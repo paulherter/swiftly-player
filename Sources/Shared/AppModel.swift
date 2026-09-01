@@ -1,0 +1,621 @@
+import Foundation
+import OSLog
+import JellyfinKit
+import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+@MainActor
+@Observable
+final class AppModel {
+
+    enum Phase: Equatable {
+        case disconnected
+        case connecting
+        case needsLogin(serverName: String, version: String)
+        case ready
+    }
+
+    var phase: Phase = .disconnected
+    var errorMessage: String?
+    var views: [Item] = []
+    /// Für die Kopfzeile im Profilmenü.
+    var serverName: String?
+
+    // MARK: Einstellungen
+
+    /// Nie umwandeln lassen. Der Grund für diese App — deshalb Vorgabe an.
+    var immerDirectPlay: Bool { didSet { merken(immerDirectPlay, "immerDirectPlay") } }
+    /// Obergrenze in Mbit/s, 0 heißt unbegrenzt. Greift nur, wenn Direct Play
+    /// nicht erzwungen wird.
+    var bitratenGrenze: Int { didSet { merken(bitratenGrenze, "bitratenGrenze") } }
+    var querformatFest: Bool { didSet { merken(querformatFest, "querformatFest") } }
+    var fortschrittAufKacheln: Bool { didSet { merken(fortschrittAufKacheln, "fortschritt") } }
+
+    /// Leer heißt: nehmen, was der Server vorgibt.
+    var tonSprache: String { didSet { merken(tonSprache, "tonSprache") } }
+    var untertitelSprache: String { didSet { merken(untertitelSprache, "utSprache") } }
+    /// Untertitel nur einschalten, wenn der Ton nicht in der gewünschten
+    /// Sprache läuft.
+    var untertitelAutomatisch: Bool { didSet { merken(untertitelAutomatisch, "utAuto") } }
+    var naechsteAutomatisch: Bool { didSet { merken(naechsteAutomatisch, "naechsteAuto") } }
+    var zurueckSekunden: Int { didSet { merken(zurueckSekunden, "zurueckSek") } }
+    var vorSekunden: Int { didSet { merken(vorSekunden, "vorSek") } }
+
+
+    private func merken(_ wert: Any, _ name: String) {
+        UserDefaults.standard.set(wert, forKey: name)
+    }
+
+    /// Was dem Server als Grenze gemeldet wird.
+    ///
+    /// Eine Milliarde heißt praktisch unbegrenzt — ein Limit löst
+    /// Transkodierung aus, auch wenn Container und Codec passen.
+    private var profilBitrate: Int {
+        immerDirectPlay || bitratenGrenze <= 0 ? 1_000_000_000 : bitratenGrenze * 1_000_000
+    }
+    var serverVersion: String?
+    var isWorking = false
+
+    private(set) var client: JellyfinClient?
+    private(set) var session: Session?
+
+    private static let sessionKey = "session"
+    static let log = Logger(subsystem: "de.paulherter.swiftly", category: "start")
+
+    /// Stabile Geräte-ID. Jellyfin listet damit die Sitzung im Dashboard.
+    private static var deviceID: String = {
+        let key = "de.paulherter.swiftly.deviceID"
+        if let existing = UserDefaults.standard.string(forKey: key) { return existing }
+        let fresh = UUID().uuidString
+        UserDefaults.standard.set(fresh, forKey: key)
+        return fresh
+    }()
+
+    private static var deviceName: String {
+        #if canImport(UIKit)
+        UIDevice.current.name
+        #else
+        "Mac"
+        #endif
+    }
+
+    init() {
+        let ablage = UserDefaults.standard
+        // `object(forKey:)` unterscheidet „nie gesetzt" von „aus" — mit
+        // `bool(forKey:)` wäre die Vorgabe immer falsch.
+        immerDirectPlay = ablage.object(forKey: "immerDirectPlay") as? Bool ?? true
+        bitratenGrenze = ablage.integer(forKey: "bitratenGrenze")
+        querformatFest = ablage.object(forKey: "querformatFest") as? Bool ?? true
+        fortschrittAufKacheln = ablage.object(forKey: "fortschritt") as? Bool ?? true
+        tonSprache = ablage.string(forKey: "tonSprache") ?? ""
+        untertitelSprache = ablage.string(forKey: "utSprache") ?? ""
+        untertitelAutomatisch = ablage.object(forKey: "utAuto") as? Bool ?? false
+        naechsteAutomatisch = ablage.object(forKey: "naechsteAuto") as? Bool ?? true
+        zurueckSekunden = ablage.object(forKey: "zurueckSek") as? Int ?? 10
+        vorSekunden = ablage.object(forKey: "vorSek") as? Int ?? 30
+
+        Self.keychainSelbsttest()
+        restoreSession()
+    }
+
+    /// Prüft, ob der Server antwortet, und zieht dabei Name und Fassung nach.
+    func verbindungPruefen() async -> String {
+        guard let client else { return String(localized: "Nicht angemeldet.") }
+        do {
+            let info = try await client.publicSystemInfo()
+            serverName = info.serverName ?? serverName
+            serverVersion = info.version ?? serverVersion
+            return String(localized: "Erreichbar — Jellyfin \(info.version ?? "?")")
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Schreibt und liest beim Start einen Testwert. Schlägt das fehl, geht
+    /// auch die Sitzung verloren — dann steht der Grund im Log statt dass man
+    /// sich wundert, warum man sich ständig neu anmelden muss.
+    private static func keychainSelbsttest() {
+        // Bleibt bewusst liegen: so lässt sich messen, ob Einträge eine
+        // Neuinstallation überleben — genau das ist die Frage.
+        if let alt = Keychain.load(key: "dauertest"),
+           let text = String(data: alt, encoding: .utf8) {
+            Self.log.info("Keychain: Eintrag überlebt seit \(text, privacy: .public)")
+        } else {
+            let stempel = ISO8601DateFormatter().string(from: Date())
+            do {
+                try Keychain.save(Data(stempel.utf8), key: "dauertest")
+                Self.log.info("Keychain: kein alter Eintrag, neu angelegt um \(stempel, privacy: .public)")
+            } catch {
+                Self.log.error("Keychain: Schreiben fehlgeschlagen — \(String(describing: error), privacy: .public)")
+            }
+        }
+        Self.log.info("Keychain: Sitzung vorhanden = \(Keychain.load(key: sessionKey) != nil, privacy: .public)")
+    }
+
+    // MARK: - Verbinden
+
+    func connect(to raw: String) async {
+        errorMessage = nil
+        phase = .connecting
+
+        guard let url = Self.normalizeServerURL(raw) else {
+            errorMessage = String(localized: "Die Adresse konnte nicht gelesen werden.")
+            phase = .disconnected
+            return
+        }
+
+        // Erst wie geraten, dann andersherum.
+        //
+        // Ohne Schema wird für Adressen außerhalb des Heimnetzes `https`
+        // angenommen. Läuft dort ein Server ohne Zertifikat, scheitert der
+        // erste Versuch an der Verbindung — nicht an einer Antwort. Genau
+        // dann, und nur dann, ist ein zweiter Versuch über `http` sinnvoll.
+        // Bei einer Antwort mit Fehlercode wäre er falsch: der Server ist ja
+        // da, er sagt nur etwas anderes.
+        if await verbindeMit(url) { return }
+
+        // Den Grund des **ersten** Versuchs festhalten.
+        //
+        // Sonst überschreibt der Ausweichversuch ihn mit seinem eigenen, und
+        // der ist fast immer der falsche: scheitert `https` schon an der
+        // Namensauflösung, scheitert `http` daran ebenso — es meldet nur
+        // vorher, dass iOS unverschlüsselte Verbindungen sperrt. Der Nutzer
+        // liest dann „richte https ein", obwohl der Server schlicht nicht zu
+        // finden war.
+        let echterGrund = errorMessage
+
+        if raw.contains("://") == false,
+           let ausweich = AppModelURLNormalizer.andersHerum(url),
+           await verbindeMit(ausweich) { return }
+
+        errorMessage = echterGrund
+        phase = .disconnected
+    }
+
+    /// - Returns: `true`, wenn der Server geantwortet hat.
+    private func verbindeMit(_ url: URL) async -> Bool {
+        let c = JellyfinClient(baseURL: url, deviceID: Self.deviceID, deviceName: Self.deviceName)
+        do {
+            let info = try await c.publicSystemInfo()
+            client = c
+            serverName = info.serverName ?? url.host()
+            serverVersion = info.version
+            phase = .needsLogin(serverName: info.serverName ?? url.host() ?? "Server",
+                                version: info.version ?? "?")
+            serverMerken(adresse: url.host() ?? url.absoluteString,
+                         name: info.serverName ?? url.host() ?? "Server",
+                         version: info.version ?? "?")
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = anschlussfehler(error, adresse: url)
+            return false
+        }
+    }
+
+    /// Verbindungsfehler so, dass die Ursache daraus hervorgeht.
+    ///
+    /// Der häufigste Fall bei selbst gehosteten Servern ist eine unver-
+    /// schlüsselte Adresse außerhalb des Heimnetzes: die sperrt iOS von sich
+    /// aus, und die Fehlermeldung des Systems sagt das nicht.
+    private func anschlussfehler(_ fehler: any Error, adresse: URL) -> String {
+        let text = lesbar(fehler)
+        guard adresse.scheme == "http",
+              !AppModelURLNormalizer.istImHeimnetz(adresse.host() ?? "") else { return text }
+        return text + " " + String(localized: "Server, die außerhalb des Heimnetzes nur über http erreichbar sind, sperrt iOS aus Sicherheitsgründen. Richte auf dem Server https ein.")
+    }
+
+    /// Was nach jeder erfolgreichen Anmeldung gleich abläuft — egal ob über
+    /// Passwort oder Quick Connect.
+    func sitzungUebernehmen(_ s: Session) {
+        session = s
+        persist(s)
+        phase = .ready
+        // Name und Fassung stehen sonst nur nach einer frischen Verbindung
+        // bereit — in den Einstellungen stand danach „Server · ?".
+        Task { _ = await verbindungPruefen() }
+    }
+
+    func login(username: String, password: String) async {
+        guard let client else { return }
+        isWorking = true
+        defer { isWorking = false }
+        errorMessage = nil
+        do {
+            let s = try await client.authenticate(username: username, password: password)
+            sitzungUebernehmen(s)
+            await loadViews()
+        } catch {
+            errorMessage = lesbar(error)
+        }
+    }
+
+    /// Quick Connect: Code freigeben, der auf einem anderen Gerät steht.
+    func quickConnectFreigeben(code: String) async throws {
+        guard let client else { throw JellyfinError.notAuthenticated }
+        try await client.quickConnectFreigeben(code: code)
+    }
+
+    // MARK: Fernsteuerung
+
+    /// Die offene Socket-Verbindung, über die Befehle vom Server kommen.
+    @ObservationIgnored private var fern: Fernsteuerung?
+    /// Setzt der Player, solange er auf dem Schirm ist.
+    @ObservationIgnored var fernbefehl: ((Fernbefehl) -> Void)?
+
+    /// Fähigkeiten melden und zuhören.
+    ///
+    /// Beides ist nötig, damit das Dashboard die Sitzung bedienen kann: ohne
+    /// die Meldung bleiben dort die Knöpfe grau, ohne den Socket kommen die
+    /// Befehle nie an.
+    func fernsteuerungStarten() async {
+        guard let client, fern == nil else { return }
+        do {
+            try await client.faehigkeitenMelden()
+        } catch {
+            Self.log.warning("Fähigkeiten nicht gemeldet: \(error.localizedDescription)")
+        }
+        guard let steuerung = try? await client.fernsteuerung() else { return }
+        fern = steuerung
+        await steuerung.starten { [weak self] befehl in
+            Task { @MainActor in self?.fernbefehl?(befehl) }
+        }
+    }
+
+    func fernsteuerungBeenden() async {
+        await fern?.beenden()
+        fern = nil
+    }
+
+    func loadViews() async {
+        guard let client else { return }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            views = try await client.userViews()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Einen Titel frisch holen — vor allem wegen der Wiedergabeposition.
+    func item(id: String) async -> Item? {
+        guard let client else { return nil }
+        return try? await client.item(id: id)
+    }
+
+    /// Der erste Trailer, der als Datei auf dem Server liegt.
+    func trailer(zu item: Item) async -> Item? {
+        guard let client else { return nil }
+        return (try? await client.trailer(zu: item.id))?.first
+    }
+
+    /// Stösst das Neueinlesen der Metadaten an. Der Server arbeitet danach im
+    /// Hintergrund weiter — die Antwort heisst nur „angenommen".
+    func metadatenAuffrischen(_ item: Item) async -> String {
+        guard let client else { return String(localized: "Nicht angemeldet.") }
+        do {
+            try await client.metadatenAuffrischen(item.id)
+            return String(localized: "Der Server liest die Metadaten neu ein.")
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func aehnliche(_ item: Item) async -> [Item] {
+        guard let client else { return [] }
+        return (try? await client.aehnliche(itemID: item.id)) ?? []
+    }
+
+    func extras(_ item: Item) async -> [Item] {
+        guard let client else { return [] }
+        return (try? await client.extras(itemID: item.id)) ?? []
+    }
+
+    func suche(_ begriff: String) async -> [Item] {
+        guard let client, begriff.count >= 2 else { return [] }
+        return (try? await client.suche(begriff)) ?? []
+    }
+
+    /// Der eine Ort, an dem Bildadressen entstehen.
+    ///
+    /// Vorher taten das fünf fast gleiche Blöcke, und zwei davon hängten das
+    /// Zugangsmerkmal nicht an — was nur solange gutging, wie der Server
+    /// Bilder auch unangemeldet herausgibt.
+    private var bilder: Bildadresse? {
+        guard let session else { return nil }
+        return Bildadresse(basis: session.serverURL, token: session.accessToken)
+    }
+
+    /// Porträt eines Mitwirkenden.
+    func personBild(_ person: Person, maxHeight: Int = 220) -> URL? {
+        bilder?.bauen(itemID: person.id, marke: person.primaryImageTag,
+                      mass: .hoechstensHoch(maxHeight))
+    }
+
+    func setzeMerkliste(_ item: Item, an: Bool) async -> String? {
+        guard let client else { return String(localized: "Nicht angemeldet.") }
+        do { try await client.setzeMerkliste(itemID: item.id, an: an); return nil }
+        catch { return lesbar(error) }
+    }
+
+    @discardableResult
+    func setzeGesehen(_ item: Item, an: Bool) async -> String? {
+        guard let client else { return String(localized: "Nicht angemeldet.") }
+        do { try await client.setzeGesehen(itemID: item.id, an: an); return nil }
+        catch { return lesbar(error) }
+    }
+
+    func staffeln(_ serie: Item) async -> [Item] {
+        guard let client else { return [] }
+        return (try? await client.staffeln(seriesID: serie.id)) ?? []
+    }
+
+    func folgen(serie: String, staffel: String?) async -> [Item] {
+        guard let client else { return [] }
+        return (try? await client.folgen(seriesID: serie, seasonID: staffel)) ?? []
+    }
+
+    /// Wo man in dieser Serie steht — für den großen Knopf.
+    func standInSerie(_ serie: Item) async -> Item? {
+        guard let client else { return nil }
+        // `try?` einer optionalen Rückgabe flacht Swift zu **einer** Ebene ab
+        // — `offen` ist hier also schon ein `Item`, und das zusätzliche
+        // `offen != nil`, das einmal danebenstand, war immer wahr.
+        if let offen = try? await client.naechsteFolgeDerSerie(seriesID: serie.id) {
+            return offen
+        }
+        // Serie ganz gesehen oder NextUp leer: dann die erste Folge.
+        return (try? await client.folgen(seriesID: serie.id))?.first
+    }
+
+    /// Das Profilbild aus Jellyfin. Fehlt es, antwortet der Server mit 404
+    /// und die Ansicht faellt auf den Anfangsbuchstaben zurueck.
+    func benutzerbildURL(groesse: Int = 120) -> URL? {
+        guard let session else { return nil }
+        return bilder?.benutzer(session.userID, kante: groesse * 2)
+    }
+
+    /// Waagerechtes Bild für die Reihe „Weiterschauen".
+    ///
+    /// Bewusst vom übergeordneten Titel, nicht von der Folge: ein Standbild
+    /// aus der Folge sagt wenig und sieht neben den anderen Reihen beliebig
+    /// aus. Gefragt war „eine Art Cover".
+    func querbildURL(for item: Item, breite: Int = 600) -> URL? {
+        bilder?.bauen(itemID: item.seriesId ?? item.id, art: .hintergrund,
+                      mass: .hoechstensBreit(breite), index: 0)
+    }
+
+    func backdropURL(for item: Item) -> URL? {
+        guard let tag = item.backdropImageTags?.first else { return nil }
+        return bilder?.bauen(itemID: item.id, art: .hintergrund, marke: tag,
+                             mass: .hoechstensBreit(1200), guete: 85)
+    }
+
+    /// Die Folge nach dieser.
+    func folgeNach(_ item: Item) async -> Item? {
+        guard let client, let serie = item.seriesId else { return nil }
+        return try? await client.folgeNach(itemID: item.id, seriesID: serie)
+    }
+
+    /// Angefangene Titel.
+    /// `nil` heißt: die Anfrage ist fehlgeschlagen. Das ist etwas anderes als
+    /// eine leere Liste — mit `try?` sah beides gleich aus, und ein einzelner
+    /// Aussetzer hat die Startseite lautlos geleert.
+    func weiterschauen() async -> [Item]? {
+        guard let client else { return nil }
+        return try? await client.resumeItems()
+    }
+
+    /// Nächste ungesehene Folgen laufender Serien.
+    ///
+    /// - Parameter ohne: Titel, die schon unter „Weiterschauen" stehen.
+    ///   Jellyfin listet angefangene Folgen in beiden Abfragen; ohne das
+    ///   Aussortieren stünde dieselbe Folge zweimal auf der Startseite.
+    func naechsteFolge(ohne bereitsGezeigt: [Item] = []) async -> [Item]? {
+        guard let client, let alle = try? await client.nextUp() else { return nil }
+        let schonDa = Set(bereitsGezeigt.map(\.id))
+        return alle.filter { !schonDa.contains($0.id) }
+    }
+
+    /// Zuletzt Hinzugefügtes über alle Bibliotheken.
+    /// Neu dazugekommen — je Serie ein Eintrag, neueste zuerst.
+    ///
+    /// Jellyfins eigene Zusammenfassung nennt nur die Serie und die Zahl der
+    /// neuen Folgen, nicht die Staffel. Deshalb ungruppiert holen und selbst
+    /// zusammenfassen: die erste Folge je Serie ist die neueste, weil der
+    /// Server bereits nach Datum sortiert.
+    func zuletztHinzugefuegt() async -> [Item]? {
+        guard let client,
+              let roh = try? await client.latest(limit: 60, gruppieren: false)
+        else { return nil }
+
+        var gesehen = Set<String>()
+        var ergebnis: [Item] = []
+        for eintrag in roh {
+            // Filme haben keine Serie und stehen für sich.
+            let schluessel = eintrag.seriesId ?? eintrag.id
+            guard gesehen.insert(schluessel).inserted else { continue }
+            ergebnis.append(eintrag)
+            if ergebnis.count >= 24 { break }
+        }
+        return ergebnis
+    }
+
+    /// Eine Seite aus einer Bibliothek.
+    ///
+    /// Gibt neben den Titeln zurück, wie viele es insgesamt gibt — sonst weiß
+    /// die Ansicht nicht, wann sie aufhören darf nachzuladen. Vorher wurden
+    /// stur die ersten zweihundert geholt und der Rest war über die
+    /// Oberfläche nicht erreichbar.
+    func items(in parentID: String,
+               sortierung: Sortierung = .name,
+               filter: Bibliotheksfilter = .alle,
+               ab startIndex: Int = 0,
+               anzahl: Int = AppModel.seitengroesse) async -> (titel: [Item], gesamt: Int)? {
+        guard let client else { return nil }
+        do {
+            let antwort = try await client.items(parentID: parentID,
+                                                 limit: anzahl,
+                                                 startIndex: startIndex,
+                                                 sortBy: sortierung.feld,
+                                                 sortOrder: sortierung.richtung,
+                                                 filters: filter.jellyfinFilter,
+                                                 istGesehen: filter.istGesehen)
+            return (antwort.items, antwort.totalRecordCount)
+        } catch {
+            errorMessage = lesbar(error)
+            return nil
+        }
+    }
+
+    /// Groß genug, dass man beim ersten Wischen nicht ans Ende kommt, klein
+    /// genug, dass die erste Seite schnell steht.
+    static let seitengroesse = 60
+
+    /// Fragt den Server, wie er diesen Titel ausliefern würde.
+    func plan(for itemID: String) async -> PlaybackPlan? {
+        guard let client else { return nil }
+        do {
+            let plan = try await client.playbackPlan(for: itemID,
+                                                       profile: .vlc(maxBitrate: profilBitrate))
+            if plan == nil {
+                // Tritt bei Serien und Staffeln auf: die haben keine
+                // Mediendatei, nur ihre Folgen haben eine.
+                Self.log.error("Kein Plan für \(itemID, privacy: .public) — Server nannte keine MediaSource")
+            }
+            return plan
+        } catch {
+            Self.log.error("PlaybackInfo fehlgeschlagen für \(itemID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Poster-URL. Wird hier gebaut statt im Client, damit die Ansichten
+    /// nicht auf den Actor warten müssen.
+    func imageURL(for item: Item, maxHeight: Int = 480, hochkant: Bool = false) -> URL? {
+        // Für Hochkantkacheln bei Folgen das Serienposter verwenden — das
+        // eigene Bild einer Folge ist ein 16:9-Vorschaubild und würde in
+        // einer 2:3-Kachel bis zur Unkenntlichkeit beschnitten.
+        let quelle: (id: String, marke: String)?
+        if hochkant, let serie = item.seriesId, let marke = item.seriesPrimaryImageTag {
+            quelle = (serie, marke)
+        } else if let marke = item.imageTags?["Primary"] {
+            quelle = (item.id, marke)
+        } else {
+            quelle = nil
+        }
+        guard let quelle else { return nil }
+        return bilder?.bauen(itemID: quelle.id, marke: quelle.marke,
+                             mass: .hoechstensHoch(maxHeight))
+    }
+
+    // MARK: - Wiedergabe melden
+    //
+    // Schlägt eine Meldung fehl, ist das kein Grund, die Wiedergabe zu stören —
+    // deshalb wird der Fehler hier nur vermerkt, nicht angezeigt.
+
+    func reportStart(item: Item, plan: PlaybackPlan, seconds: Double) async {
+        guard let client else { return }
+        do {
+            try await client.reportStart(itemID: item.id, plan: plan,
+                                         ticks: JellyfinClient.ticks(fromSeconds: seconds))
+            Self.log.info("Wiedergabe gemeldet: Start bei \(Int(seconds)) s")
+        } catch {
+            Self.log.error("Start-Meldung fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func reportProgress(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) async {
+        guard let client else { return }
+        do {
+            try await client.reportProgress(itemID: item.id, plan: plan,
+                                            positionTicks: JellyfinClient.ticks(fromSeconds: seconds),
+                                            paused: paused)
+            Self.log.info("Wiedergabe gemeldet: \(Int(seconds)) s")
+        } catch {
+            Self.log.error("Fortschritt-Meldung fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func reportStopped(item: Item, plan: PlaybackPlan, seconds: Double) async {
+        guard let client else { return }
+        do {
+            try await client.reportStopped(itemID: item.id, plan: plan,
+                                           positionTicks: JellyfinClient.ticks(fromSeconds: seconds))
+            Self.log.info("Wiedergabe gemeldet: Ende bei \(Int(seconds)) s")
+        } catch {
+            Self.log.error("Ende-Meldung fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func signOut() {
+        // Der Socket lief vorher weiter — mit einem Zugangsmerkmal, das der
+        // Nutzer gerade loswerden wollte. Seit die Fernsteuerung sich nach
+        // einem Abriss selbst wieder aufbaut, hätte sie das auch getan.
+        let alter = client
+        Task {
+            await fernsteuerungBeenden()
+            await alter?.abmelden()
+        }
+        Keychain.delete(key: Self.sessionKey)
+        session = nil
+        client = nil
+        views = []
+        errorMessage = nil
+        phase = .disconnected
+    }
+
+    // MARK: - Sitzung sichern
+
+    func persist(_ s: Session) {
+        do {
+            try Keychain.save(JSONEncoder().encode(s), key: Self.sessionKey)
+            // Sofort zurücklesen: ein Schreibfehler, der erst beim nächsten
+            // Start auffällt, kostet unnötig eine Anmeldung.
+            guard Keychain.load(key: Self.sessionKey) != nil else {
+                Self.log.error("Keychain: Sitzung geschrieben, aber nicht lesbar")
+                errorMessage = String(localized: "Sitzung ließ sich nicht sichern — du müsstest dich neu anmelden.")
+                return
+            }
+            Self.log.info("Keychain: Sitzung gesichert")
+        } catch {
+            errorMessage = String(localized: "Sitzung ließ sich nicht sichern.")
+        }
+    }
+
+    private func restoreSession() {
+        guard let data = Keychain.load(key: Self.sessionKey),
+              let s = try? JSONDecoder().decode(Session.self, from: data) else { return }
+        session = s
+        let neuer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
+                                   deviceName: Self.deviceName, session: s)
+        client = neuer
+        phase = .ready
+        Task {
+            // Name und Fassung stehen sonst nur nach einer frischen Verbindung
+            // bereit — in den Einstellungen stand danach „Server · ?".
+            _ = await verbindungPruefen()
+
+            // Und prüfen, ob das Merkmal überhaupt noch gilt.
+            //
+            // Vorher genügte ein Eintrag im Keychain, um `ready` zu setzen.
+            // Ein widerrufenes Merkmal führte damit nicht auf den
+            // Anmeldebildschirm, sondern in „Kein Kontakt zum Server" — und
+            // von dort gibt es keinen Weg zurück außer über das Profilmenü.
+            guard await neuer.sitzungGiltNoch() else {
+                signOut()
+                errorMessage = String(localized: "Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
+                return
+            }
+        }
+    }
+
+    /// Liegt in JellyfinKit, damit sie ohne Simulator testbar ist.
+    static func normalizeServerURL(_ raw: String) -> URL? {
+        AppModelURLNormalizer.normalize(raw)
+    }
+}

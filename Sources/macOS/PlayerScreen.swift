@@ -1,0 +1,779 @@
+import AppKit
+import JellyfinKit
+import SwiftUI
+
+/// Der Player im Fenster.
+///
+/// Verhalten wörtlich aus der iPhone-Fassung: die Steuerung zieht sich nach
+/// vier Sekunden Ruhe zurück, nicht im Pausenzustand; 10 s zurück, 30 s vor.
+///
+/// **Anders als auf dem iPhone**, und zwar wegen der Eingabeart:
+/// - Die Steuerung erscheint, wenn der Zeiger sich bewegt, nicht auf Tippen.
+/// - Die Doppeltipp-Drittel entfallen; gespult wird mit den Pfeiltasten.
+/// - Statt Bild-im-Bild gibt es das kleine Fenster. Das ist keine Wahl,
+///   sondern ein Befund: VLC gibt auf macOS keine `AVSampleBufferDisplayLayer`
+///   heraus, siehe CLAUDE.md.
+struct PlayerScreen: View {
+    let model: AppModel
+    let anfang: Abspielwunsch
+    let schliessen: () -> Void
+
+    /// Titel und Plan wandern beim Folgenwechsel weiter — der Player bleibt
+    /// stehen, nur was er spielt, ändert sich.
+    @State private var titel: Item
+    @State private var plan: PlaybackPlan
+    @State private var naechsteFolge: Item?
+    @State private var wechselt = false
+    @State private var hinweis: String?
+    @State private var flaeche: VLCPlayerView?
+    @State private var stand: Wiedergabetakt.Stand
+    @State private var amRegler = false
+    @State private var spurwahlOffen = false
+    /// Wo der Zeiger zuletzt stand. Ohne diesen Vergleich stellt jeder
+    /// Neuzeichenvorgang den Wecker zurück — und die Schleife zeichnet alle
+    /// 500 ms neu, der Wecker läuft also nie ab.
+    @State private var zeigerZuletzt: CGPoint?
+    @State private var tempo: Float = 1
+    /// Nur für die Blende — `stand.erstesBildDa` sagt, *ob*, dieses Merkmal
+    /// sorgt dafür, dass das Wegnehmen weich läuft.
+    @State private var schirmWeg = false
+    /// Bis wann nach einem Sprung die Zeit **nicht** übernommen wird.
+    ///
+    /// Sonst springt der Regler auf den alten Wert zurück, bevor VLC
+    /// nachgezogen hat — derselbe Fall wie die Null beim Öffnen: ein Wert
+    /// steht bereit, bevor VLC ihn bestätigt hat.
+    @State private var sprungBis: Date?
+    @State private var schlafminuten: Int?
+    @State private var schlafAufgabe: Task<Void, Never>?
+    @State private var seitStart = Date()
+    @State private var steuerungDa = true
+    @State private var halter = Fensterhalter()
+    @State private var zentrale = Wiedergabezentrale()
+    @State private var ruheAufgabe: Task<Void, Never>?
+
+    init(model: AppModel, wunsch: Abspielwunsch, schliessen: @escaping () -> Void) {
+        self.model = model
+        self.anfang = wunsch
+        self.schliessen = schliessen
+        _titel = State(initialValue: wunsch.item)
+        _plan = State(initialValue: wunsch.plan)
+        // **Die Uhr fängt an der Fortsetzungsstelle an, nicht bei null.**
+        //
+        // `Stand()` beginnt bei 0, und diese Null wird zweieinhalb Sekunden
+        // lang gerechnet, bis VLC eingesteuert hat. Sie zu verdecken genügt
+        // nicht: der Zeitregler wäre in dieser Zeit an eine Null gebunden —
+        // ein Zug daran spränge gegen 0 statt gegen die echte Stelle —, und
+        // `Folgenende.knopfZeigen` bekäme sie ebenfalls, was bei einer zu
+        // 97 % gesehenen Folge den Unterschied macht.
+        //
+        // Die iPhone-Fassung tut dasselbe (`_position = State(initialValue: startAt)`).
+        _stand = State(initialValue: .init(position: wunsch.startAt))
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black
+
+            Videoflaeche(url: anfang.plan.url, startAt: anfang.startAt,
+                         container: anfang.plan.container,
+                         verdeckt: !schirmWeg) { neu in
+                flaeche = neu
+            }
+            .ignoresSafeArea()
+            // Ohne das nimmt die Animation der Steuerung die Videofläche mit
+            // — sie wuchs bei jedem Einblenden sichtbar von klein auf groß.
+            // Eine Narbe der iPhone-Fassung, die mit Bild-im-Bild nichts zu
+            // tun hat und uns genauso trifft.
+            .transaction { $0.animation = nil }
+
+            // **Deckend**, nicht nur ein Rädchen. Vorher stand hier ein
+            // durchsichtiger `Lader()`, und das Video lief die ganze Zeit
+            // sichtbar darunter — man sah VLC an den Anfang gehen und von
+            // dort an die gemerkte Stelle steuern. Die Regeln in
+            // `Zeitannahme.bildDa` waren richtig; es fehlte schlicht der
+            // Schirm, den sie wegnehmen sollten.
+            if !schirmWeg { startschleier }
+
+            // **Erst wenn das Bild steht.** Sonst liegt die Steuerung über dem
+            // Ladeschirm und zeigt 0:00 mit leerer Leiste, während VLC noch
+            // einsteuert — es sieht dann so aus, als liefe der Film von vorn.
+            // Genau das hat
+            if schirmWeg, steuerungDa {
+                steuerung.transition(.opacity)
+            }
+        }
+        .background(Fensterzugriff(halter: halter))
+        // Der Zeiger ruft die Steuerung — nicht ein Klick. Ein Klick ins Bild
+        // täte auf dem Mac nichts Erwartbares.
+        // `onContinuousHover` meldet nicht nur Bewegung, sondern auch jedes
+        // Neuzeichnen mit unveränderter Stelle. Deshalb der Vergleich: nur
+        // eine wirkliche Bewegung ruft die Steuerung.
+        .onContinuousHover { lage in
+            guard case let .active(stelle) = lage else {
+                zeigerZuletzt = nil
+                return
+            }
+            defer { zeigerZuletzt = stelle }
+            guard let vorher = zeigerZuletzt else { return }
+            let weg = hypot(stelle.x - vorher.x, stelle.y - vorher.y)
+            if weg > 2 { steuerungZeigen() }
+        }
+        .onAppear { steuerungZeigen() }
+        .onAppear {
+            zentraleUebernehmen()
+            halter.setzePlayer(true)
+        }
+        .onChange(of: tempo) { tempoAnwenden() }
+        .onChange(of: schlafminuten) { schlafzeitSetzen(schlafminuten) }
+        .task { naechsteFolge = await model.folgeNach(titel) }
+        .onDisappear {
+            ruheAufgabe?.cancel()
+            schlafAufgabe?.cancel()
+            halter.aufraeumen()
+            zentrale.abgeben()
+            // Der Zeiger gehört zurück, sobald der Player weg ist.
+            NSCursor.unhide()
+        }
+        .task { await mitlaufen() }
+        // Tastenkürzel. Sie stehen zusätzlich in der Menüleiste, damit man sie
+        // findet, ohne sie zu kennen.
+        .background {
+            VStack {
+                Button("") { umschalten() }.keyboardShortcut(.space, modifiers: [])
+                Button("") { springe(-Double(model.zurueckSekunden)) }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                Button("") { springe(Double(model.vorSekunden)) }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+                Button("") { fluchttaste() }.keyboardShortcut(.escape, modifiers: [])
+                Button("") { halter.setzeKlein(!halter.istKlein) }
+                    .keyboardShortcut("p", modifiers: [.command, .option])
+            }
+            .opacity(0)
+        }
+    }
+
+    private var startschleier: some View {
+        ZStack {
+            Color.black
+            Lader()
+        }
+        .ignoresSafeArea()
+        .transition(.opacity)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: Steuerung
+
+    private var steuerung: some View {
+        ZStack {
+            LinearGradient(colors: [.black.opacity(0.60), .clear],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 150)
+                .frame(maxHeight: .infinity, alignment: .top)
+            LinearGradient(colors: [.clear, .black.opacity(0.70)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 230)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+
+            VStack(spacing: 0) {
+                kopf
+                Spacer()
+                mitte
+                Spacer()
+                fuss
+            }
+        }
+        .allowsHitTesting(true)
+    }
+
+    /// Links der Weg zurück, rechts die Werkzeuge — wie auf dem iPhone.
+    ///
+    /// **Die Fensterampel ist ausgeblendet, solange der Player oben ist**
+    /// (siehe `Fensterhalter`). Sonst stünden hier zwei Schließer
+    /// nebeneinander mit verschiedener Wirkung: der Winkel legt den Player
+    /// weg und bringt einen auf die Detailseite zurück, die rote Lampe
+    /// schließt die ganze Sitzung. Zwei Handlungen an derselben Ecke.
+    private var kopf: some View {
+        HStack(spacing: 0) {
+            // Der Winkel zeigt nach unten, weil der Player von unten
+            // aufsteigt und wieder dorthin verschwindet. Das Zeichen
+            // beschreibt eine Bewegung, die es hier wirklich gibt.
+            Aktionsknopf(symbol: "chevron.down", titel: "Player schließen") { beenden() }
+            Spacer(minLength: 0)
+            Chip(beschriftung: String(localized: "Kleines Fenster"),
+                 symbol: "pip", aktiv: halter.istKlein) {
+                halter.setzeKlein(!halter.istKlein)
+            }
+            Chip(beschriftung: String(localized: "Ton und Untertitel"),
+                 symbol: "slider.horizontal.3", aktiv: spurwahlOffen) {
+                withAnimation(Stil.zeitSprung) { spurwahlOffen.toggle() }
+            }
+            .padding(.leading, 12)
+            // Die Tafel klappt unter dem Knopf auf — kleine Entscheidungen
+            // bleiben am Ort. Die Wiedergabe läuft dabei weiter.
+            .overlay(alignment: .topTrailing) {
+                if spurwahlOffen, let flaeche {
+                    Spurwahl(tonspuren: flaeche.tonspuren,
+                             untertitel: flaeche.untertitelspuren,
+                             gewaehlterTon: flaeche.gewaehlteTonspur?.trackName,
+                             gewaehlterUntertitel: flaeche.gewaehlterUntertitel?.trackName,
+                             tempo: $tempo, schlafminuten: $schlafminuten,
+                             waehleTon: { flaeche.waehleTonspur($0); steuerungZeigen() },
+                             waehleUntertitel: { flaeche.waehleUntertitel($0); steuerungZeigen() })
+                        .offset(y: 46)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 18)
+    }
+
+    private var mitte: some View {
+        HStack(spacing: 52) {
+            Sprungknopf(symbol: "gobackward.\(model.zurueckSekunden)", gross: false,
+                        kuerzel: "←") { springe(-Double(model.zurueckSekunden)) }
+            Sprungknopf(symbol: stand.laeuft ? "pause.fill" : "play.fill", gross: true,
+                        kuerzel: String(localized: "Leertaste")) { umschalten() }
+            Sprungknopf(symbol: "goforward.\(model.vorSekunden)", gross: false,
+                        kuerzel: "→") { springe(Double(model.vorSekunden)) }
+        }
+    }
+
+    /// Titel unten, nicht oben: er gehört zur Zeitleiste, nicht zu den
+    /// Werkzeugen. Wörtlich die Aufteilung der iPhone-Fassung.
+    private var fuss: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .bottom, spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: titel.name)
+                        .font(.system(size: 19, weight: .semibold))
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        if let kontext = titel.kontextzeile { Text(verbatim: kontext) }
+                        // **Die Abweichung meldet sich, wo man sie merkt.**
+                        // Dass der Server nicht transkodiert, ist der Grund
+                        // für diese App; der Player ist die Stelle, an der es
+                        // auffällt. Stand bei mir nur auf der Detailseite.
+                        if !plan.isLossless {
+                            Label(plan.method.rawValue,
+                                  systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Stil.warnung)
+                        }
+                    }
+                    .font(.system(size: 14))
+                    .foregroundStyle(Stil.schrift.opacity(0.68))
+                    .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                // Erscheint erst gegen Ende — die Zahlen stehen in
+                // `Folgenende` und gelten auf allen Plattformen.
+                if let folge = naechsteFolge, !wechselt,
+                   Folgenende.knopfZeigen(position: stand.position, dauer: stand.dauer) {
+                    Chip(beschriftung: String(localized: "Nächste Folge"),
+                         symbol: "forward.end.alt", aktiv: false) { zurNaechstenFolge(folge) }
+                }
+            }
+            .foregroundStyle(Stil.schrift)
+
+            HStack(spacing: 14) {
+                Text(verbatim: Spielzeit.text(stand.position))
+                    .font(.system(size: 13)).monospacedDigit()
+                    .foregroundStyle(Stil.schrift.opacity(0.68))
+
+                Zeitregler(position: $stand.position, dauer: stand.dauer,
+                           amRegler: $amRegler) { ziel in
+                    flaeche?.seek(toSeconds: ziel)
+                    sprungBis = Date().addingTimeInterval(2)
+                }
+
+                Text(verbatim: "-" + Spielzeit.text(stand.dauer - stand.position))
+                    .font(.system(size: 13)).monospacedDigit()
+                    .foregroundStyle(Stil.schrift.opacity(0.68))
+            }
+
+            // Der Hinweis steht unter dem Regler, nicht oben im Bild.
+            if let hinweis {
+                Text(verbatim: hinweis)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Stil.schrift.opacity(0.85))
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.bottom, 26)
+    }
+
+    // MARK: Handlungen
+
+    /// Läuft die Zeit ab, wird angehalten und gesagt warum — nicht einfach
+    /// stillgestellt. Wörtlich die iPhone-Fassung.
+    private func schlafzeitSetzen(_ minuten: Int?) {
+        schlafAufgabe?.cancel()
+        guard let minuten else { return }
+        schlafAufgabe = Task {
+            try? await Task.sleep(for: .seconds(minuten * 60))
+            guard !Task.isCancelled else { return }
+            flaeche?.pause()
+            steuerungZeigen()
+            melde(String(localized: "Schlafzeit abgelaufen."))
+        }
+    }
+
+    /// Das Tempo liegt in der Ansicht, damit die Tafel es binden kann — VLC
+    /// bekommt es beim Wechsel durchgereicht.
+    private func tempoAnwenden() {
+        guard let flaeche, flaeche.tempo != tempo else { return }
+        flaeche.tempo = tempo
+    }
+
+    private func umschalten() {
+        guard let flaeche else { return }
+        if flaeche.isPlaying { flaeche.pause() } else { flaeche.resume() }
+        steuerungZeigen()
+    }
+
+    private func springe(_ sekunden: Double) {
+        flaeche?.jump(seconds: Int32(sekunden))
+        sprungBis = Date().addingTimeInterval(2)
+        steuerungZeigen()
+    }
+
+    private func beenden() {
+        // **Vor** dem Anhalten ablesen — danach steht die Zeit auf null und
+        // „Weiterschauen" verlöre die Stelle.
+        let stelle = stand.position
+        flaeche?.stop()
+        if stand.startGemeldet {
+            Task { await model.reportStopped(item: titel, plan: plan,
+                                             seconds: stelle) }
+        }
+        schliessen()
+    }
+
+    /// Esc verlässt zuerst das Vollbild und schließt erst dann den Film.
+    /// Andersherum verliert man beim Versuch, aus dem Vollbild zu kommen,
+    /// die Wiedergabe — und das ist keine Kleinigkeit, wenn man mitten drin
+    /// ist.
+    private func fluchttaste() {
+        if halter.istVollbild {
+            halter.vollbildUmschalten()
+        } else {
+            beenden()
+        }
+    }
+
+    /// Vier Sekunden Ruhe, dann zieht sie sich zurück — nicht im
+    /// Pausenzustand. Dieselbe Regel wie auf dem iPhone.
+    private func steuerungZeigen() {
+        withAnimation(.easeOut(duration: 0.18)) { steuerungDa = true }
+        NSCursor.unhide()
+        ruheAufgabe?.cancel()
+        ruheAufgabe = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, stand.laeuft, !amRegler else { return }
+            withAnimation(.easeInOut(duration: 0.34)) {
+                steuerungDa = false
+                spurwahlOffen = false
+            }
+            // Der Zeiger geht mit. `setHiddenUntilMouseMoves` ist der richtige
+            // Weg und nicht `hide()`: er kommt bei der nächsten Bewegung von
+            // selbst zurück, ohne dass wir ihn wieder einschalten müssen —
+            // und bleibt nicht verschwunden, wenn die App abstürzt.
+            NSCursor.setHiddenUntilMouseMoves(true)
+        }
+    }
+
+    /// Now Playing und die Medientasten der Tastatur. Beides läuft über
+    /// `MPRemoteCommandCenter` — auf dem Mac braucht es dafür nichts Eigenes.
+    private func zentraleUebernehmen() {
+        seitStart = Date()
+        zentrale.uebernehmen(.init(
+            abspielen: { flaeche?.resume() },
+            anhalten:  { flaeche?.pause() },
+            umschalten: { umschalten() },
+            springenAuf: { ziel in flaeche?.seek(toSeconds: ziel) },
+            vor:     { springe(Double(model.vorSekunden)) },
+            zurueck: { springe(-Double(model.zurueckSekunden)) },
+            naechste: naechsteFolge.map { folge in { zurNaechstenFolge(folge) } }))
+    }
+
+    /// Wechselt im laufenden Player, ohne in die Übersicht zurückzuspringen —
+    /// wörtlich die Regel der iPhone-Fassung.
+    private func zurNaechstenFolge(_ folge: Item) {
+        guard !wechselt else { return }
+        wechselt = true
+        Task {
+            await model.reportStopped(item: titel, plan: plan, seconds: stand.position)
+            guard let neuerPlan = await model.plan(for: folge.id) else {
+                melde(String(localized: "Nächste Folge konnte nicht geladen werden."))
+                wechselt = false
+                return
+            }
+            titel = folge
+            plan = neuerPlan
+            flaeche?.play(url: neuerPlan.url, abSekunden: 0, container: neuerPlan.container)
+            await model.reportStart(item: folge, plan: neuerPlan, seconds: 0)
+            // **Muss sein.** Sonst bliebe `startGemeldet` auf `true` hängen und
+            // der Takt meldete den nächsten Titel nie als begonnen — es kämen
+            // nur noch Fortschrittsmeldungen ohne eröffnete Sitzung. Der Start
+            // ist hier schon gemeldet, deshalb `true`.
+            Wiedergabetakt.neuerTitel(&stand, startGemeldet: true)
+            // **Auch die Uhr.** `seitStart` gehört zum Ansichtszustand, nicht
+            // zum Stand — ohne das Zurücksetzen hält `Zeitannahme` die neue
+            // Folge für einen alten, längst eingesteuerten Titel. Auf tvOS
+            // hat genau das eine Folge übersprungen.
+            seitStart = Date()
+            naechsteFolge = await model.folgeNach(folge)
+            zentraleUebernehmen()
+            wechselt = false
+        }
+    }
+
+    private func melde(_ text: String) {
+        hinweis = text
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            withAnimation { hinweis = nil }
+        }
+    }
+
+    /// Ein Takt alle halbe Sekunde — die Regeln stehen in
+    /// `Wiedergabetakt`, gemeinsam mit iPhone und Fernseher. Hier steht nur,
+    /// **wie** der Mac die vier Aufträge ausführt.
+    private func mitlaufen() async {
+        var takte = 0
+        while !Task.isCancelled {
+            try? await Task.sleep(for: Wiedergabetakt.taktlaenge)
+            guard let flaeche else { continue }
+
+            let auftrag = Wiedergabetakt.rechnen(
+                &stand,
+                messung: .init(dauer: flaeche.durationSeconds,
+                               position: flaeche.positionSeconds,
+                               guteStelle: flaeche.guteStelle,
+                               zeigtBild: flaeche.zeigtBild,
+                               stelltEin: flaeche.stelltEin,
+                               laeuft: flaeche.isPlaying,
+                               hatTonspuren: !flaeche.tonspuren.isEmpty),
+                stelltWiederHer: false,
+                sprungLaeuft: sprungBis.map { Date() < $0 } ?? false,
+                // Kein Finger, aber ein Zeiger — dieselbe Frage.
+                amSchieben: amRegler,
+                seitStart: seitStart)
+
+            if auftrag.ladeschirmWeg {
+                withAnimation(.easeOut(duration: 0.3)) { schirmWeg = true }
+            }
+            if auftrag.spurenAnwenden {
+                flaeche.wendeSprachenAn(ton: model.tonSprache,
+                                        untertitel: model.untertitelSprache,
+                                        automatisch: model.untertitelAutomatisch)
+            }
+            if auftrag.startMelden {
+                await model.reportStart(item: titel, plan: plan,
+                                        seconds: stand.position)
+                zentrale.melden(item: titel, position: stand.position,
+                                dauer: stand.dauer, tempo: flaeche.tempo,
+                                laeuft: stand.laeuft,
+                                sprungweite: (model.zurueckSekunden, model.vorSekunden))
+            }
+            if auftrag.fortschrittMelden {
+                await model.reportProgress(item: titel, plan: plan,
+                                           seconds: stand.position,
+                                           paused: !stand.laeuft)
+            }
+
+            // Am Ende von selbst weiter, wenn gewünscht.
+            if model.naechsteAutomatisch, let folge = naechsteFolge, !wechselt,
+               Folgenende.weiterschalten(position: stand.position, dauer: stand.dauer) {
+                zurNaechstenFolge(folge)
+            }
+
+            takte += 1
+            // Das Now-Playing-Feld braucht die Stelle nur im Sekundentakt.
+            if takte % 2 == 0, stand.startGemeldet {
+                zentrale.standNachziehen(position: stand.position,
+                                         laeuft: stand.laeuft, tempo: flaeche.tempo)
+            }
+        }
+    }
+
+}
+
+// MARK: - Die Videofläche
+
+/// Das Gegenstück zu `VideoSurfaceHost` auf iOS. Dieselbe Aufgabe, nur
+/// `NSViewRepresentable` — die Ansicht selbst kommt unverändert aus
+/// `Sources/Shared/VLCPlayer.swift`.
+struct Videoflaeche: NSViewRepresentable {
+    let url: URL
+    let startAt: Double
+    let container: String?
+    /// Solange wahr, ist die Fläche **ausgeblendet** statt überdeckt.
+    ///
+    /// Das ist der Unterschied zu iOS, und er ist macOS-eigen: VLCs
+    /// Videoausgang ist hier ein `VLCOpenGLVideoView`. Eine OpenGL-Ansicht
+    /// zeichnet in ihre eigene Fläche und liegt dabei über allem, was im
+    /// SwiftUI-Stapel nach ihr kommt — die Reihenfolge im `ZStack` entscheidet
+    /// nichts. Ein schwarzer Schleier darüber blieb deshalb wirkungslos, und
+    /// man sah VLC an den Anfang gehen und von dort einsteuern.
+    ///
+    /// `isHidden` wirkt dagegen auf AppKit-Ebene und damit sicher. VLC
+    /// dekodiert weiter, nur gezeigt wird nichts.
+    let verdeckt: Bool
+    let beimAnlegen: (VLCPlayerView) -> Void
+
+    func makeNSView(context: Context) -> VLCPlayerView {
+        let ansicht = VLCPlayerView()
+        ansicht.isHidden = verdeckt
+        ansicht.play(url: url, abSekunden: startAt, container: container)
+        DispatchQueue.main.async { beimAnlegen(ansicht) }
+        return ansicht
+    }
+
+    func updateNSView(_ ansicht: VLCPlayerView, context: Context) {
+        if ansicht.isHidden != verdeckt { ansicht.isHidden = verdeckt }
+    }
+}
+
+// MARK: - Bausteine des Players
+
+struct Sprungknopf: View {
+    let symbol: String
+    let gross: Bool
+    let kuerzel: String
+    let auswahl: () -> Void
+
+    @State private var schwebt = false
+
+    var body: some View {
+        Button(action: auswahl) {
+            VStack(spacing: 9) {
+                Image(systemName: symbol)
+                    .font(.system(size: gross ? 48 : 30, weight: .regular))
+                    .foregroundStyle(Stil.schrift)
+                    .frame(width: gross ? 78 : 46, height: gross ? 78 : 46)
+                    .scaleEffect(schwebt ? 1.06 : 1)
+                Text(verbatim: kuerzel)
+                    .font(.system(size: 11)).monospacedDigit()
+                    .foregroundStyle(Stil.schriftSehrLeise)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
+        .accessibilityLabel(Text(verbatim: kuerzel))
+    }
+}
+
+/// Der Zeitregler. Kein `Slider` — der bringt auf dem Mac eine eigene Spur,
+/// einen eigenen Griff und ein eigenes Material mit.
+struct Zeitregler: View {
+    @Binding var position: Double
+    let dauer: Double
+    /// Solange gezogen wird, übernimmt der Takt VLCs Zeit nicht — sonst
+    /// springt der Griff unter dem Zeiger zurück.
+    @Binding var amRegler: Bool
+    let springe: (Double) -> Void
+
+    @State private var zieht = false
+    @State private var zugPosition: Double = 0
+
+    var body: some View {
+        GeometryReader { raum in
+            let anteil = dauer > 0 ? (zieht ? zugPosition : position) / dauer : 0
+            ZStack(alignment: .leading) {
+                Capsule().fill(Stil.schrift.opacity(0.18)).frame(height: 4)
+                Capsule().fill(Stil.akzent)
+                    .frame(width: raum.size.width * min(max(anteil, 0), 1), height: 4)
+                Circle()
+                    .fill(Stil.schrift)
+                    .frame(width: zieht ? 15 : 13, height: zieht ? 15 : 13)
+                    .shadow(color: .black.opacity(0.55), radius: 5, y: 1)
+                    .offset(x: raum.size.width * min(max(anteil, 0), 1) - 6.5)
+            }
+            .frame(height: 15)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { wert in
+                        zieht = true
+                        amRegler = true
+                        zugPosition = dauer * min(max(wert.location.x / raum.size.width, 0), 1)
+                    }
+                    .onEnded { _ in
+                        springe(zugPosition)
+                        position = zugPosition
+                        zieht = false
+                        amRegler = false
+                    }
+            )
+        }
+        .frame(height: 15)
+        // Für VoiceOver ein Regler mit Stelle und Länge, nicht eine
+        // namenlose Fläche. Mit den Pfeiltasten lässt sich die Stelle dann
+        // auch ohne Ziehen ändern.
+        .accessibilityElement()
+        .accessibilityLabel("Abspielstelle")
+        .accessibilityValue(gesprochen)
+        .accessibilityAdjustableAction { richtung in
+            let schritt = max(dauer / 20, 10)
+            switch richtung {
+            case .increment: springe(min(dauer, position + schritt))
+            case .decrement: springe(max(0, position - schritt))
+            @unknown default: break
+            }
+        }
+    }
+
+    private var gesprochen: String {
+        String(localized: "\(Spielzeit.text(position)) von \(Spielzeit.text(dauer))")
+    }
+}
+
+// MARK: - Das kleine Fenster
+
+/// Der Griff ans Fenster: Vollbild, kleines Fenster, Zeiger.
+///
+/// Bewusst **dasselbe** Fenster, nur kleiner und über allen anderen: würde der
+/// Player in ein zweites Fenster umziehen, müsste VLC seine Zeichenfläche neu
+/// bekommen — das hieße Neuaufbau und Sprung an den Anfang.
+@MainActor
+@Observable
+final class Fensterhalter {
+    @ObservationIgnored private(set) weak var fenster: NSWindow?
+
+    /// Das Fenster kommt aus `viewDidMoveToWindow` und damit **später** als
+    /// `setzePlayer(true)` aus `.onAppear`. Ohne das Nachziehen hier bliebe
+    /// die Ampel im Player stehen: `ampelNachziehen` lief ins Leere, weil es
+    /// noch kein Fenster gab, und danach rief es niemand mehr.
+    func uebernehme(_ neues: NSWindow?) {
+        guard fenster !== neues else { return }
+        fenster = neues
+        ampelNachziehen()
+    }
+    @ObservationIgnored private var vorher: NSRect?
+    private(set) var istKlein = false
+    /// Ob der Player gerade das Fenster füllt.
+    private(set) var imPlayer = false
+
+    var istVollbild: Bool { fenster?.styleMask.contains(.fullScreen) ?? false }
+
+    /// **Ein Ausdruck, nicht zwei Schalter.**
+    ///
+    /// Die Ampel verschwindet im kleinen Fenster (dort gehört sie nicht hin)
+    /// **und** im Player (dort stünde sie neben dem Winkel, der zurücklegt —
+    /// zwei Schließer mit verschiedener Wirkung). Würden beide Wege ihre
+    /// eigene Sichtbarkeit setzen, hinge das Ergebnis davon ab, welcher
+    /// zuletzt lief.
+    private var ampelSichtbar: Bool { !istKlein && !imPlayer }
+
+    private func ampelNachziehen() {
+        guard let fenster else { return }
+        for knopf in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            fenster.standardWindowButton(knopf)?.isHidden = !ampelSichtbar
+        }
+    }
+
+    /// Der Player meldet sich an und ab.
+    func setzePlayer(_ an: Bool) {
+        guard imPlayer != an else { return }
+        imPlayer = an
+        ampelNachziehen()
+    }
+
+    func vollbildUmschalten() { fenster?.toggleFullScreen(nil) }
+
+    /// Kleines Fenster an oder aus.
+    ///
+    /// **Erst aus dem Vollbild.** Dort ignoriert macOS sowohl `setFrame` als
+    /// auch den Fensterrang — das kleine Fenster blieb sonst bildschirmfüllend.
+    /// Der Rückweg wartet auf die Meldung, dass das Vollbild wirklich verlassen
+    /// ist; vorher hat das Fenster noch die alten Maße.
+    func setzeKlein(_ klein: Bool) {
+        guard let fenster, klein != istKlein else { return }
+        istKlein = klein
+
+        if klein, istVollbild {
+            var beobachter: NSObjectProtocol?
+            beobachter = NotificationCenter.default.addObserver(
+                forName: NSWindow.didExitFullScreenNotification,
+                object: fenster, queue: .main) { [weak self] _ in
+                    if let beobachter { NotificationCenter.default.removeObserver(beobachter) }
+                    MainActor.assumeIsolated { self?.kleinAnwenden(true) }
+                }
+            fenster.toggleFullScreen(nil)
+            return
+        }
+        kleinAnwenden(klein)
+    }
+
+    private func kleinAnwenden(_ klein: Bool) {
+        guard let fenster else { return }
+
+        ampelNachziehen()
+        // Ohne Titelleiste zum Anfassen zieht man es am Bild.
+        fenster.isMovableByWindowBackground = klein
+        fenster.level = klein ? .floating : .normal
+
+        // **Kein `contentAspectRatio`.** Ein gesetztes Verhältnis muss man
+        // zum Zurückschalten wieder loswerden, und `.zero` ist dafür kein
+        // gültiger Wert — AppKit rechnet damit weiter und stürzt beim Ziehen
+        // ab (`_resizeWithEvent:`, brk 1). Gemessen, einmal passiert.
+        // Das Bild läuft ohnehin im Letterbox, wenn das Fenster nicht passt.
+        if klein {
+            vorher = fenster.frame
+            fenster.contentMinSize = NSSize(width: 320, height: 180)
+            let inhalt = NSRect(origin: .zero, size: NSSize(width: 480, height: 270))
+            var rahmen = fenster.frameRect(forContentRect: inhalt)
+            if let schirm = fenster.screen?.visibleFrame {
+                rahmen.origin = CGPoint(x: schirm.maxX - rahmen.width - 24,
+                                        y: schirm.minY + 24)
+            }
+            fenster.setFrame(rahmen, display: true, animate: true)
+        } else {
+            fenster.contentMinSize = NSSize(width: Stil.fensterMinBreite,
+                                            height: Stil.fensterMinHoehe)
+            if let vorher { fenster.setFrame(vorher, display: true, animate: true) }
+        }
+    }
+
+    /// Beim Verlassen des Players alles zurückdrehen — sonst bliebe das
+    /// Hauptfenster ohne Lampen und über allen anderen stehen.
+    func aufraeumen() {
+        if istKlein { istKlein = false; kleinAnwenden(false) }
+        setzePlayer(false)
+    }
+}
+
+/// Reicht das AppKit-Fenster an den Halter durch.
+///
+/// **Über `viewDidMoveToWindow`, nicht in `makeNSView`.** Beim Anlegen hängt
+/// die View noch in keinem Fenster, `window` ist dort `nil` — und dann lief
+/// das kleine Fenster still ins Leere, weil `setzeKlein` am `guard` abbrach.
+/// Einmal passiert, und von außen sah es aus, als täte der Knopf nichts.
+struct Fensterzugriff: NSViewRepresentable {
+    let halter: Fensterhalter
+
+    final class Spion: NSView {
+        var gefunden: ((NSWindow?) -> Void)?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            gefunden?(window)
+        }
+    }
+
+    func makeNSView(context: Context) -> Spion {
+        let ansicht = Spion(frame: .zero)
+        ansicht.gefunden = { fenster in
+            MainActor.assumeIsolated { halter.uebernehme(fenster) }
+        }
+        return ansicht
+    }
+
+    func updateNSView(_ ansicht: Spion, context: Context) {}
+}

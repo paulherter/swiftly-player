@@ -1,0 +1,306 @@
+name: Swiftly
+options:
+  bundleIdPrefix: de.paulherter
+  # Deutsch ist die Ausgangssprache, Englisch kommt aus dem Katalog.
+  # Beides steht in der Abgabe, und Englisch ist bei der Prüfung ohnehin die
+  # Sprache, in der geprüft wird.
+  developmentLanguage: de
+  deploymentTarget:
+    iOS: "18.0"
+    tvOS: "18.0"
+    macOS: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+
+packages:
+  JellyfinKit:
+    path: Packages/JellyfinKit
+  # Für die Startanimation. Die Vorlage kommt als Lottie aus After Effects;
+  # die Keyframes tragen je eigene Bezier-Anläufe, das von Hand nachzubauen
+  # geht schief. Airbnbs Umsetzung ist die übliche.
+  Lottie:
+    url: https://github.com/airbnb/lottie-ios
+    from: 4.5.0
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    # Damit Xcode die Texte aus dem Swift-Code in den Katalog zieht.
+    SWIFT_EMIT_LOC_STRINGS: "YES"
+    # Muss mit der Version in App Store Connect uebereinstimmen,
+    # sonst laesst sich der Build dort nicht anhaengen.
+    MARKETING_VERSION: "1.0.0"
+    # Muss bei JEDEM Upload hochgezaehlt werden — Apple nimmt dieselbe
+    # Buildnummer je Version kein zweites Mal an (Fehler 90189).
+    CURRENT_PROJECT_VERSION: "2"
+    # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
+    # persönliche Team in das bezahlte umgewandelt, statt ein zweites
+    # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
+    DEVELOPMENT_TEAM: 63L6TSM2Y9
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_STRICT_CONCURRENCY: complete
+
+fileGroups:
+  - Sources/Shared/Localizable.xcstrings
+
+targets:
+  Swiftly-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/Shared
+      - path: Sources/iOS
+    dependencies:
+      - package: JellyfinKit
+      - package: Lottie
+      # VLCKit 4 liefert Picture-in-Picture (VLCPictureInPictureDrawable) —
+      # der Grund für diese App. Lokal eingebunden statt über SwiftPM, weil
+      # VideoLAN den Download auf ~40 KB/s drosselt.
+      # Holen mit: Werkzeuge/vlckit-holen.sh
+      - framework: Vendor/VLCKit.xcframework
+        embed: true
+        codeSign: true
+    info:
+      path: Sources/iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Swiftly
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        # Ohne Farbe blitzt vor der Startanimation kurz Weiß auf.
+        UILaunchScreen:
+          UIColorName: Startgrund
+        # Alle vier, und zwar zwingend: ohne UIRequiresFullScreen gilt eine
+        # App mit "1,2" als multitaskingfähig, und dann verlangt Apple die
+        # volle Auswahl. Fehlt PortraitUpsideDown, schlägt das schon in der
+        # Upload-Prüfung auf, nicht erst in der Review.
+        #
+        # Das ist nur der äußere Rahmen. Was davon gilt, entscheidet zur
+        # Laufzeit `Orientierung`: auf dem iPhone bleibt es bei Hochformat,
+        # der Player darf drehen. Auf dem iPad gilt der Rahmen unverändert —
+        # eine multitaskingfähige App darf die Drehung nicht erzwingen.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Pflicht für Picture-in-Picture: ohne 'audio' im Hintergrundmodus
+        # beendet iOS die Wiedergabe, sobald das Fenster klein wird.
+        UIBackgroundModes:
+          - audio
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # Sonst fragt App Store Connect bei jedem Upload nach der
+        # Exportbestimmung. Die App verschlüsselt nichts selbst, sie nutzt nur
+        # HTTPS über die Systemschnittstellen — damit ist sie ausgenommen.
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
+        # iPhone und iPad.
+        #
+        # Beide Gründe, die das iPad bisher ausgeschlossen haben, sind
+        # ausgeräumt: PortraitUpsideDown steht oben in den Ausrichtungen, und
+        # die Ansichten lesen ihre Breite, statt drei Spalten fest zu
+        # verdrahten (`Stil.spalten(fuer:)`).
+        #
+        # Bewusst **ohne** UIRequiresFullScreen: die App soll im geteilten
+        # Bildschirm laufen. Der Preis dafür ist genau die Zeile darüber.
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # Ein einziges 1024er Bild, ohne eigene Fassungen für dunkel und
+        # getönt — iOS leitet die dunkle und getönte Darstellung daraus ab.
+        # Reicht für die Abgabe; eigene Fassungen wären eine Verbesserung,
+        # keine Voraussetzung.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Ohne Entitlements verweigert der Keychain das Schreiben (-34018),
+        # und die Anmeldung ginge bei jedem Start verloren.
+        CODE_SIGN_ENTITLEMENTS: Sources/iOS/Swiftly.entitlements
+
+  Swiftly-tvOS:
+    type: application
+    platform: tvOS
+    # Bewusst **nicht** `Sources/Shared` im Ganzen: dort stecken Wischgesten,
+    # die Navileiste unten, Tippflächen und Tastaturtypen, die es auf tvOS
+    # nicht gibt. Geteilt wird nur, was von Entfernung und Eingabeart
+    # unabhängig ist — Zustandshalter, Keychain, Marken, Routen, Farben.
+    # Die Ansichten hat jede Plattform für sich.
+    sources:
+      - path: Sources/Shared/AppModel.swift
+      - path: Sources/Shared/Anmeldemodell.swift
+      - path: Sources/Shared/Abspielwunsch.swift
+      - path: Sources/Shared/Farben.swift
+      - path: Sources/Shared/Keychain.swift
+      - path: Sources/Shared/Marken.swift
+      - path: Sources/Shared/Routen.swift
+      - path: Sources/Shared/Titelangaben.swift
+      - path: Sources/Shared/Titelhandlung.swift
+      # Container, Codec, Untertitel im Dateiauszug — dieselbe Auskunft
+      # überall (VERHALTEN.md D5).
+      - path: Sources/Shared/Dateiangaben.swift
+      # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
+      - path: Sources/Shared/Wiedergabewahlen.swift
+      - path: Sources/Shared/Dateiangaben.swift
+      # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
+      - path: Sources/Shared/Wiedergabewahlen.swift
+      - path: Sources/Shared/Wiedergabewahlen.swift
+      - path: Sources/Shared/QuickConnectModell.swift
+      - path: Sources/Shared/Wiedergabezentrale.swift
+      - path: Sources/Shared/Startseitenmodell.swift
+      - path: Sources/Shared/Bibliotheksmodell.swift
+      - path: Sources/Shared/SVGPfad.swift
+      # Die Abspiel-Maschinerie teilen sich beide Plattformen: derselbe
+      # `mkv_trusted`-Kniff, dieselbe Stillstandserkennung. Bild-im-Bild
+      # darin ist mit `#if os(iOS)` ausgeklammert.
+      # Traegt die Ansichtsklasse der Plattform. VLCPlayer haengt daran,
+      # seit es auch einen AppKit-Arm gibt.
+      - path: Sources/Shared/Basisansicht.swift
+      - path: Sources/Shared/VLCPlayer.swift
+      - path: Sources/Shared/Localizable.xcstrings
+      - path: Sources/Shared/Regalvorschau.swift
+      # Die Startanimation gehört auf beide Plattformen — die Marke soll
+      # überall gleich auffahren. Nur das Quadrat ist auf dem Fernseher
+      # größer.
+      - path: Sources/Shared/Startanimation.swift
+      - path: Sources/Shared/Mittel
+      - path: Sources/tvOS
+    dependencies:
+      - package: JellyfinKit
+      - package: Lottie
+      # Der Top Shelf ist ein eigenes Ziel und wird mit eingebettet.
+      - target: Swiftly-TopShelf
+      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im
+      # XCFramework nachgesehen). Bild-im-Bild gibt es hier nicht, der
+      # Abspieler schon — und mit ihm der `mkv_trusted`-Kniff.
+      - framework: Vendor/VLCKit.xcframework
+        embed: true
+        codeSign: true
+    info:
+      path: Sources/tvOS/Info.plist
+      properties:
+        CFBundleDisplayName: Swiftly
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        # Gehört **hierher**, nicht in die Info.plist: die wird von XcodeGen
+        # aus diesen Angaben erzeugt und bei jedem Lauf überschrieben. Ein
+        # Eintrag von Hand hält genau bis zum nächsten `xcodegen generate` —
+        # genau das ist einmal passiert, und der Top Shelf führte ins Leere.
+        CFBundleURLTypes:
+          - CFBundleURLName: de.paulherter.swiftly
+            CFBundleURLSchemes:
+              - swiftly
+        UIBackgroundModes:
+          - audio
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
+        # Dieselbe Begründung wie auf iOS: ohne die Zugriffsgruppe verweigert
+        # der Keychain das Schreiben (-34018) und die Anmeldung ginge bei
+        # jedem Start verloren.
+        CODE_SIGN_ENTITLEMENTS: Sources/tvOS/Swiftly.entitlements
+        # tvOS verlangt ein **geschichtetes** Zeichen, kein flaches Bild:
+        # Grundton hinten, Wortmarke vorn, dazwischen rechnet das System die
+        # Parallaxe. Erzeugt aus derselben Vorlage, aus der die App ihre
+        # Wortmarke zeichnet — siehe Werkzeuge/Iconbauer.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  # Die Reihe über dem App-Zeichen auf dem Startbildschirm des Apple TV.
+  #
+  # Eigener Prozess, eigene Berechtigungen: sie liest nur die Liste, die die
+  # App in den geteilten Ordner legt. Kein JellyfinKit, kein VLCKit, keine
+  # Serveranfrage — sie wird bei jedem Fokus auf dem Zeichen aufgerufen und
+  # muss in Sekundenbruchteilen etwas zeigen.
+  Swiftly-TopShelf:
+    type: app-extension
+    platform: tvOS
+    sources:
+      - path: Sources/Shared/Regalvorschau.swift
+      - path: Sources/TopShelf
+    info:
+      path: Sources/TopShelf/Info.plist
+      properties:
+        CFBundleDisplayName: Swiftly Top Shelf
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.tv-top-shelf
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).RegalAnbieter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.topshelf
+        CODE_SIGN_ENTITLEMENTS: Sources/TopShelf/TopShelf.entitlements
+
+  # Die Mac-Fassung.
+  #
+  # Wie beim Fernseher **nicht** `Sources/Shared` im Ganzen: dort stecken
+  # Wischgesten, die Leiste unten, Tippflächen und Tastaturtypen, die es auf
+  # dem Mac nicht gibt — und `Stil.swift` trägt die iPhone-Maße, die hier
+  # durch `Sources/macOS/Stil.swift` ersetzt sind. Geteilt wird, was von
+  # Eingabeart und Fenstergröße unabhängig ist.
+  Swiftly-macOS:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Shared/AppModel.swift
+      - path: Sources/Shared/Anmeldemodell.swift
+      - path: Sources/Shared/Abspielwunsch.swift
+      - path: Sources/Shared/Bibliotheksmodell.swift
+      - path: Sources/Shared/Farben.swift
+      # Bausteine ohne Plattformmaße — Reihentitel, Plakette, Lader,
+      # Profilzeichen. Lagen dreimal da.
+      - path: Sources/Shared/Bausteine.swift
+      - path: Sources/Shared/Keychain.swift
+      - path: Sources/Shared/Marken.swift
+      - path: Sources/Shared/Routen.swift
+      - path: Sources/Shared/SVGPfad.swift
+      # Was das Mehr-Blatt anbietet — der Inhalt ist auf allen Plattformen
+      # derselbe, nur die Darreichung ist eigen.
+      - path: Sources/Shared/Titelhandlung.swift
+      # Abgeleitete Angaben am Titel — Fortsetzstelle, Kontextzeile.
+      - path: Sources/Shared/Titelangaben.swift
+      # Container, Codec, Untertitel im Dateiauszug — dieselbe Auskunft
+      # überall (VERHALTEN.md D5).
+      - path: Sources/Shared/Dateiangaben.swift
+      # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
+      - path: Sources/Shared/Wiedergabewahlen.swift
+      # Now Playing und die Medientasten der Tastatur. Der
+      # AVAudioSession-Teil darin steht unter `#if !os(macOS)` — den Ton
+      # mischt und leitet macOS selbst.
+      - path: Sources/Shared/Wiedergabezentrale.swift
+      # Der Namensgeber für UIView beziehungsweise NSView. Ohne ihn stünde
+      # der Player zweimal da.
+      - path: Sources/Shared/Basisansicht.swift
+      # Die Abspiel-Maschinerie teilen sich alle Plattformen: derselbe
+      # `mkv_trusted`-Kniff, dieselbe Stillstandserkennung. Bild-im-Bild
+      # darin ist mit `#if os(iOS)` ausgeklammert — auf dem Mac trägt es
+      # ohnehin nicht, siehe die Messung in CLAUDE.md.
+      - path: Sources/Shared/VLCPlayer.swift
+      - path: Sources/Shared/Localizable.xcstrings
+      - path: Sources/macOS
+    dependencies:
+      - package: JellyfinKit
+      - framework: Vendor/VLCKit.xcframework
+        embed: true
+        codeSign: true
+    info:
+      path: Sources/macOS/Info.plist
+      properties:
+        CFBundleDisplayName: Swiftly
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Ein helles Thema gibt es nicht — die Gestaltung ist auf Dunkel
+        # gebaut, und ohne das setzt macOS die Fensterknöpfe hell.
+        NSRequiresAquaSystemAppearance: false
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
+        # Dieselbe Begründung wie auf iOS und tvOS: ohne die Zugriffsgruppe
+        # verweigert der Keychain das Schreiben (-34018) und die Anmeldung
+        # ginge bei jedem Start verloren.
+        CODE_SIGN_ENTITLEMENTS: Sources/macOS/Swiftly.entitlements
+        # Das Zeichen sitzt **nicht** randfüllend: macOS erwartet Abstand
+        # (824 von 1024), sonst wirkt es im Dock größer als seine Nachbarn.
+        # Auf iOS ist es umgekehrt — deshalb ein eigener Satz.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

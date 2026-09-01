@@ -1,0 +1,21 @@
+# XcodeGen erzeugt das Projekt — nie einchecken
+*.xcodeproj
+*.xcworkspace
+
+.DS_Store
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+build/
+
+# 2,7 GB — wird mit Werkzeuge/vlckit-holen.sh geholt
+Vendor
+
+# Die Notizen liegen in ../Swiftly-Notizen und haengen hier als Symlink.
+# **Ohne Schraegstrich** — mit einem greift die Regel auf Symlinks nicht,
+# und genau so ist der Vendor-Symlink einmal ins Repo gerutscht.
+CLAUDE.md
+VERHALTEN.md
+Erfahrungen.md

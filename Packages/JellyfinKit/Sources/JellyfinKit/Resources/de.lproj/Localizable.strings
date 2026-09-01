@@ -1,0 +1,34 @@
+/* Texte des Pakets. Der deutsche Wortlaut ist zugleich der
+   Schlüssel — so bleibt der Code ohne Kürzel lesbar. */
+
+"A–Z" = "A–Z";
+"Zuletzt" = "Zuletzt";
+"Bewertung" = "Bewertung";
+"Jahr" = "Jahr";
+"Alle" = "Alle";
+"Angefangen" = "Angefangen";
+"Merkliste" = "Merkliste";
+"Ungesehen" = "Ungesehen";
+"Direct Play — die Datei läuft unverändert." = "Direct Play — die Datei läuft unverändert.";
+"Direct Stream — nur der Container wird umgepackt, das Bild bleibt unangetastet." = "Direct Stream — nur der Container wird umgepackt, das Bild bleibt unangetastet.";
+"Der Server transkodiert. Grund unbekannt." = "Der Server transkodiert. Grund unbekannt.";
+"Der Server transkodiert: %@" = "Der Server transkodiert: %@";
+"Video" = "Video";
+"Audio" = "Audio";
+"Untertitel" = "Untertitel";
+"Container" = "Container";
+"%@ „%@“ wird nicht direkt unterstützt (%@)." = "%@ „%@“ wird nicht direkt unterstützt (%@).";
+"%@ „%@“ steht nicht im Geräteprofil." = "%@ „%@“ steht nicht im Geräteprofil.";
+"nicht im Profil deklariert" = "nicht im Profil deklariert";
+"%lld Kanäle" = "%lld Kanäle";
+"würde eingebrannt" = "würde eingebrannt";
+"Stereo" = "Stereo";
+"Mono" = "Mono";
+"Staffel %lld" = "Staffel %lld";
+"Folge %lld" = "Folge %lld";
+"Die Serveradresse ist ungültig." = "Die Serveradresse ist ungültig.";
+"Nicht angemeldet." = "Nicht angemeldet.";
+"Anmeldung abgelehnt." = "Anmeldung abgelehnt.";
+"Server antwortete mit %lld." = "Server antwortete mit %lld.";
+"Antwort nicht lesbar: %@" = "Antwort nicht lesbar: %@";
+"Verbindung fehlgeschlagen: %@" = "Verbindung fehlgeschlagen: %@";

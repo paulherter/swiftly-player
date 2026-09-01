@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Swiftly verfolgt niemanden und sammelt nichts. Die App spricht
+	     ausschliesslich mit dem Server, den der Nutzer selbst eintraegt. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<!-- Schnittstellen, die Apple begruenden laesst. Nur eine wird benutzt:
+	     die Voreinstellungen, und zwar fuer die eigenen Einstellungen der
+	     App (Direct Play, Sprachen, Sprungweiten) sowie die Geraetekennung,
+	     unter der Jellyfin die Sitzung im Dashboard fuehrt.
+	     CA92.1 = Zugriff nur auf Daten der eigenen App. -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

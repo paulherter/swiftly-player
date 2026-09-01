@@ -1,0 +1,34 @@
+/* Texte des Pakets. Der deutsche Wortlaut ist zugleich der
+   Schlüssel — so bleibt der Code ohne Kürzel lesbar. */
+
+"A–Z" = "A–Z";
+"Zuletzt" = "Recent";
+"Bewertung" = "Rating";
+"Jahr" = "Year";
+"Alle" = "All";
+"Angefangen" = "In progress";
+"Merkliste" = "Watchlist";
+"Ungesehen" = "Unwatched";
+"Direct Play — die Datei läuft unverändert." = "Direct Play — the file plays untouched.";
+"Direct Stream — nur der Container wird umgepackt, das Bild bleibt unangetastet." = "Direct Stream — only the container is repackaged, the picture is untouched.";
+"Der Server transkodiert. Grund unbekannt." = "The server is transcoding. Reason unknown.";
+"Der Server transkodiert: %@" = "The server is transcoding: %@";
+"Video" = "Video";
+"Audio" = "Audio";
+"Untertitel" = "Subtitles";
+"Container" = "Container";
+"%@ „%@“ wird nicht direkt unterstützt (%@)." = "%@ “%@” is not directly supported (%@).";
+"%@ „%@“ steht nicht im Geräteprofil." = "%@ “%@” is not in the device profile.";
+"nicht im Profil deklariert" = "not declared in the profile";
+"%lld Kanäle" = "%lld channels";
+"würde eingebrannt" = "would be burned in";
+"Stereo" = "Stereo";
+"Mono" = "Mono";
+"Staffel %lld" = "Season %lld";
+"Folge %lld" = "Episode %lld";
+"Die Serveradresse ist ungültig." = "The server address is not valid.";
+"Nicht angemeldet." = "Not signed in.";
+"Anmeldung abgelehnt." = "Sign-in was refused.";
+"Server antwortete mit %lld." = "The server answered with %lld.";
+"Antwort nicht lesbar: %@" = "Could not read the answer: %@";
+"Verbindung fehlgeschlagen: %@" = "Connection failed: %@";
