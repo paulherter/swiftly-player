@@ -350,22 +350,14 @@ struct SerienView: View {
         (weiterMit?.userData?.playbackPositionTicks ?? 0) > 0
     }
 
-    /// „Fortsetzen S1 • E3" — **nachgelesen bei iOS**, nicht erfunden.
+    /// „Fortsetzen S1 • E3" — aus `Titelangaben`, geteilt mit allen.
     ///
-    /// Wortlaut und Faelle stammen aus `Sources/Shared/SeriesView.swift`:
-    /// angefangen heisst „Fortsetzen", sonst „Abspielen", dazu das Kuerzel
-    /// aus `Item.folgenkuerzel`. Die beiden Wartefaelle ebenso.
-    ///
-    /// Dass das jetzt zweimal dasteht, ist gemeldet: die Beschriftung
-    /// gehoert in den Zustandshalter, und der Weg dorthin fuehrt ueber iOS.
+    /// Stand hier als eigene Fassung, nachgelesen bei iOS. Der Hauptchat hat
+    /// sie in `Item.serienknopf(folge:laedt:)` gehoben, bevor die dritte
+    /// Kopie daraus wurde; damit faellt unsere weg. Genau der Weg, den die
+    /// Regel vorsieht: geteilte Logik zuerst nach iOS, dann uebernehmen.
     private var hauptknopftext: String {
-        guard let stand = weiterMit else {
-            return laedtFolgen ? String(localized: "Lädt…")
-                               : String(localized: "Keine Folgen")
-        }
-        let kuerzel = stand.folgenkuerzel ?? stand.name
-        return angefangen ? String(localized: "Fortsetzen \(kuerzel)")
-                          : String(localized: "Abspielen \(kuerzel)")
+        Item.serienknopf(folge: weiterMit, laedt: laedtFolgen)
     }
 
     // MARK: Folgen
