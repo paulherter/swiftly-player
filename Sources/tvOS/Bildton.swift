@@ -83,6 +83,12 @@ final class Bildton {
     /// Saettigung mal der Helligkeit. Danach werden die staerksten Gipfel
     /// gezogen, und zwar mit Mindestabstand: zwei Faecher nebeneinander sind
     /// derselbe Ton, kein zweiter.
+    ///
+    /// **Fuenf, nicht drei.** Stimmt — drei war meine Sparsamkeit, nicht die
+    /// des Bildes. Mehr Toene heissen mehr Bewegung ueber die Flaeche, und das
+    /// ist zugleich das Beste gegen Streifen: je mehr die drei Kanaele
+    /// unterschiedlich schnell laufen, desto weniger fallen ihre
+    /// Quantisierungsgrenzen zusammen.
     nonisolated static func toeneAus(_ daten: Data) -> [Double] {
         guard let quelle = CGImageSourceCreateWithData(daten as CFData, nil),
               let bild = CGImageSourceCreateThumbnailAtIndex(quelle, 0, [
@@ -138,9 +144,9 @@ final class Bildton {
         // drei Faechern (30 Grad) Abstand, und so weiter.
         var gewaehlt: [Double] = []
         var uebrig = korb
-        for _ in 0 ..< 3 {
+        for _ in 0 ..< 5 {
             guard let (fach, wert) = uebrig.enumerated().max(by: { $0.element < $1.element }),
-                  wert > gesamt * 0.08 else { break }
+                  wert > gesamt * 0.035 else { break }
 
             // Der genaue Ton kommt aus dem Fach und seinen Nachbarn, damit er
             // nicht auf Zehnergrad einrastet.
@@ -155,7 +161,7 @@ final class Bildton {
             if grad < 0 { grad += 360 }
             gewaehlt.append(grad)
 
-            for versatz in -2 ... 2 { uebrig[(fach + versatz + faecher) % faecher] = 0 }
+            for versatz in -1 ... 1 { uebrig[(fach + versatz + faecher) % faecher] = 0 }
         }
         return gewaehlt
     }
@@ -216,9 +222,18 @@ extension Bildton {
             zustand ^= zustand << 13
             zustand ^= zustand >> 7
             zustand ^= zustand << 17
-            let wert = UInt8(truncatingIfNeeded: zustand)
-            punkte[i] = 255; punkte[i + 1] = 255; punkte[i + 2] = 255
-            punkte[i + 3] = wert
+            // **In beide Richtungen.** Die erste Fassung war weiss mit
+            // zufaelliger Deckkraft — die konnte nur aufhellen, nie
+            // abdunkeln. Ein einseitiger Stoss verschiebt den Verlauf, statt
+            // die Stufengrenze aufzubrechen. Hier ist jeder Punkt zufaellig
+            // schwarz oder weiss, das Mittel bleibt neutral.
+            let hell = (zustand & 1) == 1
+            let deckung = UInt8(truncatingIfNeeded: zustand >> 8)
+            // Vormultipliziert: bei Schwarz sind die Farbkanaele null, bei
+            // Weiss gleich der Deckkraft.
+            let kanal: UInt8 = hell ? deckung : 0
+            punkte[i] = kanal; punkte[i + 1] = kanal; punkte[i + 2] = kanal
+            punkte[i + 3] = deckung
         }
         let raum = CGColorSpace(name: CGColorSpace.sRGB)!
         let flaeche = CGContext(data: &punkte, width: kante, height: kante,
@@ -258,8 +273,19 @@ struct Bildgrund: ViewModifier {
         content
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
-                    (toene.first.map(Bildton.grundfarbe) ?? Stil.grund)
-                        .ignoresSafeArea()
+                    // **Der Grund ist ein Verlauf zwischen den Toenen, keine
+                    // Flaeche.**
+                    //
+                    // Und das ist der zweite Teil gegen die Baender. Ein
+                    // Verlauf von einer Farbe nach durchsichtig bewegt sich in
+                    // RGB fast nur auf einer Geraden — die
+                    // Quantisierungsstufen liegen dann alle quer dazu und
+                    // bilden saubere, gut sichtbare Baender. Laeuft er von
+                    // einer Farbe in eine **andere**, wandern die drei Kanaele
+                    // unterschiedlich schnell, ihre Stufengrenzen fallen
+                    // auseinander, und es bleibt kein durchgehender Rand mehr
+                    // uebrig.
+                    grundverlauf.ignoresSafeArea()
 
                     // **Ein Ton je Gipfel, an verschiedenen Stellen.**
                     //
@@ -283,7 +309,7 @@ struct Bildgrund: ViewModifier {
                     if !toene.isEmpty {
                         Bildton.rauschen
                             .resizable(resizingMode: .tile)
-                            .opacity(0.022)
+                            .opacity(0.035)
                             .ignoresSafeArea()
                     }
                 }
@@ -303,12 +329,38 @@ struct Bildgrund: ViewModifier {
             }
     }
 
-    private func staerke(_ i: Int) -> Double { [0.30, 0.22, 0.16][min(i, 2)] }
+    /// Ueber die Flaeche von Ton zu Ton, schraeg. Bei nur einem Ton bleibt
+    /// die Bewegung erhalten, indem Saettigung und Helligkeit leicht wandern
+    /// — auch das laesst die Kanaele verschieden schnell laufen.
+    private var grundverlauf: LinearGradient {
+        let farben: [Color]
+        switch toene.count {
+        case 0:  farben = [Stil.grund, Stil.grund]
+        case 1:  farben = [Bildton.grundfarbe(toene[0]),
+                           Color(hue: toene[0] / 360, saturation: 0.24, brightness: 0.055)]
+        default: farben = toene.map(Bildton.grundfarbe)
+        }
+        return LinearGradient(colors: farben,
+                              startPoint: .topTrailing, endPoint: .bottomLeading)
+    }
 
+    /// Der staerkste Ton fuehrt, die schwaecheren stuetzen. Zusammen bleiben
+    /// sie unter dem, was eine einzelne Wolke haette — es soll farbig
+    /// wirken, nicht bunt.
+    private func staerke(_ i: Int) -> Double {
+        [0.28, 0.20, 0.15, 0.11, 0.08][min(i, 4)]
+    }
+
+    /// Ueber die Flaeche verteilt, nicht uebereinander. Der staerkste sitzt
+    /// oben rechts beim Bild, die uebrigen wandern nach links und unten —
+    /// so entsteht der Wechsel, statt dass sich alles an einer Stelle
+    /// addiert.
     private func mitte(_ i: Int) -> UnitPoint {
-        [UnitPoint(x: 0.72, y: 0.03),
-         UnitPoint(x: 0.18, y: 0.42),
-         UnitPoint(x: 0.92, y: 0.55)][min(i, 2)]
+        [UnitPoint(x: 0.74, y: 0.02),
+         UnitPoint(x: 0.16, y: 0.38),
+         UnitPoint(x: 0.94, y: 0.52),
+         UnitPoint(x: 0.42, y: 0.72),
+         UnitPoint(x: 0.06, y: 0.06)][min(i, 4)]
     }
 }
 
