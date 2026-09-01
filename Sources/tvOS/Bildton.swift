@@ -255,7 +255,22 @@ extension Bildton {
 /// alles, was die Seite zeigt, die Reihen eingeschlossen.
 struct Bildgrund: ViewModifier {
     let url: URL?
-    @State private var toene: [Double] = []
+    @State private var toene: [Double]
+
+    /// **Der Anfangswert kommt aus dem Gedaechtnis, nicht aus dem Nichts.**
+    ///
+    /// Jede Seite legt ihren eigenen `Bildgrund` an — die Detailseite also
+    /// einen neuen, wenn sie aufgeht. Stand der auf `[]`, zeichnete er zuerst
+    /// den nackten Grund und fuellte sich erst im naechsten Durchgang. Genau
+    /// das sah
+    ///
+    /// Das nachtraegliche Setzen ohne Animation kam dafuer zu spaet — der
+    /// leere Durchgang hatte da schon stattgefunden. Ein Ton, der bekannt ist,
+    /// muss deshalb **schon im ersten** Durchgang stehen.
+    @MainActor init(url: URL?) {
+        self.url = url
+        _toene = State(initialValue: url.flatMap { Bildton.geteilt.gemerkt(fuer: $0) } ?? [])
+    }
 
     func body(content: Content) -> some View {
         content
@@ -276,13 +291,22 @@ struct Bildgrund: ViewModifier {
             .animation(.easeInOut(duration: 0.4), value: toene)
             .task(id: url) {
                 guard let url else { toene = []; return }
+
+                // Schon bekannt? Dann steht es seit dem ersten Durchgang da
+                // (siehe `init`) und hier ist nichts mehr zu tun. Ohne diese
+                // Rueckkehr wuerde dieselbe Zuweisung eine Animation
+                // ausloesen, obwohl sich der Wert gar nicht aendert.
                 if let schonDa = Bildton.geteilt.gemerkt(fuer: url) {
-                    var ohne = Transaction()
-                    ohne.disablesAnimations = true
-                    withTransaction(ohne) { toene = schonDa }
+                    if schonDa != toene {
+                        var ohne = Transaction()
+                        ohne.disablesAnimations = true
+                        withTransaction(ohne) { toene = schonDa }
+                    }
                     return
                 }
-                toene = []
+
+                // Nur wirklich Neues wird uebergeblendet — etwa ein Titel,
+                // den man ueber die Suche direkt oeffnet.
                 toene = await Bildton.geteilt.toene(fuer: url)
             }
     }
