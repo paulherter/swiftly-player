@@ -90,6 +90,23 @@ func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
     // Aussen liegt sie im Layout und gilt immer. Beschnitten wird die
     // gewachsene Kachel trotzdem nicht: dafuer sorgt `scrollClipDisabled`.
     .padding(.vertical, Stil.reihenLuft)
+    // **Am linken Rand ausfedern, nicht schneiden.**
+    //
+    // Ist die Reihe vorgescrollt, steht die vorige Kachel im seitlichen Rand
+    // und wird dort hart abgeschnitten — samt halber Beschriftung. Uebermalen
+    // geht nicht: der Grund ist gefaerbt, und eine Flaeche in #0B0B0D stuende
+    // als Fleck darin. Also eine Maske, so breit wie der Rand.
+    //
+    // Sie kostet nichts, wenn nicht gescrollt ist: die erste Kachel beginnt
+    // bei `randSeite`, also genau dort, wo die Maske voll deckt.
+    .mask {
+        HStack(spacing: 0) {
+            LinearGradient(colors: [.clear, .white],
+                           startPoint: .leading, endPoint: .trailing)
+                .frame(width: Stil.randSeite)
+            Color.white
+        }
+    }
     .scrollClipDisabled()
     .scrollIndicators(.hidden)
     // **Der seitliche Rand ist ein Inhaltsrand, kein Padding.**

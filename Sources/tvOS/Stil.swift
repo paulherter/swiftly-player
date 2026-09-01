@@ -107,19 +107,55 @@ extension Stil {
     /// in der Tafel
     static let kopfversatzDetail: CGFloat = 56
 
+    /// Zeilenhoehe und Zeilenabstand der Beschreibung.
+    ///
+    /// **Gerechnet, nicht geschaetzt** — daran ist es einmal gescheitert. Die
+    /// Tafel nennt eine Zeilenhoehe von 40; gemessen sind es bei 29 Punkt
+    /// Schrift rund 35 plus die 11 `lineSpacing`, also 46 je Zeile ab der
+    /// zweiten. Mit den 120 aus der Tafelrechnung passten deshalb nur zwei
+    /// Zeilen in den Platz, obwohl `lineLimit` auf drei stand: die dritte
+    /// wurde still abgeschnitten.
+    static let beschreibungZeile: CGFloat = 35
+    static let beschreibungLuft: CGFloat = 11
+    static let beschreibungZeilen = 3
+
+    /// Wie hoch `zeilen` Zeilen Beschreibung stehen: 3 → 127, 2 → 81.
+    static func beschreibungHoehe(_ zeilen: Int) -> CGFloat {
+        CGFloat(zeilen) * beschreibungZeile + CGFloat(zeilen - 1) * beschreibungLuft
+    }
+
+    /// Der Folgentitel ueber der Angabenzeile: 44 hoch, 10 Abstand.
+    static let zweitzeileHoehe: CGFloat = 54
+
     /// **Feste Hoehe des Kopfblocks — Titel, Angabenzeile, Beschreibung.**
     ///
-    ///     Titel          68
-    ///     + 14 Angaben   34
-    ///     + 22 Beschr.  120   (drei Zeilen a 40)
-    ///     = 258
+    ///     Titel           68
+    ///     + 14 Angaben    34
+    ///     + 22 Beschr.   127
+    ///     = 265
     ///
     /// Fest, damit nichts darunter vom Inhalt abhaengt: ein Film ohne
     /// Beschreibung, ein langer Titel, eine Folge mit Zweitzeile — der Block
     /// ist immer gleich hoch, also steht die Knopfreihe immer an derselben
-    /// Stelle. Bei Folgen nimmt die Zweitzeile der Beschreibung eine Zeile
-    /// weg, statt den Block wachsen zu lassen.
-    static let auskunftHoehe: CGFloat = 258
+    /// Stelle.
+    static var auskunftHoehe: CGFloat { auskunftHoehe(zweitzeile: false) }
+
+    /// **Mit Folgentitel eine Zeile weniger Beschreibung.**
+    ///
+    /// Drei Zeilen sind richtig, solange der Titel allein oben steht. Kommt
+    /// bei einer Folge der Folgentitel dazu, kostet er 54 Punkt — und die
+    /// dritte Zeile lief dann in den Reihentitel darunter.
+    ///
+    /// ohne  68      + 14 + 34 + 22 + 127 = 265 mit   68 + 54 + 14 + 34 + 22 +
+    /// 81 = 273
+    ///
+    /// Der Block waechst also nur um acht statt um 54: der Folgentitel nimmt
+    /// sich seinen Platz groesstenteils von der Beschreibung, nicht von der
+    /// Seite.
+    static func auskunftHoehe(zweitzeile: Bool) -> CGFloat {
+        68 + (zweitzeile ? zweitzeileHoehe : 0) + 14 + 34 + 22
+        + beschreibungHoehe(zweitzeile ? 2 : 3)
+    }
 
     /// Kopfzone einer Detailseite — **gerechnet, nicht gesetzt.**
     ///
