@@ -134,8 +134,19 @@ extension Stil {
     /// und die Reihen beginnen unveraendert bei 534.
     static var heldenHoeheDetail: CGFloat {
         randOben + kopfversatzDetail + 80 + auskunftHoehe
-        + 36 + knopfHoehe + 64 - reihenKopfLuft
+        + 36 + knopfHoehe + abstandUnterDerKnopfreihe - reihenKopfLuft
     }
+
+    /// Der Abstand unter der Knopfreihe — 64 aus `Film-Neu.dc.html`.
+    ///
+    /// Einmal auf 36 gekuerzt, weil ich glaubte, die erste Reihe rage 26 Punkt
+    /// ueber den Schirm hinaus. **Sie tut es nicht.** An Die Rechnung davor
+    /// stand auf zwei geschaetzten Werten (Reihentitel 46, Beschriftung 122),
+    /// und beide waren zu gross.
+    ///
+    /// Die Zahl aus der Tafel gilt also weiter. Was beim Fokussieren passiert,
+    /// kommt nicht von der Hoehe.
+    static let abstandUnterDerKnopfreihe: CGFloat = 64
 
     /// Senkrechte Luft im waagerechten Streifen.
     ///

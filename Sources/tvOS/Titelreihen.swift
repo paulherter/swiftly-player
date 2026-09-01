@@ -45,7 +45,24 @@ func reihenabschnitt<Kopf: View, Inhalt: View>(
 /// wuerde sie an ihrer Kante beschneiden. `reihenLuft` faengt dieselbe
 /// Vergroesserung senkrecht **innerhalb** der Reihe ab — nur deshalb darf die
 /// senkrechte Flaeche darueber beschneiden, ohne je eine Kachel anzuschneiden.
+/// **`hoehe` macht die Reihe unabhaengig vom Fokus.**
+///
+/// Ohne sie misst SwiftUI die Reihe an ihrem Inhalt — und der waechst, sobald
+/// eine Kachel fokussiert ist (`fokusLupe` 1,08). Die Reihe wurde damit je
+/// nach Fokus verschieden hoch gemessen, und ihr Abstand zum Reihenkopf
+/// aenderte sich beim Hinein- und Herausgehen.
+///
+/// Das hat mich heute mehrfach in die Irre gefuehrt: es sah aus wie ein
+/// Unterschied **zwischen Staffeln**, war aber einer zwischen fokussiert und
+/// nicht. Feste Hoehe am Container half nicht — der waagerechte Streifen ist
+/// darin gierig und zentriert seinen Inhalt. Sie gehoert an die Flaeche
+/// selbst.
+///
+/// `reihenLuft` faengt das Wachsen weiter ab; sie sorgt dafuer, dass die
+/// groessere Kachel innerhalb dieser Hoehe Platz hat, statt beschnitten zu
+/// werden.
 func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
+                            hoehe: CGFloat? = nil,
                             @ViewBuilder _ inhalt: () -> Inhalt) -> some View {
     let flaeche = ScrollView(.horizontal) {
         // Waagerecht bleibt der faule Stapel: hier setzt niemand den Fokus
@@ -53,12 +70,26 @@ func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
         // Kachel ins Leere gehen. Auf der Startseite ist das anders, dort
         // steht aus genau diesem Grund ein `HStack`.
         LazyHStack(alignment: .top, spacing: Stil.kachelAbstand, content: inhalt)
-            .padding(.vertical, Stil.reihenLuft)
             // Nur, damit `scrollPosition` sagen kann, welche Kachel vorn
             // liegt. Ein `scrollTargetBehavior` steht bewusst nicht dabei —
             // es soll nichts einrasten.
             .scrollTargetLayout()
     }
+    .frame(height: hoehe)
+    // **Die Fokusluft liegt aussen, nicht im Inhalt.**
+    //
+    // Sie stand als `padding` am `LazyHStack`, also **innerhalb** der
+    // Scrollflaeche. Von dort aus wirkt sie erst, wenn die Flaeche ihren
+    // Inhalt wirklich ausmisst — und das tut sie erst, wenn der Fokus
+    // hineingeht. Beim Oeffnen fehlte sie deshalb, und die Kacheln standen 20
+    // Punkt zu hoch; beim ersten Fokussieren kam sie dazu und alles rueckte.
+    //
+    // An Die Differenz ist auf den Punkt `reihenLuft` — deshalb war es nie ein
+    // Scrollen und nie das Section-Verhalten, obwohl beides danach aussah.
+    //
+    // Aussen liegt sie im Layout und gilt immer. Beschnitten wird die
+    // gewachsene Kachel trotzdem nicht: dafuer sorgt `scrollClipDisabled`.
+    .padding(.vertical, Stil.reihenLuft)
     .scrollClipDisabled()
     .scrollIndicators(.hidden)
     // **Der seitliche Rand ist ein Inhaltsrand, kein Padding.**
@@ -197,6 +228,12 @@ struct Folgenstreifen: View {
     }
 
     var body: some View {
+        // **Ohne feste Hoehe.** Einmal versucht, mit 80 Punkt fuer die zwei
+        // Beschriftungszeilen — am Bild gemessen sind es rund 122. Der
+        // Rahmen war damit zu klein fuer seinen Inhalt, und der waagerechte
+        // Streifen zentriert darin: es wurde schlimmer, nicht besser.
+        //
+        // Der eigentliche Befund lag ohnehin woanders, siehe unten.
         streifen(stand: $vorne) {
             ForEach(folgen) { folge in
                 Button { starten(folge) } label: {

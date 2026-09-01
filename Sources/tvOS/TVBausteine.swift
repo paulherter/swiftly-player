@@ -23,14 +23,22 @@ import SwiftUI
 struct KnopfStil: ButtonStyle {
     /// Ohne Beschriftung, nur ein Symbol — dann quadratisch statt breit.
     var nurSymbol = false
+    /// **Niedriger, wo der Knopf nicht die Hauptsache ist.**
+    ///
+    /// Die Staffelpille steht neben einem Reihentitel, nicht in der Knopfreihe
+    /// des Kopfes. Mit den vollen 76 wirkte sie dort wuchtig Die Farben und
+    /// das Fokusverhalten bleiben trotzdem dieselben; genau die waren der
+    /// Grund, sie ueberhaupt auf diesen Stil zu ziehen.
+    var hoehe: CGFloat = Stil.knopfHoehe
 
     func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration, nurSymbol: nurSymbol)
+        Inhalt(configuration: configuration, nurSymbol: nurSymbol, hoehe: hoehe)
     }
 
     private struct Inhalt: View {
         let configuration: ButtonStyleConfiguration
         let nurSymbol: Bool
+        let hoehe: CGFloat
         @Environment(\.isFocused) private var fokus
         @Environment(\.isEnabled) private var freigegeben
 
@@ -41,8 +49,8 @@ struct KnopfStil: ButtonStyle {
                 // reißt die ganze Reihe schief. Lieber kurz beschriften.
                 .lineLimit(1)
                 .foregroundStyle(vordergrund)
-                .padding(.horizontal, nurSymbol ? 0 : 40)
-                .frame(width: nurSymbol ? Stil.knopfHoehe : nil, height: Stil.knopfHoehe)
+                .padding(.horizontal, nurSymbol ? 0 : (hoehe < Stil.knopfHoehe ? 28 : 40))
+                .frame(width: nurSymbol ? hoehe : nil, height: hoehe)
                 .background(hintergrund, in: RoundedRectangle(cornerRadius: Stil.ecke))
                 // Fokus hebt die Pille leicht heraus — 1,04, nicht die 1,08
                 // der Kachel. Ein Knopf steht in einer Reihe mit Nachbarn,
@@ -487,15 +495,15 @@ struct Handlungstafel: View {
                 .focused($erste, equals: paar.offset == 0)
             }
         }
-        // **6, nicht 14.** Die Zeilen tragen ihre eigene Flaeche, wenn sie
-        // ausgewaehlt sind; darueber und darunter stand doppelt so viel
-        // Tafelgrund wie zwischen den Zeilen, und das las sich als Rand um den
-        // Rand.
+        // **Gar keine Luft mehr.** Erst 14, dann 6 — und beide Male schien
+        // oben und unten noch Tafelgrund durch. Die Zeilen bringen ihre
+        // eigene Rundung mit, also braucht es keinen Abstand zur Rundung der
+        // Tafel; er war nur ein Rand um den Rand.
         //
-        // Ganz ohne geht nicht: die ausgewaehlte Zeile ist gerundet, und ohne
-        // Luft stiesse sie in die Rundung der Tafel.
-        .padding(.vertical, 6)
+        // Beschnitten, damit die oberste und unterste Zeile in der Rundung
+        // der Tafel enden statt darueber hinauszustehen.
         .frame(width: 620)
+        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke + 8))
         .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke + 8))
         .overlay(RoundedRectangle(cornerRadius: Stil.ecke + 8).strokeBorder(Stil.rand))
         .shadow(color: .black.opacity(0.5), radius: 40, y: 16)
@@ -937,32 +945,15 @@ struct Staffelpille: View {
                     .foregroundStyle(Stil.schrift.opacity(0.6))
             }
         }
-        .buttonStyle(Pillenstil())
+        // **Derselbe Stil wie die Knoepfe im Kopf.**
+        //
+        // Sie trug einen eigenen: andere Flaeche, anderer Rand, andere
+        // Rundung. Stimmt — und es **ist** dasselbe: ein Knopf, der etwas
+        // aufklappt, wie der Mehr-Knopf daneben.
+        .buttonStyle(KnopfStil(hoehe: 60))
         .accessibilityLabel(Text("Staffel wählen, \(name)"))
     }
 }
 
 /// Fokus auf der Staffelpille: die ruhige Flaeche, wie bei Zeilen und Chips.
 /// Weiss bleibt den Handlungsknoepfen vorbehalten.
-private struct Pillenstil: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration)
-    }
-
-    private struct Inhalt: View {
-        let configuration: ButtonStyleConfiguration
-        @Environment(\.isFocused) private var fokus
-
-        var body: some View {
-            configuration.label
-                .foregroundStyle(Stil.schrift)
-                .padding(.horizontal, 26)
-                .frame(height: 60)
-                .background(fokus ? Stil.fokusflaeche : Stil.erhoeht,
-                            in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.09), lineWidth: 2))
-                .scaleEffect(fokus ? 1.04 : 1)
-                .animation(Stil.fokusAnimation, value: fokus)
-        }
-    }
-}

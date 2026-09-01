@@ -221,6 +221,15 @@ struct DetailView: View {
     /// Am Erscheinen aufgehaengt, blendet es **jedes Mal** ein, ob die Daten
     /// schon dastehen oder nicht.
     @State private var eingeblendet = false
+    /// **Wohin der Fokus zurueckkehrt, wenn eine Tafel zugeht.**
+    ///
+    /// Er sprang auf den Hauptknopf — den Startfokus der Seite, obwohl man
+    /// gerade am Mehr-Knopf beziehungsweise an der Staffelpille stand.
+    ///
+    /// Stimmt: eine Tafel ist kein Ortswechsel, sondern etwas, das ueber dem
+    /// Knopf aufklappt (E5). Wer sie schliesst, steht wieder an dem Knopf, mit
+    /// dem er sie geoeffnet hat.
+    @FocusState private var amMehrknopf: Bool
 
     @State private var bereitet = false
     @State private var aehnliche: [Item] = []
@@ -309,6 +318,7 @@ struct DetailView: View {
         //
         // Gesperrt wird **vor** den Auflagen: die Tafeln haengen danach und
         // bleiben damit selbst bedienbar.
+        .onChange(of: mehrOffen) { _, offen in if !offen { amMehrknopf = true } }
         .disabled(mehrOffen)
         .overlay(alignment: .topLeading) {
             if mehrOffen {
@@ -414,6 +424,7 @@ struct DetailView: View {
                                 gemerkt: $gemerkt, gesehen: $gesehen, meldung: $meldung)
 
                 Mehrknopf(offen: $mehrOffen)
+                    .focused($amMehrknopf)
             }
         }
     }

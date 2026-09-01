@@ -138,6 +138,16 @@ struct SerienView: View {
     @FocusState private var amFolge: String?
     /// Ob der Hauptknopf den Fokus hat — er ist der Startpunkt der Seite.
     @FocusState private var amHauptknopf: Bool
+    /// **Wohin der Fokus zurueckkehrt, wenn eine Tafel zugeht.**
+    ///
+    /// Er sprang auf den Hauptknopf — den Startfokus der Seite, obwohl man
+    /// gerade am Mehr-Knopf beziehungsweise an der Staffelpille stand.
+    ///
+    /// Stimmt: eine Tafel ist kein Ortswechsel, sondern etwas, das ueber dem
+    /// Knopf aufklappt (E5). Wer sie schliesst, steht wieder an dem Knopf, mit
+    /// dem er sie geoeffnet hat.
+    @FocusState private var amMehrknopf: Bool
+    @FocusState private var amStaffelpille: Bool
 
     private var aktuell: Item { frisch ?? serie }
     private var darsteller: [Person] { (aktuell.people ?? []).filter(\.istDarsteller) }
@@ -152,6 +162,7 @@ struct SerienView: View {
                         Reihentitel(text: "Folgen")
                         if staffeln.count > 1, let staffel = gewaehlteStaffel {
                             Staffelpille(name: staffel.name, offen: $staffelwahlOffen)
+                                .focused($amStaffelpille)
                         }
                     }
                 } inhalt: {
@@ -256,6 +267,8 @@ struct SerienView: View {
         // in der Reihe **vorn steht**. Das ist der Scrollstand, nicht der
         // Fokus, und die beiden waren hier verwechselt.
         .defaultFocus($amHauptknopf, true, priority: .userInitiated)
+        .onChange(of: mehrOffen) { _, offen in if !offen { amMehrknopf = true } }
+        .onChange(of: staffelwahlOffen) { _, offen in if !offen { amStaffelpille = true } }
         .task {
             // Erst den Fokus setzen, dann aufblenden: ein Knopf mit
             // Deckkraft 0 ist fuer tvOS kein Ziel, und der Startfokus ginge
@@ -326,6 +339,7 @@ struct SerienView: View {
                                 meldung: $meldung)
 
                 Mehrknopf(offen: $mehrOffen)
+                    .focused($amMehrknopf)
             }
             .opacity(eingeblendet ? 1 : 0)
         }
@@ -358,38 +372,45 @@ struct SerienView: View {
 
     @ViewBuilder
     private var folgenstreifen: some View {
-        if laedtFolgen {
-            // **Leer, nicht drehend.** Ein Ring sagt „warte", und genau das
-            // soll die Seite nicht sagen: sie war schon da, es fehlt nur
-            // noch eine Reihe. Die kommt, wenn sie da ist — der Platz steht
-            // solange frei, damit nichts springt.
-            //
-            // Vorher stand hier `Lader.fern`, und mit der Ueberblendung des
-            // Seitenwechsels hat man ihn nie gesehen. Ohne sie war er das
-            // Auffaelligste auf dem Schirm.
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
-        } else if folgen.isEmpty {
-            Leerzustand(symbol: "rectangle.stack",
-                        titel: "Keine Folgen in dieser Staffel")
-                .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
-        } else {
-            Folgenstreifen(model: model, folgen: folgen,
-                           weiterMit: folgeVorn, amFolge: $amFolge) { folge in
-                starte(folge)
+        // **Ein Stapel, damit sich die beiden denselben Platz teilen.**
+        //
+        // Waehrend der Ueberblendung sind alte und neue Reihe **beide** im
+        // Layout. Untereinander gesetzt steht die neue damit unter der alten
+        // und rutscht erst hoch, wenn die alte draussen ist
+        //
+        // Im `ZStack` liegen sie uebereinander, also an derselben Stelle. Die
+        // feste Hoehe haelt den Platz auch dann, wenn gerade nichts dasteht;
+        // sonst zoege sich die Seite waehrend des Wechsels zusammen.
+        ZStack(alignment: .topLeading) {
+            if laedtFolgen {
+                // Nur damit die Seite nicht zusammenschnurrt, solange nichts
+                // dasteht — der Streifen selbst bringt seine Hoehe mit.
+                Color.clear
+                    .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
+            } else if folgen.isEmpty {
+                Leerzustand(symbol: "rectangle.stack",
+                            titel: "Keine Folgen in dieser Staffel")
+                    .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
+            } else {
+                Folgenstreifen(model: model, folgen: folgen,
+                               weiterMit: folgeVorn, amFolge: $amFolge) { folge in
+                    starte(folge)
+                }
+                .id(folgen.first?.id ?? "leer")
+                .transition(.opacity)
             }
-            // **Je Staffel ein eigener Streifen.** Der Anfangsstand steckt
-            // in seinem Zustand, und Zustand ueberlebt einen Wechsel der
-            // Eintraege. Ohne eigene Kennung stuende nach dem Staffelwechsel
-            // die Folge einer anderen Staffel vorn — beziehungsweise deren
-            // Platz, denn die Kachel gibt es dort nicht mehr.
-            .id(gewaehlteStaffel?.id)
-            // Nur die Reihe blendet ein, und nur sie: am ganzen Stapel
-            // animierte es auch die Breite der Pillen daneben.
-            .transition(.opacity)
-            .animation(.easeOut(duration: 0.28), value: folgen.isEmpty)
         }
+        // **Keine erzwungene Hoehe.** Sie war meine Zutat gegen das
+        // Untereinanderstehen waehrend der Ueberblendung — und hat den
+        // Unterschied erst gemacht: der waagerechte Streifen ist gierig, er
+        // fuellt eine vorgegebene Hoehe aus, und sein Inhalt sitzt darin
+        // mittig. Wie hoch der Inhalt gerade ist, haengt am Zustand; also
+        // sass er je Staffel anders. Erst zentriert (32 Punkt Unterschied),
+        // dann oben (Staffel 1 zu hoch) — beides Symptome derselben Zutat.
+        //
+        // Der Stapel allein reicht: er legt alte und neue Reihe uebereinander
+        // und nimmt seine Hoehe vom Inhalt, wie vorher auch.
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     /// Welche Folge vorn stehen soll.
@@ -449,13 +470,14 @@ struct SerienView: View {
 
     private func folgenLaden() async {
         guard let staffel = gewaehlteStaffel else { return }
-        // Nur anzeigen, dass geladen wird, wenn nichts dasteht. Beim
-        // Staffelwechsel gehoert der Ring hin, beim Wiederkommen nicht.
         if folgen.isEmpty { laedtFolgen = true }
         let geholt = await model.folgen(serie: serie.id, staffel: staffel.id)
-        // Siehe DetailView: die Ueberblendung braucht eine animierte
-        // Transaktion, sonst ist die Reihe schlicht da.
-        withAnimation(.easeOut(duration: 0.3)) {
+
+        // Ein Zug, eine Kurve. Den Wechsel von Hand zu fuehren — ausblenden,
+        // warten, tauschen, einblenden — war der falsche Weg: er flackerte,
+        // weil ihm die Ansicht unter den Haenden getauscht wurde. Siehe die
+        // Kennung am Streifen.
+        withAnimation(.easeInOut(duration: 0.28)) {
             folgen = geholt
             laedtFolgen = false
         }
