@@ -347,9 +347,8 @@ struct HomeView: View {
 
     /// Das Querbild rechts, 1180 breit.
     ///
-    /// **Die Verlaeufe liegen darueber, sie maskieren nicht.** Eine Maske
-    /// senkt die Deckkraft der ganzen Ebene, den Fokusring eingeschlossen —
-    /// das sieht wie ein Fehler aus, nicht wie ein Verlauf.
+    /// Die Blende ist dieselbe wie auf der Detailseite (`Kulissenblende`) —
+    /// das ist Bedingung dafuer, dass beim Oeffnen nichts sichtbar wechselt.
     @ViewBuilder
     private var querbild: some View {
         ZStack {
@@ -366,22 +365,11 @@ struct HomeView: View {
         }
         .frame(width: 1180, height: 700)
         .clipped()
-        .overlay {
-            LinearGradient(stops: [
-                .init(color: Stil.grund, location: 0),
-                .init(color: Stil.grund.opacity(0.78), location: 0.26),
-                .init(color: Stil.grund.opacity(0.16), location: 0.62),
-                .init(color: Stil.grund.opacity(0), location: 1),
-            ], startPoint: .leading, endPoint: .trailing)
-        }
-        .overlay(alignment: .bottom) {
-            LinearGradient(stops: [
-                .init(color: Stil.grund.opacity(0), location: 0),
-                .init(color: Stil.grund.opacity(0.75), location: 0.55),
-                .init(color: Stil.grund, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            .frame(height: 320)
-        }
+        // Dieselbe Blende wie auf der Detailseite — siehe `Kulissenblende`.
+        // Vorher stand hier eine zweite, uebermalende Fassung mit kurzen
+        // Rampen, und beim Oeffnen einer Seite blendete die eine in die
+        // andere. Genau das waren die harten Kanten waehrend des Wechsels.
+        .kulissenblende()
         .animation(.easeInOut(duration: 0.3), value: imBild?.id)
         // Bis an die Bildkante, ohne den Text mitzunehmen.
         .padding(.trailing, -Stil.randSeite)

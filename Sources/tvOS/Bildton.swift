@@ -189,6 +189,45 @@ extension Bildton {
     /// `t * t * (3 - 2t)` laeuft an beiden Enden waagerecht aus, hat also
     /// nirgends einen Knick. Mit zwoelf Stufen abgetastet ist davon nichts
     /// mehr zu sehen.
+    /// **Feines Rauschen gegen Streifenbildung.**
+    ///
+    /// Der eigentliche Grund fuer Streifen ist nicht der Verlauf, sondern die
+    /// Zahlendarstellung: acht Bit je Kanal geben 256 Stufen, und ein
+    /// Farbverlauf, der ueber tausend Punkte nur ein paar Stufen durchlaeuft,
+    /// hat zwangslaeufig breite Baender gleicher Farbe. Auf einem grossen
+    /// dunklen Schirm sieht man jede Grenze.
+    ///
+    /// Dagegen hilft kein weicherer Verlauf — die Stufen liegen dann nur
+    /// woanders. Es hilft nur, die Grenze **aufzubrechen**: ein Hauch
+    /// Zufallsrauschen laesst benachbarte Punkte mal auf die eine, mal auf
+    /// die andere Stufe fallen. Das Auge mittelt darueber und sieht den
+    /// Uebergang, den die Zahlen nicht hergeben. Genau dafuer gibt es
+    /// Dithering, seit es Bildschirme gibt.
+    ///
+    /// 96 x 96 gekachelt, Deckkraft rund zwei Prozent — sichtbar ist davon
+    /// nichts, ausser dass die Baender weg sind.
+    static let rauschen: Image = {
+        let kante = 96
+        var punkte = [UInt8](repeating: 0, count: kante * kante * 4)
+        var zustand: UInt64 = 0x2545F4914F6CDD1D
+        for i in stride(from: 0, to: punkte.count, by: 4) {
+            // Xorshift: schnell, gleichverteilt genug, und ohne Abhaengigkeit
+            // von einer Zufallsquelle, die je Lauf anders aussieht.
+            zustand ^= zustand << 13
+            zustand ^= zustand >> 7
+            zustand ^= zustand << 17
+            let wert = UInt8(truncatingIfNeeded: zustand)
+            punkte[i] = 255; punkte[i + 1] = 255; punkte[i + 2] = 255
+            punkte[i + 3] = wert
+        }
+        let raum = CGColorSpace(name: CGColorSpace.sRGB)!
+        let flaeche = CGContext(data: &punkte, width: kante, height: kante,
+                                bitsPerComponent: 8, bytesPerRow: kante * 4,
+                                space: raum,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        return Image(decorative: flaeche.makeImage()!, scale: 1)
+    }()
+
     static func blende(bis kante: Double, umgekehrt: Bool = false) -> Gradient {
         let stufen = 12
         var stops: [Gradient.Stop] = []
@@ -237,6 +276,15 @@ struct Bildgrund: ViewModifier {
                                        center: mitte(i),
                                        startRadius: 0, endRadius: 1100)
                             .frame(height: 1400)
+                    }
+
+                    // Gegen die Baender, die acht Bit auf so viel Flaeche
+                    // nicht vermeiden koennen — siehe `Bildton.rauschen`.
+                    if !toene.isEmpty {
+                        Bildton.rauschen
+                            .resizable(resizingMode: .tile)
+                            .opacity(0.022)
+                            .ignoresSafeArea()
                     }
                 }
                 .allowsHitTesting(false)

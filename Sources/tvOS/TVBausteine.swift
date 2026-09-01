@@ -703,38 +703,55 @@ struct Kulisse: View {
         // gilt hier nicht: die Kulisse ist kein Bedienelement, sie traegt
         // `allowsHitTesting(false)` und hat nichts zu fokussieren.
         //
-        // **Nur die Raender federn aus, und ohne Knick.**
-        //
-        // Zwei Dinge mussten zusammenkommen. Erstens: die Blende gehoert an
-        // den Rand, nicht ueber die Flaeche — war das Bild grossflaechig
-        // halbdurchsichtig, schimmerte der gefaerbte Grund ueberall durch,
-        // und das sah aus wie Farbe **auf** dem Bild.
-        //
-        // Zweitens, und das war die verbliebene Kante: ein Verlauf aus
-        // wenigen Stopps hat an jedem davon einen **Knick**. Die Steigung
-        // springt, das Auge liest den Sprung als Linie — genau dort, wo die
-        // Blende endete und die Flaeche deckend wurde. Deshalb `blende(bis:)`
-        // mit einer Kurve, die an beiden Enden waagerecht auslaeuft.
-        //
-        // Waagerecht bis 45 Prozent, gerechnet: das Bild beginnt bei x = 740,
-        // der Textblock endet bei 1160. Die 420 Punkt Ueberschneidung sind 36
-        // Prozent der Bildbreite — so weit muss es mindestens weg sein, damit
-        // der Text lesbar bleibt. 45 gibt Rand.
-        .mask {
-            LinearGradient(gradient: Bildton.blende(bis: 0.45),
-                           startPoint: .leading, endPoint: .trailing)
-        }
-        // Senkrecht federt das untere Drittel aus, dort geht das Bild in den
-        // Grund ueber.
-        .mask {
-            LinearGradient(gradient: Bildton.blende(bis: 0.34, umgekehrt: true),
-                           startPoint: .top, endPoint: .bottom)
-        }
+        .kulissenblende()
         // Bis an die Bildkante, ohne den Text mitzunehmen: der Textblock
         // haelt den Rand, das Bild tritt fuer sich hinaus.
         .padding(.trailing, -Stil.randSeite)
         .allowsHitTesting(false)
     }
+}
+
+/// **Die Blende der Kulisse — einmal, fuer Startseite und Detailseite.**
+///
+/// Sie stand zweimal, und die beiden waren verschieden: hier maskiert, dort
+/// mit Verlaeufen aus `Stil.grund` uebermalt. Beim Wechsel von der Startseite
+/// auf eine Detailseite blendete SwiftUI die eine Fassung in die andere — und
+/// mitten in der Ueberblendung standen sichtbar harte Kanten, weil die alte
+/// Fassung welche hatte.
+///
+/// Jetzt ist es auf beiden Seiten dasselbe Bild mit derselben Blende. Eine
+/// Ueberblendung zwischen zwei gleichen Dingen sieht man nicht.
+///
+/// **Maskiert, nicht uebermalt.** Uebermalen setzt voraus, dass der
+/// Hintergrund genau `#0B0B0D` ist; sobald er sich faerbt, steht die
+/// uebermalte Flaeche als Fleck darin. Als Maske faellt die Deckkraft des
+/// Bildes selbst, und was dahinterliegt kommt durch — welche Farbe es auch
+/// hat.
+///
+/// **Nur die Raender federn aus.** War das Bild grossflaechig
+/// halbdurchsichtig, schimmerte der Grund ueberall durch, und das sah aus wie
+/// Farbe auf dem Bild.
+///
+/// Waagerecht bis 45 Prozent, gerechnet: das Bild beginnt bei x = 740, der
+/// Textblock endet bei 1160. Die 420 Punkt Ueberschneidung sind 36 Prozent der
+/// Bildbreite — so weit muss es mindestens weg sein, damit der Text lesbar
+/// bleibt. 45 gibt Rand. Senkrecht federt das untere Drittel aus.
+struct Kulissenblende: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .mask {
+                LinearGradient(gradient: Bildton.blende(bis: 0.45),
+                               startPoint: .leading, endPoint: .trailing)
+            }
+            .mask {
+                LinearGradient(gradient: Bildton.blende(bis: 0.34, umgekehrt: true),
+                               startPoint: .top, endPoint: .bottom)
+            }
+    }
+}
+
+extension View {
+    func kulissenblende() -> some View { modifier(Kulissenblende()) }
 }
 
 // MARK: - Staffelwahl
