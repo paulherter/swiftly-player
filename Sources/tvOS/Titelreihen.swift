@@ -53,7 +53,6 @@ func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
         // Kachel ins Leere gehen. Auf der Startseite ist das anders, dort
         // steht aus genau diesem Grund ein `HStack`.
         LazyHStack(alignment: .top, spacing: Stil.kachelAbstand, content: inhalt)
-            .padding(.horizontal, Stil.randSeite)
             .padding(.vertical, Stil.reihenLuft)
             // Nur, damit `scrollPosition` sagen kann, welche Kachel vorn
             // liegt. Ein `scrollTargetBehavior` steht bewusst nicht dabei —
@@ -62,6 +61,16 @@ func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
     }
     .scrollClipDisabled()
     .scrollIndicators(.hidden)
+    // **Der seitliche Rand ist ein Inhaltsrand, kein Padding.**
+    //
+    // Als `padding` am Stapel lag er *innerhalb* der Scrollflaeche, und
+    // `scrollPosition(anchor: .leading)` weiter unten richtet die Zielkachel
+    // an der Kante der **Flaeche** aus, nicht am Rand — die 80 Punkt
+    // scrollten also mit hinaus, und die Folgenreihe klebte am Bildrand.
+    // Sichtbar nur dort, wo eine Bindung uebergeben wird; die Startseite
+    // ohne `stand` sah immer richtig aus. `contentMargins` gehoert der
+    // Flaeche, nicht dem Inhalt, und wird beim Anfahren mitgerechnet.
+    .contentMargins(.horizontal, Stil.randSeite, for: .scrollContent)
     // Ohne das sucht tvOS senkrecht nach einer Kachel in derselben Spalte.
     // Reihen verschiedener Laenge lassen den Fokus dann zwei Reihen tief
     // fallen. Als Abschnitt gilt die Reihe als Ganzes.
