@@ -61,8 +61,6 @@ struct SerienView: View {
                     folgenstreifen
                 }
 
-                handlungen
-
                 if !darsteller.isEmpty {
                     reihenabschnitt {
                         Reihentitel(text: "Besetzung")
@@ -90,6 +88,18 @@ struct SerienView: View {
                 Handlungstafel(handlungen: staffelhandlungen, offen: $staffelwahlOffen)
                     .padding(.leading, Stil.randSeite)
                     .padding(.top, Handlungstafel.unterDemReihenkopf)
+                    .transition(.opacity)
+            }
+        }
+        // Das Mehr-Blatt an derselben Stelle wie auf der Filmseite. Es hing
+        // vorher am Knopf und klappte nach oben auf, weil die Knopfreihe
+        // unter den Folgen stand; jetzt steht sie wieder im Kopf, also gilt
+        // wieder der feste Platz (VERHALTEN.md D7).
+        .overlay(alignment: .topLeading) {
+            if mehrOffen {
+                Handlungstafel(handlungen: mehrHandlungen, offen: $mehrOffen)
+                    .padding(.leading, Stil.randSeite)
+                    .padding(.top, Handlungstafel.unterDerKnopfreihe)
                     .transition(.opacity)
             }
         }
@@ -123,53 +133,68 @@ struct SerienView: View {
 
     // MARK: Kopf
 
-    /// **Der Kopf traegt hier nur Text.**
+    /// **Kopf wie auf der Filmseite: Text und Knopfreihe.**
     ///
-    /// Kein Abspielknopf: die Folge, bei der es weitergeht, steht in der
-    /// Reihe darunter und hat beim Oeffnen den Fokus. „Fortsetzen · S2 F4"
-    /// waere ein zweiter Weg zu derselben Sache, einen Druck weiter weg.
+    /// Eine Zwischenfassung hatte den Abspielknopf hier entfernt, mit dem
+    /// Argument, die Folge stehe ja fokussiert in der Reihe darunter. Das
+    /// stand gegen die freigegebene Tafel (`Serie-Neu.dc.html`), in der
+    /// „Fortsetzen · S2 F4", „Von vorn", „Merkliste" und „Gesehen" im Kopf
+    /// stehen, und gegen A9 und E6 im Verhaltensregister: dieselbe Reihenfolge
+    /// auf jeder Plattform, ein Hauptknopf je Seite.
     ///
-    /// „Von vorn" faellt damit auch weg — es hing an dem Knopf und meinte
-    /// dieselbe Folge. Es steht weiter in der Handlungstafel („Folge von vorn
-    /// abspielen"), also ist nichts verloren.
-    ///
-    /// Merkliste, Gesehen und Mehr stehen unter den Folgen. Ein Film wird
-    /// abgespielt, eine Serie wird durchgesehen — was man an ihr **tut**,
-    /// gehoert hinter das, worum es geht.
+    /// **Weiss wird er nicht durch einen eigenen Stil, sondern durch den
+    /// Fokus.** `KnopfStil` faerbt die fokussierte Pille weiss, und der Fokus
+    /// faellt beim Oeffnen auf den ersten Knopf der Reihe. So loest tvOS E6 —
+    /// dieselbe Regel wie ueberall hier: Fokus ist weiss.
     private var kopf: some View {
-        Detailkopf(model: model, item: aktuell, plan: plan,
-                   fokussierbar: false) { EmptyView() }
+        Detailkopf(model: model, item: aktuell, plan: plan) {
+            HStack(spacing: 24) {
+                Button { starte(weiterMit) } label: {
+                    Label(hauptknopftext, systemImage: "play.fill")
+                }
+                .buttonStyle(KnopfStil())
+                .disabled(bereitet || weiterMit == nil)
+
+                // Nur, wenn ueberhaupt etwas fortzusetzen ist — sonst meinte
+                // „Von vorn" dasselbe wie der Knopf daneben.
+                if angefangen {
+                    Button { starte(weiterMit, ab: 0) } label: {
+                        Label("Von vorn", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(KnopfStil())
+                    .disabled(bereitet)
+                }
+
+                Zustandsknoepfe(model: model, item: aktuell,
+                                gemerkt: $gemerkt, gesehen: $gesehen,
+                                meldung: $meldung)
+
+                Mehrknopf(offen: $mehrOffen)
+            }
+        }
     }
 
-    /// Merkliste, Gesehen und Mehr — unter den Folgen.
-    private var handlungen: some View {
-        HStack(spacing: 24) {
-            Zustandsknoepfe(model: model, item: aktuell,
-                            gemerkt: $gemerkt, gesehen: $gesehen,
-                            meldung: $meldung)
+    /// Ob die Folge, bei der es weitergeht, schon angefangen ist.
+    private var angefangen: Bool {
+        (weiterMit?.userData?.playbackPositionTicks ?? 0) > 0
+    }
 
-            Mehrknopf(offen: $mehrOffen)
-                // **Die Tafel haengt am Knopf und klappt nach oben.**
-                //
-                // Der feste Platz (`unterDerKnopfreihe`) galt fuer eine
-                // Knopfreihe im Kopf. Hier steht sie bei rund 996 — darunter
-                // ist kein Platz mehr, und die Seite scrollt ausserdem. Am
-                // Knopf haengend wandert sie mit.
-                .overlay(alignment: .bottomLeading) {
-                    if mehrOffen {
-                        Handlungstafel(handlungen: mehrHandlungen, offen: $mehrOffen)
-                            .padding(.bottom, Stil.knopfHoehe + 14)
-                            .transition(.opacity)
-                    }
-                }
-                .zIndex(1)
+    /// „Fortsetzen S1 • E3" — **nachgelesen bei iOS**, nicht erfunden.
+    ///
+    /// Wortlaut und Faelle stammen aus `Sources/Shared/SeriesView.swift`:
+    /// angefangen heisst „Fortsetzen", sonst „Abspielen", dazu das Kuerzel
+    /// aus `Item.folgenkuerzel`. Die beiden Wartefaelle ebenso.
+    ///
+    /// Dass das jetzt zweimal dasteht, ist gemeldet: die Beschriftung
+    /// gehoert in den Zustandshalter, und der Weg dorthin fuehrt ueber iOS.
+    private var hauptknopftext: String {
+        guard let stand = weiterMit else {
+            return laedtFolgen ? String(localized: "Lädt…")
+                               : String(localized: "Keine Folgen")
         }
-        .padding(.horizontal, Stil.randSeite)
-        // Oben liegen schon 48 aus dem Folgenabschnitt, unten kommen die 24
-        // des naechsten Reihenkopfs dazu — mit diesen 24 steht der Block
-        // gleich weit von beidem entfernt.
-        .padding(.bottom, Stil.reihenKopfLuft)
-        .focusSection()
+        let kuerzel = stand.folgenkuerzel ?? stand.name
+        return angefangen ? String(localized: "Fortsetzen \(kuerzel)")
+                          : String(localized: "Abspielen \(kuerzel)")
     }
 
     // MARK: Folgen
@@ -289,7 +314,10 @@ struct SerienView: View {
         await folgenLaden()
     }
 
-    private func starte(_ folge: Item?) {
+    /// `ab` uebersteuert die gemerkte Stelle — das ist „Von vorn".
+    ///
+    /// Ohne Angabe gilt A5: eine Folge startet an **ihrer eigenen** Stelle.
+    private func starte(_ folge: Item?, ab: Double? = nil) {
         guard let folge, !bereitet else { return }
         bereitet = true
         Task {
@@ -300,7 +328,7 @@ struct SerienView: View {
                 return
             }
             abspielen.wrappedValue = Abspielwunsch(item: ziel, plan: plan,
-                                      startAt: ziel.fortsetzenAb ?? 0)
+                                      startAt: ab ?? ziel.fortsetzenAb ?? 0)
         }
     }
 }

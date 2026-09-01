@@ -53,7 +53,13 @@ struct Detailkopf<Knoepfe: View>: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             block
                 .padding(.leading, Stil.randSeite)
-                .padding(.top, 140)
+                // **196, dieselbe Zeile wie auf der Startseite.**
+                //
+                // Vorher 140. auskunft`) gegen die 140 hier. Titel,
+                // Angabenzeile und Beschreibung stehen jetzt auf beiden Seiten
+                // an derselben Stelle -- beim Wechsel bewegt sich der Text
+                // nicht mehr.
+                .padding(.top, 196)
         }
         // Nicht beschnitten: die Kulisse ist 700 hoch und darf nach unten
         // ueberragen, ihr eigener Verlauf beendet sie. Die erste Reihe
@@ -92,7 +98,9 @@ struct Detailkopf<Knoepfe: View>: View {
                            freigabe: item.officialRating,
                            belegZuletzt: true)
             }
-            .padding(.top, 14)
+            // 18 wie auf der Startseite, nicht 14 -- sonst stuende die
+            // Angabenzeile vier Punkt zu hoch und die Beschreibung mit ihr.
+            .padding(.top, 18)
 
             if let text = item.overview, !text.isEmpty {
                 Text(text)
@@ -112,7 +120,22 @@ struct Detailkopf<Knoepfe: View>: View {
             // Text und nicht am ganzen Block; einmal stand er aussen, und
             // jede Beschriftung war abgeschnitten.
             knoepfe()
-                .padding(.top, 36)
+                // **14, und das ist gerechnet, nicht gestrafft.**
+                //
+                // Der Textblock beginnt jetzt bei 196 statt 140, also endet
+                // er 56 tiefer. Mit den alten 36 liefe die Knopfreihe bis
+                // 537 und stuende im Reihenkopf.
+                //
+                // Der Platz dafuer ist da, weil die Detailseite **zwei**
+                // Beschreibungszeilen zeigt und die Startseite drei: unter
+                // der Beschreibung liegt genau die Zeile frei, die dort die
+                // dritte waere. Die Knopfreihe steht in dieser Zeile.
+                //
+                //     196 + 68 + 18 + 34 + 22 + 80 + 14 + 76 = 508
+                //
+                // Zwei Punkte unter der Kopfzone, und bis zum Text des
+                // ersten Reihentitels bei 558 bleiben 50.
+                .padding(.top, 14)
         }
     }
 }
