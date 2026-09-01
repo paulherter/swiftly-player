@@ -319,6 +319,17 @@ struct HomeView: View {
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
             imBild = titel
+
+            // **Den Farbton schon hier rechnen, gebraucht wird er drueben.**
+            //
+            // Die Startseite faerbt sich nicht — sie bleibt #0B0B0D. Aber
+            // wer hier steht, oeffnet als Naechstes wahrscheinlich genau
+            // diesen Titel, und dann soll der Ton **stehen** und nicht
+            // aufblenden. Dieselbe Adresse, derselbe Zwischenspeicher.
+            if let bild = model.querbildURL(for: titel, breite: 1600)
+                       ?? model.backdropURL(for: titel) {
+                Bildton.geteilt.vorrechnen(bild)
+            }
         }
     }
 

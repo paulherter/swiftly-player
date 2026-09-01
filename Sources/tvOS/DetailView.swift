@@ -53,26 +53,42 @@ struct Detailkopf<Knoepfe: View>: View {
         ZStack(alignment: .topLeading) {
             Stil.grund
 
-            // **Der Grund nimmt die Farbe der Kulisse an.**
-            //
-            // Nur den Farbton, Saettigung und Helligkeit stehen fest — siehe
-            // `Bildton`. Der Verlauf sitzt dort, wo auch das Bild sitzt, und
-            // laeuft nach links unten aus.
-            //
-            // Er blendet auf, statt zu springen: vor dem Bild kann es keinen
-            // Ton geben, und ein Hintergrund, der ploetzlich die Farbe
-            // wechselt, ist unruhiger als einer, der es langsam tut.
-            if let ton {
-                RadialGradient(colors: [Bildton.farbe(ton).opacity(0.30),
-                                        Stil.grund.opacity(0)],
-                               center: UnitPoint(x: 0.76, y: 0.12),
-                               startRadius: 0, endRadius: 1180)
-                    .transition(.opacity)
-            }
-
             Kulisse(url: model.querbildURL(for: item, breite: 1600)
                          ?? model.backdropURL(for: item))
                 .frame(maxWidth: .infinity, alignment: .trailing)
+
+            // **Der Ton liegt UEBER der Kulisse, nicht darunter.**
+            //
+            // Darunter gab es eine harte senkrechte Kante an der linken
+            // Bildkante, und der Grund dafuer steckt in der Kulisse selbst:
+            // sie blendet ihr Bild mit **undurchsichtigem** `#0B0B0D` aus.
+            // Diese Flaeche deckte den Ton ab — links davon der gefaerbte
+            // Grund, darin das alte Schwarz. Die Kante war genau die Naht
+            // zwischen beidem.
+            //
+            // Darueber gelegt gibt es die Naht nicht mehr, und das Bild
+            // nimmt den Ton mit an. Das ist kein Nebenschaden, sondern der
+            // Grund, warum es funktioniert: der Ton **stammt** aus diesem
+            // Bild. Ein Bild mit seinem eigenen Farbton einzufaerben
+            // veraendert es kaum sichtbar — daneben faerbt derselbe Verlauf
+            // das Schwarz deutlich. Genau so macht Plex es.
+            //
+            // 1400 hoch und nicht 606: der Verlauf muss **innerhalb** seiner
+            // Flaeche auf null auslaufen, sonst steht am unteren Rand die
+            // naechste harte Kante. Von der Mitte bei y = 84 sind es 1180
+            // Punkt Reichweite, also endet er bei 1264 — die Flaeche muss
+            // darueber hinausreichen. Sie ueberragt die Kopfzone und liegt
+            // dabei unter den Reihen, die als spaeteres Geschwister
+            // darueberzeichnen.
+            if let ton {
+                RadialGradient(colors: [Bildton.farbe(ton).opacity(0.26),
+                                        Bildton.farbe(ton).opacity(0)],
+                               center: UnitPoint(x: 0.76, y: 0.06),
+                               startRadius: 0, endRadius: 1180)
+                    .frame(height: 1400)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
             block
                 .padding(.leading, Stil.randSeite)
                 // 140 aus der Tafel, plus der Versatz, der die nicht
@@ -93,9 +109,18 @@ struct Detailkopf<Knoepfe: View>: View {
         // Nachladen.
         .animation(.easeInOut(duration: 0.4), value: ton)
         .task(id: item.id) {
-            ton = nil
             guard let bild = model.querbildURL(for: item, breite: 1600)
-                          ?? model.backdropURL(for: item) else { return }
+                          ?? model.backdropURL(for: item) else { ton = nil; return }
+
+            // **Was schon bekannt ist, wird nicht eingeblendet.**
+            if let schonDa = Bildton.geteilt.gemerkt(fuer: bild) {
+                var ohne = Transaction()
+                ohne.disablesAnimations = true
+                withTransaction(ohne) { ton = schonDa }
+                return
+            }
+
+            ton = nil
             ton = await Bildton.geteilt.ton(fuer: bild)
         }
     }

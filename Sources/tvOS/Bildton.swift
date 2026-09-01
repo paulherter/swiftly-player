@@ -36,6 +36,24 @@ final class Bildton {
     private var bekannt: [URL: Double?] = [:]
     private var laufend: [URL: Task<Double?, Never>] = [:]
 
+    /// **Schon bekannt?** Ohne Warten, ohne `await`.
+    ///
+    /// Damit die Detailseite den Ton **sofort** setzen kann, statt ihn
+    /// aufzublenden. Beim Wechsel von der Startseite ist er meist schon da:
+    /// dort wird er beim Bildwechsel mitgerechnet, und beide Seiten holen
+    /// dasselbe Bild (`breite: 1600`).
+    ///
+    /// Der aeussere Optional sagt „noch nie gerechnet", der innere „gerechnet
+    /// und nichts gefunden". Das ist nicht dasselbe: bei einem Graustufenbild
+    /// soll nicht bei jedem Oeffnen neu gesucht werden.
+    func gemerkt(fuer url: URL) -> Double?? { bekannt[url] }
+
+    /// Rechnet im Hintergrund vor, ohne dass jemand auf das Ergebnis wartet.
+    func vorrechnen(_ url: URL) {
+        guard bekannt[url] == nil, laufend[url] == nil else { return }
+        Task { _ = await ton(fuer: url) }
+    }
+
     /// Farbton in Grad, oder `nil` wenn sich keiner ableiten laesst —
     /// Graustufen, kein Bild, Serverfehler. `nil` ist kein Sonderfall,
     /// sondern der Normalzustand vor dem Laden: dann bleibt der Grund stehen.
