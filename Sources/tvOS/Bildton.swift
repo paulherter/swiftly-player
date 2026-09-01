@@ -210,8 +210,18 @@ extension Bildton {
     /// Uebergang, den die Zahlen nicht hergeben. Genau dafuer gibt es
     /// Dithering, seit es Bildschirme gibt.
     ///
-    /// 96 x 96 gekachelt, Deckkraft rund zwei Prozent — sichtbar ist davon
-    /// nichts, ausser dass die Baender weg sind.
+    /// **Die Staerke ist der ganze Trick, und sie ist winzig.** Gebraucht
+    /// wird eine Amplitude von etwa **einer** Helligkeitsstufe: gerade genug,
+    /// damit ein Punkt mal auf die eine, mal auf die andere Stufe faellt.
+    ///
+    /// Ein Zwischenstand stand auf 3,5 Prozent — bei Schwarz/Weiss mit voller
+    /// Zufallsdeckkraft sind das rund neun Stufen Ausschlag. Das ist kein
+    /// Dither mehr, sondern sichtbares Korn, und genau so sah es aus.
+    ///
+    ///     255 × 0,008 × 0,5 (mittlere Deckkraft) ≈ 1 Stufe
+    ///
+    /// 96 x 96 gekachelt. Sichtbar ist davon nichts, ausser dass die Baender
+    /// weg sind.
     static let rauschen: Image = {
         let kante = 96
         var punkte = [UInt8](repeating: 0, count: kante * kante * 4)
@@ -309,7 +319,7 @@ struct Bildgrund: ViewModifier {
                     if !toene.isEmpty {
                         Bildton.rauschen
                             .resizable(resizingMode: .tile)
-                            .opacity(0.035)
+                            .opacity(0.008)
                             .ignoresSafeArea()
                     }
                 }
@@ -333,20 +343,53 @@ struct Bildgrund: ViewModifier {
     /// die Bewegung erhalten, indem Saettigung und Helligkeit leicht wandern
     /// — auch das laesst die Kanaele verschieden schnell laufen.
     private var grundverlauf: LinearGradient {
-        let farben: [Color]
+        let toenung: [Double]
         switch toene.count {
-        case 0:  farben = [Stil.grund, Stil.grund]
-        case 1:  farben = [Bildton.grundfarbe(toene[0]),
-                           Color(hue: toene[0] / 360, saturation: 0.24, brightness: 0.055)]
-        default: farben = toene.map(Bildton.grundfarbe)
+        case 0:  return LinearGradient(colors: [Stil.grund, Stil.grund],
+                                       startPoint: .topTrailing, endPoint: .bottomLeading)
+        case 1:  toenung = [toene[0], toene[0]]
+        default: toenung = toene
         }
-        return LinearGradient(colors: farben,
+
+        // **Ohne Knick von Farbe zu Farbe.**
+        //
+        // Ein `LinearGradient(colors:)` verbindet seine Farben geradlinig und
+        // hat an jeder einen Knick — die Steigung springt, und das Auge liest
+        // den Sprung als Band. Genau derselbe Fehler wie vorher bei der
+        // Blende, nur an der naechsten Stelle.
+        //
+        // Deshalb wird jeder Abschnitt mit `t² (3 − 2t)` abgetastet: die
+        // Kurve laeuft an beiden Enden waagerecht aus, also stossen zwei
+        // Abschnitte mit gleicher Steigung null aneinander. Bei einem
+        // einzigen Ton wandern stattdessen Saettigung und Helligkeit, damit
+        // die drei Kanaele auch dann verschieden schnell laufen.
+        var stops: [Gradient.Stop] = []
+        let abschnitte = toenung.count - 1
+        for a in 0 ..< max(abschnitte, 1) {
+            let vonTon = toenung[a], bisTon = toenung[min(a + 1, toenung.count - 1)]
+            // Kuerzester Weg ueber den Farbkreis — sonst laeuft ein Uebergang
+            // von 350 auf 10 Grad einmal quer durch alle Farben.
+            var weg = bisTon - vonTon
+            if weg > 180 { weg -= 360 }
+            if weg < -180 { weg += 360 }
+
+            for i in 0 ... 8 {
+                let t = Double(i) / 8
+                let weich = t * t * (3 - 2 * t)
+                let ort = (Double(a) + t) / Double(max(abschnitte, 1))
+                let ton = vonTon + weg * weich
+                let farbe = toene.count == 1
+                    ? Color(hue: ton / 360,
+                            saturation: 0.38 - 0.14 * weich,
+                            brightness: 0.085 - 0.030 * weich)
+                    : Bildton.grundfarbe(ton)
+                stops.append(.init(color: farbe, location: min(ort, 1)))
+            }
+        }
+        return LinearGradient(gradient: Gradient(stops: stops),
                               startPoint: .topTrailing, endPoint: .bottomLeading)
     }
 
-    /// Der staerkste Ton fuehrt, die schwaecheren stuetzen. Zusammen bleiben
-    /// sie unter dem, was eine einzelne Wolke haette — es soll farbig
-    /// wirken, nicht bunt.
     private func staerke(_ i: Int) -> Double {
         [0.28, 0.20, 0.15, 0.11, 0.08][min(i, 4)]
     }
