@@ -73,6 +73,14 @@ struct HomeView: View {
         return ersterTitel
     }
 
+    /// Die Kulisse, die gerade steht — dieselbe Adresse wie auf der
+    /// Detailseite (`breite: 1600`), damit Bild und Ton dort schon im
+    /// Zwischenspeicher liegen.
+    private var kulissenURL: URL? {
+        guard let t = imBild else { return nil }
+        return model.querbildURL(for: t, breite: 1600) ?? model.backdropURL(for: t)
+    }
+
     private var alleTitel: [Item] {
         stand.weiterschauen + stand.naechsteFolge + stand.zuletzt
     }
@@ -165,6 +173,12 @@ struct HomeView: View {
         // setzt den sicheren Bereich fuer seinen Inhalt neu. Gemessen, nicht
         // vermutet — die Wortmarke rueckte, der Inhalt darunter nicht.
         .ignoresSafeArea()
+        // **Derselbe gefaerbte Grund wie auf den Detailseiten.**
+        //
+        // Er haengt am **entprellten** Bild, nicht am Fokus: sonst rechnete
+        // beim Durchhalten der Fernbedienung jeder Zwischenschritt einen
+        // eigenen Ton.
+        .bildgrund(url: kulissenURL)
         // Nur das Bild braucht noch einen Zustand — es wird entprellt.
         .onChange(of: aktuell?.id) { _, _ in
             if let t = aktuell { bildwechseln(zu: t) }
@@ -301,7 +315,9 @@ struct HomeView: View {
     /// erste Reihe zeichnet ohnehin darueber, sie ist das naechste Geschwister.
     private var heldenzone: some View {
         ZStack(alignment: .topLeading) {
-            Stil.grund
+            // Kein `Stil.grund` mehr: der Grund der Seite ist der gefaerbte
+            // Verlauf (siehe `bildgrund`), und eine undurchsichtige Flaeche
+            // davor haette ihn genau in der Kopfzone verdeckt.
             querbild
                 .frame(maxWidth: .infinity, alignment: .trailing)
             // Der Kopfverlauf gehoert **unter** die Schrift. Liegt er
@@ -339,17 +355,6 @@ struct HomeView: View {
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
             imBild = titel
-
-            // **Den Farbton schon hier rechnen, gebraucht wird er drueben.**
-            //
-            // Die Startseite faerbt sich nicht — sie bleibt #0B0B0D. Aber
-            // wer hier steht, oeffnet als Naechstes wahrscheinlich genau
-            // diesen Titel, und dann soll der Ton **stehen** und nicht
-            // aufblenden. Dieselbe Adresse, derselbe Zwischenspeicher.
-            if let bild = model.querbildURL(for: titel, breite: 1600)
-                       ?? model.backdropURL(for: titel) {
-                Bildton.geteilt.vorrechnen(bild)
-            }
         }
     }
 

@@ -48,11 +48,11 @@ final class Bildton {
     /// soll nicht bei jedem Oeffnen neu gesucht werden.
     func gemerkt(fuer url: URL) -> [Double]? { bekannt[url] }
 
-    /// Rechnet im Hintergrund vor, ohne dass jemand auf das Ergebnis wartet.
-    func vorrechnen(_ url: URL) {
-        guard bekannt[url] == nil, laufend[url] == nil else { return }
-        Task { _ = await toene(fuer: url) }
-    }
+    // `vorrechnen` gab es, solange nur die Detailseiten sich faerbten und
+    // die Startseite den Ton bloss schon einmal ausrechnen sollte. Jetzt
+    // faerbt sie sich selbst, also rechnet `Bildgrund` ihn dort ohnehin —
+    // und `gemerkt(fuer:)` sorgt dafuer, dass die Detailseite ihn ohne
+    // Warten und ohne Ueberblendung uebernimmt.
 
     /// Bis zu drei Farbtoene in Grad, nach Gewicht — leer, wenn sich keiner
     /// ableiten laesst.
