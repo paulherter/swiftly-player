@@ -289,9 +289,20 @@ struct HomeView: View {
         // Nachgereicht ging es nicht: `erstenZeigen` setzte nur, solange der
         // Fokus nirgends stand, und tvOS ist schneller als jedes `onAppear`.
         // Genau die Form, vor der CLAUDE.md warnt — gesetzt, aber die
-        // anwendende Stelle laeuft ins Leere. `userInitiated` sticht dabei
-        // die Wahl des Systems; `automatic` waere nur ein Vorschlag.
-        .defaultFocus($amTitel, startMarke, priority: .userInitiated)
+        // anwendende Stelle laeuft ins Leere. `userInitiated` sticht dabei die
+        // Wahl des Systems; `automatic` waere nur ein Vorschlag. **Zurueck
+        // heisst dorthin, wo man war — nicht nach oben.**
+        //
+        // Der Vorgabefokus zeigte auf `startMarke`, also auf die erste Kachel
+        // der ersten Reihe. tvOS wendet ihn nicht nur beim ersten Mal an,
+        // sondern jedes Mal, wenn die Seite wieder erscheint: nach dem
+        // Zurueckgehen sprang der Fokus damit nach oben, und die Scrollflaeche
+        // fuhr hinterher.
+        //
+        // `zuletztAmTitel` haelt fest, wo der Fokus wirklich stand — es gibt
+        // ihn schon, weil die Auskunft oben denselben Rueckfall braucht. Beim
+        // ersten Oeffnen ist es leer, dann gilt weiter `startMarke`.
+        .defaultFocus($amTitel, zuletztAmTitel ?? startMarke, priority: .userInitiated)
         // **Hier wird beschnitten, und das ist Absicht.** Die Vergroesserung
         // der Kachel faengt der Streifen mit `reihenLuft` in seinen eigenen
         // Grenzen ab; die senkrechte Flaeche darf deshalb schneiden — und nur
@@ -378,29 +389,32 @@ struct HomeView: View {
     /// das ist Bedingung dafuer, dass beim Oeffnen nichts sichtbar wechselt.
     @ViewBuilder
     private var querbild: some View {
+        // **Derselbe Baustein wie auf der Detailseite, nicht nur dieselben
+        // Masse.**
+        //
+        // Hier stand eine zweite Fassung: eigenes `AsyncImage`, eigener
+        // Rahmen, eigene Blende, eigenes `padding`. Sie sah gleich aus — und
+        // war es nicht. Beim Oeffnen einer Detailseite blendete SwiftUI die
+        // eine in die andere, und was dabei nicht deckungsgleich war, sah man
+        // als Zucken.
+        //
+        // Dass es **beim Hingehen stark und beim Zurueckgehen kaum** auffiel,
+        // war der Hinweis: zurueck steht die Startseite laengst da und baut
+        // nichts neu auf. Der Unterschied entsteht auf der Seite, die
+        // entsteht.
+        //
+        // `id` und Ueberblendung bleiben aussen — die gehoeren der
+        // Startseite, wo der Fokus von Titel zu Titel wandert. Die
+        // Detailseite hat das nicht, und braucht es nicht.
         ZStack {
             if let t = imBild {
-                AsyncImage(url: model.querbildURL(for: t, breite: 1600)
-                                ?? model.backdropURL(for: t)) { phase in
-                    if case let .success(bild) = phase {
-                        bild.resizable().aspectRatio(contentMode: .fill)
-                    }
-                }
-                .id(t.id)
-                .transition(.opacity)
+                Kulisse(url: model.querbildURL(for: t, breite: 1600)
+                             ?? model.backdropURL(for: t))
+                    .id(t.id)
+                    .transition(.opacity)
             }
         }
-        .frame(width: 1180, height: 700)
-        .clipped()
-        // Dieselbe Blende wie auf der Detailseite — siehe `Kulissenblende`.
-        // Vorher stand hier eine zweite, uebermalende Fassung mit kurzen
-        // Rampen, und beim Oeffnen einer Seite blendete die eine in die
-        // andere. Genau das waren die harten Kanten waehrend des Wechsels.
-        .kulissenblende()
         .animation(.easeInOut(duration: 0.3), value: imBild?.id)
-        // Bis an die Bildkante, ohne den Text mitzunehmen.
-        .padding(.trailing, -Stil.randSeite)
-        .allowsHitTesting(false)
     }
 
     /// Titel, Angaben und Beschreibung zum Titel unter dem Fokus.

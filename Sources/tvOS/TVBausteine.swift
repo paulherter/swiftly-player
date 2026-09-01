@@ -487,7 +487,14 @@ struct Handlungstafel: View {
                 .focused($erste, equals: paar.offset == 0)
             }
         }
-        .padding(.vertical, 14)
+        // **6, nicht 14.** Die Zeilen tragen ihre eigene Flaeche, wenn sie
+        // ausgewaehlt sind; darueber und darunter stand doppelt so viel
+        // Tafelgrund wie zwischen den Zeilen, und das las sich als Rand um den
+        // Rand.
+        //
+        // Ganz ohne geht nicht: die ausgewaehlte Zeile ist gerundet, und ohne
+        // Luft stiesse sie in die Rundung der Tafel.
+        .padding(.vertical, 6)
         .frame(width: 620)
         .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke + 8))
         .overlay(RoundedRectangle(cornerRadius: Stil.ecke + 8).strokeBorder(Stil.rand))
@@ -613,11 +620,27 @@ struct Kopfauskunft<Schluss: View>: View {
                 .font(.system(size: 29))
                 .lineSpacing(11)
                 .foregroundStyle(Stil.schrift.opacity(0.62))
-                .lineLimit(zweitzeile == nil ? 3 : 2)
+                // **Immer drei Zeilen**, auch wenn der Folgentitel darueber
+                // steht. Vorher waren es dort zwei, damit der Block seine
+                // feste Hoehe hielt
+                .lineLimit(3)
                 .padding(.top, 22)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: 1000, height: Stil.auskunftHoehe, alignment: .topLeading)
+        // **Fest, aber um die Zweitzeile hoeher, wenn es eine gibt.**
+        //
+        // 258 traegt Titel, Angaben und drei Zeilen Beschreibung. Der
+        // Folgentitel kostet 54 dazu (44 hoch, 10 Abstand), also 312 — und
+        // die passen: die Startseite setzt bei 196 an, der Block endet damit
+        // bei 508 und bleibt unter der Kopfzone von 510.
+        //
+        // Die Detailseiten sehen die Zweitzeile nie: eine Folge bekommt keine
+        // eigene Seite, jeder Weg zu ihr fuehrt auf die Serienseite (A8).
+        // Dort bleibt es also bei 258, und die Knopfreihe steht weiter auf
+        // jeder Seite an derselben Stelle.
+        .frame(width: 1000,
+               height: Stil.auskunftHoehe + (zweitzeile == nil ? 0 : 54),
+               alignment: .topLeading)
     }
 
     /// Jahr und Laufzeit — **ohne Genres**, siehe oben. Die Formatierung
@@ -665,52 +688,82 @@ struct Restzeitmarke: View {
 /// die Deckkraft der ganzen Ebene, den Fokusring eingeschlossen — das sieht
 /// wie ein Fehler aus, nicht wie ein Verlauf.
 ///
-/// **Fuer die Kulisse gilt das nicht mehr, und sie maskiert inzwischen.**
-/// Sie ist kein Bedienelement und hat keinen Ring; der Satz oben stammt von
-/// den Kacheln. Der Grund fuer den Wechsel steht unten am `mask`.
+/// **Fuer die Kulisse gilt das nicht mehr, und sie maskiert inzwischen.** Sie
+/// ist kein Bedienelement und hat keinen Ring; der Satz oben stammt von den
+/// Kacheln. Der Grund fuer den Wechsel steht unten am `mask`.
 ///
 /// Nicht beschnitten: das Bild darf nach unten ueberragen, sein eigener
 /// Verlauf beendet es. Beschnitten entstand die harte Kante, die als heller
-/// Streifen quer ueber dem Schirm stand.
+/// Streifen quer ueber dem Schirm stand. **Die schon gezeigten Kulissen,
+/// entschluesselt.**
+///
+/// `AsyncImage` faengt in jeder neuen Ansicht von vorn an: es fragt den
+/// Zwischenspeicher, entschluesselt und zeigt erst danach. Auf der Detailseite
+/// ist das ein neues `AsyncImage` fuer dasselbe Bild, das eben noch auf der
+/// Startseite stand — und dazwischen zeigt es nichts.
+///
+/// Der Netz-Zwischenspeicher hilft dagegen nicht: er spart den Abruf, nicht
+/// das Entschluesseln, und beides passiert asynchron. Was schon einmal auf dem
+/// Schirm stand, muss deshalb **hier** liegen, fertig zum Zeichnen.
+///
+/// Gedeckelt, weil ein Kulissenbild in Fernsehergroesse einige Megabyte
+/// belegt: die letzten acht reichen fuer den Weg Startseite → Detailseite →
+/// zurueck, und mehr braucht niemand gleichzeitig.
+@MainActor
+final class Kulissenbilder {
+    static let geteilt = Kulissenbilder()
+    private var bekannt: [URL: Image] = [:]
+    private var reihenfolge: [URL] = []
+
+    func bild(_ url: URL) -> Image? { bekannt[url] }
+
+    func merken(_ bild: Image, fuer url: URL) {
+        if bekannt[url] == nil { reihenfolge.append(url) }
+        bekannt[url] = bild
+        while reihenfolge.count > 8 {
+            bekannt[reihenfolge.removeFirst()] = nil
+        }
+    }
+}
+
 struct Kulisse: View {
     let url: URL?
+    @State private var bild: Image?
+
+    /// Was bekannt ist, steht sofort — nicht erst im naechsten Durchgang.
+    /// Dieselbe Ueberlegung wie bei `Bildgrund`: ein nachgereichter Wert
+    /// kommt zu spaet, der leere Durchgang hat dann schon stattgefunden.
+    @MainActor init(url: URL?) {
+        self.url = url
+        _bild = State(initialValue: url.flatMap { Kulissenbilder.geteilt.bild($0) })
+    }
 
     var body: some View {
         ZStack {
-            AsyncImage(url: url) { phase in
-                if case let .success(bild) = phase {
-                    bild.resizable().aspectRatio(contentMode: .fill)
+            if let bild {
+                bild.resizable().aspectRatio(contentMode: .fill)
+            } else {
+                AsyncImage(url: url) { phase in
+                    if case let .success(geladen) = phase {
+                        geladen.resizable().aspectRatio(contentMode: .fill)
+                            // Beim Zeigen merken, nicht davor: so steht es
+                            // beim naechsten Mal bereit, ohne dass hier ein
+                            // Durchgang mehr noetig waere.
+                            .task {
+                                guard let url else { return }
+                                Kulissenbilder.geteilt.merken(geladen, fuer: url)
+                            }
+                    }
                 }
             }
         }
         .frame(width: 1180, height: 700)
         .clipped()
-        // **Das Bild wird maskiert, nicht uebermalt** — und darin steckt der
-        // ganze Unterschied.
-        //
-        // Vorher lagen zwei Verlaeufe aus `Stil.grund` **darueber**: links
-        // deckendes #0B0B0D, nach rechts durchsichtig werdend. Das versteckt
-        // das Bild zwar, setzt aber voraus, dass der Hintergrund genau
-        // #0B0B0D ist. Sobald er sich faerbt, steht die uebermalte Flaeche
-        // als Fleck darin — das war die harte senkrechte Kante.
-        //
-        // Als Maske faellt die **Deckkraft des Bildes selbst**. Es laeuft in
-        // Transparenz aus, und was dahinterliegt, kommt durch, welche Farbe
-        // es auch hat. Damit liegt das Bild vorn und der Ton dahinter, statt
-        // ueber ihm.
-        //
-        // Der Einwand weiter oben — eine Maske nimmt den Fokusring mit —
-        // gilt hier nicht: die Kulisse ist kein Bedienelement, sie traegt
-        // `allowsHitTesting(false)` und hat nichts zu fokussieren.
-        //
         .kulissenblende()
-        // Bis an die Bildkante, ohne den Text mitzunehmen: der Textblock
-        // haelt den Rand, das Bild tritt fuer sich hinaus.
         .padding(.trailing, -Stil.randSeite)
         .allowsHitTesting(false)
     }
 }
-
 /// **Die Blende der Kulisse — einmal, fuer Startseite und Detailseite.**
 ///
 /// Sie stand zweimal, und die beiden waren verschieden: hier maskiert, dort

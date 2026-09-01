@@ -51,6 +51,21 @@ struct Detailkopf<Knoepfe: View>: View {
                          ?? model.backdropURL(for: item))
                 .frame(maxWidth: .infinity, alignment: .trailing)
 
+            // **Derselbe Kopfschatten wie auf der Startseite.**
+            //
+            // Hier hat er keine Leiste zu tragen — es gibt keine. Er steht
+            // trotzdem, und zwar aus einem Grund, der nichts mit Lesbarkeit
+            // zu tun hat: er war die letzte Ebene, die es nur auf einer der
+            // beiden Seiten gab. Beim Oeffnen blendete er weg, und das war
+            // das Aufhellen oben, das nach einer Ueberblendung aussah,
+            // obwohl sich Bild und Netz gar nicht aenderten.
+            //
+            // Dieselbe Regel wie beim Kopfblock, bei der Kulissenblende und
+            // beim gefaerbten Grund: was auf beiden Seiten gleich aussehen
+            // soll, muss dieselbe Ebene sein — sonst sieht man den
+            // Unterschied genau im Uebergang.
+            Kopfschatten()
+
             block
                 .padding(.leading, Stil.randSeite)
                 // 140 aus der Tafel, plus der Versatz, der die nicht
@@ -83,10 +98,19 @@ struct Detailkopf<Knoepfe: View>: View {
             // dort und hier identisch; das Einzige, was hier dazukommt, ist
             // die Knopfreihe. Siehe `Kopfauskunft`.
             Kopfauskunft(item: item) {
-                Belegzeile(direktplay: plan?.isLossless ?? false,
-                           hinweis: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
-                           bewertung: nil, freigabe: nil,
-                           belegZuletzt: true)
+                // **Der Beleg blendet ein, der Rest des Kopfes nicht.**
+                //
+                // Er haengt an `plan`, und der kommt vom Server — im Kopf,
+                // der sonst still steht, erschien er sonst mitten hinein.
+                // Er gehoert zu dem, was neu dazukommt: auf der Startseite
+                // gibt es ihn nicht, dort ist noch kein Plan geholt.
+                if let plan {
+                    Belegzeile(direktplay: plan.isLossless,
+                               hinweis: plan.isLossless ? nil : plan.method.rawValue,
+                               bewertung: nil, freigabe: nil,
+                               belegZuletzt: true)
+                        .transition(.opacity)
+                }
             }
 
             // Die Knopfreihe darf breiter werden als die 1000 des Textes.
@@ -185,6 +209,19 @@ struct DetailView: View {
     @State private var meldung: String?
     /// Der Player liegt im Rahmen — siehe `HauptView`.
     @Environment(\.abspielwunsch) private var abspielen
+    /// **Was neu ist, blendet beim Erscheinen ein — nicht beim Laden.**
+    ///
+    /// Vorher hing die Ueberblendung an der Ankunft der Daten. Seit die
+    /// Zwischenspeicher greifen, kommen die aber schon im ersten Durchgang
+    /// mit, also gab es nichts mehr zu animieren: beim ersten Mal war es etwas
+    /// weich, ab dem zweiten hart. Das war ein Widerspruch in meinem eigenen
+    /// Aufbau — erst instant machen, dann Uebergaenge an Ereignisse haengen,
+    /// die es nicht mehr gibt.
+    ///
+    /// Am Erscheinen aufgehaengt, blendet es **jedes Mal** ein, ob die Daten
+    /// schon dastehen oder nicht.
+    @State private var eingeblendet = false
+
     @State private var bereitet = false
     @State private var aehnliche: [Item] = []
     @State private var extras: [Item] = []
@@ -204,6 +241,8 @@ struct DetailView: View {
                     } inhalt: {
                         Titelstreifen(model: model, items: aehnliche)
                     }
+                    .opacity(eingeblendet ? 1 : 0)
+                    .transition(.opacity)
                 }
                 if !extras.isEmpty {
                     // **Der Trailer wohnt hier**, nicht als sechste Pille.
@@ -217,6 +256,7 @@ struct DetailView: View {
                             starte(extra, ab: 0)
                         }
                     }
+                    .opacity(eingeblendet ? 1 : 0)
                 }
                 if !darsteller.isEmpty {
                     reihenabschnitt {
@@ -224,18 +264,13 @@ struct DetailView: View {
                     } inhalt: {
                         Besetzungsstreifen(model: model, leute: darsteller)
                     }
+                    .opacity(eingeblendet ? 1 : 0)
+                    .transition(.opacity)
                 }
             }
             .padding(.bottom, Stil.abschlussLuft)
         }
         .scrollIndicators(.hidden)
-        // **Der Grund der ganzen Seite faerbt sich nach der Kulisse.**
-        //
-        // An der Seite und nicht am Kopf: sonst endet die Faerbung an dessen
-        // Unterkante, und quer ueber dem Schirm steht eine Naht. Siehe
-        // `Bildgrund`.
-        .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
-                        ?? model.backdropURL(for: aktuell))
         // **Der seitliche Rand wird einmal vergeben, nicht zweimal.**
         //
         // tvOS haelt links und rechts von sich aus 80 Punkt frei, und die
@@ -249,6 +284,32 @@ struct DetailView: View {
         // setzt den sicheren Bereich fuer seinen Inhalt neu. Gemessen, nicht
         // vermutet — die Wortmarke rueckte, der Inhalt darunter nicht.
         .ignoresSafeArea()
+        // **Der Grund der ganzen Seite faerbt sich nach der Kulisse.**
+        //
+        // **Nach `ignoresSafeArea`, nicht davor.** Davor bekam er die um den
+        // sicheren Bereich verkleinerte Flaeche — 1760 x 960 statt 1920 x
+        // 1080. Das Netz rechnet in Bruchteilen seiner Flaeche, sass damit auf
+        // der Detailseite anders als auf der Startseite, und beim Oeffnen sah
+        // man den Unterschied als Schrumpfen.
+        //
+        // Die Startseite hatte es von Anfang an nach `ignoresSafeArea`; dass
+        // die beiden verschieden standen, war der Unterschied.
+        //
+        // An der Seite und nicht am Kopf: sonst endet die Faerbung an dessen
+        // Unterkante, und quer ueber dem Schirm steht eine Naht. Siehe
+        // `Bildgrund`.
+        .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
+                        ?? model.backdropURL(for: aktuell))
+        // **Solange eine Tafel offen ist, ist der Rest kein Fokusziel.**
+        //
+        // `focusSection` haelt den Fokus nicht fest, es ordnet ihn nur. Ein
+        // Druck nach links oder rechts sprang deshalb aus der offenen Tafel
+        // heraus in die Folgen dahinter — die Tafel blieb stehen und ging erst
+        // weg, wenn man die Seite verliess.
+        //
+        // Gesperrt wird **vor** den Auflagen: die Tafeln haengen danach und
+        // bleiben damit selbst bedienbar.
+        .disabled(mehrOffen)
         .overlay(alignment: .topLeading) {
             if mehrOffen {
                 Handlungstafel(handlungen: mehrHandlungen, offen: $mehrOffen)
@@ -265,25 +326,45 @@ struct DetailView: View {
             }
         }
         .task {
+            withAnimation(.easeOut(duration: 0.3)) { eingeblendet = true }
             async let frischerTitel = model.item(id: item.id)
             async let planung = model.plan(for: item.id)
             async let aehnlich = model.aehnliche(item)
             async let extra = model.extras(item)
             async let vorschau = model.trailer(zu: item)
-            frisch = await frischerTitel
-            plan = await planung
-            aehnliche = await aehnlich
-            // **Der Trailer steht vorn in den Extras.**
+            // **Einmal aufblenden, nicht dreimal.**
             //
-            // Er war vorher eine eigene Pille. Die Knopfreihe des Entwurfs
-            // hat dafuer keinen Platz mehr — sechs Pillen sind breiter als
-            // die 1600, die zwischen den Raendern liegen. Ersatzlos streichen
-            // waere aber falsch: ein Trailer ist etwas zum Abspielen, und
-            // dafuer gibt es hier ein Regal. In der Handlungstafel waere er
-            // eine Zeile Text unter lauter Auskunft.
+            // `.transition` allein greift nicht — sie wirkt nur, wenn die
+            // Aenderung in einer **animierten Transaktion** stattfindet, und
+            // Werte aus `await` tragen keine. Deshalb war zuerst alles hart
+            // da, obwohl die Uebergaenge dranstanden.
+            //
+            // Danach standen drei getrennte `withAnimation` hier: Titel und
+            // Plan, dann die Extras, dann die Folgen. Jeder Schub blendete
+            // fuer sich, und das ueberlagerte sich zu einem Flackern statt
+            // eines Uebergangs. Jetzt wird **alles abgewartet und einmal**
+            // gezeigt.
+            //
+            // Instant bleibt, was schon auf der Startseite stand: Titel,
+            // Angaben, Beschreibung, Bild, Grund. Ueberblendet wird nur, was
+            // neu dazukommt.
+            let neuerTitel = await frischerTitel
+            let neuerPlan = await planung
+            let neueAehnliche = await aehnlich
+
+            // Der Trailer steht vorn in den Extras: er war einmal eine eigene
+            // Pille, und die Knopfreihe des Entwurfs hat dafuer keinen Platz.
+            // Ersatzlos streichen waere falsch — ein Trailer ist etwas zum
+            // Abspielen, und dafuer gibt es hier ein Regal.
             var regal = await extra
             if let vorschau = await vorschau { regal.insert(vorschau, at: 0) }
-            extras = regal
+
+            withAnimation(.easeOut(duration: 0.32)) {
+                frisch = neuerTitel
+                plan = neuerPlan
+                aehnliche = neueAehnliche
+                extras = regal
+            }
             gemerkt = aktuell.userData?.isFavorite ?? false
             gesehen = aktuell.istGesehen
         }

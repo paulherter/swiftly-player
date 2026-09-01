@@ -4,29 +4,126 @@ import SwiftUI
 /// Die Serienseite: oben derselbe Kopf wie bei einem Film, darunter die
 /// Folgen, die Besetzung und Ähnliches.
 ///
-/// **Keine Reiter mehr.** Vorher standen „Folgen", „Besetzung" und
-/// „Ähnliches" als drei Schalter nebeneinander, und nur einer war jeweils zu
-/// sehen. Der Entwurf legt sie stattdessen untereinander — dieselbe Bauart
-/// wie die Startseite, jede Reihe ein `Section`-Abschnitt. Damit entfällt
-/// auch der Umweg, den die Reiter nötig gemacht hatten: ein eigener
-/// `onMoveCommand`, der den Fokus von Hand nach oben schob, weil links über
-/// „Folgen" nichts Fokussierbares stand.
+/// **Keine Reiter mehr.** Vorher standen „Folgen", „Besetzung" und „Ähnliches"
+/// als drei Schalter nebeneinander, und nur einer war jeweils zu sehen. Der
+/// Entwurf legt sie stattdessen untereinander — dieselbe Bauart wie die
+/// Startseite, jede Reihe ein `Section`-Abschnitt. Damit entfällt auch der
+/// Umweg, den die Reiter nötig gemacht hatten: ein eigener `onMoveCommand`,
+/// der den Fokus von Hand nach oben schob, weil links über „Folgen" nichts
+/// Fokussierbares stand.
 ///
 /// Die Folgen sind jetzt ein waagerechter Streifen mit denselben Querkacheln
-/// wie „Weiterschauen", nicht mehr eine senkrechte Liste. `Folgenzeile`
-/// bleibt trotzdem — das Folgenblatt im Player benutzt sie weiter.
+/// wie „Weiterschauen", nicht mehr eine senkrechte Liste. `Folgenzeile` bleibt
+/// trotzdem — das Folgenblatt im Player benutzt sie weiter. **Was einmal
+/// geholt wurde, bleibt fuer den Rueckweg liegen.**
+///
+/// Die Serienseite holte bei jedem Oeffnen alles neu: Staffeln, Stand, Folgen.
+/// Solange der Seitenwechsel ueberblendete, hat das niemand gesehen — die
+/// Ueberblendung war laenger als der Abruf. Ohne sie schneidet man hart hinein
+/// und sieht „Laedt…" am Hauptknopf und den Ring, wo die Folgen stehen.
+///
+/// Der Abruf ist nicht langsamer geworden, er war nur verdeckt. Die Antwort
+/// ist deshalb nicht, die Ueberblendung zurueckzuholen, sondern beim zweiten
+/// Mal gar nicht erst zu warten.
+///
+/// Absichtlich **nur fuers Bild**, nicht als Wahrheit: beim Erscheinen laeuft
+/// der Abruf trotzdem und schreibt frische Werte darueber. Wer eine Folge als
+/// gesehen markiert und zurueckkommt, sieht den neuen Stand — nur eben ohne
+/// Loch davor.
+@MainActor
+final class Serienspeicher {
+    static let geteilt = Serienspeicher()
+
+    struct Stand {
+        /// Die Serie selbst — fuer den Umweg von einer Folge aus, der sie
+        /// sonst jedes Mal nachholt. Siehe `StaffelZiel`.
+        var serie: Item?
+        var staffeln: [Item] = []
+        var weiterMit: Item?
+        var folgen: [String: [Item]] = [:]   // je Staffel
+    }
+
+    private var bekannt: [String: Stand] = [:]
+    private var reihenfolge: [String] = []
+
+    func stand(_ serie: String) -> Stand? { bekannt[serie] }
+
+    func merken(_ serie: String, _ aendern: (inout Stand) -> Void) {
+        if bekannt[serie] == nil {
+            bekannt[serie] = Stand()
+            reihenfolge.append(serie)
+        }
+        aendern(&bekannt[serie]!)
+        while reihenfolge.count > 12 { bekannt[reihenfolge.removeFirst()] = nil }
+    }
+}
+
 struct SerienView: View {
     let model: AppModel
     let serie: Item
     /// Kommt man über eine einzelne Folge, ist deren Staffel schon gewählt.
     var startStaffelID: String?
+    /// **Und diese Folge ist zugleich die Stelle, an der es weitergeht.**
+    ///
+    /// Der Hauptknopf wartete sonst auf `standInSerie` — einen Abruf, dessen
+    /// Ergebnis der Aufrufer schon in der Hand hat. Auf dem Weg über
+    /// „Weiterschauen" oder „Nächste Folge" ist die geöffnete Folge genau
+    /// das, was der Knopf nennen soll.
+    ///
+    /// Nur als Anfangswert: `laden()` holt den frischen Stand und schreibt
+    /// darüber. Wer die Serie direkt aus der Bibliothek öffnet, hat ihn
+    /// nicht — dort bleibt es beim Abruf, und beim zweiten Mal greift der
+    /// `Serienspeicher`.
+    var startFolge: Item?
+
+    /// **Der Anfangsstand kommt aus dem Speicher, nicht aus dem Nichts.**
+    ///
+    /// Dieselbe Ueberlegung wie bei `Bildgrund` und `Kulisse`: ein
+    /// nachgereichter Wert kommt zu spaet, der leere Durchgang hat dann
+    /// schon stattgefunden — und genau der ist das „Laedt…". Siehe
+    /// `Serienspeicher`.
+    @MainActor init(model: AppModel, serie: Item,
+                    startStaffelID: String? = nil, startFolge: Item? = nil) {
+        self.model = model
+        self.serie = serie
+        self.startStaffelID = startStaffelID
+        self.startFolge = startFolge
+
+        let gemerkt = Serienspeicher.geteilt.stand(serie.id)
+        _staffeln = State(initialValue: gemerkt?.staffeln ?? [])
+        _weiterMit = State(initialValue: gemerkt?.weiterMit ?? startFolge)
+
+        // Die Staffel, die auch `laden()` waehlen wuerde — sonst stuende
+        // beim Wiederkommen die erste vorn statt der zuletzt gesehenen.
+        let gesucht = startStaffelID ?? gemerkt?.weiterMit?.seasonId ?? startFolge?.seasonId
+        let staffel = gemerkt?.staffeln.first { $0.id == gesucht }
+                   ?? gemerkt?.staffeln.first
+        _gewaehlteStaffel = State(initialValue: staffel)
+
+        let folgen = staffel.flatMap { gemerkt?.folgen[$0.id] } ?? []
+        _folgen = State(initialValue: folgen)
+        _laedtFolgen = State(initialValue: folgen.isEmpty)
+    }
+
+    /// **Was neu ist, blendet beim Erscheinen ein — nicht beim Laden.**
+    ///
+    /// Vorher hing die Ueberblendung an der Ankunft der Daten. Seit die
+    /// Zwischenspeicher greifen, kommen die aber schon im ersten Durchgang
+    /// mit, also gab es nichts mehr zu animieren: beim ersten Mal war es etwas
+    /// weich, ab dem zweiten hart. Das war ein Widerspruch in meinem eigenen
+    /// Aufbau — erst instant machen, dann Uebergaenge an Ereignisse haengen,
+    /// die es nicht mehr gibt.
+    ///
+    /// Am Erscheinen aufgehaengt, blendet es **jedes Mal** ein, ob die Daten
+    /// schon dastehen oder nicht.
+    @State private var eingeblendet = false
 
     @State private var frisch: Item?
     @State private var plan: PlaybackPlan?
-    @State private var staffeln: [Item] = []
+    @State private var staffeln: [Item]
     @State private var gewaehlteStaffel: Item?
-    @State private var folgen: [Item] = []
-    @State private var laedtFolgen = true
+    @State private var folgen: [Item]
+    @State private var laedtFolgen: Bool
     @State private var gemerkt = false
     @State private var gesehen = false
     @State private var meldung: String?
@@ -60,6 +157,7 @@ struct SerienView: View {
                 } inhalt: {
                     folgenstreifen
                 }
+                .opacity(eingeblendet ? 1 : 0)
 
                 if !darsteller.isEmpty {
                     reihenabschnitt {
@@ -67,6 +165,8 @@ struct SerienView: View {
                     } inhalt: {
                         Besetzungsstreifen(model: model, leute: darsteller)
                     }
+                    .opacity(eingeblendet ? 1 : 0)
+                    .transition(.opacity)
                 }
                 if !aehnliche.isEmpty {
                     reihenabschnitt {
@@ -74,22 +174,43 @@ struct SerienView: View {
                     } inhalt: {
                         Titelstreifen(model: model, items: aehnliche)
                     }
+                    .opacity(eingeblendet ? 1 : 0)
+                    .transition(.opacity)
                 }
             }
             .padding(.bottom, Stil.abschlussLuft)
         }
         .scrollIndicators(.hidden)
+        // Rand wie auf der Filmseite — siehe dort.
+        .ignoresSafeArea()
         // **Der Grund der ganzen Seite faerbt sich nach der Kulisse.**
+        //
+        // **Nach `ignoresSafeArea`, nicht davor.** Davor bekam er die um den
+        // sicheren Bereich verkleinerte Flaeche — 1760 x 960 statt 1920 x
+        // 1080. Das Netz rechnet in Bruchteilen seiner Flaeche, sass damit auf
+        // der Detailseite anders als auf der Startseite, und beim Oeffnen sah
+        // man den Unterschied als Schrumpfen.
+        //
+        // Die Startseite hatte es von Anfang an nach `ignoresSafeArea`; dass
+        // die beiden verschieden standen, war der Unterschied.
         //
         // An der Seite und nicht am Kopf: sonst endet die Faerbung an dessen
         // Unterkante, und quer ueber dem Schirm steht eine Naht. Siehe
         // `Bildgrund`.
         .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
                         ?? model.backdropURL(for: aktuell))
-        // Rand wie auf der Filmseite — siehe dort.
-        .ignoresSafeArea()
         // Die Staffelwahl liegt auf der **Seite**, nicht am Pillenknopf —
-        // siehe `Handlungstafel.unterDemReihenkopf`.
+        // siehe `Handlungstafel.unterDemReihenkopf`. **Solange eine Tafel
+        // offen ist, ist der Rest kein Fokusziel.**
+        //
+        // `focusSection` haelt den Fokus nicht fest, es ordnet ihn nur. Ein
+        // Druck nach links oder rechts sprang deshalb aus der offenen Tafel
+        // heraus in die Folgen dahinter — die Tafel blieb stehen und ging erst
+        // weg, wenn man die Seite verliess.
+        //
+        // Gesperrt wird **vor** den Auflagen: die Tafeln haengen danach und
+        // bleiben damit selbst bedienbar.
+        .disabled(mehrOffen || staffelwahlOffen)
         .overlay(alignment: .topLeading) {
             if staffelwahlOffen {
                 Handlungstafel(handlungen: staffelhandlungen, offen: $staffelwahlOffen)
@@ -135,7 +256,14 @@ struct SerienView: View {
         // in der Reihe **vorn steht**. Das ist der Scrollstand, nicht der
         // Fokus, und die beiden waren hier verwechselt.
         .defaultFocus($amHauptknopf, true, priority: .userInitiated)
-        .task { await laden() }
+        .task {
+            // Erst den Fokus setzen, dann aufblenden: ein Knopf mit
+            // Deckkraft 0 ist fuer tvOS kein Ziel, und der Startfokus ginge
+            // sonst verloren.
+            amHauptknopf = true
+            withAnimation(.easeOut(duration: 0.3)) { eingeblendet = true }
+            await laden()
+        }
         .task(id: gewaehlteStaffel?.id) { await folgenLaden() }
     }
 
@@ -156,6 +284,24 @@ struct SerienView: View {
     /// dieselbe Regel wie ueberall hier: Fokus ist weiss.
     private var kopf: some View {
         Detailkopf(model: model, item: aktuell, plan: plan) {
+            // **Instant gilt nur fuer das, was schon da war.**
+            //
+            // Das ist die klarere Regel. Titel, Angaben, Beschreibung, Bild
+            // und Grund standen auf der Startseite schon: die stehen sofort
+            // und ruehren sich nicht. Die Knopfreihe gab es dort nicht — sie
+            // darf kommen, wenn sie etwas zu sagen hat.
+            //
+            // **Der Hauptknopf ist davon ausgenommen, und zwar zweimal
+            // begruendet.** Eingeblendet sah er falsch aus: die Animation hing
+            // am Wert, also wuchs die Pille sichtbar von „Laedt…" auf
+            // „Fortsetzen S1 • E3" — ein Schieben nach rechts, keine Blende.
+            // Und mit Deckkraft 0 ist er fuer tvOS kein Fokusziel mehr, also
+            // ging der Startfokus verloren.
+            //
+            // Er muss deshalb von Anfang an richtig dastehen. Auf dem
+            // ueblichen Weg geht das auch: wer ueber eine Folge hereinkommt,
+            // bringt genau die Folge mit, bei der es weitergeht — siehe
+            // `startFolge`.
             HStack(spacing: 24) {
                 Button { starte(weiterMit) } label: {
                     Label(hauptknopftext, systemImage: "play.fill")
@@ -181,6 +327,7 @@ struct SerienView: View {
 
                 Mehrknopf(offen: $mehrOffen)
             }
+            .opacity(eingeblendet ? 1 : 0)
         }
     }
 
@@ -212,9 +359,15 @@ struct SerienView: View {
     @ViewBuilder
     private var folgenstreifen: some View {
         if laedtFolgen {
-            // Der Lader steht so hoch wie der Streifen, den er ersetzt —
-            // sonst springt die halbe Seite, sobald die Folgen ankommen.
-            Lader.fern
+            // **Leer, nicht drehend.** Ein Ring sagt „warte", und genau das
+            // soll die Seite nicht sagen: sie war schon da, es fehlt nur
+            // noch eine Reihe. Die kommt, wenn sie da ist — der Platz steht
+            // solange frei, damit nichts springt.
+            //
+            // Vorher stand hier `Lader.fern`, und mit der Ueberblendung des
+            // Seitenwechsels hat man ihn nie gesehen. Ohne sie war er das
+            // Auffaelligste auf dem Schirm.
+            Color.clear
                 .frame(maxWidth: .infinity)
                 .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
         } else if folgen.isEmpty {
@@ -232,6 +385,10 @@ struct SerienView: View {
             // die Folge einer anderen Staffel vorn — beziehungsweise deren
             // Platz, denn die Kachel gibt es dort nicht mehr.
             .id(gewaehlteStaffel?.id)
+            // Nur die Reihe blendet ein, und nur sie: am ganzen Stapel
+            // animierte es auch die Breite der Pillen daneben.
+            .transition(.opacity)
+            .animation(.easeOut(duration: 0.28), value: folgen.isEmpty)
         }
     }
 
@@ -269,6 +426,11 @@ struct SerienView: View {
         frisch = await frischeSerie
         staffeln = await liste
         weiterMit = await stand
+        Serienspeicher.geteilt.merken(serie.id) {
+            $0.serie = frisch ?? serie
+            $0.staffeln = staffeln
+            $0.weiterMit = weiterMit
+        }
         gemerkt = aktuell.userData?.isFavorite ?? false
         gesehen = aktuell.userData?.played ?? false
 
@@ -281,14 +443,23 @@ struct SerienView: View {
         if let ziel = weiterMit {
             plan = await model.plan(for: ziel.id)
         }
-        aehnliche = await model.aehnliche(serie)
+        let neueAehnliche = await model.aehnliche(serie)
+        withAnimation(.easeOut(duration: 0.3)) { aehnliche = neueAehnliche }
     }
 
     private func folgenLaden() async {
         guard let staffel = gewaehlteStaffel else { return }
-        laedtFolgen = true
-        folgen = await model.folgen(serie: serie.id, staffel: staffel.id)
-        laedtFolgen = false
+        // Nur anzeigen, dass geladen wird, wenn nichts dasteht. Beim
+        // Staffelwechsel gehoert der Ring hin, beim Wiederkommen nicht.
+        if folgen.isEmpty { laedtFolgen = true }
+        let geholt = await model.folgen(serie: serie.id, staffel: staffel.id)
+        // Siehe DetailView: die Ueberblendung braucht eine animierte
+        // Transaktion, sonst ist die Reihe schlicht da.
+        withAnimation(.easeOut(duration: 0.3)) {
+            folgen = geholt
+            laedtFolgen = false
+        }
+        Serienspeicher.geteilt.merken(serie.id) { $0.folgen[staffel.id] = geholt }
     }
 
     private var mehrHandlungen: [Titelhandlung] {

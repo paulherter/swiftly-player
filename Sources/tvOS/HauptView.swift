@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import UIKit
 
 /// Der Rahmen um alles: vier Bereiche und die Leiste **oben**.
 ///
@@ -58,6 +59,16 @@ struct HauptView: View {
     }
 
     private var anDerWurzel: Bool { pfade[bereich.rawValue].isEmpty && abspielen == nil }
+
+    /// **Ob die Kopfleiste steht — als eigener Zustand, nicht abgeleitet.**
+    ///
+    /// Abgeleitet koennte sie nicht ausblenden: der Pfad wird ohne Animation
+    /// gesetzt (siehe die Bindung in `stapel`), und was daran haengt, springt
+    /// mit.
+    ///
+    /// Als eigener Zustand, in einem `onChange` gesetzt, laeuft der Wechsel in
+    /// einer **neuen** Transaktion — und die darf animieren.
+    @State private var leisteDa = true
 
     // Die Leiste scrollt bewusst **nicht** mit weg.
     //
@@ -162,11 +173,11 @@ struct HauptView: View {
             //
             // Auf den uebrigen Bereichen bleibt er — dort scrollen Kacheln
             // unter die Leiste, und ohne ihn stossen sie hell dagegen.
-            if anDerWurzel, bereich != .start {
-                Kopfverlauf().zIndex(1)
+            if (leisteDa || anDerWurzel), bereich != .start {
+                Kopfverlauf().zIndex(1).opacity(leisteDa ? 1 : 0)
             }
 
-            if anDerWurzel {
+            if leisteDa || anDerWurzel {
                 Kopfleiste(bereich: $bereich, model: model) {
                     pfade[bereich.rawValue].append(ProfilRoute())
                 }
@@ -178,7 +189,16 @@ struct HauptView: View {
                 // Die Leiste liegt zwar auch ohne das oben — aber verlassen
                 // will ich mich darauf nicht.
                 .zIndex(2)
+                .opacity(leisteDa ? 1 : 0)
+                // Ausgeblendet ist sie kein Ziel mehr: der Fokus soll nicht
+                // in etwas springen, das gerade verschwindet.
+                .disabled(!leisteDa)
             }
+        }
+        // Der Wechsel laeuft hier, in einer eigenen Transaktion — der Pfad
+        // selbst wird bewusst ohne Animation gesetzt, siehe `stapel`.
+        .onChange(of: anDerWurzel, initial: true) { _, jetzt in
+            withAnimation(.easeInOut(duration: 0.26)) { leisteDa = jetzt }
         }
         // Serverfehler sichtbar machen. `AppModel` sammelt sie in
         // `errorMessage`; auf tvOS hat sie bisher niemand gelesen.
@@ -243,7 +263,45 @@ struct HauptView: View {
 
     @ViewBuilder
     private func stapel(_ b: Bereich) -> some View {
-        NavigationStack(path: $pfade[b.rawValue]) {
+        // **Kein Ueberblenden beim Seitenwechsel — an der Bindung.**
+        //
+        // Es ist keine einzelne Ebene mehr — Kopfblock, Kulissenblende,
+        // gefaerbter Grund und Kopfschatten sind inzwischen wirklich
+        // dieselben. Es ist SwiftUIs eigener Uebergang: er blendet die neue
+        // Seite ueber die alte, **und beide aendern dabei ihre Deckkraft**. In
+        // der Mitte liegt keine von beiden voll auf, also sackt die Helligkeit
+        // ab. Das sieht man auch bei deckungsgleichen Inhalten: es blendet
+        // nicht zwischen zwei Bildern, es blendet beide gegen den Grund.
+        //
+        // **Am Aufrufort war es zu weit aussen.** Ein `transaction` auf der
+        // Ansicht, die den Stapel enthaelt, erreicht die Animation nicht, die
+        // der Stapel intern fuer seinen Wechsel fuehrt. Die Bindung ist die
+        // engste Stelle, durch die jeder Wechsel muss — die Kacheln mit ihren
+        // `NavigationLink`, die Menue-Taste zurueck, die Tiefenverweise. Wer
+        // sie setzt, setzt sie ohne Animation.
+        let pfad = Binding<NavigationPath>(
+            get: { pfade[b.rawValue] },
+            set: { neu in
+                // **Und zusaetzlich auf UIKit-Ebene.**
+                //
+                // Die SwiftUI-Transaktion allein reicht nicht: der
+                // `NavigationStack` fuehrt seinen Wechsel auf tvOS ueber einen
+                // UIKit-Navigationscontroller, und der sieht sie nicht. Man
+                // erkennt es am Text — weisse Schrift wird waehrend des
+                // Wechsels kurz **grau**, und das ist nichts anderes als halbe
+                // Deckkraft ueber dunklem Grund. Genau das hat
+                //
+                // Fuer einen Durchlauf abgeschaltet und im naechsten wieder
+                // an: laenger waere gefaehrlich, denn daran haengen auch die
+                // Fokusbewegungen.
+                UIView.setAnimationsEnabled(false)
+                var ohne = Transaction()
+                ohne.disablesAnimations = true
+                withTransaction(ohne) { pfade[b.rawValue] = neu }
+                DispatchQueue.main.async { UIView.setAnimationsEnabled(true) }
+            }
+        )
+        return NavigationStack(path: pfad) {
             Group {
                 switch b {
                 case .start:
@@ -309,13 +367,63 @@ struct StaffelZiel: View {
 
     @State private var serie: Item?
 
+    /// **Die Serie steht sofort, wenn sie schon einmal geholt wurde.**
+    ///
+    /// Sonst zeigte diese Ansicht bei jedem Oeffnen einer Folge zuerst einen
+    /// Ring auf schwarzem Grund und tauschte ihn danach gegen die Serienseite.
+    /// Solange der Seitenwechsel ueberblendete, lag das darunter — ohne ihn
+    /// ist es das Erste, was man sieht.
+    @MainActor init(model: AppModel, folge: Item) {
+        self.model = model
+        self.folge = folge
+        _serie = State(initialValue:
+            folge.seriesId.flatMap { Serienspeicher.geteilt.stand($0)?.serie }
+            ?? StaffelZiel.vorlaeufig(zu: folge))
+    }
+
+    /// **Eine vorlaeufige Serie aus dem, was die Folge ohnehin traegt.**
+    ///
+    /// Gebraucht wird davon beim Aufmachen fast nichts: `id` fuer alle
+    /// weiteren Abrufe, `name` fuer die Ueberschrift, `type` fuer die Weichen.
+    /// Das Kulissenbild ist ohnehin dasselbe — `querbildURL` baut es aus
+    /// `seriesId ?? id`, fuer Folge und Serie also aus derselben Kennung, und
+    /// es liegt schon entschluesselt bereit.
+    ///
+    /// Alles Weitere — Beschreibung, Bewertung, Staffelzahl — holt
+    /// `SerienView.laden()` sich selbst nach und schreibt es ueber diesen
+    /// Stand (`frisch ?? serie`). Der Umweg wartet also nur noch auf nichts.
+    ///
+    /// **Ueber JSON und nicht ueber einen Erzeuger**, weil `Item` keinen
+    /// oeffentlichen hat: alle Felder sind `let`, den Erzeuger stellt
+    /// `Codable`. Einen `Item(id:name:type:)` zu ergaenzen waere sauberer und
+    /// gehoert ins Paket — und damit nach der Regel zuerst nach iOS. Gemeldet;
+    /// bis dahin steht es hier, wo es niemanden sonst betrifft.
+    @MainActor
+    private static func vorlaeufig(zu folge: Item) -> Item? {
+        guard let id = folge.seriesId, let name = folge.seriesName else { return nil }
+        let felder: [String: String] = ["Id": id, "Name": name, "Type": "Series"]
+        guard let daten = try? JSONSerialization.data(withJSONObject: felder) else { return nil }
+        return try? JSONDecoder().decode(Item.self, from: daten)
+    }
+
     var body: some View {
         ZStack {
-            Stil.grund.ignoresSafeArea()
             if let serie {
-                SerienView(model: model, serie: serie, startStaffelID: folge.seasonId)
+                // Die Folge, ueber die man hereinkam, ist zugleich die
+                // Stelle, an der es weitergeht — siehe `SerienView.startFolge`.
+                SerienView(model: model, serie: serie,
+                           startStaffelID: folge.seasonId, startFolge: folge)
             } else {
+                // **Kein undurchsichtiges Schwarz.** Beim ersten Mal ist die
+                // Wartezeit echt — die Serie muss geholt werden —, aber sie
+                // gehoert nicht schwarz unterlegt. Der gefaerbte Grund der
+                // Folge steht schon bereit, also steht er auch hier, und der
+                // Uebergang auf die Serienseite ist damit nur noch der
+                // Inhalt, nicht der ganze Schirm.
                 Lader.fern
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .bildgrund(url: model.querbildURL(for: folge, breite: 1600)
+                                    ?? model.backdropURL(for: folge))
             }
         }
         .task {
