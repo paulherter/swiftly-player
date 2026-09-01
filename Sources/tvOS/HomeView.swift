@@ -320,10 +320,12 @@ struct HomeView: View {
             // davor haette ihn genau in der Kopfzone verdeckt.
             querbild
                 .frame(maxWidth: .infinity, alignment: .trailing)
-            // Der Kopfverlauf gehoert **unter** die Schrift. Liegt er
-            // darueber, faerbt er den Titel grau — der Entwurf setzt den
-            // Textblock ausdruecklich mit `z-index: 1` darueber.
-            Kopfverlauf(ausklang: 460, weich: true)
+            // **Kein Kopfverlauf mehr.** Er dunkelte die obere Zone ab, damit
+            // die Wortmarke auf hellen Motiven lesbar bleibt — und war damit
+            // das Letzte, was diese Seite anders aussehen liess als eine
+            // Detailseite. Die Blende der Kulisse laesst oben links ohnehin
+            // nichts Helles mehr stehen; die Wortmarke steht dort auf dem
+            // gefaerbten Grund.
             auskunft
                 .padding(.leading, Stil.randSeite)
                 .padding(.top, 196)

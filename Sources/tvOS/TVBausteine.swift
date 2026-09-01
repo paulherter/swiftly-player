@@ -738,33 +738,38 @@ struct Kulissenblende: ViewModifier {
     func body(content: Content) -> some View {
         content
             .mask {
-                // **Ein runder Abfall, waagerecht gedehnt.**
+                // **Die Mitte sitzt in der oberen rechten Ecke, nicht im
+                // Bild.**
                 //
-                // Der Kreis sitzt rechts oben im Bild, wo es voll stehen
-                // soll, und faellt nach allen Seiten gleichmaessig ab. Ein
-                // Kreis hat keine Richtung, in der er wirkt — also auch keine
-                // Gerade, die als Kante sichtbar wuerde.
+                // Ein Kreis mitten im Bild faellt nach **allen** Seiten ab —
+                // auch nach rechts und oben, wo nichts abfallen soll. Genau
+                // das sah
                 //
-                // Waagerecht muss er weiter reichen als senkrecht: nach links
-                // liegt der Text, nach unten nur die Reihe. Statt einer
-                // Ellipse mit ungewissen Bezugsmassen ein Kreis in Punkten,
-                // um 2,2 in die Breite gezogen — an der rechten Kante
-                // verankert, damit das Bild dort stehen bleibt.
+                // In die Ecke gelegt, hat jeder Schritt nach rechts oder oben
+                // einen **kleineren** Abstand zur Mitte, wird also deckender
+                // statt blasser. Dort kann nichts ausblenden. Nach links und
+                // unten waechst der Abstand, und die Linien gleicher Deckkraft
+                // sind Kreisboegen um die Ecke — rund, nicht eckig. Das ist
+                // der Unterschied zu zwei Masken, deren Produkt eine Ecke
+                // zeichnet.
                 //
-                // Gerechnet, in Bildkoordinaten (1180 x 700):
+                // Waagerecht muss er weiter reichen als senkrecht: links liegt
+                // der Text, unten nur die Reihe. Deshalb um 1,8 gedehnt, an
+                // der Ecke verankert, damit sie liegen bleibt.
                 //
-                //     Mitte      (944 | 224)
-                //     senkrecht  224 + 300 = 524   → aus, lange vor 588
-                //     waagerecht 944 − 300 × 2,2 = 284
+                // Gerechnet in Bildkoordinaten (1180 x 700), Abstand von der
+                // Ecke (1180 | 0), waagerecht durch 1,8 geteilt:
                 //
-                // Die 588 sind die Stelle, an der die Kopfzone endet (606
-                // minus der Versatz des Bildes). Dass der Abfall lange davor
-                // fertig ist, ist Absicht: wo etwas beschneidet, soll ohnehin
-                // nichts mehr zu sehen sein.
+                // Textende  (420 | 300)  →  √(422² + 300²) = 518   aus
+                // Unterkante(1180 | 588) →  √(  0² + 588²) = 588   aus
+                // Bildmitte (600 | 300)  →  √(322² + 300²) = 440   halb
+                //
+                // Mit Ende bei 520 ist der Text frei und die Unterkante
+                // laengst aus, bevor die Kopfzone bei 588 endet.
                 RadialGradient(gradient: Bildton.rundeBlende(),
-                               center: UnitPoint(x: 0.80, y: 0.32),
-                               startRadius: 40, endRadius: 300)
-                    .scaleEffect(x: 2.2, y: 1, anchor: .trailing)
+                               center: UnitPoint(x: 1, y: 0),
+                               startRadius: 200, endRadius: 520)
+                    .scaleEffect(x: 1.8, y: 1, anchor: .topTrailing)
             }
     }
 }

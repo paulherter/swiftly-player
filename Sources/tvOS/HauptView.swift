@@ -138,24 +138,30 @@ struct HauptView: View {
             .animation(Stil.seitenwechsel, value: bereich)
 
             // Zwischen Inhalt und Kopfleiste: der Verlauf soll den Inhalt
-            // abdunkeln, aber nicht die Leiste selbst.
-            // **Auf der Startseite braucht es ihn nicht mehr.**
+            // abdunkeln, aber nicht die Leiste selbst. **Auf der Startseite
+            // braucht es ihn nicht mehr.**
             //
             // Er stammt aus der Zeit, als die Reihen bis unter die Leiste
-            // liefen. Heute beginnen sie erst bei 560 und werden beschnitten
-            // — es kommt nichts mehr hinauf, was abgedunkelt werden muesste.
+            // liefen. Heute beginnen sie erst bei 560 und werden beschnitten —
+            // es kommt nichts mehr hinauf, was abgedunkelt werden muesste.
             // Uebrig blieb nur sein eigener Abfall, und der faellt auf einem
             // hellen Querbild als Kante auf.
             //
             // Auf den anderen Seiten scrollen die Kacheln weiter unter die
-            // Leiste, dort bleibt er.
-            // **Nicht auf der Startseite.**
+            // Leiste, dort bleibt er. **Nicht auf der Startseite, und dort
+            // inzwischen gar nicht.**
             //
-            // Dort gehoert er unter die Schrift, nicht darueber: der Entwurf
-            // setzt den Textblock ausdruecklich mit `z-index: 1` ueber den
-            // Verlauf. Von hier aus liegt er zwangslaeufig obenauf und hat
-            // den Titel grau eingefaerbt. Die Startseite bringt ihren
-            // eigenen mit, siehe `HomeView.deckel`.
+            // Von hier aus laege er zwangslaeufig obenauf und faerbte den
+            // Titel grau — deshalb war er hier schon immer ausgenommen. Die
+            // Startseite hatte dafuer einen eigenen, weicheren unter ihrer
+            // Schrift.
+            //
+            // Auch der ist weg: sie zeigt jetzt denselben gefaerbten Grund wie
+            // eine Detailseite, und der Verlauf war das Letzte, was sie anders
+            // aussehen liess.
+            //
+            // Auf den uebrigen Bereichen bleibt er — dort scrollen Kacheln
+            // unter die Leiste, und ohne ihn stossen sie hell dagegen.
             if anDerWurzel, bereich != .start {
                 Kopfverlauf().zIndex(1)
             }
