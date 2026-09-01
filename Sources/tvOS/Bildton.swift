@@ -244,7 +244,25 @@ extension Bildton {
     /// auch keine Gerade, die er nachzeichnen koennte.
     ///
     /// Dieselbe Kurve wie ueberall, damit weder Anfang noch Ende einen Knick
-    /// hat, an dem ein Band entstehen koennte.
+    /// hat, an dem ein Band entstehen koennte. Eine Rampe von durchsichtig auf
+    /// voll, abgetastet statt gestuft.
+    ///
+    /// `von` und `bis` in Bruchteilen der Flaeche; davor sauber nichts, danach
+    /// sauber voll. Die Kurve laeuft an beiden Enden waagerecht aus, hat also
+    /// nirgends einen Knick, an dem ein Band entstehen koennte.
+    static func rampe(von: Double, bis: Double, umgekehrt: Bool = false) -> Gradient {
+        let stufen = 14
+        var stops: [Gradient.Stop] = [.init(color: umgekehrt ? .white : .clear, location: 0)]
+        for i in 0 ... stufen {
+            let t = Double(i) / Double(stufen)
+            let weich = t * t * (3 - 2 * t)
+            stops.append(.init(color: .white.opacity(umgekehrt ? 1 - weich : weich),
+                               location: von + (bis - von) * t))
+        }
+        stops.append(.init(color: umgekehrt ? .clear : .white, location: 1))
+        return Gradient(stops: stops)
+    }
+
     static func rundeBlende() -> Gradient {
         let stufen = 14
         var stops: [Gradient.Stop] = [.init(color: .white, location: 0)]

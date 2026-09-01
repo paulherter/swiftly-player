@@ -320,12 +320,12 @@ struct HomeView: View {
             // davor haette ihn genau in der Kopfzone verdeckt.
             querbild
                 .frame(maxWidth: .infinity, alignment: .trailing)
-            // **Kein Kopfverlauf mehr.** Er dunkelte die obere Zone ab, damit
-            // die Wortmarke auf hellen Motiven lesbar bleibt — und war damit
-            // das Letzte, was diese Seite anders aussehen liess als eine
-            // Detailseite. Die Blende der Kulisse laesst oben links ohnehin
-            // nichts Helles mehr stehen; die Wortmarke steht dort auf dem
-            // gefaerbten Grund.
+            // Nur noch ein leiser Schatten unter der Leiste, kein langer
+            // Kopfverlauf mehr: die Leiste soll lesbar bleiben, ohne dass
+            // die Seite dadurch anders aussieht als eine Detailseite. Er
+            // liegt **unter** der Schrift — darueber faerbte er den Titel
+            // grau, das war der alte Fehler an dieser Stelle.
+            Kopfschatten()
             auskunft
                 .padding(.leading, Stil.randSeite)
                 .padding(.top, 196)

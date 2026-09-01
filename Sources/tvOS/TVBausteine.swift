@@ -737,45 +737,84 @@ struct Kulisse: View {
 struct Kulissenblende: ViewModifier {
     func body(content: Content) -> some View {
         content
+            // **Die urspruengliche Kurve, nur als Maske statt als Anstrich.**
+            //
+            // Uebersetzt: die alte Fassung malte `Stil.grund` mit der
+            // Deckkraft `o` **ueber** das Bild. Sichtbar blieb also `1 − o`.
+            // Genau diese Werte stehen jetzt als Maske da:
+            //
+            // waagerecht   o 1,00 / 0,78 / 0,16 / 0     bei 0 / 0,26 / 0,62 /
+            // 1 sichtbar       0    / 0,22 / 0,84 / 1
+            //
+            // senkrecht    die unteren 320 von 700, also ab 0,543 o 0 / 0,75 /
+            // 1,00  →  sichtbar 1 / 0,25 / 0
+            //
+            // **Der einzige Unterschied ist, worin es ausblendet.** Anstrich
+            // endet in undurchsichtigem #0B0B0D und setzt damit voraus, dass
+            // der Hintergrund genau das ist — sobald er sich faerbt, steht die
+            // uebermalte Flaeche als Fleck darin. Das war die harte senkrechte
+            // Naht. Eine Maske endet in Transparenz, und was dahinterliegt
+            // kommt durch, welche Farbe es auch hat.
+            //
+            // Alles, was ich dazwischen versucht habe — laengere Rampen, ein
+            // Kreis in der Ecke, das Minimum zweier Rampen — hat die Kurve
+            // veraendert, statt nur ihre Technik. Deshalb war jede Fassung
+            // schlechter als diese.
             .mask {
-                // **Die Mitte sitzt in der oberen rechten Ecke, nicht im
-                // Bild.**
-                //
-                // Ein Kreis mitten im Bild faellt nach **allen** Seiten ab —
-                // auch nach rechts und oben, wo nichts abfallen soll. Genau
-                // das sah
-                //
-                // In die Ecke gelegt, hat jeder Schritt nach rechts oder oben
-                // einen **kleineren** Abstand zur Mitte, wird also deckender
-                // statt blasser. Dort kann nichts ausblenden. Nach links und
-                // unten waechst der Abstand, und die Linien gleicher Deckkraft
-                // sind Kreisboegen um die Ecke — rund, nicht eckig. Das ist
-                // der Unterschied zu zwei Masken, deren Produkt eine Ecke
-                // zeichnet.
-                //
-                // Waagerecht muss er weiter reichen als senkrecht: links liegt
-                // der Text, unten nur die Reihe. Deshalb um 1,8 gedehnt, an
-                // der Ecke verankert, damit sie liegen bleibt.
-                //
-                // Gerechnet in Bildkoordinaten (1180 x 700), Abstand von der
-                // Ecke (1180 | 0), waagerecht durch 1,8 geteilt:
-                //
-                // Textende  (420 | 300)  →  √(422² + 300²) = 518   aus
-                // Unterkante(1180 | 588) →  √(  0² + 588²) = 588   aus
-                // Bildmitte (600 | 300)  →  √(322² + 300²) = 440   halb
-                //
-                // Mit Ende bei 520 ist der Text frei und die Unterkante
-                // laengst aus, bevor die Kopfzone bei 588 endet.
-                RadialGradient(gradient: Bildton.rundeBlende(),
-                               center: UnitPoint(x: 1, y: 0),
-                               startRadius: 200, endRadius: 520)
-                    .scaleEffect(x: 1.8, y: 1, anchor: .topTrailing)
+                LinearGradient(stops: [
+                    .init(color: .white.opacity(0.00), location: 0),
+                    .init(color: .white.opacity(0.22), location: 0.26),
+                    .init(color: .white.opacity(0.84), location: 0.62),
+                    .init(color: .white.opacity(1.00), location: 1),
+                ], startPoint: .leading, endPoint: .trailing)
+            }
+            .mask {
+                LinearGradient(stops: [
+                    .init(color: .white.opacity(1.00), location: 0),
+                    .init(color: .white.opacity(1.00), location: 0.543),
+                    .init(color: .white.opacity(0.25), location: 0.794),
+                    .init(color: .white.opacity(0.00), location: 1),
+                ], startPoint: .top, endPoint: .bottom)
             }
     }
 }
 
 extension View {
     func kulissenblende() -> some View { modifier(Kulissenblende()) }
+}
+
+/// **Ein leiser Schatten unter der Kopfleiste.**
+///
+/// Seit die Startseite denselben gefaerbten Grund traegt wie eine Detailseite,
+/// ist ihr alter Kopfverlauf weg — und damit stand die Leiste auf hellen
+/// Motiven im Bild.
+///
+/// **Deutlich weniger als der alte Verlauf.** Der begann bei 72 Prozent und
+/// lief ueber 588 Punkte aus; er hat die halbe Kopfzone eingegraut und war
+/// genau das, was die Seite anders aussehen liess. Dieser hier deckt die
+/// Leiste und ist 90 Punkte darunter zu Ende — gerade so weit, dass er den
+/// Titel bei 196 nicht mehr beruehrt.
+///
+/// Abgetastet wie jeder Verlauf hier, damit er weder oben noch unten einen
+/// Knick hat, an dem ein Band entstehen koennte.
+struct Kopfschatten: View {
+    var body: some View {
+        LinearGradient(gradient: verlauf, startPoint: .top, endPoint: .bottom)
+            .frame(height: Stil.leisteUnten + 90)
+            .allowsHitTesting(false)
+    }
+
+    private var verlauf: Gradient {
+        let stufen = 12
+        var stops: [Gradient.Stop] = []
+        for i in 0 ... stufen {
+            let t = Double(i) / Double(stufen)
+            let weich = t * t * (3 - 2 * t)
+            stops.append(.init(color: Stil.grund.opacity(0.52 * (1 - weich)),
+                               location: t))
+        }
+        return Gradient(stops: stops)
+    }
 }
 
 // MARK: - Staffelwahl
