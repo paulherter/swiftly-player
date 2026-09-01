@@ -40,6 +40,10 @@ struct Detailkopf<Knoepfe: View>: View {
     var fokussierbar = true
     @ViewBuilder var knoepfe: () -> Knoepfe
 
+    /// Der aus der Kulisse abgeleitete Farbton. `nil`, solange das Bild
+    /// unterwegs ist — und dann steht schlicht der Grund da.
+    @State private var ton: Double?
+
     @ViewBuilder
     var body: some View {
         if fokussierbar { rumpf.focusSection() } else { rumpf }
@@ -48,6 +52,24 @@ struct Detailkopf<Knoepfe: View>: View {
     private var rumpf: some View {
         ZStack(alignment: .topLeading) {
             Stil.grund
+
+            // **Der Grund nimmt die Farbe der Kulisse an.**
+            //
+            // Nur den Farbton, Saettigung und Helligkeit stehen fest — siehe
+            // `Bildton`. Der Verlauf sitzt dort, wo auch das Bild sitzt, und
+            // laeuft nach links unten aus.
+            //
+            // Er blendet auf, statt zu springen: vor dem Bild kann es keinen
+            // Ton geben, und ein Hintergrund, der ploetzlich die Farbe
+            // wechselt, ist unruhiger als einer, der es langsam tut.
+            if let ton {
+                RadialGradient(colors: [Bildton.farbe(ton).opacity(0.30),
+                                        Stil.grund.opacity(0)],
+                               center: UnitPoint(x: 0.76, y: 0.12),
+                               startRadius: 0, endRadius: 1180)
+                    .transition(.opacity)
+            }
+
             Kulisse(url: model.querbildURL(for: item, breite: 1600)
                          ?? model.backdropURL(for: item))
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -67,6 +89,15 @@ struct Detailkopf<Knoepfe: View>: View {
         // darin, sonst waere der Abstand zur ersten Reihe um 56 kleiner als
         // in der Tafel.
         .frame(height: Stil.heldenHoeheDetail, alignment: .topLeading)
+        // 400 ms: darunter liest sich der Wechsel als Blitzen, darueber als
+        // Nachladen.
+        .animation(.easeInOut(duration: 0.4), value: ton)
+        .task(id: item.id) {
+            ton = nil
+            guard let bild = model.querbildURL(for: item, breite: 1600)
+                          ?? model.backdropURL(for: item) else { return }
+            ton = await Bildton.geteilt.ton(fuer: bild)
+        }
     }
 
     // **Der ganze Kopf ist ein Fokusabschnitt, nicht nur die Knopfreihe.**
