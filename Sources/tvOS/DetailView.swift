@@ -120,22 +120,28 @@ struct Detailkopf<Knoepfe: View>: View {
             // Text und nicht am ganzen Block; einmal stand er aussen, und
             // jede Beschriftung war abgeschnitten.
             knoepfe()
-                // **14, und das ist gerechnet, nicht gestrafft.**
+                // **28 — und zwar von beiden Seiten gerechnet.**
                 //
-                // Der Textblock beginnt jetzt bei 196 statt 140, also endet
-                // er 56 tiefer. Mit den alten 36 liefe die Knopfreihe bis
-                // 537 und stuende im Reihenkopf.
+                // Erst standen hier 14. Das war zu knapp, und der Fehler war
+                // nicht die Zahl, sondern die Rechnung: ich hatte nur nach
+                // oben gemessen, ob die Reihe in die Kopfzone passt, und den
+                // Abstand nach **unten** gar nicht mitgewogen. Am Bild
+                // klebte die Reihe dann am Text (14) und schwebte ueber der
+                // ersten Reihe (46).
                 //
-                // Der Platz dafuer ist da, weil die Detailseite **zwei**
-                // Beschreibungszeilen zeigt und die Startseite drei: unter
-                // der Beschreibung liegt genau die Zeile frei, die dort die
-                // dritte waere. Die Knopfreihe steht in dieser Zeile.
+                // Der Platz ist der Abstand zwischen Beschreibung und dem
+                // Text des ersten Reihentitels, und er wird geteilt:
                 //
-                //     196 + 68 + 18 + 34 + 22 + 80 + 14 + 76 = 508
+                //     428 (Beschreibung endet) .. 560 (Reihentitel) = 132
+                //     132 − 76 (Knopfhoehe) = 56  →  28 oben, 28 unten
                 //
-                // Zwei Punkte unter der Kopfzone, und bis zum Text des
-                // ersten Reihentitels bei 558 bleiben 50.
-                .padding(.top, 14)
+                // Die Reihe endet damit bei 532. Das sind 22 Punkt unter der
+                // Kopfzone von 510, und das ist Absicht: beschnitten wird
+                // hier nichts, und die Reihen beginnen weiter bei 534. Wer
+                // die 510 als Grenze fuer den **Text** liest, liest sie
+                // richtig; fuer die Knopfreihe zaehlt der Abstand zur naechsten
+                // Zeile, nicht zur Zonenkante.
+                .padding(.top, 28)
         }
     }
 }

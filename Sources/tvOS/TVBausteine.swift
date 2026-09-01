@@ -506,8 +506,8 @@ struct Handlungstafel: View {
     /// und über den sicheren Bereich hinaus zeichnet niemand mehr.
     ///
     /// Von der Bildkante gerechnet, aus dem Aufbau des Kopfes: 196 oben +
-    /// Titel 68 + 18 + Angaben 34 + 22 + Beschreibung 80 + 14 + Knopfhöhe 76
-    /// = 508, plus 16 Luft.
+    /// Titel 68 + 18 + Angaben 34 + 22 + Beschreibung 80 + 28 + Knopfhöhe 76
+    /// = 522, plus 16 Luft. Am Bild gemessen endet die Reihe bei 532.
     ///
     /// Vorher 486, gerechnet auf einen Textblock, der bei 140 ansetzte. Der
     /// beginnt jetzt bei 196 — dieselbe Zeile wie auf der Startseite —, und
@@ -516,7 +516,7 @@ struct Handlungstafel: View {
     /// Vorher waren es 210 **von unten**, gerechnet auf einen Kopf, der den
     /// ganzen Schirm füllte. Der ist 510 hoch — von unten gerechnet läge die
     /// Tafel jetzt mitten im Text.
-    static let unterDerKnopfreihe: CGFloat = 524
+    static let unterDerKnopfreihe: CGFloat = 548
 
     /// Und hier sitzt die Staffelwahl: unter dem Reihenkopf der ersten Reihe.
     ///
