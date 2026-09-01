@@ -33,37 +33,36 @@ final class Bildton {
 
     /// Einmal gerechnet, dann gemerkt. Ohne das rechnet jede Rueckkehr auf
     /// dieselbe Seite neu, und der Hintergrund blendet jedes Mal auf.
-    private var bekannt: [URL: Double?] = [:]
-    private var laufend: [URL: Task<Double?, Never>] = [:]
+    private var bekannt: [URL: [Double]] = [:]
+    private var laufend: [URL: Task<[Double], Never>] = [:]
 
     /// **Schon bekannt?** Ohne Warten, ohne `await`.
     ///
-    /// Damit die Detailseite den Ton **sofort** setzen kann, statt ihn
-    /// aufzublenden. Beim Wechsel von der Startseite ist er meist schon da:
-    /// dort wird er beim Bildwechsel mitgerechnet, und beide Seiten holen
+    /// Damit die Detailseite die Toene **sofort** setzen kann, statt sie
+    /// aufzublenden. Beim Wechsel von der Startseite sind sie meist schon da:
+    /// dort werden sie beim Bildwechsel mitgerechnet, und beide Seiten holen
     /// dasselbe Bild (`breite: 1600`).
     ///
-    /// Der aeussere Optional sagt „noch nie gerechnet", der innere „gerechnet
-    /// und nichts gefunden". Das ist nicht dasselbe: bei einem Graustufenbild
+    /// `nil` heisst "noch nie gerechnet", ein leeres Feld "gerechnet und
+    /// nichts gefunden". Das ist nicht dasselbe: bei einem Graustufenbild
     /// soll nicht bei jedem Oeffnen neu gesucht werden.
-    func gemerkt(fuer url: URL) -> Double?? { bekannt[url] }
+    func gemerkt(fuer url: URL) -> [Double]? { bekannt[url] }
 
     /// Rechnet im Hintergrund vor, ohne dass jemand auf das Ergebnis wartet.
     func vorrechnen(_ url: URL) {
         guard bekannt[url] == nil, laufend[url] == nil else { return }
-        Task { _ = await ton(fuer: url) }
+        Task { _ = await toene(fuer: url) }
     }
 
-    /// Farbton in Grad, oder `nil` wenn sich keiner ableiten laesst —
-    /// Graustufen, kein Bild, Serverfehler. `nil` ist kein Sonderfall,
-    /// sondern der Normalzustand vor dem Laden: dann bleibt der Grund stehen.
-    func ton(fuer url: URL) async -> Double? {
+    /// Bis zu drei Farbtoene in Grad, nach Gewicht — leer, wenn sich keiner
+    /// ableiten laesst.
+    func toene(fuer url: URL) async -> [Double] {
         if let fertig = bekannt[url] { return fertig }
         if let laeuft = laufend[url] { return await laeuft.value }
 
-        let aufgabe = Task<Double?, Never> {
-            guard let (daten, _) = try? await URLSession.shared.data(from: url) else { return nil }
-            return Self.tonAus(daten)
+        let aufgabe = Task<[Double], Never> {
+            guard let (daten, _) = try? await URLSession.shared.data(from: url) else { return [] }
+            return Self.toeneAus(daten)
         }
         laufend[url] = aufgabe
         let ergebnis = await aufgabe.value
@@ -72,22 +71,29 @@ final class Bildton {
         return ergebnis
     }
 
-    /// Auf 32 x 32 heruntergerechnet, dann Punkt fuer Punkt.
+    /// Auf 32 x 32 heruntergerechnet, dann Punkt fuer Punkt in ein Histogramm
+    /// der Farbtoene.
     ///
-    /// So klein, weil es um den Gesamteindruck geht und nicht um Einzelheiten
-    /// — und weil 1024 Punkte in Mikrosekunden durchlaufen sind, waehrend das
-    /// volle Bild mehrere Megabyte waere.
-    nonisolated static func tonAus(_ daten: Data) -> Double? {
+    /// **Ein Mittelwert reicht nicht.** Die erste Fassung mittelte alle Toene
+    /// zu einem einzigen — und ein Bild hat selten nur einen. Stimmt: ein
+    /// Sonnenuntergang ist orange **und** blau, und der Mittelwert davon ist
+    /// keins von beidem.
+    ///
+    /// Deshalb 36 Faecher zu je zehn Grad, gewichtet mit dem Quadrat der
+    /// Saettigung mal der Helligkeit. Danach werden die staerksten Gipfel
+    /// gezogen, und zwar mit Mindestabstand: zwei Faecher nebeneinander sind
+    /// derselbe Ton, kein zweiter.
+    nonisolated static func toeneAus(_ daten: Data) -> [Double] {
         guard let quelle = CGImageSourceCreateWithData(daten as CFData, nil),
               let bild = CGImageSourceCreateThumbnailAtIndex(quelle, 0, [
                   kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceThumbnailMaxPixelSize: 32,
+                  kCGImageSourceThumbnailMaxPixelSize: 48,
                   kCGImageSourceCreateThumbnailWithTransform: true,
               ] as CFDictionary)
-        else { return nil }
+        else { return [] }
 
         let breite = bild.width, hoehe = bild.height
-        guard breite > 0, hoehe > 0 else { return nil }
+        guard breite > 0, hoehe > 0 else { return [] }
 
         var punkte = [UInt8](repeating: 0, count: breite * hoehe * 4)
         guard let raum = CGColorSpace(name: CGColorSpace.sRGB),
@@ -95,10 +101,13 @@ final class Bildton {
                                       bitsPerComponent: 8, bytesPerRow: breite * 4,
                                       space: raum,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return nil }
+        else { return [] }
         flaeche.draw(bild, in: CGRect(x: 0, y: 0, width: breite, height: hoehe))
 
-        var x = 0.0, y = 0.0, gewichtSumme = 0.0
+        let faecher = 36
+        var korb = [Double](repeating: 0, count: faecher)
+        var gesamt = 0.0
+
         for i in stride(from: 0, to: punkte.count, by: 4) {
             let r = Double(punkte[i]) / 255
             let g = Double(punkte[i + 1]) / 255
@@ -106,7 +115,7 @@ final class Bildton {
 
             let hoch = max(r, g, b), tief = min(r, g, b)
             let spanne = hoch - tief
-            guard spanne > 0.04, hoch > 0.08 else { continue }   // Grau und Schwarz zaehlen nicht mit
+            guard spanne > 0.04, hoch > 0.08 else { continue }
 
             let saettigung = spanne / hoch
             var ton: Double
@@ -118,32 +127,44 @@ final class Bildton {
             ton *= 60
             if ton < 0 { ton += 360 }
 
-            // Quadrat der Saettigung mal Helligkeit: der kraeftigste Fleck
-            // fuehrt, ein fahler Hintergrund zieht ihn nicht weg.
             let gewicht = saettigung * saettigung * hoch
-            let bogen = ton * .pi / 180
-            x += cos(bogen) * gewicht
-            y += sin(bogen) * gewicht
-            gewichtSumme += gewicht
+            korb[min(faecher - 1, Int(ton / 10))] += gewicht
+            gesamt += gewicht
         }
 
-        // Zu wenig Farbe im Bild — ein Graustufenplakat hat keinen Ton, und
-        // einen zu erfinden waere schlimmer als keiner.
-        guard gewichtSumme > 0.5, x * x + y * y > 0.0001 else { return nil }
+        guard gesamt > 0.5 else { return [] }
 
-        var grad = atan2(y, x) * 180 / .pi
-        if grad < 0 { grad += 360 }
-        return grad
+        // Gipfel ziehen: staerkstes Fach, dann das staerkste mit mindestens
+        // drei Faechern (30 Grad) Abstand, und so weiter.
+        var gewaehlt: [Double] = []
+        var uebrig = korb
+        for _ in 0 ..< 3 {
+            guard let (fach, wert) = uebrig.enumerated().max(by: { $0.element < $1.element }),
+                  wert > gesamt * 0.08 else { break }
+
+            // Der genaue Ton kommt aus dem Fach und seinen Nachbarn, damit er
+            // nicht auf Zehnergrad einrastet.
+            var x = 0.0, y = 0.0
+            for versatz in -1 ... 1 {
+                let f = (fach + versatz + faecher) % faecher
+                let bogen = (Double(f) * 10 + 5) * .pi / 180
+                x += cos(bogen) * korb[f]
+                y += sin(bogen) * korb[f]
+            }
+            var grad = atan2(y, x) * 180 / .pi
+            if grad < 0 { grad += 360 }
+            gewaehlt.append(grad)
+
+            for versatz in -2 ... 2 { uebrig[(fach + versatz + faecher) % faecher] = 0 }
+        }
+        return gewaehlt
     }
+
 }
 
 extension Bildton {
     /// Aus dem Ton die fertige Farbe — **hier stehen Saettigung und
     /// Helligkeit**, und nur hier.
-    ///
-    /// 0,45 und 0,42 sind so gewaehlt, dass die Farbe auf `#0B0B0D` bei 30
-    /// Prozent Deckkraft sichtbar wird, ohne den Text zu bedraengen. Kraeftiger
-    /// wird sie zur Flaeche, blasser sieht man sie am Fernseher nicht mehr.
     static func farbe(_ grad: Double) -> Color {
         Color(hue: grad / 360, saturation: 0.45, brightness: 0.42)
     }
@@ -153,17 +174,34 @@ extension Bildton {
     /// Nicht Zierde, sondern gegen Streifenbildung. Lief der Verlauf auf
     /// reines `#0B0B0D` aus, ging er ueber tausend Punkte von getoent nach
     /// neutralschwarz — ein flacher Farbverlauf im dunkelsten Bereich, und
-    /// genau dort zeigt ein Fernseher Ringe: acht Bit reichen nicht, um so
-    /// wenig Unterschied auf so viel Flaeche zu verteilen.
-    ///
-    /// Nimmt der Grund den Ton schon mit an, ist die Strecke kurz: der
-    /// Verlauf muss nur noch von etwas Farbe auf etwas weniger Farbe kommen,
-    /// nicht auf gar keine.
-    ///
-    /// Dunkel bleibt es trotzdem — Helligkeit 0,085 liegt beim Grundton der
-    /// App, die Saettigung traegt den Unterschied.
+    /// genau dort zeigt ein Fernseher Ringe.
     static func grundfarbe(_ grad: Double) -> Color {
         Color(hue: grad / 360, saturation: 0.38, brightness: 0.085)
+    }
+
+    /// **Weiche Blendstufen statt weniger Stuetzstellen.**
+    ///
+    /// Ein Verlauf aus drei, vier Stopps hat an jedem davon einen Knick: die
+    /// Steigung springt, und das Auge liest den Sprung als Kante. Genau das
+    /// waren die "harten Kanten unten und links vom Bild" — sie standen dort,
+    /// wo die Blende aufhoerte und die Flaeche deckend wurde.
+    ///
+    /// `t * t * (3 - 2t)` laeuft an beiden Enden waagerecht aus, hat also
+    /// nirgends einen Knick. Mit zwoelf Stufen abgetastet ist davon nichts
+    /// mehr zu sehen.
+    static func blende(bis kante: Double, umgekehrt: Bool = false) -> Gradient {
+        let stufen = 12
+        var stops: [Gradient.Stop] = []
+        for i in 0 ... stufen {
+            let t = Double(i) / Double(stufen)
+            let weich = t * t * (3 - 2 * t)
+            let ort = umgekehrt ? 1 - kante + t * kante : t * kante
+            let deckung = umgekehrt ? 1 - weich : weich
+            stops.append(.init(color: .white.opacity(deckung), location: ort))
+        }
+        if !umgekehrt { stops.append(.init(color: .white, location: 1)) }
+        else { stops.insert(.init(color: .white, location: 0), at: 0) }
+        return Gradient(stops: stops)
     }
 }
 
@@ -175,42 +213,54 @@ extension Bildton {
 /// alles, was die Seite zeigt, die Reihen eingeschlossen.
 struct Bildgrund: ViewModifier {
     let url: URL?
-    @State private var ton: Double?
+    @State private var toene: [Double] = []
 
     func body(content: Content) -> some View {
         content
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
-                    (ton.map(Bildton.grundfarbe) ?? Stil.grund)
+                    (toene.first.map(Bildton.grundfarbe) ?? Stil.grund)
                         .ignoresSafeArea()
 
-                    // Darueber etwas mehr Farbe, dort wo das Bild sitzt.
-                    // 1400 hoch, damit der Verlauf **innerhalb** seiner
-                    // eigenen Flaeche auf null kommt — sonst steht am
-                    // unteren Rand die naechste Kante.
-                    if let ton {
-                        RadialGradient(colors: [Bildton.farbe(ton).opacity(0.30),
+                    // **Ein Ton je Gipfel, an verschiedenen Stellen.**
+                    //
+                    // Der staerkste sitzt oben rechts, wo das Bild steht; die
+                    // schwaecheren links darunter. So entsteht der Wechsel
+                    // zwischen zwei Farben ueber die Flaeche, statt einer
+                    // einzigen Wolke — das ist der Unterschied, den
+                    //
+                    // 1400 hoch, damit jeder Verlauf **innerhalb** seiner
+                    // eigenen Flaeche auf null kommt.
+                    ForEach(Array(toene.enumerated()), id: \.offset) { i, ton in
+                        RadialGradient(colors: [Bildton.farbe(ton).opacity(staerke(i)),
                                                 Bildton.farbe(ton).opacity(0)],
-                                       center: UnitPoint(x: 0.72, y: 0.03),
-                                       startRadius: 0, endRadius: 1180)
+                                       center: mitte(i),
+                                       startRadius: 0, endRadius: 1100)
                             .frame(height: 1400)
                     }
                 }
                 .allowsHitTesting(false)
             }
-            .animation(.easeInOut(duration: 0.4), value: ton)
+            .animation(.easeInOut(duration: 0.4), value: toene)
             .task(id: url) {
-                guard let url else { ton = nil; return }
-                // Was schon bekannt ist, wird nicht eingeblendet.
+                guard let url else { toene = []; return }
                 if let schonDa = Bildton.geteilt.gemerkt(fuer: url) {
                     var ohne = Transaction()
                     ohne.disablesAnimations = true
-                    withTransaction(ohne) { ton = schonDa }
+                    withTransaction(ohne) { toene = schonDa }
                     return
                 }
-                ton = nil
-                ton = await Bildton.geteilt.ton(fuer: url)
+                toene = []
+                toene = await Bildton.geteilt.toene(fuer: url)
             }
+    }
+
+    private func staerke(_ i: Int) -> Double { [0.30, 0.22, 0.16][min(i, 2)] }
+
+    private func mitte(_ i: Int) -> UnitPoint {
+        [UnitPoint(x: 0.72, y: 0.03),
+         UnitPoint(x: 0.18, y: 0.42),
+         UnitPoint(x: 0.92, y: 0.55)][min(i, 2)]
     }
 }
 

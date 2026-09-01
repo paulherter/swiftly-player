@@ -703,42 +703,32 @@ struct Kulisse: View {
         // gilt hier nicht: die Kulisse ist kein Bedienelement, sie traegt
         // `allowsHitTesting(false)` und hat nichts zu fokussieren.
         //
-        // **Nur die Raender federn aus. Die Flaeche bleibt deckend.**
+        // **Nur die Raender federn aus, und ohne Knick.**
         //
-        // Zweimal danebengegriffen, und beide Male auf dieselbe Weise: erst
-        // lief die Rampe ueber die ganze Breite, dann senkrecht ab der
-        // Mitte. In beiden Faellen war das Bild auf grossen Teilen seiner
-        // Flaeche halbdurchsichtig — und weil der gefaerbte Grund dahinter
-        // liegt, schimmerte er ueberall durch. Auf dem Schirm ist das nicht
-        // von Farbe **auf** dem Bild zu unterscheiden.
+        // Zwei Dinge mussten zusammenkommen. Erstens: die Blende gehoert an
+        // den Rand, nicht ueber die Flaeche — war das Bild grossflaechig
+        // halbdurchsichtig, schimmerte der gefaerbte Grund ueberall durch,
+        // und das sah aus wie Farbe **auf** dem Bild.
         //
-        // Der Unterschied ist nicht die Weichheit, sondern die Strecke: eine
-        // Blende gehoert an den Rand, nicht ueber die Flaeche. Innen ist das
-        // Bild unangetastet, aussen loest es sich auf.
+        // Zweitens, und das war die verbliebene Kante: ein Verlauf aus
+        // wenigen Stopps hat an jedem davon einen **Knick**. Die Steigung
+        // springt, das Auge liest den Sprung als Linie — genau dort, wo die
+        // Blende endete und die Flaeche deckend wurde. Deshalb `blende(bis:)`
+        // mit einer Kurve, die an beiden Enden waagerecht auslaeuft.
         //
-        // Waagerecht muss die Blende bis 45 Prozent reichen, und das ist
-        // gerechnet, nicht geschaetzt: das Bild beginnt bei x = 740, der
-        // Textblock endet bei 1160. Die 420 Punkt Ueberschneidung sind 36
-        // Prozent der Bildbreite — so weit muss es mindestens weg sein,
-        // damit der Text darauf lesbar bleibt. 45 gibt etwas Rand.
+        // Waagerecht bis 45 Prozent, gerechnet: das Bild beginnt bei x = 740,
+        // der Textblock endet bei 1160. Die 420 Punkt Ueberschneidung sind 36
+        // Prozent der Bildbreite — so weit muss es mindestens weg sein, damit
+        // der Text lesbar bleibt. 45 gibt Rand.
         .mask {
-            LinearGradient(stops: [
-                .init(color: .clear,               location: 0),
-                .init(color: .white.opacity(0.22), location: 0.22),
-                .init(color: .white.opacity(0.72), location: 0.36),
-                .init(color: .white,               location: 0.45),
-                .init(color: .white,               location: 1),
-            ], startPoint: .leading, endPoint: .trailing)
+            LinearGradient(gradient: Bildton.blende(bis: 0.45),
+                           startPoint: .leading, endPoint: .trailing)
         }
-        // Senkrecht federt nur das untere Viertel aus — dort geht das Bild
-        // in den Grund ueber. Darueber bleibt es voll.
+        // Senkrecht federt das untere Drittel aus, dort geht das Bild in den
+        // Grund ueber.
         .mask {
-            LinearGradient(stops: [
-                .init(color: .white,               location: 0),
-                .init(color: .white,               location: 0.74),
-                .init(color: .white.opacity(0.55), location: 0.89),
-                .init(color: .clear,               location: 1),
-            ], startPoint: .top, endPoint: .bottom)
+            LinearGradient(gradient: Bildton.blende(bis: 0.34, umgekehrt: true),
+                           startPoint: .top, endPoint: .bottom)
         }
         // Bis an die Bildkante, ohne den Text mitzunehmen: der Textblock
         // haelt den Rand, das Bild tritt fuer sich hinaus.
