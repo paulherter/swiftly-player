@@ -53,42 +53,36 @@ struct Detailkopf<Knoepfe: View>: View {
         ZStack(alignment: .topLeading) {
             Stil.grund
 
-            Kulisse(url: model.querbildURL(for: item, breite: 1600)
-                         ?? model.backdropURL(for: item))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-
-            // **Der Ton liegt UEBER der Kulisse, nicht darunter.**
+            // **Der Ton liegt hinter der Kulisse — das Bild bleibt vorn.**
             //
-            // Darunter gab es eine harte senkrechte Kante an der linken
-            // Bildkante, und der Grund dafuer steckt in der Kulisse selbst:
-            // sie blendet ihr Bild mit **undurchsichtigem** `#0B0B0D` aus.
-            // Diese Flaeche deckte den Ton ab — links davon der gefaerbte
-            // Grund, darin das alte Schwarz. Die Kante war genau die Naht
-            // zwischen beidem.
+            // Erst lag er darunter und die Kulisse uebermalte ihn mit
+            // deckendem #0B0B0D; das gab die harte senkrechte Kante. Dann lag
+            // er darueber und faerbte das Bild mit ein — die Kante war weg,
+            // aber
             //
-            // Darueber gelegt gibt es die Naht nicht mehr, und das Bild
-            // nimmt den Ton mit an. Das ist kein Nebenschaden, sondern der
-            // Grund, warum es funktioniert: der Ton **stammt** aus diesem
-            // Bild. Ein Bild mit seinem eigenen Farbton einzufaerben
-            // veraendert es kaum sichtbar — daneben faerbt derselbe Verlauf
-            // das Schwarz deutlich. Genau so macht Plex es.
+            // Beides geht erst, seit die Kulisse **maskiert statt uebermalt**
+            // (siehe dort). Sie laeuft jetzt in Transparenz aus, also scheint
+            // der Ton dort durch, wo das Bild verschwindet, und das Bild
+            // selbst bleibt unberuehrt. Der Verlauf ist der Hintergrund, nicht
+            // ein Schleier davor.
             //
-            // 1400 hoch und nicht 606: der Verlauf muss **innerhalb** seiner
-            // Flaeche auf null auslaufen, sonst steht am unteren Rand die
-            // naechste harte Kante. Von der Mitte bei y = 84 sind es 1180
-            // Punkt Reichweite, also endet er bei 1264 — die Flaeche muss
-            // darueber hinausreichen. Sie ueberragt die Kopfzone und liegt
-            // dabei unter den Reihen, die als spaeteres Geschwister
-            // darueberzeichnen.
+            // 1400 hoch: der Verlauf muss innerhalb seiner eigenen Flaeche auf
+            // null auslaufen, sonst steht am unteren Rand die naechste harte
+            // Kante. Von der Mitte bei y = 42 reicht er 1180 weit.
             if let ton {
-                RadialGradient(colors: [Bildton.farbe(ton).opacity(0.26),
+                RadialGradient(colors: [Bildton.farbe(ton).opacity(0.34),
                                         Bildton.farbe(ton).opacity(0)],
-                               center: UnitPoint(x: 0.76, y: 0.06),
+                               center: UnitPoint(x: 0.72, y: 0.03),
                                startRadius: 0, endRadius: 1180)
                     .frame(height: 1400)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
+
+            Kulisse(url: model.querbildURL(for: item, breite: 1600)
+                         ?? model.backdropURL(for: item))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+
             block
                 .padding(.leading, Stil.randSeite)
                 // 140 aus der Tafel, plus der Versatz, der die nicht

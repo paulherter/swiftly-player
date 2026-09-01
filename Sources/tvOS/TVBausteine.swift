@@ -665,6 +665,10 @@ struct Restzeitmarke: View {
 /// die Deckkraft der ganzen Ebene, den Fokusring eingeschlossen — das sieht
 /// wie ein Fehler aus, nicht wie ein Verlauf.
 ///
+/// **Fuer die Kulisse gilt das nicht mehr, und sie maskiert inzwischen.**
+/// Sie ist kein Bedienelement und hat keinen Ring; der Satz oben stammt von
+/// den Kacheln. Der Grund fuer den Wechsel steht unten am `mask`.
+///
 /// Nicht beschnitten: das Bild darf nach unten ueberragen, sein eigener
 /// Verlauf beendet es. Beschnitten entstand die harte Kante, die als heller
 /// Streifen quer ueber dem Schirm stand.
@@ -681,21 +685,44 @@ struct Kulisse: View {
         }
         .frame(width: 1180, height: 700)
         .clipped()
-        .overlay {
+        // **Das Bild wird maskiert, nicht uebermalt** — und darin steckt der
+        // ganze Unterschied.
+        //
+        // Vorher lagen zwei Verlaeufe aus `Stil.grund` **darueber**: links
+        // deckendes #0B0B0D, nach rechts durchsichtig werdend. Das versteckt
+        // das Bild zwar, setzt aber voraus, dass der Hintergrund genau
+        // #0B0B0D ist. Sobald er sich faerbt, steht die uebermalte Flaeche
+        // als Fleck darin — das war die harte senkrechte Kante.
+        //
+        // Als Maske faellt die **Deckkraft des Bildes selbst**. Es laeuft in
+        // Transparenz aus, und was dahinterliegt, kommt durch, welche Farbe
+        // es auch hat. Damit liegt das Bild vorn und der Ton dahinter, statt
+        // ueber ihm.
+        //
+        // Der Einwand weiter oben — eine Maske nimmt den Fokusring mit —
+        // gilt hier nicht: die Kulisse ist kein Bedienelement, sie traegt
+        // `allowsHitTesting(false)` und hat nichts zu fokussieren.
+        //
+        // **Die Rampe ist lang.** Vorher war das Bild bei 26 Prozent schon
+        // zu vier Fuenfteln verdeckt und bei 62 Prozent fast frei — auf so
+        // kurzer Strecke liest sich das als Kante, nicht als Verlauf. Jetzt
+        // zieht sie sich ueber die ganze Breite.
+        .mask {
             LinearGradient(stops: [
-                .init(color: Stil.grund, location: 0),
-                .init(color: Stil.grund.opacity(0.78), location: 0.26),
-                .init(color: Stil.grund.opacity(0.16), location: 0.62),
-                .init(color: Stil.grund.opacity(0), location: 1),
+                .init(color: .clear,            location: 0),
+                .init(color: .white.opacity(0.10), location: 0.30),
+                .init(color: .white.opacity(0.45), location: 0.60),
+                .init(color: .white.opacity(0.85), location: 0.85),
+                .init(color: .white,            location: 1),
             ], startPoint: .leading, endPoint: .trailing)
         }
-        .overlay(alignment: .bottom) {
+        .mask {
             LinearGradient(stops: [
-                .init(color: Stil.grund.opacity(0), location: 0),
-                .init(color: Stil.grund.opacity(0.75), location: 0.55),
-                .init(color: Stil.grund, location: 1),
+                .init(color: .white,            location: 0),
+                .init(color: .white,            location: 0.42),
+                .init(color: .white.opacity(0.55), location: 0.72),
+                .init(color: .clear,            location: 1),
             ], startPoint: .top, endPoint: .bottom)
-            .frame(height: 320)
         }
         // Bis an die Bildkante, ohne den Text mitzunehmen: der Textblock
         // haelt den Rand, das Bild tritt fuer sich hinaus.
