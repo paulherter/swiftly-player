@@ -382,12 +382,17 @@ struct HomeView: View {
     private var auskunft: some View {
         if let t = aktuell {
             VStack(alignment: .leading, spacing: 0) {
+                // Feste Hoehe wie auf der Detailseite: ein langer Titel
+                // darf die Auskunft darunter nicht verschieben, sonst
+                // stehen dieselben Angaben je nach Film woanders — und beim
+                // Oeffnen spraengen sie doch wieder.
                 Text(t.type == "Episode" ? (t.seriesName ?? t.name) : t.name)
                     .font(.system(size: 60, weight: .bold))
                     .tracking(-1.4)
-                    .lineSpacing(8)
                     .foregroundStyle(Stil.schrift)
-                    .lineLimit(2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+                    .frame(height: 68, alignment: .leading)
 
                 // Nur Folgen tragen zwei Titel.
                 if t.type == "Episode" {

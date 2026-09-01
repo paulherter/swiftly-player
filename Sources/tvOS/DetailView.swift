@@ -79,13 +79,17 @@ struct Detailkopf<Knoepfe: View>: View {
 
     private var block: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // **Feste Hoehe, eine Zeile.** Mit zwei erlaubten Zeilen stand
+            // alles darunter bei einem langen Titel 68 Punkt tiefer — und
+            // damit die Knopfreihe von Film zu Film woanders. Ein langer
+            // Titel schrumpft lieber, als die Seite zu verschieben.
             Text(item.name)
                 .font(.system(size: 60, weight: .bold))
                 .tracking(-1.4)
-                .lineSpacing(8)
                 .foregroundStyle(Stil.schrift)
-                .lineLimit(2)
-                .frame(width: 1000, alignment: .leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+                .frame(width: 1000, height: 68, alignment: .leading)
 
             HStack(spacing: 24) {
                 Text(item.nebenzeile)
@@ -100,20 +104,26 @@ struct Detailkopf<Knoepfe: View>: View {
                            freigabe: item.officialRating,
                            belegZuletzt: true)
             }
+            .frame(height: 34)
             .padding(.top, 14)
 
-            if let text = item.overview, !text.isEmpty {
-                Text(text)
-                    .font(.system(size: 29))
-                    .lineSpacing(11)
-                    .foregroundStyle(Stil.schriftLeise)
-                    // Zwei Zeilen, nicht drei: sonst waechst der Block ueber
-                    // die 510 hinaus und schiebt die Knopfreihe in die erste
-                    // Kachelreihe.
-                    .lineLimit(2)
-                    .padding(.top, 22)
-                    .frame(width: 1000, alignment: .leading)
-            }
+            // **Der Platz steht, auch wenn nichts drinsteht.**
+            //
+            // Vorher hing der Block am `if`: ein Film ohne Beschreibung --
+            // und die gibt es, „Caminandes" ist einer -- liess die
+            // Knopfreihe 102 Punkt hochrutschen. Dieselbe Seite sah damit
+            // je nach Serverdaten anders aus, und der Kopf klaffte.
+            //
+            // Zwei Zeilen sind reserviert, ob sie gefuellt werden oder
+            // nicht. Titel, Angabenzeile, Beschreibung und Knopfreihe
+            // stehen dadurch auf **jeder** Detailseite an derselben Stelle.
+            Text(item.overview ?? "")
+                .font(.system(size: 29))
+                .lineSpacing(11)
+                .foregroundStyle(Stil.schriftLeise)
+                .lineLimit(2)
+                .padding(.top, 22)
+                .frame(width: 1000, height: 80, alignment: .topLeading)
 
             // Die Knopfreihe darf breiter werden als die 1000 des Textes —
             // fuenf Pillen sind rund 1400 breit. Deshalb liegt der Deckel am
@@ -319,7 +329,20 @@ struct DetailView: View {
         }
     }
 
-    /// Kulisse, Text und Knopfreihe — 510 hoch.
+    /// Kulisse, Text und Knopfreihe.
+    ///
+    /// **Ein einziger beschrifteter Knopf, der Rest sind Symbole.** Das ist
+    /// auch E6 — ein Hauptknopf je Seite, hier nur konsequenter gelesen als
+    /// vorher: was nicht der Hauptknopf ist, muss sich auch nicht wie einer
+    /// ausbreiten.
+    ///
+    /// Fuenf beschriftete Pillen waren rund 1400 Punkt breit und lasen sich
+    /// wie fuenf gleichwertige Angebote. Jetzt traegt „Fortsetzen"
+    /// beziehungsweise „Abspielen" den Text, daneben stehen drei quadratische
+    /// Symbole: zurueck, Merkliste, Mehr.
+    ///
+    /// Jedes davon nennt VoiceOver seinen Namen ausdruecklich — ein
+    /// Symbolknopf erbt keine Beschriftung (E8).
     private var kopf: some View {
         Detailkopf(model: model, item: aktuell, plan: plan) {
             HStack(spacing: 24) {
@@ -333,9 +356,10 @@ struct DetailView: View {
                     // Neu und ausdruecklich im Entwurf: wer schon angefangen
                     // hat, kam sonst nur ueber die Tafel an den Anfang zurueck.
                     Button { starte(ab: 0) } label: {
-                        Label("Von vorn", systemImage: "arrow.counterclockwise")
+                        Image(systemName: "arrow.counterclockwise").font(Stil.knopf)
                     }
-                    .buttonStyle(KnopfStil())
+                    .buttonStyle(KnopfStil(nurSymbol: true))
+                    .accessibilityLabel(Text("Von vorn"))
                     .disabled(bereitet)
                 } else {
                     Button { starte(ab: 0) } label: {

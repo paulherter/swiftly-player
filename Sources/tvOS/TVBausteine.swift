@@ -539,9 +539,11 @@ struct Mehrknopf: View {
 
     var body: some View {
         Button { offen.toggle() } label: {
-            Label("Mehr", systemImage: "ellipsis")
+            Image(systemName: "ellipsis").font(Stil.knopf)
         }
-        .buttonStyle(KnopfStil())
+        .buttonStyle(KnopfStil(nurSymbol: true))
+        // Ohne Beschriftung waere der Knopf fuer VoiceOver namenlos (E8).
+        .accessibilityLabel(Text("Mehr"))
     }
 }
 

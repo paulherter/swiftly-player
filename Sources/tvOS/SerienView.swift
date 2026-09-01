@@ -159,9 +159,10 @@ struct SerienView: View {
                 // „Von vorn" dasselbe wie der Knopf daneben.
                 if angefangen {
                     Button { starte(weiterMit, ab: 0) } label: {
-                        Label("Von vorn", systemImage: "arrow.counterclockwise")
+                        Image(systemName: "arrow.counterclockwise").font(Stil.knopf)
                     }
-                    .buttonStyle(KnopfStil())
+                    .buttonStyle(KnopfStil(nurSymbol: true))
+                    .accessibilityLabel(Text("Von vorn"))
                     .disabled(bereitet)
                 }
 
