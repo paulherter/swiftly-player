@@ -360,14 +360,25 @@ public actor JellyfinClient {
         return try await send(req, as: [Item].self)
     }
 
-    /// Volltextsuche über Filme, Serien und Folgen.
+    /// Volltextsuche über Filme und Serien.
+    ///
+    /// **Folgen sind bewusst nicht dabei.** Sie waren es, und es sah kaputt
+    /// aus: Jede Folge traegt das Plakat ihrer Serie, also stand bei „the"
+    /// dasselbe Plakat drei-, viermal nebeneinander, mit Folgentiteln
+    /// darunter. Wer eine Serie sucht, findet sie dadurch schlechter als
+    /// ohne Suche.
+    ///
+    /// Der Preis: Man findet eine Folge nicht mehr ueber ihren eigenen Titel.
+    /// Das ist am Fernseher verschmerzbar — dort sucht niemand nach einem
+    /// Folgentitel, den er nicht kennt. Kommt es zurueck, dann gruppiert
+    /// unter der Serie, nicht als eigener Treffer.
     public func suche(_ begriff: String, limit: Int = 40) async throws -> [Item] {
         let s = try requireSession()
         let req = try request("Items", query: [
             .init(name: "userId", value: s.userID),
             .init(name: "searchTerm", value: begriff),
             .init(name: "Recursive", value: "true"),
-            .init(name: "IncludeItemTypes", value: "Movie,Series,Episode"),
+            .init(name: "IncludeItemTypes", value: "Movie,Series"),
             .init(name: "Limit", value: String(limit)),
             .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio"),
         ])

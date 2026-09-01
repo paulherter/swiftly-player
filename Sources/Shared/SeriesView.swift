@@ -403,19 +403,7 @@ struct SeriesDetailView: View {
 
     // MARK: Ableitungen
 
-    private var knopftext: String {
-        // Zwei getrennte Aufrufe, kein Fragezeichen im Argument: aus einem
-        // berechneten Schlüssel kann Xcode nichts herausziehen, der Text
-        // bliebe in der Ausgangssprache stehen.
-        guard let stand else {
-            return laedt ? String(localized: "Lädt…")
-                         : String(localized: "Keine Folgen")
-        }
-        let kuerzel = stand.folgenkuerzel ?? stand.name
-        let angefangen = (stand.userData?.playbackPositionTicks ?? 0) > 0
-        return angefangen ? String(localized: "Fortsetzen \(kuerzel)")
-                          : String(localized: "Abspielen \(kuerzel)")
-    }
+    private var knopftext: String { Item.serienknopf(folge: stand, laedt: laedt) }
 
     private func restzeit(_ folge: Item) -> String? { folge.restzeitText }
 
