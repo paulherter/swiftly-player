@@ -230,6 +230,14 @@ struct DetailView: View {
     /// Knopf aufklappt (E5). Wer sie schliesst, steht wieder an dem Knopf, mit
     /// dem er sie geoeffnet hat.
     @FocusState private var amMehrknopf: Bool
+    /// **Der Startfokus gehoert auf den Hauptknopf.**
+    ///
+    /// Er stand hier nirgends — tvOS suchte sich geometrisch etwas aus, und
+    /// wer ueber die Suche hereinkam, landete auf „Merkliste". Die
+    /// Serienseite setzt ihn seit heute ausdruecklich; die Filmseite hatte
+    /// es nur bisher zufaellig richtig getroffen, weil der Fokus meist von
+    /// oben links kam.
+    @FocusState private var amHauptknopf: Bool
 
     @State private var bereitet = false
     @State private var aehnliche: [Item] = []
@@ -318,6 +326,7 @@ struct DetailView: View {
         //
         // Gesperrt wird **vor** den Auflagen: die Tafeln haengen danach und
         // bleiben damit selbst bedienbar.
+        .defaultFocus($amHauptknopf, true, priority: .userInitiated)
         .onChange(of: mehrOffen) { _, offen in if !offen { amMehrknopf = true } }
         .disabled(mehrOffen)
         .overlay(alignment: .topLeading) {
@@ -403,6 +412,7 @@ struct DetailView: View {
                     }
                     .buttonStyle(KnopfStil())
                     .disabled(bereitet)
+                    .focused($amHauptknopf)
 
                     // Neu und ausdruecklich im Entwurf: wer schon angefangen
                     // hat, kam sonst nur ueber die Tafel an den Anfang zurueck.
@@ -418,6 +428,7 @@ struct DetailView: View {
                     }
                     .buttonStyle(KnopfStil())
                     .disabled(bereitet)
+                    .focused($amHauptknopf)
                 }
 
                 Zustandsknoepfe(model: model, item: aktuell,

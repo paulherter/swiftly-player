@@ -53,18 +53,20 @@ struct BibliothekView: View {
                             gitter
                         }
                     }
-                    // **Die Chipreihe beginnt bei 190.**
+                    // **Die Chipreihe endet bei 264**, wie das oberste
+                    // Element jeder anderen Seite — siehe `Stil.erstesEnde`.
                     //
-                    // Dieselbe Zeile, in der auf der Startseite der erste
-                    // Reihentitel steht und auf den Detailseiten der Titel.
-                    // Die Leiste endet bei 128, es bleiben also 62 Punkt
-                    // Luft — genug, dass die Seite atmet, ohne dass ein
-                    // leerer Kopf entsteht.
+                    // Zurueckgerechnet aus ihrer eigenen Hoehe: 264 − 48 =
+                    // 216, davon der obere sichere Rand ab, an dem die
+                    // Scrollflaeche beginnt.
                     //
-                    // Die Scrollflaeche beginnt beim oberen sicheren Rand,
-                    // deshalb nur die Differenz. Ohne Leiste (benannte
-                    // Bibliothek ueber den Sprungpfad) reicht der Rand.
-                    .padding(.top, bibliothek == nil ? 190 - Stil.randOben : Stil.randOben)
+                    // Vorher stand hier der Anfang (190). Bei verschieden
+                    // hohen Elementen richtet ein gemeinsamer Anfang nichts
+                    // aus — die Chips endeten 26 Punkt hoeher als der Titel
+                    // der Startseite.
+                    .padding(.top, bibliothek == nil
+                             ? Stil.erstesEnde - Stil.chipHoehe - Stil.randOben
+                             : Stil.randOben)
                     .padding(.bottom, 60)
                 }
                 .scrollIndicators(.hidden)
@@ -82,7 +84,7 @@ struct BibliothekView: View {
             if sortierwahlOffen {
                 Handlungstafel(handlungen: sortierhandlungen, offen: $sortierwahlOffen)
                     .padding(.leading, Stil.randSeite)
-                    .padding(.top, 190 + Stil.chipHoehe + 16)
+                    .padding(.top, Stil.erstesEnde + 16)
                     .transition(.opacity)
             }
         }
@@ -105,15 +107,49 @@ struct BibliothekView: View {
     /// E2 ist nicht beruehrt: das ist Grund, kein Bedienelement — dieselbe
     /// Begruendung wie beim gefaerbten Grund der Detailseiten.
     private var grundton: some View {
-        let ton: Color = art == "movies"
-            ? Color(hue: 351.0 / 360, saturation: 0.56, brightness: 0.82)
-            : Stil.akzent
-        return ZStack {
-            Stil.grund
-            RadialGradient(colors: [ton.opacity(0.16), ton.opacity(0)],
-                           center: UnitPoint(x: 1, y: 0),
-                           startRadius: 0, endRadius: 1500)
+        let ton: Double = art == "movies" ? 351 : 171
+
+        // **Ein Netz, kein radialer Verlauf.**
+        //
+        // Radial gestapelt hat es gebandet, und aus demselben Grund wie auf
+        // den Detailseiten: ein Verlauf von einer Farbe nach durchsichtig
+        // bewegt sich in RGB fast auf einer Geraden, die Stufengrenzen der
+        // drei Kanaele fallen zusammen und bilden durchgehende Baender.
+        //
+        // `MeshGradient` interpoliert ueber eine Flaeche statt entlang einer
+        // Linie — keine Stopps, an denen etwas knicken kann. 25 Stuetzpunkte,
+        // damit die Farbe nicht in Inseln zerfaellt. Dazu dasselbe Rauschen
+        // wie dort, gegen die Quantisierung der Flaeche selbst.
+        //
+        // Der Gipfel sitzt rechts bei 28 Prozent Hoehe, also knapp **unter**
+        // dem Kopfverlauf der Leiste. Lag er in der Ecke, deckte der ihn zu
+        // und es blieb eine Kante.
+        let seite = 5
+        var punkte: [SIMD2<Float>] = []
+        for zeile in 0 ..< seite {
+            for spalte in 0 ..< seite {
+                punkte.append([Float(spalte) / Float(seite - 1),
+                               Float(zeile) / Float(seite - 1)])
+            }
         }
+        return ZStack {
+            MeshGradient(width: seite, height: seite, points: punkte,
+                         colors: punkte.map { netzfarbe($0, ton: ton) })
+            Bildton.rauschen
+                .resizable(resizingMode: .tile)
+                .opacity(0.008)
+        }
+        .ignoresSafeArea()
+    }
+
+    /// Nah am Gipfel farbig, weit weg der Grundton — dieselbe Rechnung wie
+    /// bei `Bildgrund`, nur mit festem Farbton statt einem aus dem Bild.
+    private func netzfarbe(_ punkt: SIMD2<Float>, ton: Double) -> Color {
+        let dx = Double(0.97 - punkt.x), dy = Double(0.28 - punkt.y)
+        let naehe = 1 - min(1, (dx * dx + dy * dy).squareRoot() / 1.2)
+        return Color(hue: ton / 360,
+                     saturation: 0.30 + 0.16 * naehe,
+                     brightness: 0.050 + 0.055 * pow(naehe, 1.6))
     }
 
     /// Die Sortierungen als Handlungstafel — kein zweiter Chipsatz.

@@ -88,8 +88,32 @@ struct SucheView: View {
         // Wer auf „Suche" geht, will tippen — nicht erst ein Feld ansteuern.
         // Deshalb liegt der Fokus sofort dort, und tvOS öffnet damit von
         // selbst die Tastatur.
-        .onAppear { if aktiv { amFeld = true } }
-        .onChange(of: aktiv) { _, offen in if offen { amFeld = true } }
+        // **Der Fokus muss nachgereicht werden, nicht nur zugewiesen.**
+        //
+        // Beim Bereichswechsel steht diese Seite schon — sie liegt seit dem
+        // ersten Besuch im Stapel und wird nur eingeblendet. `defaultFocus`
+        // greift also nicht mehr, das gilt beim Erscheinen. Und die blosse
+        // Zuweisung verpufft, solange der Fokus noch in der Leiste sitzt und
+        // tvOS ihn dort gerade erst gesetzt hat.
+        //
+        // Sichtbar wurde das erst, seit das Feld nur im Fokus weiss ist:
+        // vorher leuchtete es immer und sah aus, als haette es ihn. Die
+        // Pille am Reiter „Suche" war die einzige Stelle, an der die Wahrheit
+        // stand.
+        .task(id: aktiv) {
+            guard aktiv else { return }
+            amFeld = true
+            // Noch einmal, nachdem tvOS seinen eigenen Zug gemacht hat.
+            try? await Task.sleep(for: .milliseconds(120))
+            guard aktiv, !amFeld else { return }
+            amFeld = true
+        }
+        // **Und ausdruecklich als Vorgabe.** Die Zuweisung oben allein
+        // reichte nicht: der Fokus blieb auf dem Reiter „Suche" in der
+        // Leiste. Aufgefallen ist es erst, seit das Feld nicht mehr staendig
+        // weiss ist — vorher sah es aus, als haette es den Fokus, und die
+        // Pille am Reiter war die einzige Stelle, an der die Wahrheit stand.
+        .defaultFocus($amFeld, true, priority: .userInitiated)
         // **Sicherer Bereich, nicht Innenabstand und nicht `contentMargins`.**
         //
         // Beides war zu wenig. Innenabstand gehört zum Inhalt, den scrollt
@@ -104,15 +128,17 @@ struct SucheView: View {
         // und sein Abstand zur Kachel (36) ab — bleiben genau die 128 der
         // Leistenunterkante. Weniger, und der Titel rutscht beim Anspringen
         // einer Reihe wieder darunter.
-        // 130 statt 150: das Feld beginnt damit bei 190 — dieselbe Zeile wie
-        // die Chipreihe der Bibliothek und der erste Reihentitel der
-        // Startseite.
+        // **Das Feld endet bei 264**, wie das oberste Element jeder anderen
+        // Seite — siehe `Stil.erstesEnde`. Zurueckgerechnet aus seiner
+        // eigenen Hoehe: 264 − 76 = 188, davon der obere sichere Rand ab.
         //
-        // Das Mindestmass von 150 oben gilt fuer Reihen **mit** Titel: es
-        // haelt Reihentitel (46) und Abstand (36) frei. Das Suchgitter hat
-        // keinen Titel ueber sich, sondern das Feld — und das soll beim
+        // Das fruehere Mindestmass von 150 galt fuer Reihen **mit** Titel:
+        // es hielt Reihentitel (46) und Abstand (36) frei. Das Suchgitter
+        // hat keinen Titel ueber sich, sondern das Feld — und das soll beim
         // Anspringen einer Kachel sichtbar bleiben, nicht mehr.
-        .safeAreaInset(edge: .top) { Color.clear.frame(height: 130) }
+        .safeAreaInset(edge: .top) {
+            Color.clear.frame(height: Stil.erstesEnde - Stil.knopfHoehe - Stil.randOben)
+        }
         // Auf tvOS kommt der Text erst, wenn die Systemtastatur schließt —
         // eine Verzögerung wie auf dem iPhone wäre hier sinnlos.
         .onChange(of: begriff) { _, neu in

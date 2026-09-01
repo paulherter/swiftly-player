@@ -129,15 +129,25 @@ extension Stil {
 
     /// **Feste Hoehe des Kopfblocks — Titel, Angabenzeile, Beschreibung.**
     ///
-    ///     Titel           68
-    ///     + 14 Angaben    34
-    ///     + 22 Beschr.   127
-    ///     = 265
+    /// Titel           68 + 14 Angaben    34 + 22 Beschr.   127 = 265
     ///
     /// Fest, damit nichts darunter vom Inhalt abhaengt: ein Film ohne
     /// Beschreibung, ein langer Titel, eine Folge mit Zweitzeile — der Block
     /// ist immer gleich hoch, also steht die Knopfreihe immer an derselben
-    /// Stelle.
+    /// Stelle. **Wo das oberste Element jeder Seite endet.**
+    ///
+    /// Start, Detail   Titel 68 ab 196   endet 264 Bibliothek      Chips 48 ab
+    /// 190   endet 238 Suche           Feld  76 ab 190   endet 266
+    ///
+    /// Ich hatte die **Anfaenge** auf 190 gelegt. Bei verschieden hohen
+    /// Elementen richtet das nichts aus — sichtbar ist die Unterkante, weil
+    /// darunter der Inhalt beginnt.
+    ///
+    /// 264 kommt vom Titel: 196 aus der Tafel plus seine Zeilenhoehe. Jede
+    /// Seite rechnet ihren oberen Abstand daraus und aus der Hoehe ihres
+    /// eigenen ersten Elements zurueck.
+    static let erstesEnde: CGFloat = 264
+
     static var auskunftHoehe: CGFloat { auskunftHoehe(zweitzeile: false) }
 
     /// **Mit Folgentitel eine Zeile weniger Beschreibung.**
