@@ -222,7 +222,16 @@ extension Stil {
 
     /// Die Bibliothek als Gitter.
     static let gitterSpalten = 7
-    static let gitterSpalte: CGFloat = 56
+    /// **50, nicht 56 — sonst passt das Raster nicht auf den Schirm.**
+    ///
+    ///     7 × 208 + 6 × 56 + 2 × 80 = 1952   bei 1920 Breite
+    ///     7 × 208 + 6 × 50 + 2 × 80 = 1916
+    ///
+    /// Mit 56 staucht `LazyVGrid` die Poster, damit die Reihe aufgeht — sie
+    /// stehen dann schmaler als dieselben 208 auf der Startseite, und die
+    /// Reihe wirkt gedraengt, ohne dass man den Grund sieht. Mit 50 bleiben
+    /// die Poster, was sie sind, und vier Punkte Rest verteilen sich.
+    static let gitterSpalte: CGFloat = 50
     static let gitterZeile: CGFloat = 72
 
     static let knopfHoehe: CGFloat = 76

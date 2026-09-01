@@ -3,10 +3,22 @@ import SwiftUI
 
 /// Eine Bibliothek als Gitter — sieben Spalten auf 1920 Punkt.
 ///
-/// Sortierung steht hier als zweite Chipreihe, nicht wie auf dem iPhone in
-/// einem Aufklappblatt. Ein Blatt kostet auf der Fernbedienung zwei Wege
-/// (öffnen, wählen, schließen); nebeneinander gelegte Chips kosten einen —
-/// und Platz ist auf dem Fernseher das, was das iPhone nicht hat.
+/// **Eine Chipreihe, nicht zwei.** Die Sortierung stand daneben als zweiter
+/// Chipsatz, mit dem Argument, ein Aufklappblatt koste auf der Fernbedienung
+/// zwei Wege statt einem. Das stimmt — nur waren es vier Chips, von denen
+/// immer genau einer an ist, und das ist eine Auswahl, kein Filter. Zwei
+/// Reihen gleich aussehender Kapseln mit verschiedener Bedeutung haben die
+/// Seite zugestellt.
+///
+/// Jetzt: links die Filter, rechts die Anzahl und **ein** Knopf, der den
+/// aktuellen Wert nennt und die Wahl dort aufklappt, wo er steht (E5) — wie
+/// die Staffelpille auf der Serienseite.
+///
+/// **Kein Kopfblock.** Startseite und Detailseiten tragen oben Titel,
+/// Angabenzeile und Beschreibung des Titels, um den es geht. Eine Bibliothek
+/// beschreibt keinen einzelnen Titel, sie zeigt einen Bestand — hier gibt es
+/// nichts, was ein Heldenbild tragen muesste. Stattdessen faerbt der Grund
+/// sich je Bereich, siehe `grundton`.
 struct BibliothekView: View {
     let model: AppModel
     /// Entweder über die Gattung („movies", „tvshows") aus der Kopfleiste …
@@ -18,6 +30,8 @@ struct BibliothekView: View {
     /// Blättern, Filtern und Sortieren stehen in `Bibliotheksmodell` —
     /// geteilt mit der iPhone-Fassung.
     @State private var stand = Bibliotheksmodell()
+    @State private var sortierwahlOffen = false
+    @FocusState private var amSortierknopf: Bool
 
     private var spalten: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: Stil.gitterSpalte),
@@ -31,7 +45,7 @@ struct BibliothekView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 30) {
-                        chipreihen
+                        chipreihe
 
                         if stand.items.isEmpty {
                             leer
@@ -39,45 +53,109 @@ struct BibliothekView: View {
                             gitter
                         }
                     }
-                    // Platz für die Kopfleiste darüber, wenn es eine gibt.
-                    .padding(.top, bibliothek == nil ? 0 : Stil.randOben)
+                    // **Die Chipreihe beginnt bei 190.**
+                    //
+                    // Dieselbe Zeile, in der auf der Startseite der erste
+                    // Reihentitel steht und auf den Detailseiten der Titel.
+                    // Die Leiste endet bei 128, es bleiben also 62 Punkt
+                    // Luft — genug, dass die Seite atmet, ohne dass ein
+                    // leerer Kopf entsteht.
+                    //
+                    // Die Scrollflaeche beginnt beim oberen sicheren Rand,
+                    // deshalb nur die Differenz. Ohne Leiste (benannte
+                    // Bibliothek ueber den Sprungpfad) reicht der Rand.
+                    .padding(.top, bibliothek == nil ? 190 - Stil.randOben : Stil.randOben)
                     .padding(.bottom, 60)
                 }
                 .scrollIndicators(.hidden)
-                .safeAreaInset(edge: .top) {
-                    Color.clear.frame(height: bibliothek == nil ? 150 : 0)
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(grundton.ignoresSafeArea())
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
         // damit `randSeite` nicht darauf sitzt und sich verdoppelt.
         .ignoresSafeArea(edges: .horizontal)
+        // Hinter der offenen Tafel ist nichts fokussierbar — siehe die
+        // Detailseiten, dort war es derselbe Fehler.
+        .disabled(sortierwahlOffen)
+        .overlay(alignment: .topLeading) {
+            if sortierwahlOffen {
+                Handlungstafel(handlungen: sortierhandlungen, offen: $sortierwahlOffen)
+                    .padding(.leading, Stil.randSeite)
+                    .padding(.top, 190 + Stil.chipHoehe + 16)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: sortierwahlOffen)
+        .onChange(of: sortierwahlOffen) { _, offen in if !offen { amSortierknopf = true } }
         .task(id: stand.kennung) { await laden() }
+    }
+
+    /// **Je Bereich ein eigener Grundton.**
+    ///
+    /// Ein fester Verlauf aus der rechten oberen Ecke ins Dunkle — nicht aus
+    /// einem Bild abgeleitet wie auf den Detailseiten: die Bibliothek hat
+    /// keinen Titel, den sie beschreibt, also gibt es nichts abzuleiten.
+    ///
+    /// Serien tragen den Akzent (Farbton 171 Grad), Filme die Komplementaere
+    /// (351 Grad) — gegenueberliegend auf dem Farbkreis, gleiche Saettigung
+    /// und Helligkeit. Man sieht am Grund, wo man ist, bevor man die Leiste
+    /// liest.
+    ///
+    /// E2 ist nicht beruehrt: das ist Grund, kein Bedienelement — dieselbe
+    /// Begruendung wie beim gefaerbten Grund der Detailseiten.
+    private var grundton: some View {
+        let ton: Color = art == "movies"
+            ? Color(hue: 351.0 / 360, saturation: 0.56, brightness: 0.82)
+            : Stil.akzent
+        return ZStack {
+            Stil.grund
+            RadialGradient(colors: [ton.opacity(0.16), ton.opacity(0)],
+                           center: UnitPoint(x: 1, y: 0),
+                           startRadius: 0, endRadius: 1500)
+        }
+    }
+
+    /// Die Sortierungen als Handlungstafel — kein zweiter Chipsatz.
+    private var sortierhandlungen: [Titelhandlung] {
+        Sortierung.allCases.map { s in
+            Titelhandlung(symbol: stand.sortierung == s ? "checkmark.circle.fill" : "circle",
+                          text: "\(s.beschriftung)") { stand.sortierung = s }
+        }
     }
 
     // MARK: Teile
 
-    private var chipreihen: some View {
-        HStack(alignment: .center, spacing: 40) {
-            HStack(spacing: 16) {
-                ForEach(filter) { f in
-                    Button(f.beschriftung) { stand.filter = f }
-                        .buttonStyle(ChipStil(an: stand.filter == f))
-                }
+    private var chipreihe: some View {
+        HStack(alignment: .center, spacing: 20) {
+            ForEach(filter) { f in
+                Button(f.beschriftung) { stand.filter = f }
+                    .buttonStyle(ChipStil(an: stand.filter == f))
             }
-            .focusSection()
 
             Spacer(minLength: 40)
 
-            HStack(spacing: 16) {
-                ForEach(Sortierung.allCases) { s in
-                    Button(s.beschriftung) { stand.sortierung = s }
-                        .buttonStyle(ChipStil(an: stand.sortierung == s))
+            // Die Anzahl stand bisher nirgends — sie ist die einzige Auskunft,
+            // die eine Bibliothek ueber sich selbst geben kann.
+            if stand.gesamt > 0 {
+                Text("\(stand.gesamt) · sortiert nach")
+                    .font(Stil.klein)
+                    .foregroundStyle(Stil.schriftSehrLeise)
+            }
+
+            Button { sortierwahlOffen.toggle() } label: {
+                HStack(spacing: 14) {
+                    Text(stand.sortierung.beschriftung)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Stil.schrift.opacity(0.6))
                 }
             }
-            .focusSection()
+            .buttonStyle(KnopfStil(hoehe: Stil.chipHoehe))
+            .focused($amSortierknopf)
+            .accessibilityLabel(Text("Sortierung, \(stand.sortierung.beschriftung)"))
         }
+        .focusSection()
         .padding(.horizontal, Stil.randSeite)
     }
 

@@ -26,11 +26,23 @@ struct SucheView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 34) {
-                Eingabefeld(platzhalter: "Titel, Serie, Person", text: $begriff,
-                            aussen: $amFeld) {
-                    Task { await suchen() }
+                // **Feld und Auskunft in einer Zeile**, wie die Chipreihe der
+                // Bibliothek: links das Feld, rechts die Trefferzahl.
+                HStack(alignment: .center, spacing: 40) {
+                    Eingabefeld(platzhalter: "Titel, Serie, Person", text: $begriff,
+                                aussen: $amFeld) {
+                        Task { await suchen() }
+                    }
+                    .frame(width: 1000)
+
+                    if !treffer.isEmpty {
+                        Text("\(treffer.count) Treffer")
+                            .font(Stil.klein)
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                    }
+
+                    Spacer(minLength: 0)
                 }
-                .frame(width: 900)
                 .padding(.horizontal, Stil.randSeite)
 
                 if laeuft {
@@ -40,6 +52,18 @@ struct SucheView: View {
                                 titel: "Nichts gefunden",
                                 hinweis: "Versuch es mit einem anderen Wort.")
                         .frame(height: 460)
+                } else if !gesucht {
+                    // **Ein Satz statt schwarzer Stille.**
+                    //
+                    // Vor der ersten Eingabe stand hier gar nichts — ein
+                    // schwarzer Schirm mit einem leuchtenden Feld. Ein
+                    // Vorschlagsregal waere Platzfuellerei; ein Satz sagt,
+                    // was das Feld annimmt und ab wann es sucht.
+                    Text("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.")
+                        .font(Stil.koerper)
+                        .foregroundStyle(Stil.schriftSehrLeise)
+                        .padding(.horizontal, Stil.randSeite)
+                        .padding(.top, 10)
                 } else if !treffer.isEmpty {
                     LazyVGrid(columns: spalten, alignment: .leading,
                               spacing: Stil.gitterZeile) {
@@ -49,8 +73,7 @@ struct SucheView: View {
                                                                   maxHeight: 600,
                                                                   hochkant: true),
                                              titel: item.name,
-                                             unterzeile: item.folgenkuerzel,
-                                             mitUnterzeile: false)
+                                             unterzeile: gattungUndJahr(item))
                             }
                             .buttonStyle(KachelStil())
                         }
@@ -81,7 +104,15 @@ struct SucheView: View {
         // und sein Abstand zur Kachel (36) ab — bleiben genau die 128 der
         // Leistenunterkante. Weniger, und der Titel rutscht beim Anspringen
         // einer Reihe wieder darunter.
-        .safeAreaInset(edge: .top) { Color.clear.frame(height: 150) }
+        // 130 statt 150: das Feld beginnt damit bei 190 — dieselbe Zeile wie
+        // die Chipreihe der Bibliothek und der erste Reihentitel der
+        // Startseite.
+        //
+        // Das Mindestmass von 150 oben gilt fuer Reihen **mit** Titel: es
+        // haelt Reihentitel (46) und Abstand (36) frei. Das Suchgitter hat
+        // keinen Titel ueber sich, sondern das Feld — und das soll beim
+        // Anspringen einer Kachel sichtbar bleiben, nicht mehr.
+        .safeAreaInset(edge: .top) { Color.clear.frame(height: 130) }
         // Auf tvOS kommt der Text erst, wenn die Systemtastatur schließt —
         // eine Verzögerung wie auf dem iPhone wäre hier sinnlos.
         .onChange(of: begriff) { _, neu in
@@ -95,6 +126,24 @@ struct SucheView: View {
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
         // damit `randSeite` nicht darauf sitzt und sich verdoppelt.
         .ignoresSafeArea(edges: .horizontal)
+    }
+
+    /// „Serie · 2008" — damit ein Film und eine Serie gleichen Namens
+    /// unterscheidbar sind.
+    ///
+    /// Bisher stand hier das Folgenkuerzel, und es war ausserdem
+    /// abgeschaltet (`mitUnterzeile: false`): unter den Kacheln stand nur
+    /// der Titel, und bei mehreren Treffern derselben Serie sah man
+    /// dasselbe Plakat mehrfach ohne Unterschied.
+    private func gattungUndJahr(_ item: Item) -> String? {
+        var teile: [String] = []
+        switch item.type {
+        case "Movie":  teile.append(String(localized: "Film"))
+        case "Series": teile.append(String(localized: "Serie"))
+        default: break
+        }
+        if let jahr = item.productionYear { teile.append(String(jahr)) }
+        return teile.isEmpty ? nil : teile.joined(separator: " · ")
     }
 
     private func suchen() async {
