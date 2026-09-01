@@ -35,13 +35,30 @@ struct Reihentitel: View {
 /// Kleine Angabe wie „FSK 16" oder „4K".
 struct Plakette: View {
     let text: String
+    /// **Die Farbe ist ein Parameter, kein fester Wert.** Der Dateiauszug
+    /// faerbt die Warnung orange, wenn der Server doch transkodiert — das ist
+    /// die eine Stelle, an der eine Plakette nicht nur beschriftet, sondern
+    /// alarmiert. Waere sie fest, haette tvOS beim Uebernehmen der geteilten
+    /// Fassung genau diese Auskunft verloren.
+    var farbe: Color = Stil.schriftLeise
+    /// Getrennt von `farbe`: sonst haette das Einfaerben der Schrift den Rand
+    /// mitgezogen und die Plakette auf dem iPhone sichtbar heller gemacht.
+    var randfarbe: Color = Stil.rand
+    /// Masse als Parameter: auf dem Fernseher sind die iPhone-Werte zu klein.
+    /// So kommt jede Plattform ohne eigene Kopie aus.
+    var innenWaagerecht: CGFloat = 5
+    var innenSenkrecht: CGFloat = 2
+    var rundung: CGFloat = 3
+    var strichstaerke: CGFloat = 1
+
     var body: some View {
         Text(text)
             .font(Stil.plakette)
-            .foregroundStyle(Stil.schriftLeise)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Stil.rand))
+            .foregroundStyle(farbe)
+            .padding(.horizontal, innenWaagerecht)
+            .padding(.vertical, innenSenkrecht)
+            .overlay(RoundedRectangle(cornerRadius: rundung)
+                .strokeBorder(randfarbe, lineWidth: strichstaerke))
     }
 }
 
