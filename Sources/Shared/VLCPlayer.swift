@@ -47,7 +47,9 @@ enum Protokoll {
                 try? Data().write(to: pfad)
             }
             griff = try? FileHandle(forWritingTo: pfad)
-            try? griff?.seekToEnd()
+            // `_ =`, weil `seekToEnd()` den neuen Versatz zurueckgibt und
+            // `try?` daraus ein `UInt64?` macht, das niemand liest.
+            _ = try? griff?.seekToEnd()
         }
         try? griff?.write(contentsOf: Data(zeile.utf8))
         #endif
