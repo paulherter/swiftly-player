@@ -735,16 +735,26 @@ struct Kulisse: View {
 /// Waagerecht bis 45 Prozent, gerechnet: das Bild beginnt bei x = 740, der
 /// Textblock endet bei 1160. Die 420 Punkt Ueberschneidung sind 36 Prozent der
 /// Bildbreite — so weit muss es mindestens weg sein, damit der Text lesbar
-/// bleibt. 45 gibt Rand. Senkrecht federt das untere Drittel aus.
+/// bleibt. 45 gibt Rand.
+///
+/// **Senkrecht ist die Blende bei 84 Prozent fertig, nicht erst am Rand.** Die
+/// Kulisse ist 700 hoch, die Kopfzone der Detailseite 606 — das sind 87
+/// Prozent. Lief die Blende bis 100 Prozent, stand bei 606 noch ein Drittel
+/// Bild, und dort endet die Zone: die abgehackte Kante, die Bei 84 Prozent
+/// (588) ist nichts mehr da, wenn die Kante kommt.
+///
+/// Waagerecht dasselbe Prinzip: erst ab 2 Prozent faengt ueberhaupt etwas an,
+/// davor ist sauber nichts.
 struct Kulissenblende: ViewModifier {
     func body(content: Content) -> some View {
         content
             .mask {
-                LinearGradient(gradient: Bildton.blende(bis: 0.45),
+                LinearGradient(gradient: Bildton.blende(von: 0.02, bis: 0.45),
                                startPoint: .leading, endPoint: .trailing)
             }
             .mask {
-                LinearGradient(gradient: Bildton.blende(bis: 0.34, umgekehrt: true),
+                LinearGradient(gradient: Bildton.blende(von: 0.50, bis: 0.84,
+                                                        umgekehrt: true),
                                startPoint: .top, endPoint: .bottom)
             }
     }

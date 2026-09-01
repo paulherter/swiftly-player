@@ -232,20 +232,35 @@ extension Bildton {
         return Image(decorative: flaeche.makeImage()!, scale: 1)
     }()
 
-    static func blende(bis kante: Double, umgekehrt: Bool = false) -> Gradient {
-        let stufen = 12
+    /// Eine Blende mit ausdruecklichem Anfang **und** Ende.
+    ///
+    /// Davor gab es nur „blende bis X", und das Ende lag damit zwangslaeufig
+    /// am Rand der Flaeche. Genau daran lag die abgehackte Kante unten: die
+    /// Kulisse ist 700 hoch, die Kopfzone der Detailseite 606 — bei 606 war
+    /// das Bild also noch zu rund einem Drittel da, und was an dieser Kante
+    /// beschneidet, schneidet in sichtbares Bild.
+    ///
+    /// **Die Blende muss innerhalb des Rahmens fertig sein, mit Reserve
+    /// dahinter.** Dann ist gleichgueltig, wo etwas beschneidet — an der
+    /// Stelle ist ohnehin nichts mehr zu sehen. Das ist der Unterschied
+    /// zwischen „passt gerade" und „kann nicht mehr schiefgehen".
+    ///
+    /// `t² (3 − 2t)` laeuft an beiden Enden waagerecht aus, hat also weder am
+    /// Anfang noch am Ende einen Knick, an dem ein Band entstehen koennte.
+    static func blende(von: Double, bis: Double, umgekehrt: Bool = false) -> Gradient {
+        let stufen = 14
         var stops: [Gradient.Stop] = []
+        stops.append(.init(color: umgekehrt ? .white : .clear, location: 0))
         for i in 0 ... stufen {
             let t = Double(i) / Double(stufen)
             let weich = t * t * (3 - 2 * t)
-            let ort = umgekehrt ? 1 - kante + t * kante : t * kante
-            let deckung = umgekehrt ? 1 - weich : weich
-            stops.append(.init(color: .white.opacity(deckung), location: ort))
+            stops.append(.init(color: .white.opacity(umgekehrt ? 1 - weich : weich),
+                               location: von + (bis - von) * t))
         }
-        if !umgekehrt { stops.append(.init(color: .white, location: 1)) }
-        else { stops.insert(.init(color: .white, location: 0), at: 0) }
+        stops.append(.init(color: umgekehrt ? .clear : .white, location: 1))
         return Gradient(stops: stops)
     }
+
 }
 
 /// Faerbt den Grund einer ganzen Seite nach ihrem Kulissenbild.
