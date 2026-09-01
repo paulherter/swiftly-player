@@ -307,21 +307,41 @@ struct Bildgrund: ViewModifier {
     /// dunkler, bis es in den Grund uebergeht. Die uebrigen Toene fuellen die
     /// Mitte, damit ueber die Flaeche wirklich Farbe wechselt.
     private var netz: some View {
-        let punkte: [SIMD2<Float>] = [
-            [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
-            [0.0, 0.5], [0.5, 0.5], [1.0, 0.5],
-            [0.0, 1.0], [0.5, 1.0], [1.0, 1.0],
-        ]
-        return MeshGradient(width: 3, height: 3,
+        // **Fuenf mal fuenf, nicht drei mal drei.**
+        //
+        // Neun Stuetzpunkte auf 1920 x 1080 sind neun Farbinseln, und was
+        // dazwischen interpoliert wird, sieht man als Beule Das laesst sich
+        // nicht wegdaempfen; solange die Punkte so weit auseinanderliegen,
+        // traegt jeder eine eigene Wolke.
+        //
+        // 25 Punkte tasten dasselbe Farbfeld dicht genug ab, dass die Flecken
+        // zu einer Flaeche verschmelzen. `farbe(bei:)` ist eine stetige
+        // Funktion des Ortes — je feiner man sie abtastet, desto glatter das
+        // Ergebnis.
+        let seite = 5
+        var punkte: [SIMD2<Float>] = []
+        for zeile in 0 ..< seite {
+            for spalte in 0 ..< seite {
+                punkte.append([Float(spalte) / Float(seite - 1),
+                               Float(zeile) / Float(seite - 1)])
+            }
+        }
+        return MeshGradient(width: seite, height: seite,
                             points: punkte,
                             colors: punkte.map { farbe(bei: $0) })
     }
 
     /// Welche Farbe an welcher Stelle des Netzes steht.
     ///
+    /// **Stetig, nicht je Feld.** Vorher waehlte ein ganzzahliger Index den
+    /// Ton, also sprang die Farbe von Punkt zu Punkt — bei fuenf Toenen sass
+    /// neben Blau schnell Orange. Jetzt laeuft ein Wert von 0 bis 1 schraeg
+    /// ueber die Flaeche und blendet zwischen benachbarten Toenen ueber:
+    /// zwei Nachbarn im Netz unterscheiden sich dadurch nur noch um einen
+    /// Bruchteil eines Tonabstands.
+    ///
     /// Zwei Dinge entscheiden: die Naehe zur Kulisse oben rechts bestimmt,
-    /// **wie hell** es wird, und die Stelle im Netz bestimmt, **welcher** Ton
-    /// es ist. Ohne das Zweite waere es wieder eine einzige Wolke.
+    /// **wie hell** es wird, die Stelle im Netz, **welcher** Ton es ist.
     private func farbe(bei punkt: SIMD2<Float>) -> Color {
         guard !toene.isEmpty else { return Stil.grund }
 
@@ -329,17 +349,56 @@ struct Bildgrund: ViewModifier {
         let dx = Double(1 - punkt.x), dy = Double(punkt.y)
         let naehe = 1 - min(1, (dx * dx + dy * dy).squareRoot() / 1.414)
 
-        // Welcher Ton: ueber die Flaeche durchgereicht, damit benachbarte
-        // Punkte verschiedene Toene tragen.
-        let feld = Int(punkt.x * 2) + Int(punkt.y * 2) * 3
-        let ton = toene[feld % toene.count]
+        // Schraeg ueber die Flaeche, damit die Farbe wandert.
+        let lauf = (Double(punkt.x) + Double(punkt.y)) / 2
+        let ton = tonBei(lauf)
 
-        // Nah an der Kulisse farbig, weit weg fast der Grundton. Die Werte
-        // bleiben unter denen der alten Wolken — auf der ganzen Flaeche
-        // wirkt weniger mehr.
+        // Nah an der Kulisse farbig, weit weg fast der Grundton.
+        //
+        //     Saettigung  0,38…0,58
+        //     Helligkeit  0,075…0,215
+        //     Abfall      naehe^1,6
+        //
+        // Der Abfall traegt das meiste: quadratisch faellt die Helligkeit so
+        // schnell, dass ausserhalb des Bildes fast alles auf dem Grundton
+        // liegt und die Farbe nur dort steht, wo ohnehin das Bild ist.
+        //
+        // Der Akzent bleibt aussen vor (E2): das ist Grund, kein
+        // Bedienelement, und dunkel genug fuer weisse Schrift darauf.
         return Color(hue: ton / 360,
-                     saturation: 0.30 + 0.16 * naehe,
-                     brightness: 0.055 + 0.115 * naehe * naehe)
+                     saturation: 0.38 + 0.20 * naehe,
+                     brightness: 0.075 + 0.140 * pow(naehe, 1.6))
+    }
+
+    /// Der Farbton an der Stelle `lauf` (0…1) — zwischen den gefundenen
+    /// Toenen uebergeblendet, ueber den kuerzesten Weg auf dem Farbkreis.
+    ///
+    /// Jeder Ton rueckt dabei zur Hauptfarbe hin: die Bewegung ueber die
+    /// Flaeche bleibt, ihre Spannweite schrumpft auf ein Drittel. Sonst
+    /// stuende neben Blau ein volles Orange, und das sieht man als Fleck,
+    /// wie fein das Netz auch ist.
+    private func tonBei(_ lauf: Double) -> Double {
+        let leit = toene[0]
+        func gedaempft(_ ton: Double) -> Double {
+            var weg = ton - leit
+            if weg > 180 { weg -= 360 }
+            if weg < -180 { weg += 360 }
+            return leit + weg * 0.34
+        }
+        guard toene.count > 1 else { return leit }
+
+        let stelle = lauf * Double(toene.count - 1)
+        let a = min(Int(stelle), toene.count - 2)
+        let t = stelle - Double(a)
+
+        let von = gedaempft(toene[a]), bis = gedaempft(toene[a + 1])
+        var weg = bis - von
+        if weg > 180 { weg -= 360 }
+        if weg < -180 { weg += 360 }
+        var ton = von + weg * (t * t * (3 - 2 * t))
+        if ton < 0 { ton += 360 }
+        if ton >= 360 { ton -= 360 }
+        return ton
     }
 }
 

@@ -818,21 +818,46 @@ extension View {
 /// Knick hat, an dem ein Band entstehen koennte.
 struct Kopfschatten: View {
     var body: some View {
-        LinearGradient(gradient: verlauf, startPoint: .top, endPoint: .bottom)
-            .frame(height: Stil.leisteUnten + 90)
-            .allowsHitTesting(false)
+        ZStack(alignment: .top) {
+            // Der Streifen unter der ganzen Leiste — traegt Wortmarke und
+            // Bereichsnamen.
+            LinearGradient(gradient: streifen, startPoint: .top, endPoint: .bottom)
+                .frame(height: Stil.leisteUnten + 90)
+
+            // **Und ein grosser weicher Fleck hinter dem Profilzeichen.**
+            //
+            // Es sitzt ganz rechts oben, also genau dort, wo die Kulisse am
+            // hellsten ist — der gleichmaessige Streifen reicht dort nicht,
+            // und das runde Bild lag plan auf dem Motiv.
+            //
+            // Riesig ist hier das Mittel, nicht die Uebertreibung: ein kleiner
+            // Schatten waere als Scheibe hinter dem Zeichen zu erkennen. Bei
+            // 520 Punkt Reichweite sieht man ihn nicht mehr als Form, sondern
+            // nur, dass es dort ruhiger ist.
+            RadialGradient(gradient: fleck,
+                           center: UnitPoint(x: 0.945, y: 0.02),
+                           startRadius: 0, endRadius: 520)
+                .frame(height: 620)
+        }
+        .allowsHitTesting(false)
     }
 
-    private var verlauf: Gradient {
-        let stufen = 12
-        var stops: [Gradient.Stop] = []
-        for i in 0 ... stufen {
+    /// Deckt die Leiste, 90 Punkte darunter zu Ende — gerade so weit, dass
+    /// er den Titel bei 196 nicht mehr beruehrt.
+    private var streifen: Gradient { verlauf(0.46) }
+
+    /// Kraeftiger als der Streifen, dafuer nur an einer Stelle.
+    private var fleck: Gradient { verlauf(0.52) }
+
+    /// Abgetastet statt gestuft: an beiden Enden waagerecht auslaufend, also
+    /// weder oben noch unten ein Knick, an dem ein Band entstehen koennte.
+    private func verlauf(_ staerke: Double) -> Gradient {
+        let stufen = 14
+        return Gradient(stops: (0 ... stufen).map { i in
             let t = Double(i) / Double(stufen)
             let weich = t * t * (3 - 2 * t)
-            stops.append(.init(color: Stil.grund.opacity(0.52 * (1 - weich)),
-                               location: t))
-        }
-        return Gradient(stops: stops)
+            return .init(color: Stil.grund.opacity(staerke * (1 - weich)), location: t)
+        })
     }
 }
 
