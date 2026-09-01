@@ -30,10 +30,12 @@ struct Wiedergabeblatt: View {
     @State private var untertitelWahl: String??
     @State private var tonWahl: String?
     @FocusState private var amChip: Kategorie?
+    /// Die Zaehler, im selben Takt nachgefuehrt wie der Player selbst.
+    @State private var zaehler: Spielwerte?
 
 
     enum Kategorie: String, CaseIterable, Identifiable {
-        case untertitel, ton, tempo, schlafzeit
+        case untertitel, ton, tempo, schlafzeit, technik
         var id: String { rawValue }
         var name: LocalizedStringKey {
             switch self {
@@ -41,6 +43,7 @@ struct Wiedergabeblatt: View {
             case .ton:        "Ton"
             case .tempo:      "Tempo"
             case .schlafzeit: "Schlafzeit"
+            case .technik:    "Technik"
             }
         }
     }
@@ -88,6 +91,18 @@ struct Wiedergabeblatt: View {
         // „Untertitel", der Zeiger stand auf „Schlafzeit". Zwei Aussagen an
         // derselben Stelle, und die falsche war die auffaellige.
         .task { amChip = kategorie }
+        // **Nur zaehlen, solange jemand hinsieht.** Der Auszug fragt VLC im
+        // halben Sekundentakt -- derselbe Takt wie `Wiedergabetakt`, und aus
+        // demselben Grund: schneller sieht man nur Flackern, langsamer
+        // verpasst man den Ruckler. Steht der Chip woanders, laeuft die
+        // Schleife nicht.
+        .task(id: kategorie) {
+            guard kategorie == .technik else { return }
+            while !Task.isCancelled {
+                zaehler = Spielwerte(flaeche.statistik)
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
         .onExitCommand { offen = false }
     }
 
@@ -146,6 +161,27 @@ struct Wiedergabeblatt: View {
                     ForEach(Schlafzeiten.werte, id: \.self) { minuten in
                         Wahlkarte(name: String(localized: "\(minuten) Minuten"), marke: nil,
                                   an: schlafminuten == minuten) { schlafminuten = minuten }
+                    }
+
+                // **Werte, keine Wahl.** Deshalb `Wertfeld` und nicht
+                // `Wahlkarte`: nichts hiervon laesst sich druecken, und eine
+                // Karte, die aussieht wie die vier daneben, verspraeche das.
+                // Aus demselben Grund ist die Reihe hier nicht fokussierbar.
+                case .technik:
+                    if let z = zaehler {
+                        Wertfeld(titel: "Verworfen", wert: "\(z.verworfen)",
+                                 warnung: z.verworfen > 0)
+                        Wertfeld(titel: "Zu spät", wert: "\(z.zuSpaet)",
+                                 warnung: z.zuSpaet > 0)
+                        Wertfeld(titel: "Gezeigt", wert: "\(z.gezeigt)")
+                        Wertfeld(titel: "Ton verloren", wert: "\(z.tonVerloren)",
+                                 warnung: z.tonVerloren > 0)
+                        Wertfeld(titel: "Eingang", wert: z.eingang)
+                        Wertfeld(titel: "Demuxer", wert: z.demuxer)
+                        Wertfeld(titel: "Bild entschlüsselt", wert: "\(z.videoBloecke)")
+                        Wertfeld(titel: "Ton entschlüsselt", wert: "\(z.tonBloecke)")
+                    } else {
+                        Wertfeld(titel: "Zähler", wert: String(localized: "Noch nichts"))
                     }
                 }
             }
@@ -208,6 +244,88 @@ struct Wiedergabeblatt: View {
         let bekannt = ["SRT", "ASS", "SSA", "PGS", "VTT", "SUB", "DVBSUB"]
         let gross = name.uppercased()
         return bekannt.first { gross.contains($0) }
+    }
+}
+
+/// VLCs Zaehlwerk, uebersetzt.
+///
+/// **Warum das ueberhaupt jemand sehen will:** diese App transkodiert nie.
+/// Ob das gutgeht, sieht man einer Wiedergabe nicht an — ein Bild, das
+/// stockt, und ein Bild, das still Einzelbilder wegwirft, sehen aus drei
+/// Metern gleich aus. `verworfen` ist der Unterschied. Steht dort eine Null,
+/// laeuft die Datei wirklich glatt; steigt sie waehrend des Zusehens, ist
+/// die Datei zu schwer fuer das Geraet, und zwar unabhaengig davon, was der
+/// Server meldet.
+///
+/// Die Rohwerte sind kumulativ seit Beginn der Wiedergabe, nicht pro
+/// Sekunde — deshalb steht hier auch nichts von „pro Sekunde".
+struct Spielwerte {
+    let verworfen: UInt64
+    let zuSpaet: UInt64
+    let gezeigt: UInt64
+    let tonVerloren: UInt64
+    let videoBloecke: UInt64
+    let tonBloecke: UInt64
+    /// Bitraten kommen als Byte pro Sekunde in `Float` — hier gleich als
+    /// Text, damit die Umrechnung an einer Stelle steht.
+    let eingang: String
+    let demuxer: String
+
+    init?(_ roh: VLCMedia.Stats?) {
+        guard let roh else { return nil }
+        verworfen    = roh.lostPictures
+        zuSpaet      = roh.latePictures
+        gezeigt      = roh.displayedPictures
+        tonVerloren  = roh.lostAudioBuffers
+        videoBloecke = roh.decodedVideo
+        tonBloecke   = roh.decodedAudio
+        eingang      = Spielwerte.rate(roh.inputBitrate)
+        demuxer      = Spielwerte.rate(roh.demuxBitrate)
+    }
+
+    /// VLC misst in Byte je Sekunde. Mal acht sind Bit, und ab einem Mbit
+    /// schreibt sich das lesbarer in Mbit/s.
+    private static func rate(_ bytesProSekunde: Float) -> String {
+        let bit = Double(bytesProSekunde) * 8
+        if bit <= 0 { return "—" }
+        if bit >= 1_000_000 {
+            return String(format: "%.1f Mbit/s", bit / 1_000_000)
+        }
+        return String(format: "%.0f kbit/s", bit / 1_000)
+    }
+}
+
+/// Ein abgelesener Wert im Technik-Auszug.
+///
+/// Sieht der `Wahlkarte` bewusst **nicht** gleich: keine Fokusflaeche, kein
+/// Druck, kein Haken. Wer eine Zahl anfassen will, soll gar nicht erst
+/// hinlangen.
+///
+/// Der Akzent bleibt aussen vor (E2) — eine auffaellige Zahl ist eine
+/// Warnung, keine Auswahl, und traegt deshalb `Stil.warnung`.
+struct Wertfeld: View {
+    let titel: LocalizedStringKey
+    let wert: String
+    var warnung = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(titel)
+                .font(.system(size: 25))
+                .foregroundStyle(Stil.schriftSehrLeise)
+                .lineLimit(1)
+            Text(wert)
+                .font(.system(size: 40, weight: .semibold))
+                .foregroundStyle(warnung ? Stil.warnung : Stil.schrift)
+                .lineLimit(1)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 28)
+        .frame(height: 130, alignment: .leading)
+        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
+        // Eine Zahl ist keine Taste — VoiceOver soll sie als Wertepaar
+        // vorlesen, nicht als Bedienelement anbieten (E8).
+        .accessibilityElement(children: .combine)
     }
 }
 

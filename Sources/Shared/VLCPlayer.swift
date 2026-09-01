@@ -617,6 +617,19 @@ final class VLCPlayerView: Basisansicht {
     var gewaehlteTonspur: VLCMediaPlayer.Track? { player.audioTracks.first(where: \.isSelected) }
     var gewaehlterUntertitel: VLCMediaPlayer.Track? { player.textTracks.first(where: \.isSelected) }
 
+    /// VLCs Zaehlwerk: verworfene Bilder, Bitraten, Dekoderbloecke.
+    ///
+    /// **Nur lesend, greift in nichts ein.** Sie beantwortet die eine Frage,
+    /// die man einer flatternden Wiedergabe sonst nicht ansieht: laeuft die
+    /// Datei wirklich glatt, oder sieht sie nur glatt aus, weil VLC still
+    /// Bilder wegwirft? `lostPictures` steigt dann, `displayedPictures`
+    /// bleibt zurueck — und genau das ist bei einer App, die niemals
+    /// transkodieren will, der Unterschied zwischen „geht" und „geht
+    /// gerade noch".
+    ///
+    /// `nil`, solange kein Medium geladen ist.
+    var statistik: VLCMedia.Stats? { player.media?.statistics }
+
     /// Wählt Ton- und Untertitelspur nach den Voreinstellungen.
     ///
     /// Verglichen wird über den Spurnamen, weil VLC keine Sprachkennung
