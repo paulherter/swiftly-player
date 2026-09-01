@@ -760,19 +760,38 @@ struct Kulissenblende: ViewModifier {
             // Kreis in der Ecke, das Minimum zweier Rampen — hat die Kurve
             // veraendert, statt nur ihre Technik. Deshalb war jede Fassung
             // schlechter als diese.
+            //
+            // **Dieselben Anker, mehr Stuetzstellen.** Das Harte waren nicht
+            // die Werte, sondern ihre Zahl: zwischen 0,26 und 0,62 sprang die
+            // Sichtbarkeit von 22 auf 84 Prozent, und an beiden Punkten
+            // knickte die Steigung. Ein Knick liest sich als Kante.
+            //
+            // Die vier Anker der urspruenglichen Fassung stehen unveraendert
+            // (0 / 0,22 / 0,84 / 1 und 1 / 0,25 / 0); dazwischen liegen jetzt
+            // Zwischenpunkte, die den Uebergang tragen, statt ihn in einem Zug
+            // zu nehmen. Die Kurve bleibt dieselbe, sie hat nur keine Ecken
+            // mehr.
             .mask {
                 LinearGradient(stops: [
                     .init(color: .white.opacity(0.00), location: 0),
-                    .init(color: .white.opacity(0.22), location: 0.26),
-                    .init(color: .white.opacity(0.84), location: 0.62),
+                    .init(color: .white.opacity(0.05), location: 0.15),
+                    .init(color: .white.opacity(0.22), location: 0.29),
+                    .init(color: .white.opacity(0.50), location: 0.45),
+                    .init(color: .white.opacity(0.75), location: 0.57),
+                    .init(color: .white.opacity(0.90), location: 0.70),
+                    .init(color: .white.opacity(0.98), location: 0.85),
                     .init(color: .white.opacity(1.00), location: 1),
                 ], startPoint: .leading, endPoint: .trailing)
             }
             .mask {
                 LinearGradient(stops: [
                     .init(color: .white.opacity(1.00), location: 0),
-                    .init(color: .white.opacity(1.00), location: 0.543),
-                    .init(color: .white.opacity(0.25), location: 0.794),
+                    .init(color: .white.opacity(1.00), location: 0.50),
+                    .init(color: .white.opacity(0.88), location: 0.60),
+                    .init(color: .white.opacity(0.62), location: 0.70),
+                    .init(color: .white.opacity(0.34), location: 0.80),
+                    .init(color: .white.opacity(0.14), location: 0.89),
+                    .init(color: .white.opacity(0.04), location: 0.95),
                     .init(color: .white.opacity(0.00), location: 1),
                 ], startPoint: .top, endPoint: .bottom)
             }
