@@ -169,32 +169,11 @@ final class Bildton {
 }
 
 extension Bildton {
-    /// Aus dem Ton die fertige Farbe — **hier stehen Saettigung und
-    /// Helligkeit**, und nur hier.
-    static func farbe(_ grad: Double) -> Color {
-        Color(hue: grad / 360, saturation: 0.45, brightness: 0.42)
-    }
+    /// Saettigung und Helligkeit stehen jetzt in `Bildgrund.farbe(bei:)`,
+    /// wo sie von der Stelle im Netz abhaengen. Die frueheren `farbe` und
+    /// `grundfarbe` gab es nur, solange der Grund aus einer Flaeche und
+    /// gestapelten Wolken bestand — sie sind mit dem Netz weggefallen.
 
-    /// **Der Grund der ganzen Seite, leicht eingefaerbt.**
-    ///
-    /// Nicht Zierde, sondern gegen Streifenbildung. Lief der Verlauf auf
-    /// reines `#0B0B0D` aus, ging er ueber tausend Punkte von getoent nach
-    /// neutralschwarz — ein flacher Farbverlauf im dunkelsten Bereich, und
-    /// genau dort zeigt ein Fernseher Ringe.
-    static func grundfarbe(_ grad: Double) -> Color {
-        Color(hue: grad / 360, saturation: 0.38, brightness: 0.085)
-    }
-
-    /// **Weiche Blendstufen statt weniger Stuetzstellen.**
-    ///
-    /// Ein Verlauf aus drei, vier Stopps hat an jedem davon einen Knick: die
-    /// Steigung springt, und das Auge liest den Sprung als Kante. Genau das
-    /// waren die "harten Kanten unten und links vom Bild" — sie standen dort,
-    /// wo die Blende aufhoerte und die Flaeche deckend wurde.
-    ///
-    /// `t * t * (3 - 2t)` laeuft an beiden Enden waagerecht aus, hat also
-    /// nirgends einen Knick. Mit zwoelf Stufen abgetastet ist davon nichts
-    /// mehr zu sehen.
     /// **Feines Rauschen gegen Streifenbildung.**
     ///
     /// Der eigentliche Grund fuer Streifen ist nicht der Verlauf, sondern die
@@ -281,41 +260,11 @@ struct Bildgrund: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background(alignment: .top) {
-                ZStack(alignment: .top) {
-                    // **Der Grund ist ein Verlauf zwischen den Toenen, keine
-                    // Flaeche.**
-                    //
-                    // Und das ist der zweite Teil gegen die Baender. Ein
-                    // Verlauf von einer Farbe nach durchsichtig bewegt sich in
-                    // RGB fast nur auf einer Geraden — die
-                    // Quantisierungsstufen liegen dann alle quer dazu und
-                    // bilden saubere, gut sichtbare Baender. Laeuft er von
-                    // einer Farbe in eine **andere**, wandern die drei Kanaele
-                    // unterschiedlich schnell, ihre Stufengrenzen fallen
-                    // auseinander, und es bleibt kein durchgehender Rand mehr
-                    // uebrig.
-                    grundverlauf.ignoresSafeArea()
+            .background {
+                ZStack {
+                    netz.ignoresSafeArea()
 
-                    // **Ein Ton je Gipfel, an verschiedenen Stellen.**
-                    //
-                    // Der staerkste sitzt oben rechts, wo das Bild steht; die
-                    // schwaecheren links darunter. So entsteht der Wechsel
-                    // zwischen zwei Farben ueber die Flaeche, statt einer
-                    // einzigen Wolke — das ist der Unterschied, den
-                    //
-                    // 1400 hoch, damit jeder Verlauf **innerhalb** seiner
-                    // eigenen Flaeche auf null kommt.
-                    ForEach(Array(toene.enumerated()), id: \.offset) { i, ton in
-                        RadialGradient(colors: [Bildton.farbe(ton).opacity(staerke(i)),
-                                                Bildton.farbe(ton).opacity(0)],
-                                       center: mitte(i),
-                                       startRadius: 0, endRadius: 1100)
-                            .frame(height: 1400)
-                    }
-
-                    // Gegen die Baender, die acht Bit auf so viel Flaeche
-                    // nicht vermeiden koennen — siehe `Bildton.rauschen`.
+                    // Der letzte Rest gegen Baender — siehe `Bildton.rauschen`.
                     if !toene.isEmpty {
                         Bildton.rauschen
                             .resizable(resizingMode: .tile)
@@ -339,71 +288,59 @@ struct Bildgrund: ViewModifier {
             }
     }
 
-    /// Ueber die Flaeche von Ton zu Ton, schraeg. Bei nur einem Ton bleibt
-    /// die Bewegung erhalten, indem Saettigung und Helligkeit leicht wandern
-    /// — auch das laesst die Kanaele verschieden schnell laufen.
-    private var grundverlauf: LinearGradient {
-        let toenung: [Double]
-        switch toene.count {
-        case 0:  return LinearGradient(colors: [Stil.grund, Stil.grund],
-                                       startPoint: .topTrailing, endPoint: .bottomLeading)
-        case 1:  toenung = [toene[0], toene[0]]
-        default: toenung = toene
-        }
-
-        // **Ohne Knick von Farbe zu Farbe.**
-        //
-        // Ein `LinearGradient(colors:)` verbindet seine Farben geradlinig und
-        // hat an jeder einen Knick — die Steigung springt, und das Auge liest
-        // den Sprung als Band. Genau derselbe Fehler wie vorher bei der
-        // Blende, nur an der naechsten Stelle.
-        //
-        // Deshalb wird jeder Abschnitt mit `t² (3 − 2t)` abgetastet: die
-        // Kurve laeuft an beiden Enden waagerecht aus, also stossen zwei
-        // Abschnitte mit gleicher Steigung null aneinander. Bei einem
-        // einzigen Ton wandern stattdessen Saettigung und Helligkeit, damit
-        // die drei Kanaele auch dann verschieden schnell laufen.
-        var stops: [Gradient.Stop] = []
-        let abschnitte = toenung.count - 1
-        for a in 0 ..< max(abschnitte, 1) {
-            let vonTon = toenung[a], bisTon = toenung[min(a + 1, toenung.count - 1)]
-            // Kuerzester Weg ueber den Farbkreis — sonst laeuft ein Uebergang
-            // von 350 auf 10 Grad einmal quer durch alle Farben.
-            var weg = bisTon - vonTon
-            if weg > 180 { weg -= 360 }
-            if weg < -180 { weg += 360 }
-
-            for i in 0 ... 8 {
-                let t = Double(i) / 8
-                let weich = t * t * (3 - 2 * t)
-                let ort = (Double(a) + t) / Double(max(abschnitte, 1))
-                let ton = vonTon + weg * weich
-                let farbe = toene.count == 1
-                    ? Color(hue: ton / 360,
-                            saturation: 0.38 - 0.14 * weich,
-                            brightness: 0.085 - 0.030 * weich)
-                    : Bildton.grundfarbe(ton)
-                stops.append(.init(color: farbe, location: min(ort, 1)))
-            }
-        }
-        return LinearGradient(gradient: Gradient(stops: stops),
-                              startPoint: .topTrailing, endPoint: .bottomLeading)
+    /// **Ein Netz statt gestapelter Verlaeufe.**
+    ///
+    /// Davor lagen hier ein linearer Grundverlauf und bis zu fuenf radiale
+    /// Wolken uebereinander. Jede davon hat Stuetzstellen, an jeder
+    /// Stuetzstelle springt die Steigung, und jeder Sprung liest sich als Band
+    /// — dazu addieren sich fuenf halbdurchsichtige Ebenen zu genau den
+    /// fleckigen Uebergaengen, die Kein Feinschliff an den Zahlen konnte das
+    /// beheben, weil der Aufbau selbst die Kanten erzeugte.
+    ///
+    /// `MeshGradient` interpoliert stattdessen auf der GPU ueber eine
+    /// **Flaeche**: neun Stuetzpunkte, dazwischen eine glatte Lage. Es gibt
+    /// darin keine Stopps, an denen etwas knicken koennte, und keine
+    /// gestapelten Ebenen, die sich addieren. Seit tvOS 18 da, unser Ziel
+    /// steht auf 18.0.
+    ///
+    /// Die Farben verteilen sich so, wie das Bild steht: oben rechts, wo die
+    /// Kulisse sitzt, der staerkste Ton am hellsten; nach links unten wird es
+    /// dunkler, bis es in den Grund uebergeht. Die uebrigen Toene fuellen die
+    /// Mitte, damit ueber die Flaeche wirklich Farbe wechselt.
+    private var netz: some View {
+        let punkte: [SIMD2<Float>] = [
+            [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
+            [0.0, 0.5], [0.5, 0.5], [1.0, 0.5],
+            [0.0, 1.0], [0.5, 1.0], [1.0, 1.0],
+        ]
+        return MeshGradient(width: 3, height: 3,
+                            points: punkte,
+                            colors: punkte.map { farbe(bei: $0) })
     }
 
-    private func staerke(_ i: Int) -> Double {
-        [0.28, 0.20, 0.15, 0.11, 0.08][min(i, 4)]
-    }
+    /// Welche Farbe an welcher Stelle des Netzes steht.
+    ///
+    /// Zwei Dinge entscheiden: die Naehe zur Kulisse oben rechts bestimmt,
+    /// **wie hell** es wird, und die Stelle im Netz bestimmt, **welcher** Ton
+    /// es ist. Ohne das Zweite waere es wieder eine einzige Wolke.
+    private func farbe(bei punkt: SIMD2<Float>) -> Color {
+        guard !toene.isEmpty else { return Stil.grund }
 
-    /// Ueber die Flaeche verteilt, nicht uebereinander. Der staerkste sitzt
-    /// oben rechts beim Bild, die uebrigen wandern nach links und unten —
-    /// so entsteht der Wechsel, statt dass sich alles an einer Stelle
-    /// addiert.
-    private func mitte(_ i: Int) -> UnitPoint {
-        [UnitPoint(x: 0.74, y: 0.02),
-         UnitPoint(x: 0.16, y: 0.38),
-         UnitPoint(x: 0.94, y: 0.52),
-         UnitPoint(x: 0.42, y: 0.72),
-         UnitPoint(x: 0.06, y: 0.06)][min(i, 4)]
+        // Abstand zur Kulisse (oben rechts), auf 0…1 gebracht.
+        let dx = Double(1 - punkt.x), dy = Double(punkt.y)
+        let naehe = 1 - min(1, (dx * dx + dy * dy).squareRoot() / 1.414)
+
+        // Welcher Ton: ueber die Flaeche durchgereicht, damit benachbarte
+        // Punkte verschiedene Toene tragen.
+        let feld = Int(punkt.x * 2) + Int(punkt.y * 2) * 3
+        let ton = toene[feld % toene.count]
+
+        // Nah an der Kulisse farbig, weit weg fast der Grundton. Die Werte
+        // bleiben unter denen der alten Wolken — auf der ganzen Flaeche
+        // wirkt weniger mehr.
+        return Color(hue: ton / 360,
+                     saturation: 0.30 + 0.16 * naehe,
+                     brightness: 0.055 + 0.115 * naehe * naehe)
     }
 }
 
