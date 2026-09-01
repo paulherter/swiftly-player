@@ -142,6 +142,10 @@ targets:
       # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
       - path: Sources/Shared/Wiedergabewahlen.swift
       - path: Sources/Shared/Wiedergabewahlen.swift
+      # Reihentitel, Plakette, Lader, Profilzeichen — die Bausteine ohne
+      # Plattformmaße. Lagen dreimal da; die Maße gibt jetzt das Ziel als
+      # Parameter mit, siehe `Plakette.fern` und `Lader.fern` in Stil.swift.
+      - path: Sources/Shared/Bausteine.swift
       - path: Sources/Shared/QuickConnectModell.swift
       - path: Sources/Shared/Wiedergabezentrale.swift
       - path: Sources/Shared/Startseitenmodell.swift

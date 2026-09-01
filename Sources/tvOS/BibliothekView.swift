@@ -27,7 +27,7 @@ struct BibliothekView: View {
     var body: some View {
         ZStack {
             if stand.laedt {
-                Lader()
+                Lader.fern
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 30) {

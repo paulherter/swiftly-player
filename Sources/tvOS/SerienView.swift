@@ -179,7 +179,7 @@ struct SerienView: View {
         if laedtFolgen {
             // Der Lader steht so hoch wie der Streifen, den er ersetzt —
             // sonst springt die halbe Seite, sobald die Folgen ankommen.
-            Lader()
+            Lader.fern
                 .frame(maxWidth: .infinity)
                 .frame(height: Stil.querHoehe + 2 * Stil.reihenLuft + 80)
         } else if folgen.isEmpty {

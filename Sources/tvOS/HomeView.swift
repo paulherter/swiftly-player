@@ -28,7 +28,7 @@ struct HomeView: View {
     var body: some View {
         ZStack {
             if !stand.geladen {
-                Lader()
+                Lader.fern
             } else if stand.gestoert {
                 Leerzustand(symbol: "wifi.exclamationmark",
                             titel: "Der Server antwortet nicht",

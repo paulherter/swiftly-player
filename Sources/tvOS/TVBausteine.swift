@@ -351,8 +351,9 @@ struct Kopfleiste: View {
             Spacer(minLength: 0)
 
             Button(action: aufsProfil) {
-                Profilzeichen(url: model.benutzerbildURL(groesse: 180),
-                              name: model.session?.userName)
+                Profilzeichen(name: model.session?.userName ?? "?",
+                              bild: model.benutzerbildURL(groesse: 180),
+                              groesse: 60)
             }
             .buttonStyle(ProfilStil())
             // Ein Bild ohne Beschriftung ist eine namenlose Taste.
@@ -372,38 +373,16 @@ struct Kopfleiste: View {
     }
 }
 
-/// Rundes Benutzerbild, ersatzweise der Anfangsbuchstabe.
-struct Profilzeichen: View {
-    let url: URL?
-    let name: String?
-
-    var body: some View {
-        Circle()
-            .fill(Stil.erhoeht)
-            .frame(width: 60, height: 60)
-            .overlay {
-                if let url {
-                    AsyncImage(url: url) { phase in
-                        if case let .success(bild) = phase {
-                            bild.resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            buchstabe
-                        }
-                    }
-                    .clipShape(Circle())
-                } else {
-                    buchstabe
-                }
-            }
-            .overlay(Circle().strokeBorder(Stil.rand, lineWidth: 2))
-    }
-
-    private var buchstabe: some View {
-        Text(String(name?.prefix(1).uppercased() ?? "?"))
-            .font(.system(size: 27, weight: .semibold))
-            .foregroundStyle(Stil.schriftLeise)
-    }
-}
+// `Profilzeichen` steht jetzt in `Sources/Shared/Bausteine.swift` und nimmt
+// die Größe als Parameter: `Profilzeichen(name:bild:groesse: 60)`.
+//
+// **Zwei Dinge sehen dadurch anders aus als vorher**, und beide sind
+// Gestaltung, nicht Technik: der Grund ist ein Grünverlauf statt der flachen
+// Fläche `Stil.erhoeht`, und der Ring ist 1 statt 2 stark. Der Buchstabe
+// rechnet sich aus der Größe (60 × 0,38 = 22,8 statt fest 27). Gemeldet,
+// nicht selbst entschieden — soll es beim alten Bild bleiben, gehören die
+// drei Werte als Parameter in den geteilten Baustein, so wie es die
+// `Plakette` schon vormacht.
 
 // MARK: - Besetzung
 

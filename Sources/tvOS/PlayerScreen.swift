@@ -178,7 +178,7 @@ struct PlayerScreen: View {
             if !erstesBildDa {
                 ZStack {
                     Color.black
-                    Lader()
+                    Lader.fern
                 }
                 .ignoresSafeArea()
                 .transition(.opacity)

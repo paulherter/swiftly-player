@@ -309,7 +309,7 @@ struct StaffelZiel: View {
             if let serie {
                 SerienView(model: model, serie: serie, startStaffelID: folge.seasonId)
             } else {
-                Lader()
+                Lader.fern
             }
         }
         .task {

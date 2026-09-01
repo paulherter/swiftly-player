@@ -231,29 +231,33 @@ struct Fortschrittsbalken: View {
 
 // MARK: - Kleinteile
 
-/// Rubrik über einer Reihe.
-struct Reihentitel: View {
-    let text: LocalizedStringKey
-    var body: some View {
-        Text(text)
-            .font(Stil.reihe)
-            .tracking(-0.3)
-            .foregroundStyle(Stil.schrift)
-    }
-}
+// `Reihentitel`, `Plakette`, `Lader` und `Profilzeichen` stehen jetzt in
+// `Sources/Shared/Bausteine.swift`. Sie lagen dreimal da — hier, auf iOS und
+// auf macOS —, weil `Shared/Stil.swift` iPhone-Maße mit neutralen Bausteinen
+// mischte und dieses Ziel die Datei deshalb nicht einbinden konnte. Kopien
+// laufen auseinander; bei `nachladen()` ist genau das passiert.
+//
+// **Die Maße bleiben hier, die Bausteine nicht.** Der geteilte Baustein nimmt
+// sie entgegen, das Ziel gibt sie mit.
 
-/// Kleine umrandete Marke — FSK, Untertitelformat, Tonspur.
-struct Plakette: View {
-    let text: String
-    var farbe: Color = Stil.schriftLeise
-
-    var body: some View {
-        Text(text)
-            .font(Stil.plakette)
-            .foregroundStyle(farbe)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(farbe.opacity(0.3), lineWidth: 2))
+/// Die Fernseher-Maße der Plakette an einer Stelle.
+///
+/// Das ist **keine zweite Plakette**, sondern ein Satz Zahlen: die
+/// iPhone-Werte (5/2, Rundung 3, Strich 1) sind auf drei Meter Entfernung zu
+/// klein. Wer sie ändert, ändert sie hier — nicht in einer Kopie.
+///
+/// Die Randfarbe leitet sich aus der Schriftfarbe ab, so wie es die eigene
+/// Fassung tat. Der geteilte Baustein hält beide getrennt, weil ein
+/// gekoppelter Rand die Plakette auf dem iPhone aufgehellt hätte.
+extension Plakette {
+    static func fern(_ text: String, farbe: Color = Stil.schriftLeise) -> Plakette {
+        Plakette(text: text,
+                 farbe: farbe,
+                 randfarbe: farbe.opacity(0.3),
+                 innenWaagerecht: 12,
+                 innenSenkrecht: 4,
+                 rundung: 6,
+                 strichstaerke: 2)
     }
 }
 
@@ -287,7 +291,7 @@ struct Belegzeile: View {
                 .foregroundStyle(Color.white.opacity(0.8))
             }
 
-            if let freigabe { Plakette(text: freigabe) }
+            if let freigabe { Plakette.fern(freigabe) }
 
             if belegZuletzt { beleg }
         }
@@ -313,21 +317,13 @@ struct Belegzeile: View {
     }
 }
 
-/// Drehender Ladering — wie auf iOS, nur größer.
-struct Lader: View {
-    var groesse: CGFloat = 68
-    var staerke: CGFloat = 5
-    @State private var dreht = false
-
-    var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.22)
-            .stroke(Stil.akzent, style: StrokeStyle(lineWidth: staerke, lineCap: .round))
-            .frame(width: groesse, height: groesse)
-            .rotationEffect(.degrees(dreht ? 360 : 0))
-            .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: dreht)
-            .onAppear { dreht = true }
-    }
+/// Der Ladering in Fernseher-Größe — 68 statt der 34 vom Telefon.
+///
+/// Wie `Plakette.fern` nur ein Satz Zahlen. Der geteilte Baustein bringt
+/// obendrein den blassen Hintergrundring mit, den die eigene Fassung nicht
+/// hatte.
+extension Lader {
+    static var fern: Lader { Lader(groesse: 68, staerke: 5) }
 }
 
 /// Wenn nichts da ist.

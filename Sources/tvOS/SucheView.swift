@@ -34,7 +34,7 @@ struct SucheView: View {
                 .padding(.horizontal, Stil.randSeite)
 
                 if laeuft {
-                    Lader().frame(maxWidth: .infinity).padding(.top, 80)
+                    Lader.fern.frame(maxWidth: .infinity).padding(.top, 80)
                 } else if treffer.isEmpty && gesucht {
                     Leerzustand(symbol: "magnifyingglass",
                                 titel: "Nichts gefunden",

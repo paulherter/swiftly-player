@@ -158,7 +158,7 @@ struct ServerView: View {
                 .padding(.top, 36)
 
             if model.phase == .connecting {
-                Lader().padding(.top, 40)
+                Lader.fern.padding(.top, 40)
             } else if let fehler = model.errorMessage {
                 Text(fehler)
                     .font(Stil.koerper)
@@ -221,7 +221,7 @@ struct AnmeldeView: View {
                 .padding(.top, 36)
 
             if model.isWorking {
-                Lader().padding(.top, 40)
+                Lader.fern.padding(.top, 40)
             } else if let fehler = model.errorMessage {
                 Text(fehler)
                     .font(Stil.koerper)
