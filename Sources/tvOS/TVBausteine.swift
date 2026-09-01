@@ -690,49 +690,53 @@ struct Kulisse: View {
         //
         // Vorher lagen zwei Verlaeufe aus `Stil.grund` **darueber**: links
         // deckendes #0B0B0D, nach rechts durchsichtig werdend. Das versteckt
-        // das Bild zwar, setzt aber voraus, dass der Hintergrund genau #0B0B0D
-        // ist. Sobald er sich faerbt, steht die uebermalte Flaeche als Fleck
-        // darin — das war die harte senkrechte Kante.
+        // das Bild zwar, setzt aber voraus, dass der Hintergrund genau
+        // #0B0B0D ist. Sobald er sich faerbt, steht die uebermalte Flaeche
+        // als Fleck darin — das war die harte senkrechte Kante.
         //
         // Als Maske faellt die **Deckkraft des Bildes selbst**. Es laeuft in
-        // Transparenz aus, und was dahinterliegt, kommt durch, welche Farbe es
-        // auch hat. Damit liegt das Bild vorn und der Ton dahinter, statt
+        // Transparenz aus, und was dahinterliegt, kommt durch, welche Farbe
+        // es auch hat. Damit liegt das Bild vorn und der Ton dahinter, statt
         // ueber ihm.
         //
-        // Der Einwand weiter oben — eine Maske nimmt den Fokusring mit — gilt
-        // hier nicht: die Kulisse ist kein Bedienelement, sie traegt
+        // Der Einwand weiter oben — eine Maske nimmt den Fokusring mit —
+        // gilt hier nicht: die Kulisse ist kein Bedienelement, sie traegt
         // `allowsHitTesting(false)` und hat nichts zu fokussieren.
         //
-        // **Weich heisst lang, aber nicht ueberall.**
+        // **Nur die Raender federn aus. Die Flaeche bleibt deckend.**
         //
-        // Ein erster Versuch zog die Rampe ueber die ganze Breite. Damit war
-        // das Bild nirgends mehr ganz deckend — bei 85 Prozent noch ein
-        // Sechstel durchsichtig, der Ton schimmerte auf der ganzen Flaeche
-        // durch, und genau das sah wieder aus wie ein Verlauf **ueber** dem
-        // Bild.
+        // Zweimal danebengegriffen, und beide Male auf dieselbe Weise: erst
+        // lief die Rampe ueber die ganze Breite, dann senkrecht ab der
+        // Mitte. In beiden Faellen war das Bild auf grossen Teilen seiner
+        // Flaeche halbdurchsichtig — und weil der gefaerbte Grund dahinter
+        // liegt, schimmerte er ueberall durch. Auf dem Schirm ist das nicht
+        // von Farbe **auf** dem Bild zu unterscheiden.
         //
-        // Richtig ist beides zugleich: rechts **voll deckend**, und der
-        // Uebergang trotzdem lang. Er liegt deshalb ganz in der linken
-        // Haelfte, dort wo der Text steht und das Bild ohnehin verschwinden
-        // soll. Ab 72 Prozent ist das Bild unangetastet.
+        // Der Unterschied ist nicht die Weichheit, sondern die Strecke: eine
+        // Blende gehoert an den Rand, nicht ueber die Flaeche. Innen ist das
+        // Bild unangetastet, aussen loest es sich auf.
+        //
+        // Waagerecht muss die Blende bis 45 Prozent reichen, und das ist
+        // gerechnet, nicht geschaetzt: das Bild beginnt bei x = 740, der
+        // Textblock endet bei 1160. Die 420 Punkt Ueberschneidung sind 36
+        // Prozent der Bildbreite — so weit muss es mindestens weg sein,
+        // damit der Text darauf lesbar bleibt. 45 gibt etwas Rand.
         .mask {
             LinearGradient(stops: [
                 .init(color: .clear,               location: 0),
-                .init(color: .white.opacity(0.15), location: 0.28),
-                .init(color: .white.opacity(0.55), location: 0.48),
-                .init(color: .white.opacity(0.90), location: 0.62),
-                .init(color: .white,               location: 0.72),
+                .init(color: .white.opacity(0.22), location: 0.22),
+                .init(color: .white.opacity(0.72), location: 0.36),
+                .init(color: .white,               location: 0.45),
                 .init(color: .white,               location: 1),
             ], startPoint: .leading, endPoint: .trailing)
         }
-        // Senkrecht dasselbe: oben unangetastet, der Ausklang liegt in der
-        // unteren Haelfte. Er muss unten auf null kommen, damit das Bild in
-        // den Grund uebergeht statt an einer Kante zu enden.
+        // Senkrecht federt nur das untere Viertel aus — dort geht das Bild
+        // in den Grund ueber. Darueber bleibt es voll.
         .mask {
             LinearGradient(stops: [
                 .init(color: .white,               location: 0),
-                .init(color: .white,               location: 0.55),
-                .init(color: .white.opacity(0.62), location: 0.80),
+                .init(color: .white,               location: 0.74),
+                .init(color: .white.opacity(0.55), location: 0.89),
                 .init(color: .clear,               location: 1),
             ], startPoint: .top, endPoint: .bottom)
         }
