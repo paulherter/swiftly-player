@@ -79,6 +79,13 @@ struct SerienView: View {
             .padding(.bottom, Stil.abschlussLuft)
         }
         .scrollIndicators(.hidden)
+        // **Der Grund der ganzen Seite faerbt sich nach der Kulisse.**
+        //
+        // An der Seite und nicht am Kopf: sonst endet die Faerbung an dessen
+        // Unterkante, und quer ueber dem Schirm steht eine Naht. Siehe
+        // `Bildgrund`.
+        .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
+                        ?? model.backdropURL(for: aktuell))
         // Rand wie auf der Filmseite — siehe dort.
         .ignoresSafeArea()
         // Die Staffelwahl liegt auf der **Seite**, nicht am Pillenknopf —

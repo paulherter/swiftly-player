@@ -690,38 +690,50 @@ struct Kulisse: View {
         //
         // Vorher lagen zwei Verlaeufe aus `Stil.grund` **darueber**: links
         // deckendes #0B0B0D, nach rechts durchsichtig werdend. Das versteckt
-        // das Bild zwar, setzt aber voraus, dass der Hintergrund genau
-        // #0B0B0D ist. Sobald er sich faerbt, steht die uebermalte Flaeche
-        // als Fleck darin — das war die harte senkrechte Kante.
+        // das Bild zwar, setzt aber voraus, dass der Hintergrund genau #0B0B0D
+        // ist. Sobald er sich faerbt, steht die uebermalte Flaeche als Fleck
+        // darin — das war die harte senkrechte Kante.
         //
         // Als Maske faellt die **Deckkraft des Bildes selbst**. Es laeuft in
-        // Transparenz aus, und was dahinterliegt, kommt durch, welche Farbe
-        // es auch hat. Damit liegt das Bild vorn und der Ton dahinter, statt
+        // Transparenz aus, und was dahinterliegt, kommt durch, welche Farbe es
+        // auch hat. Damit liegt das Bild vorn und der Ton dahinter, statt
         // ueber ihm.
         //
-        // Der Einwand weiter oben — eine Maske nimmt den Fokusring mit —
-        // gilt hier nicht: die Kulisse ist kein Bedienelement, sie traegt
+        // Der Einwand weiter oben — eine Maske nimmt den Fokusring mit — gilt
+        // hier nicht: die Kulisse ist kein Bedienelement, sie traegt
         // `allowsHitTesting(false)` und hat nichts zu fokussieren.
         //
-        // **Die Rampe ist lang.** Vorher war das Bild bei 26 Prozent schon
-        // zu vier Fuenfteln verdeckt und bei 62 Prozent fast frei — auf so
-        // kurzer Strecke liest sich das als Kante, nicht als Verlauf. Jetzt
-        // zieht sie sich ueber die ganze Breite.
+        // **Weich heisst lang, aber nicht ueberall.**
+        //
+        // Ein erster Versuch zog die Rampe ueber die ganze Breite. Damit war
+        // das Bild nirgends mehr ganz deckend — bei 85 Prozent noch ein
+        // Sechstel durchsichtig, der Ton schimmerte auf der ganzen Flaeche
+        // durch, und genau das sah wieder aus wie ein Verlauf **ueber** dem
+        // Bild.
+        //
+        // Richtig ist beides zugleich: rechts **voll deckend**, und der
+        // Uebergang trotzdem lang. Er liegt deshalb ganz in der linken
+        // Haelfte, dort wo der Text steht und das Bild ohnehin verschwinden
+        // soll. Ab 72 Prozent ist das Bild unangetastet.
         .mask {
             LinearGradient(stops: [
-                .init(color: .clear,            location: 0),
-                .init(color: .white.opacity(0.10), location: 0.30),
-                .init(color: .white.opacity(0.45), location: 0.60),
-                .init(color: .white.opacity(0.85), location: 0.85),
-                .init(color: .white,            location: 1),
+                .init(color: .clear,               location: 0),
+                .init(color: .white.opacity(0.15), location: 0.28),
+                .init(color: .white.opacity(0.55), location: 0.48),
+                .init(color: .white.opacity(0.90), location: 0.62),
+                .init(color: .white,               location: 0.72),
+                .init(color: .white,               location: 1),
             ], startPoint: .leading, endPoint: .trailing)
         }
+        // Senkrecht dasselbe: oben unangetastet, der Ausklang liegt in der
+        // unteren Haelfte. Er muss unten auf null kommen, damit das Bild in
+        // den Grund uebergeht statt an einer Kante zu enden.
         .mask {
             LinearGradient(stops: [
-                .init(color: .white,            location: 0),
-                .init(color: .white,            location: 0.42),
-                .init(color: .white.opacity(0.55), location: 0.72),
-                .init(color: .clear,            location: 1),
+                .init(color: .white,               location: 0),
+                .init(color: .white,               location: 0.55),
+                .init(color: .white.opacity(0.62), location: 0.80),
+                .init(color: .clear,               location: 1),
             ], startPoint: .top, endPoint: .bottom)
         }
         // Bis an die Bildkante, ohne den Text mitzunehmen: der Textblock

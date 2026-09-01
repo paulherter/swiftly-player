@@ -147,4 +147,73 @@ extension Bildton {
     static func farbe(_ grad: Double) -> Color {
         Color(hue: grad / 360, saturation: 0.45, brightness: 0.42)
     }
+
+    /// **Der Grund der ganzen Seite, leicht eingefaerbt.**
+    ///
+    /// Nicht Zierde, sondern gegen Streifenbildung. Lief der Verlauf auf
+    /// reines `#0B0B0D` aus, ging er ueber tausend Punkte von getoent nach
+    /// neutralschwarz — ein flacher Farbverlauf im dunkelsten Bereich, und
+    /// genau dort zeigt ein Fernseher Ringe: acht Bit reichen nicht, um so
+    /// wenig Unterschied auf so viel Flaeche zu verteilen.
+    ///
+    /// Nimmt der Grund den Ton schon mit an, ist die Strecke kurz: der
+    /// Verlauf muss nur noch von etwas Farbe auf etwas weniger Farbe kommen,
+    /// nicht auf gar keine.
+    ///
+    /// Dunkel bleibt es trotzdem — Helligkeit 0,085 liegt beim Grundton der
+    /// App, die Saettigung traegt den Unterschied.
+    static func grundfarbe(_ grad: Double) -> Color {
+        Color(hue: grad / 360, saturation: 0.38, brightness: 0.085)
+    }
+}
+
+/// Faerbt den Grund einer ganzen Seite nach ihrem Kulissenbild.
+///
+/// **An der Seite, nicht am Kopf.** Erst sass das im `Detailkopf`, und damit
+/// endete die Faerbung an dessen Unterkante — darunter stand wieder reines
+/// `#0B0B0D` und quer ueber dem Schirm eine Naht. Der Grund gehoert unter
+/// alles, was die Seite zeigt, die Reihen eingeschlossen.
+struct Bildgrund: ViewModifier {
+    let url: URL?
+    @State private var ton: Double?
+
+    func body(content: Content) -> some View {
+        content
+            .background(alignment: .top) {
+                ZStack(alignment: .top) {
+                    (ton.map(Bildton.grundfarbe) ?? Stil.grund)
+                        .ignoresSafeArea()
+
+                    // Darueber etwas mehr Farbe, dort wo das Bild sitzt.
+                    // 1400 hoch, damit der Verlauf **innerhalb** seiner
+                    // eigenen Flaeche auf null kommt — sonst steht am
+                    // unteren Rand die naechste Kante.
+                    if let ton {
+                        RadialGradient(colors: [Bildton.farbe(ton).opacity(0.30),
+                                                Bildton.farbe(ton).opacity(0)],
+                                       center: UnitPoint(x: 0.72, y: 0.03),
+                                       startRadius: 0, endRadius: 1180)
+                            .frame(height: 1400)
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+            .animation(.easeInOut(duration: 0.4), value: ton)
+            .task(id: url) {
+                guard let url else { ton = nil; return }
+                // Was schon bekannt ist, wird nicht eingeblendet.
+                if let schonDa = Bildton.geteilt.gemerkt(fuer: url) {
+                    var ohne = Transaction()
+                    ohne.disablesAnimations = true
+                    withTransaction(ohne) { ton = schonDa }
+                    return
+                }
+                ton = nil
+                ton = await Bildton.geteilt.ton(fuer: url)
+            }
+    }
+}
+
+extension View {
+    func bildgrund(url: URL?) -> some View { modifier(Bildgrund(url: url)) }
 }

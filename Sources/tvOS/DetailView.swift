@@ -40,10 +40,6 @@ struct Detailkopf<Knoepfe: View>: View {
     var fokussierbar = true
     @ViewBuilder var knoepfe: () -> Knoepfe
 
-    /// Der aus der Kulisse abgeleitete Farbton. `nil`, solange das Bild
-    /// unterwegs ist — und dann steht schlicht der Grund da.
-    @State private var ton: Double?
-
     @ViewBuilder
     var body: some View {
         if fokussierbar { rumpf.focusSection() } else { rumpf }
@@ -51,34 +47,6 @@ struct Detailkopf<Knoepfe: View>: View {
 
     private var rumpf: some View {
         ZStack(alignment: .topLeading) {
-            Stil.grund
-
-            // **Der Ton liegt hinter der Kulisse — das Bild bleibt vorn.**
-            //
-            // Erst lag er darunter und die Kulisse uebermalte ihn mit
-            // deckendem #0B0B0D; das gab die harte senkrechte Kante. Dann lag
-            // er darueber und faerbte das Bild mit ein — die Kante war weg,
-            // aber
-            //
-            // Beides geht erst, seit die Kulisse **maskiert statt uebermalt**
-            // (siehe dort). Sie laeuft jetzt in Transparenz aus, also scheint
-            // der Ton dort durch, wo das Bild verschwindet, und das Bild
-            // selbst bleibt unberuehrt. Der Verlauf ist der Hintergrund, nicht
-            // ein Schleier davor.
-            //
-            // 1400 hoch: der Verlauf muss innerhalb seiner eigenen Flaeche auf
-            // null auslaufen, sonst steht am unteren Rand die naechste harte
-            // Kante. Von der Mitte bei y = 42 reicht er 1180 weit.
-            if let ton {
-                RadialGradient(colors: [Bildton.farbe(ton).opacity(0.34),
-                                        Bildton.farbe(ton).opacity(0)],
-                               center: UnitPoint(x: 0.72, y: 0.03),
-                               startRadius: 0, endRadius: 1180)
-                    .frame(height: 1400)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-
             Kulisse(url: model.querbildURL(for: item, breite: 1600)
                          ?? model.backdropURL(for: item))
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -99,24 +67,6 @@ struct Detailkopf<Knoepfe: View>: View {
         // darin, sonst waere der Abstand zur ersten Reihe um 56 kleiner als
         // in der Tafel.
         .frame(height: Stil.heldenHoeheDetail, alignment: .topLeading)
-        // 400 ms: darunter liest sich der Wechsel als Blitzen, darueber als
-        // Nachladen.
-        .animation(.easeInOut(duration: 0.4), value: ton)
-        .task(id: item.id) {
-            guard let bild = model.querbildURL(for: item, breite: 1600)
-                          ?? model.backdropURL(for: item) else { ton = nil; return }
-
-            // **Was schon bekannt ist, wird nicht eingeblendet.**
-            if let schonDa = Bildton.geteilt.gemerkt(fuer: bild) {
-                var ohne = Transaction()
-                ohne.disablesAnimations = true
-                withTransaction(ohne) { ton = schonDa }
-                return
-            }
-
-            ton = nil
-            ton = await Bildton.geteilt.ton(fuer: bild)
-        }
     }
 
     // **Der ganze Kopf ist ein Fokusabschnitt, nicht nur die Knopfreihe.**
@@ -279,6 +229,13 @@ struct DetailView: View {
             .padding(.bottom, Stil.abschlussLuft)
         }
         .scrollIndicators(.hidden)
+        // **Der Grund der ganzen Seite faerbt sich nach der Kulisse.**
+        //
+        // An der Seite und nicht am Kopf: sonst endet die Faerbung an dessen
+        // Unterkante, und quer ueber dem Schirm steht eine Naht. Siehe
+        // `Bildgrund`.
+        .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
+                        ?? model.backdropURL(for: aktuell))
         // **Der seitliche Rand wird einmal vergeben, nicht zweimal.**
         //
         // tvOS haelt links und rechts von sich aus 80 Punkt frei, und die
