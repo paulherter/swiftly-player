@@ -39,8 +39,8 @@ struct SerienView: View {
     @State private var staffelwahlOffen = false
     /// Welche Folgenkachel den Fokus hat.
     @FocusState private var amFolge: String?
-    /// Damit der Startfokus einmal gesetzt wird und nicht bei jedem Laden.
-    @State private var startfokusGesetzt = false
+    /// Ob der Hauptknopf den Fokus hat — er ist der Startpunkt der Seite.
+    @FocusState private var amHauptknopf: Bool
 
     private var aktuell: Item { frisch ?? serie }
     private var darsteller: [Person] { (aktuell.people ?? []).filter(\.istDarsteller) }
@@ -121,19 +121,20 @@ struct SerienView: View {
         // **Beim Oeffnen steht der Fokus auf der laufenden Folge.**
         //
         // Der Streifen ist ohnehin dorthin gescrollt; ohne Zuweisung faende
-        // tvOS die vorderste Kachel meist von selbst. „Meist" ist auf dieser
-        // Seite aber zu wenig — der Kopf hat seit dem Umbau nichts
-        // Fokussierbares mehr, und wo der Fokus dann landet, entscheidet
-        // sonst die Geometrie.
+        // tvOS die vorderste Kachel meist von selbst. „Meist" ist zu wenig,
+        // wenn es darauf ankommt, wo die Seite aufmacht.
         //
-        // `initial: true` laeuft beim Erscheinen mit und noch einmal, sobald
-        // die Folgen geladen sind. Einmal gesetzt heisst einmal — sonst
-        // risse jedes Auffrischen den Fokus zurueck.
-        .onChange(of: folgeVorn, initial: true) { _, id in
-            guard !startfokusGesetzt, let id else { return }
-            startfokusGesetzt = true
-            amFolge = id
-        }
+        // **Der Startfokus gehoert auf den Hauptknopf, nicht auf eine
+        // Folge.** Hier stand das Gegenteil, mit der Begruendung, der Kopf
+        // habe seit dem Umbau nichts Fokussierbares mehr — das galt fuer die
+        // Zwischenfassung ohne Knopfreihe und stimmt nicht mehr, seit sie
+        // zurueck ist. Auf der Filmseite landet der Fokus ebenfalls dort, und
+        // A4 sagt, was der Knopf tut: die Folge, bei der es weitergeht.
+        //
+        // `folgeVorn` bleibt trotzdem — es entscheidet weiter, welche Folge
+        // in der Reihe **vorn steht**. Das ist der Scrollstand, nicht der
+        // Fokus, und die beiden waren hier verwechselt.
+        .defaultFocus($amHauptknopf, true, priority: .userInitiated)
         .task { await laden() }
         .task(id: gewaehlteStaffel?.id) { await folgenLaden() }
     }
@@ -161,6 +162,7 @@ struct SerienView: View {
                 }
                 .buttonStyle(KnopfStil())
                 .disabled(bereitet || weiterMit == nil)
+                .focused($amHauptknopf)
 
                 // Nur, wenn ueberhaupt etwas fortzusetzen ist — sonst meinte
                 // „Von vorn" dasselbe wie der Knopf daneben.

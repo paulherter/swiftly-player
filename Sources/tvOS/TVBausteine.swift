@@ -728,34 +728,43 @@ struct Kulisse: View {
 /// Bildes selbst, und was dahinterliegt kommt durch — welche Farbe es auch
 /// hat.
 ///
-/// **Nur die Raender federn aus.** War das Bild grossflaechig
-/// halbdurchsichtig, schimmerte der Grund ueberall durch, und das sah aus wie
-/// Farbe auf dem Bild.
-///
-/// Waagerecht bis 45 Prozent, gerechnet: das Bild beginnt bei x = 740, der
-/// Textblock endet bei 1160. Die 420 Punkt Ueberschneidung sind 36 Prozent der
-/// Bildbreite — so weit muss es mindestens weg sein, damit der Text lesbar
-/// bleibt. 45 gibt Rand.
-///
-/// **Senkrecht ist die Blende bei 84 Prozent fertig, nicht erst am Rand.** Die
-/// Kulisse ist 700 hoch, die Kopfzone der Detailseite 606 — das sind 87
-/// Prozent. Lief die Blende bis 100 Prozent, stand bei 606 noch ein Drittel
-/// Bild, und dort endet die Zone: die abgehackte Kante, die Bei 84 Prozent
-/// (588) ist nichts mehr da, wenn die Kante kommt.
-///
-/// Waagerecht dasselbe Prinzip: erst ab 2 Prozent faengt ueberhaupt etwas an,
-/// davor ist sauber nichts.
+/// **Ein Abfall, nicht zwei.** Davor lagen hier eine waagerechte und eine
+/// senkrechte Maske uebereinander. Zusammen ergeben sie einen rechteckigen
+/// Abfall: jede fuer sich weich, ihr Produkt zeichnet trotzdem die zwei
+/// Geraden nach, und in der Ecke wird es doppelt dunkel. Siehe
+/// `Bildton.rundeBlende`.
+
 struct Kulissenblende: ViewModifier {
     func body(content: Content) -> some View {
         content
             .mask {
-                LinearGradient(gradient: Bildton.blende(von: 0.02, bis: 0.45),
-                               startPoint: .leading, endPoint: .trailing)
-            }
-            .mask {
-                LinearGradient(gradient: Bildton.blende(von: 0.50, bis: 0.84,
-                                                        umgekehrt: true),
-                               startPoint: .top, endPoint: .bottom)
+                // **Ein runder Abfall, waagerecht gedehnt.**
+                //
+                // Der Kreis sitzt rechts oben im Bild, wo es voll stehen
+                // soll, und faellt nach allen Seiten gleichmaessig ab. Ein
+                // Kreis hat keine Richtung, in der er wirkt — also auch keine
+                // Gerade, die als Kante sichtbar wuerde.
+                //
+                // Waagerecht muss er weiter reichen als senkrecht: nach links
+                // liegt der Text, nach unten nur die Reihe. Statt einer
+                // Ellipse mit ungewissen Bezugsmassen ein Kreis in Punkten,
+                // um 2,2 in die Breite gezogen — an der rechten Kante
+                // verankert, damit das Bild dort stehen bleibt.
+                //
+                // Gerechnet, in Bildkoordinaten (1180 x 700):
+                //
+                //     Mitte      (944 | 224)
+                //     senkrecht  224 + 300 = 524   → aus, lange vor 588
+                //     waagerecht 944 − 300 × 2,2 = 284
+                //
+                // Die 588 sind die Stelle, an der die Kopfzone endet (606
+                // minus der Versatz des Bildes). Dass der Abfall lange davor
+                // fertig ist, ist Absicht: wo etwas beschneidet, soll ohnehin
+                // nichts mehr zu sehen sein.
+                RadialGradient(gradient: Bildton.rundeBlende(),
+                               center: UnitPoint(x: 0.80, y: 0.32),
+                               startRadius: 40, endRadius: 300)
+                    .scaleEffect(x: 2.2, y: 1, anchor: .trailing)
             }
     }
 }

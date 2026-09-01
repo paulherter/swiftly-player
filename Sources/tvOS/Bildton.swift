@@ -232,35 +232,30 @@ extension Bildton {
         return Image(decorative: flaeche.makeImage()!, scale: 1)
     }()
 
-    /// Eine Blende mit ausdruecklichem Anfang **und** Ende.
+    /// **Eine runde Blende — ein Abfall statt zweier.**
     ///
-    /// Davor gab es nur „blende bis X", und das Ende lag damit zwangslaeufig
-    /// am Rand der Flaeche. Genau daran lag die abgehackte Kante unten: die
-    /// Kulisse ist 700 hoch, die Kopfzone der Detailseite 606 — bei 606 war
-    /// das Bild also noch zu rund einem Drittel da, und was an dieser Kante
-    /// beschneidet, schneidet in sichtbares Bild.
+    /// Zwei Masken uebereinander, eine waagerecht und eine senkrecht, ergeben
+    /// zusammen einen **rechteckigen** Abfall. Jede fuer sich kann noch so
+    /// weich sein: ihr Produkt zeichnet die zwei Geraden nach, an denen sie
+    /// wirken, und in der Ecke, wo beide halb greifen, wird es doppelt dunkel.
+    /// Genau das — geglaettete Kanten sind immer noch Kanten.
     ///
-    /// **Die Blende muss innerhalb des Rahmens fertig sein, mit Reserve
-    /// dahinter.** Dann ist gleichgueltig, wo etwas beschneidet — an der
-    /// Stelle ist ohnehin nichts mehr zu sehen. Das ist der Unterschied
-    /// zwischen „passt gerade" und „kann nicht mehr schiefgehen".
+    /// Ein einziger radialer Abfall hat keine Richtung, in der er wirkt, also
+    /// auch keine Gerade, die er nachzeichnen koennte.
     ///
-    /// `t² (3 − 2t)` laeuft an beiden Enden waagerecht aus, hat also weder am
-    /// Anfang noch am Ende einen Knick, an dem ein Band entstehen koennte.
-    static func blende(von: Double, bis: Double, umgekehrt: Bool = false) -> Gradient {
+    /// Dieselbe Kurve wie ueberall, damit weder Anfang noch Ende einen Knick
+    /// hat, an dem ein Band entstehen koennte.
+    static func rundeBlende() -> Gradient {
         let stufen = 14
-        var stops: [Gradient.Stop] = []
-        stops.append(.init(color: umgekehrt ? .white : .clear, location: 0))
+        var stops: [Gradient.Stop] = [.init(color: .white, location: 0)]
         for i in 0 ... stufen {
             let t = Double(i) / Double(stufen)
             let weich = t * t * (3 - 2 * t)
-            stops.append(.init(color: .white.opacity(umgekehrt ? 1 - weich : weich),
-                               location: von + (bis - von) * t))
+            stops.append(.init(color: .white.opacity(1 - weich), location: t))
         }
-        stops.append(.init(color: umgekehrt ? .clear : .white, location: 1))
+        stops.append(.init(color: .clear, location: 1))
         return Gradient(stops: stops)
     }
-
 }
 
 /// Faerbt den Grund einer ganzen Seite nach ihrem Kulissenbild.
