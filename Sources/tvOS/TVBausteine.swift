@@ -548,6 +548,110 @@ struct Mehrknopf: View {
 }
 
 
+/// **Der Kopfblock — einmal, für Startseite und Detailseite.**
+///
+/// Deshalb steht er hier und nicht zweimal. Vorher hatte jede Seite ihren
+/// eigenen Aufbau, und die beiden waren bereits auseinander: die Detailseite
+/// führte zusätzlich die Genres, die Startseite dafür die Restzeit. Genau so
+/// sind `nachladen()` und `Titelangaben` auseinandergelaufen.
+///
+/// **Genres sind raus.** Nicht aus Geschmack: die Startseite kann sie gar
+/// nicht zeigen. Ihre Titel kommen aus den Kurzlisten des Servers, und dort
+/// stehen keine Genres — nur die Detailseite holt den vollen Titel. „Auf
+/// beiden dasselbe" heißt hier also zwangsläufig „ohne".
+///
+/// **Die Höhe ist fest, der Inhalt nicht.** `Stil.auskunftHoehe` gilt, ob eine
+/// Beschreibung da ist oder nicht und ob der Titel kurz oder lang ist. Nur so
+/// steht die Knopfreihe darunter auf jeder Detailseite an derselben Stelle —
+/// und nur so bleibt der Text beim Öffnen einer Seite liegen, statt zu
+/// springen.
+struct Kopfauskunft<Schluss: View>: View {
+    let item: Item
+    /// Bei Folgen steht der Folgentitel unter dem Serientitel. Er kostet
+    /// eine Zeile, die dann der Beschreibung fehlt — die Gesamthöhe bleibt.
+    var zweitzeile: String?
+    /// Was hinten steht: „Direct Play" auf der Detailseite, sonst nichts.
+    @ViewBuilder var schluss: () -> Schluss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(item.type == "Episode" ? (item.seriesName ?? item.name) : item.name)
+                .font(.system(size: 60, weight: .bold))
+                .tracking(-1.4)
+                .foregroundStyle(Stil.schrift)
+                .lineLimit(1)
+                // Ein langer Titel schrumpft, statt die Seite zu verschieben.
+                .minimumScaleFactor(0.62)
+                .frame(height: 68, alignment: .leading)
+
+            if let zweitzeile {
+                Text(zweitzeile)
+                    .font(.system(size: 38, weight: .semibold))
+                    .tracking(-0.3)
+                    .foregroundStyle(Stil.schrift.opacity(0.78))
+                    .lineLimit(1)
+                    .frame(height: 44, alignment: .leading)
+                    .padding(.top, 10)
+            }
+
+            HStack(spacing: 24) {
+                Text(angabenzeile)
+                    .font(.system(size: 29))
+                    .foregroundStyle(Stil.schrift.opacity(0.62))
+                    .lineLimit(1)
+
+                Belegzeile(direktplay: false, hinweis: nil,
+                           bewertung: item.communityRating,
+                           freigabe: item.officialRating)
+
+                schluss()
+            }
+            .frame(height: 34)
+            .padding(.top, 14)
+
+            Text(item.overview ?? "")
+                .font(.system(size: 29))
+                .lineSpacing(11)
+                .foregroundStyle(Stil.schrift.opacity(0.62))
+                .lineLimit(zweitzeile == nil ? 3 : 2)
+                .padding(.top, 22)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(width: 1000, height: Stil.auskunftHoehe, alignment: .topLeading)
+    }
+
+    /// Jahr und Laufzeit — **ohne Genres**, siehe oben. Die Formatierung
+    /// kommt aus `Titelangaben`, damit „1 Std 52 Min" überall gleich
+    /// geschrieben steht.
+    private var angabenzeile: String {
+        var teile: [String] = []
+        if item.type == "Episode", let kuerzel = item.folgenkuerzel { teile.append(kuerzel) }
+        if let jahr = item.productionYear { teile.append(String(jahr)) }
+        if let sekunden = item.runtimeSeconds, sekunden > 0 { teile.append(laufzeit(sekunden)) }
+        return teile.joined(separator: " · ")
+    }
+}
+
+/// „Noch 50 Minuten" mit Uhr, „Gesehen" mit Haken — oder nichts.
+struct Restzeitmarke: View {
+    let item: Item
+
+    @ViewBuilder
+    var body: some View {
+        if let rest = item.restzeitText {
+            Label(rest, systemImage: "clock")
+                .font(.system(size: 27, weight: .medium))
+                .foregroundStyle(Stil.akzent)
+                .lineLimit(1)
+        } else if item.istGesehen {
+            Label("Gesehen", systemImage: "checkmark")
+                .font(.system(size: 27, weight: .medium))
+                .foregroundStyle(Stil.akzent)
+                .lineLimit(1)
+        }
+    }
+}
+
 // MARK: - Kulisse
 
 /// Das Bild rechts, 1180 x 700, mit den zwei Verlaeufen davor.

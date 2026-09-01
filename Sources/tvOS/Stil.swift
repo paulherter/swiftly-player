@@ -107,8 +107,35 @@ extension Stil {
     /// in der Tafel
     static let kopfversatzDetail: CGFloat = 56
 
-    /// Kopfzone einer Detailseite: 566. Siehe `kopfversatzDetail`.
-    static var heldenHoeheDetail: CGFloat { heldenHoehe + kopfversatzDetail }
+    /// **Feste Hoehe des Kopfblocks — Titel, Angabenzeile, Beschreibung.**
+    ///
+    ///     Titel          68
+    ///     + 14 Angaben   34
+    ///     + 22 Beschr.  120   (drei Zeilen a 40)
+    ///     = 258
+    ///
+    /// Fest, damit nichts darunter vom Inhalt abhaengt: ein Film ohne
+    /// Beschreibung, ein langer Titel, eine Folge mit Zweitzeile — der Block
+    /// ist immer gleich hoch, also steht die Knopfreihe immer an derselben
+    /// Stelle. Bei Folgen nimmt die Zweitzeile der Beschreibung eine Zeile
+    /// weg, statt den Block wachsen zu lassen.
+    static let auskunftHoehe: CGFloat = 258
+
+    /// Kopfzone einer Detailseite — **gerechnet, nicht gesetzt.**
+    ///
+    ///     196 (Block beginnt)  + 258 (auskunftHoehe) = 454
+    ///     + 36 + 76 (Knopfreihe)                     = 566
+    ///     + 64 (Abstand aus der Tafel) − 24 (reihenKopfLuft)
+    ///     = 606
+    ///
+    /// Groesser als die 510 der Startseite, und das muss so sein: hier
+    /// kommt die Knopfreihe dazu, und der Block steht 56 tiefer. Die
+    /// Startseite braucht den Platz nicht — dort endet der Block bei 454
+    /// und die Reihen beginnen unveraendert bei 534.
+    static var heldenHoeheDetail: CGFloat {
+        randOben + kopfversatzDetail + 80 + auskunftHoehe
+        + 36 + knopfHoehe + 64 - reihenKopfLuft
+    }
 
     /// Senkrechte Luft im waagerechten Streifen.
     ///

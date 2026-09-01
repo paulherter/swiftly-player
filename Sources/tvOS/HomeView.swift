@@ -380,83 +380,20 @@ struct HomeView: View {
     /// Titel, Angaben und Beschreibung zum Titel unter dem Fokus.
     @ViewBuilder
     private var auskunft: some View {
-        if let t = aktuell {
-            VStack(alignment: .leading, spacing: 0) {
-                // Feste Hoehe wie auf der Detailseite: ein langer Titel
-                // darf die Auskunft darunter nicht verschieben, sonst
-                // stehen dieselben Angaben je nach Film woanders — und beim
-                // Oeffnen spraengen sie doch wieder.
-                Text(t.type == "Episode" ? (t.seriesName ?? t.name) : t.name)
-                    .font(.system(size: 60, weight: .bold))
-                    .tracking(-1.4)
-                    .foregroundStyle(Stil.schrift)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.62)
-                    .frame(height: 68, alignment: .leading)
-
-                // Nur Folgen tragen zwei Titel.
-                if t.type == "Episode" {
-                    Text(t.name)
-                        .font(.system(size: 38, weight: .semibold))
-                        .tracking(-0.3)
-                        .foregroundStyle(Stil.schrift.opacity(0.78))
-                        .lineLimit(1)
-                        .padding(.top, 10)
-                }
-
-                HStack(spacing: 24) {
-                    Text(angabenzeile(t))
-                        .font(.system(size: 29))
-                        .foregroundStyle(Stil.schrift.opacity(0.62))
-                        .lineLimit(1)
-
-                    Belegzeile(direktplay: false, hinweis: nil,
-                               bewertung: t.communityRating,
-                               freigabe: t.officialRating)
-
-                    plakette(t)
-                }
-                .padding(.top, 18)
-
-                if let text = t.overview, !text.isEmpty {
-                    Text(text)
-                        .font(.system(size: 29))
-                        .lineSpacing(11)
-                        .foregroundStyle(Stil.schrift.opacity(0.62))
-                        // Bei Folgen zwei Zeilen: der Folgentitel kommt
-                        // zusaetzlich, sonst laeuft der Block ueber die 560.
-                        .lineLimit(t.type == "Episode" ? 2 : 3)
-                        .padding(.top, 22)
+        Group {
+            if let t = aktuell {
+                // **Derselbe Baustein wie auf der Detailseite.** Vorher stand
+                // der Aufbau hier ein zweites Mal, und die beiden waren schon
+                // auseinander: dort Genres, hier die Restzeit. Siehe
+                // `Kopfauskunft`.
+                Kopfauskunft(item: t,
+                             zweitzeile: t.type == "Episode" ? t.name : nil) {
+                    Restzeitmarke(item: t)
                 }
             }
-            .frame(width: 1000, alignment: .leading)
         }
     }
 
-    /// „Gesehen" mit Haken, oder „Noch 50 Minuten" mit Uhr — oder nichts.
-    @ViewBuilder
-    private func plakette(_ t: Item) -> some View {
-        if let rest = t.restzeitText {
-            Label(rest, systemImage: "clock")
-                .font(.system(size: 27, weight: .medium))
-                .foregroundStyle(Stil.akzent)
-                .lineLimit(1)
-        } else if t.istGesehen {
-            Label("Gesehen", systemImage: "checkmark")
-                .font(.system(size: 27, weight: .medium))
-                .foregroundStyle(Stil.akzent)
-                .lineLimit(1)
-        }
-    }
-
-    /// Folgenkuerzel, Jahr, Laufzeit, Gattung — alles aus `Titelangaben`.
-    private func angabenzeile(_ t: Item) -> String {
-        var teile: [String] = []
-        if t.type == "Episode", let kuerzel = t.folgenkuerzel { teile.append(kuerzel) }
-        let rest = t.nebenzeile
-        if !rest.isEmpty { teile.append(rest) }
-        return teile.joined(separator: " · ")
-    }
 
     private func starte(_ item: Item) {
         guard !bereitet else { return }

@@ -79,75 +79,28 @@ struct Detailkopf<Knoepfe: View>: View {
 
     private var block: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // **Feste Hoehe, eine Zeile.** Mit zwei erlaubten Zeilen stand
-            // alles darunter bei einem langen Titel 68 Punkt tiefer — und
-            // damit die Knopfreihe von Film zu Film woanders. Ein langer
-            // Titel schrumpft lieber, als die Seite zu verschieben.
-            Text(item.name)
-                .font(.system(size: 60, weight: .bold))
-                .tracking(-1.4)
-                .foregroundStyle(Stil.schrift)
-                .lineLimit(1)
-                .minimumScaleFactor(0.62)
-                .frame(width: 1000, height: 68, alignment: .leading)
-
-            HStack(spacing: 24) {
-                Text(item.nebenzeile)
-                    .font(.system(size: 29))
-                    .foregroundStyle(Stil.schriftLeise)
-                    .lineLimit(1)
-
-                // Angaben zuerst, der Beleg zuletzt — siehe `belegZuletzt`.
+            // **Derselbe Baustein wie auf der Startseite.** Der Header ist
+            // dort und hier identisch; das Einzige, was hier dazukommt, ist
+            // die Knopfreihe. Siehe `Kopfauskunft`.
+            Kopfauskunft(item: item) {
                 Belegzeile(direktplay: plan?.isLossless ?? false,
                            hinweis: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
-                           bewertung: item.communityRating,
-                           freigabe: item.officialRating,
+                           bewertung: nil, freigabe: nil,
                            belegZuletzt: true)
             }
-            .frame(height: 34)
-            .padding(.top, 14)
 
-            // **Der Platz steht, auch wenn nichts drinsteht.**
+            // Die Knopfreihe darf breiter werden als die 1000 des Textes.
+            // Deshalb liegt der Deckel am Text und nicht am ganzen Block;
+            // einmal stand er aussen, und jede Beschriftung war
+            // abgeschnitten.
             //
-            // Vorher hing der Block am `if`: ein Film ohne Beschreibung --
-            // und die gibt es, „Caminandes" ist einer -- liess die
-            // Knopfreihe 102 Punkt hochrutschen. Dieselbe Seite sah damit
-            // je nach Serverdaten anders aus, und der Kopf klaffte.
-            //
-            // Zwei Zeilen sind reserviert, ob sie gefuellt werden oder
-            // nicht. Titel, Angabenzeile, Beschreibung und Knopfreihe
-            // stehen dadurch auf **jeder** Detailseite an derselben Stelle.
-            Text(item.overview ?? "")
-                .font(.system(size: 29))
-                .lineSpacing(11)
-                .foregroundStyle(Stil.schriftLeise)
-                .lineLimit(2)
-                .padding(.top, 22)
-                .frame(width: 1000, height: 80, alignment: .topLeading)
-
-            // Die Knopfreihe darf breiter werden als die 1000 des Textes —
-            // fuenf Pillen sind rund 1400 breit. Deshalb liegt der Deckel am
-            // Text und nicht am ganzen Block; einmal stand er aussen, und
-            // jede Beschriftung war abgeschnitten.
+            // 36 aus `Film-Neu.dc.html`. Weil `auskunftHoehe` fest ist,
+            // sitzt die Reihe damit auf **jeder** Detailseite bei 490.
             knoepfe()
-                // **36 — und der Abstand darunter ist absichtlich groesser.**
-                //
-                // Aus `Film-Neu.dc.html` gemessen, nicht gerechnet:
-                //
-                //     140 + 68 (Titel)        = 208
-                //      +14 + 34 (Angaben)     = 256
-                //      +22 + 80 (Beschreibung)= 358
-                //      +36 + 76 (Knopfreihe)  = 470
-                //     Reihentitel bei          534
-                //
-                // Also 36 oben und 64 unten. Einmal auf 28/28 ausgeglichen,
-                // weil mir haelftig richtiger vorkam — es ist es nicht: die
-                // Reihe gehoert zum Text ueber ihr, nicht zur Sektion
-                // darunter, und der groessere Abstand nach unten ist genau
-                // das, was die beiden voneinander trennt.
                 .padding(.top, 36)
         }
     }
+
 }
 
 // MARK: - Merkliste und Gesehen
