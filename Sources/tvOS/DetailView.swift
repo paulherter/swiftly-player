@@ -53,13 +53,18 @@ struct Detailkopf<Knoepfe: View>: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             block
                 .padding(.leading, Stil.randSeite)
-                // **196, dieselbe Zeile wie auf der Startseite.**
+                // **140, wie in `Film-Neu.dc.html`.**
                 //
-                // Vorher 140. auskunft`) gegen die 140 hier. Titel,
-                // Angabenzeile und Beschreibung stehen jetzt auf beiden Seiten
-                // an derselben Stelle -- beim Wechsel bewegt sich der Text
-                // nicht mehr.
-                .padding(.top, 196)
+                // Die Startseite setzt ihren Block bei 196 an, diese Seite
+                // bei 140 — beide Tafeln sagen das so, und der Unterschied
+                // hat einen Grund: ueber der Startseite steht die Kopfleiste
+                // bis 128, hier steht nichts.
+                //
+                // Einmal auf 196 gezogen, um den Sprung beim Oeffnen
+                // wegzubekommen. Das war die falsche Stellschraube: darunter
+                // blieben fuer die Knopfreihe nur noch 8 Punkt bis zum
+                // Reihentitel, und jeder Abstand wurde zur Notrechnung.
+                .padding(.top, 140)
         }
         // Nicht beschnitten: die Kulisse ist 700 hoch und darf nach unten
         // ueberragen, ihr eigener Verlauf beendet sie. Die erste Reihe
@@ -98,9 +103,7 @@ struct Detailkopf<Knoepfe: View>: View {
                            freigabe: item.officialRating,
                            belegZuletzt: true)
             }
-            // 18 wie auf der Startseite, nicht 14 -- sonst stuende die
-            // Angabenzeile vier Punkt zu hoch und die Beschreibung mit ihr.
-            .padding(.top, 18)
+            .padding(.top, 14)
 
             if let text = item.overview, !text.isEmpty {
                 Text(text)
@@ -120,28 +123,22 @@ struct Detailkopf<Knoepfe: View>: View {
             // Text und nicht am ganzen Block; einmal stand er aussen, und
             // jede Beschriftung war abgeschnitten.
             knoepfe()
-                // **28 — und zwar von beiden Seiten gerechnet.**
+                // **36 — und der Abstand darunter ist absichtlich groesser.**
                 //
-                // Erst standen hier 14. Das war zu knapp, und der Fehler war
-                // nicht die Zahl, sondern die Rechnung: ich hatte nur nach
-                // oben gemessen, ob die Reihe in die Kopfzone passt, und den
-                // Abstand nach **unten** gar nicht mitgewogen. Am Bild
-                // klebte die Reihe dann am Text (14) und schwebte ueber der
-                // ersten Reihe (46).
+                // Aus `Film-Neu.dc.html` gemessen, nicht gerechnet:
                 //
-                // Der Platz ist der Abstand zwischen Beschreibung und dem
-                // Text des ersten Reihentitels, und er wird geteilt:
+                //     140 + 68 (Titel)        = 208
+                //      +14 + 34 (Angaben)     = 256
+                //      +22 + 80 (Beschreibung)= 358
+                //      +36 + 76 (Knopfreihe)  = 470
+                //     Reihentitel bei          534
                 //
-                //     428 (Beschreibung endet) .. 560 (Reihentitel) = 132
-                //     132 − 76 (Knopfhoehe) = 56  →  28 oben, 28 unten
-                //
-                // Die Reihe endet damit bei 532. Das sind 22 Punkt unter der
-                // Kopfzone von 510, und das ist Absicht: beschnitten wird
-                // hier nichts, und die Reihen beginnen weiter bei 534. Wer
-                // die 510 als Grenze fuer den **Text** liest, liest sie
-                // richtig; fuer die Knopfreihe zaehlt der Abstand zur naechsten
-                // Zeile, nicht zur Zonenkante.
-                .padding(.top, 28)
+                // Also 36 oben und 64 unten. Einmal auf 28/28 ausgeglichen,
+                // weil mir haelftig richtiger vorkam — es ist es nicht: die
+                // Reihe gehoert zum Text ueber ihr, nicht zur Sektion
+                // darunter, und der groessere Abstand nach unten ist genau
+                // das, was die beiden voneinander trennt.
+                .padding(.top, 36)
         }
     }
 }
