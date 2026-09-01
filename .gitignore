@@ -19,3 +19,21 @@ Vendor
 CLAUDE.md
 VERHALTEN.md
 Erfahrungen.md
+
+# **Riegel, kein Aufraeumen.** Diese Pfade liegen in ../Swiftly-Notizen und
+# sind hier nicht vorhanden. Der Eintrag verhindert, dass sie es je wieder
+# werden — wer eine dieser Dateien anlegt, veroeffentlicht sie sonst beim
+# naechsten Push, ohne es zu merken. Alle **ohne Schraegstrich**, sonst
+# greift die Regel auf Symlinks nicht.
+AppStore
+Entwuerfe
+Rohbilder
+Spec
+Werkzeuge/Discord
+Werkzeuge/Grafik
+Werkzeuge/Iconbauer
+MORGEN.md
+OFFEN.md
+PRUEFUNG.md
+TESTEN.md
+PLAYER-TVOS.md
