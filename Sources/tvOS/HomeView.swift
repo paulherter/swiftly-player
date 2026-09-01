@@ -14,6 +14,9 @@ struct HomeView: View {
     /// Doppelte Ausloesung sperren, waehrend der Plan geholt wird.
     @State private var bereitet = false
     @FocusState private var amTitel: Kachelmarke?
+    /// Die letzte Kachel, auf der der Fokus wirklich stand. Ueberdauert den
+    /// Ausflug auf eine Detailseite — siehe `aktuell`.
+    @State private var zuletztAmTitel: Kachelmarke?
     /// Der Titel, dessen Bild gerade steht — nachgezogen, nicht sofort.
     @State private var imBild: Item?
     @State private var bildwechsel: Task<Void, Never>?
@@ -53,8 +56,20 @@ struct HomeView: View {
     /// ihn selbst, bevor irgendein `onAppear` laeuft —, blieb die Auskunft
     /// auf dem alten Titel stehen: oben „Folge 4", markiert war „The
     /// Mentalist". Abgeleitet kann sie das nicht.
+    /// **Der Rueckfall ist die zuletzt fokussierte Kachel, nicht die erste.**
+    ///
+    /// `amTitel` wird `nil`, sobald der Fokus die Seite verlaesst — und das
+    /// tut er bei jedem Oeffnen einer Detailseite. Bis hierher stand dann
+    /// wieder `ersterTitel` da: wer vom vierten Film zurueckkam, sah kurz
+    /// den ersten und erst nach dem Zurueckgeben des Fokus wieder seinen.
+    ///
+    /// Der Rueckfall muss zwischen zwei Faellen unterscheiden, die beide
+    /// `nil` sind: **noch nie fokussiert** — dann ist der erste Titel
+    /// richtig — und **gerade woanders**, dann gilt der letzte Stand weiter.
     private var aktuell: Item? {
         if let amTitel, let t = alleTitel.first(where: { $0.id == amTitel.titel }) { return t }
+        if let zuletztAmTitel,
+           let t = alleTitel.first(where: { $0.id == zuletztAmTitel.titel }) { return t }
         return ersterTitel
     }
 
@@ -181,6 +196,11 @@ struct HomeView: View {
         // „Weiterschauen" ist 448 breit, die Plakatreihen 208; Querkachel 1
         // ueberlappt Plakat 1 **und** 2. Eine gemeinsame Spalte gibt es gar
         // nicht. Also den Systemzug laufen lassen und danach zurechtruecken.
+        // Merken, solange der Fokus da ist. `nil` wird bewusst **nicht**
+        // uebernommen — das ist der ganze Zweck.
+        .onChange(of: amTitel) { _, jetzt in
+            if let jetzt { zuletztAmTitel = jetzt }
+        }
         .onChange(of: amTitel) { vorher, jetzt in
             guard let jetzt, let vorher, vorher.reihe != jetzt.reihe else { return }
             if let ziel = vordersteMarke(jetzt.reihe), ziel != jetzt { amTitel = ziel }
