@@ -53,23 +53,20 @@ struct Detailkopf<Knoepfe: View>: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             block
                 .padding(.leading, Stil.randSeite)
-                // **140, wie in `Film-Neu.dc.html`.**
-                //
-                // Die Startseite setzt ihren Block bei 196 an, diese Seite
-                // bei 140 — beide Tafeln sagen das so, und der Unterschied
-                // hat einen Grund: ueber der Startseite steht die Kopfleiste
-                // bis 128, hier steht nichts.
-                //
-                // Einmal auf 196 gezogen, um den Sprung beim Oeffnen
-                // wegzubekommen. Das war die falsche Stellschraube: darunter
-                // blieben fuer die Knopfreihe nur noch 8 Punkt bis zum
-                // Reihentitel, und jeder Abstand wurde zur Notrechnung.
-                .padding(.top, 140)
+                // 140 aus der Tafel, plus der Versatz, der die nicht
+                // gezeichnete Kopfleiste freihaelt — siehe
+                // `Stil.kopfversatzDetail`. Zusammen 196, also dieselbe
+                // Zeile, in der die Startseite ihren Titel hat.
+                .padding(.top, 140 + Stil.kopfversatzDetail)
         }
         // Nicht beschnitten: die Kulisse ist 700 hoch und darf nach unten
         // ueberragen, ihr eigener Verlauf beendet sie. Die erste Reihe
         // zeichnet darueber, sie ist das naechste Geschwister.
-        .frame(height: Stil.heldenHoehe, alignment: .topLeading)
+        //
+        // 566 statt 510: die Zone waechst um denselben Versatz wie der Text
+        // darin, sonst waere der Abstand zur ersten Reihe um 56 kleiner als
+        // in der Tafel.
+        .frame(height: Stil.heldenHoeheDetail, alignment: .topLeading)
     }
 
     // **Der ganze Kopf ist ein Fokusabschnitt, nicht nur die Knopfreihe.**
@@ -145,7 +142,14 @@ struct Detailkopf<Knoepfe: View>: View {
 
 // MARK: - Merkliste und Gesehen
 
-/// Die zwei Knöpfe, die auf jeder Detailseite gleich sind.
+/// Der Merklistenknopf — **nur das Symbol, ohne Beschriftung.**
+///
+/// „Gesehen" ist ganz aus der Reihe heraus und steht in der Handlungstafel —
+/// siehe `gesehenHandlung`. Damit bleiben vier Ziele: Fortsetzen, Von vorn,
+/// Merkliste, Mehr.
+///
+/// **Ohne Beschriftung ist die Beschriftung Pflicht.** Für VoiceOver ist ein
+/// Symbolknopf sonst namenlos (E8), deshalb der ausdrückliche Name.
 struct Zustandsknoepfe: View {
     let model: AppModel
     let item: Item
@@ -166,26 +170,39 @@ struct Zustandsknoepfe: View {
                     }
                 }
             } label: {
-                Label("Merkliste", systemImage: gemerkt ? "bookmark.fill" : "bookmark")
+                Image(systemName: gemerkt ? "bookmark.fill" : "bookmark")
+                    .font(Stil.knopf)
             }
-            .buttonStyle(KnopfStil())
+            .buttonStyle(KnopfStil(nurSymbol: true))
+            .accessibilityLabel(Text("Merkliste"))
             // Gefuelltes gegen leeres Symbol ist der ganze Unterschied —
             // fuer VoiceOver heissen beide „Merkliste".
             .accessibilityAddTraits(gemerkt ? [.isButton, .isSelected] : .isButton)
+        }
+    }
+}
 
-            Button {
-                gesehen.toggle()
-                Task {
-                    if let grund = await model.setzeGesehen(item, an: gesehen) {
-                        gesehen.toggle()
-                        meldung = grund
-                    }
-                }
-            } label: {
-                Label("Gesehen", systemImage: gesehen ? "checkmark.circle.fill" : "checkmark.circle")
+/// „Gesehen" als Eintrag der Handlungstafel statt als Pille.
+///
+/// **Anordnung, kein Verhalten** (VERHALTEN.md F): D6 verlangt, dass Gesehen
+/// sofort umschaltet und der Zustand die Antwort ist — das tut es hier
+/// weiter, nur eine Ebene tiefer. Am Fernseher zaehlt jedes Fokusziel in der
+/// Reihe, und fuenf davon nebeneinander waren zu viele.
+///
+/// Bewusst hier und nicht in `Titelhandlungen`: die Liste dort ist geteilt,
+/// und auf dem Telefon steht Gesehen weiter als eigener Knopf.
+@MainActor
+func gesehenHandlung(model: AppModel, item: Item,
+                     gesehen: Binding<Bool>,
+                     meldung: Binding<String?>) -> Titelhandlung {
+    Titelhandlung(symbol: gesehen.wrappedValue ? "checkmark.circle.fill" : "checkmark.circle",
+                  text: gesehen.wrappedValue ? "Als ungesehen merken" : "Als gesehen merken") {
+        gesehen.wrappedValue.toggle()
+        Task {
+            if let grund = await model.setzeGesehen(item, an: gesehen.wrappedValue) {
+                gesehen.wrappedValue.toggle()
+                meldung.wrappedValue = grund
             }
-            .buttonStyle(KnopfStil())
-            .accessibilityAddTraits(gesehen ? [.isButton, .isSelected] : .isButton)
         }
     }
 }
@@ -339,10 +356,14 @@ struct DetailView: View {
     // MARK: Starten
 
     private var mehrHandlungen: [Titelhandlung] {
-        Titelhandlungen.fuerFilm(aktuell, plan: plan, model: model,
-                                 starten: { starte(ab: $0) },
-                                 melden: { meldung = $0 },
-                                 auffrischen: { await auffrischen() })
+        // Gesehen steht vorn — es ist das, wofuer die Tafel jetzt am
+        // haeufigsten geoeffnet wird. Die geteilte Liste bleibt unangetastet.
+        [gesehenHandlung(model: model, item: aktuell,
+                         gesehen: $gesehen, meldung: $meldung)]
+        + Titelhandlungen.fuerFilm(aktuell, plan: plan, model: model,
+                                   starten: { starte(ab: $0) },
+                                   melden: { meldung = $0 },
+                                   auffrischen: { await auffrischen() })
     }
 
     private func auffrischen() async {

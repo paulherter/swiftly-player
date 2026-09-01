@@ -509,6 +509,8 @@ struct Handlungstafel: View {
     /// Titel 68 + 14 + Angaben 34 + 22 + Beschreibung 80 + 36 + Knopfhöhe 76
     /// = 470, plus 16 Luft. Alle Werte aus `Film-Neu.dc.html`.
     ///
+    /// Dazu der Versatz, um den die ganze Seite tiefer steht.
+    ///
     /// Vorher 486, gerechnet auf einen Textblock, der bei 140 ansetzte. Der
     /// beginnt jetzt bei 196 — dieselbe Zeile wie auf der Startseite —, und
     /// die Tafel muss mitwandern, sonst klappt sie mitten in die Knöpfe.
@@ -516,7 +518,7 @@ struct Handlungstafel: View {
     /// Vorher waren es 210 **von unten**, gerechnet auf einen Kopf, der den
     /// ganzen Schirm füllte. Der ist 510 hoch — von unten gerechnet läge die
     /// Tafel jetzt mitten im Text.
-    static let unterDerKnopfreihe: CGFloat = 486
+    static let unterDerKnopfreihe: CGFloat = 486 + Stil.kopfversatzDetail
 
     /// Und hier sitzt die Staffelwahl: unter dem Reihenkopf der ersten Reihe.
     ///

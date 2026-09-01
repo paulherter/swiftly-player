@@ -282,7 +282,11 @@ struct SerienView: View {
     }
 
     private var mehrHandlungen: [Titelhandlung] {
-        Titelhandlungen.fuerSerie(aktuell, stand: weiterMit, staffel: gewaehlteStaffel,
+        // Gesehen steht vorn, wie auf der Filmseite — aus der Knopfreihe
+        // heraus und eine Ebene tiefer. Siehe `gesehenHandlung`.
+        [gesehenHandlung(model: model, item: aktuell,
+                         gesehen: $gesehen, meldung: $meldung)]
+        + Titelhandlungen.fuerSerie(aktuell, stand: weiterMit, staffel: gewaehlteStaffel,
                                   model: model,
                                   folgeStarten: { folgeStarten($0, ab: $1) },
                                   melden: { meldung = $0 },

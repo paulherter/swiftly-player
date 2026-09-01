@@ -86,6 +86,30 @@ extension Stil {
     /// da passt die Plakatreihe nicht mehr hinein.
     static let heldenHoehe: CGFloat = 510
 
+    /// **Um so viel steht eine Detailseite tiefer als die Startseite.**
+    ///
+    /// Die Startseite setzt ihren Textblock bei 196 an, `Film-Neu.dc.html` den
+    /// der Detailseite bei 140 — weil ueber der Startseite die Kopfleiste
+    /// steht und ueber der Detailseite nichts. Auf dem Schirm ist das aber
+    /// dieselbe Auskunft zum selben Film, und beim Druecken sprang sie um
+    /// diese 56 nach oben.
+    ///
+    /// Genau das ist es: die Leiste wird nicht gezeichnet, ihr Platz aber
+    /// freigehalten. **Der Hintergrund wandert nicht mit** — die Kulisse steht
+    /// im selben Stapel und behaelt ihre Lage.
+    ///
+    /// Verschoben wird der ganze Block, nicht die Abstaende darin. Deshalb
+    /// waechst auch die Kopfzone um denselben Betrag, und die Tafelmasse
+    /// gelten unveraendert weiter:
+    ///
+    /// 196 + 68 + 14 + 34 + 22 + 80 + 36 + 76 = 526   Block endet 566 + 24
+    /// = 590   Reihentitel 590 − 526                              =  64   wie
+    /// in der Tafel
+    static let kopfversatzDetail: CGFloat = 56
+
+    /// Kopfzone einer Detailseite: 566. Siehe `kopfversatzDetail`.
+    static var heldenHoeheDetail: CGFloat { heldenHoehe + kopfversatzDetail }
+
     /// Senkrechte Luft im waagerechten Streifen.
     ///
     /// Die fokussierte Kachel waechst um 1,08 ueber ihre Layoutgroesse
