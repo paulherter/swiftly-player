@@ -17,7 +17,10 @@ enum Ruckelwache {
 
     /// Ob überhaupt gemessen wird. Nur mit `SWIFTLY_MESSFAHRT=1` — sonst
     /// schreibt jede Navigation ins Protokoll.
-    nonisolated static let an = ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"] == "1"
+    nonisolated static let an = {
+        let u = ProcessInfo.processInfo.environment
+        return u["SWIFTLY_MESSFAHRT"] == "1" || u["SWIFTLY_MESSEN"] == "1"
+    }()
 
     /// Beobachtet den Hauptlauf für die angegebene Dauer.
     static func beobachte(_ was: String, sekunden: Double = 1.2) {
@@ -86,8 +89,17 @@ enum Fahrtschreiber {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled, let erste = werte.first, let letzte = werte.last else { return }
                 let dauer = (letzte.0 - erste.0) * 1000
+                // Der grösste Zeitsprung zwischen zwei Bildern — das ist die
+                // Stelle, an der der Hauptlauf stand.
+                var groessteLuecke = 0.0
+                var beiWert: CGFloat = 0
+                for (vorher, nachher) in zip(werte, werte.dropFirst()) {
+                    let luecke = (nachher.0 - vorher.0) * 1000
+                    if luecke > groessteLuecke { groessteLuecke = luecke; beiWert = vorher.1 }
+                }
                 let schritte = werte.map { String(Int($0.1)) }.joined(separator: " ")
-                Protokoll.schreib("Fahrt: \(werte.count) Bilder in \(Int(dauer)) ms — \(schritte)")
+                Protokoll.schreib("Fahrt: \(werte.count) Bilder in \(Int(dauer)) ms, "
+                    + "grösster Zeitsprung \(Int(groessteLuecke)) ms bei Versatz \(Int(beiWert)) — \(schritte)")
                 werte.removeAll()
             }
         }

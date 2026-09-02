@@ -124,6 +124,11 @@ extension Stil {
     //                und geht dorthin zurück — deshalb zeigt der Winkel oben
     //                links nach unten.
 
+    /// Wenn nachgeladener Inhalt an die Stelle eines Laders tritt. Er soll
+    /// eintreten, nicht erscheinen — sonst liest sich das Nachladen als
+    /// Sprung, auch wenn nichts ruckelt.
+    static let zeitEinblenden = Animation.easeOut(duration: 0.25)
+
     /// Überblenden beim Ersetzen. 180 ms ease-out — dieselbe Zeit, in der auf
     /// dem iPhone die Player-Steuerung erscheint.
     static let zeitSeite = Animation.easeOut(duration: 0.18)

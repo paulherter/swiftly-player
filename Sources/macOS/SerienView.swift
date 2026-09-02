@@ -94,22 +94,27 @@ struct SerienView: View {
 
     // MARK: Abschnitte
 
-    @ViewBuilder
     private var abschnitt: some View {
-        // **Solange die Seite fährt, wird hier nichts umgebaut.**
+        // **Hier stand ein Riegel, und der war falsch.**
         //
-        // Der Abschnitt ändert beim Laden dreimal seine Gestalt: die
-        // Staffelpille kommt dazu, der Lader weicht der Liste, und die Liste
-        // hat eine andere Höhe. Auf der Filmseite steht darunter ein Raster,
-        // das nichts davon tut — deshalb lief sie sauber und diese nicht.
+        // Ich hatte den ganzen Abschnitt zurückgehalten, bis die Seite steht
+        // — damit während der Fahrt nichts umgebaut wird. Nachgemessen fährt
+        // die Serienseite aber genauso weich wie die Filmseite: 107 Bilder in
+        // 457 ms gegen 110 in 460, grösster Zeitsprung 26 gegen 14 ms.
         //
-        // Der Lader hat dieselbe feste Höhe wie das, was ihn ablöst, also
-        // wandert beim Freigeben auch nichts über dem Bildschirmrand.
-        if !ruht {
-            Lader().frame(height: 200)
-        } else {
-            abschnittsinhalt
-        }
+        // Der Riegel hat also nichts repariert, sondern etwas kaputtgemacht:
+        // die Seite kam **leer** herein, mit einem Lader statt Inhalt, und
+        // sprang eine halbe Sekunde später auf einmal voll. Deshalb sah es
+        // aus, als bewege sie sich kurz und sei dann schlagartig da. Die
+        // Filmseite hatte den Riegel nie — darum war sie perfekt.
+        //
+        // Was bleibt: das Wechseln selbst darf nicht springen. Der Lader
+        // blendet in die Liste über, und die Staffelpille kommt nicht
+        // schlagartig dazu.
+        abschnittsinhalt
+            .animation(Stil.zeitEinblenden, value: laedt)
+            .animation(Stil.zeitEinblenden, value: staffeln.count)
+            .animation(Stil.zeitEinblenden, value: folgen.count)
     }
 
     @ViewBuilder
@@ -123,6 +128,7 @@ struct SerienView: View {
                 }
                 if laedt {
                     Lader().frame(height: 200)
+                        .transition(.opacity)
                 } else if folgen.isEmpty {
                     Leerzustand(symbol: "tray", titel: "Keine Folgen")
                         .frame(height: 200)
@@ -141,6 +147,7 @@ struct SerienView: View {
                             }
                         }
                     }
+                    .transition(.opacity)
                 }
             }
 
