@@ -198,7 +198,8 @@ struct PlayerScreen: View {
             // Der Winkel zeigt nach unten, weil der Player von unten
             // aufsteigt und wieder dorthin verschwindet. Das Zeichen
             // beschreibt eine Bewegung, die es hier wirklich gibt.
-            Aktionsknopf(symbol: "chevron.down", titel: "Player schließen") { beenden() }
+            Aktionsknopf(symbol: "chevron.down", titel: "Player schließen",
+                         rand: false) { beenden() }
             Spacer(minLength: 0)
             Chip(beschriftung: String(localized: "Kleines Fenster"),
                  symbol: "pip", aktiv: halter.istKlein) {
@@ -226,6 +227,10 @@ struct PlayerScreen: View {
             }
         }
         .padding(.horizontal, 22)
+        // Links so viel, dass der Winkel neben der Fensterampel steht und
+        // nicht darauf. Dieselbe Überlegung wie `Stil.ampelHoehe` in der
+        // Seitenleiste, nur in der Breite.
+        .padding(.leading, 74)
         .padding(.top, 18)
     }
 
@@ -666,12 +671,20 @@ final class Fensterhalter {
 
     /// **Ein Ausdruck, nicht zwei Schalter.**
     ///
-    /// Die Ampel verschwindet im kleinen Fenster (dort gehört sie nicht hin)
-    /// **und** im Player (dort stünde sie neben dem Winkel, der zurücklegt —
-    /// zwei Schließer mit verschiedener Wirkung). Würden beide Wege ihre
-    /// eigene Sichtbarkeit setzen, hinge das Ergebnis davon ab, welcher
-    /// zuletzt lief.
-    private var ampelSichtbar: Bool { !istKlein && !imPlayer }
+    /// Die Ampel verschwindet **nur** im kleinen Fenster — dort gehört sie
+    /// nicht hin.
+    ///
+    /// Im Player stand sie früher ebenfalls nicht, mit der Begründung, sie
+    /// stünde dann neben dem Winkel, der zurücklegt: zwei Schließer mit
+    /// verschiedener Wirkung. Das war meine Entscheidung, nicht Ein Fenster
+    /// ohne Ampel ist auf dem Mac kein Fenster — man kann es nicht mehr
+    /// schließen, nicht ablegen, nicht zoomen. Und das Verstecken hinterliess
+    /// obendrein einen hellen Streifen, wo die Knöpfe gesessen hatten.
+    ///
+    /// Der Winkel bleibt daneben stehen und rückt dafür nach rechts aus: er
+    /// schliesst den **Player**, die Ampel das **Fenster**. Zwei Handlungen,
+    /// zwei Orte.
+    private var ampelSichtbar: Bool { !istKlein }
 
     private func ampelNachziehen() {
         guard let fenster else { return }
