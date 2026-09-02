@@ -79,6 +79,17 @@ struct PlayerScreen: View {
     /// Ab hier rückt die Steuerung enger zusammen.
     private var schmal: Bool { fensterbreite > 0 && fensterbreite < 500 }
 
+    /// Im Fenster liegt iPadOS' Ampel über der oberen linken Ecke — und dort
+    /// sitzt der Knopf zum Schließen.
+    ///
+    /// Der Player muss das selbst berücksichtigen: er ist ein
+    /// `fullScreenCover` und hängt nicht unter `HauptView`, dessen
+    /// Sicherheitsabstand ihn deshalb nicht erreicht. Genau daran ist die
+    /// erste Fassung vorbeigegangen.
+    private var imFenster: Bool {
+        Fensterknoepfe.imFenster(fensterbreite: fensterbreite)
+    }
+
     init(model: AppModel, item: Item, plan: PlaybackPlan, startAt: Double) {
         self.model = model
         self.startItem = item
@@ -366,7 +377,7 @@ struct PlayerScreen: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.top, 18)
+        .padding(.top, 18 + (imFenster ? Fensterknoepfe.hoehe : 0))
     }
 
     /// Mittig im Bild, nicht am unteren Rand — so ist der Daumen in beiden

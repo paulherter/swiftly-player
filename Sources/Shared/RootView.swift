@@ -16,17 +16,10 @@ struct RootView: View {
     /// ob eine Knopfreihe nebeneinander passt.
     @State private var fensterbreite: CGFloat = 0
 
-    /// Breite des Schirms, auf dem das Fenster liegt.
-    private var schirmbreite: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.screen.bounds.width ?? 0
-    }
-
     /// Die App teilt sich den Schirm — dann liegt iPadOS' Ampel auf unserer
-    /// oberen linken Ecke. Siehe `\.fensterknoepfe`.
+    /// oberen linken Ecke. Siehe `Fensterknoepfe`.
     private var imFenster: Bool {
-        Stil.amPad && schirmbreite > 0 && fensterbreite < schirmbreite - 8
+        Fensterknoepfe.imFenster(fensterbreite: fensterbreite)
     }
 
     var body: some View {

@@ -37,6 +37,12 @@ struct PlayerSettingsSheet: View {
 
     @State private var breite: CGFloat = 0
 
+    /// Auch dieser Kopf sitzt oben links, und auch er liegt im Fenster
+    /// unter der Ampel. Er steht im Player und erbt dessen Lage.
+    private var imFenster: Bool {
+        Fensterknoepfe.imFenster(fensterbreite: breite)
+    }
+
     /// Drei Spalten nebeneinander, wenn Breite da ist — sonst eine.
     ///
     /// **Nicht allein an der Höhenklasse.** Auf dem iPhone ist die im
@@ -121,7 +127,7 @@ struct PlayerSettingsSheet: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, Stil.randAbstand)
-        .padding(.top, 18)
+        .padding(.top, 18 + (imFenster ? Fensterknoepfe.hoehe : 0))
         .padding(.bottom, 16)
     }
 

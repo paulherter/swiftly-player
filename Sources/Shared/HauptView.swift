@@ -79,7 +79,7 @@ struct HauptView: View {
         // Die Ursache liegt ohnehin nicht am Pfeil, sondern am Fenster: dort
         // fehlt die Statusleiste, die ihn sonst nach unten schiebt. Also
         // bekommt der Rahmen ihren Platz zurück, und alles darin rückt mit.
-        .safeAreaPadding(.top, fensterknoepfe ? 32 : 0)
+        .safeAreaPadding(.top, fensterknoepfe ? Fensterknoepfe.hoehe : 0)
         // Bewusst ohne Übergang: die Leiste soll fest liegen und beim
         // Zurückkommen einfach wieder da sein, so wie der Inhalt dahinter
         // auch. Eingeblendet wirkte sie wie ein eigenes Blatt.

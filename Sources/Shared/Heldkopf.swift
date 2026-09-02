@@ -258,3 +258,34 @@ extension EnvironmentValues {
         set { self[FensterknoepfeSchluessel.self] = newValue }
     }
 }
+
+
+/// Wo iPadOS seine Fensterknöpfe hinlegt, und wie viel Platz sie brauchen.
+///
+/// **Warum das eine Funktion ist und nicht nur der Umgebungswert oben:** der
+/// Player ist ein `fullScreenCover`. Er hängt nicht unter `HauptView`, und
+/// er ignoriert den sicheren Bereich ausdrücklich — dort liegt schließlich
+/// das Bild. Ein Sicherheitsabstand, den sich der Rahmen nimmt, erreicht ihn
+/// deshalb nicht. Was im Player oben Platz braucht, muss ihn sich selbst
+/// nehmen.
+///
+/// Genau daran ist die erste Fassung gescheitert: sie hat den Rahmen
+/// gepolstert und den Player vergessen, weil er wie ein Teil davon aussieht.
+enum Fensterknoepfe {
+    /// Höhe, die freizuhalten ist. Die Ampel sitzt in einem rund 44 Punkt
+    /// hohen Feld oben links; 32 zusätzlich zu den 18, die die Kopfzeilen
+    /// ohnehin halten, schiebt den Knopf darunter.
+    static let hoehe: CGFloat = 32
+
+    /// Die App teilt sich den Schirm — geteilter Bildschirm, Slide Over,
+    /// Stage Manager. Erkannt an der Breite: „teilt sich den Schirm" heißt
+    /// genau, dass das Fenster schmaler ist als der Schirm.
+    @MainActor
+    static func imFenster(fensterbreite: CGFloat) -> Bool {
+        guard Stil.amPad, fensterbreite > 0 else { return false }
+        let schirm = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.screen.bounds.width ?? 0
+        return schirm > 0 && fensterbreite < schirm - 8
+    }
+}
