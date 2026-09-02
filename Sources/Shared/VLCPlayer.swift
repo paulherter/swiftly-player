@@ -353,8 +353,12 @@ final class VLCPlayerView: Basisansicht {
     /// **Ist der Sprung angekommen, wo er hinsollte?**
     ///
     /// Ohne diese Frage bleibt „gesprungen" eine Absicht. Kommt VLC nicht an,
-    /// liegt es am Index der Datei — und dann ist der zweite Versuch ueber den
-    /// Byte-Anteil der einzige, der ueberhaupt ankommt.
+    /// wird der andere der beiden Sprungwege versucht — welcher taugt, haengt
+    /// an der Datei, siehe `seek(toSeconds:)`.
+    ///
+    /// Zweieinhalb Sekunden Frist: ein Sprung ueber einen brauchbaren Index
+    /// sitzt in unter einer Sekunde — eine Bereichsanfrage, ein Cluster,
+    /// fertig. Laenger zu warten verzoegert nur den Weg, der ankommt.
     private func sprungNachmessen() {
         guard let ziel = offenesZiel, let seit = offenSeit else { return }
         guard Date().timeIntervalSince(seit) > 2.5 else { return }
@@ -366,18 +370,6 @@ final class VLCPlayerView: Basisansicht {
             offenSeit = nil
             return
         }
-        // **Nach vier Sekunden ist es entschieden.**
-        //
-        // Ein Sprung, der ueber einen brauchbaren Index laeuft, sitzt in
-        // unter einer Sekunde: eine Bereichsanfrage, ein Cluster, fertig.
-        // Wer nach vier Sekunden noch am Dateianfang steht, liest sich
-        // vorwaerts durch und wird das auch in einer Minute noch tun. Laenger
-        // zu warten hilft niemandem — es verzoegert nur den einzigen Weg, der
-        // ankommt.
-        // Zweieinhalb Sekunden je Weg: ein Sprung, der ueber einen
-        // brauchbaren Index laeuft, sitzt in unter einer Sekunde. Laenger zu
-        // warten verzoegert nur den Weg, der wirklich ankommt.
-        guard Date().timeIntervalSince(seit) > 2.5 else { return }
 
         // **Erst den anderen Weg, dann erst den Server.**
         //
