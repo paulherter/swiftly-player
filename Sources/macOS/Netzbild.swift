@@ -106,8 +106,28 @@ struct Netzbild: View {
             }
         }
         .task(id: url) {
-            guard let url, bild == nil else { return }
-            guard let geladen = await Bildspeicher.geteilt.laden(url) else { return }
+            guard let url else {
+                if Ruckelwache.an, art == .fill {
+                    Protokoll.schreib("Bild: KEINE Adresse")
+                }
+                return
+            }
+            guard bild == nil else {
+                if Ruckelwache.an { Protokoll.schreib("Bild: sofort aus dem Speicher") }
+                return
+            }
+            let start = Date()
+            guard let geladen = await Bildspeicher.geteilt.laden(url) else {
+                if Ruckelwache.an {
+                    Protokoll.schreib("Bild: FEHLGESCHLAGEN nach "
+                        + "\(Int(Date().timeIntervalSince(start) * 1000)) ms — \(url.lastPathComponent)")
+                }
+                return
+            }
+            if Ruckelwache.an {
+                Protokoll.schreib("Bild: sichtbar nach "
+                    + "\(Int(Date().timeIntervalSince(start) * 1000)) ms")
+            }
             bild = geladen
             // 220 ms, dieselbe Zeit wie ein Sprung im Player — lang genug,
             // dass fünfzig Kacheln wie eine Bewegung wirken statt wie fünfzig.
