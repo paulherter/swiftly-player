@@ -565,7 +565,13 @@ struct Detailkopf: View {
         // sonst auf der Fensterkante. 24 setzt ihn auf dieselbe Höhe wie die
         // Seitenleiste ihre Wortmarke.
         .padding(.top, 24)
-        .frame(height: Stil.titelHoehe + 24, alignment: .bottom)
+        // **Luft unter dem Text.** Die Leiste reicht ein Stück tiefer als
+        // ihr Inhalt; sonst klebt der Titel auf der Haarlinie. Der Betrag
+        // steht zweimal: einmal als Abstand, damit der Text an seinem Platz
+        // bleibt, und einmal in der Höhe, damit die Leiste nach unten wächst
+        // statt den Text mitzunehmen.
+        .padding(.bottom, 10)
+        .frame(height: Stil.titelHoehe + 24 + 10, alignment: .bottom)
         // **Die Leiste, die beim Scrollen kommt** — wörtlich wie auf iPhone
         // und iPad: unten eine Haarlinie, dahinter Glas, und solange das Bild
         // oben steht stattdessen ein weicher Verlauf, damit der Pfeil auf
