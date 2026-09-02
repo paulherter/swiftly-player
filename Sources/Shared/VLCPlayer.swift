@@ -274,19 +274,7 @@ final class VLCPlayerView: Basisansicht {
     /// dann fuer alle weiteren Spruenge gemerkt.
     private var zeitsetzenBesser = false
 
-    /// **Wo im Titel der gelieferte Strom anfaengt.**
-    ///
-    /// Null, solange der Server die Datei roh durchreicht. Liefert er ab einer
-    /// Stelle, zaehlt VLCs Zeit dort bei null los — und alles, was diese
-    /// Ansicht nach aussen meldet, muss den Versatz aufschlagen. Sonst zeigt
-    /// die Leiste den Anfang eines Films, der laengst laeuft, und der Server
-    /// bekaeme dieselbe falsche Stelle gemeldet.
-    private(set) var zeitversatz: Double = 0
 
-    /// Ruft, wenn ein Sprung nicht angekommen ist und auch nicht mehr
-    /// ankommen wird — der Index der Datei taugt nichts. Wer das hoert, kann
-    /// den Server bitten, ab der Stelle zu liefern.
-    var onSprungGescheitert: ((Double) -> Void)?
 
     /// Ob VLC schon ein Bild ausgibt. Davor ist die Flaeche schwarz.
     var zeigtBild: Bool { player.hasVideoOut }
@@ -303,7 +291,7 @@ final class VLCPlayerView: Basisansicht {
 
     private var laengeSekunden: Double {
         guard let ms = player.media?.length.intValue, ms > 0 else { return 0 }
-        return zeitversatz + Double(ms) / 1000
+        return Double(ms) / 1000
     }
 
     /// Beim Wechsel WLAN <-> Mobilfunk bekommt das Geraet eine andere
@@ -406,11 +394,16 @@ final class VLCPlayerView: Basisansicht {
             return
         }
 
+        // **Hier endet es.** Frueher bat an dieser Stelle der Server, ab der
+        // Zielstelle zu liefern — er packte den Strom dafuer um. Das war der
+        // Notausgang, solange VLC 4 in manchen Matroska-Dateien nicht springen
+        // konnte. Seit dem Patch am mkv-Sucher springt der Abspieler selbst;
+        // kommt ein Sprung trotzdem auf beiden Wegen nicht an, ist das ein
+        // Befund und keine Gelegenheit, die Grundregel der App zu brechen.
         zeitsetzenBesser.toggle()
-        Protokoll.schreib("[VLC] Sprung auf \(Int(ziel)) s kam auf beiden Wegen nicht an → Server soll springen")
+        Protokoll.schreib("[VLC] Sprung auf \(Int(ziel)) s kam auf beiden Wegen nicht an")
         offenesZiel = nil
         offenSeit = nil
-        onSprungGescheitert?(ziel)
     }
 
     /// Zweite Absicherung fuer Abrisse, bei denen VLC im Zustand Playing
@@ -552,7 +545,7 @@ final class VLCPlayerView: Basisansicht {
         Protokoll.schreib("[Netz] \(grund) → Strom neu aufbauen bei \(Int(letzteGutePosition)) s")
         // Der Versatz bleibt: dieselbe Adresse liefert wieder ab derselben
         // Stelle, gesprungen wird nur der Rest.
-        oeffnen(url: adresse, abSekunden: max(letzteGutePosition - zeitversatz, 0),
+        oeffnen(url: adresse, abSekunden: max(letzteGutePosition, 0),
                 container: letzterContainer)
     }
 
@@ -581,7 +574,7 @@ final class VLCPlayerView: Basisansicht {
         // Ueber denselben Weg wie jeder andere Sprung — samt Nachmessung.
         // Die Startstelle ist der Sprung, der am meisten weh tut, wenn der
         // Index nichts hergibt: er kommt vor dem ersten Bild.
-        seek(toSeconds: zeitversatz + ziel)
+        seek(toSeconds: ziel)
     }
 
     private var startposition: Double?
@@ -664,8 +657,7 @@ final class VLCPlayerView: Basisansicht {
     /// HTTPS dauert ein Sprung länger als die Wartezeit, die Position las sich
     /// noch als alt, es wurde erneut gesprungen — und der Demuxer kam nie zur
     /// Ruhe. Von vorn gestartete Titel liefen deshalb, fortgesetzte nicht.
-    func play(url: URL, abSekunden: Double = 0, container: String? = nil,
-              versatz: Double = 0) {
+    func play(url: URL, abSekunden: Double = 0, container: String? = nil) {
         // Die Sitzung wird beim App-Start eingerichtet. Hier nur prüfen und
         // notfalls nachziehen — mit sichtbarem Fehler statt stillem try?.
         //
@@ -689,8 +681,7 @@ final class VLCPlayerView: Basisansicht {
 
         letzteAdresse = url
         letzterContainer = container
-        zeitversatz = versatz
-        letzteGutePosition = versatz + abSekunden
+        letzteGutePosition = abSekunden
         absichtlichBeendet = false
         offenesZiel = nil
         offenSeit = nil
@@ -911,14 +902,14 @@ final class VLCPlayerView: Basisansicht {
     // MARK: - Position
 
     /// Aktuelle Position in Sekunden.
-    var positionSeconds: Double { zeitversatz + Double(player.time.intValue) / 1000 }
+    var positionSeconds: Double { Double(player.time.intValue) / 1000 }
 
     /// Gesamtlaenge in Sekunden. 0, solange VLC die Datei noch liest.
     var durationSeconds: Double {
         guard let ms = player.media?.length.intValue, ms > 0 else { return 0 }
         // Der Server liefert die Restlaenge; die Oberflaeche braucht die
         // ganze. Bei Versatz null ist beides dasselbe.
-        return zeitversatz + Double(ms) / 1000
+        return Double(ms) / 1000
     }
 
     var isPlaying: Bool { player.isPlaying }
@@ -955,7 +946,7 @@ final class VLCPlayerView: Basisansicht {
     private func sprungAusloesen(auf sekunden: Double, ueberZeit: Bool) {
         if ueberZeit {
             Protokoll.schreib("[VLC] Sprung auf \(Int(sekunden)) s ueber die Zeit (von \(Int(positionSeconds)) s)")
-            player.time = VLCTime(int: Int32(clamping: Int((sekunden - zeitversatz) * 1000)))
+            player.time = VLCTime(int: Int32(clamping: Int(sekunden * 1000)))
         } else {
             let abstand = sekunden - positionSeconds
             Protokoll.schreib("[VLC] Sprung auf \(Int(sekunden)) s ueber den Abstand \(Int(abstand)) s")
