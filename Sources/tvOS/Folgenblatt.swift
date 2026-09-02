@@ -31,7 +31,7 @@ struct Folgenblatt: View {
                 .padding(.bottom, 36)
 
                 if laedt {
-                    Lader().frame(maxWidth: .infinity).padding(.vertical, 100)
+                    Lader.fern.frame(maxWidth: .infinity).padding(.vertical, 100)
                 } else {
                     ScrollView {
                         VStack(spacing: 4) {

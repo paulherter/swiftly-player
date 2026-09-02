@@ -3,10 +3,22 @@ import SwiftUI
 
 /// Eine Bibliothek als Gitter — sieben Spalten auf 1920 Punkt.
 ///
-/// Sortierung steht hier als zweite Chipreihe, nicht wie auf dem iPhone in
-/// einem Aufklappblatt. Ein Blatt kostet auf der Fernbedienung zwei Wege
-/// (öffnen, wählen, schließen); nebeneinander gelegte Chips kosten einen —
-/// und Platz ist auf dem Fernseher das, was das iPhone nicht hat.
+/// **Eine Chipreihe, nicht zwei.** Die Sortierung stand daneben als zweiter
+/// Chipsatz, mit dem Argument, ein Aufklappblatt koste auf der Fernbedienung
+/// zwei Wege statt einem. Das stimmt — nur waren es vier Chips, von denen
+/// immer genau einer an ist, und das ist eine Auswahl, kein Filter. Zwei
+/// Reihen gleich aussehender Kapseln mit verschiedener Bedeutung haben die
+/// Seite zugestellt.
+///
+/// Jetzt: links die Filter, rechts die Anzahl und **ein** Knopf, der den
+/// aktuellen Wert nennt und die Wahl dort aufklappt, wo er steht (E5) — wie
+/// die Staffelpille auf der Serienseite.
+///
+/// **Kein Kopfblock.** Startseite und Detailseiten tragen oben Titel,
+/// Angabenzeile und Beschreibung des Titels, um den es geht. Eine Bibliothek
+/// beschreibt keinen einzelnen Titel, sie zeigt einen Bestand — hier gibt es
+/// nichts, was ein Heldenbild tragen muesste. Stattdessen faerbt der Grund
+/// sich je Bereich, siehe `grundton`.
 struct BibliothekView: View {
     let model: AppModel
     /// Entweder über die Gattung („movies", „tvshows") aus der Kopfleiste …
@@ -18,6 +30,9 @@ struct BibliothekView: View {
     /// Blättern, Filtern und Sortieren stehen in `Bibliotheksmodell` —
     /// geteilt mit der iPhone-Fassung.
     @State private var stand = Bibliotheksmodell()
+    @State private var sortierwahlOffen = false
+    @FocusState private var amSortierknopf: Bool
+    @Environment(\.tafelOffen) private var tafelOffen
 
     private var spalten: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: Stil.gitterSpalte),
@@ -27,11 +42,11 @@ struct BibliothekView: View {
     var body: some View {
         ZStack {
             if stand.laedt {
-                Lader()
+                Lader.fern
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 30) {
-                        chipreihen
+                        chipreihe
 
                         if stand.items.isEmpty {
                             leer
@@ -39,45 +54,164 @@ struct BibliothekView: View {
                             gitter
                         }
                     }
-                    // Platz für die Kopfleiste darüber, wenn es eine gibt.
-                    .padding(.top, bibliothek == nil ? 0 : Stil.randOben)
+                    // **Die Chipreihe endet bei 264**, wie das oberste
+                    // Element jeder anderen Seite — siehe `Stil.erstesEnde`.
+                    //
+                    // Zurueckgerechnet aus ihrer eigenen Hoehe: 264 − 48 =
+                    // 216, davon der obere sichere Rand ab, an dem die
+                    // Scrollflaeche beginnt.
+                    //
+                    // Vorher stand hier der Anfang (190). Bei verschieden
+                    // hohen Elementen richtet ein gemeinsamer Anfang nichts
+                    // aus — die Chips endeten 26 Punkt hoeher als der Titel
+                    // der Startseite.
+                    .padding(.top, bibliothek == nil
+                             ? Stil.erstesEnde - Stil.chipHoehe - Stil.randOben
+                             : Stil.randOben)
                     .padding(.bottom, 60)
                 }
                 .scrollIndicators(.hidden)
-                .safeAreaInset(edge: .top) {
-                    Color.clear.frame(height: bibliothek == nil ? 150 : 0)
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(grundton.ignoresSafeArea())
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
         // damit `randSeite` nicht darauf sitzt und sich verdoppelt.
         .ignoresSafeArea(edges: .horizontal)
+        // Hinter der offenen Tafel ist nichts fokussierbar — siehe die
+        // Detailseiten, dort war es derselbe Fehler.
+        .disabled(sortierwahlOffen)
+        // **Rechts, unter ihrem Ausloeser** — nicht links am Rand.
+        //
+        // Sie hing an `.topLeading`, der Sortierknopf steht aber ganz rechts.
+        // Die Tafel klappte also quer ueber die Seite auf und hatte mit dem
+        // Knopf, der sie geoeffnet hatte, nichts mehr zu tun. Auf den
+        // Detailseiten stimmte es, weil dort der Mehr-Knopf links sitzt.
+        //
+        // Die Kante ist die Bildkante, nicht der Inhaltsrand: der waagerechte
+        // sichere Bereich ist oben abgeschaltet, damit `randSeite` nicht
+        // doppelt zaehlt.
+        .overlay(alignment: .topTrailing) {
+            if sortierwahlOffen {
+                Handlungstafel(handlungen: sortierhandlungen, offen: $sortierwahlOffen)
+                    .padding(.trailing, Stil.randSeite)
+                    .padding(.top, Stil.erstesEnde + 16)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: sortierwahlOffen)
+        // Die Seite schaltet sich selbst ab, die Kopfleiste gehoert ihr aber
+        // nicht — die muss `HauptView` stilllegen. Sonst stieg der Fokus aus
+        // der offenen Tafel nach oben auf die Bereichsknoepfe.
+        .onChange(of: sortierwahlOffen) { _, offen in
+            tafelOffen.wrappedValue = offen
+            if !offen { amSortierknopf = true }
+        }
+        // Wer die Seite mit offener Tafel verlaesst, liesse die Leiste tot
+        // zurueck.
+        .onDisappear { tafelOffen.wrappedValue = false }
         .task(id: stand.kennung) { await laden() }
+    }
+
+    /// **Je Bereich ein eigener Grundton.**
+    ///
+    /// Ein fester Verlauf aus der rechten oberen Ecke ins Dunkle — nicht aus
+    /// einem Bild abgeleitet wie auf den Detailseiten: die Bibliothek hat
+    /// keinen Titel, den sie beschreibt, also gibt es nichts abzuleiten.
+    ///
+    /// Serien tragen den Akzent (Farbton 171 Grad), Filme die Komplementaere
+    /// (351 Grad) — gegenueberliegend auf dem Farbkreis, gleiche Saettigung
+    /// und Helligkeit. Man sieht am Grund, wo man ist, bevor man die Leiste
+    /// liest.
+    ///
+    /// E2 ist nicht beruehrt: das ist Grund, kein Bedienelement — dieselbe
+    /// Begruendung wie beim gefaerbten Grund der Detailseiten.
+    private var grundton: some View {
+        let ton: Double = art == "movies" ? 351 : 171
+
+        // **Ein Netz, kein radialer Verlauf.**
+        //
+        // Radial gestapelt hat es gebandet, und aus demselben Grund wie auf
+        // den Detailseiten: ein Verlauf von einer Farbe nach durchsichtig
+        // bewegt sich in RGB fast auf einer Geraden, die Stufengrenzen der
+        // drei Kanaele fallen zusammen und bilden durchgehende Baender.
+        //
+        // `MeshGradient` interpoliert ueber eine Flaeche statt entlang einer
+        // Linie — keine Stopps, an denen etwas knicken kann. 25 Stuetzpunkte,
+        // damit die Farbe nicht in Inseln zerfaellt. Dazu dasselbe Rauschen
+        // wie dort, gegen die Quantisierung der Flaeche selbst.
+        //
+        // Der Gipfel sitzt rechts bei 28 Prozent Hoehe, also knapp **unter**
+        // dem Kopfverlauf der Leiste. Lag er in der Ecke, deckte der ihn zu
+        // und es blieb eine Kante.
+        let seite = 5
+        var punkte: [SIMD2<Float>] = []
+        for zeile in 0 ..< seite {
+            for spalte in 0 ..< seite {
+                punkte.append([Float(spalte) / Float(seite - 1),
+                               Float(zeile) / Float(seite - 1)])
+            }
+        }
+        return ZStack {
+            MeshGradient(width: seite, height: seite, points: punkte,
+                         colors: punkte.map { netzfarbe($0, ton: ton) })
+            Bildton.rauschen
+                .resizable(resizingMode: .tile)
+                .opacity(0.008)
+        }
+        .ignoresSafeArea()
+    }
+
+    /// Nah am Gipfel farbig, weit weg der Grundton — dieselbe Rechnung wie
+    /// bei `Bildgrund`, nur mit festem Farbton statt einem aus dem Bild.
+    private func netzfarbe(_ punkt: SIMD2<Float>, ton: Double) -> Color {
+        let dx = Double(0.97 - punkt.x), dy = Double(0.28 - punkt.y)
+        let naehe = 1 - min(1, (dx * dx + dy * dy).squareRoot() / 1.2)
+        return Color(hue: ton / 360,
+                     saturation: 0.30 + 0.16 * naehe,
+                     brightness: 0.050 + 0.055 * pow(naehe, 1.6))
+    }
+
+    /// Die Sortierungen als Handlungstafel — kein zweiter Chipsatz.
+    private var sortierhandlungen: [Titelhandlung] {
+        Sortierung.allCases.map { s in
+            Titelhandlung(symbol: stand.sortierung == s ? "checkmark.circle.fill" : "circle",
+                          text: "\(s.beschriftung)") { stand.sortierung = s }
+        }
     }
 
     // MARK: Teile
 
-    private var chipreihen: some View {
-        HStack(alignment: .center, spacing: 40) {
-            HStack(spacing: 16) {
-                ForEach(filter) { f in
-                    Button(f.beschriftung) { stand.filter = f }
-                        .buttonStyle(ChipStil(an: stand.filter == f))
-                }
+    private var chipreihe: some View {
+        HStack(alignment: .center, spacing: 20) {
+            ForEach(filter) { f in
+                Button(f.beschriftung) { stand.filter = f }
+                    .buttonStyle(ChipStil(an: stand.filter == f))
             }
-            .focusSection()
 
             Spacer(minLength: 40)
 
-            HStack(spacing: 16) {
-                ForEach(Sortierung.allCases) { s in
-                    Button(s.beschriftung) { stand.sortierung = s }
-                        .buttonStyle(ChipStil(an: stand.sortierung == s))
+            // Die Anzahl stand bisher nirgends — sie ist die einzige Auskunft,
+            // die eine Bibliothek ueber sich selbst geben kann.
+            if stand.gesamt > 0 {
+                Text("\(stand.gesamt) · sortiert nach")
+                    .font(Stil.klein)
+                    .foregroundStyle(Stil.schriftSehrLeise)
+            }
+
+            Button { sortierwahlOffen.toggle() } label: {
+                HStack(spacing: 14) {
+                    Text(stand.sortierung.beschriftung)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Stil.schrift.opacity(0.6))
                 }
             }
-            .focusSection()
+            .buttonStyle(KnopfStil(hoehe: Stil.chipHoehe))
+            .focused($amSortierknopf)
+            .accessibilityLabel(Text("Sortierung, \(stand.sortierung.beschriftung)"))
         }
+        .focusSection()
         .padding(.horizontal, Stil.randSeite)
     }
 

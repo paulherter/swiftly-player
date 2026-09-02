@@ -46,7 +46,7 @@ struct QuickConnectView: View {
                         .frame(width: 1100)
                         .padding(.top, 56)
                 } else {
-                    Lader().padding(.top, 72)
+                    Lader.fern.padding(.top, 72)
                 }
 
                 anleitung.padding(.top, 56)

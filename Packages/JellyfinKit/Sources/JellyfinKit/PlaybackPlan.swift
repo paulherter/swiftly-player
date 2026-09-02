@@ -13,10 +13,24 @@ public struct PlaybackPlan: Sendable, Equatable {
     public let playSessionID: String?
     public let container: String?
     public let reasons: [TranscodeReason]
+    /// **Wie weit im Titel der gelieferte Strom beginnt.**
+    ///
+    /// Bei Direct Play immer null: die Datei kommt von vorn, den Sprung macht
+    /// der Abspieler. Hat der Server ab einer Stelle geliefert, zählt seine
+    /// Zeit dort bei null los — und die Oberfläche muss diesen Versatz
+    /// aufschlagen, sonst zeigt sie den Anfang eines Films, der längst läuft.
+    public let serverAbSekunden: Double
     /// Die gewählte Quelle — für den Datei-Auszug auf der Detailseite.
     public let quelle: MediaSource?
 
     public var isLossless: Bool { method.isLossless }
+
+    /// **Ob der Abspieler selbst springen muss.**
+    ///
+    /// Bei Direct Play liefert der Server die Datei roh von vorn; jeder Sprung
+    /// geht über den Index der Datei. Sonst liefert der Server ab der
+    /// gewünschten Stelle, und ein Sprung ist ein neuer Strom.
+    public var abspielerSpringt: Bool { method == .directPlay }
 
     /// Kurzer Satz für die Oberfläche.
     public var summary: String {
@@ -75,6 +89,7 @@ public extension PlaybackPlan {
         from response: PlaybackInfoResponse,
         itemID: String,
         profile: DeviceProfile,
+        abSekunden: Double = 0,
         streamURL: (String, String?, String?) throws -> URL,
         serverBase: URL
     ) throws -> PlaybackPlan? {
@@ -82,8 +97,21 @@ public extension PlaybackPlan {
         guard let source = besteQuelle(response.mediaSources) else { return nil }
         let method = source.deliveryMethod
 
+        // **Die Adresse des Servers gilt, sobald es eine gibt.**
+        //
+        // Bisher nur beim Transcode. Beim Umpacken liefert Jellyfin ebenfalls
+        // eine `TranscodingUrl` — und nur die trägt den Startpunkt. Wer
+        // stattdessen die Rohdatei nimmt, bekommt sie wieder von vorn.
+        //
+        // **Und wenn ab einer Stelle geliefert werden soll, gilt sie zuerst.**
+        // `deliveryMethod` sagt, was die Quelle *kann*, nicht was verlangt
+        // wurde: eine Datei, die sich direkt abspielen lässt, meldet das auch
+        // dann, wenn wir Direct Play ausdrücklich abgeschaltet haben. Wer
+        // danach entscheidet, landet wieder bei der Rohdatei — und die fängt
+        // von vorn an.
+        let serverSollSpringen = abSekunden > 0
         let url: URL
-        if method == .transcode, let path = source.transcodingUrl {
+        if serverSollSpringen || method != .directPlay, let path = source.transcodingUrl {
             // TranscodingUrl kommt als serverrelativer Pfad zurück.
             guard let composed = URL(string: path, relativeTo: serverBase)?.absoluteURL else {
                 throw JellyfinError.invalidServerURL
@@ -100,6 +128,13 @@ public extension PlaybackPlan {
             playSessionID: response.playSessionId,
             container: source.container,
             reasons: method == .transcode ? diagnose(source: source, profile: profile) : [],
+            // **Nur wenn wirklich die Serveradresse benutzt wurde.**
+            //
+            // Sonst behauptet der Plan einen Versatz, den der Strom nicht hat
+            // — die Leiste stünde bei acht Minuten und das Bild am Anfang.
+            // Genau das ist passiert, als der Server keine `TranscodingUrl`
+            // schickte und wir trotzdem auf die Rohdatei umgeschaltet haben.
+            serverAbSekunden: source.transcodingUrl == nil ? 0 : abSekunden,
             quelle: source
         )
     }

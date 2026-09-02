@@ -386,3 +386,97 @@ struct EinlesenTests {
         #expect(antwort.totalRecordCount == 1)
     }
 }
+
+// MARK: - Bildrate im Datenstrom
+
+/// **Eine Nebenangabe darf die Wiedergabe nicht verhindern.**
+///
+/// `RealFrameRate` wird nur gebraucht, damit der Fernseher seinen Ausgang
+/// früh genug umstellt. Wirft das Auspacken daran, fällt die ganze Antwort —
+/// und der Titel lässt sich gar nicht mehr abspielen, ohne dass irgendetwas
+/// auf die Bildrate hinweist.
+@Suite("Bildrate im Medienstrom")
+struct BildrateTests {
+    private func strom(_ inhalt: String) throws -> MediaStream {
+        let json = """
+        {"Codec":"h264","Type":"Video","Width":1920,"Height":1080,\(inhalt)}
+        """
+        return try JSONDecoder().decode(MediaStream.self, from: Data(json.utf8))
+    }
+
+    @Test("Nimmt die Zahl, wie sie im Datenblatt steht")
+    func alsZahl() throws {
+        #expect(try strom("\"RealFrameRate\":23.976").bildrate == 23.976)
+    }
+
+    @Test("Nimmt sie auch als Zeichenkette")
+    func alsText() throws {
+        #expect(try strom("\"RealFrameRate\":\"25\"").bildrate == 25)
+    }
+
+    @Test("Unbrauchbares wirft nicht, es fehlt nur")
+    func unbrauchbar() throws {
+        #expect(try strom("\"RealFrameRate\":true").bildrate == nil)
+        #expect(try strom("\"RealFrameRate\":null").bildrate == nil)
+        #expect(try strom("\"RealFrameRate\":{\"a\":1}").bildrate == nil)
+    }
+
+    @Test("Fehlt sie ganz, bleibt der Strom trotzdem lesbar")
+    func fehlt() throws {
+        #expect(try strom("\"Index\":0").bildrate == nil)
+    }
+
+    @Test("Schwankende Bildrate meldet lieber nichts")
+    func schwankend() throws {
+        let stark = try strom("\"RealFrameRate\":30,\"AverageFrameRate\":24")
+        #expect(stark.bildrate == nil)
+        let leicht = try strom("\"RealFrameRate\":23.976,\"AverageFrameRate\":24")
+        #expect(leicht.bildrate == 23.976)
+    }
+}
+
+// MARK: - Profil zum Umpacken
+
+/// **Umpacken heißt nicht umrechnen.**
+///
+/// Das Profil für den Serversprung darf dem Server nur erlauben, denselben
+/// Strom in einen anderen Behälter zu legen. Nennt es andere Codecs als die,
+/// die wir ohnehin direkt abspielen, rechnet der Server das Bild neu — und
+/// genau dagegen gibt es diese App.
+@Suite("Profil zum Umpacken")
+struct UmpackProfilTests {
+    @Test("Nennt dieselben Bildcodecs, die auch direkt laufen")
+    func bildcodecs() {
+        let ziel = DeviceProfile.vlcUmpacken().transcodingProfiles
+        #expect(ziel.count == 1)
+        let codecs = ziel[0].videoCodec.split(separator: ",").map(String.init)
+        #expect(codecs.contains("hevc"))
+        #expect(codecs.contains("h264"))
+    }
+
+    @Test("Nennt die Tonformate, die bei Film-Rips vorkommen")
+    func toncodecs() {
+        let codecs = DeviceProfile.vlcUmpacken().transcodingProfiles[0]
+            .audioCodec.split(separator: ",").map(String.init)
+        for format in ["ac3", "eac3", "dts", "truehd", "aac"] {
+            #expect(codecs.contains(format), "\(format) fehlt — der Server würde den Ton neu rechnen")
+        }
+    }
+
+    @Test("Das normale Profil bleibt streng")
+    func normalesProfilUnberuehrt() {
+        // Sonst bekäme der Server auch im Normalfall neue Umwandlungsziele
+        // angeboten — und könnte sich dafür entscheiden.
+        let normal = DeviceProfile.vlc().transcodingProfiles
+        #expect(normal.count == 1)
+        #expect(normal[0].videoCodec == "h264")
+        #expect(normal[0].audioCodec == "aac")
+    }
+
+    @Test("Direktwiedergabe bleibt in beiden Profilen gleich")
+    func direktwiedergabeGleich() {
+        let a = DeviceProfile.vlc().directPlayProfiles.map(\.container)
+        let b = DeviceProfile.vlcUmpacken().directPlayProfiles.map(\.container)
+        #expect(a == b)
+    }
+}
