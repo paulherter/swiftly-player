@@ -38,10 +38,15 @@ final class Bibliotheksmodell {
     }
 
     /// Welche Bibliothek gemeint ist — genannt oder über die Gattung gesucht.
+    ///
+    /// **Nicht mehr `views.first`.** Hat der Server zwei Bibliotheken
+    /// derselben Gattung, war die zweite damit unerreichbar. Jetzt gilt die
+    /// gemerkte Wahl, und die erste ist nur noch der Rückfall.
     private func quelle(_ model: AppModel, art: String?, bibliothek: Item?) async -> Item? {
         if let bibliothek { return bibliothek }
         if model.views.isEmpty { await model.loadViews() }
-        return model.views.first { $0.collectionType == art }
+        guard let art else { return nil }
+        return model.gewaehlteBibliothek(art: art)
     }
 
     func laden(_ model: AppModel, art: String? = nil, bibliothek: Item? = nil) async {

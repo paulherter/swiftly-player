@@ -178,6 +178,12 @@ struct BibliothekView: View {
     /// geteilt mit der tvOS-Fassung.
     @State private var stand = Bibliotheksmodell()
     @State private var sortierlisteOffen = false
+    /// Welche Bibliothek dieser Gattung gezeigt wird.
+    ///
+    /// Ein Server kann mehrere Filmbibliotheken haben — im TestFlight eine
+    /// auf einer externen Platte und eine lokale. Vorher nahm die Ansicht
+    /// stumm die erste, und die zweite war nicht erreichbar.
+    @State private var gewaehlt: Item?
 
     @Environment(\.breit) private var breit
     @Environment(\.fensterknoepfe) private var fensterknoepfe
@@ -203,7 +209,7 @@ struct BibliothekView: View {
         GeometryReader { rahmen in
             inhalt(nutzbar: rahmen.size.width - 2 * Stil.rand(breit: breit))
         }
-        .task(id: stand.kennung) { await laden() }
+        .task(id: "\(stand.kennung)|\(gewaehlt?.id ?? "")") { await laden() }
     }
 
     private func inhalt(nutzbar: CGFloat) -> some View {
@@ -223,7 +229,7 @@ struct BibliothekView: View {
                         // ankommt.
                         .onAppear {
                             guard item.id == stand.nachladenAb(spalten: anzahl) else { return }
-                            Task { await stand.nachladen(model, art: art) }
+                            Task { await stand.nachladen(model, art: art, bibliothek: gewaehlt) }
                         }
                     }
                 }
@@ -278,7 +284,39 @@ struct BibliothekView: View {
         Unschaerfekopf {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .bottom) {
-                    Text(titel).font(Stil.titelGross).tracking(-0.6)
+                    // **Nur ab zwei Bibliotheken ein Menü.**
+                    //
+                    // Wer eine hat — und das sind fast alle — sieht genau das
+                    // Gleiche wie vorher: eine Überschrift, kein Zeichen, kein
+                    // Tippziel. Ein Umschalter, der nichts umzuschalten hat,
+                    // ist eine Frage ohne Antwort.
+                    if auswahl.count > 1 {
+                        Menu {
+                            ForEach(auswahl) { bib in
+                                Button {
+                                    model.bibliothekWaehlen(bib, art: art)
+                                    gewaehlt = bib
+                                } label: {
+                                    if bib.id == gewaehlt?.id {
+                                        Label(bib.name, systemImage: "checkmark")
+                                    } else {
+                                        Text(bib.name)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(gewaehlt?.name ?? "")
+                                    .font(Stil.titelGross).tracking(-0.6)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Stil.schriftLeise)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(titel).font(Stil.titelGross).tracking(-0.6)
+                    }
                     Spacer(minLength: 0)
                     // Breit steht das Profilzeichen in der Seitenleiste, und
                     // zwar für alle vier Bereiche. Hier wäre es das zweite.
@@ -375,7 +413,14 @@ struct BibliothekView: View {
         }
     }
 
-    private func laden() async { await stand.laden(model, art: art) }
+    private func laden() async {
+        if model.views.isEmpty { await model.loadViews() }
+        if gewaehlt == nil { gewaehlt = model.gewaehlteBibliothek(art: art) }
+        await stand.laden(model, art: art, bibliothek: gewaehlt)
+    }
+
+    /// Alle Bibliotheken dieser Gattung. Ab zwei wird der Titel zum Menü.
+    private var auswahl: [Item] { model.bibliotheken(art: art) }
 }
 
 // MARK: - Umweg von einer Folge auf ihre Serie

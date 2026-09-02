@@ -31,6 +31,10 @@ struct BibliothekView: View {
     /// geteilt mit der iPhone-Fassung.
     @State private var stand = Bibliotheksmodell()
     @State private var sortierwahlOffen = false
+    /// Welche Bibliothek dieser Gattung gezeigt wird — nur wenn die Ansicht
+    /// ueber die Gattung kam. Kommt sie ueber den Sprungpfad, ist die
+    /// Bibliothek benannt und es gibt nichts zu waehlen.
+    @State private var gewaehlt: Item?
     @FocusState private var amSortierknopf: Bool
     @Environment(\.tafelOffen) private var tafelOffen
 
@@ -110,7 +114,7 @@ struct BibliothekView: View {
         // Wer die Seite mit offener Tafel verlaesst, liesse die Leiste tot
         // zurueck.
         .onDisappear { tafelOffen.wrappedValue = false }
-        .task(id: stand.kennung) { await laden() }
+        .task(id: "\(stand.kennung)|\(gewaehlt?.id ?? "")") { await laden() }
     }
 
     /// **Je Bereich ein eigener Grundton.**
@@ -184,6 +188,32 @@ struct BibliothekView: View {
 
     private var chipreihe: some View {
         HStack(alignment: .center, spacing: 20) {
+            // **Die Bibliothekswahl steht vorn, und nur ab zwei.**
+            //
+            // Als Chips und nicht als Tafel wie die Sortierung: die Namen
+            // kommen vom Server und sind deshalb `String`, waehrend
+            // `Titelhandlung.text` ein `LocalizedStringKey` ist — eine
+            // Bibliothek namens „Filme" wuerde dort als Schluessel
+            // nachgeschlagen. Chips nehmen den Namen, wie er ist.
+            //
+            // Ein Server mit mehr als drei Bibliotheken derselben Gattung
+            // draengt die Reihe; das ist selten genug, um es abzuwarten.
+            if auswahl.count > 1 {
+                ForEach(auswahl) { bib in
+                    Button(bib.name) {
+                        model.bibliothekWaehlen(bib, art: art ?? "")
+                        gewaehlt = bib
+                    }
+                    .buttonStyle(ChipStil(an: bib.id == gewaehlt?.id))
+                }
+                // Senkrechter Strich statt Abstand: zwei Chipsorten
+                // nebeneinander sehen sonst aus wie eine Reihe, und man
+                // sieht nicht, welche Frage welche ist.
+                Rectangle()
+                    .fill(Stil.rand)
+                    .frame(width: 2, height: Stil.chipHoehe * 0.6)
+            }
+
             ForEach(filter) { f in
                 Button(f.beschriftung) { stand.filter = f }
                     .buttonStyle(ChipStil(an: stand.filter == f))
@@ -230,7 +260,7 @@ struct BibliothekView: View {
                 .onAppear {
                     guard item.id == stand.nachladenAb(spalten: Stil.gitterSpalten)
                     else { return }
-                    Task { await stand.nachladen(model, art: art, bibliothek: bibliothek) }
+                    Task { await stand.nachladen(model, art: art, bibliothek: bibliothek ?? gewaehlt) }
                 }
             }
         }
@@ -255,6 +285,17 @@ struct BibliothekView: View {
     // MARK: Laden
 
     private func laden() async {
-        await stand.laden(model, art: art, bibliothek: bibliothek)
+        if bibliothek == nil, model.views.isEmpty { await model.loadViews() }
+        if let art, bibliothek == nil, gewaehlt == nil {
+            gewaehlt = model.gewaehlteBibliothek(art: art)
+        }
+        await stand.laden(model, art: art, bibliothek: bibliothek ?? gewaehlt)
+    }
+
+    /// Alle Bibliotheken dieser Gattung. Ab zwei kommt die Wahl in die
+    /// Chipreihe.
+    private var auswahl: [Item] {
+        guard bibliothek == nil, let art else { return [] }
+        return model.bibliotheken(art: art)
     }
 }

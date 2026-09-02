@@ -17,6 +17,9 @@ struct BibliothekView: View {
     let titel: LocalizedStringKey
 
     @State private var regal = Bibliotheksmodell()
+    /// Welche Bibliothek dieser Gattung gezeigt wird. Ein Server kann mehrere
+    /// Filmbibliotheken haben; vorher nahm die Ansicht stumm die erste.
+    @State private var gewaehlt: Item?
 
     private var spalten: [GridItem] {
         [GridItem(.adaptive(minimum: Stil.kachelBreite, maximum: Stil.kachelBreite),
@@ -28,10 +31,42 @@ struct BibliothekView: View {
             VStack(alignment: .leading, spacing: 0) {
 
                 HStack(alignment: .firstTextBaseline) {
-                    Text(titel)
-                        .font(Stil.titelGross)
-                        .tracking(-0.6)
-                        .foregroundStyle(Stil.schrift)
+                    // **Nur ab zwei Bibliotheken ein Menue.** Wer eine hat,
+                    // sieht dieselbe Ueberschrift wie bisher — ein Umschalter
+                    // ohne Auswahl ist eine Frage ohne Antwort.
+                    if auswahl.count > 1 {
+                        Menu {
+                            ForEach(auswahl) { bib in
+                                Button {
+                                    model.bibliothekWaehlen(bib, art: art)
+                                    gewaehlt = bib
+                                } label: {
+                                    if bib.id == gewaehlt?.id {
+                                        Label(bib.name, systemImage: "checkmark")
+                                    } else {
+                                        Text(bib.name)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(gewaehlt?.name ?? "")
+                                    .font(Stil.titelGross)
+                                    .tracking(-0.6)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Stil.schriftLeise)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                    } else {
+                        Text(titel)
+                            .font(Stil.titelGross)
+                            .tracking(-0.6)
+                            .foregroundStyle(Stil.schrift)
+                    }
                     Spacer()
                     if regal.gesamt > 0 {
                         Text(verbatim: "\(regal.gesamt)")
@@ -68,7 +103,7 @@ struct BibliothekView: View {
                         .task {
                             // Nachschub steht, bevor man unten ankommt.
                             if eintrag.id == regal.nachladenAb(spalten: geschaetzteSpalten) {
-                                await regal.nachladen(model, art: art)
+                                await regal.nachladen(model, art: art, bibliothek: gewaehlt)
                             }
                         }
                     }
@@ -81,11 +116,21 @@ struct BibliothekView: View {
         }
         .scrollIndicators(.never)
         .overlay { if regal.laedt { Lader() } }
-        .task(id: regal.kennung) { await regal.laden(model, art: art) }
+        .task(id: "\(regal.kennung)|\(gewaehlt?.id ?? "")") { await laden() }
     }
 
     /// Für das Nachladen genügt eine Schätzung: ob die drittletzte Reihe bei
     /// sechs oder sieben Spalten beginnt, verschiebt den Auslöser um eine
     /// Kachelbreite. Genau ausrechnen hieße die Fensterbreite mitzuführen.
     private var geschaetzteSpalten: Int { 6 }
+
+    private func laden() async {
+        if model.views.isEmpty { await model.loadViews() }
+        if gewaehlt == nil { gewaehlt = model.gewaehlteBibliothek(art: art) }
+        await regal.laden(model, art: art, bibliothek: gewaehlt)
+    }
+
+    /// Alle Bibliotheken dieser Gattung. Ab zwei wird der Titel zum Menue.
+    private var auswahl: [Item] { model.bibliotheken(art: art) }
+
 }

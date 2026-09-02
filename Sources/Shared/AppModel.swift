@@ -48,6 +48,44 @@ final class AppModel {
         UserDefaults.standard.set(wert, forKey: name)
     }
 
+    // MARK: - Mehrere Bibliotheken derselben Gattung
+
+    /// Alle Bibliotheken einer Gattung, in der Reihenfolge des Servers.
+    ///
+    /// **Ein Server kann mehrere Filmbibliotheken haben** — aus dem
+    /// TestFlight: eine auf einer externen Platte, eine lokale. Der Reiter
+    /// „Filme" nahm bis dahin `views.first` und zeigte damit nur die erste;
+    /// die zweite war in der App nicht erreichbar. Aufgefallen ist es nie,
+    /// weil unser Prüfserver genau eine hat.
+    ///
+    /// Suche, „Weiterschauen" und „Zuletzt hinzugefügt" gehen ohne
+    /// `ParentId` an den Server und sahen deshalb immer alles — nur das
+    /// Durchblättern war halbiert.
+    func bibliotheken(art: String) -> [Item] {
+        views.filter { $0.collectionType == art }
+    }
+
+    /// Welche Bibliothek zuletzt gewählt war — je Gattung gemerkt.
+    ///
+    /// Über die Kennung und nicht über den Platz in der Liste: der Server
+    /// darf umsortieren, und dann zeigte „Filme" plötzlich die andere
+    /// Sammlung. Ist die gemerkte Bibliothek verschwunden, fällt die Wahl
+    /// still auf die erste zurück.
+    func gewaehlteBibliothek(art: String) -> Item? {
+        let vorhanden = bibliotheken(art: art)
+        if let kennung = UserDefaults.standard.string(forKey: Self.bibliotheksname(art)),
+           let treffer = vorhanden.first(where: { $0.id == kennung }) {
+            return treffer
+        }
+        return vorhanden.first
+    }
+
+    func bibliothekWaehlen(_ bibliothek: Item, art: String) {
+        merken(bibliothek.id, Self.bibliotheksname(art))
+    }
+
+    private static func bibliotheksname(_ art: String) -> String { "bibliothek-\(art)" }
+
     /// Was dem Server als Grenze gemeldet wird.
     ///
     /// Eine Milliarde heißt praktisch unbegrenzt — ein Limit löst
