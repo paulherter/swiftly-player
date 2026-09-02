@@ -27,6 +27,22 @@ struct PlayerScreen: View {
     @State private var hinweis: String?
     @State private var flaeche: VLCPlayerView?
     @State private var stand: Wiedergabetakt.Stand
+
+    /// **Was der Knopf zeigt, bis der Takt nachkommt.**
+    ///
+    /// `stand.laeuft` kommt aus dem Takt, und der schlägt alle 500 ms
+    /// (`Wiedergabetakt.taktlaenge`). Der Knopf hing daran — er sprang also
+    /// erst bis zu einer halben Sekunde nach dem Klick um. Zusammen mit dem
+    /// Bild, das seinerseits einen Moment nachzieht, wirkt das, als reagiere
+    /// der Player gar nicht.
+    ///
+    /// Ein Knopf antwortet auf den Druck, nicht auf die Bestätigung. Deshalb
+    /// hier ein eigener Wert, der sofort umschlägt und wieder verschwindet,
+    /// sobald der Takt dasselbe sagt. Die iPhone-Fassung macht es genauso —
+    /// sie hält `laeuft` selbst und setzt es im Klick.
+    @State private var laeuftAnzeige: Bool?
+
+    private var laeuftJetzt: Bool { laeuftAnzeige ?? stand.laeuft }
     @State private var amRegler = false
     @State private var spurwahlOffen = false
     /// Wo der Zeiger zuletzt stand. Ohne diesen Vergleich stellt jeder
@@ -186,6 +202,9 @@ struct PlayerScreen: View {
             zentraleUebernehmen()
             halter.setzePlayer(true)
         }
+        .onChange(of: stand.laeuft) { _, neu in
+            if laeuftAnzeige == neu { laeuftAnzeige = nil }
+        }
         .onChange(of: tempo) { tempoAnwenden() }
         .onChange(of: schlafminuten) { schlafzeitSetzen(schlafminuten) }
         .task { naechsteFolge = await model.folgeNach(titel) }
@@ -318,7 +337,7 @@ struct PlayerScreen: View {
                         kuerzel: "←", takt: taktZurueck) {
                 springe(-Double(model.zurueckSekunden))
             }
-            Sprungknopf(symbol: stand.laeuft ? "pause.fill" : "play.fill", gross: true,
+            Sprungknopf(symbol: laeuftJetzt ? "pause.fill" : "play.fill", gross: true,
                         kuerzel: String(localized: "Leertaste"), flott: true) {
                 umschalten()
             }
@@ -420,6 +439,10 @@ struct PlayerScreen: View {
 
     private func umschalten() {
         guard let flaeche else { return }
+        let laeuftGleich = !flaeche.isPlaying
+        // **Erst der Knopf, dann der Strom.** Das Umschalten selbst kostet
+        // nichts, aber die Rückmeldung darf nicht darauf warten.
+        laeuftAnzeige = laeuftGleich
         if flaeche.isPlaying { flaeche.pause() } else { flaeche.resume() }
         steuerungZeigen()
     }
