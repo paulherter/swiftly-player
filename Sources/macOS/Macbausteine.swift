@@ -507,12 +507,31 @@ struct Detailkopf: View {
     let titel: String
     /// Wie weit gescrollt wurde.
     let versatz: CGFloat
-    var ab: CGFloat = Stil.heldHoehe - 150
+
+    /// **Ab wo die Leiste kommt — hergeleitet, nicht geschätzt.**
+    ///
+    /// Sie soll genau dann da sein, wenn der große Titel unter ihr
+    /// verschwindet. Aus der Geometrie des Heldenkopfes:
+    ///
+    /// - Der Titel beginnt `Stil.titelHoehe + 98` unter der Oberkante des
+    ///   Heldenbildes und ist 42 Punkt hoch.
+    /// - Die Leiste selbst ist `Stil.titelHoehe + 24` hoch.
+    ///
+    /// Die Oberkante des Titels erreicht die Unterkante der Leiste also bei
+    /// 98 − 24 = **74**, und 42 Punkt später ist er ganz darunter. Genau über
+    /// diese Strecke blendet die Leiste ein.
+    ///
+    /// Vorher stand hier `Stil.heldHoehe - 150` = 230 — ein Wert aus der
+    /// iPhone-Fassung, wo Heldenbild und Titel anders sitzen. Auf dem Mac kam
+    /// die Leiste damit erst, wenn der Titel längst weg war.
+    var ab: CGFloat = 98 - 24
+    /// Über welche Strecke sie einblendet: die Höhe des großen Titels.
+    var ueber: CGFloat = 42
     let zurueck: () -> Void
 
     private var staerke: Double {
-        guard ab > 0 else { return 1 }
-        return Double(min(max((versatz - ab) / 70, 0), 1))
+        guard ueber > 0 else { return 1 }
+        return Double(min(max((versatz - ab) / ueber, 0), 1))
     }
 
     var body: some View {
