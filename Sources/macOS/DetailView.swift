@@ -26,19 +26,13 @@ struct DetailView: View {
     /// nachkommt. Also darf er kommen, wann er kommt.
     private var titel: Item { voll ?? item }
 
-    /// Nur zum Nachmessen: welchen Weg ein Klick nimmt.
-    private func protokolliert(_ art: String?) -> String? {
-        if Ruckelwache.an { Protokoll.schreib("Detailseite: \(item.name) ist \(art ?? "?")") }
-        return art
-    }
-
     var body: some View {
         Group {
             // **Nach `item.type` verzweigen, nicht nach `titel.type`.** Die
             // Art steht schon in der Liste; nach dem nachgeladenen Satz zu
             // verzweigen hiess, den Zweig unterwegs wechseln zu können — und
             // damit die halbe Seite wegzuwerfen und neu zu bauen.
-            switch protokolliert(item.type) {
+            switch item.type {
             case "Series":
                 SerienView(model: model, serie: titel, zurueck: zurueck)
             case "Episode":
