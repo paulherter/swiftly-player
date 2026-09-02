@@ -363,6 +363,36 @@ final class VLCPlayerView: Basisansicht {
         // Bei jedem Wechsel nachziehen: sonst zeigt der Knopf im
         // Bild-im-Bild-Fenster weiter Wiedergabe, obwohl pausiert ist.
         refreshPiPState()
+
+        // **Der Knopf folgt der Maschine, nicht der Uhr.**
+        //
+        // Der Zustand des Abspielknopfes hing bisher am Takt, und der schlägt
+        // alle 500 ms (`Wiedergabetakt.taktlaenge`). Der Knopf sprang also bis
+        // zu einer halben Sekunde nach dem Druck um.
+        //
+        // Setzt man ihn stattdessen sofort im Klick, ist er zu **früh**: das
+        // Bild braucht noch seine Zeit. Am Mac gemessen, dreimal:
+        //
+        // Klick → VLC meldet „angehalten"   17–25 ms Klick → Filmzeit steht
+        // wirklich   26–36 ms
+        //
+        // Bei 60 Hz sind das ein bis zwei Bilder. Das ist der Abstand, den
+        //
+        // Also weder das eine noch das andere: der Knopf hängt an genau der
+        // Meldung, mit der die Maschine selbst umschaltet. Dann sind Knopf und
+        // Bild im selben Moment still, und der Abstand verschwindet — nicht,
+        // weil er kleiner wird, sondern weil es keine zwei Zeitpunkte mehr
+        // gibt.
+        //
+        // Warum nicht schneller: Jellyfin Media Player und Jellium haben das
+        // Problem nicht, aber beide setzen auf **libmpv**, nicht auf libvlc —
+        // andere Ausgabewarteschlange. Das ist kein Kniff zum Übernehmen, das
+        // ist ein anderer Motor.
+        switch zustand {
+        case .playing:  laeuftGemeldet?(true)
+        case .paused:   laeuftGemeldet?(false)
+        default:        break
+        }
         guard !absichtlichBeendet else { return }
         guard zustand == .stopped || zustand == .stopping || zustand == .error else { return }
         let laenge = laengeSekunden
@@ -837,6 +867,10 @@ final class VLCPlayerView: Basisansicht {
             namen.contains($0.trimmingCharacters(in: .whitespaces))
         }
     }
+
+    /// Wird gerufen, sobald **VLC selbst** umschaltet — nicht, wenn wir es
+    /// verlangen. Der Abspielknopf hängt daran; siehe `zustandGewechselt`.
+    var laeuftGemeldet: ((Bool) -> Void)?
 
     func pause()  { player.pause(); refreshPiPState() }
     func resume() { player.play();  refreshPiPState() }

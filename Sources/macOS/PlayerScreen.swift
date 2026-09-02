@@ -36,10 +36,9 @@ struct PlayerScreen: View {
     /// Bild, das seinerseits einen Moment nachzieht, wirkt das, als reagiere
     /// der Player gar nicht.
     ///
-    /// Ein Knopf antwortet auf den Druck, nicht auf die Bestätigung. Deshalb
-    /// hier ein eigener Wert, der sofort umschlägt und wieder verschwindet,
-    /// sobald der Takt dasselbe sagt. Die iPhone-Fassung macht es genauso —
-    /// sie hält `laeuft` selbst und setzt es im Klick.
+    /// Gesetzt wird er von `VLCPlayerView.laeuftGemeldet`, also in dem
+    /// Moment, in dem VLC selbst umschaltet — gemessen 17 bis 25 ms nach dem
+    /// Druck. Damit sind Knopf und Bild gleichzeitig still.
     @State private var laeuftAnzeige: Bool?
 
     private var laeuftJetzt: Bool { laeuftAnzeige ?? stand.laeuft }
@@ -124,6 +123,9 @@ struct PlayerScreen: View {
                          container: anfang.plan.container,
                          verdeckt: !schirmWeg || flaecheAus) { neu in
                 flaeche = neu
+                // Der Knopf hängt an VLCs eigener Meldung, nicht am Takt und
+                // nicht am Klick — siehe `laeuftAnzeige`.
+                neu.laeuftGemeldet = { laeuft in laeuftAnzeige = laeuft }
             }
             .ignoresSafeArea()
             // Ohne das nimmt die Animation der Steuerung die Videofläche mit
@@ -439,10 +441,6 @@ struct PlayerScreen: View {
 
     private func umschalten() {
         guard let flaeche else { return }
-        let laeuftGleich = !flaeche.isPlaying
-        // **Erst der Knopf, dann der Strom.** Das Umschalten selbst kostet
-        // nichts, aber die Rückmeldung darf nicht darauf warten.
-        laeuftAnzeige = laeuftGleich
         if flaeche.isPlaying { flaeche.pause() } else { flaeche.resume() }
         steuerungZeigen()
     }
