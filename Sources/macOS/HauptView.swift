@@ -98,14 +98,23 @@ struct HauptView: View {
             wurzel
                 .id(bereich)
                 .transition(.opacity)
+                // **Die Wurzel liegt ausdrücklich unten.**
+                //
+                // Ohne feste Ebenen legt SwiftUI eine einfahrende Ansicht
+                // nicht zuverlässig obenauf — die Seite fuhr unter den
+                // Kacheln der Startseite herein, und das sah aus, als wäre
+                // sie durchsichtig. Sie war nur verdeckt.
+                .zIndex(0)
 
             // Jede Seite des Stapels darüber. Nur die oberste ist zu sehen;
             // die darunter tragen den Weg zurück.
-            ForEach(navigator.seiten(bereich)) { ziel in
+            ForEach(Array(navigator.seiten(bereich).enumerated()), id: \.element.id) { platz, ziel in
                 ZStack {
                     Stil.grund
                     seite(ziel)
                 }
+                // Jede Seite eine Ebene höher als die darunter.
+                .zIndex(Double(platz + 1))
                 // **Nur schieben, nicht blenden.** Mit einer Überblendung
                 // dazu ist die Seite unterwegs kurz durchsichtig, und man
                 // sieht die darunterliegende hindurch — das wirkt wie ein

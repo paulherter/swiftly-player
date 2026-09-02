@@ -127,4 +127,11 @@ extension Stil {
     /// Überblenden beim Ersetzen. 180 ms ease-out — dieselbe Zeit, in der auf
     /// dem iPhone die Player-Steuerung erscheint.
     static let zeitSeite = Animation.easeOut(duration: 0.18)
+
+    /// Das Schieben beim Tiefergehen.
+    ///
+    /// Länger und beidseitig gedämpft: 180 ms waren für ein Überblenden
+    /// gewählt, wo nichts wandert. Eine Strecke braucht mehr — und sie soll
+    /// anfahren und ausrollen, nicht abrupt stehen.
+    static let zeitSeitenschub = Animation.easeInOut(duration: 0.30)
 }

@@ -23,14 +23,14 @@ final class Navigator {
     func seiten(_ bereich: Bereich) -> [Seitenziel] { stapel[bereich] ?? [] }
 
     func oeffne(_ ziel: Seitenziel, in bereich: Bereich) {
-        withAnimation(Stil.zeitSeite) {
+        withAnimation(Stil.zeitSeitenschub) {
             stapel[bereich, default: []].append(ziel)
         }
     }
 
     func zurueck(in bereich: Bereich) {
         guard !(stapel[bereich] ?? []).isEmpty else { return }
-        withAnimation(Stil.zeitSeite) {
+        withAnimation(Stil.zeitSeitenschub) {
             stapel[bereich]?.removeLast()
         }
     }
