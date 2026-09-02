@@ -57,7 +57,11 @@ targets:
       # der Grund für diese App. Lokal eingebunden statt über SwiftPM, weil
       # VideoLAN den Download auf ~40 KB/s drosselt.
       # Holen mit: Werkzeuge/vlckit-holen.sh
-      - framework: Vendor/VLCKit.xcframework
+      # **Selbst gebaute Fassung** — siehe Werkzeuge/vlckit-patches/README.md.
+      # VLC 4 kann in einer Matroska mit unvollstaendig lesbaren Cues ueber
+      # HTTP nicht vorwaerts springen; Patch 0028 stellt das Verhalten von
+      # VLC 3 wieder her. Gemessen auf tvOS und iOS an derselben Datei.
+      - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
         codeSign: true
     info:
@@ -313,7 +317,8 @@ targets:
       - path: Sources/macOS
     dependencies:
       - package: JellyfinKit
-      - framework: Vendor/VLCKit.xcframework
+      # Selbst gebaute Fassung — siehe Werkzeuge/vlckit-patches/README.md.
+      - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
         codeSign: true
     info:
