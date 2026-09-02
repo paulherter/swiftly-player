@@ -7,6 +7,7 @@ struct HomeView: View {
 
     @Environment(\.breit) private var breit
     @Environment(\.fensterknoepfe) private var fensterknoepfe
+    @Environment(\.scenePhase) private var lebenslage
 
     /// Laden und Reihenfolge stehen in `Startseitenmodell` — geteilt mit
     /// der tvOS-Fassung.
@@ -29,11 +30,30 @@ struct HomeView: View {
                 nichtsDa
             }
         }
-        .fullScreenCover(item: $abspielen) { wunsch in
+        // **Nach dem Zusehen neu holen, ohne Frist.**
+        //
+        // Wer aus dem Player zurückkommt, hat die Stelle gerade verschoben —
+        // „Weiterschauen" ist damit sicher veraltet, und die Folge ist unter
+        // Umständen zu Ende und gehört gar nicht mehr in die Reihe.
+        .fullScreenCover(item: $abspielen, onDismiss: { Task { await laden() } }) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
         .task { if !stand.geladen { await laden() } }
+        // **Beim Zurückkommen neu holen, mit Frist.**
+        //
+        // Hier lag der Fehler: die Seite lud genau einmal je App-Start, weil
+        // `geladen` nie zurückgenommen wurde. Eine auf dem Fernseher zu Ende
+        // gesehene Folge stand darum weiter mit Balken in der Reihe, während
+        // der Player beim Antippen die Stelle frisch nachholte und richtig
+        // bei null anfing. Die Kachel log, nicht der Player.
+        //
+        // Die Frist steht in `Auffrischung` und nicht hier: tvOS und macOS
+        // zeigen dieselben Reihen und brauchen dieselbe Antwort.
+        .onChange(of: lebenslage) { _, neu in
+            guard neu == .active, stand.brauchtAuffrischung else { return }
+            Task { await laden() }
+        }
     }
 
     /// Wortmarke links, Profilbild rechts.
@@ -233,8 +253,31 @@ private struct Kachel: View {
                 // Fehlt dem Titel ein waagerechtes Bild, tritt das Poster ein
                 // — beschnitten, aber immer noch das Cover und kein Standbild.
                 Bild(url: model.imageURL(for: item, maxHeight: 500, hochkant: true),
-                     breite: breite, hoehe: hoehe, ecke: Stil.eckeKachel)
+                     breite: breite, hoehe: hoehe, ecke: Stil.eckeKachel) {
+                    // **Und wenn auch das fehlt, ein Zeichen statt Leere.**
+                    //
+                    // Eine leere Flaeche sieht aus wie ein Fehler in der App,
+                    // und genau so wurde sie gemeldet. Ein Zeichen sagt: hier
+                    // gehoert ein Bild hin, der Server hat keins.
+                    Stil.flaeche.overlay {
+                        Image(systemName: item.seriesId != nil ? "tv" : "film")
+                            .font(.system(size: 22))
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                    }
+                }
             }
+            #if DEBUG
+            // Nur im Debug-Bau: in der ausgelieferten Fassung waere das eine
+            // gebaute Adresse je Kachel, fuer nichts.
+            .onAppear {
+                guard quer, model.querbildURL(for: item) == nil else { return }
+                Protokoll.schreib("[Bild] \(item.seriesName ?? item.name): kein Querbild — "
+                    + "eigen=\(item.imageTags?.keys.sorted().joined(separator: ",") ?? "-") "
+                    + "Serienposter=\(item.seriesPrimaryImageTag != nil) "
+                    + "Serienhintergrund=\(item.parentBackdropImageTags?.count ?? 0) "
+                    + "Serienvorschau=\(item.parentThumbImageTag != nil)")
+            }
+            #endif
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.seriesName ?? item.name)

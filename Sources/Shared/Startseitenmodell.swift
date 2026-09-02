@@ -20,6 +20,14 @@ final class Startseitenmodell {
     /// nicht am leeren Bestand.
     private(set) var gestoert = false
 
+    /// Wann zuletzt geholt wurde. Grundlage für `Auffrischung`.
+    ///
+    /// **Nur bei Erfolg gesetzt.** Ein Ladeversuch, bei dem nichts ankam,
+    /// macht die Reihen nicht frisch — sonst gilt der Bestand nach einem
+    /// Serveraussetzer eine halbe Minute lang als aktuell, obwohl er
+    /// unverändert alt ist.
+    private(set) var zuletztGeladen: Date?
+
     var alleLeer: Bool {
         weiterschauen.isEmpty && naechsteFolge.isEmpty && zuletzt.isEmpty
     }
@@ -40,7 +48,15 @@ final class Startseitenmodell {
         if let b { naechsteFolge = b }
         if let c { zuletzt = c }
 
-        gestoert = (a == nil && b == nil && c == nil)
+        // Ein Abbruch ist kein Ausfall — dieselbe Unterscheidung wie in
+        // `Bibliotheksmodell`.
+        gestoert = !Task.isCancelled && (a == nil && b == nil && c == nil)
+        if !gestoert { zuletztGeladen = Date() }
         geladen = true
+    }
+
+    /// Muss beim Zurückkommen in den Vordergrund neu geholt werden?
+    var brauchtAuffrischung: Bool {
+        Auffrischung.faelligBeiRueckkehr(zuletzt: zuletztGeladen)
     }
 }

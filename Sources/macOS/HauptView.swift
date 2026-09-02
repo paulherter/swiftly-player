@@ -46,6 +46,10 @@ struct HauptView: View {
     @State private var startseite = Startseitenmodell()
     @State private var filmregal = Bibliotheksmodell()
     @State private var serienregal = Bibliotheksmodell()
+    /// Welche Bibliothek der jeweiligen Gattung gezeigt wird — ein Server
+    /// kann mehrere haben. Liegt aus demselben Grund hier wie die Regale.
+    @State private var filmbibliothek: Item?
+    @State private var serienbibliothek: Item?
 
     init(model: AppModel) {
         self.model = model
@@ -323,9 +327,9 @@ struct HauptView: View {
         switch bereich {
         case .start:  HomeView(model: model, stand: startseite)
         case .filme:  BibliothekView(model: model, art: "movies", titel: "Filme",
-                                     regal: filmregal)
+                                     regal: filmregal, gewaehlt: $filmbibliothek)
         case .serien: BibliothekView(model: model, art: "tvshows", titel: "Serien",
-                                     regal: serienregal)
+                                     regal: serienregal, gewaehlt: $serienbibliothek)
         case .suche:  SucheView(model: model)
         }
     }

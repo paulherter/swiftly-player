@@ -1,5 +1,11 @@
 #if !os(macOS)
 import AVFoundation
+import UIKit
+/// Das, was `MPMediaItemArtwork` auf dieser Plattform erwartet.
+typealias Systembild = UIImage
+#else
+import AppKit
+typealias Systembild = NSImage
 #endif
 import Foundation
 import JellyfinKit
@@ -86,6 +92,8 @@ final class Wiedergabezentrale {
         #endif
         MPNowPlayingInfoCenter.default().playbackState = .stopped
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        titelbild = nil
+        titelbildFuer = nil
         griffe = nil
     }
 
@@ -94,7 +102,13 @@ final class Wiedergabezentrale {
     /// - Parameter sprungweite: dieselben Werte wie im Player, damit die
     ///   Knöpfe auf dem Sperrbildschirm dasselbe tun wie die auf dem Schirm.
     func melden(item: Item, position: Double, dauer: Double, tempo: Float,
-                laeuft: Bool, sprungweite: (zurueck: Int, vor: Int)) {
+                laeuft: Bool, sprungweite: (zurueck: Int, vor: Int),
+                // **Ohne Vorgabewert, und zwar mit Absicht.** Mit `= nil`
+                // uebersetzten alle drei Aufrufer weiter, gaben aber nichts
+                // mit — der Sperrbildschirm blieb grau, und niemand merkte es.
+                // Kommt eine vierte Plattform dazu, soll der Uebersetzer
+                // meckern, nicht der Nutzer.
+                bildURL: URL?) {
         var eintrag: [String: Any] = [
             MPMediaItemPropertyTitle: item.name,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
@@ -111,12 +125,96 @@ final class Wiedergabezentrale {
                 eintrag[MPMediaItemPropertyArtist] = kuerzel
             }
         }
+        // Das schon geladene Titelbild sofort mitgeben — sonst blitzt bei
+        // jedem Takt der graue Kasten auf, weil `nowPlayingInfo` als Ganzes
+        // ersetzt wird und der alte Eintrag mit verschwindet.
+        if let bild = titelbild, titelbildFuer == item.id {
+            eintrag[MPMediaItemPropertyArtwork] = bild
+        }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = eintrag
         zustandMelden(laeuft)
+        titelbildHolen(bildURL, fuer: item.id)
 
         let zentrale = MPRemoteCommandCenter.shared()
         zentrale.skipBackwardCommand.preferredIntervals = [NSNumber(value: sprungweite.zurueck)]
         zentrale.skipForwardCommand.preferredIntervals = [NSNumber(value: sprungweite.vor)]
+    }
+
+    // MARK: - Das Titelbild auf dem Sperrbildschirm
+
+    /// Das geladene Bild und der Titel, zu dem es gehoert.
+    ///
+    /// **Beides zusammen, nicht nur das Bild.** `melden` laeuft im Takt und
+    /// ersetzt `nowPlayingInfo` vollstaendig; ohne die Zuordnung stuende beim
+    /// Folgenwechsel eine Weile das Bild der vorigen Folge da.
+    private var titelbild: MPMediaItemArtwork?
+    private var titelbildFuer: String?
+
+    /// Holt das Titelbild einmal je Titel und traegt es nach.
+    ///
+    /// **Warum ueberhaupt nachtragen und nicht gleich mitgeben:** die Adresse
+    /// zeigt auf den Jellyfin-Server, das Bild muss also uebers Netz. Der
+    /// Sperrbildschirm soll aber sofort Titel und Balken zeigen, nicht auf ein
+    /// Bild warten. Also erst melden, dann nachreichen.
+    ///
+    /// Bis dahin stand dort ein grauer Kasten — bei Filmen wie bei Serien.
+    /// `MPMediaItemPropertyArtwork` wurde schlicht nie gesetzt.
+    /// Packt ein geladenes Bild so ein, wie `MPMediaItemArtwork` es verlangt.
+    ///
+    /// **Der Rueckrufblock muss die angeforderte Groesse liefern, nicht die
+    /// vorhandene.** Sperrbildschirm, Kontrollzentrum und CarPlay fragen
+    /// verschiedene Kantenlaengen an; wer stur dasselbe Bild zurueckgibt,
+    /// bekommt von MediaPlayer eine Ausnahme — im Debug-Bau ein sofortiger
+    /// Absturz beim Start der Wiedergabe.
+    /// **`nonisolated`, und das ist der Kern.** Die Klasse ist `@MainActor`;
+    /// ein hier geschriebener Block erbt diese Isolation. MediaPlayer ruft
+    /// ihn aber aus einem eigenen Thread, und Swift 6 bricht dann ab — im
+    /// Protokoll steht nur „terminated due to signal 5", ohne ein Wort dazu,
+    /// welche Zusicherung gebrochen wurde.
+    ///
+    /// Dieselbe Falle wie bei VLCKits Rueckrufen, siehe `Zustandsmelder`:
+    /// `@MainActor` ist eine Zusicherung, keine Umleitung.
+    private nonisolated static func werkstueck(aus bild: Systembild) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: bild.size) { groesse in
+            guard groesse != bild.size else { return bild }
+            #if os(macOS)
+            let neu = NSImage(size: groesse)
+            neu.lockFocus()
+            bild.draw(in: NSRect(origin: .zero, size: groesse))
+            neu.unlockFocus()
+            return neu
+            #else
+            let form = UIGraphicsImageRendererFormat.default()
+            form.opaque = false
+            return UIGraphicsImageRenderer(size: groesse, format: form).image { _ in
+                bild.draw(in: CGRect(origin: .zero, size: groesse))
+            }
+            #endif
+        }
+    }
+
+    private func titelbildHolen(_ url: URL?, fuer id: String) {
+        // **Hoechstens ein Versuch je Titel.** `melden` laeuft im halben
+        // Sekundentakt; ohne diese Sperre liefe bei einem Titel ohne Bild
+        // zweimal je Sekunde eine Anfrage los.
+        guard titelbildFuer != id else { return }
+        titelbildFuer = id
+        titelbild = nil
+        guard let url else { return }
+
+        Task { [weak self] in
+            guard let daten = try? await URLSession.shared.data(from: url).0,
+                  let bild = Systembild(data: daten) else { return }
+            let werk = Self.werkstueck(aus: bild)
+            guard let self, self.titelbildFuer == id else { return }
+            self.titelbild = werk
+            // Nur ergaenzen, nicht neu aufbauen: zwischen Melden und
+            // Ankommen hat sich die Stelle laengst weitergedreht.
+            guard var eintrag = MPNowPlayingInfoCenter.default().nowPlayingInfo
+            else { return }
+            eintrag[MPMediaItemPropertyArtwork] = werk
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = eintrag
+        }
     }
 
     /// Nur die Stelle nachziehen — billiger als der ganze Eintrag, und beim

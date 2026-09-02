@@ -15,6 +15,12 @@ struct SerienView: View {
     /// Welche Staffel beim Öffnen gewählt ist — gesetzt, wenn man über eine
     /// Folge hierhergekommen ist (A8).
     var startStaffelID: String?
+    /// Die **Nummer** der Staffel, aus der man kommt — der verlaessliche Weg.
+    ///
+    /// Am Geraet gemessen: der Server kann an einer Folge kein `SeasonId`
+    /// liefern. Dann greifen die Kennungsvergleiche ins Leere und die Wahl
+    /// faellt auf die erste Staffel. Die Nummer steht dagegen immer da.
+    var startStaffelNummer: Int?
     let zurueck: () -> Void
     @Environment(Navigator.self) private var navigator
     @Environment(\.bereich) private var bereich
@@ -40,10 +46,12 @@ struct SerienView: View {
     /// genau der ist der Lader, der mitten in der Einfahrt von der Liste
     /// abgelöst wird.
     @MainActor init(model: AppModel, serie: Item,
-                    startStaffelID: String? = nil, zurueck: @escaping () -> Void) {
+                    startStaffelID: String? = nil, startStaffelNummer: Int? = nil,
+                    zurueck: @escaping () -> Void) {
         self.model = model
         self.serie = serie
         self.startStaffelID = startStaffelID
+        self.startStaffelNummer = startStaffelNummer
         self.zurueck = zurueck
 
         let gemerkt = Seriencache.geteilt.stand(serie.id)
@@ -51,8 +59,11 @@ struct SerienView: View {
         _staffeln = State(initialValue: staffeln)
         _staffelnDa = State(initialValue: !staffeln.isEmpty)
 
-        // Dieselbe Staffel, die auch `staffelnLaden()` wählen würde.
-        let staffel = staffeln.first { $0.id == startStaffelID } ?? staffeln.first
+        // Dieselbe Staffel, die auch `staffelnLaden()` wählen würde —
+        // einschliesslich des Weges über die Nummer.
+        let staffel = staffeln.first { $0.id == startStaffelID }
+            ?? staffeln.first { $0.indexNumber != nil && $0.indexNumber == startStaffelNummer }
+            ?? staffeln.first
         _gewaehlt = State(initialValue: staffel)
 
         let folgen = staffel.flatMap { gemerkt?.folgen[$0.id] } ?? []
@@ -247,7 +258,14 @@ struct SerienView: View {
         let neue = await model.staffeln(serie)
         // Erst die Wahl, dann die Liste, dann das Zeichen — alles in einem
         // Zug, damit `.task(id:)` nur einen Wechsel sieht.
-        gewaehlt = neue.first { $0.id == startStaffelID } ?? neue.first
+        //
+        // Die Wahl selbst kommt aus `main`: erst über die Kennung, dann über
+        // die **Nummer**. Am Gerät gemessen liefert der Server an einer Folge
+        // nicht immer eine `SeasonId`; dann greift der Kennungsvergleich ins
+        // Leere und es stünde die erste Staffel vorn.
+        gewaehlt = neue.first { $0.id == startStaffelID }
+            ?? neue.first { $0.indexNumber != nil && $0.indexNumber == startStaffelNummer }
+            ?? neue.first
         staffeln = neue
         staffelnDa = true
         Seriencache.geteilt.merken(serie.id) { $0.staffeln = neue }
