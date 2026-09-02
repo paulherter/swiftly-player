@@ -92,24 +92,32 @@ struct Profilzeichen: View {
     var hervorgehoben = false
 
     var body: some View {
-        grund
-            .overlay {
-                // Das Bild legt sich darüber. Fehlt es, bleibt der Buchstabe
-                // stehen — Jellyfin antwortet dann schlicht mit 404.
-                AsyncImage(url: bild) { stand in
-                    if case let .success(b) = stand {
-                        b.resizable().aspectRatio(contentMode: .fill)
-                    }
+        ZStack {
+            // Der Verlauf traegt immer: er steht hinter dem Bild und faellt
+            // nicht auf, wenn eines da ist.
+            grund
+
+            // **Der Buchstabe ist Rueckfall, nicht Untergrund.** Frueher lag
+            // er immer darunter und das Bild darueber — waehrend dessen
+            // Aufblende schien er hindurch, und wer ein Profilbild hatte, sah
+            // fuer einen Moment ein grosses „P" darin. Er gehoert deshalb in
+            // den Zweig, in dem kein Bild ankommt.
+            AsyncImage(url: bild) { stand in
+                if case let .success(b) = stand {
+                    b.resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    buchstabe
                 }
-                .frame(width: groesse, height: groesse)
-                .clipShape(Circle())
             }
-            .overlay {
-                Circle().strokeBorder(hervorgehoben ? Stil.akzent : Stil.rand,
-                                      lineWidth: hervorgehoben ? 1.5 : 1)
-            }
-            .accessibilityElement()
-            .accessibilityLabel("Profil von \(name)")
+        }
+        .frame(width: groesse, height: groesse)
+        .clipShape(Circle())
+        .overlay {
+            Circle().strokeBorder(hervorgehoben ? Stil.akzent : Stil.rand,
+                                  lineWidth: hervorgehoben ? 1.5 : 1)
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Profil von \(name)")
     }
 
     private var grund: some View {
@@ -117,11 +125,11 @@ struct Profilzeichen: View {
             .fill(LinearGradient(colors: [Color(red: 0.173, green: 0.424, blue: 0.400),
                                           Color(red: 0.090, green: 0.251, blue: 0.239)],
                                  startPoint: .topLeading, endPoint: .bottomTrailing))
-            .frame(width: groesse, height: groesse)
-            .overlay {
-                Text(String(name.prefix(1)).uppercased())
-                    .font(.system(size: groesse * 0.38, weight: .semibold))
-                    .foregroundStyle(Stil.schrift)
-            }
+    }
+
+    private var buchstabe: some View {
+        Text(String(name.prefix(1)).uppercased())
+            .font(.system(size: groesse * 0.38, weight: .semibold))
+            .foregroundStyle(Stil.schrift)
     }
 }

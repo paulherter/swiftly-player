@@ -77,8 +77,9 @@ struct ProfilView: View {
 
     private var kopf: some View {
         HStack(spacing: 32) {
-            Profilzeichen(url: model.benutzerbildURL(groesse: 240),
-                          name: model.session?.userName)
+            Profilzeichen(name: model.session?.userName ?? "?",
+                          bild: model.benutzerbildURL(groesse: 240),
+                          groesse: 60)
                 .scaleEffect(1.66)
                 .frame(width: 100, height: 100)
 
@@ -91,7 +92,7 @@ struct ProfilView: View {
                         .font(Stil.koerper)
                         .foregroundStyle(Stil.schriftLeise)
                     if let version = model.serverVersion {
-                        Plakette(text: "Jellyfin \(version)")
+                        Plakette.fern("Jellyfin \(version)")
                     }
                 }
             }

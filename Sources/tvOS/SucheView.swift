@@ -26,20 +26,44 @@ struct SucheView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 34) {
-                Eingabefeld(platzhalter: "Titel, Serie, Person", text: $begriff,
-                            aussen: $amFeld) {
-                    Task { await suchen() }
+                // **Feld und Auskunft in einer Zeile**, wie die Chipreihe der
+                // Bibliothek: links das Feld, rechts die Trefferzahl.
+                HStack(alignment: .center, spacing: 40) {
+                    Eingabefeld(platzhalter: "Titel, Serie, Person", text: $begriff,
+                                aussen: $amFeld) {
+                        Task { await suchen() }
+                    }
+                    .frame(width: 1000)
+
+                    if !treffer.isEmpty {
+                        Text("\(treffer.count) Treffer")
+                            .font(Stil.klein)
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                    }
+
+                    Spacer(minLength: 0)
                 }
-                .frame(width: 900)
                 .padding(.horizontal, Stil.randSeite)
 
                 if laeuft {
-                    Lader().frame(maxWidth: .infinity).padding(.top, 80)
+                    Lader.fern.frame(maxWidth: .infinity).padding(.top, 80)
                 } else if treffer.isEmpty && gesucht {
                     Leerzustand(symbol: "magnifyingglass",
                                 titel: "Nichts gefunden",
                                 hinweis: "Versuch es mit einem anderen Wort.")
                         .frame(height: 460)
+                } else if !gesucht {
+                    // **Ein Satz statt schwarzer Stille.**
+                    //
+                    // Vor der ersten Eingabe stand hier gar nichts — ein
+                    // schwarzer Schirm mit einem leuchtenden Feld. Ein
+                    // Vorschlagsregal waere Platzfuellerei; ein Satz sagt,
+                    // was das Feld annimmt und ab wann es sucht.
+                    Text("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.")
+                        .font(Stil.koerper)
+                        .foregroundStyle(Stil.schriftSehrLeise)
+                        .padding(.horizontal, Stil.randSeite)
+                        .padding(.top, 10)
                 } else if !treffer.isEmpty {
                     LazyVGrid(columns: spalten, alignment: .leading,
                               spacing: Stil.gitterZeile) {
@@ -49,8 +73,7 @@ struct SucheView: View {
                                                                   maxHeight: 600,
                                                                   hochkant: true),
                                              titel: item.name,
-                                             unterzeile: item.folgenkuerzel,
-                                             mitUnterzeile: false)
+                                             unterzeile: gattungUndJahr(item))
                             }
                             .buttonStyle(KachelStil())
                         }
@@ -65,8 +88,32 @@ struct SucheView: View {
         // Wer auf „Suche" geht, will tippen — nicht erst ein Feld ansteuern.
         // Deshalb liegt der Fokus sofort dort, und tvOS öffnet damit von
         // selbst die Tastatur.
-        .onAppear { if aktiv { amFeld = true } }
-        .onChange(of: aktiv) { _, offen in if offen { amFeld = true } }
+        // **Der Fokus muss nachgereicht werden, nicht nur zugewiesen.**
+        //
+        // Beim Bereichswechsel steht diese Seite schon — sie liegt seit dem
+        // ersten Besuch im Stapel und wird nur eingeblendet. `defaultFocus`
+        // greift also nicht mehr, das gilt beim Erscheinen. Und die blosse
+        // Zuweisung verpufft, solange der Fokus noch in der Leiste sitzt und
+        // tvOS ihn dort gerade erst gesetzt hat.
+        //
+        // Sichtbar wurde das erst, seit das Feld nur im Fokus weiss ist:
+        // vorher leuchtete es immer und sah aus, als haette es ihn. Die
+        // Pille am Reiter „Suche" war die einzige Stelle, an der die Wahrheit
+        // stand.
+        .task(id: aktiv) {
+            guard aktiv else { return }
+            amFeld = true
+            // Noch einmal, nachdem tvOS seinen eigenen Zug gemacht hat.
+            try? await Task.sleep(for: .milliseconds(120))
+            guard aktiv, !amFeld else { return }
+            amFeld = true
+        }
+        // **Und ausdruecklich als Vorgabe.** Die Zuweisung oben allein
+        // reichte nicht: der Fokus blieb auf dem Reiter „Suche" in der
+        // Leiste. Aufgefallen ist es erst, seit das Feld nicht mehr staendig
+        // weiss ist — vorher sah es aus, als haette es den Fokus, und die
+        // Pille am Reiter war die einzige Stelle, an der die Wahrheit stand.
+        .defaultFocus($amFeld, true, priority: .userInitiated)
         // **Sicherer Bereich, nicht Innenabstand und nicht `contentMargins`.**
         //
         // Beides war zu wenig. Innenabstand gehört zum Inhalt, den scrollt
@@ -81,7 +128,17 @@ struct SucheView: View {
         // und sein Abstand zur Kachel (36) ab — bleiben genau die 128 der
         // Leistenunterkante. Weniger, und der Titel rutscht beim Anspringen
         // einer Reihe wieder darunter.
-        .safeAreaInset(edge: .top) { Color.clear.frame(height: 150) }
+        // **Das Feld endet bei 264**, wie das oberste Element jeder anderen
+        // Seite — siehe `Stil.erstesEnde`. Zurueckgerechnet aus seiner
+        // eigenen Hoehe: 264 − 76 = 188, davon der obere sichere Rand ab.
+        //
+        // Das fruehere Mindestmass von 150 galt fuer Reihen **mit** Titel:
+        // es hielt Reihentitel (46) und Abstand (36) frei. Das Suchgitter
+        // hat keinen Titel ueber sich, sondern das Feld — und das soll beim
+        // Anspringen einer Kachel sichtbar bleiben, nicht mehr.
+        .safeAreaInset(edge: .top) {
+            Color.clear.frame(height: Stil.erstesEnde - Stil.knopfHoehe - Stil.randOben)
+        }
         // Auf tvOS kommt der Text erst, wenn die Systemtastatur schließt —
         // eine Verzögerung wie auf dem iPhone wäre hier sinnlos.
         .onChange(of: begriff) { _, neu in
@@ -95,6 +152,24 @@ struct SucheView: View {
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
         // damit `randSeite` nicht darauf sitzt und sich verdoppelt.
         .ignoresSafeArea(edges: .horizontal)
+    }
+
+    /// „Serie · 2008" — damit ein Film und eine Serie gleichen Namens
+    /// unterscheidbar sind.
+    ///
+    /// Bisher stand hier das Folgenkuerzel, und es war ausserdem
+    /// abgeschaltet (`mitUnterzeile: false`): unter den Kacheln stand nur
+    /// der Titel, und bei mehreren Treffern derselben Serie sah man
+    /// dasselbe Plakat mehrfach ohne Unterschied.
+    private func gattungUndJahr(_ item: Item) -> String? {
+        var teile: [String] = []
+        switch item.type {
+        case "Movie":  teile.append(String(localized: "Film"))
+        case "Series": teile.append(String(localized: "Serie"))
+        default: break
+        }
+        if let jahr = item.productionYear { teile.append(String(jahr)) }
+        return teile.isEmpty ? nil : teile.joined(separator: " · ")
     }
 
     private func suchen() async {

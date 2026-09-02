@@ -100,4 +100,26 @@ extension Item {
     }
 
     var istGesehen: Bool { userData?.played ?? false }
+
+    /// Beschriftung des Hauptknopfes auf einer Serienseite.
+    ///
+    /// **Stand hier, weil sie sonst dreimal dasteht.** iOS und tvOS hatten sie
+    /// je fuer sich — dieselben vier Faelle, zeichengleich. Genau so sind
+    /// `nachladen()`, `trefferauskunft` und `Spielzeit` auseinandergelaufen.
+    ///
+    /// `folge` ist die naechste anzuspielende Folge, `laedt`, ob die Staffel
+    /// noch geholt wird. Ohne Folge und ohne Laden gibt es nichts abzuspielen.
+    static func serienknopf(folge: Item?, laedt: Bool) -> String {
+        // **Zwei getrennte Aufrufe, kein Fragezeichen im Argument.** Aus einem
+        // berechneten Schluessel kann Xcode nichts herausziehen; der Text
+        // bliebe in der Ausgangssprache stehen.
+        guard let folge else {
+            return laedt ? String(localized: "Lädt…")
+                         : String(localized: "Keine Folgen")
+        }
+        let kuerzel = folge.folgenkuerzel ?? folge.name
+        let angefangen = (folge.userData?.playbackPositionTicks ?? 0) > 0
+        return angefangen ? String(localized: "Fortsetzen \(kuerzel)")
+                          : String(localized: "Abspielen \(kuerzel)")
+    }
 }
