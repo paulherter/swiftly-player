@@ -100,7 +100,10 @@ struct HomeView: View {
                         .padding(.top, 120)
                 }
             }
-            .padding(.top, Stil.inhaltOben)
+            // Nicht `inhaltOben` allein: die Startseite beginnt mit einer
+            // kleineren Schrift als die Bibliotheksseiten und stünde sonst
+            // zwei Punkt zu hoch. Siehe `Stil.reihenkopfAusgleich`.
+            .padding(.top, Stil.inhaltOben + Stil.reihenkopfAusgleich)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)

@@ -36,6 +36,19 @@ extension Stil {
     /// dieselben 52 wie links — Platz für etwas, das dort nie war.
     static let inhaltOben: CGFloat = 52
 
+    /// **Optischer Ausgleich für die Startseite.**
+    ///
+    /// „Filme" und „Serien" stehen als 28-Punkt-Titel oben auf ihrer Seite,
+    /// die Startseite beginnt mit „Weiterschauen" in 20 Punkt. Bei gleichem
+    /// Abstand von oben stehen sie damit **nicht** gleich hoch: über den
+    /// Versalien lässt eine Zeile Platz, und der wächst mit dem Schriftgrad.
+    ///
+    /// Nachgemessen an den Schriftmaßen: 28 Punkt fett lässt 7,34 Punkt über
+    /// der Versalhöhe frei, 20 Punkt halbfett nur 5,24. Die Startseite muss
+    /// also um die Differenz tiefer ansetzen, damit die Oberkanten der
+    /// Buchstaben auf einer Linie liegen.
+    static let reihenkopfAusgleich: CGFloat = 2.1
+
     /// Höhe der Kopfleiste einer Detailseite (Pfeil und einblendender Titel).
     static let titelHoehe: CGFloat = 52
 
@@ -184,7 +197,7 @@ extension Stil {
     /// Unschärfe fällt in einem grossen Fenster deutlich mehr auf als auf
     /// einem Telefon — sie trifft ja jeden Text auf der ganzen Fläche
     /// gleichzeitig.
-    static let bereichUnschaerfe: CGFloat = 1.5
+    static let bereichUnschaerfe: CGFloat = 0.8
     /// Und wie wenig es dabei wächst. Der Weg hierher, alles am laufenden
     /// Bild: 92 % (Vorschrift, viel zu viel), 98, 99, 99,5 — und 99,8 war
     /// gar nicht mehr wahrnehmbar. 99,6 legt an der Fensterkante rund drei
