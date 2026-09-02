@@ -111,15 +111,7 @@ struct PlayerScreen: View {
     /// neu auf; nach der Rueckkehr aus dem Hintergrund steht das Bild,
     /// waehrend der Ton schon laeuft; und bei einem Aussetzer der Leitung
     /// steht beides. „Aber ohne irgendwie 'n Ladezeichen oder so. Also da
-    /// musst Du auf jeden Fall noch mal gucken." **Ob der Server springt statt
-    /// des Abspielers.**
-    ///
-    /// Wird gesetzt, sobald ein Sprung nicht ankommt — siehe
-    /// `VLCPlayerView.onSprungGescheitert`. Von da an wird für jeden Sprung
-    /// ein neuer Strom geholt, der schon an der richtigen Stelle beginnt. Der
-    /// Zuschauer merkt davon nichts außer der Ladeanzeige, die es beim
-    /// Springen ohnehin gibt.
-
+    /// musst Du auf jeden Fall noch mal gucken."
     @State private var stockt = false
     @State private var stillSeit: Date?
     @State private var letzteVLCZeit: Double = -1
