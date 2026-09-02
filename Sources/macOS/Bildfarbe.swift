@@ -1,4 +1,5 @@
-import AppKit
+import CoreGraphics
+import ImageIO
 import SwiftUI
 
 /// Die vorherrschende Farbe eines Bildes.
@@ -9,13 +10,13 @@ import SwiftUI
 /// schwarzer Verlauf das Bild abschneidet.
 ///
 /// Gerechnet wird auf einem einzigen Bildpunkt: Das Bild wird auf 1 × 1
-/// verkleinert, und was dabei herauskommt, ist der Mittelwert. Genauer geht
-/// es mit Häufungsverfahren, aber der Mittelwert trifft den Eindruck gut und
-/// kostet nichts.
+/// verkleinert, und was dabei herauskommt, ist der Mittelwert.
 ///
-/// Der Ton wird danach **abgedunkelt und entsättigt**, sonst leuchtet die
-/// halbe Seite in Orange — die Gestaltung will das Bild als einzige Farbe im
-/// Raum, nicht die Fläche darunter.
+/// **Das Rechnen läuft nicht auf dem Hauptlauf.** Es sieht billig aus — ein
+/// Bildpunkt —, aber davor steht das Dekodieren des ganzen Bildes, und das
+/// sind bei einer 1600er Kulisse einige Millisekunden. Sie fielen genau in
+/// den Moment, in dem die Seite hereinfährt: das Einfahren ruckelte, das
+/// Hinausfahren nicht, weil dort nichts mehr zu bauen war.
 @MainActor
 @Observable
 final class Bildfarbe {
@@ -25,39 +26,50 @@ final class Bildfarbe {
     func laden(_ url: URL?) async {
         guard let url, url != geladen else { return }
         geladen = url
-        // **Nicht `Data(contentsOf:)`.** Das ist ein blockierender Aufruf und
-        // hier auf dem Hauptakteur — die Oberfläche stünde still, solange das
-        // Bild lädt. `URLSession` gibt den Lauf frei.
-        guard let (daten, _) = try? await URLSession.shared.data(from: url),
-              let bild = NSImage(data: daten) else { return }
-        // Das Rechnen selbst ist billig (ein Bildpunkt), darf also bleiben.
-        ton = Self.mittelwert(bild) ?? Stil.grund
-    }
-
-    private static func mittelwert(_ bild: NSImage) -> Color? {
-        guard let quelle = bild.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        else { return nil }
-
-        var punkt: [UInt8] = [0, 0, 0, 0]
-        guard let raum = CGColorSpace(name: CGColorSpace.sRGB),
-              let zeichnung = CGContext(data: &punkt, width: 1, height: 1,
-                                        bitsPerComponent: 8, bytesPerRow: 4,
-                                        space: raum,
-                                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return nil }
-        zeichnung.interpolationQuality = .medium
-        zeichnung.draw(quelle, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-
-        let farbe = NSColor(srgbRed: CGFloat(punkt[0]) / 255,
-                            green: CGFloat(punkt[1]) / 255,
-                            blue: CGFloat(punkt[2]) / 255, alpha: 1)
-        guard let hsb = farbe.usingColorSpace(.deviceRGB) else { return nil }
-
+        guard let (daten, _) = try? await URLSession.shared.data(from: url) else { return }
+        // Dekodieren und rechnen abseits des Hauptlaufs.
+        let gerechnet = await Task.detached(priority: .utility) {
+            Self.tonwerte(aus: daten)
+        }.value
+        guard let werte = gerechnet else { return }
         // Abdunkeln und entsättigen: der Ton soll den Grundton einfärben,
         // nicht ersetzen. 26 % Helligkeit liegt nah an `Stil.grund` (5 %),
         // bleibt aber erkennbar warm oder kalt.
-        return Color(hue: Double(hsb.hueComponent),
-                     saturation: Double(min(hsb.saturationComponent, 0.45)),
-                     brightness: 0.26)
+        ton = Color(hue: werte.farbton, saturation: min(werte.saettigung, 0.45),
+                    brightness: 0.26)
+    }
+
+    /// Farbton und Sättigung des Mittelwerts — **ohne AppKit**, damit die
+    /// Rechnung von jedem Lauf aus gehen darf.
+    private nonisolated static func tonwerte(aus daten: Data)
+        -> (farbton: Double, saettigung: Double)? {
+        guard let quelle = CGImageSourceCreateWithData(daten as CFData, nil),
+              let bild = CGImageSourceCreateImageAtIndex(quelle, 0, nil),
+              let raum = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+
+        var punkt: [UInt8] = [0, 0, 0, 0]
+        guard let zeichnung = punkt.withUnsafeMutableBytes({ speicher in
+            CGContext(data: speicher.baseAddress, width: 1, height: 1,
+                      bitsPerComponent: 8, bytesPerRow: 4, space: raum,
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        }) else { return nil }
+        zeichnung.interpolationQuality = .medium
+        zeichnung.draw(bild, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard let ergebnis = zeichnung.data else { return nil }
+        let werte = ergebnis.assumingMemoryBound(to: UInt8.self)
+
+        let r = Double(werte[0]) / 255, g = Double(werte[1]) / 255, b = Double(werte[2]) / 255
+        let hoch = max(r, g, b), tief = min(r, g, b), spanne = hoch - tief
+        guard spanne > 0 else { return (0, 0) }
+
+        var farbton: Double
+        switch hoch {
+        case r:  farbton = (g - b) / spanne
+        case g:  farbton = 2 + (b - r) / spanne
+        default: farbton = 4 + (r - g) / spanne
+        }
+        farbton /= 6
+        if farbton < 0 { farbton += 1 }
+        return (farbton, hoch > 0 ? spanne / hoch : 0)
     }
 }
