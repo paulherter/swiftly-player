@@ -103,41 +103,6 @@ struct HauptView: View {
             }
         }
         .animation(Stil.zeitSprung, value: steuerung.wunsch?.id)
-        // **Messfahrt.** Nur wenn `SWIFTLY_MESSFAHRT` gesetzt ist: eine Seite
-        // von selbst öffnen und wieder schließen, damit die Bewegung ohne
-        // Temporär.
-        .task {
-            guard ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"] != nil else { return }
-            try? await Task.sleep(for: .seconds(6))
-            // Eine echte Serie, nicht das Profil — gemessen wird der Fall, der
-            // klemmt. **Denselben Weg nehmen wie ** Auf der Startseite sind
-            // die Kacheln unter „Weiterschauen" und „Nächste Folge" Folgen,
-            // keine Serien — und die laufen über `StaffelZiel`. Meine
-            // bisherige Fahrt öffnete eine Serie aus der Bibliothek und maß
-            // damit den falschen Fall. Welcher Weg gemessen wird, sagt der
-            // Wert: `folge` nimmt den Weg der Startseite, alles andere eine
-            // kalte Serie aus der Bibliothek — dort greift kein Vorholen.
-            let weg = ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"]
-            var ziel: Item?
-            if weg == "folge" {
-                async let a = model.naechsteFolge()
-                async let b = model.weiterschauen()
-                let (naechste, weiter) = await (a, b)
-                ziel = (naechste ?? []).first ?? (weiter ?? []).first
-            } else {
-                let regal = Bibliotheksmodell()
-                await regal.laden(model, art: "tvshows")
-                ziel = regal.items.first
-            }
-            guard let ziel else {
-                Protokoll.schreib("Messfahrt: nichts gefunden")
-                return
-            }
-            Protokoll.schreib("Messfahrt: öffne \(ziel.name) (\(ziel.type ?? "?"))")
-            navigator.oeffne(.titel(ziel), in: bereich)
-            try? await Task.sleep(for: .seconds(4))
-            navigator.zurueck(in: bereich)
-        }
         .onReceive(NotificationCenter.default.publisher(for: Kommandopost.name)) { post in
             guard let kommando = Kommandopost.empfangen(post) else { return }
             ausfuehren(kommando)
@@ -222,7 +187,6 @@ struct HauptView: View {
                     // Rechts draußen, bis sie an der Reihe ist; darunter
                     // liegende Seiten gehen ein Stück mit.
                     .offset(x: gezeigt ? (obenauf ? 0 : mitgang) : breite)
-                    .modifier(Fahrtmesser(wert: gezeigt ? (obenauf ? 0 : mitgang) : breite))
                     .overlay {
                         Color.black.opacity(gezeigt && !obenauf ? 0.28 : 0)
                             .allowsHitTesting(false)

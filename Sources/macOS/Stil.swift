@@ -135,9 +135,8 @@ extension Stil {
 
     /// Das Schieben beim Tiefergehen.
     ///
-    /// **Nachgemessen, nicht geschätzt.** `Fahrtmesser` schreibt den
-    /// Zwischenwert jedes Einzelbildes mit; damit ist der Verlauf nachlesbar
-    /// statt Geschmackssache.
+    /// **Nachgemessen, nicht geschätzt.** Der Verlauf wurde Einzelbild für
+    /// Einzelbild mitgeschrieben; die Zahlen unten stammen daraus.
     ///
     /// `smooth(0.50)` — eine Feder — sah auf dem Papier richtig aus und war
     /// es nicht: sie legte **90 % der Strecke in 320 ms** zurück und kroch

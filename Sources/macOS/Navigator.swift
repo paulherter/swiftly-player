@@ -23,7 +23,6 @@ final class Navigator {
     func seiten(_ bereich: Bereich) -> [Seitenziel] { stapel[bereich] ?? [] }
 
     func oeffne(_ ziel: Seitenziel, in bereich: Bereich) {
-        Ruckelwache.beobachte("Seite herein")
         // **Ohne Animation anlegen.** Die Seite soll erst dastehen und
         // ausgelegt sein; die Bewegung startet `HauptView` ein Einzelbild
         // später über `gezeigteTiefe`.
@@ -32,7 +31,6 @@ final class Navigator {
 
     func zurueck(in bereich: Bereich) {
         guard !(stapel[bereich] ?? []).isEmpty else { return }
-        Ruckelwache.beobachte("Seite hinaus")
         withAnimation(Stil.zeitSeitenschub) {
             stapel[bereich]?.removeLast()
         }

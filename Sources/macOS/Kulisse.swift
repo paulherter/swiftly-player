@@ -29,13 +29,7 @@ struct Kulisse: View {
         .allowsHitTesting(false)
     }
 
-    private var bild: some View {
-        Netzbild(url: url)
-            .task(id: url) {
-                guard Ruckelwache.an else { return }
-                Protokoll.schreib("Kulisse: \(url == nil ? "OHNE Adresse" : "hat Adresse")")
-            }
-    }
+    private var bild: some View { Netzbild(url: url) }
 }
 
 extension View {

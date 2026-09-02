@@ -78,13 +78,9 @@ struct StaffelZiel: View {
         }
         .task {
             guard serie == nil, let id = folge.seriesId else { return }
-            let start = Date()
             let geholt = await model.item(id: id)
             if let geholt { Seriencache.geteilt.merken(geholt) }
             serie = geholt
-            if Ruckelwache.an {
-                Protokoll.schreib("StaffelZiel: leere Seite \(Int(Date().timeIntervalSince(start) * 1000)) ms lang")
-            }
         }
     }
 }

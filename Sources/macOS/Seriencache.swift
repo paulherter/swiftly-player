@@ -9,9 +9,9 @@ import SwiftUI
 /// **leere Seite** herein und die fertige erschien mit einem Schlag
 /// mittendrin.
 ///
-/// Gemessen: „StaffelZiel: leere Seite 69 ms lang", und im Fahrtschreiber ein
-/// Zeitsprung von 32 ms bei Versatz 1025 — genau der Moment, in dem die halbe
-/// Seite auf einmal gebaut wurde.
+/// Gemessen: die leere Seite stand 92 bis 174 ms, und im mitgeschriebenen
+/// Verlauf lag genau dort der Zeitsprung — der Moment, in dem die halbe Seite
+/// auf einmal gebaut wurde.
 ///
 /// Die Startseite weiß aber schon beim Laden, welche Serien in Frage kommen.
 /// Also holt sie sie im Hintergrund, und der Klick findet sie vor. **Und was
