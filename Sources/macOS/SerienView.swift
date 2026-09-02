@@ -26,6 +26,12 @@ struct SerienView: View {
     @State private var aehnliche: [Item] = []
     @State private var staffelOffen = false
     @State private var laedt = true
+    /// Ob die Staffeln schon da sind. **Ohne das lief das Laden zweimal:**
+    /// `.task(id: gewaehlt?.id)` feuert beim Erscheinen mit `nil` und holte
+    /// alle Folgen der Serie; kurz darauf kam die Staffel an, der Lauf
+    /// wiederholte sich, und die ganze Liste wurde ein zweites Mal mit
+    /// anderem Inhalt gebaut — mitten im Hereinfahren.
+    @State private var staffelnDa = false
     @State private var versatz: CGFloat = 0
     @State private var farbe = Bildfarbe()
 
@@ -79,7 +85,10 @@ struct SerienView: View {
         }
         .task { await farbe.laden(model.backdropURL(for: serie)) }
         .task { await staffelnLaden() }
-        .task(id: gewaehlt?.id) { await folgenLaden() }
+        .task(id: gewaehlt?.id) {
+            guard staffelnDa else { return }
+            await folgenLaden()
+        }
     }
 
     // MARK: Abschnitte
@@ -99,7 +108,13 @@ struct SerienView: View {
                     Leerzustand(symbol: "tray", titel: "Keine Folgen")
                         .frame(height: 200)
                 } else {
-                    VStack(spacing: 0) {
+                    // **`LazyVStack`, nicht `VStack`.** Ein `VStack` in einer
+                    // Scrollfläche baut jede Zeile sofort — bei zehn Folgen
+                    // zehn Zeilen samt Bild, in einem einzigen Einzelbild.
+                    // Genau dieselbe Sache wie in `Blätterreihe`, nur hier
+                    // übersehen. Die Filmseite hat keine solche Liste; daher
+                    // lief sie sauber und die Serienseite nicht.
+                    LazyVStack(spacing: 0) {
                         ForEach(folgen, id: \.id) { folge in
                             Folgenzeile(model: model, folge: folge)
                             if folge.id != folgen.last?.id {
@@ -140,10 +155,14 @@ struct SerienView: View {
     // MARK: Laden
 
     private func staffelnLaden() async {
-        guard staffeln.isEmpty else { return }
-        staffeln = await model.staffeln(serie)
-        gewaehlt = staffeln.first { $0.id == startStaffelID } ?? staffeln.first
-        if staffeln.isEmpty { await folgenLaden() }
+        guard staffeln.isEmpty, !staffelnDa else { return }
+        let neue = await model.staffeln(serie)
+        // Erst die Wahl, dann die Liste, dann das Zeichen — alles in einem
+        // Zug, damit `.task(id:)` nur einen Wechsel sieht.
+        gewaehlt = neue.first { $0.id == startStaffelID } ?? neue.first
+        staffeln = neue
+        staffelnDa = true
+        if neue.isEmpty { await folgenLaden() }
     }
 
     private func folgenLaden() async {
