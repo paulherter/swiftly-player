@@ -53,6 +53,18 @@ struct HauptView: View {
                 inhalt
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // **Der Sicherheitsrand der Titelleiste fällt hier weg, nicht auf
+            // jeder Seite einzeln.**
+            //
+            // Gemessen: die Scrollfläche saß 32 Punkt tief und trug oben
+            // einen Rand von 32 — das war die schwarze Leiste. Und sie kam
+            // nicht überall an: die Kulisse landete mal bei 0, mal bei 32,
+            // was Film- und Serienseite um genau diesen Betrag gegeneinander
+            // verschob. Ein Rand, der an mehreren Stellen halb entfernt wird,
+            // ist schlimmer als einer, der überall steht.
+            //
+            // Die Seiten setzen ihren oberen Abstand selbst — `inhaltOben`.
+            .ignoresSafeArea(.container, edges: .top)
         }
         .background(Stil.grund)
         .environment(steuerung)

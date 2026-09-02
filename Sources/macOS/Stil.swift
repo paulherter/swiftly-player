@@ -34,7 +34,7 @@ extension Stil {
     /// Hier gibt es nichts freizuhalten: der Inhalt beginnt rechts der
     /// Seitenleiste, die Ampel liegt gar nicht darüber. Vorher standen hier
     /// dieselben 52 wie links — Platz für etwas, das dort nie war.
-    static let inhaltOben: CGFloat = 20
+    static let inhaltOben: CGFloat = 52
 
     /// Höhe der Kopfleiste einer Detailseite (Pfeil und einblendender Titel).
     static let titelHoehe: CGFloat = 52

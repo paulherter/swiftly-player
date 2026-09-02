@@ -104,12 +104,7 @@ struct FilmView: View {
         // **Der Inhalt läuft bis unter die Titelleiste durch.** SwiftUI rückt
         // ihn sonst um deren Sicherheitsbereich ein, und über dem Bild stand
         // ein dunkler Streifen. Die iPhone-Fassung tut dasselbe.
-        .ignoresSafeArea(edges: .top)
-        // **`ignoresSafeArea` allein reicht nicht.** Es dehnt die Scrollfläche,
-        // aber ihr *Inhalt* behält den oberen Einzug der Titelleiste — das
-        // Kulissenbild begann dadurch erst rund 40 Punkt tief, und darüber
-        // stand der Seitengrund als schwarze Leiste. Das war sie.
-        .contentMargins(.top, 0, for: .scrollContent)
+
         // **Auch hier, nicht nur am Stapel.** `NavigationStack` bekommt den
         // Riegel in `HauptView`; für eine geschobene Ansicht stellt SwiftUI
         // den Werkzeugleisten-Grund trotzdem wieder dazu — als milchige
@@ -315,12 +310,14 @@ struct Heldenkopf: View {
     /// fünf beschriftete Knöpfe waren zu viel für eine Reihe.
     private var knopfreihe: some View {
         HStack(spacing: 12) {
-            // **Feste Breite, fester Platz.** Der Hauptknopf wächst sonst mit
-            // seiner Beschriftung — „Fortsetzen" ist länger als „Abspielen" —,
-            // und der Platz für „Von vorn" gibt es nur bei angefangenen
-            // Titeln. Beides zusammen schob Merkliste und Mehr auf **jeder**
-            // Seite an eine andere Stelle. Der Platz bleibt jetzt stehen,
-            // auch wenn nichts darin ist.
+            // **Feste Breite für den Hauptknopf, aber kein Platzhalter.**
+            //
+            // Die feste Breite bleibt: sonst wüchse der Knopf mit seiner
+            // Beschriftung — „Fortsetzen" ist länger als „Abspielen" — und
+            // schöbe alles dahinter. „Von vorn" gibt es dagegen nur bei
+            // angefangenen Titeln, und wo es das nicht gibt, rückt der Rest
+            // auf. Eine leere Lücke stehen zu lassen wäre schlimmer als der
+            // kleine Versatz.
             if let ab = (spielbarerTitel ?? titel).fortsetzenAb {
                 Hauptknopf(beschriftung: "Fortsetzen") { starten(ab) }
                     .frame(width: Stil.hauptknopfBreite)
@@ -330,8 +327,6 @@ struct Heldenkopf: View {
             } else {
                 Hauptknopf(beschriftung: "Abspielen") { starten(0) }
                     .frame(width: Stil.hauptknopfBreite)
-                Color.clear
-                    .frame(width: Stil.hauptknopfHoehe, height: Stil.hauptknopfHoehe)
             }
 
             Nebenknopf(symbol: merkliste ? "bookmark.fill" : "bookmark",
