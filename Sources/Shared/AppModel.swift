@@ -619,3 +619,24 @@ final class AppModel {
         AppModelURLNormalizer.normalize(raw)
     }
 }
+
+extension AppModel {
+    /// **Der Weg in die Wiedergabe einer Folge, einmal.**
+    ///
+    /// Stand zeichengleich in `Shared/SeriesView.swift` und
+    /// `tvOS/SerienView.swift` — bis auf das Zuweisungsziel. Genau die Sorte,
+    /// die auseinanderlaeuft: Es reicht, dass einer die Meldung aendert oder
+    /// eine Pruefung ergaenzt, und die Plattformen antworten verschieden.
+    ///
+    /// Gibt `nil` zurueck, wenn der Server keinen Plan liefert. Die Meldung
+    /// dazu steht in `folgeNichtGeladen`, damit sie ebenfalls nur einmal
+    /// existiert.
+    func folgenwunsch(_ folge: Item, ab: Double) async -> Abspielwunsch? {
+        guard let plan = await plan(for: folge.id) else { return nil }
+        return Abspielwunsch(item: folge, plan: plan, startAt: ab)
+    }
+
+    static var folgeNichtGeladen: String {
+        String(localized: "Die Folge konnte nicht geladen werden.")
+    }
+}

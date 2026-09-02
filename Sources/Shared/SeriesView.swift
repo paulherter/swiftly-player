@@ -602,11 +602,11 @@ extension SeriesDetailView {
 
     private func folgeStarten(_ folge: Item, ab: Double) {
         Task {
-            guard let plan = await model.plan(for: folge.id) else {
-                meldung = String(localized: "Die Folge konnte nicht geladen werden.")
+            guard let wunsch = await model.folgenwunsch(folge, ab: ab) else {
+                meldung = AppModel.folgeNichtGeladen
                 return
             }
-            abspielen = Abspielwunsch(item: folge, plan: plan, startAt: ab)
+            abspielen = wunsch
         }
     }
 }
