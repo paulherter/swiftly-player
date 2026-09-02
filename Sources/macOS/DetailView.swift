@@ -134,6 +134,11 @@ struct FilmView: View {
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
         .ohneKanteneffekt()
+        // **Federn wie überall sonst.** Ohne die Angabe entscheidet das
+        // Rahmenwerk selbst, und auf diesen Seiten fiel die Entscheidung
+        // gegen das Federn aus — dann steht die Fläche am oberen Ende hart,
+        // statt nachzugeben.
+        .scrollBounceBehavior(.always)
         // **Der Inhalt läuft bis unter die Titelleiste durch.** SwiftUI rückt
         // ihn sonst um deren Sicherheitsbereich ein, und über dem Bild stand
         // ein dunkler Streifen. Die iPhone-Fassung tut dasselbe.

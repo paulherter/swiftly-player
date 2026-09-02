@@ -333,6 +333,13 @@ targets:
       path: Sources/macOS/Info.plist
       properties:
         CFBundleDisplayName: Swiftly
+        # **Das Zeichen zusaetzlich als vollstaendige `.icns`.**
+        #
+        # Nachgesehen: die von Xcode aus dem Katalog erzeugte `AppIcon.icns`
+        # enthaelt nur die 16er und die 128er — 32, 256, 512 und 1024 fehlen.
+        # Der Dock braucht die grossen. Die hier daneben liegende ist mit
+        # `iconutil` aus denselben zehn Bildern gebaut und vollstaendig.
+        CFBundleIconFile: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Ein helles Thema gibt es nicht — die Gestaltung ist auf Dunkel

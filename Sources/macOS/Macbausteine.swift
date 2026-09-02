@@ -539,6 +539,26 @@ struct Detailkopf: View {
         // Seitenleiste ihre Wortmarke.
         .padding(.top, 24)
         .frame(height: Stil.titelHoehe + 24, alignment: .bottom)
+        // **Die Leiste, die beim Scrollen kommt** — wörtlich wie auf iPhone
+        // und iPad: unten eine Haarlinie, dahinter Glas, und solange das Bild
+        // oben steht stattdessen ein weicher Verlauf, damit der Pfeil auf
+        // hellem Bild lesbar bleibt.
+        //
+        // Nicht zu verwechseln mit dem milchigen Streifen, den macOS 26
+        // ungefragt über jede Scrollfläche legt — der ist weiterhin
+        // abgestellt (`ohneKanteneffekt`). Diese hier ist gewollt.
+        .background(alignment: .bottom) {
+            Rectangle().fill(Stil.linie).frame(height: 1).opacity(staerke)
+        }
+        .background {
+            ZStack {
+                LinearGradient(colors: [Stil.grund.opacity(0.7), Stil.grund.opacity(0)],
+                               startPoint: .top, endPoint: .bottom)
+                    .opacity(1 - staerke)
+                Leistenglas(staerke: staerke)
+            }
+            .ignoresSafeArea(edges: .top)
+        }
     }
 }
 

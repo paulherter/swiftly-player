@@ -71,6 +71,11 @@ struct SerienView: View {
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
         .ohneKanteneffekt()
+        // **Federn wie überall sonst.** Ohne die Angabe entscheidet das
+        // Rahmenwerk selbst, und auf diesen Seiten fiel die Entscheidung
+        // gegen das Federn aus — dann steht die Fläche am oberen Ende hart,
+        // statt nachzugeben.
+        .scrollBounceBehavior(.always)
         .background(alignment: .top) {
             LinearGradient(colors: [farbe.ton, Stil.grund],
                            startPoint: .top, endPoint: .bottom)
@@ -342,7 +347,15 @@ struct Folgenzeile: View {
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
             ZStack {
-                Bildflaeche(bild: model.querbildURL(for: folge, breite: 400),
+                // **Das Bild der Folge, nicht das der Serie.**
+                //
+                // `querbildURL` nimmt absichtlich `item.seriesId ?? item.id`
+                // — für die Kacheln unter „Weiterschauen" ist das richtig,
+                // dort will man das Serienbild. In einer Folgenliste liefert
+                // es für jede Zeile **dasselbe** Bild. Die iPhone-Fassung
+                // nimmt hier `imageURL(for: folge, maxHeight: 220)`, also das
+                // eigene Vorschaubild der Folge.
+                Bildflaeche(bild: model.imageURL(for: folge, maxHeight: 220),
                             breite: bildBreite, hoehe: bildHoehe,
                             fortschritt: fortschritt)
                 if schwebt {
@@ -401,6 +414,12 @@ struct Folgenzeile: View {
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 6)
+        // **Feste Zeilenhöhe.** Ein `LazyVStack` baut nur, was zu sehen ist,
+        // und schätzt den Rest. Schätzt er falsch, springt die Scrollfläche
+        // beim schnellen Hochziehen — je mehr Folgen, desto weiter. Mit einer
+        // festen Höhe gibt es nichts zu schätzen. 90 für das Bild, zweimal 12
+        // Rand; Titel und Text bleiben mit ihren Zeilengrenzen darunter.
+        .frame(height: bildHoehe + 24)
         .background(schwebt ? Stil.schrift.opacity(0.04) : .clear)
         .contentShape(Rectangle())
         .onHover { schwebt = $0 }
