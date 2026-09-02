@@ -43,6 +43,15 @@ struct PlayerScreen: View {
     /// nachgezogen hat — derselbe Fall wie die Null beim Öffnen: ein Wert
     /// steht bereit, bevor VLC ihn bestätigt hat.
     @State private var sprungBis: Date?
+    /// Welcher Sprung gerade quittiert wird — Richtung und Weite.
+    ///
+    /// Die iPhone- und iPad-Fassung zeigen beim Springen eine Marke am Rand
+    /// (`Sprungmarke`). Auf dem Mac fehlte sie: dort hat man Knöpfe und
+    /// Pfeiltasten, aber auch dann will man sehen, **dass** gesprungen wurde
+    /// und wie weit — sonst wirkt eine Taste ohne Wirkung, bis das Bild
+    /// nachzieht.
+    @State private var sprungAnzeige: (richtung: Int, sekunden: Int)?
+    @State private var sprungTakt = 0
     @State private var schlafminuten: Int?
     @State private var schlafAufgabe: Task<Void, Never>?
     @State private var seitStart = Date()
@@ -97,7 +106,25 @@ struct PlayerScreen: View {
             // **Erst wenn das Bild steht.** Sonst liegt die Steuerung über dem
             // Ladeschirm und zeigt 0:00 mit leerer Leiste, während VLC noch
             // einsteuert — es sieht dann so aus, als liefe der Film von vorn.
-            // Genau das hat
+            // Genau das hat Die Sprungmarke steht **unabhängig von der
+            // Steuerung**: wer mit den Pfeiltasten springt, hat sie meist gar
+            // nicht offen.
+            if schirmWeg, let sprungAnzeige {
+                HStack(spacing: 0) {
+                    if sprungAnzeige.richtung > 0 { Spacer() }
+                    Sprungmarke(richtung: sprungAnzeige.richtung,
+                                sekunden: sprungAnzeige.sekunden)
+                        // Ohne eigene Kennung baut SwiftUI die Ansicht bei
+                        // zwei Sprüngen hintereinander nicht neu — die
+                        // Drehung bliebe aus.
+                        .id(sprungTakt)
+                    if sprungAnzeige.richtung < 0 { Spacer() }
+                }
+                .padding(.horizontal, 44)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
+
             if schirmWeg, steuerungDa {
                 steuerung.transition(.opacity)
             }
@@ -366,6 +393,17 @@ struct PlayerScreen: View {
         flaeche?.jump(seconds: Int32(sekunden))
         sprungBis = Date().addingTimeInterval(2)
         steuerungZeigen()
+
+        sprungTakt += 1
+        let takt = sprungTakt
+        withAnimation(.easeInOut(duration: 0.15)) {
+            sprungAnzeige = (sekunden < 0 ? -1 : 1, Int(abs(sekunden)))
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard sprungTakt == takt else { return }
+            withAnimation(.easeInOut(duration: 0.15)) { sprungAnzeige = nil }
+        }
     }
 
     private func beenden() {
@@ -893,4 +931,29 @@ struct Fensterzugriff: NSViewRepresentable {
     }
 
     func updateNSView(_ ansicht: Spion, context: Context) {}
+}
+
+/// Rückmeldung beim Springen — dieselbe Drehung wie auf den Knöpfen, damit
+/// Knopf und Tastendruck nicht wie zwei verschiedene Dinge wirken.
+///
+/// Wörtlich aus der iPhone-Fassung (`Sprungmarke` in
+/// `Sources/iOS/PlayerScreen.swift`), nur ohne den Doppeltipp, den es auf dem
+/// Mac nicht gibt. Die Marke steht an derselben Seite, in die gesprungen wird.
+private struct Sprungmarke: View {
+    let richtung: Int
+    let sekunden: Int
+    @State private var gedreht = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: richtung < 0 ? "gobackward" : "goforward")
+                .font(.system(size: 32, weight: .medium))
+                .symbolEffect(.bounce, options: .speed(1.7), value: gedreht)
+            Text(verbatim: "\(sekunden) s").font(.footnote.weight(.medium))
+        }
+        .foregroundStyle(.white)
+        .frame(width: 108, height: 108)
+        .background(.black.opacity(0.45), in: Circle())
+        .onAppear { gedreht = true }
+    }
 }
