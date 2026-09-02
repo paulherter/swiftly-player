@@ -166,9 +166,18 @@ extension Stil {
     // Sie tat es. Das ist keine Einstellungs- frage — es folgt aus der
     // Skalierung selbst und lässt sich nur verkleinern, nicht abstellen.
     //
-    // Deshalb `.blurReplace` statt Skalierung: Apples eigener Übergang für das
-    // Ersetzen von Inhalt. Er gibt dieselbe Tiefe über Unschärfe, und
-    // Unschärfe verschiebt nichts.
+    // Deshalb Unschärfe statt Skalierung: sie gibt dieselbe Tiefe und
+    // verschiebt nichts.
+    //
+    // `.blurReplace`, Apples fertiger Übergang dafür, war ebenfalls zu kräftig
+    // — er bringt seine eigene Skalierung mit und lässt sich nicht dosieren.
+    // Deshalb hier von Hand, mit drei Zahlen, die einzeln einstellbar sind.
+
+    /// Wie weich das Neue anfängt. Das ist der Anteil, den man sehen soll.
+    static let bereichUnschaerfe: CGFloat = 14
+    /// Und wie wenig es dabei wächst — 0,5 %, an der Fensterkante keine vier
+    /// Punkte. Man merkt es, ohne es zu sehen; mehr war jedes Mal zu viel.
+    static let bereichKleiner: CGFloat = 0.995
 
     /// Überblenden beim Ersetzen. 180 ms ease-out — dieselbe Zeit, in der auf
     /// dem iPhone die Player-Steuerung erscheint.
@@ -190,4 +199,36 @@ extension Stil {
     /// Hälfte der Zeit — und hört auf, wenn sie fertig ist. 450 ms, also die
     /// Hälfte länger als die 300, die zu kurz waren.
     static let zeitSeitenschub = Animation.easeInOut(duration: 0.45)
+}
+
+/// Wie ein Bereich hereinkommt: **Unschärfe zuerst, Zoom fast keiner.**
+///
+/// Von Hand statt `.blurReplace`, weil dessen Anteile feststehen. Hier sind
+/// sie drei Zahlen in `Stil`, und die Unschärfe trägt bewusst das meiste.
+struct Bereichseintritt: ViewModifier {
+    var unschaerfe: CGFloat
+    var staerke: Double
+    var groesse: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: unschaerfe)
+            .opacity(staerke)
+            .scaleEffect(groesse)
+    }
+}
+
+extension AnyTransition {
+    /// Der Wechsel in der Leiste — siehe die Zahlen in `Stil`.
+    ///
+    /// Berechnet statt abgelegt: `AnyTransition` ist nicht `Sendable`, eine
+    /// gespeicherte Eigenschaft wäre unter Swift 6 ein gemeinsam genutzter
+    /// veränderlicher Zustand.
+    static var bereichswechsel: AnyTransition { .asymmetric(
+        insertion: .modifier(
+            active: Bereichseintritt(unschaerfe: Stil.bereichUnschaerfe,
+                                     staerke: 0, groesse: Stil.bereichKleiner),
+            identity: Bereichseintritt(unschaerfe: 0, staerke: 1, groesse: 1))
+            .animation(Stil.zeitBereichHerein),
+        removal: .opacity.animation(Stil.zeitBereichHinaus)) }
 }

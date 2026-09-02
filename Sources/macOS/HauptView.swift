@@ -295,12 +295,7 @@ struct HauptView: View {
             // „Fade Through": das Alte blendet in 100 ms aus, danach kommt
             // das Neue in 200 ms und wächst dabei von 92 % auf 100 %. Die
             // Zahlen und das Warum stehen bei `Stil.zeitBereichHerein`.
-            .transition(.asymmetric(
-                // `.blurReplace` gehört zum neuen `Transition`-Protokoll,
-                // `.asymmetric` verlangt `AnyTransition` — deshalb der
-                // ausdrückliche Umweg.
-                insertion: AnyTransition(.blurReplace).animation(Stil.zeitBereichHerein),
-                removal: .opacity.animation(Stil.zeitBereichHinaus)))
+            .transition(.bereichswechsel)
             // **Nur hier, nicht am Elternteil.** Genau daran ist der erste
             // Versuch gescheitert: eine Anweisung mit `value:` gilt für
             // alles, was sich im Unterbau ändert, und hat damals auch
