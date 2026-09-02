@@ -150,11 +150,22 @@ extension Stil {
     // Wartezeit nur verlängert.
 
     /// Das Alte geht. Nur blenden, nicht schrumpfen.
-    static let zeitBereichHinaus = Animation.easeIn(duration: 0.10)
-    /// Das Neue kommt — erst danach, deshalb der Vorlauf von 100 ms.
-    static let zeitBereichHerein = Animation.easeOut(duration: 0.20).delay(0.10)
-    /// Woher es wächst.
-    static let bereichKleiner: CGFloat = 0.92
+    static let zeitBereichHinaus = Animation.easeIn(duration: 0.08)
+    /// Das Neue kommt — erst danach, deshalb der Vorlauf.
+    static let zeitBereichHerein = Animation.easeOut(duration: 0.18).delay(0.08)
+
+    /// Woher es wächst — **98 %, nicht die 92 % der Vorschrift.**
+    ///
+    /// Der Wert ist ein Anteil, die zurückgelegte Strecke also von der Größe
+    /// abhängig. Auf einem Telefon sind 8 % von 390 Punkt Breite rund 31
+    /// Punkt; in einem Fenster von 1500 Punkt sind es 120. Derselbe Wert wirkt
+    /// hier also viermal so kräftig
+    ///
+    /// Der Grund für die Abweichung ist damit die Fenstergröße, und das ist
+    /// einer der drei zulässigen. 2 % ergeben in einem grossen Fenster rund 30
+    /// Punkt und treffen damit ungefähr das, was die Vorschrift auf dem
+    /// Telefon meint.
+    static let bereichKleiner: CGFloat = 0.98
 
     /// Überblenden beim Ersetzen. 180 ms ease-out — dieselbe Zeit, in der auf
     /// dem iPhone die Player-Steuerung erscheint.
