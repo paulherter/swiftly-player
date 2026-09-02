@@ -181,10 +181,15 @@ extension Stil {
     // Deshalb hier von Hand, mit drei Zahlen, die einzeln einstellbar sind.
 
     /// Wie weich das Neue anfängt. Das ist der Anteil, den man sehen soll.
-    static let bereichUnschaerfe: CGFloat = 3
-    /// Und wie wenig es dabei wächst — 0,1 %, an der Fensterkante noch ein
-    /// halber Punkt. Darunter wäre es keine Bewegung mehr, sondern nichts.
-    static let bereichKleiner: CGFloat = 0.999
+    /// Unschärfe fällt in einem grossen Fenster deutlich mehr auf als auf
+    /// einem Telefon — sie trifft ja jeden Text auf der ganzen Fläche
+    /// gleichzeitig.
+    static let bereichUnschaerfe: CGFloat = 1.5
+    /// Und wie wenig es dabei wächst. Der Weg hierher, alles am laufenden
+    /// Bild: 92 % (Vorschrift, viel zu viel), 98, 99, 99,5 — und 99,8 war
+    /// gar nicht mehr wahrnehmbar. 99,6 legt an der Fensterkante rund drei
+    /// Punkte zurück; das ist der schmale Streifen dazwischen.
+    static let bereichKleiner: CGFloat = 0.996
 
     /// Überblenden beim Ersetzen. 180 ms ease-out — dieselbe Zeit, in der auf
     /// dem iPhone die Player-Steuerung erscheint.
