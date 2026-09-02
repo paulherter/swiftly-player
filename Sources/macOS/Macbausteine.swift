@@ -196,8 +196,12 @@ struct Posterkachel: View {
     var auswahl: (() -> Void)?
     /// `nil`, wenn es keine Übersicht dazu gibt (A6).
     var uebersicht: (() -> Void)?
+    /// Wird beim Überfahren gerufen — siehe `Seriencache.vorholen(_:mit:)`.
+    var vorholen: (() -> Void)?
 
-    @State private var schwebt = false
+    @State private var schwebt = false {
+        didSet { if schwebt, !oldValue { vorholen?() } }
+    }
 
     var body: some View {
         Kachelhuelle(auswahl: auswahl, schwebt: $schwebt,
@@ -237,8 +241,12 @@ struct Querkachel: View {
     var fortschritt: Double?
     var auswahl: (() -> Void)?
     var uebersicht: (() -> Void)?
+    /// Wird beim Überfahren gerufen — siehe `Seriencache.vorholen(_:mit:)`.
+    var vorholen: (() -> Void)?
 
-    @State private var schwebt = false
+    @State private var schwebt = false {
+        didSet { if schwebt, !oldValue { vorholen?() } }
+    }
 
     var body: some View {
         Kachelhuelle(auswahl: auswahl, schwebt: $schwebt,

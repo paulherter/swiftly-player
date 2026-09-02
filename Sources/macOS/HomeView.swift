@@ -35,7 +35,8 @@ struct HomeView: View {
                                        bild: model.querbildURL(for: titel),
                                        fortschritt: fortschritt(titel),
                                        auswahl: { steuerung.starte(titel) },
-                                       uebersicht: { navigator.oeffne(.titel(titel), in: bereich) })
+                                       uebersicht: { navigator.oeffne(.titel(titel), in: bereich) },
+                                       vorholen: { Seriencache.geteilt.vorholen(titel, mit: model) })
                         }
                     }
                 }
@@ -58,7 +59,8 @@ struct HomeView: View {
                             Button { navigator.oeffne(.titel(folge), in: bereich) } label: {
                                 Posterkachel(titel: kopf(folge),
                                              zweitzeile: folge.folgenkuerzel,
-                                             bild: model.imageURL(for: folge, hochkant: true))
+                                             bild: model.imageURL(for: folge, hochkant: true),
+                                             vorholen: { Seriencache.geteilt.vorholen(folge, mit: model) })
                             }
                             .buttonStyle(.plain)
                         }
@@ -71,7 +73,8 @@ struct HomeView: View {
                             Button { navigator.oeffne(.titel(titel), in: bereich) } label: {
                                 Posterkachel(titel: titel.name,
                                              zweitzeile: titel.neuzugangszeile,
-                                             bild: model.imageURL(for: titel, hochkant: true))
+                                             bild: model.imageURL(for: titel, hochkant: true),
+                                             vorholen: { Seriencache.geteilt.vorholen(titel, mit: model) })
                             }
                             .buttonStyle(.plain)
                         }
@@ -129,7 +132,10 @@ struct HomeView: View {
         // Serienseite (A8) und braucht dafür erst die Serie — bis dahin fuhr
         // eine leere Seite herein. Hier ist längst bekannt, welche Serien in
         // Frage kommen, also werden sie geholt, solange niemand wartet.
-        Seriencache.geteilt.vorholen(weiter + naechste, mit: model)
+        // **Auch „Zuletzt hinzugefügt".** Dort stehen bei Serien ebenfalls
+        // Folgen, und der Klick darauf nimmt denselben Weg über
+        // `StaffelZiel` — die Reihe hatte ich beim ersten Mal vergessen.
+        Seriencache.geteilt.vorholen(weiter + naechste + neu, mit: model)
     }
 }
 

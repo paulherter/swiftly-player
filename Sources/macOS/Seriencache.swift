@@ -62,6 +62,19 @@ final class Seriencache {
         while reihenfolge.count > 12 { staende[reihenfolge.removeFirst()] = nil }
     }
 
+    /// Holt die Serie zu **einer** Folge — für das Überfahren einer Kachel.
+    ///
+    /// Auf dem Mac liegt der Zeiger immer erst auf der Kachel, bevor geklickt
+    /// wird; typisch ein paar Zehntelsekunden. Das reicht für den Abruf, und
+    /// damit ist die leere Seite auch auf Wegen weg, die kein Vorholen der
+    /// Reihe abdeckt — Suche, Ähnliches, ein frisch geöffnetes Fenster. Ein
+    /// Grund, der mit der Eingabeart zu tun hat: iPhone und Fernseher haben
+    /// dieses Zeitfenster nicht.
+    func vorholen(_ folge: Item, mit model: AppModel) {
+        guard folge.type == "Episode" else { return }
+        vorholen([folge], mit: model)
+    }
+
     /// Holt die Serien zu diesen Folgen, sofern noch nicht bekannt.
     func vorholen(_ folgen: [Item], mit model: AppModel) {
         let offen = Set(folgen.compactMap(\.seriesId))
