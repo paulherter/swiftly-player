@@ -110,10 +110,25 @@ struct PlayerScreen: View {
         // eine wirkliche Bewegung ruft die Steuerung.
         .onContinuousHover { lage in
             guard case let .active(stelle) = lage else {
+                // **Zeiger raus aus dem Fenster: sofort weg.**
+                //
+                // Die vier Sekunden sind dafür da, dass die Steuerung nicht
+                // unter der Hand verschwindet, während man sie noch braucht.
+                // Ist der Zeiger gar nicht mehr im Fenster, braucht sie
+                // niemand — dann ist Warten nur Verzögerung. In Pause bleibt
+                // sie stehen: dort ist sie kein Überbleibsel, sondern der
+                // Zustand.
                 zeigerZuletzt = nil
+                halter.setzeZeigerOben(false)
+                if stand.laeuft, !amRegler { steuerungSofortWeg() }
                 return
             }
             defer { zeigerZuletzt = stelle }
+            // **Die Fensterampel hängt an dieser Zone, nicht an der
+            // Steuerung.** Sie steht sonst dauerhaft über dem Bild und ist
+            // im Weg. So kommt sie, wenn man sie sucht — oben — und bleibt
+            // sonst fort.
+            halter.setzeZeigerOben(stelle.y < Stil.ampelzone)
             guard let vorher = zeigerZuletzt else { return }
             let weg = hypot(stelle.x - vorher.x, stelle.y - vorher.y)
             if weg > 2 { steuerungZeigen() }
@@ -379,6 +394,17 @@ struct PlayerScreen: View {
 
     /// Vier Sekunden Ruhe, dann zieht sie sich zurück — nicht im
     /// Pausenzustand. Dieselbe Regel wie auf dem iPhone.
+    /// Ohne die vier Sekunden — für den Fall, dass der Zeiger das Fenster
+    /// verlässt.
+    private func steuerungSofortWeg() {
+        ruheAufgabe?.cancel()
+        withAnimation(.easeInOut(duration: 0.34)) {
+            steuerungDa = false
+            halter.setzeSteuerung(false)
+            spurwahlOffen = false
+        }
+    }
+
     private func steuerungZeigen() {
         withAnimation(.easeOut(duration: 0.18)) { steuerungDa = true }
         halter.setzeSteuerung(true)
@@ -701,9 +727,8 @@ final class Fensterhalter {
 
     /// **Ein Ausdruck, nicht zwei Schalter.**
     ///
-    /// Ob im Player gerade die Steuerung steht. Solange sie da ist, steht
-    /// auch die Ampel; geht sie, geht die Ampel mit.
-    private(set) var steuerungDa = true
+    /// Ob der Zeiger im Player oben steht — dort, wo die Ampel sitzt.
+    private(set) var zeigerOben = false
 
     /// Die Ampel verschwindet im kleinen Fenster — dort gehört sie nicht hin —
     /// **und sie geht im Player mit der Steuerung.**
@@ -726,7 +751,7 @@ final class Fensterhalter {
     /// zwei Orte.
     private var ampelSichtbar: Bool {
         if istVollbild { return true }
-        return !istKlein && (!imPlayer || steuerungDa)
+        return !istKlein && (!imPlayer || zeigerOben)
     }
 
     private func ampelNachziehen(weich: Bool = false) {
@@ -750,10 +775,18 @@ final class Fensterhalter {
         }
     }
 
-    /// Der Player meldet, ob seine Steuerung gerade steht.
+    /// Der Player meldet, ob der Zeiger oben in der Ampelzone steht.
+    func setzeZeigerOben(_ oben: Bool) {
+        guard zeigerOben != oben else { return }
+        zeigerOben = oben
+        ampelNachziehen(weich: true)
+    }
+
+    /// Geht die Steuerung, geht die Ampel in jedem Fall mit — auch wenn der
+    /// Zeiger oben stehen bleibt, etwa weil er sich nicht bewegt.
     func setzeSteuerung(_ da: Bool) {
-        guard steuerungDa != da else { return }
-        steuerungDa = da
+        guard !da, zeigerOben else { return }
+        zeigerOben = false
         ampelNachziehen(weich: true)
     }
 
