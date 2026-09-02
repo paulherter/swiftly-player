@@ -2,6 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Der Mac App Store verlangt die Sandbox zwingend. Ohne sie wird die
+	     App beim Hochladen abgewiesen, nicht erst bei der Pruefung. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- Und ohne das erreicht sie in der Sandbox keinen Jellyfin mehr:
+	     ausgehende Verbindungen sind darin standardmaessig gesperrt. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Ein Jellyfin steht meist im eigenen Netz. Fuer die Suche nach dem
+	     Server im lokalen Netz braucht es zusaetzlich den Server-Anteil;
+	     ohne ihn kommt die Rundsendung nicht zurueck. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
+	<!-- Dieselbe Begruendung wie auf iOS: ohne die Zugriffsgruppe verweigert
+	     der Keychain das Schreiben (-34018) und die Anmeldung ginge bei
+	     jedem Start verloren. -->
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)de.paulherter.swiftly</string>
