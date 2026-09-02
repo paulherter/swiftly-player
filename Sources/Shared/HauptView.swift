@@ -71,15 +71,6 @@ struct HauptView: View {
                     .ignoresSafeArea(.keyboard, edges: .bottom)
             }
         }
-        // Platz für iPadOS' Fensterknöpfe.
-        //
-        // Hier und nicht in `Seitenpfeil`: der Pfeil ist ein geteilter
-        // Baustein, den Telefon, Fernseher und Mac mitbenutzen, und im
-        // Vollbild wäre ein tiefer sitzender Pfeil eine grundlose Abweichung.
-        // Die Ursache liegt ohnehin nicht am Pfeil, sondern am Fenster: dort
-        // fehlt die Statusleiste, die ihn sonst nach unten schiebt. Also
-        // bekommt der Rahmen ihren Platz zurück, und alles darin rückt mit.
-        .safeAreaPadding(.top, fensterknoepfe ? Fensterknoepfe.hoehe : 0)
         // Bewusst ohne Übergang: die Leiste soll fest liegen und beim
         // Zurückkommen einfach wieder da sein, so wie der Inhalt dahinter
         // auch. Eingeblendet wirkte sie wie ein eigenes Blatt.
@@ -189,6 +180,7 @@ struct BibliothekView: View {
     @State private var sortierlisteOffen = false
 
     @Environment(\.breit) private var breit
+    @Environment(\.fensterknoepfe) private var fensterknoepfe
 
     /// Die Spaltenzahl folgt der Breite, die Kacheln füllen ihre Spalte.
     ///
@@ -245,7 +237,9 @@ struct BibliothekView: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .contentMargins(.top, breit ? 118 : 112, for: .scrollContent)
+            .contentMargins(.top, (breit ? 118 + Stil.kopfOben : 112)
+                            + (fensterknoepfe ? Fensterknoepfe.hoehe : 0),
+                            for: .scrollContent)
             .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
                             for: .scrollContent)
 

@@ -6,6 +6,7 @@ struct HomeView: View {
     let model: AppModel
 
     @Environment(\.breit) private var breit
+    @Environment(\.fensterknoepfe) private var fensterknoepfe
 
     /// Laden und Reihenfolge stehen in `Startseitenmodell` — geteilt mit
     /// der tvOS-Fassung.
@@ -42,10 +43,11 @@ struct HomeView: View {
     /// jetzt ein eigener Bereich in der Leiste unten.
     @ViewBuilder private var kopf: some View {
         if breit {
-            // Wortmarke und Profilzeichen stehen in der Seitenleiste. Übrig
-            // bleibt der Verlauf: der Inhalt soll auch hier nicht an einer
-            // harten Kante abschneiden, sondern sichtbar darunter durchlaufen.
-            Kopfverlauf().frame(height: 58)
+            // **Kein Verlauf.** Er trägt auf dem iPhone die Kopfzeile, die
+            // oben liegt — hier liegt die Leiste links, und über dem Inhalt
+            // ist nichts, worunter er durchlaufen müsste. Ein Verlauf ohne
+            // Kopfzeile ist Zierde, und die hat diese Gestaltung nicht.
+            EmptyView()
         } else {
             kopfzeile
         }
@@ -127,7 +129,9 @@ struct HomeView: View {
         //
         // Breit gibt es unten keine Leiste — die steht links. Der Platz, den
         // `leisteHoehe` freihält, wäre dort ein leerer Streifen.
-        .contentMargins(.top, breit ? 46 : 58, for: .scrollContent)
+        .contentMargins(.top, (breit ? Stil.kopfOben + 20 : 58)
+                        + (fensterknoepfe ? Fensterknoepfe.hoehe : 0),
+                        for: .scrollContent)
         .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
                         for: .scrollContent)
         .refreshable { await laden() }

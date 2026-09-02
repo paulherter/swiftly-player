@@ -20,6 +20,7 @@ struct SucheView: View {
     @FocusState private var imFeld: Bool
 
     @Environment(\.breit) private var breit
+    @Environment(\.fensterknoepfe) private var fensterknoepfe
 
     var body: some View {
         ZStack {
@@ -50,7 +51,8 @@ struct SucheView: View {
                     if breit { Spacer(minLength: 0) }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
-                .padding(.top, 8)
+                .padding(.top, (breit ? Stil.kopfOben : 8)
+                            + (fensterknoepfe ? Fensterknoepfe.hoehe : 0))
                 .padding(.bottom, 16)
 
                 ScrollView {

@@ -43,39 +43,47 @@ struct Heldkopf<Inhalt: View>: View {
     @ViewBuilder var inhalt: () -> Inhalt
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            hintergrund
-
-            HStack(alignment: .bottom, spacing: 32) {
-                Bild(url: poster,
-                     breite: Stil.heldPosterBreite, hoehe: Stil.heldPosterHoehe,
-                     ecke: Stil.eckeKachel, fortschritt: fortschritt) {
-                    Stil.flaeche.overlay {
-                        Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
-                    }
+        HStack(alignment: .bottom, spacing: 32) {
+            Bild(url: poster,
+                 breite: Stil.heldPosterBreite, hoehe: Stil.heldPosterHoehe,
+                 ecke: Stil.eckeKachel, fortschritt: fortschritt) {
+                Stil.flaeche.overlay {
+                    Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
                 }
-
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(titel)
-                        .font(.system(size: 40, weight: .bold))
-                        .tracking(-1)
-                        .foregroundStyle(Stil.schrift)
-                        .lineLimit(2)
-                    Text(nebenzeile)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Stil.schriftLeise)
-                        .lineLimit(1)
-                        .padding(.top, 8)
-                    inhalt()
-                        .padding(.top, 12)
-                }
-
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, Stil.randSeiteBreit)
-            .padding(.bottom, 40)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(titel)
+                    .font(.system(size: 40, weight: .bold))
+                    .tracking(-1)
+                    .foregroundStyle(Stil.schrift)
+                    .lineLimit(2)
+                Text(nebenzeile)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Stil.schriftLeise)
+                    .lineLimit(1)
+                    .padding(.top, 8)
+                inhalt()
+                    .padding(.top, 12)
+            }
+
+            Spacer(minLength: 0)
         }
-        .frame(height: Stil.heldHoeheBreit)
+        .padding(.horizontal, Stil.randSeiteBreit)
+        .padding(.top, 40)
+        .padding(.bottom, 40)
+        // **Mindesthöhe, keine feste.** 420 war für die liegende Knopfreihe
+        // gerechnet. Sobald sie sich stapelt — hochkant, im halben Fenster —
+        // ist der Block deutlich höher, und eine feste Höhe schnitt ihn ab:
+        // das Poster unten weg, die Knöpfe ganz. Jetzt wächst der Kopf mit
+        // seinem Inhalt und hält 420 nur als Untergrenze, damit vom Bild
+        // etwas zu sehen bleibt.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: Stil.heldHoeheBreit, alignment: .bottom)
+        // Als Hintergrund und nicht als Geschwister im Stapel: ein
+        // Hintergrund bestimmt die Größe seines Gastgebers nie mit. Genau
+        // daran hatte sich der Kopf vorher verschluckt.
+        .background { hintergrund }
         .clipped()
     }
 
@@ -97,8 +105,6 @@ struct Heldkopf<Inhalt: View>: View {
                     b.resizable().aspectRatio(contentMode: .fill)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
             // Von links, damit die Schrift steht.
             LinearGradient(stops: [
                 .init(color: Stil.grund.opacity(0.96), location: 0),

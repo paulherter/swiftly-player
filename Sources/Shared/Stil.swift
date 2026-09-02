@@ -97,6 +97,14 @@ extension Stil {
     /// dem iPad — am Simulator nachgemessen: Text bei 167, Linie bei 184.
     static func trennEinzug(breit: Bool) -> CGFloat { rand(breit: breit) + 34 }
 
+    /// Wie tief unter dem sicheren Bereich eine Seitenkopfzeile beginnt.
+    ///
+    /// Derselbe Wert, mit dem die Wortmarke in der Seitenleiste sitzt — sonst
+    /// stehen Überschrift und Wortmarke auf verschiedenen Höhen, und das
+    /// sieht man sofort: die Seite fängt oben an, die Leiste daneben ein
+    /// Stück tiefer.
+    static let kopfOben: CGFloat = 26
+
     /// Kachelmaße der Reihen auf der Startseite.
     ///
     /// Auf dem iPhone messen Reihe und Raster praktisch dasselbe — 112 gegen
@@ -373,11 +381,27 @@ struct Bild<Platzhalter: View>: View {
     var fortschritt: Double? = nil
     @ViewBuilder var platzhalter: () -> Platzhalter
 
-    var body: some View {
-        Color.clear
+    /// Die Grundfläche, an der sich das Bild ausrichtet.
+    ///
+    /// **Das Seitenverhältnis wird nur gesetzt, wenn es eines gibt.**
+    /// `aspectRatio(nil, contentMode: .fit)` auf einem `Color.clear` klingt
+    /// harmlos, ist es aber nicht: `Color.clear` hat keine eigene Größe, an
+    /// der sich ein „fit" bemessen könnte. Ohne Verhältnis rutschte das Bild
+    /// nach links, brach hart ab und verschwand in schmalen Fenstern ganz —
+    /// zu sehen am Heldbild der Detailseite, auf iPhone wie iPad.
+    @ViewBuilder private var flaeche: some View {
+        let grund = Color.clear
             .frame(width: breite, height: hoehe)
             .frame(maxWidth: breite == nil ? .infinity : nil)
-            .aspectRatio(verhaeltnis, contentMode: .fit)
+        if let verhaeltnis {
+            grund.aspectRatio(verhaeltnis, contentMode: .fit)
+        } else {
+            grund
+        }
+    }
+
+    var body: some View {
+        flaeche
             .overlay {
                 AsyncImage(url: url) { phase in
                     if case let .success(bild) = phase {
@@ -1066,6 +1090,7 @@ struct Navileiste: View {
 /// zurück und verschöbe dabei jedes Poster. Ein waagerechter Sprung stört
 /// mehr als ein senkrechter.
 struct Seitenleiste: View {
+    @Environment(\.fensterknoepfe) private var fensterknoepfe
     @Binding var gewaehlt: Bereich
     /// Die Profilseite ist offen — dann trägt keiner der vier Bereiche die
     /// Auswahl, sondern das Zeichen unten.
@@ -1077,7 +1102,7 @@ struct Seitenleiste: View {
     var body: some View {
         VStack(spacing: 0) {
             Wortmarke(hoehe: 20)
-                .padding(.top, 26)
+                .padding(.top, Stil.kopfOben + (fensterknoepfe ? Fensterknoepfe.hoehe : 0))
                 .padding(.bottom, 30)
 
             ForEach(Bereich.allCases) { bereich in
@@ -1262,11 +1287,15 @@ struct Verlaufsunschaerfe: View {
 /// Vorher war dort schwarze Fläche mit harter Kante. Der Inhalt läuft jetzt
 /// sichtbar darunter durch.
 struct Unschaerfekopf<Inhalt: View>: View {
+    @Environment(\.breit) private var breit
+    @Environment(\.fensterknoepfe) private var fensterknoepfe
     @ViewBuilder var inhalt: () -> Inhalt
 
     var body: some View {
         inhalt()
-            .padding(.horizontal, Stil.randAbstand)
+            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.top, (breit ? Stil.kopfOben : 0)
+                     + (fensterknoepfe ? Fensterknoepfe.hoehe : 0))
             .padding(.bottom, 12)
             .background {
                 // Nur ein Verlauf, keine Unschärfe.
@@ -1472,6 +1501,7 @@ struct Belegzeile: View {
 /// Vorher lief der Inhalt beim Scrollen ungebremst unter Uhrzeit und Akku
 /// durch, und der Pfeil schwebte ohne Grund über dem Text.
 struct Detailkopf: View {
+    @Environment(\.fensterknoepfe) private var fensterknoepfe
     let titel: String
     /// Wie weit gescrollt wurde. Ab `ab` steht die Leiste voll.
     let versatz: CGFloat
@@ -1506,6 +1536,7 @@ struct Detailkopf: View {
         }
         .padding(.leading, 6)
         .padding(.trailing, Stil.randAbstand)
+        .padding(.top, fensterknoepfe ? Fensterknoepfe.hoehe : 0)
         .padding(.bottom, 6)
         .background(alignment: .bottom) {
             Rectangle().fill(Stil.linie).frame(height: 1).opacity(staerke)
@@ -1634,6 +1665,7 @@ struct Wischzeile<Inhalt: View>: View {
 /// Eigener Baustein, weil er sonst auf jeder Seite eine andere Höhe bekommt —
 /// genau das war zwischen Profil und Quick Connect zu sehen.
 struct Seitenpfeil: View {
+    @Environment(\.fensterknoepfe) private var fensterknoepfe
     let zurueck: () -> Void
 
     var body: some View {
@@ -1651,7 +1683,7 @@ struct Seitenpfeil: View {
                 Spacer(minLength: 0)
             }
             .padding(.leading, 8)
-            .padding(.top, 6)
+            .padding(.top, 6 + (fensterknoepfe ? Fensterknoepfe.hoehe : 0))
             // Der Verlauf hängt hier, weil ihn alle Unterseiten über den Pfeil
             // bekommen — sonst scrollte dort der Inhalt hart unter die
             // Statusleiste, während er auf den übrigen Seiten weich ausläuft.

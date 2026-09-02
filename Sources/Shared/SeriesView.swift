@@ -318,12 +318,10 @@ struct SeriesDetailView: View {
     }
 
     private var folgenbereich: some View {
-        // Breit auf Lesebreite: eine Folgenzeile über 1036 Punkt setzt den
-        // Haken einen halben Meter neben den Titel. Linksbündig, nicht
-        // mittig — sie gehört unter die Reiter, nicht in die Seitenmitte.
+        // Über die volle Breite, wie auf dem iPhone. Der Haken gehört an den
+        // rechten Rand der Zeile; auf ein Lesemaß eingeschnürt stand er
+        // mitten auf der Seite und sah aus, als gehöre er zu nichts.
         folgenliste
-            .frame(maxWidth: breit ? Stil.lesebreite : .infinity, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var folgenliste: some View {
