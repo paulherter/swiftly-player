@@ -258,6 +258,14 @@ targets:
         CFBundleDisplayName: Swiftly Top Shelf
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # **Ohne das weist App Store Connect den Upload ab** (Fehler 90502):
+        # eine Erweiterung mit 64-Bit-Scheibe muss `arm64` selbst nennen.
+        # Der App-Zielblock braucht es nicht — dort setzt Xcode den Schluessel
+        # von sich aus. Bei `app-extension` tut es das nicht, und auffallen
+        # kann es erst beim Hochladen: bauen, archivieren und exportieren
+        # laufen alle durch.
+        UIRequiredDeviceCapabilities:
+          - arm64
         NSExtension:
           NSExtensionPointIdentifier: com.apple.tv-top-shelf
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).RegalAnbieter
