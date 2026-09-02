@@ -28,6 +28,8 @@ struct HomeView: View {
     /// Darauf faellt der Fokus, wenn er von oben oder unten hereinkommt.
     @State private var vorderste: [Reihenkennung: String] = [:]
 
+    @Environment(\.scenePhase) private var phase
+
     var body: some View {
         ZStack {
             if !stand.geladen {
@@ -47,6 +49,27 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await laden() }
+        // **Auch beim Zurueckkommen, nicht nur beim Erscheinen.**
+        //
+        // `.task` deckt „Player geht zu" ab — die Ansicht erscheint dann neu.
+        // Den Wechsel in den Vordergrund deckt es nicht: wer am Telefon zu
+        // Ende schaut und danach den Fernseher einschaltet, sieht die Folge
+        // hier weiter unter „Weiterschauen" stehen.
+        //
+        // Auf tvOS ist `scenePhase` der richtige Auslöser, anders als auf dem
+        // Mac. Dort schlägt er auch um, wenn nur ein zweites Fenster derselben
+        // App nach vorn kommt — deshalb nimmt macOS
+        // `didBecomeActiveNotification`. Auf dem Fernseher gibt es kein
+        // zweites Fenster; `.active` heißt dort genau „der Zuschauer ist
+        // zurück". Derselbe Auslöser trägt im Player die Pause beim
+        // Verlassen.
+        //
+        // Die Frist von 30 Sekunden steht in `Auffrischung` und ist dort
+        // geprüft — ohne sie würde jedes kurze Wegschalten neu laden.
+        .onChange(of: phase) { _, neu in
+            guard neu == .active, stand.brauchtAuffrischung else { return }
+            Task { await laden() }
+        }
     }
 
     /// Was die Auskunft beschreibt — **abgeleitet, nicht gesetzt.**
