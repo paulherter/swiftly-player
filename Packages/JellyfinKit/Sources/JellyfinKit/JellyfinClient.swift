@@ -299,10 +299,23 @@ public actor JellyfinClient {
     ///
     /// Hier wird das DeviceProfile mitgeschickt — die Antwort verrät, ob es
     /// Direct Play, Direct Stream oder Transcode wird.
+    ///
+    /// **`abSekunden` und `ohneDirectPlay` sind der Notausgang.**
+    ///
+    /// Bei Direct Play liefert der Server die Datei roh aus und springt nicht;
+    /// den Sprung macht der Abspieler über den Index der Datei. Ist der Index
+    /// unlesbar — es gibt solche Dateien —, kann der Abspieler nicht springen,
+    /// und keine Einstellung auf dieser Seite ändert daran etwas. Dann bittet
+    /// man den Server, ab der gewünschten Stelle zu liefern: `EnableDirectPlay`
+    /// aus, `StartTimeTicks` gesetzt. Jellyfin packt den Strom dann um
+    /// (Direct Stream) und beginnt dort. Umgepackt heißt nicht umgerechnet —
+    /// Bild und Ton bleiben unangetastet, nur der Behälter wechselt.
     public func playbackInfo(
         itemID: String,
         profile: DeviceProfile = .vlc(),
-        maxStreamingBitrate: Int? = nil
+        maxStreamingBitrate: Int? = nil,
+        abSekunden: Double = 0,
+        ohneDirectPlay: Bool = false
     ) async throws -> PlaybackInfoResponse {
         let s = try requireSession()
         struct Body: Encodable {
@@ -313,15 +326,22 @@ public actor JellyfinClient {
             let EnableDirectPlay: Bool
             let EnableDirectStream: Bool
             let EnableTranscoding: Bool
+            /// Jellyfin rechnet in Hundertnanosekunden.
+            let StartTimeTicks: Int64
         }
+        // Nur beim Umpacken das Profil tauschen — siehe `vlcUmpacken`.
+        let genutztesProfil = ohneDirectPlay
+            ? DeviceProfile.vlcUmpacken(maxBitrate: profile.maxStreamingBitrate)
+            : profile
         let body = Body(
             UserId: s.userID,
-            DeviceProfile: profile,
+            DeviceProfile: genutztesProfil,
             MaxStreamingBitrate: maxStreamingBitrate ?? profile.maxStreamingBitrate,
             AutoOpenLiveStream: true,
-            EnableDirectPlay: true,
+            EnableDirectPlay: !ohneDirectPlay,
             EnableDirectStream: true,
-            EnableTranscoding: true
+            EnableTranscoding: true,
+            StartTimeTicks: Int64(max(abSekunden, 0) * 10_000_000)
         )
         let req = try request("Items/\(itemID)/PlaybackInfo", method: "POST", body: body)
         return try await send(req, as: PlaybackInfoResponse.self)
@@ -529,13 +549,18 @@ public actor JellyfinClient {
     /// Fragt den Server und baut daraus direkt den Plan für den Player.
     public func playbackPlan(
         for itemID: String,
-        profile: DeviceProfile = .vlc()
+        profile: DeviceProfile = .vlc(),
+        abSekunden: Double = 0,
+        ohneDirectPlay: Bool = false
     ) async throws -> PlaybackPlan? {
-        let info = try await playbackInfo(itemID: itemID, profile: profile)
+        let info = try await playbackInfo(itemID: itemID, profile: profile,
+                                          abSekunden: abSekunden,
+                                          ohneDirectPlay: ohneDirectPlay)
         return try PlaybackPlan.make(
             from: info,
             itemID: itemID,
             profile: profile,
+            abSekunden: ohneDirectPlay ? abSekunden : 0,
             streamURL: { [self] id, sourceID, sessionID in
                 try streamURL(itemID: id, mediaSourceID: sourceID, playSessionID: sessionID)
             },

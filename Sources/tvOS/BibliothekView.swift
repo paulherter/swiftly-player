@@ -32,6 +32,7 @@ struct BibliothekView: View {
     @State private var stand = Bibliotheksmodell()
     @State private var sortierwahlOffen = false
     @FocusState private var amSortierknopf: Bool
+    @Environment(\.tafelOffen) private var tafelOffen
 
     private var spalten: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: Stil.gitterSpalte),
@@ -80,16 +81,35 @@ struct BibliothekView: View {
         // Hinter der offenen Tafel ist nichts fokussierbar — siehe die
         // Detailseiten, dort war es derselbe Fehler.
         .disabled(sortierwahlOffen)
-        .overlay(alignment: .topLeading) {
+        // **Rechts, unter ihrem Ausloeser** — nicht links am Rand.
+        //
+        // Sie hing an `.topLeading`, der Sortierknopf steht aber ganz rechts.
+        // Die Tafel klappte also quer ueber die Seite auf und hatte mit dem
+        // Knopf, der sie geoeffnet hatte, nichts mehr zu tun. Auf den
+        // Detailseiten stimmte es, weil dort der Mehr-Knopf links sitzt.
+        //
+        // Die Kante ist die Bildkante, nicht der Inhaltsrand: der waagerechte
+        // sichere Bereich ist oben abgeschaltet, damit `randSeite` nicht
+        // doppelt zaehlt.
+        .overlay(alignment: .topTrailing) {
             if sortierwahlOffen {
                 Handlungstafel(handlungen: sortierhandlungen, offen: $sortierwahlOffen)
-                    .padding(.leading, Stil.randSeite)
+                    .padding(.trailing, Stil.randSeite)
                     .padding(.top, Stil.erstesEnde + 16)
                     .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.18), value: sortierwahlOffen)
-        .onChange(of: sortierwahlOffen) { _, offen in if !offen { amSortierknopf = true } }
+        // Die Seite schaltet sich selbst ab, die Kopfleiste gehoert ihr aber
+        // nicht — die muss `HauptView` stilllegen. Sonst stieg der Fokus aus
+        // der offenen Tafel nach oben auf die Bereichsknoepfe.
+        .onChange(of: sortierwahlOffen) { _, offen in
+            tafelOffen.wrappedValue = offen
+            if !offen { amSortierknopf = true }
+        }
+        // Wer die Seite mit offener Tafel verlaesst, liesse die Leiste tot
+        // zurueck.
+        .onDisappear { tafelOffen.wrappedValue = false }
         .task(id: stand.kennung) { await laden() }
     }
 

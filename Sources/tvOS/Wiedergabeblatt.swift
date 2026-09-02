@@ -183,6 +183,43 @@ struct Wiedergabeblatt: View {
                     } else {
                         Wertfeld(titel: "Zähler", wert: String(localized: "Noch nichts"))
                     }
+
+                    // **Die Zaehler zuerst, die Herkunftsangaben dahinter.**
+                    //
+                    // Sie standen vorn, weil sie beim Suchen nach dem
+                    // Sprungfehler die wichtigsten waren. Fuer den taeglichen
+                    // Blick ist es umgekehrt: wer den Reiter oeffnet, will
+                    // wissen, ob Bilder verlorengehen. **Steht vor den
+                    // Zaehlern, weil es die Frage davor beantwortet.** „Es
+                    // ruckelt, aber nichts fehlt" ist keine Sache der Zaehler,
+                    // sondern der Ausgabekadenz — siehe `Bildtakt`. Ohne diese
+                    // Zeile sieht man dem Bild nicht an, ob der Fernseher
+                    // mitgeschaltet hat.
+                    Wertfeld(titel: "Ausgang", wert: ausgangzeile,
+                             warnung: !Bildtakt.erlaubt)
+                    // **Direct Play und Direct Stream sind nicht dasselbe.**
+                    //
+                    // Der Haken unten zeigt beide gleich, weil beide das Bild
+                    // unangetastet lassen. Beim Direct Stream packt der Server
+                    // den Behaelter aber live um — der Anlauf dauert, und
+                    // Spulen wird zaeh. Wer nur den Haken sieht, sucht den
+                    // Fehler im Player.
+                    Wertfeld(titel: "Auslieferung", wert: plan.method.rawValue,
+                             warnung: plan.method != .directPlay)
+                    // Ohne `mkv_trusted` verwirft VLC 4 den Index der Datei
+                    // und ein Sprung landet am Dateianfang. Siehe `oeffnen`.
+                    Wertfeld(titel: "MKV-Index", wert: behaelterzeile,
+                             warnung: istMkv && !flaeche.matroskaVertraut)
+                    // **Die Zahl, an der sich „zu langsam" entscheidet.**
+                    //
+                    // Direct Play heisst: die Datei muss in Echtzeit ueber die
+                    // Leitung. Schafft der Weg vom Server ihre Bitrate nicht,
+                    // laeuft der Puffer leer — egal wie richtig alles andere
+                    // eingestellt ist. Daneben steht „Eingang", was wirklich
+                    // ankommt. Liegt der deutlich darunter, ist die Ursache
+                    // gefunden und sie liegt nicht im Player.
+                    Wertfeld(titel: "Datei braucht", wert: bedarfzeile,
+                             warnung: false)
                 }
             }
             .padding(.vertical, 10)
@@ -191,6 +228,88 @@ struct Wiedergabeblatt: View {
         .scrollIndicators(.hidden)
         .frame(height: 150)
         .focusSection()
+    }
+
+    /// Mittlere Bitrate der Datei — Groesse geteilt durch Laufzeit.
+    ///
+    /// Ohne neues Serverfeld: beides steht schon in der Quelle. Der Wert ist
+    /// ein Mittel, Spitzen liegen darueber — genau die lassen den Puffer
+    /// leerlaufen.
+    private var bedarfzeile: String {
+        let dauer = flaeche.durationSeconds
+        guard let bytes = plan.quelle?.size, bytes > 0, dauer > 1 else {
+            return String(localized: "Unbekannt")
+        }
+        let bitProSekunde = Double(bytes) * 8 / dauer
+        let text = bitProSekunde >= 1_000_000
+            ? String(format: "%.1f Mbit/s", bitProSekunde / 1_000_000)
+            : String(format: "%.0f kbit/s", bitProSekunde / 1_000)
+        return text.replacingOccurrences(of: ".", with: ",") + " Ø"
+    }
+
+    private var istMkv: Bool {
+        let namen = ["mkv", "matroska", "webm", "mka", "mks"]
+        let behaelter = (plan.quelle?.container ?? "").lowercased()
+        return namen.contains { behaelter.contains($0) }
+    }
+
+    /// Behälter der Datei, Endung der ausgelieferten Adresse, und ob der
+    /// MKV-Kniff gegriffen hat — die drei Angaben, aus denen sich die
+    /// Entscheidung nachrechnen lässt.
+    private var behaelterzeile: String {
+        guard istMkv else { return String(localized: "kein Matroska") }
+        let endung = plan.url.pathExtension.lowercased()
+        let adresse = endung.isEmpty ? String(localized: "ohne Endung") : "." + endung
+        let kniff = flaeche.matroskaVertraut
+            ? String(localized: "vertraut")
+            : String(localized: "MISSTRAUT")
+        return "\(kniff) · \(adresse)"
+    }
+
+    /// Was der Fernseher aus der Bildrate der Datei gemacht hat.
+    ///
+    /// Drei Faelle, und der mittlere ist der, den Dann steht die Rate zwar
+    /// fest, aber der Ausgang bleibt auf 60 Hz und das Bild judert weiter.
+    private var ausgangzeile: String {
+        // **VLCs Wert, nicht der des Servers.**
+        //
+        // Umgeschaltet wird auf die Angabe des Servers, weil die frueh genug
+        // da ist. Angezeigt wird, was VLC im Strom vorfindet — sonst zeigte
+        // die Zeile bei falschen Metadaten denselben falschen Wert, auf den
+        // wir hereingefallen sind, und der Fehler bliebe unsichtbar.
+        let gemessen = Bildtakt.rate(von: flaeche.player)
+        let behauptet = plan.quelle.flatMap(Dateiangaben.videospur)?.bildrate
+        guard let rate = gemessen ?? behauptet else {
+            return String(localized: "Unbekannt")
+        }
+        let text = String(format: "%.3f", rate)
+            .replacingOccurrences(of: ".", with: ",")
+        // **`maximumFramesPerSecond` ist der Grundtakt, nicht der laufende.**
+        //
+        // Ich hatte die Zahl als Beweis danebengestellt: „angepasst" sei nur
+        // Absicht, erst der Schirmtakt zeige, ob der Fernseher es getan hat.
+        // Auf dem Schirm stand dann „23,976 fps · angepasst · 50 Hz" — ein
+        // Widerspruch, den es nicht gibt: der Wechsel hatte stattgefunden,
+        // aber die Auskunft folgt dem Inhaltsmodus nicht, sie nennt das
+        // eingestellte Format. Als Beweis taugt sie also nicht, als Grundtakt
+        // schon — und genau dagegen rechnet `passt`, was weiterhin richtig
+        // ist.
+        //
+        // Steht hier eine Zahl, die nicht aufgeht, kostet dieser Titel ein
+        // Schwarzbild. Das ist die Auskunft, die man wirklich braucht.
+        let grund = " · " + String(localized: "Grundtakt") + " \(Bildtakt.schirmtakt)"
+        guard gemessen != nil else {
+            return text + " " + String(localized: "fps · laut Server") + grund
+        }
+        if let ziel = Bildtakt.angefordert {
+            let zielText = String(format: "%.0f", ziel)
+            return text + " " + String(localized: "fps → \(zielText) Hz") + grund
+        }
+        switch Bildtakt.stand {
+        case .bereit:       return text + " " + String(localized: "fps · ohne Wechsel") + grund
+        case .abgeschaltet: return text + " " + String(localized: "fps · Anpassung aus") + grund
+        case .unerreichbar: return text + " " + String(localized: "fps · Anzeige stumm") + grund
+        }
     }
 
     /// Eine Aussage, keine Auswahl — deshalb Fußzeile und keine Spalte.
@@ -273,6 +392,17 @@ struct Spielwerte {
 
     init?(_ roh: VLCMedia.Stats?) {
         guard let roh else { return nil }
+        // **Hat VLC die Struktur gar nicht gefuellt, kommt Speicherschrott.**
+        //
+        // `statistics` liefert sie auch dann, wenn das Medium noch keine hat;
+        // die Felder stehen dann auf dem, was zufaellig im Speicher lag. Eine
+        // Milliarde Bilder waeren bei 60 Hz ueber ein halbes Jahr am Stueck —
+        // was darueber liegt, ist keine Messung.
+        let grenze: UInt64 = 1_000_000_000
+        guard roh.displayedPictures < grenze, roh.lostPictures < grenze,
+              roh.latePictures < grenze, roh.decodedVideo < grenze,
+              roh.decodedAudio < grenze, roh.lostAudioBuffers < grenze
+        else { return nil }
         verworfen    = roh.lostPictures
         zuSpaet      = roh.latePictures
         gezeigt      = roh.displayedPictures
@@ -308,6 +438,8 @@ struct Wertfeld: View {
     let wert: String
     var warnung = false
 
+    @Environment(\.isFocused) private var fokus
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(titel)
@@ -322,7 +454,17 @@ struct Wertfeld: View {
         }
         .padding(.horizontal, 28)
         .frame(height: 130, alignment: .leading)
-        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
+        .background(fokus ? Stil.fokusflaeche : Stil.flaeche,
+                    in: RoundedRectangle(cornerRadius: Stil.ecke))
+        // **Fokussierbar, obwohl es keine Taste ist.**
+        //
+        // Auf dem Fernseher scrollt eine Reihe nur, wenn der Fokus in ihr
+        // wandern kann. Die Technikreihe ist inzwischen laenger als der
+        // Schirm, und ohne das kam man an die hinteren Felder nicht heran Ein
+        // fokussierbares Feld ohne Aktion ist harmlos; angetippt passiert
+        // nichts.
+        .focusable()
+        .animation(Stil.fokusAnimation, value: fokus)
         // Eine Zahl ist keine Taste — VoiceOver soll sie als Wertepaar
         // vorlesen, nicht als Bedienelement anbieten (E8).
         .accessibilityElement(children: .combine)

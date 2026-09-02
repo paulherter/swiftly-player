@@ -21,10 +21,29 @@ private struct AbspielSchluessel: EnvironmentKey {
     static let defaultValue: Binding<Abspielwunsch?> = .constant(nil)
 }
 
+/// **Eine offene Tafel muss auch die Kopfleiste stilllegen.**
+///
+/// Dieselbe Begruendung wie beim Abspielwunsch, nur eine Ebene kleiner. Eine
+/// Seite kann sich selbst abschalten, solange eine `Handlungstafel` offen
+/// steht — die Leiste ueber ihr gehoert ihr aber nicht. Auf den Detail- und
+/// Serienseiten fiel das nie auf: dort ist die Leiste ohnehin weg, weil sie
+/// im Stapel liegen. Auf Filme und Serien steht sie, und der Fokus stieg aus
+/// der offenen Tafel nach oben in die Bereichsknoepfe — Tafel offen, Fokus
+/// woanders.
+private struct TafelSchluessel: EnvironmentKey {
+    static let defaultValue: Binding<Bool> = .constant(false)
+}
+
 extension EnvironmentValues {
     var abspielwunsch: Binding<Abspielwunsch?> {
         get { self[AbspielSchluessel.self] }
         set { self[AbspielSchluessel.self] = newValue }
+    }
+
+    /// Setzt eine Seite das, nimmt die Kopfleiste keinen Fokus mehr an.
+    var tafelOffen: Binding<Bool> {
+        get { self[TafelSchluessel.self] }
+        set { self[TafelSchluessel.self] = newValue }
     }
 }
 
@@ -69,6 +88,7 @@ struct HauptView: View {
     /// Als eigener Zustand, in einem `onChange` gesetzt, laeuft der Wechsel in
     /// einer **neuen** Transaktion — und die darf animieren.
     @State private var leisteDa = true
+    @State private var tafelOffen = false
 
     // Die Leiste scrollt bewusst **nicht** mit weg.
     //
@@ -98,6 +118,7 @@ struct HauptView: View {
             }
         }
         .environment(\.abspielwunsch, $abspielen)
+        .environment(\.tafelOffen, $tafelOffen)
         .animation(.easeInOut(duration: 0.2), value: abspielen?.id)
         .task { await model.fernsteuerungStarten() }
         #if DEBUG
@@ -191,8 +212,9 @@ struct HauptView: View {
                 .zIndex(2)
                 .opacity(leisteDa ? 1 : 0)
                 // Ausgeblendet ist sie kein Ziel mehr: der Fokus soll nicht
-                // in etwas springen, das gerade verschwindet.
-                .disabled(!leisteDa)
+                // in etwas springen, das gerade verschwindet. Und bei offener
+                // Tafel ebenso wenig — siehe `tafelOffen`.
+                .disabled(!leisteDa || tafelOffen)
             }
         }
         // Der Wechsel laeuft hier, in einer eigenen Transaktion — der Pfad
@@ -261,7 +283,10 @@ struct HauptView: View {
     }
     #endif
 
-    @ViewBuilder
+    // Kein `@ViewBuilder`: die Funktion rechnet erst die Bindung aus und
+    // gibt dann **eine** Ansicht zurueck. Mit Baumeister davor warnt Swift,
+    // dass das ausdrueckliche `return` ihn ausser Kraft setzt — er hat hier
+    // nichts zu tun.
     private func stapel(_ b: Bereich) -> some View {
         // **Kein Ueberblenden beim Seitenwechsel — an der Bindung.**
         //

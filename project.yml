@@ -124,6 +124,15 @@ targets:
     # unabhängig ist — Zustandshalter, Keychain, Marken, Routen, Farben.
     # Die Ansichten hat jede Plattform für sich.
     sources:
+      # **Ein Manifest fuer alle Plattformen.**
+      #
+      # Es lag unter `Sources/iOS` und wurde dort nur mitgenommen, weil das
+      # ganze Verzeichnis eingesammelt wird. tvOS und macOS picken aus
+      # `Shared` einzeln und hatten deshalb gar keins — Apple schickt dafuer
+      # die ITMS-91053-Meldung. Die Angaben sind auf allen dreien dieselben,
+      # also gibt es sie einmal.
+      - path: Sources/Shared/PrivacyInfo.xcprivacy
+        buildPhase: resources
       - path: Sources/Shared/AppModel.swift
       - path: Sources/Shared/Anmeldemodell.swift
       - path: Sources/Shared/Abspielwunsch.swift
@@ -171,10 +180,23 @@ targets:
       - package: Lottie
       # Der Top Shelf ist ein eigenes Ziel und wird mit eingebettet.
       - target: Swiftly-TopShelf
-      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im
-      # XCFramework nachgesehen). Bild-im-Bild gibt es hier nicht, der
-      # Abspieler schon — und mit ihm der `mkv_trusted`-Kniff.
-      - framework: Vendor/VLCKit.xcframework
+      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im XCFramework
+      # nachgesehen). Bild-im-Bild gibt es hier nicht, der Abspieler schon —
+      # und mit ihm der `mkv_trusted`-Kniff. **VERSUCH: selbst gebaute Fassung
+      # mit einem Patch am mkv-Sucher.**
+      #
+      # VLC 4 koppelt `index_range` an `b_fastseekable`, und das ist über HTTP
+      # nie wahr. Damit hat eine Matroska, deren Cues sich nicht auswerten
+      # lassen, gar keinen Weg mehr, nach vorn zu springen: jeder Sprung landet
+      # am Dateianfang und der Demuxer liest sich vorwärts durch — bei VLC 3
+      # ruft dieselbe Zeile ohne diesen Vorbehalt, und genau deshalb springt
+      # Swiftfin in derselben Datei sofort.
+      #
+      # Gebaut aus VLCKit 4.0.0-a23, also unserer Fassung, plus dem einen
+      # Patch. Quelle und Bauskript liegen unter /Users/paul/VLC-Bau.
+      #
+      # Zurück auf `VLCKit.xcframework`, falls es sich nicht bewährt.
+      - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
         codeSign: true
     info:
@@ -182,6 +204,13 @@ targets:
       properties:
         CFBundleDisplayName: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
+        # **Ohne das faellt die App auf 1 zurueck, der Top Shelf steht auf 2.**
+        # Xcode warnt beim Bauen, App Store Connect weist den Upload ab: die
+        # Buildnummer einer Erweiterung muss die ihrer App sein.
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Dieselbe Begruendung wie auf iOS: die App verschluesselt nichts
+        # selbst, sie nutzt HTTPS ueber die Systemschnittstellen.
+        ITSAppUsesNonExemptEncryption: false
         # Gehört **hierher**, nicht in die Info.plist: die wird von XcodeGen
         # aus diesen Angaben erzeugt und bei jedem Lauf überschrieben. Ein
         # Eintrag von Hand hält genau bis zum nächsten `xcodegen generate` —
@@ -244,6 +273,8 @@ targets:
     type: application
     platform: macOS
     sources:
+      - path: Sources/Shared/PrivacyInfo.xcprivacy
+        buildPhase: resources
       - path: Sources/Shared/AppModel.swift
       - path: Sources/Shared/Anmeldemodell.swift
       - path: Sources/Shared/Abspielwunsch.swift

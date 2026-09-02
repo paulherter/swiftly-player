@@ -352,13 +352,46 @@ public enum DeliveryMethod: String, Sendable, Equatable {
     }
 }
 
+/// **Eine Zahl, die die Antwort nicht umwerfen kann.**
+///
+/// Ein `Double?` mit erzeugtem Decoder wirft, sobald an der Stelle etwas
+/// anderes steht als eine Zahl — und ein Wurf beim Auspacken nimmt nicht das
+/// Feld mit, sondern **die ganze Antwort**. Eine Angabe, die nur zur Zierde
+/// gebraucht wird, darf niemals ueber die Wiedergabe entscheiden.
+///
+/// Genau das steht hier auf dem Spiel: `RealFrameRate` ist im Datenblatt eine
+/// Fliesskommazahl, aber Jellyfin schreibt Zahlenfelder je nach Quelle auch
+/// als Zeichenkette oder gar nicht. Ein Titel, dessen Angabe abweicht, waere
+/// sonst gar nicht abspielbar — und niemand kaeme darauf, dass es an der
+/// Bildrate liegt.
+public struct Zahlwert: Codable, Sendable, Equatable {
+    public let wert: Double?
+
+    public init(_ wert: Double?) { self.wert = wert }
+
+    public init(from decoder: Decoder) throws {
+        let raum = try decoder.singleValueContainer()
+        if let zahl = try? raum.decode(Double.self) { wert = zahl }
+        else if let text = try? raum.decode(String.self) { wert = Double(text) }
+        else { wert = nil }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var raum = encoder.singleValueContainer()
+        if let wert { try raum.encode(wert) } else { try raum.encodeNil() }
+    }
+}
+
 public struct MediaStream: Codable, Sendable, Equatable {
     public init(codec: String?, type: String?, language: String?, displayTitle: String?,
-                channels: Int?, isDefault: Bool?, index: Int?, height: Int?, width: Int?) {
+                channels: Int?, isDefault: Bool?, index: Int?, height: Int?, width: Int?,
+                realFrameRate: Double? = nil, averageFrameRate: Double? = nil) {
         self.codec = codec; self.type = type; self.language = language
         self.displayTitle = displayTitle; self.channels = channels
         self.isDefault = isDefault; self.index = index
         self.height = height; self.width = width
+        self.realFrameRateRoh = Zahlwert(realFrameRate)
+        self.averageFrameRateRoh = Zahlwert(averageFrameRate)
     }
 
     public let codec: String?
@@ -370,6 +403,43 @@ public struct MediaStream: Codable, Sendable, Equatable {
     public let index: Int?
     public let height: Int?
     public let width: Int?
+    /// Die Bildrate der Spur.
+    ///
+    /// **Wofuer.** Der Apple TV kann seinen Ausgang auf die Bildrate des
+    /// Films stellen; ohne das wird 23,976 in 60 Hz ungleichmaessig verteilt
+    /// und die Bewegung ruckelt, obwohl kein Bild fehlt. Gemessen: butterweich
+    /// mit Anpassung, ruckelig ohne — bei 4 zu spaeten Bildern auf 4888.
+    ///
+    /// **Warum sie hier steht und nicht beim Abspieler.** VLC kennt sie erst,
+    /// wenn der Strom offen ist. Der Umschaltvorgang kostet den Fernseher
+    /// aber ein paar Sekunden Schwarzbild, und die soll hinter dem Ladeschirm
+    /// liegen, nicht dahinter herausragen. Der Server weiss es vorher.
+    ///
+    /// `RealFrameRate` ist der genaue Wert, `AverageFrameRate` der gemittelte
+    /// — bei variabler Bildrate weichen sie voneinander ab.
+    private let realFrameRateRoh: Zahlwert?
+    private let averageFrameRateRoh: Zahlwert?
+
+    public var realFrameRate: Double? { realFrameRateRoh?.wert }
+    public var averageFrameRate: Double? { averageFrameRateRoh?.wert }
+
+    /// Die verlaesslichere der beiden — oder `nil`, wenn ihr nicht zu trauen
+    /// ist.
+    ///
+    /// **Weichen die beiden deutlich voneinander ab, ist die Bildrate
+    /// schwankend.** Dann gibt es keine Rate, auf die sich ein Ausgang stellen
+    /// liesse: welche man auch nimmt, es passt nur zeitweise. Umzuschalten
+    /// waere dann ein Schwarzbild fuer nichts, und deshalb sagt diese
+    /// Auskunft in dem Fall lieber gar nichts.
+    public var bildrate: Double? {
+        let plausibel = { (wert: Double?) -> Double? in
+            guard let wert, wert > 1, wert < 250 else { return nil }
+            return wert
+        }
+        guard let echt = plausibel(realFrameRate) else { return plausibel(averageFrameRate) }
+        if let mittel = plausibel(averageFrameRate), abs(echt - mittel) > 0.5 { return nil }
+        return echt
+    }
 
     enum CodingKeys: String, CodingKey {
         case height = "Height"
@@ -381,6 +451,8 @@ public struct MediaStream: Codable, Sendable, Equatable {
         case channels = "Channels"
         case isDefault = "IsDefault"
         case index = "Index"
+        case realFrameRateRoh = "RealFrameRate"
+        case averageFrameRateRoh = "AverageFrameRate"
     }
 
     /// Kurze, lesbare Bezeichnung — „Deutsch · DTS-HD MA 5.1".
