@@ -86,6 +86,10 @@ struct PlayerScreen: View {
     /// `fullScreenCover` und hängt nicht unter `HauptView`, dessen
     /// Sicherheitsabstand ihn deshalb nicht erreicht. Genau daran ist die
     /// erste Fassung vorbeigegangen.
+    /// Selbst gerechnet und nicht aus der Umgebung gelesen: der Player ist
+    /// ein `fullScreenCover` und haengt ausserhalb der Ansicht, die den Wert
+    /// setzt. Ob die Umgebung dorthin durchreicht, will ich nicht annehmen —
+    /// angenommen hatte ich hier schon zweimal genug.
     private var imFenster: Bool {
         Fensterknoepfe.imFenster(fensterbreite: fensterbreite)
     }

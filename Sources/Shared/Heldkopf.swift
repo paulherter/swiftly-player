@@ -82,7 +82,23 @@ struct Heldkopf<Inhalt: View>: View {
     private var hintergrund: some View {
         ZStack {
             Stil.grund
-            Bild(url: bild, ecke: 0)
+            // Bewusst nicht `Bild`: das ist ein Kachelbild — es misst sich an
+            // einer Breite, rundet Ecken und schneidet zu. Das Heldbild soll
+            // die Fläche randlos füllen und hat kein Seitenverhältnis, an das
+            // es sich halten könnte.
+            //
+            // Mit `Bild` sah man es: seit dort ein Seitenverhältnis eingebaut
+            // ist, steht bei `verhaeltnis == nil` ein
+            // `aspectRatio(nil, contentMode: .fit)` auf einem `Color.clear` —
+            // das hat keine eigene Größe. Das Bild rutschte nach links und
+            // brach hart ab, im schmalen Fenster verschwand es ganz.
+            AsyncImage(url: bild) { stand in
+                if case let .success(b) = stand {
+                    b.resizable().aspectRatio(contentMode: .fill)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             // Von links, damit die Schrift steht.
             LinearGradient(stops: [
                 .init(color: Stil.grund.opacity(0.96), location: 0),
@@ -277,9 +293,19 @@ enum Fensterknoepfe {
     /// ohnehin halten, schiebt den Knopf darunter.
     static let hoehe: CGFloat = 32
 
-    /// Die App teilt sich den Schirm — geteilter Bildschirm, Slide Over,
-    /// Stage Manager. Erkannt an der Breite: „teilt sich den Schirm" heißt
-    /// genau, dass das Fenster schmaler ist als der Schirm.
+    /// Die App liegt in einem Fenster statt im Vollbild.
+    ///
+    /// **Am Gerät gemessen, nicht hergeleitet.** Zwei Annahmen waren vorher
+    /// falsch, und beide klangen plausibel:
+    ///
+    /// - „Ein Fenster hat keine Statusleiste, also keinen oberen sicheren
+    ///   Bereich." Falsch. Gemessen sind es in **beiden** Fällen 32 Punkt —
+    ///   der sichere Bereich unterscheidet gar nichts.
+    /// - „Ein Fenster meldet seinen eigenen Schirm." Ebenfalls falsch.
+    ///   `screen.bounds.width` meldet 1180, während das Fenster 375 misst.
+    ///
+    /// Der Breitenvergleich stimmt also. Was nicht stimmte, war die Annahme,
+    /// ein Sicherheitsabstand am Rahmen erreiche alle — siehe `hoehe`.
     @MainActor
     static func imFenster(fensterbreite: CGFloat) -> Bool {
         guard Stil.amPad, fensterbreite > 0 else { return false }

@@ -16,6 +16,7 @@ struct RootView: View {
     /// ob eine Knopfreihe nebeneinander passt.
     @State private var fensterbreite: CGFloat = 0
 
+
     /// Die App teilt sich den Schirm — dann liegt iPadOS' Ampel auf unserer
     /// oberen linken Ecke. Siehe `Fensterknoepfe`.
     private var imFenster: Bool {

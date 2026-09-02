@@ -39,6 +39,10 @@ struct PlayerSettingsSheet: View {
 
     /// Auch dieser Kopf sitzt oben links, und auch er liegt im Fenster
     /// unter der Ampel. Er steht im Player und erbt dessen Lage.
+    /// Selbst gerechnet und nicht aus der Umgebung gelesen: der Player ist
+    /// ein `fullScreenCover` und haengt ausserhalb der Ansicht, die den Wert
+    /// setzt. Ob die Umgebung dorthin durchreicht, will ich nicht annehmen —
+    /// angenommen hatte ich hier schon zweimal genug.
     private var imFenster: Bool {
         Fensterknoepfe.imFenster(fensterbreite: breite)
     }
