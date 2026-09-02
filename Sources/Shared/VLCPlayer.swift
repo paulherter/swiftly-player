@@ -509,10 +509,12 @@ final class VLCPlayerView: Basisansicht {
         // begann von vorn. Sie hat den Haenger nicht behoben, sondern
         // verewigt, und zwar so lange, bis jemand den Player verlaesst.
         //
-        // Eine Minute Ruhe nach jedem Sprungbefehl: der langsame Weg braucht
-        // sie, und ein echter Abriss meldet sich ohnehin ueber den Zustand
-        // (`zustandGewechselt`), nicht nur ueber die stehende Zeit.
-        if offenesZiel != nil || Date().timeIntervalSince(letzterSprungbefehl) < 60 {
+        // Zwanzig Sekunden Ruhe nach jedem Sprungbefehl. Das war eine
+        // Minute, solange ein Sprung in einer Datei mit kaputtem Index
+        // beliebig lange dauern konnte; seit dem VLC-Patch sitzt er in
+        // Millisekunden. Kuerzer ist besser: solange die Frist laeuft, ist
+        // die Absicherung gegen echte Abrisse ausgesetzt.
+        if offenesZiel != nil || Date().timeIntervalSince(letzterSprungbefehl) < 20 {
             Protokoll.schreib("[Netz] Bild steht seit \(Int(dauer)) s, Sprung noch unterwegs → abwarten")
             return
         }
@@ -776,29 +778,6 @@ final class VLCPlayerView: Basisansicht {
         // Bereichs-Scan der Matroska unerreichbar. Zurueck auf 16 MiB.
         medium.addOption(":prefetch-buffer-size=16384")
 
-        // **Und der Grund, warum ein kaputter Index bisher toedlich war.**
-        //
-        // Kann VLC die Sprungpunkte einer Matroska nicht lesen, hat es in
-        // Fassung 4 noch einen zweiten Weg: `index_range()` liest einen
-        // begrenzten Bereich der Datei und traegt die Cluster ein, die es
-        // dabei findet. Der haengt an `b_fastseekable`
-        // (matroska_segment_seeker.cpp:321) — und genau das meldet der
-        // prefetch-Filter nie (prefetch.c:355). Der Filter, den wir selbst
-        // in die Kette setzen, schaltet also den einzigen Ersatzweg ab.
-        //
-        // Steht so seit Langem in unserem eigenen Kommentar zu
-        // `mkv_trusted`. Gelesen, aufgeschrieben — und nie als Stellschraube
-        // begriffen.
-        //
-        // Gemessen an einer Folge, deren Cues am `EBMLCrc32` scheitern: jeder
-        // Sprung nach vorn las ab Dateianfang, jeder nach hinten sass sofort,
-        // weil dort schon gelesen war. Genau das Muster, das ein fehlender
-        // Bereichs-Scan erzeugt.
-        //
-        // `input-fast-seek` dazu: bei einem Sprung zaehlt Ankommen mehr als
-        // die exakte Sekunde. Getroffen wird der naechste Cluster, und das
-        // sind Bruchteile einer Sekunde Unterschied.
-        medium.addOption(":input-fast-seek")
 
         // **Die Entscheidung muss ablesbar sein.**
         //
