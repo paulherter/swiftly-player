@@ -71,9 +71,21 @@ struct HauptView: View {
                 Stil.grund
                 inhalt
             }
-            // Der ruhende Elternteil: hier steht die Anweisung, die den
-            // Tausch darin führt.
-            .animation(Stil.zeitSeite, value: bereich)
+            // **Der Leistenwechsel wird nicht überblendet.**
+            //
+            // Hier stand `.animation(Stil.zeitSeite, value: bereich)`. Eine
+            // Anweisung mit `value:` gilt für **alles**, was sich in diesem
+            // Durchgang im Unterbau ändert — nicht nur für den Tausch der
+            // Wurzel. Beim Wechsel der Leiste ändert sich aber noch mehr:
+            // Seiten des alten Bereichs verschwinden, Versatz und Schleier
+            // fallen auf den Stand des neuen. All das wurde dadurch bewegt,
+            // und was man sah, war ein Seitenschub samt Schattenkante, wo
+            // nichts hätte fahren sollen.
+            //
+            // Auf dem Mac ist die Blende ohnehin fehl am Platz: eine
+            // Seitenleiste schaltet dort sofort um — Finder, Mail,
+            // Systemeinstellungen. Die Blende war aus der iPhone-Fassung
+            // mitgenommen, wo der Wechsel unten in der Leiste sitzt.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // **Der Sicherheitsrand der Titelleiste fällt hier weg, nicht auf
             // jeder Seite einzeln.**
@@ -170,7 +182,6 @@ struct HauptView: View {
                             .allowsHitTesting(false)
                     }
                     .id(bereich)
-                    .transition(.opacity)
                     // **Die Wurzel liegt ausdrücklich unten.** Ohne feste
                     // Ebenen fuhr die Seite unter den Kacheln der Startseite
                     // herein, und das sah aus wie Durchsichtigkeit.
@@ -257,7 +268,6 @@ struct HauptView: View {
                                                 removal: .move(edge: .trailing)))
                 }
                 .id(bereich)
-                .transition(.opacity)
                 .zIndex(1)
                 }
             }
