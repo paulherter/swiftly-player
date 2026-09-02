@@ -82,13 +82,19 @@ extension Stil {
 
     static func rand(breit: Bool) -> CGFloat { breit ? randSeiteBreit : randAbstand }
 
-    /// Wo die Haarlinie zwischen zwei Zeilen beginnt: hinter dem Symbol,
-    /// bündig mit dem Text.
+    /// Wo die Haarlinie zwischen zwei Zeilen beginnt: hinter dem Symbol.
     ///
     /// Die 52 auf dem iPhone sind nicht frei gewählt, sondern Rand 18 plus
     /// Symbol 20 plus Abstand 14. Mit dem breiten Rand werden daraus 62 —
     /// wer nur den Rand ändert und diese Zahl stehen lässt, bekommt Linien,
-    /// die neben dem Text anfangen.
+    /// die gegenüber dem Text verrutschen.
+    ///
+    /// **Nicht bündig mit dem Text, und das ist keine Nachlässigkeit,
+    /// sondern eine Messung.** `Trennlinie` bringt selbst noch
+    /// `.padding(.leading, randAbstand)` mit; die Linie beginnt deshalb
+    /// weitere 18 Punkt weiter rechts als der Text. Auf dem iPhone ist das
+    /// seit jeher so. Diese Formel gibt genau dasselbe Verhältnis auch auf
+    /// dem iPad — am Simulator nachgemessen: Text bei 167, Linie bei 184.
     static func trennEinzug(breit: Bool) -> CGFloat { rand(breit: breit) + 34 }
 
     /// Kachelmaße der Reihen auf der Startseite.
@@ -138,6 +144,14 @@ extension Stil {
 
     /// Ob das Gerät ein iPad ist — unabhängig davon, wie breit das Fenster
     /// gerade ist.
+    ///
+    /// `@MainActor`, und das ist nicht Zierde: `UIDevice.current` gehört dem
+    /// Hauptakteur. Ohne die Angabe stand hier eine nicht isolierte
+    /// Eigenschaft, die auf Zustand des Hauptakteurs zugreift — dieselbe
+    /// Klasse Fehler wie in der Wiedergabezentrale, nur andersherum. Der
+    /// Übersetzer hat sie hier gemeldet, weil ich nichts zugesichert hatte,
+    /// was er hätte glauben können.
+    @MainActor
     static var amPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     // MARK: Schrift — iPhone
