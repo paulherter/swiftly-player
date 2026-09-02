@@ -360,10 +360,7 @@ struct Bild<Platzhalter: View>: View {
     @ViewBuilder var platzhalter: () -> Platzhalter
 
     var body: some View {
-        Color.clear
-            .frame(width: breite, height: hoehe)
-            .frame(maxWidth: breite == nil ? .infinity : nil)
-            .aspectRatio(verhaeltnis, contentMode: .fit)
+        rahmen
             .overlay {
                 AsyncImage(url: url) { phase in
                     if case let .success(bild) = phase {
@@ -380,6 +377,35 @@ struct Bild<Platzhalter: View>: View {
             }
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: ecke))
+    }
+
+    /// Die Flaeche, an der sich alles misst.
+    private var flaeche: some View {
+        Color.clear
+            .frame(width: breite, height: hoehe)
+            .frame(maxWidth: breite == nil ? .infinity : nil)
+    }
+
+    /// **`aspectRatio` nur, wenn es ein Verhaeltnis gibt.**
+    ///
+    /// `aspectRatio(nil, contentMode: .fit)` heisst nicht „lass es bleiben",
+    /// sondern „nimm das Verhaeltnis des Inhalts" — und der Inhalt ist hier
+    /// ein `Color.clear`, das keins hat. Wo eine Breite gesetzt ist, faellt
+    /// das nicht auf: die Flaeche steht dann ohnehin fest. Wo nur eine Hoehe
+    /// gesetzt ist, bleibt nichts uebrig, woran die Breite haengt — die
+    /// Flaeche fiel auf einen Streifen am linken Rand zusammen.
+    ///
+    /// Genau so kam `Heldbild` daher (Hoehe ja, Breite nein, Verhaeltnis
+    /// nein), und damit das Bild oben auf jeder Detailseite im schmalen
+    /// Aufbau. Das Verhaeltnis kam nachtraeglich aus main dazu, fuer das
+    /// Plakatraster; die Aufrufer ohne eines waren nicht mitgedacht.
+    @ViewBuilder
+    private var rahmen: some View {
+        if let verhaeltnis {
+            flaeche.aspectRatio(verhaeltnis, contentMode: .fit)
+        } else {
+            flaeche
+        }
     }
 }
 
