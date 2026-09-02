@@ -14,6 +14,9 @@ struct HomeView: View {
     /// Doppelte Ausloesung sperren, waehrend der Plan geholt wird.
     @State private var bereitet = false
     @FocusState private var amTitel: Kachelmarke?
+    /// Die letzte Kachel, auf der der Fokus wirklich stand. Ueberdauert den
+    /// Ausflug auf eine Detailseite — siehe `aktuell`.
+    @State private var zuletztAmTitel: Kachelmarke?
     /// Der Titel, dessen Bild gerade steht — nachgezogen, nicht sofort.
     @State private var imBild: Item?
     @State private var bildwechsel: Task<Void, Never>?
@@ -28,7 +31,7 @@ struct HomeView: View {
     var body: some View {
         ZStack {
             if !stand.geladen {
-                Lader()
+                Lader.fern
             } else if stand.gestoert {
                 Leerzustand(symbol: "wifi.exclamationmark",
                             titel: "Der Server antwortet nicht",
@@ -53,9 +56,29 @@ struct HomeView: View {
     /// ihn selbst, bevor irgendein `onAppear` laeuft —, blieb die Auskunft
     /// auf dem alten Titel stehen: oben „Folge 4", markiert war „The
     /// Mentalist". Abgeleitet kann sie das nicht.
+    /// **Der Rueckfall ist die zuletzt fokussierte Kachel, nicht die erste.**
+    ///
+    /// `amTitel` wird `nil`, sobald der Fokus die Seite verlaesst — und das
+    /// tut er bei jedem Oeffnen einer Detailseite. Bis hierher stand dann
+    /// wieder `ersterTitel` da: wer vom vierten Film zurueckkam, sah kurz
+    /// den ersten und erst nach dem Zurueckgeben des Fokus wieder seinen.
+    ///
+    /// Der Rueckfall muss zwischen zwei Faellen unterscheiden, die beide
+    /// `nil` sind: **noch nie fokussiert** — dann ist der erste Titel
+    /// richtig — und **gerade woanders**, dann gilt der letzte Stand weiter.
     private var aktuell: Item? {
         if let amTitel, let t = alleTitel.first(where: { $0.id == amTitel.titel }) { return t }
+        if let zuletztAmTitel,
+           let t = alleTitel.first(where: { $0.id == zuletztAmTitel.titel }) { return t }
         return ersterTitel
+    }
+
+    /// Die Kulisse, die gerade steht — dieselbe Adresse wie auf der
+    /// Detailseite (`breite: 1600`), damit Bild und Ton dort schon im
+    /// Zwischenspeicher liegen.
+    private var kulissenURL: URL? {
+        guard let t = imBild else { return nil }
+        return model.querbildURL(for: t, breite: 1600) ?? model.backdropURL(for: t)
     }
 
     private var alleTitel: [Item] {
@@ -150,6 +173,12 @@ struct HomeView: View {
         // setzt den sicheren Bereich fuer seinen Inhalt neu. Gemessen, nicht
         // vermutet — die Wortmarke rueckte, der Inhalt darunter nicht.
         .ignoresSafeArea()
+        // **Derselbe gefaerbte Grund wie auf den Detailseiten.**
+        //
+        // Er haengt am **entprellten** Bild, nicht am Fokus: sonst rechnete
+        // beim Durchhalten der Fernbedienung jeder Zwischenschritt einen
+        // eigenen Ton.
+        .bildgrund(url: kulissenURL)
         // Nur das Bild braucht noch einen Zustand — es wird entprellt.
         .onChange(of: aktuell?.id) { _, _ in
             if let t = aktuell { bildwechseln(zu: t) }
@@ -181,6 +210,11 @@ struct HomeView: View {
         // „Weiterschauen" ist 448 breit, die Plakatreihen 208; Querkachel 1
         // ueberlappt Plakat 1 **und** 2. Eine gemeinsame Spalte gibt es gar
         // nicht. Also den Systemzug laufen lassen und danach zurechtruecken.
+        // Merken, solange der Fokus da ist. `nil` wird bewusst **nicht**
+        // uebernommen — das ist der ganze Zweck.
+        .onChange(of: amTitel) { _, jetzt in
+            if let jetzt { zuletztAmTitel = jetzt }
+        }
         .onChange(of: amTitel) { vorher, jetzt in
             guard let jetzt, let vorher, vorher.reihe != jetzt.reihe else { return }
             if let ziel = vordersteMarke(jetzt.reihe), ziel != jetzt { amTitel = ziel }
@@ -255,9 +289,20 @@ struct HomeView: View {
         // Nachgereicht ging es nicht: `erstenZeigen` setzte nur, solange der
         // Fokus nirgends stand, und tvOS ist schneller als jedes `onAppear`.
         // Genau die Form, vor der CLAUDE.md warnt — gesetzt, aber die
-        // anwendende Stelle laeuft ins Leere. `userInitiated` sticht dabei
-        // die Wahl des Systems; `automatic` waere nur ein Vorschlag.
-        .defaultFocus($amTitel, startMarke, priority: .userInitiated)
+        // anwendende Stelle laeuft ins Leere. `userInitiated` sticht dabei die
+        // Wahl des Systems; `automatic` waere nur ein Vorschlag. **Zurueck
+        // heisst dorthin, wo man war — nicht nach oben.**
+        //
+        // Der Vorgabefokus zeigte auf `startMarke`, also auf die erste Kachel
+        // der ersten Reihe. tvOS wendet ihn nicht nur beim ersten Mal an,
+        // sondern jedes Mal, wenn die Seite wieder erscheint: nach dem
+        // Zurueckgehen sprang der Fokus damit nach oben, und die Scrollflaeche
+        // fuhr hinterher.
+        //
+        // `zuletztAmTitel` haelt fest, wo der Fokus wirklich stand — es gibt
+        // ihn schon, weil die Auskunft oben denselben Rueckfall braucht. Beim
+        // ersten Oeffnen ist es leer, dann gilt weiter `startMarke`.
+        .defaultFocus($amTitel, zuletztAmTitel ?? startMarke, priority: .userInitiated)
         // **Hier wird beschnitten, und das ist Absicht.** Die Vergroesserung
         // der Kachel faengt der Streifen mit `reihenLuft` in seinen eigenen
         // Grenzen ab; die senkrechte Flaeche darf deshalb schneiden — und nur
@@ -281,13 +326,17 @@ struct HomeView: View {
     /// erste Reihe zeichnet ohnehin darueber, sie ist das naechste Geschwister.
     private var heldenzone: some View {
         ZStack(alignment: .topLeading) {
-            Stil.grund
+            // Kein `Stil.grund` mehr: der Grund der Seite ist der gefaerbte
+            // Verlauf (siehe `bildgrund`), und eine undurchsichtige Flaeche
+            // davor haette ihn genau in der Kopfzone verdeckt.
             querbild
                 .frame(maxWidth: .infinity, alignment: .trailing)
-            // Der Kopfverlauf gehoert **unter** die Schrift. Liegt er
-            // darueber, faerbt er den Titel grau — der Entwurf setzt den
-            // Textblock ausdruecklich mit `z-index: 1` darueber.
-            Kopfverlauf(ausklang: 460, weich: true)
+            // Nur noch ein leiser Schatten unter der Leiste, kein langer
+            // Kopfverlauf mehr: die Leiste soll lesbar bleiben, ohne dass
+            // die Seite dadurch anders aussieht als eine Detailseite. Er
+            // liegt **unter** der Schrift — darueber faerbte er den Titel
+            // grau, das war der alte Fehler an dieser Stelle.
+            Kopfschatten()
             auskunft
                 .padding(.leading, Stil.randSeite)
                 .padding(.top, 196)
@@ -336,122 +385,55 @@ struct HomeView: View {
 
     /// Das Querbild rechts, 1180 breit.
     ///
-    /// **Die Verlaeufe liegen darueber, sie maskieren nicht.** Eine Maske
-    /// senkt die Deckkraft der ganzen Ebene, den Fokusring eingeschlossen —
-    /// das sieht wie ein Fehler aus, nicht wie ein Verlauf.
+    /// Die Blende ist dieselbe wie auf der Detailseite (`Kulissenblende`) —
+    /// das ist Bedingung dafuer, dass beim Oeffnen nichts sichtbar wechselt.
     @ViewBuilder
     private var querbild: some View {
+        // **Derselbe Baustein wie auf der Detailseite, nicht nur dieselben
+        // Masse.**
+        //
+        // Hier stand eine zweite Fassung: eigenes `AsyncImage`, eigener
+        // Rahmen, eigene Blende, eigenes `padding`. Sie sah gleich aus — und
+        // war es nicht. Beim Oeffnen einer Detailseite blendete SwiftUI die
+        // eine in die andere, und was dabei nicht deckungsgleich war, sah man
+        // als Zucken.
+        //
+        // Dass es **beim Hingehen stark und beim Zurueckgehen kaum** auffiel,
+        // war der Hinweis: zurueck steht die Startseite laengst da und baut
+        // nichts neu auf. Der Unterschied entsteht auf der Seite, die
+        // entsteht.
+        //
+        // `id` und Ueberblendung bleiben aussen — die gehoeren der
+        // Startseite, wo der Fokus von Titel zu Titel wandert. Die
+        // Detailseite hat das nicht, und braucht es nicht.
         ZStack {
             if let t = imBild {
-                AsyncImage(url: model.querbildURL(for: t, breite: 1600)
-                                ?? model.backdropURL(for: t)) { phase in
-                    if case let .success(bild) = phase {
-                        bild.resizable().aspectRatio(contentMode: .fill)
-                    }
-                }
-                .id(t.id)
-                .transition(.opacity)
+                Kulisse(url: model.querbildURL(for: t, breite: 1600)
+                             ?? model.backdropURL(for: t))
+                    .id(t.id)
+                    .transition(.opacity)
             }
         }
-        .frame(width: 1180, height: 700)
-        .clipped()
-        .overlay {
-            LinearGradient(stops: [
-                .init(color: Stil.grund, location: 0),
-                .init(color: Stil.grund.opacity(0.78), location: 0.26),
-                .init(color: Stil.grund.opacity(0.16), location: 0.62),
-                .init(color: Stil.grund.opacity(0), location: 1),
-            ], startPoint: .leading, endPoint: .trailing)
-        }
-        .overlay(alignment: .bottom) {
-            LinearGradient(stops: [
-                .init(color: Stil.grund.opacity(0), location: 0),
-                .init(color: Stil.grund.opacity(0.75), location: 0.55),
-                .init(color: Stil.grund, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            .frame(height: 320)
-        }
         .animation(.easeInOut(duration: 0.3), value: imBild?.id)
-        // Bis an die Bildkante, ohne den Text mitzunehmen.
-        .padding(.trailing, -Stil.randSeite)
-        .allowsHitTesting(false)
     }
 
     /// Titel, Angaben und Beschreibung zum Titel unter dem Fokus.
     @ViewBuilder
     private var auskunft: some View {
-        if let t = aktuell {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(t.type == "Episode" ? (t.seriesName ?? t.name) : t.name)
-                    .font(.system(size: 60, weight: .bold))
-                    .tracking(-1.4)
-                    .lineSpacing(8)
-                    .foregroundStyle(Stil.schrift)
-                    .lineLimit(2)
-
-                // Nur Folgen tragen zwei Titel.
-                if t.type == "Episode" {
-                    Text(t.name)
-                        .font(.system(size: 38, weight: .semibold))
-                        .tracking(-0.3)
-                        .foregroundStyle(Stil.schrift.opacity(0.78))
-                        .lineLimit(1)
-                        .padding(.top, 10)
-                }
-
-                HStack(spacing: 24) {
-                    Text(angabenzeile(t))
-                        .font(.system(size: 29))
-                        .foregroundStyle(Stil.schrift.opacity(0.62))
-                        .lineLimit(1)
-
-                    Belegzeile(direktplay: false, hinweis: nil,
-                               bewertung: t.communityRating,
-                               freigabe: t.officialRating)
-
-                    plakette(t)
-                }
-                .padding(.top, 18)
-
-                if let text = t.overview, !text.isEmpty {
-                    Text(text)
-                        .font(.system(size: 29))
-                        .lineSpacing(11)
-                        .foregroundStyle(Stil.schrift.opacity(0.62))
-                        // Bei Folgen zwei Zeilen: der Folgentitel kommt
-                        // zusaetzlich, sonst laeuft der Block ueber die 560.
-                        .lineLimit(t.type == "Episode" ? 2 : 3)
-                        .padding(.top, 22)
+        Group {
+            if let t = aktuell {
+                // **Derselbe Baustein wie auf der Detailseite.** Vorher stand
+                // der Aufbau hier ein zweites Mal, und die beiden waren schon
+                // auseinander: dort Genres, hier die Restzeit. Siehe
+                // `Kopfauskunft`.
+                Kopfauskunft(item: t,
+                             zweitzeile: t.type == "Episode" ? t.name : nil) {
+                    Restzeitmarke(item: t)
                 }
             }
-            .frame(width: 1000, alignment: .leading)
         }
     }
 
-    /// „Gesehen" mit Haken, oder „Noch 50 Minuten" mit Uhr — oder nichts.
-    @ViewBuilder
-    private func plakette(_ t: Item) -> some View {
-        if let rest = t.restzeitText {
-            Label(rest, systemImage: "clock")
-                .font(.system(size: 27, weight: .medium))
-                .foregroundStyle(Stil.akzent)
-                .lineLimit(1)
-        } else if t.istGesehen {
-            Label("Gesehen", systemImage: "checkmark")
-                .font(.system(size: 27, weight: .medium))
-                .foregroundStyle(Stil.akzent)
-                .lineLimit(1)
-        }
-    }
-
-    /// Folgenkuerzel, Jahr, Laufzeit, Gattung — alles aus `Titelangaben`.
-    private func angabenzeile(_ t: Item) -> String {
-        var teile: [String] = []
-        if t.type == "Episode", let kuerzel = t.folgenkuerzel { teile.append(kuerzel) }
-        let rest = t.nebenzeile
-        if !rest.isEmpty { teile.append(rest) }
-        return teile.joined(separator: " · ")
-    }
 
     private func starte(_ item: Item) {
         guard !bereitet else { return }

@@ -32,7 +32,7 @@ settings:
     MARKETING_VERSION: "1.0.0"
     # Muss bei JEDEM Upload hochgezaehlt werden — Apple nimmt dieselbe
     # Buildnummer je Version kein zweites Mal an (Fehler 90189).
-    CURRENT_PROJECT_VERSION: "2"
+    CURRENT_PROJECT_VERSION: "3"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
     # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
@@ -57,7 +57,11 @@ targets:
       # der Grund für diese App. Lokal eingebunden statt über SwiftPM, weil
       # VideoLAN den Download auf ~40 KB/s drosselt.
       # Holen mit: Werkzeuge/vlckit-holen.sh
-      - framework: Vendor/VLCKit.xcframework
+      # **Selbst gebaute Fassung** — siehe Werkzeuge/vlckit-patches/README.md.
+      # VLC 4 kann in einer Matroska mit unvollstaendig lesbaren Cues ueber
+      # HTTP nicht vorwaerts springen; Patch 0028 stellt das Verhalten von
+      # VLC 3 wieder her. Gemessen auf tvOS und iOS an derselben Datei.
+      - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
         codeSign: true
     info:
@@ -124,6 +128,15 @@ targets:
     # unabhängig ist — Zustandshalter, Keychain, Marken, Routen, Farben.
     # Die Ansichten hat jede Plattform für sich.
     sources:
+      # **Ein Manifest fuer alle Plattformen.**
+      #
+      # Es lag unter `Sources/iOS` und wurde dort nur mitgenommen, weil das
+      # ganze Verzeichnis eingesammelt wird. tvOS und macOS picken aus
+      # `Shared` einzeln und hatten deshalb gar keins — Apple schickt dafuer
+      # die ITMS-91053-Meldung. Die Angaben sind auf allen dreien dieselben,
+      # also gibt es sie einmal.
+      - path: Sources/Shared/PrivacyInfo.xcprivacy
+        buildPhase: resources
       - path: Sources/Shared/AppModel.swift
       - path: Sources/Shared/Anmeldemodell.swift
       - path: Sources/Shared/Abspielwunsch.swift
@@ -142,6 +155,10 @@ targets:
       # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
       - path: Sources/Shared/Wiedergabewahlen.swift
       - path: Sources/Shared/Wiedergabewahlen.swift
+      # Reihentitel, Plakette, Lader, Profilzeichen — die Bausteine ohne
+      # Plattformmaße. Lagen dreimal da; die Maße gibt jetzt das Ziel als
+      # Parameter mit, siehe `Plakette.fern` und `Lader.fern` in Stil.swift.
+      - path: Sources/Shared/Bausteine.swift
       - path: Sources/Shared/QuickConnectModell.swift
       - path: Sources/Shared/Wiedergabezentrale.swift
       - path: Sources/Shared/Startseitenmodell.swift
@@ -167,10 +184,23 @@ targets:
       - package: Lottie
       # Der Top Shelf ist ein eigenes Ziel und wird mit eingebettet.
       - target: Swiftly-TopShelf
-      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im
-      # XCFramework nachgesehen). Bild-im-Bild gibt es hier nicht, der
-      # Abspieler schon — und mit ihm der `mkv_trusted`-Kniff.
-      - framework: Vendor/VLCKit.xcframework
+      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im XCFramework
+      # nachgesehen). Bild-im-Bild gibt es hier nicht, der Abspieler schon —
+      # und mit ihm der `mkv_trusted`-Kniff. **VERSUCH: selbst gebaute Fassung
+      # mit einem Patch am mkv-Sucher.**
+      #
+      # VLC 4 koppelt `index_range` an `b_fastseekable`, und das ist über HTTP
+      # nie wahr. Damit hat eine Matroska, deren Cues sich nicht auswerten
+      # lassen, gar keinen Weg mehr, nach vorn zu springen: jeder Sprung landet
+      # am Dateianfang und der Demuxer liest sich vorwärts durch — bei VLC 3
+      # ruft dieselbe Zeile ohne diesen Vorbehalt, und genau deshalb springt
+      # Swiftfin in derselben Datei sofort.
+      #
+      # Gebaut aus VLCKit 4.0.0-a23, also unserer Fassung, plus dem einen
+      # Patch. Quelle und Bauskript liegen unter /Users/paul/VLC-Bau.
+      #
+      # Zurück auf `VLCKit.xcframework`, falls es sich nicht bewährt.
+      - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
         codeSign: true
     info:
@@ -178,6 +208,13 @@ targets:
       properties:
         CFBundleDisplayName: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
+        # **Ohne das faellt die App auf 1 zurueck, der Top Shelf steht auf 2.**
+        # Xcode warnt beim Bauen, App Store Connect weist den Upload ab: die
+        # Buildnummer einer Erweiterung muss die ihrer App sein.
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Dieselbe Begruendung wie auf iOS: die App verschluesselt nichts
+        # selbst, sie nutzt HTTPS ueber die Systemschnittstellen.
+        ITSAppUsesNonExemptEncryption: false
         # Gehört **hierher**, nicht in die Info.plist: die wird von XcodeGen
         # aus diesen Angaben erzeugt und bei jedem Lauf überschrieben. Ein
         # Eintrag von Hand hält genau bis zum nächsten `xcodegen generate` —
@@ -240,6 +277,8 @@ targets:
     type: application
     platform: macOS
     sources:
+      - path: Sources/Shared/PrivacyInfo.xcprivacy
+        buildPhase: resources
       - path: Sources/Shared/AppModel.swift
       - path: Sources/Shared/Anmeldemodell.swift
       - path: Sources/Shared/Abspielwunsch.swift
@@ -278,7 +317,8 @@ targets:
       - path: Sources/macOS
     dependencies:
       - package: JellyfinKit
-      - framework: Vendor/VLCKit.xcframework
+      # Selbst gebaute Fassung — siehe Werkzeuge/vlckit-patches/README.md.
+      - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
         codeSign: true
     info:

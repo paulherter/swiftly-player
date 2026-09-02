@@ -87,7 +87,32 @@ struct Eingabefeld: View {
                 .lineLimit(1)
                 .padding(.horizontal, 30)
 
+            // **Unsichtbare Schrift, sichtbare Ansicht.**
+            //
+            // Das echte Feld liegt hinter der gestylten Beschriftung und war
+            // mit 2 Prozent Deckkraft „versteckt". Auf einem Fernseher sieht
+            // man das: weisse Schrift in Systemgroesse, blass unter dem
+            // eigenen Text
+            //
+            // Ganz auf null wollte es niemand setzen, vermutlich aus Sorge um
+            // den Fokus. Das ist auch nicht noetig: die Ansicht bleibt voll da
+            // und fokussierbar, nur ihre Schrift ist durchsichtig. Der
+            // sichtbare Text kommt ohnehin aus `beschriftung`. **Beides
+            // zusammen, nicht eins von beidem.**
+            //
+            // Das echte Feld liegt hinter der gestylten Beschriftung. Es war
+            // mit 2 Prozent Deckkraft versteckt — dabei blieb seine weisse
+            // Schrift in Systemgroesse als Schimmern sichtbar. Nur die Schrift
+            // durchsichtig zu machen und die Ebene voll zu lassen war die
+            // andere Haelfte des Fehlers: dann sieht man den Hintergrund, den
+            // tvOS dem Feld selbst gibt, als Pille im Feld.
+            //
+            // Also beides: die Ebene fast unsichtbar **und** die Schrift
+            // durchsichtig. Fokussierbar bleibt sie, und der sichtbare Text
+            // kommt ohnehin aus `beschriftung`.
             feld
+                .foregroundStyle(.clear)
+                .tint(.clear)
                 .opacity(0.02)
                 .padding(.horizontal, 30)
         }
@@ -158,7 +183,7 @@ struct ServerView: View {
                 .padding(.top, 36)
 
             if model.phase == .connecting {
-                Lader().padding(.top, 40)
+                Lader.fern.padding(.top, 40)
             } else if let fehler = model.errorMessage {
                 Text(fehler)
                     .font(Stil.koerper)
@@ -221,7 +246,7 @@ struct AnmeldeView: View {
                 .padding(.top, 36)
 
             if model.isWorking {
-                Lader().padding(.top, 40)
+                Lader.fern.padding(.top, 40)
             } else if let fehler = model.errorMessage {
                 Text(fehler)
                     .font(Stil.koerper)

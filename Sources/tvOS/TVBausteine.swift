@@ -23,14 +23,22 @@ import SwiftUI
 struct KnopfStil: ButtonStyle {
     /// Ohne Beschriftung, nur ein Symbol — dann quadratisch statt breit.
     var nurSymbol = false
+    /// **Niedriger, wo der Knopf nicht die Hauptsache ist.**
+    ///
+    /// Die Staffelpille steht neben einem Reihentitel, nicht in der Knopfreihe
+    /// des Kopfes. Mit den vollen 76 wirkte sie dort wuchtig Die Farben und
+    /// das Fokusverhalten bleiben trotzdem dieselben; genau die waren der
+    /// Grund, sie ueberhaupt auf diesen Stil zu ziehen.
+    var hoehe: CGFloat = Stil.knopfHoehe
 
     func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration, nurSymbol: nurSymbol)
+        Inhalt(configuration: configuration, nurSymbol: nurSymbol, hoehe: hoehe)
     }
 
     private struct Inhalt: View {
         let configuration: ButtonStyleConfiguration
         let nurSymbol: Bool
+        let hoehe: CGFloat
         @Environment(\.isFocused) private var fokus
         @Environment(\.isEnabled) private var freigegeben
 
@@ -41,8 +49,8 @@ struct KnopfStil: ButtonStyle {
                 // reißt die ganze Reihe schief. Lieber kurz beschriften.
                 .lineLimit(1)
                 .foregroundStyle(vordergrund)
-                .padding(.horizontal, nurSymbol ? 0 : 40)
-                .frame(width: nurSymbol ? Stil.knopfHoehe : nil, height: Stil.knopfHoehe)
+                .padding(.horizontal, nurSymbol ? 0 : (hoehe < Stil.knopfHoehe ? 28 : 40))
+                .frame(width: nurSymbol ? hoehe : nil, height: hoehe)
                 .background(hintergrund, in: RoundedRectangle(cornerRadius: Stil.ecke))
                 // Fokus hebt die Pille leicht heraus — 1,04, nicht die 1,08
                 // der Kachel. Ein Knopf steht in einer Reihe mit Nachbarn,
@@ -351,8 +359,9 @@ struct Kopfleiste: View {
             Spacer(minLength: 0)
 
             Button(action: aufsProfil) {
-                Profilzeichen(url: model.benutzerbildURL(groesse: 180),
-                              name: model.session?.userName)
+                Profilzeichen(name: model.session?.userName ?? "?",
+                              bild: model.benutzerbildURL(groesse: 180),
+                              groesse: 60)
             }
             .buttonStyle(ProfilStil())
             // Ein Bild ohne Beschriftung ist eine namenlose Taste.
@@ -372,38 +381,16 @@ struct Kopfleiste: View {
     }
 }
 
-/// Rundes Benutzerbild, ersatzweise der Anfangsbuchstabe.
-struct Profilzeichen: View {
-    let url: URL?
-    let name: String?
-
-    var body: some View {
-        Circle()
-            .fill(Stil.erhoeht)
-            .frame(width: 60, height: 60)
-            .overlay {
-                if let url {
-                    AsyncImage(url: url) { phase in
-                        if case let .success(bild) = phase {
-                            bild.resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            buchstabe
-                        }
-                    }
-                    .clipShape(Circle())
-                } else {
-                    buchstabe
-                }
-            }
-            .overlay(Circle().strokeBorder(Stil.rand, lineWidth: 2))
-    }
-
-    private var buchstabe: some View {
-        Text(String(name?.prefix(1).uppercased() ?? "?"))
-            .font(.system(size: 27, weight: .semibold))
-            .foregroundStyle(Stil.schriftLeise)
-    }
-}
+// `Profilzeichen` steht jetzt in `Sources/Shared/Bausteine.swift` und nimmt
+// die Größe als Parameter: `Profilzeichen(name:bild:groesse: 60)`.
+//
+// **Zwei Dinge sehen dadurch anders aus als vorher**, und beide sind
+// Gestaltung, nicht Technik: der Grund ist ein Grünverlauf statt der flachen
+// Fläche `Stil.erhoeht`, und der Ring ist 1 statt 2 stark. Der Buchstabe
+// rechnet sich aus der Größe (60 × 0,38 = 22,8 statt fest 27). Gemeldet,
+// nicht selbst entschieden — soll es beim alten Bild bleiben, gehören die
+// drei Werte als Parameter in den geteilten Baustein, so wie es die
+// `Plakette` schon vormacht.
 
 // MARK: - Besetzung
 
@@ -508,8 +495,15 @@ struct Handlungstafel: View {
                 .focused($erste, equals: paar.offset == 0)
             }
         }
-        .padding(.vertical, 14)
+        // **Gar keine Luft mehr.** Erst 14, dann 6 — und beide Male schien
+        // oben und unten noch Tafelgrund durch. Die Zeilen bringen ihre
+        // eigene Rundung mit, also braucht es keinen Abstand zur Rundung der
+        // Tafel; er war nur ein Rand um den Rand.
+        //
+        // Beschnitten, damit die oberste und unterste Zeile in der Rundung
+        // der Tafel enden statt darueber hinauszustehen.
         .frame(width: 620)
+        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke + 8))
         .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke + 8))
         .overlay(RoundedRectangle(cornerRadius: Stil.ecke + 8).strokeBorder(Stil.rand))
         .shadow(color: .black.opacity(0.5), radius: 40, y: 16)
@@ -528,12 +522,18 @@ struct Handlungstafel: View {
     ///
     /// Von der Bildkante gerechnet, aus dem Aufbau des Kopfes: 140 oben +
     /// Titel 68 + 14 + Angaben 34 + 22 + Beschreibung 80 + 36 + Knopfhöhe 76
-    /// = 470, plus 16 Luft.
+    /// = 470, plus 16 Luft. Alle Werte aus `Film-Neu.dc.html`.
+    ///
+    /// Dazu der Versatz, um den die ganze Seite tiefer steht.
+    ///
+    /// Vorher 486, gerechnet auf einen Textblock, der bei 140 ansetzte. Der
+    /// beginnt jetzt bei 196 — dieselbe Zeile wie auf der Startseite —, und
+    /// die Tafel muss mitwandern, sonst klappt sie mitten in die Knöpfe.
     ///
     /// Vorher waren es 210 **von unten**, gerechnet auf einen Kopf, der den
     /// ganzen Schirm füllte. Der ist 510 hoch — von unten gerechnet läge die
     /// Tafel jetzt mitten im Text.
-    static let unterDerKnopfreihe: CGFloat = 486
+    static let unterDerKnopfreihe: CGFloat = 486 + Stil.kopfversatzDetail
 
     /// Und hier sitzt die Staffelwahl: unter dem Reihenkopf der ersten Reihe.
     ///
@@ -554,12 +554,134 @@ struct Mehrknopf: View {
 
     var body: some View {
         Button { offen.toggle() } label: {
-            Label("Mehr", systemImage: "ellipsis")
+            Image(systemName: "ellipsis").font(Stil.knopf)
         }
-        .buttonStyle(KnopfStil())
+        .buttonStyle(KnopfStil(nurSymbol: true))
+        // Ohne Beschriftung waere der Knopf fuer VoiceOver namenlos (E8).
+        .accessibilityLabel(Text("Mehr"))
     }
 }
 
+
+/// **Der Kopfblock — einmal, für Startseite und Detailseite.**
+///
+/// Deshalb steht er hier und nicht zweimal. Vorher hatte jede Seite ihren
+/// eigenen Aufbau, und die beiden waren bereits auseinander: die Detailseite
+/// führte zusätzlich die Genres, die Startseite dafür die Restzeit. Genau so
+/// sind `nachladen()` und `Titelangaben` auseinandergelaufen.
+///
+/// **Genres sind raus.** Nicht aus Geschmack: die Startseite kann sie gar
+/// nicht zeigen. Ihre Titel kommen aus den Kurzlisten des Servers, und dort
+/// stehen keine Genres — nur die Detailseite holt den vollen Titel. „Auf
+/// beiden dasselbe" heißt hier also zwangsläufig „ohne".
+///
+/// **Die Höhe ist fest, der Inhalt nicht.** `Stil.auskunftHoehe` gilt, ob eine
+/// Beschreibung da ist oder nicht und ob der Titel kurz oder lang ist. Nur so
+/// steht die Knopfreihe darunter auf jeder Detailseite an derselben Stelle —
+/// und nur so bleibt der Text beim Öffnen einer Seite liegen, statt zu
+/// springen.
+struct Kopfauskunft<Schluss: View>: View {
+    let item: Item
+    /// Bei Folgen steht der Folgentitel unter dem Serientitel. Er kostet
+    /// eine Zeile, die dann der Beschreibung fehlt — die Gesamthöhe bleibt.
+    var zweitzeile: String?
+    /// Was hinten steht: „Direct Play" auf der Detailseite, sonst nichts.
+    @ViewBuilder var schluss: () -> Schluss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(item.type == "Episode" ? (item.seriesName ?? item.name) : item.name)
+                .font(.system(size: 60, weight: .bold))
+                .tracking(-1.4)
+                .foregroundStyle(Stil.schrift)
+                .lineLimit(1)
+                // Ein langer Titel schrumpft, statt die Seite zu verschieben.
+                .minimumScaleFactor(0.62)
+                .frame(height: 68, alignment: .leading)
+
+            if let zweitzeile {
+                Text(zweitzeile)
+                    .font(.system(size: 38, weight: .semibold))
+                    .tracking(-0.3)
+                    .foregroundStyle(Stil.schrift.opacity(0.78))
+                    .lineLimit(1)
+                    .frame(height: 44, alignment: .leading)
+                    .padding(.top, 10)
+            }
+
+            HStack(spacing: 24) {
+                Text(angabenzeile)
+                    .font(.system(size: 29))
+                    .foregroundStyle(Stil.schrift.opacity(0.62))
+                    .lineLimit(1)
+
+                Belegzeile(direktplay: false, hinweis: nil,
+                           bewertung: item.communityRating,
+                           freigabe: item.officialRating)
+
+                schluss()
+            }
+            .frame(height: 34)
+            .padding(.top, 14)
+
+            Text(item.overview ?? "")
+                .font(.system(size: 29))
+                .lineSpacing(Stil.beschreibungLuft)
+                .foregroundStyle(Stil.schrift.opacity(0.62))
+                // **Immer drei Zeilen**, auch wenn der Folgentitel darueber
+                // steht. Vorher waren es dort zwei, damit der Block seine
+                // feste Hoehe hielt
+                .lineLimit(zweitzeile == nil ? 3 : 2)
+                .padding(.top, 22)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        // **Fest, aber um die Zweitzeile hoeher, wenn es eine gibt.**
+        //
+        // 258 traegt Titel, Angaben und drei Zeilen Beschreibung. Der
+        // Folgentitel kostet 54 dazu (44 hoch, 10 Abstand), also 312 — und
+        // die passen: die Startseite setzt bei 196 an, der Block endet damit
+        // bei 508 und bleibt unter der Kopfzone von 510.
+        //
+        // Die Detailseiten sehen die Zweitzeile nie: eine Folge bekommt keine
+        // eigene Seite, jeder Weg zu ihr fuehrt auf die Serienseite (A8).
+        // Dort bleibt es also bei 258, und die Knopfreihe steht weiter auf
+        // jeder Seite an derselben Stelle.
+        .frame(width: 1000,
+               height: Stil.auskunftHoehe(zweitzeile: zweitzeile != nil),
+               alignment: .topLeading)
+    }
+
+    /// Jahr und Laufzeit — **ohne Genres**, siehe oben. Die Formatierung
+    /// kommt aus `Titelangaben`, damit „1 Std 52 Min" überall gleich
+    /// geschrieben steht.
+    private var angabenzeile: String {
+        var teile: [String] = []
+        if item.type == "Episode", let kuerzel = item.folgenkuerzel { teile.append(kuerzel) }
+        if let jahr = item.productionYear { teile.append(String(jahr)) }
+        if let sekunden = item.runtimeSeconds, sekunden > 0 { teile.append(laufzeit(sekunden)) }
+        return teile.joined(separator: " · ")
+    }
+}
+
+/// „Noch 50 Minuten" mit Uhr, „Gesehen" mit Haken — oder nichts.
+struct Restzeitmarke: View {
+    let item: Item
+
+    @ViewBuilder
+    var body: some View {
+        if let rest = item.restzeitText {
+            Label(rest, systemImage: "clock")
+                .font(.system(size: 27, weight: .medium))
+                .foregroundStyle(Stil.akzent)
+                .lineLimit(1)
+        } else if item.istGesehen {
+            Label("Gesehen", systemImage: "checkmark")
+                .font(.system(size: 27, weight: .medium))
+                .foregroundStyle(Stil.akzent)
+                .lineLimit(1)
+        }
+    }
+}
 
 // MARK: - Kulisse
 
@@ -574,42 +696,229 @@ struct Mehrknopf: View {
 /// die Deckkraft der ganzen Ebene, den Fokusring eingeschlossen — das sieht
 /// wie ein Fehler aus, nicht wie ein Verlauf.
 ///
+/// **Fuer die Kulisse gilt das nicht mehr, und sie maskiert inzwischen.** Sie
+/// ist kein Bedienelement und hat keinen Ring; der Satz oben stammt von den
+/// Kacheln. Der Grund fuer den Wechsel steht unten am `mask`.
+///
 /// Nicht beschnitten: das Bild darf nach unten ueberragen, sein eigener
 /// Verlauf beendet es. Beschnitten entstand die harte Kante, die als heller
-/// Streifen quer ueber dem Schirm stand.
+/// Streifen quer ueber dem Schirm stand. **Die schon gezeigten Kulissen,
+/// entschluesselt.**
+///
+/// `AsyncImage` faengt in jeder neuen Ansicht von vorn an: es fragt den
+/// Zwischenspeicher, entschluesselt und zeigt erst danach. Auf der Detailseite
+/// ist das ein neues `AsyncImage` fuer dasselbe Bild, das eben noch auf der
+/// Startseite stand — und dazwischen zeigt es nichts.
+///
+/// Der Netz-Zwischenspeicher hilft dagegen nicht: er spart den Abruf, nicht
+/// das Entschluesseln, und beides passiert asynchron. Was schon einmal auf dem
+/// Schirm stand, muss deshalb **hier** liegen, fertig zum Zeichnen.
+///
+/// Gedeckelt, weil ein Kulissenbild in Fernsehergroesse einige Megabyte
+/// belegt: die letzten acht reichen fuer den Weg Startseite → Detailseite →
+/// zurueck, und mehr braucht niemand gleichzeitig.
+@MainActor
+final class Kulissenbilder {
+    static let geteilt = Kulissenbilder()
+    private var bekannt: [URL: Image] = [:]
+    private var reihenfolge: [URL] = []
+
+    func bild(_ url: URL) -> Image? { bekannt[url] }
+
+    func merken(_ bild: Image, fuer url: URL) {
+        if bekannt[url] == nil { reihenfolge.append(url) }
+        bekannt[url] = bild
+        while reihenfolge.count > 8 {
+            bekannt[reihenfolge.removeFirst()] = nil
+        }
+    }
+}
+
 struct Kulisse: View {
     let url: URL?
+    @State private var bild: Image?
+
+    /// Was bekannt ist, steht sofort — nicht erst im naechsten Durchgang.
+    /// Dieselbe Ueberlegung wie bei `Bildgrund`: ein nachgereichter Wert
+    /// kommt zu spaet, der leere Durchgang hat dann schon stattgefunden.
+    @MainActor init(url: URL?) {
+        self.url = url
+        _bild = State(initialValue: url.flatMap { Kulissenbilder.geteilt.bild($0) })
+    }
 
     var body: some View {
         ZStack {
-            AsyncImage(url: url) { phase in
-                if case let .success(bild) = phase {
-                    bild.resizable().aspectRatio(contentMode: .fill)
+            if let bild {
+                bild.resizable().aspectRatio(contentMode: .fill)
+            } else {
+                AsyncImage(url: url) { phase in
+                    if case let .success(geladen) = phase {
+                        geladen.resizable().aspectRatio(contentMode: .fill)
+                            // Beim Zeigen merken, nicht davor: so steht es
+                            // beim naechsten Mal bereit, ohne dass hier ein
+                            // Durchgang mehr noetig waere.
+                            .task {
+                                guard let url else { return }
+                                Kulissenbilder.geteilt.merken(geladen, fuer: url)
+                            }
+                    }
                 }
             }
         }
         .frame(width: 1180, height: 700)
         .clipped()
-        .overlay {
-            LinearGradient(stops: [
-                .init(color: Stil.grund, location: 0),
-                .init(color: Stil.grund.opacity(0.78), location: 0.26),
-                .init(color: Stil.grund.opacity(0.16), location: 0.62),
-                .init(color: Stil.grund.opacity(0), location: 1),
-            ], startPoint: .leading, endPoint: .trailing)
-        }
-        .overlay(alignment: .bottom) {
-            LinearGradient(stops: [
-                .init(color: Stil.grund.opacity(0), location: 0),
-                .init(color: Stil.grund.opacity(0.75), location: 0.55),
-                .init(color: Stil.grund, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            .frame(height: 320)
-        }
-        // Bis an die Bildkante, ohne den Text mitzunehmen: der Textblock
-        // haelt den Rand, das Bild tritt fuer sich hinaus.
+        .kulissenblende()
         .padding(.trailing, -Stil.randSeite)
         .allowsHitTesting(false)
+    }
+}
+/// **Die Blende der Kulisse — einmal, fuer Startseite und Detailseite.**
+///
+/// Sie stand zweimal, und die beiden waren verschieden: hier maskiert, dort
+/// mit Verlaeufen aus `Stil.grund` uebermalt. Beim Wechsel von der Startseite
+/// auf eine Detailseite blendete SwiftUI die eine Fassung in die andere — und
+/// mitten in der Ueberblendung standen sichtbar harte Kanten, weil die alte
+/// Fassung welche hatte.
+///
+/// Jetzt ist es auf beiden Seiten dasselbe Bild mit derselben Blende. Eine
+/// Ueberblendung zwischen zwei gleichen Dingen sieht man nicht.
+///
+/// **Maskiert, nicht uebermalt.** Uebermalen setzt voraus, dass der
+/// Hintergrund genau `#0B0B0D` ist; sobald er sich faerbt, steht die
+/// uebermalte Flaeche als Fleck darin. Als Maske faellt die Deckkraft des
+/// Bildes selbst, und was dahinterliegt kommt durch — welche Farbe es auch
+/// hat.
+///
+/// **Ein Abfall, nicht zwei.** Davor lagen hier eine waagerechte und eine
+/// senkrechte Maske uebereinander. Zusammen ergeben sie einen rechteckigen
+/// Abfall: jede fuer sich weich, ihr Produkt zeichnet trotzdem die zwei
+/// Geraden nach, und in der Ecke wird es doppelt dunkel. Siehe
+/// `Bildton.rundeBlende`.
+
+struct Kulissenblende: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            // **Die urspruengliche Kurve, nur als Maske statt als Anstrich.**
+            //
+            // Uebersetzt: die alte Fassung malte `Stil.grund` mit der
+            // Deckkraft `o` **ueber** das Bild. Sichtbar blieb also `1 − o`.
+            // Genau diese Werte stehen jetzt als Maske da:
+            //
+            // waagerecht   o 1,00 / 0,78 / 0,16 / 0     bei 0 / 0,26 / 0,62 /
+            // 1 sichtbar       0    / 0,22 / 0,84 / 1
+            //
+            // senkrecht    die unteren 320 von 700, also ab 0,543 o 0 / 0,75 /
+            // 1,00  →  sichtbar 1 / 0,25 / 0
+            //
+            // **Der einzige Unterschied ist, worin es ausblendet.** Anstrich
+            // endet in undurchsichtigem #0B0B0D und setzt damit voraus, dass
+            // der Hintergrund genau das ist — sobald er sich faerbt, steht die
+            // uebermalte Flaeche als Fleck darin. Das war die harte senkrechte
+            // Naht. Eine Maske endet in Transparenz, und was dahinterliegt
+            // kommt durch, welche Farbe es auch hat.
+            //
+            // Alles, was ich dazwischen versucht habe — laengere Rampen, ein
+            // Kreis in der Ecke, das Minimum zweier Rampen — hat die Kurve
+            // veraendert, statt nur ihre Technik. Deshalb war jede Fassung
+            // schlechter als diese.
+            //
+            // **Dieselben Anker, mehr Stuetzstellen.** Das Harte waren nicht
+            // die Werte, sondern ihre Zahl: zwischen 0,26 und 0,62 sprang die
+            // Sichtbarkeit von 22 auf 84 Prozent, und an beiden Punkten
+            // knickte die Steigung. Ein Knick liest sich als Kante.
+            //
+            // Die vier Anker der urspruenglichen Fassung stehen unveraendert
+            // (0 / 0,22 / 0,84 / 1 und 1 / 0,25 / 0); dazwischen liegen jetzt
+            // Zwischenpunkte, die den Uebergang tragen, statt ihn in einem Zug
+            // zu nehmen. Die Kurve bleibt dieselbe, sie hat nur keine Ecken
+            // mehr.
+            .mask {
+                LinearGradient(stops: [
+                    .init(color: .white.opacity(0.00), location: 0),
+                    .init(color: .white.opacity(0.05), location: 0.15),
+                    .init(color: .white.opacity(0.22), location: 0.29),
+                    .init(color: .white.opacity(0.50), location: 0.45),
+                    .init(color: .white.opacity(0.75), location: 0.57),
+                    .init(color: .white.opacity(0.90), location: 0.70),
+                    .init(color: .white.opacity(0.98), location: 0.85),
+                    .init(color: .white.opacity(1.00), location: 1),
+                ], startPoint: .leading, endPoint: .trailing)
+            }
+            .mask {
+                LinearGradient(stops: [
+                    .init(color: .white.opacity(1.00), location: 0),
+                    .init(color: .white.opacity(1.00), location: 0.50),
+                    .init(color: .white.opacity(0.88), location: 0.60),
+                    .init(color: .white.opacity(0.62), location: 0.70),
+                    .init(color: .white.opacity(0.34), location: 0.80),
+                    .init(color: .white.opacity(0.14), location: 0.89),
+                    .init(color: .white.opacity(0.04), location: 0.95),
+                    .init(color: .white.opacity(0.00), location: 1),
+                ], startPoint: .top, endPoint: .bottom)
+            }
+    }
+}
+
+extension View {
+    func kulissenblende() -> some View { modifier(Kulissenblende()) }
+}
+
+/// **Ein leiser Schatten unter der Kopfleiste.**
+///
+/// Seit die Startseite denselben gefaerbten Grund traegt wie eine Detailseite,
+/// ist ihr alter Kopfverlauf weg — und damit stand die Leiste auf hellen
+/// Motiven im Bild.
+///
+/// **Deutlich weniger als der alte Verlauf.** Der begann bei 72 Prozent und
+/// lief ueber 588 Punkte aus; er hat die halbe Kopfzone eingegraut und war
+/// genau das, was die Seite anders aussehen liess. Dieser hier deckt die
+/// Leiste und ist 90 Punkte darunter zu Ende — gerade so weit, dass er den
+/// Titel bei 196 nicht mehr beruehrt.
+///
+/// Abgetastet wie jeder Verlauf hier, damit er weder oben noch unten einen
+/// Knick hat, an dem ein Band entstehen koennte.
+struct Kopfschatten: View {
+    var body: some View {
+        ZStack(alignment: .top) {
+            // Der Streifen unter der ganzen Leiste — traegt Wortmarke und
+            // Bereichsnamen.
+            LinearGradient(gradient: streifen, startPoint: .top, endPoint: .bottom)
+                .frame(height: Stil.leisteUnten + 90)
+
+            // **Und ein grosser weicher Fleck hinter dem Profilzeichen.**
+            //
+            // Es sitzt ganz rechts oben, also genau dort, wo die Kulisse am
+            // hellsten ist — der gleichmaessige Streifen reicht dort nicht,
+            // und das runde Bild lag plan auf dem Motiv.
+            //
+            // Riesig ist hier das Mittel, nicht die Uebertreibung: ein kleiner
+            // Schatten waere als Scheibe hinter dem Zeichen zu erkennen. Bei
+            // 520 Punkt Reichweite sieht man ihn nicht mehr als Form, sondern
+            // nur, dass es dort ruhiger ist.
+            RadialGradient(gradient: fleck,
+                           center: UnitPoint(x: 0.945, y: 0.02),
+                           startRadius: 0, endRadius: 520)
+                .frame(height: 620)
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// Deckt die Leiste, 90 Punkte darunter zu Ende — gerade so weit, dass
+    /// er den Titel bei 196 nicht mehr beruehrt.
+    private var streifen: Gradient { verlauf(0.46) }
+
+    /// Kraeftiger als der Streifen, dafuer nur an einer Stelle.
+    private var fleck: Gradient { verlauf(0.52) }
+
+    /// Abgetastet statt gestuft: an beiden Enden waagerecht auslaufend, also
+    /// weder oben noch unten ein Knick, an dem ein Band entstehen koennte.
+    private func verlauf(_ staerke: Double) -> Gradient {
+        let stufen = 14
+        return Gradient(stops: (0 ... stufen).map { i in
+            let t = Double(i) / Double(stufen)
+            let weich = t * t * (3 - 2 * t)
+            return .init(color: Stil.grund.opacity(staerke * (1 - weich)), location: t)
+        })
     }
 }
 
@@ -636,32 +945,15 @@ struct Staffelpille: View {
                     .foregroundStyle(Stil.schrift.opacity(0.6))
             }
         }
-        .buttonStyle(Pillenstil())
+        // **Derselbe Stil wie die Knoepfe im Kopf.**
+        //
+        // Sie trug einen eigenen: andere Flaeche, anderer Rand, andere
+        // Rundung. Stimmt — und es **ist** dasselbe: ein Knopf, der etwas
+        // aufklappt, wie der Mehr-Knopf daneben.
+        .buttonStyle(KnopfStil(hoehe: 60))
         .accessibilityLabel(Text("Staffel wählen, \(name)"))
     }
 }
 
 /// Fokus auf der Staffelpille: die ruhige Flaeche, wie bei Zeilen und Chips.
 /// Weiss bleibt den Handlungsknoepfen vorbehalten.
-private struct Pillenstil: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration)
-    }
-
-    private struct Inhalt: View {
-        let configuration: ButtonStyleConfiguration
-        @Environment(\.isFocused) private var fokus
-
-        var body: some View {
-            configuration.label
-                .foregroundStyle(Stil.schrift)
-                .padding(.horizontal, 26)
-                .frame(height: 60)
-                .background(fokus ? Stil.fokusflaeche : Stil.erhoeht,
-                            in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.09), lineWidth: 2))
-                .scaleEffect(fokus ? 1.04 : 1)
-                .animation(Stil.fokusAnimation, value: fokus)
-        }
-    }
-}

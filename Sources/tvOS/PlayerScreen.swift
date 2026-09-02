@@ -86,15 +86,45 @@ struct PlayerScreen: View {
     /// Wann zuletzt ein Schritt kam — daraus waechst das Tempo.
     @State private var letzterSchritt = Date.distantPast
     /// Wie oft hintereinander schnell getippt wurde.
-    @State private var schrittfolge = 0
     @State private var schlafminuten: Int?
     @State private var schlafAufgabe: Task<Void, Never>?
     /// Kurze Rückmeldung nach einem Sprung — „+30 s".
-    @State private var sprungAnzeige: (richtung: Int, sekunden: Int)?
+    /// Ob gerade ein Finger ueber die Flaeche zieht.
+    ///
+    /// Ein Wisch loest **auch** Schrittbefehle aus — dieselben, die der Ring
+    /// beim Druck schickt. Ohne diese Unterscheidung spulte jeder Wisch
+    /// zweimal: einmal ueber den Weg, einmal ueber den Schritt.
+    @State private var wischt = false
+    @State private var wischEnde = Date.distantPast
+    /// Woher die Marke kommt. Eine erwischte Marke wartet auf den mittleren
+    /// Knopf; eine ertippte springt von selbst, sobald das Tippen ruht.
+    @State private var markeVomWisch = false
     @State private var naechste: Item?
     /// Nach einem Sprung kurz nicht überschreiben, sonst zieht die Anzeige
     /// auf den alten Wert zurück, bevor VLC nachgezogen hat.
     @State private var sprungBis: Date?
+
+    /// **Ob gerade etwas laedt, obwohl laufen sollte.**
+    ///
+    /// Drei Faelle, die alle drei aufgetreten sind und die vorher gleich
+    /// aussahen — naemlich nach nichts: nach einem Sprung baut VLC den Strom
+    /// neu auf; nach der Rueckkehr aus dem Hintergrund steht das Bild,
+    /// waehrend der Ton schon laeuft; und bei einem Aussetzer der Leitung
+    /// steht beides. „Aber ohne irgendwie 'n Ladezeichen oder so. Also da
+    /// musst Du auf jeden Fall noch mal gucken." **Ob der Server springt statt
+    /// des Abspielers.**
+    ///
+    /// Wird gesetzt, sobald ein Sprung nicht ankommt — siehe
+    /// `VLCPlayerView.onSprungGescheitert`. Von da an wird für jeden Sprung
+    /// ein neuer Strom geholt, der schon an der richtigen Stelle beginnt. Der
+    /// Zuschauer merkt davon nichts außer der Ladeanzeige, die es beim
+    /// Springen ohnehin gibt.
+    @State private var serverSpringt = false
+    @State private var serverAufgabe: Task<Void, Never>?
+
+    @State private var stockt = false
+    @State private var stillSeit: Date?
+    @State private var letzteVLCZeit: Double = -1
 
     /// **Wo der Fokus steht — und ob er ueberhaupt irgendwo steht.**
     ///
@@ -163,28 +193,64 @@ struct PlayerScreen: View {
                 .onTapGesture { steuerungWecken() }
 
             VideoFlaeche(url: startPlan.url, startAt: startAt,
-                         container: startPlan.container) { neu in
+                         container: startPlan.container,
+                         versatz: startPlan.serverAbSekunden) { neu in
                 flaeche = neu
                 neu.onWiederherstellung = { stelltWiederHer = $0 }
+                // Kommt ein Sprung nicht an, taugt der Index der Datei
+                // nichts. Dann uebernimmt der Server — siehe `serverSprung`.
+                neu.onSprungGescheitert = { ziel in serverSprung(auf: ziel) }
             }
 
             // **Deckend, nicht nur ein Ring.**
             //
-            // Vorher stand hier `Lader()` allein — ein schwebender Ring ueber
+            // Vorher stand hier `Lader` allein — ein schwebender Ring ueber
             // dem laufenden Bild. VLC steuert die Fortsetzstelle erst nach dem
             // ersten Bild an, und in dieser Zeit war der Anfang des Films zu
             // sehen. Der Ladeschirm hat ihn nicht verdeckt, weil er nichts
             // verdeckte. Die iPhone-Fassung legt Schwarz darunter, seit jeher.
-            if !erstesBildDa {
+            // Der Moduswechsel gehoert hierher und **nicht** an
+            // `erstesBildDa`: der Wert sagt „VLC liefert Bilder" und wird von
+            // der geteilten Taktlogik gelesen — unter anderem, um `laeuft`
+            // gegen VLC gleichzurichten. Wer ihn zum Anzeigeschalter umwidmet,
+            // haelt bei einem haengenden Wechsel auch den Gleichrichter an.
+            // Genau daran kann
+            if !erstesBildDa || Bildtakt.schaltetUm {
                 ZStack {
                     Color.black
-                    Lader()
+                    Lader.fern
                 }
                 .ignoresSafeArea()
                 .transition(.opacity)
             }
 
-            if let anzeige = sprungAnzeige { sprungRueckmeldung(anzeige) }
+            // Liegt ueber allem und nimmt nichts an sich: der Erkenner
+            // haengt am Fenster, nicht an dieser Flaeche.
+            Wischfeld(beginnt: wischBeginn, bewegt: gewischt, endet: wischSchluss)
+                .allowsHitTesting(false)
+
+            if erstesBildDa {
+                // **Dieselbe Stelle, dieselbe Groesse wie das Pausezeichen.**
+                //
+                // Der richtige Weg: man koennte es genau dahin machen, wo der
+                // Pauseknopf ist, sodass es so aussieht wie, als wuerde es an
+                // exakt derselben Stelle laden." Zwei Zustandsauskuenfte ueber
+                // dieselbe Sache gehoeren an denselben Platz — sonst sucht das
+                // Auge zweimal.
+                if stockt {
+                    // **Ohne Teller.** Der Ring bringt seine Form selbst mit;
+                    // ein Kreis um einen Kreis sieht aus wie ein Versehen. Das
+                    // Pausezeichen braucht ihn, weil zwei Striche auf hellen
+                    // Szenen sonst verschwinden.
+                    zeichenmitte(teller: false) { Lader(groesse: 86, staerke: 7) }
+                } else if !laeuft {
+                    zeichenmitte {
+                        Image(systemName: "pause.fill")
+                            .font(.system(size: 76, weight: .medium))
+                            .foregroundStyle(Stil.schrift)
+                    }
+                }
+            }
 
             schleier.opacity(steuerungDa ? 1 : 0)
             werkzeuge.opacity(steuerungDa ? 1 : 0)
@@ -254,11 +320,11 @@ struct PlayerScreen: View {
             if spulziel != nil {
                 spulAufgabe?.cancel()
                 spulziel = nil
-                sprungAnzeige = nil
+                markeVomWisch = false
             }
             else if blattOffen { blattOffen = false }
             else if folgenOffen { folgenOffen = false }
-            else { schliessen() }
+            else { verlassen() }
         }
         // **Nach einem Blatt muss die Steuerung zurueckkommen.**
         //
@@ -269,14 +335,8 @@ struct PlayerScreen: View {
         .onChange(of: blattOffen) { _, offen in if !offen { steuerungWecken() } }
         .onChange(of: folgenOffen) { _, offen in if !offen { steuerungWecken() } }
         .animation(.easeInOut(duration: 0.2), value: steuerungDa)
-        .animation(.easeInOut(duration: 0.15), value: sprungAnzeige?.sekunden)
-        .task(id: sprungAnzeige?.sekunden) {
-            guard sprungAnzeige != nil else { return }
-            try? await Task.sleep(for: .milliseconds(900))
-            guard !Task.isCancelled else { return }
-            guard !Task.isCancelled else { return }
-            sprungAnzeige = nil
-        }
+        .animation(.easeInOut(duration: 0.22), value: laeuft)
+        .animation(.easeInOut(duration: 0.22), value: stockt)
         // **Wer die App verlaesst, will nicht weiterhoeren.**
         //
         // `onDisappear` greift hier nicht: die Ansicht verschwindet nicht,
@@ -293,15 +353,36 @@ struct PlayerScreen: View {
         .onChange(of: phase) { _, neu in
             guard neu == .background, let flaeche, flaeche.isPlaying else { return }
             flaeche.pause()
-            laeuft = false
+            laeuftSetzen(false)
             zeigen()
         }
         .onChange(of: schlafminuten) { _, neu in schlafzeitSetzen(neu) }
         .animation(.easeInOut(duration: 0.2), value: blattOffen)
         .onAppear {
             model.fernbefehl = ausfuehren
+            // **Vor dem ersten Bild, nicht danach.** Der Server kennt die
+            // Bildrate schon; der Fernseher kann also gleichzeitig mit dem
+            // Aufbau des Stroms umschalten, statt hinterher. Was er nicht
+            // sagt, holt der Takt spaeter aus VLCs Spuren nach.
+            Bildtakt.anpassen(laut: plan.quelle.flatMap(Dateiangaben.videospur))
+
+            // **Gelerntes gleich anwenden.**
+            //
+            // Von dieser Quelle ist schon bekannt, dass der Abspieler in ihr
+            // nicht springen kann. Dann gar nicht erst vier Sekunden auf
+            // einen Sprung warten, der nicht ankommt — sondern sofort den
+            // Server bitten. Beim ersten Mal kostet es die vier Sekunden,
+            // danach nie wieder.
+            if startAt > 1, plan.abspielerSpringt,
+               model.brauchtServerSprung(plan.quelle?.id) {
+                serverSprung(auf: startAt)
+            }
         }
         .onDisappear {
+            serverAufgabe?.cancel()
+            // Der Ausgang gehoert wieder der Oberflaeche, die auf 60 Hz
+            // gezeichnet ist.
+            Bildtakt.loesen()
             schlafAufgabe?.cancel()
             spulAufgabe?.cancel()
             model.fernbefehl = nil
@@ -337,29 +418,26 @@ struct PlayerScreen: View {
         }
     }
 
-    /// Zeigt kurz, wie weit gesprungen wurde.
+    /// **Das Zeichen fuer „steht" gehoert in die Mitte, nicht an den Rand.**
     ///
-    /// Auf dem iPhone gibt es sie beim Doppeltipp. Hier ist sie noch nötiger:
-    /// die Fernbedienung gibt keine Rückmeldung, und ohne Anzeige weiß man
-    /// nicht, ob der Druck angekommen ist.
-    private func sprungRueckmeldung(_ anzeige: (richtung: Int, sekunden: Int)) -> some View {
-        HStack(spacing: 0) {
-            if anzeige.richtung > 0 { Spacer() }
-            HStack(spacing: 14) {
-                Image(systemName: anzeige.richtung > 0 ? "goforward" : "gobackward")
-                    .font(.system(size: 44, weight: .medium))
-                Text("\(anzeige.sekunden) s")
-                    .font(.system(size: 40, weight: .semibold))
-            }
-            .foregroundStyle(Stil.schrift)
-            .padding(.horizontal, 44)
-            .padding(.vertical, 30)
-            .background(Color.black.opacity(0.55), in: Capsule())
-            .padding(.horizontal, 160)
-            if anzeige.richtung < 0 { Spacer() }
-        }
-        .allowsHitTesting(false)
-        .transition(.opacity)
+    /// Erster Anlauf war ein kleines Dreieck/Doppelstrich links vor der
+    /// verstrichenen Zeit — dort, wo der Systemplayer es hat. Er hat recht: am
+    /// Fernseher sitzt man drei Meter weg und sieht auf das Bild, nicht auf
+    /// die Leiste. Ein Standbild sieht aus wie eine ruhige Einstellung, und
+    /// die Antwort darauf muss dort stehen, wo man hinschaut.
+    ///
+    /// Es bleibt stehen, solange es steht — es ist kein Hinweis auf einen
+    /// Tastendruck, sondern eine Zustandsauskunft.
+    private func zeichenmitte<Inhalt: View>(teller: Bool = true,
+                                           @ViewBuilder _ inhalt: () -> Inhalt) -> some View {
+        inhalt()
+            .frame(width: 190, height: 190)
+            .background(teller ? Color.black.opacity(0.42) : .clear, in: Circle())
+            .overlay(Circle().strokeBorder(teller ? Color.white.opacity(0.14) : .clear))
+            .shadow(color: .black.opacity(teller ? 0.45 : 0), radius: 30)
+            .allowsHitTesting(false)
+            .transition(.opacity.combined(with: .scale(scale: 0.86)))
+            .zIndex(3)
     }
 
     // MARK: - Schleier
@@ -437,7 +515,7 @@ struct PlayerScreen: View {
                 }
             }
 
-            Zeitleiste(position: spulziel ?? position, dauer: dauer,
+            Zeitleiste(position: position, dauer: dauer, marke: spulziel,
                        zurueck: Double(model.zurueckSekunden),
                        vor: Double(model.vorSekunden),
                        springen: springen, wecken: zeigen, klick: klick)
@@ -455,6 +533,21 @@ struct PlayerScreen: View {
     }
 
     // MARK: - Befehle
+
+    /// **Den Ausgang freigeben, bevor die Ansicht weggeht.**
+    ///
+    /// Der Fernseher braucht fuer den Moduswechsel ein paar Sekunden, in
+    /// denen er schwarz ist. Stand die Freigabe in `onDisappear`, fiel das
+    /// Schwarz auf die schon zurueckgekehrte Oberflaeche — man war wieder in
+    /// der Uebersicht, und dann ging das Bild weg. Hier faellt es in den
+    /// Uebergang, wo der Schirm ohnehin dunkel ist.
+    ///
+    /// `loesen` ist mehrfach aufrufbar; die Sicherung in `onDisappear` bleibt
+    /// fuer die Wege, die hier nicht vorbeikommen.
+    private func verlassen() {
+        Bildtakt.loesen()
+        schliessen()
+    }
 
     /// Fokus zurueck auf die Leiste und die Steuerung zeigen.
     private func steuerungWecken() {
@@ -484,23 +577,82 @@ struct PlayerScreen: View {
     ///    der Wochen alt sein koennte. `laeuft` in einer festgehaltenen
     ///    Ansichtskopie sagt nur, was beim Eintragen galt.
     private func anhaltenOderWeiter() {
+        // **Nach dem eigenen Stand richten, nicht nach VLC** — siehe
+        // `Schaltwerk.laeuft`. Aus der Klasse gelesen, nicht aus `@State`:
+        // dieser Aufruf kommt auch aus festgehaltenen Rueckrufen.
+        setzen(laeuft: !schaltwerk.laeuft)
+    }
+
+    /// Beide Haelften des Laufzustands zugleich: die Ansicht zeichnet aus
+    /// `@State`, die Rueckrufe lesen aus der Klasse.
+    private func laeuftSetzen(_ neu: Bool) {
+        laeuft = neu
+        schaltwerk.laeuft = neu
+    }
+
+    /// Anhalten oder weiterlaufen — **absolut**, nicht umschaltend.
+    ///
+    /// Frueher liefen `abspielen`, `anhalten` und `umschalten` alle drei auf
+    /// dasselbe Umschalten. Solange beide Seiten denselben Stand haben, faellt
+    /// das nicht auf. Laufen sie auseinander, ist es der Grund, warum man es
+    /// nicht mehr geradeziehen kann: das Telefon schickt „Pause", wir schalten
+    /// auf Wiedergabe, und je oefter man drueckt, desto verdrehter wird es.
+    ///
+    /// Ein ausdruecklicher Befehl setzt deshalb einen Zustand; nur die Wippe
+    /// auf der Fernbedienung schaltet um.
+    private func setzen(laeuft soll: Bool) {
         guard let flaeche else { return }
         // Die Sperre liegt im Schaltwerk, nicht im Zustand: sonst liest ein
         // alter Rueckruf einen alten Zeitpunkt und sie greift nie.
         guard Date().timeIntervalSince(schaltwerk.zuletzt) > 0.4 else { return }
         schaltwerk.zuletzt = Date()
-        let vorher = flaeche.isPlaying
 
-        // **Nach `laeuft` richten, nicht nach VLC.**
-        //
-        // `isPlaying` hinkt dem Befehl nach. Wer danach fragt, waehlt die
-        // Richtung nach einem Stand, den es schon nicht mehr gibt, und schaltet
-        // zurueck, was er eben geschaltet hat. Die iPhone-Fassung nimmt
-        // deshalb den eigenen Zustand — der ist das, was der Zuschauer sieht.
-        if vorher { flaeche.pause() } else { flaeche.resume() }
-        laeuft = !vorher
-        zentrale.standNachziehen(position: position, laeuft: laeuft, tempo: tempo)
+        if soll { flaeche.resume() } else { flaeche.pause() }
+        laeuftSetzen(soll)
+        zentrale.standNachziehen(position: position, laeuft: soll, tempo: tempo)
         zeigen()
+    }
+
+    /// Ob VLC noch liefert, was es liefern soll.
+    ///
+    /// Zwei Anzeichen, weil es zwei Arten von Stocken gibt. **Die Zeit steht**
+    /// — dann fehlen Daten, nach einem Sprung oder bei einem Aussetzer der
+    /// Leitung. **Es gibt keine Bildausgabe** — dann laeuft der Ton weiter und
+    /// nur das Bild steht; so kommt VLC aus dem Hintergrund zurueck, wenn ihm
+    /// tvOS den Zugriff aufs Bild entzogen hat.
+    ///
+    /// Erst nach einer knappen Sekunde: jeder Sprung steht kurz, und ein
+    /// Ladezeichen, das bei jedem Tastendruck aufblitzt, ist schlimmer als
+    /// keins.
+    private func stockungPruefen(_ flaeche: VLCPlayerView) {
+        guard laeuft, erstesBildDa else {
+            stillSeit = nil
+            stockt = false
+            letzteVLCZeit = flaeche.positionSeconds
+            return
+        }
+
+        let jetzt = flaeche.positionSeconds
+        if abs(jetzt - letzteVLCZeit) < 0.05 {
+            stillSeit = stillSeit ?? Date()
+        } else {
+            stillSeit = nil
+        }
+        letzteVLCZeit = jetzt
+
+        // **Nur die Uhr, nicht `zeigtBild`.**
+        //
+        // `hasVideoOut` sagt, ob ein Ausgabemodul haengt — nicht, ob Bilder
+        // kommen. Als zweites Anzeichen genommen, haette ein Modul, das aus
+        // anderen Gruenden nichts meldet, das Ladezeichen dauerhaft stehen
+        // lassen. Ein Ladezeichen, das immer da ist, sagt nichts mehr aus.
+        // Die stehende Uhr ist eindeutig: kommen keine Daten, kommt die Zeit
+        // nicht voran.
+        let zeitSteht = stillSeit.map { Date().timeIntervalSince($0) > 0.9 } ?? false
+        let neu = zeitSteht || stelltWiederHer
+        if neu != stockt {
+            withAnimation(.easeInOut(duration: 0.22)) { stockt = neu }
+        }
     }
 
     private func zentraleUebernehmen() {
@@ -517,11 +669,20 @@ struct PlayerScreen: View {
             // Schreiben geht: `@State` legt seine Werte ausserhalb der
             // Struktur ab. Nur Lesen liefert den alten Stand. Deshalb hier
             // ausschliesslich befehlen und schreiben, nie fragen.
-            // **Alle drei tun dasselbe.** Welchen der drei tvOS schickt,
-            // ist seine Entscheidung und war immer dieselbe falsche. Ein
-            // Druck auf die Taste schaltet um, Punkt.
-            abspielen:   { anhaltenOderWeiter() },
-            anhalten:    { anhaltenOderWeiter() },
+            // **Ausdrueckliche Befehle setzen, die Wippe schaltet um.**
+            //
+            // Vorher taten alle drei dasselbe. Das war richtig gegen das
+            // Problem von damals — die Rueckrufe lasen einen eingefrorenen
+            // Zustand, also durfte keiner von ihnen fragen. Inzwischen steht
+            // der Stand im `Schaltwerk` und ist ueber die Verweisung immer
+            // die Gegenwart; fragen ist also wieder erlaubt.
+            //
+            // Und noetig: umschaltende Befehle machen einen auseinander
+            // gelaufenen Stand unheilbar. Wer am Telefon „Pause" drueckt und
+            // Wiedergabe bekommt, kann es mit keiner Zahl von Versuchen
+            // richten.
+            abspielen:   { setzen(laeuft: true) },
+            anhalten:    { setzen(laeuft: false) },
             umschalten:  { anhaltenOderWeiter() },
             springenAuf: { ziel in
                 flaeche?.seek(toSeconds: ziel)
@@ -548,32 +709,170 @@ struct PlayerScreen: View {
     ///    Telefon tippt man auf einen sichtbaren Knopf; hier drueckt man blind
     ///    eine Richtung, und dann darf nicht gleich gesprungen werden.
     ///
-    /// 2. **Schnelles Tippen laesst die Schrittweite wachsen.** Einzelne
-    ///    Tipper bleiben klein — zehn zurueck, dreissig vor —, damit man eine
-    ///    Stelle genau treffen kann. Wer weiter will, tippt schnell weiter und
-    ///    kommt zuegig voran. Die Fernbedienung wiederholt beim Halten von
-    ///    selbst, also traegt dieselbe Regel auch das Gedrueckthalten.
+    /// 2. **Ein einzelner Druck springt sofort** — zehn zurueck, dreissig vor,
+    ///    wie am Telefon. Frueher sammelte auch der einzelne Druck erst eine
+    ///    Marke ein; man drueckte und es geschah nichts, bis man bestaetigte.
     ///
-    /// 3. **Gesprungen wird genau einmal, wenn das Tippen aufhoert.** Ein
-    ///    Sprung je Druck laesst VLC den Strom jedesmal neu aufbauen; der
-    ///    Player rauschte hoerbar durch den Film und blieb haengen. Bis dahin
-    ///    bewegt sich nur die Marke, das Bild laeuft weiter.
+    /// 3. **Schnelles Tippen sammelt trotzdem.** VLC baut bei jedem Sprung den
+    ///    Strom neu auf; ein Sprung je Druck liess den Player hoerbar durch
+    ///    die Datei rauschen. Wer weitertippt, verschiebt darum nur die Marke,
+    ///    und gesprungen wird einmal, sobald das Tippen ruht. Wie schnell das
+    ///    war, steht nirgends mehr als Zahl da — es steht in den Zeiten unter
+    ///    der Leiste.
+    ///
+    /// 4. **Wisch schlaegt Schritt.** Ein Wisch ueber die Flaeche erzeugt
+    ///    dieselben Schrittbefehle wie ein Druck auf den Ring. Waehrend und
+    ///    kurz nach einem Wisch bleibt der Schritt darum aus, sonst spulte
+    ///    jeder Wisch zweimal.
     private func springen(_ sekunden: Double) {
         guard dauer > 0 else { return }
         guard steuerungDa else { zeigen(); return }
+        guard !wischt, Date().timeIntervalSince(wischEnde) > 0.35 else { return }
 
         let seitLetztem = Date().timeIntervalSince(letzterSchritt)
-        schrittfolge = seitLetztem < 0.6 ? schrittfolge + 1 : 0
         letzterSchritt = Date()
+        zeigen()
 
-        // Erst ab dem vierten schnellen Tipp waechst es, und hoechstens auf
-        // das Achtfache. Sonst schiesst schon der zweite Tipp uebers Ziel.
-        // Sanft: die ersten sechs Tipper bleiben bei der eingestellten
-        // Weite, danach waechst es langsam. Vorher schoss schon der vierte
-        // Tipp weit uebers Ziel.
-        let faktor = min(1 + max(schrittfolge - 5, 0) / 3, 6)
-        spulzielSetzen((spulziel ?? position) + sekunden * Double(faktor))
+        let ziel = min(max((spulziel ?? position) + sekunden, 0), dauer)
 
+        // Eine erwischte Marke wartet auf den mittleren Knopf. Der Ring
+        // verschiebt sie dann nur — er darf sie nicht hinter dem Ruecken
+        // dessen bestaetigen, der noch am Suchen ist.
+        if markeVomWisch {
+            spulziel = ziel
+            zeigen()
+            return
+        }
+
+        spulAufgabe?.cancel()
+        if spulziel == nil, seitLetztem > 0.45 {
+            sprungAusfuehren(ziel)
+            return
+        }
+
+        spulziel = ziel
+        spulAufgabe = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled, let stelle = spulziel else { return }
+            sprungAusfuehren(stelle)
+        }
+    }
+
+    // MARK: - Wenn der Abspieler nicht springen kann
+
+    /// **Den Strom neu holen, diesmal ab der gewünschten Stelle.**
+    ///
+    /// Bei Direct Play liefert der Server die Datei roh und springt nicht;
+    /// den Sprung macht der Abspieler über den Index der Datei. Ist der
+    /// unlesbar, kommt er nie an — gemessen an einer Folge, in der jeder
+    /// Sprung ab Dateianfang vorwärts las. Dann bittet man den Server, ab der
+    /// Stelle zu liefern. Er packt den Strom dafür um, rechnet aber weder
+    /// Bild noch Ton neu; die Grundregel der App bleibt gewahrt.
+    ///
+    /// Für den Zuschauer ist das ein Sprung wie jeder andere: es lädt kurz,
+    /// dann läuft es weiter. Nichts zu entscheiden, nichts zu wissen.
+    private func serverSprung(auf ziel: Double) {
+        serverAufgabe?.cancel()
+        serverAufgabe = Task {
+            let alterPlan = plan
+            model.merkeServerSprung(plan.quelle?.id)
+
+            guard let neu = await model.plan(for: item.id, abSekunden: ziel,
+                                             ohneDirectPlay: true),
+                  let flaeche
+            else { return }
+            guard !Task.isCancelled else { return }
+
+            // **Nur umschalten, wenn der Server wirklich ab der Stelle
+            // liefert.**
+            //
+            // Sonst bekommt man die Rohdatei zurueck, die von vorn anfaengt —
+            // und dann steht die Leiste bei acht Minuten, waehrend das Bild am
+            // Anfang laeuft. Das ist schlimmer als der lange Sprung, den wir
+            // umgehen wollten: der kam wenigstens irgendwann an. **Umpacken
+            // ja, umrechnen nie.**
+            //
+            // Das ist die Grundregel der App, und sie gilt auch hier: lieber
+            // ein zaeher Sprung als ein Bild, das der Server neu berechnet.
+            // Bei Direct Stream wechselt nur der Behaelter.
+            guard neu.method != .transcode else {
+                Protokoll.schreib("[Plan] Server wuerde umrechnen statt umpacken → beim alten Strom bleiben")
+                serverSpringt = false
+                return
+            }
+
+            guard neu.serverAbSekunden >= ziel - 1 else {
+                Protokoll.schreib("[Plan] Server springt nicht (Versatz \(Int(neu.serverAbSekunden)) s statt \(Int(ziel)) s) → beim alten Strom bleiben")
+                serverSpringt = false
+                return
+            }
+
+            // **Den alten Strom abmelden, bevor der neue kommt.**
+            //
+            // Jedes Umpacken ist eine eigene Sitzung auf dem Server. Ohne
+            // Abmeldung bliebe bei jedem Sprung eine stehen, und nach einem
+            // Abend voller Spruenge liefen dort ein Dutzend Vorgaenge fuer
+            // einen einzigen Zuschauer.
+            //
+            // Erst hier, nicht vorher: eine Abmeldung, der kein neuer Strom
+            // folgt, laesst den Titel im Serverdashboard verschwinden, obwohl
+            // noch gespielt wird.
+            if alterPlan.playSessionID != neu.playSessionID {
+                await model.reportStopped(item: item, plan: alterPlan, seconds: ziel)
+            }
+
+            plan = neu
+            position = neu.serverAbSekunden
+            spulziel = nil
+            markeVomWisch = false
+            spurenGesetzt = false
+            serverSpringt = true
+            sprungBis = Date().addingTimeInterval(1.2)
+
+            flaeche.play(url: neu.url, abSekunden: 0, container: neu.container,
+                         versatz: neu.serverAbSekunden)
+        }
+    }
+
+    // MARK: - Wischen
+
+    /// Der Finger auf der Flaeche setzt eine Marke, der mittlere Knopf
+    /// bestaetigt sie — so machen es der Systemplayer und Infuse.
+    private func wischBeginn() {
+        guard dauer > 0, !blattOffen, !folgenOffen else { return }
+        guard fokus == .leiste || fokus == .ruhe else { return }
+        wischt = true
+        zeigen()
+    }
+
+    /// **Langsam ziehen heisst treffen, schnell wischen heisst ankommen.**
+    ///
+    /// Ein fester Massstab taugt fuer keins von beidem: rechnet man die ganze
+    /// Datei auf die Flaeche, verschiebt der kleinste Wackler eine halbe
+    /// Minute; rechnet man fein, braucht ein Zweistundenfilm ein Dutzend
+    /// Wische. Das Tempo des Fingers entscheidet, quadratisch gewichtet,
+    /// damit die ruhige Hand die feine Stufe wirklich behaelt.
+    private func gewischt(weg: CGFloat, tempo: CGFloat) {
+        guard wischt, dauer > 0 else { return }
+        guard steuerungDa else { zeigen(); return }
+
+        spulAufgabe?.cancel()
+        spulAufgabe = nil
+        markeVomWisch = true
+
+        let fein = 0.10
+        let grob = max(dauer / 1600, fein)
+        let anteil = min(Double(abs(tempo)) / 3000, 1)
+        let takt = fein + (grob - fein) * anteil * anteil
+
+        spulzielSetzen((spulziel ?? position) + Double(weg) * takt)
+    }
+
+    /// Auch dann, wenn der Klick das Wischen schon entwaffnet hat: `wischEnde`
+    /// haelt die Schrittbefehle zurueck, die derselbe Wisch ausgeloest hat.
+    private func wischSchluss() {
+        wischt = false
+        wischEnde = Date()
     }
 
     /// Der mittlere Knopf.
@@ -588,7 +887,6 @@ struct PlayerScreen: View {
     /// den Strom neu aufbaut, ruckelte er sich hoerbar durch.
     private func klick() {
         if let ziel = spulziel {
-            schrittfolge = 0
             sprungAusfuehren(ziel)
         } else {
             anhaltenOderWeiter()
@@ -600,14 +898,77 @@ struct PlayerScreen: View {
         guard dauer > 0 else { return }
         let ziel = min(max(roh, 0), dauer)
         spulziel = ziel
-        sprungAnzeige = (ziel < position ? -1 : 1, Int(abs(ziel - position).rounded()))
         zeigen()
     }
 
     private func sprungAusfuehren(_ ziel: Double) {
         guard let flaeche else { return }
+
+        // Steht einmal fest, dass der Abspieler in dieser Datei nicht
+        // springen kann, gilt das fuer jeden weiteren Sprung. Ihn trotzdem
+        // erst zu versuchen, kostet nur wieder die vier Sekunden.
+        if serverSpringt {
+            let gerundet = min(max(ziel, 0), max(dauer - 5, 0))
+            position = gerundet
+            spulziel = nil
+            markeVomWisch = false
+            wischt = false
+            wischEnde = Date()
+            spulAufgabe?.cancel()
+            spulAufgabe = nil
+            serverSprung(auf: gerundet)
+            return
+        }
+
+        let vorher = position
         position = ziel
         spulziel = nil
+        markeVomWisch = false
+        spulAufgabe?.cancel()
+        spulAufgabe = nil
+
+        // **Der Finger liegt beim Klick noch auf der Flaeche.**
+        //
+        // Auf der Fernbedienung ist der mittlere Knopf die Flaeche selbst: wer
+        // klickt, drueckt sie herunter, und dabei rutscht sie ein Stueck.
+        // Diese Nachzuckung kam als `changed` herein, setzte eine neue Marke —
+        // und die Leiste blieb im Spulzustand stehen, mit eingefrorenen
+        // Zeiten, bis man den Player verliess. Genau das hat
+        //
+        // Ein neuer Wisch faengt bei `began` wieder an; bis dahin ist er
+        // entwaffnet.
+        wischt = false
+        wischEnde = Date()
+
+        // Unter einer Sekunde ist es kein Sprung, sondern ein Neuaufbau des
+        // Stroms fuer nichts.
+        guard abs(ziel - vorher) >= 1 else { return }
+
+        // **Nie zwei Spruenge uebereinander.**
+        //
+        // `seek(toSeconds:)` rechnet den Abstand aus VLCs **eigener** Zeit.
+        // Solange der vorige Sprung nicht gelandet ist, steht die noch auf der
+        // alten Stelle — der zweite rechnete von dort und landete zu weit.
+        // Danach zog VLC sich wieder zurecht: erst lief es, dann sprang ein
+        // Stueck, dann lief es weiter. Auch das hat
+        if sprungBis != nil {
+            spulAufgabe = Task {
+                // **Warten, bis der vorige angekommen ist — nicht eine Frist
+                // absitzen.** Der Takt loescht `sprungBis`, sobald VLC dort
+                // steht; meist ist das viel frueher als jede feste Zahl. Der
+                // Deckel ist nur dafuer da, dass ein Sprung, der nie ankommt,
+                // den naechsten nicht verschluckt.
+                let deckel = Date().addingTimeInterval(3)
+                while !Task.isCancelled, sprungBis != nil, Date() < deckel {
+                    try? await Task.sleep(for: .milliseconds(120))
+                }
+                guard !Task.isCancelled else { return }
+                sprungBis = Date().addingTimeInterval(1.2)
+                flaeche.seek(toSeconds: ziel)
+            }
+            return
+        }
+
         sprungBis = Date().addingTimeInterval(1.2)
         flaeche.seek(toSeconds: ziel)
     }
@@ -677,10 +1038,10 @@ struct PlayerScreen: View {
     private func ausfuehren(_ befehl: Fernbefehl) {
         guard let flaeche else { return }
         switch befehl {
-        case .pause:      flaeche.pause();  laeuft = false; zeigen()
-        case .weiter:     flaeche.resume(); laeuft = true;  zeigen()
+        case .pause:      flaeche.pause();  laeuftSetzen(false); zeigen()
+        case .weiter:     flaeche.resume(); laeuftSetzen(true);  zeigen()
         case .umschalten: anhaltenOderWeiter()
-        case .stopp:      schliessen()
+        case .stopp:      verlassen()
         case .vor:        springen(Double(model.vorSekunden))
         case .zurueck:    springen(-Double(model.zurueckSekunden))
         case let .springenAuf(sekunden):
@@ -704,7 +1065,7 @@ struct PlayerScreen: View {
             try? await Task.sleep(for: .seconds(minuten * 60))
             guard !Task.isCancelled else { return }
             flaeche?.pause()
-            laeuft = false
+            laeuftSetzen(false)
             zeigen()
         }
     }
@@ -720,6 +1081,32 @@ struct PlayerScreen: View {
         while !Task.isCancelled {
             try? await Task.sleep(for: Wiedergabetakt.taktlaenge)
             guard let flaeche else { continue }
+
+            // **So frueh wie moeglich**, und das ist hier: VLC kennt die
+            // Spuren, sobald der Strom offen ist — lange vor dem ersten Bild.
+            // Der Moduswechsel laeuft dadurch hinter dem Ladeschirm ab. Setzt
+            // man ihn spaeter, wird der Fernseher mitten im Film schwarz.
+            // **Nur solange etwas offen ist.** Der Aufruf liest die
+            // Spurliste, und die baut VLCKit jedesmal neu auf — im halben
+            // Sekundentakt ist das kein Nachsehen mehr, sondern ein
+            // Dauergriff in ein laufendes Medium. Sobald die Rate einmal
+            // gemessen ist, bleibt VLC in Ruhe.
+            if Bildtakt.nochNachzumessen {
+                Bildtakt.anpassen(an: flaeche.player)
+            }
+
+            // **Angekommen heisst angekommen — nicht „1,2 Sekunden sind um".**
+            //
+            // Der Riegel nach einem Sprung stand auf einer festen Frist. Ist
+            // VLC frueher da, bleibt die Zeit trotzdem stehen; braucht es
+            // laenger, faellt der Riegel zu frueh und die Anzeige springt auf
+            // die alte Stelle zurueck. Beides hat Gemessen wird jetzt, ob VLC
+            // dort ist, wo wir hinwollten.
+            if sprungBis != nil, abs(flaeche.positionSeconds - position) < 2 {
+                sprungBis = nil
+            }
+
+            stockungPruefen(flaeche)
 
             // Den Stand der Ansicht uebernehmen: Sprung, Folgenwechsel und
             // Anhalten aendern ihn zwischen zwei Takten.
@@ -747,10 +1134,17 @@ struct PlayerScreen: View {
 
             position = stand.position
             dauer = stand.dauer
-            laeuft = stand.laeuft
+            // **Der Takt ist der Gleichrichter.** `Wiedergabetakt` zieht den
+            // Stand aus `flaeche.isPlaying` nach, sobald ein Bild steht —
+            // beide Haelften muessen ihn bekommen, sonst driftet die Klasse
+            // gegen die Ansicht und wir haetten den alten Fehler an neuer
+            // Stelle.
+            laeuftSetzen(stand.laeuft)
             spurenGesetzt = stand.spurenGesetzt
             startGemeldet = stand.startGemeldet
 
+            // Waehrend des Moduswechsels ist der Ausgang schwarz. Den
+            // Ladeschirm da wegzunehmen hiesse, ein totes Bild zu zeigen.
             if auftrag.ladeschirmWeg {
                 withAnimation(.easeOut(duration: 0.3)) { erstesBildDa = true }
             }
@@ -809,8 +1203,12 @@ struct PlayerScreen: View {
 /// rechts springen darauf. Ein Schieber, auf den man den Fokus erst legen
 /// muss, wäre auf der Fernbedienung ein Weg zu viel.
 struct Zeitleiste: View {
+    /// Wo der Film wirklich steht.
     let position: Double
     let dauer: Double
+    /// Das Ziel, solange eine Marke steht — beim Wischen und beim schnellen
+    /// Tippen. `nil` heisst: die Leiste zeigt den Stand, nicht eine Absicht.
+    let marke: Double?
     /// Aus den Einstellungen, nicht fest verdrahtet — dieselben Werte, die
     /// auch die Fernsteuerung benutzt.
     let zurueck: Double
@@ -822,36 +1220,71 @@ struct Zeitleiste: View {
 
     @Environment(\.isFocused) private var fokus
 
-    private var anteil: Double {
+    private var spult: Bool { marke != nil }
+    /// Was die Zeiten und der Kopf zeigen: das Ziel, sonst der Stand.
+    private var gezeigt: Double { marke ?? position }
+
+    private func anteil(_ sekunden: Double) -> Double {
         guard dauer > 0 else { return 0 }
-        return min(max(position / dauer, 0), 1)
+        return min(max(sekunden / dauer, 0), 1)
     }
+
+    private var balkenHoehe: CGFloat { spult ? 16 : 8 }
+    private var kopf: CGFloat { spult ? 38 : (fokus ? 30 : 26) }
 
     var body: some View {
         HStack(spacing: 26) {
-            Text(Spielzeit.text(position))
+            Text(Spielzeit.text(gezeigt))
+                .foregroundStyle(spult ? Stil.akzent : Color.white.opacity(0.9))
+
             GeometryReader { rahmen in
+                let breite = rahmen.size.width
+                let stand = anteil(position)
+                let ziel = anteil(gezeigt)
+
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.24))
-                        .frame(height: 8)
+                        .frame(height: balkenHoehe)
+
+                    // Bis zur wirklichen Stelle: das ist gesehen.
                     Capsule().fill(Stil.akzent)
-                        .frame(width: rahmen.size.width * anteil, height: 8)
-                    Circle().fill(Color.white)
-                        .frame(width: fokus ? 30 : 26, height: fokus ? 30 : 26)
-                        .offset(x: rahmen.size.width * anteil - (fokus ? 15 : 13))
+                        .frame(width: breite * min(stand, ziel), height: balkenHoehe)
+
+                    // **Die Strecke zwischen Stand und Ziel.**
+                    //
+                    // Ohne sie sagt die Leiste beim Spulen nur, wo man
+                    // hinwill — nicht, wie weit das von hier ist. Genau das
+                    // ist die Frage beim Wischen, und eine Zahl dafuer stand
+                    // frueher als Blase mitten im Bild.
+                    if spult {
+                        Capsule().fill(Color.white.opacity(0.55))
+                            .frame(width: breite * abs(ziel - stand),
+                                   height: balkenHoehe)
+                            .offset(x: breite * min(stand, ziel))
+                    }
+
+                    Circle()
+                        .fill(spult ? Stil.akzent : Color.white)
+                        .overlay(Circle().strokeBorder(Color.white,
+                                                       lineWidth: spult ? 5 : 0))
+                        .frame(width: kopf, height: kopf)
+                        .offset(x: breite * ziel - kopf / 2)
+                        .shadow(color: .black.opacity(spult ? 0.5 : 0), radius: 10)
                 }
-                .frame(height: 30)
+                .frame(height: kopf)
                 .frame(maxHeight: .infinity)
             }
-            .frame(height: 30)
-            Text("−" + Spielzeit.text(max(dauer - position, 0)))
+            .frame(height: 40)
+
+            Text("−" + Spielzeit.text(max(dauer - gezeigt, 0)))
+                .foregroundStyle(spult ? Stil.akzent : Color.white.opacity(0.9))
         }
         .font(Stil.klein.monospacedDigit())
-        .foregroundStyle(Color.white.opacity(0.9))
         .focusable()
         // Der mittlere Knopf landet auf der fokussierten Ansicht.
         .onTapGesture { klick() }
         .animation(Stil.fokusAnimation, value: fokus)
+        .animation(.easeInOut(duration: 0.18), value: spult)
         .onMoveCommand { richtung in
             switch richtung {
             case .left:  springen(-zurueck)
@@ -900,11 +1333,13 @@ struct VideoFlaeche: UIViewRepresentable {
     let url: URL
     let startAt: Double
     let container: String?
+    /// Wo im Titel der gelieferte Strom beginnt — siehe `PlaybackPlan`.
+    var versatz: Double = 0
     let angelegt: (VLCPlayerView) -> Void
 
     func makeUIView(context: Context) -> VLCPlayerView {
         let view = VLCPlayerView()
-        view.play(url: url, abSekunden: startAt, container: container)
+        view.play(url: url, abSekunden: startAt, container: container, versatz: versatz)
         DispatchQueue.main.async { angelegt(view) }
         return view
     }
@@ -927,4 +1362,111 @@ final class Schaltwerk {
     /// Wann zuletzt umgeschaltet wurde — gegen doppelte Zustellung desselben
     /// Tastendrucks ueber zwei Wege.
     var zuletzt = Date.distantPast
+
+    /// **Ob gerade laeuft — und zwar so, wie der Zuschauer es sieht.**
+    ///
+    /// Stand vorher nur als `@State` in der Ansicht, und `anhaltenOderWeiter`
+    /// fragte stattdessen `flaeche.isPlaying`. Der Kommentar darueber sagte
+    /// schon das Richtige — „nach `laeuft` richten, nicht nach VLC" —, der
+    /// Code tat das Gegenteil.
+    ///
+    /// Die Folge hat `isPlaying` hinkt dem Befehl nach; wer danach fragt,
+    /// waehlt die Richtung nach einem Stand, den es nicht mehr gibt, und
+    /// schaltet zurueck, was er eben geschaltet hat. Baut VLC gerade seine
+    /// Bildausgabe wieder auf, dauert das Nachhinken Sekunden statt
+    /// Millisekunden — dann laeuft es endgueltig auseinander.
+    ///
+    /// Hier und nicht in der Ansicht, weil die Fernsteuerung aus
+    /// festgehaltenen Rueckrufen liest. Siehe die Erklaerung oben an dieser
+    /// Klasse.
+    var laeuft = true
+}
+
+/// Die Wischfläche der Fernbedienung.
+///
+/// **Warum UIKit.** SwiftUI meldet vom Trackpad nur `onMoveCommand` — ein
+/// Schritt je Wisch, ohne Weg und ohne Tempo. Zum Spulen braucht es die
+/// Fingerbewegung selbst, und die gibt tvOS allein über einen
+/// `UIPanGestureRecognizer` mit indirekten Berührungen heraus.
+///
+/// **Warum am Fenster.** Indirekte Berührungen haben keinen Ort auf dem Bild;
+/// tvOS stellt sie der fokussierten Ansicht zu und lässt sie von dort die
+/// Kette hinauflaufen. Eine Ebene im ZStack ist Geschwister der Leiste, nicht
+/// ihr Vorfahr — dort käme nie etwas an. Das Fenster ist der einzige Punkt,
+/// an dem beides zusammenläuft. Der Player füllt es ganz, und beim Abbau
+/// nimmt `dismantleUIView` den Erkenner wieder weg.
+struct Wischfeld: UIViewRepresentable {
+    let beginnt: () -> Void
+    /// Weg seit dem letzten Ruf und das Tempo, beides in Punkten.
+    let bewegt: (CGFloat, CGFloat) -> Void
+    let endet: () -> Void
+
+    func makeUIView(context: Context) -> Traeger {
+        let traeger = Traeger()
+        traeger.isUserInteractionEnabled = false
+        let erkenner = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Melder.gewischt(_:)))
+        erkenner.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+        // Der Fokus muss weiterlaufen: derselbe Wisch bewegt auch ihn, und
+        // ein Erkenner, der die Berührung schluckt, legt die Bedienung lahm.
+        erkenner.cancelsTouchesInView = false
+        erkenner.delaysTouchesBegan = false
+        erkenner.delegate = context.coordinator
+        traeger.erkenner = erkenner
+        return traeger
+    }
+
+    func updateUIView(_ traeger: Traeger, context: Context) {
+        context.coordinator.eltern = self
+    }
+
+    static func dismantleUIView(_ traeger: Traeger, coordinator: Melder) {
+        guard let erkenner = traeger.erkenner else { return }
+        erkenner.view?.removeGestureRecognizer(erkenner)
+    }
+
+    func makeCoordinator() -> Melder { Melder(self) }
+
+    /// Hängt den Erkenner ans Fenster, sobald es eines gibt.
+    final class Traeger: UIView {
+        var erkenner: UIPanGestureRecognizer?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard let erkenner else { return }
+            erkenner.view?.removeGestureRecognizer(erkenner)
+            window?.addGestureRecognizer(erkenner)
+        }
+    }
+
+    final class Melder: NSObject, UIGestureRecognizerDelegate {
+        var eltern: Wischfeld
+        private var letzte: CGFloat = 0
+
+        init(_ eltern: Wischfeld) { self.eltern = eltern }
+
+        @objc func gewischt(_ erkenner: UIPanGestureRecognizer) {
+            let x = erkenner.translation(in: nil).x
+            switch erkenner.state {
+            case .began:
+                letzte = x
+                eltern.beginnt()
+            case .changed:
+                let weg = x - letzte
+                letzte = x
+                eltern.bewegt(weg, erkenner.velocity(in: nil).x)
+            case .ended, .cancelled, .failed:
+                eltern.endet()
+            default:
+                break
+            }
+        }
+
+        // Neben dem Fokussystem, nicht statt seiner.
+        func gestureRecognizer(_ erkenner: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith anderer: UIGestureRecognizer) -> Bool {
+            true
+        }
+    }
 }

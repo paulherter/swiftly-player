@@ -20,9 +20,28 @@ enum Protokoll {
     nonisolated(unsafe) private static var griff: FileHandle?
     private static let sperre = NSLock()
 
-    static let pfad: URL = FileManager.default
-        .urls(for: .documentDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("swiftly.log")
+    /// **Auf dem Fernseher nicht `Documents`.**
+    ///
+    /// tvOS gibt Apps kein beschreibbares Dokumentenverzeichnis — `createFile`
+    /// schlaegt dort fehl, und zwar lautlos, weil der Rueckgabewert niemanden
+    /// interessiert. Das Protokoll hat auf tvOS also **nie** geschrieben, und
+    /// niemandem ist es aufgefallen: ein Werkzeug, das stumm nichts tut, sieht
+    /// aus wie ein Werkzeug, an dem es nichts zu sehen gibt. Gemerkt haben wir
+    /// es erst, als der Ordner beim Abholen leer war.
+    ///
+    /// `Caches` ist dort das, was geht. Fuer eine Datei, die ohnehin bei
+    /// 256 KB gekappt wird und nur der Fehlersuche dient, ist das richtig —
+    /// sie soll gar nicht ueberdauern.
+    static let pfad: URL = {
+        #if os(tvOS)
+        let ordner: FileManager.SearchPathDirectory = .cachesDirectory
+        #else
+        let ordner: FileManager.SearchPathDirectory = .documentDirectory
+        #endif
+        return FileManager.default
+            .urls(for: ordner, in: .userDomainMask)[0]
+            .appendingPathComponent("swiftly.log")
+    }()
 
     static func schreib(_ text: String) {
         // Ein Fehlersuch-Werkzeug gehört nicht in die ausgelieferte Fassung:
@@ -129,11 +148,17 @@ final class VLCPlayerView: Basisansicht {
         layer?.backgroundColor = NSColor.black.cgColor
         #endif
 
-        // VLCs eigenes Protokoll — zeigt Zugriffs- und Demux-Schicht.
-        // Ohne das rate ich weiter, wo die Wartezeit herkommt.
-        let ausgabe = VLCConsoleLogger()
-        ausgabe.level = .debug
-        VLCLibrary.shared().loggers = [ausgabe]
+        // **VLCs eigenes Protokoll — und zwar dorthin, wo es lesbar ist.**
+        //
+        // Es lief auf `VLCConsoleLogger`, also auf die Systemkonsole. Am
+        // Fernseher kommt da niemand heran; die Zeilen, die sagen, woran der
+        // Demuxer haengt, waren geschrieben und trotzdem unerreichbar.
+        // Derselbe Fehler wie beim eigenen Protokoll, das in `Documents`
+        // schrieb, wo tvOS nichts schreiben laesst: ein Werkzeug, das lautlos
+        // ins Leere laeuft, sieht aus wie eines, das nichts zu melden hat.
+        #if DEBUG
+        VLCLibrary.shared().loggers = [Dateiprotokoll()]
+        #endif
 
         // Muss die View selbst sein: VLC prüft die Zeichenfläche auf
         // VLCPictureInPictureDrawable, und die Schnittstelle sitzt hier.
@@ -211,6 +236,58 @@ final class VLCPlayerView: Basisansicht {
     /// Anfang stehen und dann sichtbar nach vorn springen.
     var stelltEin: Bool { startposition != nil || erstStelle != nil }
 
+    /// Ob fuer diesen Strom `mkv_trusted` gesetzt wurde — siehe `oeffnen`.
+    private(set) var matroskaVertraut = false
+
+    // MARK: Sprung ueber die Byte-Stelle
+
+    /// **Ob Spruenge ueber die Zeit bei dieser Datei etwas taugen.**
+    ///
+    /// Gemessen, nicht angenommen. Bei einer Folge las VLC den Index der Datei
+    /// und brach beim Auswerten ab — „MKV/Ebml Parser: m_el[mi_level] == NULL",
+    /// danach „loading cues done" mit null Eintraegen. Fuer den naechsten
+    /// Sprung waehlte es dann `fpos 3154, pts 0`, also den Dateianfang, und
+    /// las sich 125 MB vorwaerts. Bei 11 Mbit/s ist das anderthalb Minuten
+    /// fuer einen Sprung, und beim naechsten faengt es von vorn an.
+    ///
+    /// Beide VLCKit-Fassungen im Haus verhalten sich gleich; dieselbe Datei
+    /// laeuft in Swiftfin auf VLCKit 3 sofort. Es ist also kein Fehler der
+    /// Alpha, sondern eine Datei, deren Index VLC 4 nicht lesen kann.
+    /// **Nur zur Messung, nicht als Weiche.**
+    ///
+    /// Erster Anlauf sprang bei unbrauchbarem Index ueber den Byte-Anteil
+    /// statt ueber die Zeit. Gemessen: das landet **genauso** am Dateianfang.
+    /// VLC 4 schickt beide durch denselben Sucher, und der hat ohne
+    /// Sprungpunkte nur die schon gelesenen Cluster. Der Rueckfall war also
+    /// derselbe Weg unter anderem Namen — und weil er zusaetzliche Spruenge
+    /// ausloest, von denen jeder neu vorwaerts liest, machte er es schlimmer.
+    ///
+    /// Was bleibt, ist die Frage: kam der Sprung an? Sie steht im Protokoll
+    /// und haelt die Notbremse zurueck, solange noch einer unterwegs ist.
+    private var offenesZiel: Double?
+    private var offenSeit: Date?
+    /// Wie oft fuer dieses Ziel schon ein anderer Weg probiert wurde.
+    private var sprungStufe = 0
+    /// Wann zuletzt ein Sprung angestossen wurde — egal ob er ankam.
+    private var letzterSprungbefehl = Date.distantPast
+    /// Ob fuer diese Datei der zweite Weg der bessere ist — einmal gemessen,
+    /// dann fuer alle weiteren Spruenge gemerkt.
+    private var zeitsetzenBesser = false
+
+    /// **Wo im Titel der gelieferte Strom anfaengt.**
+    ///
+    /// Null, solange der Server die Datei roh durchreicht. Liefert er ab einer
+    /// Stelle, zaehlt VLCs Zeit dort bei null los — und alles, was diese
+    /// Ansicht nach aussen meldet, muss den Versatz aufschlagen. Sonst zeigt
+    /// die Leiste den Anfang eines Films, der laengst laeuft, und der Server
+    /// bekaeme dieselbe falsche Stelle gemeldet.
+    private(set) var zeitversatz: Double = 0
+
+    /// Ruft, wenn ein Sprung nicht angekommen ist und auch nicht mehr
+    /// ankommen wird — der Index der Datei taugt nichts. Wer das hoert, kann
+    /// den Server bitten, ab der Stelle zu liefern.
+    var onSprungGescheitert: ((Double) -> Void)?
+
     /// Ob VLC schon ein Bild ausgibt. Davor ist die Flaeche schwarz.
     var zeigtBild: Bool { player.hasVideoOut }
 
@@ -225,7 +302,8 @@ final class VLCPlayerView: Basisansicht {
     private var letzteGutePosition: Double = 0
 
     private var laengeSekunden: Double {
-        Double(player.media?.length.intValue ?? 0) / 1000
+        guard let ms = player.media?.length.intValue, ms > 0 else { return 0 }
+        return zeitversatz + Double(ms) / 1000
     }
 
     /// Beim Wechsel WLAN <-> Mobilfunk bekommt das Geraet eine andere
@@ -284,6 +362,57 @@ final class VLCPlayerView: Basisansicht {
         neuVerbinden(grund: "Strom abgerissen")
     }
 
+    /// **Ist der Sprung angekommen, wo er hinsollte?**
+    ///
+    /// Ohne diese Frage bleibt „gesprungen" eine Absicht. Kommt VLC nicht an,
+    /// liegt es am Index der Datei — und dann ist der zweite Versuch ueber den
+    /// Byte-Anteil der einzige, der ueberhaupt ankommt.
+    private func sprungNachmessen() {
+        guard let ziel = offenesZiel, let seit = offenSeit else { return }
+        guard Date().timeIntervalSince(seit) > 2.5 else { return }
+
+        let ist = positionSeconds
+        let daneben = abs(ist - ziel)
+        if daneben <= 5 {
+            offenesZiel = nil
+            offenSeit = nil
+            return
+        }
+        // **Nach vier Sekunden ist es entschieden.**
+        //
+        // Ein Sprung, der ueber einen brauchbaren Index laeuft, sitzt in
+        // unter einer Sekunde: eine Bereichsanfrage, ein Cluster, fertig.
+        // Wer nach vier Sekunden noch am Dateianfang steht, liest sich
+        // vorwaerts durch und wird das auch in einer Minute noch tun. Laenger
+        // zu warten hilft niemandem — es verzoegert nur den einzigen Weg, der
+        // ankommt.
+        // Zweieinhalb Sekunden je Weg: ein Sprung, der ueber einen
+        // brauchbaren Index laeuft, sitzt in unter einer Sekunde. Laenger zu
+        // warten verzoegert nur den Weg, der wirklich ankommt.
+        guard Date().timeIntervalSince(seit) > 2.5 else { return }
+
+        // **Erst den anderen Weg, dann erst den Server.**
+        //
+        // Der zweite Versuch kostet nichts als einen weiteren Sprungbefehl —
+        // und wenn er ankommt, bleibt die Datei bei Direct Play, ohne dass
+        // der Server etwas tun muss. Erst wenn auch er nicht ankommt, ist es
+        // wirklich die Datei und nicht der Weg.
+        if sprungStufe == 0 {
+            sprungStufe = 1
+            zeitsetzenBesser.toggle()
+            Protokoll.schreib("[VLC] Sprung auf \(Int(ziel)) s kam nicht an (steht bei \(Int(ist)) s) → anderer Weg")
+            sprungAusloesen(auf: ziel, ueberZeit: zeitsetzenBesser)
+            offenSeit = Date()
+            return
+        }
+
+        zeitsetzenBesser.toggle()
+        Protokoll.schreib("[VLC] Sprung auf \(Int(ziel)) s kam auf beiden Wegen nicht an → Server soll springen")
+        offenesZiel = nil
+        offenSeit = nil
+        onSprungGescheitert?(ziel)
+    }
+
     /// Zweite Absicherung fuer Abrisse, bei denen VLC im Zustand Playing
     /// bleibt und nur die Zeit stehen bleibt — Funkloch, Serveraussetzer.
     private func stillstandPruefen() {
@@ -291,6 +420,8 @@ final class VLCPlayerView: Basisansicht {
         if startposition != nil { startpositionSetzen() }
 
         guard !absichtlichBeendet, player.media != nil, player.isPlaying else { return }
+
+        sprungNachmessen()
 
         let jetzt = player.time.intValue
         let stelle = Double(jetzt) / 1000
@@ -347,6 +478,54 @@ final class VLCPlayerView: Basisansicht {
         let frisch = netzwechselSeit.map { Date().timeIntervalSince($0) < 90 } ?? false
         let dauer = Date().timeIntervalSince(seit)
         guard dauer >= (frisch ? 2 : 6) else { return }
+
+        // **Wer puffert, lebt — und dem reisst man nichts ab.**
+        //
+        // Gemessen an einer HEVC-Folge, die minutenlang „lud": der Puffer
+        // stieg auf 52 %, sechs Sekunden spaeter riss die Notbremse den Strom
+        // ab, der Wiederaufbau kostete zehn Sekunden samt neuem Sprung, und
+        // danach fing dasselbe von vorn an. Die Bremse hat den Haenger nicht
+        // behoben, sie hat ihn erzeugt.
+        //
+        // Die Bremse ist fuer Abrisse da — Funkloch, Serveraussetzer. Dort
+        // waechst nichts mehr. Waechst der Puffer noch, ist der Strom zaeh,
+        // und Geduld ist die richtige Antwort. Erst wenn auch er stillsteht,
+        // ist es ein Abriss.
+        // **Ein laufender Sprung ist kein Abriss.**
+        //
+        // Bei einer Datei mit unlesbarem Index liest VLC sich nach jedem
+        // Sprung vom Dateianfang vorwaerts. Das dauert, und die Bremse hat
+        // genau dort zugeschlagen: abreissen, zehn Sekunden neu aufbauen,
+        // neu springen — und dasselbe von vorn. Sie hat den Haenger nicht
+        // behoben, sondern verewigt.
+        //
+        // Der Puffermelder allein reicht als Schutz nicht: waehrend dieser
+        // Phase liefert VLCKit gar keine Puffer-Rueckrufe, obwohl VLC intern
+        // von 0 auf 99 Prozent zaehlt. Gemessen im Geraeteprotokoll.
+        // **Auch nach einem gescheiterten Sprung nicht abreissen.**
+        //
+        // Gemessen: bei einer Datei mit unlesbarem Index kam der Sprung auf
+        // keinem der beiden Wege an; danach stand `offenesZiel` wieder auf
+        // nichts, die Bremse griff — und riss den Strom ab, waehrend VLC sich
+        // gerade vorwaerts las. Der Wiederaufbau kostete zehn Sekunden und
+        // begann von vorn. Sie hat den Haenger nicht behoben, sondern
+        // verewigt, und zwar so lange, bis jemand den Player verlaesst.
+        //
+        // Zwanzig Sekunden Ruhe nach jedem Sprungbefehl. Das war eine
+        // Minute, solange ein Sprung in einer Datei mit kaputtem Index
+        // beliebig lange dauern konnte; seit dem VLC-Patch sitzt er in
+        // Millisekunden. Kuerzer ist besser: solange die Frist laeuft, ist
+        // die Absicherung gegen echte Abrisse ausgesetzt.
+        if offenesZiel != nil || Date().timeIntervalSince(letzterSprungbefehl) < 20 {
+            Protokoll.schreib("[Netz] Bild steht seit \(Int(dauer)) s, Sprung noch unterwegs → abwarten")
+            return
+        }
+
+        if melder.pufferWuchsVor < 4 {
+            Protokoll.schreib("[Netz] Bild steht seit \(Int(dauer)) s, Puffer waechst noch → abwarten")
+            return
+        }
+
         neuVerbinden(grund: "Bild steht seit \(Int(dauer)) s")
     }
 
@@ -371,7 +550,10 @@ final class VLCPlayerView: Basisansicht {
         letzteBekannteZeit = -1
         stelltWiederHer = true
         Protokoll.schreib("[Netz] \(grund) → Strom neu aufbauen bei \(Int(letzteGutePosition)) s")
-        oeffnen(url: adresse, abSekunden: letzteGutePosition, container: letzterContainer)
+        // Der Versatz bleibt: dieselbe Adresse liefert wieder ab derselben
+        // Stelle, gesprungen wird nur der Rest.
+        oeffnen(url: adresse, abSekunden: max(letzteGutePosition - zeitversatz, 0),
+                container: letzterContainer)
     }
 
 
@@ -395,9 +577,11 @@ final class VLCPlayerView: Basisansicht {
         // Vor dem ersten Bild verpufft ein Sprung wirkungslos.
         guard player.isSeekable, player.time.intValue > 0 else { return }
         startposition = nil
-        let abstand = ziel - positionSeconds
-        player.jump(withOffset: Int32(clamping: Int(abstand * 1000)), completion: {})
-        Protokoll.schreib("[VLC] Startposition gesetzt: \(Int(ziel)) s (Abstand \(Int(abstand)) s)")
+        Protokoll.schreib("[VLC] Startposition gesetzt: \(Int(ziel)) s (von \(Int(positionSeconds)) s)")
+        // Ueber denselben Weg wie jeder andere Sprung — samt Nachmessung.
+        // Die Startstelle ist der Sprung, der am meisten weh tut, wenn der
+        // Index nichts hergibt: er kommt vor dem ersten Bild.
+        seek(toSeconds: zeitversatz + ziel)
     }
 
     private var startposition: Double?
@@ -480,7 +664,8 @@ final class VLCPlayerView: Basisansicht {
     /// HTTPS dauert ein Sprung länger als die Wartezeit, die Position las sich
     /// noch als alt, es wurde erneut gesprungen — und der Demuxer kam nie zur
     /// Ruhe. Von vorn gestartete Titel liefen deshalb, fortgesetzte nicht.
-    func play(url: URL, abSekunden: Double = 0, container: String? = nil) {
+    func play(url: URL, abSekunden: Double = 0, container: String? = nil,
+              versatz: Double = 0) {
         // Die Sitzung wird beim App-Start eingerichtet. Hier nur prüfen und
         // notfalls nachziehen — mit sichtbarem Fehler statt stillem try?.
         //
@@ -504,8 +689,13 @@ final class VLCPlayerView: Basisansicht {
 
         letzteAdresse = url
         letzterContainer = container
-        letzteGutePosition = abSekunden
+        zeitversatz = versatz
+        letzteGutePosition = versatz + abSekunden
         absichtlichBeendet = false
+        offenesZiel = nil
+        offenSeit = nil
+        sprungStufe = 0
+        zeitsetzenBesser = false
 
         wachhund?.invalidate()
         wachhund = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -568,9 +758,37 @@ final class VLCPlayerView: Basisansicht {
         //
         // Erst ist der Puffer leer, dann faellt der Strom auf. Genau deshalb
         // wird beim Streckenwechsel nichts abgerissen, sondern abgewartet.
-        medium.addOption(":prefetch-buffer-size=65536")
+        //
+        // **Und genau das kostete beim Springen.**
+        //
+        // 65536 KiB waren 64 MiB, das Vierfache der Vorgabe. Ein Vorlauf
+        // traegt aber nur, solange er steht — bei jedem Sprung wirft VLC ihn
+        // weg und fuellt neu, und bis dahin bewegt sich kein Bild. Gemessen an
+        // einer Folge, bei der Springen dreissig bis fuenfzig Sekunden
+        // brauchte: der Puffer stieg in vier Sekunden auf 96 %, die Leitung
+        // war also nie das Problem — er war nur zu gross, um schnell wieder
+        // voll zu sein. Dieselbe Datei laeuft in Swiftfin sofort, und
+        // Swiftfin setzt diese Option nicht.
+        //
+        // 16384 KiB sind VLCs Vorgabe, rund elf Sekunden bei 11 Mbit/s. Der
+        // Netzwechsel bleibt damit ueberbrueckt, nur nicht mehr eine
+        // dreiviertel Minute lang — und das ist der bessere Tausch: ein
+        // Wechsel kommt selten, ein Sprung bei jeder Folge.
+        // **Gemessen: der Filter laesst sich so nicht abwaehlen.** Mit
+        // Groesse null laedt er trotzdem, nur eben ohne Puffer — schlechter
+        // als vorher. `STREAM_CAN_FASTSEEK` bleibt aus, und damit bleibt der
+        // Bereichs-Scan der Matroska unerreichbar. Zurueck auf 16 MiB.
+        medium.addOption(":prefetch-buffer-size=16384")
 
-        if istMatroska(container: container, url: url) {
+
+        // **Die Entscheidung muss ablesbar sein.**
+        //
+        // Sie ist der Unterschied zwischen „Sprung sitzt" und „Sprung landet
+        // am Dateianfang und braucht zwanzig Sekunden". Fällt sie falsch,
+        // sieht man ihr das nicht an — man sieht nur einen Player, der beim
+        // Spulen an den Anfang springt, und sucht überall sonst.
+        matroskaVertraut = istMatroska(container: container, url: url)
+        if matroskaVertraut {
             medium.addOption(":demux=mkv_trusted")
             Protokoll.schreib("[VLC] Matroska erkannt → Demuxer mkv_trusted (Cues gelten)")
         }
@@ -618,6 +836,19 @@ final class VLCPlayerView: Basisansicht {
 
     var gewaehlteTonspur: VLCMediaPlayer.Track? { player.audioTracks.first(where: \.isSelected) }
     var gewaehlterUntertitel: VLCMediaPlayer.Track? { player.textTracks.first(where: \.isSelected) }
+
+    /// VLCs Zaehlwerk: verworfene Bilder, Bitraten, Dekoderbloecke.
+    ///
+    /// **Nur lesend, greift in nichts ein.** Sie beantwortet die eine Frage,
+    /// die man einer flatternden Wiedergabe sonst nicht ansieht: laeuft die
+    /// Datei wirklich glatt, oder sieht sie nur glatt aus, weil VLC still
+    /// Bilder wegwirft? `lostPictures` steigt dann, `displayedPictures`
+    /// bleibt zurueck — und genau das ist bei einer App, die niemals
+    /// transkodieren will, der Unterschied zwischen „geht" und „geht
+    /// gerade noch".
+    ///
+    /// `nil`, solange kein Medium geladen ist.
+    var statistik: VLCMedia.Stats? { player.media?.statistics }
 
     /// Wählt Ton- und Untertitelspur nach den Voreinstellungen.
     ///
@@ -680,12 +911,14 @@ final class VLCPlayerView: Basisansicht {
     // MARK: - Position
 
     /// Aktuelle Position in Sekunden.
-    var positionSeconds: Double { Double(player.time.intValue) / 1000 }
+    var positionSeconds: Double { zeitversatz + Double(player.time.intValue) / 1000 }
 
     /// Gesamtlaenge in Sekunden. 0, solange VLC die Datei noch liest.
     var durationSeconds: Double {
         guard let ms = player.media?.length.intValue, ms > 0 else { return 0 }
-        return Double(ms) / 1000
+        // Der Server liefert die Restlaenge; die Oberflaeche braucht die
+        // ganze. Bei Versatz null ist beides dasselbe.
+        return zeitversatz + Double(ms) / 1000
     }
 
     var isPlaying: Bool { player.isPlaying }
@@ -698,14 +931,47 @@ final class VLCPlayerView: Basisansicht {
     /// sequenziell vor. Das dauerte 28 Sekunden. Derselbe Sprung über
     /// `jump(withOffset:)` fordert sofort das richtige Byte an (22,5 % der
     /// Datei) und ist nach sechs Sekunden da.
+    /// **Zwei Wege, und welcher taugt, entscheidet die Datei.**
+    ///
+    /// `jump(withOffset:)` und `player.time = …` landen in VLC 4 in
+    /// verschiedenen Suchern. Fuer eine Datei war `jump` der schnelle und
+    /// `time` brauchte 28 Sekunden — das steht seit damals in
+    /// `Erfahrungen.md`. Fuer eine andere ist es genau umgekehrt: dort sind
+    /// die Sprungpunkte unlesbar, `jump` liest ab Dateianfang vorwaerts, und
+    /// `time` sitzt sofort. Swiftfin nimmt immer `time` und springt in dieser
+    /// Datei ohne Verzoegerung — bei Direct Play, also derselben Rohdatei.
+    ///
+    /// Es gibt also keinen Weg, der immer richtig ist. Statt einen zu waehlen
+    /// und zu hoffen, wird der erste versucht und **nachgemessen**; kommt er
+    /// nicht an, nimmt der naechste den anderen. Das kostet einmal je Datei
+    /// ein paar Sekunden und danach nie wieder.
     func seek(toSeconds seconds: Double) {
         melder.sprungJetzt()
-        let abstand = seconds - positionSeconds
-        let zeile = "[VLC] Sprung auf \(Int(seconds)) s (von \(Int(positionSeconds)) s), Abstand \(Int(abstand)) s"
-        Self.log.info("\(zeile, privacy: .public)")
-        player.jump(withOffset: Int32(clamping: Int(abstand * 1000)), completion: {})
+        sprungAusloesen(auf: seconds, ueberZeit: zeitsetzenBesser)
+        sprungBeobachten(ziel: seconds)
         refreshPiPState()
     }
+
+    private func sprungAusloesen(auf sekunden: Double, ueberZeit: Bool) {
+        if ueberZeit {
+            Protokoll.schreib("[VLC] Sprung auf \(Int(sekunden)) s ueber die Zeit (von \(Int(positionSeconds)) s)")
+            player.time = VLCTime(int: Int32(clamping: Int((sekunden - zeitversatz) * 1000)))
+        } else {
+            let abstand = sekunden - positionSeconds
+            Protokoll.schreib("[VLC] Sprung auf \(Int(sekunden)) s ueber den Abstand \(Int(abstand)) s")
+            player.jump(withOffset: Int32(clamping: Int(abstand * 1000)), completion: {})
+        }
+    }
+
+    /// Merkt sich, wohin gesprungen werden sollte — `sprungNachmessen` sieht
+    /// eine Sekunde spaeter nach, ob es geklappt hat.
+    private func sprungBeobachten(ziel: Double) {
+        offenesZiel = ziel
+        offenSeit = Date()
+        sprungStufe = 0
+        letzterSprungbefehl = Date()
+    }
+
 
     func jump(seconds: Int32) {
         melder.sprungJetzt()
@@ -755,6 +1021,41 @@ final class Zeichenflaeche: Basisansicht {
 
 /// Beobachtet VLCs Zustand — bewusst ohne Actor-Isolation, weil VLCKit aus
 /// einem eigenen Thread meldet.
+#if DEBUG
+/// Leitet VLCs eigene Meldungen in dieselbe Datei wie unsere.
+///
+/// **Gefiltert, nicht vollstaendig.** Auf `debug` schreibt VLC hunderte Zeilen
+/// je Sekunde; ungefiltert waere die Datei nach Sekunden an ihrer Grenze und
+/// das Protokollieren selbst der Engpass. Durchgelassen wird, was die Frage
+/// beantwortet, wo die Wartezeit herkommt: Zugriffsschicht, Demuxer, Puffer,
+/// Decoder — dazu alles, was VLC selbst als Fehler oder Warnung einstuft.
+final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
+    var level: VLCLogLevel = .debug
+
+    /// **Nach Inhalt sieben, nicht nach Modul.**
+    ///
+    /// Erster Anlauf liess nur Meldungen bestimmter Module durch — mkv,
+    /// avcodec, videotoolbox. Im Protokoll standen daraufhin ausschliesslich
+    /// `http` und `libvlc`: VLCKit reicht den Modulnamen fuer die meisten
+    /// Meldungen gar nicht durch. Der Filter hat also genau das
+    /// weggeworfen, wonach gesucht wurde, und das Ergebnis sah aus wie
+    /// Funkstille. Geblieben ist nur das, was VLC selbst als Fehler
+    /// einstufte.
+    ///
+    /// Jetzt andersherum: alles behalten, ausser dem HTTP-Rahmenverkehr. Der
+    /// ist die eigentliche Flut — tausend Zeilen in dreissig Sekunden —, und
+    /// er sagt nichts, was die Bereichsanfragen nicht schon sagen.
+    private static let flut = ["frame of", "window update", "setting:", "headers:"]
+
+    func handleMessage(_ nachricht: String, logLevel: VLCLogLevel, context: VLCLogContext?) {
+        let text = nachricht.lowercased()
+        guard !Self.flut.contains(where: { text.contains($0) }) else { return }
+        let modul = context?.module ?? "?"
+        Protokoll.schreib("[vlc/\(modul)] \(nachricht)")
+    }
+}
+#endif
+
 final class Zustandsmelder: NSObject, VLCMediaPlayerDelegate, @unchecked Sendable {
     private weak var player: VLCMediaPlayer?
     private let lock = NSLock()
@@ -767,6 +1068,20 @@ final class Zustandsmelder: NSObject, VLCMediaPlayerDelegate, @unchecked Sendabl
 
     func sprungJetzt() {
         lock.lock(); letzterSprung = Date(); lock.unlock()
+    }
+
+    private var pufferstand: Float = 0
+    private var pufferWuchsZuletzt = Date.distantPast
+
+    /// **Wann der Puffer zuletzt gewachsen ist.**
+    ///
+    /// Das ist der Unterschied zwischen „langsam" und „tot". Ein abgerissener
+    /// Strom fuellt nichts mehr; ein zaeher fuellt weiter, nur nicht schnell
+    /// genug. Wer beides gleich behandelt, reisst genau dem den Boden weg,
+    /// der gerade dabei ist, sich zu fangen.
+    var pufferWuchsVor: TimeInterval {
+        lock.lock(); defer { lock.unlock() }
+        return Date().timeIntervalSince(pufferWuchsZuletzt)
     }
 
     private var seitSprung: String {
@@ -810,6 +1125,21 @@ final class Zustandsmelder: NSObject, VLCMediaPlayerDelegate, @unchecked Sendabl
         // Sekunde — ungedrosselt bremst allein das Protokollieren die App.
         guard fortschritt < 1 else { return }
         lock.lock()
+        // Ein Ruecksetzer auf null ist der Beginn eines neuen Fuellens, kein
+        // Rueckschritt — sonst gaelte der Neuanlauf als Stillstand.
+        //
+        // **Nur der Sprung auf null, nicht das Verharren dort.** Vorher stand
+        // hier `fortschritt == 0`, und das trifft auch einen Puffer, der
+        // dauerhaft bei null steht: jeder Rueckruf frischte den Zeitstempel
+        // auf, `pufferWuchsVor` blieb bei null, und die Notbremse haette in
+        // genau der Lage, fuer die es sie gibt, nie ausgeloest. Gefunden von
+        // der iOS-Sitzung beim Gegenlesen; in unserer Messung kamen in dieser
+        // Lage gar keine Rueckrufe, der Fehler war also nie zu sehen — eine
+        // Luecke in der Logik, kein beobachteter Ausfall.
+        if fortschritt > pufferstand || (fortschritt == 0 && pufferstand > 0) {
+            pufferWuchsZuletzt = Date()
+        }
+        pufferstand = fortschritt
         let faellig = Date().timeIntervalSince(letzteMeldung) > 1
         if faellig { letzteMeldung = Date() }
         lock.unlock()

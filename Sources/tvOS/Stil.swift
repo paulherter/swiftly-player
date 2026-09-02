@@ -86,6 +86,113 @@ extension Stil {
     /// da passt die Plakatreihe nicht mehr hinein.
     static let heldenHoehe: CGFloat = 510
 
+    /// **Um so viel steht eine Detailseite tiefer als die Startseite.**
+    ///
+    /// Die Startseite setzt ihren Textblock bei 196 an, `Film-Neu.dc.html` den
+    /// der Detailseite bei 140 — weil ueber der Startseite die Kopfleiste
+    /// steht und ueber der Detailseite nichts. Auf dem Schirm ist das aber
+    /// dieselbe Auskunft zum selben Film, und beim Druecken sprang sie um
+    /// diese 56 nach oben.
+    ///
+    /// Genau das ist es: die Leiste wird nicht gezeichnet, ihr Platz aber
+    /// freigehalten. **Der Hintergrund wandert nicht mit** — die Kulisse steht
+    /// im selben Stapel und behaelt ihre Lage.
+    ///
+    /// Verschoben wird der ganze Block, nicht die Abstaende darin. Deshalb
+    /// waechst auch die Kopfzone um denselben Betrag, und die Tafelmasse
+    /// gelten unveraendert weiter:
+    ///
+    /// 196 + 68 + 14 + 34 + 22 + 80 + 36 + 76 = 526   Block endet 566 + 24
+    /// = 590   Reihentitel 590 − 526                              =  64   wie
+    /// in der Tafel
+    static let kopfversatzDetail: CGFloat = 56
+
+    /// Zeilenhoehe und Zeilenabstand der Beschreibung.
+    ///
+    /// **Gerechnet, nicht geschaetzt** — daran ist es einmal gescheitert. Die
+    /// Tafel nennt eine Zeilenhoehe von 40; gemessen sind es bei 29 Punkt
+    /// Schrift rund 35 plus die 11 `lineSpacing`, also 46 je Zeile ab der
+    /// zweiten. Mit den 120 aus der Tafelrechnung passten deshalb nur zwei
+    /// Zeilen in den Platz, obwohl `lineLimit` auf drei stand: die dritte
+    /// wurde still abgeschnitten.
+    static let beschreibungZeile: CGFloat = 35
+    static let beschreibungLuft: CGFloat = 11
+
+    /// Wie hoch `zeilen` Zeilen Beschreibung stehen: 3 → 127, 2 → 81.
+    static func beschreibungHoehe(_ zeilen: Int) -> CGFloat {
+        CGFloat(zeilen) * beschreibungZeile + CGFloat(zeilen - 1) * beschreibungLuft
+    }
+
+    /// Der Folgentitel ueber der Angabenzeile: 44 hoch, 10 Abstand.
+    static let zweitzeileHoehe: CGFloat = 54
+
+    /// **Feste Hoehe des Kopfblocks — Titel, Angabenzeile, Beschreibung.**
+    ///
+    /// Titel           68 + 14 Angaben    34 + 22 Beschr.   127 = 265
+    ///
+    /// Fest, damit nichts darunter vom Inhalt abhaengt: ein Film ohne
+    /// Beschreibung, ein langer Titel, eine Folge mit Zweitzeile — der Block
+    /// ist immer gleich hoch, also steht die Knopfreihe immer an derselben
+    /// Stelle. **Wo das oberste Element jeder Seite endet.**
+    ///
+    /// Start, Detail   Titel 68 ab 196   endet 264 Bibliothek      Chips 48 ab
+    /// 190   endet 238 Suche           Feld  76 ab 190   endet 266
+    ///
+    /// Ich hatte die **Anfaenge** auf 190 gelegt. Bei verschieden hohen
+    /// Elementen richtet das nichts aus — sichtbar ist die Unterkante, weil
+    /// darunter der Inhalt beginnt.
+    ///
+    /// 264 kommt vom Titel: 196 aus der Tafel plus seine Zeilenhoehe. Jede
+    /// Seite rechnet ihren oberen Abstand daraus und aus der Hoehe ihres
+    /// eigenen ersten Elements zurueck.
+    static let erstesEnde: CGFloat = 264
+
+    static var auskunftHoehe: CGFloat { auskunftHoehe(zweitzeile: false) }
+
+    /// **Mit Folgentitel eine Zeile weniger Beschreibung.**
+    ///
+    /// Drei Zeilen sind richtig, solange der Titel allein oben steht. Kommt
+    /// bei einer Folge der Folgentitel dazu, kostet er 54 Punkt — und die
+    /// dritte Zeile lief dann in den Reihentitel darunter.
+    ///
+    /// ohne  68      + 14 + 34 + 22 + 127 = 265 mit   68 + 54 + 14 + 34 + 22 +
+    /// 81 = 273
+    ///
+    /// Der Block waechst also nur um acht statt um 54: der Folgentitel nimmt
+    /// sich seinen Platz groesstenteils von der Beschreibung, nicht von der
+    /// Seite.
+    static func auskunftHoehe(zweitzeile: Bool) -> CGFloat {
+        68 + (zweitzeile ? zweitzeileHoehe : 0) + 14 + 34 + 22
+        + beschreibungHoehe(zweitzeile ? 2 : 3)
+    }
+
+    /// Kopfzone einer Detailseite — **gerechnet, nicht gesetzt.**
+    ///
+    ///     196 (Block beginnt)  + 258 (auskunftHoehe) = 454
+    ///     + 36 + 76 (Knopfreihe)                     = 566
+    ///     + 64 (Abstand aus der Tafel) − 24 (reihenKopfLuft)
+    ///     = 606
+    ///
+    /// Groesser als die 510 der Startseite, und das muss so sein: hier
+    /// kommt die Knopfreihe dazu, und der Block steht 56 tiefer. Die
+    /// Startseite braucht den Platz nicht — dort endet der Block bei 454
+    /// und die Reihen beginnen unveraendert bei 534.
+    static var heldenHoeheDetail: CGFloat {
+        randOben + kopfversatzDetail + 80 + auskunftHoehe
+        + 36 + knopfHoehe + abstandUnterDerKnopfreihe - reihenKopfLuft
+    }
+
+    /// Der Abstand unter der Knopfreihe — 64 aus `Film-Neu.dc.html`.
+    ///
+    /// Einmal auf 36 gekuerzt, weil ich glaubte, die erste Reihe rage 26 Punkt
+    /// ueber den Schirm hinaus. **Sie tut es nicht.** An Die Rechnung davor
+    /// stand auf zwei geschaetzten Werten (Reihentitel 46, Beschriftung 122),
+    /// und beide waren zu gross.
+    ///
+    /// Die Zahl aus der Tafel gilt also weiter. Was beim Fokussieren passiert,
+    /// kommt nicht von der Hoehe.
+    static let abstandUnterDerKnopfreihe: CGFloat = 64
+
     /// Senkrechte Luft im waagerechten Streifen.
     ///
     /// Die fokussierte Kachel waechst um 1,08 ueber ihre Layoutgroesse
@@ -124,7 +231,16 @@ extension Stil {
 
     /// Die Bibliothek als Gitter.
     static let gitterSpalten = 7
-    static let gitterSpalte: CGFloat = 56
+    /// **50, nicht 56 — sonst passt das Raster nicht auf den Schirm.**
+    ///
+    ///     7 × 208 + 6 × 56 + 2 × 80 = 1952   bei 1920 Breite
+    ///     7 × 208 + 6 × 50 + 2 × 80 = 1916
+    ///
+    /// Mit 56 staucht `LazyVGrid` die Poster, damit die Reihe aufgeht — sie
+    /// stehen dann schmaler als dieselben 208 auf der Startseite, und die
+    /// Reihe wirkt gedraengt, ohne dass man den Grund sieht. Mit 50 bleiben
+    /// die Poster, was sie sind, und vier Punkte Rest verteilen sich.
+    static let gitterSpalte: CGFloat = 50
     static let gitterZeile: CGFloat = 72
 
     static let knopfHoehe: CGFloat = 76
@@ -138,9 +254,6 @@ extension Stil {
     /// Schatten. Bewusst wenig: Apples Karte springt deutlich weiter und
     /// schiebt in einer dichten Reihe die Nachbarn optisch weg.
     static let fokusLupe: CGFloat = 1.08
-    /// Stärke des Akzentrings und sein Abstand zur Kachel.
-    static let ringStaerke: CGFloat = 4
-    static let ringAbstand: CGFloat = 6
     /// Die ruhige Fläche, die überall Fokus bedeutet, wo kein Knopf steht:
     /// Listenzeilen, Chips, Folgenzeilen. Weiß bleibt den Handlungsknöpfen
     /// vorbehalten — dort ist es der Hauptknopf vom iPhone.
@@ -163,7 +276,6 @@ extension Stil {
 
     /// Rund verdoppelt gegenüber dem iPhone und an Apples tvOS-Rampe
     /// eingenordet. Die iOS-Entsprechung steht jeweils daneben.
-    static let titelHeld  = Font.system(size: 68, weight: .bold)       // iOS 27
     static let titelGross = Font.system(size: 57, weight: .bold)       // iOS 28
     static let reihe      = Font.system(size: 38, weight: .semibold)   // iOS 20
     static let knopf      = Font.system(size: 31, weight: .semibold)   // iOS 15/16
@@ -231,29 +343,33 @@ struct Fortschrittsbalken: View {
 
 // MARK: - Kleinteile
 
-/// Rubrik über einer Reihe.
-struct Reihentitel: View {
-    let text: LocalizedStringKey
-    var body: some View {
-        Text(text)
-            .font(Stil.reihe)
-            .tracking(-0.3)
-            .foregroundStyle(Stil.schrift)
-    }
-}
+// `Reihentitel`, `Plakette`, `Lader` und `Profilzeichen` stehen jetzt in
+// `Sources/Shared/Bausteine.swift`. Sie lagen dreimal da — hier, auf iOS und
+// auf macOS —, weil `Shared/Stil.swift` iPhone-Maße mit neutralen Bausteinen
+// mischte und dieses Ziel die Datei deshalb nicht einbinden konnte. Kopien
+// laufen auseinander; bei `nachladen()` ist genau das passiert.
+//
+// **Die Maße bleiben hier, die Bausteine nicht.** Der geteilte Baustein nimmt
+// sie entgegen, das Ziel gibt sie mit.
 
-/// Kleine umrandete Marke — FSK, Untertitelformat, Tonspur.
-struct Plakette: View {
-    let text: String
-    var farbe: Color = Stil.schriftLeise
-
-    var body: some View {
-        Text(text)
-            .font(Stil.plakette)
-            .foregroundStyle(farbe)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(farbe.opacity(0.3), lineWidth: 2))
+/// Die Fernseher-Maße der Plakette an einer Stelle.
+///
+/// Das ist **keine zweite Plakette**, sondern ein Satz Zahlen: die
+/// iPhone-Werte (5/2, Rundung 3, Strich 1) sind auf drei Meter Entfernung zu
+/// klein. Wer sie ändert, ändert sie hier — nicht in einer Kopie.
+///
+/// Die Randfarbe leitet sich aus der Schriftfarbe ab, so wie es die eigene
+/// Fassung tat. Der geteilte Baustein hält beide getrennt, weil ein
+/// gekoppelter Rand die Plakette auf dem iPhone aufgehellt hätte.
+extension Plakette {
+    static func fern(_ text: String, farbe: Color = Stil.schriftLeise) -> Plakette {
+        Plakette(text: text,
+                 farbe: farbe,
+                 randfarbe: farbe.opacity(0.3),
+                 innenWaagerecht: 12,
+                 innenSenkrecht: 4,
+                 rundung: 6,
+                 strichstaerke: 2)
     }
 }
 
@@ -287,7 +403,7 @@ struct Belegzeile: View {
                 .foregroundStyle(Color.white.opacity(0.8))
             }
 
-            if let freigabe { Plakette(text: freigabe) }
+            if let freigabe { Plakette.fern(freigabe) }
 
             if belegZuletzt { beleg }
         }
@@ -313,21 +429,13 @@ struct Belegzeile: View {
     }
 }
 
-/// Drehender Ladering — wie auf iOS, nur größer.
-struct Lader: View {
-    var groesse: CGFloat = 68
-    var staerke: CGFloat = 5
-    @State private var dreht = false
-
-    var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.22)
-            .stroke(Stil.akzent, style: StrokeStyle(lineWidth: staerke, lineCap: .round))
-            .frame(width: groesse, height: groesse)
-            .rotationEffect(.degrees(dreht ? 360 : 0))
-            .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: dreht)
-            .onAppear { dreht = true }
-    }
+/// Der Ladering in Fernseher-Größe — 68 statt der 34 vom Telefon.
+///
+/// Wie `Plakette.fern` nur ein Satz Zahlen. Der geteilte Baustein bringt
+/// obendrein den blassen Hintergrundring mit, den die eigene Fassung nicht
+/// hatte.
+extension Lader {
+    static var fern: Lader { Lader(groesse: 68, staerke: 5) }
 }
 
 /// Wenn nichts da ist.

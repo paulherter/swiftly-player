@@ -192,3 +192,37 @@ struct RandGesteVorrang: UIViewControllerRepresentable {
         }
     }
 }
+
+/// **Legt die Systemleiste am Stapel still, nicht an jeder Seite.**
+///
+/// `.toolbar(.hidden, for: .navigationBar)` steht auf jeder Zielansicht, und
+/// trotzdem blitzte beim Öffnen einer Detailseite oben kurz ein systemeigener
+/// Zurück-Knopf auf. Der Modifikator kann das nicht verhindern: beim Schieben
+/// legt UIKit die Leiste für die neue Seite an, und SwiftUI versteckt sie erst,
+/// wenn die Voreinstellung der Zielansicht ausgewertet ist. Dazwischen liegt
+/// ein Bild, und genau das war zu sehen.
+///
+/// `setNavigationBarHidden` gilt dagegen dem Navigationsrechner, nicht einer
+/// Seite — einmal gesetzt, bleibt die Leiste über alle Schübe weg. Damit
+/// entsteht sie gar nicht erst, statt sie nachträglich wegzunehmen.
+///
+/// Verhaltensregel E9: der Rückweg gehört in den Inhalt, nicht in eine
+/// Systemleiste. `Detailkopf` und `Seitenpfeil` tragen ihn.
+struct SystemleisteWeg: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController { Halter() }
+    func updateUIViewController(_ vc: UIViewController, context: Context) {}
+
+    private final class Halter: UIViewController {
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            navigationController?.setNavigationBarHidden(true, animated: false)
+        }
+
+        /// Auch beim Zurückkommen: SwiftUI stellt die Leiste beim Abräumen
+        /// einer Seite wieder her, wenn deren Voreinstellung mit ihr geht.
+        override func viewWillAppear(_ animiert: Bool) {
+            super.viewWillAppear(animiert)
+            navigationController?.setNavigationBarHidden(true, animated: false)
+        }
+    }
+}
