@@ -117,7 +117,6 @@ extension Stil {
     /// wurde still abgeschnitten.
     static let beschreibungZeile: CGFloat = 35
     static let beschreibungLuft: CGFloat = 11
-    static let beschreibungZeilen = 3
 
     /// Wie hoch `zeilen` Zeilen Beschreibung stehen: 3 → 127, 2 → 81.
     static func beschreibungHoehe(_ zeilen: Int) -> CGFloat {
@@ -255,9 +254,6 @@ extension Stil {
     /// Schatten. Bewusst wenig: Apples Karte springt deutlich weiter und
     /// schiebt in einer dichten Reihe die Nachbarn optisch weg.
     static let fokusLupe: CGFloat = 1.08
-    /// Stärke des Akzentrings und sein Abstand zur Kachel.
-    static let ringStaerke: CGFloat = 4
-    static let ringAbstand: CGFloat = 6
     /// Die ruhige Fläche, die überall Fokus bedeutet, wo kein Knopf steht:
     /// Listenzeilen, Chips, Folgenzeilen. Weiß bleibt den Handlungsknöpfen
     /// vorbehalten — dort ist es der Hauptknopf vom iPhone.
@@ -280,7 +276,6 @@ extension Stil {
 
     /// Rund verdoppelt gegenüber dem iPhone und an Apples tvOS-Rampe
     /// eingenordet. Die iOS-Entsprechung steht jeweils daneben.
-    static let titelHeld  = Font.system(size: 68, weight: .bold)       // iOS 27
     static let titelGross = Font.system(size: 57, weight: .bold)       // iOS 28
     static let reihe      = Font.system(size: 38, weight: .semibold)   // iOS 20
     static let knopf      = Font.system(size: 31, weight: .semibold)   // iOS 15/16

@@ -1127,7 +1127,16 @@ final class Zustandsmelder: NSObject, VLCMediaPlayerDelegate, @unchecked Sendabl
         lock.lock()
         // Ein Ruecksetzer auf null ist der Beginn eines neuen Fuellens, kein
         // Rueckschritt — sonst gaelte der Neuanlauf als Stillstand.
-        if fortschritt > pufferstand || fortschritt == 0 {
+        //
+        // **Nur der Sprung auf null, nicht das Verharren dort.** Vorher stand
+        // hier `fortschritt == 0`, und das trifft auch einen Puffer, der
+        // dauerhaft bei null steht: jeder Rueckruf frischte den Zeitstempel
+        // auf, `pufferWuchsVor` blieb bei null, und die Notbremse haette in
+        // genau der Lage, fuer die es sie gibt, nie ausgeloest. Gefunden von
+        // der iOS-Sitzung beim Gegenlesen; in unserer Messung kamen in dieser
+        // Lage gar keine Rueckrufe, der Fehler war also nie zu sehen — eine
+        // Luecke in der Logik, kein beobachteter Ausfall.
+        if fortschritt > pufferstand || (fortschritt == 0 && pufferstand > 0) {
             pufferWuchsZuletzt = Date()
         }
         pufferstand = fortschritt
