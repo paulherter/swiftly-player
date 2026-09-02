@@ -215,15 +215,13 @@ struct Heldenkopf: View {
     /// **Wie weit über den oberen Rand hinausgezogen wurde.**
     ///
     /// Zieht man weiter nach oben, als es Inhalt gibt, wird der Versatz
-    /// negativ. Statt der Leere darüber wächst dann das Kopfbild mit — an
-    /// seiner Oberkante festgehalten, damit es nur nach unten aufgeht. Lässt
-    /// man los, federt die Fläche zurück und das Bild mit ihr; es braucht
-    /// dafür keine eigene Anweisung.
+    /// negativ. Der ganze Inhalt rutscht dabei um diesen Betrag nach unten —
+    /// und genau dort entsteht die Lücke, die das Kopfbild füllen soll.
     ///
-    /// So macht es die iPhone- und die iPad-Fassung, und es ist der Grund,
-    /// warum sich das Ende einer Seite dort nach etwas anfasst statt nach
-    /// einer Wand.
-    private var zug: CGFloat { max(0, -stand.versatz) }
+    /// Gedeckelt: irgendwann soll es aufhören. Bis 200 Punkt geht es mit,
+    /// darüber steht es. So weit zieht man nur mit Absicht, und die Feder
+    /// der Scrollfläche ist dort ohnehin schon straff.
+    private var zug: CGFloat { min(max(0, -stand.versatz), 200) }
 
     @State private var plan: PlaybackPlan?
     @State private var spielbarerTitel: Item?
@@ -241,8 +239,23 @@ struct Heldenkopf: View {
             Kulisse(url: model.querbildURL(for: titel, breite: 1600)
                          ?? model.backdropURL(for: titel),
                     hoehe: Stil.heldHoehe * 1.62)
-                // Um denselben Anteil wachsen, um den zu weit gezogen wurde.
-                .scaleEffect(1 + zug / Stil.heldHoehe, anchor: .top)
+                // **An der Unterkante festhalten, nicht an der oberen.**
+                //
+                // Der Inhalt rutscht beim Überziehen nach unten. Wächst das
+                // Bild von oben nach unten, wandert seine Oberkante mit — und
+                // die Lücke darüber bleibt als harte Kante stehen. Genau das,
+                // was hier vermieden werden soll.
+                //
+                // Unten verankert wächst es **nach oben**, und zwar um genau
+                // den Betrag, um den der Inhalt nach unten gerutscht ist:
+                // die Oberkante bleibt damit stehen, wo sie war, und die
+                // Lücke gibt es gar nicht erst.
+                //
+                // Der Faktor rechnet deshalb gegen die **volle** Bildhöhe,
+                // nicht gegen die Höhe der Kopfzone — sonst wächst es um ein
+                // Vielfaches dessen, was gebraucht wird. Das war der zweite
+                // Fehler und der Grund, warum es zu kräftig wirkte.
+                .scaleEffect(1 + zug / (Stil.heldHoehe * 1.62), anchor: .bottom)
 
             block
                 .padding(.leading, Stil.randAbstand)
