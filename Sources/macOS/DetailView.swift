@@ -93,6 +93,10 @@ struct FilmView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        // **Der Inhalt läuft bis unter die Titelleiste durch.** SwiftUI rückt
+        // ihn sonst um deren Sicherheitsbereich ein, und über dem Bild stand
+        // ein dunkler Streifen. Die iPhone-Fassung tut dasselbe.
+        .ignoresSafeArea(edges: .top)
         // Der Ton läuft unter dem Heldenbild noch ein Stück weiter und
         // verliert sich dann im Grundton — wie bei Apple TV, wo die ganze
         // Seite vom Bild eingefärbt wirkt statt an seiner Unterkante zu enden.
@@ -176,11 +180,11 @@ struct Heldenkopf: View {
             // Maske beendet es, deshalb wird nicht beschnitten.
             Kulisse(url: model.querbildURL(for: titel, breite: 1600)
                          ?? model.backdropURL(for: titel),
-                    hoehe: Stil.heldHoehe * 1.24)
+                    hoehe: Stil.heldHoehe * 1.62)
 
             block
                 .padding(.leading, Stil.randAbstand)
-                .padding(.top, Stil.inhaltOben + 34)
+                .padding(.top, Stil.titelHoehe + 22)
         }
         .frame(height: Stil.heldHoehe, alignment: .topLeading)
         .task {

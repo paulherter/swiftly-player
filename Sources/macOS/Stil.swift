@@ -58,9 +58,14 @@ extension Stil {
     static let querBreite: CGFloat = 280
     static let querHoehe: CGFloat = 158
 
-    /// Heldenbild auf den Detailseiten. Höher als die 300 des iPhones, weil
-    /// das Fenster breiter ist und ein flaches Band sonst gedrückt wirkt.
-    static let heldHoehe: CGFloat = 420
+    /// Die Kopfzone der Detailseite.
+    ///
+    /// **Nach ihrem Inhalt bemessen**, nicht nach einem runden Wert: oben
+    /// 54, Titel 42, Angaben 32, drei Zeilen Beschreibung 84, Knopfreihe 72
+    /// — zusammen 284, plus Luft nach unten. Vorher standen hier 420, und
+    /// zwischen der Knopfreihe und „Besetzung" klaffte ein Loch von rund
+    /// 160 Punkt.
+    static let heldHoehe: CGFloat = 330
 
     // MARK: Tippflächen — kleiner als auf dem iPhone
 

@@ -534,7 +534,10 @@ struct Detailkopf: View {
         // Ausgleich sind der Innenabstand des Knopfes selbst.
         .padding(.leading, Stil.randAbstand - 8)
         .padding(.trailing, Stil.randAbstand)
-        .frame(height: Stil.titelHoehe)
+        // Seit der Inhalt unter der Titelleiste durchläuft, sitzt der Pfeil
+        // sonst auf der Fensterkante.
+        .padding(.top, 14)
+        .frame(height: Stil.titelHoehe + 14, alignment: .bottom)
         .background {
             Rectangle()
                 .fill(.ultraThinMaterial)
