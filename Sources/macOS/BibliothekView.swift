@@ -31,42 +31,10 @@ struct BibliothekView: View {
             VStack(alignment: .leading, spacing: 0) {
 
                 HStack(alignment: .firstTextBaseline) {
-                    // **Nur ab zwei Bibliotheken ein Menue.** Wer eine hat,
-                    // sieht dieselbe Ueberschrift wie bisher — ein Umschalter
-                    // ohne Auswahl ist eine Frage ohne Antwort.
-                    if auswahl.count > 1 {
-                        Menu {
-                            ForEach(auswahl) { bib in
-                                Button {
-                                    model.bibliothekWaehlen(bib, art: art)
-                                    gewaehlt = bib
-                                } label: {
-                                    if bib.id == gewaehlt?.id {
-                                        Label(bib.name, systemImage: "checkmark")
-                                    } else {
-                                        Text(bib.name)
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                Text(gewaehlt?.name ?? "")
-                                    .font(Stil.titelGross)
-                                    .tracking(-0.6)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Stil.schriftLeise)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                    } else {
-                        Text(titel)
-                            .font(Stil.titelGross)
-                            .tracking(-0.6)
-                            .foregroundStyle(Stil.schrift)
-                    }
+                    Text(titel)
+                        .font(Stil.titelGross)
+                        .tracking(-0.6)
+                        .foregroundStyle(Stil.schrift)
                     Spacer()
                     if regal.gesamt > 0 {
                         Text(verbatim: "\(regal.gesamt)")
@@ -76,6 +44,25 @@ struct BibliothekView: View {
                 }
 
                 HStack(spacing: 8) {
+                    // **Die Bibliothekswahl steht vorn, und nur ab zwei.**
+                    //
+                    // Als Chips wie Filter und Sortierung daneben — auf dem
+                    // Mac steht alles offen nebeneinander, und ein `Menu`
+                    // waere ein Apple-Standardsteuerelement (E4).
+                    if auswahl.count > 1 {
+                        ForEach(auswahl) { bib in
+                            Chip(beschriftung: bib.name,
+                                 aktiv: bib.id == gewaehlt?.id) {
+                                model.bibliothekWaehlen(bib, art: art)
+                                gewaehlt = bib
+                            }
+                        }
+                        Rectangle()
+                            .fill(Stil.rand)
+                            .frame(width: 1, height: 18)
+                            .padding(.horizontal, 4)
+                    }
+
                     ForEach(Bibliotheksfilter.allCases) { fall in
                         Chip(beschriftung: fall.beschriftung, aktiv: regal.filter == fall) {
                             regal.filter = fall

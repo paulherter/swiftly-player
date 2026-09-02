@@ -184,6 +184,7 @@ struct BibliothekView: View {
     /// auf einer externen Platte und eine lokale. Vorher nahm die Ansicht
     /// stumm die erste, und die zweite war nicht erreichbar.
     @State private var gewaehlt: Item?
+    @State private var bibliothekslisteOffen = false
 
     @Environment(\.breit) private var breit
     @Environment(\.fensterknoepfe) private var fensterknoepfe
@@ -291,20 +292,12 @@ struct BibliothekView: View {
                     // Tippziel. Ein Umschalter, der nichts umzuschalten hat,
                     // ist eine Frage ohne Antwort.
                     if auswahl.count > 1 {
-                        Menu {
-                            ForEach(auswahl) { bib in
-                                Button {
-                                    model.bibliothekWaehlen(bib, art: art)
-                                    gewaehlt = bib
-                                } label: {
-                                    if bib.id == gewaehlt?.id {
-                                        Label(bib.name, systemImage: "checkmark")
-                                    } else {
-                                        Text(bib.name)
-                                    }
-                                }
-                            }
-                        } label: {
+                        // Kein `Menu` — E4 im Register: keine
+                        // Apple-Standardsteuerelemente. Dasselbe
+                        // `Auswahlblatt` wie bei der Sortierung, und es
+                        // nimmt die Beschriftung als `String`, was hier
+                        // noetig ist: Bibliotheksnamen kommen vom Server.
+                        Button { bibliothekslisteOffen = true } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(gewaehlt?.name ?? "")
                                     .font(Stil.titelGross).tracking(-0.6)
@@ -409,6 +402,18 @@ struct BibliothekView: View {
                              beschriftung: { $0.beschriftung },
                              istGewaehlt: { $0 == stand.sortierung },
                              waehlen: { stand.sortierung = $0 })
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if bibliothekslisteOffen {
+                Auswahlblatt(offen: $bibliothekslisteOffen, titel: "Bibliothek",
+                             eintraege: auswahl,
+                             beschriftung: { $0.name },
+                             istGewaehlt: { $0.id == gewaehlt?.id },
+                             waehlen: { bib in
+                                 model.bibliothekWaehlen(bib, art: art)
+                                 gewaehlt = bib
+                             })
             }
         }
     }
