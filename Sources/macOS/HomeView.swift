@@ -1,3 +1,4 @@
+import AppKit
 import JellyfinKit
 import SwiftUI
 
@@ -117,6 +118,24 @@ struct HomeView: View {
         .ohneKanteneffekt()
         .overlay { if !geladen { Lader() } }
         .task { await laden() }
+        // **Auch beim Zurückkommen ins Fenster** (D8).
+        //
+        // `.task` deckt „Ansicht erscheint" ab — also den Leistenwechsel und
+        // das Schliessen des Players. Nicht abgedeckt ist der Fall, für den
+        // die Regel gemacht ist: am Fernseher zu Ende schauen und dann zum
+        // Mac greifen. Dort stand die Folge sonst weiter in „Weiterschauen".
+        //
+        // Auf iOS ist das Gegenstück `scenePhase`; auf dem Mac ist
+        // `didBecomeActiveNotification` das Genauere — `scenePhase` schlägt
+        // dort auch um, wenn nur ein anderes Fenster derselben App nach vorn
+        // kommt.
+        //
+        // Die Frist von 30 Sekunden steckt in `Auffrischung`, nicht hier.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard stand.brauchtAuffrischung else { return }
+            Task { await auffrischen() }
+        }
     }
 
     private func kopf(_ titel: Item) -> String {
@@ -130,6 +149,12 @@ struct HomeView: View {
 
     private func laden() async {
         guard !stand.geladen else { return }
+        await auffrischen()
+    }
+
+    /// Holt neu, ohne die Reihen vorher zu leeren — der alte Stand bleibt
+    /// stehen, bis der neue da ist.
+    private func auffrischen() async {
         await stand.laden(model)
         // Die Serien zu den Folgen im Hintergrund nachziehen: alle drei
         // Reihen bestehen bei Serien aus Folgen, und ein Klick darauf führt
