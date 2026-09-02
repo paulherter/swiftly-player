@@ -105,6 +105,11 @@ struct FilmView: View {
         // ihn sonst um deren Sicherheitsbereich ein, und über dem Bild stand
         // ein dunkler Streifen. Die iPhone-Fassung tut dasselbe.
         .ignoresSafeArea(edges: .top)
+        // **`ignoresSafeArea` allein reicht nicht.** Es dehnt die Scrollfläche,
+        // aber ihr *Inhalt* behält den oberen Einzug der Titelleiste — das
+        // Kulissenbild begann dadurch erst rund 40 Punkt tief, und darüber
+        // stand der Seitengrund als schwarze Leiste. Das war sie.
+        .contentMargins(.top, 0, for: .scrollContent)
         // **Auch hier, nicht nur am Stapel.** `NavigationStack` bekommt den
         // Riegel in `HauptView`; für eine geschobene Ansicht stellt SwiftUI
         // den Werkzeugleisten-Grund trotzdem wieder dazu — als milchige
@@ -226,7 +231,20 @@ struct Heldenkopf: View {
     /// ist die Höhe fest, und ein langer Titel schrumpft, statt die Seite zu
     /// verschieben.
     private var block: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // **Feste Stellen statt fester Höhen.**
+        //
+        // Ein Stapel mit festen Höhen je Zeile *sollte* reichen — tut es aber
+        // offenbar nicht: die Knöpfe wanderten weiter, je nachdem was der
+        // Server lieferte. Statt weiter zu raten, wo eine Zeile doch noch
+        // wächst, steht jede Zeile jetzt an einer **ausgerechneten Stelle**.
+        // Was darin zu groß wird, wird abgeschnitten und verschiebt nichts.
+        //
+        //     0    Titel        42
+        //     54   Angaben      20
+        //     92   Beschreibung 66   (drei Zeilen)
+        //     182  Knopfreihe   48
+        //     230  Ende
+        ZStack(alignment: .topLeading) {
             Text(verbatim: titel.name)
                 .font(.system(size: 34, weight: .bold))
                 .tracking(-0.8)
@@ -234,59 +252,62 @@ struct Heldenkopf: View {
                 .lineLimit(1)
                 // Ein langer Titel schrumpft, statt die Seite zu verschieben.
                 .minimumScaleFactor(0.62)
-                .frame(height: 42, alignment: .leading)
+                .frame(width: 640, height: 42, alignment: .leading)
+                .offset(y: 0)
 
-            // **Eine Zeile**, nicht drei: Jahr, Laufzeit, Bewertung,
-            // Freigabe und der Beleg stehen nebeneinander. Vorher lagen
-            // Nebenzeile und Beleg untereinander.
-            HStack(spacing: 14) {
-                Text(verbatim: angabenzeile)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Stil.schriftLeise)
-                if let bewertung = titel.communityRating {
-                    HStack(spacing: 5) {
-                        Image(systemName: "star.fill").font(.system(size: 10))
-                        Text(verbatim: String(format: "%.1f", bewertung))
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundStyle(Stil.schriftLeise)
-                }
-                if let freigabe = titel.officialRating { Plakette(text: freigabe) }
-                if let plan {
-                    HStack(spacing: 6) {
-                        Image(systemName: plan.isLossless
-                              ? "checkmark" : "exclamationmark.triangle.fill")
-                            .font(.system(size: 11, weight: .heavy))
-                        Text(verbatim: plan.isLossless
-                             ? String(localized: "Direct Play") : plan.method.rawValue)
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundStyle(plan.isLossless ? Stil.akzent : Stil.warnung)
-                    .transition(.opacity)
-                }
-            }
-            .lineLimit(1)
-            .frame(height: 20, alignment: .leading)
-            .padding(.top, 12)
+            angabenReihe
+                .frame(width: 640, height: 20, alignment: .leading)
+                .clipped()
+                .offset(y: 54)
 
-            // Die Beschreibung steht **im Kopf**, direkt unter den Angaben —
-            // nicht weit darunter auf dem Grundton. Der Platz für drei Zeilen
-            // steht immer, auch wenn der Server nur eine liefert.
             Text(verbatim: titel.overview ?? "")
                 .font(Stil.koerper)
                 .lineSpacing(3)
                 .foregroundStyle(Stil.schrift.opacity(0.62))
                 .lineLimit(3)
-                .frame(maxWidth: 640, alignment: .topLeading)
-                .frame(height: 66, alignment: .topLeading)
-                .padding(.top, 18)
+                .multilineTextAlignment(.leading)
+                .frame(width: 640, height: 66, alignment: .topLeading)
+                .clipped()
+                .offset(y: 92)
 
             knopfreihe
                 .frame(height: Stil.hauptknopfHoehe, alignment: .leading)
-                .padding(.top, 24)
+                .offset(y: 182)
         }
-        // Feste Gesamthöhe: 42 + 12 + 20 + 18 + 66 + 24 + 48 = 230.
-        .frame(height: 230, alignment: .topLeading)
+        .frame(width: 640, height: 230, alignment: .topLeading)
+    }
+
+    /// Jahr, Laufzeit, Genres, Bewertung, Freigabe und der Beleg — **eine
+    /// Zeile**, nicht drei.
+    private var angabenReihe: some View {
+        HStack(spacing: 14) {
+            Text(verbatim: angabenzeile)
+                .font(.system(size: 14))
+                .foregroundStyle(Stil.schriftLeise)
+            if let bewertung = titel.communityRating {
+                HStack(spacing: 5) {
+                    Image(systemName: "star.fill").font(.system(size: 10))
+                    Text(verbatim: String(format: "%.1f", bewertung))
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(Stil.schriftLeise)
+            }
+            if let freigabe = titel.officialRating { Plakette(text: freigabe) }
+            if let plan {
+                HStack(spacing: 6) {
+                    Image(systemName: plan.isLossless
+                          ? "checkmark" : "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .heavy))
+                    Text(verbatim: plan.isLossless
+                         ? String(localized: "Direct Play") : plan.method.rawValue)
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(plan.isLossless ? Stil.akzent : Stil.warnung)
+            }
+            Spacer(minLength: 0)
+        }
+        .lineLimit(1)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// Vier Ziele wie auf dem Apple TV: Fortsetzen, Von vorn, Merkliste,
