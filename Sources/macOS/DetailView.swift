@@ -97,6 +97,13 @@ struct FilmView: View {
         // ihn sonst um deren Sicherheitsbereich ein, und über dem Bild stand
         // ein dunkler Streifen. Die iPhone-Fassung tut dasselbe.
         .ignoresSafeArea(edges: .top)
+        // **Auch hier, nicht nur am Stapel.** `NavigationStack` bekommt den
+        // Riegel in `HauptView`; für eine geschobene Ansicht stellt SwiftUI
+        // den Werkzeugleisten-Grund trotzdem wieder dazu — als milchige
+        // Leiste über dem Bild. E4 gilt auch für das, was das Rahmenwerk
+        // ungefragt beisteuert.
+        .toolbar(.hidden)
+        .toolbarBackground(.hidden, for: .windowToolbar)
         // Der Ton läuft unter dem Heldenbild noch ein Stück weiter und
         // verliert sich dann im Grundton — wie bei Apple TV, wo die ganze
         // Seite vom Bild eingefärbt wirkt statt an seiner Unterkante zu enden.
@@ -184,7 +191,7 @@ struct Heldenkopf: View {
 
             block
                 .padding(.leading, Stil.randAbstand)
-                .padding(.top, Stil.titelHoehe + 22)
+                .padding(.top, Stil.titelHoehe + 66)
         }
         .frame(height: Stil.heldHoehe, alignment: .topLeading)
         .task {

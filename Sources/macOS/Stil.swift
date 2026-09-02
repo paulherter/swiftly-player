@@ -65,7 +65,7 @@ extension Stil {
     /// — zusammen 284, plus Luft nach unten. Vorher standen hier 420, und
     /// zwischen der Knopfreihe und „Besetzung" klaffte ein Loch von rund
     /// 160 Punkt.
-    static let heldHoehe: CGFloat = 330
+    static let heldHoehe: CGFloat = 374
 
     // MARK: Tippflächen — kleiner als auf dem iPhone
 

@@ -535,9 +535,10 @@ struct Detailkopf: View {
         .padding(.leading, Stil.randAbstand - 8)
         .padding(.trailing, Stil.randAbstand)
         // Seit der Inhalt unter der Titelleiste durchläuft, sitzt der Pfeil
-        // sonst auf der Fensterkante.
-        .padding(.top, 14)
-        .frame(height: Stil.titelHoehe + 14, alignment: .bottom)
+        // sonst auf der Fensterkante. 24 setzt ihn auf dieselbe Höhe wie die
+        // Seitenleiste ihre Wortmarke.
+        .padding(.top, 24)
+        .frame(height: Stil.titelHoehe + 24, alignment: .bottom)
         .background {
             Rectangle()
                 .fill(.ultraThinMaterial)
