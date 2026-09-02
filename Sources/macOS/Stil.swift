@@ -154,21 +154,21 @@ extension Stil {
     /// Das Neue kommt — erst danach, deshalb der Vorlauf.
     static let zeitBereichHerein = Animation.easeOut(duration: 0.26).delay(0.10)
 
-    /// Woher es wächst — **99 %, nicht die 92 % der Vorschrift.**
-    ///
-    /// Der Wert ist ein Anteil, die zurückgelegte Strecke also von der Größe
-    /// abhängig. Auf einem Telefon sind 8 % von 390 Punkt Breite rund 31
-    /// Punkt; in einem Fenster von 1500 Punkt sind es 120. Derselbe Wert wirkt
-    /// hier also viermal so kräftig
-    ///
-    /// Der Grund für die Abweichung ist damit die Fenstergröße, und das ist
-    /// einer der drei zulässigen.
-    ///
-    /// Zwei Prozent waren immer noch zu deutlich. Bei einem Prozent legt der
-    /// Rand eines 1500 Punkt breiten Fensters knapp acht Punkt zurück — man
-    /// nimmt es wahr, ohne hinzusehen, und das ist das Ziel. Weniger wäre
-    /// reines Blenden.
-    static let bereichKleiner: CGFloat = 0.99
+    // **Und warum hier keine Skalierung mehr steht.**
+    //
+    // Die Vorschrift lässt das Eingehende von 92 % wachsen. Eine Skalierung
+    // verschiebt aber jeden Punkt proportional zu seinem Abstand vom
+    // Mittelpunkt — auf einem Telefon sind das an der Kante wenige Punkte, in
+    // einem Fenster von 1500 Punkt Breite bei nur einem Prozent schon acht,
+    // und ein Fenster ist breiter als hoch. Die Verschiebung ist damit
+    // seitlich am grössten, also genau dort, wo die Kachelreihen enden.
+    //
+    // Sie tat es. Das ist keine Einstellungs- frage — es folgt aus der
+    // Skalierung selbst und lässt sich nur verkleinern, nicht abstellen.
+    //
+    // Deshalb `.blurReplace` statt Skalierung: Apples eigener Übergang für das
+    // Ersetzen von Inhalt. Er gibt dieselbe Tiefe über Unschärfe, und
+    // Unschärfe verschiebt nichts.
 
     /// Überblenden beim Ersetzen. 180 ms ease-out — dieselbe Zeit, in der auf
     /// dem iPhone die Player-Steuerung erscheint.
