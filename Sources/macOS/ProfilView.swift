@@ -11,6 +11,8 @@ import SwiftUI
 struct ProfilView: View {
     let model: AppModel
     let zurueck: () -> Void
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
 
     var body: some View {
         ScrollView {
@@ -18,7 +20,7 @@ struct ProfilView: View {
                 bildblock
 
                 Zeilengruppe {
-                    NavigationLink(value: QuickConnectRoute()) {
+                    Button { navigator.oeffne(.quickConnect, in: bereich) } label: {
                         Wertezeile(symbol: "rectangle.and.text.magnifyingglass",
                                    titel: Text("Quick Connect"),
                                    unter: Text("Code vom Fernseher eingeben"),
@@ -30,14 +32,14 @@ struct ProfilView: View {
                 Color.clear.frame(height: 26)
 
                 Zeilengruppe {
-                    NavigationLink(value: WiedergabeRoute()) {
+                    Button { navigator.oeffne(.wiedergabe, in: bereich) } label: {
                         Wertezeile(symbol: "play.fill", titel: Text("Wiedergabe"),
                                    unter: Text("Sprache, Untertitel, Tempo"),
                                    pfeil: true, aktion: {})
                     }
                     .buttonStyle(.plain)
                     Trennstrich().padding(.leading, 48)
-                    NavigationLink(value: EinstellungenRoute()) {
+                    Button { navigator.oeffne(.einstellungen, in: bereich) } label: {
                         Wertezeile(symbol: "gearshape", titel: Text("Einstellungen"),
                                    pfeil: true, aktion: {})
                     }

@@ -15,6 +15,8 @@ struct BibliothekView: View {
     let model: AppModel
     let art: String
     let titel: LocalizedStringKey
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
 
     @State private var regal = Bibliotheksmodell()
 
@@ -59,7 +61,7 @@ struct BibliothekView: View {
 
                 LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {
                     ForEach(regal.items, id: \.id) { eintrag in
-                        NavigationLink(value: eintrag) {
+                        Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
                                          bild: model.imageURL(for: eintrag, hochkant: true))

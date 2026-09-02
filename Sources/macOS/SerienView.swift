@@ -16,6 +16,8 @@ struct SerienView: View {
     /// Folge hierhergekommen ist (A8).
     var startStaffelID: String?
     let zurueck: () -> Void
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
 
     @State private var reiter: Reiter = .folgen
     @State private var staffeln: [Item] = []
@@ -123,7 +125,7 @@ struct SerienView: View {
                                              alignment: .topLeading)],
                           alignment: .leading, spacing: 20) {
                     ForEach(aehnliche, id: \.id) { eintrag in
-                        NavigationLink(value: eintrag) {
+                        Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
                                          bild: model.imageURL(for: eintrag, hochkant: true))

@@ -140,6 +140,8 @@ struct FilmView: View {
 
 /// Eine waagerechte Reihe von Postern mit Überschrift — Extras, Ähnliches.
 struct Titelreihe: View {
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
     let titel: LocalizedStringKey
     let eintraege: [Item]
     let model: AppModel
@@ -152,7 +154,7 @@ struct Titelreihe: View {
                     .foregroundStyle(Stil.schrift)
                 Blätterreihe(rand: 0) {
                     ForEach(eintraege, id: \.id) { eintrag in
-                        NavigationLink(value: eintrag) {
+                        Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
                                          bild: model.imageURL(for: eintrag, hochkant: true))

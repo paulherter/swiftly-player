@@ -6,6 +6,8 @@ import SwiftUI
 /// nur breiter.
 struct SucheView: View {
     let model: AppModel
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
 
     @State private var begriff = ""
     @State private var treffer: [Item] = []
@@ -34,7 +36,7 @@ struct SucheView: View {
                 if !treffer.isEmpty {
                     LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {
                         ForEach(treffer, id: \.id) { eintrag in
-                            NavigationLink(value: eintrag) {
+                            Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                                 Posterkachel(titel: eintrag.name,
                                              zweitzeile: eintrag.trefferauskunft,
                                              bild: model.imageURL(for: eintrag, hochkant: true))

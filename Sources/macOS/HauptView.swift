@@ -35,9 +35,7 @@ struct HauptView: View {
 
     @State private var bereich: Bereich = .start
     @State private var steuerung: Abspielsteuerung
-    /// Jeder Bereich hat seinen eigenen Stapel — wer zwischen Filmen und
-    /// Serien wechselt, findet zurück, wo er war.
-    @State private var stapel: [Bereich: NavigationPath] = [:]
+    @State private var navigator = Navigator()
 
     init(model: AppModel) {
         self.model = model
@@ -46,7 +44,9 @@ struct HauptView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Seitenleiste(model: model, bereich: $bereich) { schiebe(ProfilRoute()) }
+            Seitenleiste(model: model, bereich: $bereich) {
+                navigator.oeffne(.profil, in: bereich)
+            }
 
             ZStack {
                 Stil.grund
@@ -71,6 +71,8 @@ struct HauptView: View {
         }
         .background(Stil.grund)
         .environment(steuerung)
+        .environment(navigator)
+        .environment(\.bereich, bereich)
         // Der Player nimmt das ganze Fenster ein, Seitenleiste eingeschlossen.
         .overlay {
             if let wunsch = steuerung.wunsch {
@@ -89,68 +91,51 @@ struct HauptView: View {
     }
 
     private var inhalt: some View {
-        NavigationStack(path: pfad(bereich)) {
-            Group {
-                switch bereich {
-                case .start:  HomeView(model: model) { schiebe($0) }
-                case .filme:  BibliothekView(model: model, art: "movies", titel: "Filme")
-                case .serien: BibliothekView(model: model, art: "tvshows", titel: "Serien")
-                case .suche:  SucheView(model: model)
+        ZStack {
+            // Die Wurzel des Bereichs liegt immer unten. Sie bleibt stehen,
+            // während eine Seite darüber hereinkommt — sonst blitzt beim
+            // Zurückgehen kurz nichts auf.
+            wurzel
+                .id(bereich)
+                .transition(.opacity)
+
+            // Jede Seite des Stapels darüber. Nur die oberste ist zu sehen;
+            // die darunter tragen den Weg zurück.
+            ForEach(navigator.seiten(bereich)) { ziel in
+                ZStack {
+                    Stil.grund
+                    seite(ziel)
                 }
-            }
-            .navigationDestination(for: Item.self) { titel in
-                DetailView(model: model, item: titel) { zurueck() }
-            }
-            .navigationDestination(for: ProfilRoute.self) { _ in
-                ProfilView(model: model) { zurueck() }
-            }
-            .navigationDestination(for: EinstellungenRoute.self) { _ in
-                EinstellungenView(model: model) { zurueck() }
-            }
-            .navigationDestination(for: WiedergabeRoute.self) { _ in
-                WiedergabeEinstellungenView(model: model) { zurueck() }
-            }
-            .navigationDestination(for: QuickConnectRoute.self) { _ in
-                QuickConnectView(model: model) { zurueck() }
+                // **Beide Richtungen.** Hinein von rechts, hinaus nach
+                // rechts — die Bewegung, die `NavigationStack` auf dem Mac
+                // schuldig blieb.
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        // **Ohne Systemleiste.** `NavigationStack` setzt auf dem Mac von sich
-        // aus einen Zurückpfeil in die Titelleiste — als Glasknopf, neben die
-        // Fensterampel, die er dabei verschiebt. Auf jeder anderen Plattform
-        // sitzt der Weg zurück als eigener Pfeil **im Bild** (E9).
-        .toolbar(.hidden)
-        .toolbarBackground(.hidden, for: .windowToolbar)
-        // Der Stapel gehört zum Bereich; ohne die Kennung baut SwiftUI ihn
-        // beim Wechsel nicht neu auf und zeigt die alte Seite weiter.
-        .id(bereich)
-        // **Die Blende gehört an die Ansicht, deren Kennung wechselt** — und
-        // die Animation an deren *Elternteil*, nicht an sie selbst. Ich hatte
-        // die Blende auf den Inhalt **innerhalb** des Stapels gelegt und die
-        // Animation auf den Stapel: getauscht wurde damit etwas, das keine
-        // Blende trug, und angewiesen wurde etwas, das nicht getauscht wurde.
-        // Deshalb war nichts zu sehen.
-        .transition(.opacity)
     }
 
-    private func pfad(_ b: Bereich) -> Binding<NavigationPath> {
-        Binding(get: { stapel[b] ?? NavigationPath() },
-                set: { stapel[b] = $0 })
+    @ViewBuilder
+    private var wurzel: some View {
+        switch bereich {
+        case .start:  HomeView(model: model)
+        case .filme:  BibliothekView(model: model, art: "movies", titel: "Filme")
+        case .serien: BibliothekView(model: model, art: "tvshows", titel: "Serien")
+        case .suche:  SucheView(model: model)
+        }
     }
 
-    /// Ein Ziel auf den Stapel des sichtbaren Bereichs legen.
-    private func schiebe(_ ziel: some Hashable) {
-        var p = stapel[bereich] ?? NavigationPath()
-        p.append(ziel)
-        stapel[bereich] = p
+    @ViewBuilder
+    private func seite(_ ziel: Seitenziel) -> some View {
+        switch ziel {
+        case let .titel(item):  DetailView(model: model, item: item) { zurueck() }
+        case .profil:           ProfilView(model: model) { zurueck() }
+        case .einstellungen:    EinstellungenView(model: model) { zurueck() }
+        case .wiedergabe:       WiedergabeEinstellungenView(model: model) { zurueck() }
+        case .quickConnect:     QuickConnectView(model: model) { zurueck() }
+        }
     }
 
-    /// Eine Ebene zurück im Stapel des sichtbaren Bereichs.
-    private func zurueck() {
-        var p = stapel[bereich] ?? NavigationPath()
-        guard !p.isEmpty else { return }
-        p.removeLast()
-        stapel[bereich] = p
-    }
+    private func zurueck() { navigator.zurueck(in: bereich) }
 
     private func ausfuehren(_ kommando: Kommando) {
         switch kommando {

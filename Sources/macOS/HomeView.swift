@@ -16,12 +16,8 @@ import SwiftUI
 struct HomeView: View {
     let model: AppModel
     @Environment(Abspielsteuerung.self) private var steuerung
-    /// Legt ein Ziel auf den Stapel des Bereichs.
-    ///
-    /// Bewusst durchgereicht und **kein** eigenes `navigationDestination`:
-    /// zwei Ziele für denselben Typ im selben Stapel sind eine Falle, und
-    /// welches gewinnt, ist nicht festgelegt.
-    let oeffne: (Item) -> Void
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
 
     @State private var weiter: [Item] = []
     @State private var naechste: [Item] = []
@@ -39,7 +35,7 @@ struct HomeView: View {
                                        bild: model.querbildURL(for: titel),
                                        fortschritt: fortschritt(titel),
                                        auswahl: { steuerung.starte(titel) },
-                                       uebersicht: { oeffne(titel) })
+                                       uebersicht: { navigator.oeffne(.titel(titel), in: bereich) })
                         }
                     }
                 }
@@ -51,7 +47,7 @@ struct HomeView: View {
                             Querkachel(titel: kopf(folge), zweitzeile: folge.folgenkuerzel,
                                        bild: model.querbildURL(for: folge),
                                        auswahl: { steuerung.starte(folge, ab: 0) },
-                                       uebersicht: { oeffne(folge) })
+                                       uebersicht: { navigator.oeffne(.titel(folge), in: bereich) })
                         }
                     }
                 }
@@ -59,7 +55,7 @@ struct HomeView: View {
                 if !neu.isEmpty {
                     Reihe(titel: "Zuletzt hinzugefügt") {
                         ForEach(neu, id: \.id) { titel in
-                            NavigationLink(value: titel) {
+                            Button { navigator.oeffne(.titel(titel), in: bereich) } label: {
                                 Posterkachel(titel: titel.name,
                                              zweitzeile: titel.neuzugangszeile,
                                              bild: model.imageURL(for: titel, hochkant: true))
