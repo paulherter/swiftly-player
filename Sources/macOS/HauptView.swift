@@ -106,10 +106,11 @@ struct HauptView: View {
                     Stil.grund
                     seite(ziel)
                 }
-                // **Beide Richtungen.** Hinein von rechts, hinaus nach
-                // rechts — die Bewegung, die `NavigationStack` auf dem Mac
-                // schuldig blieb.
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                // **Nur schieben, nicht blenden.** Mit einer Überblendung
+                // dazu ist die Seite unterwegs kurz durchsichtig, und man
+                // sieht die darunterliegende hindurch — das wirkt wie ein
+                // Fehler, nicht wie eine Bewegung. Sie fährt ein, fertig.
+                .transition(.move(edge: .trailing))
             }
         }
     }
