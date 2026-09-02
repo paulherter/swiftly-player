@@ -52,6 +52,23 @@ struct PlayerScreen: View {
     /// nachzieht.
     @State private var sprungAnzeige: (richtung: Int, sekunden: Int)?
     @State private var sprungTakt = 0
+    /// **Die Videofläche beim Schliessen zuerst ausblenden.**
+    ///
+    /// Der Videoausgang ist auf dem Mac ein `VLCOpenGLVideoView`. Der
+    /// Kommentar bei `Videoflaeche` sagt schon, was das bedeutet: eine
+    /// OpenGL-Ansicht zeichnet in ihre **eigene** Fläche und liegt über
+    /// allem, was im SwiftUI-Stapel nach ihr kommt — die Reihenfolge im
+    /// `ZStack` entscheidet nichts.
+    ///
+    /// Für die Schliessbewegung heisst das: die SwiftUI-Ebenen fahren
+    /// ordentlich nach unten, die OpenGL-Fläche bleibt aber liegen, bis
+    /// SwiftUI die Ansicht wirklich abräumt. Genau das sieht man — „darunter
+    /// ist dann einfach nur eine schwarze Ebene, die nach ein paar Sekunden
+    /// wieder weg ist".
+    ///
+    /// `isHidden` wirkt auf AppKit-Ebene und damit sofort. Also erst
+    /// ausblenden, dann fahren.
+    @State private var flaecheAus = false
     /// Je Richtung ein eigener Zähler — sonst spielt der Effekt am falschen
     /// Knopf, wenn man abwechselnd vor und zurück springt.
     @State private var taktZurueck = 0
@@ -89,7 +106,7 @@ struct PlayerScreen: View {
 
             Videoflaeche(url: anfang.plan.url, startAt: anfang.startAt,
                          container: anfang.plan.container,
-                         verdeckt: !schirmWeg) { neu in
+                         verdeckt: !schirmWeg || flaecheAus) { neu in
                 flaeche = neu
             }
             .ignoresSafeArea()
@@ -430,6 +447,10 @@ struct PlayerScreen: View {
         // „Weiterschauen" verlöre die Stelle.
         let stelle = stand.position
 
+        // Zuerst die OpenGL-Fläche weg, sonst bleibt sie als schwarzes
+        // Rechteck liegen, während die Seite darüber hinunterfährt.
+        flaecheAus = true
+
         // **Anhalten ja, abräumen später.**
         //
         // Hier stand `flaeche?.stop()` unmittelbar vor `schliessen()`. `stop`
@@ -447,12 +468,10 @@ struct PlayerScreen: View {
                                              seconds: stelle) }
         }
         schliessen()
-
-        let abzuraeumen = flaeche
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(320))
-            abzuraeumen?.stop()
-        }
+        // Abgeräumt wird in `Videoflaeche.dismantleNSView`, also dann, wenn
+        // SwiftUI die Ansicht wirklich entfernt — nach der Bewegung. Ein
+        // eigener Wecker dafür war geraten und traf den Zeitpunkt nur
+        // ungefähr.
     }
 
     /// Esc verlässt zuerst das Vollbild und schließt erst dann den Film.
@@ -652,6 +671,16 @@ struct Videoflaeche: NSViewRepresentable {
 
     func updateNSView(_ ansicht: VLCPlayerView, context: Context) {
         if ansicht.isHidden != verdeckt { ansicht.isHidden = verdeckt }
+    }
+
+    /// **Fehlte hier, steht auf iOS seit jeher.**
+    ///
+    /// Ohne das läuft der Wachhund-Zeitgeber der abgeräumten Ansicht endlos
+    /// weiter. Auf `stop()` im Verschwinden ist kein Verlass: das trifft die
+    /// Ansicht, auf die `flaeche` zeigt, nicht zwingend jede, die SwiftUI
+    /// angelegt hat.
+    static func dismantleNSView(_ ansicht: VLCPlayerView, coordinator: ()) {
+        MainActor.assumeIsolated { ansicht.stop() }
     }
 }
 
