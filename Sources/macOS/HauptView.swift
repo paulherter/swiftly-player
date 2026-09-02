@@ -128,6 +128,21 @@ struct HauptView: View {
                     .transition(.move(edge: .bottom))
             }
         }
+        // **Der helle Streifen war kein Anstrich, sondern ein Rand.**
+        //
+        // Die Auflage wird im Sicherheitsbereich ausgelegt, also unterhalb
+        // der Titelleiste — das Bild fing dort an, und darüber blieb die
+        // Leiste stehen. Ein `.ignoresSafeArea()` **innerhalb** des Players
+        // half nicht: die Auflage selbst war da schon eingerückt, und ein
+        // Kind kann den Rahmen seines Elternteils nicht wieder aufmachen.
+        //
+        // Nachgesehen habe ich zuerst bei Apple: es gibt einen bekannten
+        // Rückschritt in macOS 26, bei dem die Titelleiste trotz
+        // `titlebarAppearsTransparent` gezeichnet wird — ausgelöst von genau
+        // unserem Aufbau, einer Scrollfläche mit einer Ansicht links daneben.
+        // Der ist aber seit 26.1 behoben, und dieser Rechner läuft auf 26.5.
+        // Also lag es doch an uns.
+        .ignoresSafeArea()
         .animation(Stil.zeitSprung, value: steuerung.wunsch?.id)
         .onReceive(NotificationCenter.default.publisher(for: Kommandopost.name)) { post in
             guard let kommando = Kommandopost.empfangen(post) else { return }

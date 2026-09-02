@@ -27,6 +27,11 @@ extension Stil {
     /// eigene Luft mit, weil ihre Vorlage das Zeichen über dem „i" und die
     /// Unterlänge des „y" einschließt und die Buchstaben nur die halbe Höhe
     /// füllen. 40 reicht deshalb, wo vorher 52 standen.
+    /// Wie weit von oben die Zone reicht, in der die Fensterampel im Player
+    /// erscheint. Etwas grosszuegiger als die Ampel selbst, damit man sie
+    /// nicht suchen muss.
+    static let ampelzone: CGFloat = 90
+
     static let ampelHoehe: CGFloat = 40
 
     /// Oberer Rand im **Inhaltsbereich**.
