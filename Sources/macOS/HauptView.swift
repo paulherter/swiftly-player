@@ -52,6 +52,9 @@ struct HauptView: View {
                 Stil.grund
                 inhalt
             }
+            // Der ruhende Elternteil: hier steht die Anweisung, die den
+            // Tausch darin führt.
+            .animation(Stil.zeitSeite, value: bereich)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // **Der Sicherheitsrand der Titelleiste fällt hier weg, nicht auf
             // jeder Seite einzeln.**
@@ -95,7 +98,6 @@ struct HauptView: View {
                 case .suche:  SucheView(model: model)
                 }
             }
-            .transition(.opacity)
             .navigationDestination(for: Item.self) { titel in
                 DetailView(model: model, item: titel) { zurueck() }
             }
@@ -121,8 +123,13 @@ struct HauptView: View {
         // Der Stapel gehört zum Bereich; ohne die Kennung baut SwiftUI ihn
         // beim Wechsel nicht neu auf und zeigt die alte Seite weiter.
         .id(bereich)
-        // Ersetzen blendet über — siehe die Regel in `Stil`.
-        .animation(Stil.zeitSeite, value: bereich)
+        // **Die Blende gehört an die Ansicht, deren Kennung wechselt** — und
+        // die Animation an deren *Elternteil*, nicht an sie selbst. Ich hatte
+        // die Blende auf den Inhalt **innerhalb** des Stapels gelegt und die
+        // Animation auf den Stapel: getauscht wurde damit etwas, das keine
+        // Blende trug, und angewiesen wurde etwas, das nicht getauscht wurde.
+        // Deshalb war nichts zu sehen.
+        .transition(.opacity)
     }
 
     private func pfad(_ b: Bereich) -> Binding<NavigationPath> {
