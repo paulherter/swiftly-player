@@ -101,7 +101,7 @@ struct FilmView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Heldenkopf(model: model, titel: film)
+                Heldenkopf(model: model, titel: film, stand: kopfstand)
 
                 VStack(alignment: .leading, spacing: 26) {
                     // Die Beschreibung steht im Kopf, wie auf dem Apple TV —
@@ -129,11 +129,6 @@ struct FilmView: View {
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
         .ohneKanteneffekt()
-        // **Federn wie überall sonst.** Ohne die Angabe entscheidet das
-        // Rahmenwerk selbst, und auf diesen Seiten fiel die Entscheidung
-        // gegen das Federn aus — dann steht die Fläche am oberen Ende hart,
-        // statt nachzugeben.
-        .scrollBounceBehavior(.always)
         // **Der Inhalt läuft bis unter die Titelleiste durch.** SwiftUI rückt
         // ihn sonst um deren Sicherheitsbereich ein, und über dem Bild stand
         // ein dunkler Streifen. Die iPhone-Fassung tut dasselbe.
@@ -214,6 +209,21 @@ struct Titelreihe: View {
 struct Heldenkopf: View {
     let model: AppModel
     let titel: Item
+    /// Wo die Seite steht — nur fürs Mitziehen des Bildes gebraucht.
+    let stand: Kopfstand
+
+    /// **Wie weit über den oberen Rand hinausgezogen wurde.**
+    ///
+    /// Zieht man weiter nach oben, als es Inhalt gibt, wird der Versatz
+    /// negativ. Statt der Leere darüber wächst dann das Kopfbild mit — an
+    /// seiner Oberkante festgehalten, damit es nur nach unten aufgeht. Lässt
+    /// man los, federt die Fläche zurück und das Bild mit ihr; es braucht
+    /// dafür keine eigene Anweisung.
+    ///
+    /// So macht es die iPhone- und die iPad-Fassung, und es ist der Grund,
+    /// warum sich das Ende einer Seite dort nach etwas anfasst statt nach
+    /// einer Wand.
+    private var zug: CGFloat { max(0, -stand.versatz) }
 
     @State private var plan: PlaybackPlan?
     @State private var spielbarerTitel: Item?
@@ -231,6 +241,8 @@ struct Heldenkopf: View {
             Kulisse(url: model.querbildURL(for: titel, breite: 1600)
                          ?? model.backdropURL(for: titel),
                     hoehe: Stil.heldHoehe * 1.62)
+                // Um denselben Anteil wachsen, um den zu weit gezogen wurde.
+                .scaleEffect(1 + zug / Stil.heldHoehe, anchor: .top)
 
             block
                 .padding(.leading, Stil.randAbstand)

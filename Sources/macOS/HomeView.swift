@@ -115,11 +115,6 @@ struct HomeView: View {
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
         .ohneKanteneffekt()
-        // **Federn wie überall sonst.** Ohne die Angabe entscheidet das
-        // Rahmenwerk selbst, und auf diesen Seiten fiel die Entscheidung
-        // gegen das Federn aus — dann steht die Fläche am oberen Ende hart,
-        // statt nachzugeben.
-        .scrollBounceBehavior(.always)
         .overlay { if !geladen { Lader() } }
         .task { await laden() }
     }

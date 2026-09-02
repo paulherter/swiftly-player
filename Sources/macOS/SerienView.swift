@@ -77,7 +77,7 @@ struct SerienView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Heldenkopf(model: model, titel: serie)
+                Heldenkopf(model: model, titel: serie, stand: kopfstand)
 
                 Reiterreihe(auswahl: $reiter)
                     .padding(.top, 26)
@@ -102,11 +102,6 @@ struct SerienView: View {
         .toolbar(.hidden)
         .toolbarBackground(.hidden, for: .windowToolbar)
         .ohneKanteneffekt()
-        // **Federn wie überall sonst.** Ohne die Angabe entscheidet das
-        // Rahmenwerk selbst, und auf diesen Seiten fiel die Entscheidung
-        // gegen das Federn aus — dann steht die Fläche am oberen Ende hart,
-        // statt nachzugeben.
-        .scrollBounceBehavior(.always)
         .background(alignment: .top) {
             LinearGradient(colors: [farbe.ton, Stil.grund],
                            startPoint: .top, endPoint: .bottom)

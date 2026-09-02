@@ -607,7 +607,19 @@ struct Detailkopf: View {
                 LinearGradient(colors: [Stil.grund.opacity(0.7), Stil.grund.opacity(0)],
                                startPoint: .top, endPoint: .bottom)
                     .opacity(1 - staerke)
-                Leistenglas(staerke: staerke)
+                // **Nur wenn sie etwas tut.**
+                //
+                // `Leistenglas` ist eine *lebende* Unschärfe: sie verwischt,
+                // was darunter durchläuft, und rechnet das bei jedem Bild neu
+                // — auch dann, wenn die Maske sie auf null stellt und man
+                // nichts sieht. Über einer scrollenden Seite ist das die
+                // teuerste Fläche im Fenster, und sie stand dort dauerhaft.
+                //
+                // Steht sie erst ab einem Hauch Sichtbarkeit in der Ansicht,
+                // kostet das Scrollen im Heldenbild gar nichts.
+                if staerke > 0.01 {
+                    Leistenglas(staerke: staerke)
+                }
             }
             .ignoresSafeArea(edges: .top)
         }
