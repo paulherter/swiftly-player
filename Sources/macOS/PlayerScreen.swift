@@ -429,12 +429,30 @@ struct PlayerScreen: View {
         // **Vor** dem Anhalten ablesen — danach steht die Zeit auf null und
         // „Weiterschauen" verlöre die Stelle.
         let stelle = stand.position
-        flaeche?.stop()
+
+        // **Anhalten ja, abräumen später.**
+        //
+        // Hier stand `flaeche?.stop()` unmittelbar vor `schliessen()`. `stop`
+        // räumt den Dekoder ab und braucht dafür sichtbar Zeit — auf dem
+        // Hauptlauf, in demselben Vorgang, in dem die Bewegung nach unten
+        // losfährt. Deshalb war das Öffnen weich und das Schliessen hart:
+        // beim Öffnen ist nichts abzuräumen.
+        //
+        // `pause` ist billig und nimmt den Ton sofort weg. Das Abräumen
+        // folgt, wenn die Bewegung durch ist.
+        flaeche?.pause()
+
         if stand.startGemeldet {
             Task { await model.reportStopped(item: titel, plan: plan,
                                              seconds: stelle) }
         }
         schliessen()
+
+        let abzuraeumen = flaeche
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(320))
+            abzuraeumen?.stop()
+        }
     }
 
     /// Esc verlässt zuerst das Vollbild und schließt erst dann den Film.
