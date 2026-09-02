@@ -210,7 +210,16 @@ struct BibliothekView: View {
         GeometryReader { rahmen in
             inhalt(nutzbar: rahmen.size.width - 2 * Stil.rand(breit: breit))
         }
-        .task(id: "\(stand.kennung)|\(gewaehlt?.id ?? "")") { await laden() }
+        // **Die Bibliothek gehoert nicht in die Kennung.**
+        //
+        // Sie stand einmal darin, und das war ein Fehler: `laden()` setzt die
+        // Wahl beim ersten Lauf selbst, aendert damit die Kennung und bricht
+        // die eigene Aufgabe ab. Die abgebrochene Anfrage kam als
+        // Fehlschlag zurueck, und die Seite zeigte „Kein Kontakt zum Server"
+        // ueber den Plakaten, die der zweite Lauf gerade geladen hatte.
+        //
+        // Gewechselt wird nur durch Antippen — dort wird auch neu geladen.
+        .task(id: stand.kennung) { await laden() }
     }
 
     private func inhalt(nutzbar: CGFloat) -> some View {
@@ -411,8 +420,10 @@ struct BibliothekView: View {
                              beschriftung: { $0.name },
                              istGewaehlt: { $0.id == gewaehlt?.id },
                              waehlen: { bib in
+                                 guard bib.id != gewaehlt?.id else { return }
                                  model.bibliothekWaehlen(bib, art: art)
                                  gewaehlt = bib
+                                 Task { await laden() }
                              })
             }
         }
@@ -442,13 +453,22 @@ struct StaffelZiel: View {
     let folge: Item
 
     @State private var serie: Item?
+    /// **Die Staffel frisch holen, nicht die der Kachel glauben.**
+    ///
+    /// Der Listeneintrag traegt die Staffel, die er beim Laden der Startseite
+    /// hatte. Wer eine Staffel zu Ende sieht und die naechste dazulegt, hat
+    /// dort weiter die alte stehen — die Seite oeffnete dann mit „Abspielen
+    /// S6E1" oben und Staffel 5 in der Folgenliste. Dasselbe Muster wie bei
+    /// der Fortsetzstelle in `HomeView.starte`, und dieselbe Abhilfe.
+    @State private var frischeStaffelID: String?
 
     var body: some View {
         ZStack {
             Stil.grund.ignoresSafeArea()
             if let serie {
                 SeriesDetailView(model: model, serie: serie,
-                                 startStaffelID: folge.seasonId)
+                                 startStaffelID: frischeStaffelID ?? folge.seasonId,
+                                 startStaffelNummer: folge.parentIndexNumber)
             } else {
                 Lader()
             }
@@ -465,8 +485,10 @@ struct StaffelZiel: View {
         .background(WischZurueck())
         #endif
         .task {
-            guard serie == nil, let id = folge.seriesId else { return }
-            serie = await model.item(id: id)
+            guard let id = folge.seriesId else { return }
+            async let frisch = model.item(id: folge.id)
+            if serie == nil { serie = await model.item(id: id) }
+            frischeStaffelID = await frisch?.seasonId
         }
     }
 }

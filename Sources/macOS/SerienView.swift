@@ -15,6 +15,12 @@ struct SerienView: View {
     /// Welche Staffel beim Öffnen gewählt ist — gesetzt, wenn man über eine
     /// Folge hierhergekommen ist (A8).
     var startStaffelID: String?
+    /// Die **Nummer** der Staffel, aus der man kommt — der verlaessliche Weg.
+    ///
+    /// Am Geraet gemessen: der Server kann an einer Folge kein `SeasonId`
+    /// liefern. Dann greifen die Kennungsvergleiche ins Leere und die Wahl
+    /// faellt auf die erste Staffel. Die Nummer steht dagegen immer da.
+    var startStaffelNummer: Int?
     let zurueck: () -> Void
 
     @State private var reiter: Reiter = .folgen
@@ -121,7 +127,9 @@ struct SerienView: View {
     private func staffelnLaden() async {
         guard staffeln.isEmpty else { return }
         staffeln = await model.staffeln(serie)
-        gewaehlt = staffeln.first { $0.id == startStaffelID } ?? staffeln.first
+        gewaehlt = staffeln.first { $0.id == startStaffelID }
+            ?? staffeln.first { $0.indexNumber != nil && $0.indexNumber == startStaffelNummer }
+            ?? staffeln.first
         if staffeln.isEmpty { await folgenLaden() }
     }
 

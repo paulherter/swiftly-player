@@ -392,6 +392,15 @@ struct StaffelZiel: View {
 
     @State private var serie: Item?
 
+    /// **Die Staffel frisch holen, nicht die der Kachel glauben.**
+    ///
+    /// Der Listeneintrag traegt die Staffel, die er beim Laden der Startseite
+    /// hatte. Wer eine Staffel zu Ende sieht und die naechste dazulegt, hat
+    /// dort weiter die alte stehen — die Seite oeffnete dann mit „Abspielen
+    /// S6E1" oben und Staffel 5 in der Folgenliste. Dasselbe Muster wie bei
+    /// der Fortsetzstelle in `HomeView.starte`, und dieselbe Abhilfe.
+    @State private var frischeStaffelID: String?
+
     /// **Die Serie steht sofort, wenn sie schon einmal geholt wurde.**
     ///
     /// Sonst zeigte diese Ansicht bei jedem Oeffnen einer Folge zuerst einen
@@ -437,7 +446,8 @@ struct StaffelZiel: View {
                 // Die Folge, ueber die man hereinkam, ist zugleich die
                 // Stelle, an der es weitergeht — siehe `SerienView.startFolge`.
                 SerienView(model: model, serie: serie,
-                           startStaffelID: folge.seasonId, startFolge: folge)
+                           startStaffelID: frischeStaffelID ?? folge.seasonId,
+                           startFolge: folge)
             } else {
                 // **Kein undurchsichtiges Schwarz.** Beim ersten Mal ist die
                 // Wartezeit echt — die Serie muss geholt werden —, aber sie
@@ -452,8 +462,10 @@ struct StaffelZiel: View {
             }
         }
         .task {
-            guard serie == nil, let id = folge.seriesId else { return }
-            serie = await model.item(id: id)
+            guard let id = folge.seriesId else { return }
+            async let frisch = model.item(id: folge.id)
+            if serie == nil { serie = await model.item(id: id) }
+            frischeStaffelID = await frisch?.seasonId
         }
     }
 }

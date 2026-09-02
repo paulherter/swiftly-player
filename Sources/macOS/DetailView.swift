@@ -40,19 +40,31 @@ struct StaffelZiel: View {
     let zurueck: () -> Void
 
     @State private var serie: Item?
+    /// **Die Staffel frisch holen, nicht die der Kachel glauben.**
+    ///
+    /// Der Listeneintrag traegt die Staffel, die er beim Laden der Startseite
+    /// hatte. Wer eine Staffel zu Ende sieht und die naechste dazulegt, hat
+    /// dort weiter die alte stehen — die Seite oeffnete dann mit „Abspielen
+    /// S6E1" oben und Staffel 5 in der Folgenliste. Dasselbe Muster wie bei
+    /// der Fortsetzstelle in `HomeView.starte`, und dieselbe Abhilfe.
+    @State private var frischeStaffelID: String?
 
     var body: some View {
         Group {
             if let serie {
-                SerienView(model: model, serie: serie, startStaffelID: folge.seasonId,
+                SerienView(model: model, serie: serie,
+                           startStaffelID: frischeStaffelID ?? folge.seasonId,
+                           startStaffelNummer: folge.parentIndexNumber,
                            zurueck: zurueck)
             } else {
                 Lader()
             }
         }
         .task {
-            guard serie == nil, let id = folge.seriesId else { return }
-            serie = await model.item(id: id)
+            guard let id = folge.seriesId else { return }
+            async let frisch = model.item(id: folge.id)
+            if serie == nil { serie = await model.item(id: id) }
+            frischeStaffelID = await frisch?.seasonId
         }
     }
 }
