@@ -102,6 +102,13 @@ struct FilmView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Heldenkopf(model: model, titel: film, stand: kopfstand)
+                    // **Der Kopf malt über das, was unter ihm steht.**
+                    //
+                    // Ohne das liegt das Mehr-Menü hinter Reiterreihe und
+                    // Folgenliste: die kommen im Stapel nach dem Kopf, also
+                    // malen sie später und damit darüber. Man sah beides
+                    // ineinander.
+                    .zIndex(1)
 
                 VStack(alignment: .leading, spacing: 26) {
                     // Die Beschreibung steht im Kopf, wie auf dem Apple TV —
