@@ -91,16 +91,21 @@ struct HauptView: View {
         .task {
             guard ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"] == "1" else { return }
             try? await Task.sleep(for: .seconds(6))
-            // Eine echte Serie, nicht das Profil — gemessen wird der Fall,
-            // der klemmt.
-            let regal = Bibliotheksmodell()
-            await regal.laden(model, art: "tvshows")
-            guard let serie = regal.items.first else {
-                Protokoll.schreib("Messfahrt: keine Serie gefunden")
+            // Eine echte Serie, nicht das Profil — gemessen wird der Fall, der
+            // klemmt. **Denselben Weg nehmen wie ** Auf der Startseite sind
+            // die Kacheln unter „Weiterschauen" und „Nächste Folge" Folgen,
+            // keine Serien — und die laufen über `StaffelZiel`. Meine
+            // bisherige Fahrt öffnete eine Serie aus der Bibliothek und maß
+            // damit den falschen Fall.
+            async let a = model.naechsteFolge()
+            async let b = model.weiterschauen()
+            let (naechste, weiter) = await (a, b)
+            guard let ziel = ((naechste ?? []).first ?? (weiter ?? []).first) else {
+                Protokoll.schreib("Messfahrt: nichts auf der Startseite")
                 return
             }
-            Protokoll.schreib("Messfahrt: öffne \(serie.name)")
-            navigator.oeffne(.titel(serie), in: bereich)
+            Protokoll.schreib("Messfahrt: öffne \(ziel.name) (\(ziel.type ?? "?"))")
+            navigator.oeffne(.titel(ziel), in: bereich)
             try? await Task.sleep(for: .seconds(4))
             navigator.zurueck(in: bereich)
         }

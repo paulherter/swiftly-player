@@ -21,13 +21,19 @@ struct DetailView: View {
     /// Zucken beim Öffnen eines Films.
     private var titel: Item { ruht ? (voll ?? item) : item }
 
+    /// Nur zum Nachmessen: welchen Weg ein Klick nimmt.
+    private func protokolliert(_ art: String?) -> String? {
+        if Ruckelwache.an { Protokoll.schreib("Detailseite: \(item.name) ist \(art ?? "?")") }
+        return art
+    }
+
     var body: some View {
         Group {
             // **Nach `item.type` verzweigen, nicht nach `titel.type`.** Die
             // Art steht schon in der Liste; nach dem nachgeladenen Satz zu
             // verzweigen hiess, den Zweig unterwegs wechseln zu können — und
             // damit die halbe Seite wegzuwerfen und neu zu bauen.
-            switch item.type {
+            switch protokolliert(item.type) {
             case "Series":
                 SerienView(model: model, serie: titel, zurueck: zurueck)
             case "Episode":
@@ -52,6 +58,16 @@ struct StaffelZiel: View {
 
     @State private var serie: Item?
 
+    /// **Was vorgeholt ist, steht sofort** — dann gibt es die leere Seite gar
+    /// nicht erst. Nachgereicht käme der Wert zu spät: der leere Durchgang
+    /// hat dann schon stattgefunden, und der ist das, was man sieht.
+    @MainActor init(model: AppModel, folge: Item, zurueck: @escaping () -> Void) {
+        self.model = model
+        self.folge = folge
+        self.zurueck = zurueck
+        _serie = State(initialValue: Seriencache.geteilt.serie(fuer: folge))
+    }
+
     var body: some View {
         Group {
             if let serie {
@@ -63,7 +79,13 @@ struct StaffelZiel: View {
         }
         .task {
             guard serie == nil, let id = folge.seriesId else { return }
-            serie = await model.item(id: id)
+            let start = Date()
+            let geholt = await model.item(id: id)
+            if let geholt { Seriencache.geteilt.merken(geholt) }
+            serie = geholt
+            if Ruckelwache.an {
+                Protokoll.schreib("StaffelZiel: leere Seite \(Int(Date().timeIntervalSince(start) * 1000)) ms lang")
+            }
         }
     }
 }

@@ -117,6 +117,14 @@ struct HomeView: View {
         naechste = await b ?? []
         neu = await c ?? []
         geladen = true
+
+        // **Die Serien zu diesen Folgen im Hintergrund nachziehen.**
+        //
+        // Beide Reihen bestehen aus Folgen. Ein Klick darauf führt auf die
+        // Serienseite (A8) und braucht dafür erst die Serie — bis dahin fuhr
+        // eine leere Seite herein. Hier ist längst bekannt, welche Serien in
+        // Frage kommen, also werden sie geholt, solange niemand wartet.
+        Seriencache.geteilt.vorholen(weiter + naechste, mit: model)
     }
 }
 
