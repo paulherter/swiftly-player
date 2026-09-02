@@ -296,7 +296,10 @@ struct HauptView: View {
             // das Neue in 200 ms und wächst dabei von 92 % auf 100 %. Die
             // Zahlen und das Warum stehen bei `Stil.zeitBereichHerein`.
             .transition(.asymmetric(
-                insertion: .blurReplace.animation(Stil.zeitBereichHerein),
+                // `.blurReplace` gehört zum neuen `Transition`-Protokoll,
+                // `.asymmetric` verlangt `AnyTransition` — deshalb der
+                // ausdrückliche Umweg.
+                insertion: AnyTransition(.blurReplace).animation(Stil.zeitBereichHerein),
                 removal: .opacity.animation(Stil.zeitBereichHinaus)))
             // **Nur hier, nicht am Elternteil.** Genau daran ist der erste
             // Versuch gescheitert: eine Anweisung mit `value:` gilt für
