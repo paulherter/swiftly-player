@@ -503,10 +503,29 @@ struct Detailaktion: View {
 /// Drittel, also stand die Leiste links auf blankem Grund und war als
 /// dunkler Balken zu sehen — rechts, wo das Bild liegt, verlor sie sich
 /// darin. Ein Streifen, der nur halb da ist, ist schlimmer als keiner.
+/// Wo die Seite gerade steht.
+///
+/// **Warum das ein eigenes Objekt ist und kein `@State` in der Seite.**
+///
+/// `onScrollGeometryChange` feuert bei jedem Takt des Scrollens. Schreibt es
+/// in ein `@State` der Seite, wertet SwiftUI deren **ganzen Rumpf** neu aus —
+/// bei einer Serienseite also Kopf, Reiterreihe und die Folgenliste, und das
+/// sechzigmal in der Sekunde. Beim schnellen Ziehen kommt der Hauptlauf dann
+/// nicht mehr nach, die Scrollfläche verliert den Anschluss und springt.
+///
+/// Als `@Observable` wird nur neu gezeichnet, wer den Wert **liest** — und
+/// das ist einzig der `Detailkopf`. Die Seite gibt den Halter nur weiter.
+@MainActor
+@Observable
+final class Kopfstand {
+    var versatz: CGFloat = 0
+}
+
 struct Detailkopf: View {
     let titel: String
-    /// Wie weit gescrollt wurde.
-    let versatz: CGFloat
+    /// Wo die Seite steht — siehe `Kopfstand`.
+    let stand: Kopfstand
+    private var versatz: CGFloat { stand.versatz }
 
     /// **Ab wo die Leiste kommt — hergeleitet, nicht geschätzt.**
     ///

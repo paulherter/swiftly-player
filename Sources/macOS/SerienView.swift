@@ -59,7 +59,7 @@ struct SerienView: View {
         _folgen = State(initialValue: folgen)
         _laedt = State(initialValue: folgen.isEmpty)
     }
-    @State private var versatz: CGFloat = 0
+    @State private var kopfstand = Kopfstand()
     @State private var farbe = Bildfarbe()
 
     enum Reiter: String, CaseIterable {
@@ -115,10 +115,10 @@ struct SerienView: View {
         }
         .background(Stil.grund)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
-            versatz = neu
+            kopfstand.versatz = neu
         }
         .overlay(alignment: .top) {
-            Detailkopf(titel: serie.name, versatz: versatz, zurueck: zurueck)
+            Detailkopf(titel: serie.name, stand: kopfstand, zurueck: zurueck)
         }
         .task { await farbe.laden(model.backdropURL(for: serie)) }
         .task { await staffelnLaden() }
@@ -180,6 +180,11 @@ struct SerienView: View {
                     // Genau dieselbe Sache wie in `Blätterreihe`, nur hier
                     // übersehen. Die Filmseite hat keine solche Liste; daher
                     // lief sie sauber und die Serienseite nicht.
+                    // **Bis an den Fensterrand.** Der Abschnitt setzt seinen
+                    // seitlichen Rand aussen; damit endete auch die graue
+                    // Fläche beim Überfahren dort. Eine Zeile in einer Liste
+                    // leuchtet aber über die **ganze** Breite — den Rand
+                    // trägt deshalb die Zeile selbst, siehe `Folgenzeile`.
                     LazyVStack(spacing: 0) {
                         ForEach(folgen, id: \.id) { folge in
                             Folgenzeile(model: model, folge: folge)
@@ -189,6 +194,7 @@ struct SerienView: View {
                         }
                     }
                     .transition(.opacity)
+                    .padding(.horizontal, -Stil.randAbstand)
                 }
             }
 
@@ -456,7 +462,11 @@ struct Folgenzeile: View {
             .frame(width: Stil.knopfRund, alignment: .trailing)
         }
         .padding(.vertical, 12)
-        .padding(.horizontal, 6)
+        // Der Rand des Abschnitts, hier innen — damit die Fläche beim
+        // Überfahren bis an den Fensterrand reicht, der Inhalt aber auf
+        // derselben Linie steht wie überall sonst. Die 6 Punkt Ausgleich
+        // sind der Innenabstand der Zeile selbst.
+        .padding(.horizontal, Stil.randAbstand - 6)
         // **Feste Zeilenhöhe.** Ein `LazyVStack` baut nur, was zu sehen ist,
         // und schätzt den Rest. Schätzt er falsch, springt die Scrollfläche
         // beim schnellen Hochziehen — je mehr Folgen, desto weiter. Mit einer

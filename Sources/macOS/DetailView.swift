@@ -96,7 +96,7 @@ struct FilmView: View {
 
     @State private var extras: [Item] = []
     @State private var aehnliche: [Item] = []
-    @State private var versatz: CGFloat = 0
+    @State private var kopfstand = Kopfstand()
 
     var body: some View {
         ScrollView {
@@ -156,10 +156,10 @@ struct FilmView: View {
         }
         .background(Stil.grund)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
-            versatz = neu
+            kopfstand.versatz = neu
         }
         .overlay(alignment: .top) {
-            Detailkopf(titel: film.name, versatz: versatz, zurueck: zurueck)
+            Detailkopf(titel: film.name, stand: kopfstand, zurueck: zurueck)
         }
         .task { await farbe.laden(model.backdropURL(for: film)) }
         .task {
