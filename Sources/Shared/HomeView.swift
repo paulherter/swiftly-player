@@ -253,8 +253,31 @@ private struct Kachel: View {
                 // Fehlt dem Titel ein waagerechtes Bild, tritt das Poster ein
                 // — beschnitten, aber immer noch das Cover und kein Standbild.
                 Bild(url: model.imageURL(for: item, maxHeight: 500, hochkant: true),
-                     breite: breite, hoehe: hoehe, ecke: Stil.eckeKachel)
+                     breite: breite, hoehe: hoehe, ecke: Stil.eckeKachel) {
+                    // **Und wenn auch das fehlt, ein Zeichen statt Leere.**
+                    //
+                    // Eine leere Flaeche sieht aus wie ein Fehler in der App,
+                    // und genau so wurde sie gemeldet. Ein Zeichen sagt: hier
+                    // gehoert ein Bild hin, der Server hat keins.
+                    Stil.flaeche.overlay {
+                        Image(systemName: item.seriesId != nil ? "tv" : "film")
+                            .font(.system(size: 22))
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                    }
+                }
             }
+            #if DEBUG
+            // Nur im Debug-Bau: in der ausgelieferten Fassung waere das eine
+            // gebaute Adresse je Kachel, fuer nichts.
+            .onAppear {
+                guard quer, model.querbildURL(for: item) == nil else { return }
+                Protokoll.schreib("[Bild] \(item.seriesName ?? item.name): kein Querbild — "
+                    + "eigen=\(item.imageTags?.keys.sorted().joined(separator: ",") ?? "-") "
+                    + "Serienposter=\(item.seriesPrimaryImageTag != nil) "
+                    + "Serienhintergrund=\(item.parentBackdropImageTags?.count ?? 0) "
+                    + "Serienvorschau=\(item.parentThumbImageTag != nil)")
+            }
+            #endif
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.seriesName ?? item.name)

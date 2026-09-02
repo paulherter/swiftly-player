@@ -48,7 +48,9 @@ final class Startseitenmodell {
         if let b { naechsteFolge = b }
         if let c { zuletzt = c }
 
-        gestoert = (a == nil && b == nil && c == nil)
+        // Ein Abbruch ist kein Ausfall — dieselbe Unterscheidung wie in
+        // `Bibliotheksmodell`.
+        gestoert = !Task.isCancelled && (a == nil && b == nil && c == nil)
         if !gestoert { zuletztGeladen = Date() }
         geladen = true
     }

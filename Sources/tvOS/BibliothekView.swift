@@ -114,7 +114,7 @@ struct BibliothekView: View {
         // Wer die Seite mit offener Tafel verlaesst, liesse die Leiste tot
         // zurueck.
         .onDisappear { tafelOffen.wrappedValue = false }
-        .task(id: "\(stand.kennung)|\(gewaehlt?.id ?? "")") { await laden() }
+        .task(id: stand.kennung) { await laden() }
     }
 
     /// **Je Bereich ein eigener Grundton.**
@@ -201,8 +201,10 @@ struct BibliothekView: View {
             if auswahl.count > 1 {
                 ForEach(auswahl) { bib in
                     Button(bib.name) {
+                        guard bib.id != gewaehlt?.id else { return }
                         model.bibliothekWaehlen(bib, art: art ?? "")
                         gewaehlt = bib
+                        Task { await laden() }
                     }
                     .buttonStyle(ChipStil(an: bib.id == gewaehlt?.id))
                 }

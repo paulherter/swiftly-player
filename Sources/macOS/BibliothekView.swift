@@ -53,8 +53,10 @@ struct BibliothekView: View {
                         ForEach(auswahl) { bib in
                             Chip(beschriftung: bib.name,
                                  aktiv: bib.id == gewaehlt?.id) {
+                                guard bib.id != gewaehlt?.id else { return }
                                 model.bibliothekWaehlen(bib, art: art)
                                 gewaehlt = bib
+                                Task { await laden() }
                             }
                         }
                         Rectangle()
@@ -103,7 +105,7 @@ struct BibliothekView: View {
         }
         .scrollIndicators(.never)
         .overlay { if regal.laedt { Lader() } }
-        .task(id: "\(regal.kennung)|\(gewaehlt?.id ?? "")") { await laden() }
+        .task(id: regal.kennung) { await laden() }
     }
 
     /// Für das Nachladen genügt eine Schätzung: ob die drittletzte Reihe bei

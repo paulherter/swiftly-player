@@ -130,6 +130,18 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     public let imageTags: [String: String]?
     public let userData: UserItemData?
     public let mediaSources: [MediaSource]?
+    /// Der Hintergrund der **Serie**, mitgeliefert an jeder Folge.
+    ///
+    /// Eine Folge hat nie einen eigenen — `BackdropImageTags` ist bei ihr
+    /// immer leer, am Server nachgemessen. Wer den Hintergrund einer Folge
+    /// will, muss hierher sehen. Wurde bisher gar nicht gelesen.
+    public let parentBackdropImageTags: [String]?
+    /// Zu welchem Titel der obige Hintergrund gehört.
+    public let parentBackdropItemId: String?
+    /// Das quer liegende Vorschaubild eines Titels, falls eines hinterlegt
+    /// ist. Bei Serien häufig gepflegt, bei Folgen selten.
+    public let parentThumbImageTag: String?
+    public let parentThumbItemId: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -159,6 +171,10 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         case imageTags = "ImageTags"
         case userData = "UserData"
         case mediaSources = "MediaSources"
+        case parentBackdropImageTags = "ParentBackdropImageTags"
+        case parentBackdropItemId = "ParentBackdropItemId"
+        case parentThumbImageTag = "ParentThumbImageTag"
+        case parentThumbItemId = "ParentThumbItemId"
     }
 
     /// Namen der Regie, für die Zeile unter der Beschreibung.

@@ -64,9 +64,16 @@ final class Bibliotheksmodell {
                                          filter: filter, ab: 0) {
             items = seite.titel
             gesamt = seite.gesamt
-        } else {
+        } else if !Task.isCancelled {
             // Steht schon etwas da, bleibt es stehen — was geladen war, ist
             // nicht falsch geworden, nur weil der Nachschlag scheiterte.
+            //
+            // **Ein Abbruch ist kein Ausfall.** `.task(id:)` bricht die alte
+            // Aufgabe ab, sobald sich die Kennung aendert; die laufende
+            // Anfrage kommt dann als Fehlschlag zurueck und sah bis eben
+            // aus wie ein stummer Server. Die Seite zeigte „Kein Kontakt zum
+            // Server" ueber den Plakaten, die der Nachfolger gerade geladen
+            // hatte.
             gestoert = items.isEmpty
         }
         laedt = false
