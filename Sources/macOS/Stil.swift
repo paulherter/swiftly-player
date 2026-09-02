@@ -20,9 +20,23 @@ extension Stil {
     static let fensterMinBreite: CGFloat = 900
     static let fensterMinHoehe: CGFloat = 560
 
-    /// Die Fensterknöpfe des Systems sitzen oben links **in** unserem
-    /// Fenster. Diese Höhe hält den Platz frei — die Wortmarke beginnt
-    /// darunter, sonst läge sie unter den drei Punkten.
+    /// Platz für die Fensterampel — **nur in der Seitenleiste.**
+    ///
+    /// Die drei Punkte sitzen oben links im Fenster, also über der
+    /// Seitenleiste. Sie enden bei rund 27; die Wortmarke bringt zudem
+    /// eigene Luft mit, weil ihre Vorlage das Zeichen über dem „i" und die
+    /// Unterlänge des „y" einschließt und die Buchstaben nur die halbe Höhe
+    /// füllen. 40 reicht deshalb, wo vorher 52 standen.
+    static let ampelHoehe: CGFloat = 40
+
+    /// Oberer Rand im **Inhaltsbereich**.
+    ///
+    /// Hier gibt es nichts freizuhalten: der Inhalt beginnt rechts der
+    /// Seitenleiste, die Ampel liegt gar nicht darüber. Vorher standen hier
+    /// dieselben 52 wie links — Platz für etwas, das dort nie war.
+    static let inhaltOben: CGFloat = 20
+
+    /// Höhe der Kopfleiste einer Detailseite (Pfeil und einblendender Titel).
     static let titelHoehe: CGFloat = 52
 
     static let seitenleisteBreite: CGFloat = 220

@@ -44,7 +44,7 @@ struct WiedergabeEinstellungenView: View {
             .frame(maxWidth: 560, alignment: .leading)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, Stil.randAbstand)
-            .padding(.top, Stil.titelHoehe)
+            .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)

@@ -64,6 +64,8 @@ struct FilmView: View {
     let film: Item
     let zurueck: () -> Void
 
+    @State private var farbe = Bildfarbe()
+
     @State private var extras: [Item] = []
     @State private var aehnliche: [Item] = []
     @State private var versatz: CGFloat = 0
@@ -90,12 +92,23 @@ struct FilmView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        // Der Ton läuft unter dem Heldenbild noch ein Stück weiter und
+        // verliert sich dann im Grundton — wie bei Apple TV, wo die ganze
+        // Seite vom Bild eingefärbt wirkt statt an seiner Unterkante zu enden.
+        .background(alignment: .top) {
+            LinearGradient(colors: [farbe.ton, Stil.grund],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: Stil.heldHoehe + 260)
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .background(Stil.grund)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
             versatz = neu
         }
         .overlay(alignment: .top) {
             Detailkopf(titel: film.name, versatz: versatz, zurueck: zurueck)
         }
+        .task { await farbe.laden(model.backdropURL(for: film)) }
         .task {
             async let a = model.extras(film)
             async let b = model.aehnliche(film)
@@ -154,11 +167,12 @@ struct Heldenkopf: View {
     @State private var spielbarerTitel: Item?
     @State private var mehrOffen = false
     @State private var meldung: String?
+    @State private var farbe = Bildfarbe()
     @Environment(Abspielsteuerung.self) private var steuerung
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            Bildhintergrund(bild: model.backdropURL(for: titel))
+            Bildhintergrund(bild: model.backdropURL(for: titel), ton: farbe.ton)
                 .frame(height: Stil.heldHoehe)
 
             HStack(alignment: .bottom, spacing: 24) {
@@ -179,6 +193,7 @@ struct Heldenkopf: View {
             // Player später bekommt.
             plan = await model.plan(for: spielbarerTitel?.id ?? titel.id)
         }
+        .task(id: titel.id) { await farbe.laden(model.backdropURL(for: titel)) }
         .task(id: titel.id) {
             // Bei einer Serie startet der Hauptknopf **nicht** die Serie,
             // sondern die Folge, die der Server nennt: angefangene an ihrer
@@ -248,7 +263,14 @@ struct Heldenkopf: View {
             Hauptknopf(beschriftung: hauptknopfText) { starten() }
                 .padding(.top, 18)
 
-            HStack(spacing: 14) {
+            // **Kein Abstand zwischen den Knöpfen** und links um 12 versetzt.
+            //
+            // Jeder Knopf ist 68 breit, sein Kreis aber nur 44 — die 12 Punkt
+            // links und rechts gehören zur Beschriftung darunter. Ohne den
+            // Versatz stand der erste Kreis deshalb 12 Punkt weiter rechts
+            // als der Hauptknopf darüber, und die Abstände addierten sich zu
+            // einer Reihe, die breiter war als er.
+            HStack(spacing: 0) {
                 Detailaktion(symbol: merkliste ? "checkmark" : "plus",
                              titel: "Merkliste", aktiv: merkliste) {
                     merkliste.toggle()
@@ -282,7 +304,7 @@ struct Heldenkopf: View {
                 .overlay(alignment: .topLeading) {
                     if mehrOffen {
                         Handlungsliste(handlungen: mehrHandlungen, offen: $mehrOffen)
-                            .offset(x: -110, y: 74)
+                            .offset(x: -98, y: 74)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
@@ -292,7 +314,8 @@ struct Heldenkopf: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.top, 16)
+            .padding(.leading, -12)
+            .padding(.top, 14)
         }
     }
 
@@ -412,6 +435,8 @@ struct Besetzungsreihe: View {
 /// Bild auf.
 struct Bildhintergrund: View {
     let bild: URL?
+    /// Der Ton, in den das Bild unten übergeht — aus dem Bild selbst.
+    var ton: Color = Stil.grund
 
     var body: some View {
         ZStack {
@@ -426,7 +451,7 @@ struct Bildhintergrund: View {
         }
         .clipped()
         .overlay(alignment: .top) {
-            LinearGradient(colors: [Stil.grund.opacity(0.85), .clear],
+            LinearGradient(colors: [ton.opacity(0.85), .clear],
                            startPoint: .top, endPoint: .bottom)
                 .frame(height: 110)
         }
@@ -438,11 +463,11 @@ struct Bildhintergrund: View {
         // die untere Hälfte statt über 130 Punkt.
         .overlay(alignment: .bottom) {
             LinearGradient(stops: [
-                .init(color: Stil.grund.opacity(0),    location: 0),
-                .init(color: Stil.grund.opacity(0.30), location: 0.28),
-                .init(color: Stil.grund.opacity(0.72), location: 0.55),
-                .init(color: Stil.grund.opacity(0.94), location: 0.80),
-                .init(color: Stil.grund,               location: 1),
+                .init(color: ton.opacity(0),    location: 0),
+                .init(color: ton.opacity(0.30), location: 0.28),
+                .init(color: ton.opacity(0.72), location: 0.55),
+                .init(color: ton.opacity(0.94), location: 0.80),
+                .init(color: ton,               location: 1),
             ], startPoint: .top, endPoint: .bottom)
             .frame(height: Stil.heldHoehe * 0.92)
             .allowsHitTesting(false)

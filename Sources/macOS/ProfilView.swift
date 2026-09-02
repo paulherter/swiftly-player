@@ -60,7 +60,7 @@ struct ProfilView: View {
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, Stil.randAbstand)
-            .padding(.top, Stil.titelHoehe)
+            .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
@@ -155,7 +155,7 @@ struct QuickConnectView: View {
         .frame(maxWidth: 460, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, Stil.randAbstand)
-        .padding(.top, Stil.titelHoehe)
+        .padding(.top, Stil.inhaltOben)
         // Kein Warten auf eine Tastaturanimation wie auf dem iPhone — im
         // Fenster schiebt nichts.
         .onAppear { imFeld = true }

@@ -75,7 +75,7 @@ struct HomeView: View {
                         .padding(.top, 120)
                 }
             }
-            .padding(.top, Stil.titelHoehe)
+            .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)

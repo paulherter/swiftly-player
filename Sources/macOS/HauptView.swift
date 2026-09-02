@@ -151,8 +151,8 @@ struct Seitenleiste: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Platz für die Fensterknöpfe des Systems.
-            Color.clear.frame(height: Stil.titelHoehe)
+            // Platz für die Fensterampel — sie liegt über der Seitenleiste.
+            Color.clear.frame(height: Stil.ampelHoehe)
 
             Wortmarke(hoehe: 28)
                 .padding(.horizontal, 20)

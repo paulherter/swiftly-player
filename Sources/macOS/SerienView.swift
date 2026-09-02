@@ -25,6 +25,7 @@ struct SerienView: View {
     @State private var staffelOffen = false
     @State private var laedt = true
     @State private var versatz: CGFloat = 0
+    @State private var farbe = Bildfarbe()
 
     enum Reiter: String, CaseIterable {
         case folgen, besetzung, aehnliches
@@ -57,12 +58,20 @@ struct SerienView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        .background(alignment: .top) {
+            LinearGradient(colors: [farbe.ton, Stil.grund],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: Stil.heldHoehe + 260)
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .background(Stil.grund)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
             versatz = neu
         }
         .overlay(alignment: .top) {
             Detailkopf(titel: serie.name, versatz: versatz, zurueck: zurueck)
         }
+        .task { await farbe.laden(model.backdropURL(for: serie)) }
         .task { await staffelnLaden() }
         .task(id: gewaehlt?.id) { await folgenLaden() }
     }

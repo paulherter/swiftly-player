@@ -76,7 +76,7 @@ struct BibliothekView: View {
                 .padding(.top, 22)
             }
             .padding(.horizontal, Stil.randAbstand)
-            .padding(.top, Stil.titelHoehe)
+            .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
