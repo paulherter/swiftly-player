@@ -130,14 +130,19 @@ extension Stil {
 
     /// Das Schieben beim Tiefergehen.
     ///
-    /// **Eine Feder, keine Kurve.** `easeInOut` über 300 ms lief in der Mitte
-    /// am schnellsten und stand am Ende schlagartig — das ist das Harte, das
-    /// man sieht. `smooth` ist eine Feder ohne Nachschwingen: sie fährt gleich
-    /// an und rollt lange aus. Deshalb wirkt sie weicher, obwohl sie länger
-    /// dauert.
+    /// **Nachgemessen, nicht geschätzt.** `Fahrtmesser` schreibt den
+    /// Zwischenwert jedes Einzelbildes mit; damit ist der Verlauf nachlesbar
+    /// statt Geschmackssache.
     ///
-    /// 500 ms sind für ein Fenster in Schreibtischgröße richtig: die Seite
-    /// legt dort mehr Strecke zurück als auf einem Telefon, und bei gleicher
-    /// Dauer wäre sie entsprechend schneller unterwegs.
-    static let zeitSeitenschub = Animation.smooth(duration: 0.50)
+    /// `smooth(0.50)` — eine Feder — sah auf dem Papier richtig aus und war
+    /// es nicht: sie legte **90 % der Strecke in 320 ms** zurück und kroch
+    /// die restlichen zehn Prozent über 1,2 Sekunden hinterher. Vorne ein
+    /// Wusch, hinten nichts. Genau das heisst „zu schnell und hart", obwohl
+    /// „0,5 Sekunden" daneben steht: bei einer Feder ist die Dauer ein
+    /// Empfinden, keine Strecke.
+    ///
+    /// `easeInOut` verteilt gleichmässig — die Hälfte der Strecke in der
+    /// Hälfte der Zeit — und hört auf, wenn sie fertig ist. 450 ms, also die
+    /// Hälfte länger als die 300, die zu kurz waren.
+    static let zeitSeitenschub = Animation.easeInOut(duration: 0.45)
 }

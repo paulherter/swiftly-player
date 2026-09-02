@@ -35,8 +35,14 @@ final class Bildfarbe {
         // Abdunkeln und entsättigen: der Ton soll den Grundton einfärben,
         // nicht ersetzen. 26 % Helligkeit liegt nah an `Stil.grund` (5 %),
         // bleibt aber erkennbar warm oder kalt.
-        ton = Color(hue: werte.farbton, saturation: min(werte.saettigung, 0.45),
-                    brightness: 0.26)
+        // **Nicht springen.** Der Ton färbt einen bildschirmhohen Verlauf;
+        // schlägt er ohne Anweisung um, blitzt die halbe Seite die Farbe
+        // gewechselt auf. Das kommt aus dem Netz und trifft die Seite
+        // irgendwann — oft mitten im Hereinfahren.
+        withAnimation(.easeInOut(duration: 0.40)) {
+            ton = Color(hue: werte.farbton, saturation: min(werte.saettigung, 0.45),
+                        brightness: 0.26)
+        }
     }
 
     /// Farbton und Sättigung des Mittelwerts — **ohne AppKit**, damit die

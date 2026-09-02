@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// **Misst, wann der Hauptlauf steht.**
 ///
@@ -14,8 +15,13 @@ enum Ruckelwache {
     private static var groesste: Double = 0
     private static var anlass = ""
 
+    /// Ob überhaupt gemessen wird. Nur mit `SWIFTLY_MESSFAHRT=1` — sonst
+    /// schreibt jede Navigation ins Protokoll.
+    nonisolated static let an = ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"] == "1"
+
     /// Beobachtet den Hauptlauf für die angegebene Dauer.
     static func beobachte(_ was: String, sekunden: Double = 1.2) {
+        guard an else { return }
         zeitgeber?.invalidate()
         anlass = was
         groesste = 0
@@ -40,6 +46,50 @@ enum Ruckelwache {
             zeitgeber?.invalidate()
             zeitgeber = nil
             Protokoll.schreib("Ruckeln [\(anlass)] größte Lücke \(Int(groesste)) ms")
+        }
+    }
+}
+
+/// **Schreibt mit, wie eine Bewegung tatsächlich verläuft.**
+///
+/// `animatableData` wird bei jedem Einzelbild mit dem Zwischenwert gesetzt.
+/// Wer den mitschreibt, sieht schwarz auf weiß, ob eine Anweisung überhaupt
+/// interpoliert oder ob der Wert springt — und wie lange sie dafür braucht.
+///
+/// Nur zum Nachmessen, fliegt vor der Auslieferung raus.
+struct Fahrtmesser: ViewModifier, @preconcurrency Animatable {
+    var wert: CGFloat
+
+    var animatableData: CGFloat {
+        get { wert }
+        set {
+            wert = newValue
+            Fahrtschreiber.merke(newValue)
+        }
+    }
+
+    func body(content: Content) -> some View { content }
+}
+
+/// Sammelt die Zwischenwerte und gibt sie als eine Zeile aus, sobald eine
+/// Viertelsekunde nichts mehr kam.
+enum Fahrtschreiber {
+    nonisolated(unsafe) private static var werte: [(Double, CGFloat)] = []
+    nonisolated(unsafe) private static var schluss: Task<Void, Never>?
+
+    static func merke(_ wert: CGFloat) {
+        guard Ruckelwache.an else { return }
+        MainActor.assumeIsolated {
+            werte.append((Date().timeIntervalSince1970, wert))
+            schluss?.cancel()
+            schluss = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled, let erste = werte.first, let letzte = werte.last else { return }
+                let dauer = (letzte.0 - erste.0) * 1000
+                let schritte = werte.map { String(Int($0.1)) }.joined(separator: " ")
+                Protokoll.schreib("Fahrt: \(werte.count) Bilder in \(Int(dauer)) ms — \(schritte)")
+                werte.removeAll()
+            }
         }
     }
 }

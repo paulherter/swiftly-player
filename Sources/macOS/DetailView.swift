@@ -11,12 +11,23 @@ struct DetailView: View {
     let zurueck: () -> Void
 
     @State private var voll: Item?
+    @Environment(\.seiteRuht) private var ruht
 
-    private var titel: Item { voll ?? item }
+    /// **Der volle Satz erst, wenn die Seite steht.**
+    ///
+    /// `model.item(id:)` kommt nach ein bis vier Zehntelsekunden zurück —
+    /// also mitten im Hereinfahren. Dann wurde der ganze Unterbau mit anderen
+    /// Daten neu gezeichnet, während er unterwegs war. Das war das kurze
+    /// Zucken beim Öffnen eines Films.
+    private var titel: Item { ruht ? (voll ?? item) : item }
 
     var body: some View {
         Group {
-            switch titel.type {
+            // **Nach `item.type` verzweigen, nicht nach `titel.type`.** Die
+            // Art steht schon in der Liste; nach dem nachgeladenen Satz zu
+            // verzweigen hiess, den Zweig unterwegs wechseln zu können — und
+            // damit die halbe Seite wegzuwerfen und neu zu bauen.
+            switch item.type {
             case "Series":
                 SerienView(model: model, serie: titel, zurueck: zurueck)
             case "Episode":

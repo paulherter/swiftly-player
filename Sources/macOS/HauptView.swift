@@ -73,6 +73,7 @@ struct HauptView: View {
         .environment(steuerung)
         .environment(navigator)
         .environment(\.bereich, bereich)
+        .environment(\.seiteRuht, ruht)
         // Der Player nimmt das ganze Fenster ein, Seitenleiste eingeschlossen.
         .overlay {
             if let wunsch = steuerung.wunsch {
@@ -84,6 +85,16 @@ struct HauptView: View {
             }
         }
         .animation(Stil.zeitSprung, value: steuerung.wunsch?.id)
+        // **Messfahrt.** Nur wenn `SWIFTLY_MESSFAHRT` gesetzt ist: eine Seite
+        // von selbst öffnen und wieder schließen, damit die Bewegung ohne
+        // Temporär.
+        .task {
+            guard ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"] == "1" else { return }
+            try? await Task.sleep(for: .seconds(5))
+            navigator.oeffne(.profil, in: bereich)
+            try? await Task.sleep(for: .seconds(3))
+            navigator.zurueck(in: bereich)
+        }
         .onReceive(NotificationCenter.default.publisher(for: Kommandopost.name)) { post in
             guard let kommando = Kommandopost.empfangen(post) else { return }
             ausfuehren(kommando)
@@ -107,6 +118,10 @@ struct HauptView: View {
     /// Bild warten, dann fahren. Beim Zurückgehen entfällt das Warten — dort
     /// steht längst alles.
     @State private var gezeigteTiefe = 0
+
+    /// Ob die Seite steht. Solange sie fährt, hält sich alles zurück, was
+    /// ihren Aufbau ändern würde — siehe `DetailView`.
+    @State private var ruht = true
 
     private var inhalt: some View {
         GeometryReader { raum in
@@ -142,6 +157,7 @@ struct HauptView: View {
                     // Rechts draußen, bis sie an der Reihe ist; darunter
                     // liegende Seiten gehen ein Stück mit.
                     .offset(x: gezeigt ? (obenauf ? 0 : mitgang) : breite)
+                    .modifier(Fahrtmesser(wert: gezeigt ? (obenauf ? 0 : mitgang) : breite))
                     .overlay {
                         Color.black.opacity(gezeigt && !obenauf ? 0.28 : 0)
                             .allowsHitTesting(false)
@@ -159,6 +175,30 @@ struct HauptView: View {
                             .allowsHitTesting(false)
                     }
                     .zIndex(Double(platz + 1))
+                    // **Losfahren, sobald die Seite wirklich steht.**
+                    //
+                    // Vorher wartete hier ein `Task.sleep(16 ms)`. Das war
+                    // ein Rennen: ein Einzelbild dauert bei 120 Hz gut acht
+                    // Millisekunden, mal lag der Weckruf davor, mal dahinter.
+                    // Lag er davor, fielen Anlegen und Losfahren in denselben
+                    // Vorgang — dann sprang die Seite ohne Bewegung an ihren
+                    // Platz. **Genau das ist „manchmal normal, manchmal
+                    // hart".** Es war nie die Kurve.
+                    //
+                    // `DispatchQueue.main.async` aus `onAppear` heraus läuft
+                    // dagegen zugesichert nach dem Abschluss des laufenden
+                    // Vorgangs. Kein Wecker, keine Millisekunden, kein Rennen.
+                    .onAppear {
+                        guard platz >= gezeigteTiefe else { return }
+                        DispatchQueue.main.async {
+                            ruht = false
+                            withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe = platz + 1 }
+                        }
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(520))
+                            ruht = true
+                        }
+                    }
                     // **Nur das Hinausfahren ist ein Übergang.** Das
                     // Hereinfahren macht der Versatz oben, damit die Seite
                     // vorher fertig ausgelegt ist. Blenden tut hier nichts:
@@ -167,15 +207,16 @@ struct HauptView: View {
                                             removal: .move(edge: .trailing)))
                 }
             }
+            // **Sonst tritt die Wurzel über den Rand.** Der Mitgang schiebt
+            // sie um ein Drittel nach links — ohne Beschnitt landet dieses
+            // Drittel über der Seitenleiste, und man sieht Startseite und
+            // Seitenleiste übereinander. Genau das war im Bild zu sehen.
+            .clipped()
         }
         .onChange(of: navigator.seiten(bereich).count, initial: true) { alt, neu in
             guard neu != gezeigteTiefe else { return }
             if neu > alt {
-                // Tiefergehen: ein Einzelbild Vorsprung zum Auslegen.
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(16))
-                    withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe = neu }
-                }
+                // Tiefergehen macht die Seite selbst, siehe `onAppear` oben.
             } else {
                 // Zurück: `Navigator.zurueck` animiert das Entfernen bereits,
                 // der Mitgang muss im selben Zug zurück.

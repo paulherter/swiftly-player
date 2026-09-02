@@ -71,5 +71,9 @@ enum Seitenziel: Hashable, Identifiable {
 /// Stapel sie legt — und ein durchgereichter Wert hätte durch jede Ansicht
 /// dazwischen gemusst, die ihn selbst gar nicht braucht.
 extension EnvironmentValues {
+    /// Ob die oberste Seite still steht. Während sie hereinfährt, ist der
+    /// Wert falsch — dann tauscht niemand seine Daten aus.
+    @Entry var seiteRuht: Bool = true
+
     @Entry var bereich: Bereich = .start
 }
