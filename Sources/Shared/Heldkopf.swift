@@ -82,7 +82,23 @@ struct Heldkopf<Inhalt: View>: View {
     private var hintergrund: some View {
         ZStack {
             Stil.grund
-            Bild(url: bild, ecke: 0)
+            // Bewusst nicht `Bild`: das ist ein Kachelbild — es misst sich an
+            // einer Breite, rundet Ecken und schneidet zu. Das Heldbild soll
+            // die Fläche randlos füllen und hat kein Seitenverhältnis, an das
+            // es sich halten könnte.
+            //
+            // Mit `Bild` sah man es: seit dort ein Seitenverhältnis eingebaut
+            // ist, steht bei `verhaeltnis == nil` ein
+            // `aspectRatio(nil, contentMode: .fit)` auf einem `Color.clear` —
+            // das hat keine eigene Größe. Das Bild rutschte nach links und
+            // brach hart ab, im schmalen Fenster verschwand es ganz.
+            AsyncImage(url: bild) { stand in
+                if case let .success(b) = stand {
+                    b.resizable().aspectRatio(contentMode: .fill)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             // Von links, damit die Schrift steht.
             LinearGradient(stops: [
                 .init(color: Stil.grund.opacity(0.96), location: 0),
