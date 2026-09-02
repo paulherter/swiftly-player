@@ -176,69 +176,89 @@ struct HauptView: View {
                     // herein, und das sah aus wie Durchsichtigkeit.
                     .zIndex(0)
 
-                ForEach(Array(navigator.seiten(bereich).enumerated()), id: \.element.id) { platz, ziel in
-                    let obenauf = platz == tiefe - 1
-                    let gezeigt = platz < tiefe
+                // **Der Seitenstapel als Ganzes, mit eigener Kennung.**
+                //
+                // Ohne sie stand der `ForEach` unmittelbar in diesem Stapel.
+                // Beim Wechsel der Leiste wechselte damit sein Inhalt — von
+                // den Seiten des einen Bereichs auf die des anderen —, und
+                // SwiftUI spielte für jede verschwindende Seite ihre
+                // **Hinausfahr-Bewegung** ab: von rechts hinaus, mit der
+                // Schattenkante obendrauf. Wer in „Filme" eine Seite offen
+                // liess und auf „Start" ging, sah deshalb einen Seitenschub,
+                // wo nur überblendet werden sollte.
+                //
+                // Mit `.id(bereich)` wird der Stapel als **ein** Stück
+                // getauscht. Dann gilt die Überblendung dieses Stücks, und
+                // die Bewegungen darin bleiben dem Tiefergehen vorbehalten,
+                // wofür sie gedacht sind.
+                ZStack {
+                    ForEach(Array(navigator.seiten(bereich).enumerated()), id: \.element.id) { platz, ziel in
+                        let obenauf = platz == tiefe - 1
+                        let gezeigt = platz < tiefe
 
-                    ZStack {
-                        Stil.grund
-                        seite(ziel)
-                    }
-                    // Rechts draußen, bis sie an der Reihe ist; darunter
-                    // liegende Seiten gehen ein Stück mit.
-                    .offset(x: gezeigt ? (obenauf ? 0 : mitgang) : breite)
-                    .overlay {
-                        Color.black.opacity(gezeigt && !obenauf ? 0.28 : 0)
-                            .allowsHitTesting(false)
-                    }
-                    // Der Schlagschatten an der Vorderkante. Als schmaler
-                    // Verlauf **neben** der Seite, nicht als `.shadow` —
-                    // ein Schatten um eine bildschirmgroße Ansicht zwingt
-                    // sie in einen eigenen Zwischenspeicher, und den baut
-                    // das System in jedem Einzelbild neu auf.
-                    .overlay(alignment: .leading) {
-                        LinearGradient(colors: [.black.opacity(0.45), .clear],
-                                       startPoint: .trailing, endPoint: .leading)
-                            .frame(width: 28)
-                            .offset(x: -28)
-                            .allowsHitTesting(false)
-                    }
-                    .zIndex(Double(platz + 1))
-                    // **Losfahren, sobald die Seite wirklich steht.**
-                    //
-                    // Vorher wartete hier ein `Task.sleep(16 ms)`. Das war
-                    // ein Rennen: ein Einzelbild dauert bei 120 Hz gut acht
-                    // Millisekunden, mal lag der Weckruf davor, mal dahinter.
-                    // Lag er davor, fielen Anlegen und Losfahren in denselben
-                    // Vorgang — dann sprang die Seite ohne Bewegung an ihren
-                    // Platz. **Genau das ist „manchmal normal, manchmal
-                    // hart".** Es war nie die Kurve.
-                    //
-                    // `DispatchQueue.main.async` aus `onAppear` heraus läuft
-                    // dagegen zugesichert nach dem Abschluss des laufenden
-                    // Vorgangs. Kein Wecker, keine Millisekunden, kein Rennen.
-                    .onAppear {
-                        // Steht die Seite schon, ist das ein Rückkehrer aus
-                        // einem Leistenwechsel — der fährt nicht noch einmal.
-                        guard platz >= tiefe else { return }
-                        // **Nur dieser eine Schreibzugriff.** Vorher stand
-                        // daneben ein zweiter, unanimierter (`ruht = false`).
-                        // Beides ist Zustand derselben Ansicht und landet in
-                        // einem Aktualisierungslauf — für den sucht SwiftUI
-                        // sich *eine* Transaktion aus. Fällt die Wahl auf die
-                        // leere, wird der Versatz ohne Bewegung gesetzt. Es
-                        // war der einzige Ort im Baum, an dem eine laufende
-                        // Bewegung überhaupt kippen konnte.
-                        DispatchQueue.main.async {
-                            withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe[bereich] = platz + 1 }
+                        ZStack {
+                            Stil.grund
+                            seite(ziel)
                         }
-                    }
-                    // **Nur das Hinausfahren ist ein Übergang.** Das
-                    // Hereinfahren macht der Versatz oben, damit die Seite
-                    // vorher fertig ausgelegt ist. Blenden tut hier nichts:
-                    // unterwegs durchsichtig sieht nach Fehler aus.
-                    .transition(.asymmetric(insertion: .identity,
-                                            removal: .move(edge: .trailing)))
+                        // Rechts draußen, bis sie an der Reihe ist; darunter
+                        // liegende Seiten gehen ein Stück mit.
+                        .offset(x: gezeigt ? (obenauf ? 0 : mitgang) : breite)
+                        .overlay {
+                            Color.black.opacity(gezeigt && !obenauf ? 0.28 : 0)
+                                .allowsHitTesting(false)
+                        }
+                        // Der Schlagschatten an der Vorderkante. Als schmaler
+                        // Verlauf **neben** der Seite, nicht als `.shadow` —
+                        // ein Schatten um eine bildschirmgroße Ansicht zwingt
+                        // sie in einen eigenen Zwischenspeicher, und den baut
+                        // das System in jedem Einzelbild neu auf.
+                        .overlay(alignment: .leading) {
+                            LinearGradient(colors: [.black.opacity(0.45), .clear],
+                                           startPoint: .trailing, endPoint: .leading)
+                                .frame(width: 28)
+                                .offset(x: -28)
+                                .allowsHitTesting(false)
+                        }
+                        .zIndex(Double(platz + 1))
+                        // **Losfahren, sobald die Seite wirklich steht.**
+                        //
+                        // Vorher wartete hier ein `Task.sleep(16 ms)`. Das war
+                        // ein Rennen: ein Einzelbild dauert bei 120 Hz gut acht
+                        // Millisekunden, mal lag der Weckruf davor, mal dahinter.
+                        // Lag er davor, fielen Anlegen und Losfahren in denselben
+                        // Vorgang — dann sprang die Seite ohne Bewegung an ihren
+                        // Platz. **Genau das ist „manchmal normal, manchmal
+                        // hart".** Es war nie die Kurve.
+                        //
+                        // `DispatchQueue.main.async` aus `onAppear` heraus läuft
+                        // dagegen zugesichert nach dem Abschluss des laufenden
+                        // Vorgangs. Kein Wecker, keine Millisekunden, kein Rennen.
+                        .onAppear {
+                            // Steht die Seite schon, ist das ein Rückkehrer aus
+                            // einem Leistenwechsel — der fährt nicht noch einmal.
+                            guard platz >= tiefe else { return }
+                            // **Nur dieser eine Schreibzugriff.** Vorher stand
+                            // daneben ein zweiter, unanimierter (`ruht = false`).
+                            // Beides ist Zustand derselben Ansicht und landet in
+                            // einem Aktualisierungslauf — für den sucht SwiftUI
+                            // sich *eine* Transaktion aus. Fällt die Wahl auf die
+                            // leere, wird der Versatz ohne Bewegung gesetzt. Es
+                            // war der einzige Ort im Baum, an dem eine laufende
+                            // Bewegung überhaupt kippen konnte.
+                            DispatchQueue.main.async {
+                                withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe[bereich] = platz + 1 }
+                            }
+                        }
+                        // **Nur das Hinausfahren ist ein Übergang.** Das
+                        // Hereinfahren macht der Versatz oben, damit die Seite
+                        // vorher fertig ausgelegt ist. Blenden tut hier nichts:
+                        // unterwegs durchsichtig sieht nach Fehler aus.
+                        .transition(.asymmetric(insertion: .identity,
+                                                removal: .move(edge: .trailing)))
+                }
+                .id(bereich)
+                .transition(.opacity)
+                .zIndex(1)
                 }
             }
             // **Sonst tritt die Wurzel über den Rand.** Der Mitgang schiebt
