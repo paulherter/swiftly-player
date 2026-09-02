@@ -246,7 +246,18 @@ struct SeriesDetailView: View {
                 }
             }
             .buttonStyle(HauptknopfStil(dehnt: !breit))
-            .disabled(stand == nil || bereitet)
+            // **Waehrend geladen wird bleibt er an und zeigt „Laedt…".**
+            //
+            // Auf tvOS ist ein abgeschalteter Knopf kein Fokusziel: kam man aus
+            // der Suche, wo nichts vorgeladen ist, sprang der Startfokus auf
+            // „Merkliste" — und kehrte nicht zurueck, wenn die Folge ankam.
+            // Hier gilt dasselbe Muster, nur ohne sichtbare Folge, weil der
+            // Finger sich seinen Knopf selbst sucht. Gleich gehalten, damit die
+            // Plattformen nicht wieder auseinanderlaufen.
+            //
+            // Ein Druck waehrend des Ladens tut nichts — `starte` hat den
+            // `guard` ohnehin.
+            .disabled(bereitet || (stand == nil && !laedt))
 
             if let stand, let rest = restzeit(stand) {
                 Text(rest).font(.system(size: 11)).foregroundStyle(Stil.schriftLeise)
