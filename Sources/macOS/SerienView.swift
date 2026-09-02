@@ -174,18 +174,31 @@ struct SerienView: View {
                     Leerzustand(symbol: "tray", titel: "Keine Folgen")
                         .frame(height: 200)
                 } else {
-                    // **`LazyVStack`, nicht `VStack`.** Ein `VStack` in einer
-                    // Scrollfläche baut jede Zeile sofort — bei zehn Folgen
-                    // zehn Zeilen samt Bild, in einem einzigen Einzelbild.
-                    // Genau dieselbe Sache wie in `Blätterreihe`, nur hier
-                    // übersehen. Die Filmseite hat keine solche Liste; daher
-                    // lief sie sauber und die Serienseite nicht.
+                    // **`VStack`, nicht `LazyVStack` — zurückgenommen.**
+                    //
+                    // Ich hatte auf faul umgestellt, weil ein `VStack` alle
+                    // Zeilen auf einmal baut und das die Einfahrt der Seite
+                    // störte. Der Grund ist inzwischen weg: die Bilder werden
+                    // abseits des Hauptlaufs entschlüsselt, und die drei
+                    // `.animation`-Zeilen, die den Höhensprung mitbewegten,
+                    // sind raus.
+                    //
+                    // Geblieben war dafür der Preis: eine faule Liste kennt
+                    // die Höhe dessen nicht, was sie nicht gebaut hat. Beim
+                    // Hochziehen über zweiundzwanzig Folgen springt die
+                    // Fläche deshalb ans Ende, statt den Weg zu nehmen — und
+                    // eine feste Zeilenhöhe hilft nicht, weil die Liste sie
+                    // erst erfährt, wenn sie die Zeile baut.
+                    //
+                    // Zweiundzwanzig Zeilen sind kein Aufwand. Der genaue
+                    // Inhalt ist hier mehr wert als das Sparen.
+                    //
                     // **Bis an den Fensterrand.** Der Abschnitt setzt seinen
                     // seitlichen Rand aussen; damit endete auch die graue
                     // Fläche beim Überfahren dort. Eine Zeile in einer Liste
                     // leuchtet aber über die **ganze** Breite — den Rand
                     // trägt deshalb die Zeile selbst, siehe `Folgenzeile`.
-                    LazyVStack(spacing: 0) {
+                    VStack(spacing: 0) {
                         ForEach(folgen, id: \.id) { folge in
                             Folgenzeile(model: model, folge: folge)
                             if folge.id != folgen.last?.id {
