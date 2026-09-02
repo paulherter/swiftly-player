@@ -565,43 +565,46 @@ struct Blätterreihe<Inhalt: View>: View {
     @State private var gesamt: CGFloat = 0
     @State private var sichtbar: CGFloat = 0
 
+    /// Was ein Takt über die Reihe verrät — in einem Wert, damit ein
+    /// Beobachter genügt.
+    private struct Messwerte: Equatable {
+        let versatz: CGFloat
+        let gesamt: CGFloat
+        let sichtbar: CGFloat
+    }
+
     private var kannLinks: Bool { versatz > 1 }
     private var kannRechts: Bool { versatz + sichtbar < gesamt - 1 }
 
     var body: some View {
-        ScrollViewReader { _ in
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: Stil.kachelAbstand) { inhalt }
-                    .padding(.horizontal, rand)
-                    // Damit die Kacheln beim Schweben oben nicht abgeschnitten
-                    // werden, wenn sie sich vergrößern.
-                    .padding(.vertical, 4)
-                    .background {
-                        GeometryReader { raum in
-                            Color.clear.onAppear { gesamt = raum.size.width }
-                                .onChange(of: raum.size.width) { _, neu in gesamt = neu }
-                        }
-                    }
-            }
-            .scrollIndicators(.never)
-        // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
-        // aus über jede Scrollfläche — sie war nie in unserem Code, und
-        // deshalb habe ich zweimal an der falschen Stelle gesucht. Über dem
-        // Bild verlor sie sich, links auf blankem Grund stand sie als Balken.
-        //
-        // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
-        // abgestellt wie das, was man selbst hinschreibt.
+        ScrollView(.horizontal) {
+            // **`LazyHStack`, nicht `HStack`.** Ein `HStack` baut jede Kachel
+            // sofort — die Besetzungsreihe elf Bilder, die Ähnliches-Reihe
+            // ebenso viele —, und zwar in demselben Bild, in dem die Seite
+            // hereinfährt. Das war das Ruckeln: nicht die Bewegung war hart,
+            // sondern sie verlor Bilder, weil daneben die halbe Seite gebaut
+            // wurde. Beim Hinausfahren stand alles längst, deshalb lief es
+            // dort weich.
+            LazyHStack(alignment: .top, spacing: Stil.kachelAbstand) { inhalt }
+                .padding(.horizontal, rand)
+                // Damit die Kacheln beim Schweben oben nicht abgeschnitten
+                // werden, wenn sie sich vergrößern.
+                .padding(.vertical, 4)
+        }
+        .scrollIndicators(.never)
         .ohneKanteneffekt()
-            .scrollPosition($stelle, anchor: .leading)
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, neu in
-                versatz = neu
-            }
-            .background {
-                GeometryReader { raum in
-                    Color.clear.onAppear { sichtbar = raum.size.width }
-                        .onChange(of: raum.size.width) { _, neu in sichtbar = neu }
-                }
-            }
+        .scrollPosition($stelle, anchor: .leading)
+        // **Ein Beobachter statt zweier Geometrieleser.** Die beiden
+        // `GeometryReader` schrieben beim Auslegen in den Zustand und lösten
+        // damit weitere Auslegevorgänge aus — auch das kostete Bilder.
+        .onScrollGeometryChange(for: Messwerte.self) {
+            Messwerte(versatz: $0.contentOffset.x,
+                      gesamt: $0.contentSize.width,
+                      sichtbar: $0.containerSize.width)
+        } action: { _, neu in
+            versatz = neu.versatz
+            gesamt = neu.gesamt
+            sichtbar = neu.sichtbar
         }
         .overlay(alignment: .leading) {
             if schwebt, kannLinks { pfeil("chevron.left", "Zurückblättern") { blättern(-1) } }

@@ -130,8 +130,14 @@ extension Stil {
 
     /// Das Schieben beim Tiefergehen.
     ///
-    /// Länger und beidseitig gedämpft: 180 ms waren für ein Überblenden
-    /// gewählt, wo nichts wandert. Eine Strecke braucht mehr — und sie soll
-    /// anfahren und ausrollen, nicht abrupt stehen.
-    static let zeitSeitenschub = Animation.easeInOut(duration: 0.30)
+    /// **Eine Feder, keine Kurve.** `easeInOut` über 300 ms lief in der Mitte
+    /// am schnellsten und stand am Ende schlagartig — das ist das Harte, das
+    /// man sieht. `smooth` ist eine Feder ohne Nachschwingen: sie fährt gleich
+    /// an und rollt lange aus. Deshalb wirkt sie weicher, obwohl sie länger
+    /// dauert.
+    ///
+    /// 500 ms sind für ein Fenster in Schreibtischgröße richtig: die Seite
+    /// legt dort mehr Strecke zurück als auf einem Telefon, und bei gleicher
+    /// Dauer wäre sie entsprechend schneller unterwegs.
+    static let zeitSeitenschub = Animation.smooth(duration: 0.50)
 }

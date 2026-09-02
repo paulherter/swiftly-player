@@ -23,6 +23,7 @@ final class Navigator {
     func seiten(_ bereich: Bereich) -> [Seitenziel] { stapel[bereich] ?? [] }
 
     func oeffne(_ ziel: Seitenziel, in bereich: Bereich) {
+        Ruckelwache.beobachte("Seite herein")
         withAnimation(Stil.zeitSeitenschub) {
             stapel[bereich, default: []].append(ziel)
         }
@@ -30,6 +31,7 @@ final class Navigator {
 
     func zurueck(in bereich: Bereich) {
         guard !(stapel[bereich] ?? []).isEmpty else { return }
+        Ruckelwache.beobachte("Seite hinaus")
         withAnimation(Stil.zeitSeitenschub) {
             stapel[bereich]?.removeLast()
         }
