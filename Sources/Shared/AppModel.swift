@@ -570,7 +570,17 @@ final class AppModel {
         }
         Keychain.delete(key: Self.sessionKey)
         // Sonst stehen im Top Shelf weiter die Titel des vorigen Kontos.
+        //
+        // **Nur auf dem Fernseher, und deshalb eingeklammert.** Ein Top Shelf
+        // gibt es sonst nirgends: `Regalvorschau.swift` steht in der
+        // tvOS-App und in ihrer Erweiterung, in keinem anderen Ziel. Ohne
+        // die Klammer bricht macOS an dieser Zeile ab — dort sind die
+        // geteilten Dateien einzeln aufgezaehlt, waehrend iOS `Sources/Shared`
+        // als ganzen Ordner nimmt und die Datei versehentlich mitbekommt.
+        // Der Bau auf iOS beweist hier also nichts.
+        #if os(tvOS)
         Regal.leeren()
+        #endif
         session = nil
         client = nil
         views = []
