@@ -89,6 +89,10 @@ git clone https://github.com/paulherter/swiftly-for-jellyfin.git
 cd swiftly-for-jellyfin
 
 # VLCKit is 2.7 GB and not in this repository.
+# NOTE: this fetches VideoLAN's official build, which has a known bug —
+# seeking inside MKV files served over HTTP reads from the start of the
+# file. The fix is in Werkzeuge/vlckit-patches/ and must be applied to a
+# VLCKit build for seeking to work. See "Known issue: VLCKit" below.
 Werkzeuge/vlckit-holen.sh
 
 # The .xcodeproj is generated, not checked in.
@@ -109,6 +113,17 @@ The Jellyfin OpenAPI description is not included; fetch it from any server at
 `/openapi.json` if you need it.
 
 <br>
+
+## Known issue: VLCKit
+
+VLC 4 discards the seek index of Matroska files served over HTTP: every seek
+reads from the beginning of the file and takes 30 to 90 seconds. VLC 3 does
+not have this restriction, which is why other clients seek instantly.
+
+The two-line fix lives in `Werkzeuge/vlckit-patches/` with a README of its
+own. Swiftly ships a VLCKit built with that patch applied; the official
+build fetched by `vlckit-holen.sh` does not have it. The patch has been
+submitted upstream so that official builds can be used again.
 
 ## Reporting bugs
 
