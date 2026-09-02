@@ -119,6 +119,39 @@ struct HauptView: View {
             // Wert: `folge` nimmt den Weg der Startseite, alles andere eine
             // kalte Serie aus der Bibliothek — dort greift kein Vorholen.
             let weg = ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"]
+            // TEMPORAER (Messung): zehn Serien nacheinander.
+            if weg == "reihe" {
+                let regal = Bibliotheksmodell()
+                await regal.laden(model, art: "tvshows")
+                let zehn = Array(regal.items.prefix(10))
+                Protokoll.schreib("Messreihe: \(zehn.count) Serien")
+                for (nr, serie) in zehn.enumerated() {
+                    Protokoll.schreib("Messreihe #\(nr + 1): öffne \(serie.name)")
+                    navigator.oeffne(.titel(serie), in: bereich)
+                    try? await Task.sleep(for: .seconds(4))
+                    navigator.zurueck(in: bereich)
+                    try? await Task.sleep(for: .seconds(2))
+                    // Zahlen erst NACH der Fahrt holen, damit das Holen
+                    // weder den Hauptlauf noch den Server vorwärmt.
+                    let staffeln = await model.staffeln(serie)
+                    var folgen = 0
+                    for st in staffeln {
+                        folgen += await model.folgen(serie: serie.id, staffel: st.id).count
+                    }
+                    if staffeln.isEmpty {
+                        folgen = await model.folgen(serie: serie.id, staffel: nil).count
+                    }
+                    let voll = await model.item(id: serie.id)
+                    let leute = (voll?.people ?? serie.people ?? []).count
+                    let darsteller = (voll?.darsteller ?? serie.darsteller).count
+                    Protokoll.schreib("Messreihe #\(nr + 1): \(serie.name) — "
+                        + "Staffeln \(staffeln.count), Folgen \(folgen), "
+                        + "Darsteller \(darsteller), Personen \(leute)")
+                    try? await Task.sleep(for: .seconds(1))
+                }
+                Protokoll.schreib("Messreihe: fertig")
+                return
+            }
             var ziel: Item?
             if weg == "folge" {
                 async let a = model.naechsteFolge()
