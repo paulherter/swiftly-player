@@ -41,13 +41,26 @@ struct HomeView: View {
                 }
 
                 if !naechste.isEmpty {
+                    // **Hochkant, und der Klick führt auf die Seite.**
+                    //
+                    // Hier stand eine Querkachel, die sofort abspielte —
+                    // beides falsch, und beides ohne Grund, der mit Eingabe
+                    // oder Fenstergröße zu tun hätte.
+                    //
+                    // A2 im Register: „Nächste Folge **öffnet die
+                    // Übersicht**, sie startet nicht. Nur ‚Weiterschauen'
+                    // springt direkt in die Wiedergabe." Die iPhone-Fassung
+                    // schreibt denselben Satz an dieselbe Stelle. Waagerecht
+                    // ist ebenfalls allein „Weiterschauen" — iOS sagt es
+                    // wörtlich, tvOS ruft die Reihe mit `quer: false`.
                     Reihe(titel: "Nächste Folge") {
                         ForEach(naechste, id: \.id) { folge in
-                            // Von vorn — die Folge hat noch nicht angefangen.
-                            Querkachel(titel: kopf(folge), zweitzeile: folge.folgenkuerzel,
-                                       bild: model.querbildURL(for: folge),
-                                       auswahl: { steuerung.starte(folge, ab: 0) },
-                                       uebersicht: { navigator.oeffne(.titel(folge), in: bereich) })
+                            Button { navigator.oeffne(.titel(folge), in: bereich) } label: {
+                                Posterkachel(titel: kopf(folge),
+                                             zweitzeile: folge.folgenkuerzel,
+                                             bild: model.imageURL(for: folge, hochkant: true))
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
