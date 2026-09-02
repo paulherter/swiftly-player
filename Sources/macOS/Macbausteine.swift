@@ -319,13 +319,7 @@ struct Bildflaeche: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             Stil.flaeche
-            if let bild {
-                AsyncImage(url: bild) { stufe in
-                    if let abbild = stufe.image {
-                        abbild.resizable().aspectRatio(contentMode: .fill)
-                    }
-                }
-            }
+            Netzbild(url: bild)
             if let fortschritt, fortschritt > 0 {
                 GeometryReader { raum in
                     ZStack(alignment: .leading) {

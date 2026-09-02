@@ -467,53 +467,6 @@ struct Besetzungsreihe: View {
 }
 
 
-/// Das Heldenbild mit seinen zwei Verläufen.
-///
-/// Anders als auf der Startseite haben die Verläufe hier eine Aufgabe: oben
-/// hält er das Bild von den Fensterknöpfen weg, unten führt er es in den
-/// Grundton. Der untere ist bewusst flach — ein starker Verlauf frisst das
-/// Bild auf.
-struct Bildhintergrund: View {
-    let bild: URL?
-    /// Der Ton, in den das Bild unten übergeht — aus dem Bild selbst.
-    var ton: Color = Stil.grund
-
-    var body: some View {
-        ZStack {
-            Stil.flaeche
-            if let bild {
-                AsyncImage(url: bild) { stufe in
-                    if let abbild = stufe.image {
-                        abbild.resizable().aspectRatio(contentMode: .fill)
-                    }
-                }
-            }
-        }
-        .clipped()
-        .overlay(alignment: .top) {
-            LinearGradient(colors: [ton.opacity(0.85), .clear],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: 110)
-        }
-        // **Der Auslauf muss tragen, worauf Text steht.** Auf dem iPhone ist
-        // das Heldenbild 300 hoch und trägt nur Titel und Nebenzeile; hier
-        // sind es 420 mit Poster, Titel, Beleg, Hauptknopf und Aktionsreihe.
-        // Ein 130 Punkt hoher Auslauf reichte deshalb nicht — die Buchstaben
-        // standen auf hellem Bild. Stützpunkte wie `Heldauslauf`, nur über
-        // die untere Hälfte statt über 130 Punkt.
-        .overlay(alignment: .bottom) {
-            LinearGradient(stops: [
-                .init(color: ton.opacity(0),    location: 0),
-                .init(color: ton.opacity(0.30), location: 0.28),
-                .init(color: ton.opacity(0.72), location: 0.55),
-                .init(color: ton.opacity(0.94), location: 0.80),
-                .init(color: ton,               location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            .frame(height: Stil.heldHoehe * 0.92)
-            .allowsHitTesting(false)
-        }
-    }
-}
 
 struct Kopfbild: View {
     let name: String
@@ -524,13 +477,7 @@ struct Kopfbild: View {
         VStack(alignment: .leading, spacing: 7) {
             ZStack {
                 Stil.flaeche
-                if let bild {
-                    AsyncImage(url: bild) { stufe in
-                        if let abbild = stufe.image {
-                            abbild.resizable().aspectRatio(contentMode: .fill)
-                        }
-                    }
-                }
+                Netzbild(url: bild)
             }
             .frame(width: 76, height: 76)
             .clipShape(Circle())

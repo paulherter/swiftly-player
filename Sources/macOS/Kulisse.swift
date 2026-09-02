@@ -29,17 +29,7 @@ struct Kulisse: View {
         .allowsHitTesting(false)
     }
 
-    private var bild: some View {
-        ZStack {
-            if let url {
-                AsyncImage(url: url) { stufe in
-                    if let abbild = stufe.image {
-                        abbild.resizable().aspectRatio(contentMode: .fill)
-                    }
-                }
-            }
-        }
-    }
+    private var bild: some View { Netzbild(url: url) }
 }
 
 extension View {
