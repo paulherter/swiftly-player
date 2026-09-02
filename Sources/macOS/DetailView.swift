@@ -242,13 +242,29 @@ struct Heldenkopf: View {
                 .padding(.top, Stil.titelHoehe + 98)
         }
         .frame(height: Stil.heldHoehe, alignment: .topLeading)
-        .task {
+        .task(id: titel.id) {
             merkliste = titel.userData?.isFavorite ?? false
             gesehen = titel.userData?.played ?? false
-            plan = await model.plan(for: spielbarerTitel?.id ?? titel.id)
-        }
-        .task(id: titel.id) {
-            if titel.type == "Series" { spielbarerTitel = await model.standInSerie(titel) }
+            if titel.type == "Series" {
+                spielbarerTitel = await model.standInSerie(titel)
+            }
+            // **Der Plan gehört zur Folge, nicht zur Serie.**
+            //
+            // Hier stand `spielbarerTitel?.id ?? titel.id` in einem eigenen
+            // `.task` — und `spielbarerTitel` war zu dem Zeitpunkt immer noch
+            // `nil`, weil es der *andere* `.task` setzt. Der Aufruf ging also
+            // mit der Serien-ID raus. `AppModel.plan(for:)` sagt dazu selbst:
+            // „Tritt bei Serien und Staffeln auf" — der Server nennt keine
+            // MediaSource, es kommt `nil` zurück, und weil der `.task` keine
+            // Kennung hatte, lief er nie wieder. Der Direct-Play-Beleg stand
+            // auf der Serienseite deshalb nie.
+            //
+            // `PlaybackInfo` ist ein POST, bei dem der Server die Datei
+            // anfasst — der teuerste Abruf der App, hier umsonst und mitten
+            // in der Einfahrt. iOS und tvOS holen ihn beide für die Folge.
+            if let ziel = spielbarerTitel ?? (titel.type == "Series" ? nil : titel) {
+                plan = await model.plan(for: ziel.id)
+            }
         }
     }
 

@@ -4,9 +4,9 @@ import SwiftUI
 /// Serien, die zu einer Folge gehören — **vorgeholt, bevor jemand klickt.**
 ///
 /// Auf der Startseite sind „Weiterschauen" und „Nächste Folge" Folgen, keine
-/// Serien. Ein Klick darauf führt über `StaffelZiel` auf die Serienseite
-/// (A8), und das braucht erst einmal die Serie selbst. Bis sie da war, fuhr
-/// eine **leere Seite** herein und die fertige erschien mit einem Schlag
+/// Serien. Ein Klick darauf führt über `StaffelZiel` auf die Serienseite (A8),
+/// und das braucht erst einmal die Serie selbst. Bis sie da war, fuhr eine
+/// **leere Seite** herein und die fertige erschien mit einem Schlag
 /// mittendrin.
 ///
 /// Gemessen: „StaffelZiel: leere Seite 69 ms lang", und im Fahrtschreiber ein
@@ -14,13 +14,35 @@ import SwiftUI
 /// Seite auf einmal gebaut wurde.
 ///
 /// Die Startseite weiß aber schon beim Laden, welche Serien in Frage kommen.
-/// Also holt sie sie im Hintergrund, und der Klick findet sie vor.
+/// Also holt sie sie im Hintergrund, und der Klick findet sie vor. **Und was
+/// einmal geholt wurde, bleibt für den Rückweg liegen.**
+///
+/// Wörtlich der `Serienspeicher` der tvOS-Fassung
+/// (`Sources/tvOS/SerienView.swift`) — dort steht auch die Begründung, und sie
+/// stammt von
+///
+/// Der Abruf ist nicht langsam, er war nur verdeckt, solange der Seitenwechsel
+/// überblendete. Die Antwort ist nicht, die Überblendung zurückzuholen,
+/// sondern beim zweiten Mal gar nicht erst zu warten. Das erklärt genau, warum
+/// es **beim ersten** Öffnen auffällt und danach nicht.
+///
+/// Absichtlich nur fürs Bild, nicht als Wahrheit: beim Erscheinen läuft der
+/// Abruf trotzdem und schreibt frische Werte darüber.
 @MainActor
 @Observable
 final class Seriencache {
     static let geteilt = Seriencache()
 
+    struct Stand {
+        var serie: Item?
+        var staffeln: [Item] = []
+        /// Je Staffel. Der Schlüssel ist die Staffel-ID.
+        var folgen: [String: [Item]] = [:]
+    }
+
     private var bekannt: [String: Item] = [:]
+    private var staende: [String: Stand] = [:]
+    private var reihenfolge: [String] = []
     private var laufend: Set<String> = []
 
     func serie(fuer folge: Item) -> Item? {
@@ -28,6 +50,17 @@ final class Seriencache {
     }
 
     func merken(_ serie: Item) { bekannt[serie.id] = serie }
+
+    func stand(_ serie: String) -> Stand? { staende[serie] }
+
+    func merken(_ serie: String, _ aendern: (inout Stand) -> Void) {
+        if staende[serie] == nil {
+            staende[serie] = Stand()
+            reihenfolge.append(serie)
+        }
+        aendern(&staende[serie]!)
+        while reihenfolge.count > 12 { staende[reihenfolge.removeFirst()] = nil }
+    }
 
     /// Holt die Serien zu diesen Folgen, sofern noch nicht bekannt.
     func vorholen(_ folgen: [Item], mit model: AppModel) {

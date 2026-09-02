@@ -18,7 +18,6 @@ struct SerienView: View {
     let zurueck: () -> Void
     @Environment(Navigator.self) private var navigator
     @Environment(\.bereich) private var bereich
-    @Environment(\.seiteRuht) private var ruht
 
     @State private var reiter: Reiter = .folgen
     @State private var staffeln: [Item] = []
@@ -33,6 +32,33 @@ struct SerienView: View {
     /// wiederholte sich, und die ganze Liste wurde ein zweites Mal mit
     /// anderem Inhalt gebaut — mitten im Hereinfahren.
     @State private var staffelnDa = false
+
+    /// **Der Anfangsstand kommt aus dem Speicher, nicht aus dem Nichts.**
+    ///
+    /// Dieselbe Regel wie in `Netzbild` und auf tvOS: ein nachgereichter Wert
+    /// kommt zu spät, der leere Durchgang hat dann schon stattgefunden — und
+    /// genau der ist der Lader, der mitten in der Einfahrt von der Liste
+    /// abgelöst wird.
+    @MainActor init(model: AppModel, serie: Item,
+                    startStaffelID: String? = nil, zurueck: @escaping () -> Void) {
+        self.model = model
+        self.serie = serie
+        self.startStaffelID = startStaffelID
+        self.zurueck = zurueck
+
+        let gemerkt = Seriencache.geteilt.stand(serie.id)
+        let staffeln = gemerkt?.staffeln ?? []
+        _staffeln = State(initialValue: staffeln)
+        _staffelnDa = State(initialValue: !staffeln.isEmpty)
+
+        // Dieselbe Staffel, die auch `staffelnLaden()` wählen würde.
+        let staffel = staffeln.first { $0.id == startStaffelID } ?? staffeln.first
+        _gewaehlt = State(initialValue: staffel)
+
+        let folgen = staffel.flatMap { gemerkt?.folgen[$0.id] } ?? []
+        _folgen = State(initialValue: folgen)
+        _laedt = State(initialValue: folgen.isEmpty)
+    }
     @State private var versatz: CGFloat = 0
     @State private var farbe = Bildfarbe()
 
@@ -116,10 +142,15 @@ struct SerienView: View {
         // Was bleibt: das Wechseln selbst darf nicht springen. Der Lader
         // blendet in die Liste über, und die Staffelpille kommt nicht
         // schlagartig dazu.
+        // **Keine Anweisung auf Datenankunft.** Hier standen drei
+        // `.animation`-Zeilen, die ich eingebaut hatte, damit das Nachladen
+        // nicht springt. Sie haben es schlimmer gemacht: der Wechsel vom
+        // 200 Punkt hohen Lader auf die Folgenliste ist ein Höhensprung von
+        // rund tausend Punkt, und über 250 ms **animiert** zwingt er den
+        // `LazyVStack`, seine Zeilen schrittweise während der Einfahrt zu
+        // bauen — jede mit eigenem Bildabruf. Die iPhone-Fassung animiert
+        // bei Datenankunft gar nichts; die Liste wächst einfach.
         abschnittsinhalt
-            .animation(Stil.zeitEinblenden, value: laedt)
-            .animation(Stil.zeitEinblenden, value: staffeln.count)
-            .animation(Stil.zeitEinblenden, value: folgen.count)
     }
 
     @ViewBuilder
@@ -193,13 +224,20 @@ struct SerienView: View {
         gewaehlt = neue.first { $0.id == startStaffelID } ?? neue.first
         staffeln = neue
         staffelnDa = true
+        Seriencache.geteilt.merken(serie.id) { $0.staffeln = neue }
         if neue.isEmpty { await folgenLaden() }
     }
 
     private func folgenLaden() async {
-        laedt = true
+        // Steht schon etwas aus dem Speicher, wird nicht auf leer
+        // zurückgestellt — sonst blitzt der Lader trotzdem auf.
+        laedt = folgen.isEmpty
         defer { laedt = false }
-        folgen = await model.folgen(serie: serie.id, staffel: gewaehlt?.id)
+        let neue = await model.folgen(serie: serie.id, staffel: gewaehlt?.id)
+        folgen = neue
+        if let staffel = gewaehlt?.id {
+            Seriencache.geteilt.merken(serie.id) { $0.folgen[staffel] = neue }
+        }
     }
 }
 

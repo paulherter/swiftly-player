@@ -123,8 +123,12 @@ struct HauptView: View {
             if weg == "reihe" {
                 let regal = Bibliotheksmodell()
                 await regal.laden(model, art: "tvshows")
-                let zehn = Array(regal.items.prefix(10))
-                Protokoll.schreib("Messreihe: \(zehn.count) Serien")
+                let u = ProcessInfo.processInfo.environment
+                let ab = Int(u["MESSREIHE_AB"] ?? "") ?? 0
+                let anzahl = Int(u["MESSREIHE_ANZAHL"] ?? "") ?? 10
+                let zehn = Array(regal.items.dropFirst(ab).prefix(anzahl))
+                Protokoll.schreib("Messreihe: \(zehn.count) von \(regal.items.count) "
+                    + "geladen, \(regal.gesamt) im Regal, ab \(ab)")
                 for (nr, serie) in zehn.enumerated() {
                     Protokoll.schreib("Messreihe #\(nr + 1): öffne \(serie.name)")
                     navigator.oeffne(.titel(serie), in: bereich)
