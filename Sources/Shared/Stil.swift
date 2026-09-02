@@ -381,27 +381,8 @@ struct Bild<Platzhalter: View>: View {
     var fortschritt: Double? = nil
     @ViewBuilder var platzhalter: () -> Platzhalter
 
-    /// Die Grundfläche, an der sich das Bild ausrichtet.
-    ///
-    /// **Das Seitenverhältnis wird nur gesetzt, wenn es eines gibt.**
-    /// `aspectRatio(nil, contentMode: .fit)` auf einem `Color.clear` klingt
-    /// harmlos, ist es aber nicht: `Color.clear` hat keine eigene Größe, an
-    /// der sich ein „fit" bemessen könnte. Ohne Verhältnis rutschte das Bild
-    /// nach links, brach hart ab und verschwand in schmalen Fenstern ganz —
-    /// zu sehen am Heldbild der Detailseite, auf iPhone wie iPad.
-    @ViewBuilder private var flaeche: some View {
-        let grund = Color.clear
-            .frame(width: breite, height: hoehe)
-            .frame(maxWidth: breite == nil ? .infinity : nil)
-        if let verhaeltnis {
-            grund.aspectRatio(verhaeltnis, contentMode: .fit)
-        } else {
-            grund
-        }
-    }
-
     var body: some View {
-        flaeche
+        rahmen
             .overlay {
                 AsyncImage(url: url) { phase in
                     if case let .success(bild) = phase {
@@ -418,6 +399,35 @@ struct Bild<Platzhalter: View>: View {
             }
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: ecke))
+    }
+
+    /// Die Flaeche, an der sich alles misst.
+    private var flaeche: some View {
+        Color.clear
+            .frame(width: breite, height: hoehe)
+            .frame(maxWidth: breite == nil ? .infinity : nil)
+    }
+
+    /// **`aspectRatio` nur, wenn es ein Verhaeltnis gibt.**
+    ///
+    /// `aspectRatio(nil, contentMode: .fit)` heisst nicht „lass es bleiben",
+    /// sondern „nimm das Verhaeltnis des Inhalts" — und der Inhalt ist hier
+    /// ein `Color.clear`, das keins hat. Wo eine Breite gesetzt ist, faellt
+    /// das nicht auf: die Flaeche steht dann ohnehin fest. Wo nur eine Hoehe
+    /// gesetzt ist, bleibt nichts uebrig, woran die Breite haengt — die
+    /// Flaeche fiel auf einen Streifen am linken Rand zusammen.
+    ///
+    /// Genau so kam `Heldbild` daher (Hoehe ja, Breite nein, Verhaeltnis
+    /// nein), und damit das Bild oben auf jeder Detailseite im schmalen
+    /// Aufbau. Das Verhaeltnis kam nachtraeglich aus main dazu, fuer das
+    /// Plakatraster; die Aufrufer ohne eines waren nicht mitgedacht.
+    @ViewBuilder
+    private var rahmen: some View {
+        if let verhaeltnis {
+            flaeche.aspectRatio(verhaeltnis, contentMode: .fit)
+        } else {
+            flaeche
+        }
     }
 }
 
