@@ -191,7 +191,7 @@ struct Heldenkopf: View {
 
             block
                 .padding(.leading, Stil.randAbstand)
-                .padding(.top, Stil.titelHoehe + 66)
+                .padding(.top, Stil.titelHoehe + 98)
         }
         .frame(height: Stil.heldHoehe, alignment: .topLeading)
         .task {
@@ -207,6 +207,16 @@ struct Heldenkopf: View {
     /// **Kein Poster.** Auf dem Apple TV ist es weggefallen, weil es nur den
     /// Fortschrittsbalken trug — und der steht jetzt dort, wo er auf jeder
     /// anderen Kachel auch steht.
+    ///
+    /// **Jede Zeile hat eine feste Höhe.** Titel, Angaben, Beschreibung und
+    /// Knopfreihe stehen damit auf **jeder** Filmseite an derselben Stelle,
+    /// egal wie lang der Titel ist oder wie viel Beschreibung der Server
+    /// liefert. Ohne das wandern Knöpfe und Reihen beim Blättern von Film zu
+    /// Film, und die Seite wirkt jedes Mal anders gebaut.
+    ///
+    /// Dieselbe Überlegung wie `Stil.auskunftHoehe` auf dem Fernseher: dort
+    /// ist die Höhe fest, und ein langer Titel schrumpft, statt die Seite zu
+    /// verschieben.
     private var block: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(verbatim: titel.name)
@@ -214,7 +224,9 @@ struct Heldenkopf: View {
                 .tracking(-0.8)
                 .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
+                // Ein langer Titel schrumpft, statt die Seite zu verschieben.
                 .minimumScaleFactor(0.62)
+                .frame(height: 42, alignment: .leading)
 
             // **Eine Zeile**, nicht drei: Jahr, Laufzeit, Bewertung,
             // Freigabe und der Beleg stehen nebeneinander. Vorher lagen
@@ -246,22 +258,27 @@ struct Heldenkopf: View {
                 }
             }
             .lineLimit(1)
+            .frame(height: 20, alignment: .leading)
             .padding(.top, 12)
 
             // Die Beschreibung steht **im Kopf**, direkt unter den Angaben —
-            // nicht weit darunter auf dem Grundton.
-            if let text = titel.overview, !text.isEmpty {
-                Text(verbatim: text)
-                    .font(Stil.koerper)
-                    .lineSpacing(3)
-                    .foregroundStyle(Stil.schrift.opacity(0.62))
-                    .lineLimit(3)
-                    .frame(maxWidth: 640, alignment: .leading)
-                    .padding(.top, 18)
-            }
+            // nicht weit darunter auf dem Grundton. Der Platz für drei Zeilen
+            // steht immer, auch wenn der Server nur eine liefert.
+            Text(verbatim: titel.overview ?? "")
+                .font(Stil.koerper)
+                .lineSpacing(3)
+                .foregroundStyle(Stil.schrift.opacity(0.62))
+                .lineLimit(3)
+                .frame(maxWidth: 640, alignment: .topLeading)
+                .frame(height: 66, alignment: .topLeading)
+                .padding(.top, 18)
 
-            knopfreihe.padding(.top, 24)
+            knopfreihe
+                .frame(height: Stil.hauptknopfHoehe, alignment: .leading)
+                .padding(.top, 24)
         }
+        // Feste Gesamthöhe: 42 + 12 + 20 + 18 + 66 + 24 + 48 = 230.
+        .frame(height: 230, alignment: .topLeading)
     }
 
     /// Vier Ziele wie auf dem Apple TV: Fortsetzen, Von vorn, Merkliste,

@@ -492,9 +492,14 @@ struct Detailaktion: View {
 /// Der Kopf einer Detailseite: Pfeil links, Titel daneben.
 ///
 /// **Kein Umriss, kein Kreis** — ein blanker Winkel in 20 semibold auf 40 × 40,
-/// wie `Detailkopf` in `Sources/Shared/Stil.swift`. Der Titel blendet erst
-/// ein, wenn weit genug gescrollt ist; dahinter liegt dann eine Glasleiste,
-/// damit die Buchstaben nicht im Bild verschwimmen.
+/// wie `Detailkopf` in `Sources/Shared/Stil.swift`. Der Titel blendet ein,
+/// wenn weit genug gescrollt ist.
+///
+/// **Keine Glasleiste dahinter.** Auf dem iPhone trägt sie den Titel über dem
+/// scrollenden Bild. Hier reicht die Kulisse nur über die rechten zwei
+/// Drittel, also stand die Leiste links auf blankem Grund und war als
+/// dunkler Balken zu sehen — rechts, wo das Bild liegt, verlor sie sich
+/// darin. Ein Streifen, der nur halb da ist, ist schlimmer als keiner.
 struct Detailkopf: View {
     let titel: String
     /// Wie weit gescrollt wurde.
@@ -539,15 +544,6 @@ struct Detailkopf: View {
         // Seitenleiste ihre Wortmarke.
         .padding(.top, 24)
         .frame(height: Stil.titelHoehe + 24, alignment: .bottom)
-        .background {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(staerke)
-                .overlay(alignment: .bottom) {
-                    Rectangle().fill(Stil.linie).frame(height: 1).opacity(staerke)
-                }
-                .ignoresSafeArea()
-        }
     }
 }
 

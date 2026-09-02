@@ -60,12 +60,14 @@ extension Stil {
 
     /// Die Kopfzone der Detailseite.
     ///
-    /// **Nach ihrem Inhalt bemessen**, nicht nach einem runden Wert: oben
-    /// 54, Titel 42, Angaben 32, drei Zeilen Beschreibung 84, Knopfreihe 72
-    /// — zusammen 284, plus Luft nach unten. Vorher standen hier 420, und
-    /// zwischen der Knopfreihe und „Besetzung" klaffte ein Loch von rund
-    /// 160 Punkt.
-    static let heldHoehe: CGFloat = 374
+    /// **Genau der Inhalt, keine Restluft**: 150 oben plus 230 Block.
+    ///
+    /// Die Luft liegt vollständig **oben**. Unten darf keine sein: der
+    /// Abstand von der Knopfreihe zur ersten Überschrift soll derselbe sein
+    /// wie zwischen allen anderen Abschnitten (26). Jede Restluft in dieser
+    /// Zone käme dort obendrauf, und die Reihe „Besetzung" stünde weiter
+    /// entfernt als „Ähnliches" von der Reihe darüber.
+    static let heldHoehe: CGFloat = 380
 
     // MARK: Tippflächen — kleiner als auf dem iPhone
 
