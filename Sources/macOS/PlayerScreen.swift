@@ -478,7 +478,8 @@ struct PlayerScreen: View {
                 zentrale.melden(item: titel, position: stand.position,
                                 dauer: stand.dauer, tempo: flaeche.tempo,
                                 laeuft: stand.laeuft,
-                                sprungweite: (model.zurueckSekunden, model.vorSekunden))
+                                sprungweite: (model.zurueckSekunden, model.vorSekunden),
+                                bildURL: model.sperrbildURL(for: titel))
             }
             if auftrag.fortschrittMelden {
                 await model.reportProgress(item: titel, plan: plan,
