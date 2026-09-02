@@ -57,7 +57,15 @@ targets:
       # der Grund für diese App. Lokal eingebunden statt über SwiftPM, weil
       # VideoLAN den Download auf ~40 KB/s drosselt.
       # Holen mit: Werkzeuge/vlckit-holen.sh
-      - framework: Vendor/VLCKit.xcframework
+      #
+      # **VERSUCH: selbst gebaute Fassung mit dem Patch am mkv-Sucher.**
+      # VLC 4 koppelt `index_range()` an `b_fastseekable`, was ueber HTTP nie
+      # wahr ist, und `LoadCues` meldet Erfolg auch dann, wenn kein einziger
+      # Sprungpunkt geladen wurde. Zusammen hat eine Matroska, deren Cues am
+      # `EBMLCrc32` scheitern, keinen Weg nach vorn: jeder Sprung liest ab
+      # Dateianfang. Gebaut aus 4.0.0-a23 als Release, Patch 0028.
+      # Zurueck auf `VLCKit.xcframework`, falls es sich nicht bewaehrt.
+      - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
         codeSign: true
     info:
