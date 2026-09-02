@@ -477,71 +477,21 @@ final class AppModel {
 
     // MARK: - Dateien, deren Index nichts taugt
 
-    private static let sperrigSchluessel = "swiftly.serverSprungNoetig"
 
-    /// **Wovon der Abspieler schon weiß, dass er nicht springen kann.**
-    ///
-    /// Es gibt Dateien, deren Sprungpunkte sich nicht auswerten lassen. Der
-    /// Abspieler merkt das erst, wenn ein Sprung nicht ankommt — das kostet
-    /// beim ersten Mal ein paar Sekunden. Beim zweiten Mal muss es das nicht:
-    /// die Kennung der Quelle wird gemerkt, und dann liefert von Anfang an
-    /// der Server ab der gewünschten Stelle.
-    ///
-    /// Bewusst in den Voreinstellungen und nicht nur im Speicher: die Frage
-    /// stellt sich bei jeder Folge derselben Serie neu, und ein Neustart der
-    /// App soll das Gelernte nicht wegwerfen.
-    private var sperrigeQuellen: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: Self.sperrigSchluessel) ?? []) }
-        set { UserDefaults.standard.set(Array(newValue), forKey: Self.sperrigSchluessel) }
-    }
 
-    func brauchtServerSprung(_ quellenID: String?) -> Bool {
-        guard let quellenID else { return false }
-        return sperrigeQuellen.contains(quellenID)
-    }
 
-    func merkeServerSprung(_ quellenID: String?) {
-        guard let quellenID, !sperrigeQuellen.contains(quellenID) else { return }
-        var liste = sperrigeQuellen
-        liste.insert(quellenID)
-        // Nicht unbegrenzt wachsen lassen; die Liste ist eine Abkuerzung,
-        // kein Verzeichnis.
-        sperrigeQuellen = liste.count > 200 ? Set(liste.suffix(200)) : liste
-        Self.log.info("Quelle \(quellenID, privacy: .public) braucht Serversprung — gemerkt")
-    }
 
     /// Fragt den Server, wie er diesen Titel ausliefern würde.
     ///
-    /// `abSekunden` zusammen mit `ohneDirectPlay` ist der Notausgang für
-    /// Dateien, deren Index der Abspieler nicht lesen kann: dann springt der
-    /// Server, indem er ab der Stelle liefert. Siehe `playbackInfo`.
-    func plan(for itemID: String, abSekunden: Double = 0,
-              ohneDirectPlay: Bool = false) async -> PlaybackPlan? {
+    func plan(for itemID: String) async -> PlaybackPlan? {
         guard let client else { return nil }
         do {
             let plan = try await client.playbackPlan(for: itemID,
-                                                       profile: .vlc(maxBitrate: profilBitrate),
-                                                       abSekunden: abSekunden,
-                                                       ohneDirectPlay: ohneDirectPlay)
+                                                       profile: .vlc(maxBitrate: profilBitrate))
             if plan == nil {
                 // Tritt bei Serien und Staffeln auf: die haben keine
                 // Mediendatei, nur ihre Folgen haben eine.
                 Self.log.error("Kein Plan für \(itemID, privacy: .public) — Server nannte keine MediaSource")
-            }
-            // **Was der Server geantwortet hat, nicht was wir gefragt haben.**
-            //
-            // Ohne diese Zeile bleibt offen, ob ein ausbleibender Serversprung
-            // an unserer Anfrage lag oder an seiner Antwort. Genau daran ist
-            // der erste Anlauf gescheitert: wir haben Direct Play abgeschaltet
-            // und trotzdem die Rohdatei bekommen.
-            if let plan, ohneDirectPlay || abSekunden > 0 {
-                let q = plan.quelle
-                Protokoll.schreib("[Plan] \(plan.method.rawValue)"
-                    + " · directPlay=\(q?.supportsDirectPlay?.description ?? "—")"
-                    + " directStream=\(q?.supportsDirectStream?.description ?? "—")"
-                    + " · Serveradresse=\(q?.transcodingUrl == nil ? "keine" : "ja")"
-                    + " · angefragt ab \(Int(abSekunden)) s"
-                    + " · Versatz \(Int(plan.serverAbSekunden)) s")
             }
             return plan
         } catch {
@@ -674,5 +624,26 @@ final class AppModel {
     /// Liegt in JellyfinKit, damit sie ohne Simulator testbar ist.
     static func normalizeServerURL(_ raw: String) -> URL? {
         AppModelURLNormalizer.normalize(raw)
+    }
+}
+
+extension AppModel {
+    /// **Der Weg in die Wiedergabe einer Folge, einmal.**
+    ///
+    /// Stand zeichengleich in `Shared/SeriesView.swift` und
+    /// `tvOS/SerienView.swift` — bis auf das Zuweisungsziel. Genau die Sorte,
+    /// die auseinanderlaeuft: Es reicht, dass einer die Meldung aendert oder
+    /// eine Pruefung ergaenzt, und die Plattformen antworten verschieden.
+    ///
+    /// Gibt `nil` zurueck, wenn der Server keinen Plan liefert. Die Meldung
+    /// dazu steht in `folgeNichtGeladen`, damit sie ebenfalls nur einmal
+    /// existiert.
+    func folgenwunsch(_ folge: Item, ab: Double) async -> Abspielwunsch? {
+        guard let plan = await plan(for: folge.id) else { return nil }
+        return Abspielwunsch(item: folge, plan: plan, startAt: ab)
+    }
+
+    static var folgeNichtGeladen: String {
+        String(localized: "Die Folge konnte nicht geladen werden.")
     }
 }

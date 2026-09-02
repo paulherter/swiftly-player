@@ -7,6 +7,18 @@
 # parallelen Stuecken.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# **ACHTUNG: Diese Fassung hat einen bekannten Fehler.**
+#
+# VLC 4 verwirft in `matroska_segment_seeker.cpp` den Index von MKV-Dateien
+# ueber HTTP — Spruenge lesen dann ab Dateianfang und brauchen 30 bis 90
+# Sekunden. VLC 3 hat den Vorbehalt nicht; deshalb springt Swiftfin.
+#
+# Der Patch liegt in `Werkzeuge/vlckit-patches/`. Wer die App mit
+# funktionierendem Springen bauen will, braucht ein gepatchtes VLCKit —
+# dieses Skript holt die **ungepatchte** offizielle Fassung.
+#
+# Siehe README, Abschnitt „Building".
+
 URL="https://download.videolan.org/cocoapods/unstable/VLCKit-4.0-20260805-1123.zip"
 SHA="c0c3ae1665053db5898581efc8ee920f526643526297f7fc643599532dc2ccf5"
 

@@ -111,17 +111,7 @@ struct PlayerScreen: View {
     /// neu auf; nach der Rueckkehr aus dem Hintergrund steht das Bild,
     /// waehrend der Ton schon laeuft; und bei einem Aussetzer der Leitung
     /// steht beides. „Aber ohne irgendwie 'n Ladezeichen oder so. Also da
-    /// musst Du auf jeden Fall noch mal gucken." **Ob der Server springt statt
-    /// des Abspielers.**
-    ///
-    /// Wird gesetzt, sobald ein Sprung nicht ankommt — siehe
-    /// `VLCPlayerView.onSprungGescheitert`. Von da an wird für jeden Sprung
-    /// ein neuer Strom geholt, der schon an der richtigen Stelle beginnt. Der
-    /// Zuschauer merkt davon nichts außer der Ladeanzeige, die es beim
-    /// Springen ohnehin gibt.
-    @State private var serverSpringt = false
-    @State private var serverAufgabe: Task<Void, Never>?
-
+    /// musst Du auf jeden Fall noch mal gucken."
     @State private var stockt = false
     @State private var stillSeit: Date?
     @State private var letzteVLCZeit: Double = -1
@@ -193,13 +183,10 @@ struct PlayerScreen: View {
                 .onTapGesture { steuerungWecken() }
 
             VideoFlaeche(url: startPlan.url, startAt: startAt,
-                         container: startPlan.container,
-                         versatz: startPlan.serverAbSekunden) { neu in
+                         container: startPlan.container) { neu in
                 flaeche = neu
                 neu.onWiederherstellung = { stelltWiederHer = $0 }
                 // Kommt ein Sprung nicht an, taugt der Index der Datei
-                // nichts. Dann uebernimmt der Server — siehe `serverSprung`.
-                neu.onSprungGescheitert = { ziel in serverSprung(auf: ziel) }
             }
 
             // **Deckend, nicht nur ein Ring.**
@@ -368,18 +355,8 @@ struct PlayerScreen: View {
 
             // **Gelerntes gleich anwenden.**
             //
-            // Von dieser Quelle ist schon bekannt, dass der Abspieler in ihr
-            // nicht springen kann. Dann gar nicht erst vier Sekunden auf
-            // einen Sprung warten, der nicht ankommt — sondern sofort den
-            // Server bitten. Beim ersten Mal kostet es die vier Sekunden,
-            // danach nie wieder.
-            if startAt > 1, plan.abspielerSpringt,
-               model.brauchtServerSprung(plan.quelle?.id) {
-                serverSprung(auf: startAt)
-            }
         }
         .onDisappear {
-            serverAufgabe?.cancel()
             // Der Ausgang gehoert wieder der Oberflaeche, die auf 60 Hz
             // gezeichnet ist.
             Bildtakt.loesen()
@@ -760,79 +737,6 @@ struct PlayerScreen: View {
 
     // MARK: - Wenn der Abspieler nicht springen kann
 
-    /// **Den Strom neu holen, diesmal ab der gewünschten Stelle.**
-    ///
-    /// Bei Direct Play liefert der Server die Datei roh und springt nicht;
-    /// den Sprung macht der Abspieler über den Index der Datei. Ist der
-    /// unlesbar, kommt er nie an — gemessen an einer Folge, in der jeder
-    /// Sprung ab Dateianfang vorwärts las. Dann bittet man den Server, ab der
-    /// Stelle zu liefern. Er packt den Strom dafür um, rechnet aber weder
-    /// Bild noch Ton neu; die Grundregel der App bleibt gewahrt.
-    ///
-    /// Für den Zuschauer ist das ein Sprung wie jeder andere: es lädt kurz,
-    /// dann läuft es weiter. Nichts zu entscheiden, nichts zu wissen.
-    private func serverSprung(auf ziel: Double) {
-        serverAufgabe?.cancel()
-        serverAufgabe = Task {
-            let alterPlan = plan
-            model.merkeServerSprung(plan.quelle?.id)
-
-            guard let neu = await model.plan(for: item.id, abSekunden: ziel,
-                                             ohneDirectPlay: true),
-                  let flaeche
-            else { return }
-            guard !Task.isCancelled else { return }
-
-            // **Nur umschalten, wenn der Server wirklich ab der Stelle
-            // liefert.**
-            //
-            // Sonst bekommt man die Rohdatei zurueck, die von vorn anfaengt —
-            // und dann steht die Leiste bei acht Minuten, waehrend das Bild am
-            // Anfang laeuft. Das ist schlimmer als der lange Sprung, den wir
-            // umgehen wollten: der kam wenigstens irgendwann an. **Umpacken
-            // ja, umrechnen nie.**
-            //
-            // Das ist die Grundregel der App, und sie gilt auch hier: lieber
-            // ein zaeher Sprung als ein Bild, das der Server neu berechnet.
-            // Bei Direct Stream wechselt nur der Behaelter.
-            guard neu.method != .transcode else {
-                Protokoll.schreib("[Plan] Server wuerde umrechnen statt umpacken → beim alten Strom bleiben")
-                serverSpringt = false
-                return
-            }
-
-            guard neu.serverAbSekunden >= ziel - 1 else {
-                Protokoll.schreib("[Plan] Server springt nicht (Versatz \(Int(neu.serverAbSekunden)) s statt \(Int(ziel)) s) → beim alten Strom bleiben")
-                serverSpringt = false
-                return
-            }
-
-            // **Den alten Strom abmelden, bevor der neue kommt.**
-            //
-            // Jedes Umpacken ist eine eigene Sitzung auf dem Server. Ohne
-            // Abmeldung bliebe bei jedem Sprung eine stehen, und nach einem
-            // Abend voller Spruenge liefen dort ein Dutzend Vorgaenge fuer
-            // einen einzigen Zuschauer.
-            //
-            // Erst hier, nicht vorher: eine Abmeldung, der kein neuer Strom
-            // folgt, laesst den Titel im Serverdashboard verschwinden, obwohl
-            // noch gespielt wird.
-            if alterPlan.playSessionID != neu.playSessionID {
-                await model.reportStopped(item: item, plan: alterPlan, seconds: ziel)
-            }
-
-            plan = neu
-            position = neu.serverAbSekunden
-            spulziel = nil
-            markeVomWisch = false
-            spurenGesetzt = false
-            serverSpringt = true
-            sprungBis = Date().addingTimeInterval(1.2)
-
-            flaeche.play(url: neu.url, abSekunden: 0, container: neu.container,
-                         versatz: neu.serverAbSekunden)
-        }
-    }
 
     // MARK: - Wischen
 
@@ -904,21 +808,6 @@ struct PlayerScreen: View {
     private func sprungAusfuehren(_ ziel: Double) {
         guard let flaeche else { return }
 
-        // Steht einmal fest, dass der Abspieler in dieser Datei nicht
-        // springen kann, gilt das fuer jeden weiteren Sprung. Ihn trotzdem
-        // erst zu versuchen, kostet nur wieder die vier Sekunden.
-        if serverSpringt {
-            let gerundet = min(max(ziel, 0), max(dauer - 5, 0))
-            position = gerundet
-            spulziel = nil
-            markeVomWisch = false
-            wischt = false
-            wischEnde = Date()
-            spulAufgabe?.cancel()
-            spulAufgabe = nil
-            serverSprung(auf: gerundet)
-            return
-        }
 
         let vorher = position
         position = ziel
@@ -1334,12 +1223,11 @@ struct VideoFlaeche: UIViewRepresentable {
     let startAt: Double
     let container: String?
     /// Wo im Titel der gelieferte Strom beginnt — siehe `PlaybackPlan`.
-    var versatz: Double = 0
     let angelegt: (VLCPlayerView) -> Void
 
     func makeUIView(context: Context) -> VLCPlayerView {
         let view = VLCPlayerView()
-        view.play(url: url, abSekunden: startAt, container: container, versatz: versatz)
+        view.play(url: url, abSekunden: startAt, container: container)
         DispatchQueue.main.async { angelegt(view) }
         return view
     }

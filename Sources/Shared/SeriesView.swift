@@ -246,7 +246,18 @@ struct SeriesDetailView: View {
                 }
             }
             .buttonStyle(HauptknopfStil(dehnt: !breit))
-            .disabled(stand == nil || bereitet)
+            // **Waehrend geladen wird bleibt er an und zeigt „Laedt…".**
+            //
+            // Auf tvOS ist ein abgeschalteter Knopf kein Fokusziel: kam man aus
+            // der Suche, wo nichts vorgeladen ist, sprang der Startfokus auf
+            // „Merkliste" — und kehrte nicht zurueck, wenn die Folge ankam.
+            // Hier gilt dasselbe Muster, nur ohne sichtbare Folge, weil der
+            // Finger sich seinen Knopf selbst sucht. Gleich gehalten, damit die
+            // Plattformen nicht wieder auseinanderlaufen.
+            //
+            // Ein Druck waehrend des Ladens tut nichts — `starte` hat den
+            // `guard` ohnehin.
+            .disabled(bereitet || (stand == nil && !laedt))
 
             if let stand, let rest = restzeit(stand) {
                 Text(rest).font(.system(size: 11)).foregroundStyle(Stil.schriftLeise)
@@ -602,11 +613,11 @@ extension SeriesDetailView {
 
     private func folgeStarten(_ folge: Item, ab: Double) {
         Task {
-            guard let plan = await model.plan(for: folge.id) else {
-                meldung = String(localized: "Die Folge konnte nicht geladen werden.")
+            guard let wunsch = await model.folgenwunsch(folge, ab: ab) else {
+                meldung = AppModel.folgeNichtGeladen
                 return
             }
-            abspielen = Abspielwunsch(item: folge, plan: plan, startAt: ab)
+            abspielen = wunsch
         }
     }
 }

@@ -214,41 +214,4 @@ public extension DeviceProfile {
         )
     }
 
-    /// **Dasselbe Profil, aber der Server darf umpacken.**
-    ///
-    /// Gebraucht für genau einen Fall: eine Datei, deren Sprungpunkte der
-    /// Abspieler nicht auswerten kann. Dann muss der Server ab der Stelle
-    /// liefern, und dafür braucht er einen Weg, den Strom neu zu verpacken.
-    ///
-    /// **Warum ein eigenes Profil und nicht das normale erweitern.** Das
-    /// normale nennt als Umwandlungsziel h264 und aac — bewusst, denn wenn
-    /// wirklich umgewandelt werden muss, soll etwas herauskommen, das überall
-    /// läuft. Für eine Datei mit HEVC und AC3 heißt das aber: neu berechnen.
-    /// Genau davor gibt es diese App. Gemessen an einer solchen Folge:
-    /// Jellyfin meldete „Transcode", konnte mit diesem Profil aber gar keine
-    /// Adresse bauen, weil es das Bild hätte umrechnen müssen — der Rückfall
-    /// lief ins Leere.
-    ///
-    /// Hier stehen deshalb dieselben Codecs, die wir ohnehin direkt abspielen.
-    /// Jellyfin erkennt dann, dass Bild und Ton **kopiert** werden können, und
-    /// meldet Direct Stream statt Transcode: nur der Behälter wechselt, kein
-    /// einziges Bild wird neu gerechnet.
-    ///
-    /// Das normale Profil bleibt unangetastet. Diese Fassung geht nur auf die
-    /// Nachfrage hinaus, bei der schon feststeht, dass der Abspieler nicht
-    /// springen kann — sonst könnte ein zusätzliches Umwandlungsziel dem
-    /// Server neue Ideen geben.
-    static func vlcUmpacken(maxBitrate: Int = 1_000_000_000) -> DeviceProfile {
-        var profil = vlc(maxBitrate: maxBitrate)
-        // MPEG-TS über HLS: der einzige Behälter, in den Jellyfin zuverlässig
-        // umpackt und der Bild wie Ton unverändert durchreicht.
-        profil.transcodingProfiles = [
-            TranscodingProfile(container: "ts", type: "Video",
-                               videoCodec: "h264,hevc,mpeg2video,mpeg4,vc1,av1",
-                               audioCodec: "aac,ac3,eac3,mp3,dts,truehd,flac,opus,mp2,pcm",
-                               context: "Streaming", protocolName: "hls")
-        ]
-        profil.name = "Swiftly (VLC, umpacken)"
-        return profil
-    }
 }
