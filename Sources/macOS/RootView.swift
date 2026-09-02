@@ -24,7 +24,7 @@ struct RootView: View {
             }
         }
         .background(Fensteranstrich())
-        .animation(.default, value: model.phase)
+        .animation(Stil.zeitSeite, value: model.phase)
     }
 }
 

@@ -105,4 +105,26 @@ extension Stil {
     static let zeitUmschalten = Animation.easeOut(duration: 0.10)
     static let zeitSchweben   = Animation.easeOut(duration: 0.12)
     static let zeitSprung     = Animation.snappy(duration: 0.22)
+
+    // MARK: Seitenwechsel — drei Bewegungen, an drei Bedeutungen gebunden
+    //
+    // Vorher tat jede Stelle etwas anderes: der Bereichswechsel gar nichts,
+    // der Phasenwechsel `.default`, der Player eine eigene Zeit. Von außen
+    // sah das aus, als starte die App mal mit und mal ohne Animation.
+    //
+    // Die Regel: **Was die Bewegung bedeutet, bestimmt, wie sie aussieht.**
+    //
+    //   Ersetzen     Der Inhaltsbereich zeigt etwas anderes — Start gegen
+    //                Filme, Anmeldung gegen Bibliothek. Nichts wandert,
+    //                also blendet es über.
+    //   Tiefer       Eine Ebene hinein: Detailseite, Einstellungen. Das
+    //                schiebt von rechts, und den Weg zurück kennt man.
+    //                Macht `NavigationStack` von sich aus.
+    //   Aufsteigen   Der Player nimmt das ganze Fenster. Er kommt von unten
+    //                und geht dorthin zurück — deshalb zeigt der Winkel oben
+    //                links nach unten.
+
+    /// Überblenden beim Ersetzen. 180 ms ease-out — dieselbe Zeit, in der auf
+    /// dem iPhone die Player-Steuerung erscheint.
+    static let zeitSeite = Animation.easeOut(duration: 0.18)
 }

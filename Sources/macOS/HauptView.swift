@@ -72,9 +72,9 @@ struct HauptView: View {
         .overlay {
             if let wunsch = steuerung.wunsch {
                 PlayerScreen(model: model, wunsch: wunsch) { steuerung.schliessen() }
-                    // Von unten herauf und wieder hinunter — wie auf dem
-                    // iPhone. Damit zeigt der Winkel oben links in die
-                    // Richtung, in die der Player wirklich verschwindet.
+                    // Aufsteigen — die dritte der drei Bewegungen. Von unten
+                    // herauf und wieder hinunter; deshalb zeigt der Winkel
+                    // oben links nach unten.
                     .transition(.move(edge: .bottom))
             }
         }
@@ -95,6 +95,7 @@ struct HauptView: View {
                 case .suche:  SucheView(model: model)
                 }
             }
+            .transition(.opacity)
             .navigationDestination(for: Item.self) { titel in
                 DetailView(model: model, item: titel) { zurueck() }
             }
@@ -120,6 +121,8 @@ struct HauptView: View {
         // Der Stapel gehört zum Bereich; ohne die Kennung baut SwiftUI ihn
         // beim Wechsel nicht neu auf und zeigt die alte Seite weiter.
         .id(bereich)
+        // Ersetzen blendet über — siehe die Regel in `Stil`.
+        .animation(Stil.zeitSeite, value: bereich)
     }
 
     private func pfad(_ b: Bereich) -> Binding<NavigationPath> {
