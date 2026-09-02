@@ -92,7 +92,6 @@ struct HauptView: View {
         .environment(steuerung)
         .environment(navigator)
         .environment(\.bereich, bereich)
-        .environment(\.seiteRuht, ruht)
         // Der Player nimmt das ganze Fenster ein, Seitenleiste eingeschlossen.
         .overlay {
             if let wunsch = steuerung.wunsch {
@@ -129,6 +128,8 @@ struct HauptView: View {
                 let zehn = Array(regal.items.dropFirst(ab).prefix(anzahl))
                 Protokoll.schreib("Messreihe: \(zehn.count) von \(regal.items.count) "
                     + "geladen, \(regal.gesamt) im Regal, ab \(ab)")
+                // Fester Vorlauf, damit `sample` von aussen getaktet werden kann.
+                try? await Task.sleep(for: .seconds(Int(u["MESSREIHE_VORLAUF"] ?? "") ?? 0))
                 for (nr, serie) in zehn.enumerated() {
                     Protokoll.schreib("Messreihe #\(nr + 1): öffne \(serie.name)")
                     navigator.oeffne(.titel(serie), in: bereich)
@@ -213,10 +214,6 @@ struct HauptView: View {
     /// Wie viele Seiten im **aktuellen** Bereich gezeigt werden.
     private var tiefe: Int { gezeigteTiefe[bereich] ?? 0 }
 
-    /// Ob die Seite steht. Solange sie fährt, hält sich alles zurück, was
-    /// ihren Aufbau ändern würde — siehe `DetailView`.
-    @State private var ruht = true
-
     private var inhalt: some View {
         GeometryReader { raum in
             let breite = raum.size.width
@@ -299,13 +296,16 @@ struct HauptView: View {
                         // Steht die Seite schon, ist das ein Rückkehrer aus
                         // einem Leistenwechsel — der fährt nicht noch einmal.
                         guard platz >= tiefe else { return }
+                        // **Nur dieser eine Schreibzugriff.** Vorher stand
+                        // daneben ein zweiter, unanimierter (`ruht = false`).
+                        // Beides ist Zustand derselben Ansicht und landet in
+                        // einem Aktualisierungslauf — für den sucht SwiftUI
+                        // sich *eine* Transaktion aus. Fällt die Wahl auf die
+                        // leere, wird der Versatz ohne Bewegung gesetzt. Es
+                        // war der einzige Ort im Baum, an dem eine laufende
+                        // Bewegung überhaupt kippen konnte.
                         DispatchQueue.main.async {
-                            ruht = false
                             withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe[bereich] = platz + 1 }
-                        }
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(520))
-                            ruht = true
                         }
                     }
                     // **Nur das Hinausfahren ist ein Übergang.** Das

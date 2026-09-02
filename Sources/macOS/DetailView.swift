@@ -11,15 +11,20 @@ struct DetailView: View {
     let zurueck: () -> Void
 
     @State private var voll: Item?
-    @Environment(\.seiteRuht) private var ruht
 
-    /// **Der volle Satz erst, wenn die Seite steht.**
+    /// **Der volle Satz, sobald er da ist.**
     ///
-    /// `model.item(id:)` kommt nach ein bis vier Zehntelsekunden zurück —
-    /// also mitten im Hereinfahren. Dann wurde der ganze Unterbau mit anderen
-    /// Daten neu gezeichnet, während er unterwegs war. Das war das kurze
-    /// Zucken beim Öffnen eines Films.
-    private var titel: Item { ruht ? (voll ?? item) : item }
+    /// Hier stand ein Riegel: bis die Seite steht, zeigte sie nur den mageren
+    /// Listeneintrag, dann schaltete sie um. Das war falsch herum gedacht.
+    /// Die Listenabfrage liefert nur `Overview` und das Seitenverhältnis —
+    /// Beschreibung, Bewertung, Freigabe, Genres und Laufzeit erschienen
+    /// dadurch **alle im selben Bild**, siebzig Millisekunden nachdem die
+    /// Bewegung fertig war. Genau dieser Schlag liest sich als „und zack, ist
+    /// es da".
+    ///
+    /// Der Kopf hat feste Plätze — es wandert nichts, wenn ein Text
+    /// nachkommt. Also darf er kommen, wann er kommt.
+    private var titel: Item { voll ?? item }
 
     /// Nur zum Nachmessen: welchen Weg ein Klick nimmt.
     private func protokolliert(_ art: String?) -> String? {

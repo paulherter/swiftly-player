@@ -96,6 +96,11 @@ struct SerienView: View {
         //
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
+        // Dieselbe Ansage ans Fenster wie die Filmseite. Fehlte sie hier,
+        // wechselte die Fensterpräferenz beim Hin- und Herblättern zwischen
+        // den beiden Seiten — und das rechnet AppKit jedes Mal nach.
+        .toolbar(.hidden)
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .ohneKanteneffekt()
         // **Federn wie überall sonst.** Ohne die Angabe entscheidet das
         // Rahmenwerk selbst, und auf diesen Seiten fiel die Entscheidung
