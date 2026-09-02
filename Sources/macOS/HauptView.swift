@@ -90,37 +90,100 @@ struct HauptView: View {
         }
     }
 
-    private var inhalt: some View {
-        ZStack {
-            // Die Wurzel des Bereichs liegt immer unten. Sie bleibt stehen,
-            // während eine Seite darüber hereinkommt — sonst blitzt beim
-            // Zurückgehen kurz nichts auf.
-            wurzel
-                .id(bereich)
-                .transition(.opacity)
-                // **Die Wurzel liegt ausdrücklich unten.**
-                //
-                // Ohne feste Ebenen legt SwiftUI eine einfahrende Ansicht
-                // nicht zuverlässig obenauf — die Seite fuhr unter den
-                // Kacheln der Startseite herein, und das sah aus, als wäre
-                // sie durchsichtig. Sie war nur verdeckt.
-                .zIndex(0)
+    /// Wie viele Seiten **gezeigt** werden. Das ist bewusst nicht dasselbe
+    /// wie `navigator.seiten(bereich).count`: beim Tiefergehen hinkt der Wert
+    /// ein Einzelbild hinterher, und genau darin liegt der Trick.
+    ///
+    /// **Warum überhaupt.** Mit `.transition(.move)` legt SwiftUI die neue
+    /// Seite an und bewegt sie im selben Einzelbild. In dieses eine Bild
+    /// fällt dann der gesamte Aufbau der Detailseite — Kulisse, Kopf,
+    /// Besetzung, Ähnliches. Das Bild kommt zu spät, die Bewegung setzt mit
+    /// einem Sprung ein, und keine Kurve der Welt bügelt das aus. Ein
+    /// `UINavigationController` macht es seit jeher andersherum: die neue
+    /// Ansicht kommt in den Behälter, wird ausgelegt, und **erst danach**
+    /// startet der Animator.
+    ///
+    /// Also: Seite anlegen, um eine volle Breite nach rechts versetzt, ein
+    /// Bild warten, dann fahren. Beim Zurückgehen entfällt das Warten — dort
+    /// steht längst alles.
+    @State private var gezeigteTiefe = 0
 
-            // Jede Seite des Stapels darüber. Nur die oberste ist zu sehen;
-            // die darunter tragen den Weg zurück.
-            ForEach(Array(navigator.seiten(bereich).enumerated()), id: \.element.id) { platz, ziel in
-                ZStack {
-                    Stil.grund
-                    seite(ziel)
+    private var inhalt: some View {
+        GeometryReader { raum in
+            let breite = raum.size.width
+            // Wie weit die darunterliegende Seite mitgeht. Ein Drittel — so
+            // hält es die Systemnavigation, und daher kommt der Eindruck von
+            // Ebenen statt von einem Rechteck, das vorbeischiebt.
+            let mitgang = -breite * 0.3
+
+            ZStack {
+                // Die Wurzel des Bereichs liegt immer unten.
+                wurzel
+                    .id(bereich)
+                    .transition(.opacity)
+                    .offset(x: gezeigteTiefe > 0 ? mitgang : 0)
+                    .overlay {
+                        Color.black.opacity(gezeigteTiefe > 0 ? 0.28 : 0)
+                            .allowsHitTesting(false)
+                    }
+                    // **Die Wurzel liegt ausdrücklich unten.** Ohne feste
+                    // Ebenen fuhr die Seite unter den Kacheln der Startseite
+                    // herein, und das sah aus wie Durchsichtigkeit.
+                    .zIndex(0)
+
+                ForEach(Array(navigator.seiten(bereich).enumerated()), id: \.element.id) { platz, ziel in
+                    let obenauf = platz == gezeigteTiefe - 1
+                    let gezeigt = platz < gezeigteTiefe
+
+                    ZStack {
+                        Stil.grund
+                        seite(ziel)
+                    }
+                    // Rechts draußen, bis sie an der Reihe ist; darunter
+                    // liegende Seiten gehen ein Stück mit.
+                    .offset(x: gezeigt ? (obenauf ? 0 : mitgang) : breite)
+                    .overlay {
+                        Color.black.opacity(gezeigt && !obenauf ? 0.28 : 0)
+                            .allowsHitTesting(false)
+                    }
+                    // Der Schlagschatten an der Vorderkante. Als schmaler
+                    // Verlauf **neben** der Seite, nicht als `.shadow` —
+                    // ein Schatten um eine bildschirmgroße Ansicht zwingt
+                    // sie in einen eigenen Zwischenspeicher, und den baut
+                    // das System in jedem Einzelbild neu auf.
+                    .overlay(alignment: .leading) {
+                        LinearGradient(colors: [.black.opacity(0.45), .clear],
+                                       startPoint: .trailing, endPoint: .leading)
+                            .frame(width: 28)
+                            .offset(x: -28)
+                            .allowsHitTesting(false)
+                    }
+                    .zIndex(Double(platz + 1))
+                    // **Nur das Hinausfahren ist ein Übergang.** Das
+                    // Hereinfahren macht der Versatz oben, damit die Seite
+                    // vorher fertig ausgelegt ist. Blenden tut hier nichts:
+                    // unterwegs durchsichtig sieht nach Fehler aus.
+                    .transition(.asymmetric(insertion: .identity,
+                                            removal: .move(edge: .trailing)))
                 }
-                // Jede Seite eine Ebene höher als die darunter.
-                .zIndex(Double(platz + 1))
-                // **Nur schieben, nicht blenden.** Mit einer Überblendung
-                // dazu ist die Seite unterwegs kurz durchsichtig, und man
-                // sieht die darunterliegende hindurch — das wirkt wie ein
-                // Fehler, nicht wie eine Bewegung. Sie fährt ein, fertig.
-                .transition(.move(edge: .trailing))
             }
+        }
+        .onChange(of: navigator.seiten(bereich).count, initial: true) { alt, neu in
+            guard neu != gezeigteTiefe else { return }
+            if neu > alt {
+                // Tiefergehen: ein Einzelbild Vorsprung zum Auslegen.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(16))
+                    withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe = neu }
+                }
+            } else {
+                // Zurück: `Navigator.zurueck` animiert das Entfernen bereits,
+                // der Mitgang muss im selben Zug zurück.
+                withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe = neu }
+            }
+        }
+        .onChange(of: bereich) { _, _ in
+            gezeigteTiefe = navigator.seiten(bereich).count
         }
     }
 

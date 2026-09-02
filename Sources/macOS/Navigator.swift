@@ -24,9 +24,10 @@ final class Navigator {
 
     func oeffne(_ ziel: Seitenziel, in bereich: Bereich) {
         Ruckelwache.beobachte("Seite herein")
-        withAnimation(Stil.zeitSeitenschub) {
-            stapel[bereich, default: []].append(ziel)
-        }
+        // **Ohne Animation anlegen.** Die Seite soll erst dastehen und
+        // ausgelegt sein; die Bewegung startet `HauptView` ein Einzelbild
+        // später über `gezeigteTiefe`.
+        stapel[bereich, default: []].append(ziel)
     }
 
     func zurueck(in bereich: Bereich) {
