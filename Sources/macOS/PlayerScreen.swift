@@ -226,11 +226,18 @@ struct PlayerScreen: View {
                 }
             }
         }
-        .padding(.horizontal, 22)
-        // Links so viel, dass der Winkel neben der Fensterampel steht und
-        // nicht darauf. Dieselbe Überlegung wie `Stil.ampelHoehe` in der
-        // Seitenleiste, nur in der Breite.
-        .padding(.leading, 74)
+        .padding(.trailing, 22)
+        // **Auf derselben Linie wie der Titel unten.**
+        //
+        // Die Ampel brauchte keinen Platz: sie sitzt oben bei 16, der Winkel
+        // gut fünfzig Punkt tiefer — sie stossen gar nicht aneinander. Die 74
+        // Punkt, die ich dafür freigehalten hatte, haben ihn nur nach rechts
+        // geschoben.
+        //
+        // 28 ist der Rand der unteren Zeile; die zwölf Punkt Abzug sind der
+        // Innenabstand des runden Knopfes, damit das Zeichen selbst auf der
+        // Linie steht und nicht sein Rahmen.
+        .padding(.leading, 28 - 12)
         .padding(.top, 18)
     }
 
@@ -374,6 +381,7 @@ struct PlayerScreen: View {
     /// Pausenzustand. Dieselbe Regel wie auf dem iPhone.
     private func steuerungZeigen() {
         withAnimation(.easeOut(duration: 0.18)) { steuerungDa = true }
+        halter.setzeSteuerung(true)
         NSCursor.unhide()
         ruheAufgabe?.cancel()
         ruheAufgabe = Task {
@@ -381,6 +389,7 @@ struct PlayerScreen: View {
             guard !Task.isCancelled, stand.laeuft, !amRegler else { return }
             withAnimation(.easeInOut(duration: 0.34)) {
                 steuerungDa = false
+                halter.setzeSteuerung(false)
                 spurwahlOffen = false
             }
             // Der Zeiger geht mit. `setHiddenUntilMouseMoves` ist der richtige
@@ -660,7 +669,28 @@ final class Fensterhalter {
     func uebernehme(_ neues: NSWindow?) {
         guard fenster !== neues else { return }
         fenster = neues
+        vollbildBeobachten()
         ampelNachziehen()
+    }
+
+    @ObservationIgnored private var vollbildwache: [NSObjectProtocol] = []
+
+    /// **Beim Wechsel ins Vollbild und zurück neu entscheiden.**
+    ///
+    /// Im Vollbild lassen wir die Ampel dem System; kommt das Fenster zurück,
+    /// muss unsere Regel wieder greifen. Ohne das bliebe sie nach dem
+    /// Verlassen des Vollbilds stehen, obwohl die Steuerung längst weg ist.
+    private func vollbildBeobachten() {
+        vollbildwache.forEach(NotificationCenter.default.removeObserver)
+        vollbildwache.removeAll()
+        guard let fenster else { return }
+        for name: Notification.Name in [NSWindow.didEnterFullScreenNotification,
+                                        NSWindow.didExitFullScreenNotification] {
+            vollbildwache.append(NotificationCenter.default.addObserver(
+                forName: name, object: fenster, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.ampelNachziehen() }
+                })
+        }
     }
     @ObservationIgnored private var vorher: NSRect?
     private(set) var istKlein = false
@@ -671,8 +701,18 @@ final class Fensterhalter {
 
     /// **Ein Ausdruck, nicht zwei Schalter.**
     ///
-    /// Die Ampel verschwindet **nur** im kleinen Fenster — dort gehört sie
-    /// nicht hin.
+    /// Ob im Player gerade die Steuerung steht. Solange sie da ist, steht
+    /// auch die Ampel; geht sie, geht die Ampel mit.
+    private(set) var steuerungDa = true
+
+    /// Die Ampel verschwindet im kleinen Fenster — dort gehört sie nicht hin —
+    /// **und sie geht im Player mit der Steuerung.**
+    ///
+    /// **Im Vollbild fassen wir sie nicht an.** Dort blendet macOS die ganze
+    /// Titelleiste samt Ampel von sich aus aus und schiebt sie herunter,
+    /// sobald der Zeiger an den oberen Rand geht — so kennt man es vom Mac,
+    /// und so soll es bleiben. Griffen wir zusätzlich in die Deckkraft ein,
+    /// bliebe die Leiste beim Herunterschieben leer.
     ///
     /// Im Player stand sie früher ebenfalls nicht, mit der Begründung, sie
     /// stünde dann neben dem Winkel, der zurücklegt: zwei Schließer mit
@@ -684,13 +724,37 @@ final class Fensterhalter {
     /// Der Winkel bleibt daneben stehen und rückt dafür nach rechts aus: er
     /// schliesst den **Player**, die Ampel das **Fenster**. Zwei Handlungen,
     /// zwei Orte.
-    private var ampelSichtbar: Bool { !istKlein }
+    private var ampelSichtbar: Bool {
+        if istVollbild { return true }
+        return !istKlein && (!imPlayer || steuerungDa)
+    }
 
-    private func ampelNachziehen() {
+    private func ampelNachziehen(weich: Bool = false) {
         guard let fenster else { return }
         for knopf in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            fenster.standardWindowButton(knopf)?.isHidden = !ampelSichtbar
+            guard let ansicht = fenster.standardWindowButton(knopf) else { continue }
+            // **Ausblenden, nicht verstecken.** `isHidden` nimmt sie
+            // schlagartig weg; die Steuerung daneben blendet über 180 ms.
+            // Zwei verschiedene Geschwindigkeiten an derselben Ecke sieht
+            // man sofort.
+            ansicht.isHidden = false
+            if weich {
+                NSAnimationContext.runAnimationGroup { lauf in
+                    lauf.duration = 0.18
+                    lauf.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    ansicht.animator().alphaValue = ampelSichtbar ? 1 : 0
+                }
+            } else {
+                ansicht.alphaValue = ampelSichtbar ? 1 : 0
+            }
         }
+    }
+
+    /// Der Player meldet, ob seine Steuerung gerade steht.
+    func setzeSteuerung(_ da: Bool) {
+        guard steuerungDa != da else { return }
+        steuerungDa = da
+        ampelNachziehen(weich: true)
     }
 
     /// Der Player meldet sich an und ab.
@@ -698,6 +762,12 @@ final class Fensterhalter {
         guard imPlayer != an else { return }
         imPlayer = an
         ampelNachziehen()
+        // **Und neu anstreichen.** AppKit stellt das Material der Titelleiste
+        // bei Gelegenheit wieder her; geht der Player auf, steht es dann als
+        // heller Streifen über dem Bild. Dieselbe Form wie beim Ampelfehler:
+        // die anwendende Stelle muss dort noch einmal laufen, wo sich die
+        // Vorbedingung ändert.
+        if let fenster { Fensteranstrich.anstreichen(fenster) }
     }
 
     func vollbildUmschalten() { fenster?.toggleFullScreen(nil) }
