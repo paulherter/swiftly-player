@@ -66,11 +66,12 @@ struct FilmView: View {
 
     @State private var extras: [Item] = []
     @State private var aehnliche: [Item] = []
+    @State private var versatz: CGFloat = 0
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Detailkopf(model: model, titel: film)
+                Heldenkopf(model: model, titel: film)
 
                 VStack(alignment: .leading, spacing: 26) {
                     Beschreibung(text: film.overview)
@@ -89,7 +90,12 @@ struct FilmView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
-        .overlay(alignment: .topLeading) { Rueckpfeil(zurueck: zurueck) }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
+            versatz = neu
+        }
+        .overlay(alignment: .top) {
+            Detailkopf(titel: film.name, versatz: versatz, zurueck: zurueck)
+        }
         .task {
             async let a = model.extras(film)
             async let b = model.aehnliche(film)
@@ -111,47 +117,33 @@ struct Titelreihe: View {
                 Text(titel)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Stil.schrift)
-                ScrollView(.horizontal) {
-                    HStack(alignment: .top, spacing: Stil.kachelAbstand) {
-                        ForEach(eintraege, id: \.id) { eintrag in
-                            NavigationLink(value: eintrag) {
-                                Posterkachel(titel: eintrag.name,
-                                             zweitzeile: eintrag.productionYear.map { "\($0)" },
-                                             bild: model.imageURL(for: eintrag, hochkant: true))
-                            }
-                            .buttonStyle(.plain)
+                Blätterreihe {
+                    ForEach(eintraege, id: \.id) { eintrag in
+                        NavigationLink(value: eintrag) {
+                            Posterkachel(titel: eintrag.name,
+                                         zweitzeile: eintrag.productionYear.map { "\($0)" },
+                                         bild: model.imageURL(for: eintrag, hochkant: true))
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.vertical, 3)
                 }
-                .scrollIndicators(.never)
             }
         }
     }
 }
 
-/// Der Weg zurück: eigener Pfeil oben links **im Bild**, nicht in der
-/// Titelleiste (E9). Er hält Abstand zur Fensterampel, die links davon sitzt.
-struct Rueckpfeil: View {
-    let zurueck: () -> Void
-
-    var body: some View {
-        Aktionsknopf(symbol: "chevron.left", titel: "Zurück", auswahl: zurueck)
-            .background(Circle().fill(.black.opacity(0.35)))
-            .padding(.leading, 92)
-            .padding(.top, 12)
-    }
-}
 
 // MARK: - Der gemeinsame Kopf
 
-/// Heldenbild, Poster, Titel, Beleg, Hauptknopf, Aktionsreihe.
+/// Das Heldenbild mit allem darin: Poster, Titel, Beleg, Hauptknopf,
+/// Aktionsreihe. Nicht zu verwechseln mit `Detailkopf` — das ist die Leiste
+/// mit Pfeil und Titel, die beim Scrollen einblendet.
 ///
 /// Die Reihenfolge ist die der iPhone-Fassung: Beleg → Hauptknopf →
 /// Aktionsreihe. Was sich ändert, ist die Anordnung, nicht die Folge — im
 /// Fenster steht das Poster **neben** dem Titel statt darüber, weil eine 1400
 /// Punkt breite Spalte mit einer Zeile Text darin unlesbar wäre.
-struct Detailkopf: View {
+struct Heldenkopf: View {
     let model: AppModel
     let titel: Item
 
@@ -252,8 +244,8 @@ struct Detailkopf: View {
                 Hauptknopf(beschriftung: hauptknopfText, kuerzel: "⏎") {
                     starten()
                 }
-                Aktionsknopf(symbol: merkliste ? "checkmark" : "plus",
-                             titel: "Merkliste", an: merkliste) {
+                Detailaktion(symbol: merkliste ? "checkmark" : "plus",
+                             titel: "Merkliste", aktiv: merkliste) {
                     merkliste.toggle()
                     Task {
                         // Zurückdrehen, wenn der Server nein sagt — sonst
@@ -264,9 +256,9 @@ struct Detailkopf: View {
                         }
                     }
                 }
-                Aktionsknopf(symbol: "film", titel: "Trailer") { trailerStarten() }
-                Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
-                             titel: "Gesehen", an: gesehen) {
+                Detailaktion(symbol: "film", titel: "Trailer") { trailerStarten() }
+                Detailaktion(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
+                             titel: "Gesehen", aktiv: gesehen) {
                     gesehen.toggle()
                     Task {
                         if let grund = await model.setzeGesehen(titel, an: gesehen) {
@@ -275,7 +267,7 @@ struct Detailkopf: View {
                         }
                     }
                 }
-                Aktionsknopf(symbol: "ellipsis", titel: "Mehr", an: mehrOffen) {
+                Detailaktion(symbol: "ellipsis", titel: "Mehr", aktiv: mehrOffen) {
                     withAnimation(Stil.zeitSprung) { mehrOffen.toggle() }
                 }
                 if let meldung {
@@ -300,9 +292,14 @@ struct Detailkopf: View {
         steuerung.starte(spielbarerTitel ?? titel)
     }
 
-    /// „Fortsetzen", wenn schon etwas läuft — sonst „Abspielen".
+    /// „Fortsetzen ab 1:23 h", wenn schon etwas läuft — sonst „Abspielen".
+    /// Der Wortlaut steht so in der iPhone-Fassung; bei mir hieß es nur
+    /// „Fortsetzen", ohne die Stelle.
     private var hauptknopfText: LocalizedStringKey {
-        (spielbarerTitel ?? titel).fortsetzenAb != nil ? "Fortsetzen" : "Abspielen"
+        if let ab = (spielbarerTitel ?? titel).fortsetzenAb {
+            return "Fortsetzen ab \(zeitText(ab))"
+        }
+        return "Abspielen"
     }
 
 
@@ -387,16 +384,12 @@ struct Besetzungsreihe: View {
                 Text("Besetzung")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Stil.schrift)
-                ScrollView(.horizontal) {
-                    HStack(alignment: .top, spacing: 18) {
-                        ForEach(leute, id: \.id) { person in
-                            Kopfbild(name: person.name, rolle: person.role,
-                                     bild: model.personBild(person))
-                        }
+                Blätterreihe(breiteJeStueck: 84 + 18) {
+                    ForEach(leute, id: \.id) { person in
+                        Kopfbild(name: person.name, rolle: person.role,
+                                 bild: model.personBild(person))
                     }
-                    .padding(.vertical, 2)
                 }
-                .scrollIndicators(.never)
             }
         }
     }
@@ -429,10 +422,20 @@ struct Bildhintergrund: View {
                            startPoint: .top, endPoint: .bottom)
                 .frame(height: 110)
         }
+        // **Der Auslauf muss tragen, worauf Text steht.** Auf dem iPhone ist
+        // das Heldenbild 300 hoch und trägt nur Titel und Nebenzeile; hier
+        // sind es 420 mit Poster, Titel, Beleg, Hauptknopf und Aktionsreihe.
+        // Ein 130 Punkt hoher Auslauf reichte deshalb nicht — die Buchstaben
+        // standen auf hellem Bild. Stützpunkte wie `Heldauslauf`, nur über
+        // die untere Hälfte statt über 130 Punkt.
         .overlay(alignment: .bottom) {
-            LinearGradient(colors: [.clear, Stil.grund],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: 130)
+            LinearGradient(stops: [
+                .init(color: Stil.grund.opacity(0),    location: 0),
+                .init(color: Stil.grund.opacity(0.55), location: 0.45),
+                .init(color: Stil.grund,               location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+            .frame(height: Stil.heldHoehe * 0.62)
+            .allowsHitTesting(false)
         }
     }
 }

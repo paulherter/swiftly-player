@@ -24,6 +24,7 @@ struct SerienView: View {
     @State private var aehnliche: [Item] = []
     @State private var staffelOffen = false
     @State private var laedt = true
+    @State private var versatz: CGFloat = 0
 
     enum Reiter: String, CaseIterable {
         case folgen, besetzung, aehnliches
@@ -40,7 +41,7 @@ struct SerienView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Detailkopf(model: model, titel: serie)
+                Heldenkopf(model: model, titel: serie)
 
                 Beschreibung(text: serie.overview)
                     .padding(.horizontal, Stil.randAbstand)
@@ -56,7 +57,12 @@ struct SerienView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
-        .overlay(alignment: .topLeading) { Rueckpfeil(zurueck: zurueck) }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
+            versatz = neu
+        }
+        .overlay(alignment: .top) {
+            Detailkopf(titel: serie.name, versatz: versatz, zurueck: zurueck)
+        }
         .task { await staffelnLaden() }
         .task(id: gewaehlt?.id) { await folgenLaden() }
     }
@@ -313,14 +319,22 @@ struct Folgenzeile: View {
                 }
             }
 
-            // Die Handlungen der Wischzeile — hier beim Schweben.
-            HStack(spacing: 6) {
+            // **Der Haken steht immer, wenn die Folge gesehen ist** — auf
+            // dem iPhone genauso. Vorher erschien er erst beim Schweben, und
+            // damit war beim Überfliegen der Liste nicht zu erkennen, wie
+            // weit man ist. Zum *Ändern* braucht es den Zeiger, zum *Sehen*
+            // nicht.
+            ZStack {
                 if schwebt {
                     Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
                                  titel: "Gesehen", an: gesehen) {
                         gesehen.toggle()
                         Task { _ = await model.setzeGesehen(folge, an: gesehen) }
                     }
+                } else if gesehen {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Stil.schriftSehrLeise)
                 }
             }
             .frame(width: Stil.knopfRund, alignment: .trailing)

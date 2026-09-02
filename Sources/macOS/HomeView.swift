@@ -113,19 +113,13 @@ struct Reihe<Inhalt: View>: View {
             // Der geteilte `Reihentitel` setzt keinen Rand — `randAbstand`
             // gibt es auf tvOS nicht, also gehört er zum Aufrufer. Auch die
             // Breite: ohne sie rutscht der Titel in die Mitte.
+            // Der geteilte `Reihentitel` setzt keinen Rand — `randAbstand`
+            // gibt es auf tvOS nicht, also gehört er zum Aufrufer. Auch die
+            // Breite: ohne sie rutscht der Titel in die Mitte.
             Reihentitel(text: titel)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Stil.randAbstand)
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: Stil.kachelAbstand) {
-                    inhalt
-                }
-                .padding(.horizontal, Stil.randAbstand)
-                // Damit der Schwebe-Versatz von 3 Punkten oben nicht
-                // abgeschnitten wird.
-                .padding(.vertical, 4)
-            }
-            .scrollIndicators(.never)
+            Blätterreihe(breiteJeStueck: Stil.querBreite + Stil.kachelAbstand) { inhalt }
         }
     }
 }

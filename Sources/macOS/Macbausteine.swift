@@ -443,3 +443,191 @@ struct Hinweisstreifen: View {
             .overlay(Capsule().strokeBorder(Stil.rand, lineWidth: 1))
     }
 }
+
+// MARK: - Detailseite
+
+/// Ein Knopf der Aktionsreihe: Kreis mit Symbol, **Beschriftung darunter**.
+///
+/// Anatomie wörtlich aus `Aktionsknopf` in `Sources/Shared/Stil.swift`:
+/// Kreis 44, Symbol 18 medium, gefüllt mit Weiß 9 %, aktiv im Akzent mit
+/// dunklem Symbol; darunter der Name in 11 auf 75 %. Breite 68.
+///
+/// Mein erster Mac-Knopf trug nur ein Symbol in einem Umriss und hieß für
+/// niemanden etwas — die Beschriftung stand allein für VoiceOver da.
+struct Detailaktion: View {
+    let symbol: String
+    let titel: LocalizedStringKey
+    var aktiv = false
+    let auswahl: () -> Void
+
+    @State private var schwebt = false
+
+    var body: some View {
+        Button(action: auswahl) {
+            VStack(spacing: 7) {
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(aktiv ? Stil.grund : Stil.schrift)
+                    .frame(width: 44, height: 44)
+                    .background(aktiv ? Stil.akzent
+                                      : Stil.schrift.opacity(schwebt ? 0.16 : 0.09),
+                                in: Circle())
+                Text(titel)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Stil.schrift.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .frame(width: 68)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
+        .accessibilityLabel(Text(titel))
+        .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// Der Kopf einer Detailseite: Pfeil links, Titel daneben.
+///
+/// **Kein Umriss, kein Kreis** — ein blanker Winkel in 20 semibold auf 40 × 40,
+/// wie `Detailkopf` in `Sources/Shared/Stil.swift`. Der Titel blendet erst
+/// ein, wenn weit genug gescrollt ist; dahinter liegt dann eine Glasleiste,
+/// damit die Buchstaben nicht im Bild verschwimmen.
+struct Detailkopf: View {
+    let titel: String
+    /// Wie weit gescrollt wurde.
+    let versatz: CGFloat
+    var ab: CGFloat = Stil.heldHoehe - 150
+    let zurueck: () -> Void
+
+    private var staerke: Double {
+        guard ab > 0 else { return 1 }
+        return Double(min(max((versatz - ab) / 70, 0), 1))
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            // Abstand zur Fensterampel: sie sitzt links oben **im** Fenster,
+            // seit der Titelbalken durchsichtig ist.
+            Color.clear.frame(width: 62, height: 1)
+
+            Button(action: zurueck) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Stil.schrift)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Zurück"))
+
+            Text(verbatim: titel)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Stil.schrift)
+                .lineLimit(1)
+                .opacity(staerke)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.trailing, Stil.randAbstand)
+        .frame(height: Stil.titelHoehe)
+        .background {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(staerke)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Stil.linie).frame(height: 1).opacity(staerke)
+                }
+                .ignoresSafeArea()
+        }
+    }
+}
+
+/// Eine waagerechte Reihe mit Pfeilen zum Durchblättern.
+///
+/// **Nur auf dem Mac.** Auf iPhone und Fernseher wischt oder drückt man; hier
+/// gibt es Zeiger und womöglich kein Trackpad, und dann ist eine waagerechte
+/// Reihe ohne Pfeile nicht erreichbar. Der Grund ist die Eingabeart — genau
+/// die Sorte Abweichung, die Abschnitt F erlaubt.
+///
+/// Die Pfeile erscheinen beim Schweben und nur dort, wo es etwas zu holen
+/// gibt: am linken Rand keiner nach links, am rechten keiner nach rechts.
+struct Blätterreihe<Inhalt: View>: View {
+    var schrittweite: CGFloat = 3
+    var breiteJeStueck: CGFloat = Stil.kachelBreite + Stil.kachelAbstand
+    @ViewBuilder let inhalt: Inhalt
+
+    @State private var schwebt = false
+    @State private var versatz: CGFloat = 0
+    @State private var gesamt: CGFloat = 0
+    @State private var sichtbar: CGFloat = 0
+
+    private var kannLinks: Bool { versatz > 1 }
+    private var kannRechts: Bool { versatz + sichtbar < gesamt - 1 }
+
+    var body: some View {
+        ScrollViewReader { _ in
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: Stil.kachelAbstand) { inhalt }
+                    .padding(.horizontal, Stil.randAbstand)
+                    // Damit die Kacheln beim Schweben oben nicht abgeschnitten
+                    // werden, wenn sie sich vergrößern.
+                    .padding(.vertical, 4)
+                    .background {
+                        GeometryReader { raum in
+                            Color.clear.onAppear { gesamt = raum.size.width }
+                                .onChange(of: raum.size.width) { _, neu in gesamt = neu }
+                        }
+                    }
+            }
+            .scrollIndicators(.never)
+            .scrollPosition($stelle, anchor: .leading)
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, neu in
+                versatz = neu
+            }
+            .background {
+                GeometryReader { raum in
+                    Color.clear.onAppear { sichtbar = raum.size.width }
+                        .onChange(of: raum.size.width) { _, neu in sichtbar = neu }
+                }
+            }
+        }
+        .overlay(alignment: .leading) {
+            if schwebt, kannLinks { pfeil("chevron.left", "Zurückblättern") { blättern(-1) } }
+        }
+        .overlay(alignment: .trailing) {
+            if schwebt, kannRechts { pfeil("chevron.right", "Weiterblättern") { blättern(1) } }
+        }
+        .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
+    }
+
+    @State private var stelle: ScrollPosition = .init(idType: CGFloat.self)
+
+    private func blättern(_ richtung: CGFloat) {
+        let weite = breiteJeStueck * schrittweite
+        let ziel = max(0, min(gesamt - sichtbar, versatz + richtung * weite))
+        withAnimation(.easeInOut(duration: 0.28)) {
+            stelle.scrollTo(x: ziel)
+        }
+    }
+
+    private func pfeil(_ symbol: String, _ name: LocalizedStringKey,
+                       _ auswahl: @escaping () -> Void) -> some View {
+        Button(action: auswahl) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Stil.schrift)
+                .frame(width: 34, height: 34)
+                .background(Stil.grund.opacity(0.72), in: Circle())
+                .overlay(Circle().strokeBorder(Stil.rand, lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(name))
+        .padding(.horizontal, 6)
+        .transition(.opacity)
+    }
+}
