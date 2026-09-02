@@ -1,41 +1,52 @@
-From 08cfdb68727ee7ad4ce09b7d2a1acefdf75350eb Mon Sep 17 00:00:00 2001
+From 2118ca864fc94f460868eaf18b8dbc40a877cc3f Mon Sep 17 00:00:00 2001
 From: Swiftly <accounts@paulherter.de>
 Date: Wed, 2 Sep 2026 03:33:29 +0200
 Subject: [PATCH] mkv: allow index_range() without fastseek and never claim an
  empty cue index
 
-Two changes. They only work together -- applying either one alone
-changes nothing observable, because each blocks the other's effect.
-Anyone testing them separately will conclude the diagnosis is wrong.
-That happened here before both were in place.
+Two independent changes. (2) is the one measured to fix the symptom;
+(1) is a correctness fix that did not fire on the file we measured.
+Keep them apart when reasoning about either.
 
-Symptom: a Matroska served over HTTP whose Cues cannot be parsed cannot
-be seeked forward at all. Every seek falls back to the first cluster
-already read -- the start of the file -- and the demuxer then reads
-forward to the target. Measured on a 718 MB HEVC file: 30 to 90 seconds
-for one forward seek, and the next seek starts over. VLC 3.0.x plays the
-same file from the same HTTP source and seeks instantly.
+Symptom: a Matroska served over HTTP whose Cues cannot be fully parsed
+cannot be seeked forward at all. Every seek falls back to the first
+cluster already read -- the start of the file -- and the demuxer then
+reads forward to the target. Measured on a 718 MB HEVC file
+(Muxing Application=Lavf58.29.100, Writing Application=HandBrake 1.3.2):
+30 to 90 seconds for one forward seek, and the next seek starts over.
+VLC 3.0.x plays the same file from the same HTTP source and seeks
+instantly.
 
 1) matroska_segment.cpp: LoadCues() set b_cues = true unconditionally,
    even when the loop added no seekpoint at all. That happens whenever
-   the EbmlParser bails out inside the Cues element. On the file above
-   the Cues start with an EBMLCrc32; the parser logs
-   " * Unknown (EBMLCrc32)", then "m_el[mi_level] == NULL", and LoadCues
-   still reported success. Every later check that asks !b_cues then
-   believes an index exists. An empty index is not an index.
+   the EbmlParser bails out inside the Cues element before adding
+   anything. Every later check that asks !b_cues then believes an index
+   exists. An empty index is not an index.
+
+   Note: on the file above this branch does NOT fire. Its Cues start
+   with an EBMLCrc32, the parser logs " * Unknown (EBMLCrc32)" and
+   "m_el[mi_level] == NULL" -- but enough cue points are loaded before
+   that for the index to be non-empty. The change is defensible on its
+   own terms; it is not what fixes the symptom, and it is unproven.
 
 2) matroska_segment_seeker.cpp: get_seekpoints() gated index_range() on
    ms.sys.b_fastseekable, which is never true over HTTP -- the prefetch
-   stream filter does not forward STREAM_CAN_FASTSEEK. With (1) still in
-   place the !ms.b_cues arm of the condition is false as well, so there
-   is no path to building seekpoints for a forward seek. VLC 3.0.x calls
-   index_range() here without the fastseekable condition. The scan stays
-   bounded by Range(start.fpos, end.fpos), i.e. between two cluster
-   positions already known from the SeekHead -- that is what made it safe
-   there and what keeps it safe here.
+   stream filter does not forward STREAM_CAN_FASTSEEK. With a partial
+   cue index the seekpoint pair around the target has a finite end, so
+   the remaining condition passes and index_range() refines the range.
+   VLC 3.0.x calls it here without the fastseekable condition. The scan
+   stays bounded by Range(start.fpos, end.fpos), i.e. between two
+   cluster positions already known -- that is what made it safe there
+   and what keeps it safe here.
 
-Measured after both: a seek to 1027 s issues a range request at byte
-300335029, 38 ms after the seek command. Before: byte 3154.
+Measured with both applied, on tvOS and iOS:
+
+    seek to 1027 s  ->  byte 300335029   (38 ms after the command)
+    seek to 1097 s  ->  byte 326557072   45.4 %   138 ms
+    seek to 1485 s  ->  byte 445771192   62.0 %   146 ms
+    seek to  634 s  ->  byte 177497688   24.7 %   104 ms
+
+Before: byte 3154 in every case.
 ---
  modules/demux/mkv/matroska_segment.cpp        | 19 ++++++++++++++++++-
  modules/demux/mkv/matroska_segment_seeker.cpp | 16 ++++++++++++++--
