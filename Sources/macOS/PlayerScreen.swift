@@ -907,12 +907,23 @@ final class Fensterhalter {
         guard imPlayer != an else { return }
         imPlayer = an
         ampelNachziehen()
-        // **Und neu anstreichen.** AppKit stellt das Material der Titelleiste
-        // bei Gelegenheit wieder her; geht der Player auf, steht es dann als
-        // heller Streifen über dem Bild. Dieselbe Form wie beim Ampelfehler:
-        // die anwendende Stelle muss dort noch einmal laufen, wo sich die
-        // Vorbedingung ändert.
-        if let fenster { Fensteranstrich.anstreichen(fenster) }
+        // **Nur beim Aufgehen anstreichen, nicht beim Schliessen.**
+        //
+        // AppKit stellt das Material der Titelleiste bei Gelegenheit wieder
+        // her; geht der Player auf, steht es dann als heller Streifen über
+        // dem Bild. Deshalb muss der Anstrich dort noch einmal laufen.
+        //
+        // Beim Schliessen darf er es nicht: `aufraeumen()` hängt an
+        // `.onDisappear`, und das feuert, **wenn die Bewegung anfängt** —
+        // nicht, wenn sie durch ist. Der Anstrich geht durch den ganzen
+        // Ansichtsbaum der Leiste, setzt einen neuen Stilrahmen und blendet
+        // Materialflächen aus; das lag damit auf dem Hauptlauf, während die
+        // Seite nach unten fuhr. Dieselbe Sorte Fehler wie `stop()` an
+        // derselben Stelle, nur zwei Stunden später eingebaut.
+        //
+        // Nötig ist es beim Schliessen ohnehin nicht: der Anstrich hält, er
+        // wurde beim Aufgehen gesetzt.
+        if an, let fenster { Fensteranstrich.anstreichen(fenster) }
     }
 
     func vollbildUmschalten() { fenster?.toggleFullScreen(nil) }
