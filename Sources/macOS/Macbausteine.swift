@@ -558,6 +558,13 @@ struct Blätterreihe<Inhalt: View>: View {
     var rand: CGFloat = Stil.randAbstand
     var schrittweite: CGFloat = 3
     var breiteJeStueck: CGFloat = Stil.kachelBreite + Stil.kachelAbstand
+    /// Wie hoch das **Bild** einer Kachel ist — nicht die ganze Kachel.
+    ///
+    /// Die Blätterpfeile gehören optisch in die Mitte des Bildes. Mittig über
+    /// der ganzen Reihe sitzen sie zu tief, weil unter jedem Bild noch zwei
+    /// Textzeilen stehen; bei einem Poster sind das rund 45 Punkt Versatz,
+    /// und die sieht man.
+    var bildHoehe: CGFloat = Stil.kachelHoehe
     @ViewBuilder let inhalt: Inhalt
 
     @State private var schwebt = false
@@ -606,11 +613,19 @@ struct Blätterreihe<Inhalt: View>: View {
             gesamt = neu.gesamt
             sichtbar = neu.sichtbar
         }
-        .overlay(alignment: .leading) {
-            if schwebt, kannLinks { pfeil("chevron.left", "Zurückblättern") { blättern(-1) } }
+        // Oben ausgerichtet und von Hand gesetzt: die 4 Punkt sind der
+        // senkrechte Rand der Reihe, 17 die halbe Knopfhöhe.
+        .overlay(alignment: .topLeading) {
+            if schwebt, kannLinks {
+                pfeil("chevron.left", "Zurückblättern") { blättern(-1) }
+                    .offset(y: 4 + bildHoehe / 2 - 17)
+            }
         }
-        .overlay(alignment: .trailing) {
-            if schwebt, kannRechts { pfeil("chevron.right", "Weiterblättern") { blättern(1) } }
+        .overlay(alignment: .topTrailing) {
+            if schwebt, kannRechts {
+                pfeil("chevron.right", "Weiterblättern") { blättern(1) }
+                    .offset(y: 4 + bildHoehe / 2 - 17)
+            }
         }
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)

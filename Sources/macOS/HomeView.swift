@@ -29,7 +29,7 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
 
                 if !weiter.isEmpty {
-                    Reihe(titel: "Weiterschauen") {
+                    Reihe(titel: "Weiterschauen", quer: true) {
                         ForEach(weiter, id: \.id) { titel in
                             Querkachel(titel: kopf(titel), zweitzeile: titel.kontextzeile,
                                        bild: model.querbildURL(for: titel),
@@ -131,6 +131,8 @@ struct HomeView: View {
 /// Eine waagerechte Reihe mit Überschrift.
 struct Reihe<Inhalt: View>: View {
     let titel: LocalizedStringKey
+    /// Waagerechte Kacheln — nur „Weiterschauen".
+    var quer = false
     @ViewBuilder let inhalt: Inhalt
 
     var body: some View {
@@ -144,7 +146,12 @@ struct Reihe<Inhalt: View>: View {
             Reihentitel(text: titel)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Stil.randAbstand)
-            Blätterreihe(breiteJeStueck: Stil.querBreite + Stil.kachelAbstand) { inhalt }
+            // **Jede Reihe mit ihrem eigenen Maß.** Vorher rechnete auch die
+            // Posterreihe mit der Querbreite — dann blättert sie zu weit —
+            // und die Pfeile standen auf der Höhe einer Querkachel.
+            Blätterreihe(breiteJeStueck: (quer ? Stil.querBreite : Stil.kachelBreite)
+                            + Stil.kachelAbstand,
+                         bildHoehe: quer ? Stil.querHoehe : Stil.kachelHoehe) { inhalt }
         }
     }
 }

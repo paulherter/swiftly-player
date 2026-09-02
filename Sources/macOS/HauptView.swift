@@ -47,6 +47,25 @@ struct HauptView: View {
             Seitenleiste(model: model, bereich: $bereich) {
                 navigator.oeffne(.profil, in: bereich)
             }
+            // **Der Sicherheitsrand der Titelleiste gilt links genauso wenig
+            // wie rechts.** Vorher hielt nur der Inhaltsbereich ihn nicht
+            // ein; die Leiste stand deshalb rund dreissig Punkt tiefer als
+            // das Fenster — samt ihrer Fläche und ihrer Kante. Dazu kam, dass
+            // sie oben nochmal `ampelHoehe` freihält: der Abstand lag also
+            // doppelt an.
+            .ignoresSafeArea(.container, edges: .vertical)
+
+            // **Die Kante als eigene Spalte, nicht als Auflage.**
+            //
+            // Als `.overlay` auf der Leiste hing sie an deren Rahmen und
+            // hörte dort auf, wo der Rahmen aufhörte — nicht am Fensterrand.
+            // Hier ist sie eine Spalte für sich, volle Höhe, ohne
+            // Sicherheitsrand.
+            Rectangle()
+                .fill(Stil.linie)
+                .frame(width: 1)
+                .frame(maxHeight: .infinity)
+                .ignoresSafeArea(.container, edges: .vertical)
 
             ZStack {
                 Stil.grund
@@ -89,19 +108,30 @@ struct HauptView: View {
         // von selbst öffnen und wieder schließen, damit die Bewegung ohne
         // Temporär.
         .task {
-            guard ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"] == "1" else { return }
+            guard ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"] != nil else { return }
             try? await Task.sleep(for: .seconds(6))
             // Eine echte Serie, nicht das Profil — gemessen wird der Fall, der
             // klemmt. **Denselben Weg nehmen wie ** Auf der Startseite sind
             // die Kacheln unter „Weiterschauen" und „Nächste Folge" Folgen,
             // keine Serien — und die laufen über `StaffelZiel`. Meine
             // bisherige Fahrt öffnete eine Serie aus der Bibliothek und maß
-            // damit den falschen Fall.
-            async let a = model.naechsteFolge()
-            async let b = model.weiterschauen()
-            let (naechste, weiter) = await (a, b)
-            guard let ziel = ((naechste ?? []).first ?? (weiter ?? []).first) else {
-                Protokoll.schreib("Messfahrt: nichts auf der Startseite")
+            // damit den falschen Fall. Welcher Weg gemessen wird, sagt der
+            // Wert: `folge` nimmt den Weg der Startseite, alles andere eine
+            // kalte Serie aus der Bibliothek — dort greift kein Vorholen.
+            let weg = ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"]
+            var ziel: Item?
+            if weg == "folge" {
+                async let a = model.naechsteFolge()
+                async let b = model.weiterschauen()
+                let (naechste, weiter) = await (a, b)
+                ziel = (naechste ?? []).first ?? (weiter ?? []).first
+            } else {
+                let regal = Bibliotheksmodell()
+                await regal.laden(model, art: "tvshows")
+                ziel = regal.items.first
+            }
+            guard let ziel else {
+                Protokoll.schreib("Messfahrt: nichts gefunden")
                 return
             }
             Protokoll.schreib("Messfahrt: öffne \(ziel.name) (\(ziel.type ?? "?"))")
@@ -160,14 +190,27 @@ struct HauptView: View {
 
             ZStack {
                 // Die Wurzel des Bereichs liegt immer unten.
+                // **Mitgang und Schleier gehören *unter* die Kennung.**
+                //
+                // Standen sie darüber, galten sie für die ausscheidende
+                // Wurzel genauso wie für die neue — und beide lasen `tiefe`
+                // des *neuen* Bereichs. Wer in „Filme" eine Seite offen ließ
+                // und auf „Start" wechselte, sah deshalb, wie die alte Wurzel
+                // ihren Mitgang zurückfuhr und der Schleier ausblendete: eine
+                // Bewegung mit dunklem Verlauf, die dort nichts zu suchen
+                // hat. Bei „Filme" und „Serien" fiel es nicht auf, weil dort
+                // eine Seite obendrauf lag, die es verdeckte.
+                //
+                // Unter der Kennung gehören sie zur jeweiligen Wurzel. Die
+                // ausscheidende behält ihren Stand und blendet einfach aus.
                 wurzel
-                    .id(bereich)
-                    .transition(.opacity)
                     .offset(x: tiefe > 0 ? mitgang : 0)
                     .overlay {
                         Color.black.opacity(tiefe > 0 ? 0.28 : 0)
                             .allowsHitTesting(false)
                     }
+                    .id(bereich)
+                    .transition(.opacity)
                     // **Die Wurzel liegt ausdrücklich unten.** Ohne feste
                     // Ebenen fuhr die Seite unter den Kacheln der Startseite
                     // herein, und das sah aus wie Durchsichtigkeit.
@@ -333,10 +376,8 @@ struct Seitenleiste: View {
                 .padding(12)
         }
         .frame(width: Stil.seitenleisteBreite)
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(Stil.flaeche)
-        .overlay(alignment: .trailing) {
-            Rectangle().fill(Stil.linie).frame(width: 1)
-        }
         .task { if model.views.isEmpty { await model.loadViews() } }
     }
 }

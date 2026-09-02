@@ -490,7 +490,7 @@ struct Besetzungsreihe: View {
                 Text("Besetzung")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Stil.schrift)
-                Blätterreihe(rand: 0, breiteJeStueck: 84 + 18) {
+                Blätterreihe(rand: 0, breiteJeStueck: 84 + 18, bildHoehe: 84) {
                     ForEach(leute, id: \.id) { person in
                         Kopfbild(name: person.name, rolle: person.role,
                                  bild: model.personBild(person))
