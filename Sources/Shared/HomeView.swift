@@ -7,6 +7,7 @@ struct HomeView: View {
 
     @Environment(\.breit) private var breit
     @Environment(\.fensterknoepfe) private var fensterknoepfe
+    @Environment(\.scenePhase) private var lebenslage
 
     /// Laden und Reihenfolge stehen in `Startseitenmodell` — geteilt mit
     /// der tvOS-Fassung.
@@ -29,11 +30,30 @@ struct HomeView: View {
                 nichtsDa
             }
         }
-        .fullScreenCover(item: $abspielen) { wunsch in
+        // **Nach dem Zusehen neu holen, ohne Frist.**
+        //
+        // Wer aus dem Player zurückkommt, hat die Stelle gerade verschoben —
+        // „Weiterschauen" ist damit sicher veraltet, und die Folge ist unter
+        // Umständen zu Ende und gehört gar nicht mehr in die Reihe.
+        .fullScreenCover(item: $abspielen, onDismiss: { Task { await laden() } }) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
         .task { if !stand.geladen { await laden() } }
+        // **Beim Zurückkommen neu holen, mit Frist.**
+        //
+        // Hier lag der Fehler: die Seite lud genau einmal je App-Start, weil
+        // `geladen` nie zurückgenommen wurde. Eine auf dem Fernseher zu Ende
+        // gesehene Folge stand darum weiter mit Balken in der Reihe, während
+        // der Player beim Antippen die Stelle frisch nachholte und richtig
+        // bei null anfing. Die Kachel log, nicht der Player.
+        //
+        // Die Frist steht in `Auffrischung` und nicht hier: tvOS und macOS
+        // zeigen dieselben Reihen und brauchen dieselbe Antwort.
+        .onChange(of: lebenslage) { _, neu in
+            guard neu == .active, stand.brauchtAuffrischung else { return }
+            Task { await laden() }
+        }
     }
 
     /// Wortmarke links, Profilbild rechts.
