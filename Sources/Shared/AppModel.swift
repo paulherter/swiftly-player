@@ -569,6 +569,8 @@ final class AppModel {
             await alter?.abmelden()
         }
         Keychain.delete(key: Self.sessionKey)
+        // Sonst stehen im Top Shelf weiter die Titel des vorigen Kontos.
+        Regal.leeren()
         session = nil
         client = nil
         views = []

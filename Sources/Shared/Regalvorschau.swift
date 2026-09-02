@@ -53,6 +53,17 @@ enum Regal {
         try? daten.write(to: datei, options: .atomic)
     }
 
+    /// **Beim Abmelden zu leeren ist Pflicht, nicht Kosmetik.**
+    ///
+    /// Die Datei liegt in der geteilten Gruppe und ueberlebt das Abmelden.
+    /// Ohne dieses Leeren stehen im Top Shelf weiter die Filme und Serien des
+    /// vorigen Kontos — sichtbar auf dem Startbildschirm des Fernsehers, fuer
+    /// jeden im Raum, auch nachdem sich jemand ausdruecklich abgemeldet hat.
+    static func leeren() {
+        guard let datei else { return }
+        try? FileManager.default.removeItem(at: datei)
+    }
+
     static func lesen() -> Regalvorschau? {
         guard let datei, let daten = try? Data(contentsOf: datei) else { return nil }
         return try? JSONDecoder().decode(Regalvorschau.self, from: daten)
