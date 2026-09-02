@@ -150,9 +150,16 @@ extension Stil {
     // Wartezeit nur verlängert.
 
     /// Das Alte geht. Nur blenden, nicht schrumpfen.
-    static let zeitBereichHinaus = Animation.easeIn(duration: 0.10)
+    ///
+    /// **Und es überlappt jetzt mit dem Kommenden.** Die Vorschrift trennt
+    /// beides sauber: erst 100 ms ganz hinaus, dann herein. Auf einem
+    /// Telefonbildschirm ist diese Lücke ein Wimpernschlag, in einem grossen
+    /// Fenster ist sie ein **leerer Bildschirm** — und das war vermutlich das
+    /// Harte daran, nicht die Stärke der Mittel. Jetzt gehen die beiden
+    /// ineinander über, und es ist nie nichts zu sehen.
+    static let zeitBereichHinaus = Animation.easeInOut(duration: 0.20)
     /// Das Neue kommt — erst danach, deshalb der Vorlauf.
-    static let zeitBereichHerein = Animation.easeOut(duration: 0.26).delay(0.10)
+    static let zeitBereichHerein = Animation.easeOut(duration: 0.26).delay(0.04)
 
     // **Und warum hier keine Skalierung mehr steht.**
     //
@@ -174,10 +181,10 @@ extension Stil {
     // Deshalb hier von Hand, mit drei Zahlen, die einzeln einstellbar sind.
 
     /// Wie weich das Neue anfängt. Das ist der Anteil, den man sehen soll.
-    static let bereichUnschaerfe: CGFloat = 5
-    /// Und wie wenig es dabei wächst — 0,2 %, an der Fensterkante gut ein
-    /// Punkt. Man merkt es, ohne es zu sehen; mehr war jedes Mal zu viel.
-    static let bereichKleiner: CGFloat = 0.998
+    static let bereichUnschaerfe: CGFloat = 3
+    /// Und wie wenig es dabei wächst — 0,1 %, an der Fensterkante noch ein
+    /// halber Punkt. Darunter wäre es keine Bewegung mehr, sondern nichts.
+    static let bereichKleiner: CGFloat = 0.999
 
     /// Überblenden beim Ersetzen. 180 ms ease-out — dieselbe Zeit, in der auf
     /// dem iPhone die Player-Steuerung erscheint.
