@@ -59,6 +59,18 @@ struct Fensteranstrich: NSViewRepresentable {
     /// einmal und `Fensterhalter` ruft sie mit.
     @MainActor
     static func anstreichen(_ fenster: NSWindow) {
+        // **Im Vollbild nichts anfassen.**
+        //
+        // Dort blendet macOS die Titelleiste selbst ein und aus, sobald der
+        // Zeiger an den oberen Rand geht. Greift man ihr während dieser
+        // Bewegung in die Ansichten — `isHidden` auf ihre Materialflächen, ein
+        // neuer Stilrahmen, gerät das ganze System für einen Moment ins
+        // Stocken.
+        //
+        // Im Vollbild gibt es auch nichts abzustellen: die Leiste ist dann
+        // ohnehin nicht da.
+        guard !fenster.styleMask.contains(.fullScreen) else { return }
+
         fenster.titlebarAppearsTransparent = true
         fenster.titleVisibility = .hidden
         fenster.backgroundColor = NSColor(Stil.grund)
