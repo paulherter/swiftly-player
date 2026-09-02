@@ -117,7 +117,20 @@ struct HauptView: View {
     /// Also: Seite anlegen, um eine volle Breite nach rechts versetzt, ein
     /// Bild warten, dann fahren. Beim Zurückgehen entfällt das Warten — dort
     /// steht längst alles.
-    @State private var gezeigteTiefe = 0
+    /// **Je Bereich getrennt.** Vorher stand hier eine einzige Zahl für alle
+    /// vier Bereiche. Wer in „Filme" eine Seite offen ließ und in der Leiste
+    /// auf „Start" wechselte, setzte sie damit von 1 auf 0 zurück — und weil
+    /// am Elternteil `.animation(zeitSeite, value: bereich)` hängt, lief
+    /// dieser Rücksprung als Bewegung ab: die Wurzel fuhr ihren Mitgang
+    /// zurück und der Schleier blendete aus. **Das war die komische
+    /// Einblendung mit dem dunklen Verlauf beim Leistenwechsel.**
+    ///
+    /// Der Stapel liegt im `Navigator` seit jeher je Bereich getrennt; diese
+    /// Zahl gehört daneben.
+    @State private var gezeigteTiefe: [Bereich: Int] = [:]
+
+    /// Wie viele Seiten im **aktuellen** Bereich gezeigt werden.
+    private var tiefe: Int { gezeigteTiefe[bereich] ?? 0 }
 
     /// Ob die Seite steht. Solange sie fährt, hält sich alles zurück, was
     /// ihren Aufbau ändern würde — siehe `DetailView`.
@@ -136,9 +149,9 @@ struct HauptView: View {
                 wurzel
                     .id(bereich)
                     .transition(.opacity)
-                    .offset(x: gezeigteTiefe > 0 ? mitgang : 0)
+                    .offset(x: tiefe > 0 ? mitgang : 0)
                     .overlay {
-                        Color.black.opacity(gezeigteTiefe > 0 ? 0.28 : 0)
+                        Color.black.opacity(tiefe > 0 ? 0.28 : 0)
                             .allowsHitTesting(false)
                     }
                     // **Die Wurzel liegt ausdrücklich unten.** Ohne feste
@@ -147,8 +160,8 @@ struct HauptView: View {
                     .zIndex(0)
 
                 ForEach(Array(navigator.seiten(bereich).enumerated()), id: \.element.id) { platz, ziel in
-                    let obenauf = platz == gezeigteTiefe - 1
-                    let gezeigt = platz < gezeigteTiefe
+                    let obenauf = platz == tiefe - 1
+                    let gezeigt = platz < tiefe
 
                     ZStack {
                         Stil.grund
@@ -189,10 +202,12 @@ struct HauptView: View {
                     // dagegen zugesichert nach dem Abschluss des laufenden
                     // Vorgangs. Kein Wecker, keine Millisekunden, kein Rennen.
                     .onAppear {
-                        guard platz >= gezeigteTiefe else { return }
+                        // Steht die Seite schon, ist das ein Rückkehrer aus
+                        // einem Leistenwechsel — der fährt nicht noch einmal.
+                        guard platz >= tiefe else { return }
                         DispatchQueue.main.async {
                             ruht = false
-                            withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe = platz + 1 }
+                            withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe[bereich] = platz + 1 }
                         }
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(520))
@@ -214,17 +229,14 @@ struct HauptView: View {
             .clipped()
         }
         .onChange(of: navigator.seiten(bereich).count, initial: true) { alt, neu in
-            guard neu != gezeigteTiefe else { return }
+            guard neu != tiefe else { return }
             if neu > alt {
                 // Tiefergehen macht die Seite selbst, siehe `onAppear` oben.
             } else {
                 // Zurück: `Navigator.zurueck` animiert das Entfernen bereits,
                 // der Mitgang muss im selben Zug zurück.
-                withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe = neu }
+                withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe[bereich] = neu }
             }
-        }
-        .onChange(of: bereich) { _, _ in
-            gezeigteTiefe = navigator.seiten(bereich).count
         }
     }
 

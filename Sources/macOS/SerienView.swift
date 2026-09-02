@@ -18,6 +18,7 @@ struct SerienView: View {
     let zurueck: () -> Void
     @Environment(Navigator.self) private var navigator
     @Environment(\.bereich) private var bereich
+    @Environment(\.seiteRuht) private var ruht
 
     @State private var reiter: Reiter = .folgen
     @State private var staffeln: [Item] = []
@@ -95,6 +96,24 @@ struct SerienView: View {
 
     @ViewBuilder
     private var abschnitt: some View {
+        // **Solange die Seite fährt, wird hier nichts umgebaut.**
+        //
+        // Der Abschnitt ändert beim Laden dreimal seine Gestalt: die
+        // Staffelpille kommt dazu, der Lader weicht der Liste, und die Liste
+        // hat eine andere Höhe. Auf der Filmseite steht darunter ein Raster,
+        // das nichts davon tut — deshalb lief sie sauber und diese nicht.
+        //
+        // Der Lader hat dieselbe feste Höhe wie das, was ihn ablöst, also
+        // wandert beim Freigeben auch nichts über dem Bildschirmrand.
+        if !ruht {
+            Lader().frame(height: 200)
+        } else {
+            abschnittsinhalt
+        }
+    }
+
+    @ViewBuilder
+    private var abschnittsinhalt: some View {
         switch reiter {
         case .folgen:
             VStack(alignment: .leading, spacing: 0) {
