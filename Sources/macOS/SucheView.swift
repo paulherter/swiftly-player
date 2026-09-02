@@ -6,6 +6,8 @@ import SwiftUI
 /// nur breiter.
 struct SucheView: View {
     let model: AppModel
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
 
     @State private var begriff = ""
     @State private var treffer: [Item] = []
@@ -34,7 +36,7 @@ struct SucheView: View {
                 if !treffer.isEmpty {
                     LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {
                         ForEach(treffer, id: \.id) { eintrag in
-                            NavigationLink(value: eintrag) {
+                            Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                                 Posterkachel(titel: eintrag.name,
                                              zweitzeile: eintrag.trefferauskunft,
                                              bild: model.imageURL(for: eintrag, hochkant: true))
@@ -49,10 +51,18 @@ struct SucheView: View {
                 }
             }
             .padding(.horizontal, Stil.randAbstand)
-            .padding(.top, Stil.titelHoehe)
+            .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
+        // aus über jede Scrollfläche — sie war nie in unserem Code, und
+        // deshalb habe ich zweimal an der falschen Stelle gesucht. Über dem
+        // Bild verlor sie sich, links auf blankem Grund stand sie als Balken.
+        //
+        // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
+        // abgestellt wie das, was man selbst hinschreibt.
+        .ohneKanteneffekt()
         .onAppear { imFeld = true }
         .task(id: begriff) {
             guard begriff.count > 1 else { treffer = []; gesucht = false; return }

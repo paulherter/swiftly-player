@@ -35,9 +35,21 @@ struct HauptView: View {
 
     @State private var bereich: Bereich = .start
     @State private var steuerung: Abspielsteuerung
-    /// Jeder Bereich hat seinen eigenen Stapel — wer zwischen Filmen und
-    /// Serien wechselt, findet zurück, wo er war.
-    @State private var stapel: [Bereich: NavigationPath] = [:]
+    @State private var navigator = Navigator()
+
+    /// **Die Stände der vier Bereiche liegen hier, nicht in den Ansichten.**
+    ///
+    /// Die Wurzel trägt `.id(bereich)` — beim Wechsel wird sie also
+    /// weggeworfen und neu gebaut. Lag ihr Stand in ihr, war er mit weg: die
+    /// Startseite stand eine Sekunde lang schwarz, die Regale zeigten wieder
+    /// ihren Ladebalken, obwohl längst alles geholt war.
+    @State private var startseite = Startseitenmodell()
+    @State private var filmregal = Bibliotheksmodell()
+    @State private var serienregal = Bibliotheksmodell()
+    /// Welche Bibliothek der jeweiligen Gattung gezeigt wird — ein Server
+    /// kann mehrere haben. Liegt aus demselben Grund hier wie die Regale.
+    @State private var filmbibliothek: Item?
+    @State private var serienbibliothek: Item?
 
     init(model: AppModel) {
         self.model = model
@@ -46,23 +58,73 @@ struct HauptView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Seitenleiste(model: model, bereich: $bereich) { schiebe(ProfilRoute()) }
+            Seitenleiste(model: model, bereich: $bereich) {
+                navigator.oeffne(.profil, in: bereich)
+            }
+            // **Der Sicherheitsrand der Titelleiste gilt links genauso wenig
+            // wie rechts.** Vorher hielt nur der Inhaltsbereich ihn nicht
+            // ein; die Leiste stand deshalb rund dreissig Punkt tiefer als
+            // das Fenster — samt ihrer Fläche und ihrer Kante. Dazu kam, dass
+            // sie oben nochmal `ampelHoehe` freihält: der Abstand lag also
+            // doppelt an.
+            .ignoresSafeArea(.container, edges: .vertical)
+
+            // **Die Kante als eigene Spalte, nicht als Auflage.**
+            //
+            // Als `.overlay` auf der Leiste hing sie an deren Rahmen und
+            // hörte dort auf, wo der Rahmen aufhörte — nicht am Fensterrand.
+            // Hier ist sie eine Spalte für sich, volle Höhe, ohne
+            // Sicherheitsrand.
+            Rectangle()
+                .fill(Stil.linie)
+                .frame(width: 1)
+                .frame(maxHeight: .infinity)
+                .ignoresSafeArea(.container, edges: .vertical)
 
             ZStack {
                 Stil.grund
                 inhalt
             }
+            // **Der Leistenwechsel wird nicht überblendet.**
+            //
+            // Hier stand `.animation(Stil.zeitSeite, value: bereich)`. Eine
+            // Anweisung mit `value:` gilt für **alles**, was sich in diesem
+            // Durchgang im Unterbau ändert — nicht nur für den Tausch der
+            // Wurzel. Beim Wechsel der Leiste ändert sich aber noch mehr:
+            // Seiten des alten Bereichs verschwinden, Versatz und Schleier
+            // fallen auf den Stand des neuen. All das wurde dadurch bewegt,
+            // und was man sah, war ein Seitenschub samt Schattenkante, wo
+            // nichts hätte fahren sollen.
+            //
+            // Auf dem Mac ist die Blende ohnehin fehl am Platz: eine
+            // Seitenleiste schaltet dort sofort um — Finder, Mail,
+            // Systemeinstellungen. Die Blende war aus der iPhone-Fassung
+            // mitgenommen, wo der Wechsel unten in der Leiste sitzt.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // **Der Sicherheitsrand der Titelleiste fällt hier weg, nicht auf
+            // jeder Seite einzeln.**
+            //
+            // Gemessen: die Scrollfläche saß 32 Punkt tief und trug oben
+            // einen Rand von 32 — das war die schwarze Leiste. Und sie kam
+            // nicht überall an: die Kulisse landete mal bei 0, mal bei 32,
+            // was Film- und Serienseite um genau diesen Betrag gegeneinander
+            // verschob. Ein Rand, der an mehreren Stellen halb entfernt wird,
+            // ist schlimmer als einer, der überall steht.
+            //
+            // Die Seiten setzen ihren oberen Abstand selbst — `inhaltOben`.
+            .ignoresSafeArea(.container, edges: .top)
         }
         .background(Stil.grund)
         .environment(steuerung)
+        .environment(navigator)
+        .environment(\.bereich, bereich)
         // Der Player nimmt das ganze Fenster ein, Seitenleiste eingeschlossen.
         .overlay {
             if let wunsch = steuerung.wunsch {
                 PlayerScreen(model: model, wunsch: wunsch) { steuerung.schliessen() }
-                    // Von unten herauf und wieder hinunter — wie auf dem
-                    // iPhone. Damit zeigt der Winkel oben links in die
-                    // Richtung, in die der Player wirklich verschwindet.
+                    // Aufsteigen — die dritte der drei Bewegungen. Von unten
+                    // herauf und wieder hinunter; deshalb zeigt der Winkel
+                    // oben links nach unten.
                     .transition(.move(edge: .bottom))
             }
         }
@@ -73,62 +135,217 @@ struct HauptView: View {
         }
     }
 
+    /// Wie viele Seiten **gezeigt** werden. Das ist bewusst nicht dasselbe
+    /// wie `navigator.seiten(bereich).count`: beim Tiefergehen hinkt der Wert
+    /// ein Einzelbild hinterher, und genau darin liegt der Trick.
+    ///
+    /// **Warum überhaupt.** Mit `.transition(.move)` legt SwiftUI die neue
+    /// Seite an und bewegt sie im selben Einzelbild. In dieses eine Bild
+    /// fällt dann der gesamte Aufbau der Detailseite — Kulisse, Kopf,
+    /// Besetzung, Ähnliches. Das Bild kommt zu spät, die Bewegung setzt mit
+    /// einem Sprung ein, und keine Kurve der Welt bügelt das aus. Ein
+    /// `UINavigationController` macht es seit jeher andersherum: die neue
+    /// Ansicht kommt in den Behälter, wird ausgelegt, und **erst danach**
+    /// startet der Animator.
+    ///
+    /// Also: Seite anlegen, um eine volle Breite nach rechts versetzt, ein
+    /// Bild warten, dann fahren. Beim Zurückgehen entfällt das Warten — dort
+    /// steht längst alles.
+    /// **Je Bereich getrennt.** Vorher stand hier eine einzige Zahl für alle
+    /// vier Bereiche. Wer in „Filme" eine Seite offen ließ und in der Leiste
+    /// auf „Start" wechselte, setzte sie damit von 1 auf 0 zurück — und weil
+    /// am Elternteil `.animation(zeitSeite, value: bereich)` hängt, lief
+    /// dieser Rücksprung als Bewegung ab: die Wurzel fuhr ihren Mitgang
+    /// zurück und der Schleier blendete aus. **Das war die komische
+    /// Einblendung mit dem dunklen Verlauf beim Leistenwechsel.**
+    ///
+    /// Der Stapel liegt im `Navigator` seit jeher je Bereich getrennt; diese
+    /// Zahl gehört daneben.
+    @State private var gezeigteTiefe: [Bereich: Int] = [:]
+
+    /// Wie viele Seiten im **aktuellen** Bereich gezeigt werden.
+    private var tiefe: Int { gezeigteTiefe[bereich] ?? 0 }
+
     private var inhalt: some View {
-        NavigationStack(path: pfad(bereich)) {
-            Group {
-                switch bereich {
-                case .start:  HomeView(model: model) { schiebe($0) }
-                case .filme:  BibliothekView(model: model, art: "movies", titel: "Filme")
-                case .serien: BibliothekView(model: model, art: "tvshows", titel: "Serien")
-                case .suche:  SucheView(model: model)
+        GeometryReader { raum in
+            let breite = raum.size.width
+            // Wie weit die darunterliegende Seite mitgeht. Ein Drittel — so
+            // hält es die Systemnavigation, und daher kommt der Eindruck von
+            // Ebenen statt von einem Rechteck, das vorbeischiebt.
+            let mitgang = -breite * 0.3
+
+            ZStack {
+                // Die Wurzel des Bereichs liegt immer unten.
+                // **Mitgang und Schleier gehören *unter* die Kennung.**
+                //
+                // Standen sie darüber, galten sie für die ausscheidende
+                // Wurzel genauso wie für die neue — und beide lasen `tiefe`
+                // des *neuen* Bereichs. Wer in „Filme" eine Seite offen ließ
+                // und auf „Start" wechselte, sah deshalb, wie die alte Wurzel
+                // ihren Mitgang zurückfuhr und der Schleier ausblendete: eine
+                // Bewegung mit dunklem Verlauf, die dort nichts zu suchen
+                // hat. Bei „Filme" und „Serien" fiel es nicht auf, weil dort
+                // eine Seite obendrauf lag, die es verdeckte.
+                //
+                // Unter der Kennung gehören sie zur jeweiligen Wurzel. Die
+                // ausscheidende behält ihren Stand und blendet einfach aus.
+                wurzel
+                    .offset(x: tiefe > 0 ? mitgang : 0)
+                    .overlay {
+                        Color.black.opacity(tiefe > 0 ? 0.28 : 0)
+                            .allowsHitTesting(false)
+                    }
+                    .id(bereich)
+                    // **Die Wurzel liegt ausdrücklich unten.** Ohne feste
+                    // Ebenen fuhr die Seite unter den Kacheln der Startseite
+                    // herein, und das sah aus wie Durchsichtigkeit.
+                    .zIndex(0)
+
+                // **Der Seitenstapel als Ganzes, mit eigener Kennung.**
+                //
+                // Ohne sie stand der `ForEach` unmittelbar in diesem Stapel.
+                // Beim Wechsel der Leiste wechselte damit sein Inhalt — von
+                // den Seiten des einen Bereichs auf die des anderen —, und
+                // SwiftUI spielte für jede verschwindende Seite ihre
+                // **Hinausfahr-Bewegung** ab: von rechts hinaus, mit der
+                // Schattenkante obendrauf. Wer in „Filme" eine Seite offen
+                // liess und auf „Start" ging, sah deshalb einen Seitenschub,
+                // wo nur überblendet werden sollte.
+                //
+                // Mit `.id(bereich)` wird der Stapel als **ein** Stück
+                // getauscht. Dann gilt die Überblendung dieses Stücks, und
+                // die Bewegungen darin bleiben dem Tiefergehen vorbehalten,
+                // wofür sie gedacht sind.
+                ZStack {
+                    ForEach(Array(navigator.seiten(bereich).enumerated()), id: \.element.id) { platz, ziel in
+                        let obenauf = platz == tiefe - 1
+                        let gezeigt = platz < tiefe
+
+                        ZStack {
+                            Stil.grund
+                            seite(ziel)
+                        }
+                        // Rechts draußen, bis sie an der Reihe ist; darunter
+                        // liegende Seiten gehen ein Stück mit.
+                        .offset(x: gezeigt ? (obenauf ? 0 : mitgang) : breite)
+                        .overlay {
+                            Color.black.opacity(gezeigt && !obenauf ? 0.28 : 0)
+                                .allowsHitTesting(false)
+                        }
+                        // Der Schlagschatten an der Vorderkante. Als schmaler
+                        // Verlauf **neben** der Seite, nicht als `.shadow` —
+                        // ein Schatten um eine bildschirmgroße Ansicht zwingt
+                        // sie in einen eigenen Zwischenspeicher, und den baut
+                        // das System in jedem Einzelbild neu auf.
+                        .overlay(alignment: .leading) {
+                            LinearGradient(colors: [.black.opacity(0.45), .clear],
+                                           startPoint: .trailing, endPoint: .leading)
+                                .frame(width: 28)
+                                .offset(x: -28)
+                                .allowsHitTesting(false)
+                        }
+                        .zIndex(Double(platz + 1))
+                        // **Losfahren, sobald die Seite wirklich steht.**
+                        //
+                        // Vorher wartete hier ein `Task.sleep(16 ms)`. Das war
+                        // ein Rennen: ein Einzelbild dauert bei 120 Hz gut acht
+                        // Millisekunden, mal lag der Weckruf davor, mal dahinter.
+                        // Lag er davor, fielen Anlegen und Losfahren in denselben
+                        // Vorgang — dann sprang die Seite ohne Bewegung an ihren
+                        // Platz. **Genau das ist „manchmal normal, manchmal
+                        // hart".** Es war nie die Kurve.
+                        //
+                        // `DispatchQueue.main.async` aus `onAppear` heraus läuft
+                        // dagegen zugesichert nach dem Abschluss des laufenden
+                        // Vorgangs. Kein Wecker, keine Millisekunden, kein Rennen.
+                        .onAppear {
+                            // Steht die Seite schon, ist das ein Rückkehrer aus
+                            // einem Leistenwechsel — der fährt nicht noch einmal.
+                            guard platz >= tiefe else { return }
+                            // **Nur dieser eine Schreibzugriff.** Vorher stand
+                            // daneben ein zweiter, unanimierter (`ruht = false`).
+                            // Beides ist Zustand derselben Ansicht und landet in
+                            // einem Aktualisierungslauf — für den sucht SwiftUI
+                            // sich *eine* Transaktion aus. Fällt die Wahl auf die
+                            // leere, wird der Versatz ohne Bewegung gesetzt. Es
+                            // war der einzige Ort im Baum, an dem eine laufende
+                            // Bewegung überhaupt kippen konnte.
+                            DispatchQueue.main.async {
+                                withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe[bereich] = platz + 1 }
+                            }
+                        }
+                        // **Nur das Hinausfahren ist ein Übergang.** Das
+                        // Hereinfahren macht der Versatz oben, damit die Seite
+                        // vorher fertig ausgelegt ist. Blenden tut hier nichts:
+                        // unterwegs durchsichtig sieht nach Fehler aus.
+                        .transition(.asymmetric(insertion: .identity,
+                                                removal: .move(edge: .trailing)))
+                }
+                .zIndex(1)
                 }
             }
-            .navigationDestination(for: Item.self) { titel in
-                DetailView(model: model, item: titel) { zurueck() }
-            }
-            .navigationDestination(for: ProfilRoute.self) { _ in
-                ProfilView(model: model) { zurueck() }
-            }
-            .navigationDestination(for: EinstellungenRoute.self) { _ in
-                EinstellungenView(model: model) { zurueck() }
-            }
-            .navigationDestination(for: WiedergabeRoute.self) { _ in
-                WiedergabeEinstellungenView(model: model) { zurueck() }
-            }
-            .navigationDestination(for: QuickConnectRoute.self) { _ in
-                QuickConnectView(model: model) { zurueck() }
+            // **Sonst tritt die Wurzel über den Rand.** Der Mitgang schiebt
+            // sie um ein Drittel nach links — ohne Beschnitt landet dieses
+            // Drittel über der Seitenleiste, und man sieht Startseite und
+            // Seitenleiste übereinander. Genau das war im Bild zu sehen.
+            .clipped()
+            // **Der Bereich als Ganzes, mit einer Kennung.**
+            //
+            // Vorher trugen Wurzel und Seitenstapel je eine eigene. Dann
+            // verschwindet ein offener Seitenstapel schlagartig, während die
+            // Wurzel darunter noch blendet. Ein Bereich ist ein Stück — was
+            // in ihm offen war, geht mit ihm.
+            .id(bereich)
+            // „Fade Through": das Alte blendet in 100 ms aus, danach kommt
+            // das Neue in 200 ms und wächst dabei von 92 % auf 100 %. Die
+            // Zahlen und das Warum stehen bei `Stil.zeitBereichHerein`.
+            .transition(.bereichswechsel)
+            // **Nur hier, nicht am Elternteil.** Genau daran ist der erste
+            // Versuch gescheitert: eine Anweisung mit `value:` gilt für
+            // alles, was sich im Unterbau ändert, und hat damals auch
+            // Seitenversatz und Schleier mitbewegt — sichtbar als
+            // Seitenschub samt Schattenkante, wo nichts fahren sollte. Hier
+            // steht sie an dem Stück, das getauscht wird; darin gibt es
+            // nichts zu bewegen, weil das alte seinen Stand behält und das
+            // neue frisch gezeichnet wird.
+            .animation(.default, value: bereich)
+        }
+        .onChange(of: navigator.seiten(bereich).count, initial: true) { alt, neu in
+            guard neu != tiefe else { return }
+            if neu > alt {
+                // Tiefergehen macht die Seite selbst, siehe `onAppear` oben.
+            } else {
+                // Zurück: `Navigator.zurueck` animiert das Entfernen bereits,
+                // der Mitgang muss im selben Zug zurück.
+                withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe[bereich] = neu }
             }
         }
-        // **Ohne Systemleiste.** `NavigationStack` setzt auf dem Mac von sich
-        // aus einen Zurückpfeil in die Titelleiste — als Glasknopf, neben die
-        // Fensterampel, die er dabei verschiebt. Auf jeder anderen Plattform
-        // sitzt der Weg zurück als eigener Pfeil **im Bild** (E9).
-        .toolbar(.hidden)
-        .toolbarBackground(.hidden, for: .windowToolbar)
-        // Der Stapel gehört zum Bereich; ohne die Kennung baut SwiftUI ihn
-        // beim Wechsel nicht neu auf und zeigt die alte Seite weiter.
-        .id(bereich)
     }
 
-    private func pfad(_ b: Bereich) -> Binding<NavigationPath> {
-        Binding(get: { stapel[b] ?? NavigationPath() },
-                set: { stapel[b] = $0 })
+    @ViewBuilder
+    private var wurzel: some View {
+        switch bereich {
+        case .start:  HomeView(model: model, stand: startseite)
+        case .filme:  BibliothekView(model: model, art: "movies", titel: "Filme",
+                                     regal: filmregal, gewaehlt: $filmbibliothek)
+        case .serien: BibliothekView(model: model, art: "tvshows", titel: "Serien",
+                                     regal: serienregal, gewaehlt: $serienbibliothek)
+        case .suche:  SucheView(model: model)
+        }
     }
 
-    /// Ein Ziel auf den Stapel des sichtbaren Bereichs legen.
-    private func schiebe(_ ziel: some Hashable) {
-        var p = stapel[bereich] ?? NavigationPath()
-        p.append(ziel)
-        stapel[bereich] = p
+    @ViewBuilder
+    private func seite(_ ziel: Seitenziel) -> some View {
+        switch ziel {
+        case let .titel(item):  DetailView(model: model, item: item) { zurueck() }
+        case .profil:           ProfilView(model: model) { zurueck() }
+        case .einstellungen:    EinstellungenView(model: model) { zurueck() }
+        case .wiedergabe:       WiedergabeEinstellungenView(model: model) { zurueck() }
+        case .quickConnect:     QuickConnectView(model: model) { zurueck() }
+        }
     }
 
-    /// Eine Ebene zurück im Stapel des sichtbaren Bereichs.
-    private func zurueck() {
-        var p = stapel[bereich] ?? NavigationPath()
-        guard !p.isEmpty else { return }
-        p.removeLast()
-        stapel[bereich] = p
-    }
+    private func zurueck() { navigator.zurueck(in: bereich) }
 
     private func ausfuehren(_ kommando: Kommando) {
         switch kommando {
@@ -151,8 +368,8 @@ struct Seitenleiste: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Platz für die Fensterknöpfe des Systems.
-            Color.clear.frame(height: Stil.titelHoehe)
+            // Platz für die Fensterampel — sie liegt über der Seitenleiste.
+            Color.clear.frame(height: Stil.ampelHoehe)
 
             Wortmarke(hoehe: 28)
                 .padding(.horizontal, 20)
@@ -186,10 +403,8 @@ struct Seitenleiste: View {
                 .padding(12)
         }
         .frame(width: Stil.seitenleisteBreite)
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(Stil.flaeche)
-        .overlay(alignment: .trailing) {
-            Rectangle().fill(Stil.linie).frame(width: 1)
-        }
         .task { if model.views.isEmpty { await model.loadViews() } }
     }
 }

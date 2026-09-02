@@ -15,8 +15,20 @@ struct BibliothekView: View {
     let model: AppModel
     let art: String
     let titel: LocalizedStringKey
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
 
-    @State private var regal = Bibliotheksmodell()
+    /// **Von aussen, nicht selbst gehalten.** Als `@State` verschwand das
+    /// Regal mit der Ansicht, und die Ansicht verschwindet bei jedem
+    /// Leistenwechsel (`\.id(bereich)`). Deshalb lief bei jedem Wechsel
+    /// zwischen Filmen und Serien der Ladebalken erneut.
+    let regal: Bibliotheksmodell
+    /// Welche Bibliothek dieser Gattung gezeigt wird. Ein Server kann mehrere
+    /// Filmbibliotheken haben; vorher nahm die Ansicht stumm die erste.
+    ///
+    /// Aus demselben Grund wie das Regal **von aussen**: als `@State` fiele
+    /// die Wahl bei jedem Leistenwechsel auf die erste Bibliothek zurück.
+    @Binding var gewaehlt: Item?
 
     private var spalten: [GridItem] {
         [GridItem(.adaptive(minimum: Stil.kachelBreite, maximum: Stil.kachelBreite),
@@ -41,6 +53,27 @@ struct BibliothekView: View {
                 }
 
                 HStack(spacing: 8) {
+                    // **Die Bibliothekswahl steht vorn, und nur ab zwei.**
+                    //
+                    // Als Chips wie Filter und Sortierung daneben — auf dem
+                    // Mac steht alles offen nebeneinander, und ein `Menu`
+                    // waere ein Apple-Standardsteuerelement (E4).
+                    if auswahl.count > 1 {
+                        ForEach(auswahl) { bib in
+                            Chip(beschriftung: bib.name,
+                                 aktiv: bib.id == gewaehlt?.id) {
+                                guard bib.id != gewaehlt?.id else { return }
+                                model.bibliothekWaehlen(bib, art: art)
+                                gewaehlt = bib
+                                Task { await laden() }
+                            }
+                        }
+                        Rectangle()
+                            .fill(Stil.rand)
+                            .frame(width: 1, height: 18)
+                            .padding(.horizontal, 4)
+                    }
+
                     ForEach(Bibliotheksfilter.allCases) { fall in
                         Chip(beschriftung: fall.beschriftung, aktiv: regal.filter == fall) {
                             regal.filter = fall
@@ -59,7 +92,7 @@ struct BibliothekView: View {
 
                 LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {
                     ForEach(regal.items, id: \.id) { eintrag in
-                        NavigationLink(value: eintrag) {
+                        Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
                                          bild: model.imageURL(for: eintrag, hochkant: true))
@@ -68,7 +101,7 @@ struct BibliothekView: View {
                         .task {
                             // Nachschub steht, bevor man unten ankommt.
                             if eintrag.id == regal.nachladenAb(spalten: geschaetzteSpalten) {
-                                await regal.nachladen(model, art: art)
+                                await regal.nachladen(model, art: art, bibliothek: gewaehlt)
                             }
                         }
                     }
@@ -76,16 +109,34 @@ struct BibliothekView: View {
                 .padding(.top, 22)
             }
             .padding(.horizontal, Stil.randAbstand)
-            .padding(.top, Stil.titelHoehe)
+            .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
+        // aus über jede Scrollfläche — sie war nie in unserem Code, und
+        // deshalb habe ich zweimal an der falschen Stelle gesucht. Über dem
+        // Bild verlor sie sich, links auf blankem Grund stand sie als Balken.
+        //
+        // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
+        // abgestellt wie das, was man selbst hinschreibt.
+        .ohneKanteneffekt()
         .overlay { if regal.laedt { Lader() } }
-        .task(id: regal.kennung) { await regal.laden(model, art: art) }
+        .task(id: regal.kennung) { await laden() }
     }
 
     /// Für das Nachladen genügt eine Schätzung: ob die drittletzte Reihe bei
     /// sechs oder sieben Spalten beginnt, verschiebt den Auslöser um eine
     /// Kachelbreite. Genau ausrechnen hieße die Fensterbreite mitzuführen.
     private var geschaetzteSpalten: Int { 6 }
+
+    private func laden() async {
+        if model.views.isEmpty { await model.loadViews() }
+        if gewaehlt == nil { gewaehlt = model.gewaehlteBibliothek(art: art) }
+        await regal.laden(model, art: art, bibliothek: gewaehlt)
+    }
+
+    /// Alle Bibliotheken dieser Gattung. Ab zwei wird der Titel zum Menue.
+    private var auswahl: [Item] { model.bibliotheken(art: art) }
+
 }

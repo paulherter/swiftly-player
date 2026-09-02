@@ -24,7 +24,7 @@ struct RootView: View {
             }
         }
         .background(Fensteranstrich())
-        .animation(.default, value: model.phase)
+        .animation(Stil.zeitSeite, value: model.phase)
     }
 }
 
@@ -61,7 +61,7 @@ struct ServerView: View {
                     .padding(.top, 12)
             }
 
-            Hauptknopf(beschriftung: "Verbinden", symbol: "arrow.right", kuerzel: "⏎",
+            Hauptknopf(beschriftung: "Verbinden", symbol: "arrow.right",
                        auswahl: verbinden)
                 .padding(.top, 24)
                 .disabled(adresse.isEmpty || model.isWorking)
@@ -124,7 +124,7 @@ struct AnmeldeView: View {
                     .padding(.top, 12)
             }
 
-            Hauptknopf(beschriftung: "Anmelden", symbol: "arrow.right", kuerzel: "⏎",
+            Hauptknopf(beschriftung: "Anmelden", symbol: "arrow.right",
                        auswahl: anmelden)
                 .padding(.top, 24)
                 .disabled(benutzer.isEmpty || model.isWorking)

@@ -43,46 +43,68 @@ struct Heldkopf<Inhalt: View>: View {
     @ViewBuilder var inhalt: () -> Inhalt
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            hintergrund
-
-            HStack(alignment: .bottom, spacing: 32) {
-                Bild(url: poster,
-                     breite: Stil.heldPosterBreite, hoehe: Stil.heldPosterHoehe,
-                     ecke: Stil.eckeKachel, fortschritt: fortschritt) {
-                    Stil.flaeche.overlay {
-                        Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
-                    }
+        HStack(alignment: .bottom, spacing: 32) {
+            Bild(url: poster,
+                 breite: Stil.heldPosterBreite, hoehe: Stil.heldPosterHoehe,
+                 ecke: Stil.eckeKachel, fortschritt: fortschritt) {
+                Stil.flaeche.overlay {
+                    Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
                 }
-
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(titel)
-                        .font(.system(size: 40, weight: .bold))
-                        .tracking(-1)
-                        .foregroundStyle(Stil.schrift)
-                        .lineLimit(2)
-                    Text(nebenzeile)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Stil.schriftLeise)
-                        .lineLimit(1)
-                        .padding(.top, 8)
-                    inhalt()
-                        .padding(.top, 12)
-                }
-
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, Stil.randSeiteBreit)
-            .padding(.bottom, 40)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(titel)
+                    .font(.system(size: 40, weight: .bold))
+                    .tracking(-1)
+                    .foregroundStyle(Stil.schrift)
+                    .lineLimit(2)
+                Text(nebenzeile)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Stil.schriftLeise)
+                    .lineLimit(1)
+                    .padding(.top, 8)
+                inhalt()
+                    .padding(.top, 12)
+            }
+
+            Spacer(minLength: 0)
         }
-        .frame(height: Stil.heldHoeheBreit)
+        .padding(.horizontal, Stil.randSeiteBreit)
+        .padding(.top, 40)
+        .padding(.bottom, 40)
+        // **Mindesthöhe, keine feste.** 420 war für die liegende Knopfreihe
+        // gerechnet. Sobald sie sich stapelt — hochkant, im halben Fenster —
+        // ist der Block deutlich höher, und eine feste Höhe schnitt ihn ab:
+        // das Poster unten weg, die Knöpfe ganz. Jetzt wächst der Kopf mit
+        // seinem Inhalt und hält 420 nur als Untergrenze, damit vom Bild
+        // etwas zu sehen bleibt.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: Stil.heldHoeheBreit, alignment: .bottom)
+        // Als Hintergrund und nicht als Geschwister im Stapel: ein
+        // Hintergrund bestimmt die Größe seines Gastgebers nie mit. Genau
+        // daran hatte sich der Kopf vorher verschluckt.
+        .background { hintergrund }
         .clipped()
     }
 
     private var hintergrund: some View {
         ZStack {
             Stil.grund
-            Bild(url: bild, ecke: 0)
+            // Bewusst nicht `Bild`: das ist ein Kachelbild — es misst sich an
+            // einer Breite, rundet Ecken und schneidet zu. Das Heldbild soll
+            // die Fläche randlos füllen und hat kein Seitenverhältnis, an das
+            // es sich halten könnte.
+            //
+            // Mit `Bild` sah man es: seit dort ein Seitenverhältnis eingebaut
+            // ist, steht bei `verhaeltnis == nil` ein
+            // `aspectRatio(nil, contentMode: .fit)` auf einem `Color.clear` —
+            // das hat keine eigene Größe. Das Bild rutschte nach links und
+            // brach hart ab, im schmalen Fenster verschwand es ganz.
+            AsyncImage(url: bild) { stand in
+                if case let .success(b) = stand {
+                    b.resizable().aspectRatio(contentMode: .fill)
+                }
+            }
             // Von links, damit die Schrift steht.
             LinearGradient(stops: [
                 .init(color: Stil.grund.opacity(0.96), location: 0),
@@ -256,5 +278,46 @@ extension EnvironmentValues {
     var fensterknoepfe: Bool {
         get { self[FensterknoepfeSchluessel.self] }
         set { self[FensterknoepfeSchluessel.self] = newValue }
+    }
+}
+
+
+/// Wo iPadOS seine Fensterknöpfe hinlegt, und wie viel Platz sie brauchen.
+///
+/// **Warum das eine Funktion ist und nicht nur der Umgebungswert oben:** der
+/// Player ist ein `fullScreenCover`. Er hängt nicht unter `HauptView`, und
+/// er ignoriert den sicheren Bereich ausdrücklich — dort liegt schließlich
+/// das Bild. Ein Sicherheitsabstand, den sich der Rahmen nimmt, erreicht ihn
+/// deshalb nicht. Was im Player oben Platz braucht, muss ihn sich selbst
+/// nehmen.
+///
+/// Genau daran ist die erste Fassung gescheitert: sie hat den Rahmen
+/// gepolstert und den Player vergessen, weil er wie ein Teil davon aussieht.
+enum Fensterknoepfe {
+    /// Höhe, die freizuhalten ist. Die Ampel sitzt in einem rund 44 Punkt
+    /// hohen Feld oben links; 32 zusätzlich zu den 18, die die Kopfzeilen
+    /// ohnehin halten, schiebt den Knopf darunter.
+    static let hoehe: CGFloat = 32
+
+    /// Die App liegt in einem Fenster statt im Vollbild.
+    ///
+    /// **Am Gerät gemessen, nicht hergeleitet.** Zwei Annahmen waren vorher
+    /// falsch, und beide klangen plausibel:
+    ///
+    /// - „Ein Fenster hat keine Statusleiste, also keinen oberen sicheren
+    ///   Bereich." Falsch. Gemessen sind es in **beiden** Fällen 32 Punkt —
+    ///   der sichere Bereich unterscheidet gar nichts.
+    /// - „Ein Fenster meldet seinen eigenen Schirm." Ebenfalls falsch.
+    ///   `screen.bounds.width` meldet 1180, während das Fenster 375 misst.
+    ///
+    /// Der Breitenvergleich stimmt also. Was nicht stimmte, war die Annahme,
+    /// ein Sicherheitsabstand am Rahmen erreiche alle — siehe `hoehe`.
+    @MainActor
+    static func imFenster(fensterbreite: CGFloat) -> Bool {
+        guard Stil.amPad, fensterbreite > 0 else { return false }
+        let schirm = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.screen.bounds.width ?? 0
+        return schirm > 0 && fensterbreite < schirm - 8
     }
 }

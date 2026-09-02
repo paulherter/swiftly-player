@@ -11,6 +11,8 @@ import SwiftUI
 struct ProfilView: View {
     let model: AppModel
     let zurueck: () -> Void
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
 
     var body: some View {
         ScrollView {
@@ -18,7 +20,7 @@ struct ProfilView: View {
                 bildblock
 
                 Zeilengruppe {
-                    NavigationLink(value: QuickConnectRoute()) {
+                    Button { navigator.oeffne(.quickConnect, in: bereich) } label: {
                         Wertezeile(symbol: "rectangle.and.text.magnifyingglass",
                                    titel: Text("Quick Connect"),
                                    unter: Text("Code vom Fernseher eingeben"),
@@ -30,14 +32,14 @@ struct ProfilView: View {
                 Color.clear.frame(height: 26)
 
                 Zeilengruppe {
-                    NavigationLink(value: WiedergabeRoute()) {
+                    Button { navigator.oeffne(.wiedergabe, in: bereich) } label: {
                         Wertezeile(symbol: "play.fill", titel: Text("Wiedergabe"),
                                    unter: Text("Sprache, Untertitel, Tempo"),
                                    pfeil: true, aktion: {})
                     }
                     .buttonStyle(.plain)
                     Trennstrich().padding(.leading, 48)
-                    NavigationLink(value: EinstellungenRoute()) {
+                    Button { navigator.oeffne(.einstellungen, in: bereich) } label: {
                         Wertezeile(symbol: "gearshape", titel: Text("Einstellungen"),
                                    pfeil: true, aktion: {})
                     }
@@ -60,14 +62,22 @@ struct ProfilView: View {
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, Stil.randAbstand)
-            .padding(.top, Stil.titelHoehe)
+            .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
+        // aus über jede Scrollfläche — sie war nie in unserem Code, und
+        // deshalb habe ich zweimal an der falschen Stelle gesucht. Über dem
+        // Bild verlor sie sich, links auf blankem Grund stand sie als Balken.
+        //
+        // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
+        // abgestellt wie das, was man selbst hinschreibt.
+        .ohneKanteneffekt()
         .overlay(alignment: .topLeading) {
             // Nur der Pfeil, kein Titel — der Bildblock ist der Titel.
             Aktionsknopf(symbol: "chevron.left", titel: "Zurück", auswahl: zurueck)
-                .padding(.leading, 92)
+                .padding(.leading, Stil.randAbstand - 8)
                 .padding(.top, 12)
         }
     }
@@ -145,7 +155,7 @@ struct QuickConnectView: View {
             }
 
             Hauptknopf(beschriftung: laeuft ? "Moment…" : "Freigeben",
-                       symbol: "checkmark", kuerzel: "⏎", auswahl: freigeben)
+                       symbol: "checkmark", auswahl: freigeben)
                 .disabled(laeuft || code.count < 4)
                 .opacity(code.count < 4 ? 0.4 : 1)
                 .padding(.top, 22)
@@ -155,7 +165,7 @@ struct QuickConnectView: View {
         .frame(maxWidth: 460, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, Stil.randAbstand)
-        .padding(.top, Stil.titelHoehe)
+        .padding(.top, Stil.inhaltOben)
         // Kein Warten auf eine Tastaturanimation wie auf dem iPhone — im
         // Fenster schiebt nichts.
         .onAppear { imFeld = true }

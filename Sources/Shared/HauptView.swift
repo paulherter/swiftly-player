@@ -71,15 +71,6 @@ struct HauptView: View {
                     .ignoresSafeArea(.keyboard, edges: .bottom)
             }
         }
-        // Platz für iPadOS' Fensterknöpfe.
-        //
-        // Hier und nicht in `Seitenpfeil`: der Pfeil ist ein geteilter
-        // Baustein, den Telefon, Fernseher und Mac mitbenutzen, und im
-        // Vollbild wäre ein tiefer sitzender Pfeil eine grundlose Abweichung.
-        // Die Ursache liegt ohnehin nicht am Pfeil, sondern am Fenster: dort
-        // fehlt die Statusleiste, die ihn sonst nach unten schiebt. Also
-        // bekommt der Rahmen ihren Platz zurück, und alles darin rückt mit.
-        .safeAreaPadding(.top, fensterknoepfe ? 32 : 0)
         // Bewusst ohne Übergang: die Leiste soll fest liegen und beim
         // Zurückkommen einfach wieder da sein, so wie der Inhalt dahinter
         // auch. Eingeblendet wirkte sie wie ein eigenes Blatt.
@@ -187,8 +178,16 @@ struct BibliothekView: View {
     /// geteilt mit der tvOS-Fassung.
     @State private var stand = Bibliotheksmodell()
     @State private var sortierlisteOffen = false
+    /// Welche Bibliothek dieser Gattung gezeigt wird.
+    ///
+    /// Ein Server kann mehrere Filmbibliotheken haben — im TestFlight eine
+    /// auf einer externen Platte und eine lokale. Vorher nahm die Ansicht
+    /// stumm die erste, und die zweite war nicht erreichbar.
+    @State private var gewaehlt: Item?
+    @State private var bibliothekslisteOffen = false
 
     @Environment(\.breit) private var breit
+    @Environment(\.fensterknoepfe) private var fensterknoepfe
 
     /// Die Spaltenzahl folgt der Breite, die Kacheln füllen ihre Spalte.
     ///
@@ -211,6 +210,15 @@ struct BibliothekView: View {
         GeometryReader { rahmen in
             inhalt(nutzbar: rahmen.size.width - 2 * Stil.rand(breit: breit))
         }
+        // **Die Bibliothek gehoert nicht in die Kennung.**
+        //
+        // Sie stand einmal darin, und das war ein Fehler: `laden()` setzt die
+        // Wahl beim ersten Lauf selbst, aendert damit die Kennung und bricht
+        // die eigene Aufgabe ab. Die abgebrochene Anfrage kam als
+        // Fehlschlag zurueck, und die Seite zeigte „Kein Kontakt zum Server"
+        // ueber den Plakaten, die der zweite Lauf gerade geladen hatte.
+        //
+        // Gewechselt wird nur durch Antippen — dort wird auch neu geladen.
         .task(id: stand.kennung) { await laden() }
     }
 
@@ -231,7 +239,7 @@ struct BibliothekView: View {
                         // ankommt.
                         .onAppear {
                             guard item.id == stand.nachladenAb(spalten: anzahl) else { return }
-                            Task { await stand.nachladen(model, art: art) }
+                            Task { await stand.nachladen(model, art: art, bibliothek: gewaehlt) }
                         }
                     }
                 }
@@ -245,7 +253,9 @@ struct BibliothekView: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .contentMargins(.top, breit ? 118 : 112, for: .scrollContent)
+            .contentMargins(.top, (breit ? 118 + Stil.kopfOben : 112)
+                            + (fensterknoepfe ? Fensterknoepfe.hoehe : 0),
+                            for: .scrollContent)
             .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
                             for: .scrollContent)
 
@@ -284,7 +294,31 @@ struct BibliothekView: View {
         Unschaerfekopf {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .bottom) {
-                    Text(titel).font(Stil.titelGross).tracking(-0.6)
+                    // **Nur ab zwei Bibliotheken ein Menü.**
+                    //
+                    // Wer eine hat — und das sind fast alle — sieht genau das
+                    // Gleiche wie vorher: eine Überschrift, kein Zeichen, kein
+                    // Tippziel. Ein Umschalter, der nichts umzuschalten hat,
+                    // ist eine Frage ohne Antwort.
+                    if auswahl.count > 1 {
+                        // Kein `Menu` — E4 im Register: keine
+                        // Apple-Standardsteuerelemente. Dasselbe
+                        // `Auswahlblatt` wie bei der Sortierung, und es
+                        // nimmt die Beschriftung als `String`, was hier
+                        // noetig ist: Bibliotheksnamen kommen vom Server.
+                        Button { bibliothekslisteOffen = true } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(gewaehlt?.name ?? "")
+                                    .font(Stil.titelGross).tracking(-0.6)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Stil.schriftLeise)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(titel).font(Stil.titelGross).tracking(-0.6)
+                    }
                     Spacer(minLength: 0)
                     // Breit steht das Profilzeichen in der Seitenleiste, und
                     // zwar für alle vier Bereiche. Hier wäre es das zweite.
@@ -379,9 +413,30 @@ struct BibliothekView: View {
                              waehlen: { stand.sortierung = $0 })
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if bibliothekslisteOffen {
+                Auswahlblatt(offen: $bibliothekslisteOffen, titel: "Bibliothek",
+                             eintraege: auswahl,
+                             beschriftung: { $0.name },
+                             istGewaehlt: { $0.id == gewaehlt?.id },
+                             waehlen: { bib in
+                                 guard bib.id != gewaehlt?.id else { return }
+                                 model.bibliothekWaehlen(bib, art: art)
+                                 gewaehlt = bib
+                                 Task { await laden() }
+                             })
+            }
+        }
     }
 
-    private func laden() async { await stand.laden(model, art: art) }
+    private func laden() async {
+        if model.views.isEmpty { await model.loadViews() }
+        if gewaehlt == nil { gewaehlt = model.gewaehlteBibliothek(art: art) }
+        await stand.laden(model, art: art, bibliothek: gewaehlt)
+    }
+
+    /// Alle Bibliotheken dieser Gattung. Ab zwei wird der Titel zum Menü.
+    private var auswahl: [Item] { model.bibliotheken(art: art) }
 }
 
 // MARK: - Umweg von einer Folge auf ihre Serie
@@ -398,13 +453,22 @@ struct StaffelZiel: View {
     let folge: Item
 
     @State private var serie: Item?
+    /// **Die Staffel frisch holen, nicht die der Kachel glauben.**
+    ///
+    /// Der Listeneintrag traegt die Staffel, die er beim Laden der Startseite
+    /// hatte. Wer eine Staffel zu Ende sieht und die naechste dazulegt, hat
+    /// dort weiter die alte stehen — die Seite oeffnete dann mit „Abspielen
+    /// S6E1" oben und Staffel 5 in der Folgenliste. Dasselbe Muster wie bei
+    /// der Fortsetzstelle in `HomeView.starte`, und dieselbe Abhilfe.
+    @State private var frischeStaffelID: String?
 
     var body: some View {
         ZStack {
             Stil.grund.ignoresSafeArea()
             if let serie {
                 SeriesDetailView(model: model, serie: serie,
-                                 startStaffelID: folge.seasonId)
+                                 startStaffelID: frischeStaffelID ?? folge.seasonId,
+                                 startStaffelNummer: folge.parentIndexNumber)
             } else {
                 Lader()
             }
@@ -421,8 +485,10 @@ struct StaffelZiel: View {
         .background(WischZurueck())
         #endif
         .task {
-            guard serie == nil, let id = folge.seriesId else { return }
-            serie = await model.item(id: id)
+            guard let id = folge.seriesId else { return }
+            async let frisch = model.item(id: folge.id)
+            if serie == nil { serie = await model.item(id: id) }
+            frischeStaffelID = await frisch?.seasonId
         }
     }
 }

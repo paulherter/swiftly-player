@@ -12,6 +12,17 @@ struct SeriesDetailView: View {
     let serie: Item
     /// Kommt man von einer Folge, ist deren Staffel gleich ausgewählt.
     var startStaffelID: String? = nil
+    /// Die **Nummer** der Staffel, aus der man kommt.
+    ///
+    /// **Weil die Kennung fehlen kann.** Am Geraet gemessen: Damit griffen
+    /// beide Kennungsvergleiche ins Leere und die Wahl fiel auf
+    /// `staffeln.first`: oben stand „Abspielen S6 E1", unten Staffel 5.
+    ///
+    /// Die Nummer steht dagegen immer da — an der Folge als
+    /// `parentIndexNumber`, an der Staffel als `indexNumber`. Sie ist der
+    /// verlaesslichere Weg und deshalb kein Notnagel, sondern eine
+    /// gleichrangige Stufe.
+    var startStaffelNummer: Int? = nil
 
     @Environment(\.dismiss) private var zurueck
     @Environment(\.breit) private var breit
@@ -35,6 +46,9 @@ struct SeriesDetailView: View {
     @State private var plan: PlaybackPlan?
     @State private var reiter = 0
     @State private var staffellisteOffen = false
+    /// Hat der Nutzer selbst eine Staffel gewaehlt? Dann redet ihm nichts
+    /// mehr hinein.
+    @State private var selbstGewaehlt = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -151,6 +165,21 @@ struct SeriesDetailView: View {
         }
         #endif
         .task { await laden() }
+        // **Die mitgebrachte Staffel kann nachtraeglich eintreffen.**
+        //
+        // `StaffelZiel` holt die Folge frisch nach, weil der Listeneintrag
+        // eine alte Staffel tragen kann — wer eine Staffel zu Ende sieht und
+        // die naechste dazulegt, hat auf der Kachel weiter die alte stehen.
+        // Diese Antwort kommt aber erst, wenn die Seite schon steht und
+        // `laden()` seine Wahl getroffen hat. Ohne diese Zeile war das
+        // Nachholen wirkungslos: oben „Abspielen S6E1", unten Staffel 5.
+        .onChange(of: startStaffelID) { _, neu in
+            guard !selbstGewaehlt, let neu,
+                  let treffer = staffeln.first(where: { $0.id == neu }),
+                  treffer.id != gewaehlteStaffel?.id else { return }
+            gewaehlteStaffel = treffer
+            Task { await folgenLaden() }
+        }
     }
 
     /// Alles holen, was sich ändern kann.
@@ -172,8 +201,15 @@ struct SeriesDetailView: View {
         if gewaehlteStaffel == nil {
             gewaehlteStaffel = staffeln.first { $0.id == startStaffelID }
                 ?? staffeln.first { $0.id == stand?.seasonId }
+                // Ueber die Nummer, wenn keine Kennung ankam.
+                ?? staffeln.first { nummer($0) != nil && nummer($0) == startStaffelNummer }
+                ?? staffeln.first { nummer($0) != nil && nummer($0) == stand?.parentIndexNumber }
                 ?? staffeln.first
         }
+        Protokoll.schreib("[Staffel] \(serie.name): mitgebracht=\(startStaffelID ?? "-")/\(startStaffelNummer.map(String.init) ?? "-") "
+            + "stand=\(stand.map { "S\($0.parentIndexNumber ?? -1)E\($0.indexNumber ?? -1) " + ($0.seasonId ?? "-") } ?? "-") "
+            + "gewaehlt=\(gewaehlteStaffel?.name ?? "-") "
+            + "vorhanden=[\(staffeln.map { "\($0.name)=\($0.id)" }.joined(separator: " "))]")
         gemerkt = serie.userData?.isFavorite ?? false
         gesehen = serie.userData?.played ?? false
         if let stand { plan = await model.plan(for: stand.id) }
@@ -318,12 +354,10 @@ struct SeriesDetailView: View {
     }
 
     private var folgenbereich: some View {
-        // Breit auf Lesebreite: eine Folgenzeile über 1036 Punkt setzt den
-        // Haken einen halben Meter neben den Titel. Linksbündig, nicht
-        // mittig — sie gehört unter die Reiter, nicht in die Seitenmitte.
+        // Über die volle Breite, wie auf dem iPhone. Der Haken gehört an den
+        // rechten Rand der Zeile; auf ein Lesemaß eingeschnürt stand er
+        // mitten auf der Seite und sah aus, als gehöre er zu nichts.
         folgenliste
-            .frame(maxWidth: breit ? Stil.lesebreite : .infinity, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var folgenliste: some View {
@@ -334,6 +368,7 @@ struct SeriesDetailView: View {
                               text: { $0.name },
                               istGewaehlt: { $0.id == gewaehlteStaffel?.id },
                               waehlen: { staffel in
+                                  selbstGewaehlt = true
                                   gewaehlteStaffel = staffel
                                   Task { await folgenLaden() }
                               },
@@ -417,6 +452,9 @@ struct SeriesDetailView: View {
     private var knopftext: String { Item.serienknopf(folge: stand, laedt: laedt) }
 
     private func restzeit(_ folge: Item) -> String? { folge.restzeitText }
+
+    /// Die Nummer einer Staffel — Jellyfin fuehrt sie als `IndexNumber`.
+    private func nummer(_ staffel: Item) -> Int? { staffel.indexNumber }
 
     private func folgenLaden() async {
         folgen = await model.folgen(serie: serie.id, staffel: gewaehlteStaffel?.id)

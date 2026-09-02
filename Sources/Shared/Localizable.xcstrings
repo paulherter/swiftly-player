@@ -2380,7 +2380,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Only when the audio is not in your chosen language"
+            "value": "Only when the audio is in another language"
           }
         }
       }

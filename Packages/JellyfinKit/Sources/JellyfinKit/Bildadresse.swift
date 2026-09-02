@@ -4,6 +4,9 @@ import Foundation
 public enum Bildart: String, Sendable {
     case poster    = "Primary"
     case hintergrund = "Backdrop"
+    /// Quer liegendes Vorschaubild. Jellyfin pflegt es bei Serien oft, bei
+    /// Folgen selten — als Rückfall für eine 16:9-Kachel taugt es trotzdem.
+    case vorschau  = "Thumb"
 }
 
 /// Wie das Bild zugeschnitten werden soll.

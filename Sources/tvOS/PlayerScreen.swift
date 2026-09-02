@@ -675,7 +675,8 @@ struct PlayerScreen: View {
     private func zentraleMelden() {
         zentrale.melden(item: item, position: position, dauer: dauer, tempo: tempo,
                         laeuft: laeuft,
-                        sprungweite: (model.zurueckSekunden, model.vorSekunden))
+                        sprungweite: (model.zurueckSekunden, model.vorSekunden),
+                        bildURL: model.sperrbildURL(for: item))
     }
 
     /// Spulen: sammeln, beschleunigen, **einmal** springen.

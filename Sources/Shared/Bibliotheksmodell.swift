@@ -38,10 +38,15 @@ final class Bibliotheksmodell {
     }
 
     /// Welche Bibliothek gemeint ist — genannt oder über die Gattung gesucht.
+    ///
+    /// **Nicht mehr `views.first`.** Hat der Server zwei Bibliotheken
+    /// derselben Gattung, war die zweite damit unerreichbar. Jetzt gilt die
+    /// gemerkte Wahl, und die erste ist nur noch der Rückfall.
     private func quelle(_ model: AppModel, art: String?, bibliothek: Item?) async -> Item? {
         if let bibliothek { return bibliothek }
         if model.views.isEmpty { await model.loadViews() }
-        return model.views.first { $0.collectionType == art }
+        guard let art else { return nil }
+        return model.gewaehlteBibliothek(art: art)
     }
 
     func laden(_ model: AppModel, art: String? = nil, bibliothek: Item? = nil) async {
@@ -59,9 +64,16 @@ final class Bibliotheksmodell {
                                          filter: filter, ab: 0) {
             items = seite.titel
             gesamt = seite.gesamt
-        } else {
+        } else if !Task.isCancelled {
             // Steht schon etwas da, bleibt es stehen — was geladen war, ist
             // nicht falsch geworden, nur weil der Nachschlag scheiterte.
+            //
+            // **Ein Abbruch ist kein Ausfall.** `.task(id:)` bricht die alte
+            // Aufgabe ab, sobald sich die Kennung aendert; die laufende
+            // Anfrage kommt dann als Fehlschlag zurueck und sah bis eben
+            // aus wie ein stummer Server. Die Seite zeigte „Kein Kontakt zum
+            // Server" ueber den Plakaten, die der Nachfolger gerade geladen
+            // hatte.
             gestoert = items.isEmpty
         }
         laedt = false

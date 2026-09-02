@@ -48,6 +48,44 @@ final class AppModel {
         UserDefaults.standard.set(wert, forKey: name)
     }
 
+    // MARK: - Mehrere Bibliotheken derselben Gattung
+
+    /// Alle Bibliotheken einer Gattung, in der Reihenfolge des Servers.
+    ///
+    /// **Ein Server kann mehrere Filmbibliotheken haben** — aus dem
+    /// TestFlight: eine auf einer externen Platte, eine lokale. Der Reiter
+    /// „Filme" nahm bis dahin `views.first` und zeigte damit nur die erste;
+    /// die zweite war in der App nicht erreichbar. Aufgefallen ist es nie,
+    /// weil unser Prüfserver genau eine hat.
+    ///
+    /// Suche, „Weiterschauen" und „Zuletzt hinzugefügt" gehen ohne
+    /// `ParentId` an den Server und sahen deshalb immer alles — nur das
+    /// Durchblättern war halbiert.
+    func bibliotheken(art: String) -> [Item] {
+        views.filter { $0.collectionType == art }
+    }
+
+    /// Welche Bibliothek zuletzt gewählt war — je Gattung gemerkt.
+    ///
+    /// Über die Kennung und nicht über den Platz in der Liste: der Server
+    /// darf umsortieren, und dann zeigte „Filme" plötzlich die andere
+    /// Sammlung. Ist die gemerkte Bibliothek verschwunden, fällt die Wahl
+    /// still auf die erste zurück.
+    func gewaehlteBibliothek(art: String) -> Item? {
+        let vorhanden = bibliotheken(art: art)
+        if let kennung = UserDefaults.standard.string(forKey: Self.bibliotheksname(art)),
+           let treffer = vorhanden.first(where: { $0.id == kennung }) {
+            return treffer
+        }
+        return vorhanden.first
+    }
+
+    func bibliothekWaehlen(_ bibliothek: Item, art: String) {
+        merken(bibliothek.id, Self.bibliotheksname(art))
+    }
+
+    private static func bibliotheksname(_ art: String) -> String { "bibliothek-\(art)" }
+
     /// Was dem Server als Grenze gemeldet wird.
     ///
     /// Eine Milliarde heißt praktisch unbegrenzt — ein Limit löst
@@ -384,8 +422,82 @@ final class AppModel {
     /// aus der Folge sagt wenig und sieht neben den anderen Reihen beliebig
     /// aus. Gefragt war „eine Art Cover".
     func querbildURL(for item: Item, breite: Int = 600) -> URL? {
-        bilder?.bauen(itemID: item.seriesId ?? item.id, art: .hintergrund,
-                      mass: .hoechstensBreit(breite), index: 0)
+        querbild(for: item, breite: breite)?.url
+    }
+
+    /// Woher das Querbild kam — nur fuer das Protokoll.
+    func querbildQuelle(for item: Item) -> String {
+        querbild(for: item, breite: 600)?.quelle ?? "nichts"
+    }
+
+    /// **Die Kette, und warum sie eine ist.**
+    ///
+    /// Vorher stand hier eine einzige Zeile: Hintergrund der Serie, ueber den
+    /// Index, ohne Marke. Hat die Serie keinen, antwortet Jellyfin mit 404 —
+    /// und dann blieb die Kachel leer, weil auch der Rueckfall auf das
+    /// Hochkantposter eine Marke braucht, die fehlen kann.
+    ///
+    /// Am Server nachgemessen: eine **Folge hat nie einen eigenen
+    /// Hintergrund**, `BackdropImageTags` ist bei ihr immer leer. Der
+    /// Hintergrund haengt an der Serie und kommt als
+    /// `ParentBackdropImageTags` mit — ein Feld, das wir gar nicht gelesen
+    /// haben.
+    ///
+    /// Jede Stufe wird nur genommen, wenn ihre **Marke** dasteht. Eine Marke
+    /// ist Jellyfins Beweis, dass das Bild existiert; ohne sie raten wir und
+    /// handeln uns 404 ein, die wie ein leeres Bild aussehen.
+    private func querbild(for item: Item, breite: Int) -> (url: URL, quelle: String)? {
+        let mass = Bildmass.hoechstensBreit(breite)
+
+        func versuch(_ quelle: String, _ id: String?, _ art: Bildart,
+                     _ marke: String?) -> (URL, String)? {
+            guard let id, let marke,
+                  let url = bilder?.bauen(itemID: id, art: art, marke: marke, mass: mass)
+            else { return nil }
+            return (url, quelle)
+        }
+
+        let kette: [(URL, String)?] = [
+            // 1 · Der Hintergrund der Serie
+            versuch("Serienhintergrund",
+                    item.parentBackdropItemId ?? item.seriesId,
+                    .hintergrund, item.parentBackdropImageTags?.first),
+            // 2 · Eigener Hintergrund. Bei Filmen der Normalfall.
+            versuch("eigener Hintergrund", item.id, .hintergrund,
+                    item.backdropImageTags?.first),
+            // 3 · Das quer liegende Vorschaubild der Serie.
+            versuch("Serienvorschau", item.parentThumbItemId ?? item.seriesId,
+                    .vorschau, item.parentThumbImageTag),
+            // 4 · Das eigene Vorschaubild.
+            versuch("eigene Vorschau", item.id, .vorschau,
+                    item.imageTags?["Thumb"]),
+            // 5 · Das Standbild der Folge. Als Cover schwaecher — deshalb
+            //     zuletzt und nicht zuerst —, aber immer noch ein Bild.
+            item.seriesId != nil
+                ? versuch("Folgenstandbild", item.id, .poster,
+                          item.imageTags?["Primary"])
+                : nil,
+        ]
+
+        guard let treffer = kette.compactMap({ $0 }).first else { return nil }
+        return (treffer.0, treffer.1)
+    }
+
+    /// Das Bild fuer den Sperrbildschirm und das Kontrollzentrum.
+    ///
+    /// **Bei Folgen das Standbild der Folge, nicht das Plakat der Serie.**
+    /// Das Plakat sagt nur, welche Serie laeuft — das steht daneben ohnehin
+    /// als Text. Das Standbild zeigt, *wo* man ist, und das ist die Auskunft,
+    /// die dort etwas traegt.
+    ///
+    /// Filme behalten ihr Plakat: dort gibt es kein Standbild, und das
+    /// Plakat *ist* der Titel.
+    func sperrbildURL(for item: Item, hoehe: Int = 600) -> URL? {
+        if item.seriesId != nil, let marke = item.imageTags?["Primary"] {
+            return bilder?.bauen(itemID: item.id, marke: marke,
+                                 mass: .hoechstensHoch(hoehe))
+        }
+        return imageURL(for: item, maxHeight: hoehe, hochkant: true)
     }
 
     func backdropURL(for item: Item) -> URL? {
@@ -569,6 +681,18 @@ final class AppModel {
             await alter?.abmelden()
         }
         Keychain.delete(key: Self.sessionKey)
+        // Sonst stehen im Top Shelf weiter die Titel des vorigen Kontos.
+        //
+        // **Nur auf dem Fernseher, und deshalb eingeklammert.** Ein Top Shelf
+        // gibt es sonst nirgends: `Regalvorschau.swift` steht in der
+        // tvOS-App und in ihrer Erweiterung, in keinem anderen Ziel. Ohne
+        // die Klammer bricht macOS an dieser Zeile ab — dort sind die
+        // geteilten Dateien einzeln aufgezaehlt, waehrend iOS `Sources/Shared`
+        // als ganzen Ordner nimmt und die Datei versehentlich mitbekommt.
+        // Der Bau auf iOS beweist hier also nichts.
+        #if os(tvOS)
+        Regal.leeren()
+        #endif
         session = nil
         client = nil
         views = []

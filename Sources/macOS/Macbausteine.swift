@@ -134,6 +134,7 @@ struct Hauptknopf: View {
                 }
             }
             .padding(.horizontal, 30)
+            .frame(maxWidth: .infinity)
             .frame(height: Stil.hauptknopfHoehe)
             .foregroundStyle(Stil.grund)
             .background(schwebt ? Stil.schrift.opacity(0.88) : Stil.schrift,
@@ -195,8 +196,12 @@ struct Posterkachel: View {
     var auswahl: (() -> Void)?
     /// `nil`, wenn es keine Übersicht dazu gibt (A6).
     var uebersicht: (() -> Void)?
+    /// Wird beim Überfahren gerufen — siehe `Seriencache.vorholen(_:mit:)`.
+    var vorholen: (() -> Void)?
 
-    @State private var schwebt = false
+    @State private var schwebt = false {
+        didSet { if schwebt, !oldValue { vorholen?() } }
+    }
 
     var body: some View {
         Kachelhuelle(auswahl: auswahl, schwebt: $schwebt,
@@ -236,8 +241,12 @@ struct Querkachel: View {
     var fortschritt: Double?
     var auswahl: (() -> Void)?
     var uebersicht: (() -> Void)?
+    /// Wird beim Überfahren gerufen — siehe `Seriencache.vorholen(_:mit:)`.
+    var vorholen: (() -> Void)?
 
-    @State private var schwebt = false
+    @State private var schwebt = false {
+        didSet { if schwebt, !oldValue { vorholen?() } }
+    }
 
     var body: some View {
         Kachelhuelle(auswahl: auswahl, schwebt: $schwebt,
@@ -318,13 +327,7 @@ struct Bildflaeche: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             Stil.flaeche
-            if let bild {
-                AsyncImage(url: bild) { stufe in
-                    if let abbild = stufe.image {
-                        abbild.resizable().aspectRatio(contentMode: .fill)
-                    }
-                }
-            }
+            Netzbild(url: bild)
             if let fortschritt, fortschritt > 0 {
                 GeometryReader { raum in
                     ZStack(alignment: .leading) {
@@ -443,3 +446,317 @@ struct Hinweisstreifen: View {
             .overlay(Capsule().strokeBorder(Stil.rand, lineWidth: 1))
     }
 }
+
+// MARK: - Detailseite
+
+/// Ein Knopf der Aktionsreihe: Kreis mit Symbol, **Beschriftung darunter**.
+///
+/// Anatomie wörtlich aus `Aktionsknopf` in `Sources/Shared/Stil.swift`:
+/// Kreis 44, Symbol 18 medium, gefüllt mit Weiß 9 %, aktiv im Akzent mit
+/// dunklem Symbol; darunter der Name in 11 auf 75 %. Breite 68.
+///
+/// Mein erster Mac-Knopf trug nur ein Symbol in einem Umriss und hieß für
+/// niemanden etwas — die Beschriftung stand allein für VoiceOver da.
+struct Detailaktion: View {
+    let symbol: String
+    let titel: LocalizedStringKey
+    var aktiv = false
+    let auswahl: () -> Void
+
+    @State private var schwebt = false
+
+    var body: some View {
+        Button(action: auswahl) {
+            VStack(spacing: 7) {
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(aktiv ? Stil.grund : Stil.schrift)
+                    .frame(width: 44, height: 44)
+                    .background(aktiv ? Stil.akzent
+                                      : Stil.schrift.opacity(schwebt ? 0.16 : 0.09),
+                                in: Circle())
+                Text(titel)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Stil.schrift.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .frame(width: 68)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
+        .accessibilityLabel(Text(titel))
+        .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// Der Kopf einer Detailseite: Pfeil links, Titel daneben.
+///
+/// **Kein Umriss, kein Kreis** — ein blanker Winkel in 20 semibold auf 40 × 40,
+/// wie `Detailkopf` in `Sources/Shared/Stil.swift`. Der Titel blendet ein,
+/// wenn weit genug gescrollt ist.
+///
+/// **Keine Glasleiste dahinter.** Auf dem iPhone trägt sie den Titel über dem
+/// scrollenden Bild. Hier reicht die Kulisse nur über die rechten zwei
+/// Drittel, also stand die Leiste links auf blankem Grund und war als
+/// dunkler Balken zu sehen — rechts, wo das Bild liegt, verlor sie sich
+/// darin. Ein Streifen, der nur halb da ist, ist schlimmer als keiner.
+/// Wo die Seite gerade steht.
+///
+/// **Warum das ein eigenes Objekt ist und kein `@State` in der Seite.**
+///
+/// `onScrollGeometryChange` feuert bei jedem Takt des Scrollens. Schreibt es
+/// in ein `@State` der Seite, wertet SwiftUI deren **ganzen Rumpf** neu aus —
+/// bei einer Serienseite also Kopf, Reiterreihe und die Folgenliste, und das
+/// sechzigmal in der Sekunde. Beim schnellen Ziehen kommt der Hauptlauf dann
+/// nicht mehr nach, die Scrollfläche verliert den Anschluss und springt.
+///
+/// Als `@Observable` wird nur neu gezeichnet, wer den Wert **liest** — und
+/// das ist einzig der `Detailkopf`. Die Seite gibt den Halter nur weiter.
+@MainActor
+@Observable
+final class Kopfstand {
+    var versatz: CGFloat = 0
+}
+
+struct Detailkopf: View {
+    let titel: String
+    /// Wo die Seite steht — siehe `Kopfstand`.
+    let stand: Kopfstand
+    private var versatz: CGFloat { stand.versatz }
+
+    /// **Ab wo die Leiste kommt — hergeleitet, nicht geschätzt.**
+    ///
+    /// Sie soll genau dann da sein, wenn der große Titel unter ihr
+    /// verschwindet. Aus der Geometrie des Heldenkopfes:
+    ///
+    /// - Der Titel beginnt `Stil.titelHoehe + 98` unter der Oberkante des
+    ///   Heldenbildes und ist 42 Punkt hoch.
+    /// - Die Leiste selbst ist `Stil.titelHoehe + 24` hoch.
+    ///
+    /// Die Oberkante des Titels erreicht die Unterkante der Leiste also bei
+    /// 98 − 24 = **74**, und 42 Punkt später ist er ganz darunter. Genau über
+    /// diese Strecke blendet die Leiste ein.
+    ///
+    /// Vorher stand hier `Stil.heldHoehe - 150` = 230 — ein Wert aus der
+    /// iPhone-Fassung, wo Heldenbild und Titel anders sitzen. Auf dem Mac kam
+    /// die Leiste damit erst, wenn der Titel längst weg war.
+    var ab: CGFloat = 98 - 24
+    /// Über welche Strecke sie einblendet: die Höhe des großen Titels.
+    var ueber: CGFloat = 42
+    let zurueck: () -> Void
+
+    private var staerke: Double {
+        guard ueber > 0 else { return 1 }
+        return Double(min(max((versatz - ab) / ueber, 0), 1))
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button(action: zurueck) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Stil.schrift)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Zurück"))
+
+            Text(verbatim: titel)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Stil.schrift)
+                .lineLimit(1)
+                .opacity(staerke)
+
+            Spacer(minLength: 0)
+        }
+        // **Bündig mit dem Inhalt.** Die Fensterampel sitzt über der
+        // Seitenleiste, nicht über dem Inhaltsbereich — der Abstand, den ich
+        // hier freigehalten hatte, war nie nötig. Der Pfeil steht jetzt auf
+        // derselben Linie wie „Weiterschauen" auf der Startseite; die 8 Punkt
+        // Ausgleich sind der Innenabstand des Knopfes selbst.
+        .padding(.leading, Stil.randAbstand - 8)
+        .padding(.trailing, Stil.randAbstand)
+        // Seit der Inhalt unter der Titelleiste durchläuft, sitzt der Pfeil
+        // sonst auf der Fensterkante. 24 setzt ihn auf dieselbe Höhe wie die
+        // Seitenleiste ihre Wortmarke.
+        .padding(.top, 24)
+        // **Luft unter dem Text.** Die Leiste reicht ein Stück tiefer als
+        // ihr Inhalt; sonst klebt der Titel auf der Haarlinie. Der Betrag
+        // steht zweimal: einmal als Abstand, damit der Text an seinem Platz
+        // bleibt, und einmal in der Höhe, damit die Leiste nach unten wächst
+        // statt den Text mitzunehmen.
+        .padding(.bottom, 10)
+        .frame(height: Stil.titelHoehe + 24 + 10, alignment: .bottom)
+        // **Die Leiste, die beim Scrollen kommt** — wörtlich wie auf iPhone
+        // und iPad: unten eine Haarlinie, dahinter Glas, und solange das Bild
+        // oben steht stattdessen ein weicher Verlauf, damit der Pfeil auf
+        // hellem Bild lesbar bleibt.
+        //
+        // Nicht zu verwechseln mit dem milchigen Streifen, den macOS 26
+        // ungefragt über jede Scrollfläche legt — der ist weiterhin
+        // abgestellt (`ohneKanteneffekt`). Diese hier ist gewollt.
+        .background(alignment: .bottom) {
+            Rectangle().fill(Stil.linie).frame(height: 1).opacity(staerke)
+        }
+        .background {
+            ZStack {
+                LinearGradient(colors: [Stil.grund.opacity(0.7), Stil.grund.opacity(0)],
+                               startPoint: .top, endPoint: .bottom)
+                    .opacity(1 - staerke)
+                // **Nur wenn sie etwas tut.**
+                //
+                // `Leistenglas` ist eine *lebende* Unschärfe: sie verwischt,
+                // was darunter durchläuft, und rechnet das bei jedem Bild neu
+                // — auch dann, wenn die Maske sie auf null stellt und man
+                // nichts sieht. Über einer scrollenden Seite ist das die
+                // teuerste Fläche im Fenster, und sie stand dort dauerhaft.
+                //
+                // Steht sie erst ab einem Hauch Sichtbarkeit in der Ansicht,
+                // kostet das Scrollen im Heldenbild gar nichts.
+                if staerke > 0.01 {
+                    Leistenglas(staerke: staerke)
+                }
+            }
+            .ignoresSafeArea(edges: .top)
+        }
+    }
+}
+
+/// Eine waagerechte Reihe mit Pfeilen zum Durchblättern.
+///
+/// **Nur auf dem Mac.** Auf iPhone und Fernseher wischt oder drückt man; hier
+/// gibt es Zeiger und womöglich kein Trackpad, und dann ist eine waagerechte
+/// Reihe ohne Pfeile nicht erreichbar. Der Grund ist die Eingabeart — genau
+/// die Sorte Abweichung, die Abschnitt F erlaubt.
+///
+/// Die Pfeile erscheinen beim Schweben und nur dort, wo es etwas zu holen
+/// gibt: am linken Rand keiner nach links, am rechten keiner nach rechts.
+struct Blätterreihe<Inhalt: View>: View {
+    /// Der seitliche Rand. **Null, wenn der Aufrufer schon einen setzt** —
+    /// sonst stehen die Kacheln 48 Punkt eingerückt unter einer Überschrift,
+    /// die bei 24 beginnt, und die Linie stimmt nicht mehr.
+    var rand: CGFloat = Stil.randAbstand
+    var schrittweite: CGFloat = 3
+    var breiteJeStueck: CGFloat = Stil.kachelBreite + Stil.kachelAbstand
+    /// Wie hoch das **Bild** einer Kachel ist — nicht die ganze Kachel.
+    ///
+    /// Die Blätterpfeile gehören optisch in die Mitte des Bildes. Mittig über
+    /// der ganzen Reihe sitzen sie zu tief, weil unter jedem Bild noch zwei
+    /// Textzeilen stehen; bei einem Poster sind das rund 45 Punkt Versatz,
+    /// und die sieht man.
+    var bildHoehe: CGFloat = Stil.kachelHoehe
+    @ViewBuilder let inhalt: Inhalt
+
+    @State private var schwebt = false
+    @State private var versatz: CGFloat = 0
+    @State private var gesamt: CGFloat = 0
+    @State private var sichtbar: CGFloat = 0
+
+    /// Was ein Takt über die Reihe verrät — in einem Wert, damit ein
+    /// Beobachter genügt.
+    private struct Messwerte: Equatable {
+        let versatz: CGFloat
+        let gesamt: CGFloat
+        let sichtbar: CGFloat
+    }
+
+    private var kannLinks: Bool { versatz > 1 }
+    private var kannRechts: Bool { versatz + sichtbar < gesamt - 1 }
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            // **`LazyHStack`, nicht `HStack`.** Ein `HStack` baut jede Kachel
+            // sofort — die Besetzungsreihe elf Bilder, die Ähnliches-Reihe
+            // ebenso viele —, und zwar in demselben Bild, in dem die Seite
+            // hereinfährt. Das war das Ruckeln: nicht die Bewegung war hart,
+            // sondern sie verlor Bilder, weil daneben die halbe Seite gebaut
+            // wurde. Beim Hinausfahren stand alles längst, deshalb lief es
+            // dort weich.
+            LazyHStack(alignment: .top, spacing: Stil.kachelAbstand) { inhalt }
+                .padding(.horizontal, rand)
+                // Damit die Kacheln beim Schweben oben nicht abgeschnitten
+                // werden, wenn sie sich vergrößern.
+                .padding(.vertical, 4)
+        }
+        .scrollIndicators(.never)
+        .ohneKanteneffekt()
+        .scrollPosition($stelle, anchor: .leading)
+        // **Ein Beobachter statt zweier Geometrieleser.** Die beiden
+        // `GeometryReader` schrieben beim Auslegen in den Zustand und lösten
+        // damit weitere Auslegevorgänge aus — auch das kostete Bilder.
+        .onScrollGeometryChange(for: Messwerte.self) {
+            Messwerte(versatz: $0.contentOffset.x,
+                      gesamt: $0.contentSize.width,
+                      sichtbar: $0.containerSize.width)
+        } action: { _, neu in
+            versatz = neu.versatz
+            gesamt = neu.gesamt
+            sichtbar = neu.sichtbar
+        }
+        // Oben ausgerichtet und von Hand gesetzt: die 4 Punkt sind der
+        // senkrechte Rand der Reihe, 17 die halbe Knopfhöhe.
+        .overlay(alignment: .topLeading) {
+            if schwebt, kannLinks {
+                pfeil("chevron.left", "Zurückblättern") { blättern(-1) }
+                    .offset(y: 4 + bildHoehe / 2 - 17)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if schwebt, kannRechts {
+                pfeil("chevron.right", "Weiterblättern") { blättern(1) }
+                    .offset(y: 4 + bildHoehe / 2 - 17)
+            }
+        }
+        .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
+    }
+
+    @State private var stelle: ScrollPosition = .init(idType: CGFloat.self)
+
+    private func blättern(_ richtung: CGFloat) {
+        let weite = breiteJeStueck * schrittweite
+        let ziel = max(0, min(gesamt - sichtbar, versatz + richtung * weite))
+        withAnimation(.easeInOut(duration: 0.28)) {
+            stelle.scrollTo(x: ziel)
+        }
+    }
+
+    private func pfeil(_ symbol: String, _ name: LocalizedStringKey,
+                       _ auswahl: @escaping () -> Void) -> some View {
+        Button(action: auswahl) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Stil.schrift)
+                .frame(width: 34, height: 34)
+                .background(Stil.grund.opacity(0.72), in: Circle())
+                .overlay(Circle().strokeBorder(Stil.rand, lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(name))
+        .padding(.horizontal, 6)
+        .transition(.opacity)
+    }
+}
+
+
+/// Nimmt der Scrollfläche die milchige Leiste am Rand.
+///
+/// **Erst ab macOS 26**, und das Ziel steht auf 15 — deshalb die Prüfung.
+/// Auf älteren Fassungen gibt es den Effekt gar nicht, dort ist nichts zu
+/// tun.
+extension View {
+    @ViewBuilder
+    func ohneKanteneffekt() -> some View {
+        if #available(macOS 26.0, *) {
+            scrollEdgeEffectHidden(true, for: .all)
+        } else {
+            self
+        }
+    }
+}
+

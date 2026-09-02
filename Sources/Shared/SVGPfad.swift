@@ -14,8 +14,23 @@ enum SVGPfad {
     /// `box` ist die viewBox **einschließlich Ursprung** — der liegt nicht
     /// immer bei null. Die Wortmarke etwa beginnt bei `23 -778`; ohne das
     /// Verschieben läge sie weit außerhalb des Rahmens.
+    ///
+    /// **Der Rohpfad wird gemerkt.** `Shape.path(in:)` ruft das Rahmenwerk
+    /// bei *jedem* Auslegen auf — bei einer laufenden Bewegung also einmal je
+    /// Einzelbild. Ohne Speicher wurde die Wortmarke dabei jedes Mal neu
+    /// abgetastet und zusammengesetzt.
+    ///
+    /// Gemessen mit `sample` während des Öffnens einer Serienseite auf dem
+    /// Mac: **75 von 439 Stichproben des Hauptlaufs — 17 % — steckten in
+    /// `SVGPfad`**, davon 56 im Abtaster. Die Wortmarke steht dort dauerhaft
+    /// in der Seitenleiste, wird also bei jeder Bewegung im Fenster
+    /// mitgerechnet.
+    ///
+    /// Gemerkt wird der **unverwandelte** Pfad: die Vorlagen sind eine
+    /// Handvoll fester Zeichenketten, die Verwandlung dagegen hängt am
+    /// Rahmen und ist billig.
     static func pfad(_ daten: String, box: CGRect, in rahmen: CGRect) -> Path {
-        let roh = zeichne(marken(daten))
+        let roh = Pfadspeicher.geteilt.roh(daten)
         let faktor = min(rahmen.width / box.width, rahmen.height / box.height)
         let breite = box.width * faktor
         let hoehe = box.height * faktor
@@ -26,6 +41,9 @@ enum SVGPfad {
         t = t.translatedBy(x: -box.minX, y: -box.minY)
         return roh.applying(t)
     }
+
+    /// Der abgetastete Pfad ohne jede Verwandlung.
+    static func rohpfad(_ daten: String) -> Path { zeichne(marken(daten)) }
 
     // MARK: Zerlegen
 
@@ -273,6 +291,38 @@ enum SVGPfad {
 }
 
 /// Eine Form aus SVG-Pfaddaten.
+/// Merkt sich die abgetasteten Rohpfade. Eine Handvoll Einträge — die
+/// Vorlagen stehen als feste Zeichenketten im Programm.
+///
+/// `Shape.path(in:)` ist nicht auf den Hauptlauf festgelegt, deshalb ein
+/// Schloss statt eines Akteurs.
+private final class Pfadspeicher: @unchecked Sendable {
+    static let geteilt = Pfadspeicher()
+
+    private let schloss = NSLock()
+    private var bekannt: [String: Path] = [:]
+
+    func roh(_ daten: String) -> Path {
+        schloss.lock()
+        if let da = bekannt[daten] {
+            schloss.unlock()
+            return da
+        }
+        schloss.unlock()
+
+        let neu = SVGPfad.rohpfad(daten)
+
+        schloss.lock()
+        // Mehr als eine Handvoll wäre ein Zeichen, dass hier Pfade
+        // hereinkommen, die zur Laufzeit entstehen — dann lieber leeren als
+        // unbegrenzt wachsen.
+        if bekannt.count > 32 { bekannt.removeAll() }
+        bekannt[daten] = neu
+        schloss.unlock()
+        return neu
+    }
+}
+
 struct SVGForm: Shape {
     let daten: String
     let box: CGRect

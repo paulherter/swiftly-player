@@ -430,7 +430,7 @@ struct ItemDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Gruppentitel(text: "Datei").padding(.top, 22)
                 Rectangle().fill(Stil.linie).frame(height: 1)
-                if let container = quelle.container {
+                if quelle.container != nil {
                     Dateizeile(bezeichnung: "Container", wert: Dateiangaben.container(quelle) ?? "")
                     Rectangle().fill(Stil.linie).frame(height: 1)
                 }

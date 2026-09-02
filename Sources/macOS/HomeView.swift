@@ -1,3 +1,4 @@
+import AppKit
 import JellyfinKit
 import SwiftUI
 
@@ -16,42 +17,66 @@ import SwiftUI
 struct HomeView: View {
     let model: AppModel
     @Environment(Abspielsteuerung.self) private var steuerung
-    /// Legt ein Ziel auf den Stapel des Bereichs.
-    ///
-    /// Bewusst durchgereicht und **kein** eigenes `navigationDestination`:
-    /// zwei Ziele für denselben Typ im selben Stapel sind eine Falle, und
-    /// welches gewinnt, ist nicht festgelegt.
-    let oeffne: (Item) -> Void
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
 
-    @State private var weiter: [Item] = []
-    @State private var naechste: [Item] = []
-    @State private var neu: [Item] = []
-    @State private var geladen = false
+    /// **Der geteilte Stand, nicht ein eigener.**
+    ///
+    /// Hier standen vier `@State`-Felder und eine eigene `laden()`. Das war
+    /// ein Nachbau von `Startseitenmodell`, und er war schon auseinander
+    /// gelaufen: er rief `naechsteFolge()` **ohne** Argument, sodass die
+    /// Titel aus „Weiterschauen" gleich noch einmal unter „Nächste Folge"
+    /// standen, und er räumte bei einem einzelnen Aussetzer die ganze Reihe
+    /// leer — genau der Fehler, vor dem der Kommentar im geteilten Modell
+    /// warnt.
+    ///
+    /// Der Stand liegt jetzt in `HauptView` und überlebt den Leistenwechsel.
+    let stand: Startseitenmodell
+
+    private var weiter: [Item] { stand.weiterschauen }
+    private var naechste: [Item] { stand.naechsteFolge }
+    private var neu: [Item] { stand.zuletzt }
+    private var geladen: Bool { stand.geladen }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
 
                 if !weiter.isEmpty {
-                    Reihe(titel: "Weiterschauen") {
+                    Reihe(titel: "Weiterschauen", quer: true) {
                         ForEach(weiter, id: \.id) { titel in
                             Querkachel(titel: kopf(titel), zweitzeile: titel.kontextzeile,
                                        bild: model.querbildURL(for: titel),
                                        fortschritt: fortschritt(titel),
                                        auswahl: { steuerung.starte(titel) },
-                                       uebersicht: { oeffne(titel) })
+                                       uebersicht: { navigator.oeffne(.titel(titel), in: bereich) },
+                                       vorholen: { Seriencache.geteilt.vorholen(titel, mit: model) })
                         }
                     }
                 }
 
                 if !naechste.isEmpty {
+                    // **Hochkant, und der Klick führt auf die Seite.**
+                    //
+                    // Hier stand eine Querkachel, die sofort abspielte —
+                    // beides falsch, und beides ohne Grund, der mit Eingabe
+                    // oder Fenstergröße zu tun hätte.
+                    //
+                    // A2 im Register: „Nächste Folge **öffnet die
+                    // Übersicht**, sie startet nicht. Nur ‚Weiterschauen'
+                    // springt direkt in die Wiedergabe." Die iPhone-Fassung
+                    // schreibt denselben Satz an dieselbe Stelle. Waagerecht
+                    // ist ebenfalls allein „Weiterschauen" — iOS sagt es
+                    // wörtlich, tvOS ruft die Reihe mit `quer: false`.
                     Reihe(titel: "Nächste Folge") {
                         ForEach(naechste, id: \.id) { folge in
-                            // Von vorn — die Folge hat noch nicht angefangen.
-                            Querkachel(titel: kopf(folge), zweitzeile: folge.folgenkuerzel,
-                                       bild: model.querbildURL(for: folge),
-                                       auswahl: { steuerung.starte(folge, ab: 0) },
-                                       uebersicht: { oeffne(folge) })
+                            Button { navigator.oeffne(.titel(folge), in: bereich) } label: {
+                                Posterkachel(titel: kopf(folge),
+                                             zweitzeile: folge.folgenkuerzel,
+                                             bild: model.imageURL(for: folge, hochkant: true),
+                                             vorholen: { Seriencache.geteilt.vorholen(folge, mit: model) })
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -59,10 +84,11 @@ struct HomeView: View {
                 if !neu.isEmpty {
                     Reihe(titel: "Zuletzt hinzugefügt") {
                         ForEach(neu, id: \.id) { titel in
-                            NavigationLink(value: titel) {
+                            Button { navigator.oeffne(.titel(titel), in: bereich) } label: {
                                 Posterkachel(titel: titel.name,
                                              zweitzeile: titel.neuzugangszeile,
-                                             bild: model.imageURL(for: titel, hochkant: true))
+                                             bild: model.imageURL(for: titel, hochkant: true),
+                                             vorholen: { Seriencache.geteilt.vorholen(titel, mit: model) })
                             }
                             .buttonStyle(.plain)
                         }
@@ -75,12 +101,41 @@ struct HomeView: View {
                         .padding(.top, 120)
                 }
             }
-            .padding(.top, Stil.titelHoehe)
+            // Nicht `inhaltOben` allein: die Startseite beginnt mit einer
+            // kleineren Schrift als die Bibliotheksseiten und stünde sonst
+            // zwei Punkt zu hoch. Siehe `Stil.reihenkopfAusgleich`.
+            .padding(.top, Stil.inhaltOben + Stil.reihenkopfAusgleich)
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
+        // aus über jede Scrollfläche — sie war nie in unserem Code, und
+        // deshalb habe ich zweimal an der falschen Stelle gesucht. Über dem
+        // Bild verlor sie sich, links auf blankem Grund stand sie als Balken.
+        //
+        // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
+        // abgestellt wie das, was man selbst hinschreibt.
+        .ohneKanteneffekt()
         .overlay { if !geladen { Lader() } }
         .task { await laden() }
+        // **Auch beim Zurückkommen ins Fenster** (D8).
+        //
+        // `.task` deckt „Ansicht erscheint" ab — also den Leistenwechsel und
+        // das Schliessen des Players. Nicht abgedeckt ist der Fall, für den
+        // die Regel gemacht ist: am Fernseher zu Ende schauen und dann zum
+        // Mac greifen. Dort stand die Folge sonst weiter in „Weiterschauen".
+        //
+        // Auf iOS ist das Gegenstück `scenePhase`; auf dem Mac ist
+        // `didBecomeActiveNotification` das Genauere — `scenePhase` schlägt
+        // dort auch um, wenn nur ein anderes Fenster derselben App nach vorn
+        // kommt.
+        //
+        // Die Frist von 30 Sekunden steckt in `Auffrischung`, nicht hier.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard stand.brauchtAuffrischung else { return }
+            Task { await auffrischen() }
+        }
     }
 
     private func kopf(_ titel: Item) -> String {
@@ -93,19 +148,28 @@ struct HomeView: View {
     }
 
     private func laden() async {
-        async let a = model.weiterschauen()
-        async let b = model.naechsteFolge()
-        async let c = model.zuletztHinzugefuegt()
-        weiter = await a ?? []
-        naechste = await b ?? []
-        neu = await c ?? []
-        geladen = true
+        guard !stand.geladen else { return }
+        await auffrischen()
     }
+
+    /// Holt neu, ohne die Reihen vorher zu leeren — der alte Stand bleibt
+    /// stehen, bis der neue da ist.
+    private func auffrischen() async {
+        await stand.laden(model)
+        // Die Serien zu den Folgen im Hintergrund nachziehen: alle drei
+        // Reihen bestehen bei Serien aus Folgen, und ein Klick darauf führt
+        // auf die Serienseite (A8) — bis dahin fuhr sonst eine leere Seite
+        // herein.
+        Seriencache.geteilt.vorholen(weiter + naechste + neu, mit: model)
+    }
+
 }
 
 /// Eine waagerechte Reihe mit Überschrift.
 struct Reihe<Inhalt: View>: View {
     let titel: LocalizedStringKey
+    /// Waagerechte Kacheln — nur „Weiterschauen".
+    var quer = false
     @ViewBuilder let inhalt: Inhalt
 
     var body: some View {
@@ -113,19 +177,18 @@ struct Reihe<Inhalt: View>: View {
             // Der geteilte `Reihentitel` setzt keinen Rand — `randAbstand`
             // gibt es auf tvOS nicht, also gehört er zum Aufrufer. Auch die
             // Breite: ohne sie rutscht der Titel in die Mitte.
+            // Der geteilte `Reihentitel` setzt keinen Rand — `randAbstand`
+            // gibt es auf tvOS nicht, also gehört er zum Aufrufer. Auch die
+            // Breite: ohne sie rutscht der Titel in die Mitte.
             Reihentitel(text: titel)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Stil.randAbstand)
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: Stil.kachelAbstand) {
-                    inhalt
-                }
-                .padding(.horizontal, Stil.randAbstand)
-                // Damit der Schwebe-Versatz von 3 Punkten oben nicht
-                // abgeschnitten wird.
-                .padding(.vertical, 4)
-            }
-            .scrollIndicators(.never)
+            // **Jede Reihe mit ihrem eigenen Maß.** Vorher rechnete auch die
+            // Posterreihe mit der Querbreite — dann blättert sie zu weit —
+            // und die Pfeile standen auf der Höhe einer Querkachel.
+            Blätterreihe(breiteJeStueck: (quer ? Stil.querBreite : Stil.kachelBreite)
+                            + Stil.kachelAbstand,
+                         bildHoehe: quer ? Stil.querHoehe : Stil.kachelHoehe) { inhalt }
         }
     }
 }

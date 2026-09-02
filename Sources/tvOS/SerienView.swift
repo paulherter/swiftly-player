@@ -96,7 +96,12 @@ struct SerienView: View {
         // Die Staffel, die auch `laden()` waehlen wuerde — sonst stuende
         // beim Wiederkommen die erste vorn statt der zuletzt gesehenen.
         let gesucht = startStaffelID ?? gemerkt?.weiterMit?.seasonId ?? startFolge?.seasonId
+        // Der Server kann an einer Folge kein `SeasonId` liefern — dann ueber
+        // die Nummer, die immer dasteht. Am Geraet gemessen.
+        let gesuchteNummer = startFolge?.parentIndexNumber ?? gemerkt?.weiterMit?.parentIndexNumber
         let staffel = gemerkt?.staffeln.first { $0.id == gesucht }
+                   ?? gemerkt?.staffeln.first { $0.indexNumber != nil
+                                                && $0.indexNumber == gesuchteNummer }
                    ?? gemerkt?.staffeln.first
         _gewaehlteStaffel = State(initialValue: staffel)
 
@@ -476,7 +481,11 @@ struct SerienView: View {
             // Über eine Folge gekommen: deren Staffel steht vorn. Sonst die,
             // in der es weitergeht — und erst dann die erste.
             let gesucht = startStaffelID ?? weiterMit?.seasonId
-            gewaehlteStaffel = staffeln.first { $0.id == gesucht } ?? staffeln.first
+            // Und ueber die Nummer, wenn der Server keine Kennung mitgibt.
+            let nummer = startFolge?.parentIndexNumber ?? weiterMit?.parentIndexNumber
+            gewaehlteStaffel = staffeln.first { $0.id == gesucht }
+                ?? staffeln.first { $0.indexNumber != nil && $0.indexNumber == nummer }
+                ?? staffeln.first
         }
         if let ziel = weiterMit {
             plan = await model.plan(for: ziel.id)
