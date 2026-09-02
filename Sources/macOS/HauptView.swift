@@ -277,7 +277,6 @@ struct HauptView: View {
                         .transition(.asymmetric(insertion: .identity,
                                                 removal: .move(edge: .trailing)))
                 }
-                .id(bereich)
                 .zIndex(1)
                 }
             }
@@ -286,6 +285,29 @@ struct HauptView: View {
             // Drittel über der Seitenleiste, und man sieht Startseite und
             // Seitenleiste übereinander. Genau das war im Bild zu sehen.
             .clipped()
+            // **Der Bereich als Ganzes, mit einer Kennung.**
+            //
+            // Vorher trugen Wurzel und Seitenstapel je eine eigene. Dann
+            // verschwindet ein offener Seitenstapel schlagartig, während die
+            // Wurzel darunter noch blendet. Ein Bereich ist ein Stück — was
+            // in ihm offen war, geht mit ihm.
+            .id(bereich)
+            // „Fade Through": das Alte blendet in 100 ms aus, danach kommt
+            // das Neue in 200 ms und wächst dabei von 92 % auf 100 %. Die
+            // Zahlen und das Warum stehen bei `Stil.zeitBereichHerein`.
+            .transition(.asymmetric(
+                insertion: .scale(scale: Stil.bereichKleiner).combined(with: .opacity)
+                    .animation(Stil.zeitBereichHerein),
+                removal: .opacity.animation(Stil.zeitBereichHinaus)))
+            // **Nur hier, nicht am Elternteil.** Genau daran ist der erste
+            // Versuch gescheitert: eine Anweisung mit `value:` gilt für
+            // alles, was sich im Unterbau ändert, und hat damals auch
+            // Seitenversatz und Schleier mitbewegt — sichtbar als
+            // Seitenschub samt Schattenkante, wo nichts fahren sollte. Hier
+            // steht sie an dem Stück, das getauscht wird; darin gibt es
+            // nichts zu bewegen, weil das alte seinen Stand behält und das
+            // neue frisch gezeichnet wird.
+            .animation(.default, value: bereich)
         }
         .onChange(of: navigator.seiten(bereich).count, initial: true) { alt, neu in
             guard neu != tiefe else { return }

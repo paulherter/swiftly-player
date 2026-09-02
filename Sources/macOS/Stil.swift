@@ -129,6 +129,33 @@ extension Stil {
     /// Sprung, auch wenn nichts ruckelt.
     static let zeitEinblenden = Animation.easeOut(duration: 0.25)
 
+    // MARK: Der Wechsel in der Leiste — „Fade Through"
+    //
+    // **Nachgelesen, nicht ausgedacht.** Der Übergang hat einen Namen und eine
+    // veröffentlichte Vorschrift: das Ausgehende blendet in 100 ms aus,
+    // **danach** blendet das Eingehende in 200 ms ein und wächst dabei von 92
+    // % auf 100 %. Nacheinander, nicht überlappend.
+    //
+    // Die 92 % sind ausdrücklich so gewählt und nicht kleiner: der Übergang
+    // soll die Aufmerksamkeit nicht auf sich ziehen. Genau deshalb sieht man
+    // ihn kaum und findet ihn trotzdem angenehm.
+    //
+    // Gedacht ist er für Inhalte **ohne starke Beziehung zueinander** — und
+    // der Wechsel zwischen Tabs wird in der Vorschrift wörtlich als der
+    // passende Fall genannt.
+    //
+    // Zur Einordnung: eine macOS-Seitenleiste schaltet sonst ohne Blende um
+    // (Finder, Mail, Systemeinstellungen). Das hier ist eine bewusste
+    // Abweichung, Solange jeder Wechsel neu geladen hat, hätte eine Blende die
+    // Wartezeit nur verlängert.
+
+    /// Das Alte geht. Nur blenden, nicht schrumpfen.
+    static let zeitBereichHinaus = Animation.easeIn(duration: 0.10)
+    /// Das Neue kommt — erst danach, deshalb der Vorlauf von 100 ms.
+    static let zeitBereichHerein = Animation.easeOut(duration: 0.20).delay(0.10)
+    /// Woher es wächst.
+    static let bereichKleiner: CGFloat = 0.92
+
     /// Überblenden beim Ersetzen. 180 ms ease-out — dieselbe Zeit, in der auf
     /// dem iPhone die Player-Steuerung erscheint.
     static let zeitSeite = Animation.easeOut(duration: 0.18)
