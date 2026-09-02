@@ -52,6 +52,10 @@ struct PlayerScreen: View {
     /// nachzieht.
     @State private var sprungAnzeige: (richtung: Int, sekunden: Int)?
     @State private var sprungTakt = 0
+    /// Je Richtung ein eigener Zähler — sonst spielt der Effekt am falschen
+    /// Knopf, wenn man abwechselnd vor und zurück springt.
+    @State private var taktZurueck = 0
+    @State private var taktVor = 0
     @State private var schlafminuten: Int?
     @State private var schlafAufgabe: Task<Void, Never>?
     @State private var seitStart = Date()
@@ -187,7 +191,10 @@ struct PlayerScreen: View {
                 Button("") { springe(Double(model.vorSekunden)) }
                     .keyboardShortcut(.rightArrow, modifiers: [])
                 Button("") { fluchttaste() }.keyboardShortcut(.escape, modifiers: [])
-                Button("") { halter.setzeKlein(!halter.istKlein) }
+                // „Kleines Fenster" ist vorerst aus der Oberfläche raus;
+                // der Kurzbefehl geht mit, sonst gäbe es einen Weg dorthin,
+                // aus dem man nicht zurückfindet.
+                Button("") { }
                     .keyboardShortcut("p", modifiers: [.command, .option])
             }
             .opacity(0)
@@ -237,16 +244,14 @@ struct PlayerScreen: View {
     /// schließt die ganze Sitzung. Zwei Handlungen an derselben Ecke.
     private var kopf: some View {
         HStack(spacing: 0) {
-            // Der Winkel zeigt nach unten, weil der Player von unten
-            // aufsteigt und wieder dorthin verschwindet. Das Zeichen
-            // beschreibt eine Bewegung, die es hier wirklich gibt.
-            Aktionsknopf(symbol: "chevron.down", titel: "Player schließen",
-                         rand: false) { beenden() }
+            // **Links steht nichts mehr.** Der Winkel sass dort neben der
+            // Fensterampel; jetzt hat sie die Ecke für sich. Geschlossen wird
+            // rechts, bei den übrigen Werkzeugen.
+            //
+            // „Kleines Fenster" ist vorerst raus — die Maschinerie dahinter
+            // (`Fensterhalter.setzeKlein`) bleibt stehen, sie ist nur nicht
+            // mehr erreichbar.
             Spacer(minLength: 0)
-            Chip(beschriftung: String(localized: "Kleines Fenster"),
-                 symbol: "pip", aktiv: halter.istKlein) {
-                halter.setzeKlein(!halter.istKlein)
-            }
             Chip(beschriftung: String(localized: "Ton und Untertitel"),
                  symbol: "slider.horizontal.3", aktiv: spurwahlOffen) {
                 withAnimation(Stil.zeitSprung) { spurwahlOffen.toggle() }
@@ -267,6 +272,13 @@ struct PlayerScreen: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+
+            // Der Winkel zeigt nach unten, weil der Player von unten
+            // aufsteigt und wieder dorthin verschwindet. Das Zeichen
+            // beschreibt eine Bewegung, die es hier wirklich gibt.
+            Chip(beschriftung: String(localized: "Schließen"),
+                 symbol: "chevron.down", aktiv: false) { beenden() }
+                .padding(.leading, 12)
         }
         .padding(.trailing, 22)
         // **Auf derselben Linie wie der Titel unten.**
@@ -286,11 +298,17 @@ struct PlayerScreen: View {
     private var mitte: some View {
         HStack(spacing: 52) {
             Sprungknopf(symbol: "gobackward.\(model.zurueckSekunden)", gross: false,
-                        kuerzel: "←") { springe(-Double(model.zurueckSekunden)) }
+                        kuerzel: "←", takt: taktZurueck) {
+                springe(-Double(model.zurueckSekunden))
+            }
             Sprungknopf(symbol: stand.laeuft ? "pause.fill" : "play.fill", gross: true,
-                        kuerzel: String(localized: "Leertaste")) { umschalten() }
+                        kuerzel: String(localized: "Leertaste"), flott: true) {
+                umschalten()
+            }
             Sprungknopf(symbol: "goforward.\(model.vorSekunden)", gross: false,
-                        kuerzel: "→") { springe(Double(model.vorSekunden)) }
+                        kuerzel: "→", takt: taktVor) {
+                springe(Double(model.vorSekunden))
+            }
         }
     }
 
@@ -394,6 +412,7 @@ struct PlayerScreen: View {
         sprungBis = Date().addingTimeInterval(2)
         steuerungZeigen()
 
+        if sekunden < 0 { taktZurueck += 1 } else { taktVor += 1 }
         sprungTakt += 1
         let takt = sprungTakt
         withAnimation(.easeInOut(duration: 0.15)) {
@@ -624,6 +643,11 @@ struct Sprungknopf: View {
     let symbol: String
     let gross: Bool
     let kuerzel: String
+    /// Zählt jeden Druck. Ein **Wert**, kein Schalter: der Effekt spielt bei
+    /// jeder Änderung erneut, auch beim zehnten Sprung hintereinander.
+    var takt: Int = 0
+    /// Der schnelle Austausch statt des vorbeischiebenden.
+    var flott = false
     let auswahl: () -> Void
 
     @State private var schwebt = false
@@ -632,8 +656,25 @@ struct Sprungknopf: View {
         Button(action: auswahl) {
             VStack(spacing: 9) {
                 Image(systemName: symbol)
+                    // **Ohne das blendet SwiftUI die beiden Symbole
+                    // ineinander** — das sieht nach Fehler aus, nicht nach
+                    // Absicht. Stand wörtlich so in der iPhone-Fassung; auf
+                    // dem Mac fehlte es, und genau das ist das „weniger
+                    // smooth" beim Pausieren.
+                    //
+                    // `.downUp` schiebt beide Symbole aneinander vorbei und
+                    // braucht dafür sichtbar Zeit. Für Pause ist das zu lang:
+                    // der Knopf muss in demselben Moment umspringen, in dem
+                    // der Ton aufhört, sonst wirkt der ganze Player träge.
+                    // Dort also der einfache Austausch.
+                    .contentTransition(.symbolEffect(flott ? .replace.offUp
+                                                           : .replace.downUp))
                     .font(.system(size: gross ? 48 : 30, weight: .regular))
                     .foregroundStyle(Stil.schrift)
+                    // Diskreter Effekt aus SF Symbols: spielt einmal ab und
+                    // geht von selbst in die Ruhelage zurück. Ein selbst
+                    // gerechneter Winkel bliebe stehen.
+                    .symbolEffect(.bounce, options: .speed(1.7), value: takt)
                     .frame(width: gross ? 78 : 46, height: gross ? 78 : 46)
                     .scaleEffect(schwebt ? 1.06 : 1)
                 Text(verbatim: kuerzel)
@@ -794,6 +835,21 @@ final class Fensterhalter {
 
     private func ampelNachziehen(weich: Bool = false) {
         guard let fenster else { return }
+        // **Im Vollbild gar nichts.** Nicht nur „sichtbar lassen", sondern die
+        // Knöpfe überhaupt nicht anfassen.
+        //
+        // Dort schiebt macOS die Titelleiste selbst herunter, sobald der
+        // Zeiger an den oberen Rand geht — und animiert dabei genau diese
+        // Ansichten. Legt man in demselben Moment eine eigene
+        // `NSAnimationContext`-Gruppe auf ihre Deckkraft, ringen zwei
+        // Animationen um dieselben Ansichten, und das System steht für einen
+        // Moment.
+        //
+        // Der erste Anlauf hat nur `Fensteranstrich` im Vollbild ausgesetzt.
+        // Das war die halbe Ursache: das Nachziehen der Ampel lief weiter, und
+        // es feuerte bei **jeder** Bewegung des Zeigers über die Grenze der
+        // oberen Zone.
+        guard !istVollbild else { return }
         for knopf in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             guard let ansicht = fenster.standardWindowButton(knopf) else { continue }
             // **Ausblenden, nicht verstecken.** `isHidden` nimmt sie
@@ -815,7 +871,7 @@ final class Fensterhalter {
 
     /// Der Player meldet, ob der Zeiger oben in der Ampelzone steht.
     func setzeZeigerOben(_ oben: Bool) {
-        guard zeigerOben != oben else { return }
+        guard !istVollbild, zeigerOben != oben else { return }
         zeigerOben = oben
         ampelNachziehen(weich: true)
     }
