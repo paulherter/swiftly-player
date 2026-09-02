@@ -241,10 +241,6 @@ struct Unterseitenkopf: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            // Abstand zur Fensterampel: die sitzt links oben **im** Fenster,
-            // und der Inhalt läuft seit dem durchsichtigen Titelbalken bis
-            // ganz nach oben durch.
-            Color.clear.frame(width: 62, height: 1)
             Aktionsknopf(symbol: "chevron.left", titel: "Zurück", auswahl: zurueck)
             Text(titel)
                 .font(.system(size: 28, weight: .bold))

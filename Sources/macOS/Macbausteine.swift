@@ -509,10 +509,6 @@ struct Detailkopf: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            // Abstand zur Fensterampel: sie sitzt links oben **im** Fenster,
-            // seit der Titelbalken durchsichtig ist.
-            Color.clear.frame(width: 62, height: 1)
-
             Button(action: zurueck) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 20, weight: .semibold))
@@ -531,6 +527,12 @@ struct Detailkopf: View {
 
             Spacer(minLength: 0)
         }
+        // **Bündig mit dem Inhalt.** Die Fensterampel sitzt über der
+        // Seitenleiste, nicht über dem Inhaltsbereich — der Abstand, den ich
+        // hier freigehalten hatte, war nie nötig. Der Pfeil steht jetzt auf
+        // derselben Linie wie „Weiterschauen" auf der Startseite; die 8 Punkt
+        // Ausgleich sind der Innenabstand des Knopfes selbst.
+        .padding(.leading, Stil.randAbstand - 8)
         .padding(.trailing, Stil.randAbstand)
         .frame(height: Stil.titelHoehe)
         .background {
@@ -555,6 +557,10 @@ struct Detailkopf: View {
 /// Die Pfeile erscheinen beim Schweben und nur dort, wo es etwas zu holen
 /// gibt: am linken Rand keiner nach links, am rechten keiner nach rechts.
 struct Blätterreihe<Inhalt: View>: View {
+    /// Der seitliche Rand. **Null, wenn der Aufrufer schon einen setzt** —
+    /// sonst stehen die Kacheln 48 Punkt eingerückt unter einer Überschrift,
+    /// die bei 24 beginnt, und die Linie stimmt nicht mehr.
+    var rand: CGFloat = Stil.randAbstand
     var schrittweite: CGFloat = 3
     var breiteJeStueck: CGFloat = Stil.kachelBreite + Stil.kachelAbstand
     @ViewBuilder let inhalt: Inhalt
@@ -571,7 +577,7 @@ struct Blätterreihe<Inhalt: View>: View {
         ScrollViewReader { _ in
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: Stil.kachelAbstand) { inhalt }
-                    .padding(.horizontal, Stil.randAbstand)
+                    .padding(.horizontal, rand)
                     // Damit die Kacheln beim Schweben oben nicht abgeschnitten
                     // werden, wenn sie sich vergrößern.
                     .padding(.vertical, 4)

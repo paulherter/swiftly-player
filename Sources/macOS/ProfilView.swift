@@ -67,7 +67,7 @@ struct ProfilView: View {
         .overlay(alignment: .topLeading) {
             // Nur der Pfeil, kein Titel — der Bildblock ist der Titel.
             Aktionsknopf(symbol: "chevron.left", titel: "Zurück", auswahl: zurueck)
-                .padding(.leading, 92)
+                .padding(.leading, Stil.randAbstand - 8)
                 .padding(.top, 12)
         }
     }
@@ -145,7 +145,7 @@ struct QuickConnectView: View {
             }
 
             Hauptknopf(beschriftung: laeuft ? "Moment…" : "Freigeben",
-                       symbol: "checkmark", kuerzel: "⏎", auswahl: freigeben)
+                       symbol: "checkmark", auswahl: freigeben)
                 .disabled(laeuft || code.count < 4)
                 .opacity(code.count < 4 ? 0.4 : 1)
                 .padding(.top, 22)

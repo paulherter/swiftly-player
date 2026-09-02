@@ -117,7 +117,7 @@ struct Titelreihe: View {
                 Text(titel)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Stil.schrift)
-                Blätterreihe {
+                Blätterreihe(rand: 0) {
                     ForEach(eintraege, id: \.id) { eintrag in
                         NavigationLink(value: eintrag) {
                             Posterkachel(titel: eintrag.name,
@@ -240,10 +240,15 @@ struct Heldenkopf: View {
             .frame(maxWidth: 620, alignment: .leading)
             .padding(.top, 12)
 
-            HStack(spacing: 12) {
-                Hauptknopf(beschriftung: hauptknopfText, kuerzel: "⏎") {
-                    starten()
-                }
+            // **Hauptknopf allein, Aktionsreihe darunter.** Nebeneinander
+            // standen die vier Kreise rechts neben dem Knopf und wirkten
+            // verloren — und mittig war dabei nicht der Kreis, sondern der
+            // Block aus Kreis und Beschriftung. So steht es auf iPhone und
+            // iPad: erst der eine Knopf, dann die Reihe.
+            Hauptknopf(beschriftung: hauptknopfText) { starten() }
+                .padding(.top, 18)
+
+            HStack(spacing: 14) {
                 Detailaktion(symbol: merkliste ? "checkmark" : "plus",
                              titel: "Merkliste", aktiv: merkliste) {
                     merkliste.toggle()
@@ -270,21 +275,24 @@ struct Heldenkopf: View {
                 Detailaktion(symbol: "ellipsis", titel: "Mehr", aktiv: mehrOffen) {
                     withAnimation(Stil.zeitSprung) { mehrOffen.toggle() }
                 }
+                // **Die Liste hängt am Knopf, nicht am Block.** Vorher lag
+                // sie als Auflage über der ganzen Angabenspalte und klappte
+                // deshalb links auf, weit weg vom Auslöser. E5: kleine
+                // Entscheidungen erscheinen dort, wo sie ausgelöst wurden.
+                .overlay(alignment: .topLeading) {
+                    if mehrOffen {
+                        Handlungsliste(handlungen: mehrHandlungen, offen: $mehrOffen)
+                            .offset(x: -110, y: 74)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+
                 if let meldung {
                     Hinweisstreifen(text: meldung)
                 }
+                Spacer(minLength: 0)
             }
-            .padding(.top, 18)
-            // Die Liste klappt direkt unter dem Knopf auf — kein Blatt, kein
-            // eigenes Fenster. Der Überlagerung wegen, damit sie den Kopf
-            // nicht auseinanderschiebt.
-            .overlay(alignment: .bottomLeading) {
-                if mehrOffen {
-                    Handlungsliste(handlungen: mehrHandlungen, offen: $mehrOffen)
-                        .offset(y: 52)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-            }
+            .padding(.top, 16)
         }
     }
 
@@ -384,7 +392,7 @@ struct Besetzungsreihe: View {
                 Text("Besetzung")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Stil.schrift)
-                Blätterreihe(breiteJeStueck: 84 + 18) {
+                Blätterreihe(rand: 0, breiteJeStueck: 84 + 18) {
                     ForEach(leute, id: \.id) { person in
                         Kopfbild(name: person.name, rolle: person.role,
                                  bild: model.personBild(person))
@@ -431,10 +439,12 @@ struct Bildhintergrund: View {
         .overlay(alignment: .bottom) {
             LinearGradient(stops: [
                 .init(color: Stil.grund.opacity(0),    location: 0),
-                .init(color: Stil.grund.opacity(0.55), location: 0.45),
+                .init(color: Stil.grund.opacity(0.30), location: 0.28),
+                .init(color: Stil.grund.opacity(0.72), location: 0.55),
+                .init(color: Stil.grund.opacity(0.94), location: 0.80),
                 .init(color: Stil.grund,               location: 1),
             ], startPoint: .top, endPoint: .bottom)
-            .frame(height: Stil.heldHoehe * 0.62)
+            .frame(height: Stil.heldHoehe * 0.92)
             .allowsHitTesting(false)
         }
     }
