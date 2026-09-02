@@ -90,9 +90,18 @@ struct HauptView: View {
         // Temporär.
         .task {
             guard ProcessInfo.processInfo.environment["SWIFTLY_MESSFAHRT"] == "1" else { return }
-            try? await Task.sleep(for: .seconds(5))
-            navigator.oeffne(.profil, in: bereich)
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(6))
+            // Eine echte Serie, nicht das Profil — gemessen wird der Fall,
+            // der klemmt.
+            let regal = Bibliotheksmodell()
+            await regal.laden(model, art: "tvshows")
+            guard let serie = regal.items.first else {
+                Protokoll.schreib("Messfahrt: keine Serie gefunden")
+                return
+            }
+            Protokoll.schreib("Messfahrt: öffne \(serie.name)")
+            navigator.oeffne(.titel(serie), in: bereich)
+            try? await Task.sleep(for: .seconds(4))
             navigator.zurueck(in: bereich)
         }
         .onReceive(NotificationCenter.default.publisher(for: Kommandopost.name)) { post in
