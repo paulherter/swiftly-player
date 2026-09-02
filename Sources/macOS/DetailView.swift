@@ -76,7 +76,8 @@ struct FilmView: View {
                 Heldenkopf(model: model, titel: film)
 
                 VStack(alignment: .leading, spacing: 26) {
-                    Beschreibung(text: film.overview)
+                    // Die Beschreibung steht im Kopf, wie auf dem Apple TV —
+                    // hier stünde sie ein zweites Mal.
                     Besetzungsreihe(model: model, leute: film.darsteller)
                     // Extras und Ähnliches fehlten auf meiner Filmseite ganz.
                     // Reihenfolge wie auf iOS (A9).
@@ -160,74 +161,66 @@ struct Heldenkopf: View {
     let model: AppModel
     let titel: Item
 
+    @State private var plan: PlaybackPlan?
+    @State private var spielbarerTitel: Item?
     @State private var merkliste = false
     @State private var gesehen = false
-    @State private var plan: PlaybackPlan?
-    /// Bei einer Serie die Folge, die der Hauptknopf meint.
-    @State private var spielbarerTitel: Item?
     @State private var mehrOffen = false
     @State private var meldung: String?
-    @State private var farbe = Bildfarbe()
     @Environment(Abspielsteuerung.self) private var steuerung
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            Bildhintergrund(bild: model.backdropURL(for: titel), ton: farbe.ton)
-                .frame(height: Stil.heldHoehe)
+        ZStack(alignment: .topLeading) {
+            // **Rechts, nicht über die volle Breite** — wie auf dem Apple TV.
+            // Das Bild ragt nach unten über die Kopfzone hinaus; seine eigene
+            // Maske beendet es, deshalb wird nicht beschnitten.
+            Kulisse(url: model.querbildURL(for: titel, breite: 1600)
+                         ?? model.backdropURL(for: titel),
+                    hoehe: Stil.heldHoehe * 1.24)
 
-            HStack(alignment: .bottom, spacing: 24) {
-                Bildflaeche(bild: model.imageURL(for: titel, hochkant: true),
-                            breite: 180, hoehe: 270)
-                    .shadow(color: .black.opacity(0.55), radius: 22, y: 18)
-
-                angaben.padding(.bottom, 6)
-            }
-            .padding(.horizontal, Stil.randAbstand)
-            .padding(.bottom, 26)
+            block
+                .padding(.leading, Stil.randAbstand)
+                .padding(.top, Stil.inhaltOben + 34)
         }
-        .frame(height: Stil.heldHoehe)
+        .frame(height: Stil.heldHoehe, alignment: .topLeading)
         .task {
             merkliste = titel.userData?.isFavorite ?? false
             gesehen = titel.userData?.played ?? false
-            // Was der Server mit dieser Datei vorhat — dasselbe, was der
-            // Player später bekommt.
             plan = await model.plan(for: spielbarerTitel?.id ?? titel.id)
         }
-        .task(id: titel.id) { await farbe.laden(model.backdropURL(for: titel)) }
         .task(id: titel.id) {
-            // Bei einer Serie startet der Hauptknopf **nicht** die Serie,
-            // sondern die Folge, die der Server nennt: angefangene an ihrer
-            // Stelle, sonst die nächste ungesehene, sonst Folge 1.
             if titel.type == "Series" { spielbarerTitel = await model.standInSerie(titel) }
         }
     }
 
-    private var angaben: some View {
+    /// **Kein Poster.** Auf dem Apple TV ist es weggefallen, weil es nur den
+    /// Fortschrittsbalken trug — und der steht jetzt dort, wo er auf jeder
+    /// anderen Kachel auch steht.
+    private var block: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(verbatim: titel.name)
                 .font(.system(size: 34, weight: .bold))
                 .tracking(-0.8)
                 .foregroundStyle(Stil.schrift)
-                .lineLimit(2)
-
-            // Jahr, Laufzeit und Genre kommen aus `Titelangaben.nebenzeile`
-            // — dieselbe Zeile wie auf allen anderen Plattformen. Ich hatte
-            // sie mir selbst zusammengesetzt und dabei die Genres vergessen.
-            Text(verbatim: titel.nebenzeile)
-                .font(.system(size: 14))
-                .foregroundStyle(Stil.schriftLeise)
                 .lineLimit(1)
-                .padding(.top, 10)
+                .minimumScaleFactor(0.62)
 
-            // Der stille Normalfall: läuft alles verlustfrei, steht hier
-            // „Direct Play" im Akzent, **ohne** Erklärung. Nur die Abweichung
-            // meldet sich lauter — in Warnorange und mit Grund.
-            //
-            // Vorher stand hier fest verdrahtet „Direct Play". Das ist genau
-            // das Versprechen der App, und es einfach zu behaupten wäre die
-            // schlimmste Sorte falsch: man hätte nie erfahren, dass der Server
-            // rechnet.
+            // **Eine Zeile**, nicht drei: Jahr, Laufzeit, Bewertung,
+            // Freigabe und der Beleg stehen nebeneinander. Vorher lagen
+            // Nebenzeile und Beleg untereinander.
             HStack(spacing: 14) {
+                Text(verbatim: angabenzeile)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Stil.schriftLeise)
+                if let bewertung = titel.communityRating {
+                    HStack(spacing: 5) {
+                        Image(systemName: "star.fill").font(.system(size: 10))
+                        Text(verbatim: String(format: "%.1f", bewertung))
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(Stil.schriftLeise)
+                }
+                if let freigabe = titel.officialRating { Plakette(text: freigabe) }
                 if let plan {
                     HStack(spacing: 6) {
                         Image(systemName: plan.isLossless
@@ -238,122 +231,114 @@ struct Heldenkopf: View {
                             .font(.system(size: 13, weight: .medium))
                     }
                     .foregroundStyle(plan.isLossless ? Stil.akzent : Stil.warnung)
+                    .transition(.opacity)
                 }
-                // Bewertung und Freigabe stehen auf iOS in derselben Zeile
-                // wie der Beleg (`Belegzeile`), nicht oben bei Jahr und
-                // Laufzeit. Ich hatte die Freigabe nach oben gesetzt.
-                if let bewertung = titel.communityRating {
-                    HStack(spacing: 5) {
-                        Image(systemName: "star.fill").font(.system(size: 10))
-                        Text(verbatim: String(format: "%.1f", bewertung))
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundStyle(Stil.schriftLeise)
-                }
-                if let freigabe = titel.officialRating { Plakette(text: freigabe) }
             }
-            .frame(maxWidth: 620, alignment: .leading)
+            .lineLimit(1)
             .padding(.top, 12)
 
-            // **Hauptknopf allein, Aktionsreihe darunter.** Nebeneinander
-            // standen die vier Kreise rechts neben dem Knopf und wirkten
-            // verloren — und mittig war dabei nicht der Kreis, sondern der
-            // Block aus Kreis und Beschriftung. So steht es auf iPhone und
-            // iPad: erst der eine Knopf, dann die Reihe.
-            Hauptknopf(beschriftung: hauptknopfText) { starten() }
-                .padding(.top, 18)
-
-            // **Kein Abstand zwischen den Knöpfen** und links um 12 versetzt.
-            //
-            // Jeder Knopf ist 68 breit, sein Kreis aber nur 44 — die 12 Punkt
-            // links und rechts gehören zur Beschriftung darunter. Ohne den
-            // Versatz stand der erste Kreis deshalb 12 Punkt weiter rechts
-            // als der Hauptknopf darüber, und die Abstände addierten sich zu
-            // einer Reihe, die breiter war als er.
-            HStack(spacing: 0) {
-                Detailaktion(symbol: merkliste ? "checkmark" : "plus",
-                             titel: "Merkliste", aktiv: merkliste) {
-                    merkliste.toggle()
-                    Task {
-                        // Zurückdrehen, wenn der Server nein sagt — sonst
-                        // bliebe die Anzeige stehen und löge.
-                        if let grund = await model.setzeMerkliste(titel, an: merkliste) {
-                            merkliste.toggle()
-                            melde(grund)
-                        }
-                    }
-                }
-                Detailaktion(symbol: "film", titel: "Trailer") { trailerStarten() }
-                Detailaktion(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
-                             titel: "Gesehen", aktiv: gesehen) {
-                    gesehen.toggle()
-                    Task {
-                        if let grund = await model.setzeGesehen(titel, an: gesehen) {
-                            gesehen.toggle()
-                            melde(grund)
-                        }
-                    }
-                }
-                Detailaktion(symbol: "ellipsis", titel: "Mehr", aktiv: mehrOffen) {
-                    withAnimation(Stil.zeitSprung) { mehrOffen.toggle() }
-                }
-                // **Die Liste hängt am Knopf, nicht am Block.** Vorher lag
-                // sie als Auflage über der ganzen Angabenspalte und klappte
-                // deshalb links auf, weit weg vom Auslöser. E5: kleine
-                // Entscheidungen erscheinen dort, wo sie ausgelöst wurden.
-                .overlay(alignment: .topLeading) {
-                    if mehrOffen {
-                        Handlungsliste(handlungen: mehrHandlungen, offen: $mehrOffen)
-                            .offset(x: -98, y: 74)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-                }
-
-                if let meldung {
-                    Hinweisstreifen(text: meldung)
-                }
-                Spacer(minLength: 0)
+            // Die Beschreibung steht **im Kopf**, direkt unter den Angaben —
+            // nicht weit darunter auf dem Grundton.
+            if let text = titel.overview, !text.isEmpty {
+                Text(verbatim: text)
+                    .font(Stil.koerper)
+                    .lineSpacing(3)
+                    .foregroundStyle(Stil.schrift.opacity(0.62))
+                    .lineLimit(3)
+                    .frame(maxWidth: 640, alignment: .leading)
+                    .padding(.top, 18)
             }
-            .padding(.leading, -12)
-            .padding(.top, 14)
+
+            knopfreihe.padding(.top, 24)
         }
     }
 
-    private func starten() {
-        steuerung.starte(spielbarerTitel ?? titel)
-    }
+    /// Vier Ziele wie auf dem Apple TV: Fortsetzen, Von vorn, Merkliste,
+    /// Mehr. „Gesehen" und „Trailer" sind in die Mehr-Liste gewandert —
+    /// fünf beschriftete Knöpfe waren zu viel für eine Reihe.
+    private var knopfreihe: some View {
+        HStack(spacing: 12) {
+            if let ab = (spielbarerTitel ?? titel).fortsetzenAb {
+                Hauptknopf(beschriftung: "Fortsetzen") { starten(ab) }
+                Nebenknopf(symbol: "arrow.counterclockwise", titel: "Von vorn") {
+                    starten(0)
+                }
+            } else {
+                Hauptknopf(beschriftung: "Abspielen") { starten(0) }
+            }
 
-    /// „Fortsetzen ab 1:23 h", wenn schon etwas läuft — sonst „Abspielen".
-    /// Der Wortlaut steht so in der iPhone-Fassung; bei mir hieß es nur
-    /// „Fortsetzen", ohne die Stelle.
-    private var hauptknopfText: LocalizedStringKey {
-        if let ab = (spielbarerTitel ?? titel).fortsetzenAb {
-            return "Fortsetzen ab \(zeitText(ab))"
+            Nebenknopf(symbol: merkliste ? "bookmark.fill" : "bookmark",
+                       titel: "Merkliste", aktiv: merkliste) {
+                merkliste.toggle()
+                Task {
+                    if let grund = await model.setzeMerkliste(titel, an: merkliste) {
+                        merkliste.toggle()
+                        melde(grund)
+                    }
+                }
+            }
+
+            Nebenknopf(symbol: "ellipsis", titel: "Mehr", aktiv: mehrOffen) {
+                withAnimation(Stil.zeitSprung) { mehrOffen.toggle() }
+            }
+            .overlay(alignment: .topLeading) {
+                if mehrOffen {
+                    Handlungsliste(handlungen: mehrHandlungen, offen: $mehrOffen)
+                        .offset(x: -206, y: Stil.hauptknopfHoehe + 8)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+
+            if let meldung { Hinweisstreifen(text: meldung) }
+            Spacer(minLength: 0)
         }
-        return "Abspielen"
     }
 
+    private var angabenzeile: String {
+        var teile: [String] = []
+        if let jahr = titel.productionYear { teile.append(String(jahr)) }
+        if let sekunden = titel.runtimeSeconds, sekunden > 0 { teile.append(laufzeit(sekunden)) }
+        if let genres = titel.genres, !genres.isEmpty {
+            teile.append(genres.prefix(2).joined(separator: ", "))
+        }
+        return teile.joined(separator: " · ")
+    }
 
-    /// Die Einträge kommen aus `Titelhandlungen` — derselbe Erzeuger wie auf
-    /// dem iPhone (VERHALTEN.md D7). Meine erste Fassung stellte sie selbst
-    /// zusammen und kannte weder Trailer noch „Nächste Folge abspielen".
+    private func starten(_ ab: Double) {
+        steuerung.starte(spielbarerTitel ?? titel, ab: ab)
+    }
+
+    /// Dieselben Handlungen wie auf den anderen Plattformen, aus
+    /// `Titelhandlungen` — dazu „Gesehen" und „Trailer", die auf dem Apple TV
+    /// ebenfalls hier stehen statt in der Knopfreihe.
     private var mehrHandlungen: [Titelhandlung] {
+        var liste: [Titelhandlung] = [
+            .init(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
+                  text: gesehen ? "Als ungesehen markieren" : "Als gesehen markieren") {
+                gesehen.toggle()
+                Task {
+                    if let grund = await model.setzeGesehen(titel, an: gesehen) {
+                        gesehen.toggle()
+                        melde(grund)
+                    }
+                }
+            },
+            .init(symbol: "film", text: "Trailer") { trailerStarten() },
+        ]
         if titel.type == "Series" {
-            return Titelhandlungen.fuerSerie(
+            liste += Titelhandlungen.fuerSerie(
                 titel, stand: spielbarerTitel, staffel: nil, model: model,
                 folgeStarten: { folge, ab in steuerung.starte(folge, ab: ab) },
-                melden: { melde($0) },
-                auffrischen: { await auffrischen() })
+                melden: { melde($0) }, auffrischen: { await auffrischen() })
+        } else {
+            liste += Titelhandlungen.fuerFilm(
+                titel, plan: plan, model: model,
+                starten: { ab in steuerung.starte(titel, ab: ab) },
+                melden: { melde($0) }, auffrischen: { await auffrischen() })
         }
-        return Titelhandlungen.fuerFilm(
-            titel, plan: plan, model: model,
-            starten: { ab in steuerung.starte(titel, ab: ab) },
-            melden: { melde($0) },
-            auffrischen: { await auffrischen() })
+        return liste
     }
 
-    /// Erst der Trailer als Datei vom Server, sonst der verlinkte im Browser.
-    /// Gibt es keinen, sagt es das — dieselbe Reihenfolge wie auf dem iPhone.
     private func trailerStarten() {
         Task {
             if let film = await model.trailer(zu: titel) {
@@ -362,8 +347,6 @@ struct Heldenkopf: View {
             }
             if let adresse = titel.remoteTrailers?.compactMap(\.url).first,
                let ziel = URL(string: adresse) {
-                // Auf dem iPhone `UIApplication.shared.open` — auf dem Mac
-                // gibt es das nicht, die Entsprechung ist NSWorkspace.
                 NSWorkspace.shared.open(ziel)
                 return
             }
@@ -371,16 +354,11 @@ struct Heldenkopf: View {
         }
     }
 
-    /// Nach „Fortschritt zurücksetzen" den neuen Stand holen — sonst zeigt der
-    /// Hauptknopf weiter „Fortsetzen" und der Beleg den alten Plan.
     private func auffrischen() async {
-        if titel.type == "Series" {
-            spielbarerTitel = await model.standInSerie(titel)
-        }
+        if titel.type == "Series" { spielbarerTitel = await model.standInSerie(titel) }
         plan = await model.plan(for: spielbarerTitel?.id ?? titel.id)
     }
 
-    /// Drei Sekunden, dann von selbst weg — wie der Hinweisstreifen auf iOS.
     private func melde(_ text: String) {
         meldung = text
         Task {

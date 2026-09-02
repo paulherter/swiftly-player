@@ -44,10 +44,6 @@ struct SerienView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Heldenkopf(model: model, titel: serie)
 
-                Beschreibung(text: serie.overview)
-                    .padding(.horizontal, Stil.randAbstand)
-                    .padding(.top, 26)
-
                 Reiterreihe(auswahl: $reiter)
                     .padding(.top, 26)
 
