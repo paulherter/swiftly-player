@@ -162,6 +162,12 @@ extension View {
             }
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
+            // Der Modifikator darueber gilt der Wurzel; die geschobenen Ziele
+            // tragen ihn je einzeln. Das reicht nicht — er greift erst nach
+            // dem ersten Bild, und so lange stand oben ein systemeigener
+            // Zurueck-Knopf. `SystemleisteWeg` legt die Leiste am
+            // Navigationsrechner still, also fuer den ganzen Stapel.
+            .background(SystemleisteWeg())
             #endif
     }
 }
