@@ -290,6 +290,11 @@ targets:
       - path: Sources/Shared/AppModel.swift
       - path: Sources/Shared/Anmeldemodell.swift
       - path: Sources/Shared/Abspielwunsch.swift
+      # Die Startseite laedt fuer alle Plattformen gleich — und sie muss es,
+      # sonst laeuft es auseinander: die Mac-Fassung hatte sie nachgebaut und
+      # dabei `naechsteFolge(ohne:)` verloren, sodass angefangene Titel
+      # zweimal auf der Seite standen.
+      - path: Sources/Shared/Startseitenmodell.swift
       - path: Sources/Shared/Bibliotheksmodell.swift
       - path: Sources/Shared/Farben.swift
       # Bausteine ohne Plattformmaße — Reihentitel, Plakette, Lader,

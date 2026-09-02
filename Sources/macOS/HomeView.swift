@@ -19,10 +19,23 @@ struct HomeView: View {
     @Environment(Navigator.self) private var navigator
     @Environment(\.bereich) private var bereich
 
-    @State private var weiter: [Item] = []
-    @State private var naechste: [Item] = []
-    @State private var neu: [Item] = []
-    @State private var geladen = false
+    /// **Der geteilte Stand, nicht ein eigener.**
+    ///
+    /// Hier standen vier `@State`-Felder und eine eigene `laden()`. Das war
+    /// ein Nachbau von `Startseitenmodell`, und er war schon auseinander
+    /// gelaufen: er rief `naechsteFolge()` **ohne** Argument, sodass die
+    /// Titel aus „Weiterschauen" gleich noch einmal unter „Nächste Folge"
+    /// standen, und er räumte bei einem einzelnen Aussetzer die ganze Reihe
+    /// leer — genau der Fehler, vor dem der Kommentar im geteilten Modell
+    /// warnt.
+    ///
+    /// Der Stand liegt jetzt in `HauptView` und überlebt den Leistenwechsel.
+    let stand: Startseitenmodell
+
+    private var weiter: [Item] { stand.weiterschauen }
+    private var naechste: [Item] { stand.naechsteFolge }
+    private var neu: [Item] { stand.zuletzt }
+    private var geladen: Bool { stand.geladen }
 
     var body: some View {
         ScrollView {
@@ -118,25 +131,15 @@ struct HomeView: View {
     }
 
     private func laden() async {
-        async let a = model.weiterschauen()
-        async let b = model.naechsteFolge()
-        async let c = model.zuletztHinzugefuegt()
-        weiter = await a ?? []
-        naechste = await b ?? []
-        neu = await c ?? []
-        geladen = true
-
-        // **Die Serien zu diesen Folgen im Hintergrund nachziehen.**
-        //
-        // Beide Reihen bestehen aus Folgen. Ein Klick darauf führt auf die
-        // Serienseite (A8) und braucht dafür erst die Serie — bis dahin fuhr
-        // eine leere Seite herein. Hier ist längst bekannt, welche Serien in
-        // Frage kommen, also werden sie geholt, solange niemand wartet.
-        // **Auch „Zuletzt hinzugefügt".** Dort stehen bei Serien ebenfalls
-        // Folgen, und der Klick darauf nimmt denselben Weg über
-        // `StaffelZiel` — die Reihe hatte ich beim ersten Mal vergessen.
+        guard !stand.geladen else { return }
+        await stand.laden(model)
+        // Die Serien zu den Folgen im Hintergrund nachziehen: alle drei
+        // Reihen bestehen bei Serien aus Folgen, und ein Klick darauf führt
+        // auf die Serienseite (A8) — bis dahin fuhr sonst eine leere Seite
+        // herein.
         Seriencache.geteilt.vorholen(weiter + naechste + neu, mit: model)
     }
+
 }
 
 /// Eine waagerechte Reihe mit Überschrift.

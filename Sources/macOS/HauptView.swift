@@ -37,6 +37,16 @@ struct HauptView: View {
     @State private var steuerung: Abspielsteuerung
     @State private var navigator = Navigator()
 
+    /// **Die Stände der vier Bereiche liegen hier, nicht in den Ansichten.**
+    ///
+    /// Die Wurzel trägt `.id(bereich)` — beim Wechsel wird sie also
+    /// weggeworfen und neu gebaut. Lag ihr Stand in ihr, war er mit weg: die
+    /// Startseite stand eine Sekunde lang schwarz, die Regale zeigten wieder
+    /// ihren Ladebalken, obwohl längst alles geholt war.
+    @State private var startseite = Startseitenmodell()
+    @State private var filmregal = Bibliotheksmodell()
+    @State private var serienregal = Bibliotheksmodell()
+
     init(model: AppModel) {
         self.model = model
         _steuerung = State(initialValue: Abspielsteuerung(model: model))
@@ -292,9 +302,11 @@ struct HauptView: View {
     @ViewBuilder
     private var wurzel: some View {
         switch bereich {
-        case .start:  HomeView(model: model)
-        case .filme:  BibliothekView(model: model, art: "movies", titel: "Filme")
-        case .serien: BibliothekView(model: model, art: "tvshows", titel: "Serien")
+        case .start:  HomeView(model: model, stand: startseite)
+        case .filme:  BibliothekView(model: model, art: "movies", titel: "Filme",
+                                     regal: filmregal)
+        case .serien: BibliothekView(model: model, art: "tvshows", titel: "Serien",
+                                     regal: serienregal)
         case .suche:  SucheView(model: model)
         }
     }

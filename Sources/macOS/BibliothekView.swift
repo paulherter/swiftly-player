@@ -18,7 +18,11 @@ struct BibliothekView: View {
     @Environment(Navigator.self) private var navigator
     @Environment(\.bereich) private var bereich
 
-    @State private var regal = Bibliotheksmodell()
+    /// **Von aussen, nicht selbst gehalten.** Als `@State` verschwand das
+    /// Regal mit der Ansicht, und die Ansicht verschwindet bei jedem
+    /// Leistenwechsel (`\.id(bereich)`). Deshalb lief bei jedem Wechsel
+    /// zwischen Filmen und Serien der Ladebalken erneut.
+    let regal: Bibliotheksmodell
 
     private var spalten: [GridItem] {
         [GridItem(.adaptive(minimum: Stil.kachelBreite, maximum: Stil.kachelBreite),
