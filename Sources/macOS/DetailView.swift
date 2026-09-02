@@ -93,6 +93,14 @@ struct FilmView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
+        // aus über jede Scrollfläche — sie war nie in unserem Code, und
+        // deshalb habe ich zweimal an der falschen Stelle gesucht. Über dem
+        // Bild verlor sie sich, links auf blankem Grund stand sie als Balken.
+        //
+        // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
+        // abgestellt wie das, was man selbst hinschreibt.
+        .ohneKanteneffekt()
         // **Der Inhalt läuft bis unter die Titelleiste durch.** SwiftUI rückt
         // ihn sonst um deren Sicherheitsbereich ein, und über dem Bild stand
         // ein dunkler Streifen. Die iPhone-Fassung tut dasselbe.
@@ -286,13 +294,23 @@ struct Heldenkopf: View {
     /// fünf beschriftete Knöpfe waren zu viel für eine Reihe.
     private var knopfreihe: some View {
         HStack(spacing: 12) {
+            // **Feste Breite, fester Platz.** Der Hauptknopf wächst sonst mit
+            // seiner Beschriftung — „Fortsetzen" ist länger als „Abspielen" —,
+            // und der Platz für „Von vorn" gibt es nur bei angefangenen
+            // Titeln. Beides zusammen schob Merkliste und Mehr auf **jeder**
+            // Seite an eine andere Stelle. Der Platz bleibt jetzt stehen,
+            // auch wenn nichts darin ist.
             if let ab = (spielbarerTitel ?? titel).fortsetzenAb {
                 Hauptknopf(beschriftung: "Fortsetzen") { starten(ab) }
+                    .frame(width: Stil.hauptknopfBreite)
                 Nebenknopf(symbol: "arrow.counterclockwise", titel: "Von vorn") {
                     starten(0)
                 }
             } else {
                 Hauptknopf(beschriftung: "Abspielen") { starten(0) }
+                    .frame(width: Stil.hauptknopfBreite)
+                Color.clear
+                    .frame(width: Stil.hauptknopfHoehe, height: Stil.hauptknopfHoehe)
             }
 
             Nebenknopf(symbol: merkliste ? "bookmark.fill" : "bookmark",

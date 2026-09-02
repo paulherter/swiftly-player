@@ -134,6 +134,7 @@ struct Hauptknopf: View {
                 }
             }
             .padding(.horizontal, 30)
+            .frame(maxWidth: .infinity)
             .frame(height: Stil.hauptknopfHoehe)
             .foregroundStyle(Stil.grund)
             .background(schwebt ? Stil.schrift.opacity(0.88) : Stil.schrift,
@@ -589,6 +590,14 @@ struct Blätterreihe<Inhalt: View>: View {
                     }
             }
             .scrollIndicators(.never)
+        // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
+        // aus über jede Scrollfläche — sie war nie in unserem Code, und
+        // deshalb habe ich zweimal an der falschen Stelle gesucht. Über dem
+        // Bild verlor sie sich, links auf blankem Grund stand sie als Balken.
+        //
+        // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
+        // abgestellt wie das, was man selbst hinschreibt.
+        .ohneKanteneffekt()
             .scrollPosition($stelle, anchor: .leading)
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, neu in
                 versatz = neu
@@ -635,5 +644,22 @@ struct Blätterreihe<Inhalt: View>: View {
         .accessibilityLabel(Text(name))
         .padding(.horizontal, 6)
         .transition(.opacity)
+    }
+}
+
+
+/// Nimmt der Scrollfläche die milchige Leiste am Rand.
+///
+/// **Erst ab macOS 26**, und das Ziel steht auf 15 — deshalb die Prüfung.
+/// Auf älteren Fassungen gibt es den Effekt gar nicht, dort ist nichts zu
+/// tun.
+extension View {
+    @ViewBuilder
+    func ohneKanteneffekt() -> some View {
+        if #available(macOS 26.0, *) {
+            scrollEdgeEffectHidden(true, for: .all)
+        } else {
+            self
+        }
     }
 }

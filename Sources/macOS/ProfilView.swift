@@ -64,6 +64,14 @@ struct ProfilView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
+        // aus über jede Scrollfläche — sie war nie in unserem Code, und
+        // deshalb habe ich zweimal an der falschen Stelle gesucht. Über dem
+        // Bild verlor sie sich, links auf blankem Grund stand sie als Balken.
+        //
+        // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
+        // abgestellt wie das, was man selbst hinschreibt.
+        .ohneKanteneffekt()
         .overlay(alignment: .topLeading) {
             // Nur der Pfeil, kein Titel — der Bildblock ist der Titel.
             Aktionsknopf(symbol: "chevron.left", titel: "Zurück", auswahl: zurueck)

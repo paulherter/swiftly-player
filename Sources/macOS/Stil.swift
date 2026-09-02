@@ -80,6 +80,13 @@ extension Stil {
     /// ein Zeiger trifft einen Knopf, ein Daumen braucht die Fläche.
     static let hauptknopfHoehe: CGFloat = 48
 
+    /// **Feste Breite des Hauptknopfes.**
+    ///
+    /// Sonst richtet sich der ganze Rest der Reihe nach der Länge der
+    /// Beschriftung, und Merkliste und Mehr stehen auf jeder Seite woanders.
+    /// 200 trägt „Fortsetzen" wie „Abspielen" mit Luft.
+    static let hauptknopfBreite: CGFloat = 200
+
     // MARK: Schrift — dieselbe Abstufung wie auf dem iPhone
 
     static let titelGross = Font.system(size: 28, weight: .bold)
