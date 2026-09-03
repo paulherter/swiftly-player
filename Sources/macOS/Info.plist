@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Swiftly</string>
 	<key>CFBundleExecutable</key>
@@ -24,11 +24,17 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.entertainment</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Swiftly looks for your Jellyfin server on your home network. Without this, the app cannot reach a server at an address like 192.168.1.5.</string>
 	<key>NSRequiresAquaSystemAppearance</key>
 	<false/>
 </dict>

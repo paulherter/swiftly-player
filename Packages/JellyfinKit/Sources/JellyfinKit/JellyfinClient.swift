@@ -6,6 +6,7 @@ public enum JellyfinError: LocalizedError, Equatable {
     case http(status: Int, body: String?)
     case decoding(String)
     case transport(String)
+    case noPlayableSource
 
     public var errorDescription: String? {
         switch self {
@@ -13,6 +14,8 @@ public enum JellyfinError: LocalizedError, Equatable {
             return uebersetzt("Die Serveradresse ist ungültig.")
         case .notAuthenticated:
             return uebersetzt("Nicht angemeldet.")
+        case .noPlayableSource:
+            return uebersetzt("Der Server nennt keine abspielbare Fassung.")
         // Der Antwortkörper des Servers bleibt draußen: er kann alles
         // enthalten, von einer Stapelablaufverfolgung bis zu einer Adresse
         // mit Zugangsmerkmal, und für den Nutzer sagt er nichts.
@@ -56,7 +59,7 @@ public actor JellyfinClient {
 
     private let decoder: JSONDecoder = {
         let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
+        d.dateDecodingStrategy = .custom { try Zeitstempel.lesen(aus: $0) }
         return d
     }()
 
@@ -66,7 +69,7 @@ public actor JellyfinClient {
         deviceName: String,
         clientVersion: String = "0.1.0",
         session: Session? = nil,
-        urlSession: URLSession = .shared
+        urlSession: URLSession = .ortsnetzfaehig
     ) {
         self.baseURL = baseURL
         self.deviceID = deviceID
@@ -267,7 +270,21 @@ public actor JellyfinClient {
         filters: [String] = [],
         /// `false` heißt: nur Ungesehenes.
         istGesehen: Bool? = nil,
-        recursive: Bool = false
+        recursive: Bool = false,
+        /// Welche Gattungen zurueckkommen sollen — „Movie", „Series".
+        ///
+        /// **Ohne das liefert Jellyfin bei einer Serienbibliothek nicht die
+        /// Serien.** Im Wurzelverzeichnis einer solchen Bibliothek liegen je
+        /// nach Servereinstellung virtuelle Ordner: „Weiterschauen",
+        /// „Als Naechstes", „Neueste", „Serien", „Lieblingsserien",
+        /// „Genres". Die haben keine Plakate, und genau als leere Kacheln mit
+        /// diesen Namen ist es einem Nutzer am 03.09.2026 aufgefallen.
+        ///
+        /// Jellyfins eigene Weboberflaeche fragt deshalb immer mit Gattung
+        /// und rekursiv. Auf Servern ohne diese Ordner aendert es nichts —
+        /// am Pruefserver nachgemessen, dieselben Titel in derselben
+        /// Reihenfolge.
+        includeItemTypes: [String] = []
     ) async throws -> ItemsResponse {
         let s = try requireSession()
         var query: [URLQueryItem] = [
@@ -286,6 +303,10 @@ public actor JellyfinClient {
             .init(name: "Recursive", value: recursive ? "true" : "false"),
         ]
         if let parentID { query.append(.init(name: "ParentId", value: parentID)) }
+        if !includeItemTypes.isEmpty {
+            query.append(.init(name: "IncludeItemTypes",
+                               value: includeItemTypes.joined(separator: ",")))
+        }
         if !filters.isEmpty {
             query.append(.init(name: "Filters", value: filters.joined(separator: ",")))
         }
@@ -308,10 +329,18 @@ public actor JellyfinClient {
     ///
     /// Seit dem Patch am mkv-Sucher springt der Abspieler selbst. Der
     /// Notausgang ist deshalb entfernt; siehe `Werkzeuge/vlckit-patches/`.
+    ///
+    /// - Parameter audioStreamIndex: Welche Tonspur der Server nehmen soll.
+    ///   Nur fuer AirPlay gesetzt: dort muss haeufig die AC-3-Spur statt der
+    ///   DTS-Standardspur ausgeliefert werden, weil der Empfaenger DTS nicht
+    ///   annimmt. Bei VLC bleibt es `nil` — der waehlt selbst, und zwar aus
+    ///   allen Spuren.
     public func playbackInfo(
         itemID: String,
         profile: DeviceProfile = .vlc(),
-        maxStreamingBitrate: Int? = nil
+        maxStreamingBitrate: Int? = nil,
+        audioStreamIndex: Int? = nil,
+        subtitleStreamIndex: Int? = nil
     ) async throws -> PlaybackInfoResponse {
         let s = try requireSession()
         struct Body: Encodable {
@@ -322,6 +351,8 @@ public actor JellyfinClient {
             let EnableDirectPlay: Bool
             let EnableDirectStream: Bool
             let EnableTranscoding: Bool
+            let AudioStreamIndex: Int?
+            let SubtitleStreamIndex: Int?
         }
         let body = Body(
             UserId: s.userID,
@@ -330,7 +361,9 @@ public actor JellyfinClient {
             AutoOpenLiveStream: true,
             EnableDirectPlay: true,
             EnableDirectStream: true,
-            EnableTranscoding: true
+            EnableTranscoding: true,
+            AudioStreamIndex: audioStreamIndex,
+            SubtitleStreamIndex: subtitleStreamIndex
         )
         let req = try request("Items/\(itemID)/PlaybackInfo", method: "POST", body: body)
         return try await send(req, as: PlaybackInfoResponse.self)
@@ -538,9 +571,13 @@ public actor JellyfinClient {
     /// Fragt den Server und baut daraus direkt den Plan für den Player.
     public func playbackPlan(
         for itemID: String,
-        profile: DeviceProfile = .vlc()
+        profile: DeviceProfile = .vlc(),
+        audioStreamIndex: Int? = nil,
+        subtitleStreamIndex: Int? = nil
     ) async throws -> PlaybackPlan? {
-        let info = try await playbackInfo(itemID: itemID, profile: profile)
+        let info = try await playbackInfo(itemID: itemID, profile: profile,
+                                          audioStreamIndex: audioStreamIndex,
+                                          subtitleStreamIndex: subtitleStreamIndex)
         return try PlaybackPlan.make(
             from: info,
             itemID: itemID,
@@ -550,6 +587,123 @@ public actor JellyfinClient {
             },
             serverBase: baseURL
         )
+    }
+
+    // MARK: - Übernehmen
+
+    /// Die Sitzungen, die dieser Nutzer bedienen darf.
+    ///
+    /// `controllableByUserId` ist wichtig: ohne den Filter kommen auf einem
+    /// Familienserver auch die Sitzungen der anderen zurueck, und dann steht
+    /// im Abzeichen, was jemand anders gerade schaut. `activeWithinSeconds`
+    /// haelt die Antwort klein — Jellyfin fuehrt alte Sitzungen lange mit.
+    ///
+    /// **Ein Fehlschlag ist kein Fehler**, wie bei den Abschnitten: dann gibt
+    /// es kein Angebot. Ein Abzeichen ist Zubehoer, keine Zusage.
+    public func fremdsitzungen() async -> [Fremdsitzung] {
+        do {
+            let s = try requireSession()
+            let req = try request("Sessions", query: [
+                .init(name: "controllableByUserId", value: s.userID),
+                .init(name: "activeWithinSeconds", value: "120"),
+            ])
+            return try await send(req, as: [Fremdsitzung].self)
+        } catch {
+            return []
+        }
+    }
+
+    /// Einen Wiedergabebefehl an eine fremde Sitzung schicken.
+    ///
+    /// Der Weg ist derselbe, den Jellyfins eigene Oberflaeche nimmt. Er
+    /// braucht nichts von uns ausser der Sitzungskennung — die Gegenstelle
+    /// hoert ohnehin schon auf ihrem Socket zu, siehe ``Fernsteuerung``.
+    public func fremdbefehl(_ befehl: Fremdbefehl, an sitzung: String) async throws {
+        let req = try request("Sessions/\(sitzung)/Playing/\(befehl.rawValue)",
+                              method: "POST")
+        let (_, antwort) = try await urlSession.data(for: req)
+        guard let http = antwort as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            throw JellyfinError.transport(uebersetzt("Das andere Gerät hat nicht reagiert."))
+        }
+    }
+
+    /// Die markierten Abschnitte einer Folge — Vorspann, Rueckblick, Abspann.
+    ///
+    /// **Ein Fehlschlag ist kein Fehler.** Auf einem Server ohne das Plugin
+    /// ist die Liste leer, und aeltere Fassungen kennen den Endpunkt gar
+    /// nicht. Beides heisst dasselbe: kein Knopf. Wer das als Fehler
+    /// behandelt, zeigt eine Meldung fuer eine Funktion, die der Zuschauer
+    /// nie erwartet hat.
+    public func abschnitte(fuer itemID: String) async -> [Abschnitt] {
+        do {
+            let req = try request("MediaSegments/\(itemID)")
+            return try await send(req, as: AbschnittsAntwort.self).items
+        } catch {
+            return []
+        }
+    }
+
+    /// Was AirPlay fuer diesen Titel hergibt.
+    ///
+    /// **Die Pruefung kommt vor der Anfrage, nicht danach.** Die Stroeme der
+    /// Datei stehen schon in der Quelle, die der laufende Plan mitbringt — es
+    /// braucht also keinen Serverbesuch, um „geht nicht" zu sagen. Und es darf
+    /// keinen geben: wer erst fragt und dann ablehnt, hat auf dem Server eine
+    /// Sitzung eroeffnet, die niemand wieder schliesst.
+    ///
+    /// Geht es, laeuft **eine** Anfrage — mit dem engen Profil und der Tonspur,
+    /// die durchkommt.
+    public func airplayPlan(for itemID: String, quelle: MediaSource) async throws -> AirPlayAuskunft {
+        let eignung = AirPlayEignung.pruefen(quelle: quelle)
+        guard eignung.geeignet else { return .gehtNicht(eignung) }
+        // **`SubtitleStreamIndex: -1` ist keine Kleinigkeit.**
+        //
+        // Waehlt Jellyfin von sich aus eine Untertitelspur, die AVPlayer nicht
+        // zeichnen kann — PGS und VOBSUB stehen darum absichtlich nicht im
+        // AirPlay-Profil, brennt es sie ins Bild. Und Einbrennen heisst: das
+        // Video wird neu gerechnet. Am Server nachgemessen, was dann passiert:
+        // die Segmente kommen nicht mehr rechtzeitig, AVPlayer bleibt auf
+        // `unknown` stehen und meldet `-12889 · No response for map in 3s` —
+        // kein Fehler, kein Bild, Schwarzbild ohne Diagnose. Genau das hat
+        //
+        // Ausdruecklich `-1` und nicht `nil`: `nil` heisst „entscheide du",
+        // und genau das soll der Server hier nicht.
+        let info = try await playbackInfo(itemID: itemID, profile: .airplay(),
+                                          audioStreamIndex: eignung.tonspur,
+                                          subtitleStreamIndex: -1)
+        guard let quelle = PlaybackPlan.besteQuelle(info.mediaSources) else {
+            throw JellyfinError.noPlayableSource
+        }
+
+        // **Ohne Adresse vom Server geht es nicht — und das war ein Loch.**
+        //
+        // Ist der Container nichts fuer AVPlayer (Matroska), muss der Server
+        // umpacken und dafuer eine `TranscodingUrl` nennen. Nennt er keine,
+        // fiel der Plan bisher stillschweigend auf die **Originaldatei**
+        // zurueck (`/stream?static=true`) — und die reichten wir an AVPlayer
+        // weiter, der sie nicht oeffnen kann. Auf dem Fernseher: Schwarzbild.
+        // Am 03.09.2026 auf
+        //
+        // Fuer den VLC-Weg ist derselbe Rueckfall richtig — VLC oeffnet die
+        // Datei ja. Hier ist er falsch, also wird hier geprueft.
+        if quelle.deliveryMethod != .directPlay, quelle.transcodingUrl == nil {
+            return .gehtNicht(AirPlayEignung(tonspur: nil, hindernisse: [
+                AirPlayEignung.Hindernis(art: .umpacken,
+                                         codec: quelle.container ?? "?")
+            ]))
+        }
+
+        guard let plan = try PlaybackPlan.make(
+            from: info, itemID: itemID, profile: .airplay(),
+            streamURL: { [self] id, sourceID, sessionID in
+                try streamURL(itemID: id, mediaSourceID: sourceID, playSessionID: sessionID)
+            },
+            serverBase: baseURL
+        ) else {
+            throw JellyfinError.noPlayableSource
+        }
+        return .geht(plan)
     }
 
     // MARK: - URLs für den Player

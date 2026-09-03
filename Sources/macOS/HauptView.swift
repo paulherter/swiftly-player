@@ -44,6 +44,10 @@ struct HauptView: View {
     /// Startseite stand eine Sekunde lang schwarz, die Regale zeigten wieder
     /// ihren Ladebalken, obwohl längst alles geholt war.
     @State private var startseite = Startseitenmodell()
+    /// Läuft auf einem anderen Gerät etwas? Siehe ``Uebernahmemodell``.
+    @State private var uebernahme = Uebernahmemodell()
+    /// Bei mehr als einem Gerät wird gefragt statt geraten.
+    @State private var auswahlOffen = false
     @State private var filmregal = Bibliotheksmodell()
     @State private var serienregal = Bibliotheksmodell()
     /// Welche Bibliothek der jeweiligen Gattung gezeigt wird — ein Server
@@ -58,7 +62,9 @@ struct HauptView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Seitenleiste(model: model, bereich: $bereich) {
+            Seitenleiste(model: model, bereich: $bereich,
+                         uebernahme: uebernahme.angebot,
+                         uebernehmen: { abzeichenGedrueckt() }) {
                 navigator.oeffne(.profil, in: bereich)
             }
             // **Der Sicherheitsrand der Titelleiste gilt links genauso wenig
@@ -116,6 +122,32 @@ struct HauptView: View {
         }
         .background(Stil.grund)
         .environment(steuerung)
+        // **Der Socket, ohne den der Mac keine Sitzung ist.**
+        //
+        // iOS und tvOS starten ihn je in ihrer eigenen `HauptView`; die des
+        // Macs hatte ihn nie. Ohne ihn meldet Jellyfin
+        // `SupportsRemoteControl: false` — der Mac liess sich also weder von
+        // aussen bedienen noch uebernehmen, und im Dashboard blieben die
+        // Knoepfe grau. Es fiel nicht auf, weil die App fuer sich einwandfrei
+        // lief.
+        .task { await model.fernsteuerungStarten() }
+        .onDisappear { Task { await model.fernsteuerungBeenden() } }
+        // **Nur solange kein Player läuft** — im Player ist die Leiste weg,
+        // und der Server hätte alle zehn Sekunden eine Anfrage mehr.
+        .task(id: steuerung.wunsch == nil) {
+            if steuerung.wunsch == nil { uebernahme.starten(model) }
+            else { uebernahme.beenden() }
+        }
+        .onDisappear { uebernahme.beenden() }
+        .overlay {
+            if auswahlOffen {
+                Uebernahmeauswahl(sitzungen: uebernahme.angebote,
+                                  waehlen: { hierWeiterschauen($0) },
+                                  abbrechen: { auswahlOffen = false })
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
         .environment(navigator)
         .environment(\.bereich, bereich)
         // Der Player nimmt das ganze Fenster ein, Seitenleiste eingeschlossen.
@@ -376,9 +408,34 @@ struct HauptView: View {
 
 // MARK: - Seitenleiste
 
+extension HauptView {
+
+    /// Bei einem Gerät sofort, bei mehreren erst fragen.
+    fileprivate func abzeichenGedrueckt() {
+        if uebernahme.mehrereDa { auswahlOffen = true }
+        else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
+    }
+
+    /// Drüben beenden, hier an derselben Stelle weitermachen.
+    ///
+    /// Erst der Befehl, dann der Start — geht das Beenden schief, passiert
+    /// hier gar nichts. Sonst liefen zwei Tonspuren im Raum.
+    fileprivate func hierWeiterschauen(_ sitzung: Fremdsitzung) {
+        auswahlOffen = false
+        Task {
+            guard let (titel, ab) = await uebernahme.uebernehmen(sitzung, model: model)
+            else { return }
+            steuerung.starte(titel, ab: ab)
+        }
+    }
+}
+
 struct Seitenleiste: View {
     let model: AppModel
     @Binding var bereich: Bereich
+    /// Was auf einem anderen Gerät läuft — `nil`, wenn nichts.
+    var uebernahme: Fremdsitzung?
+    var uebernehmen: () -> Void
     let zumProfil: () -> Void
 
     var body: some View {
@@ -408,6 +465,21 @@ struct Seitenleiste: View {
 
             Spacer(minLength: 0)
 
+            // **Über der Trennlinie, nicht darunter.** Auf dem Mac gibt es
+            // kein Profilbild oben rechts; die Seitenleiste endet mit dem
+            // Konto. Das Angebot gehört daneben, wo man ohnehin hinsieht —
+            // dieselbe Stelle wie das Abzeichen auf iPhone und Fernseher,
+            // nur in der Form dieser Leiste.
+            if let uebernahme {
+                Button(action: uebernehmen) {
+                    Uebernahmezeile(sitzung: uebernahme)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+                .transition(.opacity)
+            }
+
             Divider().overlay(Stil.linie)
 
             // Kein `NavigationLink`: die Seitenleiste liegt **neben** dem
@@ -420,6 +492,7 @@ struct Seitenleiste: View {
         .frame(width: Stil.seitenleisteBreite)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Stil.flaeche)
+        .animation(.easeInOut(duration: 0.22), value: uebernahme?.id)
         .task { if model.views.isEmpty { await model.loadViews() } }
     }
 }

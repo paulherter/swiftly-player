@@ -328,6 +328,9 @@ struct Kopfleiste: View {
     @Binding var bereich: Bereich
     let model: AppModel
     var aufsProfil: () -> Void
+    /// Was auf einem anderen Gerät läuft — `nil`, wenn nichts.
+    var uebernahme: Fremdsitzung?
+    var uebernehmen: () -> Void
 
     /// Welcher Reiter gerade den Fokus hat — `nil`, sobald er im Inhalt steht.
     @FocusState private var amReiter: Bereich?
@@ -358,15 +361,35 @@ struct Kopfleiste: View {
 
             Spacer(minLength: 0)
 
-            Button(action: aufsProfil) {
-                Profilzeichen(name: model.session?.userName ?? "?",
-                              bild: model.benutzerbildURL(groesse: 180),
-                              groesse: 60)
+            // **Links vom Profilbild, und nur wenn es etwas gibt.**
+            //
+            // Ein Abzeichen, das immer dasteht und meistens nichts sagt, ist
+            // Ausstattung. Dieses erscheint, wenn woanders etwas läuft, und
+            // verschwindet wieder — deshalb steht es auch nicht im Fokusweg,
+            // solange es nichts anzubieten hat.
+            // **Eigenes, engeres Raster fuer die beiden rechts.**
+            //
+            // Die Leiste steht auf 56 Punkt Abstand — richtig zwischen
+            // Wortmarke und Reitern, zu viel zwischen Abzeichen und
+            // Profilbild. Die zwei gehoeren zusammen; getrennt sah es aus,
+            // als haette das Abzeichen keinen Platz gefunden.
+            HStack(spacing: 18) {
+                if let uebernahme {
+                    Uebernahmeabzeichen(sitzung: uebernahme, aktion: uebernehmen)
+                        .focusSection()
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+
+                Button(action: aufsProfil) {
+                    Profilzeichen(name: model.session?.userName ?? "?",
+                                  bild: model.benutzerbildURL(groesse: 180),
+                                  groesse: 60)
+                }
+                .buttonStyle(ProfilStil())
+                // Ein Bild ohne Beschriftung ist eine namenlose Taste.
+                .accessibilityLabel(Text("Profil und Einstellungen"))
+                .focusSection()
             }
-            .buttonStyle(ProfilStil())
-            // Ein Bild ohne Beschriftung ist eine namenlose Taste.
-            .accessibilityLabel(Text("Profil und Einstellungen"))
-            .focusSection()
         }
         .padding(.horizontal, Stil.randSeite)
         // Oben und seitlich der sichere Bereich, damit die Abstände
@@ -378,6 +401,66 @@ struct Kopfleiste: View {
         // dann 80 Punkt weiter innen als der Inhalt darunter — genau die
         // Sorte Fehler, die man erst sieht, wenn sie einem auffaellt.
         .ignoresSafeArea(edges: [.top, .horizontal])
+        .animation(.easeInOut(duration: 0.25), value: uebernahme?.id)
+    }
+}
+
+/// „Läuft auf dem iPhone — hier weiterschauen."
+///
+/// **Bewusst mit Gerätenamen und Titel, nicht nur als Zeichen.** Ein Symbol
+/// allein wirft die Frage auf, was es tut; wer es dann drückt, hält
+/// versehentlich seinen Film auf dem anderen Gerät an. Der Text sagt, was
+/// passiert, bevor es passiert.
+struct Uebernahmeabzeichen: View {
+    let sitzung: Fremdsitzung
+    var aktion: () -> Void
+
+    var body: some View {
+        Button(action: aktion) {
+            HStack(spacing: 14) {
+                Image(systemName: sitzung.geraetezeichen)
+                    .font(.system(size: 24, weight: .medium))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Hier weiterschauen")
+                        .font(.system(size: 22, weight: .semibold))
+                    // Der Titel in der zweiten Zeile: er ist die Auskunft,
+                    // die man wirklich braucht, und er darf umbrechen —
+                    // Serverdaten, also `String` und nicht `LocalizedStringKey`.
+                    Text(sitzung.titelzeile)
+                        .font(.system(size: 18))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 24)
+            .frame(height: 60)
+        }
+        .buttonStyle(AbzeichenStil())
+        .accessibilityLabel(Text("Hier weiterschauen"))
+        .accessibilityValue(Text(sitzung.titelzeile))
+    }
+}
+
+/// Derselbe Ruhe-zu-Fokus-Sprung wie überall auf dem Fernseher: gewählt ist
+/// Akzent, fokussiert die helle Fläche.
+struct AbzeichenStil: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Inhalt(configuration: configuration)
+    }
+
+    private struct Inhalt: View {
+        let configuration: Configuration
+        @Environment(\.isFocused) private var fokus
+
+        var body: some View {
+            configuration.label
+                .foregroundStyle(fokus ? Stil.grund : .white)
+                .background(fokus ? AnyShapeStyle(.white)
+                                  : AnyShapeStyle(Stil.erhoeht), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(fokus ? 0 : 0.18)))
+                .scaleEffect(fokus ? 1.06 : 1)
+                .animation(.easeOut(duration: 0.16), value: fokus)
+        }
     }
 }
 
@@ -957,3 +1040,76 @@ struct Staffelpille: View {
 
 /// Fokus auf der Staffelpille: die ruhige Flaeche, wie bei Zeilen und Chips.
 /// Weiss bleibt den Handlungsknoepfen vorbehalten.
+
+// MARK: - Übernahme: welches Gerät?
+
+/// Läuft auf mehreren Geräten etwas, wird gefragt statt geraten.
+///
+/// **`TV`-Kürzel, weil es die geteilte Fassung auch gibt.** Die hier ist für
+/// zehn Fuß Abstand und den Fokusring gebaut, die in `Bausteine.swift` für
+/// den Finger. Gleicher Zweck, verschiedene Entfernung — genau der Fall, in
+/// dem CLAUDE.md eigene Ansichten erlaubt.
+///
+/// **Warum ein eigenes Blatt und keine Liste im Abzeichen.** Das Abzeichen
+/// sitzt in der Kopfleiste und hat dort Platz für eine Zeile. Und die Wahl
+/// ist folgenreich: was hier gewählt wird, **hält auf dem anderen Gerät an**.
+/// Das gehört vor Augen, nicht in ein Aufklappmenü.
+struct TVUebernahmeauswahl: View {
+    let sitzungen: [Fremdsitzung]
+    var waehlen: (Fremdsitzung) -> Void
+    var abbrechen: () -> Void
+
+    var body: some View {
+        ZStack {
+            // Der Grund fängt den Druck ab, damit dahinter nichts reagiert.
+            Color.black.opacity(0.72)
+                .ignoresSafeArea()
+
+            VStack(spacing: 34) {
+                VStack(spacing: 10) {
+                    Text("Wo weiterschauen?")
+                        .font(.system(size: 42, weight: .semibold))
+                    Text("Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                VStack(spacing: 14) {
+                    ForEach(sitzungen) { s in
+                        Button { waehlen(s) } label: {
+                            HStack(spacing: 20) {
+                                Image(systemName: s.geraetezeichen)
+                                    .font(.system(size: 28, weight: .medium))
+                                    .frame(width: 40)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(s.geraetename ?? "Gerät")
+                                        .font(.system(size: 26, weight: .semibold))
+                                    Text(s.titelzeile)
+                                        .font(.system(size: 20))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                                Text(Spielzeit.text(s.stand?.stelle ?? 0))
+                                    .font(.system(size: 20).monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 28)
+                            .frame(height: 88)
+                            .frame(maxWidth: 760)
+                        }
+                        .buttonStyle(AbzeichenStil())
+                    }
+                }
+                .focusSection()
+
+                Button("Abbrechen", action: abbrechen)
+                    .buttonStyle(AbzeichenStil())
+            }
+            .padding(48)
+        }
+        // Menü schließt, wie überall auf dem Fernseher.
+        .onExitCommand(perform: abbrechen)
+    }
+}

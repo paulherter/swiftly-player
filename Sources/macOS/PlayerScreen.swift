@@ -23,6 +23,8 @@ struct PlayerScreen: View {
     @State private var titel: Item
     @State private var plan: PlaybackPlan
     @State private var naechsteFolge: Item?
+    /// Vorspann, Rückblick, Abspann — leer, wenn der Server nichts weiß.
+    @State private var abschnitte: [JellyfinKit.Abschnitt] = []
     @State private var wechselt = false
     @State private var hinweis: String?
     @State private var flaeche: VLCPlayerView?
@@ -202,6 +204,13 @@ struct PlayerScreen: View {
         .onAppear { steuerungZeigen() }
         .onAppear {
             zentraleUebernehmen()
+            // **Auch die Fernsteuerung, nicht nur der Sperrbildschirm.**
+            //
+            // Beide bekommen dieselben Griffe, sie kommen nur aus
+            // verschiedenen Richtungen: die Zentrale von den Medientasten
+            // dieses Rechners, `fernbefehl` über Jellyfins Socket von einem
+            // anderen Gerät. Auf dem Mac fehlte die zweite Hälfte ganz
+            model.fernbefehl = ausfuehren
             halter.setzePlayer(true)
         }
         .onChange(of: stand.laeuft) { _, neu in
@@ -209,12 +218,16 @@ struct PlayerScreen: View {
         }
         .onChange(of: tempo) { tempoAnwenden() }
         .onChange(of: schlafminuten) { schlafzeitSetzen(schlafminuten) }
-        .task { naechsteFolge = await model.folgeNach(titel) }
+        .task {
+            naechsteFolge = await model.folgeNach(titel)
+            abschnitte = await model.abschnitte(fuer: titel.id)
+        }
         .onDisappear {
             ruheAufgabe?.cancel()
             schlafAufgabe?.cancel()
             halter.aufraeumen()
             zentrale.abgeben()
+            model.fernbefehl = nil
             // Der Zeiger gehört zurück, sobald der Player weg ist.
             NSCursor.unhide()
         }
@@ -380,10 +393,10 @@ struct PlayerScreen: View {
 
                 // Erscheint erst gegen Ende — die Zahlen stehen in
                 // `Folgenende` und gelten auf allen Plattformen.
-                if let folge = naechsteFolge, !wechselt,
-                   Folgenende.knopfZeigen(position: stand.position, dauer: stand.dauer) {
-                    Chip(beschriftung: String(localized: "Nächste Folge"),
-                         symbol: "forward.end.alt", aktiv: false) { zurNaechstenFolge(folge) }
+                if angebot.sichtbar {
+                    Chip(beschriftung: angebot.beschriftung,
+                         symbol: angebot.zeichen, aktiv: false,
+                         auswahl: angebotAusfuehren)
                 }
             }
             .foregroundStyle(Stil.schrift)
@@ -460,6 +473,50 @@ struct PlayerScreen: View {
             try? await Task.sleep(for: .milliseconds(700))
             guard sprungTakt == takt else { return }
             withAnimation(.easeInOut(duration: 0.15)) { sprungAnzeige = nil }
+        }
+    }
+
+    /// Was ein anderes Gerät hier auslöst.
+    ///
+    /// Dieselben Griffe wie in ``zentraleUebernehmen``, nur über Jellyfins
+    /// Socket statt über die Medientasten. `.stopp` schließt den Player —
+    /// darauf verlässt sich das Übernehmen: drüben zu, hier weiter.
+    private func ausfuehren(_ befehl: Fernbefehl) {
+        switch befehl {
+        case .pause:     flaeche?.pause()
+        case .weiter:    flaeche?.resume()
+        case .umschalten: umschalten()
+        case .stopp:     beenden()
+        case let .springenAuf(sekunden):
+            flaeche?.seek(toSeconds: sekunden)
+            sprungBis = Date().addingTimeInterval(2)
+        case .vor:       springe(Double(model.vorSekunden))
+        case .zurueck:   springe(-Double(model.zurueckSekunden))
+        case .naechste:
+            if let folge = naechsteFolge { zurNaechstenFolge(folge) }
+        case .vorige:    break
+        }
+        steuerungZeigen()
+    }
+
+    /// Welcher Knopf gerade gilt. Dieselbe Regel wie auf iOS.
+    private var angebot: Knopfangebot {
+        guard !wechselt else { return .keiner }
+        return Abschnittslogik.angebot(position: stand.position, dauer: stand.dauer,
+                                       abschnitte: abschnitte,
+                                       hatNaechsteFolge: naechsteFolge != nil)
+    }
+
+    private func angebotAusfuehren() {
+        switch angebot {
+        case .keiner:
+            break
+        case let .ueberspringen(nach, _):
+            flaeche?.seek(toSeconds: nach)
+            sprungBis = Date().addingTimeInterval(2)
+            steuerungZeigen()
+        case .naechsteFolge:
+            if let folge = naechsteFolge { zurNaechstenFolge(folge) }
         }
     }
 
@@ -582,6 +639,8 @@ struct PlayerScreen: View {
             // hat genau das eine Folge übersprungen.
             seitStart = Date()
             naechsteFolge = await model.folgeNach(folge)
+            // Die neue Folge hat eigene Abschnitte.
+            abschnitte = await model.abschnitte(fuer: folge.id)
             zentraleUebernehmen()
             wechselt = false
         }

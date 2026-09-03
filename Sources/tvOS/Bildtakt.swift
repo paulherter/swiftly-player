@@ -148,6 +148,16 @@ enum Bildtakt {
     /// ist. Was der Server nicht sagt, holt `anpassen(an:)` später nach.
     @discardableResult
     static func anpassen(laut angabe: MediaStream?) -> Double? {
+        // **Ins Dateiprotokoll, nicht nur ins Systemprotokoll.**
+        //
+        // Am Fernseher kommt an Apples Log niemand heran; dieselbe Falle wie
+        // bei VLCs eigenen Zeilen. Und es ist die Zahl, mit der sich Ruckeln
+        // ohne verworfene Bilder ueberhaupt erst erklaeren laesst: schaltet
+        // der Ausgang nicht um, laufen 23,976 Bilder auf 60 Hz, und das
+        // ruckelt sichtbar, obwohl kein einziges Bild fehlt.
+        Protokoll.schreib("[Takt] Server sagt: real=\(angabe?.realFrameRate.map { String(format: "%.3f", $0) } ?? "—")"
+            + " mittel=\(angabe?.averageFrameRate.map { String(format: "%.3f", $0) } ?? "—")"
+            + " → benutzbar=\(angabe?.bildrate.map { String(format: "%.3f", $0) } ?? "nein")")
         guard let angabe, let rate = angabe.bildrate else { return nil }
         return setzen(rate: rate,
                       breite: Int32(angabe.width ?? 1920),
@@ -222,6 +232,8 @@ enum Bildtakt {
         zuletzt = gewuenscht
         wechselSeit = Date()
         log.info("Ausgang auf \(rate, privacy: .public) Hz gestellt (\(breite, privacy: .public)×\(hoehe, privacy: .public))")
+        Protokoll.schreib("[Takt] Ausgang auf \(String(format: "%.3f", rate)) Hz gestellt"
+            + " (\(breite)×\(hoehe))")
         return rate
     }
 

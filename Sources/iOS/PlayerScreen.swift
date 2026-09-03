@@ -46,9 +46,20 @@ struct PlayerScreen: View {
     @State private var letzteSeite = 0
 
     /// Sichtbar heisst: gewollt, Bild steht, kein Menue davor.
+    ///
+    /// Und nicht auf dem Fernseher: dort steuert `AVPlayerViewController`, und
+    /// zwei Steuerungen uebereinander wuerden sich gegenseitig treffen.
     private var steuerungDa: Bool {
         steuerungSichtbar && erstesBildDa && !imKleinenFenster && !zeigeEinstellungen
+            && airplayPlan == nil
     }
+
+    /// Beobachtet, ob der Ton auf ein AirPlay-Geraet umgestellt wurde.
+    @State private var fernziel = Fernziel()
+    /// Gesetzt, solange der Film ueber `AVPlayer` auf dem Fernseher laeuft.
+    @State private var airplayPlan: PlaybackPlan?
+    /// Die Stelle, an der VLC abgegeben hat.
+    @State private var airplayAb: Double = 0
     @State private var sprungAnzeige: (richtung: Int, sekunden: Int)?
     /// Zaehlen die Ausloesungen je Richtung. Der Knopf dreht sich dadurch
     /// bei jedem Druck ein Stueck weiter, statt nur einmal.
@@ -68,6 +79,13 @@ struct PlayerScreen: View {
     @AppStorage("querformatFest") private var querformatFest = true
 
     @State private var naechsteFolge: Item?
+    /// Vorspann, Rückblick, Abspann — leer, wenn der Server nichts weiß.
+    ///
+    /// Steht die Liste leer, ändert sich gegenüber früher **nichts**: dann
+    /// entscheidet allein die Restzeitregel, wann „Nächste Folge" erscheint.
+    // `JellyfinKit.` ausgeschrieben: `Abschnitt` heisst in
+    // `BrowseViews.swift` schon eine Ansicht, und die hiess zuerst so.
+    @State private var abschnitte: [JellyfinKit.Abschnitt] = []
     @State private var wechselt = false
     /// Sperrbildschirm, Kontrollzentrum, Kopfhörertasten und Anrufe.
     @State private var zentrale = Wiedergabezentrale()
@@ -245,7 +263,39 @@ struct PlayerScreen: View {
                                     querformatFest: $querformatFest)
                     .transition(.opacity)
             }
+
+            // **Ueber allem, weil es alles ersetzt.** Solange der Fernseher
+            // dran ist, ist die VLC-Flaeche darunter nur noch Hintergrund;
+            // getippt und gesteuert wird hier.
+            if let airplayPlan {
+                AirPlayFlaeche(
+                    url: airplayPlan.url,
+                    abSekunden: airplayAb,
+                    stand: { stelle, laenge in
+                        position = stelle
+                        if laenge > 0 { dauer = laenge }
+                        meldeFortschritt()
+                    },
+                    beendet: {
+                        if let naechsteFolge { zurNaechstenFolge(naechsteFolge) }
+                        else { dismiss() }
+                    },
+                    fehler: { text in
+                        // **Zurueck aufs Geraet, nicht schwarz stehenbleiben.**
+                        // Nimmt der Empfaenger den Strom nicht, ist ein
+                        // Schwarzbild auf dem Fernseher das Schlechteste von
+                        // allem: der Film laeuft nirgends. Also weiter auf dem
+                        // Telefon, mit Ansage.
+                        hinweis = String(localized: "Der Fernseher nimmt diesen Film nicht an (\(text)). Läuft weiter auf dem iPhone.")
+                        airplayUmschalten(false)
+                    }
+                )
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .zIndex(10)
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: airplayPlan?.url)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         // Am Stapel gemessen, nicht an der Videofläche: die meldet nach der
@@ -253,8 +303,20 @@ struct PlayerScreen: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { neu in
             fensterbreite = neu
         }
-        .onAppear { model.fernbefehl = ausfuehren }
-        .onDisappear { model.fernbefehl = nil }
+        .onAppear {
+            model.fernbefehl = ausfuehren
+            // **Auch beim Oeffnen nachsehen, nicht nur beim Wechsel.** Steht
+            // das Ziel schon auf dem Fernseher, weil vorher Musik dorthin
+            // lief, kommt gar keine Meldung mehr — und der Film waere wieder
+            // Ton ohne Bild.
+            fernziel.gewechselt = { airplayUmschalten($0) }
+            fernziel.nachsehen()
+            if fernziel.aufAirPlay { airplayUmschalten(true) }
+        }
+        .onDisappear {
+            model.fernbefehl = nil
+            fernziel.aufhoeren()
+        }
         .task(id: ausblendMarke) {
             // Im Stehen nichts wegnehmen: wer pausiert hat, schaut gerade
             // nicht aufs Bild, sondern will die Steuerung sehen.
@@ -277,6 +339,7 @@ struct PlayerScreen: View {
         .task { await beobachten() }
         .task {
             naechsteFolge = await model.folgeNach(item)
+            abschnitte = await model.abschnitte(fuer: item.id)
             // Erst jetzt steht fest, ob es einen „Weiter"-Knopf geben darf.
             zentraleUebernehmen()
         }
@@ -442,17 +505,25 @@ struct PlayerScreen: View {
 
                 Spacer(minLength: 0)
 
-                if let naechsteFolge, !wechselt, gegenEnde {
-                    Button { zurNaechstenFolge(naechsteFolge) } label: {
-                        Label("Nächste Folge", systemImage: "forward.end.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .padding(.horizontal, 15)
-                            .frame(height: 34)
-                            .background(.white.opacity(0.16), in: Capsule())
-                            .overlay(Capsule().strokeBorder(.white.opacity(0.24)))
+                if angebot.sichtbar {
+                    Button(action: angebotAusfuehren) {
+                        // Serverdaten sind hier nicht im Spiel, aber die
+                        // Beschriftung entsteht als `String` im Paket —
+                        // deshalb `Text(verbatim:)` statt `Label(_:)`, sonst
+                        // würde sie ein zweites Mal nachgeschlagen.
+                        HStack(spacing: 6) {
+                            Image(systemName: angebot.zeichen)
+                            Text(verbatim: angebot.beschriftung)
+                        }
+                        .font(.system(size: 14, weight: .semibold))
+                        .padding(.horizontal, 15)
+                        .frame(height: 34)
+                        .background(.white.opacity(0.16), in: Capsule())
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.24)))
                     }
                     .foregroundStyle(.white)
                     .fixedSize()
+                    .transition(.opacity)
                 }
             }
             .foregroundStyle(.white)
@@ -553,6 +624,36 @@ struct PlayerScreen: View {
     /// Plattformen, damit der Knopf überall zur selben Zeit auftaucht.
     private var gegenEnde: Bool {
         Folgenende.knopfZeigen(position: position, dauer: dauer)
+    }
+
+    /// Welcher Knopf gerade gilt — überspringen, weiterschalten oder keiner.
+    ///
+    /// **Es ist derselbe Knopf.** Gestaltung und Platz bleiben; nur
+    /// Beschriftung, Zeichen und Zeitpunkt wechseln. Die Regel dahinter steht
+    /// im Paket, damit sie auf allen vier Plattformen dieselbe ist.
+    private var angebot: Knopfangebot {
+        guard !wechselt else { return .keiner }
+        return Abschnittslogik.angebot(position: position, dauer: dauer,
+                                       abschnitte: abschnitte,
+                                       hatNaechsteFolge: naechsteFolge != nil)
+    }
+
+    /// Der Druck darauf.
+    private func angebotAusfuehren() {
+        switch angebot {
+        case .keiner:
+            break
+        case let .ueberspringen(nach, _):
+            // Wie ein Sprung von Hand: Stelle setzen, springen, und die
+            // Anzeige kurz nicht überschreiben lassen.
+            position = nach
+            surface?.seek(toSeconds: nach)
+            sprungBis = Date().addingTimeInterval(2)
+            meldeFortschritt()
+            ausblendenVerschieben()
+        case .naechsteFolge:
+            if let naechsteFolge { zurNaechstenFolge(naechsteFolge) }
+        }
     }
 
     // MARK: - Aktionen
@@ -660,10 +761,69 @@ struct PlayerScreen: View {
             await model.reportStart(item: folge, plan: neuerPlan, seconds: 0)
             startGemeldet = true
             naechsteFolge = await model.folgeNach(folge)
+            // **Die neue Folge hat eigene Abschnitte.** Ohne das trüge sie
+            // die des Vorgängers, und der Knopf erschiene an dessen Stellen.
+            abschnitte = await model.abschnitte(fuer: folge.id)
             zentraleUebernehmen()
             wechselt = false
             steuerungSichtbar = true
             ausblendenVerschieben()
+        }
+    }
+
+    // MARK: - Auf den Fernseher und zurueck
+
+    /// Das Ziel hat gewechselt — also wechselt der Abspieler mit.
+    ///
+    /// **Zwei Abspieler, eine Stelle.** VLC gibt an `AVPlayer` ab und
+    /// umgekehrt; weitergegeben wird `position`, der Zustand der Ansicht.
+    /// Nicht VLCs Zeit: die steht nach dem Anhalten nicht mehr verlaesslich,
+    /// und genau daran ist das Fortsetzen schon einmal gescheitert.
+    ///
+    /// **Geht es nicht, sagt es das.** Der Ton laeuft dann trotzdem auf dem
+    /// Fernseher — nur ohne Bild, weil der Empfaenger den Strom ablehnt. Ohne
+    /// Meldung sieht das nach einem Fehler in Swiftly aus, und es ist keiner.
+    private func airplayUmschalten(_ an: Bool) {
+        if an {
+            guard airplayPlan == nil else { return }
+            guard let client = model.client, let quelle = plan.quelle else { return }
+            Task {
+                do {
+                    switch try await client.airplayPlan(for: item.id, quelle: quelle) {
+                    case .gehtNicht(let eignung):
+                        hinweis = eignung.meldung
+                        Protokoll.schreib("[AirPlay] abgelehnt — "
+                            + eignung.hindernisse.map(\.codec).joined(separator: ", "))
+                    case .geht(let neu):
+                        // **Die Gruende mit ins Protokoll.** Ohne sie stand
+                        // dort nur „Transcode", und das sagt nicht, woran
+                        // der Server sich stoert — genau die Angabe, die beim
+                        // ersten Schwarzbild gefehlt hat.
+                        let gruende = neu.reasons.isEmpty
+                            ? "keine" : neu.reasons.map(\.codec).joined(separator: ",")
+                        Protokoll.schreib("[AirPlay] uebernimmt ab \(Int(position)) s"
+                            + " — \(neu.method.wireName), Gruende: \(gruende)"
+                            + " — \(neu.url.absoluteString.prefix(160))")
+                        airplayAb = position
+                        surface?.pause()
+                        // Der Sperrbildschirm haengt an VLCs Griffen; die
+                        // zeigen jetzt ins Leere. `AVPlayer` bringt seine
+                        // eigene Anzeige mit.
+                        zentrale.abgeben()
+                        airplayPlan = neu
+                    }
+                } catch {
+                    hinweis = error.localizedDescription
+                }
+            }
+        } else {
+            guard airplayPlan != nil else { return }
+            let stelle = position
+            Protokoll.schreib("[AirPlay] zurueck aufs Geraet bei \(Int(stelle)) s")
+            airplayPlan = nil
+            surface?.seek(toSeconds: stelle)
+            surface?.resume()
+            zentraleUebernehmen()
         }
     }
 

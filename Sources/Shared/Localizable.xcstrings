@@ -1,7 +1,6 @@
 {
   "sourceLanguage": "de",
   "strings": {
-    "": {},
     " ": {
       "extractionState": "manual",
       "localizations": {
@@ -2759,23 +2758,6 @@
         }
       }
     },
-    "Server, die außerhalb des Heimnetzes nur über http erreichbar sind, sperrt iOS aus Sicherheitsgründen. Richte auf dem Server https ein.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Server, die außerhalb des Heimnetzes nur über http erreichbar sind, sperrt iOS aus Sicherheitsgründen. Richte auf dem Server https ein."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iOS blocks servers outside your home network that are only reachable over http. Set up https on the server."
-          }
-        }
-      }
-    },
     "Sitzung ließ sich nicht sichern — du müsstest dich neu anmelden.": {
       "extractionState": "manual",
       "localizations": {
@@ -3860,6 +3842,142 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open overview"
+          }
+        }
+      }
+    },
+    "Der Server war nicht erreichbar. Hat Swiftly die Erlaubnis, Geräte im heimischen Netz zu suchen? Sie steht in den Systemeinstellungen unter „Swiftly · Lokales Netzwerk\".": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server war nicht erreichbar. Hat Swiftly die Erlaubnis, Geräte im heimischen Netz zu suchen? Sie steht in den Systemeinstellungen unter „Swiftly · Lokales Netzwerk\"."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server could not be reached. Does Swiftly have permission to find devices on your home network? It is in Settings under \"Swiftly · Local Network\"."
+          }
+        }
+      }
+    },
+    "keine Antwort vom Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "keine Antwort vom Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no response from the server"
+          }
+        }
+      }
+    },
+    "Der Fernseher nimmt diesen Film nicht an (%@). Läuft weiter auf dem iPhone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Fernseher nimmt diesen Film nicht an (%@). Läuft weiter auf dem iPhone."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The TV will not take this film (%@). Playing on the iPhone instead."
+          }
+        }
+      }
+    },
+    "Hier weiterschauen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hier weiterschauen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue here"
+          }
+        }
+      }
+    },
+    "Wo weiterschauen?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wo weiterschauen?"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where do you want to continue?"
+          }
+        }
+      }
+    },
+    "Gerät": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerät"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device"
+          }
+        }
+      }
+    },
+    "Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The device you pick will close, and playback continues here at the same spot."
+          }
+        }
+      }
+    },
+    "%@ — %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — %@"
           }
         }
       }

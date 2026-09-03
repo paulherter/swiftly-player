@@ -79,6 +79,31 @@ struct HauptView: View {
 
     private var anDerWurzel: Bool { pfade[bereich.rawValue].isEmpty && abspielen == nil }
 
+    /// Der Druck aufs Abzeichen.
+    ///
+    /// **Bei einer Sitzung sofort, bei mehreren erst fragen.** Auf zwei
+    /// Geräten zu raten, welches gemeint ist, geht in der Hälfte der Fälle
+    /// daneben — und der Preis dafür ist, dass anderswo der Film anhält.
+    private func abzeichenGedrueckt() {
+        if uebernahme.mehrereDa { auswahlOffen = true }
+        else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
+    }
+
+    /// Das andere Gerät anhalten und hier an derselben Stelle weitermachen.
+    ///
+    /// Die Reihenfolge ist die ganze Sache: erst dort anhalten, dann hier den
+    /// Plan holen, dann starten. Geht das Anhalten schief, passiert hier
+    /// nichts — sonst liefen zwei Tonspuren im Raum.
+    private func hierWeiterschauen(_ sitzung: Fremdsitzung) {
+        auswahlOffen = false
+        Task {
+            guard let (titel, ab) = await uebernahme.uebernehmen(sitzung, model: model)
+            else { return }
+            guard let plan = await model.plan(for: titel.id) else { return }
+            abspielen = Abspielwunsch(item: titel, plan: plan, startAt: ab)
+        }
+    }
+
     /// **Ob die Kopfleiste steht — als eigener Zustand, nicht abgeleitet.**
     ///
     /// Abgeleitet koennte sie nicht ausblenden: der Pfad wird ohne Animation
@@ -89,6 +114,10 @@ struct HauptView: View {
     /// einer **neuen** Transaktion — und die darf animieren.
     @State private var leisteDa = true
     @State private var tafelOffen = false
+    /// Was auf einem anderen Gerät läuft.
+    @State private var uebernahme = Uebernahmemodell()
+    /// Steht auf mehreren Geräten etwas, wird gefragt statt geraten.
+    @State private var auswahlOffen = false
 
     // Die Leiste scrollt bewusst **nicht** mit weg.
     //
@@ -103,13 +132,26 @@ struct HauptView: View {
             // **Der Player ist ein Geschwister, kein Kind.**
             //
             // Vorher lag `.disabled` in der Kette **vor** `.overlay`. Damit
-            // erbte der Player die Sperre: er war zu sehen, aber tot —
-            // nichts darin fokussierbar, jeder Tastendruck unbehandelt, und
-            // Menue fiel durch, was tvOS als Ausstieg las. Er verschwand also
-            // beim ersten Druck, und keine Reparatur im Player konnte je
-            // greifen, weil keine von ihnen zum Zuge kam.
+            // erbte der Player die Sperre: er war zu sehen, aber tot — nichts
+            // darin fokussierbar, jeder Tastendruck unbehandelt, und Menue
+            // fiel durch, was tvOS als Ausstieg las. Er verschwand also beim
+            // ersten Druck, und keine Reparatur im Player konnte je greifen,
+            // weil keine von ihnen zum Zuge kam. **Auch beim Auswahlblatt
+            // sperren, nicht nur beim Player.**
+            //
+            // Sonst bleibt alles dahinter fokussierbar: Sichtbar verdeckt
+            // heisst auf dem Fernseher nicht unerreichbar — der Fokusmotor
+            // sucht geometrisch und kennt keine Ebenen.
             rahmen
-                .disabled(abspielen != nil)
+                .disabled(abspielen != nil || auswahlOffen)
+
+            if auswahlOffen {
+                TVUebernahmeauswahl(sitzungen: uebernahme.angebote,
+                                  waehlen: { hierWeiterschauen($0) },
+                                  abbrechen: { auswahlOffen = false })
+                    .transition(.opacity)
+                    .zIndex(3)
+            }
 
             if let wunsch = abspielen {
                 PlayerScreen(model: model, item: wunsch.item, plan: wunsch.plan,
@@ -120,7 +162,15 @@ struct HauptView: View {
         .environment(\.abspielwunsch, $abspielen)
         .environment(\.tafelOffen, $tafelOffen)
         .animation(.easeInOut(duration: 0.2), value: abspielen?.id)
+        .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
         .task { await model.fernsteuerungStarten() }
+        // **Nur solange nichts läuft.** Im Player wäre die Abfrage sinnlos —
+        // die Leiste ist weg, und der Server hätte alle zehn Sekunden eine
+        // Anfrage mehr zu beantworten, während es aufs Bild ankommt.
+        .task(id: abspielen == nil) {
+            if abspielen == nil { uebernahme.starten(model) } else { uebernahme.beenden() }
+        }
+        .onDisappear { uebernahme.beenden() }
         #if DEBUG
         .task { await debugSprung() }
         #endif
@@ -199,9 +249,12 @@ struct HauptView: View {
             }
 
             if leisteDa || anDerWurzel {
-                Kopfleiste(bereich: $bereich, model: model) {
-                    pfade[bereich.rawValue].append(ProfilRoute())
-                }
+                Kopfleiste(bereich: $bereich, model: model,
+                           aufsProfil: {
+                               pfade[bereich.rawValue].append(ProfilRoute())
+                           },
+                           uebernahme: uebernahme.angebot,
+                           uebernehmen: { abzeichenGedrueckt() })
                 // Ohne eigenen Abschnitt springt der Fokus aus dem Inhalt
                 // nicht sauber in die Leiste, sondern sucht sich den
                 // waagerecht nächsten Knopf.

@@ -4,12 +4,13 @@ import SwiftUI
 /// Dieselben drei Zustände wie auf iPhone und Fernseher, aus demselben
 /// `AppModel`. Nur die Ansichten dahinter sind eigen.
 ///
-/// Kein Startvorhang: die Lottie-Animation braucht eine Zeichenfläche, die
-/// heute nur als `UIViewRepresentable` vorliegt. Sobald
-/// `Sources/Shared/Startanimation.swift` einen NSView-Arm hat, gehört sie auch
-/// hierher — die Marke soll überall gleich auffahren.
+/// **Mit Startvorhang.** Hier stand lange, es gebe keinen: die Animation lag
+/// nur als `UIViewRepresentable` vor. `Startanimation.swift` hat jetzt einen
+/// AppKit-Arm, und die Marke fährt damit auf allen vier Plattformen gleich
+/// auf.
 struct RootView: View {
     @State private var model = AppModel()
+    @State private var vorhangDa = true
 
     var body: some View {
         ZStack {
@@ -21,6 +22,10 @@ struct RootView: View {
                 AnmeldeView(model: model, serverName: serverName, version: version)
             case .ready:
                 HauptView(model: model)
+            }
+
+            if vorhangDa {
+                Startvorhang { withAnimation(.easeOut(duration: 0.35)) { vorhangDa = false } }
             }
         }
         .background(Fensteranstrich())

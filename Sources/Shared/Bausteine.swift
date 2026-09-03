@@ -1,3 +1,4 @@
+import JellyfinKit
 //  Bausteine.swift
 //  Swiftly
 //
@@ -131,5 +132,87 @@ struct Profilzeichen: View {
         Text(String(name.prefix(1)).uppercased())
             .font(.system(size: groesse * 0.38, weight: .semibold))
             .foregroundStyle(Stil.schrift)
+    }
+}
+
+// MARK: - Übernahme: welches Gerät?
+
+/// Läuft auf mehreren eigenen Geräten etwas, wird gefragt statt geraten.
+///
+/// **Der Schleier ist der Grund, warum das kein `confirmationDialog` ist.**
+/// Der Systemdialog bringt seinen eigenen, sehr hellen mit; über einer dunklen
+/// Startseite voller Plakate hebt er sich kaum ab. Hier gehört er uns.
+///
+/// Und die Wahl ist folgenreich: was hier gewählt wird, **schließt auf dem
+/// anderen Gerät den Player**. Das gehört vor Augen, nicht in eine Zeile.
+struct Uebernahmeauswahl: View {
+    let sitzungen: [Fremdsitzung]
+    var waehlen: (Fremdsitzung) -> Void
+    var abbrechen: () -> Void
+
+    var body: some View {
+        ZStack {
+            // Fängt auch den Druck ab, damit dahinter nichts reagiert.
+            Color.black.opacity(0.62)
+                .ignoresSafeArea()
+                .onTapGesture(perform: abbrechen)
+
+            VStack(spacing: 0) {
+                VStack(spacing: 6) {
+                    Text("Wo weiterschauen?")
+                        .font(.headline)
+                    Text("Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 16)
+
+                ForEach(sitzungen) { s in
+                    Divider().overlay(Stil.schrift.opacity(0.12))
+                    Button { waehlen(s) } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: s.geraetezeichen)
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(Stil.akzent)
+                                .frame(width: 26)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(s.geraetename ?? String(localized: "Gerät"))
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text(s.titelzeile)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                            Text(Spielzeit.text(s.stand?.stelle ?? 0))
+                                .font(.system(size: 13).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 20)
+                        .frame(height: 58)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Divider().overlay(Stil.schrift.opacity(0.12))
+                Button("Abbrechen", action: abbrechen)
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+            }
+            .foregroundStyle(Stil.schrift)
+            .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke))
+            .overlay(RoundedRectangle(cornerRadius: Stil.ecke)
+                .strokeBorder(Stil.schrift.opacity(0.12)))
+            .frame(maxWidth: 420)
+            .padding(.horizontal, 24)
+            .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
+        }
     }
 }

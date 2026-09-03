@@ -32,7 +32,7 @@ settings:
     MARKETING_VERSION: "1.0.0"
     # Muss bei JEDEM Upload hochgezaehlt werden — Apple nimmt dieselbe
     # Buildnummer je Version kein zweites Mal an (Fehler 90189).
-    CURRENT_PROJECT_VERSION: "4"
+    CURRENT_PROJECT_VERSION: "7"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
     # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
@@ -42,6 +42,7 @@ settings:
 
 fileGroups:
   - Sources/Shared/Localizable.xcstrings
+  - Sources/Shared/InfoPlist.xcstrings
 
 targets:
   Swiftly-iOS:
@@ -67,6 +68,19 @@ targets:
     info:
       path: Sources/iOS/Info.plist
       properties:
+        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        #
+        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
+        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
+        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
+        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
+        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
+        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
+        # pruefen.
+        #
+        # Nicht ueber `options.developmentLanguage`: das ist die
+        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        CFBundleDevelopmentRegion: en
         CFBundleDisplayName: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
         # Ohne Farbe blitzt vor der Startanimation kurz Weiß auf.
@@ -91,7 +105,44 @@ targets:
         UIBackgroundModes:
           - audio
         NSAppTransportSecurity:
+          # **Beide Schluessel, und beide mit Grund.**
+          #
+          # `NSAllowsLocalNetworking` deckt nur das Heimnetz — IP-Bereiche wie
+          # 192.168.*, `.local`, localhost. Das ist der haeufigste Fall und
+          # der sicherste Weg dorthin.
+          #
+          # `NSAllowsArbitraryLoads` braucht es fuer den zweithaeufigsten:
+          # einen Jellyfin, der per Portweiterleitung unter
+          # `http://irgendwas.duckdns.org` erreichbar ist. Apple empfiehlt
+          # dafuer `NSExceptionDomains` — die helfen hier aber nicht, weil die
+          # Adresse erst der Nutzer eingibt und zur Bauzeit niemand kennt. Bei
+          # einem Client fuer selbst betriebene Server gibt es keinen dritten
+          # Weg.
+          #
+          # Swiftly draengt trotzdem zu https: eine Adresse ohne Schema
+          # bekommt `https://` vorgesetzt, ausser sie sieht nach Heimnetz aus
+          # (`AppModelURLNormalizer`). Auf http faellt es nur zurueck, wenn
+          # https an der Verbindung scheitert — nie bei einer Fehlerantwort.
           NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        #
+        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
+        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
+        # Verweigert der Nutzer, meldet URLSession „The Internet connection
+        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
+        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
+        # erklaeren, warum die App das will.
+        #
+        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
+        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
+        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
+        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
+        # Sprachfehler an genau der Stelle wieder, an der er am meisten
+        # stoert.
+        NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
+          on your home network. Without this, the app cannot reach a server at
+          an address like 192.168.1.5.
         # Sonst fragt App Store Connect bei jedem Upload nach der
         # Exportbestimmung. Die App verschlüsselt nichts selbst, sie nutzt nur
         # HTTPS über die Systemschnittstellen — damit ist sie ausgenommen.
@@ -171,7 +222,12 @@ targets:
       # seit es auch einen AppKit-Arm gibt.
       - path: Sources/Shared/Basisansicht.swift
       - path: Sources/Shared/VLCPlayer.swift
+      # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
+      - path: Sources/Shared/Uebernahmemodell.swift
       - path: Sources/Shared/Localizable.xcstrings
+      # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
+      # deutsch kommt hier heraus.
+      - path: Sources/Shared/InfoPlist.xcstrings
       - path: Sources/Shared/Regalvorschau.swift
       # Die Startanimation gehört auf beide Plattformen — die Marke soll
       # überall gleich auffahren. Nur das Quadrat ist auf dem Fernseher
@@ -206,6 +262,19 @@ targets:
     info:
       path: Sources/tvOS/Info.plist
       properties:
+        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        #
+        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
+        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
+        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
+        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
+        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
+        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
+        # pruefen.
+        #
+        # Nicht ueber `options.developmentLanguage`: das ist die
+        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        CFBundleDevelopmentRegion: en
         CFBundleDisplayName: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
         # **Ohne das faellt die App auf 1 zurueck, der Top Shelf steht auf 2.**
@@ -226,7 +295,44 @@ targets:
         UIBackgroundModes:
           - audio
         NSAppTransportSecurity:
+          # **Beide Schluessel, und beide mit Grund.**
+          #
+          # `NSAllowsLocalNetworking` deckt nur das Heimnetz — IP-Bereiche wie
+          # 192.168.*, `.local`, localhost. Das ist der haeufigste Fall und
+          # der sicherste Weg dorthin.
+          #
+          # `NSAllowsArbitraryLoads` braucht es fuer den zweithaeufigsten:
+          # einen Jellyfin, der per Portweiterleitung unter
+          # `http://irgendwas.duckdns.org` erreichbar ist. Apple empfiehlt
+          # dafuer `NSExceptionDomains` — die helfen hier aber nicht, weil die
+          # Adresse erst der Nutzer eingibt und zur Bauzeit niemand kennt. Bei
+          # einem Client fuer selbst betriebene Server gibt es keinen dritten
+          # Weg.
+          #
+          # Swiftly draengt trotzdem zu https: eine Adresse ohne Schema
+          # bekommt `https://` vorgesetzt, ausser sie sieht nach Heimnetz aus
+          # (`AppModelURLNormalizer`). Auf http faellt es nur zurueck, wenn
+          # https an der Verbindung scheitert — nie bei einer Fehlerantwort.
           NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        #
+        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
+        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
+        # Verweigert der Nutzer, meldet URLSession „The Internet connection
+        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
+        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
+        # erklaeren, warum die App das will.
+        #
+        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
+        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
+        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
+        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
+        # Sprachfehler an genau der Stelle wieder, an der er am meisten
+        # stoert.
+        NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
+          on your home network. Without this, the app cannot reach a server at
+          an address like 192.168.1.5.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
@@ -255,9 +361,32 @@ targets:
     info:
       path: Sources/TopShelf/Info.plist
       properties:
+        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        #
+        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
+        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
+        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
+        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
+        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
+        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
+        # pruefen.
+        #
+        # Nicht ueber `options.developmentLanguage`: das ist die
+        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        CFBundleDevelopmentRegion: en
         CFBundleDisplayName: Swiftly Top Shelf
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # **Auch hier, obwohl die Erweiterung selbst nichts holt.**
+        #
+        # Sie gibt dem System nur Bildadressen (`setImageURL`), geladen wird
+        # ausserhalb. Liegen die Bilder aber auf einem Server, der nur ueber
+        # http erreichbar ist, entscheidet ATS mit — und ein leeres Regal
+        # waere ein Fehler, den niemand einem fehlenden Plist-Schluessel
+        # zuordnet. Es kostet nichts, ihn zu setzen.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
         # **Ohne das weist App Store Connect den Upload ab** (Fehler 90502):
         # eine Erweiterung mit 64-Bit-Scheibe muss `arm64` selbst nennen.
         # Der App-Zielblock braucht es nicht — dort setzt Xcode den Schluessel
@@ -326,10 +455,22 @@ targets:
       # darin ist mit `#if os(iOS)` ausgeklammert — auf dem Mac trägt es
       # ohnehin nicht, siehe die Messung in CLAUDE.md.
       - path: Sources/Shared/VLCPlayer.swift
+      # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
+      - path: Sources/Shared/Uebernahmemodell.swift
       - path: Sources/Shared/Localizable.xcstrings
+      # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
+      # deutsch kommt hier heraus.
+      - path: Sources/Shared/InfoPlist.xcstrings
+      # Die Startanimation und ihre Vorlage. Der Mac lief bis hierher ohne
+      # Vorhang — die Datei war in keinem seiner Pfade.
+      - path: Sources/Shared/Startanimation.swift
+      - path: Sources/Shared/Mittel
       - path: Sources/macOS
     dependencies:
       - package: JellyfinKit
+      # Fuer die Startanimation — dieselbe Vorlage wie iPhone und Fernseher.
+      # Fehlte hier, deshalb lief der Mac ohne Vorhang an.
+      - package: Lottie
       # Selbst gebaute Fassung — siehe Werkzeuge/vlckit-patches/README.md.
       - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true
@@ -337,6 +478,25 @@ targets:
     info:
       path: Sources/macOS/Info.plist
       properties:
+        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        #
+        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
+        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
+        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
+        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
+        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
+        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
+        # pruefen.
+        #
+        # Nicht ueber `options.developmentLanguage`: das ist die
+        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        CFBundleDevelopmentRegion: en
+        # **Ohne das weist der Store den Upload ab** (Fehler 90242): eine
+        # Mac-App muss ihre Kategorie im Info.plist tragen, nicht nur im
+        # Store-Eintrag. iOS und tvOS verlangen das nicht — es faellt also
+        # erst beim ersten Mac-Upload auf, so wie das fehlende `arm64` am
+        # Top Shelf erst beim ersten tvOS-Upload.
+        LSApplicationCategoryType: public.app-category.entertainment
         CFBundleDisplayName: Swiftly
         # **Das Zeichen zusaetzlich als vollstaendige `.icns`.**
         #
@@ -351,7 +511,44 @@ targets:
         # gebaut, und ohne das setzt macOS die Fensterknöpfe hell.
         NSRequiresAquaSystemAppearance: false
         NSAppTransportSecurity:
+          # **Beide Schluessel, und beide mit Grund.**
+          #
+          # `NSAllowsLocalNetworking` deckt nur das Heimnetz — IP-Bereiche wie
+          # 192.168.*, `.local`, localhost. Das ist der haeufigste Fall und
+          # der sicherste Weg dorthin.
+          #
+          # `NSAllowsArbitraryLoads` braucht es fuer den zweithaeufigsten:
+          # einen Jellyfin, der per Portweiterleitung unter
+          # `http://irgendwas.duckdns.org` erreichbar ist. Apple empfiehlt
+          # dafuer `NSExceptionDomains` — die helfen hier aber nicht, weil die
+          # Adresse erst der Nutzer eingibt und zur Bauzeit niemand kennt. Bei
+          # einem Client fuer selbst betriebene Server gibt es keinen dritten
+          # Weg.
+          #
+          # Swiftly draengt trotzdem zu https: eine Adresse ohne Schema
+          # bekommt `https://` vorgesetzt, ausser sie sieht nach Heimnetz aus
+          # (`AppModelURLNormalizer`). Auf http faellt es nur zurueck, wenn
+          # https an der Verbindung scheitert — nie bei einer Fehlerantwort.
           NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        #
+        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
+        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
+        # Verweigert der Nutzer, meldet URLSession „The Internet connection
+        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
+        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
+        # erklaeren, warum die App das will.
+        #
+        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
+        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
+        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
+        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
+        # Sprachfehler an genau der Stelle wieder, an der er am meisten
+        # stoert.
+        NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
+          on your home network. Without this, the app cannot reach a server at
+          an address like 192.168.1.5.
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:

@@ -101,6 +101,8 @@ extension AppModel {
                 }
             case let .decoding(text):
                 return String(localized: "Die Antwort des Servers war unverständlich. (\(String(text.prefix(80))))")
+            case .noPlayableSource:
+                return String(localized: "Der Server nennt keine abspielbare Fassung.")
             }
         }
         if let u = fehler as? URLError {

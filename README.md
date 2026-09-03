@@ -8,6 +8,12 @@
 [![License](https://img.shields.io/badge/license-MPL--2.0-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](LICENSE)
 [![Jellyfin](https://img.shields.io/badge/Jellyfin-10.10%2B-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](https://jellyfin.org)
 
+<br>
+
+[![Join the beta on TestFlight](https://img.shields.io/badge/TestFlight-Join%20the%20beta-0B0B0D?style=for-the-badge&labelColor=0B0B0D&color=5CD1C2&logo=apple&logoColor=0B0B0D)](https://testflight.apple.com/join/MqeP2cnj)
+&nbsp;
+[![Discord](https://img.shields.io/badge/Discord-Bugs%20%26%20feedback-0B0B0D?style=for-the-badge&labelColor=0B0B0D&color=5865F2&logo=discord&logoColor=white)](https://discord.gg/MeGwfv3UwN)
+
 </div>
 
 <br>
@@ -49,10 +55,15 @@ that, which is rather the point.
 
 | Platform | State |
 |---|---|
-| iPhone | Version 1.0.0 in review with Apple |
-| iPad | In development |
-| Apple TV | In development, beta planned next |
-| Mac | In development |
+| iPhone | Beta on TestFlight · 1.0.0 in review with Apple |
+| iPad | Beta on TestFlight · ships with the iPhone app |
+| Apple TV | Beta on TestFlight · 1.0.0 in review with Apple |
+| Mac | 1.0.0 in review with Apple |
+
+**The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
+— one link for iPhone, iPad and Apple TV. What each build wants tested is
+written in its release notes, and it is usually five specific things rather
+than "have a look around".
 
 One app, one design, sized for the screen you are on. The logic — server
 access, device profile, playback timing — is shared; only the views differ,
@@ -114,20 +125,42 @@ The Jellyfin OpenAPI description is not included; fetch it from any server at
 
 <br>
 
-## Known issue: VLCKit
+## Known issues: VLCKit
 
-VLC 4 discards the seek index of Matroska files served over HTTP: every seek
-reads from the beginning of the file and takes 30 to 90 seconds. VLC 3 does
-not have this restriction, which is why other clients seek instantly.
+Swiftly ships a VLCKit built with its own patches. The official build fetched
+by `vlckit-holen.sh` does not have them, and two of the problems below are
+bad enough that the app is not usable without the fix. Every patch lives in
+`Werkzeuge/vlckit-patches/` with a README of its own that carries the
+measurements.
 
-The two-line fix lives in `Werkzeuge/vlckit-patches/` with a README of its
-own. Swiftly ships a VLCKit built with that patch applied; the official
-build fetched by `vlckit-holen.sh` does not have it. The patch has been
-submitted upstream so that official builds can be used again.
+**Seeking in Matroska over HTTP.** VLC 4 discards the seek index of Matroska
+files served over HTTP: every seek reads from the beginning of the file and
+takes 30 to 90 seconds. VLC 3 does not have this restriction, which is why
+other clients seek instantly.
+
+**The clock resets on files with sparse timestamps.** VLC 4 lowered the
+threshold for "this is a stream discontinuity" from 60 seconds to 300 ms.
+That comparison only holds when the source runs at its own pace; for a plain
+file over HTTP the demuxer reads faster than realtime, so every timestamp gap
+larger than 300 ms is treated as a break and the clock resets its reference.
+Measured on an Apple TV: 5276 clock resets in 72 seconds on one episode, 35
+to 70 new clock contexts per second, until tvOS killed the app for burning
+the CPU. The same file plays fine on VLC 3.
+
+**Pause took up to 125 ms to take effect** — three to four frames at 120 Hz.
+Three causes, three patches; it is about one frame now.
+
+The patches are being submitted upstream so that official builds can be used
+again.
 
 ## Reporting bugs
 
-The Discord is the fastest way: **https://discord.gg/mzKPMEr7hj**
+The Discord is the fastest way: **https://discord.gg/MeGwfv3UwN** — there are
+channels for bug reports and feature requests, and a beta chat.
+
+If you are on the TestFlight build, the release notes name the handful of
+things that changed since the last one. Reports against those are worth the
+most, because they can be traced to a specific change.
 
 The single most useful report is one where the server transcoded when it
 should not have. If your Jellyfin dashboard says *Transcoding* instead of

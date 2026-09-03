@@ -245,6 +245,7 @@ final class VLCPlayerView: Basisansicht {
         }
     }
 
+
     /// **Sicherheitsnetz gegen dauerhafte Stille.**
     ///
     /// Der Ton wird an genau einer Stelle zurueckgehalten und an vier wieder

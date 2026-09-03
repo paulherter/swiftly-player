@@ -34,6 +34,18 @@ struct ProfilView: View {
     }
 
     var body: some View {
+        seite
+            // **Zugeklappt zurückkommen.** Wer die Einstellungen verlässt und
+            // später wiederkommt, findet sonst noch die Auswahl von vorhin
+            // offen — und eine halb aufgeklappte Liste sieht aus wie ein
+            // Zustand, den man selbst hinterlassen hat, ohne es zu wissen.
+            .onDisappear { offen = nil }
+            // Dasselbe beim Wechsel des Bereichs: die Zeile, die offen war,
+            // gibt es auf der neuen Seite gar nicht mehr.
+            .onChange(of: bereich) { _, _ in offen = nil }
+    }
+
+    private var seite: some View {
         VStack(alignment: .leading, spacing: 0) {
             kopf.padding(.bottom, 60)
 
@@ -45,17 +57,48 @@ struct ProfilView: View {
                             .buttonStyle(BereichsStil(an: bereich == b))
                     }
                 }
-                .frame(width: 460)
+                // **Auf volle Hoehe, und zwar wegen des Fokusmotors.**
+                //
+                // Er bewegt den Fokus nur, wenn in der gedrueckten Richtung
+                // etwas *angrenzend* und fokussierbar ist. Die Spalte war nur
+                // so hoch wie ihr Inhalt; klappt rechts eine Wertzeile auf,
+                // die tiefer sitzt als diese Hoehe — „Vorspulen" ist die
+                // zweite —, liegt links von den Chips nichts mehr, und Links
+                // tat gar nichts. Der Fokus sass fest.
+                //
+                // Von Koney am 03.09.2026 gemeldet. Sichtbar aendert sich
+                // nichts: der Inhalt bleibt oben, nur der Abschnitt reicht
+                // jetzt bis unten.
+                .frame(width: 460, alignment: .topLeading)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
                 .focusSection()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Gruppentitel(text: bereich.name)
-                        zeilen
+                // **Der Leser ist die ganze Bewegung.**
+                //
+                // Klappt eine Zeile auf, wird sie hierhin gescrollt — und das
+                // Scrollen selbst ist die weiche Bewegung, die tvOS ohnehin
+                // mitbringt. Vorher habe ich die Spalte von Hand verschoben;
+                // das war hart und musste die Höhe der Auswahl raten. Hier
+                // rät niemand: die Liste ist so lang, wie sie ist, und der
+                // Leser bringt die aufgeklappte Zeile ins Bild.
+                ScrollViewReader { leser in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Gruppentitel(text: bereich.name)
+                            zeilen
+                        }
+                    }
+                    .scrollIndicators(.hidden)
+                    .scrollClipDisabled()
+                    .onChange(of: offen) { _, neu in
+                        guard let neu else { return }
+                        // Dieselbe Kurve und Dauer wie das Aufklappen —
+                        // sonst laufen zwei Bewegungen gegeneinander.
+                        withAnimation(.easeInOut(duration: 0.28)) {
+                            leser.scrollTo(neu, anchor: .top)
+                        }
                     }
                 }
-                .scrollIndicators(.hidden)
-                .scrollClipDisabled()
                 .focusSection()
             }
         }
@@ -178,23 +221,53 @@ struct ProfilView: View {
         return VStack(alignment: .leading, spacing: 0) {
             Handlungszeile(titel: titel, wert: wert,
                            aufgeklappt: offen == schluessel) {
-                offen = offen == schluessel ? nil : schluessel
+                // **Ein Vorgang für die ganze Liste, nicht einer je Zeile.**
+                //
+                // Hier hing ein `.animation(…, value: offen)` an jeder
+                // Wertzeile. Damit animiert jede für sich: die zwei direkt
+                // darunter standen sofort an ihrem neuen Platz, die weiter
+                // unten rutschten langsam nach, und dazwischen überlappten
+                // sie sich. Ein `withAnimation` an der Änderung selbst legt
+                // alle in **eine** Bewegung — die Liste rückt als ein Stück.
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    offen = offen == schluessel ? nil : schluessel
+                }
             }
+
             if offen == schluessel {
-                FlussReihe {
+                // **Dieselbe Zeilenform, nur eingerückt.** Vorher standen hier
+                // runde Marken nebeneinander; Eine Auswahl sieht in einer
+                // Einstellungsliste aus wie die Liste — mit Haken beim
+                // Gewählten, so wie es jede App macht.
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(eintraege) { eintrag in
-                        Button(beschriftung(eintrag)) {
+                        Button {
                             waehlen(eintrag)
                             offen = nil
+                        } label: {
+                            HStack(spacing: 24) {
+                                Image(systemName: an(eintrag)
+                                      ? "checkmark" : "")
+                                    .font(.system(size: 26, weight: .semibold))
+                                    .foregroundStyle(Stil.akzent)
+                                    .frame(width: 34)
+                                // Interpoliert, nicht als Schlüssel: „30 s"
+                                // ist ein Wert und stünde sonst als
+                                // Fehlstelle im Katalog.
+                                Text("\(beschriftung(eintrag))")
+                                Spacer(minLength: 0)
+                            }
                         }
-                        .buttonStyle(ChipStil(an: an(eintrag)))
+                        .buttonStyle(ZeilenStil())
                     }
                 }
-                .padding(.horizontal, 26)
-                .padding(.bottom, 20)
+                .padding(.leading, 26)
                 .focusSection()
+                .transition(.opacity)
             }
         }
+        // Ziel für den Leser, damit die aufgeklappte Zeile ins Bild kommt.
+        .id(schluessel)
     }
 }
 

@@ -103,7 +103,10 @@ final class AppModel {
     static let log = Logger(subsystem: "de.paulherter.swiftly", category: "start")
 
     /// Stabile Geräte-ID. Jellyfin listet damit die Sitzung im Dashboard.
-    private static var deviceID: String = {
+    /// **Nicht mehr `private`.** `Uebernahmemodell` muss die eigene Kennung
+    /// kennen, sonst zeigt das Gerät sich selbst als „läuft woanders" an —
+    /// und das fällt erst auf, wenn nur ein Gerät läuft.
+    static var deviceID: String = {
         let key = "de.paulherter.swiftly.deviceID"
         if let existing = UserDefaults.standard.string(forKey: key) { return existing }
         let fresh = UUID().uuidString
@@ -238,11 +241,26 @@ final class AppModel {
     /// Der häufigste Fall bei selbst gehosteten Servern ist eine unver-
     /// schlüsselte Adresse außerhalb des Heimnetzes: die sperrt iOS von sich
     /// aus, und die Fehlermeldung des Systems sagt das nicht.
+    /// Den Systemfehler um den Hinweis ergänzen, der ihn deutbar macht.
+    ///
+    /// **Der Fall, um den es hier geht, ist eine Falschmeldung des Systems.**
+    /// Verweigert der Nutzer die Ortsnetz-Erlaubnis, meldet URLSession
+    /// „Die Internetverbindung scheint offline zu sein" — obwohl das Netz
+    /// einwandfrei läuft und nur diese eine Erlaubnis fehlt. Wer das liest,
+    /// prüft sein WLAN und findet nichts. Also sagen wir es.
+    ///
+    /// Der frühere Hinweis („richte https ein") ist weg: seit
+    /// `NSAllowsArbitraryLoads` sperrt iOS http nicht mehr, und ein Rat, der
+    /// nicht mehr stimmt, ist schlechter als keiner.
     private func anschlussfehler(_ fehler: any Error, adresse: URL) -> String {
         let text = lesbar(fehler)
-        guard adresse.scheme == "http",
-              !AppModelURLNormalizer.istImHeimnetz(adresse.host() ?? "") else { return text }
-        return text + " " + String(localized: "Server, die außerhalb des Heimnetzes nur über http erreichbar sind, sperrt iOS aus Sicherheitsgründen. Richte auf dem Server https ein.")
+        let imHeimnetz = AppModelURLNormalizer.istImHeimnetz(adresse.host() ?? "")
+        // Nur bei „offline", und nur im Heimnetz: draußen ist derselbe Fehler
+        // schlicht ein fehlendes Netz, und dann wäre der Hinweis irreführend.
+        if imHeimnetz, (fehler as? URLError)?.code == .notConnectedToInternet {
+            return String(localized: "Der Server war nicht erreichbar. Hat Swiftly die Erlaubnis, Geräte im heimischen Netz zu suchen? Sie steht in den Systemeinstellungen unter „Swiftly · Lokales Netzwerk\".")
+        }
+        return text
     }
 
     /// Was nach jeder erfolgreichen Anmeldung gleich abläuft — egal ob über
@@ -563,11 +581,13 @@ final class AppModel {
     /// stur die ersten zweihundert geholt und der Rest war über die
     /// Oberfläche nicht erreichbar.
     func items(in parentID: String,
+               art: String? = nil,
                sortierung: Sortierung = .name,
                filter: Bibliotheksfilter = .alle,
                ab startIndex: Int = 0,
                anzahl: Int = AppModel.seitengroesse) async -> (titel: [Item], gesamt: Int)? {
         guard let client else { return nil }
+        let gattungen = Bibliotheksgattung.typen(zu: art)
         do {
             let antwort = try await client.items(parentID: parentID,
                                                  limit: anzahl,
@@ -575,7 +595,13 @@ final class AppModel {
                                                  sortBy: sortierung.feld,
                                                  sortOrder: sortierung.richtung,
                                                  filters: filter.jellyfinFilter,
-                                                 istGesehen: filter.istGesehen)
+                                                 istGesehen: filter.istGesehen,
+                                                 // Rekursiv, sobald die Gattung
+                                                 // feststeht: sonst blieben die
+                                                 // Titel unter den virtuellen
+                                                 // Ordnern unerreichbar.
+                                                 recursive: Bibliotheksgattung.rekursiv(zu: art),
+                                                 includeItemTypes: gattungen)
             return (antwort.items, antwort.totalRecordCount)
         } catch {
             errorMessage = lesbar(error)
@@ -630,6 +656,15 @@ final class AppModel {
         guard let quelle else { return nil }
         return bilder?.bauen(itemID: quelle.id, marke: quelle.marke,
                              mass: .hoechstensHoch(maxHeight))
+    }
+
+    /// Vorspann, Rückblick und Abspann einer Folge.
+    ///
+    /// Leer heißt: der Server weiß nichts davon — kein Plugin, keine Analyse,
+    /// oder eine ältere Fassung. Dann bleibt alles wie vorher.
+    func abschnitte(fuer itemID: String) async -> [JellyfinKit.Abschnitt] {
+        guard let client else { return [] }
+        return await client.abschnitte(fuer: itemID)
     }
 
     // MARK: - Wiedergabe melden
