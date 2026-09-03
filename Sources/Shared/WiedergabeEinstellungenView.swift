@@ -12,6 +12,18 @@ struct WiedergabeEinstellungenView: View {
     @Environment(\.dismiss) private var zurueck
     @Environment(\.breit) private var breit
     @State private var offeneListe: Liste?
+    /// Welche Liste **gezeigt** wird — bleibt beim Schließen stehen.
+    ///
+    /// **Ohne das faehrt nichts hinaus.** Haengt der Inhalt an `offeneListe`,
+    /// verschwindet er im selben Moment, in dem die Bewegung anfangen soll.
+    /// SwiftUI hat dann nichts mehr zu bewegen und blendet.
+    ///
+    /// **Von Anfang an gesetzt, nicht erst beim ersten Öffnen.** Sonst würde
+    /// die Karte beim ersten Mal im selben Zug eingehängt *und* geöffnet —
+    /// und was gerade erst entsteht, kann nicht von unten hereinfahren. Mit
+    /// einem Anfangswert hängt sie von Beginn an da, außerhalb des Bildes,
+    /// und es wechselt nur noch `offeneListe`.
+    @State private var gezeigteListe: Liste? = .ton
 
     private enum Liste: String, Identifiable {
         case bitrate, ton, untertitel, zurueck, vor
@@ -74,7 +86,7 @@ struct WiedergabeEinstellungenView: View {
     }
 
     private var qualitaet: some View {
-        let waehlen: (() -> Void)? = model.immerDirectPlay ? nil : { offeneListe = .bitrate }
+        let waehlen: (() -> Void)? = model.immerDirectPlay ? nil : { oeffne(.bitrate) }
 
         return Einstellungsgruppe(titel: "Qualität") {
             Wahlzeile(symbol: "play.fill", titel: Text("Immer Direct Play"),
@@ -92,11 +104,11 @@ struct WiedergabeEinstellungenView: View {
         Einstellungsgruppe(titel: "Sprache") {
             Wertzeile(symbol: "speaker.wave.2", titel: Text("Ton"),
                       wert: model.tonSprache.isEmpty ? String(localized: "Wie die Datei") : model.tonSprache,
-                      aktion: { offeneListe = .ton })
+                      aktion: { oeffne(.ton) })
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wertzeile(symbol: "captions.bubble", titel: Text("Untertitel"),
                       wert: model.untertitelSprache.isEmpty ? String(localized: "Aus") : model.untertitelSprache,
-                      aktion: { offeneListe = .untertitel })
+                      aktion: { oeffne(.untertitel) })
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wahlzeile(symbol: "text.alignleft", titel: Text("Untertitel automatisch"),
                       unter: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
@@ -113,17 +125,34 @@ struct WiedergabeEinstellungenView: View {
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wertzeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                       wert: "\(model.zurueckSekunden) s",
-                      aktion: { offeneListe = .zurueck })
+                      aktion: { oeffne(.zurueck) })
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wertzeile(symbol: "goforward", titel: Text("Vorspulen"),
                       wert: "\(model.vorSekunden) s",
-                      aktion: { offeneListe = .vor })
+                      aktion: { oeffne(.vor) })
         }
+    }
+
+    /// Blatt öffnen: erst den Inhalt setzen, dann in einer Bewegung zeigen.
+    private func oeffne(_ liste: Liste) {
+        gezeigteListe = liste
+        withAnimation(Stil.blattbewegung) { offeneListe = liste }
+    }
+
+    /// Schließen — und der Inhalt bleibt stehen, dauerhaft.
+    ///
+    /// **Kein Zeitgeber mehr.** Vorher wurde `gezeigteListe` nach 400 ms
+    /// geleert; solange blieb unten ein Stück der Karte sichtbar und
+    /// verschwand dann ruckartig. Die Karte wird jetzt nur verschoben, ist
+    /// also draußen, sobald die Bewegung durch ist — abzuräumen gibt es
+    /// nichts. Was bleibt, ist eine Liste im Speicher, und die kostet nichts.
+    private func schliesseBlatt() {
+        withAnimation(Stil.blattbewegung) { offeneListe = nil }
     }
 
     @ViewBuilder
     private var blatt: some View {
-        switch offeneListe {
+        switch gezeigteListe {
         case .bitrate:
             auswahl("Höchste Bitrate", Bitrate.stufen, { Bitrate.text($0.wert) },
                     { $0.wert == model.bitratenGrenze }, { model.bitratenGrenze = $0.wert })
@@ -149,7 +178,7 @@ struct WiedergabeEinstellungenView: View {
                                           _ gewaehlt: @escaping (E) -> Bool,
                                           _ waehlen: @escaping (E) -> Void) -> some View {
         Auswahlblatt(offen: Binding(get: { offeneListe != nil },
-                                    set: { if !$0 { offeneListe = nil } }),
+                                    set: { if !$0 { schliesseBlatt() } }),
                      titel: titel, eintraege: eintraege,
                      beschriftung: text, istGewaehlt: gewaehlt, waehlen: waehlen)
     }

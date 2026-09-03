@@ -8,6 +8,16 @@ import SwiftUI
 /// undurchsichtig, damit das Bildmaterial die einzige Farbe im Raum ist.
 extension Stil {
 
+    /// Wie ein Blatt von unten hereinfährt.
+    ///
+    /// **Auf Apples Blatt gelegt, nicht geraten.** Schnell heran, kein
+    /// Nachschwingen — dieselbe Kennlinie, die `.sheet` zeigt. Sie steht
+    /// hier und nicht an den Aufrufstellen, weil sonst vier Blätter vier
+    /// Kurven hätten.
+    static let blattbewegung: Animation = .spring(response: 0.35,
+                                                  dampingFraction: 0.86)
+
+
     // MARK: Maße — iPhone
 
     static let ecke: CGFloat = 6
@@ -443,39 +453,6 @@ extension Bild where Platzhalter == Color {
     }
 }
 
-/// Zurück-Pfeil, wie im Entwurf: schlicht auf dem Bild, ohne Kreisfläche.
-/// SwiftUIs Standardleiste legt sonst ein graues Rund darunter und schreibt
-/// den Titel mittig darüber — beides gibt es im Entwurf nicht.
-struct ZurueckPfeil: View {
-    let aktion: () -> Void
-    var body: some View {
-        Button(action: aktion) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(Stil.schrift)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-                .shadow(color: .black.opacity(0.5), radius: 4, y: 1)
-        }
-        .padding(.leading, 12)
-    }
-}
-
-/// Verlauf über der Statusleiste.
-///
-/// Detailseiten lassen ihr Bild bis unter die Statusleiste laufen. Ohne
-/// diesen Schleier schiebt sich beim Scrollen der Inhalt — Reiter,
-/// Beschriftungen — ungeschützt hinter die Uhrzeit.
-struct Kopfschleier: View {
-    var body: some View {
-        LinearGradient(colors: [Stil.grund.opacity(0.8), Stil.grund.opacity(0)],
-                       startPoint: .top, endPoint: .bottom)
-            .frame(height: 110)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-    }
-}
-
 /// Eigene Auswahl statt `Menu` oder `Picker`.
 ///
 /// Apples Menü bringt sein eigenes Erscheinungsbild mit — abgerundetes Glas,
@@ -484,6 +461,18 @@ struct Kopfschleier: View {
 /// abgedunkelter Grund, flache Fläche, unsere Schrift, unser Akzent.
 struct Auswahlblatt<Eintrag: Identifiable>: View {
     @Binding var offen: Bool
+    /// Wie hoch die Einträge zusammen sind — gemessen, nicht angenommen.
+    @State private var inhaltshoehe: CGFloat = 0
+    /// Wie hoch die ganze Karte ist — bestimmt, wie weit sie hinausfährt.
+    @State private var kartenhoehe: CGFloat = 500
+    /// Wie weit über dem unteren Rand das Blatt endet.
+    ///
+    /// **Die Seite reicht hinter die Leiste.** In den Bibliotheken liegt
+    /// unten die Bereichsleiste über dem Inhalt; ohne diesen Abstand
+    /// verschwindet „Abbrechen" darunter. In den Einstellungen gibt es keine
+    /// Leiste, dort ist er null — deshalb sagt es der Aufrufer und nicht
+    /// dieser Baustein, der seine Umgebung nicht kennt.
+    var unterrand: CGFloat = 0
     let titel: LocalizedStringKey
     let eintraege: [Eintrag]
     let beschriftung: (Eintrag) -> String
@@ -491,10 +480,16 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     let waehlen: (Eintrag) -> Void
 
     var body: some View {
+        // **Der Stapel bleibt, die Kinder wechseln.**
+        //
+        // Wird das ganze Blatt eingefügt, animiert SwiftUI nur dieses
+        // Einfügen — die Übergänge der Kinder kommen gar nicht zum Zug, und
+        // heraus kommt ein Aufblenden. Erst wenn Schleier und Karte einzeln
+        // erscheinen, kann der eine blenden und die andere fahren.
         ZStack(alignment: .bottom) {
             // Abdunkeln; Tippen daneben schließt.
             Rectangle()
-                .fill(.black.opacity(0.55))
+                .fill(.black.opacity(offen ? 0.55 : 0))
                 .ignoresSafeArea()
                 .onTapGesture { schliessen() }
 
@@ -535,8 +530,17 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
                                 .padding(.leading, Stil.randAbstand)
                         }
                     }
+                    // Gemessen, nicht angenommen — siehe unten.
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                        action: { inhaltshoehe = $0 }
                 }
-                .frame(maxHeight: 340)
+                // **So hoch wie die Einträge, höchstens 340.**
+                //
+                // `.frame(maxHeight:)` allein reicht nicht: eine `ScrollView`
+                // ist senkrecht gierig und nimmt sich die 340 auch dann, wenn
+                // vier Zeilen nur 204 brauchen. Übrig blieb ein Hohlraum
+                // unter der letzten Zeile, der nichts tut.
+                .frame(height: min(inhaltshoehe, 340))
                 .scrollIndicators(.hidden)
 
                 Button { schliessen() } label: {
@@ -547,17 +551,49 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
                 }
                 .buttonStyle(.plain)
             }
+            .padding(.bottom, unterrand)
             .background {
+                // **Die Fläche reicht weiter nach unten, als die Karte je
+                // fährt.**
+                //
+                // Die Feder schießt beim Öffnen über — die Karte hebt kurz von
+                // der Leiste ab. Endet die Fläche an ihrer Unterkante, blitzt
+                // in dem Moment der Inhalt darunter durch. Der negative Rand
+                // zieht sie 300 Punkt tiefer; sichtbar wird davon nichts, weil
+                // dort der Bildrand ist.
+                //
+                // Den Bounce dafür wegzunehmen wäre der falsche Tausch
                 UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
                     .fill(Stil.flaeche)
+                    .padding(.bottom, -300)
                     .ignoresSafeArea(edges: .bottom)
             }
+            // **Verschieben statt Ein- und Aushängen.**
+            //
+            // Ein Übergang bewegt einen Rahmen — was darüber hinaus gezeichnet
+            // wird, Hintergrund in der Sicherheitszone etwa, bleibt stehen und
+            // verschwindet erst, wenn die Ansicht abgeräumt wird. Genau das
+            // war zu sehen: unten blieb ein Stück und ging nach einer halben
+            // Sekunde ruckartig weg.
+            //
+            // Die Karte bleibt deshalb hängen und wird nur verschoben — um
+            // ihre **gemessene** Höhe plus reichlich Zugabe. Damit ist sie
+            // draußen, wenn sie draußen sein soll, und es gibt nichts
+            // abzuräumen und keinen Zeitgeber, der es täte.
+            .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                action: { kartenhoehe = $0 }
+            .offset(y: offen ? 0 : kartenhoehe + 400)
         }
-        .transition(.opacity)
+        // Der Stapel muss den Schirm füllen; sonst bemisst sich die Auflage
+        // am Inhalt und die Karte sitzt oben.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(offen)
     }
 
     private func schliessen() {
-        withAnimation(.snappy(duration: 0.22)) { offen = false }
+        // Dieselbe Feder wie beim Öffnen — sonst kommt es anders zurück,
+        // als es gegangen ist.
+        withAnimation(Stil.blattbewegung) { offen = false }
     }
 }
 
@@ -644,32 +680,6 @@ struct Einstellungsgruppe<Inhalt: View>: View {
             VStack(spacing: 0) { inhalt() }
                 .background(alignment: .top) { Trennlinie() }
                 .background(alignment: .bottom) { Trennlinie() }
-        }
-    }
-}
-
-/// Eine Zeile im Einstellungsblatt.
-struct Einstellzeile<Rechts: View>: View {
-    let titel: LocalizedStringKey
-    var aktion: (() -> Void)? = nil
-    @ViewBuilder var rechts: () -> Rechts
-
-    var body: some View {
-        let inhalt = HStack(spacing: 10) {
-            Text(titel)
-                .font(.system(size: 15))
-                .foregroundStyle(Stil.schrift)
-            Spacer(minLength: 0)
-            rechts()
-        }
-        .padding(.horizontal, Stil.randAbstand)
-        .frame(height: 48)
-        .contentShape(Rectangle())
-
-        if let aktion {
-            Button(action: aktion) { inhalt }.buttonStyle(.plain)
-        } else {
-            inhalt
         }
     }
 }
@@ -1028,6 +1038,53 @@ enum Bereich: Int, CaseIterable, Identifiable {
     }
 }
 
+/// Ein Bereich in der Leiste — unten auf dem iPhone, links auf dem iPad.
+///
+/// **Ein Baustein für beide Leisten.** Er stand zweimal da, siebzehn Zeilen
+/// wortgleich, und der Kommentar an `Seitenleiste` sagte es selbst:
+/// „Gleiche Symbole, gleiche Größen, gleicher Akzent". Genau so fangen die
+/// Fassungen an auseinanderzulaufen — wer die Auswahlfarbe ändert, ändert
+/// eine von zwei Leisten und sieht die andere erst auf dem anderen Gerät.
+///
+/// Verschieden sind nur zwei Dinge, und beide stehen jetzt als Parameter da:
+/// die Seitenleiste gibt eine feste Zeilenhöhe vor, und bei ihr trägt
+/// keiner der vier Bereiche die Auswahl, solange das Profil offen ist.
+private struct Bereichsknopf: View {
+    let bereich: Bereich
+    let aktiv: Bool
+    /// Feste Zeilenhöhe. Die Leiste unten gibt keine vor — dort teilen sich
+    /// die vier die Höhe der Leiste selbst.
+    var hoehe: CGFloat?
+    let waehlen: () -> Void
+
+    var body: some View {
+        Button(action: waehlen) { inhalt }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(bereich.name))
+            .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
+    }
+
+    @ViewBuilder private var inhalt: some View {
+        let kern = VStack(spacing: 4) {
+            Image(systemName: bereich.symbol)
+                .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
+            Text(bereich.name)
+                .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
+        }
+        .foregroundStyle(aktiv ? Stil.akzent : Color.white.opacity(0.42))
+        .frame(maxWidth: .infinity)
+
+        // Nicht `.frame(height: hoehe)` mit einem `nil`: das legt auch dann
+        // eine Rahmenschicht ein, wenn keine gemeint ist. Hier soll die
+        // Leiste unten genau den Baum bekommen, den sie vorher hatte.
+        if let hoehe {
+            kern.frame(height: hoehe).contentShape(Rectangle())
+        } else {
+            kern.contentShape(Rectangle())
+        }
+    }
+}
+
 /// Eigene Leiste statt `TabView`.
 ///
 /// Apples Leiste bringt auf iOS 26 ihr eigenes Glasmaterial mit, dazu eigene
@@ -1040,23 +1097,9 @@ struct Navileiste: View {
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Bereich.allCases) { bereich in
-                let aktiv = bereich == gewaehlt
-                Button {
+                Bereichsknopf(bereich: bereich, aktiv: bereich == gewaehlt) {
                     gewaehlt = bereich
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: bereich.symbol)
-                            .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
-                        Text(bereich.name)
-                            .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
-                    }
-                    .foregroundStyle(aktiv ? Stil.akzent : Color.white.opacity(0.42))
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(bereich.name))
-                .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(.top, 9)
@@ -1116,24 +1159,11 @@ struct Seitenleiste: View {
                 .padding(.bottom, 30)
 
             ForEach(Bereich.allCases) { bereich in
-                let aktiv = bereich == gewaehlt && !imProfil
-                Button {
+                Bereichsknopf(bereich: bereich,
+                              aktiv: bereich == gewaehlt && !imProfil,
+                              hoehe: 64) {
                     gewaehlt = bereich
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: bereich.symbol)
-                            .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
-                        Text(bereich.name)
-                            .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
-                    }
-                    .foregroundStyle(aktiv ? Stil.akzent : Color.white.opacity(0.42))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 64)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(bereich.name))
-                .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
             }
 
             Spacer(minLength: 0)
@@ -1252,41 +1282,6 @@ struct Leistenglas: View {
         ZStack {
             Unschaerfe(staerke: staerke)
             Stil.grund.opacity(tiefe * staerke)
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-/// Dunkles Glas: leichte Unschärfe mit dem Grundton darüber, beides nach
-/// unten auslaufend.
-///
-/// Die Unschärfe allein hellt auf — sie mischt ja Helles aus dem Bild ein.
-/// Erst der Grundton darüber macht daraus dunkles Glas.
-struct Verlaufsunschaerfe: View {
-    var staerke: Double = 1
-    var vollBis: CGFloat = 0.72
-    /// Wie dunkel das Glas an der Oberkante ist. Derselbe Wert wie die
-    /// Navigationsleiste unten, damit beide zusammenpassen.
-    var oben: Double = 0.86
-    /// Wie dunkel es auf Höhe des Inhalts noch ist.
-    var tiefe: Double = 0.55
-    /// Deckkraft der Unschärfe selbst. Unter eins bleibt mehr vom Bild
-    /// erkennbar — voll aufgedreht war es zu milchig.
-    var dichte: Double = 0.72
-
-    var body: some View {
-        ZStack {
-            Unschaerfe(vollBis: vollBis, staerke: staerke * dichte)
-            // Der dunkle Anteil ist selbst ein Verlauf, nicht eine Fläche
-            // mit Maske: oben fast deckend wie die Leiste unten, nach unten
-            // auslaufend. Nur so treffen sich Kopf und Leiste farblich.
-            LinearGradient(stops: [
-                .init(color: Stil.grund.opacity(oben * staerke), location: 0),
-                .init(color: Stil.grund.opacity(tiefe * staerke), location: vollBis),
-                .init(color: Stil.grund.opacity(tiefe * 0.4 * staerke),
-                      location: (vollBis + 1) / 2),
-                .init(color: .clear, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
         }
         .allowsHitTesting(false)
     }

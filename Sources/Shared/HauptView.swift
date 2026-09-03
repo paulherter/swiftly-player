@@ -210,6 +210,41 @@ struct BibliothekView: View {
         GeometryReader { rahmen in
             inhalt(nutzbar: rahmen.size.width - 2 * Stil.rand(breit: breit))
         }
+        // **Die Blätter gehören an die Seite, nicht an die Kopfzeile.**
+        //
+        // Sie hingen an `kopf`. Eine Auflage bekommt den Rahmen dessen, worauf
+        // sie liegt — und das war rund hundert Punkt hoch. Das Blatt saß
+        // deshalb oben, ohne Schleier, und seine Liste bekam gar keine Höhe:
+        // sichtbar waren nur „Sortieren" und „Abbrechen".
+        //
+        // Im Simulator nachgestellt. Der Fehler ist **älter** als der Umbau
+        // der Blattbewegung von heute Abend — nach dem Zurücksetzen auf den
+        // geprüften Stand war er unverändert da.
+        // **Ohne `if` — der Behaelter bleibt, das Blatt gattert sich selbst.**
+        // Nur so laufen die Uebergaenge von Schleier und Karte einzeln.
+        .overlay(alignment: .topTrailing) {
+                Auswahlblatt(offen: $sortierlisteOffen,
+                             unterrand: breit ? 0 : Stil.leisteHoehe,
+                             titel: "Sortieren",
+                             eintraege: Sortierung.allCases,
+                             beschriftung: { $0.beschriftung },
+                             istGewaehlt: { $0 == stand.sortierung },
+                             waehlen: { stand.sortierung = $0 })
+        }
+        .overlay(alignment: .topTrailing) {
+                Auswahlblatt(offen: $bibliothekslisteOffen,
+                             unterrand: breit ? 0 : Stil.leisteHoehe,
+                             titel: "Bibliothek",
+                             eintraege: auswahl,
+                             beschriftung: { $0.name },
+                             istGewaehlt: { $0.id == gewaehlt?.id },
+                             waehlen: { bib in
+                                 guard bib.id != gewaehlt?.id else { return }
+                                 model.bibliothekWaehlen(bib, art: art)
+                                 gewaehlt = bib
+                                 Task { await laden() }
+                             })
+        }
         // **Die Bibliothek gehoert nicht in die Kennung.**
         //
         // Sie stand einmal darin, und das war ein Fehler: `laden()` setzt die
@@ -306,7 +341,7 @@ struct BibliothekView: View {
                         // `Auswahlblatt` wie bei der Sortierung, und es
                         // nimmt die Beschriftung als `String`, was hier
                         // noetig ist: Bibliotheksnamen kommen vom Server.
-                        Button { bibliothekslisteOffen = true } label: {
+                        Button { withAnimation(Stil.blattbewegung) { bibliothekslisteOffen = true } } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(gewaehlt?.name ?? "")
                                     .font(Stil.titelGross).tracking(-0.6)
@@ -386,7 +421,7 @@ struct BibliothekView: View {
                         .fixedSize(horizontal: true, vertical: false)
                         .layoutPriority(1)
                     } else {
-                        Button { sortierlisteOffen = true } label: {
+                        Button { withAnimation(Stil.blattbewegung) { sortierlisteOffen = true } } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "line.3.horizontal.decrease")
                                     .font(.system(size: 12, weight: .medium))
@@ -402,29 +437,6 @@ struct BibliothekView: View {
                         .buttonStyle(.plain)
                     }
                 }
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            if sortierlisteOffen {
-                Auswahlblatt(offen: $sortierlisteOffen, titel: "Sortieren",
-                             eintraege: Sortierung.allCases,
-                             beschriftung: { $0.beschriftung },
-                             istGewaehlt: { $0 == stand.sortierung },
-                             waehlen: { stand.sortierung = $0 })
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            if bibliothekslisteOffen {
-                Auswahlblatt(offen: $bibliothekslisteOffen, titel: "Bibliothek",
-                             eintraege: auswahl,
-                             beschriftung: { $0.name },
-                             istGewaehlt: { $0.id == gewaehlt?.id },
-                             waehlen: { bib in
-                                 guard bib.id != gewaehlt?.id else { return }
-                                 model.bibliothekWaehlen(bib, art: art)
-                                 gewaehlt = bib
-                                 Task { await laden() }
-                             })
             }
         }
     }

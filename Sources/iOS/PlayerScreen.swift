@@ -9,8 +9,6 @@ import SwiftUI
 /// Doppeltippen links/rechts spult, einmal tippen blendet um.
 struct PlayerScreen: View {
     let model: AppModel
-    let startItem: Item
-    let startPlan: PlaybackPlan
     let startAt: Double
 
     @Environment(\.dismiss) private var dismiss
@@ -104,18 +102,12 @@ struct PlayerScreen: View {
     /// `fullScreenCover` und hängt nicht unter `HauptView`, dessen
     /// Sicherheitsabstand ihn deshalb nicht erreicht. Genau daran ist die
     /// erste Fassung vorbeigegangen.
-    /// Selbst gerechnet und nicht aus der Umgebung gelesen: der Player ist
-    /// ein `fullScreenCover` und haengt ausserhalb der Ansicht, die den Wert
-    /// setzt. Ob die Umgebung dorthin durchreicht, will ich nicht annehmen —
-    /// angenommen hatte ich hier schon zweimal genug.
     private var imFenster: Bool {
         Fensterknoepfe.imFenster(fensterbreite: fensterbreite)
     }
 
     init(model: AppModel, item: Item, plan: PlaybackPlan, startAt: Double) {
         self.model = model
-        self.startItem = item
-        self.startPlan = plan
         self.startAt = startAt
         // Nicht bei null anfangen: sonst steht der Schieber kurz auf Anfang
         // und springt sichtbar nach vorn, sobald der Strom seine Stelle hat.
@@ -541,7 +533,7 @@ struct PlayerScreen: View {
                         // nachgeführt.
                         amSchieben = false
                         surface?.seek(toSeconds: position)
-                        sprungBis = Date().addingTimeInterval(2)
+                        sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
                         meldeFortschritt()
                         ausblendenVerschieben()
                     }
@@ -617,15 +609,6 @@ struct PlayerScreen: View {
         .transition(.opacity)
     }
 
-    /// Der Knopf erscheint erst, wenn die Folge fast durch ist — sonst stünde
-    /// er bei einem Zweistünder zwei Stunden lang im Weg.
-    ///
-    /// Die Zahlen stehen in `Folgenende`, geteilt mit den anderen
-    /// Plattformen, damit der Knopf überall zur selben Zeit auftaucht.
-    private var gegenEnde: Bool {
-        Folgenende.knopfZeigen(position: position, dauer: dauer)
-    }
-
     /// Welcher Knopf gerade gilt — überspringen, weiterschalten oder keiner.
     ///
     /// **Es ist derselbe Knopf.** Gestaltung und Platz bleiben; nur
@@ -648,7 +631,7 @@ struct PlayerScreen: View {
             // Anzeige kurz nicht überschreiben lassen.
             position = nach
             surface?.seek(toSeconds: nach)
-            sprungBis = Date().addingTimeInterval(2)
+            sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
             meldeFortschritt()
             ausblendenVerschieben()
         case .naechsteFolge:
@@ -676,7 +659,7 @@ struct PlayerScreen: View {
         case let .springenAuf(sekunden):
             position = sekunden
             surface?.seek(toSeconds: sekunden)
-            sprungBis = Date().addingTimeInterval(2)
+            sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
         case .vor:
             spulen(Int32(model.vorSekunden))
         case .zurueck:
@@ -716,7 +699,7 @@ struct PlayerScreen: View {
 
     private func spulen(_ sekunden: Int32) {
         surface?.jump(seconds: sekunden)
-        sprungBis = Date().addingTimeInterval(1.5)
+        sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
         if sekunden < 0 { taktZurueck += 1 } else { taktVor += 1 }
         sprungAnzeige = (sekunden < 0 ? -1 : 1, Int(abs(sekunden)))
         Task {
@@ -893,6 +876,23 @@ struct PlayerScreen: View {
                 letzterWechsel = titelwechsel
                 // `true`, weil der Wechsel den Start selbst gemeldet hat.
                 Wiedergabetakt.neuerTitel(&stand, startGemeldet: true)
+            }
+
+            // **Angekommen heisst angekommen — nicht „zwei Sekunden sind um".**
+            //
+            // Der Riegel nach einem Sprung stand auf einer festen Frist. Ist
+            // VLC frueher da, bleibt die Zeit trotzdem stehen; braucht es
+            // laenger, faellt der Riegel zu frueh und die Anzeige springt auf
+            // die alte Stelle zurueck. Gemessen wird deshalb, ob VLC dort
+            // ist, wo wir hinwollten — die Frist ist nur noch der Deckel fuer
+            // den Fall, dass ein Sprung gar nicht ankommt.
+            //
+            // Von tvOS uebernommen, wo es seit Langem so laeuft. Die
+            // tvOS-Sitzung hat den Unterschied im Tiefendurchgang gefunden:
+            // die drei Plattformen hatten nicht verschiedene Zahlen, sondern
+            // verschiedene Verfahren.
+            if sprungBis != nil, abs(surface.positionSeconds - position) < Zeitannahme.sprungAngekommen {
+                sprungBis = nil
             }
 
             let auftrag = Wiedergabetakt.rechnen(

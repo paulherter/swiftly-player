@@ -95,7 +95,9 @@ struct HomeView: View {
                     }
                 }
 
-                if geladen, weiter.isEmpty, naechste.isEmpty, neu.isEmpty {
+                // `alleLeer` statt dreier Abfragen — dieselbe Aussage, und
+                // sie steht im geteilten `Startseitenmodell`.
+                if geladen, stand.alleLeer {
                     Leerzustand(symbol: "tray", titel: "Hier ist noch nichts",
                                 text: "Sobald der Server Titel hat, stehen sie hier.")
                         .padding(.top, 120)
@@ -142,10 +144,13 @@ struct HomeView: View {
         titel.seriesName ?? titel.name
     }
 
-    private func fortschritt(_ titel: Item) -> Double? {
-        guard let daten = titel.userData?.playedPercentage else { return nil }
-        return daten / 100
-    }
+    /// **Aus `Item.gesehenerAnteil`** (`Sources/Shared/Titelangaben.swift`).
+    ///
+    /// Hier stand dieselbe Rechnung noch einmal. Ein Unterschied bestand:
+    /// die geteilte Fassung gibt bei null Prozent `nil` zurück, diese gab
+    /// `0.0`. Folgenlos, weil `Bildflaeche` den Balken ohnehin nur
+    /// `if fortschritt > 0` zeichnet — beides führt zu keinem Balken.
+    private func fortschritt(_ titel: Item) -> Double? { titel.gesehenerAnteil }
 
     private func laden() async {
         guard !stand.geladen else { return }

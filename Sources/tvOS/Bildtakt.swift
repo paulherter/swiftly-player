@@ -162,7 +162,10 @@ enum Bildtakt {
         return setzen(rate: rate,
                       breite: Int32(angabe.width ?? 1920),
                       hoehe: Int32(angabe.height ?? 1080),
-                      codec: kennung(text: angabe.codec))
+                      codec: kennung(text: angabe.codec),
+                      umfang: Farbauskunft.umfang(typ: angabe.videoRangeType,
+                                                  kennlinie: angabe.colorTransfer,
+                                                  primaervalenzen: angabe.colorPrimaries))
     }
 
     @discardableResult
@@ -170,14 +173,19 @@ enum Bildtakt {
         guard nochNachzumessen, let rate = rate(von: spieler) else { return nil }
         guard let spur = spieler.media?.videoTracks.first, let bild = spur.video
         else { return nil }
+        // VLC gibt den Farbumfang nicht heraus — hier bleibt es beim
+        // Nachmessen der Bildrate. Den Umfang hat der Server schon vorher
+        // gesetzt, falls er ihn kannte.
         return setzen(rate: rate,
                       breite: Int32(bild.width),
                       hoehe: Int32(bild.height),
-                      codec: kennung(spur.codec))
+                      codec: kennung(spur.codec),
+                      umfang: .unbekannt)
     }
 
     private static func setzen(rate: Double, breite: Int32, hoehe: Int32,
-                               codec: CMVideoCodecType) -> Double? {
+                               codec: CMVideoCodecType,
+                               umfang: Farbumfang) -> Double? {
         // **Nicht umschalten, wenn es nichts bringt.**
         //
         // Jeder Wechsel kostet ein paar Sekunden Schwarzbild — der Grund, aus
@@ -204,22 +212,41 @@ enum Bildtakt {
         let gewuenscht = Float(rate)
         if let zuletzt, abs(zuletzt - gewuenscht) < 0.05 { return rate }
 
-        // **Ohne Farbangaben.**
+        // **Mit Farbangaben, wenn der Server welche nennt.**
         //
-        // Die Beschreibung trägt sonst auch Primärvalenzen und Kennlinie, und
-        // tvOS schaltet dann den Dynamikumfang mit um. Welchen die Datei hat,
-        // weiß hier niemand: VLCKit gibt es nicht heraus, und Jellyfins
-        // `VideoRangeType` steht nicht im geteilten Modell. Geraten wäre
-        // schlimmer als gelassen — ein HDR-Film in SDR sieht ausgewaschen aus.
-        // So bleibt der Dynamikumfang, wie er ist, und nur die Kadenz ändert
-        // sich. Genau die war das Problem.
+        // Hier stand einmal „welchen Umfang die Datei hat, weiß hier
+        // niemand" — das stimmte, solange `VideoRangeType` nicht im Modell
+        // war. Seit dem 03.09.2026 ist es das, und damit kann die
+        // Beschreibung die Kennlinie tragen und tvOS den HDMI-Ausgang
+        // umstellen.
+        //
+        // **Die Regel von damals gilt unverändert weiter:** sagt der Server
+        // nichts, wird nichts gesetzt. Ein HDR-Film in SDR sieht ausgewaschen
+        // aus, ein SDR-Film in HDR flau — geraten ist schlimmer als gelassen.
+        //
+        // **Was das nicht kann: Dolby Vision.** Ein Ausgang, der über eine
+        // Formatbeschreibung angefordert wird, geht nach HDR10, nicht nach
+        // DV. Ein DV-Film landet also in HDR10 — richtig in Kennlinie und
+        // Primärvalenzen, ohne die dynamischen Metadaten. Besser als SDR,
+        // aber nicht dasselbe.
         var beschreibung: CMVideoFormatDescription?
+        var farben: CFDictionary?
+        if let kennlinie = umfang.kennlinie {
+            farben = [
+                kCVImageBufferColorPrimariesKey: kCVImageBufferColorPrimaries_ITU_R_2020,
+                kCVImageBufferTransferFunctionKey: kennlinie == .pq
+                    ? kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ
+                    : kCVImageBufferTransferFunction_ITU_R_2100_HLG,
+                kCVImageBufferYCbCrMatrixKey: kCVImageBufferYCbCrMatrix_ITU_R_2020,
+            ] as CFDictionary
+        }
+
         let ergebnis = CMVideoFormatDescriptionCreate(
             allocator: kCFAllocatorDefault,
             codecType: codec,
             width: breite,
             height: hoehe,
-            extensions: nil,
+            extensions: farben,
             formatDescriptionOut: &beschreibung)
 
         guard ergebnis == noErr, let beschreibung else {
@@ -233,7 +260,8 @@ enum Bildtakt {
         wechselSeit = Date()
         log.info("Ausgang auf \(rate, privacy: .public) Hz gestellt (\(breite, privacy: .public)×\(hoehe, privacy: .public))")
         Protokoll.schreib("[Takt] Ausgang auf \(String(format: "%.3f", rate)) Hz gestellt"
-            + " (\(breite)×\(hoehe))")
+            + " (\(breite)×\(hoehe), \(umfang.rawValue)"
+            + "\(umfang.kennlinie.map { $0 == .pq ? ", PQ" : ", HLG" } ?? ", ohne Farbangaben"))")
         return rate
     }
 

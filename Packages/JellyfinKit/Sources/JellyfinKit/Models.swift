@@ -401,11 +401,16 @@ public struct Zahlwert: Codable, Sendable, Equatable {
 public struct MediaStream: Codable, Sendable, Equatable {
     public init(codec: String?, type: String?, language: String?, displayTitle: String?,
                 channels: Int?, isDefault: Bool?, index: Int?, height: Int?, width: Int?,
-                realFrameRate: Double? = nil, averageFrameRate: Double? = nil) {
+                realFrameRate: Double? = nil, averageFrameRate: Double? = nil,
+                videoRangeType: Farbumfang? = nil,
+                colorTransfer: String? = nil, colorPrimaries: String? = nil) {
         self.codec = codec; self.type = type; self.language = language
         self.displayTitle = displayTitle; self.channels = channels
         self.isDefault = isDefault; self.index = index
         self.height = height; self.width = width
+        self.videoRangeTypeRoh = videoRangeType?.rawValue
+        self.colorTransfer = colorTransfer
+        self.colorPrimaries = colorPrimaries
         self.realFrameRateRoh = Zahlwert(realFrameRate)
         self.averageFrameRateRoh = Zahlwert(averageFrameRate)
     }
@@ -419,6 +424,26 @@ public struct MediaStream: Codable, Sendable, Equatable {
     public let index: Int?
     public let height: Int?
     public let width: Int?
+    /// Dynamikumfang, Kennlinie und Primärvalenzen — siehe ``Farbumfang``.
+    ///
+    /// Wurden bis zum 03.09.2026 nicht eingelesen, obwohl der Server sie
+    /// immer mitschickt. Genau daran hing, dass der Apple TV nie in den
+    /// HDR-Modus geschaltet hat.
+    ///
+    /// **Als Zeichenkette gespeichert, nicht als Aufzählung — mit Grund.**
+    /// Ein unbekannter Wert lässt eine `String`-Aufzählung werfen, und weil
+    /// das Werfen die **ganze** Spur unlesbar macht, hätte eine neue
+    /// Jellyfin-Fassung mit einem neuen Umfangstyp jede Datei ohne Codec,
+    /// Kanäle und Sprache dastehen lassen. Im Test war das zuerst nicht zu
+    /// sehen: `try?` liess ihn auch dann gruen werden, wenn gar nichts
+    /// ankam.
+    private let videoRangeTypeRoh: String?
+
+    public var videoRangeType: Farbumfang? {
+        videoRangeTypeRoh.flatMap(Farbumfang.init(rawValue:))
+    }
+    public let colorTransfer: String?
+    public let colorPrimaries: String?
     /// Die Bildrate der Spur.
     ///
     /// **Wofuer.** Der Apple TV kann seinen Ausgang auf die Bildrate des
@@ -459,6 +484,9 @@ public struct MediaStream: Codable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case height = "Height"
+        case videoRangeTypeRoh = "VideoRangeType"
+        case colorTransfer = "ColorTransfer"
+        case colorPrimaries = "ColorPrimaries"
         case width = "Width"
         case codec = "Codec"
         case type = "Type"

@@ -96,12 +96,7 @@ struct HauptView: View {
     /// nichts — sonst liefen zwei Tonspuren im Raum.
     private func hierWeiterschauen(_ sitzung: Fremdsitzung) {
         auswahlOffen = false
-        Task {
-            guard let (titel, ab) = await uebernahme.uebernehmen(sitzung, model: model)
-            else { return }
-            guard let plan = await model.plan(for: titel.id) else { return }
-            abspielen = Abspielwunsch(item: titel, plan: plan, startAt: ab)
-        }
+        Task { abspielen = await uebernahme.wunsch(fuer: sitzung, model: model) }
     }
 
     /// **Ob die Kopfleiste steht — als eigener Zustand, nicht abgeleitet.**

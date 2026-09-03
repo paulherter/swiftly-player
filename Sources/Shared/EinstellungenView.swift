@@ -74,8 +74,9 @@ struct EinstellungenView: View {
             // `UIRequiresFullScreen` gilt die App als multitaskingfähig, und
             // eine solche App darf die Drehung nicht erzwingen. Der Schalter
             // hätte dort keine Wirkung — und ein Schalter ohne Wirkung ist
-            // schlechter als keiner. Siehe `Orientierung`.
-            if !Stil.amPad {
+            // schlechter als keiner. Die Frage beantwortet `Orientierung`,
+            // nicht diese Ansicht — dort steht auch der Grund.
+            if Orientierung.querformatSperreMoeglich {
                 Wahlzeile(symbol: "rectangle.on.rectangle",
                             titel: Text("Querformat im Player sperren"),
                             an: Binding(get: { model.querformatFest },
@@ -85,6 +86,15 @@ struct EinstellungenView: View {
             Wahlzeile(symbol: "chart.bar.fill", titel: Text("Fortschritt auf Kacheln"),
                         an: Binding(get: { model.fortschrittAufKacheln },
                                     set: { model.fortschrittAufKacheln = $0 }))
+            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            // **Geschmacksfrage, deshalb ein Schalter und keine Regel.**
+            // Manche wollen eine Reihe mit allem, manche nur Filme, manche
+            // beides getrennt. Aus heißt: wie bisher.
+            Wahlzeile(symbol: "square.split.2x1",
+                        titel: Text("Neuzugänge getrennt"),
+                        unter: Text("Neue Filme und neue Serien in eigenen Reihen"),
+                        an: Binding(get: { model.neuzugangGetrennt },
+                                    set: { model.neuzugangGetrennt = $0 }))
         }
     }
 

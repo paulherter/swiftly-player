@@ -106,6 +106,24 @@ final class Uebernahmemodell {
         angebote = []
         return (titel, ab)
     }
+
+    /// Dasselbe, aber gleich als fertiger ``Abspielwunsch``.
+    ///
+    /// **Warum das hier steht und nicht in den Ansichten.** Diese sechs
+    /// Zeilen standen zeichengleich in `Sources/tvOS/HauptView.swift` und
+    /// `Sources/Shared/HomeView.swift` — von mir selbst, am selben
+    /// Nachmittag, beim Übertragen der Übernahme von einer Plattform auf die
+    /// andere. Byte für Byte identisch ist genau der Fall, vor dem CLAUDE.md
+    /// warnt; die tvOS-Sitzung hat ihn im Tiefendurchgang gefunden.
+    ///
+    /// **macOS benutzt es nicht, und das ist richtig so.** Dort startet die
+    /// Wiedergabe über ``Abspielsteuerung``, die den Plan selbst holt — ein
+    /// echter Unterschied im Aufbau, keine Abweichung aus Versehen.
+    func wunsch(fuer sitzung: Fremdsitzung, model: AppModel) async -> Abspielwunsch? {
+        guard let (titel, ab) = await uebernehmen(sitzung, model: model),
+              let plan = await model.plan(for: titel.id) else { return nil }
+        return Abspielwunsch(item: titel, plan: plan, startAt: ab)
+    }
 }
 
 /// Wie eine fremde Sitzung benannt und bebildert wird.
