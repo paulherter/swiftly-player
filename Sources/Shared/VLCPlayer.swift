@@ -941,11 +941,19 @@ final class VLCPlayerView: Basisansicht {
         // `letzteGutePosition`, und die darf bis eine Sekunde vor Schluss
         // stehen — genau die Lage, in der `:start-time` wieder ins Dateiende
         // liefe. Ein Netzabriss in der letzten Minute soll den Zuschauer nicht
-        // in die naechste Folge werfen.
-        if direktStarten, abSekunden > 1 {
-            medium.addOption(":start-time=\(Int(abSekunden))")
-            Protokoll.schreib("[VLC] start-time=\(Int(abSekunden)) s gesetzt")
-        }
+        // in die naechste Folge werfen. **`:start-time` ist zweimal
+        // zurueckgeflogen und bleibt vorerst aus.**
+        //
+        // Beide Male sprang die App in die naechste Folge, weil die
+        // Fortsetzstelle am Dateiende lag und VLC dort sofort `end of stream`
+        // meldet. Beim zweiten Mal war `Fortsetzstelle` schon eingebaut — sie
+        // hat nicht gegriffen, weil ihre obere Grenze eine **Laufzeit**
+        // braucht und die hier fehlte. Der Rueckfall „ohne Laufzeit nur die
+        // untere Grenze" laesst genau den gefaehrlichen Fall durch.
+        //
+        // Bevor das wieder angeschaltet wird, muss gemessen sein, warum
+        // `runTimeTicks` fehlt. Die Zeile dafuer steht in `fortsetzenAb`.
+        _ = direktStarten
 
         startposition = abSekunden
         erstStelle = abSekunden > 1 ? abSekunden : nil

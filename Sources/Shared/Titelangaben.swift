@@ -51,8 +51,19 @@ extension Item {
     /// aber am Ende ohne Grenze — eine durchgelaufene Folge lieferte damit
     /// ihr eigenes Ende als Fortsetzstelle.
     var fortsetzenAb: Double? {
-        Fortsetzstelle.ab(position: userData?.playbackPositionTicks.map { Double($0) / 10_000_000 },
-                          laufzeit: runTimeTicks.map { Double($0) / 10_000_000 })
+        let stelle = userData?.playbackPositionTicks.map { Double($0) / 10_000_000 }
+        let laufzeit = runTimeTicks.map { Double($0) / 10_000_000 }
+        let ergebnis = Fortsetzstelle.ab(position: stelle, laufzeit: laufzeit)
+        // **Messung.** Zweimal ist die App in die naechste Folge gesprungen,
+        // weil hier das Dateiende herauskam. Beim zweiten Mal war die Regel
+        // schon da und hat nicht gegriffen — vermutlich, weil die Laufzeit
+        // fehlt. Vermutlich reicht nicht.
+        if let stelle, stelle > 60 {
+            Protokoll.schreib("[Fortsetzen] Stelle \(Int(stelle)) s, Laufzeit "
+                + (laufzeit.map { "\(Int($0)) s" } ?? "UNBEKANNT")
+                + " → \(ergebnis.map { "\(Int($0)) s" } ?? "von vorn")")
+        }
+        return ergebnis
     }
 
     /// Die Zeile unter einem Suchtreffer: „Furious · S1 E4 · 52 Min."
