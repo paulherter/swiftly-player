@@ -140,12 +140,27 @@ struct Wertezeile: View {
     var akzent = false
     var pfeil = false
     var aktion: (() -> Void)?
+    /// Ob die Zeile beim Überfahren hervorgehoben wird.
+    ///
+    /// **Standardmäßig nur, wenn sie eine eigene Aktion hat** — sonst würde
+    /// eine reine Anzeigezeile so tun, als könnte man sie drücken.
+    ///
+    /// Steht die Zeile aber als **Beschriftung in einem äußeren Knopf**, ist
+    /// sie sehr wohl drückbar und hat trotzdem keine eigene Aktion. Genau
+    /// dafür ist dieser Schalter da. Vorher half man sich mit `aktion: {}`,
+    /// und das war die Ursache dafür, dass „Wiedergabe" und „Einstellungen"
+    /// im Profil **gar nicht reagierten**: eine leere Aktion ist nicht `nil`,
+    /// also baute die Zeile einen eigenen Knopf, und der schluckte den Klick,
+    /// bevor der äußere ihn sah.
+    var schwebbar: Bool?
 
     @State private var schwebt = false
 
+    private var hatKnopf: Bool { aktion != nil }
+
     var body: some View {
         // Ohne eigene Aktion **kein** Knopf: die Zeile steht dann als
-        // Beschriftung in einem `NavigationLink`, und ein Knopf darin würde
+        // Beschriftung in einem äußeren Knopf, und ein Knopf darin würde
         // den Klick schlucken. Derselbe Fehler wie bei den Kacheln.
         Group {
             if let aktion {
@@ -154,7 +169,7 @@ struct Wertezeile: View {
                 rumpf
             }
         }
-        .onHover { schwebt = $0 && aktion != nil }
+        .onHover { schwebt = $0 && (schwebbar ?? hatKnopf) }
         .animation(Stil.zeitSchweben, value: schwebt)
     }
 

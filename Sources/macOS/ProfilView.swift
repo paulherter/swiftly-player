@@ -24,7 +24,7 @@ struct ProfilView: View {
                         Wertezeile(symbol: "rectangle.and.text.magnifyingglass",
                                    titel: Text("Quick Connect"),
                                    unter: Text("Code vom Fernseher eingeben"),
-                                   akzent: true, pfeil: true)
+                                   akzent: true, pfeil: true, schwebbar: true)
                     }
                     .buttonStyle(.plain)
                 }
@@ -35,13 +35,13 @@ struct ProfilView: View {
                     Button { navigator.oeffne(.wiedergabe, in: bereich) } label: {
                         Wertezeile(symbol: "play.fill", titel: Text("Wiedergabe"),
                                    unter: Text("Sprache, Untertitel, Tempo"),
-                                   pfeil: true, aktion: {})
+                                   pfeil: true, schwebbar: true)
                     }
                     .buttonStyle(.plain)
                     Trennstrich().padding(.leading, 48)
                     Button { navigator.oeffne(.einstellungen, in: bereich) } label: {
                         Wertezeile(symbol: "gearshape", titel: Text("Einstellungen"),
-                                   pfeil: true, aktion: {})
+                                   pfeil: true, schwebbar: true)
                     }
                     .buttonStyle(.plain)
                 }
