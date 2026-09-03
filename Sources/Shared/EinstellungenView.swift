@@ -74,8 +74,9 @@ struct EinstellungenView: View {
             // `UIRequiresFullScreen` gilt die App als multitaskingfähig, und
             // eine solche App darf die Drehung nicht erzwingen. Der Schalter
             // hätte dort keine Wirkung — und ein Schalter ohne Wirkung ist
-            // schlechter als keiner. Siehe `Orientierung`.
-            if !Stil.amPad {
+            // schlechter als keiner. Die Frage beantwortet `Orientierung`,
+            // nicht diese Ansicht — dort steht auch der Grund.
+            if Orientierung.querformatSperreMoeglich {
                 Wahlzeile(symbol: "rectangle.on.rectangle",
                             titel: Text("Querformat im Player sperren"),
                             an: Binding(get: { model.querformatFest },

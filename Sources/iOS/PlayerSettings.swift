@@ -115,8 +115,6 @@ struct PlayerSettingsSheet: View {
         .padding(.horizontal, 26)
     }
 
-    private var abstand: some View { Color.clear.frame(height: 22) }
-
     private var kopf: some View {
         HStack {
             Text("Wiedergabe")
@@ -253,7 +251,7 @@ struct PlayerSettingsSheet: View {
     /// Leerlauf, weil eine multitaskingfähige App die Drehung nicht erzwingen
     /// darf. In den Einstellungen ist die Zeile deshalb schon weg — hier
     /// stand sie noch, und zwar wirkungslos.
-    private var bildWahlMoeglich: Bool { !Stil.amPad }
+    private var bildWahlMoeglich: Bool { Orientierung.querformatSperreMoeglich }
 
     private var schlafzeit: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -265,12 +263,6 @@ struct PlayerSettingsSheet: View {
                 }
             }
         }
-    }
-
-    private var haken: some View {
-        Image(systemName: "checkmark")
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Stil.akzent)
     }
 
     private func beschriftung(_ wert: Float) -> String {

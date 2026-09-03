@@ -443,39 +443,6 @@ extension Bild where Platzhalter == Color {
     }
 }
 
-/// Zurück-Pfeil, wie im Entwurf: schlicht auf dem Bild, ohne Kreisfläche.
-/// SwiftUIs Standardleiste legt sonst ein graues Rund darunter und schreibt
-/// den Titel mittig darüber — beides gibt es im Entwurf nicht.
-struct ZurueckPfeil: View {
-    let aktion: () -> Void
-    var body: some View {
-        Button(action: aktion) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(Stil.schrift)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-                .shadow(color: .black.opacity(0.5), radius: 4, y: 1)
-        }
-        .padding(.leading, 12)
-    }
-}
-
-/// Verlauf über der Statusleiste.
-///
-/// Detailseiten lassen ihr Bild bis unter die Statusleiste laufen. Ohne
-/// diesen Schleier schiebt sich beim Scrollen der Inhalt — Reiter,
-/// Beschriftungen — ungeschützt hinter die Uhrzeit.
-struct Kopfschleier: View {
-    var body: some View {
-        LinearGradient(colors: [Stil.grund.opacity(0.8), Stil.grund.opacity(0)],
-                       startPoint: .top, endPoint: .bottom)
-            .frame(height: 110)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-    }
-}
-
 /// Eigene Auswahl statt `Menu` oder `Picker`.
 ///
 /// Apples Menü bringt sein eigenes Erscheinungsbild mit — abgerundetes Glas,
@@ -644,32 +611,6 @@ struct Einstellungsgruppe<Inhalt: View>: View {
             VStack(spacing: 0) { inhalt() }
                 .background(alignment: .top) { Trennlinie() }
                 .background(alignment: .bottom) { Trennlinie() }
-        }
-    }
-}
-
-/// Eine Zeile im Einstellungsblatt.
-struct Einstellzeile<Rechts: View>: View {
-    let titel: LocalizedStringKey
-    var aktion: (() -> Void)? = nil
-    @ViewBuilder var rechts: () -> Rechts
-
-    var body: some View {
-        let inhalt = HStack(spacing: 10) {
-            Text(titel)
-                .font(.system(size: 15))
-                .foregroundStyle(Stil.schrift)
-            Spacer(minLength: 0)
-            rechts()
-        }
-        .padding(.horizontal, Stil.randAbstand)
-        .frame(height: 48)
-        .contentShape(Rectangle())
-
-        if let aktion {
-            Button(action: aktion) { inhalt }.buttonStyle(.plain)
-        } else {
-            inhalt
         }
     }
 }
@@ -1028,6 +969,53 @@ enum Bereich: Int, CaseIterable, Identifiable {
     }
 }
 
+/// Ein Bereich in der Leiste — unten auf dem iPhone, links auf dem iPad.
+///
+/// **Ein Baustein für beide Leisten.** Er stand zweimal da, siebzehn Zeilen
+/// wortgleich, und der Kommentar an `Seitenleiste` sagte es selbst:
+/// „Gleiche Symbole, gleiche Größen, gleicher Akzent". Genau so fangen die
+/// Fassungen an auseinanderzulaufen — wer die Auswahlfarbe ändert, ändert
+/// eine von zwei Leisten und sieht die andere erst auf dem anderen Gerät.
+///
+/// Verschieden sind nur zwei Dinge, und beide stehen jetzt als Parameter da:
+/// die Seitenleiste gibt eine feste Zeilenhöhe vor, und bei ihr trägt
+/// keiner der vier Bereiche die Auswahl, solange das Profil offen ist.
+private struct Bereichsknopf: View {
+    let bereich: Bereich
+    let aktiv: Bool
+    /// Feste Zeilenhöhe. Die Leiste unten gibt keine vor — dort teilen sich
+    /// die vier die Höhe der Leiste selbst.
+    var hoehe: CGFloat?
+    let waehlen: () -> Void
+
+    var body: some View {
+        Button(action: waehlen) { inhalt }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(bereich.name))
+            .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
+    }
+
+    @ViewBuilder private var inhalt: some View {
+        let kern = VStack(spacing: 4) {
+            Image(systemName: bereich.symbol)
+                .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
+            Text(bereich.name)
+                .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
+        }
+        .foregroundStyle(aktiv ? Stil.akzent : Color.white.opacity(0.42))
+        .frame(maxWidth: .infinity)
+
+        // Nicht `.frame(height: hoehe)` mit einem `nil`: das legt auch dann
+        // eine Rahmenschicht ein, wenn keine gemeint ist. Hier soll die
+        // Leiste unten genau den Baum bekommen, den sie vorher hatte.
+        if let hoehe {
+            kern.frame(height: hoehe).contentShape(Rectangle())
+        } else {
+            kern.contentShape(Rectangle())
+        }
+    }
+}
+
 /// Eigene Leiste statt `TabView`.
 ///
 /// Apples Leiste bringt auf iOS 26 ihr eigenes Glasmaterial mit, dazu eigene
@@ -1040,23 +1028,9 @@ struct Navileiste: View {
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Bereich.allCases) { bereich in
-                let aktiv = bereich == gewaehlt
-                Button {
+                Bereichsknopf(bereich: bereich, aktiv: bereich == gewaehlt) {
                     gewaehlt = bereich
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: bereich.symbol)
-                            .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
-                        Text(bereich.name)
-                            .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
-                    }
-                    .foregroundStyle(aktiv ? Stil.akzent : Color.white.opacity(0.42))
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(bereich.name))
-                .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(.top, 9)
@@ -1116,24 +1090,11 @@ struct Seitenleiste: View {
                 .padding(.bottom, 30)
 
             ForEach(Bereich.allCases) { bereich in
-                let aktiv = bereich == gewaehlt && !imProfil
-                Button {
+                Bereichsknopf(bereich: bereich,
+                              aktiv: bereich == gewaehlt && !imProfil,
+                              hoehe: 64) {
                     gewaehlt = bereich
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: bereich.symbol)
-                            .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
-                        Text(bereich.name)
-                            .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
-                    }
-                    .foregroundStyle(aktiv ? Stil.akzent : Color.white.opacity(0.42))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 64)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(bereich.name))
-                .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
             }
 
             Spacer(minLength: 0)
@@ -1252,41 +1213,6 @@ struct Leistenglas: View {
         ZStack {
             Unschaerfe(staerke: staerke)
             Stil.grund.opacity(tiefe * staerke)
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-/// Dunkles Glas: leichte Unschärfe mit dem Grundton darüber, beides nach
-/// unten auslaufend.
-///
-/// Die Unschärfe allein hellt auf — sie mischt ja Helles aus dem Bild ein.
-/// Erst der Grundton darüber macht daraus dunkles Glas.
-struct Verlaufsunschaerfe: View {
-    var staerke: Double = 1
-    var vollBis: CGFloat = 0.72
-    /// Wie dunkel das Glas an der Oberkante ist. Derselbe Wert wie die
-    /// Navigationsleiste unten, damit beide zusammenpassen.
-    var oben: Double = 0.86
-    /// Wie dunkel es auf Höhe des Inhalts noch ist.
-    var tiefe: Double = 0.55
-    /// Deckkraft der Unschärfe selbst. Unter eins bleibt mehr vom Bild
-    /// erkennbar — voll aufgedreht war es zu milchig.
-    var dichte: Double = 0.72
-
-    var body: some View {
-        ZStack {
-            Unschaerfe(vollBis: vollBis, staerke: staerke * dichte)
-            // Der dunkle Anteil ist selbst ein Verlauf, nicht eine Fläche
-            // mit Maske: oben fast deckend wie die Leiste unten, nach unten
-            // auslaufend. Nur so treffen sich Kopf und Leiste farblich.
-            LinearGradient(stops: [
-                .init(color: Stil.grund.opacity(oben * staerke), location: 0),
-                .init(color: Stil.grund.opacity(tiefe * staerke), location: vollBis),
-                .init(color: Stil.grund.opacity(tiefe * 0.4 * staerke),
-                      location: (vollBis + 1) / 2),
-                .init(color: .clear, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
         }
         .allowsHitTesting(false)
     }
