@@ -969,6 +969,53 @@ enum Bereich: Int, CaseIterable, Identifiable {
     }
 }
 
+/// Ein Bereich in der Leiste — unten auf dem iPhone, links auf dem iPad.
+///
+/// **Ein Baustein für beide Leisten.** Er stand zweimal da, siebzehn Zeilen
+/// wortgleich, und der Kommentar an `Seitenleiste` sagte es selbst:
+/// „Gleiche Symbole, gleiche Größen, gleicher Akzent". Genau so fangen die
+/// Fassungen an auseinanderzulaufen — wer die Auswahlfarbe ändert, ändert
+/// eine von zwei Leisten und sieht die andere erst auf dem anderen Gerät.
+///
+/// Verschieden sind nur zwei Dinge, und beide stehen jetzt als Parameter da:
+/// die Seitenleiste gibt eine feste Zeilenhöhe vor, und bei ihr trägt
+/// keiner der vier Bereiche die Auswahl, solange das Profil offen ist.
+private struct Bereichsknopf: View {
+    let bereich: Bereich
+    let aktiv: Bool
+    /// Feste Zeilenhöhe. Die Leiste unten gibt keine vor — dort teilen sich
+    /// die vier die Höhe der Leiste selbst.
+    var hoehe: CGFloat?
+    let waehlen: () -> Void
+
+    var body: some View {
+        Button(action: waehlen) { inhalt }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(bereich.name))
+            .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
+    }
+
+    @ViewBuilder private var inhalt: some View {
+        let kern = VStack(spacing: 4) {
+            Image(systemName: bereich.symbol)
+                .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
+            Text(bereich.name)
+                .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
+        }
+        .foregroundStyle(aktiv ? Stil.akzent : Color.white.opacity(0.42))
+        .frame(maxWidth: .infinity)
+
+        // Nicht `.frame(height: hoehe)` mit einem `nil`: das legt auch dann
+        // eine Rahmenschicht ein, wenn keine gemeint ist. Hier soll die
+        // Leiste unten genau den Baum bekommen, den sie vorher hatte.
+        if let hoehe {
+            kern.frame(height: hoehe).contentShape(Rectangle())
+        } else {
+            kern.contentShape(Rectangle())
+        }
+    }
+}
+
 /// Eigene Leiste statt `TabView`.
 ///
 /// Apples Leiste bringt auf iOS 26 ihr eigenes Glasmaterial mit, dazu eigene
@@ -981,23 +1028,9 @@ struct Navileiste: View {
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Bereich.allCases) { bereich in
-                let aktiv = bereich == gewaehlt
-                Button {
+                Bereichsknopf(bereich: bereich, aktiv: bereich == gewaehlt) {
                     gewaehlt = bereich
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: bereich.symbol)
-                            .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
-                        Text(bereich.name)
-                            .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
-                    }
-                    .foregroundStyle(aktiv ? Stil.akzent : Color.white.opacity(0.42))
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(bereich.name))
-                .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
             }
         }
         .padding(.top, 9)
@@ -1057,24 +1090,11 @@ struct Seitenleiste: View {
                 .padding(.bottom, 30)
 
             ForEach(Bereich.allCases) { bereich in
-                let aktiv = bereich == gewaehlt && !imProfil
-                Button {
+                Bereichsknopf(bereich: bereich,
+                              aktiv: bereich == gewaehlt && !imProfil,
+                              hoehe: 64) {
                     gewaehlt = bereich
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: bereich.symbol)
-                            .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
-                        Text(bereich.name)
-                            .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
-                    }
-                    .foregroundStyle(aktiv ? Stil.akzent : Color.white.opacity(0.42))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 64)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(bereich.name))
-                .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
             }
 
             Spacer(minLength: 0)
