@@ -1115,7 +1115,8 @@ struct PlayerScreen: View {
                // Erst wenn die neue Folge wirklich steht. Sonst zaehlt noch
                // die Zeit der alten, und die ist naturgemaess am Ende.
                erstesBildDa,
-               Folgenende.weiterschalten(position: position, dauer: dauer) {
+               Folgenende.weiterschalten(position: position, dauer: dauer,
+                                         seitOeffnen: Date().timeIntervalSince(seitStart)) {
                 wechsleZu(folge)
             }
         }

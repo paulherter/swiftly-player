@@ -720,7 +720,8 @@ struct PlayerScreen: View {
 
             // Am Ende von selbst weiter, wenn gewünscht.
             if model.naechsteAutomatisch, let folge = naechsteFolge, !wechselt,
-               Folgenende.weiterschalten(position: stand.position, dauer: stand.dauer) {
+               Folgenende.weiterschalten(position: stand.position, dauer: stand.dauer,
+                                         seitOeffnen: Date().timeIntervalSince(seitStart)) {
                 zurNaechstenFolge(folge)
             }
 

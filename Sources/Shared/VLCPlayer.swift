@@ -941,31 +941,28 @@ final class VLCPlayerView: Basisansicht {
         // `letzteGutePosition`, und die darf bis eine Sekunde vor Schluss
         // stehen — genau die Lage, in der `:start-time` wieder ins Dateiende
         // liefe. Ein Netzabriss in der letzten Minute soll den Zuschauer nicht
-        // in die naechste Folge werfen. **`:start-time` ist zweimal
-        // zurueckgeflogen und bleibt aus, und der Grund ist nicht der, den ich
-        // zweimal aufgeschrieben habe.**
+        // in die naechste Folge werfen. **Direkt an der Stelle anfangen.**
         //
-        // Beide Male sprang die App in die naechste Folge: VLC meldete beim
-        // Oeffnen sofort `end of stream`, die Folgenende-Erkennung griff. Ich
-        // habe daraus geschlossen, die Fortsetzstelle liege am Dateiende —
-        // erst 3707 s, dann 3721 s, beides klang nach Schluss einer Folge.
+        // Zweimal zurueckgeflogen, und beide Male habe ich die Ursache falsch
+        // benannt: erst „die Fortsetzstelle liegt am Dateiende", dann „die
+        // Laufzeit fehlt". Gemessen war beides nicht so — die Stelle lag bei
+        // 3721 s von 6683 s, die Laufzeit war bekannt.
         //
-        // **Gemessen ist es nicht so.** `[Fortsetzen] Stelle 3721 s, Laufzeit
-        // 6683 s` — die Stelle liegt knapp ueber der Haelfte, und die Laufzeit
-        // war die ganze Zeit bekannt. Zwei Erklaerungen, beide plausibel,
-        // beide falsch; die zweite habe ich sogar mit einer neuen Regel
-        // „behoben", die am Fehler vorbeiging.
+        // Was das Protokoll wirklich zeigt: `:start-time` **funktioniert**.
+        // VLC liest die Cues am Dateiende (daher die zwei `end of stream`, die
+        // ich fuer den Fehler hielt) und fordert dann Byte 3.331.460.181 von
+        // 6.206.407.931 an — genau die halbe Datei, passend zu 3721 von 6683
+        // Sekunden. 388 ms nach dem Oeffnen laeuft es an der richtigen Stelle.
         //
-        // Was bleibt: **`:start-time` erzeugt auf diesen Matroska-Stroemen
-        // sofort ein Dateiende, unabhaengig von der Stelle.** Ob es an
-        // `mkv_trusted` liegt, an der HTTP-Quelle oder daran, dass libVLC die
-        // Option vor der Laenge auswertet, ist offen — das ist zum
-        // Nachschlagen und einzeln Nachbauen, nicht zum Raten.
-        //
-        // `Fortsetzstelle` bleibt trotzdem: eine Stelle drei Sekunden vor
-        // Schluss ist als „weiterschauen" sinnlos. Sie war nur nie die
-        // Ursache, und das steht dort auch so.
-        _ = direktStarten
+        // Die naechste Folge kam 240 ms **danach**, aus einer anderen Ecke:
+        // `Folgenende.weiterschalten` sah `position >= dauer - 1`, weil VLC
+        // die Position sofort meldet und die Laenge in denselben Millisekunden
+        // noch nicht. Dort steht jetzt eine Anlaufruhe, und die ist auch ohne
+        // Startsprung richtig.
+        if direktStarten, abSekunden > 1 {
+            medium.addOption(":start-time=\(Int(abSekunden))")
+            Protokoll.schreib("[VLC] start-time=\(Int(abSekunden)) s gesetzt")
+        }
 
         startposition = abSekunden
         erstStelle = abSekunden > 1 ? abSekunden : nil

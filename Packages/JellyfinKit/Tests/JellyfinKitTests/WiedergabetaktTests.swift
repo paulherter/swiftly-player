@@ -191,8 +191,14 @@ struct FolgenendeTests {
     /// ohne dass jemand darum gebeten hat.
     @Test("Weitergeschaltet wird erst am Ende, nicht schon beim Angebot")
     func weiterschalten() {
-        #expect(!Folgenende.weiterschalten(position: 3500, dauer: 3600))
-        #expect(Folgenende.weiterschalten(position: 3599.5, dauer: 3600))
+        #expect(!Folgenende.weiterschalten(position: 3500, dauer: 3600, seitOeffnen: 600))
+        #expect(Folgenende.weiterschalten(position: 3599.5, dauer: 3600, seitOeffnen: 600))
+
+        // **Der Fall vom 04.09.2026.** Mit `:start-time` meldet VLC die
+        // Position sofort, die Laenge in denselben Millisekunden noch nicht.
+        // Ohne Anlaufruhe schaltete die App 629 ms nach dem Oeffnen weiter.
+        #expect(!Folgenende.weiterschalten(position: 3721, dauer: 3721, seitOeffnen: 0.6))
+        #expect(Folgenende.weiterschalten(position: 3721, dauer: 3721, seitOeffnen: 6))
     }
 }
 
