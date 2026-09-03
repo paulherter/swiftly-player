@@ -468,7 +468,15 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     let waehlen: (Eintrag) -> Void
 
     var body: some View {
+        // **Der Stapel steht, die Kinder wechseln.**
+        //
+        // Vorher wurde das ganze Blatt eingefügt, wenn es aufging. Dann läuft
+        // kein Übergang der Kinder — SwiftUI animiert nur das Einfügen des
+        // Ganzen, und das ist ein Aufblenden. Erst wenn der Behälter bleibt
+        // und Schleier und Karte einzeln erscheinen, kann der eine blenden
+        // und die andere fahren.
         ZStack(alignment: .bottom) {
+            if offen {
             // Abdunkeln; Tippen daneben schließt.
             Rectangle()
                 .fill(.black.opacity(0.55))
@@ -545,6 +553,7 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
             // Die Feder darunter (0,35 s Antwort, 0,86 Daempfung) liegt auf
             // Apples Blatt: schnell heran, kein Nachschwingen.
             .transition(.move(edge: .bottom))
+            }
         }
     }
 

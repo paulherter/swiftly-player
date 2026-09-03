@@ -12,6 +12,12 @@ struct WiedergabeEinstellungenView: View {
     @Environment(\.dismiss) private var zurueck
     @Environment(\.breit) private var breit
     @State private var offeneListe: Liste?
+    /// Welche Liste **gezeigt** wird — bleibt beim Schließen stehen.
+    ///
+    /// **Ohne das faehrt nichts hinaus.** Haengt der Inhalt an `offeneListe`,
+    /// verschwindet er im selben Moment, in dem die Bewegung anfangen soll.
+    /// SwiftUI hat dann nichts mehr zu bewegen und blendet.
+    @State private var gezeigteListe: Liste?
 
     private enum Liste: String, Identifiable {
         case bitrate, ton, untertitel, zurueck, vor
@@ -74,7 +80,7 @@ struct WiedergabeEinstellungenView: View {
     }
 
     private var qualitaet: some View {
-        let waehlen: (() -> Void)? = model.immerDirectPlay ? nil : { withAnimation(Stil.blattbewegung) { offeneListe = .bitrate } }
+        let waehlen: (() -> Void)? = model.immerDirectPlay ? nil : { oeffne(.bitrate) }
 
         return Einstellungsgruppe(titel: "Qualität") {
             Wahlzeile(symbol: "play.fill", titel: Text("Immer Direct Play"),
@@ -92,11 +98,11 @@ struct WiedergabeEinstellungenView: View {
         Einstellungsgruppe(titel: "Sprache") {
             Wertzeile(symbol: "speaker.wave.2", titel: Text("Ton"),
                       wert: model.tonSprache.isEmpty ? String(localized: "Wie die Datei") : model.tonSprache,
-                      aktion: { withAnimation(Stil.blattbewegung) { offeneListe = .ton } })
+                      aktion: { oeffne(.ton) })
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wertzeile(symbol: "captions.bubble", titel: Text("Untertitel"),
                       wert: model.untertitelSprache.isEmpty ? String(localized: "Aus") : model.untertitelSprache,
-                      aktion: { withAnimation(Stil.blattbewegung) { offeneListe = .untertitel } })
+                      aktion: { oeffne(.untertitel) })
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wahlzeile(symbol: "text.alignleft", titel: Text("Untertitel automatisch"),
                       unter: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
@@ -113,17 +119,33 @@ struct WiedergabeEinstellungenView: View {
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wertzeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                       wert: "\(model.zurueckSekunden) s",
-                      aktion: { withAnimation(Stil.blattbewegung) { offeneListe = .zurueck } })
+                      aktion: { oeffne(.zurueck) })
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wertzeile(symbol: "goforward", titel: Text("Vorspulen"),
                       wert: "\(model.vorSekunden) s",
-                      aktion: { withAnimation(Stil.blattbewegung) { offeneListe = .vor } })
+                      aktion: { oeffne(.vor) })
+        }
+    }
+
+    /// Blatt öffnen: erst den Inhalt setzen, dann in einer Bewegung zeigen.
+    private func oeffne(_ liste: Liste) {
+        gezeigteListe = liste
+        withAnimation(Stil.blattbewegung) { offeneListe = liste }
+    }
+
+    /// Schließen: die Bewegung läuft, der Inhalt bleibt stehen — und wird
+    /// erst danach weggeräumt, sonst gäbe es nichts zu bewegen.
+    private func schliesseBlatt() {
+        withAnimation(Stil.blattbewegung) { offeneListe = nil }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            if offeneListe == nil { gezeigteListe = nil }
         }
     }
 
     @ViewBuilder
     private var blatt: some View {
-        switch offeneListe {
+        switch gezeigteListe {
         case .bitrate:
             auswahl("Höchste Bitrate", Bitrate.stufen, { Bitrate.text($0.wert) },
                     { $0.wert == model.bitratenGrenze }, { model.bitratenGrenze = $0.wert })
@@ -149,18 +171,7 @@ struct WiedergabeEinstellungenView: View {
                                           _ gewaehlt: @escaping (E) -> Bool,
                                           _ waehlen: @escaping (E) -> Void) -> some View {
         Auswahlblatt(offen: Binding(get: { offeneListe != nil },
-                                    set: { neu in
-                                        // **Eine Bewegung fuer das ganze
-                                        // Blatt.** Animiert man Karte und
-                                        // Schleier je fuer sich, laufen sie
-                                        // gegeneinander — derselbe Fehler wie
-                                        // heute bei den tvOS-Einstellungen.
-                                        if !neu {
-                                            withAnimation(Stil.blattbewegung) {
-                                                offeneListe = nil
-                                            }
-                                        }
-                                    }),
+                                    set: { if !$0 { schliesseBlatt() } }),
                      titel: titel, eintraege: eintraege,
                      beschriftung: text, istGewaehlt: gewaehlt, waehlen: waehlen)
     }

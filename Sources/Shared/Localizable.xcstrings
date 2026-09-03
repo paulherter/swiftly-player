@@ -4016,40 +4016,6 @@
         }
       }
     },
-    "Neue Filme": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Neue Filme"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "New Movies"
-          }
-        }
-      }
-    },
-    "Neue Serien": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Neue Serien"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "New Shows"
-          }
-        }
-      }
-    },
     "Neuzugänge getrennt": {
       "extractionState": "manual",
       "localizations": {
@@ -4080,6 +4046,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Separate rows for new movies and new shows"
+          }
+        }
+      }
+    },
+    "Kürzlich hinzugefügte Filme": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kürzlich hinzugefügte Filme"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently Added Movies"
+          }
+        }
+      }
+    },
+    "Kürzlich hinzugefügte Serien": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kürzlich hinzugefügte Serien"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently Added Shows"
           }
         }
       }

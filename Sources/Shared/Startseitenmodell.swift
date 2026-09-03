@@ -68,9 +68,19 @@ final class Startseitenmodell {
         // einzelner Aussetzer die ganze Seite leer — genau das ist passiert.
         if let a { weiterschauen = a }
         if let b { naechsteFolge = b }
-        if let c { zuletzt = c }
-        if let d { neueFilme = d }
-        if let e { neueSerien = e }
+        // **Die nicht gewaehlte Form wird geleert, nicht bloss nicht
+        // geholt.** Sonst bliebe die Reihe von vorhin stehen: wer umschaltet,
+        // saehe „Zuletzt hinzugefuegt" **und** die beiden neuen. Genau das
+        // ist beim ersten Versuch passiert.
+        if getrennt {
+            zuletzt = []
+            if let d { neueFilme = d }
+            if let e { neueSerien = e }
+        } else {
+            neueFilme = []
+            neueSerien = []
+            if let c { zuletzt = c }
+        }
 
         // Ein Abbruch ist kein Ausfall — dieselbe Unterscheidung wie in
         // `Bibliotheksmodell`.

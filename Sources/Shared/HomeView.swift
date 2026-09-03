@@ -201,12 +201,12 @@ struct HomeView: View {
                 // Hier führt der Tipp auf die Seite: was man noch nicht
                 // angefangen hat, will man erst ansehen.
                 if !stand.neueFilme.isEmpty {
-                    Reihe(model: model, titel: "Neue Filme",
+                    Reihe(model: model, titel: "Kürzlich hinzugefügte Filme",
                           items: stand.neueFilme, neuzugang: true,
                           nachGesehen: { await laden() })
                 }
                 if !stand.neueSerien.isEmpty {
-                    Reihe(model: model, titel: "Neue Serien",
+                    Reihe(model: model, titel: "Kürzlich hinzugefügte Serien",
                           items: stand.neueSerien, neuzugang: true,
                           nachGesehen: { await laden() })
                 }
@@ -307,27 +307,30 @@ private struct Reihe: View {
                                 NavigationLink(value: item) {
                                     Label("Zur Übersicht", systemImage: "info.circle")
                                 }
-                                // **Beide Richtungen, nicht ein Umschalter.**
+                                // **Beide Eintraege immer, nicht der passende.**
                                 //
-                                // Ein Eintrag „Gesehen" mit Häkchen liest sich
-                                // wie eine Anzeige, und man weiß vor dem
-                                // Drücken nicht, was passiert. Zwei Einträge
-                                // sagen es im Wortlaut — und der, der gerade
-                                // nicht zutrifft, fehlt einfach.
-                                if item.istGesehen {
-                                    Button {
-                                        gesehenSetzen(item, an: false)
-                                    } label: {
-                                        Label("Als ungesehen markieren",
-                                              systemImage: "eye.slash")
-                                    }
-                                } else {
-                                    Button {
-                                        gesehenSetzen(item, an: true)
-                                    } label: {
-                                        Label("Als gesehen markieren",
-                                              systemImage: "checkmark.circle")
-                                    }
+                                // Erst stand hier nur der, der gerade zutraf.
+                                // Das ging an einem Fall vorbei: eine Folge,
+                                // durch die man nur durchgesprungen ist, gilt
+                                // als angefangen — „ungesehen" setzt sie
+                                // zurueck und holt sie aus „Weiterschauen".
+                                // Wer das will, findet sonst nichts.
+                                //
+                                // Ein Umschalter mit Haeckchen waere die
+                                // dritte Moeglichkeit und die schlechteste:
+                                // er liest sich wie eine Anzeige, und man
+                                // weiss vor dem Druecken nicht, was passiert.
+                                Button {
+                                    gesehenSetzen(item, an: true)
+                                } label: {
+                                    Label("Als gesehen markieren",
+                                          systemImage: "checkmark.circle")
+                                }
+                                Button {
+                                    gesehenSetzen(item, an: false)
+                                } label: {
+                                    Label("Als ungesehen markieren",
+                                          systemImage: "eye.slash")
                                 }
                             }
                         } else {
