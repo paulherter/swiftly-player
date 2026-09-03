@@ -79,14 +79,26 @@ struct HauptView: View {
 
     private var anDerWurzel: Bool { pfade[bereich.rawValue].isEmpty && abspielen == nil }
 
+    /// Der Druck aufs Abzeichen.
+    ///
+    /// **Bei einer Sitzung sofort, bei mehreren erst fragen.** Auf zwei
+    /// Geräten zu raten, welches gemeint ist, geht in der Hälfte der Fälle
+    /// daneben — und der Preis dafür ist, dass anderswo der Film anhält.
+    private func abzeichenGedrueckt() {
+        if uebernahme.mehrereDa { auswahlOffen = true }
+        else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
+    }
+
     /// Das andere Gerät anhalten und hier an derselben Stelle weitermachen.
     ///
     /// Die Reihenfolge ist die ganze Sache: erst dort anhalten, dann hier den
     /// Plan holen, dann starten. Geht das Anhalten schief, passiert hier
     /// nichts — sonst liefen zwei Tonspuren im Raum.
-    private func hierWeiterschauen() {
+    private func hierWeiterschauen(_ sitzung: Fremdsitzung) {
+        auswahlOffen = false
         Task {
-            guard let (titel, ab) = await uebernahme.uebernehmen(model) else { return }
+            guard let (titel, ab) = await uebernahme.uebernehmen(sitzung, model: model)
+            else { return }
             guard let plan = await model.plan(for: titel.id) else { return }
             abspielen = Abspielwunsch(item: titel, plan: plan, startAt: ab)
         }
@@ -104,6 +116,8 @@ struct HauptView: View {
     @State private var tafelOffen = false
     /// Was auf einem anderen Gerät läuft.
     @State private var uebernahme = Uebernahmemodell()
+    /// Steht auf mehreren Geräten etwas, wird gefragt statt geraten.
+    @State private var auswahlOffen = false
 
     // Die Leiste scrollt bewusst **nicht** mit weg.
     //
@@ -126,6 +140,14 @@ struct HauptView: View {
             rahmen
                 .disabled(abspielen != nil)
 
+            if auswahlOffen {
+                Uebernahmeauswahl(sitzungen: uebernahme.angebote,
+                                  waehlen: { hierWeiterschauen($0) },
+                                  abbrechen: { auswahlOffen = false })
+                    .transition(.opacity)
+                    .zIndex(3)
+            }
+
             if let wunsch = abspielen {
                 PlayerScreen(model: model, item: wunsch.item, plan: wunsch.plan,
                              startAt: wunsch.startAt) { abspielen = nil }
@@ -135,6 +157,7 @@ struct HauptView: View {
         .environment(\.abspielwunsch, $abspielen)
         .environment(\.tafelOffen, $tafelOffen)
         .animation(.easeInOut(duration: 0.2), value: abspielen?.id)
+        .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
         .task { await model.fernsteuerungStarten() }
         // **Nur solange nichts läuft.** Im Player wäre die Abfrage sinnlos —
         // die Leiste ist weg, und der Server hätte alle zehn Sekunden eine
@@ -226,7 +249,7 @@ struct HauptView: View {
                                pfade[bereich.rawValue].append(ProfilRoute())
                            },
                            uebernahme: uebernahme.angebot,
-                           uebernehmen: { hierWeiterschauen() })
+                           uebernehmen: { abzeichenGedrueckt() })
                 // Ohne eigenen Abschnitt springt der Fokus aus dem Inhalt
                 // nicht sauber in die Leiste, sondern sucht sich den
                 // waagerecht nächsten Knopf.

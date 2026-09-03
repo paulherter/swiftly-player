@@ -99,6 +99,14 @@ struct PlayerScreen: View {
     /// Woher die Marke kommt. Eine erwischte Marke wartet auf den mittleren
     /// Knopf; eine ertippte springt von selbst, sobald das Tippen ruht.
     @State private var markeVomWisch = false
+    /// Dieser Wisch hat die Steuerung geholt — und tut sonst nichts.
+    ///
+    /// **Der Wisch, der das Menü öffnet, spult nicht mit.** Vorher tat er
+    /// beides: `wischBeginn` blendet die Steuerung ein, damit ist
+    /// `steuerungDa` im selben Zug wahr, und die Bewegung desselben Fingers
+    /// lief schon auf die Zeitleiste. Man wollte nur sehen, wo man ist, und
+    /// stand danach woanders.
+    @State private var wischNurGeoeffnet = false
     @State private var naechste: Item?
     /// Nach einem Sprung kurz nicht überschreiben, sonst zieht die Anzeige
     /// auf den alten Wert zurück, bevor VLC nachgezogen hat.
@@ -766,6 +774,9 @@ struct PlayerScreen: View {
     private func wischBeginn() {
         guard dauer > 0, !blattOffen, !folgenOffen else { return }
         guard fokus == .leiste || fokus == .ruhe else { return }
+        // **Vor `zeigen()` merken.** Danach ist `steuerungDa` wahr, und die
+        // Frage „war sie schon da?" nicht mehr zu beantworten.
+        wischNurGeoeffnet = !steuerungDa
         wischt = true
         zeigen()
     }
@@ -780,6 +791,9 @@ struct PlayerScreen: View {
     private func gewischt(weg: CGFloat, tempo: CGFloat) {
         guard wischt, dauer > 0 else { return }
         guard steuerungDa else { zeigen(); return }
+        // Dieser Finger hat die Steuerung geholt. Er darf sie wachhalten,
+        // aber nicht spulen — dafür ist der nächste Wisch da.
+        guard !wischNurGeoeffnet else { zeigen(); return }
 
         spulAufgabe?.cancel()
         spulAufgabe = nil
@@ -798,6 +812,7 @@ struct PlayerScreen: View {
     private func wischSchluss() {
         wischt = false
         wischEnde = Date()
+        wischNurGeoeffnet = false
     }
 
     /// Der mittlere Knopf.

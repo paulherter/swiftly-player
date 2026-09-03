@@ -9,6 +9,14 @@ import Foundation
 public struct Fremdsitzung: Sendable, Equatable, Decodable, Identifiable {
 
     public let id: String
+    /// Wem die Sitzung gehört.
+    ///
+    /// **Unverzichtbar, und das war ein Irrtum.** `controllableByUserId`
+    /// liefert nicht die *eigenen* Sitzungen, sondern die, die dieser Nutzer
+    /// **bedienen darf** — als Administrator sind das alle. Auf Auf dem
+    /// Prüfserver fiel es nicht auf: dort ist das Konto kein Administrator,
+    /// und die Antwort enthielt ohnehin nur eigene Sitzungen.
+    public let benutzerID: String?
     public let geraeteID: String?
     public let geraetename: String?
     /// „Swiftly", „Jellyfin Web", „Swiftfin" — der Name des Programms.
@@ -38,6 +46,7 @@ public struct Fremdsitzung: Sendable, Equatable, Decodable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
+        case benutzerID = "UserId"
         case geraeteID = "DeviceId"
         case geraetename = "DeviceName"
         case programm = "Client"
@@ -50,6 +59,7 @@ public struct Fremdsitzung: Sendable, Equatable, Decodable, Identifiable {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
+        benutzerID = try c.decodeIfPresent(String.self, forKey: .benutzerID)
         geraeteID = try c.decodeIfPresent(String.self, forKey: .geraeteID)
         geraetename = try c.decodeIfPresent(String.self, forKey: .geraetename)
         programm = try c.decodeIfPresent(String.self, forKey: .programm)
@@ -59,10 +69,12 @@ public struct Fremdsitzung: Sendable, Equatable, Decodable, Identifiable {
         letzteRegung = try c.decodeIfPresent(Date.self, forKey: .letzteRegung)
     }
 
-    public init(id: String, geraeteID: String?, geraetename: String?, programm: String?,
+    public init(id: String, benutzerID: String? = nil, geraeteID: String?,
+                geraetename: String?, programm: String?,
                 nimmtBefehle: Bool, laeuft: Item?, stand: Spielstand?,
                 letzteRegung: Date? = nil) {
-        self.id = id; self.geraeteID = geraeteID; self.geraetename = geraetename
+        self.id = id; self.benutzerID = benutzerID
+        self.geraeteID = geraeteID; self.geraetename = geraetename
         self.programm = programm; self.nimmtBefehle = nimmtBefehle
         self.laeuft = laeuft; self.stand = stand; self.letzteRegung = letzteRegung
     }
@@ -96,34 +108,58 @@ public enum Uebernahme {
     /// zehn Sekunden, also sind neunzig Sekunden reichlich Luft.
     public static let stillefrist: TimeInterval = 90
 
-    /// Die Sitzung, die angeboten wird — oder `nil`.
+    /// Alles, was übernommen werden kann — jüngste Regung zuerst.
     ///
-    /// - Parameters:
-    ///   - eigeneGeraeteID: Ohne die zeigt das Gerät sich selbst an. Der
-    ///     häufigste Fehler an dieser Stelle, und er fällt erst auf, wenn nur
-    ///     ein Gerät läuft.
-    ///   - jetzt: Für die Stillefrist. Von außen, damit es prüfbar bleibt.
-    public static func angebot(aus sitzungen: [Fremdsitzung],
-                               eigeneGeraeteID: String,
-                               jetzt: Date = Date()) -> Fremdsitzung? {
+    /// **Eine Liste, keine einzelne Sitzung.** Läuft auf zwei Geräten etwas,
+    /// soll die Oberfläche fragen, welches gemeint ist, statt eines davon zu
+    /// erraten. "
+    ///
+    /// - Parameters: - eigeneGeraeteID: Ohne die zeigt das Gerät sich selbst
+    /// an. Der häufigste Fehler an dieser Stelle, und er fällt erst auf, wenn
+    /// nur ein Gerät läuft. - eigeneBenutzerID: Ohne die steht dort, was
+    /// jemand anders schaut. - jetzt: Für die Stillefrist. Von außen, damit es
+    /// prüfbar bleibt.
+    public static func angebote(aus sitzungen: [Fremdsitzung],
+                                eigeneGeraeteID: String,
+                                eigeneBenutzerID: String,
+                                jetzt: Date = Date()) -> [Fremdsitzung] {
         sitzungen
-            .filter { taugt($0, eigeneGeraeteID: eigeneGeraeteID, jetzt: jetzt) }
-            // Die jüngste: wer zuletzt etwas getan hat, sitzt vermutlich davor.
-            .max { links, rechts in
-                (links.letzteRegung ?? .distantPast) < (rechts.letzteRegung ?? .distantPast)
+            .filter { taugt($0, eigeneGeraeteID: eigeneGeraeteID,
+                            eigeneBenutzerID: eigeneBenutzerID, jetzt: jetzt) }
+            // Die jüngste zuerst: wer zuletzt etwas getan hat, sitzt
+            // vermutlich davor. `sorted` ist stabil, bei Gleichstand bleibt
+            // also die Reihenfolge des Servers.
+            .sorted { links, rechts in
+                (links.letzteRegung ?? .distantPast) > (rechts.letzteRegung ?? .distantPast)
             }
     }
 
-    static func taugt(_ s: Fremdsitzung, eigeneGeraeteID: String, jetzt: Date) -> Bool {
+    /// Die eine, wenn es nur eine gibt — sonst die jüngste.
+    public static func angebot(aus sitzungen: [Fremdsitzung],
+                               eigeneGeraeteID: String,
+                               eigeneBenutzerID: String,
+                               jetzt: Date = Date()) -> Fremdsitzung? {
+        angebote(aus: sitzungen, eigeneGeraeteID: eigeneGeraeteID,
+                 eigeneBenutzerID: eigeneBenutzerID, jetzt: jetzt).first
+    }
+
+    static func taugt(_ s: Fremdsitzung, eigeneGeraeteID: String,
+                      eigeneBenutzerID: String, jetzt: Date) -> Bool {
         // 1. Nicht wir selbst.
         guard s.geraeteID != eigeneGeraeteID else { return false }
-        // 2. Es läuft etwas, und es hat eine Kennung, mit der man es öffnen kann.
+        // 2. Und nicht jemand anders. Der Server antwortet mit allem, was
+        //    dieser Nutzer bedienen *darf*; bei einem Administrator ist das
+        //    der ganze Haushalt. Angeboten wird nur das eigene Konto —
+        //    fremde Wiedergabe anzuhalten waere ein Uebergriff, und im
+        //    Abzeichen stuende, was jemand anders schaut.
+        guard let wem = s.benutzerID, wem == eigeneBenutzerID else { return false }
+        // 3. Es läuft etwas, und es hat eine Kennung, mit der man es öffnen kann.
         guard let titel = s.laeuft, !titel.id.isEmpty else { return false }
-        // 3. Anhalten muss ankommen. Ohne das würde das andere Gerät
+        // 4. Anhalten muss ankommen. Ohne das würde das andere Gerät
         //    weiterlaufen, während hier dasselbe beginnt — zwei Tonspuren
         //    im Raum, und niemand versteht, warum.
         guard s.nimmtBefehle else { return false }
-        // 4. Frisch genug.
+        // 5. Frisch genug.
         if let regung = s.letzteRegung, jetzt.timeIntervalSince(regung) > stillefrist {
             return false
         }

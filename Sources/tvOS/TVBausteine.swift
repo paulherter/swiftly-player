@@ -397,6 +397,35 @@ struct Kopfleiste: View {
     }
 }
 
+/// Wie eine fremde Sitzung benannt wird — an zwei Stellen gebraucht,
+/// deshalb einmal geschrieben.
+extension Fremdsitzung {
+    /// „Game of Thrones · S1 E5" oder schlicht der Filmtitel.
+    ///
+    /// Serverdaten, also `String` und nicht `LocalizedStringKey`: sonst
+    /// würde ein Filmtitel als Übersetzungsschlüssel nachgeschlagen.
+    var titelzeile: String {
+        guard let t = laeuft else { return geraetename ?? "" }
+        var teile: [String] = []
+        if let serie = t.seriesName, !serie.isEmpty { teile.append(serie) }
+        else { teile.append(t.name) }
+        if let staffel = t.parentIndexNumber, let folge = t.indexNumber {
+            teile.append("S\(staffel) E\(folge)")
+        }
+        return teile.joined(separator: " · ")
+    }
+
+    /// Das Symbol zum Gerät — nach dem Namen geraten, mehr gibt der Server
+    /// nicht her. `DeviceType` ist bei eigenen Clients leer.
+    var geraetezeichen: String {
+        let name = (geraetename ?? "").lowercased()
+        if name.contains("ipad") { return "ipad" }
+        if name.contains("mac") { return "laptopcomputer" }
+        if name.contains("tv")  { return "tv" }
+        return "iphone"
+    }
+}
+
 /// „Läuft auf dem iPhone — hier weiterschauen."
 ///
 /// **Bewusst mit Gerätenamen und Titel, nicht nur als Zeichen.** Ein Symbol
@@ -407,18 +436,10 @@ struct Uebernahmeabzeichen: View {
     let sitzung: Fremdsitzung
     var aktion: () -> Void
 
-    private var geraetezeichen: String {
-        let name = (sitzung.geraetename ?? "").lowercased()
-        if name.contains("ipad") { return "ipad" }
-        if name.contains("mac") { return "laptopcomputer" }
-        if name.contains("tv")  { return "tv" }
-        return "iphone"
-    }
-
     var body: some View {
         Button(action: aktion) {
             HStack(spacing: 14) {
-                Image(systemName: geraetezeichen)
+                Image(systemName: sitzung.geraetezeichen)
                     .font(.system(size: 24, weight: .medium))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Hier weiterschauen")
@@ -426,7 +447,7 @@ struct Uebernahmeabzeichen: View {
                     // Der Titel in der zweiten Zeile: er ist die Auskunft,
                     // die man wirklich braucht, und er darf umbrechen —
                     // Serverdaten, also `String` und nicht `LocalizedStringKey`.
-                    Text(titelzeile)
+                    Text(sitzung.titelzeile)
                         .font(.system(size: 18))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -437,19 +458,7 @@ struct Uebernahmeabzeichen: View {
         }
         .buttonStyle(AbzeichenStil())
         .accessibilityLabel(Text("Hier weiterschauen"))
-        .accessibilityValue(Text(titelzeile))
-    }
-
-    /// „Game of Thrones · S1 E5" oder schlicht der Filmtitel.
-    private var titelzeile: String {
-        guard let t = sitzung.laeuft else { return sitzung.geraetename ?? "" }
-        var teile: [String] = []
-        if let serie = t.seriesName, !serie.isEmpty { teile.append(serie) }
-        else { teile.append(t.name) }
-        if let staffel = t.parentIndexNumber, let folge = t.indexNumber {
-            teile.append("S\(staffel) E\(folge)")
-        }
-        return teile.joined(separator: " · ")
+        .accessibilityValue(Text(sitzung.titelzeile))
     }
 }
 
@@ -1052,3 +1061,71 @@ struct Staffelpille: View {
 
 /// Fokus auf der Staffelpille: die ruhige Flaeche, wie bei Zeilen und Chips.
 /// Weiss bleibt den Handlungsknoepfen vorbehalten.
+
+// MARK: - Übernahme: welches Gerät?
+
+/// Läuft auf mehreren Geräten etwas, wird gefragt statt geraten.
+///
+/// **Warum ein eigenes Blatt und keine Liste im Abzeichen.** Das Abzeichen
+/// sitzt in der Kopfleiste und hat dort Platz für eine Zeile. Und die Wahl
+/// ist folgenreich: was hier gewählt wird, **hält auf dem anderen Gerät an**.
+/// Das gehört vor Augen, nicht in ein Aufklappmenü.
+struct Uebernahmeauswahl: View {
+    let sitzungen: [Fremdsitzung]
+    var waehlen: (Fremdsitzung) -> Void
+    var abbrechen: () -> Void
+
+    var body: some View {
+        ZStack {
+            // Der Grund fängt den Druck ab, damit dahinter nichts reagiert.
+            Color.black.opacity(0.72)
+                .ignoresSafeArea()
+
+            VStack(spacing: 34) {
+                VStack(spacing: 10) {
+                    Text("Wo weiterschauen?")
+                        .font(.system(size: 42, weight: .semibold))
+                    Text("Das gewählte Gerät hält an, hier läuft es an derselben Stelle weiter.")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                VStack(spacing: 14) {
+                    ForEach(sitzungen) { s in
+                        Button { waehlen(s) } label: {
+                            HStack(spacing: 20) {
+                                Image(systemName: s.geraetezeichen)
+                                    .font(.system(size: 28, weight: .medium))
+                                    .frame(width: 40)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(s.geraetename ?? "Gerät")
+                                        .font(.system(size: 26, weight: .semibold))
+                                    Text(s.titelzeile)
+                                        .font(.system(size: 20))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                                Text(Spielzeit.text(s.stand?.stelle ?? 0))
+                                    .font(.system(size: 20).monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 28)
+                            .frame(height: 88)
+                            .frame(maxWidth: 760)
+                        }
+                        .buttonStyle(AbzeichenStil())
+                    }
+                }
+                .focusSection()
+
+                Button("Abbrechen", action: abbrechen)
+                    .buttonStyle(AbzeichenStil())
+            }
+            .padding(48)
+        }
+        // Menü schließt, wie überall auf dem Fernseher.
+        .onExitCommand(perform: abbrechen)
+    }
+}

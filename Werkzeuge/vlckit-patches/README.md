@@ -8,7 +8,7 @@ nicht nur auf einem Rechner.
 |---|---|
 | Grundlage | VLCKit **4.0.0-a23** |
 | VLC-Stand | der von VLCKit gepinnte `TESTEDHASH` |
-| Patches | `0028-mkv-…`, `0030-vout-clock-…`, `VLCKit-pause-ohne-warteschlange.patch` |
+| Patches | `0028-mkv-…`, `0030-vout-clock-…`, `0031-ios-…`, `0032-input_clock-…`, `VLCKit-pause-ohne-warteschlange.patch` |
 
 ## Wofür
 
@@ -148,3 +148,46 @@ Zweimal in einer Nacht hat das etwas verdeckt:
 Daraus die Regel, die dabei entstanden ist: **wer eine Meldung nicht
 behandelt, soll sie auch nicht bestellen.** Der Debug-Bau ist die Stelle, an
 der so etwas auffällt.
+
+
+## Uhrspruenge: die App starb an einer Datei mit weiten Zeitstempeln
+
+`0032-input_clock-raise-CR_MAX_GAP-back-to-60-seconds.patch`
+
+Eine Folge auf dem Testserver hat die App auf dem Apple TV nach rund zwei
+Minuten umgebracht. Kein Absturz — das Geraet hatte keinen Bericht —, sondern
+verbrannter Prozessor.
+
+**Gemessen im Geraeteprotokoll:**
+
+```
+clock gap, unexpected stream discontinuity: system_diff: 34 stream_diff: 320666
+feeding synchro with a new reference point trying to recover from clock gap
+new clock context(1) … (2642)
+```
+
+5276 davon in 72 Sekunden, 35 bis 70 neue Uhrkontexte je Sekunde. Ueber 2638
+Stichproben: `stream_diff` min 303 ms, Median 490 ms, max 1001 ms — **jeder
+einzelne Wert knapp ueber der Schwelle von 300 ms**.
+
+**Es lag nicht an der Datei allein.** Neun Titel im Protokoll, sechs davon
+stundenlang: null Uhrspruenge. Nur diese eine. Und dieselbe Datei laeuft in
+Swiftfin auf demselben Apple TV — das sitzt auf VLCKit **3**.
+
+Das war der Hinweis. In VLC 4 hat `input_clock: finer discontinuity handling`
+`CR_MAX_GAP` von **60 Sekunden auf 300 ms** gesenkt, zusammen mit einem
+besseren Vergleich: ein grosser `stream_diff` ist in Ordnung, solange
+`system_diff` mitwaechst.
+
+Der Vergleich gilt aber nur, wenn die Quelle ihr eigenes Tempo bestimmt.
+Bestimmen **wir** es — eine Datei ueber HTTP —, liest der Demuxer so schnell
+er kann, `system_diff` ist praktisch null, und jeder Zeitstempelabstand ueber
+300 ms gilt als Bruch. Die Uhr setzt dann bei jeder Aktualisierung ihren
+Bezugspunkt neu.
+
+Der Patch hebt die Schwelle zurueck auf 60 Sekunden. Der verbesserte
+Vergleich bleibt, und `stream_diff < 0` faengt echte Rueckspruenge weiterhin
+ab, unabhaengig von diesem Wert.
+
+**Gehoert zu VideoLAN gemeldet** — der Fall trifft jeden Client, der Dateien
+ueber HTTP abspielt, nicht nur uns.

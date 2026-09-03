@@ -58,6 +58,9 @@ final class Wiedergabezentrale {
     ///
     /// Deshalb hat der Takt hier zwei Sekunden lang nichts zu melden.
     private var seitBefehl: Date?
+    /// Wann dieser Player die Zentrale bekommen hat — fuer die Schonfrist
+    /// beim Routenwechsel.
+    private var seitUebernahme = Date.distantPast
     #if !os(macOS)
     private var beobachter: NSObjectProtocol?
     #endif
@@ -71,6 +74,7 @@ final class Wiedergabezentrale {
         self.griffe = griffe
         befehleEinrichten()
         #if !os(macOS)
+        seitUebernahme = Date()
         unterbrechungenBeobachten()
         routenwechselBeobachten()
         #endif
@@ -397,8 +401,37 @@ final class Wiedergabezentrale {
         guard let roh,
               let grund = AVAudioSession.RouteChangeReason(rawValue: roh) else { return }
         switch grund {
-        case .newDeviceAvailable, .override, .categoryChange, .routeConfigurationChange:
+        // **Nur die zwei, die wirklich ein Gerätewechsel sind.**
+        //
+        // Hier standen einmal vier — `.categoryChange` und
+        // `.routeConfigurationChange` waren dabei. Die feuern aber, wenn die
+        // **App selbst** ihre Tonsitzung einrichtet, also unmittelbar beim
+        // Start. Auf dem Apple TV hat das eine Kette ausgelöst, die die App
+        // umgebracht hat, am Gerät gemessen (03.09.2026, `swiftly.log`):
+        //
+        //     [Ton] Routenwechsel (8) — Ausgang neu aufbauen
+        //     Paused · Position 0 s          angehalten mitten im Start
+        //     Playing · Position 9 s         neun Sekunden später
+        //     picture is too late (missing 8366 ms)   × hunderte
+        //     clock gap → new clock context(1) … (2642)
+        //     201 s lang, 35 Kontexte je Sekunde → tvOS räumt die App ab
+        //
+        // VLC kam aus dem Rückstand nie wieder heraus und drehte sich zu
+        // Tode. Koney hat dasselbe gesehen: „unten lief die Zeit, aber es
+        // lief nichts."
+        //
+        // Für Bluetooth reichen die beiden hier: `.newDeviceAvailable`, wenn
+        // Kopfhörer dazukommen, `.override`, wenn jemand das Ziel umstellt.
+        // Genau die waren auch gemeint — die anderen zwei waren Beifang.
+        case .newDeviceAvailable, .override:
             guard spieltGerade else { return }
+            // **Schonfrist.** In den ersten Sekunden richtet sich die
+            // Tonsitzung noch ein; ein Anstoß träfe einen Player, der gerade
+            // erst anläuft. Genau daran ist es gescheitert.
+            guard Date().timeIntervalSince(seitUebernahme) > 5 else {
+                Protokoll.schreib("[Ton] Routenwechsel (\(roh)) im Anlauf — übergangen")
+                return
+            }
             Protokoll.schreib("[Ton] Routenwechsel (\(roh)) — Ausgang neu aufbauen")
             // **Anhalten und sofort weiter.** VLC baut den Tonausgang beim
             // Fortsetzen neu auf; ohne diesen Anstoss bleibt er auf dem alten

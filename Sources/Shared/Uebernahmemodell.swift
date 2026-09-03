@@ -15,8 +15,14 @@ import Observation
 @Observable
 final class Uebernahmemodell {
 
-    /// Was gerade angeboten wird — `nil`, wenn nichts läuft.
-    private(set) var angebot: Fremdsitzung?
+    /// Alles, was übernommen werden kann — jüngste Regung zuerst.
+    private(set) var angebote: [Fremdsitzung] = []
+
+    /// Das erste davon, für den Fall, dass es nur eins gibt.
+    var angebot: Fremdsitzung? { angebote.first }
+
+    /// Mehr als eins? Dann fragt die Oberfläche, statt zu raten.
+    var mehrereDa: Bool { angebote.count > 1 }
 
     /// Was schiefging — für eine Meldung in der Ansicht.
     var fehler: String?
@@ -48,14 +54,18 @@ final class Uebernahmemodell {
     func beenden() {
         takt?.cancel()
         takt = nil
-        angebot = nil
+        angebote = []
     }
 
     private func einmalFragen(_ model: AppModel) async {
-        guard let client = model.client else { angebot = nil; return }
+        // `model.session` statt `client.currentSession()`: der Client ist ein
+        // Aktor, die Sitzung liegt hier ohnehin schon auf dem Hauptakteur.
+        guard let client = model.client,
+              let benutzer = model.session?.userID else { angebote = []; return }
         let sitzungen = await client.fremdsitzungen()
-        angebot = Uebernahme.angebot(aus: sitzungen,
-                                     eigeneGeraeteID: AppModel.deviceID)
+        angebote = Uebernahme.angebote(aus: sitzungen,
+                                       eigeneGeraeteID: AppModel.deviceID,
+                                       eigeneBenutzerID: benutzer)
     }
 
     /// Das andere Gerät anhalten und hier weitermachen.
@@ -66,8 +76,10 @@ final class Uebernahmemodell {
     /// deshalb gar nicht gestartet.
     ///
     /// - Returns: Titel und Stelle, oder `nil` samt Meldung.
-    func uebernehmen(_ model: AppModel) async -> (item: Item, ab: Double)? {
-        guard let sitzung = angebot, let titel = sitzung.laeuft,
+    /// - Parameter sitzung: Welche übernommen werden soll. Bei mehreren hat
+    ///   die Oberfläche gefragt; bei einer ist es schlicht die eine.
+    func uebernehmen(_ sitzung: Fremdsitzung, model: AppModel) async -> (item: Item, ab: Double)? {
+        guard let titel = sitzung.laeuft,
               let client = model.client, !uebernimmt else { return nil }
         uebernimmt = true
         defer { uebernimmt = false }
@@ -84,7 +96,7 @@ final class Uebernahmemodell {
         // nach.
         let ab = sitzung.stand?.stelle ?? 0
         // Damit das Abzeichen nicht noch einen Takt lang stehenbleibt.
-        angebot = nil
+        angebote = []
         return (titel, ab)
     }
 }
