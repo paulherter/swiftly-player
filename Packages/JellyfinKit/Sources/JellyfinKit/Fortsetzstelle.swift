@@ -2,16 +2,20 @@ import Foundation
 
 /// Ab welcher Sekunde fortgesetzt wird — oder gar nicht.
 ///
-/// **Die Regel hatte nur eine Haelfte.** „Unter einer Minute lohnt Fortsetzen
-/// nicht" stand seit jeher da. Dass es am *anderen* Ende genauso ist, fiel
-/// erst am 04.09.2026 auf, und zwar teuer: eine Folge lief durch, der Server
-/// merkte sich 3707 s von 3707 s, und beim naechsten Oeffnen war das die
-/// Fortsetzstelle. Die App setzte am Dateiende fort, VLC meldete sofort `end
-/// of stream`, die Folgenende-Erkennung griff — und
+/// **Die Regel hatte nur eine Haelfte.** „Unter einer Minute lohnt
+/// Fortsetzen nicht" stand seit jeher da; dass es am *anderen* Ende genauso
+/// ist, stand nirgends. Eine Stelle drei Sekunden vor Schluss ist als
+/// „weiterschauen" sinnlos — dafuer ist diese Datei da.
 ///
-/// Dass es vorher nicht auffiel, lag am Weg dorthin: der alte Sprung setzte
-/// erst *nach* dem Anlaufen ein, und ein Sprung ans eigene Ende ist harmlos.
-/// Der Fehler lag trotzdem schon da.
+/// **Sie ist ausdruecklich nicht die Behebung, als die sie entstand.** Am
+/// 04.09.2026 sprang die App zweimal in die naechste Folge, und ich hielt
+/// die Fortsetzstelle fuer den Grund: 3707 s, dann 3721 s, beides klang nach
+/// dem Ende einer Folge. Die Messung sagt etwas anderes — `Stelle 3721 s,
+/// Laufzeit 6683 s`, also knapp ueber der Haelfte. Die Ursache lag bei
+/// `:start-time` selbst und ist weiterhin offen.
+///
+/// Der Eintrag steht hier, damit niemand diese Regel fuer die Loesung jenes
+/// Fehlers haelt und die Suche dort beendet.
 ///
 /// Deshalb hier, im Paket: eine Regel mit zwei Grenzen, ohne Abspieler
 /// pruefbar, fuer alle vier Plattformen dieselbe.

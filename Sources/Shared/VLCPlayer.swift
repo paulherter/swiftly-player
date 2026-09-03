@@ -942,17 +942,29 @@ final class VLCPlayerView: Basisansicht {
         // stehen — genau die Lage, in der `:start-time` wieder ins Dateiende
         // liefe. Ein Netzabriss in der letzten Minute soll den Zuschauer nicht
         // in die naechste Folge werfen. **`:start-time` ist zweimal
-        // zurueckgeflogen und bleibt vorerst aus.**
+        // zurueckgeflogen und bleibt aus, und der Grund ist nicht der, den ich
+        // zweimal aufgeschrieben habe.**
         //
-        // Beide Male sprang die App in die naechste Folge, weil die
-        // Fortsetzstelle am Dateiende lag und VLC dort sofort `end of stream`
-        // meldet. Beim zweiten Mal war `Fortsetzstelle` schon eingebaut — sie
-        // hat nicht gegriffen, weil ihre obere Grenze eine **Laufzeit**
-        // braucht und die hier fehlte. Der Rueckfall „ohne Laufzeit nur die
-        // untere Grenze" laesst genau den gefaehrlichen Fall durch.
+        // Beide Male sprang die App in die naechste Folge: VLC meldete beim
+        // Oeffnen sofort `end of stream`, die Folgenende-Erkennung griff. Ich
+        // habe daraus geschlossen, die Fortsetzstelle liege am Dateiende —
+        // erst 3707 s, dann 3721 s, beides klang nach Schluss einer Folge.
         //
-        // Bevor das wieder angeschaltet wird, muss gemessen sein, warum
-        // `runTimeTicks` fehlt. Die Zeile dafuer steht in `fortsetzenAb`.
+        // **Gemessen ist es nicht so.** `[Fortsetzen] Stelle 3721 s, Laufzeit
+        // 6683 s` — die Stelle liegt knapp ueber der Haelfte, und die Laufzeit
+        // war die ganze Zeit bekannt. Zwei Erklaerungen, beide plausibel,
+        // beide falsch; die zweite habe ich sogar mit einer neuen Regel
+        // „behoben", die am Fehler vorbeiging.
+        //
+        // Was bleibt: **`:start-time` erzeugt auf diesen Matroska-Stroemen
+        // sofort ein Dateiende, unabhaengig von der Stelle.** Ob es an
+        // `mkv_trusted` liegt, an der HTTP-Quelle oder daran, dass libVLC die
+        // Option vor der Laenge auswertet, ist offen — das ist zum
+        // Nachschlagen und einzeln Nachbauen, nicht zum Raten.
+        //
+        // `Fortsetzstelle` bleibt trotzdem: eine Stelle drei Sekunden vor
+        // Schluss ist als „weiterschauen" sinnlos. Sie war nur nie die
+        // Ursache, und das steht dort auch so.
         _ = direktStarten
 
         startposition = abSekunden
