@@ -28,12 +28,21 @@ struct SucheView: View {
 
             GeometryReader { rahmen in
             VStack(spacing: 0) {
-                // Das Profilzeichen gehört auch hierher. Es stand im Kopf von
-                // Start, Filme und Serien — in der Suche fehlte es, und drei
-                // von vier ist keine Regel, sondern ein vergessener Fall.
+                // **Kein Profilzeichen auf der Suchseite.**
                 //
-                // Breit steht es in der Seitenleiste, und zwar für alle vier
-                // Bereiche. Hier wäre es das zweite.
+                // Hier stand eines, mit der Begründung: es steht im Kopf von
+                // Start, Filme und Serien, drei von vier sei keine Regel
+                // sondern ein vergessener Fall. Das klingt richtig und ist es
+                // nicht
+                //
+                // Der Grund ist das Suchfeld. Es ist auf dieser Seite das
+                // einzige Bedienelement und will von Rand zu Rand; ein Zeichen
+                // daneben nimmt ihm die letzten vierzig Punkt und macht aus
+                // einem Feld eine Zeile mit Anhängsel. Die anderen drei Seiten
+                // tragen oben eine Überschrift, neben der noch Platz ist.
+                //
+                // Gleichförmigkeit gilt für das Verhalten, nicht für jedes
+                // Element auf jeder Seite.
                 HStack(spacing: 12) {
                     Suchfeld(text: $begriff, amTippen: $imFeld)
                         // Breit ein Maß, aber linksbündig: mittig wäre es
@@ -41,13 +50,6 @@ struct SucheView: View {
                         // Breite ein 1036 Punkt langer Kasten für ein Wort.
                         .frame(maxWidth: breit ? Stil.lesebreite : .infinity,
                                alignment: .leading)
-                    if !breit {
-                        NavigationLink(value: ProfilRoute()) {
-                            Profilzeichen(name: model.session?.userName ?? "?",
-                                          bild: model.benutzerbildURL())
-                        }
-                        .buttonStyle(.plain)
-                    }
                     if breit { Spacer(minLength: 0) }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
