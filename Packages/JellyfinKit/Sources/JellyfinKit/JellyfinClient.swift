@@ -566,6 +566,22 @@ public actor JellyfinClient {
         )
     }
 
+    /// Die markierten Abschnitte einer Folge — Vorspann, Rueckblick, Abspann.
+    ///
+    /// **Ein Fehlschlag ist kein Fehler.** Auf einem Server ohne das Plugin
+    /// ist die Liste leer, und aeltere Fassungen kennen den Endpunkt gar
+    /// nicht. Beides heisst dasselbe: kein Knopf. Wer das als Fehler
+    /// behandelt, zeigt eine Meldung fuer eine Funktion, die der Zuschauer
+    /// nie erwartet hat.
+    public func abschnitte(fuer itemID: String) async -> [Abschnitt] {
+        do {
+            let req = try request("MediaSegments/\(itemID)")
+            return try await send(req, as: AbschnittsAntwort.self).items
+        } catch {
+            return []
+        }
+    }
+
     /// Was AirPlay fuer diesen Titel hergibt.
     ///
     /// **Die Pruefung kommt vor der Anfrage, nicht danach.** Die Stroeme der

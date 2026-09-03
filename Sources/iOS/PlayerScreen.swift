@@ -272,6 +272,15 @@ struct PlayerScreen: View {
                     beendet: {
                         if let naechsteFolge { zurNaechstenFolge(naechsteFolge) }
                         else { dismiss() }
+                    },
+                    fehler: { text in
+                        // **Zurueck aufs Geraet, nicht schwarz stehenbleiben.**
+                        // Nimmt der Empfaenger den Strom nicht, ist ein
+                        // Schwarzbild auf dem Fernseher das Schlechteste von
+                        // allem: der Film laeuft nirgends. Also weiter auf dem
+                        // Telefon, mit Ansage.
+                        hinweis = String(localized: "Der Fernseher nimmt diesen Film nicht an (\(text)). Läuft weiter auf dem iPhone.")
+                        airplayUmschalten(false)
                     }
                 )
                 .ignoresSafeArea()

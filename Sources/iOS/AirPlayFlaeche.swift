@@ -24,6 +24,12 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
     /// Stelle und Dauer, etwa jede Sekunde — fürs Melden an den Server.
     var stand: (Double, Double) -> Void
     var beendet: () -> Void
+    /// **AVPlayers eigene Fehlermeldung.**
+    ///
+    /// Ohne sie ist ein Schwarzbild auf dem Fernseher nicht zu deuten — man
+    /// sieht, dass nichts kommt, aber nicht woran es liegt. `errorLog()`
+    /// nennt sogar den HTTP-Status des Segments, das gescheitert ist.
+    var fehler: (String) -> Void
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let spieler = AVPlayer(url: url)
@@ -67,7 +73,9 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
         scheibe.player = nil
     }
 
-    func makeCoordinator() -> Koordinator { Koordinator(stand: stand, beendet: beendet) }
+    func makeCoordinator() -> Koordinator {
+        Koordinator(stand: stand, beendet: beendet, fehler: fehler)
+    }
 
     /// **`@MainActor`, und die Rueckrufe heben einzeln.**
     ///
@@ -80,13 +88,19 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
     final class Koordinator {
         private let stand: (Double, Double) -> Void
         private let beendet: () -> Void
+        private let fehler: (String) -> Void
         private var takt: Any?
         private var ende: NSObjectProtocol?
+        private var schiefgegangen: NSObjectProtocol?
+        private var protokolleintrag: NSObjectProtocol?
+        private var zustand: NSKeyValueObservation?
         private weak var spieler: AVPlayer?
 
-        init(stand: @escaping (Double, Double) -> Void, beendet: @escaping () -> Void) {
+        init(stand: @escaping (Double, Double) -> Void, beendet: @escaping () -> Void,
+             fehler: @escaping (String) -> Void) {
             self.stand = stand
             self.beendet = beendet
+            self.fehler = fehler
         }
 
         func anhaengen(an spieler: AVPlayer, scheibe: AVPlayerViewController) {
@@ -111,6 +125,50 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
             ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.beendet() }
             }
+
+            guard let stueck = spieler.currentItem else { return }
+
+            // **Drei Quellen, weil jede etwas anderes weiss.**
+            //
+            // `status` sagt, dass es scheiterte. `error` sagt grob warum.
+            // `errorLog()` nennt die Adresse und den HTTP-Status des Segments
+            // — und das ist die Angabe, aus der sich etwas ableiten laesst.
+            zustand = stueck.observe(\.status, options: [.new]) { [weak self] stueck, _ in
+                MainActor.assumeIsolated {
+                    guard stueck.status == .failed else { return }
+                    self?.melden("Status .failed", stueck.error)
+                }
+            }
+
+            schiefgegangen = NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.failedToPlayToEndTimeNotification,
+                object: stueck, queue: .main
+            ) { [weak self] nachricht in
+                let grund = nachricht.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+                MainActor.assumeIsolated { self?.melden("Abbruch", grund) }
+            }
+
+            protokolleintrag = NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.newErrorLogEntryNotification,
+                object: stueck, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let letzter = stueck.errorLog()?.events.last else { return }
+                    let text = [
+                        letzter.errorStatusCode != 0 ? "HTTP \(letzter.errorStatusCode)" : nil,
+                        letzter.errorComment,
+                        letzter.uri,
+                    ].compactMap { $0 }.joined(separator: " · ")
+                    Protokoll.schreib("[AirPlay] Protokolleintrag: \(text)")
+                    self?.fehler(letzter.errorComment ?? "HTTP \(letzter.errorStatusCode)")
+                }
+            }
+        }
+
+        private func melden(_ woher: String, _ grund: (any Error)?) {
+            let text = grund?.localizedDescription ?? "ohne Angabe"
+            Protokoll.schreib("[AirPlay] \(woher): \(text)")
+            fehler(text)
         }
 
         /// Wird von `dismantleUIViewController` gerufen — nicht aus `deinit`.
@@ -118,8 +176,11 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
         func aufraeumen() {
             if let takt { spieler?.removeTimeObserver(takt) }
             takt = nil
-            if let ende { NotificationCenter.default.removeObserver(ende) }
-            ende = nil
+            for b in [ende, schiefgegangen, protokolleintrag].compactMap({ $0 }) {
+                NotificationCenter.default.removeObserver(b)
+            }
+            ende = nil; schiefgegangen = nil; protokolleintrag = nil
+            zustand?.invalidate(); zustand = nil
         }
     }
 }
