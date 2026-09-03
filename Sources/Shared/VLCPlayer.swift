@@ -232,7 +232,15 @@ final class VLCPlayerView: Basisansicht {
     private var lautstaerkeVorher: Int32?
 
     private func tonZurueckhalten(_ zurueck: Bool) {
-        guard let ton = player.audio else { return }
+        // **Der stille Ausgang.** Gibt es den Tonausgang beim Oeffnen noch
+        // nicht, faellt der Rueckhalt hier lautlos aus — und der Zuschauer
+        // hoert genau die Sekunde vom Anfang, die er nicht hoeren soll.
+        // 09.2026 wieder gemeldet, obwohl der Rueckhalt gebaut ist; ob es
+        // dieser Ausgang ist, sagt nur eine Messung.
+        guard let ton = player.audio else {
+            Protokoll.schreib("[Ton] Rueckhalt(\(zurueck)) ohne Tonausgang — wirkungslos")
+            return
+        }
         if zurueck {
             guard lautstaerkeVorher == nil else { return }
             // **Was VLC vor dem ersten Ton meldet, ist kein Messwert.**
@@ -244,9 +252,11 @@ final class VLCPlayerView: Basisansicht {
             let jetzt = ton.volume
             lautstaerkeVorher = jetzt > 0 ? jetzt : 100
             ton.volume = 0
+            Protokoll.schreib("[Ton] stumm ab jetzt (war \(jetzt), gemerkt \(lautstaerkeVorher!))")
         } else if let vorher = lautstaerkeVorher {
             ton.volume = vorher > 0 ? vorher : 100
             lautstaerkeVorher = nil
+            Protokoll.schreib("[Ton] wieder laut (\(vorher))")
         }
     }
 
