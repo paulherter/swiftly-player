@@ -148,12 +148,7 @@ struct HomeView: View {
     /// schief, passiert hier gar nichts. Sonst liefen zwei Tonspuren im Raum.
     private func hierWeiterschauen(_ sitzung: Fremdsitzung) {
         auswahlOffen = false
-        Task {
-            guard let (titel, ab) = await uebernahme.uebernehmen(sitzung, model: model)
-            else { return }
-            guard let plan = await model.plan(for: titel.id) else { return }
-            abspielen = Abspielwunsch(item: titel, plan: plan, startAt: ab)
-        }
+        Task { abspielen = await uebernahme.wunsch(fuer: sitzung, model: model) }
     }
 
     /// Statt eines leeren schwarzen Bildschirms: sagen, was los ist, und einen
