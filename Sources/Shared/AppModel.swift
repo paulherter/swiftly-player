@@ -658,6 +658,15 @@ final class AppModel {
                              mass: .hoechstensHoch(maxHeight))
     }
 
+    /// Vorspann, Rückblick und Abspann einer Folge.
+    ///
+    /// Leer heißt: der Server weiß nichts davon — kein Plugin, keine Analyse,
+    /// oder eine ältere Fassung. Dann bleibt alles wie vorher.
+    func abschnitte(fuer itemID: String) async -> [JellyfinKit.Abschnitt] {
+        guard let client else { return [] }
+        return await client.abschnitte(fuer: itemID)
+    }
+
     // MARK: - Wiedergabe melden
     //
     // Schlägt eine Meldung fehl, ist das kein Grund, die Wiedergabe zu stören —

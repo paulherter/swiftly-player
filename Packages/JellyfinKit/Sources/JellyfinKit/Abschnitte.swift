@@ -103,6 +103,31 @@ public enum Knopfangebot: Sendable, Equatable {
     /// Springen — auf diese Sekunde, mit dieser Beschriftung.
     case ueberspringen(nach: Double, art: Abschnitt.Art)
     case naechsteFolge
+
+    /// Was auf dem Knopf steht.
+    public var beschriftung: String {
+        switch self {
+        case .keiner:                 ""
+        case let .ueberspringen(_, art): art.beschriftung
+        case .naechsteFolge:          uebersetzt("Nächste Folge")
+        }
+    }
+
+    /// Welches Zeichen davor steht.
+    ///
+    /// **Zwei verschiedene, und das ist Absicht.** Überspringen führt *in*
+    /// derselben Folge weiter, Weiterschalten *aus* ihr heraus. Dasselbe
+    /// Zeichen für beides würde den Unterschied verwischen, und der ist der
+    /// einzige, den man vor dem Druck nicht zurücknehmen kann.
+    public var zeichen: String {
+        switch self {
+        case .keiner:          ""
+        case .ueberspringen:   "forward.fill"
+        case .naechsteFolge:   "forward.end.fill"
+        }
+    }
+
+    public var sichtbar: Bool { self != .keiner }
 }
 
 /// Entscheidet aus Stelle, Dauer und Abschnitten, welcher Knopf gilt.

@@ -23,6 +23,8 @@ struct PlayerScreen: View {
     @State private var titel: Item
     @State private var plan: PlaybackPlan
     @State private var naechsteFolge: Item?
+    /// Vorspann, Rückblick, Abspann — leer, wenn der Server nichts weiß.
+    @State private var abschnitte: [JellyfinKit.Abschnitt] = []
     @State private var wechselt = false
     @State private var hinweis: String?
     @State private var flaeche: VLCPlayerView?
@@ -216,7 +218,10 @@ struct PlayerScreen: View {
         }
         .onChange(of: tempo) { tempoAnwenden() }
         .onChange(of: schlafminuten) { schlafzeitSetzen(schlafminuten) }
-        .task { naechsteFolge = await model.folgeNach(titel) }
+        .task {
+            naechsteFolge = await model.folgeNach(titel)
+            abschnitte = await model.abschnitte(fuer: titel.id)
+        }
         .onDisappear {
             ruheAufgabe?.cancel()
             schlafAufgabe?.cancel()
@@ -388,10 +393,10 @@ struct PlayerScreen: View {
 
                 // Erscheint erst gegen Ende — die Zahlen stehen in
                 // `Folgenende` und gelten auf allen Plattformen.
-                if let folge = naechsteFolge, !wechselt,
-                   Folgenende.knopfZeigen(position: stand.position, dauer: stand.dauer) {
-                    Chip(beschriftung: String(localized: "Nächste Folge"),
-                         symbol: "forward.end.alt", aktiv: false) { zurNaechstenFolge(folge) }
+                if angebot.sichtbar {
+                    Chip(beschriftung: angebot.beschriftung,
+                         symbol: angebot.zeichen, aktiv: false,
+                         auswahl: angebotAusfuehren)
                 }
             }
             .foregroundStyle(Stil.schrift)
@@ -492,6 +497,27 @@ struct PlayerScreen: View {
         case .vorige:    break
         }
         steuerungZeigen()
+    }
+
+    /// Welcher Knopf gerade gilt. Dieselbe Regel wie auf iOS.
+    private var angebot: Knopfangebot {
+        guard !wechselt else { return .keiner }
+        return Abschnittslogik.angebot(position: stand.position, dauer: stand.dauer,
+                                       abschnitte: abschnitte,
+                                       hatNaechsteFolge: naechsteFolge != nil)
+    }
+
+    private func angebotAusfuehren() {
+        switch angebot {
+        case .keiner:
+            break
+        case let .ueberspringen(nach, _):
+            flaeche?.seek(toSeconds: nach)
+            sprungBis = Date().addingTimeInterval(2)
+            steuerungZeigen()
+        case .naechsteFolge:
+            if let folge = naechsteFolge { zurNaechstenFolge(folge) }
+        }
     }
 
     private func beenden() {
@@ -613,6 +639,8 @@ struct PlayerScreen: View {
             // hat genau das eine Folge übersprungen.
             seitStart = Date()
             naechsteFolge = await model.folgeNach(folge)
+            // Die neue Folge hat eigene Abschnitte.
+            abschnitte = await model.abschnitte(fuer: folge.id)
             zentraleUebernehmen()
             wechselt = false
         }

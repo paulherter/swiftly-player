@@ -79,6 +79,13 @@ struct PlayerScreen: View {
     @AppStorage("querformatFest") private var querformatFest = true
 
     @State private var naechsteFolge: Item?
+    /// Vorspann, Rückblick, Abspann — leer, wenn der Server nichts weiß.
+    ///
+    /// Steht die Liste leer, ändert sich gegenüber früher **nichts**: dann
+    /// entscheidet allein die Restzeitregel, wann „Nächste Folge" erscheint.
+    // `JellyfinKit.` ausgeschrieben: `Abschnitt` heisst in
+    // `BrowseViews.swift` schon eine Ansicht, und die hiess zuerst so.
+    @State private var abschnitte: [JellyfinKit.Abschnitt] = []
     @State private var wechselt = false
     /// Sperrbildschirm, Kontrollzentrum, Kopfhörertasten und Anrufe.
     @State private var zentrale = Wiedergabezentrale()
@@ -332,6 +339,7 @@ struct PlayerScreen: View {
         .task { await beobachten() }
         .task {
             naechsteFolge = await model.folgeNach(item)
+            abschnitte = await model.abschnitte(fuer: item.id)
             // Erst jetzt steht fest, ob es einen „Weiter"-Knopf geben darf.
             zentraleUebernehmen()
         }
@@ -497,17 +505,25 @@ struct PlayerScreen: View {
 
                 Spacer(minLength: 0)
 
-                if let naechsteFolge, !wechselt, gegenEnde {
-                    Button { zurNaechstenFolge(naechsteFolge) } label: {
-                        Label("Nächste Folge", systemImage: "forward.end.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .padding(.horizontal, 15)
-                            .frame(height: 34)
-                            .background(.white.opacity(0.16), in: Capsule())
-                            .overlay(Capsule().strokeBorder(.white.opacity(0.24)))
+                if angebot.sichtbar {
+                    Button(action: angebotAusfuehren) {
+                        // Serverdaten sind hier nicht im Spiel, aber die
+                        // Beschriftung entsteht als `String` im Paket —
+                        // deshalb `Text(verbatim:)` statt `Label(_:)`, sonst
+                        // würde sie ein zweites Mal nachgeschlagen.
+                        HStack(spacing: 6) {
+                            Image(systemName: angebot.zeichen)
+                            Text(verbatim: angebot.beschriftung)
+                        }
+                        .font(.system(size: 14, weight: .semibold))
+                        .padding(.horizontal, 15)
+                        .frame(height: 34)
+                        .background(.white.opacity(0.16), in: Capsule())
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.24)))
                     }
                     .foregroundStyle(.white)
                     .fixedSize()
+                    .transition(.opacity)
                 }
             }
             .foregroundStyle(.white)
@@ -608,6 +624,36 @@ struct PlayerScreen: View {
     /// Plattformen, damit der Knopf überall zur selben Zeit auftaucht.
     private var gegenEnde: Bool {
         Folgenende.knopfZeigen(position: position, dauer: dauer)
+    }
+
+    /// Welcher Knopf gerade gilt — überspringen, weiterschalten oder keiner.
+    ///
+    /// **Es ist derselbe Knopf.** Gestaltung und Platz bleiben; nur
+    /// Beschriftung, Zeichen und Zeitpunkt wechseln. Die Regel dahinter steht
+    /// im Paket, damit sie auf allen vier Plattformen dieselbe ist.
+    private var angebot: Knopfangebot {
+        guard !wechselt else { return .keiner }
+        return Abschnittslogik.angebot(position: position, dauer: dauer,
+                                       abschnitte: abschnitte,
+                                       hatNaechsteFolge: naechsteFolge != nil)
+    }
+
+    /// Der Druck darauf.
+    private func angebotAusfuehren() {
+        switch angebot {
+        case .keiner:
+            break
+        case let .ueberspringen(nach, _):
+            // Wie ein Sprung von Hand: Stelle setzen, springen, und die
+            // Anzeige kurz nicht überschreiben lassen.
+            position = nach
+            surface?.seek(toSeconds: nach)
+            sprungBis = Date().addingTimeInterval(2)
+            meldeFortschritt()
+            ausblendenVerschieben()
+        case .naechsteFolge:
+            if let naechsteFolge { zurNaechstenFolge(naechsteFolge) }
+        }
     }
 
     // MARK: - Aktionen
@@ -715,6 +761,9 @@ struct PlayerScreen: View {
             await model.reportStart(item: folge, plan: neuerPlan, seconds: 0)
             startGemeldet = true
             naechsteFolge = await model.folgeNach(folge)
+            // **Die neue Folge hat eigene Abschnitte.** Ohne das trüge sie
+            // die des Vorgängers, und der Knopf erschiene an dessen Stellen.
+            abschnitte = await model.abschnitte(fuer: folge.id)
             zentraleUebernehmen()
             wechselt = false
             steuerungSichtbar = true

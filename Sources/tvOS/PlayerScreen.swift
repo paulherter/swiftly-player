@@ -49,6 +49,8 @@ struct PlayerScreen: View {
     @State private var folgenOffen = false
     @State private var spurenGesetzt = false
     @State private var startGemeldet = false
+    /// Vorspann, Rückblick, Abspann — leer, wenn der Server nichts weiß.
+    @State private var abschnitte: [JellyfinKit.Abschnitt] = []
     /// Der Wechsel laeuft schon — sonst loest der Takt ihn mehrfach aus.
     @State private var wechselt = false
     @State private var tempo: Float = 1.0
@@ -390,6 +392,7 @@ struct PlayerScreen: View {
         .task { await beobachten() }
         .task {
             naechste = await model.folgeNach(item)
+            abschnitte = await model.abschnitte(fuer: item.id)
             // Erst jetzt steht fest, ob es einen „Weiter"-Griff geben darf.
             zentraleUebernehmen()
         }
@@ -504,9 +507,15 @@ struct PlayerScreen: View {
 
                 // Erscheint erst, wenn die Folge fast durch ist — sonst steht
                 // sie zwei Stunden lang im Weg. Dieselbe Regel wie auf iOS.
-                if let folge = naechste, fastDurch {
-                    Button { wechsleZu(folge) } label: {
-                        Label("Nächste Folge", systemImage: "forward.end.fill")
+                if angebot.sichtbar {
+                    Button(action: angebotAusfuehren) {
+                        HStack(spacing: 10) {
+                            Image(systemName: angebot.zeichen)
+                            // Die Beschriftung entsteht als `String` im Paket;
+                            // `verbatim` verhindert, dass sie ein zweites Mal
+                            // nachgeschlagen wird.
+                            Text(verbatim: angebot.beschriftung)
+                        }
                     }
                     .buttonStyle(PillenStil())
                 }
@@ -527,6 +536,25 @@ struct PlayerScreen: View {
 
     private var fastDurch: Bool {
         Folgenende.knopfZeigen(position: position, dauer: dauer)
+    }
+
+    /// Welcher Knopf gerade gilt. Dieselbe Regel wie auf iOS — sie steht im
+    /// Paket, damit die vier Plattformen nicht auseinanderlaufen.
+    private var angebot: Knopfangebot {
+        Abschnittslogik.angebot(position: position, dauer: dauer,
+                                abschnitte: abschnitte,
+                                hatNaechsteFolge: naechste != nil)
+    }
+
+    private func angebotAusfuehren() {
+        switch angebot {
+        case .keiner:
+            break
+        case let .ueberspringen(nach, _):
+            sprungAusfuehren(nach)
+        case .naechsteFolge:
+            if let folge = naechste { wechsleZu(folge) }
+        }
     }
 
     // MARK: - Befehle
@@ -950,6 +978,9 @@ struct PlayerScreen: View {
             await model.reportStart(item: folge, plan: neuerPlan, seconds: 0)
 
             naechste = await model.folgeNach(folge)
+            // **Die neue Folge hat eigene Abschnitte.** Ohne das truege sie
+            // die des Vorgaengers, und der Knopf erschiene an dessen Stellen.
+            abschnitte = await model.abschnitte(fuer: folge.id)
             zentraleUebernehmen()
             wechselt = false
             // Nach dem Wechsel steht der Fokus sonst im Nichts: die Folgen-
