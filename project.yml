@@ -105,25 +105,27 @@ targets:
         UIBackgroundModes:
           - audio
         NSAppTransportSecurity:
-          # **Beide Schluessel, und beide mit Grund.**
+          # **Nur dieser eine Schluessel — und das ist keine Nachlaessigkeit.**
           #
-          # `NSAllowsLocalNetworking` deckt nur das Heimnetz — IP-Bereiche wie
-          # 192.168.*, `.local`, localhost. Das ist der haeufigste Fall und
-          # der sicherste Weg dorthin.
+          # Hier stand einmal `NSAllowsLocalNetworking` daneben, mit der Begruendung,
+          # es decke das Heimnetz auf dem sichereren Weg ab und der zweite Schluessel
+          # faenge den Rest. Das ist falsch herum: **ab iOS 10 wird
+          # `NSAllowsArbitraryLoads` ignoriert, sobald `NSAllowsLocalNetworking`,
+          # `NSAllowsArbitraryLoadsInWebContent` oder `...ForMedia` im Plist steht.**
+          # Die beiden ergaenzen sich nicht, der zweite schaltet den ersten ab.
           #
-          # `NSAllowsArbitraryLoads` braucht es fuer den zweithaeufigsten:
-          # einen Jellyfin, der per Portweiterleitung unter
-          # `http://irgendwas.duckdns.org` erreichbar ist. Apple empfiehlt
-          # dafuer `NSExceptionDomains` — die helfen hier aber nicht, weil die
-          # Adresse erst der Nutzer eingibt und zur Bauzeit niemand kennt. Bei
-          # einem Client fuer selbst betriebene Server gibt es keinen dritten
-          # Weg.
+          # Gekostet hat das einen Nutzer, der seinen Jellyfin ueber Tailscale
+          # erreichte: `http://100.110.192.87:8096`. Tailscale vergibt aus
+          # 100.64.0.0/10, dem CGNAT-Bereich — und der zaehlt fuer ATS **nicht** als
+          # lokales Netz. RFC1918, `.local` und `localhost` schon, CGNAT nicht.
+          # Dieselbe Sperre traf `http://irgendwas.duckdns.org`.
           #
-          # Swiftly draengt trotzdem zu https: eine Adresse ohne Schema
-          # bekommt `https://` vorgesetzt, ausser sie sieht nach Heimnetz aus
-          # (`AppModelURLNormalizer`). Auf http faellt es nur zurueck, wenn
-          # https an der Verbindung scheitert — nie bei einer Fehlerantwort.
-          NSAllowsLocalNetworking: true
+          # Ein Client fuer selbst betriebene Server kann die Adresse zur Bauzeit
+          # nicht kennen, also helfen `NSExceptionDomains` nicht. Swiftly draengt
+          # stattdessen im Code zu https: ohne Schema bekommt eine Adresse `https://`
+          # vorgesetzt, ausser sie sieht nach Heimnetz aus (`AppModelURLNormalizer`,
+          # IP-Literale eingeschlossen). Auf http faellt es nur zurueck, wenn https
+          # an der Verbindung scheitert — nie bei einer Fehlerantwort.
           NSAllowsArbitraryLoads: true
         # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
         #
@@ -291,25 +293,27 @@ targets:
         UIBackgroundModes:
           - audio
         NSAppTransportSecurity:
-          # **Beide Schluessel, und beide mit Grund.**
+          # **Nur dieser eine Schluessel — und das ist keine Nachlaessigkeit.**
           #
-          # `NSAllowsLocalNetworking` deckt nur das Heimnetz — IP-Bereiche wie
-          # 192.168.*, `.local`, localhost. Das ist der haeufigste Fall und
-          # der sicherste Weg dorthin.
+          # Hier stand einmal `NSAllowsLocalNetworking` daneben, mit der Begruendung,
+          # es decke das Heimnetz auf dem sichereren Weg ab und der zweite Schluessel
+          # faenge den Rest. Das ist falsch herum: **ab iOS 10 wird
+          # `NSAllowsArbitraryLoads` ignoriert, sobald `NSAllowsLocalNetworking`,
+          # `NSAllowsArbitraryLoadsInWebContent` oder `...ForMedia` im Plist steht.**
+          # Die beiden ergaenzen sich nicht, der zweite schaltet den ersten ab.
           #
-          # `NSAllowsArbitraryLoads` braucht es fuer den zweithaeufigsten:
-          # einen Jellyfin, der per Portweiterleitung unter
-          # `http://irgendwas.duckdns.org` erreichbar ist. Apple empfiehlt
-          # dafuer `NSExceptionDomains` — die helfen hier aber nicht, weil die
-          # Adresse erst der Nutzer eingibt und zur Bauzeit niemand kennt. Bei
-          # einem Client fuer selbst betriebene Server gibt es keinen dritten
-          # Weg.
+          # Gekostet hat das einen Nutzer, der seinen Jellyfin ueber Tailscale
+          # erreichte: `http://100.110.192.87:8096`. Tailscale vergibt aus
+          # 100.64.0.0/10, dem CGNAT-Bereich — und der zaehlt fuer ATS **nicht** als
+          # lokales Netz. RFC1918, `.local` und `localhost` schon, CGNAT nicht.
+          # Dieselbe Sperre traf `http://irgendwas.duckdns.org`.
           #
-          # Swiftly draengt trotzdem zu https: eine Adresse ohne Schema
-          # bekommt `https://` vorgesetzt, ausser sie sieht nach Heimnetz aus
-          # (`AppModelURLNormalizer`). Auf http faellt es nur zurueck, wenn
-          # https an der Verbindung scheitert — nie bei einer Fehlerantwort.
-          NSAllowsLocalNetworking: true
+          # Ein Client fuer selbst betriebene Server kann die Adresse zur Bauzeit
+          # nicht kennen, also helfen `NSExceptionDomains` nicht. Swiftly draengt
+          # stattdessen im Code zu https: ohne Schema bekommt eine Adresse `https://`
+          # vorgesetzt, ausser sie sieht nach Heimnetz aus (`AppModelURLNormalizer`,
+          # IP-Literale eingeschlossen). Auf http faellt es nur zurueck, wenn https
+          # an der Verbindung scheitert — nie bei einer Fehlerantwort.
           NSAllowsArbitraryLoads: true
         # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
         #
@@ -381,7 +385,7 @@ targets:
         # waere ein Fehler, den niemand einem fehlenden Plist-Schluessel
         # zuordnet. Es kostet nichts, ihn zu setzen.
         NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
+          # Siehe App-Ziel: der zweite Schluessel wuerde den ersten abschalten.
           NSAllowsArbitraryLoads: true
         # **Ohne das weist App Store Connect den Upload ab** (Fehler 90502):
         # eine Erweiterung mit 64-Bit-Scheibe muss `arm64` selbst nennen.
@@ -507,25 +511,27 @@ targets:
         # gebaut, und ohne das setzt macOS die Fensterknöpfe hell.
         NSRequiresAquaSystemAppearance: false
         NSAppTransportSecurity:
-          # **Beide Schluessel, und beide mit Grund.**
+          # **Nur dieser eine Schluessel — und das ist keine Nachlaessigkeit.**
           #
-          # `NSAllowsLocalNetworking` deckt nur das Heimnetz — IP-Bereiche wie
-          # 192.168.*, `.local`, localhost. Das ist der haeufigste Fall und
-          # der sicherste Weg dorthin.
+          # Hier stand einmal `NSAllowsLocalNetworking` daneben, mit der Begruendung,
+          # es decke das Heimnetz auf dem sichereren Weg ab und der zweite Schluessel
+          # faenge den Rest. Das ist falsch herum: **ab iOS 10 wird
+          # `NSAllowsArbitraryLoads` ignoriert, sobald `NSAllowsLocalNetworking`,
+          # `NSAllowsArbitraryLoadsInWebContent` oder `...ForMedia` im Plist steht.**
+          # Die beiden ergaenzen sich nicht, der zweite schaltet den ersten ab.
           #
-          # `NSAllowsArbitraryLoads` braucht es fuer den zweithaeufigsten:
-          # einen Jellyfin, der per Portweiterleitung unter
-          # `http://irgendwas.duckdns.org` erreichbar ist. Apple empfiehlt
-          # dafuer `NSExceptionDomains` — die helfen hier aber nicht, weil die
-          # Adresse erst der Nutzer eingibt und zur Bauzeit niemand kennt. Bei
-          # einem Client fuer selbst betriebene Server gibt es keinen dritten
-          # Weg.
+          # Gekostet hat das einen Nutzer, der seinen Jellyfin ueber Tailscale
+          # erreichte: `http://100.110.192.87:8096`. Tailscale vergibt aus
+          # 100.64.0.0/10, dem CGNAT-Bereich — und der zaehlt fuer ATS **nicht** als
+          # lokales Netz. RFC1918, `.local` und `localhost` schon, CGNAT nicht.
+          # Dieselbe Sperre traf `http://irgendwas.duckdns.org`.
           #
-          # Swiftly draengt trotzdem zu https: eine Adresse ohne Schema
-          # bekommt `https://` vorgesetzt, ausser sie sieht nach Heimnetz aus
-          # (`AppModelURLNormalizer`). Auf http faellt es nur zurueck, wenn
-          # https an der Verbindung scheitert — nie bei einer Fehlerantwort.
-          NSAllowsLocalNetworking: true
+          # Ein Client fuer selbst betriebene Server kann die Adresse zur Bauzeit
+          # nicht kennen, also helfen `NSExceptionDomains` nicht. Swiftly draengt
+          # stattdessen im Code zu https: ohne Schema bekommt eine Adresse `https://`
+          # vorgesetzt, ausser sie sieht nach Heimnetz aus (`AppModelURLNormalizer`,
+          # IP-Literale eingeschlossen). Auf http faellt es nur zurueck, wenn https
+          # an der Verbindung scheitert — nie bei einer Fehlerantwort.
           NSAllowsArbitraryLoads: true
         # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
         #
