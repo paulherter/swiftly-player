@@ -285,7 +285,7 @@ struct Heldenkopf: View {
         .frame(height: Stil.heldHoehe, alignment: .topLeading)
         .task(id: titel.id) {
             merkliste = titel.userData?.isFavorite ?? false
-            gesehen = titel.userData?.played ?? false
+            gesehen = titel.istGesehen
             if titel.type == "Series" {
                 spielbarerTitel = await model.standInSerie(titel)
             }
