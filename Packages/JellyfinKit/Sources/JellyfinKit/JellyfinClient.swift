@@ -59,7 +59,7 @@ public actor JellyfinClient {
 
     private let decoder: JSONDecoder = {
         let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
+        d.dateDecodingStrategy = .custom { try Zeitstempel.lesen(aus: $0) }
         return d
     }()
 
@@ -569,6 +569,45 @@ public actor JellyfinClient {
             },
             serverBase: baseURL
         )
+    }
+
+    // MARK: - Übernehmen
+
+    /// Die Sitzungen, die dieser Nutzer bedienen darf.
+    ///
+    /// `controllableByUserId` ist wichtig: ohne den Filter kommen auf einem
+    /// Familienserver auch die Sitzungen der anderen zurueck, und dann steht
+    /// im Abzeichen, was jemand anders gerade schaut. `activeWithinSeconds`
+    /// haelt die Antwort klein — Jellyfin fuehrt alte Sitzungen lange mit.
+    ///
+    /// **Ein Fehlschlag ist kein Fehler**, wie bei den Abschnitten: dann gibt
+    /// es kein Angebot. Ein Abzeichen ist Zubehoer, keine Zusage.
+    public func fremdsitzungen() async -> [Fremdsitzung] {
+        do {
+            let s = try requireSession()
+            let req = try request("Sessions", query: [
+                .init(name: "controllableByUserId", value: s.userID),
+                .init(name: "activeWithinSeconds", value: "120"),
+            ])
+            return try await send(req, as: [Fremdsitzung].self)
+        } catch {
+            return []
+        }
+    }
+
+    /// Einen Wiedergabebefehl an eine fremde Sitzung schicken.
+    ///
+    /// Der Weg ist derselbe, den Jellyfins eigene Oberflaeche nimmt. Er
+    /// braucht nichts von uns ausser der Sitzungskennung — die Gegenstelle
+    /// hoert ohnehin schon auf ihrem Socket zu, siehe ``Fernsteuerung``.
+    public func fremdbefehl(_ befehl: Fremdbefehl, an sitzung: String) async throws {
+        let req = try request("Sessions/\(sitzung)/Playing/\(befehl.rawValue)",
+                              method: "POST")
+        let (_, antwort) = try await urlSession.data(for: req)
+        guard let http = antwort as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            throw JellyfinError.transport(uebersetzt("Das andere Gerät hat nicht reagiert."))
+        }
     }
 
     /// Die markierten Abschnitte einer Folge — Vorspann, Rueckblick, Abspann.

@@ -79,6 +79,19 @@ struct HauptView: View {
 
     private var anDerWurzel: Bool { pfade[bereich.rawValue].isEmpty && abspielen == nil }
 
+    /// Das andere Gerät anhalten und hier an derselben Stelle weitermachen.
+    ///
+    /// Die Reihenfolge ist die ganze Sache: erst dort anhalten, dann hier den
+    /// Plan holen, dann starten. Geht das Anhalten schief, passiert hier
+    /// nichts — sonst liefen zwei Tonspuren im Raum.
+    private func hierWeiterschauen() {
+        Task {
+            guard let (titel, ab) = await uebernahme.uebernehmen(model) else { return }
+            guard let plan = await model.plan(for: titel.id) else { return }
+            abspielen = Abspielwunsch(item: titel, plan: plan, startAt: ab)
+        }
+    }
+
     /// **Ob die Kopfleiste steht — als eigener Zustand, nicht abgeleitet.**
     ///
     /// Abgeleitet koennte sie nicht ausblenden: der Pfad wird ohne Animation
@@ -89,6 +102,8 @@ struct HauptView: View {
     /// einer **neuen** Transaktion — und die darf animieren.
     @State private var leisteDa = true
     @State private var tafelOffen = false
+    /// Was auf einem anderen Gerät läuft.
+    @State private var uebernahme = Uebernahmemodell()
 
     // Die Leiste scrollt bewusst **nicht** mit weg.
     //
@@ -121,6 +136,13 @@ struct HauptView: View {
         .environment(\.tafelOffen, $tafelOffen)
         .animation(.easeInOut(duration: 0.2), value: abspielen?.id)
         .task { await model.fernsteuerungStarten() }
+        // **Nur solange nichts läuft.** Im Player wäre die Abfrage sinnlos —
+        // die Leiste ist weg, und der Server hätte alle zehn Sekunden eine
+        // Anfrage mehr zu beantworten, während es aufs Bild ankommt.
+        .task(id: abspielen == nil) {
+            if abspielen == nil { uebernahme.starten(model) } else { uebernahme.beenden() }
+        }
+        .onDisappear { uebernahme.beenden() }
         #if DEBUG
         .task { await debugSprung() }
         #endif
@@ -199,9 +221,12 @@ struct HauptView: View {
             }
 
             if leisteDa || anDerWurzel {
-                Kopfleiste(bereich: $bereich, model: model) {
-                    pfade[bereich.rawValue].append(ProfilRoute())
-                }
+                Kopfleiste(bereich: $bereich, model: model,
+                           aufsProfil: {
+                               pfade[bereich.rawValue].append(ProfilRoute())
+                           },
+                           uebernahme: uebernahme.angebot,
+                           uebernehmen: { hierWeiterschauen() })
                 // Ohne eigenen Abschnitt springt der Fokus aus dem Inhalt
                 // nicht sauber in die Leiste, sondern sucht sich den
                 // waagerecht nächsten Knopf.

@@ -3896,6 +3896,23 @@
           }
         }
       }
+    },
+    "Hier weiterschauen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hier weiterschauen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue here"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

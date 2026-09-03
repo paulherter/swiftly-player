@@ -222,6 +222,8 @@ targets:
       # seit es auch einen AppKit-Arm gibt.
       - path: Sources/Shared/Basisansicht.swift
       - path: Sources/Shared/VLCPlayer.swift
+      # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
+      - path: Sources/Shared/Uebernahmemodell.swift
       - path: Sources/Shared/Localizable.xcstrings
       # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
       # deutsch kommt hier heraus.
@@ -453,6 +455,8 @@ targets:
       # darin ist mit `#if os(iOS)` ausgeklammert — auf dem Mac trägt es
       # ohnehin nicht, siehe die Messung in CLAUDE.md.
       - path: Sources/Shared/VLCPlayer.swift
+      # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
+      - path: Sources/Shared/Uebernahmemodell.swift
       - path: Sources/Shared/Localizable.xcstrings
       # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
       # deutsch kommt hier heraus.

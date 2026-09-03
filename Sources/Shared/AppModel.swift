@@ -103,7 +103,10 @@ final class AppModel {
     static let log = Logger(subsystem: "de.paulherter.swiftly", category: "start")
 
     /// Stabile Geräte-ID. Jellyfin listet damit die Sitzung im Dashboard.
-    private static var deviceID: String = {
+    /// **Nicht mehr `private`.** `Uebernahmemodell` muss die eigene Kennung
+    /// kennen, sonst zeigt das Gerät sich selbst als „läuft woanders" an —
+    /// und das fällt erst auf, wenn nur ein Gerät läuft.
+    static var deviceID: String = {
         let key = "de.paulherter.swiftly.deviceID"
         if let existing = UserDefaults.standard.string(forKey: key) { return existing }
         let fresh = UUID().uuidString

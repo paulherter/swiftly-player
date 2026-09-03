@@ -328,6 +328,9 @@ struct Kopfleiste: View {
     @Binding var bereich: Bereich
     let model: AppModel
     var aufsProfil: () -> Void
+    /// Was auf einem anderen Gerät läuft — `nil`, wenn nichts.
+    var uebernahme: Fremdsitzung?
+    var uebernehmen: () -> Void
 
     /// Welcher Reiter gerade den Fokus hat — `nil`, sobald er im Inhalt steht.
     @FocusState private var amReiter: Bereich?
@@ -358,6 +361,18 @@ struct Kopfleiste: View {
 
             Spacer(minLength: 0)
 
+            // **Links vom Profilbild, und nur wenn es etwas gibt.**
+            //
+            // Ein Abzeichen, das immer dasteht und meistens nichts sagt, ist
+            // Ausstattung. Dieses erscheint, wenn woanders etwas läuft, und
+            // verschwindet wieder — deshalb steht es auch nicht im Fokusweg,
+            // solange es nichts anzubieten hat.
+            if let uebernahme {
+                Uebernahmeabzeichen(sitzung: uebernahme, aktion: uebernehmen)
+                    .focusSection()
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
+
             Button(action: aufsProfil) {
                 Profilzeichen(name: model.session?.userName ?? "?",
                               bild: model.benutzerbildURL(groesse: 180),
@@ -378,6 +393,86 @@ struct Kopfleiste: View {
         // dann 80 Punkt weiter innen als der Inhalt darunter — genau die
         // Sorte Fehler, die man erst sieht, wenn sie einem auffaellt.
         .ignoresSafeArea(edges: [.top, .horizontal])
+        .animation(.easeInOut(duration: 0.25), value: uebernahme?.id)
+    }
+}
+
+/// „Läuft auf dem iPhone — hier weiterschauen."
+///
+/// **Bewusst mit Gerätenamen und Titel, nicht nur als Zeichen.** Ein Symbol
+/// allein wirft die Frage auf, was es tut; wer es dann drückt, hält
+/// versehentlich seinen Film auf dem anderen Gerät an. Der Text sagt, was
+/// passiert, bevor es passiert.
+struct Uebernahmeabzeichen: View {
+    let sitzung: Fremdsitzung
+    var aktion: () -> Void
+
+    private var geraetezeichen: String {
+        let name = (sitzung.geraetename ?? "").lowercased()
+        if name.contains("ipad") { return "ipad" }
+        if name.contains("mac") { return "laptopcomputer" }
+        if name.contains("tv")  { return "tv" }
+        return "iphone"
+    }
+
+    var body: some View {
+        Button(action: aktion) {
+            HStack(spacing: 14) {
+                Image(systemName: geraetezeichen)
+                    .font(.system(size: 24, weight: .medium))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Hier weiterschauen")
+                        .font(.system(size: 22, weight: .semibold))
+                    // Der Titel in der zweiten Zeile: er ist die Auskunft,
+                    // die man wirklich braucht, und er darf umbrechen —
+                    // Serverdaten, also `String` und nicht `LocalizedStringKey`.
+                    Text(titelzeile)
+                        .font(.system(size: 18))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 24)
+            .frame(height: 60)
+        }
+        .buttonStyle(AbzeichenStil())
+        .accessibilityLabel(Text("Hier weiterschauen"))
+        .accessibilityValue(Text(titelzeile))
+    }
+
+    /// „Game of Thrones · S1 E5" oder schlicht der Filmtitel.
+    private var titelzeile: String {
+        guard let t = sitzung.laeuft else { return sitzung.geraetename ?? "" }
+        var teile: [String] = []
+        if let serie = t.seriesName, !serie.isEmpty { teile.append(serie) }
+        else { teile.append(t.name) }
+        if let staffel = t.parentIndexNumber, let folge = t.indexNumber {
+            teile.append("S\(staffel) E\(folge)")
+        }
+        return teile.joined(separator: " · ")
+    }
+}
+
+/// Derselbe Ruhe-zu-Fokus-Sprung wie überall auf dem Fernseher: gewählt ist
+/// Akzent, fokussiert die helle Fläche.
+struct AbzeichenStil: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Inhalt(configuration: configuration)
+    }
+
+    private struct Inhalt: View {
+        let configuration: Configuration
+        @Environment(\.isFocused) private var fokus
+
+        var body: some View {
+            configuration.label
+                .foregroundStyle(fokus ? Stil.grund : .white)
+                .background(fokus ? AnyShapeStyle(.white)
+                                  : AnyShapeStyle(Stil.erhoeht), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(fokus ? 0 : 0.18)))
+                .scaleEffect(fokus ? 1.06 : 1)
+                .animation(.easeOut(duration: 0.16), value: fokus)
+        }
     }
 }
 
