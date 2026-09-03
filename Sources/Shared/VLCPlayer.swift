@@ -542,58 +542,31 @@ final class VLCPlayerView: Basisansicht {
 
         let seit = stehtSeit ?? Date()
         stehtSeit = seit
-        // Nach einem Streckenwechsel ist ein Stillstand erklaert — dann muss
-        // nicht lange gewartet werden. Sonst koennte es auch ein zaeher
-        // Server sein, da ist Geduld besser als ein Abriss.
-        let frisch = netzwechselSeit.map { Date().timeIntervalSince($0) < 90 } ?? false
         let dauer = Date().timeIntervalSince(seit)
-        guard dauer >= (frisch ? 2 : 6) else { return }
 
-        // **Wer puffert, lebt — und dem reisst man nichts ab.**
+        // **Die Entscheidung steht in `Stromwacht`, nicht mehr hier.**
         //
-        // Gemessen an einer HEVC-Folge, die minutenlang „lud": der Puffer
-        // stieg auf 52 %, sechs Sekunden spaeter riss die Notbremse den Strom
-        // ab, der Wiederaufbau kostete zehn Sekunden samt neuem Sprung, und
-        // danach fing dasselbe von vorn an. Die Bremse hat den Haenger nicht
-        // behoben, sie hat ihn erzeugt.
-        //
-        // Die Bremse ist fuer Abrisse da — Funkloch, Serveraussetzer. Dort
-        // waechst nichts mehr. Waechst der Puffer noch, ist der Strom zaeh,
-        // und Geduld ist die richtige Antwort. Erst wenn auch er stillsteht,
-        // ist es ein Abriss.
-        // **Ein laufender Sprung ist kein Abriss.**
-        //
-        // Bei einer Datei mit unlesbarem Index liest VLC sich nach jedem
-        // Sprung vom Dateianfang vorwaerts. Das dauert, und die Bremse hat
-        // genau dort zugeschlagen: abreissen, zehn Sekunden neu aufbauen,
-        // neu springen — und dasselbe von vorn. Sie hat den Haenger nicht
-        // behoben, sondern verewigt.
-        //
-        // Der Puffermelder allein reicht als Schutz nicht: waehrend dieser
-        // Phase liefert VLCKit gar keine Puffer-Rueckrufe, obwohl VLC intern
-        // von 0 auf 99 Prozent zaehlt. Gemessen im Geraeteprotokoll.
-        // **Auch nach einem gescheiterten Sprung nicht abreissen.**
-        //
-        // Gemessen: bei einer Datei mit unlesbarem Index kam der Sprung auf
-        // keinem der beiden Wege an; danach stand `offenesZiel` wieder auf
-        // nichts, die Bremse griff — und riss den Strom ab, waehrend VLC sich
-        // gerade vorwaerts las. Der Wiederaufbau kostete zehn Sekunden und
-        // begann von vorn. Sie hat den Haenger nicht behoben, sondern
-        // verewigt, und zwar so lange, bis jemand den Player verlaesst.
-        //
-        // Zwanzig Sekunden Ruhe nach jedem Sprungbefehl. Das war eine
-        // Minute, solange ein Sprung in einer Datei mit kaputtem Index
-        // beliebig lange dauern konnte; seit dem VLC-Patch sitzt er in
-        // Millisekunden. Kuerzer ist besser: solange die Frist laeuft, ist
-        // die Absicherung gegen echte Abrisse ausgesetzt.
-        if offenesZiel != nil || Date().timeIntervalSince(letzterSprungbefehl) < 20 {
+        // Fuenf Schwellen, alle gemessen, und eine falsche davon kostet den
+        // Zuschauer zehn Sekunden Film — die Bremse hat einmal genau den
+        // Haenger erzeugt, den sie beheben sollte. Im Paket ist sie ohne
+        // Abspieler pruefbar; die Begruendungen stehen dort je Konstante.
+        switch Stromwacht.rat(
+            stillstandSeit: dauer,
+            netzwechselVor: netzwechselSeit.map { Date().timeIntervalSince($0) },
+            sprungOffen: offenesZiel != nil,
+            letzterSprungVor: Date().timeIntervalSince(letzterSprungbefehl),
+            pufferWuchsVor: melder.pufferWuchsVor
+        ) {
+        case .nochNicht:
+            return
+        case .sprungLaeuft:
             Protokoll.schreib("[Netz] Bild steht seit \(Int(dauer)) s, Sprung noch unterwegs → abwarten")
             return
-        }
-
-        if melder.pufferWuchsVor < 4 {
+        case .pufferWaechst:
             Protokoll.schreib("[Netz] Bild steht seit \(Int(dauer)) s, Puffer waechst noch → abwarten")
             return
+        case .neuVerbinden:
+            break
         }
 
         neuVerbinden(grund: "Bild steht seit \(Int(dauer)) s")
