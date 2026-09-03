@@ -513,7 +513,7 @@ struct Folgenzeile: View {
         // Eine Folge startet an ihrer eigenen Position — nicht an der der
         // Serie. Wörtlich aus der iPhone-Fassung.
         .onTapGesture { steuerung.starte(folge) }
-        .task { gesehen = folge.userData?.played ?? false }
+        .task { gesehen = folge.istGesehen }
     }
 
     private var kopfzeile: String {
@@ -524,8 +524,6 @@ struct Folgenzeile: View {
     }
 
 
-    private var fortschritt: Double? {
-        guard let anteil = folge.userData?.playedPercentage else { return nil }
-        return anteil / 100
-    }
+    /// Aus `Item.gesehenerAnteil` — siehe die Begründung in `HomeView`.
+    private var fortschritt: Double? { folge.gesehenerAnteil }
 }

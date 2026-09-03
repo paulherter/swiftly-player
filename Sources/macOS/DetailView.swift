@@ -285,7 +285,7 @@ struct Heldenkopf: View {
         .frame(height: Stil.heldHoehe, alignment: .topLeading)
         .task(id: titel.id) {
             merkliste = titel.userData?.isFavorite ?? false
-            gesehen = titel.userData?.played ?? false
+            gesehen = titel.istGesehen
             if titel.type == "Series" {
                 spielbarerTitel = await model.standInSerie(titel)
             }
@@ -453,15 +453,15 @@ struct Heldenkopf: View {
         }
     }
 
-    private var angabenzeile: String {
-        var teile: [String] = []
-        if let jahr = titel.productionYear { teile.append(String(jahr)) }
-        if let sekunden = titel.runtimeSeconds, sekunden > 0 { teile.append(laufzeit(sekunden)) }
-        if let genres = titel.genres, !genres.isEmpty {
-            teile.append(genres.prefix(2).joined(separator: ", "))
-        }
-        return teile.joined(separator: " · ")
-    }
+    /// Jahr, Laufzeit und Genre — aus `Item.nebenzeile` in
+    /// `Sources/Shared/Titelangaben.swift`.
+    ///
+    /// **Hier stand dieselbe Rechnung noch einmal**, zeichengleich bis auf
+    /// das vorangestellte `titel.`. Darin steckt die Prüfung `sekunden > 0`,
+    /// und genau die hat auf dem Fernseher schon einmal gefehlt — dort stand
+    /// bei Serien „0 Min.", weil der Server für sie 0 liefert. Eine zweite
+    /// Abschrift heisst: beim nächsten Mal fehlt sie hier.
+    private var angabenzeile: String { titel.nebenzeile }
 
     private func starten(_ ab: Double) {
         steuerung.starte(spielbarerTitel ?? titel, ab: ab)
