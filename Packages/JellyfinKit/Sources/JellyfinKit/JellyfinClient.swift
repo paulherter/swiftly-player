@@ -69,7 +69,7 @@ public actor JellyfinClient {
         deviceName: String,
         clientVersion: String = "0.1.0",
         session: Session? = nil,
-        urlSession: URLSession = .shared
+        urlSession: URLSession = .ortsnetzfaehig
     ) {
         self.baseURL = baseURL
         self.deviceID = deviceID

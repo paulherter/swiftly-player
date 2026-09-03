@@ -238,11 +238,26 @@ final class AppModel {
     /// Der häufigste Fall bei selbst gehosteten Servern ist eine unver-
     /// schlüsselte Adresse außerhalb des Heimnetzes: die sperrt iOS von sich
     /// aus, und die Fehlermeldung des Systems sagt das nicht.
+    /// Den Systemfehler um den Hinweis ergänzen, der ihn deutbar macht.
+    ///
+    /// **Der Fall, um den es hier geht, ist eine Falschmeldung des Systems.**
+    /// Verweigert der Nutzer die Ortsnetz-Erlaubnis, meldet URLSession
+    /// „Die Internetverbindung scheint offline zu sein" — obwohl das Netz
+    /// einwandfrei läuft und nur diese eine Erlaubnis fehlt. Wer das liest,
+    /// prüft sein WLAN und findet nichts. Also sagen wir es.
+    ///
+    /// Der frühere Hinweis („richte https ein") ist weg: seit
+    /// `NSAllowsArbitraryLoads` sperrt iOS http nicht mehr, und ein Rat, der
+    /// nicht mehr stimmt, ist schlechter als keiner.
     private func anschlussfehler(_ fehler: any Error, adresse: URL) -> String {
         let text = lesbar(fehler)
-        guard adresse.scheme == "http",
-              !AppModelURLNormalizer.istImHeimnetz(adresse.host() ?? "") else { return text }
-        return text + " " + String(localized: "Server, die außerhalb des Heimnetzes nur über http erreichbar sind, sperrt iOS aus Sicherheitsgründen. Richte auf dem Server https ein.")
+        let imHeimnetz = AppModelURLNormalizer.istImHeimnetz(adresse.host() ?? "")
+        // Nur bei „offline", und nur im Heimnetz: draußen ist derselbe Fehler
+        // schlicht ein fehlendes Netz, und dann wäre der Hinweis irreführend.
+        if imHeimnetz, (fehler as? URLError)?.code == .notConnectedToInternet {
+            return String(localized: "Der Server war nicht erreichbar. Hat Swiftly die Erlaubnis, Geräte im heimischen Netz zu suchen? Sie steht in den Systemeinstellungen unter „Swiftly · Lokales Netzwerk\".")
+        }
+        return text
     }
 
     /// Was nach jeder erfolgreichen Anmeldung gleich abläuft — egal ob über

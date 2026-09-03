@@ -42,6 +42,7 @@ settings:
 
 fileGroups:
   - Sources/Shared/Localizable.xcstrings
+  - Sources/Shared/InfoPlist.xcstrings
 
 targets:
   Swiftly-iOS:
@@ -104,7 +105,44 @@ targets:
         UIBackgroundModes:
           - audio
         NSAppTransportSecurity:
+          # **Beide Schluessel, und beide mit Grund.**
+          #
+          # `NSAllowsLocalNetworking` deckt nur das Heimnetz — IP-Bereiche wie
+          # 192.168.*, `.local`, localhost. Das ist der haeufigste Fall und
+          # der sicherste Weg dorthin.
+          #
+          # `NSAllowsArbitraryLoads` braucht es fuer den zweithaeufigsten:
+          # einen Jellyfin, der per Portweiterleitung unter
+          # `http://irgendwas.duckdns.org` erreichbar ist. Apple empfiehlt
+          # dafuer `NSExceptionDomains` — die helfen hier aber nicht, weil die
+          # Adresse erst der Nutzer eingibt und zur Bauzeit niemand kennt. Bei
+          # einem Client fuer selbst betriebene Server gibt es keinen dritten
+          # Weg.
+          #
+          # Swiftly draengt trotzdem zu https: eine Adresse ohne Schema
+          # bekommt `https://` vorgesetzt, ausser sie sieht nach Heimnetz aus
+          # (`AppModelURLNormalizer`). Auf http faellt es nur zurueck, wenn
+          # https an der Verbindung scheitert — nie bei einer Fehlerantwort.
           NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        #
+        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
+        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
+        # Verweigert der Nutzer, meldet URLSession „The Internet connection
+        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
+        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
+        # erklaeren, warum die App das will.
+        #
+        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
+        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
+        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
+        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
+        # Sprachfehler an genau der Stelle wieder, an der er am meisten
+        # stoert.
+        NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
+          on your home network. Without this, the app cannot reach a server at
+          an address like 192.168.1.5.
         # Sonst fragt App Store Connect bei jedem Upload nach der
         # Exportbestimmung. Die App verschlüsselt nichts selbst, sie nutzt nur
         # HTTPS über die Systemschnittstellen — damit ist sie ausgenommen.
@@ -185,6 +223,9 @@ targets:
       - path: Sources/Shared/Basisansicht.swift
       - path: Sources/Shared/VLCPlayer.swift
       - path: Sources/Shared/Localizable.xcstrings
+      # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
+      # deutsch kommt hier heraus.
+      - path: Sources/Shared/InfoPlist.xcstrings
       - path: Sources/Shared/Regalvorschau.swift
       # Die Startanimation gehört auf beide Plattformen — die Marke soll
       # überall gleich auffahren. Nur das Quadrat ist auf dem Fernseher
@@ -252,7 +293,44 @@ targets:
         UIBackgroundModes:
           - audio
         NSAppTransportSecurity:
+          # **Beide Schluessel, und beide mit Grund.**
+          #
+          # `NSAllowsLocalNetworking` deckt nur das Heimnetz — IP-Bereiche wie
+          # 192.168.*, `.local`, localhost. Das ist der haeufigste Fall und
+          # der sicherste Weg dorthin.
+          #
+          # `NSAllowsArbitraryLoads` braucht es fuer den zweithaeufigsten:
+          # einen Jellyfin, der per Portweiterleitung unter
+          # `http://irgendwas.duckdns.org` erreichbar ist. Apple empfiehlt
+          # dafuer `NSExceptionDomains` — die helfen hier aber nicht, weil die
+          # Adresse erst der Nutzer eingibt und zur Bauzeit niemand kennt. Bei
+          # einem Client fuer selbst betriebene Server gibt es keinen dritten
+          # Weg.
+          #
+          # Swiftly draengt trotzdem zu https: eine Adresse ohne Schema
+          # bekommt `https://` vorgesetzt, ausser sie sieht nach Heimnetz aus
+          # (`AppModelURLNormalizer`). Auf http faellt es nur zurueck, wenn
+          # https an der Verbindung scheitert — nie bei einer Fehlerantwort.
           NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        #
+        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
+        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
+        # Verweigert der Nutzer, meldet URLSession „The Internet connection
+        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
+        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
+        # erklaeren, warum die App das will.
+        #
+        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
+        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
+        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
+        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
+        # Sprachfehler an genau der Stelle wieder, an der er am meisten
+        # stoert.
+        NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
+          on your home network. Without this, the app cannot reach a server at
+          an address like 192.168.1.5.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
@@ -297,6 +375,16 @@ targets:
         CFBundleDisplayName: Swiftly Top Shelf
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # **Auch hier, obwohl die Erweiterung selbst nichts holt.**
+        #
+        # Sie gibt dem System nur Bildadressen (`setImageURL`), geladen wird
+        # ausserhalb. Liegen die Bilder aber auf einem Server, der nur ueber
+        # http erreichbar ist, entscheidet ATS mit — und ein leeres Regal
+        # waere ein Fehler, den niemand einem fehlenden Plist-Schluessel
+        # zuordnet. Es kostet nichts, ihn zu setzen.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
         # **Ohne das weist App Store Connect den Upload ab** (Fehler 90502):
         # eine Erweiterung mit 64-Bit-Scheibe muss `arm64` selbst nennen.
         # Der App-Zielblock braucht es nicht — dort setzt Xcode den Schluessel
@@ -366,6 +454,9 @@ targets:
       # ohnehin nicht, siehe die Messung in CLAUDE.md.
       - path: Sources/Shared/VLCPlayer.swift
       - path: Sources/Shared/Localizable.xcstrings
+      # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
+      # deutsch kommt hier heraus.
+      - path: Sources/Shared/InfoPlist.xcstrings
       # Die Startanimation und ihre Vorlage. Der Mac lief bis hierher ohne
       # Vorhang — die Datei war in keinem seiner Pfade.
       - path: Sources/Shared/Startanimation.swift
@@ -416,7 +507,44 @@ targets:
         # gebaut, und ohne das setzt macOS die Fensterknöpfe hell.
         NSRequiresAquaSystemAppearance: false
         NSAppTransportSecurity:
+          # **Beide Schluessel, und beide mit Grund.**
+          #
+          # `NSAllowsLocalNetworking` deckt nur das Heimnetz — IP-Bereiche wie
+          # 192.168.*, `.local`, localhost. Das ist der haeufigste Fall und
+          # der sicherste Weg dorthin.
+          #
+          # `NSAllowsArbitraryLoads` braucht es fuer den zweithaeufigsten:
+          # einen Jellyfin, der per Portweiterleitung unter
+          # `http://irgendwas.duckdns.org` erreichbar ist. Apple empfiehlt
+          # dafuer `NSExceptionDomains` — die helfen hier aber nicht, weil die
+          # Adresse erst der Nutzer eingibt und zur Bauzeit niemand kennt. Bei
+          # einem Client fuer selbst betriebene Server gibt es keinen dritten
+          # Weg.
+          #
+          # Swiftly draengt trotzdem zu https: eine Adresse ohne Schema
+          # bekommt `https://` vorgesetzt, ausser sie sieht nach Heimnetz aus
+          # (`AppModelURLNormalizer`). Auf http faellt es nur zurueck, wenn
+          # https an der Verbindung scheitert — nie bei einer Fehlerantwort.
           NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        #
+        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
+        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
+        # Verweigert der Nutzer, meldet URLSession „The Internet connection
+        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
+        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
+        # erklaeren, warum die App das will.
+        #
+        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
+        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
+        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
+        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
+        # Sprachfehler an genau der Stelle wieder, an der er am meisten
+        # stoert.
+        NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
+          on your home network. Without this, the app cannot reach a server at
+          an address like 192.168.1.5.
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:

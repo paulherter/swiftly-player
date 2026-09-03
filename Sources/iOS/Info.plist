@@ -24,9 +24,13 @@
 	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Swiftly looks for your Jellyfin server on your home network. Without this, the app cannot reach a server at an address like 192.168.1.5.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

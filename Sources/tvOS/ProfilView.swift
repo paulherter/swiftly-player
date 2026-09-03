@@ -45,7 +45,20 @@ struct ProfilView: View {
                             .buttonStyle(BereichsStil(an: bereich == b))
                     }
                 }
-                .frame(width: 460)
+                // **Auf volle Hoehe, und zwar wegen des Fokusmotors.**
+                //
+                // Er bewegt den Fokus nur, wenn in der gedrueckten Richtung
+                // etwas *angrenzend* und fokussierbar ist. Die Spalte war nur
+                // so hoch wie ihr Inhalt; klappt rechts eine Wertzeile auf,
+                // die tiefer sitzt als diese Hoehe — „Vorspulen" ist die
+                // zweite —, liegt links von den Chips nichts mehr, und Links
+                // tat gar nichts. Der Fokus sass fest.
+                //
+                // Von Koney am 03.09.2026 gemeldet. Sichtbar aendert sich
+                // nichts: der Inhalt bleibt oben, nur der Abschnitt reicht
+                // jetzt bis unten.
+                .frame(width: 460, alignment: .topLeading)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
                 .focusSection()
 
                 ScrollView {
