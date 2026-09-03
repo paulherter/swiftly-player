@@ -251,7 +251,7 @@ struct PlayerSettingsSheet: View {
     /// Leerlauf, weil eine multitaskingfähige App die Drehung nicht erzwingen
     /// darf. In den Einstellungen ist die Zeile deshalb schon weg — hier
     /// stand sie noch, und zwar wirkungslos.
-    private var bildWahlMoeglich: Bool { !Stil.amPad }
+    private var bildWahlMoeglich: Bool { Orientierung.querformatSperreMoeglich }
 
     private var schlafzeit: some View {
         VStack(alignment: .leading, spacing: 10) {
