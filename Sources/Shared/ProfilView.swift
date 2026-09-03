@@ -209,7 +209,16 @@ struct QuickConnectView: View {
                 zurueck()
             } catch {
                 geschafft = false
-                meldung = error.localizedDescription
+                // **`lesbar` und nicht `localizedDescription`.**
+                //
+                // Bei einem `JellyfinError` liefert `localizedDescription`
+                // den Typnamen — „The operation couldn't be completed
+                // (JellyfinKit.JellyfinError error 2)". `AppModel.lesbar`
+                // gibt es genau dafuer, und `Anmeldemodell` sagt im
+                // Kommentar daneben, warum. Die Mac-Fassung machte es
+                // richtig, diese hier nicht; von der macOS-Sitzung im
+                // Tiefendurchgang gefunden.
+                meldung = model.lesbar(error)
             }
         }
     }
