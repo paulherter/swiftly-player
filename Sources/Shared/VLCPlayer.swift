@@ -697,6 +697,17 @@ final class VLCPlayerView: Basisansicht {
         }
         // Vor dem ersten Bild verpufft ein Sprung wirkungslos.
         guard player.isSeekable, player.time.intValue > 0 else { return }
+
+        // Hat `:start-time` getroffen, waere ein Nachsprung ein Sprung fuer
+        // nichts — und der Ladeschirm bliebe dafuer laenger stehen.
+        if positionSeconds >= ziel - 10 {
+            Protokoll.schreib("[VLC] start-time hat getroffen (\(Int(positionSeconds)) s) — kein Nachsprung")
+            startposition = nil
+            erstStelle = nil
+            tonZurueckhalten(false)
+            return
+        }
+
         startposition = nil
         Protokoll.schreib("[VLC] Startposition gesetzt: \(Int(ziel)) s (von \(Int(positionSeconds)) s)")
         // Ueber denselben Weg wie jeder andere Sprung — samt Nachmessung.
@@ -821,11 +832,13 @@ final class VLCPlayerView: Basisansicht {
             Task { @MainActor in self?.stillstandPruefen() }
         }
 
-        oeffnen(url: url, abSekunden: abSekunden, container: container)
+        oeffnen(url: url, abSekunden: abSekunden, container: container,
+                direktStarten: true)
     }
 
     /// Der eigentliche Aufbau — auch der Weg zurueck nach einem Netzwechsel.
-    private func oeffnen(url: URL, abSekunden: Double, container: String?) {
+    private func oeffnen(url: URL, abSekunden: Double, container: String?,
+                         direktStarten: Bool = false) {
         guard let medium = VLCMedia(url: url) else {
             Self.log.error("Medium ließ sich nicht öffnen: \(url.ohneGeheimnis, privacy: .public)")
             return
@@ -910,6 +923,28 @@ final class VLCPlayerView: Basisansicht {
         if matroskaVertraut {
             medium.addOption(":demux=mkv_trusted")
             Protokoll.schreib("[VLC] Matroska erkannt → Demuxer mkv_trusted (Cues gelten)")
+        }
+
+        // **Direkt an der Stelle anfangen — aber nur beim frischen Start.**
+        //
+        // Der alte Weg laesst den Strom bei null anlaufen und springt danach;
+        // gemessen am 04.09.2026 waren das 1,66 s Anfang, hoer- und sichtbar.
+        // Kann man, seit `mkv_trusted` auch billig.
+        //
+        // Ein erster Versuch ist am selben Abend zurueckgeflogen, weil die
+        // Fortsetzstelle das Dateiende sein konnte: dann meldet VLC beim
+        // Oeffnen sofort `end of stream` und die App springt in die naechste
+        // Folge. Das ist jetzt an der Wurzel behoben — ``Fortsetzstelle``
+        // liefert am Ende nichts mehr —, und zwar mit Tests.
+        //
+        // **Beim Wiederaufbau bleibt es beim alten Weg.** Dort ist die Stelle
+        // `letzteGutePosition`, und die darf bis eine Sekunde vor Schluss
+        // stehen — genau die Lage, in der `:start-time` wieder ins Dateiende
+        // liefe. Ein Netzabriss in der letzten Minute soll den Zuschauer nicht
+        // in die naechste Folge werfen.
+        if direktStarten, abSekunden > 1 {
+            medium.addOption(":start-time=\(Int(abSekunden))")
+            Protokoll.schreib("[VLC] start-time=\(Int(abSekunden)) s gesetzt")
         }
 
         startposition = abSekunden

@@ -46,12 +46,13 @@ extension Item {
 
     /// Sekunde, ab der fortgesetzt wird — oder nichts.
     ///
-    /// Unter einer Minute lohnt „Fortsetzen" nicht: wer eine halbe Minute
-    /// gesehen hat, will von vorn.
+    /// Die Regel steht in ``Fortsetzstelle`` im Paket, mit beiden Grenzen und
+    /// mit Tests. Hier stand sie einmal halb: unter einer Minute von vorn,
+    /// aber am Ende ohne Grenze — eine durchgelaufene Folge lieferte damit
+    /// ihr eigenes Ende als Fortsetzstelle.
     var fortsetzenAb: Double? {
-        guard let ticks = userData?.playbackPositionTicks, ticks > 0 else { return nil }
-        let sekunden = Double(ticks) / 10_000_000
-        return sekunden > 60 ? sekunden : nil
+        Fortsetzstelle.ab(position: userData?.playbackPositionTicks.map { Double($0) / 10_000_000 },
+                          laufzeit: runTimeTicks.map { Double($0) / 10_000_000 })
     }
 
     /// Die Zeile unter einem Suchtreffer: „Furious · S1 E4 · 52 Min."
