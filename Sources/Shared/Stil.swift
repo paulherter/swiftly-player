@@ -461,6 +461,16 @@ extension Bild where Platzhalter == Color {
 /// abgedunkelter Grund, flache Fläche, unsere Schrift, unser Akzent.
 struct Auswahlblatt<Eintrag: Identifiable>: View {
     @Binding var offen: Bool
+    /// Wie hoch die Einträge zusammen sind — gemessen, nicht angenommen.
+    @State private var inhaltshoehe: CGFloat = 0
+    /// Wie weit über dem unteren Rand das Blatt endet.
+    ///
+    /// **Die Seite reicht hinter die Leiste.** In den Bibliotheken liegt
+    /// unten die Bereichsleiste über dem Inhalt; ohne diesen Abstand
+    /// verschwindet „Abbrechen" darunter. In den Einstellungen gibt es keine
+    /// Leiste, dort ist er null — deshalb sagt es der Aufrufer und nicht
+    /// dieser Baustein, der seine Umgebung nicht kennt.
+    var unterrand: CGFloat = 0
     let titel: LocalizedStringKey
     let eintraege: [Eintrag]
     let beschriftung: (Eintrag) -> String
@@ -468,12 +478,20 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     let waehlen: (Eintrag) -> Void
 
     var body: some View {
+        // **Der Stapel bleibt, die Kinder wechseln.**
+        //
+        // Wird das ganze Blatt eingefügt, animiert SwiftUI nur dieses
+        // Einfügen — die Übergänge der Kinder kommen gar nicht zum Zug, und
+        // heraus kommt ein Aufblenden. Erst wenn Schleier und Karte einzeln
+        // erscheinen, kann der eine blenden und die andere fahren.
         ZStack(alignment: .bottom) {
+            if offen {
             // Abdunkeln; Tippen daneben schließt.
             Rectangle()
                 .fill(.black.opacity(0.55))
                 .ignoresSafeArea()
                 .onTapGesture { schliessen() }
+                .transition(.opacity)
 
             VStack(spacing: 0) {
                 Text(titel)
@@ -512,8 +530,17 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
                                 .padding(.leading, Stil.randAbstand)
                         }
                     }
+                    // Gemessen, nicht angenommen — siehe unten.
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                        action: { inhaltshoehe = $0 }
                 }
-                .frame(maxHeight: 340)
+                // **So hoch wie die Einträge, höchstens 340.**
+                //
+                // `.frame(maxHeight:)` allein reicht nicht: eine `ScrollView`
+                // ist senkrecht gierig und nimmt sich die 340 auch dann, wenn
+                // vier Zeilen nur 204 brauchen. Übrig blieb ein Hohlraum
+                // unter der letzten Zeile, der nichts tut.
+                .frame(height: min(inhaltshoehe, 340))
                 .scrollIndicators(.hidden)
 
                 Button { schliessen() } label: {
@@ -527,14 +554,23 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
             .background {
                 UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
                     .fill(Stil.flaeche)
-                    .ignoresSafeArea(edges: .bottom)
+                    .ignoresSafeArea(edges: unterrand > 0 ? [] : .bottom)
+            }
+            .padding(.bottom, unterrand)
+            // Von unten herein — derselbe Weg, den `.sheet` nimmt.
+            .transition(.move(edge: .bottom))
             }
         }
-        .transition(.opacity)
+        // Der Stapel muss den Schirm füllen; sonst bemisst sich die Auflage
+        // am Inhalt und die Karte sitzt oben.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(offen)
     }
 
     private func schliessen() {
-        withAnimation(.snappy(duration: 0.22)) { offen = false }
+        // Dieselbe Feder wie beim Öffnen — sonst kommt es anders zurück,
+        // als es gegangen ist.
+        withAnimation(Stil.blattbewegung) { offen = false }
     }
 }
 
