@@ -463,6 +463,8 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     @Binding var offen: Bool
     /// Wie hoch die Einträge zusammen sind — gemessen, nicht angenommen.
     @State private var inhaltshoehe: CGFloat = 0
+    /// Wie hoch die ganze Karte ist — bestimmt, wie weit sie hinausfährt.
+    @State private var kartenhoehe: CGFloat = 500
     /// Wie weit über dem unteren Rand das Blatt endet.
     ///
     /// **Die Seite reicht hinter die Leiste.** In den Bibliotheken liegt
@@ -485,13 +487,11 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
         // heraus kommt ein Aufblenden. Erst wenn Schleier und Karte einzeln
         // erscheinen, kann der eine blenden und die andere fahren.
         ZStack(alignment: .bottom) {
-            if offen {
             // Abdunkeln; Tippen daneben schließt.
             Rectangle()
-                .fill(.black.opacity(0.55))
+                .fill(.black.opacity(offen ? 0.55 : 0))
                 .ignoresSafeArea()
                 .onTapGesture { schliessen() }
-                .transition(.opacity)
 
             VStack(spacing: 0) {
                 Text(titel)
@@ -551,15 +551,38 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
                 }
                 .buttonStyle(.plain)
             }
+            .padding(.bottom, unterrand)
             .background {
+                // **Die Fläche reicht weiter nach unten, als die Karte je
+                // fährt.**
+                //
+                // Die Feder schießt beim Öffnen über — die Karte hebt kurz von
+                // der Leiste ab. Endet die Fläche an ihrer Unterkante, blitzt
+                // in dem Moment der Inhalt darunter durch. Der negative Rand
+                // zieht sie 300 Punkt tiefer; sichtbar wird davon nichts, weil
+                // dort der Bildrand ist.
+                //
+                // Den Bounce dafür wegzunehmen wäre der falsche Tausch
                 UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
                     .fill(Stil.flaeche)
-                    .ignoresSafeArea(edges: unterrand > 0 ? [] : .bottom)
+                    .padding(.bottom, -300)
+                    .ignoresSafeArea(edges: .bottom)
             }
-            .padding(.bottom, unterrand)
-            // Von unten herein — derselbe Weg, den `.sheet` nimmt.
-            .transition(.move(edge: .bottom))
-            }
+            // **Verschieben statt Ein- und Aushängen.**
+            //
+            // Ein Übergang bewegt einen Rahmen — was darüber hinaus gezeichnet
+            // wird, Hintergrund in der Sicherheitszone etwa, bleibt stehen und
+            // verschwindet erst, wenn die Ansicht abgeräumt wird. Genau das
+            // war zu sehen: unten blieb ein Stück und ging nach einer halben
+            // Sekunde ruckartig weg.
+            //
+            // Die Karte bleibt deshalb hängen und wird nur verschoben — um
+            // ihre **gemessene** Höhe plus reichlich Zugabe. Damit ist sie
+            // draußen, wenn sie draußen sein soll, und es gibt nichts
+            // abzuräumen und keinen Zeitgeber, der es täte.
+            .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                action: { kartenhoehe = $0 }
+            .offset(y: offen ? 0 : kartenhoehe + 400)
         }
         // Der Stapel muss den Schirm füllen; sonst bemisst sich die Auflage
         // am Inhalt und die Karte sitzt oben.

@@ -17,7 +17,13 @@ struct WiedergabeEinstellungenView: View {
     /// **Ohne das faehrt nichts hinaus.** Haengt der Inhalt an `offeneListe`,
     /// verschwindet er im selben Moment, in dem die Bewegung anfangen soll.
     /// SwiftUI hat dann nichts mehr zu bewegen und blendet.
-    @State private var gezeigteListe: Liste?
+    ///
+    /// **Von Anfang an gesetzt, nicht erst beim ersten Öffnen.** Sonst würde
+    /// die Karte beim ersten Mal im selben Zug eingehängt *und* geöffnet —
+    /// und was gerade erst entsteht, kann nicht von unten hereinfahren. Mit
+    /// einem Anfangswert hängt sie von Beginn an da, außerhalb des Bildes,
+    /// und es wechselt nur noch `offeneListe`.
+    @State private var gezeigteListe: Liste? = .ton
 
     private enum Liste: String, Identifiable {
         case bitrate, ton, untertitel, zurueck, vor
@@ -133,14 +139,15 @@ struct WiedergabeEinstellungenView: View {
         withAnimation(Stil.blattbewegung) { offeneListe = liste }
     }
 
-    /// Schließen: die Bewegung läuft, der Inhalt bleibt stehen — und wird
-    /// erst danach weggeräumt, sonst gäbe es nichts zu bewegen.
+    /// Schließen — und der Inhalt bleibt stehen, dauerhaft.
+    ///
+    /// **Kein Zeitgeber mehr.** Vorher wurde `gezeigteListe` nach 400 ms
+    /// geleert; solange blieb unten ein Stück der Karte sichtbar und
+    /// verschwand dann ruckartig. Die Karte wird jetzt nur verschoben, ist
+    /// also draußen, sobald die Bewegung durch ist — abzuräumen gibt es
+    /// nichts. Was bleibt, ist eine Liste im Speicher, und die kostet nichts.
     private func schliesseBlatt() {
         withAnimation(Stil.blattbewegung) { offeneListe = nil }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            if offeneListe == nil { gezeigteListe = nil }
-        }
     }
 
     @ViewBuilder
