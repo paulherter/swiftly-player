@@ -88,6 +88,7 @@ struct SucheView: View {
         // Wer auf „Suche" geht, will tippen — nicht erst ein Feld ansteuern.
         // Deshalb liegt der Fokus sofort dort, und tvOS öffnet damit von
         // selbst die Tastatur.
+        //
         // **Der Fokus muss nachgereicht werden, nicht nur zugewiesen.**
         //
         // Beim Bereichswechsel steht diese Seite schon — sie liegt seit dem
@@ -128,6 +129,7 @@ struct SucheView: View {
         // und sein Abstand zur Kachel (36) ab — bleiben genau die 128 der
         // Leistenunterkante. Weniger, und der Titel rutscht beim Anspringen
         // einer Reihe wieder darunter.
+        //
         // **Das Feld endet bei 264**, wie das oberste Element jeder anderen
         // Seite — siehe `Stil.erstesEnde`. Zurueckgerechnet aus seiner
         // eigenen Hoehe: 264 − 76 = 188, davon der obere sichere Rand ab.

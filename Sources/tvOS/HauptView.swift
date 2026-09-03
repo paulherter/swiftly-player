@@ -136,8 +136,9 @@ struct HauptView: View {
             // darin fokussierbar, jeder Tastendruck unbehandelt, und Menue
             // fiel durch, was tvOS als Ausstieg las. Er verschwand also beim
             // ersten Druck, und keine Reparatur im Player konnte je greifen,
-            // weil keine von ihnen zum Zuge kam. **Auch beim Auswahlblatt
-            // sperren, nicht nur beim Player.**
+            // weil keine von ihnen zum Zuge kam.
+            //
+            // **Auch beim Auswahlblatt sperren, nicht nur beim Player.**
             //
             // Sonst bleibt alles dahinter fokussierbar: Sichtbar verdeckt
             // heisst auf dem Fernseher nicht unerreichbar — der Fokusmotor
@@ -220,8 +221,9 @@ struct HauptView: View {
             .animation(Stil.seitenwechsel, value: bereich)
 
             // Zwischen Inhalt und Kopfleiste: der Verlauf soll den Inhalt
-            // abdunkeln, aber nicht die Leiste selbst. **Auf der Startseite
-            // braucht es ihn nicht mehr.**
+            // abdunkeln, aber nicht die Leiste selbst.
+            //
+            // **Auf der Startseite braucht es ihn nicht mehr.**
             //
             // Er stammt aus der Zeit, als die Reihen bis unter die Leiste
             // liefen. Heute beginnen sie erst bei 560 und werden beschnitten —
@@ -230,8 +232,9 @@ struct HauptView: View {
             // hellen Querbild als Kante auf.
             //
             // Auf den anderen Seiten scrollen die Kacheln weiter unter die
-            // Leiste, dort bleibt er. **Nicht auf der Startseite, und dort
-            // inzwischen gar nicht.**
+            // Leiste, dort bleibt er.
+            //
+            // **Nicht auf der Startseite, und dort inzwischen gar nicht.**
             //
             // Von hier aus laege er zwangslaeufig obenauf und faerbte den
             // Titel grau — deshalb war er hier schon immer ausgenommen. Die
@@ -291,6 +294,7 @@ struct HauptView: View {
         // an, die Richtungstasten kamen nie im Player an, und die
         // Menue-Taste fiel bis ans System durch — tvOS verstand sie als
         // „App verlassen". Dieselbe Regel wie bei den unsichtbaren Stapeln.
+        //
         // **Menue fuehrt eine Stufe zurueck, nicht aus der App.**
         //
         // Ohne Behandlung faellt der Befehl am Wurzelpunkt eines Bereichs bis

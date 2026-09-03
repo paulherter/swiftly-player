@@ -216,8 +216,9 @@ struct SerienView: View {
         .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
                         ?? model.backdropURL(for: aktuell))
         // Die Staffelwahl liegt auf der **Seite**, nicht am Pillenknopf —
-        // siehe `Handlungstafel.unterDemReihenkopf`. **Solange eine Tafel
-        // offen ist, ist der Rest kein Fokusziel.**
+        // siehe `Handlungstafel.unterDemReihenkopf`.
+        //
+        // **Solange eine Tafel offen ist, ist der Rest kein Fokusziel.**
         //
         // `focusSection` haelt den Fokus nicht fest, es ordnet ihn nur. Ein
         // Druck nach links oder rechts sprang deshalb aus der offenen Tafel

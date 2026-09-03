@@ -367,6 +367,7 @@ struct Kopfleiste: View {
             // Ausstattung. Dieses erscheint, wenn woanders etwas läuft, und
             // verschwindet wieder — deshalb steht es auch nicht im Fokusweg,
             // solange es nichts anzubieten hat.
+            //
             // **Eigenes, engeres Raster fuer die beiden rechts.**
             //
             // Die Leiste steht auf 56 Punkt Abstand — richtig zwischen
