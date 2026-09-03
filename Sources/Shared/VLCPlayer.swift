@@ -677,19 +677,6 @@ final class VLCPlayerView: Basisansicht {
         }
         // Vor dem ersten Bild verpufft ein Sprung wirkungslos.
         guard player.isSeekable, player.time.intValue > 0 else { return }
-
-        // **Hat `:start-time` schon getroffen, ist hier nichts mehr zu tun.**
-        // Ohne diese Pruefung spraenge der alte Weg ein zweites Mal an eine
-        // Stelle, an der der Strom laengst steht — ein Sprung fuer nichts,
-        // und der Ladeschirm bliebe dafuer laenger stehen als noetig.
-        if positionSeconds >= ziel - 10 {
-            Protokoll.schreib("[VLC] start-time hat getroffen (\(Int(positionSeconds)) s von \(Int(ziel)) s) — kein Nachsprung")
-            startposition = nil
-            erstStelle = nil
-            tonZurueckhalten(false)
-            return
-        }
-
         startposition = nil
         Protokoll.schreib("[VLC] Startposition gesetzt: \(Int(ziel)) s (von \(Int(positionSeconds)) s)")
         // Ueber denselben Weg wie jeder andere Sprung — samt Nachmessung.
@@ -903,28 +890,6 @@ final class VLCPlayerView: Basisansicht {
         if matroskaVertraut {
             medium.addOption(":demux=mkv_trusted")
             Protokoll.schreib("[VLC] Matroska erkannt → Demuxer mkv_trusted (Cues gelten)")
-        }
-
-        // **Direkt an der richtigen Stelle anfangen, nicht hinspringen.**
-        //
-        // Hier stand jahrelang das Gegenteil: `:start-time` sei zu teuer, weil
-        // VLC dann schon beim Oeffnen springen muesse. Das war richtig,
-        // solange ein Sprung in einer Matroska ohne brauchbaren Index zwanzig
-        // Sekunden kostete. Seit `mkv_trusted` sind es rund fuenfzig
-        // Millisekunden — die Begruendung ist mit dem Patch verfallen, der
-        // Satz blieb stehen.
-        //
-        // Was der alte Weg kostete, steht gemessen im Protokoll vom
-        // 04.09.2026: VLC lief 1,66 s ab null, ehe der Sprung ueberhaupt
-        // gesetzt wurde, denn der braucht ein laufendes Bild (`player.time >
-        // 0`). Deshalb die zwei Abdeckungen — Ladeschirm und Stummschaltung,
-        // und deshalb " Beide Abdeckungen behandeln ein Symptom, das es nicht
-        // geben muss.
-        //
-        // `startposition` bleibt trotzdem gesetzt: greift `:start-time` nicht
-        // — fremder Container, kaputter Index —, springt der alte Weg nach.
-        if abSekunden > 1 {
-            medium.addOption(":start-time=\(Int(abSekunden))")
         }
 
         startposition = abSekunden
