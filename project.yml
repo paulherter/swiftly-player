@@ -327,9 +327,16 @@ targets:
       # ohnehin nicht, siehe die Messung in CLAUDE.md.
       - path: Sources/Shared/VLCPlayer.swift
       - path: Sources/Shared/Localizable.xcstrings
+      # Die Startanimation und ihre Vorlage. Der Mac lief bis hierher ohne
+      # Vorhang — die Datei war in keinem seiner Pfade.
+      - path: Sources/Shared/Startanimation.swift
+      - path: Sources/Shared/Mittel
       - path: Sources/macOS
     dependencies:
       - package: JellyfinKit
+      # Fuer die Startanimation — dieselbe Vorlage wie iPhone und Fernseher.
+      # Fehlte hier, deshalb lief der Mac ohne Vorhang an.
+      - package: Lottie
       # Selbst gebaute Fassung — siehe Werkzeuge/vlckit-patches/README.md.
       - framework: Vendor/VLCKit-gepatcht.xcframework
         embed: true

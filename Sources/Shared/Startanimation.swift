@@ -1,5 +1,10 @@
 import Lottie
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#else
+import AppKit
+#endif
 
 /// Die Startanimation: Dreieck fährt auf, dann fahren die Buchstaben aus.
 ///
@@ -7,6 +12,20 @@ import SwiftUI
 /// jeder Keyframe trägt eigene Bezier-Anläufe, und die von Hand nachzurechnen
 /// führt zu einer Bewegung, die *fast* stimmt. Das fällt mehr auf als ein
 /// zusätzliches Paket.
+/// **Zwei Arme, ein Ablauf.**
+///
+/// Der Mac hatte lange keinen — in `macOS/RootView` stand als Notiz, die
+/// Animation brauche „eine Zeichenfläche, die heute nur als
+/// `UIViewRepresentable` vorliegt". Das war richtig und ist jetzt behoben:
+/// unten steht derselbe Ablauf noch einmal für AppKit.
+///
+/// **Warum nicht ein gemeinsamer Rumpf mit zwei Hüllen:** `makeUIView` und
+/// `makeNSView` sind verschiedene Anforderungen zweier verschiedener
+/// Protokolle, und die Ansichtsklassen darunter teilen keinen Vorfahren.
+/// Ein Zwischenstück, das beide bedient, wäre länger als die zweite Fassung
+/// und würde bei jeder Änderung an einer Seite mitgedacht werden müssen.
+/// Die Bewegung selbst steckt ohnehin in der Vorlage, nicht im Code.
+#if canImport(UIKit)
 struct Startanimation: UIViewRepresentable {
     var nachlauf: TimeInterval = 0.5
     /// Spätestens dann geht es weiter, egal was die Animation macht.
@@ -95,6 +114,70 @@ struct Startanimation: UIViewRepresentable {
     func updateUIView(_ ansicht: Huelle, context: Context) {}
 }
 
+#else
+
+/// Die AppKit-Fassung. Gleicher Ablauf, gleiche Fristen, gleiche Vorsicht:
+/// ohne Vorlage gar nicht erst spielen, und eine Frist daneben, damit der
+/// Vorhang nie liegenbleibt.
+struct Startanimation: NSViewRepresentable {
+    var nachlauf: TimeInterval = 0.5
+    var spaetestens: TimeInterval = 3.5
+    let fertig: () -> Void
+
+    /// Wie auf iOS: ohne eigene Hülle setzt `LottieAnimationView` ihr
+    /// Wunschmaß von 1024 × 1024 gegen den Rahmen von SwiftUI durch.
+    final class Huelle: NSView {
+        override var intrinsicContentSize: NSSize {
+            NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+        }
+    }
+
+    final class Einmal {
+        private var schonGerufen = false
+        func ruf(_ tun: () -> Void) {
+            guard !schonGerufen else { return }
+            schonGerufen = true
+            tun()
+        }
+    }
+
+    func makeCoordinator() -> Einmal { Einmal() }
+
+    func makeNSView(context: Context) -> Huelle {
+        let huelle = Huelle()
+        let ansicht = LottieAnimationView(name: "startanimation")
+        ansicht.contentMode = .scaleAspectFit
+        ansicht.loopMode = .playOnce
+        ansicht.backgroundBehavior = .pauseAndRestore
+        ansicht.translatesAutoresizingMaskIntoConstraints = false
+        huelle.addSubview(ansicht)
+        NSLayoutConstraint.activate([
+            ansicht.topAnchor.constraint(equalTo: huelle.topAnchor),
+            ansicht.bottomAnchor.constraint(equalTo: huelle.bottomAnchor),
+            ansicht.leadingAnchor.constraint(equalTo: huelle.leadingAnchor),
+            ansicht.trailingAnchor.constraint(equalTo: huelle.trailingAnchor),
+        ])
+
+        let einmal = context.coordinator
+        let weiter = { DispatchQueue.main.asyncAfter(deadline: .now() + nachlauf) {
+            einmal.ruf(fertig)
+        } }
+
+        guard ansicht.animation != nil else {
+            einmal.ruf(fertig)
+            return huelle
+        }
+        ansicht.play { _ in weiter() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + spaetestens) {
+            einmal.ruf(fertig)
+        }
+        return huelle
+    }
+
+    func updateNSView(_ ansicht: Huelle, context: Context) {}
+}
+#endif
+
 /// Der Vorhang beim Start: fester Grundton, darauf die Animation. Ist sie
 /// durch, blendet die App darunter auf.
 struct Startvorhang: View {
@@ -103,6 +186,10 @@ struct Startvorhang: View {
     private var kante: CGFloat {
         #if os(tvOS)
         900
+        #elseif os(macOS)
+        // Das Fenster ist kleiner als ein Fernseher und größer als ein
+        // Telefon; 520 sitzt zwischen beiden.
+        520
         #else
         440
         #endif
