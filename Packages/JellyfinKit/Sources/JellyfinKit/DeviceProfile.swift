@@ -242,6 +242,29 @@ public extension DeviceProfile {
     /// HEVC, Ton AAC, AC-3, E-AC-3, ALAC und FLAC. Dieselbe Liste prüft
     /// ``AirPlayEignung`` **vor** dem Knopf — damit niemand AirPlay drückt und
     /// Bild ohne Ton bekommt.
+    /// - Parameter maxBitrate: Praktisch unbegrenzt, wie beim VLC-Profil —
+    ///   **und das war eine Messung, keine Uebernahme.**
+    ///
+    ///   Hier stand kurz 120 Mbit/s, mit einer plausiblen Begruendung: Jellyfin
+    ///   gibt diese Zahl als *Zielrate* an ffmpeg weiter, und eine Zielrate von
+    ///   1 Gbit/s kann niemand liefern. Am Server nachgemessen, mit erzwungenem
+    ///   Neuencode:
+    ///
+    ///   ```
+    ///   Zielrate 1 Gbit/s    Stillstand, -12889 „No response for map in 3s"
+    ///   Zielrate 120 Mbit/s  Stillstand, dieselbe Meldung
+    ///   Bild wird kopiert    spielt sofort
+    ///   ```
+    ///
+    ///   Die Zielrate war also nie das Problem. **Ein echter Neuencode geht
+    ///   fuer AirPlay grundsaetzlich nicht**, und eine Grenze richtet nur
+    ///   Schaden an: eine Datei oberhalb davon wuerde dadurch erst zum
+    ///   Neuencode gemacht, obwohl sie sonst schlicht kopiert worden waere.
+    ///
+    ///   Verhindert wird der Neuencode deshalb anders — durch ``AirPlayEignung``
+    ///   vor dem Umschalten und durch `SubtitleStreamIndex: -1` beim Fragen,
+    ///   damit kein Untertitel eingebrannt wird. Passiert er trotzdem, faellt
+    ///   der Abspieler nach zwoelf Sekunden aufs Telefon zurueck.
     static func airplay(maxBitrate: Int = 1_000_000_000) -> DeviceProfile {
         // Passt die Datei schon, macht der Server gar nichts. Der Fall ist
         // seltener als er klingt, aber er kostet nichts, ihn zu erlauben.

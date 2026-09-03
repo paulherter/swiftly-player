@@ -746,8 +746,15 @@ struct PlayerScreen: View {
                         Protokoll.schreib("[AirPlay] abgelehnt — "
                             + eignung.hindernisse.map(\.codec).joined(separator: ", "))
                     case .geht(let neu):
+                        // **Die Gruende mit ins Protokoll.** Ohne sie stand
+                        // dort nur „Transcode", und das sagt nicht, woran
+                        // der Server sich stoert — genau die Angabe, die beim
+                        // ersten Schwarzbild gefehlt hat.
+                        let gruende = neu.reasons.isEmpty
+                            ? "keine" : neu.reasons.map(\.codec).joined(separator: ",")
                         Protokoll.schreib("[AirPlay] uebernimmt ab \(Int(position)) s"
-                            + " — \(neu.method.wireName)")
+                            + " — \(neu.method.wireName), Gruende: \(gruende)"
+                            + " — \(neu.url.absoluteString.prefix(160))")
                         airplayAb = position
                         surface?.pause()
                         // Der Sperrbildschirm haengt an VLCs Griffen; die

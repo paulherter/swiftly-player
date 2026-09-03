@@ -321,7 +321,8 @@ public actor JellyfinClient {
         itemID: String,
         profile: DeviceProfile = .vlc(),
         maxStreamingBitrate: Int? = nil,
-        audioStreamIndex: Int? = nil
+        audioStreamIndex: Int? = nil,
+        subtitleStreamIndex: Int? = nil
     ) async throws -> PlaybackInfoResponse {
         let s = try requireSession()
         struct Body: Encodable {
@@ -333,6 +334,7 @@ public actor JellyfinClient {
             let EnableDirectStream: Bool
             let EnableTranscoding: Bool
             let AudioStreamIndex: Int?
+            let SubtitleStreamIndex: Int?
         }
         let body = Body(
             UserId: s.userID,
@@ -342,7 +344,8 @@ public actor JellyfinClient {
             EnableDirectPlay: true,
             EnableDirectStream: true,
             EnableTranscoding: true,
-            AudioStreamIndex: audioStreamIndex
+            AudioStreamIndex: audioStreamIndex,
+            SubtitleStreamIndex: subtitleStreamIndex
         )
         let req = try request("Items/\(itemID)/PlaybackInfo", method: "POST", body: body)
         return try await send(req, as: PlaybackInfoResponse.self)
@@ -551,10 +554,12 @@ public actor JellyfinClient {
     public func playbackPlan(
         for itemID: String,
         profile: DeviceProfile = .vlc(),
-        audioStreamIndex: Int? = nil
+        audioStreamIndex: Int? = nil,
+        subtitleStreamIndex: Int? = nil
     ) async throws -> PlaybackPlan? {
         let info = try await playbackInfo(itemID: itemID, profile: profile,
-                                          audioStreamIndex: audioStreamIndex)
+                                          audioStreamIndex: audioStreamIndex,
+                                          subtitleStreamIndex: subtitleStreamIndex)
         return try PlaybackPlan.make(
             from: info,
             itemID: itemID,
@@ -595,8 +600,21 @@ public actor JellyfinClient {
     public func airplayPlan(for itemID: String, quelle: MediaSource) async throws -> AirPlayAuskunft {
         let eignung = AirPlayEignung.pruefen(quelle: quelle)
         guard eignung.geeignet else { return .gehtNicht(eignung) }
+        // **`SubtitleStreamIndex: -1` ist keine Kleinigkeit.**
+        //
+        // Waehlt Jellyfin von sich aus eine Untertitelspur, die AVPlayer nicht
+        // zeichnen kann — PGS und VOBSUB stehen darum absichtlich nicht im
+        // AirPlay-Profil, brennt es sie ins Bild. Und Einbrennen heisst: das
+        // Video wird neu gerechnet. Am Server nachgemessen, was dann passiert:
+        // die Segmente kommen nicht mehr rechtzeitig, AVPlayer bleibt auf
+        // `unknown` stehen und meldet `-12889 · No response for map in 3s` —
+        // kein Fehler, kein Bild, Schwarzbild ohne Diagnose. Genau das hat
+        //
+        // Ausdruecklich `-1` und nicht `nil`: `nil` heisst „entscheide du",
+        // und genau das soll der Server hier nicht.
         guard let plan = try await playbackPlan(for: itemID, profile: .airplay(),
-                                                audioStreamIndex: eignung.tonspur) else {
+                                                audioStreamIndex: eignung.tonspur,
+                                                subtitleStreamIndex: -1) else {
             throw JellyfinError.noPlayableSource
         }
         return .geht(plan)

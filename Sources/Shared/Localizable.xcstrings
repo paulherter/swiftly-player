@@ -3862,6 +3862,40 @@
           }
         }
       }
+    },
+    "keine Antwort vom Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "keine Antwort vom Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no response from the server"
+          }
+        }
+      }
+    },
+    "Der Fernseher nimmt diesen Film nicht an (%@). Läuft weiter auf dem iPhone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Fernseher nimmt diesen Film nicht an (%@). Läuft weiter auf dem iPhone."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The TV will not take this film (%@). Playing on the iPhone instead."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

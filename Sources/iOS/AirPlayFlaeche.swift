@@ -94,6 +94,7 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
         private var schiefgegangen: NSObjectProtocol?
         private var protokolleintrag: NSObjectProtocol?
         private var zustand: NSKeyValueObservation?
+        private var wache: Task<Void, Never>?
         private weak var spieler: AVPlayer?
 
         init(stand: @escaping (Double, Double) -> Void, beendet: @escaping () -> Void,
@@ -128,6 +129,23 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
 
             guard let stueck = spieler.currentItem else { return }
 
+            // **Wachhund gegen den lautlosen Stillstand.**
+            //
+            // Der schlimmste Fall meldet gar nichts: `status` bleibt auf
+            // `unknown`, `error` ist leer, und auf dem Fernseher steht ein
+            // Schwarzbild. Am Server nachgemessen, als er wirklich rechnen
+            // musste — die Segmente kamen nicht, und AVPlayer wartet darauf
+            // ohne Frist. Ohne diese Uhr faellt niemand zurueck.
+            //
+            // Zwoelf Sekunden: ein Umpacken ist in zwei bis drei da, und
+            // laenger als zwoelf sieht auch bei Erfolg nach kaputt aus.
+            wache = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(12))
+                guard !Task.isCancelled, let self else { return }
+                guard stueck.status != .readyToPlay else { return }
+                self.melden("Kein Bild nach 12 s", stueck.error)
+            }
+
             // **Drei Quellen, weil jede etwas anderes weiss.**
             //
             // `status` sagt, dass es scheiterte. `error` sagt grob warum.
@@ -135,6 +153,7 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
             // — und das ist die Angabe, aus der sich etwas ableiten laesst.
             zustand = stueck.observe(\.status, options: [.new]) { [weak self] stueck, _ in
                 MainActor.assumeIsolated {
+                    if stueck.status == .readyToPlay { self?.wache?.cancel(); return }
                     guard stueck.status == .failed else { return }
                     self?.melden("Status .failed", stueck.error)
                 }
@@ -165,8 +184,18 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
             }
         }
 
+        /// Einmal melden, dann nichts mehr.
+        ///
+        /// `-12889` kommt im Sekundentakt nach; wer jeden Eintrag weitergibt,
+        /// schaltet den Abspieler mehrfach um und ueberschreibt den Hinweis
+        /// mit sich selbst.
+        private var gemeldet = false
+
         private func melden(_ woher: String, _ grund: (any Error)?) {
-            let text = grund?.localizedDescription ?? "ohne Angabe"
+            guard !gemeldet else { return }
+            gemeldet = true
+            wache?.cancel()
+            let text = grund?.localizedDescription ?? String(localized: "keine Antwort vom Server")
             Protokoll.schreib("[AirPlay] \(woher): \(text)")
             fehler(text)
         }
@@ -181,6 +210,7 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
             }
             ende = nil; schiefgegangen = nil; protokolleintrag = nil
             zustand?.invalidate(); zustand = nil
+            wache?.cancel(); wache = nil
         }
     }
 }
