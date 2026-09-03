@@ -4050,13 +4050,13 @@
         }
       }
     },
-    "Kürzlich hinzugefügte Filme": {
+    "Zuletzt hinzugefügte Filme": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kürzlich hinzugefügte Filme"
+            "value": "Zuletzt hinzugefügte Filme"
           }
         },
         "en": {
@@ -4067,13 +4067,13 @@
         }
       }
     },
-    "Kürzlich hinzugefügte Serien": {
+    "Zuletzt hinzugefügte Serien": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kürzlich hinzugefügte Serien"
+            "value": "Zuletzt hinzugefügte Serien"
           }
         },
         "en": {

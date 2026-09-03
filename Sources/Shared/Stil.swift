@@ -461,6 +461,8 @@ extension Bild where Platzhalter == Color {
 /// abgedunkelter Grund, flache Fläche, unsere Schrift, unser Akzent.
 struct Auswahlblatt<Eintrag: Identifiable>: View {
     @Binding var offen: Bool
+    /// Wie hoch die Karte ist — bestimmt, wie weit sie hinausfaehrt.
+    @State private var hoehe: CGFloat = 400
     let titel: LocalizedStringKey
     let eintraege: [Eintrag]
     let beschriftung: (Eintrag) -> String
@@ -476,16 +478,12 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
         // und Schleier und Karte einzeln erscheinen, kann der eine blenden
         // und die andere fahren.
         ZStack(alignment: .bottom) {
-            if offen {
             // Abdunkeln; Tippen daneben schließt.
             Rectangle()
-                .fill(.black.opacity(0.55))
+                .fill(.black.opacity(offen ? 0.55 : 0))
                 .ignoresSafeArea()
+                .allowsHitTesting(offen)
                 .onTapGesture { schliessen() }
-                // Der Schleier blendet, die Karte faehrt — wie beim
-                // Systemblatt. Zusammen ergibt das die Bewegung, die man
-                // von iOS kennt.
-                .transition(.opacity)
 
             VStack(spacing: 0) {
                 Text(titel)
@@ -541,19 +539,19 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
                     .fill(Stil.flaeche)
                     .ignoresSafeArea(edges: .bottom)
             }
-            // **Von unten herein, nicht aufgeblendet.**
+            // **Gemessener Versatz statt `.move(edge: .bottom)`.**
             //
-            // Das Blatt sass am unteren Rand und erschien trotzdem einfach —
-            // es war ein `.transition(.opacity)` auf dem ganzen Stapel. Ein
-            // Blatt, das nicht faehrt, wirkt wie ein Fenster, das jemand
-            // hingestellt hat; man sieht nicht, woher es kommt und wohin es
-            // geht.
+            // Der eingebaute Uebergang schiebt eine Ansicht um ihre
+            // **Rahmenhoehe**. Der Hintergrund hier ragt mit `ignoresSafeArea`
+            // darueber hinaus — also blieb unten ein Streifen stehen und
+            // verschwand erst, wenn die Ansicht abgeraeumt wurde. Ruckartig,
+            // und genau darueber ist
             //
-            // `.move(edge: .bottom)` ist derselbe Weg, den `.sheet` nimmt.
-            // Die Feder darunter (0,35 s Antwort, 0,86 Daempfung) liegt auf
-            // Apples Blatt: schnell heran, kein Nachschwingen.
-            .transition(.move(edge: .bottom))
-            }
+            // Mit der gemessenen Hoehe plus der Sicherheitszone faehrt die
+            // Karte ganz hinaus, und es gibt nichts mehr wegzuraeumen.
+            .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                action: { hoehe = $0 }
+            .offset(y: offen ? 0 : hoehe + 120)
         }
     }
 

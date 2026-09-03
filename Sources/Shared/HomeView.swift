@@ -61,6 +61,13 @@ struct HomeView: View {
             if abspielen == nil { uebernahme.starten(model) } else { uebernahme.beenden() }
         }
         .onDisappear { uebernahme.beenden() }
+        // **Die Einstellung greift sofort, nicht beim naechsten Ziehen.**
+        //
+        // Umschalten aendert, welche Reihen es ueberhaupt gibt — und die
+        // stehen erst nach einer neuen Abfrage fest. Ohne das sah man seine
+        // eigene Einstellung erst, wenn man die Seite von Hand nachlud, und
+        // hielt sie fuer wirkungslos.
+        .task(id: model.neuzugangGetrennt) { await laden() }
         .fullScreenCover(item: $abspielen, onDismiss: { Task { await laden() } }) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
@@ -201,12 +208,12 @@ struct HomeView: View {
                 // Hier führt der Tipp auf die Seite: was man noch nicht
                 // angefangen hat, will man erst ansehen.
                 if !stand.neueFilme.isEmpty {
-                    Reihe(model: model, titel: "Kürzlich hinzugefügte Filme",
+                    Reihe(model: model, titel: "Zuletzt hinzugefügte Filme",
                           items: stand.neueFilme, neuzugang: true,
                           nachGesehen: { await laden() })
                 }
                 if !stand.neueSerien.isEmpty {
-                    Reihe(model: model, titel: "Kürzlich hinzugefügte Serien",
+                    Reihe(model: model, titel: "Zuletzt hinzugefügte Serien",
                           items: stand.neueSerien, neuzugang: true,
                           nachGesehen: { await laden() })
                 }
