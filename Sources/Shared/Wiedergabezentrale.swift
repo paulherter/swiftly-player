@@ -424,12 +424,17 @@ final class Wiedergabezentrale {
         // Kopfhörer dazukommen, `.override`, wenn jemand das Ziel umstellt.
         // Genau die waren auch gemeint — die anderen zwei waren Beifang.
         case .newDeviceAvailable, .override:
-            guard spieltGerade else { return }
-            // **Schonfrist.** In den ersten Sekunden richtet sich die
-            // Tonsitzung noch ein; ein Anstoß träfe einen Player, der gerade
-            // erst anläuft. Genau daran ist es gescheitert.
-            guard Date().timeIntervalSince(seitUebernahme) > 5 else {
-                Protokoll.schreib("[Ton] Routenwechsel (\(roh)) im Anlauf — übergangen")
+            // Die Regel samt Schonfrist steht in `Tonwacht` — mit der
+            // Messung, die dahintersteht, und dem Vermerk, dass die fünf
+            // Sekunden **geraten** sind.
+            guard Tonwacht.ausgangNeuAufbauen(
+                echterGeraetewechsel: true,
+                spielt: spieltGerade,
+                seitUebernahme: Date().timeIntervalSince(seitUebernahme))
+            else {
+                if spieltGerade {
+                    Protokoll.schreib("[Ton] Routenwechsel (\(roh)) im Anlauf — übergangen")
+                }
                 return
             }
             Protokoll.schreib("[Ton] Routenwechsel (\(roh)) — Ausgang neu aufbauen")
