@@ -23,18 +23,14 @@ final class Orientierung {
 
     /// Auf dem iPad wird nichts eingeschränkt, deshalb steht hier von
     /// Anfang an die volle Maske.
-    private(set) var erlaubt: UIInterfaceOrientationMask = Orientierung.amPad
+    private(set) var erlaubt: UIInterfaceOrientationMask = Stil.amPad
         ? .all : .portrait
-
-    private static var amPad: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad
-    }
 
     func setzen(_ maske: UIInterfaceOrientationMask) {
         // Auf dem iPad bleibt `erlaubt` auf `.all` stehen. Würde hier die
         // Maske trotzdem gesetzt, meldete der App-Delegate sie an iOS
         // zurück — und die App wäre nicht mehr multitaskingfähig.
-        guard !Self.amPad else { return }
+        guard !Stil.amPad else { return }
 
         erlaubt = maske
         guard let szene = UIApplication.shared.connectedScenes
@@ -51,10 +47,6 @@ final class Orientierung {
 
     /// Zurück zur App: wieder hochkant.
     func playerGeschlossen() { setzen(.portrait) }
-
-    /// Ob sich die Sperre überhaupt anbieten lässt. Auf dem iPad nicht — ein
-    /// Schalter ohne Wirkung ist schlechter als keiner.
-    static var querformatSperreMoeglich: Bool { !amPad }
 }
 
 /// Ohne Delegate hat iOS keine Stelle, an der es nach der erlaubten

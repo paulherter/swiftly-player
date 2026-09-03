@@ -9,8 +9,6 @@ import SwiftUI
 /// Doppeltippen links/rechts spult, einmal tippen blendet um.
 struct PlayerScreen: View {
     let model: AppModel
-    let startItem: Item
-    let startPlan: PlaybackPlan
     let startAt: Double
 
     @Environment(\.dismiss) private var dismiss
@@ -104,18 +102,12 @@ struct PlayerScreen: View {
     /// `fullScreenCover` und hängt nicht unter `HauptView`, dessen
     /// Sicherheitsabstand ihn deshalb nicht erreicht. Genau daran ist die
     /// erste Fassung vorbeigegangen.
-    /// Selbst gerechnet und nicht aus der Umgebung gelesen: der Player ist
-    /// ein `fullScreenCover` und haengt ausserhalb der Ansicht, die den Wert
-    /// setzt. Ob die Umgebung dorthin durchreicht, will ich nicht annehmen —
-    /// angenommen hatte ich hier schon zweimal genug.
     private var imFenster: Bool {
         Fensterknoepfe.imFenster(fensterbreite: fensterbreite)
     }
 
     init(model: AppModel, item: Item, plan: PlaybackPlan, startAt: Double) {
         self.model = model
-        self.startItem = item
-        self.startPlan = plan
         self.startAt = startAt
         // Nicht bei null anfangen: sonst steht der Schieber kurz auf Anfang
         // und springt sichtbar nach vorn, sobald der Strom seine Stelle hat.
