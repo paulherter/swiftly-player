@@ -617,15 +617,6 @@ struct PlayerScreen: View {
         .transition(.opacity)
     }
 
-    /// Der Knopf erscheint erst, wenn die Folge fast durch ist — sonst stünde
-    /// er bei einem Zweistünder zwei Stunden lang im Weg.
-    ///
-    /// Die Zahlen stehen in `Folgenende`, geteilt mit den anderen
-    /// Plattformen, damit der Knopf überall zur selben Zeit auftaucht.
-    private var gegenEnde: Bool {
-        Folgenende.knopfZeigen(position: position, dauer: dauer)
-    }
-
     /// Welcher Knopf gerade gilt — überspringen, weiterschalten oder keiner.
     ///
     /// **Es ist derselbe Knopf.** Gestaltung und Platz bleiben; nur

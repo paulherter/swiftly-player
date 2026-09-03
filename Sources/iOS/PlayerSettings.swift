@@ -115,8 +115,6 @@ struct PlayerSettingsSheet: View {
         .padding(.horizontal, 26)
     }
 
-    private var abstand: some View { Color.clear.frame(height: 22) }
-
     private var kopf: some View {
         HStack {
             Text("Wiedergabe")
@@ -265,12 +263,6 @@ struct PlayerSettingsSheet: View {
                 }
             }
         }
-    }
-
-    private var haken: some View {
-        Image(systemName: "checkmark")
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Stil.akzent)
     }
 
     private func beschriftung(_ wert: Float) -> String {

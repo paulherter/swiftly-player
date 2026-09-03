@@ -443,39 +443,6 @@ extension Bild where Platzhalter == Color {
     }
 }
 
-/// Zurück-Pfeil, wie im Entwurf: schlicht auf dem Bild, ohne Kreisfläche.
-/// SwiftUIs Standardleiste legt sonst ein graues Rund darunter und schreibt
-/// den Titel mittig darüber — beides gibt es im Entwurf nicht.
-struct ZurueckPfeil: View {
-    let aktion: () -> Void
-    var body: some View {
-        Button(action: aktion) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(Stil.schrift)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-                .shadow(color: .black.opacity(0.5), radius: 4, y: 1)
-        }
-        .padding(.leading, 12)
-    }
-}
-
-/// Verlauf über der Statusleiste.
-///
-/// Detailseiten lassen ihr Bild bis unter die Statusleiste laufen. Ohne
-/// diesen Schleier schiebt sich beim Scrollen der Inhalt — Reiter,
-/// Beschriftungen — ungeschützt hinter die Uhrzeit.
-struct Kopfschleier: View {
-    var body: some View {
-        LinearGradient(colors: [Stil.grund.opacity(0.8), Stil.grund.opacity(0)],
-                       startPoint: .top, endPoint: .bottom)
-            .frame(height: 110)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-    }
-}
-
 /// Eigene Auswahl statt `Menu` oder `Picker`.
 ///
 /// Apples Menü bringt sein eigenes Erscheinungsbild mit — abgerundetes Glas,
@@ -644,32 +611,6 @@ struct Einstellungsgruppe<Inhalt: View>: View {
             VStack(spacing: 0) { inhalt() }
                 .background(alignment: .top) { Trennlinie() }
                 .background(alignment: .bottom) { Trennlinie() }
-        }
-    }
-}
-
-/// Eine Zeile im Einstellungsblatt.
-struct Einstellzeile<Rechts: View>: View {
-    let titel: LocalizedStringKey
-    var aktion: (() -> Void)? = nil
-    @ViewBuilder var rechts: () -> Rechts
-
-    var body: some View {
-        let inhalt = HStack(spacing: 10) {
-            Text(titel)
-                .font(.system(size: 15))
-                .foregroundStyle(Stil.schrift)
-            Spacer(minLength: 0)
-            rechts()
-        }
-        .padding(.horizontal, Stil.randAbstand)
-        .frame(height: 48)
-        .contentShape(Rectangle())
-
-        if let aktion {
-            Button(action: aktion) { inhalt }.buttonStyle(.plain)
-        } else {
-            inhalt
         }
     }
 }
@@ -1252,41 +1193,6 @@ struct Leistenglas: View {
         ZStack {
             Unschaerfe(staerke: staerke)
             Stil.grund.opacity(tiefe * staerke)
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-/// Dunkles Glas: leichte Unschärfe mit dem Grundton darüber, beides nach
-/// unten auslaufend.
-///
-/// Die Unschärfe allein hellt auf — sie mischt ja Helles aus dem Bild ein.
-/// Erst der Grundton darüber macht daraus dunkles Glas.
-struct Verlaufsunschaerfe: View {
-    var staerke: Double = 1
-    var vollBis: CGFloat = 0.72
-    /// Wie dunkel das Glas an der Oberkante ist. Derselbe Wert wie die
-    /// Navigationsleiste unten, damit beide zusammenpassen.
-    var oben: Double = 0.86
-    /// Wie dunkel es auf Höhe des Inhalts noch ist.
-    var tiefe: Double = 0.55
-    /// Deckkraft der Unschärfe selbst. Unter eins bleibt mehr vom Bild
-    /// erkennbar — voll aufgedreht war es zu milchig.
-    var dichte: Double = 0.72
-
-    var body: some View {
-        ZStack {
-            Unschaerfe(vollBis: vollBis, staerke: staerke * dichte)
-            // Der dunkle Anteil ist selbst ein Verlauf, nicht eine Fläche
-            // mit Maske: oben fast deckend wie die Leiste unten, nach unten
-            // auslaufend. Nur so treffen sich Kopf und Leiste farblich.
-            LinearGradient(stops: [
-                .init(color: Stil.grund.opacity(oben * staerke), location: 0),
-                .init(color: Stil.grund.opacity(tiefe * staerke), location: vollBis),
-                .init(color: Stil.grund.opacity(tiefe * 0.4 * staerke),
-                      location: (vollBis + 1) / 2),
-                .init(color: .clear, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
         }
         .allowsHitTesting(false)
     }

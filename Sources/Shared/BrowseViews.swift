@@ -542,19 +542,6 @@ struct Abschnitt<Inhalt: View>: View {
     }
 }
 
-/// Auslieferungsart als Haken oder Warnung — steht in der Kopfzeile.
-struct Wiedergabebeleg: View {
-    let plan: PlaybackPlan
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: plan.isLossless ? "checkmark" : "exclamationmark.triangle.fill")
-                .font(.system(size: 11, weight: .bold))
-            Text(plan.method.rawValue)
-        }
-        .foregroundStyle(plan.isLossless ? Stil.akzent : Stil.warnung)
-    }
-}
-
 /// Trennpunkt zwischen Metadaten — steht nur zwischen vorhandenen Angaben.
 struct Trennpunkt: View {
     var body: some View { Text("·").opacity(0.45) }
