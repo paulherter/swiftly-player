@@ -196,6 +196,11 @@ final class VLCPlayerView: Basisansicht {
     private var letzterNeuaufbau = Date.distantPast
     private var wachhund: Timer?
     private var letzteBekannteZeit: Int32 = -1
+
+    /// Letzter Stand der beiden VLC-Zaehler, fuer ``bildfluss(jetzt:)``.
+    /// `nil` heisst: noch kein Vergleichswert, also noch kein Urteil.
+    private var letzteBilder: UInt64?
+    private var letzteBytes: UInt64?
     private var stehtSeit: Date?
     private var netzErreichbar = true
     private var wartetAufNetz = false
@@ -529,6 +534,7 @@ final class VLCPlayerView: Basisansicht {
         }
 
         if jetzt != letzteBekannteZeit {
+            bildfluss(jetzt: jetzt)
             letzteBekannteZeit = jetzt
             stehtSeit = nil
             let laenge = laengeSekunden
@@ -570,6 +576,47 @@ final class VLCPlayerView: Basisansicht {
         }
 
         neuVerbinden(grund: "Bild steht seit \(Int(dauer)) s")
+    }
+
+    /// **Die Uhr laeuft, das Bild steht — davon weiss `stillstandPruefen`
+    /// nichts.**
+    ///
+    /// Die Absicherung darueber schlaegt an, wenn die *Zeit* stehen bleibt.
+    /// 09.2026 den umgekehrten Fall gemeldet: App lag lange im Hintergrund,
+    /// Player auf Pause; zurueck in der App lief es eine halbe Minute, dann
+    /// Standbild — und die Zeit lief weiter. Fuer `Stromwacht` ist das ein
+    /// gesunder Strom, denn `jetzt` aendert sich jede Sekunde. Sie ist fuer
+    /// genau diesen Fehler blind, und zwar bauartbedingt.
+    ///
+    /// Deshalb hier die zweite Groesse. VLC fuehrt sie selbst mit:
+    /// `displayedPictures` sind die gezeigten Bilder, `demuxReadBytes` das,
+    /// was ueberhaupt vom Server ankommt. Die beiden zusammen trennen die zwei
+    /// Erklaerungen, die sich sonst nicht unterscheiden lassen:
+    ///
+    /// - Bytes wachsen, Bilder nicht → die Daten kommen, die Ausgabe ist tot.
+    /// - Beide stehen → es kommt nichts mehr, die Verbindung ist weg.
+    ///
+    /// **Noch wird nur mitgeschrieben, nicht eingegriffen.** Welche der beiden
+    /// es ist, weiss niemand, und eine Bremse auf Verdacht hat in dieser Datei
+    /// schon einmal den Haenger erzeugt, den sie beheben sollte — siehe
+    /// `Stromwacht`. Erst messen.
+    private func bildfluss(jetzt: Int32) {
+        guard let stat = player.media?.statistics else { return }
+        defer {
+            letzteBilder = stat.displayedPictures
+            letzteBytes = stat.demuxReadBytes
+        }
+        guard let vorherBilder = letzteBilder, let vorherBytes = letzteBytes else { return }
+
+        // Nur der auffaellige Fall kommt ins Protokoll. Jede Sekunde eine
+        // Zeile zu schreiben, macht die Datei unlesbar und verdeckt genau
+        // den Moment, um den es geht.
+        guard stat.displayedPictures == vorherBilder else { return }
+
+        let bytes = stat.demuxReadBytes - vorherBytes
+        Protokoll.schreib("[Bild] Uhr bei \(jetzt / 1000) s laeuft, aber kein neues Bild"
+            + " (gezeigt \(stat.displayedPictures), verloren \(stat.lostPictures),"
+            + " neue Bytes \(bytes)) → \(bytes > 0 ? "Daten kommen an, Ausgabe steht" : "es kommt nichts mehr")")
     }
 
     /// Strom neu aufmachen und an die letzte gute Stelle springen.
