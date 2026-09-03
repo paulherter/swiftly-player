@@ -186,6 +186,18 @@ struct PlayerScreen: View {
                          container: startPlan.container) { neu in
                 flaeche = neu
                 neu.onWiederherstellung = { stelltWiederHer = $0 }
+                // **Der Knopf haengt an VLCs Meldung, nicht am Druck.**
+                //
+                // Gemessen von der macOS-Sitzung: vom Klick bis VLC
+                // „angehalten" meldet vergehen 17–25 ms, bis die Filmzeit
+                // wirklich steht 26–36 ms. Im Druck gesetzt springt der Knopf
+                // also **vor** dem Bild um, und das sieht aus wie ein Player,
+                // der nicht reagiert. Am 500-ms-Takt waere er zu spaet.
+                //
+                // An dieser Meldung sind Knopf und Bild im selben Moment
+                // still — der Abstand verschwindet nicht, weil er kleiner
+                // wird, sondern weil es keine zwei Zeitpunkte mehr gibt.
+                neu.laeuftGemeldet = { laeuftSetzen($0) }
                 // Kommt ein Sprung nicht an, taugt der Index der Datei
             }
 
@@ -557,7 +569,12 @@ struct PlayerScreen: View {
         // **Nach dem eigenen Stand richten, nicht nach VLC** — siehe
         // `Schaltwerk.laeuft`. Aus der Klasse gelesen, nicht aus `@State`:
         // dieser Aufruf kommt auch aus festgehaltenen Rueckrufen.
-        setzen(laeuft: !schaltwerk.laeuft)
+        //
+        // Und ohne den Zustand gleich mitzusetzen: die Wippe sagt nur „das
+        // andere", also darf sie auch nur befehlen. Wie es ausgeht, meldet
+        // VLC — siehe `laeuftGemeldet`. Die Sperre von 0,4 s haelt lange
+        // genug, dass die Meldung (17–25 ms) vor dem naechsten Druck da ist.
+        setzen(laeuft: !schaltwerk.laeuft, sofortAnzeigen: false)
     }
 
     /// Beide Haelften des Laufzustands zugleich: die Ansicht zeichnet aus
@@ -576,8 +593,11 @@ struct PlayerScreen: View {
     /// auf Wiedergabe, und je oefter man drueckt, desto verdrehter wird es.
     ///
     /// Ein ausdruecklicher Befehl setzt deshalb einen Zustand; nur die Wippe
-    /// auf der Fernbedienung schaltet um.
-    private func setzen(laeuft soll: Bool) {
+    /// auf der Fernbedienung schaltet um. `sofortAnzeigen` trennt Befehl von
+    /// Anzeige: ein ausdrueckliches „spiel ab" oder „halt an" von aussen sagt,
+    /// was gelten soll, und darf den Zustand setzen. Die Wippe sagt nur „das
+    /// andere" — dort wartet die Anzeige auf VLCs Meldung.
+    private func setzen(laeuft soll: Bool, sofortAnzeigen: Bool = true) {
         guard let flaeche else { return }
         // Die Sperre liegt im Schaltwerk, nicht im Zustand: sonst liest ein
         // alter Rueckruf einen alten Zeitpunkt und sie greift nie.
@@ -585,7 +605,7 @@ struct PlayerScreen: View {
         schaltwerk.zuletzt = Date()
 
         if soll { flaeche.resume() } else { flaeche.pause() }
-        laeuftSetzen(soll)
+        if sofortAnzeigen { laeuftSetzen(soll) }
         zentrale.standNachziehen(position: position, laeuft: soll, tempo: tempo)
         zeigen()
     }
