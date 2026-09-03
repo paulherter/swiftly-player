@@ -215,3 +215,72 @@ public extension DeviceProfile {
     }
 
 }
+
+// MARK: - Das AirPlay-Profil
+
+public extension DeviceProfile {
+
+    /// Das Profil für **echtes AirPlay** — bewusst eng, und das ist keine
+    /// Nachlässigkeit.
+    ///
+    /// **Wofür.** AirPlay für Video geht bei Apple ausschließlich über
+    /// `AVPlayer`. Der kennt weder Matroska noch DTS, und der Apple TV am
+    /// anderen Ende nimmt DTS ohnehin nicht an. Wer AirPlay anbietet, muss dem
+    /// Server deshalb ein Profil zeigen, das *AVPlayers* Grenzen beschreibt —
+    /// nicht libVLCs. Dieses hier ist die einzige Stelle in der App, an der
+    /// wir absichtlich weniger deklarieren, als wir können.
+    ///
+    /// **Und es bricht das Versprechen der App nicht.** Am Server nachgemessen
+    /// (Jellyfin 10.11.11): mit diesem Profil antwortet er
+    /// `SupportsDirectPlay: false`, `SupportsDirectStream: false`,
+    /// `SupportsTranscoding: true` — aber **`TranscodeReasons: None`**. Es
+    /// wird nichts neu gerechnet, nur der Container von Matroska nach
+    /// fragmentiertem MP4 umgepackt. Die Übersicht nennt das trotzdem
+    /// „Transcoding"; das ist Jellyfins Beschriftung, nicht der Vorgang.
+    ///
+    /// Was hier drinsteht, steht in Apples Vorgaben für HLS: Video H.264 und
+    /// HEVC, Ton AAC, AC-3, E-AC-3, ALAC und FLAC. Dieselbe Liste prüft
+    /// ``AirPlayEignung`` **vor** dem Knopf — damit niemand AirPlay drückt und
+    /// Bild ohne Ton bekommt.
+    static func airplay(maxBitrate: Int = 1_000_000_000) -> DeviceProfile {
+        // Passt die Datei schon, macht der Server gar nichts. Der Fall ist
+        // seltener als er klingt, aber er kostet nichts, ihn zu erlauben.
+        let direct = ["mp4", "m4v", "mov"].map { container in
+            DirectPlayProfile(container: container, type: "Video",
+                              videoCodec: "h264,hevc",
+                              audioCodec: "aac,ac3,eac3,alac,flac,mp3")
+        }
+
+        // **Der eigentliche Weg.** `videoCodec` nennt beide erlaubten Codecs,
+        // damit Jellyfin die Videospur kopieren darf statt sie zu rechnen —
+        // steht dort nur `h264`, wird jeder HEVC-Film neu encodiert.
+        let transcoding = [
+            TranscodingProfile(container: "mp4", type: "Video",
+                               videoCodec: "h264,hevc",
+                               audioCodec: "aac,ac3,eac3",
+                               context: "Streaming", protocolName: "hls")
+        ]
+
+        // Nur Textformate, und `External` statt `Embed`.
+        //
+        // **Ein Bitmap-Untertitel wäre hier der einzige echte Transcode-Grund
+        // der ganzen App.** PGS oder VOBSUB kann AVPlayer nicht zeichnen, also
+        // würde der Server sie ins Bild brennen — und dafür das Video neu
+        // rechnen müssen. Sie stehen deshalb absichtlich *nicht* drin: fehlt
+        // das Format, liefert Jellyfin den Strom ohne Untertitel aus, statt
+        // ihn einzubrennen. Kein Untertitel ist besser als ein Neuencode.
+        let untertitel = ["vtt", "webvtt", "srt", "subrip"]
+            .map { SubtitleProfile(format: $0, method: "External") }
+
+        return DeviceProfile(
+            name: "Swiftly (AirPlay)",
+            maxStreamingBitrate: maxBitrate,
+            maxStaticBitrate: maxBitrate,
+            directPlayProfiles: direct,
+            transcodingProfiles: transcoding,
+            subtitleProfiles: untertitel,
+            codecProfiles: []
+        )
+    }
+
+}
