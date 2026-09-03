@@ -139,3 +139,11 @@ public struct AirPlayEignung: Sendable, Equatable {
         return beste
     }
 }
+
+/// Was AirPlay für einen Titel hergibt.
+public enum AirPlayAuskunft: Sendable {
+    /// Geht — mit diesem Plan, den `AVPlayer` öffnen kann.
+    case geht(PlaybackPlan)
+    /// Geht nicht, und hier steht warum.
+    case gehtNicht(AirPlayEignung)
+}

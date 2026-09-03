@@ -6,6 +6,7 @@ public enum JellyfinError: LocalizedError, Equatable {
     case http(status: Int, body: String?)
     case decoding(String)
     case transport(String)
+    case noPlayableSource
 
     public var errorDescription: String? {
         switch self {
@@ -13,6 +14,8 @@ public enum JellyfinError: LocalizedError, Equatable {
             return uebersetzt("Die Serveradresse ist ungültig.")
         case .notAuthenticated:
             return uebersetzt("Nicht angemeldet.")
+        case .noPlayableSource:
+            return uebersetzt("Der Server nennt keine abspielbare Fassung.")
         // Der Antwortkörper des Servers bleibt draußen: er kann alles
         // enthalten, von einer Stapelablaufverfolgung bis zu einer Adresse
         // mit Zugangsmerkmal, und für den Nutzer sagt er nichts.
@@ -308,10 +311,17 @@ public actor JellyfinClient {
     ///
     /// Seit dem Patch am mkv-Sucher springt der Abspieler selbst. Der
     /// Notausgang ist deshalb entfernt; siehe `Werkzeuge/vlckit-patches/`.
+    ///
+    /// - Parameter audioStreamIndex: Welche Tonspur der Server nehmen soll.
+    ///   Nur fuer AirPlay gesetzt: dort muss haeufig die AC-3-Spur statt der
+    ///   DTS-Standardspur ausgeliefert werden, weil der Empfaenger DTS nicht
+    ///   annimmt. Bei VLC bleibt es `nil` — der waehlt selbst, und zwar aus
+    ///   allen Spuren.
     public func playbackInfo(
         itemID: String,
         profile: DeviceProfile = .vlc(),
-        maxStreamingBitrate: Int? = nil
+        maxStreamingBitrate: Int? = nil,
+        audioStreamIndex: Int? = nil
     ) async throws -> PlaybackInfoResponse {
         let s = try requireSession()
         struct Body: Encodable {
@@ -322,6 +332,7 @@ public actor JellyfinClient {
             let EnableDirectPlay: Bool
             let EnableDirectStream: Bool
             let EnableTranscoding: Bool
+            let AudioStreamIndex: Int?
         }
         let body = Body(
             UserId: s.userID,
@@ -330,7 +341,8 @@ public actor JellyfinClient {
             AutoOpenLiveStream: true,
             EnableDirectPlay: true,
             EnableDirectStream: true,
-            EnableTranscoding: true
+            EnableTranscoding: true,
+            AudioStreamIndex: audioStreamIndex
         )
         let req = try request("Items/\(itemID)/PlaybackInfo", method: "POST", body: body)
         return try await send(req, as: PlaybackInfoResponse.self)
@@ -538,9 +550,11 @@ public actor JellyfinClient {
     /// Fragt den Server und baut daraus direkt den Plan für den Player.
     public func playbackPlan(
         for itemID: String,
-        profile: DeviceProfile = .vlc()
+        profile: DeviceProfile = .vlc(),
+        audioStreamIndex: Int? = nil
     ) async throws -> PlaybackPlan? {
-        let info = try await playbackInfo(itemID: itemID, profile: profile)
+        let info = try await playbackInfo(itemID: itemID, profile: profile,
+                                          audioStreamIndex: audioStreamIndex)
         return try PlaybackPlan.make(
             from: info,
             itemID: itemID,
@@ -550,6 +564,26 @@ public actor JellyfinClient {
             },
             serverBase: baseURL
         )
+    }
+
+    /// Was AirPlay fuer diesen Titel hergibt.
+    ///
+    /// **Die Pruefung kommt vor der Anfrage, nicht danach.** Die Stroeme der
+    /// Datei stehen schon in der Quelle, die der laufende Plan mitbringt — es
+    /// braucht also keinen Serverbesuch, um „geht nicht" zu sagen. Und es darf
+    /// keinen geben: wer erst fragt und dann ablehnt, hat auf dem Server eine
+    /// Sitzung eroeffnet, die niemand wieder schliesst.
+    ///
+    /// Geht es, laeuft **eine** Anfrage — mit dem engen Profil und der Tonspur,
+    /// die durchkommt.
+    public func airplayPlan(for itemID: String, quelle: MediaSource) async throws -> AirPlayAuskunft {
+        let eignung = AirPlayEignung.pruefen(quelle: quelle)
+        guard eignung.geeignet else { return .gehtNicht(eignung) }
+        guard let plan = try await playbackPlan(for: itemID, profile: .airplay(),
+                                                audioStreamIndex: eignung.tonspur) else {
+            throw JellyfinError.noPlayableSource
+        }
+        return .geht(plan)
     }
 
     // MARK: - URLs für den Player

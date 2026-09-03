@@ -46,9 +46,20 @@ struct PlayerScreen: View {
     @State private var letzteSeite = 0
 
     /// Sichtbar heisst: gewollt, Bild steht, kein Menue davor.
+    ///
+    /// Und nicht auf dem Fernseher: dort steuert `AVPlayerViewController`, und
+    /// zwei Steuerungen uebereinander wuerden sich gegenseitig treffen.
     private var steuerungDa: Bool {
         steuerungSichtbar && erstesBildDa && !imKleinenFenster && !zeigeEinstellungen
+            && airplayPlan == nil
     }
+
+    /// Beobachtet, ob der Ton auf ein AirPlay-Geraet umgestellt wurde.
+    @State private var fernziel = Fernziel()
+    /// Gesetzt, solange der Film ueber `AVPlayer` auf dem Fernseher laeuft.
+    @State private var airplayPlan: PlaybackPlan?
+    /// Die Stelle, an der VLC abgegeben hat.
+    @State private var airplayAb: Double = 0
     @State private var sprungAnzeige: (richtung: Int, sekunden: Int)?
     /// Zaehlen die Ausloesungen je Richtung. Der Knopf dreht sich dadurch
     /// bei jedem Druck ein Stueck weiter, statt nur einmal.
@@ -245,7 +256,30 @@ struct PlayerScreen: View {
                                     querformatFest: $querformatFest)
                     .transition(.opacity)
             }
+
+            // **Ueber allem, weil es alles ersetzt.** Solange der Fernseher
+            // dran ist, ist die VLC-Flaeche darunter nur noch Hintergrund;
+            // getippt und gesteuert wird hier.
+            if let airplayPlan {
+                AirPlayFlaeche(
+                    url: airplayPlan.url,
+                    abSekunden: airplayAb,
+                    stand: { stelle, laenge in
+                        position = stelle
+                        if laenge > 0 { dauer = laenge }
+                        meldeFortschritt()
+                    },
+                    beendet: {
+                        if let naechsteFolge { zurNaechstenFolge(naechsteFolge) }
+                        else { dismiss() }
+                    }
+                )
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .zIndex(10)
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: airplayPlan?.url)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         // Am Stapel gemessen, nicht an der Videofläche: die meldet nach der
@@ -253,8 +287,20 @@ struct PlayerScreen: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { neu in
             fensterbreite = neu
         }
-        .onAppear { model.fernbefehl = ausfuehren }
-        .onDisappear { model.fernbefehl = nil }
+        .onAppear {
+            model.fernbefehl = ausfuehren
+            // **Auch beim Oeffnen nachsehen, nicht nur beim Wechsel.** Steht
+            // das Ziel schon auf dem Fernseher, weil vorher Musik dorthin
+            // lief, kommt gar keine Meldung mehr — und der Film waere wieder
+            // Ton ohne Bild.
+            fernziel.gewechselt = { airplayUmschalten($0) }
+            fernziel.nachsehen()
+            if fernziel.aufAirPlay { airplayUmschalten(true) }
+        }
+        .onDisappear {
+            model.fernbefehl = nil
+            fernziel.aufhoeren()
+        }
         .task(id: ausblendMarke) {
             // Im Stehen nichts wegnehmen: wer pausiert hat, schaut gerade
             // nicht aufs Bild, sondern will die Steuerung sehen.
@@ -664,6 +710,55 @@ struct PlayerScreen: View {
             wechselt = false
             steuerungSichtbar = true
             ausblendenVerschieben()
+        }
+    }
+
+    // MARK: - Auf den Fernseher und zurueck
+
+    /// Das Ziel hat gewechselt — also wechselt der Abspieler mit.
+    ///
+    /// **Zwei Abspieler, eine Stelle.** VLC gibt an `AVPlayer` ab und
+    /// umgekehrt; weitergegeben wird `position`, der Zustand der Ansicht.
+    /// Nicht VLCs Zeit: die steht nach dem Anhalten nicht mehr verlaesslich,
+    /// und genau daran ist das Fortsetzen schon einmal gescheitert.
+    ///
+    /// **Geht es nicht, sagt es das.** Der Ton laeuft dann trotzdem auf dem
+    /// Fernseher — nur ohne Bild, weil der Empfaenger den Strom ablehnt. Ohne
+    /// Meldung sieht das nach einem Fehler in Swiftly aus, und es ist keiner.
+    private func airplayUmschalten(_ an: Bool) {
+        if an {
+            guard airplayPlan == nil else { return }
+            guard let client = model.client, let quelle = plan.quelle else { return }
+            Task {
+                do {
+                    switch try await client.airplayPlan(for: item.id, quelle: quelle) {
+                    case .gehtNicht(let eignung):
+                        hinweis = eignung.meldung
+                        Protokoll.schreib("[AirPlay] abgelehnt — "
+                            + eignung.hindernisse.map(\.codec).joined(separator: ", "))
+                    case .geht(let neu):
+                        Protokoll.schreib("[AirPlay] uebernimmt ab \(Int(position)) s"
+                            + " — \(neu.method.wireName)")
+                        airplayAb = position
+                        surface?.pause()
+                        // Der Sperrbildschirm haengt an VLCs Griffen; die
+                        // zeigen jetzt ins Leere. `AVPlayer` bringt seine
+                        // eigene Anzeige mit.
+                        zentrale.abgeben()
+                        airplayPlan = neu
+                    }
+                } catch {
+                    hinweis = error.localizedDescription
+                }
+            }
+        } else {
+            guard airplayPlan != nil else { return }
+            let stelle = position
+            Protokoll.schreib("[AirPlay] zurueck aufs Geraet bei \(Int(stelle)) s")
+            airplayPlan = nil
+            surface?.seek(toSeconds: stelle)
+            surface?.resume()
+            zentraleUebernehmen()
         }
     }
 

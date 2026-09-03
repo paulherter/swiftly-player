@@ -245,34 +245,6 @@ final class VLCPlayerView: Basisansicht {
         }
     }
 
-    #if os(iOS)
-    /// **Messung, keine Funktion.** Sieht die App einen zweiten Schirm,
-    /// sobald Bildschirmsynchronisierung laeuft? Davon haengt ab, ob AirPlay
-    /// mit Bild ohne jede Umwandlung moeglich ist — die App darf auf einem
-    /// zweiten Schirm ein eigenes Fenster zeichnen, VLC dekodiert weiter
-    /// lokal, und der Server tut gar nichts.
-    ///
-    /// Wird wieder ausgebaut, sobald die Frage beantwortet ist.
-    private var fremdschirmZuletzt = -1
-
-    private func fremdschirmPruefen() {
-        let schirme = UIScreen.screens
-        guard schirme.count != fremdschirmZuletzt else { return }
-        fremdschirmZuletzt = schirme.count
-        let beschreibung = schirme.enumerated().map { i, s in
-            let m = s.bounds.size
-            return "\(i): \(Int(m.width))x\(Int(m.height)) @\(s.scale)x"
-        }.joined(separator: " · ")
-        Protokoll.schreib("[Schirm] \(schirme.count) Schirm(e) — \(beschreibung)")
-        if let fremd = schirme.first(where: { $0 !== UIScreen.main }) {
-            Protokoll.schreib("[Schirm] fremder Schirm da: "
-                + "\(Int(fremd.bounds.width))x\(Int(fremd.bounds.height)) "
-                + "@\(fremd.scale)x · Modi \(fremd.availableModes.count)")
-        }
-    }
-    #else
-    private func fremdschirmPruefen() {}
-    #endif
 
     /// **Sicherheitsnetz gegen dauerhafte Stille.**
     ///
@@ -518,7 +490,6 @@ final class VLCPlayerView: Basisansicht {
 
         sprungNachmessen()
         tonFreigebenFallsFaellig()
-        fremdschirmPruefen()
 
         let jetzt = player.time.intValue
         let stelle = Double(jetzt) / 1000
