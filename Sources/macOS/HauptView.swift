@@ -122,6 +122,16 @@ struct HauptView: View {
         }
         .background(Stil.grund)
         .environment(steuerung)
+        // **Der Socket, ohne den der Mac keine Sitzung ist.**
+        //
+        // iOS und tvOS starten ihn je in ihrer eigenen `HauptView`; die des
+        // Macs hatte ihn nie. Ohne ihn meldet Jellyfin
+        // `SupportsRemoteControl: false` — der Mac liess sich also weder von
+        // aussen bedienen noch uebernehmen, und im Dashboard blieben die
+        // Knoepfe grau. Es fiel nicht auf, weil die App fuer sich einwandfrei
+        // lief.
+        .task { await model.fernsteuerungStarten() }
+        .onDisappear { Task { await model.fernsteuerungBeenden() } }
         // **Nur solange kein Player läuft** — im Player ist die Leiste weg,
         // und der Server hätte alle zehn Sekunden eine Anfrage mehr.
         .task(id: steuerung.wunsch == nil) {

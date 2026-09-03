@@ -60,7 +60,8 @@ final class Bibliotheksmodell {
             laedt = false
             return
         }
-        if let seite = await model.items(in: bib.id, sortierung: sortierung,
+        if let seite = await model.items(in: bib.id, art: art ?? bib.collectionType,
+                                         sortierung: sortierung,
                                          filter: filter, ab: 0) {
             items = seite.titel
             gesamt = seite.gesamt
@@ -84,8 +85,10 @@ final class Bibliotheksmodell {
         guard let bib = await quelle(model, art: art, bibliothek: bibliothek) else { return }
         laedtNach = true
         defer { laedtNach = false }
-        guard let seite = await model.items(in: bib.id, sortierung: sortierung,
-                                            filter: filter, ab: items.count) else { return }
+        guard let seite = await model.items(in: bib.id, art: art ?? bib.collectionType,
+                                            sortierung: sortierung,
+                                            filter: filter, ab: items.count)
+        else { return }
         let bekannt = Set(items.map(\.id))
         items.append(contentsOf: seite.titel.filter { !bekannt.contains($0.id) })
         gesamt = seite.gesamt

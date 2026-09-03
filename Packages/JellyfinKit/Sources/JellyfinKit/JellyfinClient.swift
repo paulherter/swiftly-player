@@ -270,7 +270,21 @@ public actor JellyfinClient {
         filters: [String] = [],
         /// `false` heißt: nur Ungesehenes.
         istGesehen: Bool? = nil,
-        recursive: Bool = false
+        recursive: Bool = false,
+        /// Welche Gattungen zurueckkommen sollen — „Movie", „Series".
+        ///
+        /// **Ohne das liefert Jellyfin bei einer Serienbibliothek nicht die
+        /// Serien.** Im Wurzelverzeichnis einer solchen Bibliothek liegen je
+        /// nach Servereinstellung virtuelle Ordner: „Weiterschauen",
+        /// „Als Naechstes", „Neueste", „Serien", „Lieblingsserien",
+        /// „Genres". Die haben keine Plakate, und genau als leere Kacheln mit
+        /// diesen Namen ist es einem Nutzer am 03.09.2026 aufgefallen.
+        ///
+        /// Jellyfins eigene Weboberflaeche fragt deshalb immer mit Gattung
+        /// und rekursiv. Auf Servern ohne diese Ordner aendert es nichts —
+        /// am Pruefserver nachgemessen, dieselben Titel in derselben
+        /// Reihenfolge.
+        includeItemTypes: [String] = []
     ) async throws -> ItemsResponse {
         let s = try requireSession()
         var query: [URLQueryItem] = [
@@ -289,6 +303,10 @@ public actor JellyfinClient {
             .init(name: "Recursive", value: recursive ? "true" : "false"),
         ]
         if let parentID { query.append(.init(name: "ParentId", value: parentID)) }
+        if !includeItemTypes.isEmpty {
+            query.append(.init(name: "IncludeItemTypes",
+                               value: includeItemTypes.joined(separator: ",")))
+        }
         if !filters.isEmpty {
             query.append(.init(name: "Filters", value: filters.joined(separator: ",")))
         }

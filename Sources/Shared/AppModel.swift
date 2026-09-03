@@ -581,11 +581,13 @@ final class AppModel {
     /// stur die ersten zweihundert geholt und der Rest war über die
     /// Oberfläche nicht erreichbar.
     func items(in parentID: String,
+               art: String? = nil,
                sortierung: Sortierung = .name,
                filter: Bibliotheksfilter = .alle,
                ab startIndex: Int = 0,
                anzahl: Int = AppModel.seitengroesse) async -> (titel: [Item], gesamt: Int)? {
         guard let client else { return nil }
+        let gattungen = Bibliotheksgattung.typen(zu: art)
         do {
             let antwort = try await client.items(parentID: parentID,
                                                  limit: anzahl,
@@ -593,7 +595,13 @@ final class AppModel {
                                                  sortBy: sortierung.feld,
                                                  sortOrder: sortierung.richtung,
                                                  filters: filter.jellyfinFilter,
-                                                 istGesehen: filter.istGesehen)
+                                                 istGesehen: filter.istGesehen,
+                                                 // Rekursiv, sobald die Gattung
+                                                 // feststeht: sonst blieben die
+                                                 // Titel unter den virtuellen
+                                                 // Ordnern unerreichbar.
+                                                 recursive: Bibliotheksgattung.rekursiv(zu: art),
+                                                 includeItemTypes: gattungen)
             return (antwort.items, antwort.totalRecordCount)
         } catch {
             errorMessage = lesbar(error)
