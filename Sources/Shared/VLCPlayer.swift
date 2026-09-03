@@ -230,12 +230,33 @@ final class VLCPlayerView: Basisansicht {
         guard let ton = player.audio else { return }
         if zurueck {
             guard lautstaerkeVorher == nil else { return }
-            lautstaerkeVorher = ton.volume
+            // **Was VLC vor dem ersten Ton meldet, ist kein Messwert.**
+            //
+            // `tonZurueckhalten(true)` laeuft in `oeffnen(…)`, also bevor
+            // `player.media` gesetzt ist — der Tonausgang existiert da noch
+            // gar nicht und `volume` steht auf 0 oder -1. Gemerkt und spaeter
+            // „wiederhergestellt" hiess damit: dauerhaft stumm.
+            let jetzt = ton.volume
+            lautstaerkeVorher = jetzt > 0 ? jetzt : 100
             ton.volume = 0
         } else if let vorher = lautstaerkeVorher {
-            ton.volume = vorher
+            ton.volume = vorher > 0 ? vorher : 100
             lautstaerkeVorher = nil
         }
+    }
+
+    /// **Sicherheitsnetz gegen dauerhafte Stille.**
+    ///
+    /// Der Ton wird an genau einer Stelle zurueckgehalten und an vier wieder
+    /// freigegeben. Wird eine davon je uebersehen — oder kommt ein Weg dazu,
+    /// den heute niemand kennt —, bleibt der Film stumm, und das ist der
+    /// schlimmste stille Fehler, den dieser Player haben kann. Deshalb prueft
+    /// der Takt es zusaetzlich: wird nicht mehr eingesteuert, darf nichts
+    /// mehr zurueckgehalten werden.
+    private func tonFreigebenFallsFaellig() {
+        guard lautstaerkeVorher != nil, !stelltEin else { return }
+        Protokoll.schreib("[Ton] Rueckhalt hing noch — freigegeben")
+        tonZurueckhalten(false)
     }
 
     /// Der Strom wird gerade neu aufgebaut.
@@ -467,6 +488,7 @@ final class VLCPlayerView: Basisansicht {
         guard !absichtlichBeendet, player.media != nil, player.isPlaying else { return }
 
         sprungNachmessen()
+        tonFreigebenFallsFaellig()
 
         let jetzt = player.time.intValue
         let stelle = Double(jetzt) / 1000
