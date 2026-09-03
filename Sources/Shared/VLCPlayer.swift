@@ -376,7 +376,10 @@ final class VLCPlayerView: Basisansicht {
         // Klick → VLC meldet „angehalten"   17–25 ms Klick → Filmzeit steht
         // wirklich   26–36 ms
         //
-        // Bei 60 Hz sind das ein bis zwei Bilder. Das ist der Abstand, den
+        // Alle Geräte hier laufen mit **120 Hz**, ein Bild ist also 8,3 ms —
+        // das sind drei bis vier Bilder, nicht ein bis zwei. (Hier stand
+        // zuerst die Rechnung für 60 Hz; sie hat den Abstand halbiert und
+        // damit kleiner aussehen lassen, als er ist.) Das ist der Abstand, den
         //
         // Also weder das eine noch das andere: der Knopf hängt an genau der
         // Meldung, mit der die Maschine selbst umschaltet. Dann sind Knopf und
