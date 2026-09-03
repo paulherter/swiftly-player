@@ -8,6 +8,12 @@
 [![License](https://img.shields.io/badge/license-MPL--2.0-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](LICENSE)
 [![Jellyfin](https://img.shields.io/badge/Jellyfin-10.10%2B-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](https://jellyfin.org)
 
+<br>
+
+[![Join the beta on TestFlight](https://img.shields.io/badge/TestFlight-Join%20the%20beta-0B0B0D?style=for-the-badge&labelColor=0B0B0D&color=5CD1C2&logo=apple&logoColor=0B0B0D)](https://testflight.apple.com/join/MqeP2cnj)
+&nbsp;
+[![Discord](https://img.shields.io/badge/Discord-Bugs%20%26%20feedback-0B0B0D?style=for-the-badge&labelColor=0B0B0D&color=5865F2&logo=discord&logoColor=white)](https://discord.gg/MeGwfv3UwN)
+
 </div>
 
 <br>
@@ -49,10 +55,15 @@ that, which is rather the point.
 
 | Platform | State |
 |---|---|
-| iPhone | Version 1.0.0 in review with Apple |
-| iPad | In development |
-| Apple TV | In development, beta planned next |
-| Mac | In development |
+| iPhone | Beta on TestFlight · 1.0.0 in review with Apple |
+| iPad | Beta on TestFlight · ships with the iPhone app |
+| Apple TV | Beta on TestFlight · 1.0.0 in review with Apple |
+| Mac | 1.0.0 in review with Apple |
+
+**The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
+— one link for iPhone, iPad and Apple TV. What each build wants tested is
+written in its release notes, and it is usually five specific things rather
+than "have a look around".
 
 One app, one design, sized for the screen you are on. The logic — server
 access, device profile, playback timing — is shared; only the views differ,
@@ -127,7 +138,12 @@ submitted upstream so that official builds can be used again.
 
 ## Reporting bugs
 
-The Discord is the fastest way: **https://discord.gg/mzKPMEr7hj**
+The Discord is the fastest way: **https://discord.gg/MeGwfv3UwN** — there are
+channels for bug reports and feature requests, and a beta chat.
+
+If you are on the TestFlight build, the release notes name the handful of
+things that changed since the last one. Reports against those are worth the
+most, because they can be traced to a specific change.
 
 The single most useful report is one where the server transcoded when it
 should not have. If your Jellyfin dashboard says *Transcoding* instead of
