@@ -230,12 +230,33 @@ final class VLCPlayerView: Basisansicht {
         guard let ton = player.audio else { return }
         if zurueck {
             guard lautstaerkeVorher == nil else { return }
-            lautstaerkeVorher = ton.volume
+            // **Was VLC vor dem ersten Ton meldet, ist kein Messwert.**
+            //
+            // `tonZurueckhalten(true)` laeuft in `oeffnen(…)`, also bevor
+            // `player.media` gesetzt ist — der Tonausgang existiert da noch
+            // gar nicht und `volume` steht auf 0 oder -1. Gemerkt und spaeter
+            // „wiederhergestellt" hiess damit: dauerhaft stumm.
+            let jetzt = ton.volume
+            lautstaerkeVorher = jetzt > 0 ? jetzt : 100
             ton.volume = 0
         } else if let vorher = lautstaerkeVorher {
-            ton.volume = vorher
+            ton.volume = vorher > 0 ? vorher : 100
             lautstaerkeVorher = nil
         }
+    }
+
+    /// **Sicherheitsnetz gegen dauerhafte Stille.**
+    ///
+    /// Der Ton wird an genau einer Stelle zurueckgehalten und an vier wieder
+    /// freigegeben. Wird eine davon je uebersehen — oder kommt ein Weg dazu,
+    /// den heute niemand kennt —, bleibt der Film stumm, und das ist der
+    /// schlimmste stille Fehler, den dieser Player haben kann. Deshalb prueft
+    /// der Takt es zusaetzlich: wird nicht mehr eingesteuert, darf nichts
+    /// mehr zurueckgehalten werden.
+    private func tonFreigebenFallsFaellig() {
+        guard lautstaerkeVorher != nil, !stelltEin else { return }
+        Protokoll.schreib("[Ton] Rueckhalt hing noch — freigegeben")
+        tonZurueckhalten(false)
     }
 
     /// Der Strom wird gerade neu aufgebaut.
@@ -413,8 +434,12 @@ final class VLCPlayerView: Basisansicht {
     /// **Ist der Sprung angekommen, wo er hinsollte?**
     ///
     /// Ohne diese Frage bleibt „gesprungen" eine Absicht. Kommt VLC nicht an,
-    /// liegt es am Index der Datei — und dann ist der zweite Versuch ueber den
-    /// Byte-Anteil der einzige, der ueberhaupt ankommt.
+    /// wird der andere der beiden Sprungwege versucht — welcher taugt, haengt
+    /// an der Datei, siehe `seek(toSeconds:)`.
+    ///
+    /// Zweieinhalb Sekunden Frist: ein Sprung ueber einen brauchbaren Index
+    /// sitzt in unter einer Sekunde — eine Bereichsanfrage, ein Cluster,
+    /// fertig. Laenger zu warten verzoegert nur den Weg, der ankommt.
     private func sprungNachmessen() {
         guard let ziel = offenesZiel, let seit = offenSeit else { return }
         guard Date().timeIntervalSince(seit) > 2.5 else { return }
@@ -426,18 +451,6 @@ final class VLCPlayerView: Basisansicht {
             offenSeit = nil
             return
         }
-        // **Nach vier Sekunden ist es entschieden.**
-        //
-        // Ein Sprung, der ueber einen brauchbaren Index laeuft, sitzt in
-        // unter einer Sekunde: eine Bereichsanfrage, ein Cluster, fertig.
-        // Wer nach vier Sekunden noch am Dateianfang steht, liest sich
-        // vorwaerts durch und wird das auch in einer Minute noch tun. Laenger
-        // zu warten hilft niemandem — es verzoegert nur den einzigen Weg, der
-        // ankommt.
-        // Zweieinhalb Sekunden je Weg: ein Sprung, der ueber einen
-        // brauchbaren Index laeuft, sitzt in unter einer Sekunde. Laenger zu
-        // warten verzoegert nur den Weg, der wirklich ankommt.
-        guard Date().timeIntervalSince(seit) > 2.5 else { return }
 
         // **Erst den anderen Weg, dann erst den Server.**
         //
@@ -475,6 +488,7 @@ final class VLCPlayerView: Basisansicht {
         guard !absichtlichBeendet, player.media != nil, player.isPlaying else { return }
 
         sprungNachmessen()
+        tonFreigebenFallsFaellig()
 
         let jetzt = player.time.intValue
         let stelle = Double(jetzt) / 1000

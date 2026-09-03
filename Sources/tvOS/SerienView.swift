@@ -325,7 +325,32 @@ struct SerienView: View {
                     Label(hauptknopftext, systemImage: "play.fill")
                 }
                 .buttonStyle(KnopfStil())
-                .disabled(bereitet || weiterMit == nil)
+                // **Nicht abschalten, solange geladen wird.**
+                //
+                // Ein abgeschalteter Knopf ist auf tvOS kein Fokusziel. Wer
+                // aus der Suche auf eine Serie ging, traf den Hauptknopf
+                // deshalb abgeschaltet an — die Folgen waren noch unterwegs,
+                // `weiterMit` noch nil — und der Fokusmotor nahm den
+                // naechsten in der Reihe: Merkliste. Kam die Folge an, wurde
+                // der Knopf wieder fokussierbar, aber der Fokus wandert nicht
+                // von selbst zurueck. Auf den ueblichen Wegen fiel es nicht
+                // auf, weil dort die Folge schon im Zwischenspeicher liegt.
+                //
+                // Der Kommentar zwoelf Zeilen weiter oben beschreibt genau
+                // diesen Fehler in seiner anderen Form: mit Deckkraft 0 ist
+                // der Knopf ebenfalls kein Fokusziel mehr. Zweimal dieselbe
+                // Ursache im selben Block.
+                //
+                // `serienknopf` hat fuer diesen Moment schon die richtige
+                // Beschriftung — „Laedt…". Sie wurde nie gezeigt, weil die
+                // Abschaltung den Knopf vorher unerreichbar machte. Jetzt
+                // steht sie da, der Knopf ist von Anfang an fokussierbar, und
+                // `starte` tut ohne Folge ohnehin nichts.
+                //
+                // Abgeschaltet bleibt er, wenn wirklich nichts da ist
+                // („Keine Folgen") und waehrend `bereitet` — das ist der
+                // kurze Moment nach dem Druck.
+                .disabled(bereitet || (weiterMit == nil && !laedtFolgen))
                 .focused($amHauptknopf)
 
                 // Nur, wenn ueberhaupt etwas fortzusetzen ist — sonst meinte
