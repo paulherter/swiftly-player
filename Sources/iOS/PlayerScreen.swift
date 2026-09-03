@@ -163,6 +163,18 @@ struct PlayerScreen: View {
                 surface = $0
                 $0.onWiederherstellung = { stelltWiederHer = $0 }
                 $0.onPiPStateChanged = { imKleinenFenster = $0 }
+                // **Der Knopf folgt VLC, nicht dem Klick und nicht dem Takt.**
+                //
+                // Am Takt hing er bis zu einer halben Sekunde nach. Im Klick
+                // gesetzt ist er zu frueh: das Bild braucht noch seine Zeit,
+                // und ein Knopf, der vor dem Bild umspringt, sieht aus wie ein
+                // Player, der nicht reagiert. Gemessen auf dem Mac, dreimal:
+                // Klick bis VLC „angehalten" meldet 17–25 ms, bis die Filmzeit
+                // wirklich steht 26–36 ms.
+                //
+                // An VLCs eigener Meldung sind Knopf und Bild im selben Moment
+                // still. Uebernommen aus der Mac-Fassung (`b5db900`), wo
+                $0.laeuftGemeldet = { laeuft = $0 }
             }
             // Nach der Rückkehr aus Bild-im-Bild meldete die Fläche noch die
             // Größe des kleinen Fensters. Der Stapel richtete sich danach und
@@ -592,8 +604,9 @@ struct PlayerScreen: View {
     }
 
     private func spielenUmschalten() {
+        // Kein `laeuft.toggle()` mehr: der Knopf wartet auf VLCs Meldung.
+        // Siehe `laeuftGemeldet` oben.
         if laeuft { surface?.pause() } else { surface?.resume() }
-        withAnimation(.easeOut(duration: 0.12)) { laeuft.toggle() }
         steuerungSichtbar = true
         zentrale.standNachziehen(position: position, laeuft: laeuft, tempo: tempo)
         ausblendenVerschieben()
