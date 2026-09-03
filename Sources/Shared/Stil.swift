@@ -461,8 +461,6 @@ extension Bild where Platzhalter == Color {
 /// abgedunkelter Grund, flache Fläche, unsere Schrift, unser Akzent.
 struct Auswahlblatt<Eintrag: Identifiable>: View {
     @Binding var offen: Bool
-    /// Wie hoch die Karte ist — bestimmt, wie weit sie hinausfaehrt.
-    @State private var hoehe: CGFloat = 400
     let titel: LocalizedStringKey
     let eintraege: [Eintrag]
     let beschriftung: (Eintrag) -> String
@@ -470,19 +468,11 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     let waehlen: (Eintrag) -> Void
 
     var body: some View {
-        // **Der Stapel steht, die Kinder wechseln.**
-        //
-        // Vorher wurde das ganze Blatt eingefügt, wenn es aufging. Dann läuft
-        // kein Übergang der Kinder — SwiftUI animiert nur das Einfügen des
-        // Ganzen, und das ist ein Aufblenden. Erst wenn der Behälter bleibt
-        // und Schleier und Karte einzeln erscheinen, kann der eine blenden
-        // und die andere fahren.
         ZStack(alignment: .bottom) {
             // Abdunkeln; Tippen daneben schließt.
             Rectangle()
-                .fill(.black.opacity(offen ? 0.55 : 0))
+                .fill(.black.opacity(0.55))
                 .ignoresSafeArea()
-                .allowsHitTesting(offen)
                 .onTapGesture { schliessen() }
 
             VStack(spacing: 0) {
@@ -539,20 +529,8 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
                     .fill(Stil.flaeche)
                     .ignoresSafeArea(edges: .bottom)
             }
-            // **Gemessener Versatz statt `.move(edge: .bottom)`.**
-            //
-            // Der eingebaute Uebergang schiebt eine Ansicht um ihre
-            // **Rahmenhoehe**. Der Hintergrund hier ragt mit `ignoresSafeArea`
-            // darueber hinaus — also blieb unten ein Streifen stehen und
-            // verschwand erst, wenn die Ansicht abgeraeumt wurde. Ruckartig,
-            // und genau darueber ist
-            //
-            // Mit der gemessenen Hoehe plus der Sicherheitszone faehrt die
-            // Karte ganz hinaus, und es gibt nichts mehr wegzuraeumen.
-            .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                action: { hoehe = $0 }
-            .offset(y: offen ? 0 : hoehe + 120)
         }
+        .transition(.opacity)
     }
 
     private func schliessen() {
