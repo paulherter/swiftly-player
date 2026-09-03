@@ -14,6 +14,32 @@ import Foundation
 /// vorher hatte der Fernseher gar keine.
 public enum Zeitannahme {
 
+    /// Wie lange die Anzeige nach einem Sprung nicht überschrieben wird —
+    /// **als Deckel, nicht als Wartezeit.**
+    ///
+    /// Der Riegel fällt, sobald der Abspieler dort steht, wo er hinsollte;
+    /// diese Frist greift nur, wenn ein Sprung gar nicht ankommt. Ohne sie
+    /// bliebe die Anzeige bei einer kaputten Datei für immer stehen.
+    ///
+    /// **Sie stand einmal vierfach da, mit drei verschiedenen Werten:**
+    /// tvOS 1,2 s, macOS 2 s, iOS 2 s — und einmal 1,5 s im Spulen, ohne
+    /// Begründung. Verschieden war dabei nicht der Wert, sondern das
+    /// Verfahren: nur tvOS löste den Riegel früh, die anderen sassen ihre
+    /// Frist immer ab. Seit alle drei früh lösen, ist der Wert nur noch der
+    /// Deckel — und dann gibt es keinen Grund für drei davon.
+    ///
+    /// Gefunden von der tvOS-Sitzung im Tiefendurchgang am 03.09.2026.
+    public static let sprungriegel: TimeInterval = 2
+
+    /// Wie nah der Abspieler am Ziel sein muss, damit der Sprung als
+    /// angekommen gilt.
+    ///
+    /// Zwei Sekunden: enger wäre bei einem Strom, der nur auf Schlüsselbilder
+    /// springen kann, zu streng — dort landet man regelmäßig eine Sekunde
+    /// daneben, und der Riegel fiele nie.
+    public static let sprungAngekommen: Double = 2
+
+
     /// Wie lange nach dem Öffnen ein Rücksprung als Aufbauzucken gilt.
     public static let frischeFenster: TimeInterval = 8
     /// Ab wann der Ladeschirm auf jeden Fall weicht.

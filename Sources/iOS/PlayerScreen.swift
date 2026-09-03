@@ -533,7 +533,7 @@ struct PlayerScreen: View {
                         // nachgeführt.
                         amSchieben = false
                         surface?.seek(toSeconds: position)
-                        sprungBis = Date().addingTimeInterval(2)
+                        sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
                         meldeFortschritt()
                         ausblendenVerschieben()
                     }
@@ -631,7 +631,7 @@ struct PlayerScreen: View {
             // Anzeige kurz nicht überschreiben lassen.
             position = nach
             surface?.seek(toSeconds: nach)
-            sprungBis = Date().addingTimeInterval(2)
+            sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
             meldeFortschritt()
             ausblendenVerschieben()
         case .naechsteFolge:
@@ -659,7 +659,7 @@ struct PlayerScreen: View {
         case let .springenAuf(sekunden):
             position = sekunden
             surface?.seek(toSeconds: sekunden)
-            sprungBis = Date().addingTimeInterval(2)
+            sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
         case .vor:
             spulen(Int32(model.vorSekunden))
         case .zurueck:
@@ -699,7 +699,7 @@ struct PlayerScreen: View {
 
     private func spulen(_ sekunden: Int32) {
         surface?.jump(seconds: sekunden)
-        sprungBis = Date().addingTimeInterval(1.5)
+        sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
         if sekunden < 0 { taktZurueck += 1 } else { taktVor += 1 }
         sprungAnzeige = (sekunden < 0 ? -1 : 1, Int(abs(sekunden)))
         Task {
@@ -876,6 +876,23 @@ struct PlayerScreen: View {
                 letzterWechsel = titelwechsel
                 // `true`, weil der Wechsel den Start selbst gemeldet hat.
                 Wiedergabetakt.neuerTitel(&stand, startGemeldet: true)
+            }
+
+            // **Angekommen heisst angekommen — nicht „zwei Sekunden sind um".**
+            //
+            // Der Riegel nach einem Sprung stand auf einer festen Frist. Ist
+            // VLC frueher da, bleibt die Zeit trotzdem stehen; braucht es
+            // laenger, faellt der Riegel zu frueh und die Anzeige springt auf
+            // die alte Stelle zurueck. Gemessen wird deshalb, ob VLC dort
+            // ist, wo wir hinwollten — die Frist ist nur noch der Deckel fuer
+            // den Fall, dass ein Sprung gar nicht ankommt.
+            //
+            // Von tvOS uebernommen, wo es seit Langem so laeuft. Die
+            // tvOS-Sitzung hat den Unterschied im Tiefendurchgang gefunden:
+            // die drei Plattformen hatten nicht verschiedene Zahlen, sondern
+            // verschiedene Verfahren.
+            if sprungBis != nil, abs(surface.positionSeconds - position) < Zeitannahme.sprungAngekommen {
+                sprungBis = nil
             }
 
             let auftrag = Wiedergabetakt.rechnen(
