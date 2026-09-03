@@ -323,6 +323,22 @@ struct ServeradresseTests {
         let lokal = try #require(AppModelURLNormalizer.normalize("192.168.1.5"))
         #expect(AppModelURLNormalizer.andersHerum(lokal) == nil)
     }
+
+    /// **Tailscale vergibt aus 100.64.0.0/10, dem CGNAT-Bereich.**
+    ///
+    /// Ein Nutzer erreichte seinen Jellyfin unter `100.110.192.87:8096` und
+    /// kam nicht durch. Am Normalisierer lag es nicht — jedes IP-Literal gilt
+    /// als Heimnetz, also wird `http://` vorgesetzt, und das ist richtig.
+    /// Gesperrt hat ATS: `NSAllowsLocalNetworking` deckt RFC1918, `.local`
+    /// und `localhost`, aber **nicht** CGNAT, und seine blosse Anwesenheit
+    /// schaltete `NSAllowsArbitraryLoads` ab. Der Test haelt die Halbe fest,
+    /// die hier pruefbar ist; die andere steht im Info.plist.
+    @Test func tailscaleAdresseGehtUeberHTTP() throws {
+        #expect(AppModelURLNormalizer.istImHeimnetz("100.110.192.87"))
+        let url = try #require(AppModelURLNormalizer.normalize("100.110.192.87:8096"))
+        #expect(url.scheme == "http")
+        #expect(url.port == 8096)
+    }
 }
 
 // MARK: - Spuren und Sprachen
