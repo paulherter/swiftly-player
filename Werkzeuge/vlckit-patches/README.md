@@ -95,6 +95,12 @@ Auf einem MacBook Pro (M1 Pro, 10 Kerne), contribs bereits gebaut:
 | Lauf | Dauer |
 |---|---|
 | macOS, jeder weitere Lauf | **4–5 min** |
+| iOS + Simulator, Release | **7 min** |
+| tvOS + Simulator, Release | **4,5 min** |
+
+Gemessen in der Nacht zum 3.9., alle drei nacheinander, contribs vorhanden.
+Ein voller Durchgang über alle drei Plattformen ist damit rund eine
+Viertelstunde — nicht die Stunden, mit denen wir geplant hatten.
 
 Ein Bau ohne `-r` ist ein **Debug**-Bau, und darin bricht der OpenGL-Ausgang
 mit `Assertion failed: (!"GL_INVALID_OPERATION") … vout_helper.c:164` ab. Der
