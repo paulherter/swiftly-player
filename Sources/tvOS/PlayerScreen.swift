@@ -19,7 +19,6 @@ struct PlayerScreen: View {
     /// Der Titel beim Oeffnen. Die Videoflaeche haengt daran und darf sich
     /// nicht aendern — sonst legt SwiftUI sie neu an und der Strom faengt
     /// von vorn an.
-    let startItem: Item
     let startPlan: PlaybackPlan
     let startAt: Double
     /// Zumachen. Bewusst ein Rückruf und kein `dismiss`: der Player wird
@@ -109,6 +108,16 @@ struct PlayerScreen: View {
     @State private var naechste: Item?
     /// Nach einem Sprung kurz nicht überschreiben, sonst zieht die Anzeige
     /// auf den alten Wert zurück, bevor VLC nachgezogen hat.
+    ///
+    /// **Die 1,2 s sind ein Deckel, keine Wartezeit** — und die Zahl selbst
+    /// ist nicht gemessen. Der Takt löscht den Riegel, sobald VLC dort steht,
+    /// wo er hinsollte (siehe `beobachten`); meist ist das viel früher. Nur
+    /// wenn ein Sprung gar nicht ankommt, läuft die Frist ab.
+    ///
+    /// Auf iOS und macOS steht 2 s, und dort gibt es **keinen** frühen
+    /// Rücksetzer — die Frist wird immer abgesessen. Die drei Zahlen sind
+    /// deshalb nicht vergleichbar: verschieden ist nicht der Wert, sondern
+    /// die Mechanik. Gemeldet; ob angeglichen wird, entscheidet `main`.
     @State private var sprungBis: Date?
 
     /// **Ob gerade etwas laedt, obwohl laufen sollte.**
@@ -139,7 +148,6 @@ struct PlayerScreen: View {
     init(model: AppModel, item: Item, plan: PlaybackPlan, startAt: Double,
          schliessen: @escaping () -> Void) {
         self.model = model
-        self.startItem = item
         self.startPlan = plan
         self.startAt = startAt
         self.schliessen = schliessen
