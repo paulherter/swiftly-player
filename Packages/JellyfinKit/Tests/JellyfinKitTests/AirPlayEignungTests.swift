@@ -162,6 +162,19 @@ struct AirPlayEignungTests {
         #expect(e.geeignet)
     }
 
+    @Test("Kann der Server nicht umpacken, ist das ein Hindernis mit Namen")
+    func umpacken() {
+        let e = AirPlayEignung(tonspur: nil, hindernisse: [
+            .init(art: .umpacken, codec: "mkv")
+        ])
+        #expect(!e.geeignet)
+        #expect(e.tonspur == nil)
+        #expect(e.meldung != nil)
+        // Der Container muss in der Meldung stehen — sonst weiß niemand,
+        // welche Datei gemeint ist.
+        #expect(e.meldung?.localizedCaseInsensitiveContains("mkv") == true)
+    }
+
     @Test("Eine Datei ohne Ströme wird nicht abgelehnt")
     func ohneStroeme() {
         let e = AirPlayEignung.pruefen(quelle: quelle([]))

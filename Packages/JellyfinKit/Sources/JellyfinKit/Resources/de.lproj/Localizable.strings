@@ -32,3 +32,16 @@
 "Server antwortete mit %lld." = "Server antwortete mit %lld.";
 "Antwort nicht lesbar: %@" = "Antwort nicht lesbar: %@";
 "Verbindung fehlgeschlagen: %@" = "Verbindung fehlgeschlagen: %@";
+
+/* AirPlay und Abschnitte */
+"Das Bild liegt als %@ vor. AirPlay überträgt nur H.264 und HEVC." = "Das Bild liegt als %@ vor. AirPlay überträgt nur H.264 und HEVC.";
+"Der Ton liegt als %@ vor. Apple-Geräte nehmen das über AirPlay nicht an." = "Der Ton liegt als %@ vor. Apple-Geräte nehmen das über AirPlay nicht an.";
+"Die Datei liegt als %@ vor. Für AirPlay müsste der Server sie umpacken — er bietet das nicht an. In den Servereinstellungen unter „Wiedergabe“ muss Transkodierung erlaubt sein." = "Die Datei liegt als %@ vor. Für AirPlay müsste der Server sie umpacken — er bietet das nicht an. In den Servereinstellungen unter „Wiedergabe“ muss Transkodierung erlaubt sein.";
+"Über Bildschirmsynchronisierung im Kontrollzentrum läuft der Film trotzdem auf dem Fernseher." = "Über Bildschirmsynchronisierung im Kontrollzentrum läuft der Film trotzdem auf dem Fernseher.";
+"Vorspann überspringen" = "Vorspann überspringen";
+"Rückblick überspringen" = "Rückblick überspringen";
+"Vorschau überspringen" = "Vorschau überspringen";
+"Werbung überspringen" = "Werbung überspringen";
+"Nächste Folge" = "Nächste Folge";
+"Überspringen" = "Überspringen";
+"Der Server nennt keine abspielbare Fassung." = "Der Server nennt keine abspielbare Fassung.";

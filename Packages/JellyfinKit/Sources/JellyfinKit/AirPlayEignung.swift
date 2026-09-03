@@ -34,15 +34,27 @@ public struct AirPlayEignung: Sendable, Equatable {
 
     public var geeignet: Bool { hindernisse.isEmpty }
 
+    public init(tonspur: Int?, hindernisse: [Hindernis]) {
+        self.tonspur = tonspur
+        self.hindernisse = hindernisse
+    }
+
     /// Was AirPlay im Weg steht.
     public struct Hindernis: Sendable, Equatable {
         public enum Art: String, Sendable {
             case video
             case ton
+            /// Der Server müsste umpacken, kann oder will aber nicht.
+            case umpacken
         }
 
         public let art: Art
         public let codec: String
+
+        public init(art: Art, codec: String) {
+            self.art = art
+            self.codec = codec
+        }
 
         public var text: String {
             switch art {
@@ -50,6 +62,8 @@ public struct AirPlayEignung: Sendable, Equatable {
                 uebersetzt("Das Bild liegt als \(codec.uppercased()) vor. AirPlay überträgt nur H.264 und HEVC.")
             case .ton:
                 uebersetzt("Der Ton liegt als \(codec.uppercased()) vor. Apple-Geräte nehmen das über AirPlay nicht an.")
+            case .umpacken:
+                uebersetzt("Die Datei liegt als \(codec.uppercased()) vor. Für AirPlay müsste der Server sie umpacken — er bietet das nicht an. In den Servereinstellungen unter „Wiedergabe“ muss Transkodierung erlaubt sein.")
             }
         }
     }

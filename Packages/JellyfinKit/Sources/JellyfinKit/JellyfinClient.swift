@@ -612,9 +612,38 @@ public actor JellyfinClient {
         //
         // Ausdruecklich `-1` und nicht `nil`: `nil` heisst „entscheide du",
         // und genau das soll der Server hier nicht.
-        guard let plan = try await playbackPlan(for: itemID, profile: .airplay(),
-                                                audioStreamIndex: eignung.tonspur,
-                                                subtitleStreamIndex: -1) else {
+        let info = try await playbackInfo(itemID: itemID, profile: .airplay(),
+                                          audioStreamIndex: eignung.tonspur,
+                                          subtitleStreamIndex: -1)
+        guard let quelle = PlaybackPlan.besteQuelle(info.mediaSources) else {
+            throw JellyfinError.noPlayableSource
+        }
+
+        // **Ohne Adresse vom Server geht es nicht — und das war ein Loch.**
+        //
+        // Ist der Container nichts fuer AVPlayer (Matroska), muss der Server
+        // umpacken und dafuer eine `TranscodingUrl` nennen. Nennt er keine,
+        // fiel der Plan bisher stillschweigend auf die **Originaldatei**
+        // zurueck (`/stream?static=true`) — und die reichten wir an AVPlayer
+        // weiter, der sie nicht oeffnen kann. Auf dem Fernseher: Schwarzbild.
+        // Am 03.09.2026 auf
+        //
+        // Fuer den VLC-Weg ist derselbe Rueckfall richtig — VLC oeffnet die
+        // Datei ja. Hier ist er falsch, also wird hier geprueft.
+        if quelle.deliveryMethod != .directPlay, quelle.transcodingUrl == nil {
+            return .gehtNicht(AirPlayEignung(tonspur: nil, hindernisse: [
+                AirPlayEignung.Hindernis(art: .umpacken,
+                                         codec: quelle.container ?? "?")
+            ]))
+        }
+
+        guard let plan = try PlaybackPlan.make(
+            from: info, itemID: itemID, profile: .airplay(),
+            streamURL: { [self] id, sourceID, sessionID in
+                try streamURL(itemID: id, mediaSourceID: sourceID, playSessionID: sessionID)
+            },
+            serverBase: baseURL
+        ) else {
             throw JellyfinError.noPlayableSource
         }
         return .geht(plan)
