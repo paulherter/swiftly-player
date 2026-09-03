@@ -8,7 +8,7 @@ nicht nur auf einem Rechner.
 |---|---|
 | Grundlage | VLCKit **4.0.0-a23** |
 | VLC-Stand | der von VLCKit gepinnte `TESTEDHASH` |
-| Patch | `0028-mkv-allow-index_range-without-fastseek-and-never-cla.patch` |
+| Patches | `0028-mkv-…`, `0030-vout-clock-…`, `VLCKit-pause-ohne-warteschlange.patch` |
 
 ## Wofür
 
@@ -54,3 +54,74 @@ Das Bauskript verträgt **keine Leerzeichen im Pfad**.
 
 Der Patch gehört zu VideoLAN eingereicht. Sobald er dort ist, können wir
 wieder auf die offiziellen Fassungen zurück.
+
+## Pause greift sofort — drei Patches, alle gemessen
+
+Gemeldet auf dem Mac, betrifft aber jede Plattform: zwischen dem Druck auf
+Pause und dem stehenden Bild vergingen bis zu **125 Millisekunden**. Bei
+120 Hz sind das rund vierzehn Bilder.
+
+**Erst gemessen, dann gepatcht** — und das hat einen Baulauf gespart: der
+erste Verdacht galt `ControlPause` in `src/input/input.c`. Eingebaute
+Wegmarken zeigten, dass der ganze Abschnitt dort **157 bis 216 Mikrosekunden**
+braucht. libvlcs Pausepfad war nie das Problem.
+
+| Abschnitt | vorher | Abhilfe |
+|---|---|---|
+| VLCKit reiht `pause` in eine serielle Schlange | 17–25 ms | `VLCKit-pause-ohne-warteschlange.patch` |
+| libvlc: Befehl bis Uhren stehen | 0,2 ms | — nichts zu tun |
+| Uhr weckt Wartende beim Pausieren nicht | bis 41 ms | `0030`, erste Hälfte |
+| Anzeigeschleife wartet `VOUT_REDISPLAY_DELAY` (80 ms) | bis 80 ms | `0030`, zweite Hälfte |
+
+Danach: Pause und Fortsetzen greifen nach etwa einem Bild.
+
+### VLCKit-Patch, nicht libvlc
+
+`VLCKit-pause-ohne-warteschlange.patch` fasst `Sources/Playback/VLCMediaPlayer.m`
+an und liegt damit **nicht** in `libvlc/patches/` — das Bauskript setzt nur
+den vlc-Baum zurück, VLCKits eigene Quellen überleben. Er muss deshalb von
+Hand aufgelegt werden. **Vor jedem Bau prüfen**, dass er drin ist; sonst
+fehlt er unbemerkt, und genau diese Sorte Fehler hat beim `0028`-Durchgang
+schon einmal eine Stunde gekostet.
+
+`play` bleibt absichtlich auf der Schlange, **außer** beim Fortsetzen aus der
+Pause: der erste Start öffnet das Medium und kann ans Netz gehen, der darf
+den Aufrufer nicht blockieren.
+
+## Gemessene Bauzeiten
+
+Auf einem MacBook Pro (M1 Pro, 10 Kerne), contribs bereits gebaut:
+
+| Lauf | Dauer |
+|---|---|
+| macOS, jeder weitere Lauf | **4–5 min** |
+| iOS + Simulator, Release | **7 min** |
+| tvOS + Simulator, Release | **4,5 min** |
+
+Gemessen in der Nacht zum 3.9., alle drei nacheinander, contribs vorhanden.
+Ein voller Durchgang über alle drei Plattformen ist damit rund eine
+Viertelstunde — nicht die Stunden, mit denen wir geplant hatten.
+
+Ein Bau ohne `-r` ist ein **Debug**-Bau, und darin bricht der OpenGL-Ausgang
+mit `Assertion failed: (!"GL_INVALID_OPERATION") … vout_helper.c:164` ab. Der
+Fehler steckt auch in der ausgelieferten Fassung, dort ist die Zusicherung nur
+wegkompiliert. Zum Messen also **immer `-r`**.
+
+## Bekannt und nicht behoben: Flackern beim Ziehen am Fensterrand
+
+Nur macOS, nur beim Ziehen, **älter als diese Patches** — eine Fassung ohne
+sie flackert identisch. `reshape` in `modules/video_output/macosx.m` führt nur
+die Maße nach und löst kein Neuzeichnen aus; bis das nächste Bild kommt, zeigt
+der Fensterserver den alten, anders skalierten Puffer. Im pausierten Zustand
+kommt nie eines, deshalb ist es dort am schlimmsten.
+
+VLCs eigene Gegenmaßnahme steht in `renewGState` — und ihr eigener Kommentar
+sagt, dass `disableScreenUpdatesUntilFlush` **seit macOS 10.13 ein Nichtstuer**
+ist.
+
+Ein Versuch, in `reshape` bei `inLiveResize` synchron mit `[self display]`
+neu zu zeichnen, **wurde verworfen**: das Flackern war weg, dafür lief das
+Ziehen mit rund zwei Bildern je Sekunde. `reshape` feuert beim Ziehen dutzende
+Male je Sekunde, und jeder Aufruf malt das ganze Bild und wartet auf den
+Puffertausch. Die richtige Abhilfe wäre, beim Ziehen etwas **Billiges** zu
+zeichnen — genau das, wozu Apples Dokumentation bei `inLiveResize` rät.

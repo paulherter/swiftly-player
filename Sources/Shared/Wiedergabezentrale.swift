@@ -72,10 +72,17 @@ final class Wiedergabezentrale {
         befehleEinrichten()
         #if !os(macOS)
         unterbrechungenBeobachten()
+        routenwechselBeobachten()
         #endif
     }
 
     func abgeben() {
+        #if !os(macOS)
+        if let routenbeobachter {
+            NotificationCenter.default.removeObserver(routenbeobachter)
+            self.routenbeobachter = nil
+        }
+        #endif
         let zentrale = MPRemoteCommandCenter.shared()
         for befehl in [zentrale.playCommand, zentrale.pauseCommand,
                        zentrale.togglePlayPauseCommand, zentrale.nextTrackCommand,
@@ -361,6 +368,54 @@ final class Wiedergabezentrale {
     // wenn nebenbei etwas klingelt, es mischt. Es gibt also nichts, worauf
     // gehört werden müsste.
     #if !os(macOS)
+    /// **Wechselt das Ausgabegeraet, muss der Tonausgang neu aufgebaut
+    /// werden.**
+    ///
+    /// Genau das ist das Bild eines nicht behandelten Routenwechsels. iOS
+    /// meldet ihn, VLCs Tonausgang haengt aber weiter am alten Geraet und
+    /// bleibt stumm, bis irgendein anderer Anlass ihn neu aufbaut — beim Hin-
+    /// und Herwechseln kommt der irgendwann von selbst.
+    ///
+    /// Wir haben bisher **nur** auf Unterbrechungen gehoert, nicht auf
+    /// Routenwechsel. Das sind zwei verschiedene Meldungen: ein Anruf
+    /// unterbricht, ein Kopfhoerer wechselt die Route.
+    private var routenbeobachter: NSObjectProtocol?
+
+    private func routenwechselBeobachten() {
+        if let routenbeobachter { NotificationCenter.default.removeObserver(routenbeobachter) }
+        routenbeobachter = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] nachricht in
+            let roh = nachricht.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            MainActor.assumeIsolated { self?.routenwechsel(grund: roh) }
+        }
+    }
+
+    private func routenwechsel(grund roh: UInt?) {
+        guard let roh,
+              let grund = AVAudioSession.RouteChangeReason(rawValue: roh) else { return }
+        switch grund {
+        case .newDeviceAvailable, .override, .categoryChange, .routeConfigurationChange:
+            guard spieltGerade else { return }
+            Protokoll.schreib("[Ton] Routenwechsel (\(roh)) — Ausgang neu aufbauen")
+            // **Anhalten und sofort weiter.** VLC baut den Tonausgang beim
+            // Fortsetzen neu auf; ohne diesen Anstoss bleibt er auf dem alten
+            // Geraet. Ein feinerer Weg waere, nur den Ausgang zu tauschen —
+            // den bietet VLCKit nicht an.
+            griffe?.anhalten()
+            griffe?.abspielen()
+        case .oldDeviceUnavailable:
+            // Kopfhoerer raus: anhalten, wie es jeder Abspieler tut. Sonst
+            // laeuft der Film ploetzlich ueber den Lautsprecher.
+            Protokoll.schreib("[Ton] Ausgabegeraet weg — anhalten")
+            griffe?.anhalten()
+        default:
+            break
+        }
+    }
+
     private func unterbrechungenBeobachten() {
         if let beobachter { NotificationCenter.default.removeObserver(beobachter) }
         beobachter = NotificationCenter.default.addObserver(
@@ -386,12 +441,38 @@ final class Wiedergabezentrale {
                 .nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0) > 0
             griffe?.anhalten()
         case .ended:
-            // Nur weiterspielen, wenn das System es nahelegt **und** vorher
-            // etwas lief. Sonst startet ein Anruf während einer Pause die
-            // Wiedergabe.
+            // **`shouldResume` darf nicht Bedingung sein.**
+            //
+            // Hier stand `if liefVorher, sollWeiter`. Der Gedanke war richtig
+            // — ein Anruf waehrend einer Pause soll die Wiedergabe nicht
+            // starten —, aber genau das leistet `liefVorher` schon allein.
+            // `shouldResume` setzt iOS nur, wenn es das Fortsetzen nahelegen
+            // *will*; bei kurzen Unterbrechungen fehlt es regelmaessig.
+            //
+            // Am Geraet gemessen: Mitteilungszentrale aufziehen und wieder
+            // schliessen. Dreimal derselbe Handgriff, dreimal „pausing" von
+            // VLC — beim dritten Mal kam kein „resuming" mehr. Die App zeigte
+            // korrekt „angehalten", nur setzte niemand fort, und der
+            // Pausenknopf half auch nicht mehr.
+            //
+            // Der Hinweis wird trotzdem mitgeschrieben: fehlt er dauerhaft
+            // auch bei Anrufen, waere das ein anderer Fehler.
             let sollWeiter = AVAudioSession.InterruptionOptions(rawValue: hinweis ?? 0)
                 .contains(.shouldResume)
-            if liefVorher, sollWeiter { griffe?.abspielen() }
+            Protokoll.schreib("[Ton] Unterbrechung vorbei — lief vorher "
+                + "\(liefVorher), shouldResume \(sollWeiter)")
+            if liefVorher {
+                // **Die Tonsitzung erst wieder aktivieren.** Nach einer
+                // Unterbrechung ist sie inaktiv; ein `play` darauf verpufft
+                // still, und dann steht das Bild ohne erkennbaren Grund.
+                do {
+                    try AVAudioSession.sharedInstance().setActive(true)
+                } catch {
+                    Protokoll.schreib("[Ton] Sitzung liess sich nicht aktivieren: "
+                        + error.localizedDescription)
+                }
+                griffe?.abspielen()
+            }
             liefVorher = false
         @unknown default:
             break

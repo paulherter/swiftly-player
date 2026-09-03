@@ -155,6 +155,12 @@ struct Aktionsknopf: View {
     let symbol: String
     var titel: LocalizedStringKey?
     var an: Bool = false
+    /// Die Umrandung. Sie gehört dorthin, wo der Knopf auf ruhigem Grund
+    /// steht und sonst nicht als Knopf zu erkennen wäre — in einer Zeile,
+    /// auf einer Fläche. **Über einem Filmbild nicht:** dort ist der Knopf
+    /// ohnehin der einzige Kreis weit und breit, und der Ring liegt als
+    /// Fremdkörper im Bild.
+    var rand: Bool = true
     let auswahl: () -> Void
 
     @State private var schwebt = false
@@ -166,7 +172,7 @@ struct Aktionsknopf: View {
                 .frame(width: Stil.knopfRund, height: Stil.knopfRund)
                 .foregroundStyle(an ? Stil.akzent : Stil.schrift.opacity(0.8))
                 .background(schwebt ? Stil.schrift.opacity(0.08) : .clear, in: Circle())
-                .overlay(Circle().strokeBorder(Stil.rand, lineWidth: 1))
+                .overlay { if rand { Circle().strokeBorder(Stil.rand, lineWidth: 1) } }
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

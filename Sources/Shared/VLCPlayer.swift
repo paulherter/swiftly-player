@@ -211,6 +211,54 @@ final class VLCPlayerView: Basisansicht {
     /// Mal am Filmanfang.
     private var erstStelle: Double?
 
+    /// **Stumm, solange die Startstelle angesteuert wird.**
+    ///
+    /// Der Sprung auf die gemerkte Stelle geht bewusst *nach* dem Öffnen los
+    /// und nicht als `:start-time` — siehe `startpositionSetzen()`. Er braucht
+    /// dafür ein laufendes Bild (`player.time > 0`). Das Bild ist in dieser
+    /// Zeit ausgeblendet, der **Ton war es nicht**: man hörte rund eine
+    /// Sekunde vom Anfang der Folge, dann sprang es an die richtige Stelle.
+    ///
+    /// Gemeldet auf dem Mac, betrifft aber jede Plattform — es ist derselbe
+    /// Weg.
+    ///
+    /// Geregelt über die Lautstärke, **nicht** über `isMuted`: für
+    /// `setMuted:` ist bei VLCKit eine Verklemmung gemeldet (Fehler 111).
+    private var lautstaerkeVorher: Int32?
+
+    private func tonZurueckhalten(_ zurueck: Bool) {
+        guard let ton = player.audio else { return }
+        if zurueck {
+            guard lautstaerkeVorher == nil else { return }
+            // **Was VLC vor dem ersten Ton meldet, ist kein Messwert.**
+            //
+            // `tonZurueckhalten(true)` laeuft in `oeffnen(…)`, also bevor
+            // `player.media` gesetzt ist — der Tonausgang existiert da noch
+            // gar nicht und `volume` steht auf 0 oder -1. Gemerkt und spaeter
+            // „wiederhergestellt" hiess damit: dauerhaft stumm.
+            let jetzt = ton.volume
+            lautstaerkeVorher = jetzt > 0 ? jetzt : 100
+            ton.volume = 0
+        } else if let vorher = lautstaerkeVorher {
+            ton.volume = vorher > 0 ? vorher : 100
+            lautstaerkeVorher = nil
+        }
+    }
+
+    /// **Sicherheitsnetz gegen dauerhafte Stille.**
+    ///
+    /// Der Ton wird an genau einer Stelle zurueckgehalten und an vier wieder
+    /// freigegeben. Wird eine davon je uebersehen — oder kommt ein Weg dazu,
+    /// den heute niemand kennt —, bleibt der Film stumm, und das ist der
+    /// schlimmste stille Fehler, den dieser Player haben kann. Deshalb prueft
+    /// der Takt es zusaetzlich: wird nicht mehr eingesteuert, darf nichts
+    /// mehr zurueckgehalten werden.
+    private func tonFreigebenFallsFaellig() {
+        guard lautstaerkeVorher != nil, !stelltEin else { return }
+        Protokoll.schreib("[Ton] Rueckhalt hing noch — freigegeben")
+        tonZurueckhalten(false)
+    }
+
     /// Der Strom wird gerade neu aufgebaut.
     ///
     /// Die Oberflaeche braucht das: beim Abriss liest VLC ein Dateiende,
@@ -336,6 +384,39 @@ final class VLCPlayerView: Basisansicht {
         // Bei jedem Wechsel nachziehen: sonst zeigt der Knopf im
         // Bild-im-Bild-Fenster weiter Wiedergabe, obwohl pausiert ist.
         refreshPiPState()
+
+        // **Der Knopf folgt der Maschine, nicht der Uhr.**
+        //
+        // Der Zustand des Abspielknopfes hing bisher am Takt, und der schlägt
+        // alle 500 ms (`Wiedergabetakt.taktlaenge`). Der Knopf sprang also bis
+        // zu einer halben Sekunde nach dem Druck um.
+        //
+        // Setzt man ihn stattdessen sofort im Klick, ist er zu **früh**: das
+        // Bild braucht noch seine Zeit. Am Mac gemessen, dreimal:
+        //
+        // Klick → VLC meldet „angehalten"   17–25 ms Klick → Filmzeit steht
+        // wirklich   26–36 ms
+        //
+        // Alle Geräte hier laufen mit **120 Hz**, ein Bild ist also 8,3 ms —
+        // das sind drei bis vier Bilder, nicht ein bis zwei. (Hier stand
+        // zuerst die Rechnung für 60 Hz; sie hat den Abstand halbiert und
+        // damit kleiner aussehen lassen, als er ist.) Das ist der Abstand, den
+        //
+        // Also weder das eine noch das andere: der Knopf hängt an genau der
+        // Meldung, mit der die Maschine selbst umschaltet. Dann sind Knopf und
+        // Bild im selben Moment still, und der Abstand verschwindet — nicht,
+        // weil er kleiner wird, sondern weil es keine zwei Zeitpunkte mehr
+        // gibt.
+        //
+        // Warum nicht schneller: Jellyfin Media Player und Jellium haben das
+        // Problem nicht, aber beide setzen auf **libmpv**, nicht auf libvlc —
+        // andere Ausgabewarteschlange. Das ist kein Kniff zum Übernehmen, das
+        // ist ein anderer Motor.
+        switch zustand {
+        case .playing:  laeuftGemeldet?(true)
+        case .paused:   laeuftGemeldet?(false)
+        default:        break
+        }
         guard !absichtlichBeendet else { return }
         guard zustand == .stopped || zustand == .stopping || zustand == .error else { return }
         let laenge = laengeSekunden
@@ -407,6 +488,7 @@ final class VLCPlayerView: Basisansicht {
         guard !absichtlichBeendet, player.media != nil, player.isPlaying else { return }
 
         sprungNachmessen()
+        tonFreigebenFallsFaellig()
 
         let jetzt = player.time.intValue
         let stelle = Double(jetzt) / 1000
@@ -423,6 +505,7 @@ final class VLCPlayerView: Basisansicht {
             letzteBekannteZeit = jetzt
             if stelle >= ziel - 10 {
                 erstStelle = nil
+                tonZurueckhalten(false)
             } else {
                 einsteuernSeit = einsteuernSeit ?? Date()
                 // Notbremse: kommt der Sprung nie an, darf die Oberflaeche
@@ -430,6 +513,7 @@ final class VLCPlayerView: Basisansicht {
                 if Date().timeIntervalSince(einsteuernSeit!) > 20 {
                     Protokoll.schreib("[VLC] Einsteuern auf \(Int(ziel)) s aufgegeben, weiter bei \(Int(stelle)) s")
                     erstStelle = nil
+                    tonZurueckhalten(false)
                     einsteuernSeit = nil
                 }
             }
@@ -557,6 +641,7 @@ final class VLCPlayerView: Basisansicht {
         guard ziel > 1 else {
             startposition = nil
             erstStelle = nil
+            tonZurueckhalten(false)
             return
         }
         // Vor dem ersten Bild verpufft ein Sprung wirkungslos.
@@ -778,6 +863,7 @@ final class VLCPlayerView: Basisansicht {
 
         startposition = abSekunden
         erstStelle = abSekunden > 1 ? abSekunden : nil
+        tonZurueckhalten(erstStelle != nil)
         melder.neuBeginnen()
         Protokoll.schreib("[VLC] Öffne \(url.lastPathComponent), Startposition \(Int(abSekunden)) s")
         player.media = medium
@@ -799,10 +885,15 @@ final class VLCPlayerView: Basisansicht {
         }
     }
 
+    /// Wird gerufen, sobald **VLC selbst** umschaltet — nicht, wenn wir es
+    /// verlangen. Der Abspielknopf hängt daran; siehe `zustandGewechselt`.
+    var laeuftGemeldet: ((Bool) -> Void)?
+
     func pause()  { player.pause(); refreshPiPState() }
     func resume() { player.play();  refreshPiPState() }
     func stop() {
         absichtlichBeendet = true
+        tonZurueckhalten(false)
         wachhund?.invalidate()
         wachhund = nil
         // netzwache bleibt: cancel() ist endgueltig, und dieselbe View spielt
