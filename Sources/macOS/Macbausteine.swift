@@ -766,3 +766,44 @@ extension View {
     }
 }
 
+
+// MARK: - Übernahme
+
+/// „Läuft auf dem iPhone — hier weiterschauen", in der Form der Seitenleiste.
+///
+/// **`Mac`-eigene Fassung, weil die Leiste schmal ist.** Auf dem Fernseher
+/// trägt das Abzeichen zwei Zeilen nebeneinander, hier stehen sie
+/// untereinander und der Titel darf umbrechen. Gleicher Zweck, andere Breite
+/// — die Benennung (`titelzeile`, `geraetezeichen`) teilen sich beide.
+struct Uebernahmezeile: View {
+    let sitzung: Fremdsitzung
+    @State private var schwebt = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: sitzung.geraetezeichen)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Stil.akzent)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Hier weiterschauen")
+                    .font(Stil.kachelTitel)
+                    .foregroundStyle(Stil.schrift)
+                    .lineLimit(1)
+                Text(verbatim: sitzung.titelzeile)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 40)
+        .background(schwebt ? Stil.akzent.opacity(0.12) : Stil.akzent.opacity(0.06),
+                    in: RoundedRectangle(cornerRadius: Stil.ecke))
+        .overlay(RoundedRectangle(cornerRadius: Stil.ecke)
+            .strokeBorder(Stil.akzent.opacity(schwebt ? 0.35 : 0.18)))
+        .onHover { schwebt = $0 }
+        .animation(Stil.zeitSchweben, value: schwebt)
+    }
+}
