@@ -10,11 +10,13 @@
 	     ausgehende Verbindungen sind darin standardmaessig gesperrt. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- Ein Jellyfin steht meist im eigenen Netz. Fuer die Suche nach dem
-	     Server im lokalen Netz braucht es zusaetzlich den Server-Anteil;
-	     ohne ihn kommt die Rundsendung nicht zurueck. -->
-	<key>com.apple.security.network.server</key>
-	<true/>
+	<!-- **Kein com.apple.security.network.server.** Es stand hier einmal,
+	     begruendet mit einer Suche nach dem Server im lokalen Netz — die es
+	     nicht gibt: kein UDP, kein Bonjour, kein Lauschen, die Adresse wird
+	     von Hand eingegeben. Apples Pruefung hat den Bau am 03.09.2026
+	     deshalb abgewiesen. Ein Client, der nur hinausgeht, braucht nur
+	     .client. Kaeme die Serversuche je dazu, gehoert das Entitlement
+	     zurueck — zusammen mit dem Code, der es rechtfertigt. -->
 	<!-- Dieselbe Begruendung wie auf iOS: ohne die Zugriffsgruppe verweigert
 	     der Keychain das Schreiben (-34018) und die Anmeldung ginge bei
 	     jedem Start verloren. -->
