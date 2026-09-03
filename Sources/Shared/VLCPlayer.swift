@@ -659,13 +659,33 @@ final class VLCPlayerView: Basisansicht {
 
     /// Startposition setzen, sobald VLC springen kann.
     ///
-    /// Nicht als ':start-time'-Option: die zwingt VLC, schon beim Oeffnen zu
-    /// springen, und das kostet ein Vielfaches.
+    /// **Nicht als ':start-time'-Option — und der urspruengliche Grund dafuer
+    /// ist nicht mehr der richtige.**
+    ///
+    /// Hier stand: die Option zwinge VLC, schon beim Oeffnen zu springen, und
+    /// das koste ein Vielfaches. Das galt vor `mkv_trusted`, als ein Sprung
+    /// ohne Index zwanzig Sekunden dauerte. Heute sind es Millisekunden, also
+    /// habe ich es am 04.09.2026 umgebaut — und binnen Minuten am Geraet
+    /// wieder ausgebaut.
+    ///
+    /// **Der neue Grund ist ein anderer und ein besserer.** Die gemerkte
+    /// Stelle kann am Dateiende liegen: eine Folge laeuft durch, die App merkt
+    /// sich 3707 s, und beim naechsten Oeffnen steht genau dort die
+    /// Startposition. Mit ':start-time' meldet VLC dann sofort `end of stream`
+    /// — gemessen, 141 ms nach dem Oeffnen, die Folgenende- Erkennung greift
+    /// und die App springt in die naechste Folge.
+    ///
+    /// Der Weg ueber den nachtraeglichen Sprung hat den Fehler nicht: dort
+    /// laeuft der Strom erst an, und ein Sprung ans eigene Ende ist harmlos.
+    ///
+    /// Wer es erneut versucht, braucht **vorher** die Laufzeit und einen
+    /// Abstand zum Ende — und die Laufzeit steht beim Oeffnen noch nicht fest.
+    /// Das ist der eigentliche Aufwand, nicht die Option.
     ///
     /// Haengt bewusst **nicht** allein am Zustandswechsel nach Playing. Baut
     /// man den Strom neu auf, waehrend VLC schon spielt, bleibt es intern bei
-    /// Playing — es kommt kein Uebergang, der Rueckruf feuert nie und der
-    /// neue Strom laeuft ab Sekunde 0. Genau daran ist die Rettung nach dem
+    /// Playing — es kommt kein Uebergang, der Rueckruf feuert nie und der neue
+    /// Strom laeuft ab Sekunde 0. Genau daran ist die Rettung nach dem
     /// Netzwechsel gescheitert. Der Wachhund ruft deshalb ebenfalls hier an.
     private func startpositionSetzen() {
         guard let ziel = startposition else { return }
