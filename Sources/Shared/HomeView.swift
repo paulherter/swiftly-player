@@ -33,7 +33,22 @@ struct HomeView: View {
             } else if stand.weiterschauen.isEmpty, stand.naechsteFolge.isEmpty, stand.zuletzt.isEmpty {
                 nichtsDa
             }
+
+            // **Eigenes Blatt statt `confirmationDialog`.**
+            //
+            // Der Systemdialog legt seinen eigenen, sehr hellen Schleier auf;
+            // ueber einer dunklen Startseite voller Plakate hebt er sich kaum
+            // ab. Mit einem eigenen Blatt ist der Schleier unsere Entscheidung
+            // — und es sieht aus wie das auf dem Fernseher.
+            if auswahlOffen {
+                Uebernahmeauswahl(sitzungen: uebernahme.angebote,
+                                  waehlen: { hierWeiterschauen($0) },
+                                  abbrechen: { auswahlOffen = false })
+                    .transition(.opacity)
+                    .zIndex(5)
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
         // **Nach dem Zusehen neu holen, ohne Frist.**
         //
         // Wer aus dem Player zurückkommt, hat die Stelle gerade verschoben —
@@ -46,17 +61,6 @@ struct HomeView: View {
             if abspielen == nil { uebernahme.starten(model) } else { uebernahme.beenden() }
         }
         .onDisappear { uebernahme.beenden() }
-        .confirmationDialog("Wo weiterschauen?", isPresented: $auswahlOffen,
-                            titleVisibility: .visible) {
-            ForEach(uebernahme.angebote) { s in
-                Button("\(s.geraetename ?? String(localized: "Gerät")) — \(s.titelzeile)") {
-                    hierWeiterschauen(s)
-                }
-            }
-            Button("Abbrechen", role: .cancel) { auswahlOffen = false }
-        } message: {
-            Text("Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.")
-        }
         .fullScreenCover(item: $abspielen, onDismiss: { Task { await laden() } }) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)

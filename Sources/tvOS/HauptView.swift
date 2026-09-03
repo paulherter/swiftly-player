@@ -132,16 +132,21 @@ struct HauptView: View {
             // **Der Player ist ein Geschwister, kein Kind.**
             //
             // Vorher lag `.disabled` in der Kette **vor** `.overlay`. Damit
-            // erbte der Player die Sperre: er war zu sehen, aber tot —
-            // nichts darin fokussierbar, jeder Tastendruck unbehandelt, und
-            // Menue fiel durch, was tvOS als Ausstieg las. Er verschwand also
-            // beim ersten Druck, und keine Reparatur im Player konnte je
-            // greifen, weil keine von ihnen zum Zuge kam.
+            // erbte der Player die Sperre: er war zu sehen, aber tot — nichts
+            // darin fokussierbar, jeder Tastendruck unbehandelt, und Menue
+            // fiel durch, was tvOS als Ausstieg las. Er verschwand also beim
+            // ersten Druck, und keine Reparatur im Player konnte je greifen,
+            // weil keine von ihnen zum Zuge kam. **Auch beim Auswahlblatt
+            // sperren, nicht nur beim Player.**
+            //
+            // Sonst bleibt alles dahinter fokussierbar: Sichtbar verdeckt
+            // heisst auf dem Fernseher nicht unerreichbar — der Fokusmotor
+            // sucht geometrisch und kennt keine Ebenen.
             rahmen
-                .disabled(abspielen != nil)
+                .disabled(abspielen != nil || auswahlOffen)
 
             if auswahlOffen {
-                Uebernahmeauswahl(sitzungen: uebernahme.angebote,
+                TVUebernahmeauswahl(sitzungen: uebernahme.angebote,
                                   waehlen: { hierWeiterschauen($0) },
                                   abbrechen: { auswahlOffen = false })
                     .transition(.opacity)

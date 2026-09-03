@@ -1045,11 +1045,16 @@ struct Staffelpille: View {
 
 /// Läuft auf mehreren Geräten etwas, wird gefragt statt geraten.
 ///
+/// **`TV`-Kürzel, weil es die geteilte Fassung auch gibt.** Die hier ist für
+/// zehn Fuß Abstand und den Fokusring gebaut, die in `Bausteine.swift` für
+/// den Finger. Gleicher Zweck, verschiedene Entfernung — genau der Fall, in
+/// dem CLAUDE.md eigene Ansichten erlaubt.
+///
 /// **Warum ein eigenes Blatt und keine Liste im Abzeichen.** Das Abzeichen
 /// sitzt in der Kopfleiste und hat dort Platz für eine Zeile. Und die Wahl
 /// ist folgenreich: was hier gewählt wird, **hält auf dem anderen Gerät an**.
 /// Das gehört vor Augen, nicht in ein Aufklappmenü.
-struct Uebernahmeauswahl: View {
+struct TVUebernahmeauswahl: View {
     let sitzungen: [Fremdsitzung]
     var waehlen: (Fremdsitzung) -> Void
     var abbrechen: () -> Void
