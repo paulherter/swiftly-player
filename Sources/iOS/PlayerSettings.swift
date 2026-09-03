@@ -71,9 +71,26 @@ struct PlayerSettingsSheet: View {
             // Ohne Spacer: sonst bekommen die Spalten nur ihre Wunschhöhe und
             // die unterste Gruppe wurde am Bildrand abgeschnitten, statt zu
             // scrollen.
-            VStack(spacing: 0) {
-                kopf
-                if quer { spalten } else { einzelspalte }
+            // **Der Inhalt haengt an `offen`, die Flaeche nicht.**
+            //
+            // Das Blatt bleibt montiert und blendet nur, damit es beim
+            // Schliessen nicht schlagartig verschwindet (siehe `PlayerScreen`).
+            // Sein Inhalt darf das nicht mitmachen: `untertitel` und `ton`
+            // lesen `surface?.untertitelspuren` und `?.tonspuren`, und die
+            // gehen direkt in VLCKit. Dauerhaft montiert waeren das bei jedem
+            // 500-ms-Takt vier Anfragen, in jeder Wiedergabe, auch wenn
+            // niemand den Dialog offen hat.
+            //
+            // Sichtbar kostet es fast nichts: beim Schliessen geht die helle
+            // Schrift einen Moment vor der Flaeche. Gemessen wird der Schirm
+            // dadurch kurz *dunkler* (0,168 → 0,109), nicht heller — auf
+            // dunklem Grund ist das nicht zu sehen. Der helle Blitz, um den es
+            // ging, war ein Sprung auf 0,918.
+            if offen {
+                VStack(spacing: 0) {
+                    kopf
+                    if quer { spalten } else { einzelspalte }
+                }
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { neu in

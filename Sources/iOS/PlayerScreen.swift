@@ -49,8 +49,21 @@ struct PlayerScreen: View {
     /// Und nicht auf dem Fernseher: dort steuert `AVPlayerViewController`, und
     /// zwei Steuerungen uebereinander wuerden sich gegenseitig treffen.
     private var steuerungDa: Bool {
-        steuerungSichtbar && erstesBildDa && !imKleinenFenster && !zeigeEinstellungen
-            && airplayPlan == nil
+        schleierDa && !zeigeEinstellungen
+    }
+
+    /// **Die Abdunklung bleibt unter dem Wiedergabemenue stehen.**
+    ///
+    /// Sie hing frueher mit an `!zeigeEinstellungen`, war unter dem Blatt also
+    /// gar nicht da — und musste beim Schliessen erst wieder hochfahren. In
+    /// dem Fenster sah man ungedaempftes Video, heller als vorher *und*
+    /// nachher.
+    ///
+    /// Sichtbar aendert das nichts, solange das Blatt offen ist: es deckt mit
+    /// 0,97 ohnehin alles darunter ab. Kopf, Fuss und Mittelsteuerung weichen
+    /// weiterhin — sie wuerden durch das Blatt scheinen, siehe unten.
+    private var schleierDa: Bool {
+        steuerungSichtbar && erstesBildDa && !imKleinenFenster && airplayPlan == nil
     }
 
     /// Beobachtet, ob der Ton auf ein AirPlay-Geraet umgestellt wurde.
@@ -211,8 +224,15 @@ struct PlayerScreen: View {
             // Ladeschirm, und das sieht nach zwei Bildschirmen gleichzeitig aus.
             // Nicht zusätzlich zum Wiedergabemenü: sonst scheinen Kopf und
             // Fuß des Players durch und überlagern dessen Kopfzeile.
+            // Eigene Ebene, weil sie eine eigene Frage beantwortet — siehe
+            // `schleierDa`. Dieselben Kurven wie die Steuerung.
+            schleier
+                .opacity(schleierDa ? 1 : 0)
+                .animation(schleierDa ? .easeOut(duration: 0.18)
+                                      : .easeInOut(duration: 0.34),
+                           value: schleierDa)
+
             Group {
-                schleier
                 // Eigene Ebene statt zwischen Kopf und Fuss gestapelt: der
                 // Fuss ist hoeher als der Kopf, dadurch lag die Mitte
                 // zwischen beiden sichtbar ueber der Bildmitte.
@@ -250,12 +270,28 @@ struct PlayerScreen: View {
             if let sprungAnzeige { sprungRueckmeldung(sprungAnzeige) }
             if wechselt { Lader() }
 
-            if zeigeEinstellungen {
-                PlayerSettingsSheet(surface: surface, offen: $zeigeEinstellungen,
-                                    tempo: $tempo, schlafminuten: $schlafminuten,
-                                    querformatFest: $querformatFest)
-                    .transition(.opacity)
-            }
+            // **Nicht ein- und aushaengen, sondern nur aufblenden** — dasselbe
+            // Muster wie bei der Steuerung darueber, und aus demselben Grund.
+            //
+            // Gemessen im Simulator an gerenderten Bildpunkten, Zeiten
+            // zehnfach gedehnt, mittlere Leuchtdichte ueber weissem Grund
+            // (Ruhewert 0,610):
+            //
+            //     mit `if` + `.transition`   0,178 → 0,918 → 0,823 → … → 0,610
+            //     montiert, aufgeblendet     0,168 → 0,109 → 0,187 → … → 0,610
+            //
+            // Die `.transition(.opacity)` lief gar nicht: zwischen 0,178 und
+            // 0,918 liegt kein Zwischenwert, das Blatt war schlagartig weg.
+            //
+            // Den Inhalt traegt `PlayerSettingsSheet` nur, solange `offen`
+            // gilt. Dauerhaft montiert wuerde er sonst bei jedem Takt
+            // `surface?.tonspuren` und `?.untertitelspuren` lesen, und die
+            // gehen direkt in VLCKit — rund acht Aufrufe je Sekunde, dauerhaft.
+            PlayerSettingsSheet(surface: surface, offen: $zeigeEinstellungen,
+                                tempo: $tempo, schlafminuten: $schlafminuten,
+                                querformatFest: $querformatFest)
+                .opacity(zeigeEinstellungen ? 1 : 0)
+                .allowsHitTesting(zeigeEinstellungen)
 
             // **Ueber allem, weil es alles ersetzt.** Solange der Fernseher
             // dran ist, ist die VLC-Flaeche darunter nur noch Hintergrund;
