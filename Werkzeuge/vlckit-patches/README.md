@@ -125,3 +125,26 @@ Ziehen mit rund zwei Bildern je Sekunde. `reshape` feuert beim Ziehen dutzende
 Male je Sekunde, und jeder Aufruf malt das ganze Bild und wartet auf den
 Puffertausch. Die richtige Abhilfe wäre, beim Ziehen etwas **Billiges** zu
 zeichnen — genau das, wozu Apples Dokumentation bei `inLiveResize` rät.
+
+## Vor dem Ausliefern einmal **ohne** `-r` bauen
+
+Zum Messen ist `-r` Pflicht (siehe oben). Vor dem Ausliefern gehört ein Patch
+aber genau einmal **ohne** gebaut und gestartet — sonst liefern wir Code aus,
+dessen Zusicherungen nie gelaufen sind.
+
+Zweimal in einer Nacht hat das etwas verdeckt:
+
+- Der OpenGL-Ausgang bricht beim Öffnen des Players mit
+  `Assertion failed: (!"GL_INVALID_OPERATION") … vout_helper.c:164` ab. Der
+  Fehler steckt auch in der ausgelieferten Fassung, dort ist die Zusicherung
+  nur wegkompiliert. Er ist damit nicht behoben, sondern unbeobachtet.
+- Ein erster Entwurf von `0031` entfernte den `WillResignActive`-Zweig, liess
+  aber die **Anmeldung auf die Meldung** stehen. Sie fiel damit in den
+  `else`-Zweig, der auf `assert(… DidBecomeActive …)` endet. Im Debug ein
+  Abbruch beim Aufziehen der Mitteilungszentrale, im Release still
+  `_appActive = YES` — beim *Verlassen* des aktiven Zustands, also falsch
+  herum und unsichtbar.
+
+Daraus die Regel, die dabei entstanden ist: **wer eine Meldung nicht
+behandelt, soll sie auch nicht bestellen.** Der Debug-Bau ist die Stelle, an
+der so etwas auffällt.
