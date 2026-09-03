@@ -3931,23 +3931,6 @@
         }
       }
     },
-    "Das gewählte Gerät hält an, hier läuft es an derselben Stelle weiter.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Das gewählte Gerät hält an, hier läuft es an derselben Stelle weiter."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The device you pick will pause, and playback continues here at the same spot."
-          }
-        }
-      }
-    },
     "Gerät": {
       "extractionState": "manual",
       "localizations": {
@@ -3961,6 +3944,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Device"
+          }
+        }
+      }
+    },
+    "Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The device you pick will close, and playback continues here at the same spot."
+          }
+        }
+      }
+    },
+    "%@ — %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — %@"
           }
         }
       }

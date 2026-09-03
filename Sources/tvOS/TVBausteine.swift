@@ -367,21 +367,29 @@ struct Kopfleiste: View {
             // Ausstattung. Dieses erscheint, wenn woanders etwas läuft, und
             // verschwindet wieder — deshalb steht es auch nicht im Fokusweg,
             // solange es nichts anzubieten hat.
-            if let uebernahme {
-                Uebernahmeabzeichen(sitzung: uebernahme, aktion: uebernehmen)
-                    .focusSection()
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            }
+            // **Eigenes, engeres Raster fuer die beiden rechts.**
+            //
+            // Die Leiste steht auf 56 Punkt Abstand — richtig zwischen
+            // Wortmarke und Reitern, zu viel zwischen Abzeichen und
+            // Profilbild. Die zwei gehoeren zusammen; getrennt sah es aus,
+            // als haette das Abzeichen keinen Platz gefunden.
+            HStack(spacing: 18) {
+                if let uebernahme {
+                    Uebernahmeabzeichen(sitzung: uebernahme, aktion: uebernehmen)
+                        .focusSection()
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
 
-            Button(action: aufsProfil) {
-                Profilzeichen(name: model.session?.userName ?? "?",
-                              bild: model.benutzerbildURL(groesse: 180),
-                              groesse: 60)
+                Button(action: aufsProfil) {
+                    Profilzeichen(name: model.session?.userName ?? "?",
+                                  bild: model.benutzerbildURL(groesse: 180),
+                                  groesse: 60)
+                }
+                .buttonStyle(ProfilStil())
+                // Ein Bild ohne Beschriftung ist eine namenlose Taste.
+                .accessibilityLabel(Text("Profil und Einstellungen"))
+                .focusSection()
             }
-            .buttonStyle(ProfilStil())
-            // Ein Bild ohne Beschriftung ist eine namenlose Taste.
-            .accessibilityLabel(Text("Profil und Einstellungen"))
-            .focusSection()
         }
         .padding(.horizontal, Stil.randSeite)
         // Oben und seitlich der sichere Bereich, damit die Abstände
@@ -394,35 +402,6 @@ struct Kopfleiste: View {
         // Sorte Fehler, die man erst sieht, wenn sie einem auffaellt.
         .ignoresSafeArea(edges: [.top, .horizontal])
         .animation(.easeInOut(duration: 0.25), value: uebernahme?.id)
-    }
-}
-
-/// Wie eine fremde Sitzung benannt wird — an zwei Stellen gebraucht,
-/// deshalb einmal geschrieben.
-extension Fremdsitzung {
-    /// „Game of Thrones · S1 E5" oder schlicht der Filmtitel.
-    ///
-    /// Serverdaten, also `String` und nicht `LocalizedStringKey`: sonst
-    /// würde ein Filmtitel als Übersetzungsschlüssel nachgeschlagen.
-    var titelzeile: String {
-        guard let t = laeuft else { return geraetename ?? "" }
-        var teile: [String] = []
-        if let serie = t.seriesName, !serie.isEmpty { teile.append(serie) }
-        else { teile.append(t.name) }
-        if let staffel = t.parentIndexNumber, let folge = t.indexNumber {
-            teile.append("S\(staffel) E\(folge)")
-        }
-        return teile.joined(separator: " · ")
-    }
-
-    /// Das Symbol zum Gerät — nach dem Namen geraten, mehr gibt der Server
-    /// nicht her. `DeviceType` ist bei eigenen Clients leer.
-    var geraetezeichen: String {
-        let name = (geraetename ?? "").lowercased()
-        if name.contains("ipad") { return "ipad" }
-        if name.contains("mac") { return "laptopcomputer" }
-        if name.contains("tv")  { return "tv" }
-        return "iphone"
     }
 }
 
@@ -1085,7 +1064,7 @@ struct Uebernahmeauswahl: View {
                 VStack(spacing: 10) {
                     Text("Wo weiterschauen?")
                         .font(.system(size: 42, weight: .semibold))
-                    Text("Das gewählte Gerät hält an, hier läuft es an derselben Stelle weiter.")
+                    Text("Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.")
                         .font(.system(size: 22))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

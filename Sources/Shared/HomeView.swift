@@ -16,6 +16,10 @@ struct HomeView: View {
     @State private var bereitet = false
     /// Keine der Anfragen kam durch.
     @State private var laedtNeu = false
+    /// Läuft auf einem anderen Gerät etwas? Siehe ``Uebernahmemodell``.
+    @State private var uebernahme = Uebernahmemodell()
+    /// Bei mehr als einem Gerät wird gefragt statt geraten.
+    @State private var auswahlOffen = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -35,6 +39,24 @@ struct HomeView: View {
         // Wer aus dem Player zurückkommt, hat die Stelle gerade verschoben —
         // „Weiterschauen" ist damit sicher veraltet, und die Folge ist unter
         // Umständen zu Ende und gehört gar nicht mehr in die Reihe.
+        // **Nur solange kein Player läuft.** Im Player ist die Kopfzeile weg,
+        // und der Server hätte alle zehn Sekunden eine Anfrage mehr zu
+        // beantworten, während es aufs Bild ankommt.
+        .task(id: abspielen == nil) {
+            if abspielen == nil { uebernahme.starten(model) } else { uebernahme.beenden() }
+        }
+        .onDisappear { uebernahme.beenden() }
+        .confirmationDialog("Wo weiterschauen?", isPresented: $auswahlOffen,
+                            titleVisibility: .visible) {
+            ForEach(uebernahme.angebote) { s in
+                Button("\(s.geraetename ?? String(localized: "Gerät")) — \(s.titelzeile)") {
+                    hierWeiterschauen(s)
+                }
+            }
+            Button("Abbrechen", role: .cancel) { auswahlOffen = false }
+        } message: {
+            Text("Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.")
+        }
         .fullScreenCover(item: $abspielen, onDismiss: { Task { await laden() } }) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
@@ -78,6 +100,25 @@ struct HomeView: View {
             HStack(alignment: .bottom) {
                 Wortmarke(hoehe: 30)
                 Spacer(minLength: 0)
+                // **Links vom Profilbild, dicht daneben.** Dasselbe wie auf
+                // dem Fernseher; nur ohne Text, weil oben auf dem Telefon
+                // kein Platz für eine Zeile ist. Der Titel steht im Blatt,
+                // das sich beim Antippen öffnet.
+                if let angebot = uebernahme.angebot {
+                    Button { abzeichenGedrueckt() } label: {
+                        Image(systemName: angebot.geraetezeichen)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Stil.akzent)
+                            .frame(width: 34, height: 34)
+                            .background(Stil.akzent.opacity(0.14), in: Circle())
+                            .overlay(Circle().strokeBorder(Stil.akzent.opacity(0.28)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Hier weiterschauen"))
+                    .accessibilityValue(Text(angebot.titelzeile))
+                    .padding(.trailing, 10)
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                }
                 NavigationLink(value: ProfilRoute()) {
                     Profilzeichen(name: model.session?.userName ?? "?",
                                   bild: model.benutzerbildURL())
@@ -85,6 +126,29 @@ struct HomeView: View {
                 .buttonStyle(.plain)
             }
             .foregroundStyle(Stil.schrift)
+            .animation(.easeInOut(duration: 0.22), value: uebernahme.angebot?.id)
+        }
+    }
+
+    // MARK: - Auf diesem Gerät weiterschauen
+
+    /// Bei einem Gerät sofort, bei mehreren erst fragen.
+    private func abzeichenGedrueckt() {
+        if uebernahme.mehrereDa { auswahlOffen = true }
+        else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
+    }
+
+    /// Drüben beenden, hier an derselben Stelle weitermachen.
+    ///
+    /// Erst der Befehl, dann der Plan, dann der Start — geht das Beenden
+    /// schief, passiert hier gar nichts. Sonst liefen zwei Tonspuren im Raum.
+    private func hierWeiterschauen(_ sitzung: Fremdsitzung) {
+        auswahlOffen = false
+        Task {
+            guard let (titel, ab) = await uebernahme.uebernehmen(sitzung, model: model)
+            else { return }
+            guard let plan = await model.plan(for: titel.id) else { return }
+            abspielen = Abspielwunsch(item: titel, plan: plan, startAt: ab)
         }
     }
 
