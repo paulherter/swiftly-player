@@ -8,6 +8,16 @@ import SwiftUI
 /// undurchsichtig, damit das Bildmaterial die einzige Farbe im Raum ist.
 extension Stil {
 
+    /// Wie ein Blatt von unten hereinfährt.
+    ///
+    /// **Auf Apples Blatt gelegt, nicht geraten.** Schnell heran, kein
+    /// Nachschwingen — dieselbe Kennlinie, die `.sheet` zeigt. Sie steht
+    /// hier und nicht an den Aufrufstellen, weil sonst vier Blätter vier
+    /// Kurven hätten.
+    static let blattbewegung: Animation = .spring(response: 0.35,
+                                                  dampingFraction: 0.86)
+
+
     // MARK: Maße — iPhone
 
     static let ecke: CGFloat = 6
@@ -464,6 +474,10 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
                 .fill(.black.opacity(0.55))
                 .ignoresSafeArea()
                 .onTapGesture { schliessen() }
+                // Der Schleier blendet, die Karte faehrt — wie beim
+                // Systemblatt. Zusammen ergibt das die Bewegung, die man
+                // von iOS kennt.
+                .transition(.opacity)
 
             VStack(spacing: 0) {
                 Text(titel)
@@ -519,8 +533,19 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
                     .fill(Stil.flaeche)
                     .ignoresSafeArea(edges: .bottom)
             }
+            // **Von unten herein, nicht aufgeblendet.**
+            //
+            // Das Blatt sass am unteren Rand und erschien trotzdem einfach —
+            // es war ein `.transition(.opacity)` auf dem ganzen Stapel. Ein
+            // Blatt, das nicht faehrt, wirkt wie ein Fenster, das jemand
+            // hingestellt hat; man sieht nicht, woher es kommt und wohin es
+            // geht.
+            //
+            // `.move(edge: .bottom)` ist derselbe Weg, den `.sheet` nimmt.
+            // Die Feder darunter (0,35 s Antwort, 0,86 Daempfung) liegt auf
+            // Apples Blatt: schnell heran, kein Nachschwingen.
+            .transition(.move(edge: .bottom))
         }
-        .transition(.opacity)
     }
 
     private func schliessen() {

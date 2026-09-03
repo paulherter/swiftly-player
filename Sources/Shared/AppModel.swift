@@ -40,6 +40,15 @@ final class AppModel {
     /// Sprache läuft.
     var untertitelAutomatisch: Bool { didSet { merken(untertitelAutomatisch, "utAuto") } }
     var naechsteAutomatisch: Bool { didSet { merken(naechsteAutomatisch, "naechsteAuto") } }
+
+    /// „Zuletzt hinzugefügt" getrennt nach Filmen und Serien.
+    ///
+    /// **Vorgabe aus, damit sich für niemanden etwas ändert.** Eine Reihe mit
+    /// allem ist der Stand seit der ersten Fassung; wer sie getrennt will,
+    /// schaltet um. Ausdrücklich `false` beim ersten Start — `UserDefaults`
+    /// gibt für einen unbekannten Schlüssel ohnehin `false`, aber das hier
+    /// steht als Absicht da, nicht als Zufall.
+    var neuzugangGetrennt: Bool { didSet { merken(neuzugangGetrennt, "neuGetrennt") } }
     var zurueckSekunden: Int { didSet { merken(zurueckSekunden, "zurueckSek") } }
     var vorSekunden: Int { didSet { merken(vorSekunden, "vorSek") } }
 
@@ -134,6 +143,7 @@ final class AppModel {
         untertitelSprache = ablage.string(forKey: "utSprache") ?? ""
         untertitelAutomatisch = ablage.object(forKey: "utAuto") as? Bool ?? false
         naechsteAutomatisch = ablage.object(forKey: "naechsteAuto") as? Bool ?? true
+        neuzugangGetrennt = ablage.object(forKey: "neuGetrennt") as? Bool ?? false
         zurueckSekunden = ablage.object(forKey: "zurueckSek") as? Int ?? 10
         vorSekunden = ablage.object(forKey: "vorSek") as? Int ?? 30
 
@@ -557,9 +567,11 @@ final class AppModel {
     /// neuen Folgen, nicht die Staffel. Deshalb ungruppiert holen und selbst
     /// zusammenfassen: die erste Folge je Serie ist die neueste, weil der
     /// Server bereits nach Datum sortiert.
-    func zuletztHinzugefuegt() async -> [Item]? {
+    /// - Parameter in: Nur aus dieser Bibliothek. `nil` heißt: aus allen.
+    func zuletztHinzugefuegt(in bibliothek: String? = nil) async -> [Item]? {
         guard let client,
-              let roh = try? await client.latest(limit: 60, gruppieren: false)
+              let roh = try? await client.latest(parentID: bibliothek,
+                                                 limit: 60, gruppieren: false)
         else { return nil }
 
         var gesehen = Set<String>()

@@ -74,7 +74,7 @@ struct WiedergabeEinstellungenView: View {
     }
 
     private var qualitaet: some View {
-        let waehlen: (() -> Void)? = model.immerDirectPlay ? nil : { offeneListe = .bitrate }
+        let waehlen: (() -> Void)? = model.immerDirectPlay ? nil : { withAnimation(Stil.blattbewegung) { offeneListe = .bitrate } }
 
         return Einstellungsgruppe(titel: "Qualität") {
             Wahlzeile(symbol: "play.fill", titel: Text("Immer Direct Play"),
@@ -92,11 +92,11 @@ struct WiedergabeEinstellungenView: View {
         Einstellungsgruppe(titel: "Sprache") {
             Wertzeile(symbol: "speaker.wave.2", titel: Text("Ton"),
                       wert: model.tonSprache.isEmpty ? String(localized: "Wie die Datei") : model.tonSprache,
-                      aktion: { offeneListe = .ton })
+                      aktion: { withAnimation(Stil.blattbewegung) { offeneListe = .ton } })
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wertzeile(symbol: "captions.bubble", titel: Text("Untertitel"),
                       wert: model.untertitelSprache.isEmpty ? String(localized: "Aus") : model.untertitelSprache,
-                      aktion: { offeneListe = .untertitel })
+                      aktion: { withAnimation(Stil.blattbewegung) { offeneListe = .untertitel } })
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wahlzeile(symbol: "text.alignleft", titel: Text("Untertitel automatisch"),
                       unter: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
@@ -113,11 +113,11 @@ struct WiedergabeEinstellungenView: View {
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wertzeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                       wert: "\(model.zurueckSekunden) s",
-                      aktion: { offeneListe = .zurueck })
+                      aktion: { withAnimation(Stil.blattbewegung) { offeneListe = .zurueck } })
             Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
             Wertzeile(symbol: "goforward", titel: Text("Vorspulen"),
                       wert: "\(model.vorSekunden) s",
-                      aktion: { offeneListe = .vor })
+                      aktion: { withAnimation(Stil.blattbewegung) { offeneListe = .vor } })
         }
     }
 
@@ -149,7 +149,18 @@ struct WiedergabeEinstellungenView: View {
                                           _ gewaehlt: @escaping (E) -> Bool,
                                           _ waehlen: @escaping (E) -> Void) -> some View {
         Auswahlblatt(offen: Binding(get: { offeneListe != nil },
-                                    set: { if !$0 { offeneListe = nil } }),
+                                    set: { neu in
+                                        // **Eine Bewegung fuer das ganze
+                                        // Blatt.** Animiert man Karte und
+                                        // Schleier je fuer sich, laufen sie
+                                        // gegeneinander — derselbe Fehler wie
+                                        // heute bei den tvOS-Einstellungen.
+                                        if !neu {
+                                            withAnimation(Stil.blattbewegung) {
+                                                offeneListe = nil
+                                            }
+                                        }
+                                    }),
                      titel: titel, eintraege: eintraege,
                      beschriftung: text, istGewaehlt: gewaehlt, waehlen: waehlen)
     }

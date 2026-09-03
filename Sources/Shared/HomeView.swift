@@ -188,19 +188,32 @@ struct HomeView: View {
             LazyVStack(alignment: .leading, spacing: Stil.reihenAbstand) {
                 if !stand.weiterschauen.isEmpty {
                     Reihe(model: model, titel: "Weiterschauen",
-                          items: stand.weiterschauen, quer: true, direkt: starte)
+                          items: stand.weiterschauen, quer: true, direkt: starte,
+                          nachGesehen: { await laden() })
                 }
                 if !stand.naechsteFolge.isEmpty {
                     // Ohne 'direkt': eine noch nicht angefangene Folge will
                     // man erst ansehen, nicht sofort starten. Nur
                     // 'Weiterschauen' springt direkt in die Wiedergabe.
-                    Reihe(model: model, titel: "Nächste Folge", items: stand.naechsteFolge)
+                    Reihe(model: model, titel: "Nächste Folge", items: stand.naechsteFolge,
+                          nachGesehen: { await laden() })
+                }
+                // Hier führt der Tipp auf die Seite: was man noch nicht
+                // angefangen hat, will man erst ansehen.
+                if !stand.neueFilme.isEmpty {
+                    Reihe(model: model, titel: "Neue Filme",
+                          items: stand.neueFilme, neuzugang: true,
+                          nachGesehen: { await laden() })
+                }
+                if !stand.neueSerien.isEmpty {
+                    Reihe(model: model, titel: "Neue Serien",
+                          items: stand.neueSerien, neuzugang: true,
+                          nachGesehen: { await laden() })
                 }
                 if !stand.zuletzt.isEmpty {
-                    // Hier führt der Tipp auf die Seite: was man noch nicht
-                    // angefangen hat, will man erst ansehen.
                     Reihe(model: model, titel: "Zuletzt hinzugefügt",
-                          items: stand.zuletzt, neuzugang: true)
+                          items: stand.zuletzt, neuzugang: true,
+                          nachGesehen: { await laden() })
                 }
                 // Die Reihe „Bibliotheken" ist entfallen — Filme und Serien
                 // stehen jetzt in der Leiste unten.
@@ -249,6 +262,24 @@ private struct Reihe: View {
     var neuzugang = false
     /// Gesetzt heißt: Tippen startet sofort, statt auf die Seite zu führen.
     var direkt: ((Item) -> Void)? = nil
+    /// Wird nach „gesehen/ungesehen" gerufen, damit die Startseite nachzieht.
+    var nachGesehen: (() async -> Void)? = nil
+
+    /// Gesehen-Zustand setzen und die Startseite nachziehen.
+    ///
+    /// **Neu laden, nicht nur die Kachel ändern.** „Weiterschauen" und
+    /// „Als Nächstes" hängen beide am Fortschritt: eine als gesehen markierte
+    /// Folge verschwindet aus der einen Reihe und die nächste erscheint in
+    /// der anderen. Nur die Kachel umzufärben ließe die Reihen falsch stehen.
+    private func gesehenSetzen(_ item: Item, an: Bool) {
+        Task {
+            if let fehler = await model.setzeGesehen(item, an: an) {
+                model.errorMessage = fehler
+                return
+            }
+            await nachGesehen?()
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
@@ -275,6 +306,28 @@ private struct Reihe: View {
                             .contextMenu {
                                 NavigationLink(value: item) {
                                     Label("Zur Übersicht", systemImage: "info.circle")
+                                }
+                                // **Beide Richtungen, nicht ein Umschalter.**
+                                //
+                                // Ein Eintrag „Gesehen" mit Häkchen liest sich
+                                // wie eine Anzeige, und man weiß vor dem
+                                // Drücken nicht, was passiert. Zwei Einträge
+                                // sagen es im Wortlaut — und der, der gerade
+                                // nicht zutrifft, fehlt einfach.
+                                if item.istGesehen {
+                                    Button {
+                                        gesehenSetzen(item, an: false)
+                                    } label: {
+                                        Label("Als ungesehen markieren",
+                                              systemImage: "eye.slash")
+                                    }
+                                } else {
+                                    Button {
+                                        gesehenSetzen(item, an: true)
+                                    } label: {
+                                        Label("Als gesehen markieren",
+                                              systemImage: "checkmark.circle")
+                                    }
                                 }
                             }
                         } else {
