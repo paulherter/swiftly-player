@@ -599,6 +599,23 @@ enum Stil {
         }
 
         /* Die Hinweiszeile: drei Sekunden, dann weg. */
+        /* Die Übernahmezeile: 40 hoch, Akzent zu 6 % mit Rand zu 18 %,
+           schwebend 12 und 35 — die Werte vom Mac. */
+        button.swiftly-uebernahme {
+            min-height: 40px;
+            padding: 0 10px;
+            border-radius: \(ecke)px;
+            background-color: rgba(92,209,194,0.06);
+            border: 1px solid rgba(92,209,194,0.18);
+            transition: background-color 120ms ease-out, border-color 120ms ease-out;
+        }
+        button.swiftly-uebernahme:hover {
+            background-color: rgba(92,209,194,0.12);
+            border-color: rgba(92,209,194,0.35);
+        }
+        button.swiftly-uebernahme image { color: \(akzent); }
+        .swiftly-uebernahmezeile { font-size: 11px; color: \(schriftSehrLeise); }
+
         .swiftly-akzentzeichen { color: \(akzent); }
         .swiftly-sehrleise, .swiftly-sehrleise image { color: \(schriftSehrLeise); }
 

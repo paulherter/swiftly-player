@@ -678,7 +678,7 @@ final class App: @unchecked Sendable {
     var medienleiste: Medienleiste?
     private var uebernahmezeile: Widget!
     private var uebernahmetitel: Widget!
-    private var uebernahmegeraet: Widget!
+    private var uebernahmezeichen: Widget!
     private var uebernahmeangebote: [Fremdsitzung] = []
     private var uebernahmelauf: Task<Void, Never>?
     /// Vorspann- und Abspannmarken des laufenden Titels, vom Server.
@@ -1016,36 +1016,60 @@ final class App: @unchecked Sendable {
 
     /// Wer angemeldet ist, und wo. Unten in der Leiste — 40 hoch, Bild 26,
     /// Name 14 halbfett, Server 11 sehr leise.
-    /// Die Zeile „läuft auf einem anderen Gerät".
+    /// Die Zeile „Hier weiterschauen".
+    ///
+    /// **Mass für Mass vom Mac** (`Macbausteine.Uebernahmezeile`): 40 hoch,
+    /// 10 innen, Zeichen 26 breit im Akzent, darunter Titel und Folge in 11
+    /// auf sehr leiser Schrift. Der Kasten trägt Akzent zu 6 % mit einem Rand
+    /// zu 18 %, schwebend 12 und 35.
+    ///
+    /// Zuerst stand hier der Titel oben und „läuft auf iPhone" darunter. Das
+    /// sagt, **was** läuft — der Mac sagt, **was man tun kann**, und stellt
+    /// den Titel darunter. Bei einem Angebot ist das die richtige Reihenfolge.
     private func uebernahmezeileBauen() -> Widget! {
         let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-zeile")
+        gtk_widget_add_css_class(knopf, "swiftly-uebernahme")
         gtk_widget_set_margin_start(knopf, 12)
         gtk_widget_set_margin_end(knopf, 12)
         gtk_widget_set_margin_bottom(knopf, 4)
+
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
-        let bild: Widget! = gtk_image_new_from_icon_name("media-playback-start-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(bild), 15)
-        gtk_widget_add_css_class(bild, "swiftly-akzentzeichen")
-        anhaengen(reihe, bild)
+        uebernahmezeichen = gtk_image_new_from_icon_name("phone-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(uebernahmezeichen), 13)
+        gtk_widget_set_size_request(uebernahmezeichen, 26, -1)
+        anhaengen(reihe, uebernahmezeichen)
+
         let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
-        uebernahmetitel = beschriftung("", stil: "swiftly-zweitzeile")
+        gtk_widget_set_valign(text, GTK_ALIGN_CENTER)
+        let oben = beschriftung("Hier weiterschauen", stil: "swiftly-kacheltitel")
+        gtk_label_set_xalign(OpaquePointer(oben), 0)
+        gtk_label_set_ellipsize(OpaquePointer(oben), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(oben), 1)
+        anhaengen(text, oben)
+        uebernahmetitel = beschriftung("", stil: "swiftly-uebernahmezeile")
         gtk_label_set_xalign(OpaquePointer(uebernahmetitel), 0)
         gtk_label_set_ellipsize(OpaquePointer(uebernahmetitel), PANGO_ELLIPSIZE_END)
         gtk_label_set_max_width_chars(OpaquePointer(uebernahmetitel), 1)
         anhaengen(text, uebernahmetitel)
-        uebernahmegeraet = beschriftung("", stil: "swiftly-zweitzeile")
-        gtk_widget_add_css_class(uebernahmegeraet, "swiftly-leise")
-        gtk_label_set_xalign(OpaquePointer(uebernahmegeraet), 0)
-        gtk_label_set_ellipsize(OpaquePointer(uebernahmegeraet), PANGO_ELLIPSIZE_END)
-        gtk_label_set_max_width_chars(OpaquePointer(uebernahmegeraet), 1)
-        anhaengen(text, uebernahmegeraet)
         gtk_widget_set_hexpand(text, 1)
         anhaengen(reihe, text)
+
         gtk_button_set_child(alsKnopf(knopf), reihe)
         beiSignal(knopf, "clicked") { [weak self] in self?.uebernehmen() }
         beschriften(knopf, "Wiedergabe übernehmen")
         return knopf
+    }
+
+    /// **Welches Zeichen zu welchem Gerät.** Die Entscheidung, *welches*
+    /// Gerät es ist, liegt im Paket — hier steht nur, wie Adwaita es nennt.
+    private func geraetezeichen(_ art: Fremdsitzung.Geraeteart) -> String {
+        switch art {
+        case .telefon:   "phone-symbolic"
+        case .tablet:    "tablet-symbolic"
+        case .rechner:   "computer-symbolic"
+        case .fernseher: "video-display-symbolic"
+        case .unbekannt: "media-playback-start-symbolic"
+        }
     }
 
     /// **Fragt regelmässig, was anderswo läuft.**
@@ -1085,10 +1109,10 @@ final class App: @unchecked Sendable {
             gtk_widget_set_visible(zeile, 0)
             return
         }
-        gtk_label_set_text(OpaquePointer(uebernahmetitel),
-                           titel.seriesName ?? titel.name)
-        let wo = erste.geraetename ?? erste.programm ?? "einem anderen Gerät"
-        gtk_label_set_text(OpaquePointer(uebernahmegeraet), "läuft auf \(wo)")
+        _ = titel
+        gtk_label_set_text(OpaquePointer(uebernahmetitel), erste.titelzeile)
+        gtk_image_set_from_icon_name(OpaquePointer(uebernahmezeichen),
+                                     geraetezeichen(erste.geraeteart))
         gtk_widget_set_visible(zeile, 1)
     }
 
