@@ -66,7 +66,7 @@ extension App {
         anhaengen(bildblock, huelle)
         if let adressen, !benutzerID.isEmpty,
            let url = adressen.benutzer(benutzerID, kante: 200) {
-            bildLaden(bild, url: url, schluessel: url.absoluteString)
+            bildLaden(bild, url: url, schluessel: url.absoluteString, sofort: true)
         }
 
         let name = beschriftung(benutzername.isEmpty ? "Angemeldet" : benutzername,

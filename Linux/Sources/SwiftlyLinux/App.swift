@@ -1020,7 +1020,7 @@ final class App: @unchecked Sendable {
         gtk_label_set_text(OpaquePointer(profilserver), servername ?? "")
         if let adressen, !benutzerID.isEmpty,
            let url = adressen.benutzer(benutzerID, kante: 60) {
-            bildLaden(profilbild, url: url, schluessel: "benutzer-\(benutzerID)")
+            bildLaden(profilbild, url: url, schluessel: "benutzer-\(benutzerID)", sofort: true)
         }
     }
 

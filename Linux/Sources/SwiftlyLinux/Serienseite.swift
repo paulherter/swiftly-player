@@ -85,7 +85,7 @@ extension App {
         let kiste = gehalten(raum)
         Task.detached { [self] in
             let staffeln = (try? await client.staffeln(seriesID: serie.id)) ?? []
-            nachDemSchub {
+            aufHauptfaden {
                 defer { losgelassen(kiste) }
                 self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget)
             }

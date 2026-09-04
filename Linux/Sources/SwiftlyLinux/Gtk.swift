@@ -561,8 +561,13 @@ enum Schubsperre {
 
 /// Wie ``aufHauptfaden``, aber **nicht, während eine Seite fährt**.
 ///
-/// Für alles, was eine Seite aufbaut oder umbaut. Nicht für die Navigation
-/// selbst — die löst die Fahrt ja erst aus.
+/// **Nur für die vielen, nicht für die wenigen.** Das Kopfbild, der Farbton,
+/// der Titelblock, die Staffelauswahl — das ist das, was man während der
+/// Fahrt anschaut, und das darf nicht nachpoppen; es ist auch je eine Sache
+/// und keine zwanzig. Was hier wartet, sind die Folgenbilder, die Besetzung
+/// und „Ähnliches": viele kleine Bilder, die alle im selben Augenblick
+/// eintreffen. Nicht für die Navigation selbst — die löst die Fahrt ja
+/// erst aus.
 func nachDemSchub(_ block: @escaping @Sendable () -> Void) {
     aufHauptfaden { Schubsperre.spaeter(block) }
 }
