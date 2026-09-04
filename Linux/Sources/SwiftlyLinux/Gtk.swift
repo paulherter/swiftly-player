@@ -523,15 +523,28 @@ func beiGroesse(_ feld: Widget!, _ block: @escaping (Int32, Int32) -> Void) {
 /// angefasst wird es nur aus ``aufHauptfaden`` heraus.
 enum Schubsperre {
     nonisolated(unsafe) private static var tiefe = 0
+    nonisolated(unsafe) private static var seit = Date.distantPast
     nonisolated(unsafe) private static var warteschlange: [@Sendable () -> Void] = []
 
-    static var faehrt: Bool { tiefe > 0 }
+    /// **Eine Sperre, die haengenbleibt, ist schlimmer als keine.** Der
+    /// Bildtakt gibt keine Zusicherung, dass er einen Lauf zu Ende bringt —
+    /// wird das Fenster unterwegs abgebaut, kommt der letzte Rueckruf nie,
+    /// und dann laedt die App nie wieder ein Bild. Eine Fahrt dauert 0,45 s;
+    /// was laenger als eine Sekunde behauptet zu fahren, faehrt nicht mehr.
+    static var faehrt: Bool {
+        guard tiefe > 0 else { return false }
+        guard Date().timeIntervalSince(seit) < 1 else { tiefe = 0; return false }
+        return true
+    }
 
-    static func beginnen() { tiefe += 1 }
+    static func beginnen() {
+        tiefe += 1
+        seit = Date()
+    }
 
     static func beenden() {
         tiefe = max(tiefe - 1, 0)
-        guard tiefe == 0, !warteschlange.isEmpty else { return }
+        guard !faehrt, !warteschlange.isEmpty else { return }
         let offen = warteschlange
         warteschlange = []
         // **Nicht im letzten Bild der Fahrt.** Der Rückruf läuft noch im
@@ -541,7 +554,8 @@ enum Schubsperre {
     }
 
     static func spaeter(_ block: @escaping @Sendable () -> Void) {
-        if faehrt { warteschlange.append(block) } else { block() }
+        guard faehrt else { beenden(); block(); return }
+        warteschlange.append(block)
     }
 }
 
