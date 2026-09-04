@@ -77,6 +77,11 @@ extension App {
         let ueber: Widget! = gtk_overlay_new()
         spielerRahmen = ueber
         gtk_widget_add_css_class(ueber, "swiftly-spieler")
+        // Aus der vorigen Seite aushängen, bevor es in die neue kommt: ein
+        // Widget mit Eltern lässt sich nicht ein zweites Mal einhängen.
+        if gtk_widget_get_parent(abspieler.anzeige) != nil {
+            gtk_widget_unparent(abspieler.anzeige)
+        }
         gtk_overlay_set_child(OpaquePointer(ueber), abspieler.anzeige)
 
         let steuerung = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)

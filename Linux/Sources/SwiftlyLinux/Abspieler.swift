@@ -43,6 +43,14 @@ final class Abspieler {
 
         bruecke = bildbruecke_neu()
         bildfeld = gtk_picture_new()
+        // **Das Bildfeld überlebt seine Seite.** Es wird einmal angelegt und
+        // bei jedem Öffnen in eine neue Player-Seite gehängt; wird die alte
+        // Seite aus dem Stapel genommen, verliert es seinen Eltern — und damit
+        // seine letzte Referenz. Beim zweiten Öffnen läge dann ein
+        // freigegebener Zeiger in `anzeige`, und GObject stirbt daran mit
+        // einer Adresse, die nach Zufall aussieht. Genau so ist die App
+        // abgestürzt, als
+        g_object_ref_sink(bildfeld)
         gtk_picture_set_content_fit(OpaquePointer(bildfeld), GTK_CONTENT_FIT_CONTAIN)
         gtk_widget_set_hexpand(bildfeld, 1)
         gtk_widget_set_vexpand(bildfeld, 1)
@@ -190,6 +198,7 @@ final class Abspieler {
         }
         if let bruecke { bildbruecke_frei(bruecke); self.bruecke = nil }
         if let kern { libvlc_release(kern); self.kern = nil }
+        if let bildfeld { g_object_unref(bildfeld); self.bildfeld = nil }
     }
 }
 

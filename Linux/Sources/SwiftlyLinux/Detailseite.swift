@@ -400,27 +400,63 @@ extension App {
     private func knopfreihe(_ titel: Item) -> Widget! {
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
 
-        if let ab = titel.fortsetzenAb {
-            let haupt = hauptknopf("Fortsetzen", symbol: "media-playback-start-symbolic")
-            gtk_widget_set_size_request(haupt, Int32(Stil.hauptknopfBreite),
-                                        Int32(Stil.hauptknopfHoehe))
-            beiSignal(haupt, "clicked") { [weak self] in self?.starte(titel, ab: ab) }
-            anhaengen(reihe, haupt)
-            let vorn = nebenknopf("media-skip-backward-symbolic")
-            beiSignal(vorn, "clicked") { [weak self] in self?.starte(titel, ab: 0) }
-            anhaengen(reihe, vorn)
-        } else {
-            let haupt = hauptknopf("Abspielen", symbol: "media-playback-start-symbolic")
-            gtk_widget_set_size_request(haupt, Int32(Stil.hauptknopfBreite),
-                                        Int32(Stil.hauptknopfHoehe))
-            beiSignal(haupt, "clicked") { [weak self] in self?.starte(titel, ab: 0) }
-            anhaengen(reihe, haupt)
+        // **Der Hauptknopf startet dort, wo der Server sagt** (A4):
+        // angefangene Folge an ihrer Stelle, sonst nächste ungesehene, sonst
+        // Folge 1. Bei einer Serie steht das nicht im Eintrag — Jellyfin
+        // beantwortet beides in einem Aufruf (`Shows/NextUp`).
+        //
+        // Hier stand vorher schlicht die Serie selbst, und die hat keine
+        // MediaSource: der Server nannte keine Quelle, und der Knopf tat
+        // nichts als eine Fehlermeldung. Bei einem Film ist der Titel selbst
+        // schon das Ziel.
+        let ziel = Spielziel()
+        ziel.titel = titel.type == "Series" ? nil : titel
+
+        let angefangen = titel.fortsetzenAb
+        let haupt = hauptknopf(angefangen != nil ? "Fortsetzen" : "Abspielen",
+                               symbol: "media-playback-start-symbolic")
+        gtk_widget_set_size_request(haupt, Int32(Stil.hauptknopfBreite),
+                                    Int32(Stil.hauptknopfHoehe))
+        beiSignal(haupt, "clicked") { [weak self] in
+            guard let self, let was = ziel.titel else { return }
+            self.starte(was, ab: was.fortsetzenAb ?? 0)
+        }
+        // Solange das Ziel nicht feststeht, ist nichts zu starten.
+        gtk_widget_set_sensitive(haupt, ziel.titel == nil ? 0 : 1)
+        anhaengen(reihe, haupt)
+
+        // **„Von vorn" nur bei angefangenen Titeln.** Wo es das nicht gibt,
+        // rückt der Rest auf; eine leere Lücke stehen zu lassen wäre
+        // schlimmer als der kleine Versatz.
+        let vorn = nebenknopf("view-refresh-symbolic")
+        gtk_widget_set_visible(vorn, angefangen != nil ? 1 : 0)
+        beiSignal(vorn, "clicked") { [weak self] in
+            guard let self, let was = ziel.titel else { return }
+            self.starte(was, ab: 0)
+        }
+        anhaengen(reihe, vorn)
+
+        if titel.type == "Series", let client {
+            let knopfKiste = gehalten(haupt)
+            let vornKiste = gehalten(vorn)
+            Task.detached {
+                let folge = try? await client.naechsteFolgeDerSerie(seriesID: titel.id)
+                aufHauptfaden {
+                    defer { losgelassen(knopfKiste); losgelassen(vornKiste) }
+                    guard let folge else { return }
+                    ziel.titel = folge
+                    gtk_widget_set_sensitive(knopfKiste.widget, 1)
+                    let weiter = folge.fortsetzenAb != nil
+                    gtk_button_set_label(alsKnopf(knopfKiste.widget),
+                                         weiter ? "Fortsetzen" : "Abspielen")
+                    gtk_widget_set_visible(vornKiste.widget, weiter ? 1 : 0)
+                }
+            }
         }
 
         // **Merkliste schaltet sofort um, ohne Rückfrage** (D6). Der Zustand
         // des Knopfes ist die Antwort. Das Zeichen ist ein Lesezeichen, kein
-        // Stern — „Merkliste erreicht eigentlich das Merklistensymbol an
-        // sich", und auf dem Mac steht dort `bookmark`.
+        // Stern — auf dem Mac steht dort `bookmark`.
         var gemerkt = titel.userData?.isFavorite ?? false
         let merk = nebenknopf("user-bookmarks-symbolic", aktiv: gemerkt)
         beiSignal(merk, "clicked") { [weak self] in
@@ -519,4 +555,12 @@ nonisolated(unsafe) let kulisseGemessen: @convention(c) (
 ) -> Void = { _, breite, _, daten in
     guard let daten else { return }
     Unmanaged<App>.fromOpaque(daten).takeUnretainedValue().kulisseBreite(breite)
+}
+
+
+/// Wohin der Hauptknopf zeigt. Eine Klasse, damit der Rückruf denselben Wert
+/// sieht wie das Nachladen — bei einer Serie steht er erst fest, wenn der
+/// Server geantwortet hat.
+final class Spielziel {
+    var titel: Item?
 }

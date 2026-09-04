@@ -247,11 +247,19 @@ extension App {
 
     /// Ein Kopf: 84 rund, darunter Name und Rolle.
     private func kopfbild(_ person: Person) -> Widget! {
+        // **Ein Knopf, damit `:hover` greift.** GTK führt den Zustand nur auf
+        // Bedienelementen; auf einer schlichten Box wüchse das Bild nie.
+        // Dieselbe Hülle wie bei den Kacheln.
+        let huelleKnopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(huelleKnopf, "swiftly-kachel")
+        gtk_widget_set_valign(huelleKnopf, GTK_ALIGN_START)
+
         let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 7)
         gtk_widget_set_size_request(kachel, 84, -1)
         gtk_widget_set_valign(kachel, GTK_ALIGN_START)
 
         let (huelle, bild) = gerahmtesBild(breite: 84, hoehe: 84, stil: "swiftly-kopfbild")
+        gtk_widget_add_css_class(huelle, "swiftly-plakat")
         anhaengen(kachel, huelle)
         if let adressen, let marke = person.primaryImageTag,
            let url = adressen.bauen(itemID: person.id, marke: marke,
@@ -275,7 +283,8 @@ extension App {
             gtk_label_set_max_width_chars(OpaquePointer(r), 1)
             anhaengen(kachel, r)
         }
-        return kachel
+        gtk_button_set_child(alsKnopf(huelleKnopf), kachel)
+        return huelleKnopf
     }
 
     func aehnlicheNachladen(_ titel: Item, in raum: Widget!, leeren leeren_: Bool = false) {

@@ -131,10 +131,16 @@ enum Stil {
             font-family: Inter, "Noto Sans", "DejaVu Sans", sans-serif;
         }
 
-        window, .background, scrolledwindow, viewport, stack {
+        window, .background, stack {
             background-color: \(grund);
             color: \(schrift);
         }
+        /* **Scrollflächen malen nicht mit.** Sie standen hier mit `grund` —
+           und auf einer eingefärbten Detailseite ist das eine schwarze Ebene
+           hinter jeder Reihe. Sie stand unter „Besetzung". Was
+           einen Grund braucht, sagt es selbst; alles andere lässt das
+           Fenster durchscheinen. */
+        scrolledwindow, viewport { background-color: transparent; }
 
         label { color: \(schrift); }
         .dim-label { color: \(schriftLeise); }
@@ -477,7 +483,7 @@ enum Stil {
         }
         button.swiftly-folgenzeile:hover { background-color: rgba(255,255,255,0.06); }
 
-        .swiftly-kopfbild { border-radius: 42px; background-color: \(flaeche); }
+        .swiftly-kopfbild { border-radius: 42px; }
 
         /* MARK: Einstellungszeilen */
 
