@@ -413,6 +413,24 @@ final class App: @unchecked Sendable {
         return quer
     }
 
+    // MARK: Kopfzeile
+
+    /// **Die Kopfzeile bleibt leer.**
+    ///
+    /// Servername und „Abmelden" standen hier, solange es keine Seitenleiste
+    /// gab. Auf dem Mac steht beides unten links im Konto, und dorthin ist es
+    /// jetzt gewandert. Die Leiste selbst muss bleiben: unter Wayland hängen
+    /// die Fensterknöpfe daran, und ohne sie liesse sich das Fenster nicht
+    /// mehr schliessen.
+    private func kopfzeileFuellen() {
+        gtk_header_bar_set_title_widget(OpaquePointer(kopfzeile), titelzeile)
+        kopfzeileZeigen(false)
+    }
+
+    private func kopfzeileZeigen(_ sichtbar: Bool) {
+        gtk_widget_set_visible(titelzeile, sichtbar ? 1 : 0)
+    }
+
     // MARK: Seitenleiste
 
     private func seitenleisteBauen() -> Widget! {
