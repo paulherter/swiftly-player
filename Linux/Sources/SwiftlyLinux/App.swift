@@ -583,9 +583,6 @@ final class App: @unchecked Sendable {
         adressen = Bildadresse(basis: serverURL, token: token)
         self.benutzerID = benutzerID
         sitzungAnzeigen(benutzername: benutzername, servername: servername)
-        serverstandHolen()
-        fernsteuerungStarten()
-        uebernahmetaktStarten()
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
 
         // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
@@ -599,6 +596,17 @@ final class App: @unchecked Sendable {
                 self.geladen = [.start]
                 self.startseiteLaden()
                 self.bibliothekenLaden()
+                // **Erst hier, nicht früher.** `client` wird oben noch nicht
+                // gesetzt — es geht über den Akteur und ist erst nach
+                // `setSession` da. Alles, was mit `guard let client` beginnt,
+                // stieg vorher stumm wieder aus: die Fernsteuerung meldete
+                // ihre Fähigkeiten nie, und deshalb sah das iPhone die
+                // Linux-Sitzung nicht als bedienbar. Der Übernahmetakt fiel
+                // nicht auf, weil er ohnehin alle zehn Sekunden fragt und
+                // sich damit selbst heilte.
+                self.serverstandHolen()
+                self.fernsteuerungStarten()
+                self.uebernahmetaktStarten()
             }
         }
     }
