@@ -24,7 +24,10 @@ import JellyfinKit
 /// über die Kopfzone hinaus und läuft erst darunter aus, was dort ein
 /// `zIndex` erlaubt. In einer GTK-Box malt das nächste Geschwister darüber,
 /// also endet die Blende hier innerhalb der 380 Punkte.
-final class Kulisse {
+/// **`@unchecked Sendable` mit derselben Begründung wie ``Zeigerkiste``:**
+/// angefasst wird sie nur auf GTKs Hauptfaden. Das Nachladen kommt über
+/// ``aufHauptfaden`` dorthin zurück, bevor ``setzen(_:)`` gerufen wird.
+final class Kulisse: @unchecked Sendable {
 
     /// Die Punkte des Bildes, so wie Cairo sie erwartet. Der Puffer muss
     /// leben, solange die Fläche lebt — deshalb liegt er hier.
@@ -41,7 +44,7 @@ final class Kulisse {
         gtk_widget_set_hexpand(feld, 1)
         gtk_widget_set_size_request(feld, -1, Int32(Stil.heldHoehe))
         anzeige = feld!
-        gtk_drawing_area_set_draw_func(OpaquePointer(feld), kulisseMalen,
+        gtk_drawing_area_set_draw_func(alsZeichen(feld), kulisseMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
     }
 
