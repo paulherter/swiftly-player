@@ -24,6 +24,10 @@ struct PlayerScreen: View {
     /// Läuft gerade im kleinen Fenster.
     @State private var imKleinenFenster = false
     @State private var erstesBildDa = false
+    /// Wird beim Oeffnen gedreht? Muss vorher feststehen — steht die Lage
+    /// schon richtig, feuert gar kein Uebergang.
+    @State private var drehungErwartet = false
+    @State private var drehungFertig = false
     @State private var seitStart = Date()
     /// Einmal je Titel: die Spurvorwahl anwenden.
     @State private var spurenGesetzt = false
@@ -63,7 +67,25 @@ struct PlayerScreen: View {
     /// 0,97 ohnehin alles darunter ab. Kopf, Fuss und Mittelsteuerung weichen
     /// weiterhin — sie wuerden durch das Blatt scheinen, siehe unten.
     private var schleierDa: Bool {
-        steuerungSichtbar && erstesBildDa && !imKleinenFenster && airplayPlan == nil
+        steuerungSichtbar && bildFrei && !imKleinenFenster && airplayPlan == nil
+    }
+
+    /// **Das Bild ist frei, wenn es steht — und wenn es richtig herum steht.**
+    ///
+    /// Seit der Player pausiert oeffnet und sofort springt, kommt das erste
+    /// Bild bei rund +0,9 s. Die Drehung ins Querformat dauert 300 ms und
+    /// beginnt erst mit `onAppear`; vorher hat die erste Sekunde vom
+    /// Filmanfang sie kaschiert.
+    ///
+    /// `drehungFertig` kommt aus `Drehhorcher`, also vom Uebergangskoordinator
+    /// — dem einzigen Signal, das das **Ende** der Drehung meldet. Geometrie
+    /// und `interfaceOrientation` springen schon nach gut dreissig
+    /// Millisekunden auf die Endwerte und taugen dafuer nicht; das ist
+    /// gemessen, siehe `Drehhorcher`.
+    ///
+    /// Ohne erwartete Drehung ist die Bedingung genau die alte.
+    private var bildFrei: Bool {
+        erstesBildDa && (!drehungErwartet || drehungFertig)
     }
 
     /// Beobachtet, ob der Ton auf ein AirPlay-Geraet umgestellt wurde.
@@ -216,7 +238,12 @@ struct PlayerScreen: View {
             tippflaechen
                 .allowsHitTesting(!imKleinenFenster)
 
-            if !erstesBildDa { startschleier }
+            if !bildFrei { startschleier }
+
+            // Unsichtbar; horcht nur auf das Ende der Drehung.
+            Drehhorcher { drehungFertig = true }
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
             if imKleinenFenster { kleinerHinweis }
             if stelltWiederHer { verbindungsHinweis }
 
@@ -380,7 +407,30 @@ struct PlayerScreen: View {
             zentraleUebernehmen()
         }
         .onChange(of: dauer) { _, _ in zentraleMelden() }
-        .onAppear { Orientierung.shared.playerGeoeffnet(querformatFest: querformatFest) }
+        .onAppear {
+            // **Vor** dem Anfordern fragen: danach steht die Lage schon quer.
+            drehungErwartet = Orientierung.drehungErwartet(querformatFest: querformatFest)
+            Orientierung.shared.playerGeoeffnet(querformatFest: querformatFest)
+        }
+        // **Notausgang.** Bleibt der Uebergang aus — Drehsperre im
+        // Kontrollzentrum, abgelehnte Anfrage, ein Fall, den wir nicht kennen —,
+        // haengt der Ladeschirm sonst, bis jemand den Player verlaesst. Der
+        // Fehler, den er verdeckt, ist eine Sekunde schiefes Bild; der Fehler,
+        // den er erzeugen wuerde, waere ein Player, der nie aufmacht.
+        //
+        // Bewusst **ohne** `guard drehungErwartet`: `.task` und `.onAppear`
+        // haben keine zugesicherte Reihenfolge. Laeuft die Aufgabe zuerst,
+        // stuende dort noch `false`, der Notausgang stiege sofort aus — und
+        // haette genau in dem Fall gefehlt, fuer den er da ist. Ohne erwartete
+        // Drehung liest `bildFrei` das Ergebnis ohnehin nicht.
+        .task {
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard !Task.isCancelled, !drehungFertig else { return }
+            if drehungErwartet {
+                Protokoll.schreib("[Dreh] kein Uebergang binnen 1,5 s — Ladeschirm faellt trotzdem")
+            }
+            drehungFertig = true
+        }
         .onDisappear {
             ausblendMarke += 1
             schlafAufgabe?.cancel()
