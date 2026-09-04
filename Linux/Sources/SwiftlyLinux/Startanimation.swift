@@ -29,7 +29,6 @@ final class Startanimation: @unchecked Sendable {
     /// innerhalb des Blocks — er nach draussen zu reichen ist genau der
     /// Fehler, der die App beim ersten Bild abgeräumt hat.
     private var punkte: UnsafeMutablePointer<UInt32>?
-    private var flaeche: OpaquePointer?
     private var mass: Int = 0
     private var teiler: Int32 = 1
     /// Das Bild, das gerade gezeichnet werden soll.
@@ -72,7 +71,6 @@ final class Startanimation: @unchecked Sendable {
     }
 
     deinit {
-        if let flaeche { cairo_surface_destroy(flaeche) }
         if let punkte { punkte.deallocate() }
         if let tier { lottie_animation_destroy(tier) }
     }
@@ -137,46 +135,64 @@ final class Startanimation: @unchecked Sendable {
         fertig()
     }
 
-    /// Rechnet das aktuelle Bild in die Fläche. Gerechnet wird in
-    /// **Gerätepunkten**, sonst ist die Marke auf einem feinen Schirm weich.
-    fileprivate func flaecheFuer(_ breite: Int32, _ hoehe: Int32) -> OpaquePointer? {
-        guard let tier else { return nil }
+    /// Rechnet das aktuelle Bild und gibt eine **frische** Fläche darauf.
+    ///
+    /// **Warum jedes Mal eine neue.** Erst hielt ich eine Fläche über alle
+    /// Bilder und erklärte sie nach jedem Rechnen für verändert. Cairo legt
+    /// aber von einer Fläche, die einmal als Quelle gedient hat, eine
+    /// Momentaufnahme an — und `cairo_surface_mark_dirty` bricht dann ab:
+    ///
+    ///     cairo-surface.c:1739: Assertion
+    ///     `! _cairo_surface_has_snapshots (surface)' failed.
+    ///
+    /// Das war das schwarze Fenster über fünf Anläufe. Nicht die Animation
+    /// war kaputt und nicht ihr Abgang: **die App stürzte beim zweiten Bild
+    /// ab.** Deshalb kam auch nie ein zweiter Takt — es gab keinen Prozess
+    /// mehr, der hätte takten können.
+    ///
+    /// `cairo_image_surface_create_for_data` kopiert nichts, es legt nur eine
+    /// Hülle um den Puffer. Eine je Bild kostet also fast nichts und hat
+    /// keine Vorgeschichte.
+    fileprivate func malen(_ cr: OpaquePointer, _ breite: Int32, _ hoehe: Int32) {
+        guard let tier else { return }
         let t = max(gtk_widget_get_scale_factor(anzeige), 1)
-        // **Die Marke ist ein Zeichen, kein Hintergrund.** Quadratisch, denn
-        // die Vorlage ist es (1024 × 1024), und gedeckelt: über 360 Punkt
-        // hinaus wird sie nicht grösser, sondern nur teurer — auf dem Mac
-        // steht sie in derselben Grössenordnung.
+        // **Die Marke ist ein Zeichen, kein Hintergrund** — gedeckelt bei 360.
         let seite = min(Int(min(breite, hoehe)), 360)
         let neu = seite * Int(t)
-        guard neu > 0 else { return nil }
+        guard neu > 0 else { return }
+
         if neu != mass || teiler != t || punkte == nil {
-            gerechnet = -1
-            if let alt = flaeche { cairo_surface_destroy(alt); flaeche = nil }
             if let alt = punkte { alt.deallocate() }
             mass = neu
             teiler = t
             let feld = UnsafeMutablePointer<UInt32>.allocate(capacity: neu * neu)
             feld.initialize(repeating: 0, count: neu * neu)
             punkte = feld
-            flaeche = cairo_image_surface_create_for_data(
-                UnsafeMutableRawPointer(feld).assumingMemoryBound(to: UInt8.self),
-                CAIRO_FORMAT_ARGB32, Int32(mass), Int32(mass), Int32(mass * 4))
+            gerechnet = -1
         }
-        guard let punkte else { return nil }
-        // **Nur rechnen, wenn ein anderes Bild dran ist.** Gezeichnet wird
-        // auch aus anderen Gründen; ein Lottie-Bild neu zu rechnen, um
-        // dasselbe noch einmal hinzulegen, ist reine Last.
+        guard let punkte else { return }
+
         if gerechnet != bild {
             gerechnet = bild
             lottie_animation_render(tier, size_t(bild), punkte,
                                     size_t(mass), size_t(mass), size_t(mass * 4))
         }
-        if let flaeche { cairo_surface_mark_dirty(flaeche) }
-        return flaeche
+
+        guard let flaeche = cairo_image_surface_create_for_data(
+            UnsafeMutableRawPointer(punkte).assumingMemoryBound(to: UInt8.self),
+            CAIRO_FORMAT_ARGB32, Int32(mass), Int32(mass), Int32(mass * 4))
+        else { return }
+        defer { cairo_surface_destroy(flaeche) }
+
+        let kante = Double(mass) / Double(teiler)
+        cairo_save(cr)
+        cairo_translate(cr, (Double(breite) - kante) / 2, (Double(hoehe) - kante) / 2)
+        cairo_scale(cr, 1 / Double(teiler), 1 / Double(teiler))
+        cairo_set_source_surface(cr, flaeche, 0, 0)
+        cairo_paint(cr)
+        cairo_restore(cr)
     }
 
-    fileprivate var punktmass: Int { mass }
-    fileprivate var punktteiler: Int32 { teiler }
 }
 
 nonisolated(unsafe) private let startTakt: @convention(c) (
@@ -193,15 +209,6 @@ nonisolated(unsafe) private let startMalen: @convention(c) (
     UnsafeMutablePointer<GtkDrawingArea>?, OpaquePointer?, Int32, Int32, gpointer?
 ) -> Void = { _, cr, breite, hoehe, daten in
     guard let cr, let daten else { return }
-    let a = Unmanaged<Startanimation>.fromOpaque(daten).takeUnretainedValue()
-    guard let flaeche = a.flaecheFuer(breite, hoehe) else { return }
-    // Die Marke steht mittig und in der Grösse, die die Vorlage vorgibt —
-    // hier ein Drittel der kürzeren Fensterseite, wie auf dem Mac.
-    let seite = Double(a.punktmass) / Double(a.punktteiler)
-    cairo_save(cr)
-    cairo_translate(cr, (Double(breite) - seite) / 2, (Double(hoehe) - seite) / 2)
-    cairo_scale(cr, 1 / Double(a.punktteiler), 1 / Double(a.punktteiler))
-    cairo_set_source_surface(cr, flaeche, 0, 0)
-    cairo_paint(cr)
-    cairo_restore(cr)
+    Unmanaged<Startanimation>.fromOpaque(daten).takeUnretainedValue()
+        .malen(cr, breite, hoehe)
 }
