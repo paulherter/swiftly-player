@@ -79,7 +79,11 @@ extension App {
         guard laufenderTitel != nil else { return }
         // **Die Stelle vor `stop()` melden** (C3): danach steht VLCs Zeit auf
         // null, und der Server merkte sich den Anfang statt der Stelle.
-        if melden, let client, let plan = laufenderPlan, let titel = laufenderTitel {
+        // **Ein Stopp ohne Start ist keine Sitzung.** Wer den Player vor dem
+        // ersten Bild wieder schliesst, hat nie eine eröffnet; der Mac meldet
+        // dann auch nichts (`PlayerScreen.swift:547`).
+        if melden, spielstand.startGemeldet,
+           let client, let plan = laufenderPlan, let titel = laufenderTitel {
             let ticks = Int64(spielstand.position * 10_000_000)
             Task.detached {
                 try? await client.reportStopped(itemID: titel.id, plan: plan,
@@ -88,6 +92,9 @@ extension App {
         }
         taktBeenden()
         spurwahlSchliessen()
+        // **Ein alter Wecker haelt sonst spaeter eine andere Wiedergabe an.**
+        schlaftakt += 1
+        schlafminuten = nil
         laufenderTitel = nil
         laufenderPlan = nil
         // `UNDER_DOWN`: der Player fährt nach unten hinaus und gibt frei,
@@ -150,6 +157,11 @@ extension App {
         anhaengen(steuerung, luft())
         anhaengen(steuerung, spielerfuss(item))
 
+        let schleier = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_add_css_class(schleier, "swiftly-spieler")
+        spielerLadeschirm = schleier
+        gtk_overlay_add_overlay(OpaquePointer(ueber), schleier)
+
         gtk_overlay_add_overlay(OpaquePointer(ueber), steuerung)
 
         // **Die Steuerung blendet nach 4 s Ruhe aus** (B1) — nur während der
@@ -208,6 +220,7 @@ extension App {
             [weak self] in
             guard let self else { return }
             self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
+            self.sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
             self.spielerZurueckZeichen?.stupsen()
             self.steuerungZeigen()
         })
@@ -234,6 +247,7 @@ extension App {
             [weak self] in
             guard let self else { return }
             self.abspieler.springen(Double(self.wahlen.vorSekunden))
+            self.sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
             self.spielerVorZeichen?.stupsen()
             self.steuerungZeigen()
         })
@@ -389,7 +403,7 @@ extension App {
             position: abspieler.position,
             guteStelle: spielstand.position,
             zeigtBild: abspieler.zeigtBild,
-            stelltEin: false,
+            stelltEin: abspieler.stelltEin,
             laeuft: abspieler.laeuft,
             hatTonspuren: abspieler.hatTonspuren)
 
@@ -398,15 +412,26 @@ extension App {
         // derselbe, den Swift `MainActor` nennt. `assumeIsolated` sagt genau
         // das — und prüft es zur Laufzeit, statt es zu behaupten.
         let auftrag = MainActor.assumeIsolated {
+            // **Nach einem Sprung und beim Ziehen darf VLCs Zeit nicht
+            // übernommen werden.** Sonst fällt die Anzeige auf die alte
+            // Stelle zurück, bis der Strom neu steht — die Marke hüpft.
             Wiedergabetakt.rechnen(&spielstand, messung: messung,
                                    stelltWiederHer: false,
-                                   sprungLaeuft: false,
-                                   amSchieben: false,
+                                   sprungLaeuft: Date() < sprungBis,
+                                   amSchieben: amRegler,
                                    seitStart: seitOeffnen)
         }
 
         zeitenZeigen()
 
+        // **Bis das erste Bild steht, deckt ein Schleier.** Ohne ihn sieht man
+        // den Aufbau des Stroms — Klötzchen, ein Ruck, manchmal ein grüner
+        // Rahmen. Wann er weicht, entscheidet ``Zeitannahme`` im Paket, nicht
+        // diese Datei; ich hatte den Auftrag nur nie ausgewertet.
+        if auftrag.ladeschirmWeg, let schleier = spielerLadeschirm {
+            sanft(auf: schleier, von: 1, nach: 0) { gtk_widget_set_opacity(schleier, $0) }
+            spielerLadeschirm = nil
+        }
         if auftrag.spurenAnwenden { spurenVorwaehlen() }
         if auftrag.startMelden { melden(.start) }
         if auftrag.fortschrittMelden { melden(.fortschritt) }
@@ -492,7 +517,12 @@ extension App {
         Task.detached { [self] in
             guard let naechste = try? await client.folgeNach(itemID: titel.id,
                                                              seriesID: serie),
-                  let plan = try? await client.playbackPlan(for: naechste.id, profile: .vlc(maxBitrate: grenze)) else { return }
+                  let plan = try? await client.playbackPlan(for: naechste.id,
+                                                            profile: .vlc(maxBitrate: grenze))
+            else {
+                aufHauptfaden { self.melden("Nächste Folge konnte nicht geladen werden.") }
+                return
+            }
             aufHauptfaden {
                 // **Beim Folgenwechsel: Ende der alten melden, Start der
                 // neuen. Genau einmal** (C4). `neuerTitel` setzt den Stand
@@ -528,6 +558,7 @@ extension App {
         let ziel = spielstand.dauer * anteil
         spielstand.position = ziel
         abspieler.setzeZeit(ziel)
+        sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
         steuerungZeigen()
     }
 
@@ -739,6 +770,10 @@ extension App {
                 guard self.schlaftakt == meins, self.schlafminuten == minuten else { return }
                 self.abspieler.anhalten()
                 self.schlafminuten = nil
+                self.spielstand.laeuft = false
+                self.spielerAbspielzeichen?.setzen(false)
+                self.steuerungZeigen()
+                self.melden("Schlafzeit abgelaufen.")
             }
         }
     }

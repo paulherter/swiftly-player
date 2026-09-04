@@ -105,6 +105,15 @@ final class Abspieler {
 
     var hatTonspuren: Bool { !tonspuren.isEmpty }
 
+    /// **Steuert VLC gerade ein?** `Zeitannahme.bildDa` zieht dann die
+    /// längere Frist von 25 Sekunden statt der kurzen — ohne diese Auskunft
+    /// gilt das erste Bild als da, bevor es da ist, und damit meldet die App
+    /// dem Server einen Start, den es noch nicht gibt.
+    var stelltEin: Bool {
+        guard let spieler else { return false }
+        return libvlc_media_player_get_state(spieler) == libvlc_Buffering
+    }
+
     func setzeZeit(_ sekunden: Double) {
         guard let spieler else { return }
         libvlc_media_player_set_time(spieler, libvlc_time_t(max(0, sekunden) * 1000))

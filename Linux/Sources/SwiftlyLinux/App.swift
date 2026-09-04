@@ -529,6 +529,11 @@ final class App: @unchecked Sendable {
     var spielerAbspielzeichen: Abspielzeichen?
     var spielerWeiter: Widget!
     var spielerSpurknopf: Widget!
+    var spielerLadeschirm: Widget!
+    /// Bis wann VLCs Zeit nicht übernommen wird — nach jedem Sprung.
+    var sprungBis = Date.distantPast
+    /// Ob gerade am Zeitregler gezogen wird.
+    var amRegler = false
     var spielerWarnung: Widget!
     var spielerWarntext: Widget!
     /// Die beiden Kreispfeile. Sie tragen die Sprungweite als Zahl und
