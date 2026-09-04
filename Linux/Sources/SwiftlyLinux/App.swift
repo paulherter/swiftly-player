@@ -629,6 +629,9 @@ final class App: @unchecked Sendable {
     var buehne: Widget!
     /// Welche Ebene gerade obenauf liegt.
     var obenAuf: Widget!
+    /// Die zuletzt gemeldete Grösse der Bühne.
+    var buehnenBreite: Int32 = -1
+    var buehnenHoehe: Int32 = -1
     private var bereichsknoepfe: [Widget?] = []
     private var bibliotheksrubrik: Widget!
     private var bibliotheksliste: Widget!
@@ -842,6 +845,18 @@ final class App: @unchecked Sendable {
         gtk_widget_set_vexpand(masz, 1)
         beiGroesse(masz) { [weak self] breite, hoehe in
             guard let self else { return }
+            // **Nur wenn sich wirklich etwas geändert hat.**
+            //
+            // `gtk_widget_set_size_request` meldet eine neue Auslegung an —
+            // auch dann, wenn derselbe Wert noch einmal gesetzt wird. Die
+            // neue Auslegung teilt der Zeichenfläche wieder eine Grösse zu,
+            // die meldet wieder, und das geht im Bildtakt weiter: **eine
+            // Schleife, die sich selbst füttert.** Gemessen: 92 % Dauerlast,
+            // schon auf dem Anmeldebildschirm, und ein Fenster, das nicht
+            // mehr zum Zeichnen kam.
+            guard breite != self.buehnenBreite || hoehe != self.buehnenHoehe else { return }
+            self.buehnenBreite = breite
+            self.buehnenHoehe = hoehe
             for ebene in [self.inhalt!] + self.detailscheiben {
                 gtk_widget_set_size_request(ebene, breite, hoehe)
             }
