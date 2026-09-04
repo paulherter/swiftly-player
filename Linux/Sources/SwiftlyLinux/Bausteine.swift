@@ -62,10 +62,19 @@ func hauptknopf(_ text: String, symbol: String = "go-next-symbolic") -> Widget! 
 /// Beschriftung — und damit war der Abspielpfeil weg, sobald die Serienseite
 /// „Fortsetzen" nachtrug. Der Knopf trägt eine Box aus Symbol und Text; hier
 /// wird nur der Text gesetzt.
-func hauptknopfBeschriften(_ knopf: Widget!, _ text: String) {
+/// `symbol` setzt zusätzlich das Zeichen davor — der Knopf im Player wechselt
+/// zwischen „Vorspann überspringen" und „Nächste Folge", und die beiden tragen
+/// **verschiedene** Zeichen: das eine führt in derselben Folge weiter, das
+/// andere aus ihr heraus. Dasselbe Zeichen für beides würde den Unterschied
+/// verwischen, und der ist der einzige, den man vor dem Druck nicht
+/// zurücknehmen kann (`Knopfangebot.zeichen`).
+func hauptknopfBeschriften(_ knopf: Widget!, _ text: String, symbol: String? = nil) {
     guard let reihe = gtk_widget_get_first_child(knopf),
           let l = gtk_widget_get_last_child(reihe) else { return }
     gtk_label_set_text(OpaquePointer(l), text)
+    if let symbol, let bild = gtk_widget_get_first_child(reihe), bild != l {
+        gtk_image_set_from_icon_name(OpaquePointer(bild), symbol)
+    }
 }
 
 // MARK: - Seitenleiste

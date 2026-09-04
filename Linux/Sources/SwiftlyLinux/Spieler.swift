@@ -53,6 +53,14 @@ extension App {
         // **Die Grenze vor dem Faden ablesen.** `wahlen` gehört dem
         // Hauptfaden; im abgesetzten Auftrag darf sie nicht angefasst werden.
         let grenze = wahlen.profilBitrate
+        // **Abschnitte holen, solange der Plan unterwegs ist.** Vorspann und
+        // Abspann kommen vom Server; ohne sie entscheidet allein die
+        // Restzeitregel, mit ihnen steht der Knopf an der Stelle, die in der
+        // Datei vermerkt ist. `Abschnittslogik` im Paket wusste das längst.
+        Task.detached { [self] in
+            let marken = await client.abschnitte(fuer: item.id)
+            aufHauptfaden { self.abschnitte = marken }
+        }
         Task.detached { [self] in
             let plan = try? await client.playbackPlan(for: item.id, profile: .vlc(maxBitrate: grenze))
             aufHauptfaden {
@@ -92,6 +100,8 @@ extension App {
         }
         taktBeenden()
         spurwahlSchliessen()
+        zeigerZeigen(true)
+        abschnitte = []
         // **Ein alter Wecker haelt sonst spaeter eine andere Wiedergabe an.**
         schlaftakt += 1
         schlafminuten = nil
@@ -333,7 +343,7 @@ extension App {
         spielerWeiter = chip("Nächste Folge", symbol: "media-skip-forward-symbolic")
         gtk_widget_set_valign(spielerWeiter, GTK_ALIGN_END)
         gtk_widget_set_visible(spielerWeiter, 0)
-        beiSignal(spielerWeiter, "clicked") { [weak self] in self?.naechsteFolge() }
+        beiSignal(spielerWeiter, "clicked") { [weak self] in self?.angebotAusfuehren() }
         anhaengen(kopfzeile, spielerWeiter)
         anhaengen(unten, kopfzeile)
 
@@ -440,9 +450,23 @@ extension App {
 
         // B5: der Knopf. B6: das selbsttätige Weiterschalten — deutlich enger
         // gefasst, und frühestens `anlaufruhe` Sekunden nach dem Öffnen.
-        let zeigen = Folgenende.knopfZeigen(position: spielstand.position,
-                                            dauer: spielstand.dauer)
-        gtk_widget_set_visible(spielerWeiter, zeigen ? 1 : 0)
+        //
+        // **Der Knopf ist nicht immer „Nächste Folge".** Steht die Stelle in
+        // einem überspringbaren Abschnitt, heisst er „Vorspann überspringen"
+        // und springt an dessen Ende — dieselbe Entscheidung wie auf allen
+        // anderen Plattformen, sie liegt in `Abschnittslogik`.
+        let angebot = Abschnittslogik.angebot(position: spielstand.position,
+                                              dauer: spielstand.dauer,
+                                              abschnitte: abschnitte,
+                                              hatNaechsteFolge: laufenderTitel?.seriesId != nil)
+        jetzigesAngebot = angebot
+        gtk_widget_set_visible(spielerWeiter, angebot.sichtbar ? 1 : 0)
+        if angebot.sichtbar {
+            hauptknopfBeschriften(spielerWeiter, angebot.beschriftung,
+                                  symbol: angebot == .naechsteFolge
+                                      ? "media-skip-forward-symbolic"
+                                      : "media-seek-forward-symbolic")
+        }
         if wahlen.naechsteAutomatisch,
            Folgenende.weiterschalten(position: spielstand.position,
                                      dauer: spielstand.dauer,
@@ -513,6 +537,21 @@ extension App {
         }
     }
 
+    /// Was der Knopf unten rechts gerade tut.
+    func angebotAusfuehren() {
+        switch jetzigesAngebot {
+        case .keiner:
+            break
+        case let .ueberspringen(nach, _):
+            abspieler.setzeZeit(nach)
+            spielstand.position = nach
+            sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+            steuerungZeigen()
+        case .naechsteFolge:
+            naechsteFolge()
+        }
+    }
+
     func naechsteFolge() {
         guard let client, let titel = laufenderTitel, let serie = titel.seriesId else { return }
         let grenze = wahlen.profilBitrate
@@ -544,8 +583,20 @@ extension App {
                 }
                 self.spielstand.erstesBildDa = false
                 self.seitOeffnen = Date()
+                self.abschnitte = []
+                // **Das Tempo überlebt den Folgenwechsel.** Linux legt je
+                // Folge einen neuen libVLC-Spieler an; ohne diese Zeile fängt
+                // die nächste Folge wieder bei 1,0 an, obwohl der Zuschauer
+                // 1,25 gewählt hat. Auf dem Mac bleibt derselbe Spieler
+                // stehen, deshalb stellt sich die Frage dort nicht.
+                let tempo = self.abspieler.tempo
                 // Die nächste Folge startet **von vorn** (B5).
                 self.abspieler.oeffnen(plan.url, ab: 0)
+                self.abspieler.tempo = tempo
+                Task.detached { [self] in
+                    let marken = await client.abschnitte(fuer: naechste.id)
+                    aufHauptfaden { self.abschnitte = marken }
+                }
             }
         }
     }
@@ -572,11 +623,27 @@ extension App {
         steuerungstakt += 1
         gtk_widget_set_opacity(spielerSteuerung, 0)
         spurwahlSchliessen()
+        zeigerZeigen(false)
+    }
+
+    /// **Der Zeiger geht mit der Steuerung.** Ein Pfeil, der auf einem
+    /// Standbild stehenbleibt, ist genau das, was am Mac
+    /// `setHiddenUntilMouseMoves` verhindert.
+    func zeigerZeigen(_ an: Bool) {
+        guard let fenster else { return }
+        if an {
+            gtk_widget_set_cursor(fenster, nil)
+        } else {
+            let leer = gdk_cursor_new_from_name("none", nil)
+            gtk_widget_set_cursor(fenster, leer)
+            if let leer { g_object_unref(UnsafeMutableRawPointer(leer)) }
+        }
     }
 
     func steuerungZeigen() {
         // Der Zeiger meldet sich auch noch, während der Player hinausfährt.
         guard spielerSteuerung != nil else { return }
+        zeigerZeigen(true)
         gtk_widget_set_opacity(spielerSteuerung, 1)
         steuerungstakt += 1
         let meins = steuerungstakt
@@ -592,6 +659,7 @@ extension App {
                 guard self.laufenderTitel != nil, self.spielerSteuerung != nil,
                       self.steuerungstakt == meins, self.spielstand.laeuft else { return }
                 gtk_widget_set_opacity(self.spielerSteuerung, 0)
+                self.zeigerZeigen(false)
                 // **Die Tafel gehoert zur Steuerung.** Sie liegt als eigener
                 // Ueberzug daneben, also nimmt die Deckkraft der Steuerung sie
                 // nicht mit — sie blieb offen ueber einem Bild ohne Bedienung.

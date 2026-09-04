@@ -529,6 +529,9 @@ final class App: @unchecked Sendable {
     /// Die Fernsteuerung über Jellyfins Socket. Ohne sie meldet der Server
     /// `SupportsRemoteControl: false` und blendet im Dashboard die Knöpfe aus.
     var fernsteuerung: Fernsteuerung?
+    /// Vorspann- und Abspannmarken des laufenden Titels, vom Server.
+    var abschnitte: [Abschnitt] = []
+    var jetzigesAngebot: Knopfangebot = .keiner
 
     // MARK: Spieler
     /// **Erst beim ersten Abspielen.** Der Abspieler legt ein `GtkPicture`
@@ -718,8 +721,21 @@ final class App: @unchecked Sendable {
                 spielerVorZeichen?.stupsen()
                 steuerungZeigen()
                 return true
+            case 0xFFC8:                                   // F11
+                // **Vollbild.** Der Mac laesst Escape erst daraus und dann
+                // erst den Player schliessen; hier ebenso.
+                if gtk_window_is_fullscreen(alsFenster(fenster)) != 0 {
+                    gtk_window_unfullscreen(alsFenster(fenster))
+                } else {
+                    gtk_window_fullscreen(alsFenster(fenster))
+                }
+                return true
             case 0xFF1B:                                   // Escape
-                spielerSchliessen()
+                if gtk_window_is_fullscreen(alsFenster(fenster)) != 0 {
+                    gtk_window_unfullscreen(alsFenster(fenster))
+                } else {
+                    spielerSchliessen()
+                }
                 return true
             default: break
             }
