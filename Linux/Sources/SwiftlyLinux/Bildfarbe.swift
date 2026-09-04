@@ -162,6 +162,7 @@ enum Tonblatt {
         /* Und darunter läuft er über 260 Punkte nach `grund` aus — als
            Anstrich am Unterbau, damit er nichts misst. */
         .swiftly-tonauslauf {
+            padding-top: 26px;
             background-color: \(Stil.grund);
             background-image: linear-gradient(to bottom,
                 \(t(1)) 0px, \(Stil.grund) 260px);

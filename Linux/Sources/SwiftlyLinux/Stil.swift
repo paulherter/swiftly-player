@@ -458,7 +458,7 @@ enum Stil {
                 \(grund) 96%, \(grund) 100%);
         }
         .swiftly-kopfton { background-color: \(grund); }
-        .swiftly-tonauslauf { background-color: \(grund); }
+        .swiftly-tonauslauf { background-color: \(grund); padding-top: 26px; }
         /* Malt nichts. Für Widgets, die nur ein Maß beisteuern. */
         .swiftly-blank { background-color: transparent; background-image: none; }
         drawingarea { background-color: transparent; }

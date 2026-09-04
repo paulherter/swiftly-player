@@ -164,7 +164,12 @@ extension App {
         // liegt von sich aus hinter dem Inhalt und misst nichts.
         let unten = stapel(GTK_ORIENTATION_VERTICAL, abstand: 26)
         gtk_widget_add_css_class(unten, "swiftly-tonauslauf")
-        gtk_widget_set_margin_top(unten, 26)
+        // **Kein oberer Rand — der liegt ausserhalb der Hintergrundfläche.**
+        // Mit `margin_top: 26` begann der Tonauslauf erst 26 Punkte unter dem
+        // Kopf, und dazwischen stand der blanke Grund: ein schwarzer Balken
+        // quer über die Seite. Im Bildschirmfoto nachgemessen — 52
+        // Gerätepunkte in (10,10,12) zwischen Ton und Auslauf. Die Luft
+        // steckt jetzt als Innenabstand im Stilblatt.
         gtk_widget_set_margin_bottom(unten, Int32(Stil.randAbstand))
         anhaengen(seite, unten)
 
@@ -282,10 +287,17 @@ extension App {
     /// färben sich mit — deshalb zwei Verläufe im selben Ton statt einer
     /// Maske, die GTK ohnehin nicht kennt. Die Stützstellen sind dieselben.
     private func kulisse(_ titel: Item) -> (Widget, Widget) {
-        // **Kein Beschnitt.** Der ließ eine Haarlinie des ungefilterten Bildes
-        // am Rand stehen Zu beschneiden gibt es hier nichts: die Kulisse ist
-        // nicht gerundet.
+        // **Mit Beschnitt.** „Cover" vergrößert das Bild über die Fläche
+        // hinaus; ohne Beschnitt malt es über seine eigene Zuteilung hinaus,
+        // und dort deckt es keine Blende mehr ab. Bei einem hellen Kopfbild
+        // steht dann ein weisser Faden am Rand — und weil er von der
+        // Punktlage abhängt, kommt und geht er beim Verschieben des Fensters.
+        //
+        // Ich hatte ihn einmal entfernt, weil eine Haarlinie zu sehen war;
+        // die kam aber vom Grund darunter, nicht vom Beschnitt. Der Grund ist
+        // inzwischen weg.
         let huelle: Widget! = gtk_overlay_new()
+        gtk_widget_set_overflow(huelle, GTK_OVERFLOW_HIDDEN)
         gtk_widget_add_css_class(huelle, "swiftly-kulisse")
         gtk_widget_set_hexpand(huelle, 0)
         gtk_widget_set_vexpand(huelle, 0)
