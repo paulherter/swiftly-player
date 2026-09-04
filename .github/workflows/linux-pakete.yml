@@ -160,7 +160,12 @@ jobs:
           ./swiftly init --quiet-shell-followup --assume-yes --skip-install \
             --platform ubuntu24.04
           export PATH="$SWIFTLY_BIN_DIR:$PATH"
-          swiftly install --use latest
+          # swiftly meldet die Toolchain als erfolgreich installiert und geht
+          # trotzdem mit 1 heraus — es beklagt die Sitzung, die seine
+          # Pfadaenderung noch nicht kennt. Geprueft wird deshalb am
+          # Uebersetzer selbst, nicht am Rueckgabewert.
+          swiftly install --use latest || true
+          "$SWIFTLY_BIN_DIR/swift" --version
           echo "$SWIFTLY_BIN_DIR" >> "$GITHUB_PATH"
           echo "SWIFTLY_HOME_DIR=$SWIFTLY_HOME_DIR" >> "$GITHUB_ENV"
           echo "SWIFTLY_BIN_DIR=$SWIFTLY_BIN_DIR" >> "$GITHUB_ENV"
