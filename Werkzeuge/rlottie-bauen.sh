@@ -19,12 +19,16 @@ if [ ! -d "$quelle" ]; then
 fi
 cd "$quelle"
 
-# Die Kopfdatei, die sonst cmake schreibt. Faeden und Zwischenspeicher an,
-# das Bildmodul aus — wir zeichnen selbst.
+# Die Kopfdatei, die sonst cmake schreibt.
+#
+# **Ohne Faeden, und das ist gemessen.** Mit `LOTTIE_THREAD_SUPPORT` legt
+# rlottie einen Fadenpool an, der beim Laden der Vorlage startet und danach
+# leer weiterdreht: drei Faeden, zusammen 90 % einer Kerne-Last, dauerhaft.
+# Die App wurde davon so langsam, dass ihr Fenster schwarz blieb. Fuer eine
+# Marke von 360 Punkten, die einmal beim Start laeuft, ist ein Faden mehr als
+# genug.
 cat > src/vector/config.h <<'EOF'
 #define LOTTIE_IMAGE_MODULE_PLUGIN ""
-#define LOTTIE_THREAD
-#define LOTTIE_THREAD_SUPPORT
 #define LOTTIE_CACHE
 #define LOTTIE_CACHE_SUPPORT
 EOF

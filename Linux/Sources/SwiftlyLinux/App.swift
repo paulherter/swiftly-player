@@ -105,7 +105,9 @@ final class App: @unchecked Sendable {
         // hinterher schlicht keinen Prozess mehr. Siehe ``Startanimation``.
         let decke: Widget! = gtk_overlay_new()
         gtk_overlay_set_child(OpaquePointer(decke), inhalt)
-        if let lauf = Startanimation(fertig: { [weak self] in self?.startbildWeg() }) {
+        // `SWIFTLY_START=0` schaltet sie ab — zum Messen, was sie kostet.
+        if ProcessInfo.processInfo.environment["SWIFTLY_START"] != "0",
+           let lauf = Startanimation(fertig: { [weak self] in self?.startbildWeg() }) {
             startanimation = lauf
             let grund = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
             gtk_widget_add_css_class(grund, "swiftly-startgrund")
