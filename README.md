@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src=".github/bilder/banner.png" alt="Swiftly" width="100%">
+<img src=".github/bilder/banner.png" alt="Swiftly for Jellyfin" width="100%">
 
 <br>
 
-[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20iPadOS%20%7C%20tvOS%20%7C%20macOS-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](#status)
+[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20iPadOS%20%7C%20tvOS%20%7C%20macOS%20%7C%20Linux-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](#-platforms)
 [![License](https://img.shields.io/badge/license-MPL--2.0-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](LICENSE)
 [![Jellyfin](https://img.shields.io/badge/Jellyfin-10.10%2B-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](https://jellyfin.org)
 
@@ -18,8 +18,8 @@
 
 <br>
 
-**Swiftly is a Jellyfin client for Apple devices. It is meant to be plain, and
-to just work.**
+**Swiftly for Jellyfin is a client for your own Jellyfin server. It is meant to
+be plain, and to just work.**
 
 There is no long feature list here, and that is deliberate. It opens, it finds
 your library, it plays. Resume where you stopped, subtitles, Picture in
@@ -32,7 +32,7 @@ that, which is rather the point.
 
 <br>
 
-## Screenshots
+## 📸 Screenshots
 
 <table>
 <tr>
@@ -51,109 +51,69 @@ that, which is rather the point.
 
 <br>
 
-## Status
+## 🌟 Features
 
-| Platform | State |
-|---|---|
-| iPhone | Beta on TestFlight · 1.0.0 in review with Apple |
-| iPad | Beta on TestFlight · ships with the iPhone app |
-| Apple TV | Beta on TestFlight · 1.0.0 in review with Apple |
-| Mac | 1.0.0 in review with Apple |
+- 🎯 **Never transcode**: the device profile declares containers, codecs and
+  every subtitle format, so the server has no reason to re-encode. Undeclared
+  subtitles are the most common cause of a needless transcode, and they are
+  all declared here.
+- 🪟 **Picture in Picture** on iPhone and iPad — the one thing that sent me
+  looking for another client in the first place.
+- ⏯️ **Resume** exactly where you stopped, with the next episode following on
+  its own.
+- 🔑 **Quick Connect**, so you never type a password on a television remote.
+- 🎧 **Audio and subtitle tracks** switch while the film keeps running.
+- 📚 **Several libraries** of the same kind, and the app remembers which one
+  you were in.
+- 🚫 **No account, no subscription, no ads, no tracking.** Nothing leaves your
+  device except the requests to the server you enter yourself.
 
-**The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
-— one link for iPhone, iPad and Apple TV. What each build wants tested is
-written in its release notes, and it is usually five specific things rather
-than "have a look around".
+<br>
+
+## 📱 Platforms
 
 One app, one design, sized for the screen you are on. The logic — server
 access, device profile, playback timing — is shared; only the views differ,
 and only where distance, input or window size demand it.
 
+| Platform | State |
+|---|---|
+| 📱 iPhone | **1.0.0 (9)** · beta on TestFlight |
+| 📲 iPad | **1.0.0 (9)** · ships with the iPhone app |
+| 📺 Apple TV | **1.0.0 (9)** · beta on TestFlight |
+| 💻 Mac | **1.0.0 (9)** · beta on TestFlight |
+| 🐧 Linux | in development — GTK4, native, same shared logic |
+| 🪟 Windows | planned |
+
+**The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
+— one link for iPhone, iPad, Apple TV and Mac. What each build wants tested is
+written in its release notes, and it is usually five specific things rather
+than "have a look around".
+
 <br>
 
-## What it does
+## 📖 Documentation
 
-- **Direct Play and Direct Stream** for every codec the hardware can handle.
-  The device profile declares containers, codecs and every subtitle format, so
-  the server has no reason to re-encode. Undeclared subtitles are the most
-  common cause of a needless transcode, and they are all declared here.
-- **Picture in Picture** on iPhone and iPad.
-- **Resume** where you stopped, with the next episode following on its own.
-- **Quick Connect**, so you never type a password on a television remote.
-- **No account, no subscription, no ads, no tracking.** Nothing leaves your
-  device except the requests to the server you enter yourself.
+- 🛠️ [Building](Documentation/Building.md) — clone, fetch VLCKit, generate the
+  project, run the tests
+- 🎬 [VLCKit](Documentation/VLCKit.md) — why this app ships a patched build,
+  with the measurements
+- 📐 [Device profile](Packages/JellyfinKit/Sources/JellyfinKit/DeviceProfile.swift)
+  — the file that decides whether your server transcodes, with the reasoning
+  in its comments
 
 <br>
 
-## Requirements
+## ✅ Requirements
 
-- Your own Jellyfin server, **10.10 or newer**. Swiftly hosts nothing and has
-  no account of its own — you sign in with the credentials you already have.
+- Your own Jellyfin server, **10.10 or newer**. Swiftly for Jellyfin hosts
+  nothing and has no account of its own — you sign in with the credentials you
+  already have.
 - iOS 18, tvOS 18 or macOS 15.
 
 <br>
 
-## Building
-
-```bash
-git clone https://github.com/paulherter/swiftly-for-jellyfin.git
-cd swiftly-for-jellyfin
-
-# VLCKit is 2.7 GB and not in this repository.
-# NOTE: this fetches VideoLAN's official build, which has a known bug —
-# seeking inside MKV files served over HTTP reads from the start of the
-# file. The fix is in Werkzeuge/vlckit-patches/ and must be applied to a
-# VLCKit build for seeking to work. See "Known issue: VLCKit" below.
-Werkzeuge/vlckit-holen.sh
-
-# The .xcodeproj is generated, not checked in.
-brew install xcodegen && xcodegen generate
-
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-iOS \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
-```
-
-Logic lives in `Packages/JellyfinKit` and is testable without a simulator:
-
-```bash
-cd Packages/JellyfinKit && swift test
-```
-
-The Jellyfin OpenAPI description is not included; fetch it from any server at
-`/openapi.json` if you need it.
-
-<br>
-
-## Known issues: VLCKit
-
-Swiftly ships a VLCKit built with its own patches. The official build fetched
-by `vlckit-holen.sh` does not have them, and two of the problems below are
-bad enough that the app is not usable without the fix. Every patch lives in
-`Werkzeuge/vlckit-patches/` with a README of its own that carries the
-measurements.
-
-**Seeking in Matroska over HTTP.** VLC 4 discards the seek index of Matroska
-files served over HTTP: every seek reads from the beginning of the file and
-takes 30 to 90 seconds. VLC 3 does not have this restriction, which is why
-other clients seek instantly.
-
-**The clock resets on files with sparse timestamps.** VLC 4 lowered the
-threshold for "this is a stream discontinuity" from 60 seconds to 300 ms.
-That comparison only holds when the source runs at its own pace; for a plain
-file over HTTP the demuxer reads faster than realtime, so every timestamp gap
-larger than 300 ms is treated as a break and the clock resets its reference.
-Measured on an Apple TV: 5276 clock resets in 72 seconds on one episode, 35
-to 70 new clock contexts per second, until tvOS killed the app for burning
-the CPU. The same file plays fine on VLC 3.
-
-**Pause took up to 125 ms to take effect** — three to four frames at 120 Hz.
-Three causes, three patches; it is about one frame now.
-
-The patches are being submitted upstream so that official builds can be used
-again.
-
-## Reporting bugs
+## 🐞 Reporting bugs
 
 The Discord is the fastest way: **https://discord.gg/MeGwfv3UwN** — there are
 channels for bug reports and feature requests, and a beta chat.
@@ -162,42 +122,36 @@ If you are on the TestFlight build, the release notes name the handful of
 things that changed since the last one. Reports against those are worth the
 most, because they can be traced to a specific change.
 
-The single most useful report is one where the server transcoded when it
-should not have. If your Jellyfin dashboard says *Transcoding* instead of
+The single most useful report is one where **the server transcoded when it
+should not have.** If your Jellyfin dashboard says *Transcoding* instead of
 *Direct Play* or *Direct Stream*, please include the container, video codec,
 audio codec and subtitle format of that file.
 
 <br>
 
-## Built with Claude
+## 🤖 Built with Claude
 
-Swiftly was written together with Anthropic's Claude, and the commit history
-says so — every commit carries a `Co-Authored-By` line. The decisions, the
-testing and the responsibility are mine; a good deal of the typing was not.
-It seemed more honest to say that here than to let someone work it out.
+Swiftly for Jellyfin was written together with Anthropic's Claude, and the
+commit history says so — every commit carries a `Co-Authored-By` line. The
+decisions, the testing and the responsibility are mine; a good deal of the
+typing was not. It seemed more honest to say that here than to let someone
+work it out.
 
 <br>
 
-## License
+## 📄 License
 
 The code is licensed under the **Mozilla Public License 2.0** — see
 [LICENSE](LICENSE). In short: you may use, change and redistribute it, and if
 you change these files you publish your changes too.
 
-**The name and the artwork are not covered by that license.** "Swiftly", the
-wordmark and the app icon remain the author's. You are welcome to fork the
-code; please do not ship the result under this name or with this icon.
+**The name and the artwork are not covered by that license.** "Swiftly for
+Jellyfin", the wordmark and the app icon remain the author's. You are welcome
+to fork the code; please do not ship the result under this name or with this
+icon.
 
-### VLCKit
-
-Playback uses [VLCKit](https://code.videolan.org/videolan/VLCKit), which is
-licensed under the **LGPL-2.1-or-later**. It is not distributed in this
-repository; `Werkzeuge/vlckit-holen.sh` fetches VideoLAN's official build and
-verifies its SHA-256. The full source of this application is published here
-precisely so that anyone can rebuild it against their own build of that
-library.
-
-### Sample content
+Playback uses [VLCKit](https://code.videolan.org/videolan/VLCKit) under the
+**LGPL-2.1-or-later** — see [Documentation/VLCKit.md](Documentation/VLCKit.md).
 
 The screenshots show films by the [Blender
 Foundation](https://studio.blender.org/films/) — *Big Buck Bunny*, *Sintel*,
