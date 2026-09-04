@@ -501,7 +501,7 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
         for name in ["detail", "detail-b"] {
             let scheibe = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-            detailscheiben.append(scheibe)
+            detailscheiben.append(scheibe!)
             gtk_stack_add_named(OpaquePointer(inhalt), scheibe, name)
         }
 
