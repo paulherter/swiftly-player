@@ -70,8 +70,11 @@ extension App {
         gtk_stack_set_visible_child_name(OpaquePointer(inhalt), "detail")
 
         let seite = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        // Der Ton der Seite — solange keiner da ist, bleibt es `grund`.
+        gtk_widget_add_css_class(seite, "swiftly-detailgrund")
 
         let scroller = gtk_scrolled_window_new()
+        gtk_widget_add_css_class(scroller, "swiftly-detailgrund")
         gtk_scrolled_window_set_policy(OpaquePointer(scroller),
                                        GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
         gtk_widget_set_hexpand(scroller, 1)

@@ -430,11 +430,12 @@ enum Stil {
         }
         .swiftly-blende-hoch {
             background-image: linear-gradient(to bottom,
-                rgba(11,11,13,0) 0%, rgba(11,11,13,0) 50%, rgba(11,11,13,0.12) 60%,
-                rgba(11,11,13,0.38) 70%, rgba(11,11,13,0.66) 80%,
-                rgba(11,11,13,0.86) 89%, rgba(11,11,13,0.96) 95%,
-                \(grund) 100%);
+                \(grund) 0%, rgba(11,11,13,0) 7%, rgba(11,11,13,0) 50%,
+                rgba(11,11,13,0.12) 60%, rgba(11,11,13,0.38) 70%,
+                rgba(11,11,13,0.66) 80%, rgba(11,11,13,0.86) 89%,
+                rgba(11,11,13,0.96) 95%, \(grund) 100%);
         }
+        .swiftly-detailgrund { background-color: \(grund); }
 
         /* Nebenknopf: abgerundetes Quadrat, nur Symbol. */
         button.swiftly-neben {
@@ -629,6 +630,7 @@ enum Stil {
     /// Lädt das Stilblatt in die Anzeige.
     static func anwenden() {
         let anbieter = gtk_css_provider_new()
+        meckern(anbieter)
         gtk_css_provider_load_from_string(anbieter, blatt)
         if let anzeige = gdk_display_get_default() {
             // `GtkStyleProvider` ist eine Schnittstelle, kein Typ, den Swift
@@ -639,6 +641,17 @@ enum Stil {
                 800)   // GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
         }
         g_object_unref(UnsafeMutableRawPointer(anbieter))
+    }
+
+    /// **GTK meldet einen Fehler im Stilblatt nicht auf der Fehlerleitung**,
+    /// sondern über das Signal `parsing-error` — wer nicht zuhört, merkt
+    /// nichts. Eine Schreibweise, die GTK nicht kennt, fällt damit lautlos
+    /// aus, und die Suche beginnt beim falschen Widget. Das ist heute schon
+    /// einmal passiert.
+    static func meckern(_ anbieter: UnsafeMutablePointer<GtkCssProvider>!) {
+        g_signal_connect_data(UnsafeMutableRawPointer(anbieter), "parsing-error",
+                              unsafeBitCast(stilfehler, to: GCallback.self),
+                              nil, nil, GConnectFlags(rawValue: 0))
     }
 
     // MARK: Wortmarke
@@ -716,4 +729,14 @@ enum Stil {
         gtk_widget_set_valign(huelle, GTK_ALIGN_CENTER)
         return huelle
     }
+}
+
+
+/// Form: `(GtkCssProvider*, GtkCssSection*, GError*, gpointer)`.
+nonisolated(unsafe) let stilfehler: @convention(c) (
+    UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<GError>?, gpointer?
+) -> Void = { _, abschnitt, fehler, _ in
+    let text = fehler?.pointee.message.map { String(cString: $0) } ?? "unbekannt"
+    let stelle = abschnitt.map { String(cString: gtk_css_section_to_string($0)) } ?? "?"
+    FileHandle.standardError.write(Data("[Stilblatt] \(stelle): \(text)\n".utf8))
 }

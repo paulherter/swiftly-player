@@ -28,8 +28,8 @@ enum Bildfarbe {
     /// Der Weg zu den Bildpunkten ist derselbe wie in ``bildSetzen``: rohe
     /// Bytes zu `GBytes`, daraus eine `GdkTexture`, die das Format selbst
     /// erkennt. `gdk_texture_download` gibt sie als BGRA zu acht Bit heraus.
-    static func ton(aus daten: Data) -> String? {
-        daten.withUnsafeBytes { puffer -> String? in
+    static func ton(aus daten: Data) -> (r: Int, g: Int, b: Int)? {
+        daten.withUnsafeBytes { puffer -> (r: Int, g: Int, b: Int)? in
             guard let basis = puffer.baseAddress else { return nil }
             guard let bytes = g_bytes_new(basis, gsize(puffer.count)) else { return nil }
             defer { g_bytes_unref(bytes) }
@@ -64,9 +64,9 @@ enum Bildfarbe {
     }
 
     /// Mittelwert zu Farbton und Sättigung, dann abgedunkelt und entsättigt.
-    private static func farbe(r: Double, g: Double, b: Double) -> String {
+    private static func farbe(r: Double, g: Double, b: Double) -> (r: Int, g: Int, b: Int) {
         let hoch = max(r, g, b), tief = min(r, g, b), spanne = hoch - tief
-        guard spanne > 0, hoch > 0 else { return Stil.grund }
+        guard spanne > 0, hoch > 0 else { return (11, 11, 13) }   // grund
 
         var farbton: Double
         if hoch == r { farbton = (g - b) / spanne }
@@ -75,13 +75,13 @@ enum Bildfarbe {
         farbton /= 6
         if farbton < 0 { farbton += 1 }
 
-        return alsHex(farbton: farbton,
+        return ausHSB(farbton: farbton,
                       saettigung: min(spanne / hoch, 0.45),
                       helligkeit: 0.26)
     }
 
-    private static func alsHex(farbton: Double, saettigung: Double,
-                               helligkeit: Double) -> String {
+    private static func ausHSB(farbton: Double, saettigung: Double,
+                               helligkeit: Double) -> (r: Int, g: Int, b: Int) {
         let i = Int(farbton * 6) % 6
         let f = farbton * 6 - Double(Int(farbton * 6))
         let p = helligkeit * (1 - saettigung)
@@ -95,8 +95,7 @@ enum Bildfarbe {
         case 4: (t, p, helligkeit)
         default: (helligkeit, p, q)
         }
-        return String(format: "#%02X%02X%02X",
-                      Int(r * 255), Int(g * 255), Int(b * 255))
+        return (Int(r * 255), Int(g * 255), Int(b * 255))
     }
 }
 
@@ -109,29 +108,46 @@ enum Bildfarbe {
 enum Tonblatt {
     nonisolated(unsafe) private static var anbieter: UnsafeMutablePointer<GtkCssProvider>?
 
-    static func setzen(_ ton: String) {
+    /// **Der Ton färbt die ganze Seite, nicht nur den Auslauf.**
+    ///
+    /// Erst stand er allein in den beiden Verläufen — und genau daran lag die
+    /// harte Kante, die Auf dem Mac färbt `Bildfarbe` den Grund der Seite ein;
+    /// der Auslauf hat dann gar nichts mehr zu verbergen.
+    ///
+    /// Oben braucht es zusätzlich eine kurze Blende. Auf dem Mac reicht das
+    /// Bild bis an die Fensterkante, hier sitzt die Titelzeile darüber — ohne
+    /// die ersten sieben Prozent stünde dort dieselbe Stufe.
+    ///
+    /// **`rgba(…)`, nicht achtstelliges Hex.** GTK meldet einen Fehler im
+    /// Stilblatt nicht auf der Fehlerleitung, sondern über ein Signal; eine
+    /// Schreibweise, die es nicht kennt, fällt lautlos aus. Was sicher geht,
+    /// steht hier.
+    static func setzen(_ ton: (r: Int, g: Int, b: Int)) {
         if anbieter == nil {
             anbieter = gtk_css_provider_new()
+            Stil.meckern(anbieter)
             if let anzeige = gdk_display_get_default(), let anbieter {
                 gtk_style_context_add_provider_for_display(anzeige,
                                                            OpaquePointer(anbieter), 900)
             }
         }
         guard let anbieter else { return }
+        func t(_ deckung: Double) -> String {
+            "rgba(\(ton.r),\(ton.g),\(ton.b),\(deckung))"
+        }
         gtk_css_provider_load_from_string(anbieter, """
-        .swiftly-kulisse { background-color: \(ton); }
+        .swiftly-detailgrund { background-color: \(t(1)); }
+        .swiftly-kulisse { background-color: \(t(1)); }
         .swiftly-blende-quer {
             background-image: linear-gradient(to right,
-                \(ton) 0%, \(ton) 38%,
-                \(ton)F2 47.3%, \(ton)C7 56.0%, \(ton)80 65.9%,
-                \(ton)40 73.3%, \(ton)1A 81.4%, \(ton)05 90.7%,
-                \(ton)00 100%);
+                \(t(1)) 0%, \(t(0.95)) 15%, \(t(0.78)) 29%, \(t(0.50)) 45%,
+                \(t(0.25)) 57%, \(t(0.10)) 70%, \(t(0.02)) 85%, \(t(0)) 100%);
         }
         .swiftly-blende-hoch {
             background-image: linear-gradient(to bottom,
-                \(ton)00 0%, \(ton)00 50%, \(ton)1F 60%,
-                \(ton)61 70%, \(ton)A8 80%, \(ton)DB 89%,
-                \(ton)F5 95%, \(ton) 100%);
+                \(t(1)) 0%, \(t(0)) 7%, \(t(0)) 50%, \(t(0.12)) 60%,
+                \(t(0.38)) 70%, \(t(0.66)) 80%, \(t(0.86)) 89%,
+                \(t(0.96)) 95%, \(t(1)) 100%);
         }
         """)
     }
