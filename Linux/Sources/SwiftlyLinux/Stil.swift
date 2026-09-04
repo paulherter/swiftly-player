@@ -89,6 +89,18 @@ enum Stil {
     /// Punkt ist ein GTK-Typ.
     static var blatt: String {
         """
+        /* **Die Schrift ist die groesste einzelne Aehnlichkeit.**
+           Apple setzt SF Pro; die darf nicht mitgeliefert werden und liegt
+           auf keinem Linux. Inter ist genau dafuer entworfen worden — gleiche
+           Bauart, gleiche Strichstaerke, offene Lizenz (SIL OFL), also auch
+           beilegbar. Ohne sie faellt es auf Noto Sans zurueck, und das ist
+           deutlich runder und breiter als SF.
+           Ein ausgelieferter Bau muss Inter mitbringen; hier kommt sie noch
+           vom System. */
+        window, .background, scrolledwindow, viewport, stack, entry, button, label {
+            font-family: Inter, "Noto Sans", "DejaVu Sans", sans-serif;
+        }
+
         window, .background, scrolledwindow, viewport, stack {
             background-color: \(grund);
             color: \(schrift);
