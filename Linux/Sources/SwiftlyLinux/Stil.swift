@@ -427,6 +427,32 @@ enum Stil {
         button.swiftly-zurueck:hover { background-color: transparent; }
         button.swiftly-zurueck:hover image { color: rgba(255,255,255,0.72); }
 
+        /* MARK: Kopfzone der Detailseite
+           Der Ton kommt aus ``Tonblatt`` und wechselt mit dem Titel; hier
+           steht nur, was ohne Ton gilt. */
+        .swiftly-kopfton { background-color: \(grund); }
+        .swiftly-tonauslauf { background-color: \(grund); padding-top: 26px; }
+        /* Malt nichts. Für Widgets, die nur ein Mass beisteuern — die
+           Zeichenflaeche der Kulisse malt ihr Bild selbst mit Cairo. */
+        .swiftly-blank { background-color: transparent; background-image: none; }
+        drawingarea { background-color: transparent; }
+
+        /* MARK: Die Leiste, die beim Scrollen kommt
+           Wie auf iPhone, iPad und Mac: unten eine Haarlinie, dahinter Glas —
+           und solange das Bild oben steht stattdessen ein weicher Verlauf,
+           damit der Pfeil auf hellem Bild lesbar bleibt.
+           **Ohne Glas.** GTK hat keine lebende Unschaerfe; was den Inhalt
+           darunter verwischt, gibt es hier nicht. An ihre Stelle tritt eine
+           dunkle Flaeche — dieselbe Aufgabe, anderes Mittel. */
+        .swiftly-kopfverlauf {
+            background-image: linear-gradient(to bottom,
+                rgba(11,11,13,0.70) 0%, rgba(11,11,13,0) 100%);
+        }
+        .swiftly-kopfleiste {
+            background-color: rgba(11,11,13,0.86);
+            border-bottom: 1px solid \(linie);
+        }
+
         /* Nebenknopf: abgerundetes Quadrat, nur Symbol. */
         button.swiftly-neben {
             border-radius: \(ecke)px;
