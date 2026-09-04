@@ -103,3 +103,46 @@ func luft() -> Widget! {
     gtk_widget_set_vexpand(l, 1)
     return l
 }
+
+// MARK: - Bildkäfig
+
+/// **Ein `GtkPicture` wächst auf die Größe seines Bildes.** Der Käfig hält es
+/// auf dem Maß, das dasteht.
+///
+/// Das ist dieselbe Falle wie bei der Wortmarke, nur an drei weiteren
+/// Stellen: `gtk_widget_set_size_request` setzt nur eine **Mindest**größe.
+/// Ein Bild von 300 Punkt Breite verlangt 300 und bekommt sie, sobald Platz
+/// da ist — die Kacheln standen deshalb doppelt so groß im Fenster, und das
+/// Profilbild hat die Seitenleiste von 220 auf über 700 aufgezogen. Mit
+/// `hexpand = 0` ist dem nicht beizukommen: das steuert nur, wer *überschüssigen*
+/// Platz bekommt, nicht wie groß etwas von sich aus sein will.
+///
+/// GTK kennt keine Höchstgröße. Was es kennt, ist ein `GtkScrolledWindow`, und
+/// der gibt die Wunschgröße seines Kindes **nicht** nach oben weiter
+/// (`propagate-natural-width` ist von Haus aus aus). Mit beiden Richtungen auf
+/// `NEVER` zwingt er das Kind zudem auf die eigene Größe, statt es zu
+/// beschneiden — es wird also skaliert, nicht abgeschnitten.
+///
+/// Am Bild selbst darf deshalb **keine** Größe stehen: mit `can_shrink` ist
+/// seine Mindestgröße null, und dann gilt allein das Maß des Käfigs.
+func bildkaefig(_ bild: Widget!, breite: Int, hoehe: Int) -> Widget! {
+    gtk_picture_set_can_shrink(OpaquePointer(bild), 1)
+    let kaefig: Widget! = gtk_scrolled_window_new()
+    gtk_scrolled_window_set_policy(OpaquePointer(kaefig), GTK_POLICY_NEVER, GTK_POLICY_NEVER)
+    gtk_scrolled_window_set_child(OpaquePointer(kaefig), bild)
+    gtk_widget_set_size_request(kaefig, Int32(breite), Int32(hoehe))
+    gtk_widget_set_hexpand(kaefig, 0)
+    gtk_widget_set_vexpand(kaefig, 0)
+    gtk_widget_set_overflow(kaefig, GTK_OVERFLOW_HIDDEN)
+    return kaefig
+}
+
+/// Ein Bild im Käfig, mit gerundeter Kante — Plakat, Querkachel, Profilbild.
+func gerahmtesBild(breite: Int, hoehe: Int, stil: String) -> (kaefig: Widget!, bild: Widget!) {
+    let bild: Widget! = gtk_picture_new()
+    gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_COVER)
+    let kaefig = bildkaefig(bild, breite: breite, hoehe: hoehe)
+    // Die Rundung gehört an den Käfig: er ist es, der beschneidet.
+    gtk_widget_add_css_class(kaefig, stil)
+    return (kaefig, bild)
+}

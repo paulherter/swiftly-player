@@ -489,15 +489,11 @@ final class App: @unchecked Sendable {
 
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
 
-        profilbild = gtk_picture_new()
-        gtk_widget_add_css_class(profilbild, "swiftly-profilbild")
-        gtk_widget_set_size_request(profilbild, 26, 26)
-        gtk_widget_set_hexpand(profilbild, 0)
-        gtk_widget_set_vexpand(profilbild, 0)
-        gtk_widget_set_valign(profilbild, GTK_ALIGN_CENTER)
-        gtk_picture_set_content_fit(OpaquePointer(profilbild), GTK_CONTENT_FIT_COVER)
-        gtk_widget_set_overflow(profilbild, GTK_OVERFLOW_HIDDEN)
-        anhaengen(reihe, profilbild)
+        let (bildkaefigChen, bild) = gerahmtesBild(breite: 26, hoehe: 26,
+                                                   stil: "swiftly-profilbild")
+        profilbild = bild
+        gtk_widget_set_valign(bildkaefigChen, GTK_ALIGN_CENTER)
+        anhaengen(reihe, bildkaefigChen)
 
         let namen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
         gtk_widget_set_valign(namen, GTK_ALIGN_CENTER)
@@ -773,12 +769,10 @@ final class App: @unchecked Sendable {
         gtk_widget_set_size_request(kachel, Int32(Stil.kachelBreite), -1)
         gtk_widget_set_valign(kachel, GTK_ALIGN_START)
 
-        let bild = gtk_picture_new()
-        gtk_widget_set_size_request(bild, Int32(Stil.kachelBreite), Int32(Stil.kachelHoehe))
-        gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_COVER)
-        gtk_widget_add_css_class(bild, "swiftly-plakat")
-        gtk_widget_set_overflow(bild, GTK_OVERFLOW_HIDDEN)
-        anhaengen(kachel, bild)
+        let (kaefig, bild) = gerahmtesBild(breite: Stil.kachelBreite,
+                                           hoehe: Stil.kachelHoehe,
+                                           stil: "swiftly-plakat")
+        anhaengen(kachel, kaefig)
 
         if let adressen { posterLaden(bild, item: item, adressen: adressen, kante: 300) }
 
