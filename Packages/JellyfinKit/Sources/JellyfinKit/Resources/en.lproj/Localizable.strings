@@ -54,3 +54,14 @@
 "Unbegrenzt" = "Unlimited";
 "%lld Mbit/s" = "%lld Mbps";
 "Wie die Datei" = "As in the file";
+
+"Film" = "Movie";
+"Serie" = "Series";
+"Folge" = "Episode";
+"Keine" = "None";
+"Lädt…" = "Loading…";
+"Keine Folgen" = "No episodes";
+"Noch %d Minuten" = "%d minutes left";
+"Fortsetzen %@" = "Resume %@";
+"Abspielen %@" = "Play %@";
+"%d Staffeln" = "%d seasons";
