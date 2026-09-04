@@ -606,8 +606,9 @@ nonisolated(unsafe) private let auftragFreigebenRoh: @convention(c) (gpointer?) 
 /// `accessibilityLabel`; in GTK4 heisst es `GTK_ACCESSIBLE_PROPERTY_LABEL`.
 func beschriften(_ ziel: Widget!, _ name: String) {
     name.withCString { zeiger in
-        gtk_accessible_update_property(
-            unsafeBitCast(ziel, to: UnsafeMutablePointer<GtkAccessible>.self),
-            GTK_ACCESSIBLE_PROPERTY_LABEL, zeiger, -1)
+        // `GtkAccessible` ist wie `GtkOverlay` ein unvollstaendiger Typ und
+        // kommt in Swift als `OpaquePointer` an.
+        gtk_accessible_update_property(OpaquePointer(ziel),
+                                       GTK_ACCESSIBLE_PROPERTY_LABEL, zeiger, -1)
     }
 }
