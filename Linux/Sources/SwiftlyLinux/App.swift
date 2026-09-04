@@ -623,7 +623,7 @@ final class App: @unchecked Sendable {
                                 unsafeBitCast(kind, to: Widget.self))
         }
         for item in items {
-            gtk_flow_box_insert(OpaquePointer(raster), kachelBauen(item), -1)
+            gtk_flow_box_insert(OpaquePointer(raster), rasterkachel(item), -1)
         }
     }
 
@@ -688,11 +688,16 @@ final class App: @unchecked Sendable {
             async let naechste = try? await client.nextUp(limit: 20)
             async let neu = try? await client.latest(limit: 20)
 
-            let reihen: [(String, [Item])] = [
-                ("Weiterschauen", await weiter ?? []),
-                ("Nächste Folge", await naechste ?? []),
-                ("Zuletzt hinzugefügt", await neu ?? [])
-            ].filter { !$0.1.isEmpty }
+            // **Jede Reihe hat ihre eigene Kachelform, und das ist keine
+            // Geschmacksfrage.** A2 im Register: „Nächste Folge öffnet die
+            // Übersicht, sie startet nicht. Nur ‚Weiterschauen' springt
+            // direkt in die Wiedergabe." Waagerecht ist deshalb allein
+            // „Weiterschauen" — auf iPhone, Fernseher und Mac genauso.
+            let reihen: [(String, Reihenart, [Item])] = [
+                ("Weiterschauen", .weiterschauen, await weiter ?? []),
+                ("Nächste Folge", .naechste, await naechste ?? []),
+                ("Zuletzt hinzugefügt", .neu, await neu ?? [])
+            ].filter { !$0.2.isEmpty }
 
             aufHauptfaden { self.reihenZeigen(reihen) }
         }
@@ -729,7 +734,7 @@ final class App: @unchecked Sendable {
         }
     }
 
-    private func reihenZeigen(_ reihen: [(String, [Item])]) {
+    private func reihenZeigen(_ reihen: [(String, Reihenart, [Item])]) {
         leeren(reihenstapel)
         guard !reihen.isEmpty else {
             anhaengen(reihenstapel,
@@ -737,14 +742,14 @@ final class App: @unchecked Sendable {
                                    stil: "swiftly-koerper", umbruch: true))
             return
         }
-        for (titel, titelListe) in reihen {
-            anhaengen(reihenstapel, reiheBauen(titel: titel, items: titelListe))
+        for (titel, art, titelListe) in reihen {
+            anhaengen(reihenstapel, reiheBauen(titel: titel, art: art, items: titelListe))
         }
     }
 
     /// Eine waagerecht scrollende Reihe mit Postern. Überschrift 20 halbfett,
     /// darunter 10 Luft — `Stil.reihe`.
-    private func reiheBauen(titel: String, items: [Item]) -> Widget! {
+    private func reiheBauen(titel: String, art: Reihenart, items: [Item]) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 10)
 
         let ueberschrift = beschriftung(titel, stil: "swiftly-reihe")
@@ -757,14 +762,76 @@ final class App: @unchecked Sendable {
                                        GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER)
 
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(Stil.kachelAbstand))
-        for item in items { anhaengen(reihe, kachelBauen(item)) }
+        for item in items { anhaengen(reihe, kachelBauen(item, art: art)) }
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
         anhaengen(block, scroller)
         return block
     }
 
-    /// Eine Kachel: Plakat 150 × 225, darunter Titel und Zweitzeile.
-    private func kachelBauen(_ item: Item) -> Widget! {
+    /// **Eine Kachel, drei Bedeutungen.** Was oben steht, was darunter, und
+    /// welches Bild — das entscheidet die Reihe, nicht die Kachel.
+    ///
+    /// Die Zuordnung ist aus `Sources/macOS/HomeView.swift` abgeschrieben:
+    ///
+    /// | Reihe | Bild | Titel | Zweitzeile |
+    /// |---|---|---|---|
+    /// | Weiterschauen | quer, 280 × 158 | Serie | `kontextzeile` |
+    /// | Nächste Folge | Plakat der Serie | Serie | `folgenkuerzel` |
+    /// | Zuletzt hinzugefügt | Plakat | eigener Name | `neuzugangszeile` |
+    ///
+    /// Bei einer Folge steht oben der **Serienname**, nicht der Folgentitel.
+    /// Andersherum war es hier zuerst, und dann steht unter einem Standbild
+    /// „Lilien in der Wüste", wo auf dem Mac „The Mentalist" steht.
+    private func kachelBauen(_ item: Item, art: Reihenart) -> Widget! {
+        let quer = art == .weiterschauen
+        let breite = quer ? Stil.querBreite : Stil.kachelBreite
+        let hoehe = quer ? Stil.querHoehe : Stil.kachelHoehe
+
+        let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+        gtk_widget_set_size_request(kachel, Int32(breite), -1)
+        gtk_widget_set_valign(kachel, GTK_ALIGN_START)
+
+        let (kaefig, bild) = gerahmtesBild(breite: breite, hoehe: hoehe,
+                                           stil: "swiftly-plakat")
+        if let adressen {
+            // **Welches Bild, entscheidet `Bildwahl` im Paket.** Bei einer
+            // Folge hochkant das Plakat der Serie, quer der Hintergrund der
+            // Serie mit vier Rückfällen dahinter. Die Begründung zu jeder
+            // Stufe steht dort, mit Tests.
+            let adresse = quer
+                ? Bildwahl.quer(item, adressen: adressen, breite: breite * 2)?.url
+                : Bildwahl.hochkant(item, adressen: adressen, maxHoehe: hoehe * 2)
+            if let adresse {
+                bildLaden(bild, url: adresse, schluessel: "\(item.id)-\(quer ? "quer" : "hoch")")
+            }
+        }
+
+        // Der Fortschrittsbalken liegt **auf** dem Bild, unten, wie auf dem
+        // Mac. Nur bei „Weiterschauen" — sonst steht er unter Titeln, die
+        // noch gar nicht angefangen wurden.
+        if quer, let anteil = item.gesehenerAnteil {
+            anhaengen(kachel, mitBalken(kaefig, breite: breite, anteil: anteil))
+        } else {
+            anhaengen(kachel, kaefig)
+        }
+
+        let (oben, unten): (String, String?) = switch art {
+        case .weiterschauen: (item.seriesName ?? item.name, item.kontextzeile)
+        case .naechste:      (item.seriesName ?? item.name, item.folgenkuerzel)
+        case .neu:           (item.name, item.neuzugangszeile)
+        }
+
+        anhaengen(kachel, kacheltitel(oben, stil: "swiftly-kacheltitel"))
+        if let unten, !unten.isEmpty {
+            let zweite = kacheltitel(unten, stil: "swiftly-zweitzeile")
+            gtk_widget_add_css_class(zweite, "dim-label")
+            anhaengen(kachel, zweite)
+        }
+        return kachel
+    }
+
+    /// Eine Kachel im Raster — Plakat, Name, Jahr.
+    private func rasterkachel(_ item: Item) -> Widget! {
         let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
         gtk_widget_set_size_request(kachel, Int32(Stil.kachelBreite), -1)
         gtk_widget_set_valign(kachel, GTK_ALIGN_START)
@@ -773,24 +840,60 @@ final class App: @unchecked Sendable {
                                            hoehe: Stil.kachelHoehe,
                                            stil: "swiftly-plakat")
         anhaengen(kachel, kaefig)
+        if let adressen,
+           let adresse = Bildwahl.hochkant(item, adressen: adressen,
+                                           maxHoehe: Stil.kachelHoehe * 2) {
+            bildLaden(bild, url: adresse, schluessel: "\(item.id)-hoch")
+        }
 
-        if let adressen { posterLaden(bild, item: item, adressen: adressen, kante: 300) }
-
-        let name = beschriftung(item.name, stil: "swiftly-kacheltitel")
-        gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
-        gtk_label_set_xalign(OpaquePointer(name), 0)
-        anhaengen(kachel, name)
-
-        // Bei Folgen die Serie darunter, bei Filmen das Jahr.
-        let zweite = item.seriesName ?? item.productionYear.map(String.init) ?? ""
-        if !zweite.isEmpty {
-            let unten = beschriftung(zweite, stil: "swiftly-zweitzeile")
-            gtk_widget_add_css_class(unten, "dim-label")
-            gtk_label_set_ellipsize(OpaquePointer(unten), PANGO_ELLIPSIZE_END)
-            gtk_label_set_xalign(OpaquePointer(unten), 0)
-            anhaengen(kachel, unten)
+        anhaengen(kachel, kacheltitel(item.name, stil: "swiftly-kacheltitel"))
+        if let jahr = item.productionYear {
+            let zweite = kacheltitel(String(jahr), stil: "swiftly-zweitzeile")
+            gtk_widget_add_css_class(zweite, "dim-label")
+            anhaengen(kachel, zweite)
         }
         return kachel
+    }
+
+    /// **Eine Beschriftung zieht die Kachel sonst auf ihre Textlänge.**
+    ///
+    /// `gtk_label_set_ellipsize` senkt nur die *Mindest*breite; gewünscht
+    /// bleibt die volle Zeile. In der Reihe „Weiterschauen" stand deshalb
+    /// eine Kachel von 363 Punkt neben lauter 150ern — sie trug den längsten
+    /// Titel. `max_width_chars` deckelt auch den Wunsch; die Kachel richtet
+    /// sich danach allein nach dem Bild und ihrem eigenen `size_request`.
+    private func kacheltitel(_ text: String, stil: String) -> Widget! {
+        let l = beschriftung(text, stil: stil)
+        gtk_label_set_ellipsize(OpaquePointer(l), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(l), 1)
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        return l
+    }
+
+    /// Legt den Fortschrittsbalken unten auf ein Bild.
+    ///
+    /// Zwei Lagen: eine dunkle Spur über die ganze Breite und darauf der
+    /// Akzent, so breit wie der gesehene Anteil. GTK kennt keinen Anteil als
+    /// Breitenangabe — die Kachel hat aber eine feste Breite, also lässt er
+    /// sich ausrechnen.
+    private func mitBalken(_ kaefig: Widget!, breite: Int, anteil: Double) -> Widget! {
+        let ueber: Widget! = gtk_overlay_new()
+        gtk_overlay_set_child(OpaquePointer(ueber), kaefig)
+
+        let spur: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_add_css_class(spur, "swiftly-balkenspur")
+        gtk_widget_set_size_request(spur, -1, 4)
+        gtk_widget_set_valign(spur, GTK_ALIGN_END)
+        gtk_widget_set_halign(spur, GTK_ALIGN_FILL)
+        gtk_overlay_add_overlay(OpaquePointer(ueber), spur)
+
+        let balken: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_add_css_class(balken, "swiftly-balken")
+        gtk_widget_set_size_request(balken, Int32(Double(breite) * min(max(anteil, 0), 1)), 4)
+        gtk_widget_set_valign(balken, GTK_ALIGN_END)
+        gtk_widget_set_halign(balken, GTK_ALIGN_START)
+        gtk_overlay_add_overlay(OpaquePointer(ueber), balken)
+        return ueber
     }
 
     func kopfzeileEinrichten() { kopfzeileFuellen() }

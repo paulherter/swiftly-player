@@ -68,28 +68,6 @@ func bildSetzen(_ bildfeld: Widget!, daten: Data) {
     }
 }
 
-/// Holt das Poster eines Titels und trägt es nach, sobald es da ist.
-func posterLaden(_ bildfeld: Widget!, item: Item, adressen: Bildadresse, kante: Int) {
-    guard let url = adressen.bauen(itemID: item.id,
-                                   art: .poster,
-                                   marke: item.imageTags?["Primary"],
-                                   mass: .hoechstensBreit(kante)) else { return }
-    let schluessel = "\(item.id)-poster"
-
-    // **Das Bildfeld überlebt den Download möglicherweise nicht.** Scrollt
-    // jemand weiter, räumt GTK es ab. Deshalb wird es festgehalten, solange
-    // geladen wird, und danach wieder losgelassen.
-    g_object_ref(bildfeld)
-    let kiste = Zeigerkiste(bildfeld)
-    Task.detached {
-        let daten = await Bildlager.shared.laden(url, schluessel: schluessel)
-        aufHauptfaden {
-            if let daten { bildSetzen(kiste.widget, daten: daten) }
-            g_object_unref(kiste.widget)
-        }
-    }
-}
-
 /// Lädt ein beliebiges Bild in ein `GtkPicture` — dasselbe wie ``posterLaden``,
 /// nur mit fertiger Adresse. Gebraucht für das Benutzerbild in der
 /// Seitenleiste, das keinen `Item` hat.

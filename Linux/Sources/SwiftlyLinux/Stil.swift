@@ -250,6 +250,12 @@ enum Stil {
             min-height: 38px;
         }
 
+        /* Der Fortschrittsbalken auf einer „Weiterschauen"-Kachel: dunkle
+           Spur über die ganze Breite, darauf der Akzent so weit, wie gesehen
+           wurde. Genau wie auf dem Mac. */
+        .swiftly-balkenspur { background-color: rgba(0,0,0,0.45); }
+        .swiftly-balken { background-color: \(akzent); }
+
         /* Plakate: eigener Grund, solange das Bild noch nicht da ist. */
         .swiftly-plakat {
             background-color: \(erhoeht);
