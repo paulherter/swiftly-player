@@ -1479,7 +1479,7 @@ final class App: @unchecked Sendable {
         return raster
     }
 
-    private func rasterFuellen(_ raster: Widget!, _ items: [Item]) {
+    func rasterFuellen(_ raster: Widget!, _ items: [Item]) {
         while let kind = gtk_flow_box_get_child_at_index(OpaquePointer(raster), 0) {
             gtk_flow_box_remove(OpaquePointer(raster),
                                 unsafeBitCast(kind, to: Widget.self))
