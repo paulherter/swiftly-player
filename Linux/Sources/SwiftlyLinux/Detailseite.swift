@@ -408,8 +408,8 @@ extension App {
 
         let tafel: Widget! = gtk_popover_new()
         gtk_widget_add_css_class(tafel, "swiftly-mehr")
-        gtk_popover_set_child(OpaquePointer(tafel), liste)
-        gtk_popover_set_position(OpaquePointer(tafel), GTK_POS_BOTTOM)
+        gtk_popover_set_child(alsTafel(tafel), liste)
+        gtk_popover_set_position(alsTafel(tafel), GTK_POS_BOTTOM)
         gtk_widget_set_parent(tafel, knopf)
 
         anhaengen(liste, handlungszeile("object-select-symbolic", ersteZeile) {
@@ -418,20 +418,20 @@ extension App {
             gesehen.toggle()
             let neu = gesehen
             Task.detached { try? await client.setzeGesehen(itemID: titel.id, an: neu) }
-            gtk_popover_popdown(OpaquePointer(tafel))
+            gtk_popover_popdown(alsTafel(tafel))
         })
         anhaengen(liste, handlungszeile("video-x-generic-symbolic", "Trailer") {
             [weak self] in
-            gtk_popover_popdown(OpaquePointer(tafel))
+            gtk_popover_popdown(alsTafel(tafel))
             self?.trailerStarten(titel)
         })
         anhaengen(liste, handlungszeile("view-refresh-symbolic", "Metadaten auffrischen") {
             [weak self] in
             guard let client = self?.client else { return }
             Task.detached { try? await client.metadatenAuffrischen(titel.id) }
-            gtk_popover_popdown(OpaquePointer(tafel))
+            gtk_popover_popdown(alsTafel(tafel))
         })
-        gtk_popover_popup(OpaquePointer(tafel))
+        gtk_popover_popup(alsTafel(tafel))
     }
 
     private func handlungszeile(_ symbol: String, _ text: String,
