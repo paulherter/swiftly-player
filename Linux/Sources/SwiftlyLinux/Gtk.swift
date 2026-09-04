@@ -605,10 +605,14 @@ nonisolated(unsafe) private let auftragFreigebenRoh: @convention(c) (gpointer?) 
 /// Zeitregler ein namenloses Rechteck. Auf Apple leistet das
 /// `accessibilityLabel`; in GTK4 heisst es `GTK_ACCESSIBLE_PROPERTY_LABEL`.
 func beschriften(_ ziel: Widget!, _ name: String) {
-    name.withCString { zeiger in
-        // `GtkAccessible` ist wie `GtkOverlay` ein unvollstaendiger Typ und
-        // kommt in Swift als `OpaquePointer` an.
-        gtk_accessible_update_property(OpaquePointer(ziel),
-                                       GTK_ACCESSIBLE_PROPERTY_LABEL, zeiger, -1)
-    }
+    // **Die bequeme Form ist variadisch und damit für Swift gesperrt.**
+    // `gtk_accessible_update_property` nimmt Paare beliebiger Länge;
+    // `…_value` nimmt zwei Felder und ist aufrufbar. Der Typ des Wertes wird
+    // über seinen Namen geholt, statt das Makro `G_TYPE_STRING` nachzubauen.
+    var eigenschaft = GTK_ACCESSIBLE_PROPERTY_LABEL
+    var wert = GValue()
+    g_value_init(&wert, g_type_from_name("gchararray"))
+    name.withCString { g_value_set_string(&wert, $0) }
+    gtk_accessible_update_property_value(OpaquePointer(ziel), 1, &eigenschaft, &wert)
+    g_value_unset(&wert)
 }
