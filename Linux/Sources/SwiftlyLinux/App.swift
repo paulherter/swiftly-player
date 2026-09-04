@@ -462,7 +462,7 @@ final class App: @unchecked Sendable {
     /// so stand es hier: von der Startseite auf einen Film schob es, von
     /// einem Film auf die Serie dahinter nicht. Zwei Scheiben, abwechselnd
     /// gefüllt, machen aus jedem Schritt einen Wechsel.
-    var detailscheiben: [Widget!] = []
+    var detailscheiben: [Widget] = []
     var detailscheibe = 0
     var detailhuelle: Widget! { detailscheiben[detailscheibe] }
     /// Wird beim Blättern gebraucht, um den Titel in der Kopfleiste

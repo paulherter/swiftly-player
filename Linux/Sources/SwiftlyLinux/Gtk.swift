@@ -419,5 +419,7 @@ func beiKlick(_ ziel: Widget!, _ block: @escaping () -> Void) {
     g_signal_connect_data(UnsafeMutableRawPointer(geste), "released",
                           unsafeBitCast(auftragAlsKlick, to: GCallback.self),
                           auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    gtk_widget_add_controller(ziel, unsafeBitCast(geste, to: UnsafeMutablePointer<GtkEventController>.self))
+    // `GtkEventController` ist in C ein unvollstaendiger Typ; Swift bekommt
+    // ihn als `OpaquePointer` — genau das, was die Geste schon ist.
+    gtk_widget_add_controller(ziel, geste)
 }
