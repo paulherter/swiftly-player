@@ -17,8 +17,7 @@ extension App {
     enum Unterseite { case profil, quickConnect, wiedergabe, einstellungen }
 
     func unterseiteOeffnen(_ was: Unterseite, schub: Schub = .tiefer) {
-        let name = naechsteScheibe()
-        seiteZeigen(name, schub: schub)
+        let scheibe = naechsteScheibe()
         offeneUnterseite = was
 
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
@@ -39,13 +38,14 @@ extension App {
         let scroller = seitenscroller()
         gtk_scrolled_window_set_child(OpaquePointer(scroller), block)
         anhaengen(detailhuelle, scroller)
+        schieben(zu: scheibe, richtung: schub)
     }
 
     /// Zurück aus einer Unterseite: erst zum Profil, von dort in den Bereich.
     private func unterseiteZurueck() {
         if offeneUnterseite == .profil {
             offeneUnterseite = nil
-            seiteZeigen(bereich.kennung, schub: .zurueck)
+            bereichZeigen(bereich.kennung, schub: .zurueck)
         } else {
             unterseiteOeffnen(.profil, schub: .zurueck)
         }

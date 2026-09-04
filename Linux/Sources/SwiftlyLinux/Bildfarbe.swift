@@ -155,7 +155,6 @@ enum Tonblatt {
             background-repeat: no-repeat;
         }
         """
-        FileHandle.standardError.write(Data("[Tonblatt]\n\(blatt)\n".utf8))
         gtk_css_provider_load_from_string(anbieter, blatt)
     }
 }

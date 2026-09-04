@@ -46,6 +46,21 @@ enum Stil {
     static let eckeKachel = 8
     /// Felder sind runder als Knöpfe — 10 gegen 6, so wie auf dem iPhone.
     static let eckeFeld = 10
+    // MARK: Seitenschub
+
+    /// Wie lange eine Seite hereinschiebt — `Stil.zeitSeitenschub` vom Mac,
+    /// `easeInOut` über 0,45 s.
+    static let zeitSeitenschub = 0.45
+    /// Wie weit die Seite **darunter** mitgeht. Ein knappes Drittel — so hält
+    /// es die Systemnavigation, und daher kommt der Eindruck von Ebenen statt
+    /// von einem Rechteck, das vorbeischiebt.
+    static let schubMitgabe = 0.3
+    /// Der Schleier über der Seite darunter. Auf dem Mac liegt dort Schwarz
+    /// zu 28 %; über unserem dunklen Grund kommt dasselbe heraus, wenn die
+    /// Ebene stattdessen auf 72 % Deckkraft geht — und das ist ein Zug im
+    /// Bildbaum statt einer weiteren Fläche.
+    static let schubSchleier = 0.28
+
     static let randAbstand = 24
     static let kachelAbstand = 12
     static let reihenAbstand = 28

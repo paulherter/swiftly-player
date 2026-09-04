@@ -385,6 +385,11 @@ final class App: @unchecked Sendable {
 
     private var titelzeile: Widget!
     var inhalt: Widget!            // GtkStack: start / filme / serien / suche
+    /// Die Bühne: ein `GtkFixed`, auf dem die Listenebene und die beiden
+    /// Detailebenen übereinanderliegen. Sie schneidet ab, was hinausragt.
+    var buehne: Widget!
+    /// Welche Ebene gerade obenauf liegt.
+    var obenAuf: Widget!
     private var bereichsknoepfe: [Widget?] = []
     private var bibliotheksrubrik: Widget!
     private var bibliotheksliste: Widget!
@@ -499,13 +504,54 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.filme), "filme")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.serien), "serien")
         gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
-        for name in ["detail", "detail-b"] {
-            let scheibe = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-            detailscheiben.append(scheibe!)
-            gtk_stack_add_named(OpaquePointer(inhalt), scheibe, name)
+
+        // **Die Detailseite legt sich auf, sie tritt nicht daneben.**
+        //
+        // Ein `GtkStack` schiebt beim Wechsel *beide* Kinder um die volle
+        // Breite — das sieht aus, als lägen die Seiten nebeneinander. Der Mac
+        // schiebt die neue Seite über die alte, und die darunter wandert nur
+        // ein knappes Drittel mit. Dafür braucht es eine eigene Bühne.
+        //
+        // `GtkFixed` ist die einzige GTK-Kiste, die ihre Kinder frei
+        // verschiebt, und `gtk_fixed_move` ändert dabei nur den Vorsatz,
+        // nicht die Grösse — die Seite wird also nicht bei jedem Bild neu
+        // umbrochen.
+        buehne = gtk_fixed_new()
+        gtk_widget_set_overflow(buehne, GTK_OVERFLOW_HIDDEN)
+        gtk_fixed_put(alsFest(buehne), inhalt, 0, 0)
+        for _ in 0..<2 {
+            let scheibe: Widget! = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+            detailscheiben.append(scheibe)
+            gtk_fixed_put(alsFest(buehne), scheibe, 0, 0)
+            gtk_widget_set_visible(scheibe, 0)
+        }
+        obenAuf = inhalt
+
+        // **Ein `GtkFixed` gibt seinen Kindern die Wunschgrösse, nicht die
+        // eigene** (Falle 1). Eine Seite ist innen ein Scroller und wünscht
+        // sich fast nichts — sie fiele in sich zusammen. Also muss ihr jemand
+        // die Grösse sagen, und dafür muss sie erst einmal jemand kennen.
+        //
+        // Die Zeichenfläche ist dieser Jemand: als **Hauptkind** einer
+        // Überlagerung bekommt sie immer die volle Fläche, und ihr Signal
+        // `resize` nennt sie. Gemalt wird darauf nichts.
+        let masz: Widget! = gtk_drawing_area_new()
+        gtk_widget_add_css_class(masz, "swiftly-blank")
+        gtk_widget_set_hexpand(masz, 1)
+        gtk_widget_set_vexpand(masz, 1)
+        beiGroesse(masz) { [weak self] breite, hoehe in
+            guard let self else { return }
+            for ebene in [self.inhalt!] + self.detailscheiben {
+                gtk_widget_set_size_request(ebene, breite, hoehe)
+            }
         }
 
-        anhaengen(quer, inhalt)
+        let rahmen: Widget! = gtk_overlay_new()
+        gtk_widget_set_hexpand(rahmen, 1)
+        gtk_widget_set_vexpand(rahmen, 1)
+        gtk_overlay_set_child(alsUeberlage(rahmen), masz)
+        gtk_overlay_add_overlay(alsUeberlage(rahmen), buehne)
+        anhaengen(quer, rahmen)
 
         titelzeile = beschriftung("", stil: "swiftly-zweitzeile")
         return quer
@@ -658,32 +704,66 @@ final class App: @unchecked Sendable {
     /// Through"), weil er nicht tiefer führt, sondern daneben.
     enum Schub { case tiefer, zurueck, ohne }
 
-    /// Stellt Art und Dauer der Bewegung ein und schaltet um.
+    /// Legt eine Ebene obenauf und schiebt sie dabei herein.
     ///
-    /// GTK zählt die Richtung aus Sicht des Inhalts: `SLIDE_LEFT` schiebt
-    /// den Inhalt nach links, das Neue kommt also von rechts herein — das
-    /// ist „tiefer".
-    func seiteZeigen(_ name: String, schub: Schub) {
-        let stab = OpaquePointer(inhalt)
-        switch schub {
-        case .tiefer:
-            gtk_stack_set_transition_type(stab, GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT)
-            gtk_stack_set_transition_duration(stab, 450)
-        case .zurueck:
-            gtk_stack_set_transition_type(stab, GTK_STACK_TRANSITION_TYPE_SLIDE_RIGHT)
-            gtk_stack_set_transition_duration(stab, 450)
-        case .ohne:
-            gtk_stack_set_transition_type(stab, GTK_STACK_TRANSITION_TYPE_CROSSFADE)
-            gtk_stack_set_transition_duration(stab, 220)
+    /// Der Mac nimmt `Stil.zeitSeitenschub` — `easeInOut`, 0,45 s. Die neue
+    /// Seite legt sich über die alte; die alte wandert **ein knappes Drittel**
+    /// nach links mit und bleibt liegen. Zurück läuft es rückwärts: die obere
+    /// Seite schiebt sich nach rechts hinaus und gibt die darunter frei.
+    ///
+    /// Wer wen überdeckt, entscheidet die Reihenfolge im `GtkFixed` — beim
+    /// Vorwärtsschub muss die neue Ebene oben liegen, beim Zurückschub die
+    /// alte, weil sie diejenige ist, die sich bewegt.
+    func schieben(zu ziel: Widget!, richtung: Schub) {
+        let alt: Widget! = obenAuf
+        obenAuf = ziel
+        gtk_widget_set_visible(ziel, 1)
+        guard alt != ziel else { return }
+
+        let fest = alsFest(buehne)
+        let breite = Double(gtk_widget_get_width(buehne))
+        guard richtung != .ohne, breite > 1 else {
+            gtk_fixed_move(fest, ziel, 0, 0)
+            gtk_widget_set_visible(alt, 0)
+            return
         }
-        gtk_stack_set_visible_child_name(stab, name)
+
+        gtk_widget_insert_before(richtung == .tiefer ? ziel : alt, buehne, nil)
+        let teiler = Double(max(gtk_widget_get_scale_factor(buehne), 1))
+        // Auf ganze Gerätepunkte, aus demselben Grund wie beim Scrollen: eine
+        // Kante auf einem halben Punkt wird geglättet und säumt.
+        func rasten(_ x: Double) -> Double { (x * teiler).rounded() / teiler }
+
+        laufen(auf: buehne, dauer: Stil.zeitSeitenschub) { e in
+            if richtung == .tiefer {
+                gtk_fixed_move(fest, ziel, rasten(breite * (1 - e)), 0)
+                gtk_fixed_move(fest, alt, rasten(-breite * Stil.schubMitgabe * e), 0)
+                gtk_widget_set_opacity(alt, 1 - Stil.schubSchleier * e)
+            } else {
+                gtk_fixed_move(fest, alt, rasten(breite * e), 0)
+                gtk_fixed_move(fest, ziel, rasten(-breite * Stil.schubMitgabe * (1 - e)), 0)
+                gtk_widget_set_opacity(ziel, 1 - Stil.schubSchleier * (1 - e))
+            }
+        } fertig: {
+            gtk_fixed_move(fest, ziel, 0, 0)
+            gtk_fixed_move(fest, alt, 0, 0)
+            gtk_widget_set_opacity(ziel, 1)
+            gtk_widget_set_opacity(alt, 1)
+            gtk_widget_set_visible(alt, 0)
+        }
     }
 
-    /// Nimmt die freie Detailscheibe, leert sie und nennt ihren Namen.
-    func naechsteScheibe() -> String {
+    /// Zeigt einen Bereich — im Stapel überblendet, auf der Bühne geschoben.
+    func bereichZeigen(_ kennung: String, schub: Schub) {
+        gtk_stack_set_visible_child_name(OpaquePointer(inhalt), kennung)
+        schieben(zu: inhalt, richtung: schub)
+    }
+
+    /// Nimmt die freie Detailscheibe und leert sie.
+    func naechsteScheibe() -> Widget! {
         detailscheibe = 1 - detailscheibe
         leeren(detailhuelle)
-        return detailscheibe == 0 ? "detail" : "detail-b"
+        return detailhuelle
     }
 
     /// Schaltet den Bereich um und färbt die Zeilen nach.
@@ -699,7 +779,7 @@ final class App: @unchecked Sendable {
         if let oben = seitenstapel[neu]?.last {
             detailZeigen(oben, schub: .ohne)
         } else {
-            seiteZeigen(neu.kennung, schub: .ohne)
+            bereichZeigen(neu.kennung, schub: .ohne)
         }
         // **Jeder Bereich lädt einmal.** Auf dem Mac bleiben die Stände der
         // Bereiche liegen; wer zwischen Filmen und Serien wechselt, wartet
@@ -752,9 +832,12 @@ final class App: @unchecked Sendable {
     /// blättern trotzdem bis an die Fensterkante. Genau so hier.
     private func startbereichBauen() -> Widget! {
         reihenstapel = stapel(GTK_ORIENTATION_VERTICAL, abstand: Int32(Stil.reihenAbstand))
-        let scroller = gtk_scrolled_window_new()
-        gtk_widget_set_hexpand(scroller, 1)
-        gtk_widget_set_vexpand(scroller, 1)
+        // **Derselbe Scroller wie überall.** Hier stand ein blanker
+        // `GtkScrolledWindow` — ohne Regel, also mit GTKs Vorgabe
+        // `AUTOMATIC`: die Systemleiste rechts, genau die, die auf keiner
+        // Seite auftauchen soll. `seitenscroller` setzt `EXTERNAL` (scrollen
+        // ja, Leiste nein) und hängt das weiche Laufen dran.
+        let scroller = seitenscroller()
         gtk_widget_set_margin_top(reihenstapel,
                                   Int32(Stil.inhaltOben + Stil.reihenkopfAusgleich))
         gtk_widget_set_margin_bottom(reihenstapel, Int32(Stil.randAbstand))

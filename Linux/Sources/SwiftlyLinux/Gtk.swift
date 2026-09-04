@@ -31,6 +31,12 @@ typealias Widget = UnsafeMutablePointer<GtkWidget>
 @inline(__always) func alsZeichen(_ w: Widget!) -> UnsafeMutablePointer<GtkDrawingArea>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkDrawingArea>.self)
 }
+@inline(__always) func alsFest(_ w: Widget!) -> UnsafeMutablePointer<GtkFixed>! {
+    unsafeBitCast(w, to: UnsafeMutablePointer<GtkFixed>.self)
+}
+@inline(__always) func alsUeberlage(_ w: Widget!) -> UnsafeMutablePointer<GtkOverlay>! {
+    unsafeBitCast(w, to: UnsafeMutablePointer<GtkOverlay>.self)
+}
 @inline(__always) func alsTafel(_ w: Widget!) -> UnsafeMutablePointer<GtkPopover>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkPopover>.self)
 }
@@ -422,4 +428,77 @@ func beiKlick(_ ziel: Widget!, _ block: @escaping () -> Void) {
     // `GtkEventController` ist in C ein unvollstaendiger Typ; Swift bekommt
     // ihn als `OpaquePointer` — genau das, was die Geste schon ist.
     gtk_widget_add_controller(ziel, geste)
+}
+
+// MARK: - Ein Lauf von null nach eins
+
+/// Ein Lauf über eine Dauer, im Takt des Schirms. ``sanft(auf:von:nach:setzen:)``
+/// bewegt **einen** Wert; hier braucht es den Fortschritt selbst, weil an ihm
+/// mehrere Ebenen gleichzeitig hängen.
+private final class Lauf {
+    let schritt: (Double) -> Void
+    let fertig: () -> Void
+    let dauer: Double
+    let beginn = Date()
+
+    init(dauer: Double, schritt: @escaping (Double) -> Void, fertig: @escaping () -> Void) {
+        self.dauer = dauer
+        self.schritt = schritt
+        self.fertig = fertig
+    }
+}
+
+nonisolated(unsafe) private let laufTakt: @convention(c) (
+    UnsafeMutablePointer<GtkWidget>?, OpaquePointer?, gpointer?
+) -> gboolean = { _, _, daten in
+    guard let daten else { return 0 }
+    let l = Unmanaged<Lauf>.fromOpaque(daten).takeUnretainedValue()
+    let t = min(Date().timeIntervalSince(l.beginn) / l.dauer, 1)
+    // easeInOut — dieselbe Kennlinie wie `Animation.easeInOut` auf dem Mac.
+    l.schritt(t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2)
+    if t >= 1 {
+        l.fertig()
+        Unmanaged<Lauf>.fromOpaque(daten).release()
+        return 0   // G_SOURCE_REMOVE
+    }
+    return 1
+}
+
+/// Ruft `schritt` mit dem geglätteten Fortschritt 0…1, dann einmal `fertig`.
+func laufen(auf widget: Widget!, dauer: Double,
+            schritt: @escaping (Double) -> Void,
+            fertig: @escaping () -> Void) {
+    let lauf = Lauf(dauer: dauer, schritt: schritt, fertig: fertig)
+    _ = gtk_widget_add_tick_callback(widget, laufTakt,
+                                     Unmanaged.passRetained(lauf).toOpaque(), nil)
+}
+
+// MARK: - Grösse melden
+
+final class Massauftrag {
+    let block: (Int32, Int32) -> Void
+    init(_ block: @escaping (Int32, Int32) -> Void) { self.block = block }
+}
+
+nonisolated(unsafe) private let auftragAlsMass: @convention(c) (
+    UnsafeMutableRawPointer?, Int32, Int32, gpointer?
+) -> Void = { _, breite, hoehe, daten in
+    guard let daten else { return }
+    Unmanaged<Massauftrag>.fromOpaque(daten).takeUnretainedValue().block(breite, hoehe)
+}
+
+nonisolated(unsafe) private let massFreigeben: @convention(c) (
+    gpointer?, UnsafeMutablePointer<_GClosure>?
+) -> Void = { daten, _ in
+    guard let daten else { return }
+    Unmanaged<Massauftrag>.fromOpaque(daten).release()
+}
+
+/// Meldet die Grösse einer Zeichenfläche. **`resize` bringt Breite und Höhe
+/// mit** — vier Argumente, also wieder ein eigener Rückruf (Falle 2).
+func beiGroesse(_ feld: Widget!, _ block: @escaping (Int32, Int32) -> Void) {
+    let auftrag = Unmanaged.passRetained(Massauftrag(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(feld), "resize",
+                          unsafeBitCast(auftragAlsMass, to: GCallback.self),
+                          auftrag, massFreigeben, GConnectFlags(rawValue: 0))
 }
