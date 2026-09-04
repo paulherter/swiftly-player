@@ -40,6 +40,12 @@ Werkzeuge/Iconbauer
 # README.md oder project.yml in so einem Abzug.
 .claude
 
+# **Das Aufspielwerkzeug fuer den Linux-Rechner.** Es nennt Rechnernamen,
+# Pfade und die Wayland-Sitzung — Werkzeug, kein Code. Es liegt dauerhaft
+# unter ~/swiftly-starten.sh auf dem Zielrechner, und der post-receive-Hook
+# ruft es dort auf, nicht aus dem Auscheck.
+.linux
+
 MORGEN.md
 OFFEN.md
 PRUEFUNG.md
