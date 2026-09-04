@@ -12,7 +12,7 @@
 set -euo pipefail
 
 quelle="${1:-$HOME/rlottie-bau}"
-ziel="$HOME/.local"
+ziel="${SWIFTLY_RLOTTIE_ZIEL:-$HOME/.local}"
 
 if [ ! -d "$quelle" ]; then
     git clone --depth 1 https://github.com/Samsung/rlottie.git "$quelle"
@@ -35,14 +35,35 @@ EOF
 
 mkdir -p "$ziel/lib/pkgconfig" "$ziel/include"
 
-g++ -std=c++14 -O2 -fPIC -shared -w -DNDEBUG \
-    -Iinc -Isrc/vector -Isrc/vector/freetype -Isrc/vector/pixman \
-    -Isrc/vector/stb -Isrc/lottie -Isrc/binding \
-    $(find src/lottie src/vector src/binding -name '*.cpp' | grep -v wasm) \
-    -lpthread -o "$ziel/lib/librlottie.so"
+quellen=$(find src/lottie src/vector src/binding -name '*.cpp' | grep -v wasm)
+flaggen=(-std=c++14 -O2 -fPIC -w -DNDEBUG
+    -Iinc -Isrc/vector -Isrc/vector/freetype -Isrc/vector/pixman
+    -Isrc/vector/stb -Isrc/lottie -Isrc/binding)
+
+# **Ein Archiv, keine Bibliothek neben der App.**
+#
+# Die Bibliothek gibt es in keiner Paketquelle. Als `.so` muesste sie
+# mitgeliefert und ueber einen Suchpfad gefunden werden — genau die Sorte
+# Installation, die auf einem fremden Rechner schiefgeht. Statisch gebunden
+# ist sie einfach im Binaerprogramm drin, und das Paket haengt nur noch an
+# Sachen, die jede Distribution hat.
+rm -rf "$quelle/.obj"
+mkdir -p "$quelle/.obj"
+zaehler=0
+for datei in $quellen; do
+    g++ "${flaggen[@]}" -c "$datei" -o "$quelle/.obj/$zaehler.o" &
+    zaehler=$((zaehler + 1))
+    if [ $((zaehler % 8)) -eq 0 ]; then wait; fi
+done
+wait
+
+ar rcs "$ziel/lib/librlottie.a" "$quelle"/.obj/*.o
+g++ "${flaggen[@]}" -shared $quellen -lpthread -o "$ziel/lib/librlottie.so"
 
 cp inc/rlottie_capi.h inc/rlottiecommon.h "$ziel/include/"
 
+# `Libs` nennt das Archiv mit vollem Pfad. Ein blosses `-lrlottie` wuerde der
+# Binder zur `.so` aufloesen, sobald beide danebenliegen.
 cat > "$ziel/lib/pkgconfig/rlottie.pc" <<EOF
 prefix=$ziel
 libdir=\${prefix}/lib
@@ -51,9 +72,9 @@ includedir=\${prefix}/include
 Name: rlottie
 Description: Lottie-Abspieler
 Version: 0.2
-Libs: -L\${libdir} -lrlottie -Wl,-rpath,\${libdir}
+Libs: \${libdir}/librlottie.a -lstdc++ -lm
 Cflags: -I\${includedir}
 EOF
 
-echo "librlottie.so liegt in $ziel/lib"
-echo "PKG_CONFIG_PATH=\$HOME/.local/lib/pkgconfig muss beim Bauen gesetzt sein."
+echo "librlottie.a und librlottie.so liegen in $ziel/lib"
+echo "PKG_CONFIG_PATH=$ziel/lib/pkgconfig muss beim Bauen gesetzt sein."
