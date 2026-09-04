@@ -398,7 +398,7 @@ final class App: @unchecked Sendable {
     //
     /// **Je Bereich ein eigener Stapel**, wie `Navigator` auf dem Mac: wer
     /// zwischen Filmen und Serien wechselt, findet zurück, wo er war.
-    var stapel: [Bereich: [Item]] = [:]
+    var seitenstapel: [Bereich: [Item]] = [:]
     /// Die Staffel, mit der eine Serienseite öffnet — gesetzt, wenn der Weg
     /// über eine Folge führte (A8).
     var startStaffel: String?
@@ -590,7 +590,7 @@ final class App: @unchecked Sendable {
         }
         // **Der Stapel entscheidet, was zu sehen ist.** Liegt auf diesem
         // Bereich eine Detailseite, kommt sie zurück — nicht die Liste.
-        if let oben = stapel[neu]?.last {
+        if let oben = seitenstapel[neu]?.last {
             detailZeigen(oben)
         } else {
             gtk_stack_set_visible_child_name(OpaquePointer(inhalt), neu.kennung)

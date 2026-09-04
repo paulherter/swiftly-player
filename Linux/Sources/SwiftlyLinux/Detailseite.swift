@@ -18,14 +18,14 @@ extension App {
     /// Folge führt auf die Serienseite, mit der Staffel der Folge gewählt.
     /// Das entscheidet ``detailZeigen(_:)`` beim Aufbauen.
     func oeffne(_ item: Item) {
-        stapel[bereich, default: []].append(item)
+        seitenstapel[bereich, default: []].append(item)
         detailZeigen(item)
     }
 
     func zurueck() {
-        guard var meiner = stapel[bereich], !meiner.isEmpty else { return }
+        guard var meiner = seitenstapel[bereich], !meiner.isEmpty else { return }
         meiner.removeLast()
-        stapel[bereich] = meiner
+        seitenstapel[bereich] = meiner
         if let oben = meiner.last {
             detailZeigen(oben)
         } else {
@@ -85,7 +85,7 @@ extension App {
             guard let voll = try? await client.item(id: item.id) else { return }
             aufHauptfaden {
                 // Nur nachtragen, wenn diese Seite noch die oberste ist.
-                guard self.stapel[self.bereich]?.last?.id == item.id else { return }
+                guard self.seitenstapel[self.bereich]?.last?.id == item.id else { return }
                 leeren(seite)
                 self.aufbauenMit(voll, in: seite)
             }
