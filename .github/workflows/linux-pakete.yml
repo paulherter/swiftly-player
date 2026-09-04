@@ -132,7 +132,7 @@ jobs:
           # Namen. `libxml2-legacy` ist die mit soname 2 — Arch liefert
           # inzwischen 16, und der Uebersetzer startet ohne sie gar nicht.
           pacman -Syu --noconfirm --needed \
-            gtk4 vlc git gcc pkgconf curl unzip which sudo \
+            gtk4 vlc git gcc pkgconf curl unzip which sudo gnupg \
             libxml2-legacy icu python sqlite libedit ncurses zlib
           useradd -m bauer
           echo "bauer ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
@@ -187,11 +187,27 @@ jobs:
           bash Linux/Installieren/pacman-paket.sh \
             "${{ steps.f.outputs.wert }}" "$PWD/Linux/.build/release" "$PWD/pakete"
 
+      # pacman prueft je Paket eine eigene .sig-Datei, nicht die Datenbank —
+      # deshalb wird hier jedes Paket einzeln signiert und `repo-add -s`
+      # setzt die Signatur der Datenbank obendrauf.
       - name: In die pacman-Quelle
+        env:
+          SCHLUESSEL: ${{ secrets.SIGNIERSCHLUESSEL }}
         run: |
           mkdir -p seite/arch
           cp pakete/*.pkg.tar.zst seite/arch/
-          repo-add seite/arch/swiftly.db.tar.gz seite/arch/*.pkg.tar.zst
+          if [ -n "$SCHLUESSEL" ]; then
+            echo "$SCHLUESSEL" | gpg --batch --import
+            kennung=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+            for paket in seite/arch/*.pkg.tar.zst; do
+              gpg --batch --yes --detach-sign --no-armor -u "$kennung" "$paket"
+            done
+            repo-add -s -v -k "$kennung" seite/arch/swiftly.db.tar.gz seite/arch/*.pkg.tar.zst
+            gpg --batch --yes --armor --export "$kennung" > seite/swiftly.gpg
+          else
+            echo "::warning::Kein SIGNIERSCHLUESSEL — die pacman-Quelle bleibt unsigniert."
+            repo-add seite/arch/swiftly.db.tar.gz seite/arch/*.pkg.tar.zst
+          fi
 
       - name: Auf Pages stellen
         uses: peaceiris/actions-gh-pages@v4

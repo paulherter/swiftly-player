@@ -108,7 +108,9 @@ curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-for-jellyfin/mai
 **Debian, Ubuntu, Linux Mint, Pop!_OS, elementary, Zorin**
 
 ```sh
-echo "deb [arch=amd64 trusted=yes] https://paulherter.github.io/swiftly-for-jellyfin/deb ./" | sudo tee /etc/apt/sources.list.d/swiftly.list
+sudo install -d -m755 /etc/apt/keyrings
+curl -fsSL https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg | sudo tee /etc/apt/keyrings/swiftly.asc >/dev/null
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/swiftly.asc] https://paulherter.github.io/swiftly-for-jellyfin/deb ./" | sudo tee /etc/apt/sources.list.d/swiftly.list
 sudo apt update && sudo apt install swiftly-jellyfin
 ```
 
@@ -120,7 +122,8 @@ sudo tee /etc/yum.repos.d/swiftly.repo <<'EOF'
 name=Swiftly for Jellyfin
 baseurl=https://paulherter.github.io/swiftly-for-jellyfin/rpm
 enabled=1
-gpgcheck=0
+gpgcheck=1
+gpgkey=https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg
 EOF
 sudo dnf install swiftly-jellyfin
 ```
@@ -128,10 +131,12 @@ sudo dnf install swiftly-jellyfin
 **Arch, CachyOS, Manjaro, EndeavourOS, Garuda**
 
 ```sh
+curl -fsSL https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg | sudo pacman-key --add -
+sudo pacman-key --lsign-key 705D676A71BF0121804A90BAC8589885A042FB8B
 sudo tee -a /etc/pacman.conf <<'EOF'
 
 [swiftly]
-SigLevel = Optional TrustAll
+SigLevel = Required DatabaseOptional
 Server = https://paulherter.github.io/swiftly-for-jellyfin/arch
 EOF
 sudo pacman -Sy swiftly-jellyfin
@@ -140,7 +145,8 @@ sudo pacman -Sy swiftly-jellyfin
 **openSUSE Tumbleweed**
 
 ```sh
-sudo zypper addrepo -f -G https://paulherter.github.io/swiftly-for-jellyfin/rpm swiftly
+sudo rpm --import https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg
+sudo zypper addrepo -f https://paulherter.github.io/swiftly-for-jellyfin/rpm swiftly
 sudo zypper install swiftly-jellyfin
 ```
 
@@ -149,6 +155,9 @@ sudo zypper install swiftly-jellyfin
 distribution, fetches Swift into `$HOME`, and builds.
 
 </details>
+
+The packages are signed; the key's fingerprint is
+`705D 676A 71BF 0121 804A  90BA C858 9885 A042 FB8B`.
 
 **Requirements: GTK 4.14 and libVLC.** That is what rules out the older
 releases — Debian 12 ships GTK 4.8 and could not draw the app at all. The
