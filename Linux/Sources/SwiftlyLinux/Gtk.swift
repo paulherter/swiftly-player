@@ -283,7 +283,7 @@ private final class Weichlauf {
     let obergrenze: () -> Double
     var ziel: Double
     var takt: guint = 0
-    var zuletzt: Int64 = 0
+    var zuletzt: Int = 0
 
     init(lesen: @escaping () -> Double, setzen: @escaping (Double) -> Void,
          obergrenze: @escaping () -> Double) {
@@ -307,7 +307,7 @@ nonisolated(unsafe) private let weichTakt: @convention(c) (
     let w = Unmanaged<Weichlauf>.fromOpaque(daten).takeUnretainedValue()
 
     // Die Zeit kommt aus dem Bildtakt, in Mikrosekunden.
-    let jetztZeit = uhr.map { gdk_frame_clock_get_frame_time($0) } ?? 0
+    let jetztZeit = Int(uhr.map { gdk_frame_clock_get_frame_time($0) } ?? 0)
     let dt = w.zuletzt == 0 ? 1.0 / 60 : Double(jetztZeit - w.zuletzt) / 1_000_000
     w.zuletzt = jetztZeit
 
