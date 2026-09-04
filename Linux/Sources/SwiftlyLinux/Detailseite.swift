@@ -260,8 +260,11 @@ extension App {
         guard let adressen,
               let url = Bildwahl.quer(titel, adressen: adressen, breite: 16)?.url
         else { return }
+        // Über ``Bildlager``, nicht über `URLSession` — dort liegt schon der
+        // Weg samt `FoundationNetworking`, und derselbe Titel wird beim
+        // Zurückkommen nicht noch einmal geholt.
         Task.detached {
-            guard let (daten, _) = try? await URLSession.shared.data(from: url),
+            guard let daten = await Bildlager.shared.laden(url, schluessel: url.absoluteString),
                   let ton = Bildfarbe.ton(aus: daten) else { return }
             aufHauptfaden { Tonblatt.setzen(ton) }
         }
