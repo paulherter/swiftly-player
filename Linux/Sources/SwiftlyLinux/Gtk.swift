@@ -602,7 +602,7 @@ nonisolated(unsafe) private let auftragFreigebenRoh: @convention(c) (gpointer?) 
 /// `pressed`: ein Kontextmenü erscheint beim Drücken, nicht beim Loslassen.
 func beiRechtsklick(_ ziel: Widget!, _ block: @escaping () -> Void) {
     let geste = gtk_gesture_click_new()
-    gtk_gesture_single_set_button(OpaquePointer(geste), 3)
+    gtk_gesture_single_set_button(geste, 3)
     let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
     g_signal_connect_data(UnsafeMutableRawPointer(geste), "pressed",
                           unsafeBitCast(auftragAlsKlick, to: GCallback.self),
