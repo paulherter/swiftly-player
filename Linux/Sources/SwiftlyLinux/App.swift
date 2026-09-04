@@ -295,6 +295,7 @@ final class App: @unchecked Sendable {
         adressen = Bildadresse(basis: serverURL, token: token)
         gtk_label_set_text(OpaquePointer(titelzeile),
                            servername.map { "Swiftly · \($0)" } ?? "Swiftly")
+        kopfzeileZeigen(true)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
 
         // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
@@ -333,6 +334,18 @@ final class App: @unchecked Sendable {
     private func kopfzeileFuellen() {
         gtk_header_bar_set_title_widget(OpaquePointer(kopfzeile), titelzeile)
         gtk_header_bar_pack_end(OpaquePointer(kopfzeile), abmeldeknopf)
+        kopfzeileZeigen(false)
+    }
+
+    /// **Die Kopfzeile gehört zur Sitzung, nicht zum Fenster.**
+    ///
+    /// Servername und „Abmelden" haben auf dem Anmeldebildschirm nichts zu
+    /// suchen — sie standen dort, weil beide einmal aufgebaut werden und
+    /// niemand sie wieder ausgeblendet hat. Auf dem Anmeldeweg bleibt der
+    /// Kopf leer.
+    private func kopfzeileZeigen(_ sichtbar: Bool) {
+        gtk_widget_set_visible(titelzeile, sichtbar ? 1 : 0)
+        gtk_widget_set_visible(abmeldeknopf, sichtbar ? 1 : 0)
     }
 
     private func abmelden() {
@@ -343,6 +356,7 @@ final class App: @unchecked Sendable {
         gtk_editable_set_text(OpaquePointer(passwortfeld), "")
         anmeldestandZeigen("")
         serverstandZeigen("Abgemeldet.")
+        kopfzeileZeigen(false)
         gtk_stack_set_visible_child_name(OpaquePointer(anmeldeschritte), "server")
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "anmeldung")
     }
