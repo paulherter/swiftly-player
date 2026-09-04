@@ -523,7 +523,7 @@ func beiGroesse(_ feld: Widget!, _ block: @escaping (Int32, Int32) -> Void) {
 /// angefasst wird es nur aus ``aufHauptfaden`` heraus.
 enum Schubsperre {
     nonisolated(unsafe) private static var tiefe = 0
-    nonisolated(unsafe) private static var warteschlange: [() -> Void] = []
+    nonisolated(unsafe) private static var warteschlange: [@Sendable () -> Void] = []
 
     static var faehrt: Bool { tiefe > 0 }
 
@@ -540,7 +540,7 @@ enum Schubsperre {
         aufHauptfaden { for block in offen { block() } }
     }
 
-    static func spaeter(_ block: @escaping () -> Void) {
+    static func spaeter(_ block: @escaping @Sendable () -> Void) {
         if faehrt { warteschlange.append(block) } else { block() }
     }
 }
