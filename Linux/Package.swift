@@ -17,6 +17,11 @@ import PackageDescription
 // die ohnehin plattformeigen sein soll, ein guter Tausch.
 let package = Package(
     name: "SwiftlyLinux",
+    // **Deutsch ist die Ausgangssprache** — und zugleich der Schluessel jedes
+    // Textes. Ohne diese Zeile weigert sich SwiftPM, sobald ein Ziel
+    // uebersetzte Mittel mitbringt: es muss wissen, was gilt, wenn die
+    // Sprache des Rechners in keinem Katalog steht.
+    defaultLocalization: "de",
     dependencies: [
         // Dieselben Dateien, die iOS, tvOS und macOS benutzen. Keine Kopie.
         .package(path: "../Packages/JellyfinKit")
