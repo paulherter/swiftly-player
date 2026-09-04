@@ -28,6 +28,10 @@ struct PlayerScreen: View {
     /// schon richtig, feuert gar kein Uebergang.
     @State private var drehungErwartet = false
     @State private var drehungFertig = false
+    /// Wann die Drehung angeordnet wurde — nur, um ihre Dauer am Geraet zu
+    /// messen. Der Simulator sagt 300 ms Animationsdauer und 349 ms bis zur
+    /// `completion`; ob das Telefon dasselbe tut, steht damit im Protokoll.
+    @State private var drehungAngefordert: Date?
     @State private var seitStart = Date()
     /// Einmal je Titel: die Spurvorwahl anwenden.
     @State private var spurenGesetzt = false
@@ -241,7 +245,13 @@ struct PlayerScreen: View {
             if !bildFrei { startschleier }
 
             // Unsichtbar; horcht nur auf das Ende der Drehung.
-            Drehhorcher { drehungFertig = true }
+            Drehhorcher {
+                if let seit = drehungAngefordert {
+                    let ms = Int(Date().timeIntervalSince(seit) * 1000)
+                    Protokoll.schreib("[Drehung] fertig nach \(ms) ms")
+                }
+                drehungFertig = true
+            }
                 .frame(width: 0, height: 0)
                 .allowsHitTesting(false)
             if imKleinenFenster { kleinerHinweis }
@@ -410,6 +420,9 @@ struct PlayerScreen: View {
         .onAppear {
             // **Vor** dem Anfordern fragen: danach steht die Lage schon quer.
             drehungErwartet = Orientierung.drehungErwartet(querformatFest: querformatFest)
+            drehungAngefordert = Date()
+            Protokoll.schreib("[Drehung] angeordnet · erwartet=\(drehungErwartet)"
+                + " · Sperre=\(querformatFest)")
             Orientierung.shared.playerGeoeffnet(querformatFest: querformatFest)
         }
         // **Notausgang.** Bleibt der Uebergang aus — Drehsperre im
