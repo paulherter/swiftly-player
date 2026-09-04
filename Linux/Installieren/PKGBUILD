@@ -13,7 +13,7 @@ pkgrel=1
 pkgdesc="Jellyfin-Client, der niemals transkodiert"
 arch=('x86_64' 'aarch64')
 url="https://github.com/paulherter/swiftly-for-jellyfin"
-license=('MIT')
+license=('MPL-2.0')
 depends=('gtk4' 'vlc' 'glibc' 'gcc-libs')
 makedepends=('git' 'gcc' 'pkgconf' 'swift-bin')
 source=("git+$url.git#branch=main"

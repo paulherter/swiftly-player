@@ -168,8 +168,10 @@ if [ "$brauche_swift" = "1" ]; then
       curl -fsSLO "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
       tar -xzf "swiftly-$(uname -m).tar.gz" )
     "$ARBEIT/swiftly" init --quiet-shell-followup --assume-yes --skip-install
-    # shellcheck disable=SC1091
-    . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
+    # Nicht ueber env.sh: die Datei legt swiftly je nach Fassung woanders
+    # oder gar nicht an, und ein `.` auf eine fehlende Datei bricht mit
+    # `set -e` den ganzen Lauf ab. Der Pfad reicht.
+    export PATH="${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/bin:$PATH"
     swiftly install --use latest
     command -v swift >/dev/null 2>&1 || klagen "Swift ist nach der Installation nicht im PATH."
 fi

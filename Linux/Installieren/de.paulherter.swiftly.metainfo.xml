@@ -5,7 +5,7 @@
   <summary>Jellyfin client that never transcodes</summary>
   <summary xml:lang="de">Jellyfin-Client, der niemals transkodiert</summary>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
+  <project_license>MPL-2.0</project_license>
   <developer id="de.paulherter">
     <name>Paul Herter</name>
   </developer>
