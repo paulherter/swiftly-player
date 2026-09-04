@@ -649,6 +649,19 @@ enum Stil {
         button.swiftly-spieltaste image { color: \(schrift); }
         /* Der Zeiger hebt das Zeichen an, statt einen Kasten zu malen. */
         button.swiftly-spieltaste:hover label { color: \(schriftLeise); }
+        /* Der Vollbildknopf: so gross wie ein Chip hoch ist, rund, leise. */
+        button.swiftly-vollknopf {
+            border-radius: 14px;
+            padding: 0;
+            min-width: 28px;
+            min-height: 28px;
+            border: 1px solid \(rand);
+            background-color: transparent;
+        }
+        button.swiftly-vollknopf image { color: \(schriftLeise); }
+        button.swiftly-vollknopf:hover { background-color: rgba(255,255,255,0.06); }
+        button.swiftly-vollknopf:hover image { color: \(schrift); }
+
         .swiftly-kuerzel {
             font-size: 11px;
             color: \(schriftSehrLeise);

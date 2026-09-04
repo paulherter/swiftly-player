@@ -226,6 +226,20 @@ extension App {
         gtk_widget_set_margin_top(oben, 18)
         gtk_widget_set_margin_end(oben, 22)
         gtk_widget_set_margin_start(oben, 16)
+
+        // **Links der Weg hinaus, rechts die Werkzeuge.**
+        //
+        // Auf dem Mac steht links nichts, weil dort die Fensterampel sitzt
+        // und zwei Schliesser an derselben Ecke verwirren. Unter Wayland
+        // gehört die Titelzeile dem Fenster und liegt **über** dem Player,
+        // nicht daneben — die Verwechslung gibt es hier nicht, und der Platz
+        // links ist frei. Er ist der bessere: der Zurückweg gehört nach links
+        // (E9), und rechts wird es sonst eng, weil hier ein Knopf mehr steht
+        // als auf dem Mac.
+        let zu = chip("Schließen", symbol: "pan-down-symbolic")
+        beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
+        anhaengen(oben, zu)
+
         anhaengen(oben, luftQuer())
 
         let spuren = chip("Ton und Untertitel", symbol: "media-view-subtitles-symbolic")
@@ -233,10 +247,30 @@ extension App {
         beiSignal(spuren, "clicked") { [weak self] in self?.spurwahlZeigen() }
         anhaengen(oben, spuren)
 
-        let zu = chip("Schließen", symbol: "pan-down-symbolic")
-        beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
-        anhaengen(oben, zu)
+        // **Vollbild braucht kein Wort.** Das Zeichen ist eindeutig, und
+        // neben zwei beschrifteten Chips wäre ein dritter zu viel Text für
+        // eine Sache, die man einmal drückt und dann vergisst.
+        let voll = nebenknopf("view-fullscreen-symbolic", name: "Vollbild")
+        gtk_widget_add_css_class(voll, "swiftly-vollknopf")
+        gtk_widget_set_size_request(voll, 28, 28)
+        gtk_widget_set_valign(voll, GTK_ALIGN_CENTER)
+        spielerVollknopf = voll
+        beiSignal(voll, "clicked") { [weak self] in self?.vollbildUmschalten() }
+        anhaengen(oben, voll)
         return oben
+    }
+
+    /// Vollbild an oder aus — und das Zeichen sagt, was der nächste Druck tut.
+    func vollbildUmschalten() {
+        let jetzt = gtk_window_is_fullscreen(alsFenster(fenster)) != 0
+        if jetzt { gtk_window_unfullscreen(alsFenster(fenster)) }
+        else { gtk_window_fullscreen(alsFenster(fenster)) }
+        if let knopf = spielerVollknopf {
+            knopfzustand(knopf, aktiv: false,
+                         symbol: jetzt ? "view-fullscreen-symbolic"
+                                       : "view-restore-symbolic")
+        }
+        steuerungZeigen()
     }
 
     /// Die drei Knöpfe **in der Mitte des Bildes**, nicht unten in der Leiste

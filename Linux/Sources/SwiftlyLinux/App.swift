@@ -716,6 +716,7 @@ final class App: @unchecked Sendable {
     var spielerAbspielzeichen: Abspielzeichen?
     var spielerWeiter: Widget!
     var spielerSpurknopf: Widget!
+    var spielerVollknopf: Widget!
     var spielerLadeschirm: Widget!
     /// Bis wann VLCs Zeit nicht übernommen wird — nach jedem Sprung.
     var sprungBis = Date.distantPast
@@ -852,6 +853,17 @@ final class App: @unchecked Sendable {
     /// Tastenhorcher weniger Apparat.
     private func tastenEinrichten() {
         let horcher = gtk_event_controller_key_new()
+        // **Erfassungsphase, nicht Blasenphase.**
+        //
+        // In der Blasenphase bekommt erst das fokussierte Widget die Taste.
+        // Beim Öffnen des Players liegt der Fokus auf dem ersten Knopf oben —
+        // und die Leertaste drückt ihn, statt anzuhalten. Wer vorher irgendwo
+        // hingeklickt hatte, sah den Fehler nicht.
+        //
+        // Dieselbe Falle wie beim Scrollen, dort mit demselben Mittel gelöst.
+        // Ungelesene Tasten reicht der Rückruf weiter, es geht also nichts
+        // verloren — im Suchfeld tippt es sich weiter wie zuvor.
+        gtk_event_controller_set_propagation_phase(horcher, GTK_PHASE_CAPTURE)
         g_signal_connect_data(UnsafeMutableRawPointer(horcher), "key-pressed",
                               unsafeBitCast(tasteGedrueckt, to: GCallback.self),
                               Unmanaged.passUnretained(self).toOpaque(),
@@ -894,13 +906,7 @@ final class App: @unchecked Sendable {
                 steuerungZeigen()
                 return true
             case 0xFFC8:                                   // F11
-                // **Vollbild.** Der Mac laesst Escape erst daraus und dann
-                // erst den Player schliessen; hier ebenso.
-                if gtk_window_is_fullscreen(alsFenster(fenster)) != 0 {
-                    gtk_window_unfullscreen(alsFenster(fenster))
-                } else {
-                    gtk_window_fullscreen(alsFenster(fenster))
-                }
+                vollbildUmschalten()
                 return true
             case 0xFF1B:                                   // Escape
                 if gtk_window_is_fullscreen(alsFenster(fenster)) != 0 {
