@@ -21,7 +21,14 @@ import Foundation
 final class Startanimation: @unchecked Sendable {
 
     private var tier: OpaquePointer?
-    private var punkte: [UInt32] = []
+    /// **Von Hand belegt, nicht als Feld.**
+    ///
+    /// `cairo_image_surface_create_for_data` behält den Zeiger, den es
+    /// bekommt. Ein Swift-Feld darf sich aber jederzeit verschieben, und der
+    /// Zeiger aus `withUnsafeMutableBufferPointer` gilt ausdrücklich nur
+    /// innerhalb des Blocks — er nach draussen zu reichen ist genau der
+    /// Fehler, der die App beim ersten Bild abgeräumt hat.
+    private var punkte: UnsafeMutablePointer<UInt32>?
     private var flaeche: OpaquePointer?
     private var mass: Int = 0
     private var teiler: Int32 = 1
@@ -59,12 +66,17 @@ final class Startanimation: @unchecked Sendable {
         anzeige = feld!
         gtk_drawing_area_set_draw_func(alsZeichen(feld), startMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
+        // **Der Takt hält die Animation fest.** Die Frist kann sie aus
+        // `App` lösen, während noch ein Takt aussteht; ein schwacher Zeiger
+        // zeigte dann auf abgeräumten Speicher. Freigegeben wird sie, wenn
+        // der Takt sich selbst abmeldet.
         _ = gtk_widget_add_tick_callback(feld, startTakt,
-                                         Unmanaged.passUnretained(self).toOpaque(), nil)
+                                         Unmanaged.passRetained(self).toOpaque(), nil)
     }
 
     deinit {
         if let flaeche { cairo_surface_destroy(flaeche) }
+        if let punkte { punkte.deallocate() }
         if let tier { lottie_animation_destroy(tier) }
     }
 
@@ -85,6 +97,7 @@ final class Startanimation: @unchecked Sendable {
     /// weiterspringt, läuft auf 144 Hz zweieinhalbmal zu schnell — die Vorlage
     /// hat ihre eigene Bildrate, und die Uhr ist der gemeinsame Nenner.
     fileprivate func weiter() -> Bool {
+        guard !schonFertig else { return false }
         let seit = Date().timeIntervalSince(beginn)
         let neu = min(Int(seit / dauer * Double(bilder)), bilder - 1)
         if neu != bild {
@@ -114,25 +127,21 @@ final class Startanimation: @unchecked Sendable {
         // Quadratisch, denn die Vorlage ist es: 1024 × 1024.
         let neu = Int(min(breite, hoehe)) * Int(t)
         guard neu > 0 else { return nil }
-        if neu != mass || teiler != t {
+        if neu != mass || teiler != t || punkte == nil {
             if let alt = flaeche { cairo_surface_destroy(alt); flaeche = nil }
+            if let alt = punkte { alt.deallocate() }
             mass = neu
             teiler = t
-            punkte = [UInt32](repeating: 0, count: neu * neu)
+            let feld = UnsafeMutablePointer<UInt32>.allocate(capacity: neu * neu)
+            feld.initialize(repeating: 0, count: neu * neu)
+            punkte = feld
+            flaeche = cairo_image_surface_create_for_data(
+                UnsafeMutableRawPointer(feld).assumingMemoryBound(to: UInt8.self),
+                CAIRO_FORMAT_ARGB32, Int32(mass), Int32(mass), Int32(mass * 4))
         }
-        punkte.withUnsafeMutableBufferPointer { puffer in
-            guard let basis = puffer.baseAddress else { return }
-            lottie_animation_render(tier, size_t(bild), basis,
-                                    size_t(mass), size_t(mass), size_t(mass * 4))
-        }
-        if flaeche == nil {
-            flaeche = punkte.withUnsafeMutableBufferPointer { puffer in
-                cairo_image_surface_create_for_data(
-                    UnsafeMutableRawPointer(puffer.baseAddress!)
-                        .assumingMemoryBound(to: UInt8.self),
-                    CAIRO_FORMAT_ARGB32, Int32(mass), Int32(mass), Int32(mass * 4))
-            }
-        }
+        guard let punkte else { return nil }
+        lottie_animation_render(tier, size_t(bild), punkte,
+                                size_t(mass), size_t(mass), size_t(mass * 4))
         if let flaeche { cairo_surface_mark_dirty(flaeche) }
         return flaeche
     }
@@ -145,8 +154,10 @@ nonisolated(unsafe) private let startTakt: @convention(c) (
     UnsafeMutablePointer<GtkWidget>?, OpaquePointer?, gpointer?
 ) -> gboolean = { _, _, daten in
     guard let daten else { return 0 }
-    return Unmanaged<Startanimation>.fromOpaque(daten)
-        .takeUnretainedValue().weiter() ? 1 : 0
+    let a = Unmanaged<Startanimation>.fromOpaque(daten)
+    if a.takeUnretainedValue().weiter() { return 1 }
+    a.release()
+    return 0   // G_SOURCE_REMOVE
 }
 
 nonisolated(unsafe) private let startMalen: @convention(c) (
