@@ -457,7 +457,25 @@ enum Stil {
                 rgba(11,11,13,0.66) 80%, rgba(11,11,13,0.86) 89%,
                 \(grund) 96%, \(grund) 100%);
         }
-        .swiftly-detailgrund { background-color: \(grund); }
+        .swiftly-kopfton { background-color: \(grund); }
+        .swiftly-tonauslauf { background-color: \(grund); }
+
+        /* MARK: Die Leiste, die beim Scrollen kommt
+           Wörtlich wie auf iPhone, iPad und Mac: unten eine Haarlinie,
+           dahinter Glas — und solange das Bild oben steht stattdessen ein
+           weicher Verlauf, damit der Pfeil auf hellem Bild lesbar bleibt.
+           **Ohne Glas.** GTK hat keine lebende Unschärfe; was den Inhalt
+           darunter verwischt, gibt es hier nicht. An ihre Stelle tritt eine
+           dunkle Fläche — dieselbe Aufgabe, anderes Mittel. */
+        .swiftly-kopfverlauf {
+            background-image: linear-gradient(to bottom,
+                rgba(11,11,13,0.70) 0%, rgba(11,11,13,0) 100%);
+        }
+        .swiftly-kopfleiste {
+            background-color: rgba(11,11,13,0.86);
+            border-bottom: 1px solid \(linie);
+            transition: opacity 120ms ease-out;
+        }
 
         /* Nebenknopf: abgerundetes Quadrat, nur Symbol. */
         button.swiftly-neben {

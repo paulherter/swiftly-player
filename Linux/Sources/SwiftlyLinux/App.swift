@@ -459,6 +459,8 @@ final class App: @unchecked Sendable {
     /// Wird beim Blättern gebraucht, um den Titel in der Kopfleiste
     /// einzublenden — dieselbe Rechnung wie `Detailkopf.staerke` auf dem Mac.
     var detailkopfTitel: Widget!
+    var detailkopfLeiste: Widget!
+    var detailkopfVerlauf: Widget!
     /// Die Kulisse, deren Breite mit dem Fenster mitgeht.
     var breitenhalter: Zeigerkiste?
 

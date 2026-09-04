@@ -156,12 +156,12 @@ enum Tonblatt {
             "rgba(\(ton.r),\(ton.g),\(ton.b),\(deckung))"
         }
         gtk_css_provider_load_from_string(anbieter, """
-        .swiftly-detailgrund {
-            background-color: \(Stil.grund);
-            background-image: linear-gradient(to bottom,
-                \(t(1)) 0px, \(t(1)) \(Stil.heldHoehe)px,
-                \(Stil.grund) \(Stil.heldHoehe + 260)px);
-            background-repeat: no-repeat;
+        /* Die Kopfzone trägt den Ton gleichmäßig — nur so kann keine
+           übermalte Stelle danebenliegen. */
+        .swiftly-kopfton { background-color: \(t(1)); }
+        /* Und darunter läuft er über 260 Punkte nach `grund` aus. */
+        .swiftly-tonauslauf {
+            background-image: linear-gradient(to bottom, \(t(1)), \(Stil.grund));
         }
         .swiftly-blende-quer {
             background-image: linear-gradient(to right,

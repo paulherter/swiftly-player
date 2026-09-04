@@ -71,22 +71,24 @@ extension App {
 
         let seite = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
 
-        // **Der Ton gehört an den Inhalt, nicht an die Scrollfläche.**
+        // **Der Ton gehört zum Kopf, nicht zur Seite.**
         //
         // Auf dem Mac steht er als `.background` an der `ScrollView` und
-        // bleibt damit stehen, während der Inhalt darüber wegläuft. Dort geht
-        // das, weil die Blenden das Bild **maskieren**: es wird durchsichtig,
-        // und was die Seite an dieser Stelle zeigt, ist gleichgültig.
+        // bleibt stehen, während der Inhalt darüber wegläuft. Dort geht das,
+        // weil die Blenden das Bild **maskieren**: es wird durchsichtig, und
+        // was darunter liegt, ist gleichgültig.
         //
-        // Hier wird übermalt, und dann müssen beide Verläufe übereinander
-        // liegen. An der Scrollfläche steht der eine still, während das
-        // Kopfbild mit dem Inhalt läuft — an der Unterkante des Bildes stand
-        // deshalb eine Stufe, sobald man ein Stück gescrollt hatte. Genau der
-        // Strich quer über die rechte Hälfte.
+        // Hier wird übermalt. Damit muss die Farbe an jeder Stelle die des
+        // Untergrunds sein — und ein stehender Untergrund unter einem
+        // laufenden Bild kann das nicht leisten. Genau daher der Strich an der
+        // Unterkante, den
         //
-        // Am Inhalt laufen beide zusammen. Dass der Ton dabei nach oben aus
-        // dem Bild wandert, ist richtig: er gehört zur Kopfzone.
-        gtk_widget_add_css_class(seite, "swiftly-detailgrund")
+        // Also trägt die Kopfzone ihren Ton selbst, gleichmäßig, und darunter
+        // steht ein eigener Auslauf von 260 Punkten nach `grund` — dieselbe
+        // Länge wie auf dem Mac. Beide laufen mit dem Inhalt, also liegt
+        // nichts je daneben. Der Unterschied zum Mac: dort bleibt der Ton beim
+        // weiten Scrollen oben am Fensterrand stehen, hier verschwindet er mit
+        // der Kopfzone.
 
         let scroller = seitenscroller()
         gtk_scrolled_window_set_child(OpaquePointer(scroller), seite)
@@ -112,7 +114,17 @@ extension App {
         beiSignalRoh(UnsafeMutableRawPointer(senkrecht), "value-changed") { [weak self] in
             guard let self, let kopf = self.detailkopfTitel else { return }
             let v = gtk_adjustment_get_value(senkrecht)
-            gtk_widget_set_opacity(kopf, min(max((v - 74) / 42, 0), 1))
+            // **Ab wo die Leiste kommt — hergeleitet, nicht geschätzt.** Der
+            // große Titel beginnt 98 unter der Oberkante des Heldenbildes und
+            // ist 42 hoch; die Leiste ist 24 hoch. Seine Oberkante erreicht
+            // ihre Unterkante also bei 98 − 24 = 74, und 42 später ist er ganz
+            // darunter. Genau über diese Strecke blendet sie ein.
+            let staerke = min(max((v - 74) / 42, 0), 1)
+            gtk_widget_set_opacity(kopf, staerke)
+            if let leiste = self.detailkopfLeiste { gtk_widget_set_opacity(leiste, staerke) }
+            if let verlauf = self.detailkopfVerlauf {
+                gtk_widget_set_opacity(verlauf, 1 - staerke)
+            }
         }
     }
 
@@ -142,10 +154,23 @@ extension App {
     private func aufbauenMit(_ titel: Item, in seite: Widget!) {
         anhaengen(seite, heldenkopf(titel))
 
+
+        // **Der Auslauf des Tons liegt hinter dem Unterbau, nicht davor.**
+        // 260 Punkte nach `grund`, wie auf dem Mac — nur trägt ihn hier ein
+        // Überzug hinter dem Inhalt, damit die ersten Reihen darin liegen und
+        // nicht darunter.
+        let unterraum: Widget! = gtk_overlay_new()
+        let auslauf: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        gtk_widget_add_css_class(auslauf, "swiftly-tonauslauf")
+        gtk_widget_set_size_request(auslauf, -1, 260)
+        gtk_widget_set_valign(auslauf, GTK_ALIGN_START)
+        gtk_overlay_set_child(OpaquePointer(unterraum), auslauf)
+
         let unten = stapel(GTK_ORIENTATION_VERTICAL, abstand: 26)
         gtk_widget_set_margin_top(unten, 26)
         gtk_widget_set_margin_bottom(unten, Int32(Stil.randAbstand))
-        anhaengen(seite, unten)
+        gtk_overlay_add_overlay(OpaquePointer(unterraum), unten)
+        anhaengen(seite, unterraum)
 
         if titel.type == "Series" {
             serienunterbau(titel, in: unten)
@@ -160,10 +185,27 @@ extension App {
     // MARK: - Kopfleiste mit Pfeil
 
     private func detailkopfBauen(_ item: Item) -> Widget! {
+        // Höhe wie auf dem Mac: 24 Luft, 40 Knopf, 10 unter dem Text.
+        let kopf: Widget! = gtk_overlay_new()
+        gtk_widget_set_valign(kopf, GTK_ALIGN_START)
+        gtk_widget_set_halign(kopf, GTK_ALIGN_FILL)
+
+        // Solange oben steht: ein weicher Verlauf, damit der Pfeil auf hellem
+        // Bild lesbar bleibt. Er ist das Hauptkind und gibt die Höhe vor.
+        let verlauf: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        gtk_widget_add_css_class(verlauf, "swiftly-kopfverlauf")
+        gtk_widget_set_size_request(verlauf, -1, 74)
+        gtk_overlay_set_child(OpaquePointer(kopf), verlauf)
+
+        // Und beim Scrollen die Leiste darüber.
+        detailkopfLeiste = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        gtk_widget_add_css_class(detailkopfLeiste, "swiftly-kopfleiste")
+        gtk_widget_set_opacity(detailkopfLeiste, 0)
+        gtk_overlay_add_overlay(OpaquePointer(kopf), detailkopfLeiste)
+        detailkopfVerlauf = verlauf
+
         let leiste = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 4)
-        gtk_widget_add_css_class(leiste, "swiftly-detailkopf")
         gtk_widget_set_valign(leiste, GTK_ALIGN_START)
-        gtk_widget_set_halign(leiste, GTK_ALIGN_FILL)
         // Bündig mit dem Inhalt: 24 minus die 8 Innenabstand des Knopfes.
         gtk_widget_set_margin_start(leiste, Int32(Stil.randAbstand - 8))
         gtk_widget_set_margin_end(leiste, Int32(Stil.randAbstand))
@@ -180,9 +222,12 @@ extension App {
         detailkopfTitel = beschriftung(item.seriesName ?? item.name, stil: "swiftly-leistentitel")
         gtk_label_set_ellipsize(OpaquePointer(detailkopfTitel), PANGO_ELLIPSIZE_END)
         gtk_widget_set_valign(detailkopfTitel, GTK_ALIGN_CENTER)
+        gtk_widget_set_margin_top(detailkopfTitel, 8)
         gtk_widget_set_opacity(detailkopfTitel, 0)
         anhaengen(leiste, detailkopfTitel)
-        return leiste
+
+        gtk_overlay_add_overlay(OpaquePointer(kopf), leiste)
+        return kopf
     }
 
     // MARK: - Heldenkopf
@@ -190,6 +235,7 @@ extension App {
     /// Kulisse rechts, Block links. Höhe 380 (`Stil.heldHoehe`).
     private func heldenkopf(_ titel: Item) -> Widget! {
         let kopf: Widget! = gtk_overlay_new()
+        gtk_widget_add_css_class(kopf, "swiftly-kopfton")
         gtk_widget_set_hexpand(kopf, 1)
 
         // **Das Hauptkind gibt das Maß, sonst nichts.** Ein `GtkOverlay`
