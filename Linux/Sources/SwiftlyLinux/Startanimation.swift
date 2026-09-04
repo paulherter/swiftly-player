@@ -39,6 +39,8 @@ final class Startanimation: @unchecked Sendable {
     private var beginn = Date()
     private let fertig: () -> Void
     private var schonFertig = false
+    /// Welches Bild schon in der Fläche steht.
+    private var gerechnet = -1
 
     let anzeige: Widget
 
@@ -140,10 +142,15 @@ final class Startanimation: @unchecked Sendable {
     fileprivate func flaecheFuer(_ breite: Int32, _ hoehe: Int32) -> OpaquePointer? {
         guard let tier else { return nil }
         let t = max(gtk_widget_get_scale_factor(anzeige), 1)
-        // Quadratisch, denn die Vorlage ist es: 1024 × 1024.
-        let neu = Int(min(breite, hoehe)) * Int(t)
+        // **Die Marke ist ein Zeichen, kein Hintergrund.** Quadratisch, denn
+        // die Vorlage ist es (1024 × 1024), und gedeckelt: über 360 Punkt
+        // hinaus wird sie nicht grösser, sondern nur teurer — auf dem Mac
+        // steht sie in derselben Grössenordnung.
+        let seite = min(Int(min(breite, hoehe)), 360)
+        let neu = seite * Int(t)
         guard neu > 0 else { return nil }
         if neu != mass || teiler != t || punkte == nil {
+            gerechnet = -1
             if let alt = flaeche { cairo_surface_destroy(alt); flaeche = nil }
             if let alt = punkte { alt.deallocate() }
             mass = neu
@@ -156,8 +163,14 @@ final class Startanimation: @unchecked Sendable {
                 CAIRO_FORMAT_ARGB32, Int32(mass), Int32(mass), Int32(mass * 4))
         }
         guard let punkte else { return nil }
-        lottie_animation_render(tier, size_t(bild), punkte,
-                                size_t(mass), size_t(mass), size_t(mass * 4))
+        // **Nur rechnen, wenn ein anderes Bild dran ist.** Gezeichnet wird
+        // auch aus anderen Gründen; ein Lottie-Bild neu zu rechnen, um
+        // dasselbe noch einmal hinzulegen, ist reine Last.
+        if gerechnet != bild {
+            gerechnet = bild
+            lottie_animation_render(tier, size_t(bild), punkte,
+                                    size_t(mass), size_t(mass), size_t(mass * 4))
+        }
         if let flaeche { cairo_surface_mark_dirty(flaeche) }
         return flaeche
     }

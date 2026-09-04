@@ -147,20 +147,12 @@ final class App: @unchecked Sendable {
                                       GTK_STACK_TRANSITION_TYPE_CROSSFADE)
         gtk_stack_set_transition_duration(OpaquePointer(seiten), 260)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), startziel)
-        // Erst wenn der Übergang durch ist, sonst verschwindet das Bild
-        // mitten im Blenden.
-        let seitenKiste = gehalten(seiten)
+        // **Die Seite bleibt stehen, sie wird nicht abgeräumt.** Ein Kind aus
+        // dem Stapel zu nehmen, während sein Bildtakt noch aussteht, ist die
+        // vierte Falle: der Takt greift dann auf ein abgebautes Widget. Eine
+        // versteckte Stapelseite kostet nichts, und die Animation gibt ihren
+        // Speicher selbst frei, sobald der Takt sich abmeldet.
         _ = lauf
-        Task.detached {
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            aufHauptfaden {
-                defer { losgelassen(seitenKiste) }
-                if let alt = gtk_stack_get_child_by_name(OpaquePointer(seitenKiste.widget),
-                                                         "startbild") {
-                    gtk_stack_remove(OpaquePointer(seitenKiste.widget), alt)
-                }
-            }
-        }
     }
 
     // MARK: - Anmeldung
