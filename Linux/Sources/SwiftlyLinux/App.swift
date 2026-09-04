@@ -256,10 +256,11 @@ final class App: @unchecked Sendable {
             // **Die Adresse vor dem Hauptfaden holen.** `benutzerbild` gehört
             // dem Client-Actor; im Aufbau der Kachel wäre es ein Zugriff von
             // aussen.
-            var bilder: [(OeffentlicherBenutzer, URL?)] = []
+            var gesammelt: [(OeffentlicherBenutzer, URL?)] = []
             for benutzer in liste.prefix(6) {
-                bilder.append((benutzer, await c.benutzerbild(benutzer, kante: 128)))
+                gesammelt.append((benutzer, await c.benutzerbild(benutzer, kante: 128)))
             }
+            let bilder = gesammelt
             aufHauptfaden {
                 gtk_widget_set_visible(self.schnellknopf, moeglich ? 1 : 0)
                 leeren(self.kontenreihe)
