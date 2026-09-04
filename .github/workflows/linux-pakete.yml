@@ -1,0 +1,179 @@
+# Linux-Pakete bauen und in die Paketquelle stellen.
+#
+# **Warum eine Baumaschine und nicht die eigene Kiste.** Ein uebersetztes
+# Programm haengt an der glibc des Rechners, auf dem es entstand. Die
+# Entwicklungskiste laeuft auf CachyOS mit 2.44 — dort gebaut startet es auf
+# nichts anderem. Ubuntu 24.04 hat 2.39 und GTK 4.14, und das ist genau der
+# Boden, den unsere App ohnehin braucht: aeltere Ausgaben von Debian oder
+# Ubuntu bringen GTK 4.8 mit und koennten die App gar nicht anzeigen.
+#
+# Was hier herausfaellt, landet auf GitHub Pages als apt- und dnf-Quelle.
+# Ab da holt der Paketverwalter des Nutzers neue Fassungen von selbst.
+
+name: Linux-Pakete
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      fassung:
+        description: 'Fassung, z. B. 1.0.0'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  bauen:
+    runs-on: ubuntu-24.04
+    container: swift:6.1-noble
+
+    steps:
+      - name: Werkzeuge
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            libgtk-4-dev libvlc-dev pkg-config g++ git \
+            rpm dpkg-dev apt-utils createrepo-c gnupg ca-certificates
+
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Fassung bestimmen
+        id: f
+        run: |
+          if [ -n "${{ github.event.inputs.fassung }}" ]; then
+            echo "wert=${{ github.event.inputs.fassung }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "wert=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: rlottie
+        run: |
+          export SWIFTLY_RLOTTIE_ZIEL="$PWD/.rlottie"
+          bash Werkzeuge/rlottie-bauen.sh "$PWD/.rlottie-quelle"
+
+      - name: Swiftly bauen
+        run: |
+          export PKG_CONFIG_PATH="$PWD/.rlottie/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          cd Linux
+          swift build -c release -Xswiftc -static-stdlib
+
+      - name: Pakete schnueren
+        run: |
+          bash Linux/Installieren/paket-bauen.sh \
+            "${{ steps.f.outputs.wert }}" \
+            "$PWD/Linux/.build/release" \
+            "$PWD/pakete"
+
+      # Ohne Schluessel entsteht eine unsignierte Quelle. Die funktioniert,
+      # aber apt maeckert bei jedem Aufruf — deshalb wird signiert, sobald
+      # das Geheimnis SIGNIERSCHLUESSEL im Verwahr liegt.
+      - name: Paketquelle bauen
+        env:
+          SCHLUESSEL: ${{ secrets.SIGNIERSCHLUESSEL }}
+        run: |
+          mkdir -p seite/deb seite/rpm
+          cp pakete/*.deb seite/deb/
+          cp pakete/*.rpm seite/rpm/
+          ( cd seite/deb && dpkg-scanpackages . /dev/null > Packages && gzip -9kf Packages
+            apt-ftparchive release . > Release )
+          createrepo_c seite/rpm
+          if [ -n "$SCHLUESSEL" ]; then
+            echo "$SCHLUESSEL" | gpg --batch --import
+            kennung=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+            gpg --batch --yes --armor --detach-sign -u "$kennung" \
+                -o seite/deb/Release.gpg seite/deb/Release
+            gpg --batch --yes --clearsign -u "$kennung" -o seite/deb/InRelease seite/deb/Release
+            for r in seite/rpm/*.rpm; do
+              rpm --define "_gpg_name $kennung" --addsign "$r" || true
+            done
+            gpg --batch --yes --armor --export "$kennung" > seite/swiftly.gpg
+            echo "signiert mit $kennung"
+          else
+            echo "::warning::Kein SIGNIERSCHLUESSEL hinterlegt — die Quelle bleibt unsigniert."
+          fi
+          cp Linux/Installieren/quelle-einrichten.sh seite/ 2>/dev/null || true
+          echo "swiftly-for-jellyfin" > seite/.nojekyll
+
+      - name: Auf Pages stellen
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./seite
+          publish_branch: gh-pages
+          keep_files: true
+
+      - name: An die Veroeffentlichung haengen
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pakete/*
+
+  # Arch ist rollend, also wird dort gegen die heutigen Bibliotheken gebaut —
+  # ein Paket aus dem Ubuntu-Lauf waere gegen zu alte gebunden. Dafuer gibt es
+  # eine eigene pacman-Quelle statt eines AUR-Eintrags: der AUR braucht ein
+  # Konto und einen Schluessel, die pacman-Quelle nur eine Zeile in
+  # pacman.conf — und aktualisiert wird sie mit jedem `pacman -Syu`.
+  arch:
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    needs: bauen
+
+    steps:
+      - name: Werkzeuge
+        run: |
+          pacman -Syu --noconfirm --needed \
+            gtk4 vlc git gcc pkgconf curl unzip which sudo
+          useradd -m bauer
+          echo "bauer ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+      - uses: actions/checkout@v4
+
+      - name: Fassung bestimmen
+        id: f
+        run: |
+          if [ -n "${{ github.event.inputs.fassung }}" ]; then
+            echo "wert=${{ github.event.inputs.fassung }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "wert=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Swift
+        run: |
+          curl -fsSLO "https://download.swift.org/swiftly/linux/swiftly-x86_64.tar.gz"
+          tar -xzf swiftly-x86_64.tar.gz
+          ./swiftly init --quiet-shell-followup --assume-yes --skip-install
+          export PATH="$HOME/.local/share/swiftly/bin:$PATH"
+          swiftly install --use latest
+          echo "$HOME/.local/share/swiftly/bin" >> "$GITHUB_PATH"
+
+      - name: Bauen
+        run: |
+          export SWIFTLY_RLOTTIE_ZIEL="$PWD/.rlottie"
+          bash Werkzeuge/rlottie-bauen.sh "$PWD/.rlottie-quelle"
+          export PKG_CONFIG_PATH="$PWD/.rlottie/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          cd Linux && swift build -c release -Xswiftc -static-stdlib
+
+      - name: Paket schnueren
+        run: |
+          bash Linux/Installieren/pacman-paket.sh \
+            "${{ steps.f.outputs.wert }}" "$PWD/Linux/.build/release" "$PWD/pakete"
+
+      - name: In die pacman-Quelle
+        run: |
+          mkdir -p seite/arch
+          cp pakete/*.pkg.tar.zst seite/arch/
+          repo-add seite/arch/swiftly.db.tar.gz seite/arch/*.pkg.tar.zst
+
+      - name: Auf Pages stellen
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./seite
+          publish_branch: gh-pages
+          keep_files: true
