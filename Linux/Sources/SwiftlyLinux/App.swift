@@ -38,6 +38,10 @@ final class App: @unchecked Sendable {
     private var serverURL: URL?
     private var benutzerfeld: Widget!
     private var passwortfeld: Widget!
+    private var kontenreihe: Widget!
+    private var schnellknopf: Widget!
+    /// Der Client des Servers, mit dem gerade angemeldet wird.
+    private var anmeldeclient: JellyfinClient?
     private var anmeldeknopf: Widget!
     private var anmeldestand: Widget!
     private var meldetGerade = false
@@ -241,6 +245,98 @@ final class App: @unchecked Sendable {
     ///
     /// Marke, 34, Servername, 4, Fassung, 28, Benutzer, 10, Passwort, 24,
     /// Knopf — aus `AnmeldeView` auf dem Mac.
+    /// Holt die öffentlichen Konten und prüft, ob der Server Quick Connect
+    /// anbietet. Beides ist eine Auskunft des Servers, keine Einstellung.
+    private func kontenHolen(_ c: JellyfinClient) {
+        anmeldeclient = c
+        Task.detached { [self] in
+            async let konten = try? await c.oeffentlicheBenutzer()
+            async let schnell = await c.quickConnectVerfuegbar()
+            let (liste, moeglich) = await (konten ?? [], schnell)
+            aufHauptfaden {
+                gtk_widget_set_visible(self.schnellknopf, moeglich ? 1 : 0)
+                leeren(self.kontenreihe)
+                gtk_widget_set_visible(self.kontenreihe, liste.isEmpty ? 0 : 1)
+                for benutzer in liste.prefix(6) {
+                    anhaengen(self.kontenreihe, self.kontenkachel(benutzer, c))
+                }
+                // **Bei genau einem Konto steht der Name schon da.** Dann
+                // fehlt nur noch das Passwort.
+                if liste.count == 1 {
+                    gtk_editable_set_text(OpaquePointer(self.benutzerfeld), liste[0].name)
+                }
+            }
+        }
+    }
+
+    /// Ein Konto als Bild mit Namen darunter.
+    private func kontenkachel(_ benutzer: OeffentlicherBenutzer,
+                              _ c: JellyfinClient) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-kachel")
+        let saeule = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+        let (kaefig, bild) = gerahmtesBild(breite: 64, hoehe: 64, stil: "swiftly-rund")
+        if let url = c.benutzerbild(benutzer, kante: 128) {
+            bildLaden(bild, url: url, schluessel: "konto-\(benutzer.id)", sofort: true)
+        } else {
+            zeichenLegen(kaefig, serie: false)
+        }
+        anhaengen(saeule, kaefig)
+        let name = beschriftung(benutzer.name, stil: "swiftly-zweitzeile")
+        gtk_widget_set_halign(name, GTK_ALIGN_CENTER)
+        anhaengen(saeule, name)
+        gtk_button_set_child(alsKnopf(knopf), saeule)
+        beiSignal(knopf, "clicked") { [weak self] in
+            guard let self else { return }
+            gtk_editable_set_text(OpaquePointer(self.benutzerfeld), benutzer.name)
+            gtk_widget_grab_focus(self.passwortfeld)
+        }
+        return knopf
+    }
+
+    /// **Anmelden mit einem Code, ohne Passwort.**
+    ///
+    /// Der Server nennt einen sechsstelligen Code; wer ihn auf einem schon
+    /// angemeldeten Gerät freigibt, meldet dieses hier an. Der Vorgang läuft,
+    /// bis er freigegeben oder abgebrochen wird.
+    private func schnellanmeldung() {
+        guard let c = anmeldeclient else { return }
+        Task.detached { [self] in
+            guard let vorgang = try? await c.quickConnectStarten() else {
+                aufHauptfaden { self.anmeldestandZeigen("Der Server hat keinen Code gegeben.") }
+                return
+            }
+            aufHauptfaden {
+                self.anmeldestandZeigen("Code \(vorgang.code) — auf einem angemeldeten Gerät freigeben")
+            }
+            // Höchstens fünf Minuten warten; danach ist der Code ohnehin tot.
+            for _ in 0..<150 {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard (try? await c.quickConnectFreigegeben(vorgang)) == true else { continue }
+                guard let sitzung = try? await c.anmeldenMitQuickConnect(vorgang) else { break }
+                let name = sitzung.userName
+                aufHauptfaden {
+                    guard let url = self.serverURL else { return }
+                    let servername = gtk_label_get_text(OpaquePointer(self.serverzeile))
+                        .map { String(cString: $0) }
+                    Speicher.schreiben(.init(serverURL: url,
+                                             token: sitzung.accessToken,
+                                             benutzerID: sitzung.userID,
+                                             benutzername: name,
+                                             servername: servername))
+                    self.anmeldestandZeigen("")
+                    self.sitzungUebernehmen(serverURL: url,
+                                            token: sitzung.accessToken,
+                                            benutzerID: sitzung.userID,
+                                            benutzername: name,
+                                            servername: servername)
+                }
+                return
+            }
+            aufHauptfaden { self.anmeldestandZeigen("Der Code ist abgelaufen.") }
+        }
+    }
+
     private func kontoSchrittBauen() -> Widget! {
         let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_set_valign(mitte, GTK_ALIGN_CENTER)
@@ -256,6 +352,16 @@ final class App: @unchecked Sendable {
         gtk_widget_add_css_class(fassungszeile, "swiftly-leise")
         gtk_widget_set_margin_top(fassungszeile, 4)
         anhaengen(mitte, fassungszeile)
+
+        // **„Wer schaut?"** — die öffentlichen Konten des Servers, mit Bild.
+        // Der Mac holt sie und wählt bei genau einem den Namen vor
+        // (`Shared/RootView.swift:217`); hier stand nur ein leeres Textfeld,
+        // in das man seinen Namen zeichengenau tippen musste.
+        kontenreihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
+        gtk_widget_set_halign(kontenreihe, GTK_ALIGN_CENTER)
+        gtk_widget_set_margin_top(kontenreihe, 26)
+        gtk_widget_set_visible(kontenreihe, 0)
+        anhaengen(mitte, kontenreihe)
 
         benutzerfeld = eingabezeile(symbol: "avatar-default-symbolic",
                                     platzhalter: "Benutzername")
@@ -277,6 +383,17 @@ final class App: @unchecked Sendable {
 
         // Der Mac kommt über die Fensterampel zurueck; hier braucht es einen
         // Weg im Bild, sonst sitzt man auf dem falschen Server fest.
+        // **Quick Connect als Anmeldeweg.** Bisher gab es hier nur die
+        // Gegenrichtung — einen fremden Code freigeben. Wer sich anmelden
+        // will, ohne sein Passwort zu tippen, konnte es nicht.
+        schnellknopf = gtk_button_new_with_label("Mit Code anmelden")
+        gtk_widget_add_css_class(schnellknopf, "swiftly-flach")
+        gtk_widget_set_margin_top(schnellknopf, 10)
+        gtk_widget_set_halign(schnellknopf, GTK_ALIGN_CENTER)
+        gtk_widget_set_visible(schnellknopf, 0)
+        beiSignal(schnellknopf, "clicked") { [weak self] in self?.schnellanmeldung() }
+        anhaengen(mitte, schnellknopf)
+
         let zurueck: Widget! = gtk_button_new_with_label("Anderer Server")
         gtk_widget_add_css_class(zurueck, "swiftly-flach")
         gtk_widget_set_margin_top(zurueck, 14)
@@ -368,6 +485,7 @@ final class App: @unchecked Sendable {
                     self.serverstandZeigen("")
                     gtk_stack_set_visible_child_name(OpaquePointer(self.anmeldeschritte), "konto")
                     gtk_widget_grab_focus(self.benutzerfeld)
+                    self.kontenHolen(c)
                 }
             } catch {
                 aufHauptfaden {
