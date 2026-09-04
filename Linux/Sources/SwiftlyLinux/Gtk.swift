@@ -603,6 +603,26 @@ nonisolated(unsafe) private let auftragFreigebenRoh: @convention(c) (gpointer?) 
 }
 
 
+/// Meldet, wenn ein Scroller **unten** angekommen ist.
+///
+/// `edge-reached` reicht die erreichte Kante als zweites Argument mit — genau
+/// das Signal, an dem die App am 04.09.2026 abgestuerzt ist, als es noch ueber
+/// ``beiSignal`` lief. Deshalb ein eigener Rueckruf mit passender Form, und
+/// gemeldet wird nur die untere Kante (`GTK_POS_BOTTOM` = 3).
+func randMelden(_ scroller: Widget!, _ block: @escaping () -> Void) {
+    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(scroller), "edge-reached",
+                          unsafeBitCast(auftragAnKante, to: GCallback.self),
+                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+}
+
+nonisolated(unsafe) private let auftragAnKante: @convention(c) (
+    UnsafeMutableRawPointer?, UInt32, gpointer?
+) -> Void = { _, kante, daten in
+    guard let daten, kante == GTK_POS_BOTTOM.rawValue else { return }
+    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+}
+
 /// Meldet jede Bewegung des Zeigers über einem Widget.
 ///
 /// **Warum zusätzlich zu ``beiZeiger``:** Das Betreten des Fensters allein

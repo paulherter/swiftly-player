@@ -513,7 +513,7 @@ extension App {
         }
     }
 
-    private func naechsteFolge() {
+    func naechsteFolge() {
         guard let client, let titel = laufenderTitel, let serie = titel.seriesId else { return }
         let grenze = wahlen.profilBitrate
         Task.detached { [self] in

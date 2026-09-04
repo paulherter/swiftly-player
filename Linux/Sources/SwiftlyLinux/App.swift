@@ -359,6 +359,10 @@ final class App: @unchecked Sendable {
                 aufHauptfaden {
                     self.verbindenFertig()
                     self.serverURL = url
+                    // **Sie wurde geholt und weggeworfen.** `serverfassung`
+                    // stand in den Einstellungen und im Profil und war immer
+                    // leer, weil niemand sie je gesetzt hat.
+                    self.serverfassung = fassung
                     gtk_label_set_text(OpaquePointer(self.serverzeile), name)
                     gtk_label_set_text(OpaquePointer(self.fassungszeile), "Jellyfin \(fassung)")
                     self.serverstandZeigen("")
@@ -436,6 +440,8 @@ final class App: @unchecked Sendable {
         adressen = Bildadresse(basis: serverURL, token: token)
         self.benutzerID = benutzerID
         sitzungAnzeigen(benutzername: benutzername, servername: servername)
+        serverstandHolen()
+        fernsteuerungStarten()
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
 
         // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
@@ -511,6 +517,18 @@ final class App: @unchecked Sendable {
     var benutzername = ""
     var servername = ""
     var serverfassung = ""
+    /// Was im Raster schon steht, und wie viel der Server insgesamt hat —
+    /// für das Nachladen beim Blättern.
+    var filmeItems: [Item] = []
+    var serienItems: [Item] = []
+    var filmeGesamt = 0
+    var serienGesamt = 0
+    var rasterLaedt: Set<Bereich> = []
+    var filmeLader: Widget!
+    var serienLader: Widget!
+    /// Die Fernsteuerung über Jellyfins Socket. Ohne sie meldet der Server
+    /// `SupportsRemoteControl: false` und blendet im Dashboard die Knöpfe aus.
+    var fernsteuerung: Fernsteuerung?
 
     // MARK: Spieler
     /// **Erst beim ersten Abspielen.** Der Abspieler legt ein `GtkPicture`
@@ -916,6 +934,9 @@ final class App: @unchecked Sendable {
         } else {
             bereichZeigen(neu.kennung, schub: .ohne)
         }
+        // **Wer auf „Suche" geht, will tippen.** Der Mac setzt den Fokus beim
+        // Erscheinen der Seite; hier ging es nur über Strg+F.
+        if neu == .suche { gtk_widget_grab_focus(suchfeld) }
         // **Jeder Bereich lädt einmal.** Auf dem Mac bleiben die Stände der
         // Bereiche liegen; wer zwischen Filmen und Serien wechselt, wartet
         // nur beim ersten Mal.
@@ -992,9 +1013,20 @@ final class App: @unchecked Sendable {
 
         let raster = rasterBauen()
         anhaengen(block, raster)
-        if was == .filme { filmeraster = raster; filmezahl = zahl }
-        else { serienraster = raster; serienzahl = zahl }
-        return seitenrahmen(block)
+        let lader = beschriftung("Lade …", stil: "swiftly-koerper")
+        gtk_widget_add_css_class(lader, "swiftly-leise")
+        gtk_widget_set_halign(lader, GTK_ALIGN_CENTER)
+        gtk_widget_set_margin_top(lader, 40)
+        gtk_widget_set_visible(lader, 0)
+        anhaengen(block, lader)
+        if was == .filme { filmeraster = raster; filmezahl = zahl; filmeLader = lader }
+        else { serienraster = raster; serienzahl = zahl; serienLader = lader }
+
+        let rahmen = seitenrahmen(block)
+        // **Am unteren Rand wird nachgeladen** (`edge-reached` — das Signal
+        // bringt die Kante mit, also wieder ein eigener Rückruf, Falle 2).
+        randMelden(rahmen) { [weak self] in self?.rasterNachladen(was) }
+        return rahmen
     }
 
     /// **Filter links, Sortierung rechts** — die Anordnung des Macs.
@@ -1104,6 +1136,17 @@ final class App: @unchecked Sendable {
         return scroller
     }
 
+    /// Zeigt oder verbirgt die Ladeanzeige über einem Raster.
+    ///
+    /// Beim Wechsel von Filter, Sortierung oder Bibliothek stand das alte
+    /// Raster still da, bis das neue eintraf — es sah aus, als hätte der
+    /// Klick nichts getan.
+    func rasterLaderZeigen(_ was: Bereich, _ an: Bool) {
+        let lader = was == .filme ? filmeLader : serienLader
+        guard let lader else { return }
+        gtk_widget_set_visible(lader, an ? 1 : 0)
+    }
+
     /// Ein umbrechendes Raster. GTKs `GtkFlowBox` kann genau das, was auf dem
     /// Mac ein `LazyVGrid` mit fester Spaltenbreite tut.
     private func rasterBauen() -> Widget! {
@@ -1130,7 +1173,52 @@ final class App: @unchecked Sendable {
 
     // MARK: Laden
 
+    /// **Ohne die taucht die Sitzung im Dashboard auf, laesst sich aber nicht
+    /// bedienen.** Es fehlen zwei Dinge, nicht eins: die Faehigkeitsmeldung,
+    /// mit der der Server ueberhaupt erst Knoepfe anzeigt, und der Socket, ueber
+    /// den die Befehle dann ankommen. Beides liegt im Paket und wurde von
+    /// Linux nie benutzt — die Fassung war von aussen nicht steuerbar und
+    /// nicht uebernehmbar.
+    func fernsteuerungStarten() {
+        guard let client else { return }
+        Task.detached {
+            try? await client.faehigkeitenMelden()
+            guard let fern = try? client.fernsteuerung() else { return }
+            aufHauptfaden { self.fernsteuerung = fern }
+            await fern.starten { befehl in
+                aufHauptfaden { self.fernbefehlAusfuehren(befehl) }
+            }
+        }
+    }
+
+    /// Was ein anderes Geraet hier ausloest. Dieselben Griffe wie am Knopf.
+    func fernbefehlAusfuehren(_ befehl: Fernbefehl) {
+        guard laufenderTitel != nil else {
+            // Ohne laufenden Titel gibt es nichts zu steuern; „stopp" waere
+            // sonst ein Schliessen ins Leere.
+            return
+        }
+        switch befehl {
+        case .pause:    abspieler.anhalten()
+        case .weiter:   abspieler.abspielen()
+        case .umschalten: abspieler.umschalten()
+        case .stopp:    spielerSchliessen()
+        case let .springenAuf(stelle): abspieler.setzeZeit(stelle)
+        case .vor:      abspieler.springen(Double(wahlen.vorSekunden))
+        case .zurueck:  abspieler.springen(-Double(wahlen.zurueckSekunden))
+        case .naechste: naechsteFolge()
+        case .vorige:   break
+        }
+        if befehl != .stopp {
+            spielstand.laeuft = abspieler.laeuft
+            spielerAbspielzeichen?.setzen(spielstand.laeuft)
+            steuerungZeigen()
+        }
+    }
+
     func abmelden() {
+        Task.detached { [fernsteuerung] in await fernsteuerung?.beenden() }
+        fernsteuerung = nil
         Speicher.loeschen()
         client = nil
         adressen = nil
@@ -1147,6 +1235,22 @@ final class App: @unchecked Sendable {
     }
 
     /// Name, Server und Bild unten in der Leiste, dazu die Bibliotheken.
+    /// Holt Namen und Fassung des Servers nach — beim Start aus einer
+    /// gemerkten Sitzung hat sie niemand gefragt.
+    private func serverstandHolen() {
+        guard let client else { return }
+        Task.detached { [self] in
+            guard let info = try? await client.publicSystemInfo() else { return }
+            aufHauptfaden {
+                self.serverfassung = info.version ?? ""
+                if let name = info.serverName, !name.isEmpty {
+                    self.servername = name
+                    gtk_label_set_text(OpaquePointer(self.profilserver), name)
+                }
+            }
+        }
+    }
+
     private func sitzungAnzeigen(benutzername: String, servername: String?) {
         self.benutzername = benutzername
         self.servername = servername ?? ""
@@ -1229,8 +1333,28 @@ final class App: @unchecked Sendable {
     /// Filme und Serien. **Mit Gattung und rekursiv**, aus demselben Grund,
     /// der in `JellyfinClient.items` steht: sonst kommen bei einer
     /// Serienbibliothek die virtuellen Ordner statt der Serien.
-    private func rasterLaden(_ was: Bereich) {
+    /// **Nachladen beim Blättern**, statt einmal 500 zu holen.
+    ///
+    /// Fünfhundert war die Zahl, bei der es „reicht schon" hiess — bei einer
+    /// grösseren Sammlung fehlt der Rest schlicht. Der Mac zieht die nächste
+    /// Seite, sobald die drittletzte Reihe sichtbar wird
+    /// (`Bibliotheksmodell.swift:82`); hier hängt es am unteren Rand des
+    /// Scrollers, was dasselbe bedeutet und in GTK ein Signal ist, das es
+    /// ohnehin gibt.
+    private func rasterNachladen(_ was: Bereich) {
+        guard !rasterLaedt.contains(was) else { return }
+        let schon = (was == .filme ? filmeItems : serienItems).count
+        guard schon > 0, schon < (was == .filme ? filmeGesamt : serienGesamt) else { return }
+        rasterLaden(was, ab: schon)
+    }
+
+    private func rasterLaden(_ was: Bereich, ab: Int = 0) {
         guard let client else { return }
+        rasterLaedt.insert(was)
+        if ab == 0 {
+            if was == .filme { filmeItems = [] } else { serienItems = [] }
+            rasterLaderZeigen(was, true)
+        }
         let gattung = was == .filme ? "Movie" : "Series"
         let f = filter[was] ?? .alle
         let sort = sortierung[was] ?? .name
@@ -1238,7 +1362,8 @@ final class App: @unchecked Sendable {
         let eltern = gewaehlteBibliothek[was] ?? meine.first?.id
         Task.detached { [self] in
             let antwort = try? await client.items(parentID: eltern,
-                                                  limit: 500,
+                                                  startIndex: ab,
+                                                  limit: 100,
                                                   sortBy: sort.feld,
                                                   sortOrder: sort.richtung,
                                                   filters: f.jellyfinFilter,
@@ -1248,9 +1373,19 @@ final class App: @unchecked Sendable {
             let items = antwort?.items ?? []
             let gesamt = antwort?.totalRecordCount ?? items.count
             aufHauptfaden {
+                self.rasterLaedt.remove(was)
+                self.rasterLaderZeigen(was, false)
                 let raster = was == .filme ? self.filmeraster : self.serienraster
                 let zahl = was == .filme ? self.filmezahl : self.serienzahl
-                self.rasterFuellen(raster, items)
+                if was == .filme {
+                    self.filmeItems += items
+                    self.filmeGesamt = gesamt
+                    self.rasterFuellen(raster, self.filmeItems)
+                } else {
+                    self.serienItems += items
+                    self.serienGesamt = gesamt
+                    self.rasterFuellen(raster, self.serienItems)
+                }
                 gtk_label_set_text(OpaquePointer(zahl), String(gesamt))
             }
         }
