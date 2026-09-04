@@ -150,7 +150,14 @@ enum Tonblatt {
            Anstrich am Unterbau, damit er nichts misst. */
         .swiftly-tonauslauf {
             padding-top: 26px;
-            background-color: \(Stil.grund);
+            /* **Der Grund ist der Ton, nicht Schwarz.** Der Verlauf liegt als
+               Bild darüber; wo seine Deckung an der Oberkante einen Hauch
+               unter eins liegt, scheint der Grund durch. Mit Schwarz waren
+               das zwei bis drei Zeilen, die dunkler standen als beides —
+               genau der Strich quer über die Seite, am Bildschirmfoto
+               gemessen: 66 → 60 → 52 → 64. Mit dem Ton als Grund ist ein
+               Hauch Durchlässigkeit unsichtbar. */
+            background-color: \(t(1));
             background-image: linear-gradient(to bottom,
                 \(t(1)) 0px, \(Stil.grund) 260px);
             background-repeat: no-repeat;

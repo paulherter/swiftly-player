@@ -49,6 +49,7 @@ final class Kulisse: @unchecked Sendable {
     private var fertig: OpaquePointer?
     private var fertigBreite = 0
     private var fertigHoehe = 0
+    private var fertigTeiler: Int32 = 1
 
     let anzeige: Widget
 
@@ -72,6 +73,7 @@ final class Kulisse: @unchecked Sendable {
         if let fertig { cairo_surface_destroy(fertig); self.fertig = nil }
         fertigBreite = 0
         fertigHoehe = 0
+        fertigTeiler = 1
     }
 
     /// Nimmt ein heruntergeladenes Bild an.
@@ -125,22 +127,33 @@ final class Kulisse: @unchecked Sendable {
 
     fileprivate func malen(_ cr: OpaquePointer, _ w: Double, _ h: Double) {
         guard flaeche != nil, breite > 0, hoehe > 0, w > 0, h > 0 else { return }
-        if fertig == nil || fertigBreite != Int(w) || fertigHoehe != Int(h) {
-            fertigRechnen(w, h)
+        let teiler = max(gtk_widget_get_scale_factor(anzeige), 1)
+        if fertig == nil || fertigBreite != Int(w) || fertigHoehe != Int(h)
+            || fertigTeiler != teiler {
+            fertigRechnen(w, h, teiler)
         }
         guard let fertig else { return }
+        // **Der Zwischenspeicher liegt in Gerätepunkten.** Der Zeichenaufruf
+        // rechnet in Punkten; auf einem Bildschirm mit doppelter Auflösung
+        // wäre eine Fläche in Punktgrösse hochskaliert und unscharf.
+        cairo_save(cr)
+        let s = 1.0 / Double(fertigTeiler)
+        cairo_scale(cr, s, s)
         cairo_set_source_surface(cr, fertig, 0, 0)
         cairo_paint(cr)
+        cairo_restore(cr)
     }
 
     /// Rechnet das maskierte Bild einmal in eine eigene Fläche.
-    private func fertigRechnen(_ w: Double, _ h: Double) {
+    private func fertigRechnen(_ w: Double, _ h: Double, _ teiler: Int32) {
         guard let flaeche else { return }
         fertigLoesen()
         guard let ziel = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
-                                                    Int32(w), Int32(h)),
+                                                    Int32(w) * teiler,
+                                                    Int32(h) * teiler),
               let cr = cairo_create(ziel) else { return }
         defer { cairo_destroy(cr) }
+        cairo_scale(cr, Double(teiler), Double(teiler))
 
         // **`max(breite * 0,62, 520)` — die Rechnung des Macs**, rechtsbündig.
         let bb = max(w * 0.62, 520)
@@ -186,6 +199,7 @@ final class Kulisse: @unchecked Sendable {
         fertig = ziel
         fertigBreite = Int(w)
         fertigHoehe = Int(h)
+        fertigTeiler = teiler
     }
 }
 
