@@ -1183,7 +1183,7 @@ final class App: @unchecked Sendable {
         guard let client else { return }
         Task.detached {
             try? await client.faehigkeitenMelden()
-            guard let fern = try? client.fernsteuerung() else { return }
+            guard let fern = try? await client.fernsteuerung() else { return }
             aufHauptfaden { self.fernsteuerung = fern }
             await fern.starten { befehl in
                 aufHauptfaden { self.fernbefehlAusfuehren(befehl) }
@@ -1362,8 +1362,8 @@ final class App: @unchecked Sendable {
         let eltern = gewaehlteBibliothek[was] ?? meine.first?.id
         Task.detached { [self] in
             let antwort = try? await client.items(parentID: eltern,
-                                                  startIndex: ab,
                                                   limit: 100,
+                                                  startIndex: ab,
                                                   sortBy: sort.feld,
                                                   sortOrder: sort.richtung,
                                                   filters: f.jellyfinFilter,
