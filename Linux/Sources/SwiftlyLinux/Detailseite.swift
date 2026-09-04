@@ -192,27 +192,28 @@ extension App {
     /// `grund` — deshalb zwei Verläufe darüber statt einer Maske, die GTK
     /// ohnehin nicht kennt. Die Stützstellen sind dieselben.
     private func kulisse(_ titel: Item) -> Widget! {
-        let raum: Widget! = gtk_overlay_new()
-
         let (huelle, bild) = gerahmtesBild(breite: 900, hoehe: Stil.heldHoehe,
                                            stil: "swiftly-kulisse")
         gtk_widget_set_halign(huelle, GTK_ALIGN_END)
         gtk_widget_set_valign(huelle, GTK_ALIGN_START)
-        gtk_overlay_set_child(OpaquePointer(raum), huelle)
 
         if let adressen,
            let url = Bildwahl.quer(titel, adressen: adressen, breite: 1600)?.url {
             bildLaden(bild, url: url, schluessel: url.absoluteString)
         }
 
+        // **Die Blenden gehören in die Bildhülle, nicht in einen Überzug
+        // darum.** Zuerst lagen sie über der ganzen Fensterbreite — und ein
+        // Verlauf, der bei 0 % am linken Fensterrand beginnt, ist am linken
+        // Bildrand längst durchsichtig. Das Bild stand deshalb mit harter
+        // Kante da, und der Titel lag unlesbar darauf. In der Hülle fällt
+        // dieselbe Kurve auf die 900 Punkt des Bildes.
         for klasse in ["swiftly-blende-quer", "swiftly-blende-hoch"] {
             let blende: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
             gtk_widget_add_css_class(blende, klasse)
-            gtk_widget_set_hexpand(blende, 1)
-            gtk_widget_set_vexpand(blende, 1)
-            gtk_overlay_add_overlay(OpaquePointer(raum), blende)
+            gtk_overlay_add_overlay(OpaquePointer(huelle), blende)
         }
-        return raum
+        return huelle
     }
 
     /// **Feste Stellen statt fester Höhen.**
