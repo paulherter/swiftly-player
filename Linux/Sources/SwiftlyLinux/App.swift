@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import CVLC
 import JellyfinKit
 
 /// **Swiftly auf Linux.**
@@ -77,6 +78,7 @@ final class App: @unchecked Sendable {
         gtk_window_set_child(alsFenster(fenster), inhalt)
 
         tastenEinrichten()
+        VLCFassung.text = String(cString: libvlc_get_version())
         gtk_window_present(alsFenster(fenster))
 
         // Gemerkte Sitzung: gleich weiter zur Startseite, ohne Nachfragen.
@@ -413,7 +415,11 @@ final class App: @unchecked Sendable {
     var serverfassung = ""
 
     // MARK: Spieler
-    let abspieler = Abspieler()
+    /// **Erst beim ersten Abspielen.** Der Abspieler legt ein `GtkPicture`
+    /// an, und ``App`` entsteht als globale Referenz — also **bevor**
+    /// `g_application_run` GTK hochgefahren hat. Ein Widget vor `gtk_init`
+    /// ist ein Absturz in libgtk, ohne eine Zeile eigenen Codes im Rückweg.
+    lazy var abspieler = Abspieler()
     var laufenderTitel: Item?
     var laufenderPlan: PlaybackPlan?
     var spielstand = Wiedergabetakt.Stand()

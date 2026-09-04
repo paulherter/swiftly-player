@@ -46,7 +46,6 @@ final class Abspieler {
         gtk_picture_set_content_fit(OpaquePointer(bildfeld), GTK_CONTENT_FIT_CONTAIN)
         gtk_widget_set_hexpand(bildfeld, 1)
         gtk_widget_set_vexpand(bildfeld, 1)
-        VLCFassung.text = String(cString: libvlc_get_version())
     }
 
     deinit { beenden() }
