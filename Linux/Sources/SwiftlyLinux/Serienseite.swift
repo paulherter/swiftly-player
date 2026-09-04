@@ -82,11 +82,17 @@ extension App {
 
     private func staffelnLaden(_ serie: Item, in raum: Widget!) {
         guard let client else { return }
+        // **Schon geholt heisst: sofort da.** Kein Lader, kein Sprung.
+        if let schon = staffelspeicher[serie.id], !schon.isEmpty {
+            staffelnZeigen(schon, serie: serie, in: raum)
+            return
+        }
         let kiste = gehalten(raum)
         Task.detached { [self] in
             let staffeln = (try? await client.staffeln(seriesID: serie.id)) ?? []
             aufHauptfaden {
                 defer { losgelassen(kiste) }
+                self.staffelspeicher[serie.id] = staffeln
                 self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget)
             }
         }
@@ -177,6 +183,10 @@ extension App {
 
     private func folgenLaden(serie: Item, staffel: Item, in raum: Widget!) {
         guard let client else { return }
+        if let schon = folgenspeicher[staffel.id] {
+            folgenZeigen(schon, in: raum)
+            return
+        }
         leeren(raum)
         anhaengen(raum, beschriftung("Lade …", stil: "swiftly-koerper"))
         let kiste = gehalten(raum)
@@ -185,21 +195,27 @@ extension App {
                                                    seasonID: staffel.id)) ?? []
             nachDemSchub {
                 defer { losgelassen(kiste) }
-                leeren(kiste.widget)
-                guard !folgen.isEmpty else {
-                    // **Leer ist eine Auskunft, kein leerer Kasten.** Sonst
-                    // steht dort nichts und man hält es für einen Fehler.
-                    let l = beschriftung("Keine Folgen", stil: "swiftly-koerper")
-                    gtk_widget_add_css_class(l, "swiftly-leise")
-                    gtk_widget_set_halign(l, GTK_ALIGN_CENTER)
-                    gtk_widget_set_margin_top(l, 40)
-                    gtk_widget_set_margin_bottom(l, 40)
-                    anhaengen(kiste.widget, l)
-                    return
-                }
-                for folge in folgen { anhaengen(kiste.widget, self.folgenzeile(folge)) }
+                self.folgenspeicher[staffel.id] = folgen
+                self.folgenZeigen(folgen, in: kiste.widget)
             }
         }
+    }
+
+    /// Zeigt eine Folgenliste — aus dem Netz oder aus dem Speicher.
+    private func folgenZeigen(_ folgen: [Item], in raum: Widget!) {
+        leeren(raum)
+        guard !folgen.isEmpty else {
+            // **Leer ist eine Auskunft, kein leerer Kasten.** Sonst steht
+            // dort nichts und man hält es für einen Fehler.
+            let l = beschriftung("Keine Folgen", stil: "swiftly-koerper")
+            gtk_widget_add_css_class(l, "swiftly-leise")
+            gtk_widget_set_halign(l, GTK_ALIGN_CENTER)
+            gtk_widget_set_margin_top(l, 40)
+            gtk_widget_set_margin_bottom(l, 40)
+            anhaengen(raum, l)
+            return
+        }
+        for folge in folgen { anhaengen(raum, folgenzeile(folge)) }
     }
 
     /// Eine Folge in der Liste. Bild 160 × 90 (16 : 9), 18 Abstand, darunter

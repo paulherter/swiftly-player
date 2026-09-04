@@ -537,6 +537,14 @@ final class App: @unchecked Sendable {
     var detailBeruehrt = false
     /// Was zuletzt bei „Verbindung prüfen" herauskam.
     var pruefergebnis = ""
+    /// **Staffeln und Folgen, einmal geholt.**
+    ///
+    /// Der Mac hat dafür `Seriencache`: wer eine Serienseite verlässt und
+    /// zurückkommt, sieht sie sofort stehen. Auf Linux wurde jedes Mal neu
+    /// geholt, mit „Lade …" davor — bei einer Serie, die man mehrmals am
+    /// Abend öffnet, ist das jedes Mal dieselbe Wartezeit.
+    var staffelspeicher: [String: [Item]] = [:]
+    var folgenspeicher: [String: [Item]] = [:]
 
     // MARK: Spieler
     /// **Erst beim ersten Abspielen.** Der Abspieler legt ein `GtkPicture`
@@ -568,6 +576,10 @@ final class App: @unchecked Sendable {
     /// müssen sie nachziehen, wenn sie sich in den Einstellungen ändert.
     var spielerZurueckZeichen: Sprungzeichen?
     var spielerVorZeichen: Sprungzeichen?
+    /// Die Sprunganzeige am Bildrand.
+    var spielerSprungLinks: Sprungzeichen?
+    var spielerSprungRechts: Sprungzeichen?
+    var sprungtakt = 0
     var spielerRahmen: Widget!
     var spurtafel: Widget!
     var schlafminuten: Int?
@@ -718,12 +730,16 @@ final class App: @unchecked Sendable {
                 return true
             case 0xFF51:                                   // Pfeil links
                 abspieler.springen(-Double(wahlen.zurueckSekunden))
+                sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
                 spielerZurueckZeichen?.stupsen()
+                sprungZeigen(true)
                 steuerungZeigen()
                 return true
             case 0xFF53:                                   // Pfeil rechts
                 abspieler.springen(Double(wahlen.vorSekunden))
+                sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
                 spielerVorZeichen?.stupsen()
+                sprungZeigen(false)
                 steuerungZeigen()
                 return true
             case 0xFFC8:                                   // F11

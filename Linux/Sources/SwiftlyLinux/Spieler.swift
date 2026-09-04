@@ -167,6 +167,25 @@ extension App {
         anhaengen(steuerung, luft())
         anhaengen(steuerung, spielerfuss(item))
 
+        // **Die Sprunganzeige** — ein Zeichen am Bildrand, 700 ms lang, auf
+        // der Seite, in die gesprungen wurde. Sie steht **ausserhalb** der
+        // Steuerung: sie soll auch dann erscheinen, wenn die Steuerung schon
+        // weggeblendet ist und jemand nur die Pfeiltaste drückt.
+        let sprungLinks = Sprungzeichen(zurueck: true, zahl: wahlen.zurueckSekunden, mass: 56)
+        let sprungRechts = Sprungzeichen(zurueck: false, zahl: wahlen.vorSekunden, mass: 56)
+        spielerSprungLinks = sprungLinks
+        spielerSprungRechts = sprungRechts
+        for (zeichen, seite) in [(sprungLinks, GTK_ALIGN_START), (sprungRechts, GTK_ALIGN_END)] {
+            gtk_widget_set_halign(zeichen.anzeige, seite)
+            gtk_widget_set_valign(zeichen.anzeige, GTK_ALIGN_CENTER)
+            gtk_widget_set_margin_start(zeichen.anzeige, 70)
+            gtk_widget_set_margin_end(zeichen.anzeige, 70)
+            gtk_widget_set_size_request(zeichen.anzeige, 72, 72)
+            gtk_widget_set_opacity(zeichen.anzeige, 0)
+            gtk_widget_set_can_target(zeichen.anzeige, 0)
+            gtk_overlay_add_overlay(OpaquePointer(ueber), zeichen.anzeige)
+        }
+
         let schleier = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_add_css_class(schleier, "swiftly-spieler")
         spielerLadeschirm = schleier
@@ -234,6 +253,7 @@ extension App {
             self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
             self.sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
             self.spielerZurueckZeichen?.stupsen()
+            self.sprungZeigen(true)
             self.steuerungZeigen()
         })
 
@@ -261,6 +281,7 @@ extension App {
             self.abspieler.springen(Double(self.wahlen.vorSekunden))
             self.sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
             self.spielerVorZeichen?.stupsen()
+            self.sprungZeigen(false)
             self.steuerungZeigen()
         })
         return reihe
@@ -613,6 +634,26 @@ extension App {
         abspieler.setzeZeit(ziel)
         sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
         steuerungZeigen()
+    }
+
+    /// Lässt die Sprunganzeige kurz aufblitzen.
+    func sprungZeigen(_ zurueck: Bool) {
+        let zeichen = zurueck ? spielerSprungLinks : spielerSprungRechts
+        guard let zeichen else { return }
+        zeichen.setzeZahl(zurueck ? wahlen.zurueckSekunden : wahlen.vorSekunden)
+        zeichen.stupsen()
+        gtk_widget_set_opacity(zeichen.anzeige, 1)
+        sprungtakt += 1
+        let meins = sprungtakt
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            aufHauptfaden {
+                guard self.sprungtakt == meins else { return }
+                sanft(auf: zeichen.anzeige, von: 1, nach: 0) {
+                    gtk_widget_set_opacity(zeichen.anzeige, $0)
+                }
+            }
+        }
     }
 
     /// Blendet die Steuerung sofort weg — **ausser in Pause**: ein Standbild
