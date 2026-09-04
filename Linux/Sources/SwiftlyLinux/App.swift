@@ -183,7 +183,8 @@ final class App {
         let c = JellyfinClient(baseURL: serverURL,
                                deviceID: Geraet.kennung,
                                deviceName: Geraet.name)
-        c.setSession(Session(accessToken: token, userID: benutzerID))
+        c.setSession(Session(accessToken: token, userID: benutzerID,
+                             userName: benutzername, serverURL: serverURL))
         client = c
         adressen = Bildadresse(basis: serverURL, token: token)
 

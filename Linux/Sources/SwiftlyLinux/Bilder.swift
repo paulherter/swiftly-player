@@ -1,5 +1,10 @@
 import CGtk
 import Foundation
+// Auf Linux liegt URLSession nicht in Foundation, sondern in einem
+// eigenen Modul. Auf Apple gibt es das Modul nicht.
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import JellyfinKit
 
 /// Lädt Poster vom Server und hängt sie in ein Bildfeld.
@@ -58,9 +63,8 @@ func bildSetzen(_ bildfeld: Widget!, daten: Data) {
             }
             return
         }
-        gtk_picture_set_paintable(OpaquePointer(bildfeld),
-                                  unsafeBitCast(textur, to: OpaquePointer.self))
-        g_object_unref(textur)
+        gtk_picture_set_paintable(OpaquePointer(bildfeld), textur)
+        g_object_unref(UnsafeMutableRawPointer(textur))
     }
 }
 
