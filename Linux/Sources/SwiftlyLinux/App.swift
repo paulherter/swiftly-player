@@ -49,6 +49,11 @@ final class App: @unchecked Sendable {
 
     var client: JellyfinClient?
     var adressen: Bildadresse?
+    /// Läuft nur beim Start und wird danach abgeräumt.
+    var startanimation: Startanimation?
+    /// Wohin es nach der Animation geht. Steht schon fest, während sie läuft:
+    /// die gemerkte Sitzung wird sofort übernommen, nur nicht gezeigt.
+    var startziel = "anmeldung"
 
     // MARK: - Aufbau
 
@@ -79,6 +84,24 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(seiten), anmeldeseite, "anmeldung")
         gtk_stack_add_named(OpaquePointer(seiten), startseite, "start")
 
+        // **Die Startanimation liegt vor allem anderen.** Sie hat eine eigene
+        // Seite, damit darunter schon aufgebaut werden kann, was danach zu
+        // sehen sein soll — sonst sähe man nach ihr einen leeren Rahmen.
+        if let lauf = Startanimation(fertig: { [weak self] in self?.startbildWeg() }) {
+            startanimation = lauf
+            let grund = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+            gtk_widget_add_css_class(grund, "swiftly-startgrund")
+            anhaengen(grund, lauf.anzeige)
+            gtk_stack_add_named(OpaquePointer(seiten), grund, "startbild")
+            gtk_stack_set_visible_child_name(OpaquePointer(seiten), "startbild")
+            // **Spätestens dann geht es weiter, egal was die Animation
+            // macht** — dieselbe Frist wie auf Apple (3,5 s).
+            Task.detached { [weak self] in
+                try? await Task.sleep(nanoseconds: 3_500_000_000)
+                aufHauptfaden { self?.startanimation?.abschliessen() }
+            }
+        }
+
         kopfzeile = gtk_header_bar_new()
         gtk_window_set_titlebar(alsFenster(fenster), kopfzeile)
         let inhalt = stapel(GTK_ORIENTATION_VERTICAL)
@@ -107,6 +130,30 @@ final class App: @unchecked Sendable {
                                benutzerID: abgelegt.benutzerID,
                                benutzername: abgelegt.benutzername,
                                servername: abgelegt.servername)
+        }
+    }
+
+    /// Die Animation ist durch: weiter zu dem, was ohnehin schon aufgebaut ist.
+    private func startbildWeg() {
+        guard let lauf = startanimation else { return }
+        startanimation = nil
+        gtk_stack_set_transition_type(OpaquePointer(seiten),
+                                      GTK_STACK_TRANSITION_TYPE_CROSSFADE)
+        gtk_stack_set_transition_duration(OpaquePointer(seiten), 260)
+        gtk_stack_set_visible_child_name(OpaquePointer(seiten), startziel)
+        // Erst wenn der Übergang durch ist, sonst verschwindet das Bild
+        // mitten im Blenden.
+        let seitenKiste = gehalten(seiten)
+        _ = lauf
+        Task.detached {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            aufHauptfaden {
+                defer { losgelassen(seitenKiste) }
+                if let alt = gtk_stack_get_child_by_name(OpaquePointer(seitenKiste.widget),
+                                                         "startbild") {
+                    gtk_stack_remove(OpaquePointer(seitenKiste.widget), alt)
+                }
+            }
         }
     }
 
@@ -372,7 +419,11 @@ final class App: @unchecked Sendable {
         adressen = Bildadresse(basis: serverURL, token: token)
         self.benutzerID = benutzerID
         sitzungAnzeigen(benutzername: benutzername, servername: servername)
-        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
+        startziel = "start"
+        // Läuft die Startanimation noch, wartet der Wechsel auf sie.
+        if startanimation == nil {
+            gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
+        }
 
         // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
         // deshalb nur mit `await`; erst danach darf geladen werden.

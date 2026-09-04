@@ -40,12 +40,27 @@ let package = Package(
         // Dekoderfaden und teilen sich einen Puffer mit GTKs Hauptfaden.
         // Begruendung in bildbruecke.h.
         .target(name: "CBildbruecke", dependencies: ["CVLC"]),
+        // **rlottie fuer die Startanimation.** Die Vorlage kommt als Lottie
+        // aus After Effects und liegt in `Sources/Shared/Mittel` — dieselbe
+        // Datei, die iOS, tvOS und macOS abspielen. Nachbauen kaeme nicht in
+        // Frage: jeder Keyframe traegt eigene Bezier-Anlaeufe, von Hand wird
+        // die Bewegung *fast* richtig, und das faellt mehr auf als keine.
+        //
+        // Auf Arch ist rlottie nicht paketiert. `Werkzeuge/rlottie-bauen.sh`
+        // uebersetzt die Quellen ohne cmake nach `~/.local` und legt die
+        // pkg-config-Datei dazu.
+        .systemLibrary(
+            name: "CRlottie",
+            pkgConfig: "rlottie",
+            providers: [.apt(["librlottie-dev"])]
+        ),
         .executableTarget(
             name: "SwiftlyLinux",
             dependencies: [
                 "CGtk",
                 "CVLC",
                 "CBildbruecke",
+                "CRlottie",
                 .product(name: "JellyfinKit", package: "JellyfinKit")
             ]
         )

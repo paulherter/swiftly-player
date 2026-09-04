@@ -576,6 +576,9 @@ enum Stil {
 
         /* MARK: Player (E10) */
 
+        /* Der Grund der Startanimation — auf iOS eine eigene Farbe
+           („Startgrund"), hier derselbe dunkle Grund wie überall. */
+        .swiftly-startgrund { background-color: \(grund); }
         .swiftly-spieler { background-color: #000000; }
         /* Die Steuerung liegt über dem Bild und blendet weich weg. */
         /* Zwei Schleier, oben 0,60 über 150 Punkt, unten 0,70 über 230 —
