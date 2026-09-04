@@ -961,7 +961,10 @@ final class VLCPlayerView: Basisansicht {
         // Startsprung richtig.
         if direktStarten, abSekunden > 1 {
             medium.addOption(":start-time=\(Int(abSekunden))")
+            startversatz = Double(Int(abSekunden))
             Protokoll.schreib("[VLC] start-time=\(Int(abSekunden)) s gesetzt")
+        } else {
+            startversatz = 0
         }
 
         startposition = abSekunden
@@ -1093,10 +1096,26 @@ final class VLCPlayerView: Basisansicht {
     /// Gesamtlaenge in Sekunden. 0, solange VLC die Datei noch liest.
     var durationSeconds: Double {
         guard let ms = player.media?.length.intValue, ms > 0 else { return 0 }
-        // Der Server liefert die Restlaenge; die Oberflaeche braucht die
-        // ganze. Bei Versatz null ist beides dasselbe.
-        return Double(ms) / 1000
+        // **Mit `:start-time` meldet VLC die Restlaenge, nicht die ganze.**
+        //
+        // Gemessen am 04.09.2026, und es ist eine glatte Rechnung: `Position
+        // 3723 s · Dauer 2960 s · Laufzeit laut Server 6683 s` — 6683 minus
+        // 3723 ist 2960. Die Position bleibt absolut, die Laenge wird relativ
+        // zur Startstelle.
+        //
+        // Das hat dreimal die naechste Folge ausgeloest: `position >= dauer-1`
+        // ist damit von der ersten Sekunde an wahr. Und der Schieber stand
+        // falsch
+        //
+        // Der Versatz kommt wieder drauf. Der Kommentar, der hier stand, hat
+        // genau diesen Fall schon beschrieben — fuer den Server, der frueher
+        // einen Teilstrom lieferte. Jetzt gilt er auch fuer VLC selbst.
+        return Double(ms) / 1000 + startversatz
     }
+
+    /// Um wie viele Sekunden der Strom mit `:start-time` versetzt geoeffnet
+    /// wurde. Null, wenn von vorn — dann ist Restlaenge gleich Gesamtlaenge.
+    private(set) var startversatz: Double = 0
 
     var isPlaying: Bool { player.isPlaying }
 

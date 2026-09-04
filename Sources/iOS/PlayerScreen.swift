@@ -985,9 +985,28 @@ struct PlayerScreen: View {
             }
 
             // Am Ende von selbst weiter, wenn gewünscht.
+            let offenSeit = Date().timeIntervalSince(seitStart)
+            // **Messung, solange der Fehler nicht verstanden ist.** Dreimal
+            // ist die App hier hineingelaufen, ohne dass die Folge zu Ende
+            // war. Welche der Zahlen luegt, ist offen — deshalb steht hier
+            // jede Beinahe-Schaltung im Protokoll, auch die unterdrueckten.
+            if dauer > 60, position >= dauer - 1, offenSeit <= Folgenende.anlaufruhe {
+                Protokoll.schreib("[Folgenende] UNTERDRÜCKT: Position \(Int(position)) s,"
+                    + " Dauer \(Int(dauer)) s, offen seit \(String(format: "%.1f", offenSeit)) s,"
+                    + " Laufzeit laut Server \(item.runTimeTicks.map { String(Int(Double($0) / 10_000_000)) } ?? "—") s")
+            }
             if model.naechsteAutomatisch, let folge = naechsteFolge, !wechselt,
                Folgenende.weiterschalten(position: position, dauer: dauer,
-                                         seitOeffnen: Date().timeIntervalSince(seitStart)) {
+                                         seitOeffnen: offenSeit) {
+                Protokoll.schreib("[Folgenende] schaltet weiter: Position \(Int(position)) s,"
+                    + " Dauer \(Int(dauer)) s, offen seit \(Int(offenSeit)) s,"
+                    + " Laufzeit laut Server \(item.runTimeTicks.map { String(Int(Double($0) / 10_000_000)) } ?? "—") s")
+                // **Messung.** Dreimal ist die App hier hineingelaufen, ohne
+                // dass die Folge zu Ende war. Welche der drei Zahlen luegt,
+                // ist offen — die Anlaufruhe allein hat es nicht gerichtet.
+                Protokoll.schreib("[Folgenende] schaltet weiter: Position \(Int(position)) s,"
+                    + " Dauer \(Int(dauer)) s, seit dem Öffnen \(Int(Date().timeIntervalSince(seitStart))) s,"
+                    + " Laufzeit laut Server \(item.runTimeTicks.map { String(Int(Double($0) / 10_000_000)) } ?? "—") s")
                 zurNaechstenFolge(folge)
             }
 

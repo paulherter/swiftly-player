@@ -50,7 +50,7 @@ public enum Folgenende {
     /// erst aufgeht, ist nicht zu Ende. Kein Zuschauer verliert etwas, niemand
     /// merkt die Verzoegerung — und der Fall, den sie verhindert, kostet die
     /// ganze Folge.
-    public static let anlaufruhe: Double = 5
+    public static let anlaufruhe: Double = 30
 
     /// Ob von selbst zur naechsten Folge gewechselt wird.
     ///
