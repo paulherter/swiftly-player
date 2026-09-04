@@ -38,8 +38,8 @@ static unsigned aufbauen(void **opaque, char *chroma,
                          unsigned *breite, unsigned *hoehe,
                          unsigned *takte, unsigned *zeilen) {
     Bildbruecke *b = *opaque;
-    memcpy(chroma, "RV32", 4);
-    unsigned takt = (*breite * 4 + 31) & ~31u;
+    memcpy(chroma, "RV24", 4);
+    unsigned takt = (*breite * 3 + 31) & ~31u;   /* RV24: drei Bytes je Punkt */
     size_t groesse = (size_t)takt * (*hoehe);
 
     pthread_mutex_lock(&b->schloss);

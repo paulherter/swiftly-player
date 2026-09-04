@@ -2,11 +2,335 @@ import CGtk
 import Foundation
 import JellyfinKit
 
-/// Der Player. Noch nicht gebaut — hier steht vorerst nur der Weg hinein,
-/// damit die Detailseiten schon die richtigen Wege nehmen (A1, A4, A5).
+/// **Der Player sieht überall gleich aus** (E10): Schließen oben links,
+/// Einstellungen oben rechts, Titel und Folge unten links, Zeitleiste
+/// darunter, die drei Knöpfe mittig. Bild-im-Bild entfällt — wie auf dem Mac,
+/// wo VLCKit es nicht trägt; hier gibt es unter Wayland kein Gegenstück.
+///
+/// Was der Player tut und was der Server erfährt, entscheidet nicht diese
+/// Datei, sondern das Paket: ``Wiedergabetakt`` (B3, B4, B7, B12, C1, C2),
+/// ``Folgenende`` (B5, B6) und ``Zeitannahme``. Hier steht nur, wie es
+/// aussieht und wer wann gefragt wird.
 extension App {
+
     func spielerOeffnen(_ item: Item, ab: Double) {
-        FileHandle.standardError.write(
-            Data("[Spieler] \(item.name) ab \(Int(ab)) s — noch nicht gebaut\n".utf8))
+        guard let client else { return }
+        spielerSchliessen(melden: true)
+
+        laufenderTitel = item
+        spielstand = Wiedergabetakt.Stand()
+        seitOeffnen = Date()
+
+        let seite = spielerSeiteBauen(item)
+        gtk_stack_add_named(OpaquePointer(seiten), seite, "spieler")
+        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "spieler")
+        gtk_widget_set_visible(kopfzeile, 0)
+
+        // **Erst den Plan holen, dann öffnen.** Die Adresse steht nicht in
+        // `Item`; sie kommt aus `/PlaybackInfo`, und dort entscheidet sich
+        // zugleich, ob der Server transkodiert. Ohne Plan kein Bild.
+        Task.detached { [self] in
+            let plan = try? await client.playbackPlan(for: item.id)
+            aufHauptfaden {
+                guard let plan else {
+                    self.spielerMeldung("Der Server nennt keine Quelle für diesen Titel.")
+                    return
+                }
+                self.laufenderPlan = plan
+                self.abspieler.oeffnen(plan.url, ab: ab)
+                self.spielstand.position = ab
+                self.taktStarten()
+            }
+        }
     }
+
+    func spielerSchliessen(melden: Bool = true) {
+        guard laufenderTitel != nil else { return }
+        // **Die Stelle vor `stop()` melden** (C3): danach steht VLCs Zeit auf
+        // null, und der Server merkte sich den Anfang statt der Stelle.
+        if melden, let client, let plan = laufenderPlan, let titel = laufenderTitel {
+            let ticks = Int64(spielstand.position * 10_000_000)
+            Task.detached {
+                try? await client.reportStopped(itemID: titel.id, plan: plan,
+                                                positionTicks: ticks)
+            }
+        }
+        abspieler.beenden(nurMedium: true)
+        taktBeenden()
+        laufenderTitel = nil
+        laufenderPlan = nil
+        gtk_widget_set_visible(kopfzeile, 1)
+        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
+        if let seite = gtk_stack_get_child_by_name(OpaquePointer(seiten), "spieler") {
+            gtk_stack_remove(OpaquePointer(seiten), seite)
+        }
+        // **Die Startseite holt ihre Reihen neu, wenn der Player zugeht**
+        // (D8) — ohne Frist. Eine zu Ende gesehene Folge stünde sonst weiter
+        // mit Balken in „Weiterschauen".
+        startseiteLaden()
+    }
+
+    // MARK: Aufbau
+
+    private func spielerSeiteBauen(_ item: Item) -> Widget! {
+        let ueber: Widget! = gtk_overlay_new()
+        gtk_widget_add_css_class(ueber, "swiftly-spieler")
+        gtk_overlay_set_child(OpaquePointer(ueber), abspieler.anzeige)
+
+        let steuerung = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_add_css_class(steuerung, "swiftly-steuerung")
+        spielerSteuerung = steuerung
+
+        // Oben: Schliessen links, Einstellungen rechts.
+        let oben = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        raender(oben, 18)
+        let zu = rundknopf("window-close-symbolic")
+        beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
+        anhaengen(oben, zu)
+        anhaengen(oben, luftQuer())
+        let spuren = rundknopf("emblem-system-symbolic")
+        beiSignal(spuren, "clicked") { [weak self] in self?.spurwahlZeigen() }
+        anhaengen(oben, spuren)
+        anhaengen(steuerung, oben)
+
+        anhaengen(steuerung, luft())
+
+        // Unten: Titel, Zeitleiste, drei Knöpfe.
+        let unten = stapel(GTK_ORIENTATION_VERTICAL, abstand: 12)
+        gtk_widget_set_margin_start(unten, 28)
+        gtk_widget_set_margin_end(unten, 28)
+        gtk_widget_set_margin_bottom(unten, 24)
+
+        let namen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+        let gross = beschriftung(item.seriesName ?? item.name, stil: "swiftly-titel")
+        gtk_label_set_xalign(OpaquePointer(gross), 0)
+        anhaengen(namen, gross)
+        if let zeile = item.kontextzeile {
+            let k = beschriftung(zeile, stil: "swiftly-koerper")
+            gtk_widget_add_css_class(k, "dim-label")
+            gtk_label_set_xalign(OpaquePointer(k), 0)
+            anhaengen(namen, k)
+        }
+        anhaengen(unten, namen)
+
+        // Zeitleiste: Stand links, Balken, Rest rechts.
+        let leiste = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
+        spielerZeit = beschriftung("0:00", stil: "swiftly-zweitzeile")
+        anhaengen(leiste, spielerZeit)
+        spielerRegler = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.001)
+        gtk_scale_set_draw_value(OpaquePointer(spielerRegler), 0)
+        gtk_widget_add_css_class(spielerRegler, "swiftly-regler")
+        gtk_widget_set_hexpand(spielerRegler, 1)
+        beiSignal(spielerRegler, "change-value") { }
+        anhaengen(leiste, spielerRegler)
+        spielerRest = beschriftung("", stil: "swiftly-zweitzeile")
+        anhaengen(leiste, spielerRest)
+        anhaengen(unten, leiste)
+
+        // Die drei Knöpfe mittig. **Vorwärts weiter als rückwärts** (B2),
+        // und beide Weiten kommen aus den Einstellungen.
+        let knoepfe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
+        gtk_widget_set_halign(knoepfe, GTK_ALIGN_CENTER)
+        let zurueck = rundknopf("media-seek-backward-symbolic", gross: false)
+        beiSignal(zurueck, "clicked") { [weak self] in
+            guard let self else { return }
+            self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
+        }
+        anhaengen(knoepfe, zurueck)
+        spielerSpieltaste = rundknopf("media-playback-pause-symbolic", gross: true)
+        beiSignal(spielerSpieltaste, "clicked") { [weak self] in self?.abspieler.umschalten() }
+        anhaengen(knoepfe, spielerSpieltaste)
+        let vor = rundknopf("media-seek-forward-symbolic", gross: false)
+        beiSignal(vor, "clicked") { [weak self] in
+            guard let self else { return }
+            self.abspieler.springen(Double(self.wahlen.vorSekunden))
+        }
+        anhaengen(knoepfe, vor)
+        anhaengen(unten, knoepfe)
+
+        // „Nächste Folge" erscheint erst gegen Ende (B5).
+        spielerWeiter = hauptknopf("Nächste Folge", symbol: "media-skip-forward-symbolic")
+        gtk_widget_set_halign(spielerWeiter, GTK_ALIGN_END)
+        gtk_widget_set_size_request(spielerWeiter, 200, Int32(Stil.hauptknopfHoehe))
+        gtk_widget_set_visible(spielerWeiter, 0)
+        beiSignal(spielerWeiter, "clicked") { [weak self] in self?.naechsteFolge() }
+        anhaengen(unten, spielerWeiter)
+
+        anhaengen(steuerung, unten)
+        gtk_overlay_add_overlay(OpaquePointer(ueber), steuerung)
+
+        // **Die Steuerung blendet nach 4 s Ruhe aus** (B1) — nur während der
+        // Wiedergabe. Jede Bewegung des Zeigers holt sie zurück.
+        beiZeiger(ueber, herein: { [weak self] in self?.steuerungZeigen() },
+                         hinaus: { [weak self] in self?.steuerungZeigen() })
+        steuerungZeigen()
+        return ueber
+    }
+
+    private func rundknopf(_ symbol: String, gross: Bool = false) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, gross ? "swiftly-spielrund-gross" : "swiftly-spielrund")
+        let bild: Widget! = gtk_image_new_from_icon_name(symbol)
+        gtk_image_set_pixel_size(OpaquePointer(bild), gross ? 26 : 18)
+        gtk_button_set_child(alsKnopf(knopf), bild)
+        return knopf
+    }
+
+    private func spielerMeldung(_ text: String) {
+        guard let feld = spielerZeit else { return }
+        gtk_label_set_text(OpaquePointer(feld), text)
+    }
+
+    // MARK: Der Takt — 500 ms (B12)
+
+    private func taktStarten() {
+        taktBeenden()
+        spielertakt = g_timeout_add_full(200, 500, spielerTaktRuf,
+                                         Unmanaged.passUnretained(self).toOpaque(), nil)
+    }
+
+    private func taktBeenden() {
+        if spielertakt != 0 { g_source_remove(spielertakt); spielertakt = 0 }
+    }
+
+    /// Ein Takt. Die Rechnung selbst steht im Paket — hier wird nur gemessen,
+    /// gefragt und ausgeführt.
+    func takten() {
+        guard laufenderTitel != nil else { return }
+        let messung = Wiedergabetakt.Messung(
+            dauer: abspieler.dauer,
+            position: abspieler.position,
+            guteStelle: spielstand.position,
+            zeigtBild: abspieler.zeigtBild,
+            stelltEin: false,
+            laeuft: abspieler.laeuft,
+            hatTonspuren: abspieler.hatTonspuren)
+
+        let auftrag = Wiedergabetakt.rechnen(&spielstand, messung: messung,
+                                             stelltWiederHer: false,
+                                             sprungLaeuft: false,
+                                             amSchieben: false,
+                                             seitStart: seitOeffnen)
+
+        zeitenZeigen()
+
+        if auftrag.spurenAnwenden { spurenVorwaehlen() }
+        if auftrag.startMelden { melden(.start) }
+        if auftrag.fortschrittMelden { melden(.fortschritt) }
+
+        // B5: der Knopf. B6: das selbsttätige Weiterschalten — deutlich enger
+        // gefasst, und frühestens `anlaufruhe` Sekunden nach dem Öffnen.
+        let zeigen = Folgenende.knopfZeigen(position: spielstand.position,
+                                            dauer: spielstand.dauer)
+        gtk_widget_set_visible(spielerWeiter, zeigen ? 1 : 0)
+        if wahlen.naechsteAutomatisch,
+           Folgenende.weiterschalten(position: spielstand.position,
+                                     dauer: spielstand.dauer,
+                                     seitOeffnen: Date().timeIntervalSince(seitOeffnen)) {
+            naechsteFolge()
+        }
+    }
+
+    private enum Meldung { case start, fortschritt }
+
+    private func melden(_ was: Meldung) {
+        guard let client, let plan = laufenderPlan, let titel = laufenderTitel else { return }
+        let ticks = Int64(spielstand.position * 10_000_000)
+        let pausiert = !spielstand.laeuft
+        Task.detached {
+            switch was {
+            case .start:
+                try? await client.reportStart(itemID: titel.id, plan: plan, ticks: ticks)
+            case .fortschritt:
+                try? await client.reportProgress(itemID: titel.id, plan: plan,
+                                                 positionTicks: ticks, paused: pausiert)
+            }
+        }
+    }
+
+    private func zeitenZeigen() {
+        gtk_label_set_text(OpaquePointer(spielerZeit), zeitText(spielstand.position))
+        if spielstand.dauer > 0 {
+            let rest = max(0, spielstand.dauer - spielstand.position)
+            gtk_label_set_text(OpaquePointer(spielerRest), "−" + zeitText(rest))
+            gtk_range_set_value(OpaquePointer(spielerRegler),
+                                spielstand.position / spielstand.dauer)
+        }
+        knopfzustand(spielerSpieltaste, aktiv: false,
+                     symbol: spielstand.laeuft ? "media-playback-pause-symbolic"
+                                               : "media-playback-start-symbolic")
+    }
+
+    /// **Tonspuren werden einmal gesetzt, sobald VLC sie kennt** (B8).
+    private func spurenVorwaehlen() {
+        let wunsch = wahlen.tonSprache
+        guard !wunsch.isEmpty else { return }
+        if let treffer = abspieler.tonspuren.first(where: {
+            $0.name.localizedCaseInsensitiveContains(wunsch)
+        }) {
+            abspieler.setzeTonspur(treffer.kennung)
+        }
+    }
+
+    private func naechsteFolge() {
+        guard let client, let titel = laufenderTitel, let serie = titel.seriesId else { return }
+        Task.detached { [self] in
+            guard let naechste = try? await client.folgeNach(itemID: titel.id,
+                                                             seriesID: serie),
+                  let plan = try? await client.playbackPlan(for: naechste.id) else { return }
+            aufHauptfaden {
+                // **Beim Folgenwechsel: Ende der alten melden, Start der
+                // neuen. Genau einmal** (C4). `neuerTitel` setzt den Stand
+                // zurück — einschließlich `seitStart` (B7).
+                self.melden(.fortschritt)
+                if let alterPlan = self.laufenderPlan {
+                    let ticks = Int64(self.spielstand.position * 10_000_000)
+                    Task.detached {
+                        try? await client.reportStopped(itemID: titel.id, plan: alterPlan,
+                                                        positionTicks: ticks)
+                    }
+                }
+                self.laufenderTitel = naechste
+                self.laufenderPlan = plan
+                Wiedergabetakt.neuerTitel(&self.spielstand, startGemeldet: false)
+                self.spielstand.erstesBildDa = false
+                self.seitOeffnen = Date()
+                // Die nächste Folge startet **von vorn** (B5).
+                self.abspieler.oeffnen(plan.url, ab: 0)
+            }
+        }
+    }
+
+    // MARK: Steuerung ein- und ausblenden (B1)
+
+    func steuerungZeigen() {
+        gtk_widget_set_opacity(spielerSteuerung, 1)
+        steuerungstakt += 1
+        let meins = steuerungstakt
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            aufHauptfaden {
+                // Nur ausblenden, wenn seither nichts passiert ist — und
+                // nicht in Pause: ein Standbild ohne Steuerung sieht aus wie
+                // eine ruhige Einstellung.
+                guard self.steuerungstakt == meins, self.spielstand.laeuft else { return }
+                gtk_widget_set_opacity(self.spielerSteuerung, 0)
+            }
+        }
+    }
+
+    // MARK: Spurwahl
+
+    private func spurwahlZeigen() {
+        // **Kleine Entscheidungen klappen dort auf, wo sie ausgelöst wurden**
+        // (E5). Hier steht die Liste über dem Bild, am rechten Rand.
+        steuerungZeigen()
+    }
+}
+
+/// Der Taktgeber. Wie jeder C-Rückruf trägt er die App als Zeiger.
+nonisolated(unsafe) let spielerTaktRuf: @convention(c) (gpointer?) -> gboolean = { daten in
+    guard let daten else { return 0 }
+    Unmanaged<App>.fromOpaque(daten).takeUnretainedValue().takten()
+    return 1
 }

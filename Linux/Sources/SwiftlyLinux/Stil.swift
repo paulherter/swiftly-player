@@ -518,6 +518,48 @@ enum Stil {
         }
         entry.swiftly-code text { caret-color: \(akzent); }
 
+        /* MARK: Player (E10) */
+
+        .swiftly-spieler { background-color: #000000; }
+        /* Die Steuerung liegt über dem Bild und blendet weich weg. */
+        .swiftly-steuerung {
+            background-image: linear-gradient(to bottom,
+                rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 22%,
+                rgba(0,0,0,0) 55%, rgba(0,0,0,0.78) 100%);
+            transition: opacity 180ms ease-out;
+        }
+        button.swiftly-spielrund, button.swiftly-spielrund-gross {
+            border-radius: 50%;
+            background-color: rgba(255,255,255,0.14);
+            border: none;
+            padding: 0;
+        }
+        button.swiftly-spielrund { min-width: 40px; min-height: 40px; }
+        button.swiftly-spielrund-gross { min-width: 64px; min-height: 64px; }
+        button.swiftly-spielrund image,
+        button.swiftly-spielrund-gross image { color: \(schrift); }
+        button.swiftly-spielrund:hover,
+        button.swiftly-spielrund-gross:hover { background-color: rgba(255,255,255,0.26); }
+
+        /* Der Zeitregler: schmale Spur, Akzent für das Gesehene. */
+        scale.swiftly-regler trough {
+            min-height: 4px;
+            background-color: rgba(255,255,255,0.22);
+            border-radius: 2px;
+        }
+        scale.swiftly-regler highlight {
+            background-color: \(akzent);
+            border-radius: 2px;
+        }
+        scale.swiftly-regler slider {
+            min-width: 12px;
+            min-height: 12px;
+            background-color: \(schrift);
+            border-radius: 6px;
+            border: none;
+            box-shadow: none;
+        }
+
         scrollbar { background-color: transparent; }
         scrollbar slider {
             background-color: rgba(255,255,255,0.22);

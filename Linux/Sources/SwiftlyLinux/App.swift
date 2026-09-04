@@ -23,7 +23,7 @@ final class App: @unchecked Sendable {
 
     // Fenster und die zwei Seiten darin.
     private var fenster: Widget!
-    private var seiten: Widget!          // GtkStack
+    var seiten: Widget!          // GtkStack
     private var anmeldeseite: Widget!
     private var startseite: Widget!
 
@@ -44,7 +44,7 @@ final class App: @unchecked Sendable {
     // Startseite
     var bereich: Bereich = .start
     private var reihenstapel: Widget!
-    private var kopfzeile: Widget!
+    var kopfzeile: Widget!
 
     var client: JellyfinClient?
     var adressen: Bildadresse?
@@ -411,6 +411,21 @@ final class App: @unchecked Sendable {
     var benutzername = ""
     var servername = ""
     var serverfassung = ""
+
+    // MARK: Spieler
+    let abspieler = Abspieler()
+    var laufenderTitel: Item?
+    var laufenderPlan: PlaybackPlan?
+    var spielstand = Wiedergabetakt.Stand()
+    var seitOeffnen = Date()
+    var spielertakt: guint = 0
+    var steuerungstakt = 0
+    var spielerSteuerung: Widget!
+    var spielerZeit: Widget!
+    var spielerRest: Widget!
+    var spielerRegler: Widget!
+    var spielerSpieltaste: Widget!
+    var spielerWeiter: Widget!
     var detailhuelle: Widget!
     /// Wird beim Blättern gebraucht, um den Titel in der Kopfleiste
     /// einzublenden — dieselbe Rechnung wie `Detailkopf.staerke` auf dem Mac.
@@ -820,7 +835,7 @@ final class App: @unchecked Sendable {
         }
     }
 
-    private func startseiteLaden() {
+    func startseiteLaden() {
         guard let client else { return }
         leeren(reihenstapel)
         anhaengen(reihenstapel, beschriftung("Lade …", stil: "swiftly-koerper"))
