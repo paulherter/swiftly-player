@@ -360,7 +360,9 @@ extension App {
     private func spurwahlZeigen() {
         steuerungZeigen()
         if let alt = spurtafel {
-            gtk_widget_unparent(alt)
+            // **Ein Überzug wird über den Überzug entfernt**, nicht über
+            // `gtk_widget_unparent` — der lässt GTKs Buchführung stehen.
+            gtk_overlay_remove_overlay(OpaquePointer(spielerRahmen), alt)
             spurtafel = nil
             return
         }
@@ -440,7 +442,10 @@ extension App {
     }
 
     private func spurwahlSchliessen() {
-        if let tafel = spurtafel { gtk_widget_unparent(tafel); spurtafel = nil }
+        if let tafel = spurtafel, spielerRahmen != nil {
+            gtk_overlay_remove_overlay(OpaquePointer(spielerRahmen), tafel)
+        }
+        spurtafel = nil
     }
 
     private func spurgruppe(_ titel: String, _ symbol: String) -> (aussen: Widget, raum: Widget) {

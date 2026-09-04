@@ -156,7 +156,7 @@ extension App {
         anhaengen(block, knopf)
 
         let feldKiste = Zeigerkiste(feld)
-        let standKiste = Zeigerkiste(stand)
+        let standKiste = gehalten(stand)
         beiSignal(feld, "changed") { [weak self] in
             guard let self else { return }
             gtk_widget_set_sensitive(knopf, self.text(feld).count == 6 ? 1 : 0)
@@ -165,7 +165,7 @@ extension App {
             guard let self, let client = self.client else { return }
             let code = self.text(feldKiste.widget)
             gtk_widget_set_sensitive(knopf, 0)
-            let knopfKiste = Zeigerkiste(knopf)
+            let knopfKiste = gehalten(knopf)
             Task.detached {
                 // `gut` entsteht **vor** dem Sprung auf den Hauptfaden und
                 // wird dort nur gelesen — eine veränderliche Variable über
@@ -174,6 +174,7 @@ extension App {
                 do { try await client.quickConnectFreigeben(code: code); gut = true }
                 catch { gut = false }
                 aufHauptfaden {
+                    defer { losgelassen(knopfKiste) }
                     gtk_label_set_text(OpaquePointer(standKiste.widget),
                                        gut ? "Freigegeben. Das andere Gerät meldet sich jetzt an."
                                            : "Der Code stimmt nicht oder ist abgelaufen.")
@@ -371,7 +372,9 @@ extension App {
         gtk_button_set_child(alsKnopf(pfeil),
                              gtk_image_new_from_icon_name("go-previous-symbolic"))
         gtk_widget_set_halign(pfeil, GTK_ALIGN_START)
-        gtk_widget_set_margin_start(pfeil, -8)
+        // Kein negativer Rand: GTK laesst ihn nicht zu. Der Pfeil steht
+        // ohnehin schon im 24er-Rand des Blocks.
+        gtk_widget_set_margin_start(pfeil, 0)
         beiSignal(pfeil, "clicked") { [weak self] in self?.unterseiteZurueck() }
         return pfeil
     }

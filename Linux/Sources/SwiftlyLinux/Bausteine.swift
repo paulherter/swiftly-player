@@ -116,60 +116,48 @@ func luft() -> Widget! {
 /// **Ein `GtkPicture` wächst auf die Größe seines Bildes.** Der Käfig hält es
 /// auf dem Maß, das dasteht.
 ///
-/// Das ist dieselbe Falle wie bei der Wortmarke, nur an drei weiteren
-/// Stellen: `gtk_widget_set_size_request` setzt nur eine **Mindest**größe.
-/// Ein Bild von 300 Punkt Breite verlangt 300 und bekommt sie, sobald Platz
-/// da ist — die Kacheln standen deshalb doppelt so groß im Fenster, und das
-/// Profilbild hat die Seitenleiste von 220 auf über 700 aufgezogen. Mit
-/// `hexpand = 0` ist dem nicht beizukommen: das steuert nur, wer *überschüssigen*
-/// Platz bekommt, nicht wie groß etwas von sich aus sein will.
+/// Dieselbe Falle wie bei der Wortmarke: `gtk_widget_set_size_request` setzt
+/// nur eine **Mindest**größe. Ein Bild von 300 Punkt verlangt 300 und bekommt
+/// sie, sobald Platz da ist — die Kacheln standen doppelt so groß im Fenster
+/// und das Profilbild hat die Seitenleiste von 220 auf über 700 aufgezogen.
+/// `hexpand = 0` hilft nicht: das verteilt überschüssigen Platz, es begrenzt
+/// keine Wunschgröße.
 ///
-/// GTK kennt keine Höchstgröße. Was es kennt, ist ein `GtkScrolledWindow`, und
-/// der gibt die Wunschgröße seines Kindes **nicht** nach oben weiter
-/// (`propagate-natural-width` ist von Haus aus aus). Mit beiden Richtungen auf
-/// `NEVER` zwingt er das Kind zudem auf die eigene Größe, statt es zu
-/// beschneiden — es wird also skaliert, nicht abgeschnitten.
+/// **Erst stand hier ein `GtkScrolledWindow`**, weil der die Wunschgröße
+/// seines Kindes nicht nach oben weitergibt. Er tut es, aber er bringt auch
+/// Scrollbalken mit — und die meldeten reihenweise
+/// `slider reported min width -2`, weil sie in eine 26 Punkt große Kachel
+/// nicht hineinpassen. Ein Käfig, der Warnungen ausspuckt, ist kein Käfig.
 ///
-/// Am Bild selbst darf deshalb **keine** Größe stehen: mit `can_shrink` ist
-/// seine Mindestgröße null, und dann gilt allein das Maß des Käfigs.
-func bildkaefig(_ bild: Widget!, breite: Int, hoehe: Int) -> Widget! {
-    gtk_picture_set_can_shrink(OpaquePointer(bild), 1)
-    let kaefig: Widget! = gtk_scrolled_window_new()
-    gtk_widget_add_css_class(kaefig, "swiftly-kaefig")
-    gtk_scrolled_window_set_policy(OpaquePointer(kaefig), GTK_POLICY_NEVER, GTK_POLICY_NEVER)
-    gtk_scrolled_window_set_child(OpaquePointer(kaefig), bild)
-    gtk_widget_set_size_request(kaefig, Int32(breite), Int32(hoehe))
-    gtk_widget_set_hexpand(kaefig, 0)
-    gtk_widget_set_vexpand(kaefig, 0)
-    gtk_widget_set_overflow(kaefig, GTK_OVERFLOW_HIDDEN)
-    return kaefig
-}
-
-/// Ein Bild mit gerundeter Kante — Plakat, Querkachel, Profilbild.
+/// `GtkOverlay` kann dasselbe ohne Beiwerk: er **misst nur sein Hauptkind**.
+/// Das ist hier eine leere Box mit dem gewünschten Maß; das Bild liegt als
+/// Überzug darüber, wird nicht gemessen und bekommt trotzdem die volle
+/// Fläche. Genau dafür ist der Überzug da.
 ///
-/// **Die Rundung gehört an die Hülle, nicht an den Käfig.** Auf dem Mac ist
+/// Die Rundung gehört an die Hülle, nicht ans Bild: auf dem Mac ist
 /// `Bildflaeche` ein `ZStack` aus Grund, Bild *und* Fortschrittsbalken, und
-/// erst der ganze Stapel bekommt `.clipShape(RoundedRectangle(…))`. Der Balken
-/// liegt damit **innerhalb** der Rundung und wird beim Schweben mitvergrößert.
-///
-/// Hier lag er zuerst daneben — als Geschwister des Käfigs in einem eigenen
-/// Überzug. Jetzt ist die Hülle der Überzug: sie trägt Rundung, Beschnitt und
-/// Größe, das Bild sitzt darin, der Balken darüber.
+/// erst der ganze Stapel bekommt `clipShape`. Nur so liegt der Balken
+/// **innerhalb** der Rundung und wird beim Schweben mitvergrößert.
 ///
 /// Der Rückgabetyp trägt bewusst kein `!`: Swift verbietet ein implizit
 /// ausgepacktes Optional in einem Tupelfach. Beides ist hier nie null.
 func gerahmtesBild(breite: Int, hoehe: Int, stil: String) -> (huelle: Widget, bild: Widget) {
-    let bild: Widget! = gtk_picture_new()
-    gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_COVER)
-    let kaefig = bildkaefig(bild, breite: breite, hoehe: hoehe)
-
     let huelle: Widget! = gtk_overlay_new()
-    gtk_overlay_set_child(OpaquePointer(huelle), kaefig)
     gtk_widget_add_css_class(huelle, stil)
     gtk_widget_set_overflow(huelle, GTK_OVERFLOW_HIDDEN)
-    gtk_widget_set_size_request(huelle, Int32(breite), Int32(hoehe))
     gtk_widget_set_hexpand(huelle, 0)
     gtk_widget_set_vexpand(huelle, 0)
+
+    // Das Maß gibt eine leere Box vor. Sie ist das Hauptkind, also das
+    // einzige, das gemessen wird.
+    let mass: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+    gtk_widget_set_size_request(mass, Int32(breite), Int32(hoehe))
+    gtk_overlay_set_child(OpaquePointer(huelle), mass)
+
+    let bild: Widget! = gtk_picture_new()
+    gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_COVER)
+    gtk_picture_set_can_shrink(OpaquePointer(bild), 1)
+    gtk_overlay_add_overlay(OpaquePointer(huelle), bild)
     return (huelle!, bild!)
 }
 
@@ -193,22 +181,6 @@ func balkenLegen(_ huelle: Widget!, breite: Int, anteil: Double) {
     gtk_widget_set_valign(balken, GTK_ALIGN_END)
     gtk_widget_set_halign(balken, GTK_ALIGN_START)
     gtk_overlay_add_overlay(OpaquePointer(huelle), balken)
-}
-
-// MARK: - Chip
-
-/// Filter- und Sortierchip. Aktiv ist er weiß mit dunkler Schrift, sonst
-/// leise mit einer Haarlinie darum — 28 hoch, 12 seitlich, vollrund.
-///
-/// Die halbfette Schrift im aktiven Zustand steht so auf dem Mac und ist
-/// kein Zufall: der Chip wird dadurch minimal breiter, und das ist die
-/// einzige Stelle, an der man die Wahl auch ohne Farbe sieht.
-func chip(_ text: String, aktiv: Bool) -> Widget! {
-    let knopf: Widget! = gtk_button_new_with_label(text)
-    gtk_widget_add_css_class(knopf, "swiftly-chip")
-    if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
-    gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
-    return knopf
 }
 
 /// **Ein Zeichen statt Leere, wenn der Server kein Bild hat.**
@@ -448,4 +420,27 @@ func luftHoch(_ hoehe: Int32) -> Widget! {
     let l: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
     gtk_widget_set_size_request(l, -1, hoehe)
     return l
+}
+
+
+// MARK: - Was ein Nachladen überleben muss
+
+/// **Zwischen dem Start einer Aufgabe und ihrer Antwort kann die Seite neu
+/// gebaut worden sein.** Dann ist der Zeiger, den die Aufgabe trägt, längst
+/// freigegeben — und das Nachtragen greift in fremden Speicher.
+///
+/// Genau so ist die App am 04.09.2026 gestorben: die Detailseite zeigt sofort
+/// den mageren Listeneintrag und baut sich neu, sobald der volle Satz da ist.
+/// Wer dazwischen den Plan holte, trug ihn in eine Zeile ein, die es nicht
+/// mehr gab. Absturz in libgtk, keine eigene Zeile im Rückweg.
+///
+/// ``bildLaden`` hält das Bildfeld deshalb seit je fest. Alles andere, was
+/// nachträgt, muss dasselbe tun — hier einmal aufgeschrieben.
+func gehalten(_ w: Widget!) -> Zeigerkiste {
+    g_object_ref(w)
+    return Zeigerkiste(w)
+}
+
+func losgelassen(_ kiste: Zeigerkiste) {
+    g_object_unref(kiste.widget)
 }

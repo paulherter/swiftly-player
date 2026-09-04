@@ -109,12 +109,14 @@ extension App {
         // der Kiste. Ausgepackt wird er nur in `aufHauptfaden`, also wieder
         // auf dem Faden, dem GTK gehört — genau die Zusicherung, die
         // ``Zeigerkiste`` gibt.
-        let kiste = Zeigerkiste(seite)
+        let kiste = gehalten(seite)
         Task.detached { [self] in
-            guard let voll = try? await client.item(id: item.id) else { return }
+            let voll = try? await client.item(id: item.id)
             aufHauptfaden {
+                defer { losgelassen(kiste) }
                 // Nur nachtragen, wenn diese Seite noch die oberste ist.
-                guard self.seitenstapel[self.bereich]?.last?.id == item.id else { return }
+                guard let voll,
+                      self.seitenstapel[self.bereich]?.last?.id == item.id else { return }
                 leeren(kiste.widget)
                 self.aufbauenMit(voll, in: kiste.widget)
             }
@@ -299,7 +301,7 @@ extension App {
     /// der teuerste Abruf der App, hier umsonst.
     private func planNachladen(_ titel: Item, in beleg: Widget!) {
         guard let client else { return }
-        let kiste = Zeigerkiste(beleg)
+        let kiste = gehalten(beleg)
         Task.detached { [self] in
             let ziel: Item?
             if titel.type == "Series" {
@@ -307,9 +309,13 @@ extension App {
             } else {
                 ziel = titel
             }
-            guard let ziel, let plan = try? await client.playbackPlan(for: ziel.id)
-            else { return }
+            let plan: PlaybackPlan? = await {
+                guard let ziel else { return nil }
+                return try? await client.playbackPlan(for: ziel.id)
+            }()
             aufHauptfaden {
+                defer { losgelassen(kiste) }
+                guard let plan else { return }
                 let ziel = kiste.widget
                 let zeichen: Widget! = gtk_image_new_from_icon_name(
                     plan.isLossless ? "object-select-symbolic" : "dialog-warning-symbolic")

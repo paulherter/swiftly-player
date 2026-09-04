@@ -366,16 +366,6 @@ enum Stil {
             background-color: \(erhoeht);
         }
 
-        /* **Der Käfig ist ein Scrollfenster und malt sonst mit.**
-           Weiter oben steht `scrolledwindow, viewport { background-color:
-           grund }` — und der Käfig unter der Wortmarke ist genau so eines.
-           Auf der Seitenleiste (`flaeche`) stand deshalb ein schwarzes
-           Rechteck unter der Marke. Er soll gar nichts malen; wo ein Grund
-           hin soll, trägt ihn die Hülle. */
-        .swiftly-kaefig,
-        .swiftly-kaefig viewport,
-        .swiftly-kaefig scrolledwindow { background-color: transparent; }
-
         /* MARK: Detailseite */
 
         .swiftly-heldtitel { font-size: 34px; font-weight: 700; letter-spacing: -0.8px; }
@@ -647,16 +637,25 @@ enum Stil {
         guard let datei = wortmarkeDatei(hoehe: hoehe * 2) else {
             return beschriftung("swiftly", stil: "swiftly-titel-gross")
         }
-        let bild: Widget! = gtk_picture_new_for_filename(datei)
-        gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_CONTAIN)
         // **Und der doppelt so feine Aufbau war zugleich die Falle.** Die
         // Marke stand doppelt so groß da, weil `set_size_request` nur ein
         // Mindestmaß ist und ein Bild von 164 × 56 genau die verlangt, sobald
-        // Platz da ist. Der Käfig gibt die Wunschgröße des Bildes nicht nach
-        // oben weiter — dasselbe Mittel wie bei den Plakaten.
-        let kaefig = bildkaefig(bild, breite: breite, hoehe: hoehe)
-        gtk_widget_set_halign(kaefig, links ? GTK_ALIGN_START : GTK_ALIGN_CENTER)
-        gtk_widget_set_valign(kaefig, GTK_ALIGN_CENTER)
-        return kaefig
+        // Platz da ist. Der Überzug misst nur sein Hauptkind — dasselbe
+        // Mittel wie bei den Plakaten, siehe ``gerahmtesBild``.
+        let huelle: Widget! = gtk_overlay_new()
+        let mass: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        gtk_widget_set_size_request(mass, Int32(breite), Int32(hoehe))
+        gtk_overlay_set_child(OpaquePointer(huelle), mass)
+
+        let bild: Widget! = gtk_picture_new_for_filename(datei)
+        gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_CONTAIN)
+        gtk_picture_set_can_shrink(OpaquePointer(bild), 1)
+        gtk_overlay_add_overlay(OpaquePointer(huelle), bild)
+
+        gtk_widget_set_hexpand(huelle, 0)
+        gtk_widget_set_vexpand(huelle, 0)
+        gtk_widget_set_halign(huelle, links ? GTK_ALIGN_START : GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(huelle, GTK_ALIGN_CENTER)
+        return huelle
     }
 }

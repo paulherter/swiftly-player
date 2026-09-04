@@ -78,10 +78,13 @@ extension App {
 
     private func staffelnLaden(_ serie: Item, in raum: Widget!) {
         guard let client else { return }
-        let kiste = Zeigerkiste(raum)
+        let kiste = gehalten(raum)
         Task.detached { [self] in
             let staffeln = (try? await client.staffeln(seriesID: serie.id)) ?? []
-            aufHauptfaden { self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget) }
+            aufHauptfaden {
+                defer { losgelassen(kiste) }
+                self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget)
+            }
         }
     }
 
@@ -135,11 +138,12 @@ extension App {
         guard let client else { return }
         leeren(raum)
         anhaengen(raum, beschriftung("Lade …", stil: "swiftly-koerper"))
-        let kiste = Zeigerkiste(raum)
+        let kiste = gehalten(raum)
         Task.detached { [self] in
             let folgen = (try? await client.folgen(seriesID: serie.id,
                                                    seasonID: staffel.id)) ?? []
             aufHauptfaden {
+                defer { losgelassen(kiste) }
                 leeren(kiste.widget)
                 for folge in folgen { anhaengen(kiste.widget, self.folgenzeile(folge)) }
             }
@@ -264,10 +268,11 @@ extension App {
 
     func aehnlicheNachladen(_ titel: Item, in raum: Widget!, leeren leeren_: Bool = false) {
         guard let client else { return }
-        let kiste = Zeigerkiste(raum)
+        let kiste = gehalten(raum)
         Task.detached { [self] in
             let treffer = (try? await client.aehnliche(itemID: titel.id)) ?? []
             aufHauptfaden {
+                defer { losgelassen(kiste) }
                 let ziel = kiste.widget
                 if leeren_ { leeren(ziel) }
                 guard !treffer.isEmpty else {
