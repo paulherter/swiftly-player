@@ -78,9 +78,10 @@ extension App {
 
     private func staffelnLaden(_ serie: Item, in raum: Widget!) {
         guard let client else { return }
+        let kiste = Zeigerkiste(raum)
         Task.detached { [self] in
             let staffeln = (try? await client.staffeln(seriesID: serie.id)) ?? []
-            aufHauptfaden { self.staffelnZeigen(staffeln, serie: serie, in: raum) }
+            aufHauptfaden { self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget) }
         }
     }
 
@@ -134,12 +135,13 @@ extension App {
         guard let client else { return }
         leeren(raum)
         anhaengen(raum, beschriftung("Lade …", stil: "swiftly-koerper"))
+        let kiste = Zeigerkiste(raum)
         Task.detached { [self] in
             let folgen = (try? await client.folgen(seriesID: serie.id,
                                                    seasonID: staffel.id)) ?? []
             aufHauptfaden {
-                leeren(raum)
-                for folge in folgen { anhaengen(raum, self.folgenzeile(folge)) }
+                leeren(kiste.widget)
+                for folge in folgen { anhaengen(kiste.widget, self.folgenzeile(folge)) }
             }
         }
     }
@@ -262,18 +264,20 @@ extension App {
 
     func aehnlicheNachladen(_ titel: Item, in raum: Widget!, leeren leeren_: Bool = false) {
         guard let client else { return }
+        let kiste = Zeigerkiste(raum)
         Task.detached { [self] in
             let treffer = (try? await client.aehnliche(itemID: titel.id)) ?? []
             aufHauptfaden {
-                if leeren_ { leeren(raum) }
+                let ziel = kiste.widget
+                if leeren_ { leeren(ziel) }
                 guard !treffer.isEmpty else {
                     if leeren_ {
-                        anhaengen(raum, beschriftung("Nichts Ähnliches gefunden.",
+                        anhaengen(ziel, beschriftung("Nichts Ähnliches gefunden.",
                                                      stil: "swiftly-koerper"))
                     }
                     return
                 }
-                anhaengen(raum, self.reiheBauen(titel: "Ähnliches", art: .neu, items: treffer))
+                anhaengen(ziel, self.reiheBauen(titel: "Ähnliches", art: .neu, items: treffer))
             }
         }
     }

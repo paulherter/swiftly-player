@@ -81,13 +81,18 @@ extension App {
 
     private func titelNachladen(_ item: Item, in seite: Widget!) {
         guard let client else { return }
+        // **Der Zeiger geht über eine Fadengrenze**, und Swift 6 besteht auf
+        // der Kiste. Ausgepackt wird er nur in `aufHauptfaden`, also wieder
+        // auf dem Faden, dem GTK gehört — genau die Zusicherung, die
+        // ``Zeigerkiste`` gibt.
+        let kiste = Zeigerkiste(seite)
         Task.detached { [self] in
             guard let voll = try? await client.item(id: item.id) else { return }
             aufHauptfaden {
                 // Nur nachtragen, wenn diese Seite noch die oberste ist.
                 guard self.seitenstapel[self.bereich]?.last?.id == item.id else { return }
-                leeren(seite)
-                self.aufbauenMit(voll, in: seite)
+                leeren(kiste.widget)
+                self.aufbauenMit(voll, in: kiste.widget)
             }
         }
     }
@@ -209,11 +214,11 @@ extension App {
         gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
         gtk_label_set_xalign(OpaquePointer(name), 0)
         gtk_widget_set_size_request(name, 640, 42)
-        gtk_fixed_put(OpaquePointer(feld), name, 0, 0)
+        gtk_fixed_put(alsFeld2(feld), name, 0, 0)
 
         let angaben = angabenreihe(titel)
         gtk_widget_set_size_request(angaben, 640, 20)
-        gtk_fixed_put(OpaquePointer(feld), angaben, 0, 54)
+        gtk_fixed_put(alsFeld2(feld), angaben, 0, 54)
 
         let text = beschriftung(titel.overview ?? "", stil: "swiftly-koerper", umbruch: true)
         gtk_label_set_xalign(OpaquePointer(text), 0)
@@ -222,9 +227,9 @@ extension App {
         gtk_label_set_justify(OpaquePointer(text), GTK_JUSTIFY_LEFT)
         gtk_widget_add_css_class(text, "swiftly-beschreibung")
         gtk_widget_set_size_request(text, 640, 66)
-        gtk_fixed_put(OpaquePointer(feld), text, 0, 92)
+        gtk_fixed_put(alsFeld2(feld), text, 0, 92)
 
-        gtk_fixed_put(OpaquePointer(feld), knopfreihe(titel), 0, 182)
+        gtk_fixed_put(alsFeld2(feld), knopfreihe(titel), 0, 182)
         return feld
     }
 
@@ -270,6 +275,7 @@ extension App {
     /// der teuerste Abruf der App, hier umsonst.
     private func planNachladen(_ titel: Item, in beleg: Widget!) {
         guard let client else { return }
+        let kiste = Zeigerkiste(beleg)
         Task.detached { [self] in
             let ziel: Item?
             if titel.type == "Series" {
@@ -280,15 +286,16 @@ extension App {
             guard let ziel, let plan = try? await client.playbackPlan(for: ziel.id)
             else { return }
             aufHauptfaden {
+                let ziel = kiste.widget
                 let zeichen: Widget! = gtk_image_new_from_icon_name(
                     plan.isLossless ? "object-select-symbolic" : "dialog-warning-symbolic")
                 gtk_image_set_pixel_size(OpaquePointer(zeichen), 11)
-                anhaengen(beleg, zeichen)
+                anhaengen(ziel, zeichen)
                 let text = beschriftung(plan.isLossless ? "Direct Play" : plan.method.rawValue,
                                         stil: "swiftly-zweitzeile")
-                anhaengen(beleg, text)
-                gtk_widget_add_css_class(beleg, plan.isLossless ? "swiftly-beleg" : "swiftly-warnung")
-                gtk_widget_set_visible(beleg, 1)
+                anhaengen(ziel, text)
+                gtk_widget_add_css_class(ziel, plan.isLossless ? "swiftly-beleg" : "swiftly-warnung")
+                gtk_widget_set_visible(ziel, 1)
             }
         }
     }
