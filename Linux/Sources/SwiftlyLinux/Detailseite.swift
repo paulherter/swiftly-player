@@ -561,6 +561,11 @@ nonisolated(unsafe) let kulisseGemessen: @convention(c) (
 /// Wohin der Hauptknopf zeigt. Eine Klasse, damit der Rückruf denselben Wert
 /// sieht wie das Nachladen — bei einer Serie steht er erst fest, wenn der
 /// Server geantwortet hat.
-final class Spielziel {
+///
+/// **`@unchecked Sendable` mit derselben Begründung wie ``Zeigerkiste``:**
+/// gelesen und geschrieben wird ausschließlich auf GTKs Hauptfaden, das
+/// Nachladen kommt über ``aufHauptfaden`` dorthin zurück. Swift kann das
+/// nicht sehen, nur wir.
+final class Spielziel: @unchecked Sendable {
     var titel: Item?
 }
