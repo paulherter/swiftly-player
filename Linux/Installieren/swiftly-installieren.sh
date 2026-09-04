@@ -4,12 +4,15 @@
 #
 #     curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-for-jellyfin/main/Linux/Installieren/swiftly-installieren.sh | bash
 #
-# **Warum aus der Quelle und nicht als fertiges Binaerprogramm.** Der Bau
-# haengt an der glibc des Rechners, auf dem er entstand. Auf CachyOS ist das
-# heute 2.44, auf Ubuntu 22.04 ist es 2.35 — ein hier gebautes Programm
-# startet dort nicht, und zwar mit einer Fehlermeldung, die niemandem sagt,
-# warum. Der Bau aus der Quelle dauert ein paar Minuten und laeuft dafuer
-# ueberall.
+# **Es wird eine Paketquelle eingetragen, nicht nur installiert.** Ein Bau
+# von Hand ist einmalig — danach weiss kein Paketverwalter, dass es die App
+# gibt, und es kommt nie wieder ein Update. Deshalb legt dieses Skript die
+# Quelle an, aus der apt, dnf, zypper oder pacman die App holen. Ab da
+# kommen neue Fassungen mit dem normalen Systemupdate, wie bei jedem
+# anderen Programm.
+#
+# Wer trotzdem selbst bauen will: `--aus-quelle`. Das dauert ein paar
+# Minuten und laeuft auch auf Distributionen, fuer die es kein Paket gibt.
 #
 # Alles landet unter $HOME. Das Passwort wird genau einmal gebraucht, fuer
 # die Pakete der Distribution — und die Abfrage kommt vom Paketverwalter
@@ -30,6 +33,7 @@ ZIEL="$HOME/.local"
 # „CachyOS Linux" und landete in einem Verzeichnis mit Leerzeichen.
 PROGRAMM="swiftly-jellyfin"
 KENNUNG="de.paulherter.swiftly"
+QUELLE_URL="${SWIFTLY_QUELLE:-https://paulherter.github.io/swiftly-for-jellyfin}"
 
 rot=''; gruen=''; fett=''; blass=''; aus=''
 if [ -t 1 ]; then
@@ -40,6 +44,9 @@ leise()   { printf '    %s%s%s\n' "$blass" "$1" "$aus"; }
 klagen()  { printf '%sFehler:%s %s\n' "$rot$fett" "$aus" "$1" >&2; exit 1; }
 
 # ---------------------------------------------------------------- Abbau
+
+aus_quelle=0
+[ "${1:-}" = "--aus-quelle" ] && aus_quelle=1
 
 if [ "${1:-}" = "--deinstallieren" ] || [ "${1:-}" = "--entfernen" ]; then
     sagen "Swiftly for Jellyfin entfernen"
@@ -95,6 +102,84 @@ sudo_ruf=""
 if [ "$(id -u)" != "0" ]; then
     command -v sudo >/dev/null 2>&1 || klagen "sudo fehlt, und ich bin nicht root."
     sudo_ruf="sudo"
+fi
+
+# ---------------------------------------------------------- Paketquelle
+#
+# Der uebliche Weg. Eine Zeile in der Konfiguration des Paketverwalters,
+# danach gehoert die App zum System wie jedes andere Paket — samt Updates.
+#
+# **Signatur, wenn es eine gibt.** Liegt in der Quelle ein oeffentlicher
+# Schluessel, wird er eingetragen und geprueft. Liegt keiner da, wird die
+# Quelle als vertrauenswuerdig eingetragen und das hier gesagt — lieber
+# offen als eine Zeile, die niemand versteht.
+
+signiert=0
+if curl -fsI "$QUELLE_URL/swiftly.gpg" >/dev/null 2>&1; then signiert=1; fi
+
+quelle_eintragen() {
+    case "$sippe" in
+        debian)
+            if [ "$signiert" = "1" ]; then
+                $sudo_ruf install -d /usr/share/keyrings
+                curl -fsSL "$QUELLE_URL/swiftly.gpg" |
+                    $sudo_ruf gpg --dearmor -o /usr/share/keyrings/swiftly.gpg
+                echo "deb [arch=amd64 signed-by=/usr/share/keyrings/swiftly.gpg] $QUELLE_URL/deb ./" |
+                    $sudo_ruf tee /etc/apt/sources.list.d/swiftly.list >/dev/null
+            else
+                echo "deb [arch=amd64 trusted=yes] $QUELLE_URL/deb ./" |
+                    $sudo_ruf tee /etc/apt/sources.list.d/swiftly.list >/dev/null
+            fi
+            $sudo_ruf apt-get update
+            $sudo_ruf apt-get install -y "$PROGRAMM"
+            ;;
+        fedora)
+            $sudo_ruf tee /etc/yum.repos.d/swiftly.repo >/dev/null <<EOF
+[swiftly]
+name=Swiftly for Jellyfin
+baseurl=$QUELLE_URL/rpm
+enabled=1
+gpgcheck=$signiert
+$([ "$signiert" = "1" ] && echo "gpgkey=$QUELLE_URL/swiftly.gpg")
+EOF
+            $sudo_ruf dnf install -y "$PROGRAMM"
+            ;;
+        suse)
+            $sudo_ruf zypper --non-interactive removerepo swiftly >/dev/null 2>&1 || true
+            $sudo_ruf zypper --non-interactive addrepo -f "$QUELLE_URL/rpm" swiftly
+            [ "$signiert" = "1" ] || $sudo_ruf zypper --non-interactive modifyrepo --no-gpgcheck swiftly
+            $sudo_ruf zypper --non-interactive --gpg-auto-import-keys refresh swiftly
+            $sudo_ruf zypper --non-interactive install "$PROGRAMM"
+            ;;
+        arch)
+            local stufe="Optional TrustAll"
+            [ "$signiert" = "1" ] && stufe="Required DatabaseOptional"
+            if ! grep -q '^\[swiftly\]' /etc/pacman.conf; then
+                printf '\n[swiftly]\nSigLevel = %s\nServer = %s/arch\n' \
+                    "$stufe" "$QUELLE_URL" | $sudo_ruf tee -a /etc/pacman.conf >/dev/null
+            fi
+            $sudo_ruf pacman -Sy --noconfirm "$PROGRAMM"
+            ;;
+        *)  return 1 ;;
+    esac
+}
+
+if [ "${aus_quelle:-0}" = "0" ]; then
+    sagen "Paketquelle eintragen"
+    [ "$signiert" = "1" ] ||
+        leise "Die Quelle ist noch nicht signiert — sie wird als vertrauenswuerdig eingetragen."
+    leise "Dafuer fragt der Paketverwalter gleich nach deinem Passwort."
+    if quelle_eintragen; then
+        sagen "Fertig."
+        echo
+        leise "Im Anwendungsmenue steht jetzt „Swiftly\"."
+        leise "Aus der Konsole: $PROGRAMM"
+        leise "Updates kommen ab jetzt mit dem normalen Systemupdate."
+        echo
+        leise "Entfernen: ueber den Paketverwalter, wie jedes andere Paket."
+        return 0
+    fi
+    leise "Kein Paket fuer diese Distribution — es wird aus der Quelle gebaut."
 fi
 
 pakete_setzen() {
