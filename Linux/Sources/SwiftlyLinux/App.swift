@@ -27,8 +27,14 @@ final class App: @unchecked Sendable {
     private var anmeldeseite: Widget!
     private var startseite: Widget!
 
-    // Anmeldung
+    // Anmeldung, zwei Schritte
+    private var anmeldeschritte: Widget!     // GtkStack: server -> konto
     private var serverfeld: Widget!
+    private var verbindeknopf: Widget!
+    private var serverstand: Widget!
+    private var serverzeile: Widget!
+    private var fassungszeile: Widget!
+    private var serverURL: URL?
     private var benutzerfeld: Widget!
     private var passwortfeld: Widget!
     private var anmeldeknopf: Widget!
@@ -80,6 +86,22 @@ final class App: @unchecked Sendable {
     // MARK: - Anmeldung
 
     private func anmeldungBauen() -> Widget! {
+        // **Zwei Schritte, wie auf allen anderen Plattformen.** Erst die
+        // Adresse und verbinden, dann das Konto. Der Mac führt dafür
+        // `AppModel.Phase` — disconnected, needsLogin(serverName:version:),
+        // ready —, und dieselbe Reihenfolge gilt hier. Ein eigener Ablauf pro
+        // Plattform wäre genau die Abweichung, die `VERHALTEN.md` verbietet:
+        // verschieden sein dürfen Eingabeart und Fenstergröße, nicht der Weg.
+        anmeldeschritte = gtk_stack_new()
+        gtk_stack_set_transition_type(OpaquePointer(anmeldeschritte),
+                                      GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT)
+        gtk_stack_add_named(OpaquePointer(anmeldeschritte), serverSchrittBauen(), "server")
+        gtk_stack_add_named(OpaquePointer(anmeldeschritte), kontoSchrittBauen(), "konto")
+        return anmeldeschritte
+    }
+
+    /// Schritt eins: wo steht der Server?
+    private func serverSchrittBauen() -> Widget! {
         let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 12)
         raender(mitte, 40)
         gtk_widget_set_valign(mitte, GTK_ALIGN_CENTER)
@@ -94,8 +116,40 @@ final class App: @unchecked Sendable {
         gtk_widget_set_margin_top(serverfeld, 10)
         anhaengen(mitte, serverfeld)
 
+        let hinweis = beschriftung("Kein https:// nötig — das ergänzen wir.", stil: "caption")
+        gtk_widget_add_css_class(hinweis, "dim-label")
+        anhaengen(mitte, hinweis)
+
+        verbindeknopf = gtk_button_new_with_label("Verbinden")
+        gtk_widget_add_css_class(verbindeknopf, "suggested-action")
+        gtk_widget_add_css_class(verbindeknopf, "pill")
+        gtk_widget_set_margin_top(verbindeknopf, 8)
+        anhaengen(mitte, verbindeknopf)
+
+        serverstand = beschriftung("", stil: "dim-label", umbruch: true)
+        anhaengen(mitte, serverstand)
+
+        beiSignal(verbindeknopf, "clicked") { [weak self] in self?.verbinden() }
+        beiSignal(serverfeld, "activate") { [weak self] in self?.verbinden() }
+        return mitte
+    }
+
+    /// Schritt zwei: welches Konto?
+    private func kontoSchrittBauen() -> Widget! {
+        let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 12)
+        raender(mitte, 40)
+        gtk_widget_set_valign(mitte, GTK_ALIGN_CENTER)
+        gtk_widget_set_halign(mitte, GTK_ALIGN_CENTER)
+        gtk_widget_set_size_request(mitte, 380, -1)
+
+        serverzeile = beschriftung("", stil: "title-2", umbruch: true)
+        anhaengen(mitte, serverzeile)
+        fassungszeile = beschriftung("", stil: "dim-label")
+        anhaengen(mitte, fassungszeile)
+
         benutzerfeld = gtk_entry_new()
         gtk_entry_set_placeholder_text(alsFeld(benutzerfeld), "Benutzername")
+        gtk_widget_set_margin_top(benutzerfeld, 14)
         anhaengen(mitte, benutzerfeld)
 
         passwortfeld = gtk_entry_new()
@@ -110,12 +164,19 @@ final class App: @unchecked Sendable {
         anhaengen(mitte, anmeldeknopf)
 
         anmeldestand = beschriftung("", stil: "dim-label", umbruch: true)
-        gtk_widget_set_margin_top(anmeldestand, 6)
         anhaengen(mitte, anmeldestand)
 
+        let zurueck = gtk_button_new_with_label("Anderer Server")
+        gtk_widget_add_css_class(zurueck, "flat")
+        gtk_widget_set_margin_top(zurueck, 6)
+        anhaengen(mitte, zurueck)
+
         beiSignal(anmeldeknopf, "clicked") { [weak self] in self?.anmelden() }
-        for feld in [serverfeld, benutzerfeld, passwortfeld] {
-            beiSignal(feld, "activate") { [weak self] in self?.anmelden() }
+        beiSignal(passwortfeld, "activate") { [weak self] in self?.anmelden() }
+        beiSignal(benutzerfeld, "activate") { [weak self] in self?.anmelden() }
+        beiSignal(zurueck, "clicked") { [weak self] in
+            guard let self else { return }
+            gtk_stack_set_visible_child_name(OpaquePointer(self.anmeldeschritte), "server")
         }
         return mitte
     }
@@ -124,52 +185,95 @@ final class App: @unchecked Sendable {
         gtk_editable_get_text(OpaquePointer(feld)).map { String(cString: $0) } ?? ""
     }
 
+    private func serverstandZeigen(_ s: String) {
+        gtk_label_set_text(OpaquePointer(serverstand), s)
+    }
+
     private func anmeldestandZeigen(_ s: String) {
         gtk_label_set_text(OpaquePointer(anmeldestand), s)
     }
 
-    private func anmelden() {
+    // MARK: Schritt eins — verbinden
+
+    private func verbinden() {
         guard !meldetGerade else { return }
-
         let eingabe = text(serverfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        let benutzer = text(benutzerfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        let passwort = text(passwortfeld)
+        guard !eingabe.isEmpty else { serverstandZeigen("Trag erst eine Adresse ein."); return }
 
-        guard !eingabe.isEmpty else { anmeldestandZeigen("Trag erst eine Adresse ein."); return }
-        guard !benutzer.isEmpty else { anmeldestandZeigen("Und einen Benutzernamen."); return }
-
-        // Dieselbe Regel wie auf allen Apple-Plattformen: ohne Schema bekommt
-        // eine Adresse `https` vorgesetzt, außer sie sieht nach Heimnetz aus.
+        // Dieselbe Regel wie überall: ohne Schema bekommt eine Adresse
+        // `https` vorgesetzt, außer sie sieht nach Heimnetz aus.
         guard let url = AppModelURLNormalizer.normalize(eingabe) else {
-            anmeldestandZeigen("Mit dieser Adresse kann ich nichts anfangen.")
+            serverstandZeigen("Mit dieser Adresse kann ich nichts anfangen.")
             return
         }
 
         meldetGerade = true
-        gtk_widget_set_sensitive(anmeldeknopf, 0)
-        gtk_button_set_label(alsKnopf(anmeldeknopf), "Melde an …")
-        anmeldestandZeigen("Frage \(url.absoluteString) …")
+        gtk_widget_set_sensitive(verbindeknopf, 0)
+        gtk_button_set_label(alsKnopf(verbindeknopf), "Verbinde …")
+        serverstandZeigen("Frage \(url.absoluteString) …")
 
         Task.detached { [self] in
-            let neuerClient = JellyfinClient(baseURL: url,
-                                             deviceID: Geraet.kennung,
-                                             deviceName: Geraet.name)
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
             do {
-                let info = try? await neuerClient.publicSystemInfo()
-                let sitzung = try await neuerClient.authenticate(username: benutzer,
-                                                                 password: passwort)
+                let info = try await c.publicSystemInfo()
+                let name = info.serverName ?? url.host() ?? "Server"
+                let fassung = info.version ?? "?"
+                aufHauptfaden {
+                    self.verbindenFertig()
+                    self.serverURL = url
+                    gtk_label_set_text(OpaquePointer(self.serverzeile), name)
+                    gtk_label_set_text(OpaquePointer(self.fassungszeile), "Jellyfin \(fassung)")
+                    self.serverstandZeigen("")
+                    gtk_stack_set_visible_child_name(OpaquePointer(self.anmeldeschritte), "konto")
+                    gtk_widget_grab_focus(self.benutzerfeld)
+                }
+            } catch {
+                aufHauptfaden {
+                    self.verbindenFertig()
+                    self.serverstandZeigen("Ging nicht: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private func verbindenFertig() {
+        meldetGerade = false
+        gtk_widget_set_sensitive(verbindeknopf, 1)
+        gtk_button_set_label(alsKnopf(verbindeknopf), "Verbinden")
+    }
+
+    // MARK: Schritt zwei — anmelden
+
+    private func anmelden() {
+        guard !meldetGerade, let url = serverURL else { return }
+        let benutzer = text(benutzerfeld).trimmingCharacters(in: .whitespacesAndNewlines)
+        let passwort = text(passwortfeld)
+        guard !benutzer.isEmpty else { anmeldestandZeigen("Trag einen Benutzernamen ein."); return }
+
+        meldetGerade = true
+        gtk_widget_set_sensitive(anmeldeknopf, 0)
+        gtk_button_set_label(alsKnopf(anmeldeknopf), "Melde an …")
+        anmeldestandZeigen("")
+
+        let servername = gtk_label_get_text(OpaquePointer(serverzeile)).map { String(cString: $0) }
+
+        Task.detached { [self] in
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
+            do {
+                let sitzung = try await c.authenticate(username: benutzer, password: passwort)
                 Speicher.schreiben(.init(serverURL: url,
                                          token: sitzung.accessToken,
                                          benutzerID: sitzung.userID,
                                          benutzername: benutzer,
-                                         servername: info?.serverName))
+                                         servername: servername))
                 aufHauptfaden {
                     self.anmeldungFertig()
+                    gtk_editable_set_text(OpaquePointer(self.passwortfeld), "")
                     self.sitzungUebernehmen(serverURL: url,
-                                             token: sitzung.accessToken,
-                                             benutzerID: sitzung.userID,
-                                             benutzername: benutzer,
-                                             servername: info?.serverName)
+                                            token: sitzung.accessToken,
+                                            benutzerID: sitzung.userID,
+                                            benutzername: benutzer,
+                                            servername: servername)
                 }
             } catch {
                 aufHauptfaden {
@@ -240,7 +344,9 @@ final class App: @unchecked Sendable {
         adressen = nil
         leeren(reihenstapel)
         gtk_editable_set_text(OpaquePointer(passwortfeld), "")
-        anmeldestandZeigen("Abgemeldet.")
+        anmeldestandZeigen("")
+        serverstandZeigen("Abgemeldet.")
+        gtk_stack_set_visible_child_name(OpaquePointer(anmeldeschritte), "server")
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "anmeldung")
     }
 
