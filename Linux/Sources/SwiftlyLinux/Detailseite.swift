@@ -155,22 +155,18 @@ extension App {
         anhaengen(seite, heldenkopf(titel))
 
 
-        // **Der Auslauf des Tons liegt hinter dem Unterbau, nicht davor.**
-        // 260 Punkte nach `grund`, wie auf dem Mac — nur trägt ihn hier ein
-        // Überzug hinter dem Inhalt, damit die ersten Reihen darin liegen und
-        // nicht darunter.
-        let unterraum: Widget! = gtk_overlay_new()
-        let auslauf: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
-        gtk_widget_add_css_class(auslauf, "swiftly-tonauslauf")
-        gtk_widget_set_size_request(auslauf, -1, 260)
-        gtk_widget_set_valign(auslauf, GTK_ALIGN_START)
-        gtk_overlay_set_child(OpaquePointer(unterraum), auslauf)
-
+        // **Der Auslauf ist ein Anstrich, kein Widget.**
+        //
+        // Erst stand er als eigene Box in einem Überzug hinter dem Unterbau —
+        // und ein `GtkOverlay` nimmt die Höhe seines **Hauptkinds**. Damit war
+        // die ganze Seite auf 260 Punkte gedeckelt, und Scrollen ging gar
+        // nicht mehr. Ein Hintergrundverlauf am Unterbau selbst tut dasselbe,
+        // liegt von sich aus hinter dem Inhalt und misst nichts.
         let unten = stapel(GTK_ORIENTATION_VERTICAL, abstand: 26)
+        gtk_widget_add_css_class(unten, "swiftly-tonauslauf")
         gtk_widget_set_margin_top(unten, 26)
         gtk_widget_set_margin_bottom(unten, Int32(Stil.randAbstand))
-        gtk_overlay_add_overlay(OpaquePointer(unterraum), unten)
-        anhaengen(seite, unterraum)
+        anhaengen(seite, unten)
 
         if titel.type == "Series" {
             serienunterbau(titel, in: unten)
@@ -245,6 +241,10 @@ extension App {
         // `resize` erfahren wir die Breite, die es in GTK sonst nirgends zu
         // holen gibt.
         let mass: Widget! = gtk_drawing_area_new()
+        // **Sie misst, sie malt nicht.** Ohne das gibt ihr das Systemthema
+        // einen eigenen Grund — und der blitzte beim Verschieben des Fensters
+        // als heller Saum um das Kopfbild auf.
+        gtk_widget_add_css_class(mass, "swiftly-blank")
         gtk_widget_set_size_request(mass, -1, Int32(Stil.heldHoehe))
         gtk_overlay_set_child(OpaquePointer(kopf), mass)
 

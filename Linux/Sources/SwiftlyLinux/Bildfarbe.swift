@@ -159,9 +159,13 @@ enum Tonblatt {
         /* Die Kopfzone trägt den Ton gleichmäßig — nur so kann keine
            übermalte Stelle danebenliegen. */
         .swiftly-kopfton { background-color: \(t(1)); }
-        /* Und darunter läuft er über 260 Punkte nach `grund` aus. */
+        /* Und darunter läuft er über 260 Punkte nach `grund` aus — als
+           Anstrich am Unterbau, damit er nichts misst. */
         .swiftly-tonauslauf {
-            background-image: linear-gradient(to bottom, \(t(1)), \(Stil.grund));
+            background-color: \(Stil.grund);
+            background-image: linear-gradient(to bottom,
+                \(t(1)) 0px, \(Stil.grund) 260px);
+            background-repeat: no-repeat;
         }
         .swiftly-blende-quer {
             background-image: linear-gradient(to right,

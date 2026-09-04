@@ -459,6 +459,9 @@ enum Stil {
         }
         .swiftly-kopfton { background-color: \(grund); }
         .swiftly-tonauslauf { background-color: \(grund); }
+        /* Malt nichts. Für Widgets, die nur ein Maß beisteuern. */
+        .swiftly-blank { background-color: transparent; background-image: none; }
+        drawingarea { background-color: transparent; }
 
         /* MARK: Die Leiste, die beim Scrollen kommt
            Wörtlich wie auf iPhone, iPad und Mac: unten eine Haarlinie,
