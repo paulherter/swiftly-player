@@ -177,10 +177,21 @@ extension App {
     /// Kulisse rechts, Block links. Höhe 380 (`Stil.heldHoehe`).
     private func heldenkopf(_ titel: Item) -> Widget! {
         let kopf: Widget! = gtk_overlay_new()
-        gtk_widget_set_size_request(kopf, -1, Int32(Stil.heldHoehe))
         gtk_widget_set_hexpand(kopf, 1)
 
-        gtk_overlay_set_child(OpaquePointer(kopf), kulisse(titel))
+        // **Das Hauptkind gibt das Maß, sonst nichts.** Ein `GtkOverlay`
+        // legt seinem Hauptkind die volle Fläche zu und übergeht dessen
+        // Ausrichtung — die Kulisse stand deshalb über die ganze Breite und
+        // über 570 statt 380 Punkt Höhe. Damit fiel auch der Verlauf über
+        // eine viel größere Strecke, und das Bild endete unten mit einer
+        // sichtbaren Kante. Überzüge dagegen achten auf Ausrichtung und
+        // Wunschgröße; also ist das Hauptkind eine leere Box mit dem Maß,
+        // und Kulisse wie Block liegen darüber.
+        let mass: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        gtk_widget_set_size_request(mass, -1, Int32(Stil.heldHoehe))
+        gtk_overlay_set_child(OpaquePointer(kopf), mass)
+
+        gtk_overlay_add_overlay(OpaquePointer(kopf), kulisse(titel))
         gtk_overlay_add_overlay(OpaquePointer(kopf), heldenblock(titel))
         return kopf
     }
@@ -359,30 +370,95 @@ extension App {
         }
 
         // **Merkliste schaltet sofort um, ohne Rückfrage** (D6). Der Zustand
-        // des Knopfes ist die Antwort.
+        // des Knopfes ist die Antwort. Das Zeichen ist ein Lesezeichen, kein
+        // Stern — „Merkliste erreicht eigentlich das Merklistensymbol an
+        // sich", und auf dem Mac steht dort `bookmark`.
         var gemerkt = titel.userData?.isFavorite ?? false
-        let merk = nebenknopf(gemerkt ? "starred-symbolic" : "non-starred-symbolic",
-                              aktiv: gemerkt)
+        let merk = nebenknopf("user-bookmarks-symbolic", aktiv: gemerkt)
         beiSignal(merk, "clicked") { [weak self] in
             guard let self, let client = self.client else { return }
             gemerkt.toggle()
-            knopfzustand(merk, aktiv: gemerkt,
-                         symbol: gemerkt ? "starred-symbolic" : "non-starred-symbolic")
+            knopfzustand(merk, aktiv: gemerkt, symbol: "user-bookmarks-symbolic")
             let neu = gemerkt
             Task.detached { try? await client.setzeMerkliste(itemID: titel.id, an: neu) }
         }
         anhaengen(reihe, merk)
 
-        var istGesehen = titel.istGesehen
-        let haken = nebenknopf("object-select-symbolic", aktiv: istGesehen)
-        beiSignal(haken, "clicked") { [weak self] in
-            guard let self, let client = self.client else { return }
-            istGesehen.toggle()
-            knopfzustand(haken, aktiv: istGesehen, symbol: "object-select-symbolic")
-            let neu = istGesehen
-            Task.detached { try? await client.setzeGesehen(itemID: titel.id, an: neu) }
-        }
-        anhaengen(reihe, haken)
+        // **Vier Ziele, nicht fünf.** „Gesehen" und „Trailer" sind in die
+        // Mehr-Liste gewandert; fünf beschriftete Knöpfe waren zu viel für
+        // eine Reihe. So steht es auf dem Apple TV und auf dem Mac.
+        let mehr = nebenknopf("view-more-symbolic")
+        beiSignal(mehr, "clicked") { [weak self] in self?.mehrZeigen(titel, an: mehr) }
+        anhaengen(reihe, mehr)
         return reihe
+    }
+
+    // MARK: Mehr
+
+    /// **Kleine Entscheidungen klappen dort auf, wo sie ausgelöst wurden**
+    /// (E5). Ein `GtkPopover` ist dafür das Mittel von GTK — er trägt keine
+    /// eigene Gestalt, die wir nicht überschreiben könnten, und schließt von
+    /// selbst, wenn man daneben klickt.
+    private func mehrZeigen(_ titel: Item, an knopf: Widget!) {
+        let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_set_size_request(liste, 230, -1)
+
+        var gesehen = titel.istGesehen
+        let ersteZeile = gesehen ? "Als ungesehen markieren" : "Als gesehen markieren"
+
+        let tafel: Widget! = gtk_popover_new()
+        gtk_widget_add_css_class(tafel, "swiftly-mehr")
+        gtk_popover_set_child(OpaquePointer(tafel), liste)
+        gtk_popover_set_position(OpaquePointer(tafel), GTK_POS_BOTTOM)
+        gtk_widget_set_parent(tafel, knopf)
+
+        anhaengen(liste, handlungszeile("object-select-symbolic", ersteZeile) {
+            [weak self] in
+            guard let self, let client = self.client else { return }
+            gesehen.toggle()
+            let neu = gesehen
+            Task.detached { try? await client.setzeGesehen(itemID: titel.id, an: neu) }
+            gtk_popover_popdown(OpaquePointer(tafel))
+        })
+        anhaengen(liste, handlungszeile("video-x-generic-symbolic", "Trailer") {
+            [weak self] in
+            gtk_popover_popdown(OpaquePointer(tafel))
+            self?.trailerStarten(titel)
+        })
+        anhaengen(liste, handlungszeile("view-refresh-symbolic", "Metadaten auffrischen") {
+            [weak self] in
+            guard let client = self?.client else { return }
+            Task.detached { try? await client.metadatenAuffrischen(titel.id) }
+            gtk_popover_popdown(OpaquePointer(tafel))
+        })
+        gtk_popover_popup(OpaquePointer(tafel))
+    }
+
+    private func handlungszeile(_ symbol: String, _ text: String,
+                                _ auswahl: @escaping () -> Void) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-handlung")
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
+        let bild: Widget! = gtk_image_new_from_icon_name(symbol)
+        gtk_image_set_pixel_size(OpaquePointer(bild), 14)
+        anhaengen(reihe, bild)
+        let l = beschriftung(text, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        gtk_widget_set_hexpand(l, 1)
+        anhaengen(reihe, l)
+        gtk_button_set_child(alsKnopf(knopf), reihe)
+        beiSignal(knopf, "clicked", auswahl)
+        return knopf
+    }
+
+    private func trailerStarten(_ titel: Item) {
+        guard let client else { return }
+        Task.detached { [self] in
+            let filme = (try? await client.trailer(zu: titel.id)) ?? []
+            aufHauptfaden {
+                guard let film = filme.first else { return }
+                self.starte(film, ab: 0)
+            }
+        }
     }
 }

@@ -302,19 +302,28 @@ enum Stil {
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
            Dieselbe Wirkung: gleiche Farbe, keine Linie, kein Schatten. */
+        /* **Die Leiste ist so hoch wie ihre Knöpfe, nicht wie ihre Regel.**
+           `min-height` allein hat nichts gebracht: die Fensterknöpfe bringen
+           vom Systemthema ihre eigene Mindesthöhe samt Innenabstand mit, und
+           die gewinnt. Also beides. Auf dem Mac gibt es hier gar keine Leiste
+           — die Ampel schwebt über der Seitenleiste; unter Wayland gehört die
+           Titelzeile dem Fenster, sie soll nur so wenig Platz nehmen wie
+           möglich. */
         headerbar {
             background-color: \(flaeche);
             background-image: none;
             border: none;
             box-shadow: none;
-            /* Halb so hoch wie zuvor. Auf dem Mac ist da gar keine Leiste —
-               die Ampel schwebt über der Seitenleiste. Unter Wayland gehört
-               die Titelzeile dem Fenster, also bleibt sie; sie soll aber so
-               wenig Platz nehmen wie möglich. */
-            min-height: 19px;
+            min-height: 0;
             padding: 0 4px;
         }
-        headerbar windowcontrols { margin: 0; }
+        headerbar windowcontrols { margin: 0; min-height: 0; }
+        headerbar windowcontrols button {
+            min-height: 20px;
+            min-width: 20px;
+            padding: 0;
+            margin: 0 2px;
+        }
 
         /* Der Fortschrittsbalken auf einer „Weiterschauen"-Kachel: dunkle
            Spur über die ganze Breite, darauf der Akzent so weit, wie gesehen
@@ -395,7 +404,12 @@ enum Stil {
             border: none;
         }
         button.swiftly-zurueck image { color: \(schrift); -gtk-icon-size: 20px; }
-        button.swiftly-zurueck:hover { background-color: rgba(255,255,255,0.08); }
+        /* **Kein Grund, auch nicht beim Schweben.** Auf dem Mac ist es ein
+           blanker Winkel mit `.buttonStyle(.plain)` — kein Rahmen, keine
+           Fläche. Ein Kasten, der nur unter dem Zeiger erscheint, ist eine
+           Zutat, die dort nicht steht. */
+        button.swiftly-zurueck:hover { background-color: transparent; }
+        button.swiftly-zurueck:hover image { color: rgba(255,255,255,0.72); }
 
         /* **Die Kulisse blendet nach links und nach unten aus.**
            Auf dem Mac ist das eine Maske, weil der Grund sich einfärben kann
@@ -556,6 +570,27 @@ enum Stil {
             border: 1px solid \(rand);
             border-radius: \(eckeFeld)px;
         }
+
+        /* Die Mehr-Liste. GTKs Popover bringt einen eigenen Grund mit —
+           der wird hier überschrieben, sonst stünde Apples… nein: KDEs
+           Gestalt darin. */
+        popover.swiftly-mehr > contents {
+            background-color: \(erhoeht);
+            border: 1px solid \(rand);
+            border-radius: \(eckeFeld)px;
+            padding: 6px;
+            box-shadow: 0 10px 22px rgba(0,0,0,0.45);
+        }
+        popover.swiftly-mehr > arrow { background-color: transparent; border: none; }
+        button.swiftly-handlung {
+            min-height: 36px;
+            padding: 0 10px;
+            border-radius: \(ecke)px;
+            background-color: transparent;
+            border: none;
+        }
+        button.swiftly-handlung:hover { background-color: rgba(255,255,255,0.08); }
+        button.swiftly-handlung image { color: \(schriftLeise); }
 
         scrollbar { background-color: transparent; }
         /* **Den Rand des Systemthemas mit zurücksetzen.** Breeze legt auf
