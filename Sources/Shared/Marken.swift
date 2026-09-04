@@ -31,7 +31,7 @@ enum Marke {
     static let wortmarkeSchrift = Markenpfade.wortmarke
 
     /// Das Zeichen über dem „i“.
-    static let wortmarkeAkzent = "M1407.4 -748.5 L1508.1 -690.8 A28.0 28.0 0 0 1 1508.1 -642.2 L1407.4 -584.5 A28.0 28.0 0 0 1 1365.5 -608.8 L1365.5 -724.2 A28.0 28.0 0 0 1 1407.4 -748.5 Z"
+    static let wortmarkeAkzent = Markenpfade.wortmarkeAkzent
 
     /// Die Abspielform im App-Zeichen.
     static let signetForm = "M440.1,280l285,163.2c38,21.7,51.2,70,29.6,108-7,12.3-17.2,22.5-29.6,29.6l-285,163.2c-37.9,21.8-86.3,8.6-108.1-29.3-6.9-12-10.5-25.6-10.5-39.4v-326.6c0-43.7,35.5-79.2,79.2-79.2,13.8,0,27.4,3.6,39.4,10.5Z"

@@ -101,23 +101,22 @@ final class App: @unchecked Sendable {
 
     /// Schritt eins: wo steht der Server?
     private func serverSchrittBauen() -> Widget! {
-        let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 12)
+        let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
         raender(mitte, 40)
         gtk_widget_set_valign(mitte, GTK_ALIGN_CENTER)
         gtk_widget_set_halign(mitte, GTK_ALIGN_CENTER)
-        gtk_widget_set_size_request(mitte, 380, -1)
+        gtk_widget_set_size_request(mitte, 460, -1)
 
-        anhaengen(mitte, Stil.wortmarke(hoehe: 46))
-        anhaengen(mitte, beschriftung("Wo steht dein Jellyfin?", stil: "dim-label"))
+        anhaengen(mitte, Stil.wortmarke(hoehe: 62))
+        anhaengen(mitte, beschriftung("Wo steht dein Jellyfin-Server?", stil: "dim-label"))
 
         serverfeld = gtk_entry_new()
         gtk_entry_set_placeholder_text(alsFeld(serverfeld), "tv.beispiel.de")
-        gtk_widget_set_margin_top(serverfeld, 10)
+        // Die Weltkugel im Feld — auf dem Mac steht sie dort ebenfalls.
+        gtk_entry_set_icon_from_icon_name(alsFeld(serverfeld),
+                                          GTK_ENTRY_ICON_PRIMARY, "globe-symbolic")
+        gtk_widget_set_margin_top(serverfeld, 26)
         anhaengen(mitte, serverfeld)
-
-        let hinweis = beschriftung("Kein https:// nötig — das ergänzen wir.", stil: "caption")
-        gtk_widget_add_css_class(hinweis, "dim-label")
-        anhaengen(mitte, hinweis)
 
         verbindeknopf = gtk_button_new_with_label("Verbinden")
         gtk_widget_add_css_class(verbindeknopf, "swiftly-haupt")

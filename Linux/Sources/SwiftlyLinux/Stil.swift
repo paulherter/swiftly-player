@@ -71,7 +71,7 @@ enum Stil {
             color: \(schrift);
             border: 1px solid rgba(255,255,255,0.10);
             border-radius: \(ecke)px;
-            padding: 9px 12px;
+            padding: 12px 14px;
             caret-color: \(akzent);
         }
         entry:focus {
@@ -80,6 +80,7 @@ enum Stil {
             box-shadow: none;
         }
         entry placeholder { color: \(schriftSehrLeise); }
+        entry image { color: \(schriftLeise); margin-right: 8px; }
 
         button {
             background-image: none;
@@ -87,7 +88,7 @@ enum Stil {
             color: \(schrift);
             border: 1px solid rgba(255,255,255,0.10);
             border-radius: \(ecke)px;
-            padding: 9px 18px;
+            padding: 12px 20px;
             font-weight: 600;
         }
         button:hover { background-color: rgba(255,255,255,0.12); }
@@ -112,9 +113,12 @@ enum Stil {
         }
         button.flat:hover { background-color: rgba(255,255,255,0.08); color: \(schrift); }
 
+        /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
+           Dieselbe Wirkung: gleiche Farbe, keine Linie, kein Schatten. */
         headerbar {
             background-color: \(grund);
-            border-bottom: 1px solid rgba(255,255,255,0.07);
+            background-image: none;
+            border: none;
             box-shadow: none;
             min-height: 44px;
         }
@@ -165,6 +169,7 @@ enum Stil {
         viewBox="\(r.x) \(r.y) \(r.breite) \(r.hoehe)" \
         width="\(Int(Double(hoehe) * r.breite / r.hoehe))" height="\(hoehe)">
         <path d="\(Markenpfade.wortmarke)" fill="\(schrift)"/>
+        <path d="\(Markenpfade.wortmarkeAkzent)" fill="\(markeAkzent)"/>
         </svg>
         """
         let ziel = URL(fileURLWithPath: NSTemporaryDirectory())
