@@ -1052,6 +1052,7 @@ struct PlayerScreen: View {
                                         untertitel: model.untertitelSprache,
                                         automatisch: model.untertitelAutomatisch)
             }
+            if auftrag.spurenAnwenden { surface.kanaeleNachmessen() }
             // Waehrend des Wechsels schweigen. Sonst geht ein Fortschritt
             // fuer den **alten** Titel hinaus, nachdem sein Ende schon
             // gemeldet wurde — die Reihenfolge, die C4 zusagt, waere gebrochen.
