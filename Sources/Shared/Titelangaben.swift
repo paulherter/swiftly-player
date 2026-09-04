@@ -9,62 +9,18 @@ import JellyfinKit
 /// weil die Prüfung auf `> 0` fehlte). Solche Angaben gehören einmal
 /// aufgeschrieben und von beiden benutzt.
 
-/// „2 Std. 8 Min." oder „94 Min."
-func laufzeit(_ sekunden: Double) -> String {
-    let m = Int(sekunden / 60)
-    return m >= 60 ? String(localized: "\(m / 60) Std. \(m % 60) Min.")
-                   : String(localized: "\(m) Min.")
-}
-
-/// „1:23 h" oder „42 min" — für den Fortsetzen-Knopf.
-func zeitText(_ sekunden: Double) -> String {
-    let gesamt = Int(sekunden)
-    let (h, m) = (gesamt / 3600, (gesamt % 3600) / 60)
-    return h > 0 ? "\(h):\(String(format: "%02d", m)) h" : "\(m) min"
-}
-
-/// „7,8" statt „7.8" — Jellyfin liefert Punkt, Deutsch schreibt Komma.
-func komma(_ wert: Double) -> String {
-    String(format: "%.1f", wert).replacingOccurrences(of: ".", with: ",")
-}
+// **`laufzeit`, `zeitText`, `komma`, `nebenzeile` und `fortsetzenAb` liegen
+// jetzt im Paket** (`JellyfinKit/Titelangaben.swift`). Sie waren hier an
+// `String(localized:)` mit dem App-Katalog gebunden und damit fuer die
+// Linux-Fassung unerreichbar — die haette sie abschreiben muessen, und genau
+// daran ist die Zeile schon einmal auseinandergelaufen (auf tvOS stand bei
+// Serien „0 Min.").
+//
+// Im Paket laufen sie ueber `uebersetzt(…)` und die `.lproj`-Dateien. Was
+// hier bleibt, haengt an `LocalizedStringKey` oder am App-Katalog und kann
+// nicht mit.
 
 extension Item {
-
-    /// Jahr, Laufzeit und Genre in einer Zeile.
-    ///
-    /// Serien haben keine eigene Laufzeit — der Server liefert dort 0, und
-    /// ohne die Prüfung stünde „0 Min." in der Zeile.
-    var nebenzeile: String {
-        var teile: [String] = []
-        if let jahr = productionYear { teile.append(String(jahr)) }
-        if let sekunden = runtimeSeconds, sekunden > 0 { teile.append(laufzeit(sekunden)) }
-        if let genres, !genres.isEmpty {
-            teile.append(genres.prefix(2).joined(separator: ", "))
-        }
-        return teile.joined(separator: " · ")
-    }
-
-    /// Sekunde, ab der fortgesetzt wird — oder nichts.
-    ///
-    /// Die Regel steht in ``Fortsetzstelle`` im Paket, mit beiden Grenzen und
-    /// mit Tests. Hier stand sie einmal halb: unter einer Minute von vorn,
-    /// aber am Ende ohne Grenze — eine durchgelaufene Folge lieferte damit
-    /// ihr eigenes Ende als Fortsetzstelle.
-    var fortsetzenAb: Double? {
-        let stelle = userData?.playbackPositionTicks.map { Double($0) / 10_000_000 }
-        let laufzeit = runTimeTicks.map { Double($0) / 10_000_000 }
-        let ergebnis = Fortsetzstelle.ab(position: stelle, laufzeit: laufzeit)
-        // **Messung.** Zweimal ist die App in die naechste Folge gesprungen,
-        // weil hier das Dateiende herauskam. Beim zweiten Mal war die Regel
-        // schon da und hat nicht gegriffen — vermutlich, weil die Laufzeit
-        // fehlt. Vermutlich reicht nicht.
-        if let stelle, stelle > 60 {
-            Protokoll.schreib("[Fortsetzen] Stelle \(Int(stelle)) s, Laufzeit "
-                + (laufzeit.map { "\(Int($0)) s" } ?? "UNBEKANNT")
-                + " → \(ergebnis.map { "\(Int($0)) s" } ?? "von vorn")")
-        }
-        return ergebnis
-    }
 
     /// Die Zeile unter einem Suchtreffer: „Furious · S1 E4 · 52 Min."
     ///
