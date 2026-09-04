@@ -28,6 +28,12 @@ typealias Widget = UnsafeMutablePointer<GtkWidget>
 @inline(__always) func alsFenster(_ w: Widget!) -> UnsafeMutablePointer<GtkWindow>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkWindow>.self)
 }
+@inline(__always) func alsSkala(_ w: Widget!) -> UnsafeMutablePointer<GtkScale>! {
+    unsafeBitCast(w, to: UnsafeMutablePointer<GtkScale>.self)
+}
+@inline(__always) func alsBereich(_ w: Widget!) -> UnsafeMutablePointer<GtkRange>! {
+    unsafeBitCast(w, to: UnsafeMutablePointer<GtkRange>.self)
+}
 @inline(__always) func alsFeld2(_ w: Widget!) -> UnsafeMutablePointer<GtkFixed>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkFixed>.self)
 }

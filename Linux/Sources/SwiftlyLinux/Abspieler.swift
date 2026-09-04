@@ -163,7 +163,7 @@ final class Abspieler {
         guard let textur = gdk_memory_texture_new(Int32(breite), Int32(hoehe),
                                                   GDK_MEMORY_R8G8B8,
                                                   bytes, gsize(zeilentakt)) else { return }
-        gtk_picture_set_paintable(OpaquePointer(bildfeld), OpaquePointer(textur))
+        gtk_picture_set_paintable(OpaquePointer(bildfeld), textur)
         g_object_unref(UnsafeMutableRawPointer(textur))
     }
 

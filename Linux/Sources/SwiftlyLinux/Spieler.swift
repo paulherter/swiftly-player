@@ -118,7 +118,7 @@ extension App {
         spielerZeit = beschriftung("0:00", stil: "swiftly-zweitzeile")
         anhaengen(leiste, spielerZeit)
         spielerRegler = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.001)
-        gtk_scale_set_draw_value(OpaquePointer(spielerRegler), 0)
+        gtk_scale_set_draw_value(alsSkala(spielerRegler), 0)
         gtk_widget_add_css_class(spielerRegler, "swiftly-regler")
         gtk_widget_set_hexpand(spielerRegler, 1)
         beiSignal(spielerRegler, "change-value") { }
@@ -206,11 +206,17 @@ extension App {
             laeuft: abspieler.laeuft,
             hatTonspuren: abspieler.hatTonspuren)
 
-        let auftrag = Wiedergabetakt.rechnen(&spielstand, messung: messung,
-                                             stelltWiederHer: false,
-                                             sprungLaeuft: false,
-                                             amSchieben: false,
-                                             seitStart: seitOeffnen)
+        // **`Wiedergabetakt` ist `@MainActor`, dieser Rückruf nicht.**
+        // GTKs Taktgeber läuft auf dem Hauptfaden des Prozesses, und das ist
+        // derselbe, den Swift `MainActor` nennt. `assumeIsolated` sagt genau
+        // das — und prüft es zur Laufzeit, statt es zu behaupten.
+        let auftrag = MainActor.assumeIsolated {
+            Wiedergabetakt.rechnen(&spielstand, messung: messung,
+                                   stelltWiederHer: false,
+                                   sprungLaeuft: false,
+                                   amSchieben: false,
+                                   seitStart: seitOeffnen)
+        }
 
         zeitenZeigen()
 
@@ -253,7 +259,7 @@ extension App {
         if spielstand.dauer > 0 {
             let rest = max(0, spielstand.dauer - spielstand.position)
             gtk_label_set_text(OpaquePointer(spielerRest), "−" + zeitText(rest))
-            gtk_range_set_value(OpaquePointer(spielerRegler),
+            gtk_range_set_value(alsBereich(spielerRegler),
                                 spielstand.position / spielstand.dauer)
         }
         knopfzustand(spielerSpieltaste, aktiv: false,
@@ -292,7 +298,9 @@ extension App {
                 }
                 self.laufenderTitel = naechste
                 self.laufenderPlan = plan
-                Wiedergabetakt.neuerTitel(&self.spielstand, startGemeldet: false)
+                MainActor.assumeIsolated {
+                    Wiedergabetakt.neuerTitel(&self.spielstand, startGemeldet: false)
+                }
                 self.spielstand.erstesBildDa = false
                 self.seitOeffnen = Date()
                 // Die nächste Folge startet **von vorn** (B5).
