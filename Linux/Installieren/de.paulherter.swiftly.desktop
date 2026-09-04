@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Swiftly
+GenericName=Jellyfin-Client
+GenericName[en]=Jellyfin Client
+Comment=Filme und Serien vom eigenen Jellyfin-Server — ohne Transkodierung
+Comment[en]=Movies and shows from your own Jellyfin server — never transcoded
+Exec=swiftly-jellyfin %U
+Icon=de.paulherter.swiftly
+Terminal=false
+Categories=AudioVideo;Video;Player;TV;
+Keywords=Jellyfin;Media;Video;Film;Serie;Streaming;
+Keywords[en]=Jellyfin;Media;Video;Movie;Show;Streaming;
+StartupNotify=true
+StartupWMClass=SwiftlyLinux
