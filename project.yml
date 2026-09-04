@@ -197,13 +197,10 @@ targets:
       - path: Sources/Shared/Keychain.swift
       - path: Sources/Shared/Marken.swift
       - path: Sources/Shared/Routen.swift
-      - path: Sources/Shared/Titelangaben.swift
       - path: Sources/Shared/Titelhandlung.swift
       # Container, Codec, Untertitel im Dateiauszug — dieselbe Auskunft
       # überall (VERHALTEN.md D5).
-      - path: Sources/Shared/Dateiangaben.swift
       # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
-      - path: Sources/Shared/Wiedergabewahlen.swift
       # Reihentitel, Plakette, Lader, Profilzeichen — die Bausteine ohne
       # Plattformmaße. Lagen dreimal da; die Maße gibt jetzt das Ziel als
       # Parameter mit, siehe `Plakette.fern` und `Lader.fern` in Stil.swift.
@@ -437,12 +434,9 @@ targets:
       # derselbe, nur die Darreichung ist eigen.
       - path: Sources/Shared/Titelhandlung.swift
       # Abgeleitete Angaben am Titel — Fortsetzstelle, Kontextzeile.
-      - path: Sources/Shared/Titelangaben.swift
       # Container, Codec, Untertitel im Dateiauszug — dieselbe Auskunft
       # überall (VERHALTEN.md D5).
-      - path: Sources/Shared/Dateiangaben.swift
       # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
-      - path: Sources/Shared/Wiedergabewahlen.swift
       # Now Playing und die Medientasten der Tastatur. Der
       # AVAudioSession-Teil darin steht unter `#if !os(macOS)` — den Ton
       # mischt und leitet macOS selbst.

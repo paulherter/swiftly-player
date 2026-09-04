@@ -54,3 +54,14 @@
 "Unbegrenzt" = "Unbegrenzt";
 "%lld Mbit/s" = "%lld Mbit/s";
 "Wie die Datei" = "Wie die Datei";
+
+"Film" = "Film";
+"Serie" = "Serie";
+"Folge" = "Folge";
+"Keine" = "Keine";
+"Lädt…" = "Lädt…";
+"Keine Folgen" = "Keine Folgen";
+"Noch %d Minuten" = "Noch %d Minuten";
+"Fortsetzen %@" = "Fortsetzen %@";
+"Abspielen %@" = "Abspielen %@";
+"%d Staffeln" = "%d Staffeln";
