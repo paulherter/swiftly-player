@@ -181,16 +181,30 @@ final class App: @unchecked Sendable {
     /// Die Animation ist durch: die Decke blendet weg, darunter steht alles
     /// längst fertig.
     private func startbildWeg() {
-        guard let lauf = startanimation, let bild = startbild else { return }
+        guard startanimation != nil, let bild = startbild else { return }
         startanimation = nil
+        gtk_widget_set_can_target(bild, 0)
         sanft(auf: bild, von: 1, nach: 0) { gtk_widget_set_opacity(bild, $0) }
+        // **Das Verschwinden darf nicht am Bildtakt hängen.**
+        //
+        // `sanft` blendet über `gtk_widget_add_tick_callback` — und genau der
+        // sprang hier schon einmal nicht an. Springt er wieder nicht an,
+        // bleibt die Deckkraft auf eins und der schwarze Deckel liegen: die
+        // App startet dann in ein schwarzes Fenster. Der Wecker nimmt ihn
+        // hinterher in jedem Fall weg. Blendet es weich, sieht man ihn nicht;
+        // blendet es nicht, ist er trotzdem fort.
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: 340_000_000)
+            aufHauptfaden {
+                gtk_widget_set_opacity(bild, 0)
+                gtk_widget_set_visible(bild, 0)
+            }
+        }
         // **Die Decke bleibt hängen, sie wird nicht abgeräumt.** Ein Widget
         // wegzunehmen, während sein Bildtakt noch aussteht, ist die vierte
         // Falle. Unsichtbar und ohne Treffer kostet es nichts, und die
         // Animation gibt ihren Speicher selbst frei, sobald der Takt sich
         // abmeldet.
-        gtk_widget_set_can_target(bild, 0)
-        _ = lauf
     }
 
     // MARK: - Anmeldung
