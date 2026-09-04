@@ -1,0 +1,134 @@
+import CGtk
+import Foundation
+import JellyfinKit
+
+/// **Die vorherrschende Farbe eines Bildes.**
+///
+/// Apple TV legt über sein Coverbild keinen schwarzen, sondern einen
+/// **eingefärbten** Auslauf: unten geht das Bild in einen Ton über, der aus
+/// ihm selbst stammt. Deshalb wirkt die Seite wie aus einem Guss, während ein
+/// schwarzer Verlauf das Bild abschneidet. Der Mac macht es genauso
+/// (`Sources/macOS/Bildfarbe.swift`), und die Regel dort ist knapp:
+///
+/// - Das Bild auf **einen** Punkt verkleinern — das ist der Mittelwert.
+/// - Daraus Farbton und Sättigung nehmen, die Sättigung auf **0,45** deckeln
+///   und die Helligkeit auf **0,26** setzen. Der Ton soll den Grund
+///   einfärben, nicht ersetzen; 26 % liegt nah an `grund` (5 %), bleibt aber
+///   erkennbar warm oder kalt.
+///
+/// **Den einen Punkt holt hier der Server**, nicht wir. Auf dem Mac wird das
+/// große Bild dafür noch einmal dekodiert — einige Millisekunden, und sie
+/// fielen genau ins Einfahren der Seite. Jellyfin kann jedes Bild auf ein
+/// gewünschtes Maß bringen; 16 Punkt breit sind ein paar hundert Byte und
+/// brauchen kein eigenes Nebenläufigkeitsproblem.
+enum Bildfarbe {
+
+    /// Der eingefärbte Grundton, oder `nil`, wenn nichts zu holen war.
+    static func ton(aus daten: Data) -> String? {
+        guard let bytes = daten.withUnsafeBytes({ puffer -> OpaquePointer? in
+            guard let basis = puffer.baseAddress else { return nil }
+            return OpaquePointer(g_bytes_new(basis, gsize(puffer.count)))
+        }) else { return nil }
+        defer { g_bytes_unref(UnsafeMutablePointer(bytes)) }
+
+        var fehler: UnsafeMutablePointer<GError>?
+        guard let textur = gdk_texture_new_from_bytes(UnsafeMutablePointer(bytes), &fehler) else {
+            if let fehler { g_error_free(fehler) }
+            return nil
+        }
+        defer { g_object_unref(UnsafeMutableRawPointer(textur)) }
+
+        let breite = Int(gdk_texture_get_width(textur))
+        let hoehe = Int(gdk_texture_get_height(textur))
+        guard breite > 0, hoehe > 0 else { return nil }
+
+        // `gdk_texture_download` liefert BGRA zu acht Bit.
+        var punkte = [UInt8](repeating: 0, count: breite * hoehe * 4)
+        punkte.withUnsafeMutableBytes { speicher in
+            guard let basis = speicher.baseAddress else { return }
+            gdk_texture_download(textur, basis.assumingMemoryBound(to: UInt8.self),
+                                 gsize(breite * 4))
+        }
+
+        var summeR = 0.0, summeG = 0.0, summeB = 0.0
+        for i in stride(from: 0, to: punkte.count, by: 4) {
+            summeB += Double(punkte[i])
+            summeG += Double(punkte[i + 1])
+            summeR += Double(punkte[i + 2])
+        }
+        let anzahl = Double(breite * hoehe) * 255
+        return farbe(r: summeR / anzahl, g: summeG / anzahl, b: summeB / anzahl)
+    }
+
+    /// Mittelwert zu Farbton und Sättigung, dann abgedunkelt und entsättigt.
+    private static func farbe(r: Double, g: Double, b: Double) -> String {
+        let hoch = max(r, g, b), tief = min(r, g, b), spanne = hoch - tief
+        guard spanne > 0, hoch > 0 else { return Stil.grund }
+
+        var farbton: Double
+        if hoch == r { farbton = (g - b) / spanne }
+        else if hoch == g { farbton = 2 + (b - r) / spanne }
+        else { farbton = 4 + (r - g) / spanne }
+        farbton /= 6
+        if farbton < 0 { farbton += 1 }
+
+        return alsHex(farbton: farbton,
+                      saettigung: min(spanne / hoch, 0.45),
+                      helligkeit: 0.26)
+    }
+
+    private static func alsHex(farbton: Double, saettigung: Double,
+                               helligkeit: Double) -> String {
+        let i = Int(farbton * 6) % 6
+        let f = farbton * 6 - Double(Int(farbton * 6))
+        let p = helligkeit * (1 - saettigung)
+        let q = helligkeit * (1 - f * saettigung)
+        let t = helligkeit * (1 - (1 - f) * saettigung)
+        let (r, g, b): (Double, Double, Double) = switch i {
+        case 0: (helligkeit, t, p)
+        case 1: (q, helligkeit, p)
+        case 2: (p, helligkeit, t)
+        case 3: (p, q, helligkeit)
+        case 4: (t, p, helligkeit)
+        default: (helligkeit, p, q)
+        }
+        return String(format: "#%02X%02X%02X",
+                      Int(r * 255), Int(g * 255), Int(b * 255))
+    }
+}
+
+/// **Ein zweites Stilblatt, nur für den Ton der offenen Seite.**
+///
+/// Das große Blatt in ``Stil`` steht fest; der Ton wechselt mit jedem Titel.
+/// Ein eigener Anbieter mit höherem Rang lässt sich austauschen, ohne alles
+/// andere neu zu laden — und weil immer nur eine Detailseite offen ist,
+/// genügt einer.
+enum Tonblatt {
+    nonisolated(unsafe) private static var anbieter: OpaquePointer?
+
+    static func setzen(_ ton: String) {
+        if anbieter == nil {
+            anbieter = OpaquePointer(gtk_css_provider_new())
+            if let anzeige = gdk_display_get_default(), let anbieter {
+                gtk_style_context_add_provider_for_display(anzeige, anbieter, 900)
+            }
+        }
+        guard let anbieter else { return }
+        gtk_css_provider_load_from_string(UnsafeMutablePointer(anbieter), """
+        .swiftly-kulisse { background-color: \(ton); }
+        .swiftly-blende-quer {
+            background-image: linear-gradient(to right,
+                \(ton) 0%, \(ton) 38%,
+                \(ton)F2 47.3%, \(ton)C7 56.0%, \(ton)80 65.9%,
+                \(ton)40 73.3%, \(ton)1A 81.4%, \(ton)05 90.7%,
+                \(ton)00 100%);
+        }
+        .swiftly-blende-hoch {
+            background-image: linear-gradient(to bottom,
+                \(ton)00 0%, \(ton)00 50%, \(ton)1F 60%,
+                \(ton)61 70%, \(ton)A8 80%, \(ton)DB 89%,
+                \(ton)F5 95%, \(ton) 100%);
+        }
+        """)
+    }
+}

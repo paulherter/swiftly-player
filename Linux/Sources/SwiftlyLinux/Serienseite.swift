@@ -206,6 +206,18 @@ extension App {
         }
         anhaengen(reihe, text)
 
+        // **Der Haken steht immer, wenn die Folge gesehen ist** — er ist die
+        // einzige Auskunft darüber in der Liste, und ohne ihn sieht eine
+        // durchgesehene Staffel aus wie eine unangetastete.
+        if folge.istGesehen {
+            let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+            gtk_image_set_pixel_size(OpaquePointer(haken), 14)
+            gtk_widget_add_css_class(haken, "swiftly-beleg")
+            gtk_widget_set_valign(haken, GTK_ALIGN_START)
+            gtk_widget_set_margin_top(haken, 2)
+            anhaengen(reihe, haken)
+        }
+
         gtk_button_set_child(alsKnopf(knopf), reihe)
         // **Eine Folge aus der Liste startet an ihrer eigenen Stelle** (A5).
         beiSignal(knopf, "clicked") { [weak self] in self?.starte(folge) }

@@ -181,48 +181,66 @@ extension App {
 
         // **Das Hauptkind gibt das Maß, sonst nichts.** Ein `GtkOverlay`
         // legt seinem Hauptkind die volle Fläche zu und übergeht dessen
-        // Ausrichtung — die Kulisse stand deshalb über die ganze Breite und
-        // über 570 statt 380 Punkt Höhe. Damit fiel auch der Verlauf über
-        // eine viel größere Strecke, und das Bild endete unten mit einer
-        // sichtbaren Kante. Überzüge dagegen achten auf Ausrichtung und
-        // Wunschgröße; also ist das Hauptkind eine leere Box mit dem Maß,
-        // und Kulisse wie Block liegen darüber.
-        let mass: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        // Ausrichtung; Überzüge dagegen achten auf beides. Deshalb ist das
+        // Hauptkind eine Zeichenfläche, die nur misst — und über ihr Signal
+        // `resize` erfahren wir die Breite, die es in GTK sonst nirgends zu
+        // holen gibt.
+        let mass: Widget! = gtk_drawing_area_new()
         gtk_widget_set_size_request(mass, -1, Int32(Stil.heldHoehe))
         gtk_overlay_set_child(OpaquePointer(kopf), mass)
 
-        gtk_overlay_add_overlay(OpaquePointer(kopf), kulisse(titel))
+        let (kulissenhuelle, bild) = kulisse(titel)
+        gtk_overlay_add_overlay(OpaquePointer(kopf), kulissenhuelle)
         gtk_overlay_add_overlay(OpaquePointer(kopf), heldenblock(titel))
+
+        // **`max(breite * 0,62, 520)` — wörtlich die Rechnung des Macs.**
+        // Erst stand hier eine feste Breite, dann die volle Breite mit einem
+        // Verlauf, der die linken 38 % dicht hielt. Beides war daneben: fest
+        // riss beim Ziehen am Fenster, voll rückte die Bildmitte unter den
+        // Verlauf — die Person in der Mitte des Bildes stand dann im Dunst.
+        // Das Bild gehört nach rechts und muss 62 % breit sein, nicht nur so
+        // aussehen.
+        breitenhalter = Zeigerkiste(kulissenhuelle)
+        g_signal_connect_data(UnsafeMutableRawPointer(mass), "resize",
+                              unsafeBitCast(kulisseGemessen, to: GCallback.self),
+                              Unmanaged.passUnretained(self).toOpaque(),
+                              nil, GConnectFlags(rawValue: 0))
+        tonNachladen(titel, bild: bild)
         return kopf
+    }
+
+    /// Wird aus dem Rückruf gerufen, sobald die Kopfzone ihre Breite kennt.
+    func kulisseBreite(_ breite: Int32) {
+        guard let huelle = breitenhalter?.widget, breite > 0 else { return }
+        gtk_widget_set_size_request(huelle, Int32(max(Double(breite) * 0.62, 520)),
+                                    Int32(Stil.heldHoehe))
     }
 
     /// **Rechts, nicht über die volle Breite** — wie auf dem Apple TV und dem
     /// Mac. Dort blendet eine *Maske* das Bild aus, weil der Grund sich
-    /// einfärben kann (`Bildfarbe`) und ein Anstrich dann als Fleck darin
-    /// stünde. Hier gibt es diese Einfärbung nicht, der Grund ist immer
-    /// `grund` — deshalb zwei Verläufe darüber statt einer Maske, die GTK
-    /// ohnehin nicht kennt. Die Stützstellen sind dieselben.
-    private func kulisse(_ titel: Item) -> Widget! {
-        // **Über die volle Breite, und der Verlauf macht daraus 62 %.**
-        //
-        // Auf dem Mac ist die Kulisse `max(breite * 0.62, 520)` breit und
-        // blendet über ihre eigene Fläche aus — sie wächst also mit dem
-        // Fenster. Eine feste Breite (erst 900) hatte genau den Fehler, den
-        //
-        // GTK hat kein Gegenstück zu `GeometryReader`, und eine Breite bei
-        // jeder Größenänderung nachzurechnen wäre Zustand, der schiefgehen
-        // kann. Deshalb andersherum: **das Bild nimmt die ganze Breite, und
-        // der Verlauf hält die ersten 38 % dicht.** Das ist dieselbe Optik,
-        // nur in Prozent statt in Punkten — und damit von sich aus
-        // mitwachsend, ohne eine einzige Zeile, die misst.
-        //
-        // Die Stützstellen unten sind die des Macs, auf die volle Breite
-        // umgerechnet: p = 0,38 + 0,62 · t, Deckung = 1 − Maske.
-        let (huelle, bild) = gerahmtesBild(breite: 1, hoehe: Stil.heldHoehe,
-                                           stil: "swiftly-kulisse")
-        gtk_widget_set_hexpand(huelle, 1)
-        gtk_widget_set_halign(huelle, GTK_ALIGN_FILL)
+    /// einfärben kann und ein Anstrich dann als Fleck darin stünde. Hier
+    /// färbt sich der Grund ebenfalls ein (``Bildfarbe``), aber die Blenden
+    /// färben sich mit — deshalb zwei Verläufe im selben Ton statt einer
+    /// Maske, die GTK ohnehin nicht kennt. Die Stützstellen sind dieselben.
+    private func kulisse(_ titel: Item) -> (Widget, Widget) {
+        // **Kein Beschnitt.** Der ließ eine Haarlinie des ungefilterten Bildes
+        // am Rand stehen Zu beschneiden gibt es hier nichts: die Kulisse ist
+        // nicht gerundet.
+        let huelle: Widget! = gtk_overlay_new()
+        gtk_widget_add_css_class(huelle, "swiftly-kulisse")
+        gtk_widget_set_hexpand(huelle, 0)
+        gtk_widget_set_vexpand(huelle, 0)
+        gtk_widget_set_halign(huelle, GTK_ALIGN_END)
         gtk_widget_set_valign(huelle, GTK_ALIGN_START)
+        gtk_widget_set_size_request(huelle, 520, Int32(Stil.heldHoehe))
+
+        let mass: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        gtk_overlay_set_child(OpaquePointer(huelle), mass)
+
+        let bild: Widget! = gtk_picture_new()
+        gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_COVER)
+        gtk_picture_set_can_shrink(OpaquePointer(bild), 1)
+        gtk_overlay_add_overlay(OpaquePointer(huelle), bild)
 
         if let adressen,
            let url = Bildwahl.quer(titel, adressen: adressen, breite: 1600)?.url {
@@ -234,7 +252,19 @@ extension App {
             gtk_widget_add_css_class(blende, klasse)
             gtk_overlay_add_overlay(OpaquePointer(huelle), blende)
         }
-        return huelle
+        return (huelle!, bild!)
+    }
+
+    /// Holt ein winziges Abbild und färbt den Auslauf damit ein.
+    private func tonNachladen(_ titel: Item, bild: Widget!) {
+        guard let adressen,
+              let url = Bildwahl.quer(titel, adressen: adressen, breite: 16)?.url
+        else { return }
+        Task.detached {
+            guard let (daten, _) = try? await URLSession.shared.data(from: url),
+                  let ton = Bildfarbe.ton(aus: daten) else { return }
+            aufHauptfaden { Tonblatt.setzen(ton) }
+        }
     }
 
     /// **Feste Stellen statt fester Höhen.**
@@ -255,8 +285,10 @@ extension App {
         gtk_widget_set_valign(feld, GTK_ALIGN_START)
         gtk_widget_set_size_request(feld, 640, 230)
         gtk_widget_set_margin_start(feld, Int32(Stil.randAbstand))
-        // titelHoehe (52) + 98
-        gtk_widget_set_margin_top(feld, Int32(Stil.titelHoehe + 98))
+        // titelHoehe (52) + 98, minus die Kopfleiste. Auf dem Mac ist die
+        // Strecke ab Fensteroberkante gemessen — dort gibt es keine
+        // Titelzeile, hier schon, und ihre Höhe kommt oben drauf.
+        gtk_widget_set_margin_top(feld, Int32(Stil.titelHoehe + 98 - Stil.kopfzeileHoehe))
 
         let name = beschriftung(titel.name, stil: "swiftly-heldtitel")
         gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
@@ -471,4 +503,14 @@ extension App {
             }
         }
     }
+}
+
+
+/// Die Kopfzone hat ihre Breite gemessen. Form: `(GtkDrawingArea*, int, int,
+/// gpointer)` — vier Argumente, nicht zwei.
+nonisolated(unsafe) let kulisseGemessen: @convention(c) (
+    UnsafeMutableRawPointer?, Int32, Int32, gpointer?
+) -> Void = { _, breite, _, daten in
+    guard let daten else { return }
+    Unmanaged<App>.fromOpaque(daten).takeUnretainedValue().kulisseBreite(breite)
 }

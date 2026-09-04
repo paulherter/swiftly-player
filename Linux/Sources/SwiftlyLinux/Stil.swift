@@ -80,7 +80,7 @@ enum Stil {
     /// oben drauf. Genau das war der „viel zu viel Platz über Weiterschauen":
     /// 19 plus 52 statt 52. Abgezogen stimmt der Abstand zur Fensterkante
     /// wieder mit dem Mac überein.
-    static let kopfzeileHoehe = 19
+    static let kopfzeileHoehe = 24
     static let inhaltObenMac = 52
     static var inhaltOben: Int { inhaltObenMac - kopfzeileHoehe }
 
@@ -418,14 +418,14 @@ enum Stil {
            Stützstellen, die auf dem Fernseher nach vier Umbauten entstanden
            sind. */
         .swiftly-kulisse { background-color: \(grund); border-radius: 0; }
-        /* Die ersten 38 % bleiben dicht — dort liegt auf dem Mac gar kein
-           Bild. Danach dieselbe Kurve, umgerechnet auf die volle Breite. */
+        /* Die Stützstellen des Fernsehers, dort nach vier Umbauten
+           entstanden. Der Ton darin wechselt mit dem Bild — ``Tonblatt``
+           überschreibt beide Regeln mit einem eigenen Anbieter. */
         .swiftly-blende-quer {
             background-image: linear-gradient(to right,
-                \(grund) 0%, \(grund) 38%,
-                rgba(11,11,13,0.95) 47.3%, rgba(11,11,13,0.78) 56.0%,
-                rgba(11,11,13,0.50) 65.9%, rgba(11,11,13,0.25) 73.3%,
-                rgba(11,11,13,0.10) 81.4%, rgba(11,11,13,0.02) 90.7%,
+                \(grund) 0%, rgba(11,11,13,0.95) 15%, rgba(11,11,13,0.78) 29%,
+                rgba(11,11,13,0.50) 45%, rgba(11,11,13,0.25) 57%,
+                rgba(11,11,13,0.10) 70%, rgba(11,11,13,0.02) 85%,
                 rgba(11,11,13,0) 100%);
         }
         .swiftly-blende-hoch {
@@ -464,11 +464,15 @@ enum Stil {
             background-color: \(akzent);
         }
 
+        /* **Links kein Innenabstand.** Die acht Punkt schoben Vorschaubild
+           und Staffelpille aus der Flucht: die Reiterbeschriftung darüber
+           beginnt am Rand des Inhalts, die Zeile darunter acht Punkt weiter
+           rechts. Oben und unten bleiben sie — die geben der Zeile Luft. */
         button.swiftly-folgenzeile {
             background-color: transparent;
             border: none;
             border-radius: \(ecke)px;
-            padding: 8px;
+            padding: 8px 8px 8px 0;
         }
         button.swiftly-folgenzeile:hover { background-color: rgba(255,255,255,0.06); }
 
@@ -577,6 +581,16 @@ enum Stil {
         /* Die Mehr-Liste. GTKs Popover bringt einen eigenen Grund mit —
            der wird hier überschrieben, sonst stünde Apples… nein: KDEs
            Gestalt darin. */
+        /* **Der Popover malt hinter seinem Inhalt noch selbst.** Sein
+           eigener Knoten trägt vom Systemthema Grund und Schatten; nur den
+           Inhalt zu gestalten ließ eine schwarze Fläche ringsum stehen. */
+        popover.swiftly-mehr,
+        popover.swiftly-mehr > arrow {
+            background-color: transparent;
+            background-image: none;
+            border: none;
+            box-shadow: none;
+        }
         popover.swiftly-mehr > contents {
             background-color: \(erhoeht);
             border: 1px solid \(rand);
@@ -584,7 +598,6 @@ enum Stil {
             padding: 6px;
             box-shadow: 0 10px 22px rgba(0,0,0,0.45);
         }
-        popover.swiftly-mehr > arrow { background-color: transparent; border: none; }
         button.swiftly-handlung {
             min-height: 36px;
             padding: 0 10px;
