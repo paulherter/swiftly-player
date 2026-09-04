@@ -38,6 +38,7 @@ final class Startanimation: @unchecked Sendable {
     private var beginn = Date()
     private let fertig: () -> Void
     private var schonFertig = false
+    private var gestartet = false
     /// Welches Bild schon in der Fläche steht.
     private var gerechnet = -1
 
@@ -67,6 +68,18 @@ final class Startanimation: @unchecked Sendable {
         anzeige = feld!
         gtk_drawing_area_set_draw_func(alsZeichen(feld), startMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
+        // **Losfahren, wenn das Widget wirklich auf dem Schirm ist.**
+        //
+        // `gtk_widget_add_tick_callback` fordert nur dann Bilder an, wenn das
+        // Widget schon eine Bilduhr hat — also wenn es aufgelegt ist. Vorher
+        // stand der Aufruf nach `gtk_window_present`, und das genügt unter
+        // Wayland nicht: das Auflegen kommt später. Gemessen: **kein
+        // einziger Takt.** Eine Weile lief es trotzdem, weil eine
+        // Auslegungsschleife nebenher dauernd Bilder erzwang; als die weg
+        // war, stand die Animation still.
+        //
+        // `map` ist der Zeitpunkt, an dem es sicher ist.
+        beiSignal(feld, "map") { [weak self] in self?.losfahren() }
 
     }
 
@@ -102,6 +115,8 @@ final class Startanimation: @unchecked Sendable {
     /// `App` lösen, während noch ein Takt aussteht. Freigegeben wird sie,
     /// wenn der Takt sich abmeldet.
     func losfahren() {
+        guard !gestartet else { return }
+        gestartet = true
         beginn = Date()
         _ = gtk_widget_add_tick_callback(anzeige, startTakt,
                                          Unmanaged.passRetained(self).toOpaque(), nil)
@@ -121,7 +136,6 @@ final class Startanimation: @unchecked Sendable {
             gtk_widget_queue_draw(anzeige)
         }
         if seit >= dauer {
-            FileHandle.standardError.write(Data("[S] durch nach \(seit)\n".utf8))
             abschliessen()
             return false
         }

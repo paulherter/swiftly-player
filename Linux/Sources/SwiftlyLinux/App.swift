@@ -122,10 +122,7 @@ final class App: @unchecked Sendable {
             // verschachtelten Sendable-Hülle ohnehin nicht zu fassen.
             Task.detached { [self] in
                 try? await Task.sleep(nanoseconds: 3_500_000_000)
-                aufHauptfaden {
-                    FileHandle.standardError.write(Data("[S] Frist\n".utf8))
-                    self.startanimation?.abschliessen()
-                }
+                aufHauptfaden { self.startanimation?.abschliessen() }
             }
         }
         gtk_window_set_child(alsFenster(fenster), decke)
@@ -159,9 +156,8 @@ final class App: @unchecked Sendable {
             serverstandZeigen(merk.servername.map { String(format: uebersetzt("Zuletzt: %@"), $0) } ?? "")
         }
         gtk_window_present(alsFenster(fenster))
-        // Erst jetzt hat die Zeichenfläche eine Bilduhr. Siehe
-        // ``Startanimation/losfahren()``.
-        startanimation?.losfahren()
+        // Die Animation fährt selbst los, sobald ihre Fläche aufgelegt ist —
+        // siehe ``Startanimation/losfahren()``. Von hier aus wäre es zu früh.
 
         // Gemerkte Sitzung: gleich weiter zur Startseite, ohne Nachfragen.
         if let abgelegt = Speicher.lesen() {
@@ -176,7 +172,6 @@ final class App: @unchecked Sendable {
     /// Die Animation ist durch: die Decke blendet weg, darunter steht alles
     /// längst fertig.
     private func startbildWeg() {
-        FileHandle.standardError.write(Data("[S] weg lauf=\(startanimation != nil) bild=\(startbild != nil)\n".utf8))
         guard startanimation != nil, let bild = startbild else { return }
         startanimation = nil
         gtk_widget_set_can_target(bild, 0)
