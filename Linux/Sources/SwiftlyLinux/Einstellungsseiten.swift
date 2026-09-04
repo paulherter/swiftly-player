@@ -75,9 +75,9 @@ extension App {
     private func unterseiteZurueck() {
         if offeneUnterseite == .profil {
             offeneUnterseite = nil
-            bereichZeigen(bereich.kennung, schub: .zurueck)
+            bereichZeigen(bereich.kennung, schub: .ohne)
         } else {
-            unterseiteOeffnen(.profil, schub: .zurueck)
+            unterseiteOeffnen(.profil)
         }
     }
 

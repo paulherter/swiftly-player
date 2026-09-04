@@ -704,8 +704,11 @@ extension App {
         // Verlassen des wegfahrenden Fensters den Zeiger noch einmal —
         // nachdem `spielerSchliessen` ihn schon zurückgeholt hatte. Ergebnis:
         // ein Fenster ohne Mauszeiger, dauerhaft, bis zum Neustart.
+        // **Eine offene Tafel hält die Steuerung.** Wer gerade eine Tonspur
+        // sucht, hat den Zeiger stillstehen — das ist kein Grund, ihm die
+        // Liste unter der Hand wegzunehmen.
         guard laufenderTitel != nil, spielerSteuerung != nil,
-              spielstand.laeuft else { return }
+              spurtafel == nil, spielstand.laeuft else { return }
         steuerungstakt += 1
         gtk_widget_set_opacity(spielerSteuerung, 0)
         spurwahlSchliessen()
@@ -743,6 +746,7 @@ extension App {
                 // Dann steht in `spielerSteuerung` ein abgeräumtes Widget,
                 // und GTK meldet „assertion GTK_IS_WIDGET failed".
                 guard self.laufenderTitel != nil, self.spielerSteuerung != nil,
+                      self.spurtafel == nil,
                       self.steuerungstakt == meins, self.spielstand.laeuft else { return }
                 gtk_widget_set_opacity(self.spielerSteuerung, 0)
                 self.zeigerZeigen(false)

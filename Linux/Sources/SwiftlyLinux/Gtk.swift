@@ -656,9 +656,17 @@ nonisolated(unsafe) private let wacheAlsBewegung: @convention(c) (
 ) -> Void = { _, x, y, daten in
     guard let daten else { return }
     let w = Unmanaged<Bewegungswache>.fromOpaque(daten).takeUnretainedValue()
-    defer { w.x = x; w.y = y }
-    guard w.x >= 0 else { return }          // die erste Meldung zählt nicht
+    // **Die Marke wandert nur beim Auslösen mit.**
+    //
+    // Vorher stand sie nach *jeder* Meldung neu — damit wurde immer nur der
+    // Abstand zur vorigen Meldung geprüft, und langsames Ziehen blieb ewig
+    // darunter: die Steuerung blendete weg, obwohl die Maus lief. Bleibt die
+    // Marke stehen, summiert sich die Strecke, und irgendwann sind die zwei
+    // Punkte erreicht — genau das meint „echte Bewegung".
+    guard w.x >= 0 else { w.x = x; w.y = y; return }
     guard abs(x - w.x) > 2 || abs(y - w.y) > 2 else { return }
+    w.x = x
+    w.y = y
     w.block()
 }
 
