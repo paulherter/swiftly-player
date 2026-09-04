@@ -192,10 +192,12 @@ extension App {
     /// absichtlich den Hintergrund der Serie — richtig für „Weiterschauen",
     /// falsch hier: in einer Folgenliste stünde in jeder Zeile dasselbe Bild.
     private func folgenzeile(_ folge: Item) -> Widget! {
-        let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-folgenzeile")
-
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 18)
+        // **Kein Knopf, eine Geste.** Die Zeile trägt selbst einen Knopf —
+        // den Haken zum Umschalten —, und ein Knopf im Knopf ist in GTK kein
+        // sicherer Bau. Auf dem Mac steht dort aus demselben Grund
+        // `.onTapGesture`.
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 18)
+        gtk_widget_add_css_class(zeile, "swiftly-folgenzeile")
 
         let (huelle, bild) = gerahmtesBild(breite: 160, hoehe: 90, stil: "swiftly-plakat")
         gtk_widget_set_valign(huelle, GTK_ALIGN_START)
@@ -209,7 +211,7 @@ extension App {
         if wahlen.fortschrittAufKacheln, let anteil = folge.gesehenerAnteil {
             balkenLegen(huelle, breite: 160, anteil: anteil)
         }
-        anhaengen(reihe, huelle)
+        anhaengen(zeile, huelle)
 
         let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 5)
         gtk_widget_set_hexpand(text, 1)
@@ -239,24 +241,56 @@ extension App {
             gtk_widget_set_size_request(z, 200, -1)
             anhaengen(text, z)
         }
-        anhaengen(reihe, text)
+        anhaengen(zeile, text)
 
-        // **Der Haken steht immer, wenn die Folge gesehen ist** — er ist die
-        // einzige Auskunft darüber in der Liste, und ohne ihn sieht eine
-        // durchgesehene Staffel aus wie eine unangetastete.
-        if folge.istGesehen {
-            let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-            gtk_image_set_pixel_size(OpaquePointer(haken), 14)
-            gtk_widget_add_css_class(haken, "swiftly-beleg")
-            gtk_widget_set_valign(haken, GTK_ALIGN_START)
-            gtk_widget_set_margin_top(haken, 2)
-            anhaengen(reihe, haken)
+        // **Der Haken steht immer, wenn die Folge gesehen ist** — auf iPhone
+        // und Mac genauso. Er ist die einzige Auskunft darüber in der Liste;
+        // ohne ihn sieht eine durchgesehene Staffel aus wie eine
+        // unangetastete. **Zum Ändern** braucht es den Zeiger, zum Sehen
+        // nicht: beim Schweben tritt an seine Stelle ein runder Knopf.
+        var gesehen = folge.istGesehen
+        let platz = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
+        gtk_widget_set_size_request(platz, 40, -1)
+        gtk_widget_set_halign(platz, GTK_ALIGN_END)
+        gtk_widget_set_valign(platz, GTK_ALIGN_START)
+        gtk_widget_set_margin_top(platz, 2)
+
+        let ruhig: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(ruhig), 12)
+        gtk_widget_add_css_class(ruhig, "swiftly-leise")
+        gtk_widget_set_halign(ruhig, GTK_ALIGN_END)
+        gtk_widget_set_hexpand(ruhig, 1)
+        gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
+        anhaengen(platz, ruhig)
+
+        let knopf = nebenknopf("object-select-symbolic", aktiv: gesehen)
+        gtk_widget_add_css_class(knopf, "swiftly-hakenknopf")
+        gtk_widget_set_size_request(knopf, 34, 34)
+        gtk_widget_set_visible(knopf, 0)
+        beiSignal(knopf, "clicked") { [weak self] in
+            guard let self, let client = self.client else { return }
+            gesehen.toggle()
+            knopfzustand(knopf, aktiv: gesehen, symbol: "object-select-symbolic")
+            gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
+            let neu = gesehen
+            Task.detached { try? await client.setzeGesehen(itemID: folge.id, an: neu) }
         }
+        anhaengen(platz, knopf)
+        anhaengen(zeile, platz)
 
-        gtk_button_set_child(alsKnopf(knopf), reihe)
+        beiZeiger(zeile, herein: {
+            gtk_widget_add_css_class(zeile, "swiftly-schwebt")
+            gtk_widget_set_visible(knopf, 1)
+            gtk_widget_set_visible(ruhig, 0)
+        }, hinaus: {
+            gtk_widget_remove_css_class(zeile, "swiftly-schwebt")
+            gtk_widget_set_visible(knopf, 0)
+            gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
+        })
+
         // **Eine Folge aus der Liste startet an ihrer eigenen Stelle** (A5).
-        beiSignal(knopf, "clicked") { [weak self] in self?.starte(folge) }
-        return knopf
+        beiKlick(zeile) { [weak self] in self?.starte(folge) }
+        return zeile
     }
 
     // MARK: Besetzung und Ähnliches

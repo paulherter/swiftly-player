@@ -206,7 +206,7 @@ enum Stil {
         button.swiftly-haupt, button.swiftly-flach, button.swiftly-zeile,
         button.swiftly-chip, button.swiftly-profil, button.swiftly-kachel,
         button.swiftly-pfeil, button.swiftly-zurueck, button.swiftly-neben,
-        button.swiftly-reiter, button.swiftly-folgenzeile,
+        button.swiftly-reiter,
         button.swiftly-einstellzeile, button.swiftly-wertzeile,
         button.swiftly-handlung, button.swiftly-spielrund,
         button.swiftly-spielrund-gross {
@@ -485,14 +485,23 @@ enum Stil {
            und das Vorschaubild steht trotzdem in der Flucht der
            Reiterbeschriftung darueber. Keine Rundung: eine Zeile, die von
            Kante zu Kante geht, hat keine Ecken. */
-        button.swiftly-folgenzeile {
+        .swiftly-folgenzeile {
             background-color: transparent;
-            border: none;
-            border-radius: 0;
-            padding: 8px \(randAbstand)px;
+            padding: 12px \(randAbstand)px;
             transition: background-color 120ms ease-out;
         }
-        button.swiftly-folgenzeile:hover { background-color: rgba(255,255,255,0.06); }
+        /* Weiss zu vier Prozent — der Wert vom Mac. */
+        .swiftly-folgenzeile.swiftly-schwebt { background-color: rgba(255,255,255,0.04); }
+        /* Rund, nicht abgerundet-eckig: der Mac nimmt hier den kleinen
+           Aktionsknopf, kein Nebenknopf der Knopfreihe. */
+        button.swiftly-hakenknopf {
+            border-radius: 17px;
+            padding: 0;
+            min-width: 34px;
+            min-height: 34px;
+            background-color: rgba(255,255,255,0.14);
+        }
+        button.swiftly-hakenknopf:hover { background-color: rgba(255,255,255,0.22); }
 
         .swiftly-kopfbild { border-radius: 42px; }
 

@@ -395,3 +395,29 @@ func weichesScrollen(_ scroller: Widget!) {
                           weichlaufFreigeben, GConnectFlags(rawValue: 0))
     gtk_widget_add_controller(scroller, horcher)
 }
+
+// MARK: - Klicken ohne Knopf
+
+nonisolated(unsafe) private let auftragAlsKlick: @convention(c) (
+    UnsafeMutableRawPointer?, Int32, Double, Double, gpointer?
+) -> Void = { _, _, _, _, daten in
+    guard let daten else { return }
+    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+}
+
+/// Macht ein beliebiges Widget anklickbar, ohne es zu einem Knopf zu machen.
+///
+/// **Warum kein Knopf.** Eine Folgenzeile trägt selbst einen Knopf — den
+/// Haken zum Umschalten. Ein Knopf im Knopf ist in GTK kein sicherer Bau; wer
+/// beide braucht, nimmt für den äusseren eine Geste. Auf dem Mac steht dort
+/// aus demselben Grund `.onTapGesture` statt eines `Button`.
+///
+/// `released` bringt Zählung und Ort mit — vier Argumente, nicht zwei.
+func beiKlick(_ ziel: Widget!, _ block: @escaping () -> Void) {
+    let geste = gtk_gesture_click_new()
+    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(geste), "released",
+                          unsafeBitCast(auftragAlsKlick, to: GCallback.self),
+                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(ziel, unsafeBitCast(geste, to: UnsafeMutablePointer<GtkEventController>.self))
+}

@@ -455,7 +455,16 @@ final class App: @unchecked Sendable {
     var gewaehlteBibliothek: [Bereich: String] = [:]
     /// Wann die Startseite zuletzt geladen hat — für D8.
     var zuletztGeladen: Date?
-    var detailhuelle: Widget!
+    /// **Die Detailseite hat zwei Scheiben, nicht eine.**
+    ///
+    /// Ein `GtkStack` bewegt sich zwischen *verschiedenen* Kindern. Wer
+    /// dasselbe Kind leert und neu füllt, bekommt keine Bewegung — und genau
+    /// so stand es hier: von der Startseite auf einen Film schob es, von
+    /// einem Film auf die Serie dahinter nicht. Zwei Scheiben, abwechselnd
+    /// gefüllt, machen aus jedem Schritt einen Wechsel.
+    var detailscheiben: [Widget!] = []
+    var detailscheibe = 0
+    var detailhuelle: Widget! { detailscheiben[detailscheibe] }
     /// Wird beim Blättern gebraucht, um den Titel in der Kopfleiste
     /// einzublenden — dieselbe Rechnung wie `Detailkopf.staerke` auf dem Mac.
     var detailkopfTitel: Widget!
@@ -490,8 +499,11 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.filme), "filme")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.serien), "serien")
         gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
-        detailhuelle = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_stack_add_named(OpaquePointer(inhalt), detailhuelle, "detail")
+        for name in ["detail", "detail-b"] {
+            let scheibe = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+            detailscheiben.append(scheibe)
+            gtk_stack_add_named(OpaquePointer(inhalt), scheibe, name)
+        }
 
         anhaengen(quer, inhalt)
 
@@ -638,6 +650,42 @@ final class App: @unchecked Sendable {
         return knopf
     }
 
+    /// Wie eine Seite den Platz wechselt.
+    ///
+    /// Auf dem Mac ist das `Stil.zeitSeitenschub` — `easeInOut`, 0,45 s —
+    /// mit der Regel „tiefer gehen schiebt von rechts, zurück schiebt nach
+    /// rechts hinaus". Ein Bereichswechsel dagegen blendet über („Fade
+    /// Through"), weil er nicht tiefer führt, sondern daneben.
+    enum Schub { case tiefer, zurueck, ohne }
+
+    /// Stellt Art und Dauer der Bewegung ein und schaltet um.
+    ///
+    /// GTK zählt die Richtung aus Sicht des Inhalts: `SLIDE_LEFT` schiebt
+    /// den Inhalt nach links, das Neue kommt also von rechts herein — das
+    /// ist „tiefer".
+    func seiteZeigen(_ name: String, schub: Schub) {
+        let stab = OpaquePointer(inhalt)
+        switch schub {
+        case .tiefer:
+            gtk_stack_set_transition_type(stab, GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT)
+            gtk_stack_set_transition_duration(stab, 450)
+        case .zurueck:
+            gtk_stack_set_transition_type(stab, GTK_STACK_TRANSITION_TYPE_SLIDE_RIGHT)
+            gtk_stack_set_transition_duration(stab, 450)
+        case .ohne:
+            gtk_stack_set_transition_type(stab, GTK_STACK_TRANSITION_TYPE_CROSSFADE)
+            gtk_stack_set_transition_duration(stab, 220)
+        }
+        gtk_stack_set_visible_child_name(stab, name)
+    }
+
+    /// Nimmt die freie Detailscheibe, leert sie und nennt ihren Namen.
+    func naechsteScheibe() -> String {
+        detailscheibe = 1 - detailscheibe
+        leeren(detailhuelle)
+        return detailscheibe == 0 ? "detail" : "detail-b"
+    }
+
     /// Schaltet den Bereich um und färbt die Zeilen nach.
     func zeige(_ neu: Bereich) {
         bereich = neu
@@ -649,9 +697,9 @@ final class App: @unchecked Sendable {
         // **Der Stapel entscheidet, was zu sehen ist.** Liegt auf diesem
         // Bereich eine Detailseite, kommt sie zurück — nicht die Liste.
         if let oben = seitenstapel[neu]?.last {
-            detailZeigen(oben)
+            detailZeigen(oben, schub: .ohne)
         } else {
-            gtk_stack_set_visible_child_name(OpaquePointer(inhalt), neu.kennung)
+            seiteZeigen(neu.kennung, schub: .ohne)
         }
         // **Jeder Bereich lädt einmal.** Auf dem Mac bleiben die Stände der
         // Bereiche liegen; wer zwischen Filmen und Serien wechselt, wartet

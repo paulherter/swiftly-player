@@ -51,9 +51,9 @@ extension App {
         meiner.removeLast()
         seitenstapel[bereich] = meiner
         if let oben = meiner.last {
-            detailZeigen(oben)
+            detailZeigen(oben, schub: .zurueck)
         } else {
-            gtk_stack_set_visible_child_name(OpaquePointer(inhalt), bereich.kennung)
+            seiteZeigen(bereich.kennung, schub: .zurueck)
         }
     }
 
@@ -65,9 +65,9 @@ extension App {
 
     // MARK: - Aufbau
 
-    func detailZeigen(_ item: Item) {
-        leeren(detailhuelle)
-        gtk_stack_set_visible_child_name(OpaquePointer(inhalt), "detail")
+    func detailZeigen(_ item: Item, schub: Schub = .tiefer) {
+        let name = naechsteScheibe()
+        seiteZeigen(name, schub: schub)
 
         let seite = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         // **Ein Kasten malt den Ton, nicht zwei.**

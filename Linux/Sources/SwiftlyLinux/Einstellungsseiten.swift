@@ -16,9 +16,9 @@ extension App {
 
     enum Unterseite { case profil, quickConnect, wiedergabe, einstellungen }
 
-    func unterseiteOeffnen(_ was: Unterseite) {
-        leeren(detailhuelle)
-        gtk_stack_set_visible_child_name(OpaquePointer(inhalt), "detail")
+    func unterseiteOeffnen(_ was: Unterseite, schub: Schub = .tiefer) {
+        let name = naechsteScheibe()
+        seiteZeigen(name, schub: schub)
         offeneUnterseite = was
 
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
@@ -45,9 +45,9 @@ extension App {
     private func unterseiteZurueck() {
         if offeneUnterseite == .profil {
             offeneUnterseite = nil
-            gtk_stack_set_visible_child_name(OpaquePointer(inhalt), bereich.kennung)
+            seiteZeigen(bereich.kennung, schub: .zurueck)
         } else {
-            unterseiteOeffnen(.profil)
+            unterseiteOeffnen(.profil, schub: .zurueck)
         }
     }
 
