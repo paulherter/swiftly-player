@@ -657,6 +657,40 @@ final class App: @unchecked Sendable {
 
     /// Wahr heißt: verbraucht, nicht weiterreichen.
     func taste(_ wert: UInt32, strg: Bool) -> Bool {
+        // **Die Kürzel unter den Knöpfen müssen stimmen.**
+        //
+        // Unter den drei Knöpfen des Players stehen „←", „Leertaste" und „→"
+        // — sie standen dort, ohne dass eine dieser Tasten etwas tat. Ein
+        // Hinweis, der nicht stimmt, ist schlimmer als keiner.
+        //
+        // Dieselben vier wie auf dem Mac (`PlayerScreen` 242–247), ohne
+        // Zusatztaste: Leertaste hält an, die Pfeile springen, Escape geht
+        // zurück. Vollbild gibt es unter Wayland nicht als eigenen Zustand,
+        // den wir führen — dort schliesst Escape gleich.
+        if laufenderTitel != nil, !strg {
+            switch wert {
+            case 0x020:                                    // Leertaste
+                abspieler.umschalten()
+                spielstand.laeuft.toggle()
+                spielerAbspielzeichen?.setzen(spielstand.laeuft)
+                steuerungZeigen()
+                return true
+            case 0xFF51:                                   // Pfeil links
+                abspieler.springen(-Double(wahlen.zurueckSekunden))
+                spielerZurueckZeichen?.stupsen()
+                steuerungZeigen()
+                return true
+            case 0xFF53:                                   // Pfeil rechts
+                abspieler.springen(Double(wahlen.vorSekunden))
+                spielerVorZeichen?.stupsen()
+                steuerungZeigen()
+                return true
+            case 0xFF1B:                                   // Escape
+                spielerSchliessen()
+                return true
+            default: break
+            }
+        }
         guard strg else { return false }
         // GDKs Tastenwerte sind die ASCII-Zeichen; eigene Namen dafür gibt es
         // in Swift nicht, weil sie in GDK Makros sind.
