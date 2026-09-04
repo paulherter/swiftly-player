@@ -203,6 +203,22 @@ func zeichenLegen(_ huelle: Widget!, serie: Bool) {
     gtk_overlay_add_overlay(OpaquePointer(huelle), zeichen)
 }
 
+// MARK: - Chip
+
+/// Filter- und Sortierchip. Aktiv ist er weiß mit dunkler Schrift, sonst
+/// leise mit einer Haarlinie darum — 28 hoch, 12 seitlich, vollrund.
+///
+/// Die halbfette Schrift im aktiven Zustand steht so auf dem Mac und ist
+/// kein Zufall: der Chip wird dadurch minimal breiter, und das ist die
+/// einzige Stelle, an der man die Wahl auch ohne Farbe sieht.
+func chip(_ text: String, aktiv: Bool) -> Widget! {
+    let knopf: Widget! = gtk_button_new_with_label(text)
+    gtk_widget_add_css_class(knopf, "swiftly-chip")
+    if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+    gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
+    return knopf
+}
+
 // MARK: - Nebenknopf, Plakette, Reiter
 
 /// Nebenknopf der Knopfreihe: abgerundetes Quadrat, **nur Symbol**, 48 × 48.
