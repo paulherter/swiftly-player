@@ -165,9 +165,13 @@ extension App {
             guard let self, let client = self.client else { return }
             let code = self.text(feldKiste.widget)
             gtk_widget_set_sensitive(knopf, 0)
+            let knopfKiste = Zeigerkiste(knopf)
             Task.detached {
-                var gut = true
-                do { try await client.quickConnectFreigeben(code: code) }
+                // `gut` entsteht **vor** dem Sprung auf den Hauptfaden und
+                // wird dort nur gelesen — eine veränderliche Variable über
+                // die Grenze zu reichen ginge nicht.
+                let gut: Bool
+                do { try await client.quickConnectFreigeben(code: code); gut = true }
                 catch { gut = false }
                 aufHauptfaden {
                     gtk_label_set_text(OpaquePointer(standKiste.widget),
@@ -176,7 +180,7 @@ extension App {
                     gtk_widget_add_css_class(standKiste.widget,
                                              gut ? "swiftly-beleg" : "swiftly-warnung")
                     gtk_widget_set_visible(standKiste.widget, 1)
-                    gtk_widget_set_sensitive(knopf, 1)
+                    gtk_widget_set_sensitive(knopfKiste.widget, 1)
                 }
             }
         }
