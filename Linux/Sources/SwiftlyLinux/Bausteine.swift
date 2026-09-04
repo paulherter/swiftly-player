@@ -138,11 +138,14 @@ func bildkaefig(_ bild: Widget!, breite: Int, hoehe: Int) -> Widget! {
 }
 
 /// Ein Bild im Käfig, mit gerundeter Kante — Plakat, Querkachel, Profilbild.
-func gerahmtesBild(breite: Int, hoehe: Int, stil: String) -> (kaefig: Widget!, bild: Widget!) {
+/// Der Rückgabetyp trägt bewusst kein `!`: Swift verbietet ein implizit
+/// ausgepacktes Optional in einem Tupelfach. Beides ist an dieser Stelle
+/// ohnehin nie null — GTKs `*_new()` schlägt nicht fehl.
+func gerahmtesBild(breite: Int, hoehe: Int, stil: String) -> (kaefig: Widget, bild: Widget) {
     let bild: Widget! = gtk_picture_new()
     gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_COVER)
     let kaefig = bildkaefig(bild, breite: breite, hoehe: hoehe)
     // Die Rundung gehört an den Käfig: er ist es, der beschneidet.
     gtk_widget_add_css_class(kaefig, stil)
-    return (kaefig, bild)
+    return (kaefig!, bild!)
 }
