@@ -96,9 +96,12 @@ final class App: @unchecked Sendable {
             gtk_stack_set_visible_child_name(OpaquePointer(seiten), "startbild")
             // **Spätestens dann geht es weiter, egal was die Animation
             // macht** — dieselbe Frist wie auf Apple (3,5 s).
-            Task.detached { [weak self] in
+            // `[self]`, nicht `[weak self]`: die App lebt in einer globalen
+            // Referenz bis zum Ende, und ein schwacher Verweis wäre in der
+            // verschachtelten Sendable-Hülle ohnehin nicht zu fassen.
+            Task.detached { [self] in
                 try? await Task.sleep(nanoseconds: 3_500_000_000)
-                aufHauptfaden { self?.startanimation?.abschliessen() }
+                aufHauptfaden { self.startanimation?.abschliessen() }
             }
         }
 
