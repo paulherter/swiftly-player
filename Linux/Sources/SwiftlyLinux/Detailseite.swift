@@ -107,6 +107,16 @@ extension App {
         // nachkommt, also darf er kommen, wann er kommt.
         aufbauenMit(item, in: seite)
         titelNachladen(item, in: seite)
+        // Einmal nach dem Auslegen den Baum hinschreiben.
+        let kiste = gehalten(seite)
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            aufHauptfaden {
+                defer { losgelassen(kiste) }
+                FileHandle.standardError.write(Data("[Baum] --- Seite ---\n".utf8))
+                self.baumZeigen(kiste.widget)
+            }
+        }
 
         // Den Titel oben einblenden, sobald der grosse unter der Leiste
         // verschwindet: ab 98 − 24 = 74, über die 42 Punkt seiner Höhe.
@@ -151,6 +161,30 @@ extension App {
     /// **Nach `item.type` verzweigen**, nicht nach dem nachgeladenen Satz:
     /// die Art steht schon in der Liste, und den Zweig unterwegs zu wechseln
     /// hiesse, die halbe Seite wegzuwerfen und neu zu bauen.
+    /// Läuft den Baum ab und schreibt Klassen und Zuteilung hin. Nur zum
+    /// Suchen — wer eine Kante sieht, will wissen, welcher Kasten dort endet.
+    func baumZeigen(_ w: Widget!, _ tiefe: Int = 0) {
+        var kind = gtk_widget_get_first_child(w)
+        while let k = kind {
+            var y: Int32 = 0, hoehe: Int32 = 0
+            var zuteilung = GdkRectangle()
+            gtk_widget_get_allocation(k, &zuteilung)
+            y = zuteilung.y; hoehe = zuteilung.height
+            let art = String(cString: g_type_name(G_TYPE_FROM_INSTANCE(
+                UnsafeMutableRawPointer(k).assumingMemoryBound(to: GTypeInstance.self))))
+            var klassen = ""
+            if let liste = gtk_widget_get_css_classes(k) {
+                var i = 0
+                while let z = liste[i] { klassen += " ." + String(cString: z); i += 1 }
+                g_strfreev(liste)
+            }
+            FileHandle.standardError.write(Data(
+                "[Baum] \(String(repeating: "  ", count: tiefe))\(art) y=\(y) h=\(hoehe)\(klassen)\n".utf8))
+            if tiefe < 2 { baumZeigen(k, tiefe + 1) }
+            kind = gtk_widget_get_next_sibling(k)
+        }
+    }
+
     private func aufbauenMit(_ titel: Item, in seite: Widget!) {
         anhaengen(seite, heldenkopf(titel))
 

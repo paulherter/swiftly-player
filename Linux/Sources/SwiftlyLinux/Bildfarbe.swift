@@ -142,7 +142,7 @@ enum Tonblatt {
         func t(_ deckung: Double) -> String {
             "rgba(\(ton.r),\(ton.g),\(ton.b),\(deckung))"
         }
-        gtk_css_provider_load_from_string(anbieter, """
+        let blatt = """
         /* Die Kopfzone trägt den Ton gleichmäßig — nur so kann keine
            übermalte Stelle danebenliegen. */
         .swiftly-kopfton { background-color: \(t(1)); }
@@ -162,6 +162,8 @@ enum Tonblatt {
                 \(t(1)) 0px, \(Stil.grund) 260px);
             background-repeat: no-repeat;
         }
-        """)
+        """
+        FileHandle.standardError.write(Data("[Tonblatt]\n\(blatt)\n".utf8))
+        gtk_css_provider_load_from_string(anbieter, blatt)
     }
 }
