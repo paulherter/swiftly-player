@@ -70,6 +70,21 @@ extension App {
         gtk_stack_set_visible_child_name(OpaquePointer(inhalt), "detail")
 
         let seite = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        // **Ein Kasten malt den Ton, nicht zwei.**
+        //
+        // Vorher trugen Kopfzone und Unterbau ihn je selbst — zwei
+        // gleichfarbige Flächen, die aneinanderstossen. Genau an ihrer Kante
+        // stand der Strich, und zwar hartnäckig: beim Öffnen, beim Scrollen,
+        // und nach einem Scrollen hin und zurück war er weg. Das ist kein
+        // Farbfehler, das ist die Kante selbst — GTK zeichnet die Ränder
+        // zweier Kästen einzeln, und wo sie sich treffen, scheint auf einem
+        // halben Bildpunkt der Grund durch.
+        //
+        // Gibt es die Kante nicht, kann dort auch nichts durchscheinen. Der
+        // Verlauf liegt jetzt als **ein** Anstrich auf der ganzen Seite: Ton
+        // über die Höhe der Kopfzone, dann 260 Punkte nach `grund` — dieselbe
+        // Länge wie auf dem Mac.
+        gtk_widget_add_css_class(seite, "swiftly-seitenton")
 
         // **Der Ton gehört zum Kopf, nicht zur Seite.**
         //
@@ -198,13 +213,9 @@ extension App {
         // nicht mehr. Ein Hintergrundverlauf am Unterbau selbst tut dasselbe,
         // liegt von sich aus hinter dem Inhalt und misst nichts.
         let unten = stapel(GTK_ORIENTATION_VERTICAL, abstand: 26)
-        gtk_widget_add_css_class(unten, "swiftly-tonauslauf")
-        // **Kein oberer Rand — der liegt ausserhalb der Hintergrundfläche.**
-        // Mit `margin_top: 26` begann der Tonauslauf erst 26 Punkte unter dem
-        // Kopf, und dazwischen stand der blanke Grund: ein schwarzer Balken
-        // quer über die Seite. Im Bildschirmfoto nachgemessen — 52
-        // Gerätepunkte in (10,10,12) zwischen Ton und Auslauf. Die Luft
-        // steckt jetzt als Innenabstand im Stilblatt.
+        // Die Luft nach der Kopfzone. Sie darf jetzt wieder ein Rand sein —
+        // der Ton liegt auf der Seite, nicht auf diesem Kasten.
+        gtk_widget_set_margin_top(unten, 26)
         gtk_widget_set_margin_bottom(unten, Int32(Stil.randAbstand))
         anhaengen(seite, unten)
 
@@ -271,7 +282,6 @@ extension App {
     /// Kulisse rechts, Block links. Höhe 380 (`Stil.heldHoehe`).
     private func heldenkopf(_ titel: Item) -> Widget! {
         let kopf: Widget! = gtk_overlay_new()
-        gtk_widget_add_css_class(kopf, "swiftly-kopfton")
         gtk_widget_set_hexpand(kopf, 1)
 
         // **Die Kulisse ist das Hauptkind** — sie gibt das Mass (380 hoch)

@@ -430,8 +430,7 @@ enum Stil {
         /* MARK: Kopfzone der Detailseite
            Der Ton kommt aus ``Tonblatt`` und wechselt mit dem Titel; hier
            steht nur, was ohne Ton gilt. */
-        .swiftly-kopfton { background-color: \(grund); }
-        .swiftly-tonauslauf { background-color: \(grund); padding-top: 26px; }
+        .swiftly-seitenton { background-color: \(grund); }
         /* Malt nichts. Für Widgets, die nur ein Mass beisteuern — die
            Zeichenflaeche der Kulisse malt ihr Bild selbst mit Cairo. */
         .swiftly-blank { background-color: transparent; background-image: none; }
@@ -481,15 +480,17 @@ enum Stil {
             background-color: \(akzent);
         }
 
-        /* **Links kein Innenabstand.** Die acht Punkt schoben Vorschaubild
-           und Staffelpille aus der Flucht: die Reiterbeschriftung darüber
-           beginnt am Rand des Inhalts, die Zeile darunter acht Punkt weiter
-           rechts. Oben und unten bleiben sie — die geben der Zeile Luft. */
+        /* **Der Rand steckt im Innenabstand, nicht im aeusseren.**
+           So laeuft die Hervorhebung ueber die ganze Breite, wie auf dem Mac,
+           und das Vorschaubild steht trotzdem in der Flucht der
+           Reiterbeschriftung darueber. Keine Rundung: eine Zeile, die von
+           Kante zu Kante geht, hat keine Ecken. */
         button.swiftly-folgenzeile {
             background-color: transparent;
             border: none;
-            border-radius: \(ecke)px;
-            padding: 8px 8px 8px 0;
+            border-radius: 0;
+            padding: 8px \(randAbstand)px;
+            transition: background-color 120ms ease-out;
         }
         button.swiftly-folgenzeile:hover { background-color: rgba(255,255,255,0.06); }
 

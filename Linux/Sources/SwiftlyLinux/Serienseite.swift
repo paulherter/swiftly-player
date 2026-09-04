@@ -22,9 +22,11 @@ extension App {
 
     func serienunterbau(_ serie: Item, in unten: Widget!) {
         let reiterraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        // **Kein Rand am Reiterinhalt.** Sonst reicht die Hervorhebung einer
+        // Folgenzeile nur bis 24 vor die Kante — auf dem Mac läuft sie über
+        // die ganze Breite. Den Rand tragen die Zeilen selbst, als
+        // Innenabstand, damit ihr Grund darunter durchläuft.
         let inhaltraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
-        gtk_widget_set_margin_start(inhaltraum, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_end(inhaltraum, Int32(Stil.randAbstand))
 
         var gewaehlt: Reiter = .folgen
         var reiterknoepfe: [Widget?] = []
@@ -64,13 +66,15 @@ extension App {
             staffelnLaden(serie, in: raum)
         case .besetzung:
             if serie.darsteller.isEmpty {
-                anhaengen(raum, beschriftung("Keine Besetzung hinterlegt.", stil: "swiftly-koerper"))
+                let leer = beschriftung("Keine Besetzung hinterlegt.", stil: "swiftly-koerper")
+                gtk_widget_set_margin_start(leer, Int32(Stil.randAbstand))
+                anhaengen(raum, leer)
             } else {
-                anhaengen(raum, besetzungsreihe(serie.darsteller, rand: 0))
+                anhaengen(raum, besetzungsreihe(serie.darsteller))
             }
         case .aehnliches:
             anhaengen(raum, beschriftung("Lade …", stil: "swiftly-koerper"))
-            aehnlicheNachladen(serie, in: raum, leeren: true, rand: 0)
+            aehnlicheNachladen(serie, in: raum, leeren: true)
         }
     }
 
@@ -136,6 +140,7 @@ extension App {
             gtk_popover_popup(alsTafel(tafel))
         }
 
+        gtk_widget_set_margin_start(pille, Int32(Stil.randAbstand))
         anhaengen(raum, pille)
         anhaengen(raum, folgenraum)
         if let jetzt = wahl.jetzt {

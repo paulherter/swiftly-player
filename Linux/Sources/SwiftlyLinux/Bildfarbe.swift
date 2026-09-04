@@ -143,23 +143,15 @@ enum Tonblatt {
             "rgba(\(ton.r),\(ton.g),\(ton.b),\(deckung))"
         }
         let blatt = """
-        /* Die Kopfzone trägt den Ton gleichmäßig — nur so kann keine
-           übermalte Stelle danebenliegen. */
-        .swiftly-kopfton { background-color: \(t(1)); }
-        /* Und darunter läuft er über 260 Punkte nach `grund` aus — als
-           Anstrich am Unterbau, damit er nichts misst. */
-        .swiftly-tonauslauf {
-            padding-top: 26px;
-            /* **Der Grund ist der Ton, nicht Schwarz.** Der Verlauf liegt als
-               Bild darüber; wo seine Deckung an der Oberkante einen Hauch
-               unter eins liegt, scheint der Grund durch. Mit Schwarz waren
-               das zwei bis drei Zeilen, die dunkler standen als beides —
-               genau der Strich quer über die Seite, am Bildschirmfoto
-               gemessen: 66 → 60 → 52 → 64. Mit dem Ton als Grund ist ein
-               Hauch Durchlässigkeit unsichtbar. */
-            background-color: \(t(1));
+        /* **Ein Anstrich für die ganze Seite.** Ton über die Höhe der
+           Kopfzone, dann 260 Punkte nach `grund` — dieselbe Länge wie auf dem
+           Mac. Zwei Kästen mit demselben Ton haben eine Kante dazwischen, und
+           die scheint auf einem halben Bildpunkt durch; einer hat keine. */
+        .swiftly-seitenton {
+            background-color: \(Stil.grund);
             background-image: linear-gradient(to bottom,
-                \(t(1)) 0px, \(Stil.grund) 260px);
+                \(t(1)) 0px, \(t(1)) \(Stil.heldHoehe)px,
+                \(Stil.grund) \(Stil.heldHoehe + 260)px);
             background-repeat: no-repeat;
         }
         """
