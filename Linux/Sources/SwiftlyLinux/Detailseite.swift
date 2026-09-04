@@ -71,16 +71,24 @@ extension App {
 
         let seite = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
 
-        // **Der Ton gehört an die Scrollfläche, nicht an ihren Inhalt.** Auf
-        // dem Mac steht er als `.background` an der `ScrollView` und bleibt
-        // damit stehen, während der Inhalt darüber wegläuft. Am Inhalt würde
-        // er mitscrollen, und der Kopf der Seite wäre irgendwann schwarz.
-        let scroller = gtk_scrolled_window_new()
-        gtk_widget_add_css_class(scroller, "swiftly-detailgrund")
-        gtk_scrolled_window_set_policy(OpaquePointer(scroller),
-                                       GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
-        gtk_widget_set_hexpand(scroller, 1)
-        gtk_widget_set_vexpand(scroller, 1)
+        // **Der Ton gehört an den Inhalt, nicht an die Scrollfläche.**
+        //
+        // Auf dem Mac steht er als `.background` an der `ScrollView` und
+        // bleibt damit stehen, während der Inhalt darüber wegläuft. Dort geht
+        // das, weil die Blenden das Bild **maskieren**: es wird durchsichtig,
+        // und was die Seite an dieser Stelle zeigt, ist gleichgültig.
+        //
+        // Hier wird übermalt, und dann müssen beide Verläufe übereinander
+        // liegen. An der Scrollfläche steht der eine still, während das
+        // Kopfbild mit dem Inhalt läuft — an der Unterkante des Bildes stand
+        // deshalb eine Stufe, sobald man ein Stück gescrollt hatte. Genau der
+        // Strich quer über die rechte Hälfte.
+        //
+        // Am Inhalt laufen beide zusammen. Dass der Ton dabei nach oben aus
+        // dem Bild wandert, ist richtig: er gehört zur Kopfzone.
+        gtk_widget_add_css_class(seite, "swiftly-detailgrund")
+
+        let scroller = seitenscroller()
         gtk_scrolled_window_set_child(OpaquePointer(scroller), seite)
 
         // **Der Zurückweg gehört in den Inhalt, nicht in die Systemleiste**

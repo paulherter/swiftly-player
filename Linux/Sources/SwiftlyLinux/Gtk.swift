@@ -333,6 +333,12 @@ func weichesScrollen(_ scroller: Widget!) {
             gtk_adjustment_get_upper(anpassung) - gtk_adjustment_get_page_size(anpassung)
         })
     let horcher = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL)
+    // **In der Fangphase, sonst kommt nichts an.** Ein Horcher, der an der
+    // Scrollfläche hängt, läuft von Haus aus in der Blasenphase — also
+    // *nachdem* die Scrollfläche das Rad schon selbst verarbeitet und den
+    // Sprung gemacht hat. Genau deshalb blieb das Scrollen stockig, obwohl
+    // der Horcher dran war. `CAPTURE` sieht das Ereignis zuerst.
+    gtk_event_controller_set_propagation_phase(horcher, GTK_PHASE_CAPTURE)
     g_signal_connect_data(UnsafeMutableRawPointer(horcher), "scroll",
                           unsafeBitCast(radGedreht, to: GCallback.self),
                           Unmanaged.passRetained(w).toOpaque(),
