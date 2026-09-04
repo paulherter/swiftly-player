@@ -123,7 +123,13 @@ extension App {
         gtk_scale_set_draw_value(alsSkala(spielerRegler), 0)
         gtk_widget_add_css_class(spielerRegler, "swiftly-regler")
         gtk_widget_set_hexpand(spielerRegler, 1)
-        beiSignal(spielerRegler, "change-value") { }
+        // **`change-value` bringt Sprungart und Wert mit** — mit dem
+        // schlichten Rückruf wäre das derselbe Absturz wie bei
+        // `edge-reached`. Deshalb ein eigener, der die Form kennt.
+        g_signal_connect_data(UnsafeMutableRawPointer(spielerRegler), "change-value",
+                              unsafeBitCast(reglerGezogen, to: GCallback.self),
+                              Unmanaged.passUnretained(self).toOpaque(),
+                              nil, GConnectFlags(rawValue: 0))
         anhaengen(leiste, spielerRegler)
         spielerRest = beschriftung("", stil: "swiftly-zweitzeile")
         anhaengen(leiste, spielerRest)
@@ -313,6 +319,17 @@ extension App {
 
     // MARK: Steuerung ein- und ausblenden (B1)
 
+    /// Der Zeitregler wurde gezogen. **Der Sprung greift sofort**, und der
+    /// Stand wird mitgeführt: sonst zöge ihn der nächste Takt zurück, bevor
+    /// VLC an der neuen Stelle angekommen ist.
+    func reglerGesetzt(_ anteil: Double) {
+        guard spielstand.dauer > 0 else { return }
+        let ziel = spielstand.dauer * anteil
+        spielstand.position = ziel
+        abspieler.setzeZeit(ziel)
+        steuerungZeigen()
+    }
+
     func steuerungZeigen() {
         gtk_widget_set_opacity(spielerSteuerung, 1)
         steuerungstakt += 1
@@ -476,6 +493,17 @@ extension App {
             }
         }
     }
+}
+
+/// Wenn jemand den Zeitregler zieht. Die Form ist `(GtkRange*, GtkScrollType,
+/// gdouble, gpointer)` — vier Argumente, nicht zwei.
+nonisolated(unsafe) let reglerGezogen: @convention(c) (
+    UnsafeMutableRawPointer?, UInt32, Double, gpointer?
+) -> gboolean = { _, _, anteil, daten in
+    guard let daten else { return 0 }
+    let app = Unmanaged<App>.fromOpaque(daten).takeUnretainedValue()
+    app.reglerGesetzt(min(max(anteil, 0), 1))
+    return 0   // false: GTK darf den Wert selbst übernehmen
 }
 
 /// Der Taktgeber. Wie jeder C-Rückruf trägt er die App als Zeiger.

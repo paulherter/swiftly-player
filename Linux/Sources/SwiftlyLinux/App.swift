@@ -82,7 +82,7 @@ final class App: @unchecked Sendable {
         // **D8: die Startseite holt ihre Reihen neu, wenn die App in den
         // Vordergrund kommt** — mit Frist, damit ein Wechsel hin und her nicht
         // jedes Mal lädt. Die Frist steht im Paket, nicht hier.
-        beiSignalRoh(UnsafeMutableRawPointer(fenster), "notify::is-active") { [weak self] in
+        beiEigenschaft(UnsafeMutableRawPointer(fenster), "notify::is-active") { [weak self] in
             guard let self, self.client != nil,
                   gtk_window_is_active(alsFenster(self.fenster)) != 0 else { return }
             if Auffrischung.faelligBeiRueckkehr(zuletzt: self.zuletztGeladen,

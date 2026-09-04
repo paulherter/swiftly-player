@@ -130,6 +130,26 @@ func beiSignalRoh(_ ziel: UnsafeMutableRawPointer, _ name: String,
                           auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
 }
 
+nonisolated(unsafe) private let auftragAlsEigenschaft: @convention(c) (
+    UnsafeMutableRawPointer?, OpaquePointer?, gpointer?
+) -> Void = { _, _, daten in
+    guard let daten else { return }
+    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+}
+
+/// Horcht auf eine Eigenschaft — `notify::is-active` und Verwandte.
+///
+/// **Eigener Rückruf, weil `notify` die Eigenschaft mitgibt.** Es ist genau
+/// die Form, an der die App am 04.09.2026 gestorben ist: der GParamSpec steht
+/// an der Stelle, an der ``beiSignal`` die Nutzdaten erwartet.
+func beiEigenschaft(_ ziel: UnsafeMutableRawPointer, _ name: String,
+                    _ block: @escaping () -> Void) {
+    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
+    g_signal_connect_data(ziel, name,
+                          unsafeBitCast(auftragAlsEigenschaft, to: GCallback.self),
+                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+}
+
 /// **Ein GTK-Zeiger ist nicht „sendbar", und Swift 6 besteht darauf.**
 ///
 /// Zu Recht: ein roher Zeiger sagt nichts darüber, wer ihn gleichzeitig
