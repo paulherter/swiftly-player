@@ -930,9 +930,14 @@ final class App: @unchecked Sendable {
             sanft(von: wert, nach: ziel) { gtk_adjustment_set_value(anpassung, $0) }
         }
 
-        beiSignal(links, "clicked") { blaettern(-1); nachfuehren() }
-        beiSignal(rechts, "clicked") { blaettern(1); nachfuehren() }
-        beiSignal(scroller, "edge-reached") { nachfuehren() }
+        beiSignal(links, "clicked") { blaettern(-1) }
+        beiSignal(rechts, "clicked") { blaettern(1) }
+        // **Nicht `edge-reached`.** Das Signal bringt die erreichte Kante mit
+        // und verschiebt damit die Nutzdaten — daran ist die App gestorben.
+        // `value-changed` an der Anpassung hat die schlichte Form und ist
+        // ohnehin das Richtige: es meldet jede Bewegung, nicht nur die ans
+        // Ende, also stimmen die Pfeile auch mitten im Blättern.
+        beiSignalRoh(UnsafeMutableRawPointer(anpassung), "value-changed") { nachfuehren() }
         beiZeiger(ueber, herein: { schwebt = true; nachfuehren() },
                          hinaus: { schwebt = false; nachfuehren() })
         nachfuehren()

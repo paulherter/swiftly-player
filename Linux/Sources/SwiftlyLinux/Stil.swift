@@ -160,8 +160,16 @@ enum Stil {
            `Eingabezeile` auf dem Mac. */
         entry image { color: \(schriftSehrLeise); min-width: 17px; margin-right: 9px; }
 
-        /* MARK: Hauptknopf — weiß mit dunkler Schrift, nicht im Akzent. */
-        button {
+        /* MARK: Knöpfe
+           **Der Reset gilt nur für unsere eigenen.** Er stand einmal auf
+           schlichtem `button` — und traf damit auch Minimieren, Maximieren
+           und Schließen, die danach unsichtbar dastanden. Der Versuch, sie
+           selbst nachzuzeichnen, sah dann nach nichts aus: die Fensterknöpfe
+           gehören dem System, nicht uns. Sie sind hier deshalb gar nicht
+           erwähnt und tragen, was das Systemthema ihnen gibt. */
+        button.swiftly-haupt, button.swiftly-flach, button.swiftly-zeile,
+        button.swiftly-chip, button.swiftly-profil, button.swiftly-kachel,
+        button.swiftly-pfeil {
             background-image: none;
             background-color: transparent;
             border: none;
@@ -169,6 +177,8 @@ enum Stil {
             color: \(schrift);
             border-radius: \(ecke)px;
             padding: 0;
+            min-height: 0;
+            min-width: 0;
         }
         button.swiftly-haupt {
             background-color: \(schrift);
@@ -267,21 +277,6 @@ enum Stil {
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
            Dieselbe Wirkung: gleiche Farbe, keine Linie, kein Schatten. */
-        /* **Die Fensterknöpfe hatte der Reset oben plattgemacht.**
-           `button { background: transparent; border: none; padding: 0 }` gilt
-           auch für Minimieren, Maximieren und Schließen — die standen danach
-           unsichtbar da. Sie bekommen ihre Form hier zurück. */
-        windowcontrols button {
-            min-width: 24px;
-            min-height: 24px;
-            padding: 2px;
-            margin: 0 3px;
-            border-radius: 12px;
-            background-color: rgba(255,255,255,0.10);
-        }
-        windowcontrols button:hover { background-color: rgba(255,255,255,0.20); }
-        windowcontrols button image { color: \(schrift); }
-
         headerbar {
             background-color: \(flaeche);
             background-image: none;

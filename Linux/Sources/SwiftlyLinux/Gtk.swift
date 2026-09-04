@@ -94,9 +94,29 @@ nonisolated(unsafe) let auftragFreigebenOeffentlich: @convention(c) (gpointer?, 
 /// `g_signal_connect_data`. Der Abschluss wird festgehalten und wieder
 /// freigegeben, wenn GTK das Signal löst — sonst wäre er nach dem nächsten
 /// Aufräumen ein Zeiger ins Leere.
+///
+/// **Nur für Signale ohne eigene Argumente.** Der Rückruf unten nimmt zwei
+/// Zeiger: den Sender und die Nutzdaten. Ein Signal, das dazwischen etwas
+/// mitgibt, schiebt die Nutzdaten eine Stelle weiter — und dann liest der
+/// Rückruf dessen Wert als Zeiger.
+///
+/// Genau so ist die App am 04.09.2026 abgestürzt, als „Bad pointer dereference
+/// at 0x8". Wer ein Signal mit Argumenten braucht, schreibt einen eigenen
+/// Rückruf mit passender Form — siehe ``beiZeiger`` für „enter", das x und y
+/// mitbringt.
 func beiSignal(_ ziel: Widget!, _ name: String, _ block: @escaping () -> Void) {
     let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
     g_signal_connect_data(UnsafeMutableRawPointer(ziel), name,
+                          unsafeBitCast(auftragAlsSignalOeffentlich, to: GCallback.self),
+                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+}
+
+/// Dasselbe für etwas, das kein Widget ist — eine `GtkAdjustment` etwa.
+/// Es gelten dieselben Formvorschriften wie bei ``beiSignal``.
+func beiSignalRoh(_ ziel: UnsafeMutableRawPointer, _ name: String,
+                  _ block: @escaping () -> Void) {
+    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
+    g_signal_connect_data(ziel, name,
                           unsafeBitCast(auftragAlsSignalOeffentlich, to: GCallback.self),
                           auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
 }
