@@ -23,7 +23,7 @@ import JellyfinKit
 final class App: @unchecked Sendable {
 
     // Fenster und die zwei Seiten darin.
-    private var fenster: Widget!
+    var fenster: Widget!
     var seiten: Widget!          // GtkStack
     private var anmeldeseite: Widget!
     private var startseite: Widget!
