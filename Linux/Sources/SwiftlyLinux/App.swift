@@ -909,7 +909,9 @@ final class App: @unchecked Sendable {
         gtk_overlay_add_overlay(OpaquePointer(ueber), rechts)
 
         // Den Typ dieser Anpassung benennt niemand — er wird nur gereicht.
-        let anpassung = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))
+        // Ausgepackt gleich hier: sie ist bei einem Scroller nie null, und der
+        // Übersetzer hat gefragt.
+        let anpassung = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))!
         var schwebt = false
 
         func nachfuehren() {
