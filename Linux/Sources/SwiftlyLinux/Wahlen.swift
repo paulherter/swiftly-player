@@ -15,6 +15,17 @@ struct Wahlen: Codable {
     var tonSprache = ""
     var untertitelSprache = ""
     var untertitelAutomatisch = false
+
+    /// **Was dem Server als Grenze gemeldet wird.**
+    ///
+    /// Eine Milliarde heisst praktisch unbegrenzt — ein Limit löst
+    /// Transkodierung aus, auch wenn Container und Codec passen. Wörtlich
+    /// `AppModel.profilBitrate` vom Mac; die beiden Einstellungen darüber
+    /// waren auf Linux gesetzt, gesichert und ohne jede Wirkung, weil sie
+    /// niemand las.
+    var profilBitrate: Int {
+        immerDirectPlay || bitratenGrenze <= 0 ? 1_000_000_000 : bitratenGrenze * 1_000_000
+    }
     var naechsteAutomatisch = true
     var zurueckSekunden = 10
     var vorSekunden = 30

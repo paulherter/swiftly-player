@@ -409,6 +409,8 @@ extension App {
     private func planNachladen(_ titel: Item, in beleg: Widget!) {
         guard let client else { return }
         let kiste = gehalten(beleg)
+        // Die Grenze vor dem Faden ablesen — `wahlen` gehört dem Hauptfaden.
+        let grenze = wahlen.profilBitrate
         Task.detached { [self] in
             let ziel: Item?
             if titel.type == "Series" {
@@ -418,7 +420,8 @@ extension App {
             }
             let plan: PlaybackPlan? = await {
                 guard let ziel else { return nil }
-                return try? await client.playbackPlan(for: ziel.id)
+                return try? await client.playbackPlan(for: ziel.id,
+                                                      profile: .vlc(maxBitrate: grenze))
             }()
             aufHauptfaden {
                 defer { losgelassen(kiste) }

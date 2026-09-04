@@ -50,8 +50,11 @@ extension App {
         // **Erst den Plan holen, dann öffnen.** Die Adresse steht nicht in
         // `Item`; sie kommt aus `/PlaybackInfo`, und dort entscheidet sich
         // zugleich, ob der Server transkodiert. Ohne Plan kein Bild.
+        // **Die Grenze vor dem Faden ablesen.** `wahlen` gehört dem
+        // Hauptfaden; im abgesetzten Auftrag darf sie nicht angefasst werden.
+        let grenze = wahlen.profilBitrate
         Task.detached { [self] in
-            let plan = try? await client.playbackPlan(for: item.id)
+            let plan = try? await client.playbackPlan(for: item.id, profile: .vlc(maxBitrate: grenze))
             aufHauptfaden {
                 guard let plan else {
                     // **D3: der Fehler nennt den Server, nicht nur „ging
@@ -449,23 +452,47 @@ extension App {
         spielerAbspielzeichen?.setzen(spielstand.laeuft)
     }
 
-    /// **Tonspuren werden einmal gesetzt, sobald VLC sie kennt** (B8).
+    /// **Ton- und Untertitelspur werden einmal gesetzt, sobald VLC sie
+    /// kennt** (B8).
+    ///
+    /// **Zwei Sachen waren hier falsch.** Die Untertitelvorwahl und
+    /// „Untertitel automatisch" standen in den Einstellungen, wurden
+    /// gesichert — und nie gelesen. Und der Abgleich lief über
+    /// `localizedCaseInsensitiveContains` auf einen einzigen Namen; VLC
+    /// meldet je nach Datei „German", „Deutsch" oder „ger". Dafür gibt es
+    /// ``Sprache/passt(_:zu:)`` im Paket, das alle Schreibweisen kennt — der
+    /// Mac benutzt es (`VLCPlayer.swift`), ich hatte es übersehen.
     private func spurenVorwaehlen() {
-        let wunsch = wahlen.tonSprache
-        guard !wunsch.isEmpty else { return }
-        if let treffer = abspieler.tonspuren.first(where: {
-            $0.name.localizedCaseInsensitiveContains(wunsch)
-        }) {
+        let tonWunsch = wahlen.tonSprache
+        if !tonWunsch.isEmpty,
+           let treffer = abspieler.tonspuren.first(where: {
+               $0.kennung >= 0 && Sprache.passt($0.name, zu: tonWunsch)
+           }) {
             abspieler.setzeTonspur(treffer.kennung)
+        }
+
+        // „Automatisch" heisst: Untertitel nur, wenn der Ton nicht in der
+        // gewünschten Sprache läuft. Sonst gilt die feste Vorwahl.
+        let uWunsch = wahlen.untertitelSprache
+        guard !uWunsch.isEmpty else { return }
+        if wahlen.untertitelAutomatisch, !tonWunsch.isEmpty {
+            let tonLaeuft = abspieler.tonspuren.first { $0.kennung == abspieler.tonspur }
+            if let tonLaeuft, Sprache.passt(tonLaeuft.name, zu: tonWunsch) { return }
+        }
+        if let treffer = abspieler.untertitelspuren.first(where: {
+            $0.kennung >= 0 && Sprache.passt($0.name, zu: uWunsch)
+        }) {
+            abspieler.setzeUntertitel(treffer.kennung)
         }
     }
 
     private func naechsteFolge() {
         guard let client, let titel = laufenderTitel, let serie = titel.seriesId else { return }
+        let grenze = wahlen.profilBitrate
         Task.detached { [self] in
             guard let naechste = try? await client.folgeNach(itemID: titel.id,
                                                              seriesID: serie),
-                  let plan = try? await client.playbackPlan(for: naechste.id) else { return }
+                  let plan = try? await client.playbackPlan(for: naechste.id, profile: .vlc(maxBitrate: grenze)) else { return }
             aufHauptfaden {
                 // **Beim Folgenwechsel: Ende der alten melden, Start der
                 // neuen. Genau einmal** (C4). `neuerTitel` setzt den Stand
