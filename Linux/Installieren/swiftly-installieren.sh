@@ -25,7 +25,10 @@ ZWEIG="${SWIFTLY_ZWEIG:-main}"
 HERKUNFT="${SWIFTLY_HERKUNFT:-https://github.com/paulherter/swiftly-for-jellyfin.git}"
 ARBEIT="${XDG_CACHE_HOME:-$HOME/.cache}/swiftly-jellyfin"
 ZIEL="$HOME/.local"
-NAME="swiftly-jellyfin"
+# **Nicht `NAME`.** `/etc/os-release` setzt selbst ein `NAME`, und das wird
+# hier gleich eingelesen. Im ersten Testlauf hiess die App danach
+# „CachyOS Linux" und landete in einem Verzeichnis mit Leerzeichen.
+PROGRAMM="swiftly-jellyfin"
 KENNUNG="de.paulherter.swiftly"
 
 rot=''; gruen=''; fett=''; blass=''; aus=''
@@ -40,7 +43,7 @@ klagen()  { printf '%sFehler:%s %s\n' "$rot$fett" "$aus" "$1" >&2; exit 1; }
 
 if [ "${1:-}" = "--deinstallieren" ] || [ "${1:-}" = "--entfernen" ]; then
     sagen "Swiftly for Jellyfin entfernen"
-    rm -rf "$ZIEL/share/$NAME" "$ZIEL/bin/$NAME" \
+    rm -rf "$ZIEL/share/$PROGRAMM" "$ZIEL/bin/$PROGRAMM" \
            "$ZIEL/share/applications/$KENNUNG.desktop" \
            "$ZIEL/share/metainfo/$KENNUNG.metainfo.xml" "$ARBEIT"
     find "$ZIEL/share/icons/hicolor" -name "$KENNUNG.png" -delete 2>/dev/null || true
@@ -226,12 +229,12 @@ binaer="$quelle/Linux/.build/release/SwiftlyLinux"
 # share/, und in bin/ steht nur ein Verweis.
 
 sagen "Einraeumen"
-mkdir -p "$ZIEL/bin" "$ZIEL/share/$NAME" "$ZIEL/share/applications" "$ZIEL/share/metainfo"
-install -m755 "$binaer" "$ZIEL/share/$NAME/$NAME"
-strip "$ZIEL/share/$NAME/$NAME" 2>/dev/null || true
-rm -rf "$ZIEL/share/$NAME"/*.resources
-cp -r "$quelle/Linux/.build/release"/*.resources "$ZIEL/share/$NAME/" 2>/dev/null || true
-ln -sf "$ZIEL/share/$NAME/$NAME" "$ZIEL/bin/$NAME"
+mkdir -p "$ZIEL/bin" "$ZIEL/share/$PROGRAMM" "$ZIEL/share/applications" "$ZIEL/share/metainfo"
+install -m755 "$binaer" "$ZIEL/share/$PROGRAMM/$PROGRAMM"
+strip "$ZIEL/share/$PROGRAMM/$PROGRAMM" 2>/dev/null || true
+rm -rf "$ZIEL/share/$PROGRAMM"/*.resources
+cp -r "$quelle/Linux/.build/release"/*.resources "$ZIEL/share/$PROGRAMM/" 2>/dev/null || true
+ln -sf "$ZIEL/share/$PROGRAMM/$PROGRAMM" "$ZIEL/bin/$PROGRAMM"
 
 for grad in 32 64 128 256 512; do
     bild="$quelle/Linux/Ressourcen/icons/hicolor/${grad}x${grad}/apps/$KENNUNG.png"
@@ -252,7 +255,7 @@ command -v gtk-update-icon-cache >/dev/null 2>&1 &&
 sagen "Fertig."
 echo
 leise "Im Anwendungsmenue steht jetzt „Swiftly\"."
-leise "Aus der Konsole: $NAME"
+leise "Aus der Konsole: $PROGRAMM"
 case ":$PATH:" in
     *":$ZIEL/bin:"*) ;;
     *) echo
