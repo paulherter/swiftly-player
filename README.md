@@ -82,13 +82,41 @@ and only where distance, input or window size demand it.
 | 📲 iPad | **1.0.0 (9)** · ships with the iPhone app |
 | 📺 Apple TV | **1.0.0 (9)** · beta on TestFlight |
 | 💻 Mac | **1.0.0 (9)** · beta on TestFlight |
-| 🐧 Linux | in development — GTK4, native, same shared logic |
+| 🐧 Linux | **1.0.0** · GTK4, native, same shared logic · [install](#-linux) |
 | 🪟 Windows | planned |
 
 **The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
 — one link for iPhone, iPad, Apple TV and Mac. What each build wants tested is
 written in its release notes, and it is usually five specific things rather
 than "have a look around".
+
+<br>
+
+## 🐧 Linux
+
+One command. It works out which distribution you are on, pulls the
+dependencies from that distribution's own package sources, and builds.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-for-jellyfin/main/Linux/Installieren/swiftly-installieren.sh | bash
+```
+
+| Distribution | Covered by |
+|---|---|
+| Arch, CachyOS, Manjaro, EndeavourOS, Garuda | the command above, or `makepkg -si` in [`Linux/Installieren`](Linux/Installieren) |
+| Ubuntu, Linux Mint, Debian, Pop!\_OS, elementary, Zorin | the command above |
+| Fedora, Nobara, RHEL, Rocky, AlmaLinux | the command above — it offers to add RPM Fusion, where libVLC lives |
+| openSUSE Tumbleweed, Leap | the command above — it points you at Packman for VLC |
+
+**Why it builds instead of downloading a binary.** A compiled program is tied
+to the glibc of the machine it was built on. Ours would be 2.44 from CachyOS;
+Ubuntu 22.04 has 2.35, and the program simply would not start there — with an
+error message that tells nobody why. Building takes a few minutes once and
+then runs everywhere.
+
+Everything lands under `$HOME`. Your password is asked for exactly once, for
+your distribution's packages, and the prompt comes from the package manager
+itself. To remove it again, run the same script with `--deinstallieren`.
 
 <br>
 
@@ -109,7 +137,8 @@ than "have a look around".
 - Your own Jellyfin server, **10.10 or newer**. Swiftly for Jellyfin hosts
   nothing and has no account of its own — you sign in with the credentials you
   already have.
-- iOS 18, tvOS 18 or macOS 15.
+- iOS 18, tvOS 18 or macOS 15 — or a Linux desktop with GTK 4 and libVLC,
+  which the installer takes care of.
 
 <br>
 
