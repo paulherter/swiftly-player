@@ -49,3 +49,8 @@
 /* Laufzeit — aus Sources/Shared/Titelangaben.swift hierher gehoben. */
 "%lld Std. %lld Min." = "%lld h %lld min";
 "%lld Min." = "%lld min";
+
+/* Wiedergabewahlen — aus Sources/Shared hierher gehoben. */
+"Unbegrenzt" = "Unlimited";
+"%lld Mbit/s" = "%lld Mbps";
+"Wie die Datei" = "As in the file";
