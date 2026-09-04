@@ -148,6 +148,12 @@ final class App: @unchecked Sendable {
                 self.startseiteLaden()
             }
         }
+        // **Der zuletzt benutzte Server steht schon im Feld.** Nach dem
+        // Abmelden war es leer, und man tippte die Adresse von Hand.
+        if Speicher.lesen() == nil, let merk = Speicher.gemerkterServer() {
+            gtk_editable_set_text(OpaquePointer(serverfeld), merk.serverURL.absoluteString)
+            serverstandZeigen(merk.servername.map { "Zuletzt: \($0)" } ?? "")
+        }
         gtk_window_present(alsFenster(fenster))
         // Erst jetzt hat die Zeichenfläche eine Bilduhr. Siehe
         // ``Startanimation/losfahren()``.
@@ -488,6 +494,8 @@ final class App: @unchecked Sendable {
                     // stand in den Einstellungen und im Profil und war immer
                     // leer, weil niemand sie je gesetzt hat.
                     self.serverfassung = fassung
+                    Speicher.serverMerken(.init(serverURL: url, servername: name,
+                                                fassung: fassung))
                     gtk_label_set_text(OpaquePointer(self.serverzeile), name)
                     gtk_label_set_text(OpaquePointer(self.fassungszeile), "Jellyfin \(fassung)")
                     self.serverstandZeigen("")

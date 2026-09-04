@@ -58,4 +58,33 @@ enum Speicher {
     static func loeschen() {
         try? FileManager.default.removeItem(at: datei)
     }
+
+    // MARK: Zuletzt verbunden
+
+    /// **Der zuletzt benutzte Server, auch nach dem Abmelden.**
+    ///
+    /// Abmelden loeschte bisher alles — beim naechsten Start stand wieder ein
+    /// leeres Adressfeld, und man tippte `tv.paulherter.de` von Hand. Der Mac
+    /// merkt sich Adresse, Name und Fassung getrennt von der Sitzung
+    /// (`Shared/Anmeldemodell.swift:15`); die Zugangsdaten sind damit weg, der
+    /// Weg dorthin nicht.
+    struct Merkzettel: Codable {
+        let serverURL: URL
+        let servername: String?
+        let fassung: String?
+    }
+
+    private static var merkdatei: URL { ordner.appendingPathComponent("server.json") }
+
+    static func serverMerken(_ eintrag: Merkzettel) {
+        try? FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
+        guard let daten = try? JSONEncoder().encode(eintrag) else { return }
+        try? daten.write(to: merkdatei, options: [.atomic])
+    }
+
+    static func gemerkterServer() -> Merkzettel? {
+        guard let daten = try? Data(contentsOf: merkdatei) else { return nil }
+        return try? JSONDecoder().decode(Merkzettel.self, from: daten)
+    }
 }
