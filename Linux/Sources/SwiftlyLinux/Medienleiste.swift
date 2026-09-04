@@ -36,6 +36,15 @@ final class Medienleiste: @unchecked Sendable {
     /// `const char*` auf `const GVariantType*`. In Swift gibt es das nicht;
     /// `g_variant_type_new` legt stattdessen eine Kopie an, die wieder frei
     /// werden muss.
+    /// Legt einen Eintrag `{sv}` an. Der Wert wird in eine Variante gepackt —
+    /// das verlangt der Typ `a{sv}`.
+    fileprivate static func eintragen(_ bauer: OpaquePointer?, _ name: String,
+                                      _ wert: OpaquePointer?) {
+        guard let wert else { return }
+        g_variant_builder_add_value(bauer, g_variant_new_dict_entry(
+            g_variant_new_string(name), g_variant_new_variant(wert)))
+    }
+
     private static func typ(_ text: String) -> OpaquePointer? {
         g_variant_type_new(text)
     }
@@ -135,17 +144,28 @@ final class Medienleiste: @unchecked Sendable {
         self.stelle = stelle
         guard let bus = verbindung else { return }
 
+        // **Auch hier ist die bequeme Form variadisch und damit gesperrt.**
+        // `g_variant_builder_add(b, "{sv}", …)` und `g_variant_new("(…)", …)`
+        // gibt es in Swift nicht; die Werte werden einzeln gebaut und
+        // zusammengesetzt. Der Wert in `a{sv}` ist eine **Variante**, nicht
+        // der nackte Wert — ohne `g_variant_new_variant` passt der Typ nicht.
         let bauer = Medienleiste.mitTyp("a{sv}") { g_variant_builder_new($0) }
         defer { g_variant_builder_unref(bauer) }
-        g_variant_builder_add(bauer, "{sv}", "PlaybackStatus",
-                              g_variant_new_string(laeuft ? "Playing" : "Paused"))
-        g_variant_builder_add(bauer, "{sv}", "Metadata", metadaten())
+        Medienleiste.eintragen(bauer, "PlaybackStatus",
+                               g_variant_new_string(laeuft ? "Playing" : "Paused"))
+        Medienleiste.eintragen(bauer, "Metadata", metadaten())
 
         let leer = Medienleiste.mitTyp("as") { g_variant_builder_new($0) }
         defer { g_variant_builder_unref(leer) }
 
-        let inhalt = g_variant_new("(sa{sv}as)", "org.mpris.MediaPlayer2.Player",
-                                   bauer, leer)
+        var kinder: [OpaquePointer?] = [
+            g_variant_new_string("org.mpris.MediaPlayer2.Player"),
+            g_variant_builder_end(bauer),
+            g_variant_builder_end(leer)
+        ]
+        let inhalt = kinder.withUnsafeMutableBufferPointer {
+            g_variant_new_tuple($0.baseAddress, 3)
+        }
         g_dbus_connection_emit_signal(bus, nil, "/org/mpris/MediaPlayer2",
                                       "org.freedesktop.DBus.Properties",
                                       "PropertiesChanged", inhalt, nil)
@@ -157,17 +177,16 @@ final class Medienleiste: @unchecked Sendable {
         defer { g_variant_builder_unref(bauer) }
         // Eine Kennung ist Pflicht; ohne sie halten manche Umgebungen den
         // Eintrag für unfertig und zeigen ihn gar nicht.
-        g_variant_builder_add(bauer, "{sv}", "mpris:trackid",
-                              g_variant_new_object_path("/de/paulherter/swiftly/titel"))
-        g_variant_builder_add(bauer, "{sv}", "mpris:length",
-                              g_variant_new_int64(Int64(dauer * 1_000_000)))
-        g_variant_builder_add(bauer, "{sv}", "xesam:title", g_variant_new_string(titel))
+        Medienleiste.eintragen(bauer, "mpris:trackid",
+                               g_variant_new_object_path("/de/paulherter/swiftly/titel"))
+        Medienleiste.eintragen(bauer, "mpris:length",
+                               g_variant_new_int64(gint64(dauer * 1_000_000)))
+        Medienleiste.eintragen(bauer, "xesam:title", g_variant_new_string(titel))
         if !untertitel.isEmpty {
             let liste = Medienleiste.mitTyp("as") { g_variant_builder_new($0) }
             defer { g_variant_builder_unref(liste) }
-            g_variant_builder_add(liste, "s", untertitel)
-            g_variant_builder_add(bauer, "{sv}", "xesam:artist",
-                                  g_variant_builder_end(liste))
+            g_variant_builder_add_value(liste, g_variant_new_string(untertitel))
+            Medienleiste.eintragen(bauer, "xesam:artist", g_variant_builder_end(liste))
         }
         return g_variant_builder_end(bauer)
     }
@@ -250,7 +269,7 @@ nonisolated(unsafe) private let mprisLesen: @convention(c) (
     case "PlaybackStatus":
         return g_variant_new_string(leiste.laeuft ? "Playing" : "Paused")
     case "Metadata":            return leiste.metadaten()
-    case "Position":            return g_variant_new_int64(Int64(leiste.stelle * 1_000_000))
+    case "Position":            return g_variant_new_int64(gint64(leiste.stelle * 1_000_000))
     case "CanPlay", "CanPause", "CanSeek", "CanControl", "CanGoNext":
         return g_variant_new_boolean(1)
     case "CanGoPrevious":       return g_variant_new_boolean(0)
