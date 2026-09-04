@@ -371,6 +371,7 @@ enum Stil {
             background-color: rgba(11,13,13,0.72);
             border: 1px solid \(rand);
         }
+        button.swiftly-pfeil { transition: opacity 140ms ease-out; }
         button.swiftly-pfeil image { color: \(schrift); }
         button.swiftly-pfeil:hover { background-color: rgba(11,13,13,0.92); }
 
@@ -454,7 +455,7 @@ enum Stil {
                 \(grund) 0%, rgba(11,11,13,0) 7%, rgba(11,11,13,0) 50%,
                 rgba(11,11,13,0.12) 60%, rgba(11,11,13,0.38) 70%,
                 rgba(11,11,13,0.66) 80%, rgba(11,11,13,0.86) 89%,
-                rgba(11,11,13,0.96) 95%, \(grund) 100%);
+                \(grund) 96%, \(grund) 100%);
         }
         .swiftly-detailgrund { background-color: \(grund); }
 

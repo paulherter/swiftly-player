@@ -36,9 +36,7 @@ extension App {
         case .einstellungen:  einstellungenBauen(block)
         }
 
-        let scroller = gtk_scrolled_window_new()
-        gtk_widget_set_hexpand(scroller, 1)
-        gtk_widget_set_vexpand(scroller, 1)
+        let scroller = seitenscroller()
         gtk_scrolled_window_set_child(OpaquePointer(scroller), block)
         anhaengen(detailhuelle, scroller)
     }

@@ -255,3 +255,87 @@ func beiZeiger(_ ziel: Widget!, herein: @escaping () -> Void, hinaus: @escaping 
                           b, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
     gtk_widget_add_controller(ziel, horcher)
 }
+
+// MARK: - Weiches Scrollen
+
+/// **GTK scrollt am Mausrad in Sprüngen.** Ein Rastpunkt, ein Satz — das ist
+/// das Stockige, das Am Zeigerfeld glättet GTK selbst, am Rad nicht.
+///
+/// Hier wird jeder Rastpunkt in ein Ziel verwandelt, und ein Takt läuft diesem
+/// Ziel exponentiell hinterher: pro Bild ein Fünftel des Rests. Kommen weitere
+/// Rastpunkte, wandert nur das Ziel — es entsteht keine zweite Bewegung, die
+/// gegen die erste läuft.
+private final class Weichlauf {
+    let lesen: () -> Double
+    let setzen: (Double) -> Void
+    let obergrenze: () -> Double
+    var ziel: Double
+    var takt: guint = 0
+
+    init(lesen: @escaping () -> Double, setzen: @escaping (Double) -> Void,
+         obergrenze: @escaping () -> Double) {
+        self.lesen = lesen
+        self.setzen = setzen
+        self.obergrenze = obergrenze
+        self.ziel = lesen()
+    }
+}
+
+/// Wie weit ein Rastpunkt trägt. Etwa drei Textzeilen — dieselbe Größenordnung,
+/// die ein Zeigerfeld in einer Wischbewegung zurücklegt.
+private let rastweite: Double = 110
+
+nonisolated(unsafe) private let weichTakt: @convention(c) (gpointer?) -> gboolean = { daten in
+    guard let daten else { return 0 }
+    let w = Unmanaged<Weichlauf>.fromOpaque(daten).takeUnretainedValue()
+    let jetzt = w.lesen()
+    let rest = w.ziel - jetzt
+    if abs(rest) < 0.5 {
+        w.setzen(w.ziel)
+        w.takt = 0
+        Unmanaged<Weichlauf>.fromOpaque(daten).release()
+        return 0
+    }
+    w.setzen(jetzt + rest * 0.20)
+    return 1
+}
+
+nonisolated(unsafe) private let radGedreht: @convention(c) (
+    UnsafeMutableRawPointer?, Double, Double, gpointer?
+) -> gboolean = { _, _, dy, daten in
+    guard let daten else { return 0 }
+    let w = Unmanaged<Weichlauf>.fromOpaque(daten).takeUnretainedValue()
+    let hoechst = w.obergrenze()
+    w.ziel = min(max(w.ziel + dy * rastweite, 0), max(hoechst, 0))
+    if w.takt == 0 {
+        // Der Takt hält sich selbst fest, solange er läuft.
+        w.takt = g_timeout_add_full(200, 16, weichTakt,
+                                    Unmanaged.passRetained(w).toOpaque(), nil)
+    }
+    return 1   // verbraucht: GTK soll nicht zusätzlich springen
+}
+
+nonisolated(unsafe) private let weichlaufFreigeben: @convention(c) (
+    gpointer?, UnsafeMutablePointer<_GClosure>?
+) -> Void = { daten, _ in
+    guard let daten else { return }
+    Unmanaged<Weichlauf>.fromOpaque(daten).release()
+}
+
+/// Hängt weiches Scrollen an eine Scrollfläche.
+func weichesScrollen(_ scroller: Widget!) {
+    guard let anpassung = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
+    else { return }
+    let w = Weichlauf(
+        lesen: { gtk_adjustment_get_value(anpassung) },
+        setzen: { gtk_adjustment_set_value(anpassung, $0) },
+        obergrenze: {
+            gtk_adjustment_get_upper(anpassung) - gtk_adjustment_get_page_size(anpassung)
+        })
+    let horcher = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL)
+    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "scroll",
+                          unsafeBitCast(radGedreht, to: GCallback.self),
+                          Unmanaged.passRetained(w).toOpaque(),
+                          weichlaufFreigeben, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(scroller, horcher)
+}

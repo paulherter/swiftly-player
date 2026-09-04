@@ -459,8 +459,8 @@ extension App {
                     ziel.titel = folge
                     gtk_widget_set_sensitive(knopfKiste.widget, 1)
                     let weiter = folge.fortsetzenAb != nil
-                    gtk_button_set_label(alsKnopf(knopfKiste.widget),
-                                         weiter ? "Fortsetzen" : "Abspielen")
+                    hauptknopfBeschriften(knopfKiste.widget,
+                                          weiter ? "Fortsetzen" : "Abspielen")
                     gtk_widget_set_visible(vornKiste.widget, weiter ? 1 : 0)
                 }
             }

@@ -668,9 +668,7 @@ final class App: @unchecked Sendable {
     /// Der gemeinsame Rahmen jeder Seite: oben 52, seitlich 24 — `inhaltOben`
     /// und `randAbstand` vom Mac.
     private func seitenrahmen(_ kind: Widget!) -> Widget! {
-        let scroller = gtk_scrolled_window_new()
-        gtk_widget_set_hexpand(scroller, 1)
-        gtk_widget_set_vexpand(scroller, 1)
+        let scroller = seitenscroller()
         gtk_widget_set_margin_top(kind, Int32(Stil.inhaltOben))
         gtk_widget_set_margin_start(kind, Int32(Stil.randAbstand))
         gtk_widget_set_margin_end(kind, Int32(Stil.randAbstand))
@@ -816,6 +814,24 @@ final class App: @unchecked Sendable {
         beiSignal(suchfeld, "activate") { [weak self] in self?.suchen() }
         beiSignal(suchfeld, "changed") { [weak self] in self?.sucheAngestossen() }
         return seitenrahmen(block)
+    }
+
+    /// **Eine Scrollfläche ohne Leiste, dafür mit weichem Lauf.**
+    ///
+    /// Die senkrechte Leiste braucht niemand — gescrollt wird am Rad, und ein
+    /// Balken über dem Inhalt ist dasselbe Ärgernis wie der waagerechte in
+    /// den Reihen. `EXTERNAL` heisst: scrollen ja, Leiste nein.
+    ///
+    /// Das weiche Laufen macht ``weichesScrollen``; GTK springt am Rad sonst
+    /// von Rastpunkt zu Rastpunkt.
+    func seitenscroller() -> Widget! {
+        let scroller = gtk_scrolled_window_new()
+        gtk_scrolled_window_set_policy(OpaquePointer(scroller),
+                                       GTK_POLICY_NEVER, GTK_POLICY_EXTERNAL)
+        gtk_widget_set_hexpand(scroller, 1)
+        gtk_widget_set_vexpand(scroller, 1)
+        weichesScrollen(scroller)
+        return scroller
     }
 
     /// Ein umbrechendes Raster. GTKs `GtkFlowBox` kann genau das, was auf dem
@@ -1068,12 +1084,21 @@ final class App: @unchecked Sendable {
         let anpassung = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))!
         var schwebt = false
 
+        // **Einblenden, nicht erscheinen.** Auf dem Mac liegt eine
+        // `.transition(.opacity)` an den Pfeilen. `set_visible` kennt keinen
+        // Zwischenzustand — die Deckung schon, und das Stilblatt gibt ihr
+        // eine Zeit mit. `can_target` sorgt dafür, dass ein unsichtbarer
+        // Pfeil auch keinen Klick schluckt.
+        func zeigen(_ knopf: Widget!, _ ja: Bool) {
+            gtk_widget_set_opacity(knopf, ja ? 1 : 0)
+            gtk_widget_set_can_target(knopf, ja ? 1 : 0)
+        }
         func nachfuehren() {
             let wert = gtk_adjustment_get_value(anpassung)
             let seite = gtk_adjustment_get_page_size(anpassung)
             let ganz = gtk_adjustment_get_upper(anpassung)
-            gtk_widget_set_visible(links, schwebt && wert > 1 ? 1 : 0)
-            gtk_widget_set_visible(rechts, schwebt && wert + seite < ganz - 1 ? 1 : 0)
+            zeigen(links, schwebt && wert > 1)
+            zeigen(rechts, schwebt && wert + seite < ganz - 1)
         }
 
         func blaettern(_ richtung: Double) {
@@ -1110,7 +1135,8 @@ final class App: @unchecked Sendable {
         gtk_widget_set_halign(knopf, rechts ? GTK_ALIGN_END : GTK_ALIGN_START)
         gtk_widget_set_valign(knopf, GTK_ALIGN_START)
         gtk_widget_set_margin_top(knopf, Int32(4 + bildHoehe / 2 - 17))
-        gtk_widget_set_visible(knopf, 0)
+        gtk_widget_set_opacity(knopf, 0)
+        gtk_widget_set_can_target(knopf, 0)
         return knopf
     }
 

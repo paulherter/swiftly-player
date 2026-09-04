@@ -56,6 +56,18 @@ func hauptknopf(_ text: String, symbol: String = "go-next-symbolic") -> Widget! 
     return knopf
 }
 
+/// Beschriftet einen Hauptknopf **nach**, ohne sein Symbol zu verlieren.
+///
+/// `gtk_button_set_label` ersetzt das ganze Kind durch eine schlichte
+/// Beschriftung — und damit war der Abspielpfeil weg, sobald die Serienseite
+/// „Fortsetzen" nachtrug. Der Knopf trägt eine Box aus Symbol und Text; hier
+/// wird nur der Text gesetzt.
+func hauptknopfBeschriften(_ knopf: Widget!, _ text: String) {
+    guard let reihe = gtk_widget_get_first_child(knopf),
+          let l = gtk_widget_get_last_child(reihe) else { return }
+    gtk_label_set_text(OpaquePointer(l), text)
+}
+
 // MARK: - Seitenleiste
 
 /// Eine Zeile der Seitenleiste: Symbol (17 breit), 10 Abstand, Beschriftung.

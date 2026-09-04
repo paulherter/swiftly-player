@@ -48,8 +48,8 @@ extension App {
             anhaengen(zeile, knopf)
         }
         anhaengen(reiterraum, zeile)
-        // Die Haarlinie läuft über die volle Breite, die Reiter nicht.
-        anhaengen(reiterraum, trennlinie())
+        // **Ohne Haarlinie darunter.** Auf dem Mac läuft sie über die volle
+        // Breite; Das ist eine bewusste Abweichung — zurück ist es eine Zeile.
 
         anhaengen(unten, reiterraum)
         anhaengen(unten, inhaltraum)
