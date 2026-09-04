@@ -294,26 +294,31 @@ extension App {
         // Titelzeile, hier schon, und ihre Höhe kommt oben drauf.
         gtk_widget_set_margin_top(feld, Int32(Stil.titelHoehe + 98 - Stil.kopfzeileHoehe))
 
+        // **Jede Zeile in ihrem Fach.** Die vier Stellen und Höhen stehen so
+        // auf dem Mac; ohne festes Fach wüchse jede Beschriftung über ihre
+        // Höhe hinaus, weil Inter höher baut als SF Pro — und die Abstände
+        // dazwischen wüchsen mit. Was zu gross wird, wird abgeschnitten und
+        // verschiebt nichts.
         let name = beschriftung(titel.name, stil: "swiftly-heldtitel")
         gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
         gtk_label_set_xalign(OpaquePointer(name), 0)
-        gtk_widget_set_size_request(name, 640, 42)
-        gtk_fixed_put(alsFeld2(feld), name, 0, 0)
+        gtk_fixed_put(alsFeld2(feld), fach(name, breite: 640, hoehe: 42), 0, 0)
 
-        let angaben = angabenreihe(titel)
-        gtk_widget_set_size_request(angaben, 640, 20)
-        gtk_fixed_put(alsFeld2(feld), angaben, 0, 54)
+        gtk_fixed_put(alsFeld2(feld), fach(angabenreihe(titel), breite: 640, hoehe: 20),
+                      0, 54)
 
         let text = beschriftung(titel.overview ?? "", stil: "swiftly-koerper", umbruch: true)
         gtk_label_set_xalign(OpaquePointer(text), 0)
+        gtk_label_set_yalign(OpaquePointer(text), 0)
         gtk_label_set_lines(OpaquePointer(text), 3)
         gtk_label_set_ellipsize(OpaquePointer(text), PANGO_ELLIPSIZE_END)
         gtk_label_set_justify(OpaquePointer(text), GTK_JUSTIFY_LEFT)
         gtk_widget_add_css_class(text, "swiftly-beschreibung")
-        gtk_widget_set_size_request(text, 640, 66)
-        gtk_fixed_put(alsFeld2(feld), text, 0, 92)
+        gtk_fixed_put(alsFeld2(feld), fach(text, breite: 640, hoehe: 66,
+                                           senkrecht: GTK_ALIGN_START), 0, 92)
 
-        gtk_fixed_put(alsFeld2(feld), knopfreihe(titel), 0, 182)
+        gtk_fixed_put(alsFeld2(feld), fach(knopfreihe(titel), breite: 640,
+                                           hoehe: Stil.hauptknopfHoehe), 0, 182)
         return feld
     }
 

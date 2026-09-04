@@ -215,6 +215,30 @@ func zeichenLegen(_ huelle: Widget!, serie: Bool) {
     gtk_overlay_add_overlay(OpaquePointer(huelle), zeichen)
 }
 
+/// **Genau dieses Mass, nicht mehr.**
+///
+/// `gtk_widget_set_size_request` ist ein Mindestmass — ein Kind darf darüber
+/// hinauswachsen, und Beschriftungen tun das: Inter baut höher als SF Pro,
+/// also wurde jede Zeile des Heldenblocks ein paar Punkte höher als ihr Fach
+/// auf dem Mac, und die Abstände dazwischen wuchsen mit.
+///
+/// Ein `GtkOverlay` misst **nur sein Hauptkind**. Ist das eine leere Box mit
+/// dem gewünschten Mass, steht das Fach fest; der Inhalt liegt als Überzug
+/// darin und wird nicht gemessen. Dieselbe Technik wie beim Bildkäfig, nur
+/// für Text.
+func fach(_ kind: Widget!, breite: Int, hoehe: Int,
+          senkrecht: GtkAlign = GTK_ALIGN_CENTER) -> Widget! {
+    let huelle: Widget! = gtk_overlay_new()
+    let mass: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+    gtk_widget_set_size_request(mass, Int32(breite), Int32(hoehe))
+    gtk_overlay_set_child(OpaquePointer(huelle), mass)
+    gtk_widget_set_valign(kind, senkrecht)
+    gtk_widget_set_halign(kind, GTK_ALIGN_FILL)
+    gtk_overlay_add_overlay(OpaquePointer(huelle), kind)
+    gtk_widget_set_overflow(huelle, GTK_OVERFLOW_HIDDEN)
+    return huelle
+}
+
 // MARK: - Chip
 
 /// Filter- und Sortierchip. Aktiv ist er weiß mit dunkler Schrift, sonst
