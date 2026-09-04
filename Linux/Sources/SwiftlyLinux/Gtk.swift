@@ -401,7 +401,7 @@ func weichesScrollen(_ scroller: Widget!) {
 
 // MARK: - Klicken ohne Knopf
 
-nonisolated(unsafe) private let auftragAlsKlick: @convention(c) (
+nonisolated(unsafe) let auftragAlsKlick: @convention(c) (
     UnsafeMutableRawPointer?, Int32, Double, Double, gpointer?
 ) -> Void = { _, _, _, _, daten in
     guard let daten else { return }
@@ -595,6 +595,20 @@ nonisolated(unsafe) private let auftragFreigebenRoh: @convention(c) (gpointer?) 
     Unmanaged<Auftrag>.fromOpaque(daten).release()
 }
 
+
+/// Meldet einen Rechtsklick — die Zeigerform des langen Drückens (A6).
+///
+/// Dieselbe Geste wie ``beiKlick``, nur auf die rechte Taste gestellt und auf
+/// `pressed`: ein Kontextmenü erscheint beim Drücken, nicht beim Loslassen.
+func beiRechtsklick(_ ziel: Widget!, _ block: @escaping () -> Void) {
+    let geste = gtk_gesture_click_new()
+    gtk_gesture_single_set_button(OpaquePointer(geste), 3)
+    let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(geste), "pressed",
+                          unsafeBitCast(auftragAlsKlick, to: GCallback.self),
+                          auftrag, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(ziel, geste)
+}
 
 // MARK: - Was die Bedienhilfe erfährt
 

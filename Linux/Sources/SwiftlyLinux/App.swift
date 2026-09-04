@@ -1425,7 +1425,8 @@ final class App: @unchecked Sendable {
         // **Nur „Weiterschauen" springt direkt in die Wiedergabe** (A1).
         // „Nächste Folge" und „Zuletzt hinzugefügt" öffnen die Übersicht
         // (A2, A3) — was man nicht angefangen hat, will man erst ansehen.
-        return kachelhuelle(bild: kaefig, breite: breite, oben: oben, unten: unten) {
+        return kachelhuelle(bild: kaefig, breite: breite, oben: oben, unten: unten,
+                            uebersicht: quer ? { [weak self] in self?.oeffne(item) } : nil) {
             [weak self] in
             guard let self else { return }
             if quer { self.starte(item) } else { self.oeffne(item) }
@@ -1471,8 +1472,18 @@ final class App: @unchecked Sendable {
     /// Die Abstände stehen in `Macbausteine.Posterkachel`: **8** zwischen Bild
     /// und Text, **1** zwischen Titel und Zweitzeile. Hier standen zuerst
     /// beide auf 8, und der Abstand darunter war doppelt so groß wie auf dem
-    /// Mac
+    /// Mac Eine Kachel: Bild, Titel, Zweitzeile — und der Rechtsklickweg zur
+    /// Übersicht (A6).
+    ///
+    /// **Wozu er da ist:** „Weiterschauen" springt sofort in die Wiedergabe
+    /// (A1). Wer *erst nachsehen* will, worum es geht, hat sonst keinen Weg
+    /// zur Seite. Auf dem Mac steht dafür `.contextMenu` (`Macbausteine`), auf
+    /// dem Telefon das lange Drücken; hier die rechte Taste.
+    ///
+    /// `uebersicht` ist `nil`, wo die Kachel ohnehin schon dorthin führt — ein
+    /// Menü mit dem einen Eintrag, den der Klick auch tut, ist keiner.
     func kachelhuelle(bild: Widget!, breite: Int, oben: String, unten: String?,
+                      uebersicht: (() -> Void)? = nil,
                       auswahl: @escaping () -> Void) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-kachel")
@@ -1493,6 +1504,21 @@ final class App: @unchecked Sendable {
 
         gtk_button_set_child(alsKnopf(knopf), kachel)
         beiSignal(knopf, "clicked", auswahl)
+
+        if let uebersicht {
+            let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+            let tafel: Widget! = gtk_popover_new()
+            gtk_widget_add_css_class(tafel, "swiftly-mehr")
+            gtk_popover_set_child(alsTafel(tafel), liste)
+            gtk_popover_set_position(alsTafel(tafel), GTK_POS_BOTTOM)
+            gtk_widget_set_parent(tafel, knopf)
+            anhaengen(liste, handlungszeile("dialog-information-symbolic",
+                                            "Übersicht öffnen") {
+                gtk_popover_popdown(alsTafel(tafel))
+                uebersicht()
+            })
+            beiRechtsklick(knopf) { gtk_popover_popup(alsTafel(tafel)) }
+        }
         return knopf
     }
 

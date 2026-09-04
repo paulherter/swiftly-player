@@ -534,7 +534,7 @@ extension App {
         gtk_popover_popup(alsTafel(tafel))
     }
 
-    private func handlungszeile(_ symbol: String, _ text: String,
+    func handlungszeile(_ symbol: String, _ text: String,
                                 _ auswahl: @escaping () -> Void) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-handlung")
