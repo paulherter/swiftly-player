@@ -196,6 +196,11 @@ final class VLCPlayerView: Basisansicht {
     private var letzterNeuaufbau = Date.distantPast
     private var wachhund: Timer?
     private var letzteBekannteZeit: Int32 = -1
+
+    /// Letzter Stand der beiden VLC-Zaehler, fuer ``bildfluss(jetzt:)``.
+    /// `nil` heisst: noch kein Vergleichswert, also noch kein Urteil.
+    private var letzteBilder: UInt64?
+    private var letzteBytes: UInt64?
     private var stehtSeit: Date?
     private var netzErreichbar = true
     private var wartetAufNetz = false
@@ -227,7 +232,15 @@ final class VLCPlayerView: Basisansicht {
     private var lautstaerkeVorher: Int32?
 
     private func tonZurueckhalten(_ zurueck: Bool) {
-        guard let ton = player.audio else { return }
+        // **Der stille Ausgang.** Gibt es den Tonausgang beim Oeffnen noch
+        // nicht, faellt der Rueckhalt hier lautlos aus — und der Zuschauer
+        // hoert genau die Sekunde vom Anfang, die er nicht hoeren soll.
+        // 09.2026 wieder gemeldet, obwohl der Rueckhalt gebaut ist; ob es
+        // dieser Ausgang ist, sagt nur eine Messung.
+        guard let ton = player.audio else {
+            Protokoll.schreib("[Ton] Rueckhalt(\(zurueck)) ohne Tonausgang — wirkungslos")
+            return
+        }
         if zurueck {
             guard lautstaerkeVorher == nil else { return }
             // **Was VLC vor dem ersten Ton meldet, ist kein Messwert.**
@@ -239,9 +252,11 @@ final class VLCPlayerView: Basisansicht {
             let jetzt = ton.volume
             lautstaerkeVorher = jetzt > 0 ? jetzt : 100
             ton.volume = 0
+            Protokoll.schreib("[Ton] stumm ab jetzt (war \(jetzt), gemerkt \(lautstaerkeVorher!))")
         } else if let vorher = lautstaerkeVorher {
             ton.volume = vorher > 0 ? vorher : 100
             lautstaerkeVorher = nil
+            Protokoll.schreib("[Ton] wieder laut (\(vorher))")
         }
     }
 
@@ -386,6 +401,10 @@ final class VLCPlayerView: Basisansicht {
         // Bild-im-Bild-Fenster weiter Wiedergabe, obwohl pausiert ist.
         refreshPiPState()
 
+        // Pausierter Start: jeder Wechsel ist ein Anlass, sofort statt beim
+        // naechsten Takt — bei Paused ist das der Moment zum Fortsetzen.
+        if startsprung != nil { startsprungPruefen(anlass: VLCMediaPlayerStateToString(zustand)) }
+
         // **Der Knopf folgt der Maschine, nicht der Uhr.**
         //
         // Der Zustand des Abspielknopfes hing bisher am Takt, und der schlägt
@@ -529,6 +548,7 @@ final class VLCPlayerView: Basisansicht {
         }
 
         if jetzt != letzteBekannteZeit {
+            bildfluss(jetzt: jetzt)
             letzteBekannteZeit = jetzt
             stehtSeit = nil
             let laenge = laengeSekunden
@@ -572,6 +592,47 @@ final class VLCPlayerView: Basisansicht {
         neuVerbinden(grund: "Bild steht seit \(Int(dauer)) s")
     }
 
+    /// **Die Uhr laeuft, das Bild steht — davon weiss `stillstandPruefen`
+    /// nichts.**
+    ///
+    /// Die Absicherung darueber schlaegt an, wenn die *Zeit* stehen bleibt.
+    /// 09.2026 den umgekehrten Fall gemeldet: App lag lange im Hintergrund,
+    /// Player auf Pause; zurueck in der App lief es eine halbe Minute, dann
+    /// Standbild — und die Zeit lief weiter. Fuer `Stromwacht` ist das ein
+    /// gesunder Strom, denn `jetzt` aendert sich jede Sekunde. Sie ist fuer
+    /// genau diesen Fehler blind, und zwar bauartbedingt.
+    ///
+    /// Deshalb hier die zweite Groesse. VLC fuehrt sie selbst mit:
+    /// `displayedPictures` sind die gezeigten Bilder, `demuxReadBytes` das,
+    /// was ueberhaupt vom Server ankommt. Die beiden zusammen trennen die zwei
+    /// Erklaerungen, die sich sonst nicht unterscheiden lassen:
+    ///
+    /// - Bytes wachsen, Bilder nicht → die Daten kommen, die Ausgabe ist tot.
+    /// - Beide stehen → es kommt nichts mehr, die Verbindung ist weg.
+    ///
+    /// **Noch wird nur mitgeschrieben, nicht eingegriffen.** Welche der beiden
+    /// es ist, weiss niemand, und eine Bremse auf Verdacht hat in dieser Datei
+    /// schon einmal den Haenger erzeugt, den sie beheben sollte — siehe
+    /// `Stromwacht`. Erst messen.
+    private func bildfluss(jetzt: Int32) {
+        guard let stat = player.media?.statistics else { return }
+        defer {
+            letzteBilder = stat.displayedPictures
+            letzteBytes = stat.demuxReadBytes
+        }
+        guard let vorherBilder = letzteBilder, let vorherBytes = letzteBytes else { return }
+
+        // Nur der auffaellige Fall kommt ins Protokoll. Jede Sekunde eine
+        // Zeile zu schreiben, macht die Datei unlesbar und verdeckt genau
+        // den Moment, um den es geht.
+        guard stat.displayedPictures == vorherBilder else { return }
+
+        let bytes = stat.demuxReadBytes - vorherBytes
+        Protokoll.schreib("[Bild] Uhr bei \(jetzt / 1000) s laeuft, aber kein neues Bild"
+            + " (gezeigt \(stat.displayedPictures), verloren \(stat.lostPictures),"
+            + " neue Bytes \(bytes)) → \(bytes > 0 ? "Daten kommen an, Ausgabe steht" : "es kommt nichts mehr")")
+    }
+
     /// Strom neu aufmachen und an die letzte gute Stelle springen.
     ///
     /// Das ist erst seit 'mkv_trusted' eine gute Idee: vorher hat der Sprung
@@ -602,15 +663,38 @@ final class VLCPlayerView: Basisansicht {
 
     /// Startposition setzen, sobald VLC springen kann.
     ///
-    /// Nicht als ':start-time'-Option: die zwingt VLC, schon beim Oeffnen zu
-    /// springen, und das kostet ein Vielfaches.
+    /// **Nicht als ':start-time'-Option — und der urspruengliche Grund dafuer
+    /// ist nicht mehr der richtige.**
+    ///
+    /// Hier stand: die Option zwinge VLC, schon beim Oeffnen zu springen, und
+    /// das koste ein Vielfaches. Das galt vor `mkv_trusted`, als ein Sprung
+    /// ohne Index zwanzig Sekunden dauerte. Heute sind es Millisekunden, also
+    /// habe ich es am 04.09.2026 umgebaut — und binnen Minuten am Geraet
+    /// wieder ausgebaut.
+    ///
+    /// **Der neue Grund ist ein anderer und ein besserer.** Die gemerkte
+    /// Stelle kann am Dateiende liegen: eine Folge laeuft durch, die App merkt
+    /// sich 3707 s, und beim naechsten Oeffnen steht genau dort die
+    /// Startposition. Mit ':start-time' meldet VLC dann sofort `end of stream`
+    /// — gemessen, 141 ms nach dem Oeffnen, die Folgenende- Erkennung greift
+    /// und die App springt in die naechste Folge.
+    ///
+    /// Der Weg ueber den nachtraeglichen Sprung hat den Fehler nicht: dort
+    /// laeuft der Strom erst an, und ein Sprung ans eigene Ende ist harmlos.
+    ///
+    /// Wer es erneut versucht, braucht **vorher** die Laufzeit und einen
+    /// Abstand zum Ende — und die Laufzeit steht beim Oeffnen noch nicht fest.
+    /// Das ist der eigentliche Aufwand, nicht die Option.
     ///
     /// Haengt bewusst **nicht** allein am Zustandswechsel nach Playing. Baut
     /// man den Strom neu auf, waehrend VLC schon spielt, bleibt es intern bei
-    /// Playing — es kommt kein Uebergang, der Rueckruf feuert nie und der
-    /// neue Strom laeuft ab Sekunde 0. Genau daran ist die Rettung nach dem
+    /// Playing — es kommt kein Uebergang, der Rueckruf feuert nie und der neue
+    /// Strom laeuft ab Sekunde 0. Genau daran ist die Rettung nach dem
     /// Netzwechsel gescheitert. Der Wachhund ruft deshalb ebenfalls hier an.
     private func startpositionSetzen() {
+        // Der pausierte Start hat Vorrang; dieser Weg ist nur noch der
+        // Rueckfall fuer Startstellen unter einer Sekunde.
+        guard startsprung == nil else { return }
         guard let ziel = startposition else { return }
         guard ziel > 1 else {
             startposition = nil
@@ -620,6 +704,17 @@ final class VLCPlayerView: Basisansicht {
         }
         // Vor dem ersten Bild verpufft ein Sprung wirkungslos.
         guard player.isSeekable, player.time.intValue > 0 else { return }
+
+        // Hat `:start-time` getroffen, waere ein Nachsprung ein Sprung fuer
+        // nichts — und der Ladeschirm bliebe dafuer laenger stehen.
+        if positionSeconds >= ziel - 10 {
+            Protokoll.schreib("[VLC] Strom steht schon bei \(Int(positionSeconds)) s — kein Nachsprung")
+            startposition = nil
+            erstStelle = nil
+            tonZurueckhalten(false)
+            return
+        }
+
         startposition = nil
         Protokoll.schreib("[VLC] Startposition gesetzt: \(Int(ziel)) s (von \(Int(positionSeconds)) s)")
         // Ueber denselben Weg wie jeder andere Sprung — samt Nachmessung.
@@ -835,14 +930,150 @@ final class VLCPlayerView: Basisansicht {
             Protokoll.schreib("[VLC] Matroska erkannt → Demuxer mkv_trusted (Cues gelten)")
         }
 
+        // **Pausiert oeffnen, im Stillstand springen, dann fortsetzen.**
+        //
+        // Das ist der Weg, der den Anfang der Folge nie zeigt und nie hoeren
+        // laesst — nicht, weil er ihn verdeckt, sondern weil er ihn gar nicht
+        // erst ausgibt. Gemessen war vorher: VLC `started` bei +0,41 s, unser
+        // Sprung bei +1,00 s, Daten von der Zielstelle bei +1,12 s. Die
+        // 0,85 s dazwischen waren Bild und Ton von Sekunde null, und der
+        // alte Riegel („vor dem ersten Bild verpufft ein Sprung") hat genau
+        // das erzwungen: er wartete auf `time > 0`, also auf laufende Ausgabe.
+        //
+        // Was VLC 4 wirklich tut (libvlc/vlc, geprueft am Quelltext):
+        //
+        // - `:start-paused` kommt ueber input_item_ApplyOptions am Eingang an
+        //   (input.c:249) und pausiert ihn zu Beginn von MainLoop (input.c:647).
+        // - Waehrend des Pufferns wird die Pause aufgeschoben (input.c:1755)
+        //   und am Puffer-Ende **vor** der Freigabe der Dekoder angewandt
+        //   (es_out.c:1268–1285). Kein Bild, kein Sample wird ausgegeben.
+        // - Ein Sprung im Pausenzustand wird ausgefuehrt; danach wird an der
+        //   Zielstelle gepuffert, und spaeter erzeugte Dekoder erben die Pause
+        //   (es_out.c:1288, decoder.c:436). Der Ton bleibt still.
+        // - Fortsetzen ueber `player.play()`: VLCKit ruft bei `Paused` direkt
+        //   set_pause(0). **Nur bei gemeldetem Paused** — vorher waere play()
+        //   ein Leerlauf (vlc_player_Start: schon gestartet, nicht pausiert),
+        //   und die aufgeschobene Pause liesse den Spieler danach stehen.
+        //
+        // `:start-time` war die falsche Abkuerzung: es verschiebt die
+        // Zeitachse (i_stop += i_start, input.c:916), VLC meldet dann die
+        // Restlaenge. Der Ton-Rueckhalt ueber die Lautstaerke war nie wirksam:
+        // vor dem ersten Ton gibt es keinen Tonausgang, vlc_player_aout_
+        // SetVolume gibt -1 zurueck (aout.c:137) und VLCKit ignoriert das.
+        // Beides bleibt als Rueckfall stehen, traegt aber nichts mehr.
+        let pausiertStarten = abSekunden > 1
+        if pausiertStarten {
+            medium.addOption(":start-paused")
+        }
+
         startposition = abSekunden
-        erstStelle = abSekunden > 1 ? abSekunden : nil
+        erstStelle = pausiertStarten ? abSekunden : nil
         tonZurueckhalten(erstStelle != nil)
         melder.neuBeginnen()
-        Protokoll.schreib("[VLC] Öffne \(url.lastPathComponent), Startposition \(Int(abSekunden)) s")
+        Protokoll.schreib("[VLC] Öffne \(url.lastPathComponent), Startposition \(Int(abSekunden)) s"
+            + (pausiertStarten ? " (pausiert, Sprung im Stillstand)" : ""))
         player.media = medium
         player.play()
         refreshPiPState()
+
+        startsprung = pausiertStarten ? abSekunden : nil
+        startsprungSeit = pausiertStarten ? Date() : nil
+        zielGesehenBei = nil
+        letzterStartsprungBefehl = .distantPast
+        startwacht?.invalidate()
+        if pausiertStarten {
+            // 50 ms, damit Sprung und Fortsetzen ohne fuehlbare Verzoegerung
+            // greifen. Der Takt lebt nur, bis der Start abgeschlossen ist.
+            startwacht = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.startsprungPruefen(anlass: "Takt") }
+            }
+        }
+    }
+
+    // MARK: - Pausierter Start
+
+    /// Die Zielstelle, solange der pausierte Start noch laeuft.
+    private var startsprung: Double?
+    private var startsprungSeit: Date?
+    private var letzterStartsprungBefehl = Date.distantPast
+    private var startwacht: Timer?
+
+    /// Laenger als das darf ein Start nicht pausiert bleiben. Danach wird
+    /// fortgesetzt, wo auch immer der Strom steht — ein stehender Spieler
+    /// ist schlimmer als ein falscher Einstieg.
+    private static let startsprungFrist: TimeInterval = 20
+
+    /// Treibt den pausierten Start voran: Sprung anstossen, bis die Uhr in
+    /// der Naehe ist; fortsetzen, sobald VLC pausiert meldet.
+    ///
+    /// Der Sprungbefehl geht in VLCs Warteschlange und wird waehrend des
+    /// Pufferns zurueckgestellt, nicht verworfen (input.c, ControlPop mit
+    /// b_postpone_seek); Wiederholungen werden dort zusammengefasst
+    /// (ControlGetReducedIndexLocked). Vor dem ersten Zustandswechsel gibt es
+    /// noch keinen Eingang, dann verpufft der Befehl — deshalb wird er im
+    /// Takt erneut geschickt, bis er ankommt.
+    private func startsprungPruefen(anlass: String) {
+        guard let ziel = startsprung else { startwacht?.invalidate(); startwacht = nil; return }
+        let stelle = positionSeconds
+        let zustand = player.state
+        let seit = startsprungSeit.map { Date().timeIntervalSince($0) } ?? 0
+
+        if seit > Self.startsprungFrist {
+            Protokoll.schreib("[Start] \(Int(seit)) s pausiert, Ziel \(Int(ziel)) s nicht erreicht (bei \(Int(stelle)) s) — fortsetzen trotzdem")
+            startsprungAbschliessen(fortsetzen: zustand == .paused)
+            return
+        }
+
+        if stelle < ziel - 10 {
+            if Date().timeIntervalSince(letzterStartsprungBefehl) > 0.25,
+               zustand != .stopped, zustand != .error {
+                letzterStartsprungBefehl = Date()
+                player.time = VLCTime(int: Int32(clamping: Int(ziel * 1000)))
+                Protokoll.schreib("[Start] Sprung auf \(Int(ziel)) s angestossen (\(anlass), Zustand \(VLCMediaPlayerStateToString(zustand)), Uhr \(Int(stelle)) s)")
+            }
+            return
+        }
+
+        // Uhr ist am Ziel. Fortsetzen, sobald VLC wirklich pausiert ist —
+        // vorher ist play() ein Leerlauf, siehe oeffnen().
+        if zustand == .paused {
+            Protokoll.schreib("[Start] am Ziel (\(Int(stelle)) s) und pausiert → fortsetzen, \(String(format: "%.2f", seit)) s nach dem Öffnen")
+            startsprungAbschliessen(fortsetzen: true)
+            return
+        }
+
+        // **`Playing` heisst hier noch nichts.** Gemessen im Simulator: VLC
+        // meldet Playing bei +0,405 s, die aufgeschobene Pause greift erst
+        // bei +0,699 s (am Puffer-Ende, input.c:1755 / es_out.c:1268). Wer
+        // bei Playing abschliesst, laesst den Spieler danach pausiert stehen
+        // — genau das ist beim ersten Versuch passiert. Der einzige Beweis,
+        // dass wirklich gespielt wird, ist eine Uhr, die vom Ziel aus
+        // weiterlaeuft; im Pausenzustand steht sie.
+        if zustand == .playing {
+            if let vorher = zielGesehenBei {
+                if stelle > vorher + 0.5 {
+                    Protokoll.schreib("[Start] am Ziel und die Uhr laeuft (\(Int(stelle)) s) — ohne Pause abgeschlossen")
+                    startsprungAbschliessen(fortsetzen: false)
+                }
+            } else {
+                zielGesehenBei = stelle
+            }
+        }
+    }
+
+    /// Erste am Ziel gemeldete Uhrzeit im Zustand Playing — siehe oben.
+    private var zielGesehenBei: Double?
+
+    private func startsprungAbschliessen(fortsetzen: Bool) {
+        startwacht?.invalidate()
+        startwacht = nil
+        startsprung = nil
+        startsprungSeit = nil
+        zielGesehenBei = nil
+        startposition = nil
+        erstStelle = nil
+        tonZurueckhalten(false)
+        if fortsetzen { player.play() }
     }
 
     /// Entscheidend ist der *ausgelieferte* Container, nicht der der Datei:
@@ -870,6 +1101,9 @@ final class VLCPlayerView: Basisansicht {
         tonZurueckhalten(false)
         wachhund?.invalidate()
         wachhund = nil
+        startwacht?.invalidate()
+        startwacht = nil
+        startsprung = nil
         // netzwache bleibt: cancel() ist endgueltig, und dieselbe View spielt
         // beim Folgenwechsel weiter. Sie kostet im Leerlauf nichts.
         player.stop()

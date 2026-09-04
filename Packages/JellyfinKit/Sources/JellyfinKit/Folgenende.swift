@@ -37,11 +37,29 @@ public enum Folgenende {
         return (dauer - position) <= restsekunden || (position / dauer) >= anteil
     }
 
-    /// Ob von selbst zur nächsten Folge gewechselt wird.
+    /// Wie lange nach dem Oeffnen nicht von selbst weitergeschaltet wird.
+    ///
+    /// **Ohne diese Frist schaltet ein frisch geoeffneter Strom sofort
+    /// weiter.** Gemessen am 04.09.2026: eine Folge wurde mit
+    /// `:start-time=3721` geoeffnet, VLC meldete die Position augenblicklich
+    /// als 3721 s — die Laenge dagegen war in denselben Millisekunden noch
+    /// nicht verlaesslich. `position >= dauer - 1` war damit wahr, 629 ms nach
+    /// dem Oeffnen lief die naechste Folge, und
+    ///
+    /// Die Frist ist auch ohne Startsprung richtig: eine Folge, die gerade
+    /// erst aufgeht, ist nicht zu Ende. Kein Zuschauer verliert etwas, niemand
+    /// merkt die Verzoegerung — und der Fall, den sie verhindert, kostet die
+    /// ganze Folge.
+    public static let anlaufruhe: Double = 5
+
+    /// Ob von selbst zur naechsten Folge gewechselt wird.
     ///
     /// Deutlich enger gefasst als der Knopf: hier wird gehandelt, ohne dass
-    /// jemand darum gebeten hat. Erst wenn wirklich nichts mehr kommt.
-    public static func weiterschalten(position: Double, dauer: Double) -> Bool {
+    /// jemand darum gebeten hat. Erst wenn wirklich nichts mehr kommt — und
+    /// fruehestens ``anlaufruhe`` Sekunden nach dem Oeffnen.
+    public static func weiterschalten(position: Double, dauer: Double,
+                                      seitOeffnen: Double) -> Bool {
+        guard seitOeffnen > anlaufruhe else { return false }
         guard dauer > 60 else { return false }
         return position >= dauer - 1
     }

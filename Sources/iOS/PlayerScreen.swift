@@ -12,6 +12,7 @@ struct PlayerScreen: View {
     let startAt: Double
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var lebenslage
 
     // Laufender Titel — ändert sich, wenn zur nächsten Folge gewechselt wird.
     @State private var item: Item
@@ -48,8 +49,21 @@ struct PlayerScreen: View {
     /// Und nicht auf dem Fernseher: dort steuert `AVPlayerViewController`, und
     /// zwei Steuerungen uebereinander wuerden sich gegenseitig treffen.
     private var steuerungDa: Bool {
-        steuerungSichtbar && erstesBildDa && !imKleinenFenster && !zeigeEinstellungen
-            && airplayPlan == nil
+        schleierDa && !zeigeEinstellungen
+    }
+
+    /// **Die Abdunklung bleibt unter dem Wiedergabemenue stehen.**
+    ///
+    /// Sie hing frueher mit an `!zeigeEinstellungen`, war unter dem Blatt also
+    /// gar nicht da — und musste beim Schliessen erst wieder hochfahren. In
+    /// dem Fenster sah man ungedaempftes Video, heller als vorher *und*
+    /// nachher.
+    ///
+    /// Sichtbar aendert das nichts, solange das Blatt offen ist: es deckt mit
+    /// 0,97 ohnehin alles darunter ab. Kopf, Fuss und Mittelsteuerung weichen
+    /// weiterhin — sie wuerden durch das Blatt scheinen, siehe unten.
+    private var schleierDa: Bool {
+        steuerungSichtbar && erstesBildDa && !imKleinenFenster && airplayPlan == nil
     }
 
     /// Beobachtet, ob der Ton auf ein AirPlay-Geraet umgestellt wurde.
@@ -210,8 +224,15 @@ struct PlayerScreen: View {
             // Ladeschirm, und das sieht nach zwei Bildschirmen gleichzeitig aus.
             // Nicht zusätzlich zum Wiedergabemenü: sonst scheinen Kopf und
             // Fuß des Players durch und überlagern dessen Kopfzeile.
+            // Eigene Ebene, weil sie eine eigene Frage beantwortet — siehe
+            // `schleierDa`. Dieselben Kurven wie die Steuerung.
+            schleier
+                .opacity(schleierDa ? 1 : 0)
+                .animation(schleierDa ? .easeOut(duration: 0.18)
+                                      : .easeInOut(duration: 0.34),
+                           value: schleierDa)
+
             Group {
-                schleier
                 // Eigene Ebene statt zwischen Kopf und Fuss gestapelt: der
                 // Fuss ist hoeher als der Kopf, dadurch lag die Mitte
                 // zwischen beiden sichtbar ueber der Bildmitte.
@@ -249,12 +270,28 @@ struct PlayerScreen: View {
             if let sprungAnzeige { sprungRueckmeldung(sprungAnzeige) }
             if wechselt { Lader() }
 
-            if zeigeEinstellungen {
-                PlayerSettingsSheet(surface: surface, offen: $zeigeEinstellungen,
-                                    tempo: $tempo, schlafminuten: $schlafminuten,
-                                    querformatFest: $querformatFest)
-                    .transition(.opacity)
-            }
+            // **Nicht ein- und aushaengen, sondern nur aufblenden** — dasselbe
+            // Muster wie bei der Steuerung darueber, und aus demselben Grund.
+            //
+            // Gemessen im Simulator an gerenderten Bildpunkten, Zeiten
+            // zehnfach gedehnt, mittlere Leuchtdichte ueber weissem Grund
+            // (Ruhewert 0,610):
+            //
+            //     mit `if` + `.transition`   0,178 → 0,918 → 0,823 → … → 0,610
+            //     montiert, aufgeblendet     0,168 → 0,109 → 0,187 → … → 0,610
+            //
+            // Die `.transition(.opacity)` lief gar nicht: zwischen 0,178 und
+            // 0,918 liegt kein Zwischenwert, das Blatt war schlagartig weg.
+            //
+            // Den Inhalt traegt `PlayerSettingsSheet` nur, solange `offen`
+            // gilt. Dauerhaft montiert wuerde er sonst bei jedem Takt
+            // `surface?.tonspuren` und `?.untertitelspuren` lesen, und die
+            // gehen direkt in VLCKit — rund acht Aufrufe je Sekunde, dauerhaft.
+            PlayerSettingsSheet(surface: surface, offen: $zeigeEinstellungen,
+                                tempo: $tempo, schlafminuten: $schlafminuten,
+                                querformatFest: $querformatFest)
+                .opacity(zeigeEinstellungen ? 1 : 0)
+                .allowsHitTesting(zeigeEinstellungen)
 
             // **Ueber allem, weil es alles ersetzt.** Solange der Fernseher
             // dran ist, ist die VLC-Flaeche darunter nur noch Hintergrund;
@@ -327,6 +364,13 @@ struct PlayerScreen: View {
         .onChange(of: schlafminuten) { _, neu in schlafzeitSetzen(neu) }
         .onChange(of: querformatFest) { _, fest in
             Orientierung.shared.playerGeoeffnet(querformatFest: fest)
+        }
+        // **Nur messen, nichts richten.** Siehe `geometrieNachmessen`.
+        .onChange(of: lebenslage) { _, neu in
+            if neu == .active { geometrieNachmessen(anlass: "aktiv") }
+        }
+        .onChange(of: imKleinenFenster) { _, klein in
+            if !klein { geometrieNachmessen(anlass: "aus PiP zurueck") }
         }
         .task { await beobachten() }
         .task {
@@ -942,7 +986,8 @@ struct PlayerScreen: View {
 
             // Am Ende von selbst weiter, wenn gewünscht.
             if model.naechsteAutomatisch, let folge = naechsteFolge, !wechselt,
-               Folgenende.weiterschalten(position: position, dauer: dauer) {
+               Folgenende.weiterschalten(position: position, dauer: dauer,
+                                         seitOeffnen: Date().timeIntervalSince(seitStart)) {
                 zurNaechstenFolge(folge)
             }
 
@@ -996,6 +1041,42 @@ struct PlayerScreen: View {
     }
 
     private func zeit(_ sekunden: Double) -> String { Spielzeit.text(sekunden) }
+
+    /// **Messung, kein Eingriff.**
+    ///
+    /// Zwei Erklaerungen kommen in Frage, und sie sind am Protokoll zu
+    /// **unterscheiden** — genau dafuer steht das hier:
+    ///
+    /// - **Drehmaske.** `Orientierung` wird nur in `onAppear`, `onDisappear`
+    /// und bei geaenderter Querformatsperre gerufen; nichts setzt sie neu,
+    /// wenn die App aus dem Hintergrund zurueckkommt, und das Kontrollzentrum
+    /// schickt sie dorthin. Dann stuende `erlaubt` auf `.portrait`, waehrend
+    /// die Szene quer liegt. - **Geometrie.** Die Szene meldet noch die
+    /// Groesse des kleinen Fensters. Das ist der Zwilling eines schon
+    /// behobenen Fehlers — damals traf es die Videoflaeche, hier waere es eine
+    /// Ebene hoeher. Dann wiche `fensterbreite` von der Fensterbreite der
+    /// Szene ab.
+    ///
+    /// Ein einzelner Wert beim Umschalten reicht nicht: der Fehler dauert zwei
+    /// Sekunden, der Augenblick des Wechsels liegt davor. Also drei Sekunden
+    /// lang alle 250 ms.
+    private func geometrieNachmessen(anlass: String) {
+        Task { @MainActor in
+            for schritt in 0..<12 {
+                let szene = UIApplication.shared.connectedScenes
+                    .compactMap { $0 as? UIWindowScene }.first
+                let fenster = szene?.keyWindow?.bounds.size ?? .zero
+                let lage = szene?.interfaceOrientation.rawValue ?? -1
+                let maske = Orientierung.shared.erlaubt.rawValue
+                Protokoll.schreib("[Geometrie] \(anlass) +\(schritt * 250) ms"
+                    + " · Fenster \(Int(fenster.width))x\(Int(fenster.height))"
+                    + " · Ansicht \(Int(fensterbreite))"
+                    + " · Lage \(lage) · Maske \(maske)"
+                    + " · PiP \(imKleinenFenster)")
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+    }
 }
 
 /// Rueckmeldung beim Doppeltipp — dieselbe Drehung wie auf den Knoepfen,

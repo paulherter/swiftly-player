@@ -17,7 +17,14 @@ for g in json.load(open(sys.argv[1]))["result"]["devices"]:
 [ -z "${UDID:-}" ] && { echo "Kein erreichbares Geraet." >&2; exit 1; }
 
 ZIEL="${1:-swiftly.log}"
-xcrun devicectl device copy from --device "$UDID" \
+# **`--user mobile` ist noetig, sonst schlaegt das Holen fehl.** Ohne die
+# Angabe meldet devicectl "Failed to retrieve the file node ... error 7000",
+# und zwar mit derselben Wortwahl, die es auch fuer eine nicht vorhandene
+# Datei benutzt. Am 04.09.2026 hat mich das eine falsche Schlussfolgerung
+# gekostet: kein Abruf, also kein Protokoll, also die falsche Fassung auf dem
+# Geraet -- alles drei falsch. Die Datei lag da, `devicectl device info files
+# --subdirectory Documents` zeigt sie.
+xcrun devicectl device copy from --device "$UDID" --user mobile \
   --domain-type appDataContainer --domain-identifier de.paulherter.swiftly \
   --source Documents/swiftly.log --destination "$ZIEL"
 echo "Geholt nach $ZIEL ($(wc -l < "$ZIEL") Zeilen)"
