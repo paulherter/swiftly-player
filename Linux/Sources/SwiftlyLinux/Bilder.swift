@@ -76,7 +76,10 @@ func bildLaden(_ bildfeld: Widget!, url: URL, schluessel: String) {
     let kiste = Zeigerkiste(bildfeld)
     Task.detached {
         let daten = await Bildlager.shared.laden(url, schluessel: schluessel)
-        aufHauptfaden {
+        // **Auch ein Bild ist schwere Arbeit.** `gdk_texture_new_from_bytes`
+        // packt das JPEG auf dem Hauptfaden aus; ein Dutzend Folgenbilder,
+        // die während der Fahrt eintreffen, kosten sichtbar Bilder.
+        nachDemSchub {
             if let daten { bildSetzen(kiste.widget, daten: daten) }
             g_object_unref(kiste.widget)
         }

@@ -729,6 +729,7 @@ final class App: @unchecked Sendable {
         }
 
         gtk_widget_insert_before(richtung == .tiefer ? ziel : alt, buehne, nil)
+        Schubsperre.beginnen()
         let teiler = Double(max(gtk_widget_get_scale_factor(buehne), 1))
         // Auf ganze Gerätepunkte, aus demselben Grund wie beim Scrollen: eine
         // Kante auf einem halben Punkt wird geglättet und säumt.
@@ -750,6 +751,7 @@ final class App: @unchecked Sendable {
             gtk_widget_set_opacity(ziel, 1)
             gtk_widget_set_opacity(alt, 1)
             gtk_widget_set_visible(alt, 0)
+            Schubsperre.beenden()
         }
     }
 

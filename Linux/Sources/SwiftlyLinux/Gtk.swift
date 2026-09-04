@@ -499,3 +499,56 @@ func beiGroesse(_ feld: Widget!, _ block: @escaping (Int32, Int32) -> Void) {
                           unsafeBitCast(auftragAlsMass, to: GCallback.self),
                           auftrag, massFreigeben, GConnectFlags(rawValue: 0))
 }
+
+// MARK: - Während eine Seite fährt, wird nichts Schweres getan
+
+/// **Das Ruckeln war nie die Kurve.**
+///
+/// Auf dem Mac stand an derselben Stelle ein `HStack`, der jede Kachel sofort
+/// baute — „in demselben Bild, in dem die Seite hereinfährt. Das war das
+/// Ruckeln: nicht die Bewegung war hart, sondern sie verlor Bilder, weil
+/// daneben die halbe Seite gebaut wurde." Ein `LazyHStack` hat es behoben.
+///
+/// GTK hat kein faules Auslegen, und die schweren Sachen sind hier andere:
+/// ein 1600 Punkt breites Kopfbild entpacken, das Stilblatt für den Farbton
+/// neu einlesen (das stellt **jedes** Widget der App neu), die halbe Seite
+/// verwerfen und mit dem vollen Satz vom Server neu bauen. Alles das kommt
+/// aus dem Netz und trifft die Seite deshalb genau in der Mitte der Fahrt —
+/// da, wo es hakt.
+///
+/// Also wartet es. Die Fahrt dauert 0,45 s; wer danach dran ist, merkt nichts
+/// davon, und die Bewegung behält alle Bilder.
+///
+/// `nonisolated(unsafe)`, weil es GTKs Hauptfaden gehört wie alles hier —
+/// angefasst wird es nur aus ``aufHauptfaden`` heraus.
+enum Schubsperre {
+    nonisolated(unsafe) private static var tiefe = 0
+    nonisolated(unsafe) private static var warteschlange: [() -> Void] = []
+
+    static var faehrt: Bool { tiefe > 0 }
+
+    static func beginnen() { tiefe += 1 }
+
+    static func beenden() {
+        tiefe = max(tiefe - 1, 0)
+        guard tiefe == 0, !warteschlange.isEmpty else { return }
+        let offen = warteschlange
+        warteschlange = []
+        // **Nicht im letzten Bild der Fahrt.** Der Rückruf läuft noch im
+        // Bildtakt; wer hier arbeitet, kostet genau das Bild, das die
+        // Bewegung abschliesst.
+        aufHauptfaden { for block in offen { block() } }
+    }
+
+    static func spaeter(_ block: @escaping () -> Void) {
+        if faehrt { warteschlange.append(block) } else { block() }
+    }
+}
+
+/// Wie ``aufHauptfaden``, aber **nicht, während eine Seite fährt**.
+///
+/// Für alles, was eine Seite aufbaut oder umbaut. Nicht für die Navigation
+/// selbst — die löst die Fahrt ja erst aus.
+func nachDemSchub(_ block: @escaping @Sendable () -> Void) {
+    aufHauptfaden { Schubsperre.spaeter(block) }
+}

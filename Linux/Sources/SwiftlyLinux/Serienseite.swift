@@ -85,7 +85,7 @@ extension App {
         let kiste = gehalten(raum)
         Task.detached { [self] in
             let staffeln = (try? await client.staffeln(seriesID: serie.id)) ?? []
-            aufHauptfaden {
+            nachDemSchub {
                 defer { losgelassen(kiste) }
                 self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget)
             }
@@ -177,7 +177,7 @@ extension App {
         Task.detached { [self] in
             let folgen = (try? await client.folgen(seriesID: serie.id,
                                                    seasonID: staffel.id)) ?? []
-            aufHauptfaden {
+            nachDemSchub {
                 defer { losgelassen(kiste) }
                 leeren(kiste.widget)
                 for folge in folgen { anhaengen(kiste.widget, self.folgenzeile(folge)) }
@@ -362,7 +362,7 @@ extension App {
         let kiste = gehalten(raum)
         Task.detached { [self] in
             let treffer = (try? await client.aehnliche(itemID: titel.id)) ?? []
-            aufHauptfaden {
+            nachDemSchub {
                 defer { losgelassen(kiste) }
                 let ziel = kiste.widget
                 if leeren_ { leeren(ziel) }
