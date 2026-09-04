@@ -37,6 +37,7 @@ extension App {
                     return
                 }
                 self.laufenderPlan = plan
+                self.warnungZeigen(plan)
                 self.abspieler.oeffnen(plan.url, ab: ab)
                 self.spielstand.position = ab
                 self.taktStarten()
@@ -88,41 +89,159 @@ extension App {
         gtk_widget_add_css_class(steuerung, "swiftly-steuerung")
         spielerSteuerung = steuerung
 
-        // Oben: Schliessen links, Einstellungen rechts.
-        let oben = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        raender(oben, 18)
-        let zu = rundknopf("window-close-symbolic")
-        beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
-        anhaengen(oben, zu)
+        anhaengen(steuerung, spielerkopf())
+        anhaengen(steuerung, luft())
+        anhaengen(steuerung, spielermitte())
+        anhaengen(steuerung, luft())
+        anhaengen(steuerung, spielerfuss(item))
+
+        gtk_overlay_add_overlay(OpaquePointer(ueber), steuerung)
+
+        // **Die Steuerung blendet nach 4 s Ruhe aus** (B1) — nur während der
+        // Wiedergabe. Jede Bewegung des Zeigers holt sie zurück.
+        beiZeiger(ueber, herein: { [weak self] in self?.steuerungZeigen() },
+                         hinaus: { [weak self] in self?.steuerungZeigen() })
+        steuerungZeigen()
+        return ueber
+    }
+
+    /// **Links steht nichts, rechts die zwei Werkzeuge** — wörtlich der Mac.
+    ///
+    /// Dort sass der Winkel einmal links neben der Fensterampel und ist
+    /// bewusst nach rechts gewandert: sonst stünden an derselben Ecke zwei
+    /// Schliesser mit verschiedener Wirkung. Unter Wayland gehört die
+    /// Fensterleiste ohnehin dem Fenster, und während der Wiedergabe ist sie
+    /// weg — der Grund gilt trotzdem, weil die Aufteilung dieselbe sein soll.
+    ///
+    /// Der Winkel zeigt nach unten, weil der Player von unten aufsteigt und
+    /// wieder dorthin verschwindet.
+    private func spielerkopf() -> Widget! {
+        let oben = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
+        gtk_widget_set_margin_top(oben, 18)
+        gtk_widget_set_margin_end(oben, 22)
+        gtk_widget_set_margin_start(oben, 16)
         anhaengen(oben, luftQuer())
-        let spuren = rundknopf("emblem-system-symbolic")
+
+        let spuren = chip("Ton und Untertitel", symbol: "media-view-subtitles-symbolic")
+        spielerSpurknopf = spuren
         beiSignal(spuren, "clicked") { [weak self] in self?.spurwahlZeigen() }
         anhaengen(oben, spuren)
-        anhaengen(steuerung, oben)
 
-        anhaengen(steuerung, luft())
+        let zu = chip("Schließen", symbol: "pan-down-symbolic")
+        beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
+        anhaengen(oben, zu)
+        return oben
+    }
 
-        // Unten: Titel, Zeitleiste, drei Knöpfe.
-        let unten = stapel(GTK_ORIENTATION_VERTICAL, abstand: 12)
+    /// Die drei Knöpfe **in der Mitte des Bildes**, nicht unten in der Leiste
+    /// — und ohne runde Fläche darunter: auf dem Mac steht dort nur das
+    /// Zeichen, darunter das Tastenkürzel in ganz leiser Schrift.
+    ///
+    /// **Vorwärts weiter als rückwärts** (B2), und beide Weiten kommen aus
+    /// den Einstellungen; deshalb tragen die Zeichen ihre Zahl.
+    private func spielermitte() -> Widget! {
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 52)
+        gtk_widget_set_halign(reihe, GTK_ALIGN_CENTER)
+
+        let zurueck = Sprungzeichen(zurueck: true, zahl: wahlen.zurueckSekunden)
+        spielerZurueckZeichen = zurueck
+        anhaengen(reihe, spieltaste(zurueck.anzeige, kuerzel: "←") { [weak self] in
+            guard let self else { return }
+            self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
+            self.steuerungZeigen()
+        })
+
+        let mitte: Widget! = gtk_image_new_from_icon_name("media-playback-pause-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(mitte), 48)
+        spielerSpieltaste = mitte
+        anhaengen(reihe, spieltaste(mitte, kuerzel: "Leertaste", gross: true) {
+            [weak self] in
+            self?.abspieler.umschalten()
+            self?.steuerungZeigen()
+        })
+
+        let vor = Sprungzeichen(zurueck: false, zahl: wahlen.vorSekunden)
+        spielerVorZeichen = vor
+        anhaengen(reihe, spieltaste(vor.anzeige, kuerzel: "→") { [weak self] in
+            guard let self else { return }
+            self.abspieler.springen(Double(self.wahlen.vorSekunden))
+            self.steuerungZeigen()
+        })
+        return reihe
+    }
+
+    /// Ein Knopf der Mitte: das Zeichen, darunter das Kürzel.
+    private func spieltaste(_ zeichen: Widget!, kuerzel: String, gross: Bool = false,
+                            auswahl: @escaping () -> Void) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-spieltaste")
+        let saeule = stapel(GTK_ORIENTATION_VERTICAL, abstand: 9)
+        gtk_widget_set_halign(zeichen, GTK_ALIGN_CENTER)
+        gtk_widget_set_size_request(zeichen, gross ? 78 : 46, gross ? 78 : 46)
+        gtk_widget_set_valign(zeichen, GTK_ALIGN_CENTER)
+        anhaengen(saeule, zeichen)
+        let k = beschriftung(kuerzel, stil: "swiftly-kuerzel")
+        anhaengen(saeule, k)
+        gtk_button_set_child(alsKnopf(knopf), saeule)
+        beiSignal(knopf, "clicked", auswahl)
+        return knopf
+    }
+
+    /// **Der Titel steht unten, nicht oben**: er gehört zur Zeitleiste, nicht
+    /// zu den Werkzeugen. Wörtlich die Aufteilung der iPhone-Fassung.
+    private func spielerfuss(_ item: Item) -> Widget! {
+        let unten = stapel(GTK_ORIENTATION_VERTICAL, abstand: 10)
         gtk_widget_set_margin_start(unten, 28)
         gtk_widget_set_margin_end(unten, 28)
-        gtk_widget_set_margin_bottom(unten, 24)
+        gtk_widget_set_margin_bottom(unten, 26)
 
+        let kopfzeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 16)
+        gtk_widget_set_valign(kopfzeile, GTK_ALIGN_END)
         let namen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
-        let gross = beschriftung(item.seriesName ?? item.name, stil: "swiftly-titel")
+        gtk_widget_set_hexpand(namen, 1)
+        // **Der Titel der Folge, nicht der Serie.** Hier stand
+        // `seriesName ?? name` — dann las man oben „Adults" und darunter
+        // „S2 • E1 • Adults", also zweimal dasselbe und nirgends, welche
+        // Folge läuft. Der Mac nimmt `titel.name`.
+        let gross = beschriftung(item.name, stil: "swiftly-spielertitel")
         gtk_label_set_xalign(OpaquePointer(gross), 0)
+        gtk_label_set_ellipsize(OpaquePointer(gross), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(gross), 1)
         anhaengen(namen, gross)
+
+        let zweite = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
         if let zeile = item.kontextzeile {
-            let k = beschriftung(zeile, stil: "swiftly-koerper")
-            gtk_widget_add_css_class(k, "dim-label")
+            let k = beschriftung(zeile, stil: "swiftly-spielerzeile")
             gtk_label_set_xalign(OpaquePointer(k), 0)
-            anhaengen(namen, k)
+            anhaengen(zweite, k)
         }
-        anhaengen(unten, namen)
+        // **Die Abweichung meldet sich, wo man sie merkt.** Dass der Server
+        // nicht transkodiert, ist der Grund für diese App; der Player ist die
+        // Stelle, an der es auffiele. Stand bisher nur auf der Detailseite.
+        spielerWarnung = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 5)
+        gtk_widget_set_visible(spielerWarnung, 0)
+        let zeichen: Widget! = gtk_image_new_from_icon_name("dialog-warning-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(zeichen), 13)
+        anhaengen(spielerWarnung, zeichen)
+        spielerWarntext = beschriftung("", stil: "swiftly-spielerzeile")
+        anhaengen(spielerWarnung, spielerWarntext)
+        gtk_widget_add_css_class(spielerWarnung, "swiftly-warnung")
+        anhaengen(zweite, spielerWarnung)
+        anhaengen(namen, zweite)
+        anhaengen(kopfzeile, namen)
+
+        // „Nächste Folge" erscheint erst gegen Ende (B5) — als Chip in der
+        // Titelzeile, nicht als grosser Knopf. So auf dem Mac.
+        spielerWeiter = chip("Nächste Folge", symbol: "media-skip-forward-symbolic")
+        gtk_widget_set_valign(spielerWeiter, GTK_ALIGN_END)
+        gtk_widget_set_visible(spielerWeiter, 0)
+        beiSignal(spielerWeiter, "clicked") { [weak self] in self?.naechsteFolge() }
+        anhaengen(kopfzeile, spielerWeiter)
+        anhaengen(unten, kopfzeile)
 
         // Zeitleiste: Stand links, Balken, Rest rechts.
-        let leiste = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
-        spielerZeit = beschriftung("0:00", stil: "swiftly-zweitzeile")
+        let leiste = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
+        spielerZeit = beschriftung("0:00", stil: "swiftly-spielerzeit")
         anhaengen(leiste, spielerZeit)
         spielerRegler = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.001)
         gtk_scale_set_draw_value(alsSkala(spielerRegler), 0)
@@ -136,57 +255,19 @@ extension App {
                               Unmanaged.passUnretained(self).toOpaque(),
                               nil, GConnectFlags(rawValue: 0))
         anhaengen(leiste, spielerRegler)
-        spielerRest = beschriftung("", stil: "swiftly-zweitzeile")
+        spielerRest = beschriftung("", stil: "swiftly-spielerzeit")
         anhaengen(leiste, spielerRest)
         anhaengen(unten, leiste)
-
-        // Die drei Knöpfe mittig. **Vorwärts weiter als rückwärts** (B2),
-        // und beide Weiten kommen aus den Einstellungen.
-        let knoepfe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
-        gtk_widget_set_halign(knoepfe, GTK_ALIGN_CENTER)
-        let zurueck = rundknopf("media-seek-backward-symbolic", gross: false)
-        beiSignal(zurueck, "clicked") { [weak self] in
-            guard let self else { return }
-            self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
-        }
-        anhaengen(knoepfe, zurueck)
-        spielerSpieltaste = rundknopf("media-playback-pause-symbolic", gross: true)
-        beiSignal(spielerSpieltaste, "clicked") { [weak self] in self?.abspieler.umschalten() }
-        anhaengen(knoepfe, spielerSpieltaste)
-        let vor = rundknopf("media-seek-forward-symbolic", gross: false)
-        beiSignal(vor, "clicked") { [weak self] in
-            guard let self else { return }
-            self.abspieler.springen(Double(self.wahlen.vorSekunden))
-        }
-        anhaengen(knoepfe, vor)
-        anhaengen(unten, knoepfe)
-
-        // „Nächste Folge" erscheint erst gegen Ende (B5).
-        spielerWeiter = hauptknopf("Nächste Folge", symbol: "media-skip-forward-symbolic")
-        gtk_widget_set_halign(spielerWeiter, GTK_ALIGN_END)
-        gtk_widget_set_size_request(spielerWeiter, 200, Int32(Stil.hauptknopfHoehe))
-        gtk_widget_set_visible(spielerWeiter, 0)
-        beiSignal(spielerWeiter, "clicked") { [weak self] in self?.naechsteFolge() }
-        anhaengen(unten, spielerWeiter)
-
-        anhaengen(steuerung, unten)
-        gtk_overlay_add_overlay(OpaquePointer(ueber), steuerung)
-
-        // **Die Steuerung blendet nach 4 s Ruhe aus** (B1) — nur während der
-        // Wiedergabe. Jede Bewegung des Zeigers holt sie zurück.
-        beiZeiger(ueber, herein: { [weak self] in self?.steuerungZeigen() },
-                         hinaus: { [weak self] in self?.steuerungZeigen() })
-        steuerungZeigen()
-        return ueber
+        return unten
     }
 
-    private func rundknopf(_ symbol: String, gross: Bool = false) -> Widget! {
-        let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, gross ? "swiftly-spielrund-gross" : "swiftly-spielrund")
-        let bild: Widget! = gtk_image_new_from_icon_name(symbol)
-        gtk_image_set_pixel_size(OpaquePointer(bild), gross ? 26 : 18)
-        gtk_button_set_child(alsKnopf(knopf), bild)
-        return knopf
+    /// Zeigt an, wenn der Server doch transkodiert.
+    private func warnungZeigen(_ plan: PlaybackPlan) {
+        guard let feld = spielerWarnung else { return }
+        gtk_widget_set_visible(feld, plan.isLossless ? 0 : 1)
+        if !plan.isLossless, let text = spielerWarntext {
+            gtk_label_set_text(OpaquePointer(text), plan.method.rawValue)
+        }
     }
 
     private func spielerMeldung(_ text: String) {
@@ -275,9 +356,10 @@ extension App {
             gtk_range_set_value(alsBereich(spielerRegler),
                                 spielstand.position / spielstand.dauer)
         }
-        knopfzustand(spielerSpieltaste, aktiv: false,
-                     symbol: spielstand.laeuft ? "media-playback-pause-symbolic"
-                                               : "media-playback-start-symbolic")
+        gtk_image_set_from_icon_name(
+            OpaquePointer(spielerSpieltaste),
+            spielstand.laeuft ? "media-playback-pause-symbolic"
+                              : "media-playback-start-symbolic")
     }
 
     /// **Tonspuren werden einmal gesetzt, sobald VLC sie kennt** (B8).

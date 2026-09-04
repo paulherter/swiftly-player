@@ -448,6 +448,13 @@ final class App: @unchecked Sendable {
     var spielerRegler: Widget!
     var spielerSpieltaste: Widget!
     var spielerWeiter: Widget!
+    var spielerSpurknopf: Widget!
+    var spielerWarnung: Widget!
+    var spielerWarntext: Widget!
+    /// Die beiden Kreispfeile. Sie tragen die Sprungweite als Zahl und
+    /// müssen sie nachziehen, wenn sie sich in den Einstellungen ändert.
+    var spielerZurueckZeichen: Sprungzeichen?
+    var spielerVorZeichen: Sprungzeichen?
     var spielerRahmen: Widget!
     var spurtafel: Widget!
     var schlafminuten: Int?

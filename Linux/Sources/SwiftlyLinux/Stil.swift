@@ -311,7 +311,10 @@ enum Stil {
             font-size: 13px;
             font-weight: 400;
         }
-        button.swiftly-chip label { color: \(schriftLeise); }
+        button.swiftly-chip label,
+        button.swiftly-chip image { color: \(schriftLeise); }
+        button.swiftly-chip:hover label,
+        button.swiftly-chip:hover image { color: \(schrift); }
         button.swiftly-chip:hover { background-color: rgba(255,255,255,0.06); }
         button.swiftly-chip:hover label { color: \(schrift); }
         button.swiftly-chip.swiftly-aktiv {
@@ -575,24 +578,48 @@ enum Stil {
 
         .swiftly-spieler { background-color: #000000; }
         /* Die Steuerung liegt über dem Bild und blendet weich weg. */
+        /* Zwei Schleier, oben 0,60 über 150 Punkt, unten 0,70 über 230 —
+           die Werte vom Mac. In Anteilen ausgedrückt, weil ein Fenster
+           anders hoch ist als das nächste; bei rund 800 Punkt Höhe kommt
+           dasselbe heraus. */
         .swiftly-steuerung {
             background-image: linear-gradient(to bottom,
-                rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 22%,
-                rgba(0,0,0,0) 55%, rgba(0,0,0,0.78) 100%);
+                rgba(0,0,0,0.60) 0%, rgba(0,0,0,0) 19%,
+                rgba(0,0,0,0) 71%, rgba(0,0,0,0.70) 100%);
             transition: opacity 180ms ease-out;
         }
-        button.swiftly-spielrund, button.swiftly-spielrund-gross {
-            border-radius: 50%;
-            background-color: rgba(255,255,255,0.14);
+        /* **Die Knöpfe der Mitte tragen keine Fläche.** Auf dem Mac steht
+           dort nur das Zeichen (`buttonStyle(.plain)`), darunter das
+           Tastenkürzel. Die runden Flächen, die hier standen, waren meine
+           Erfindung und haben den Player nach Systemabspieler aussehen
+           lassen. */
+        button.swiftly-spieltaste {
+            background-color: transparent;
+            background-image: none;
             border: none;
+            box-shadow: none;
             padding: 0;
+            min-width: 0;
+            min-height: 0;
         }
-        button.swiftly-spielrund { min-width: 40px; min-height: 40px; }
-        button.swiftly-spielrund-gross { min-width: 64px; min-height: 64px; }
-        button.swiftly-spielrund image,
-        button.swiftly-spielrund-gross image { color: \(schrift); }
-        button.swiftly-spielrund:hover,
-        button.swiftly-spielrund-gross:hover { background-color: rgba(255,255,255,0.26); }
+        button.swiftly-spieltaste image { color: \(schrift); }
+        /* Der Zeiger hebt das Zeichen an, statt einen Kasten zu malen. */
+        button.swiftly-spieltaste:hover label { color: \(schriftLeise); }
+        .swiftly-kuerzel {
+            font-size: 11px;
+            color: \(schriftSehrLeise);
+        }
+
+        /* Titel und Zeiten unten. 19 halbfett, darunter 14 auf 68 %, und
+           die Zeiten 13 mit gleich breiten Ziffern — die Masse des Macs. */
+        .swiftly-spielertitel { font-size: 19px; font-weight: 600; color: \(schrift); }
+        .swiftly-spielerzeile { font-size: 14px; color: rgba(255,255,255,0.68); }
+        .swiftly-spielerzeit {
+            font-size: 13px;
+            font-feature-settings: "tnum";
+            color: rgba(255,255,255,0.68);
+        }
+        .swiftly-warnung label, .swiftly-warnung image { color: \(warnung); }
 
         /* Der Zeitregler: schmale Spur, Akzent für das Gesehene. */
         scale.swiftly-regler trough {
@@ -605,13 +632,17 @@ enum Stil {
             border-radius: 2px;
         }
         scale.swiftly-regler slider {
-            min-width: 12px;
-            min-height: 12px;
+            min-width: 13px;
+            min-height: 13px;
             background-color: \(schrift);
-            border-radius: 6px;
+            border-radius: 7px;
             border: none;
-            box-shadow: none;
+            /* Der Griff liegt über dem Bild und braucht eine Kante, sonst
+               verschwindet er auf einer hellen Stelle. Auf dem Mac ist es
+               derselbe Schatten. */
+            box-shadow: 0 1px 5px rgba(0,0,0,0.55);
         }
+        scale.swiftly-regler:hover slider { min-width: 15px; min-height: 15px; }
 
         /* Die Spurtafel über dem Bild: 320 breit, erhoeht, Ecke 10. */
         .swiftly-tafel {

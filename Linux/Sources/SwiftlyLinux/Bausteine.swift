@@ -247,11 +247,20 @@ func fach(_ kind: Widget!, breite: Int, hoehe: Int,
 /// Die halbfette Schrift im aktiven Zustand steht so auf dem Mac und ist
 /// kein Zufall: der Chip wird dadurch minimal breiter, und das ist die
 /// einzige Stelle, an der man die Wahl auch ohne Farbe sieht.
-func chip(_ text: String, aktiv: Bool) -> Widget! {
-    let knopf: Widget! = gtk_button_new_with_label(text)
+func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false) -> Widget! {
+    let knopf: Widget! = gtk_button_new()
     gtk_widget_add_css_class(knopf, "swiftly-chip")
     if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
     gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
+    // Zeichen und Wort im Abstand 6 — die Masse des Macs (`Chip`).
+    let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
+    if let symbol {
+        let bild: Widget! = gtk_image_new_from_icon_name(symbol)
+        gtk_image_set_pixel_size(OpaquePointer(bild), 12)
+        anhaengen(reihe, bild)
+    }
+    anhaengen(reihe, beschriftung(text))
+    gtk_button_set_child(alsKnopf(knopf), reihe)
     return knopf
 }
 
