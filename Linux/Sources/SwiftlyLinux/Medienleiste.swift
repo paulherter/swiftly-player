@@ -28,7 +28,27 @@ final class Medienleiste: @unchecked Sendable {
     /// Was die Leiste auslöst. Dieselben Griffe wie am Knopf.
     enum Griff { case abspielen, anhalten, umschalten, beenden, weiter, zurueck }
 
-    private var verbindung: OpaquePointer?
+    /// **`G_VARIANT_TYPE` ist ein Makro** — in C ein blosser Cast von
+    /// `const char*` auf `const GVariantType*`. In Swift gibt es das nicht;
+    /// `g_variant_type_new` legt stattdessen eine Kopie an, die wieder frei
+    /// werden muss.
+    private static func typ(_ text: String) -> UnsafeMutablePointer<GVariantType>? {
+        g_variant_type_new(text)
+    }
+
+    static func mitTypOeffentlich<E>(_ text: String,
+                                     _ tun: (UnsafeMutablePointer<GVariantType>?) -> E) -> E {
+        mitTyp(text, tun)
+    }
+
+    private static func mitTyp<E>(_ text: String,
+                                  _ tun: (UnsafeMutablePointer<GVariantType>?) -> E) -> E {
+        let t = typ(text)
+        defer { if let t { g_variant_type_free(t) } }
+        return tun(t)
+    }
+
+    private var verbindung: UnsafeMutablePointer<GDBusConnection>?
     private var name: guint = 0
     private var stamm: guint = 0
     private var spieler: guint = 0
@@ -60,7 +80,7 @@ final class Medienleiste: @unchecked Sendable {
             if let fehler { g_error_free(fehler) }
             return
         }
-        verbindung = OpaquePointer(bus)
+        verbindung = bus
 
         guard let knoten = g_dbus_node_info_new_for_xml(Medienleiste.beschreibung, &fehler) else {
             if let fehler { g_error_free(fehler) }
@@ -91,8 +111,7 @@ final class Medienleiste: @unchecked Sendable {
     }
 
     private func abmelden() {
-        guard let bus = verbindung.map({ UnsafeMutablePointer<GDBusConnection>(OpaquePointer($0)) })
-        else { return }
+        guard let bus = verbindung else { return }
         if stamm != 0 { g_dbus_connection_unregister_object(bus, stamm) }
         if spieler != 0 { g_dbus_connection_unregister_object(bus, spieler) }
         if name != 0 { g_bus_unown_name(name) }
@@ -110,16 +129,15 @@ final class Medienleiste: @unchecked Sendable {
         self.untertitel = untertitel
         self.dauer = dauer
         self.stelle = stelle
-        guard let bus = verbindung.map({ UnsafeMutablePointer<GDBusConnection>(OpaquePointer($0)) })
-        else { return }
+        guard let bus = verbindung else { return }
 
-        let bauer = g_variant_builder_new(G_VARIANT_TYPE("a{sv}"))
+        let bauer = Medienleiste.mitTyp("a{sv}") { g_variant_builder_new($0) }
         defer { g_variant_builder_unref(bauer) }
         g_variant_builder_add(bauer, "{sv}", "PlaybackStatus",
                               g_variant_new_string(laeuft ? "Playing" : "Paused"))
         g_variant_builder_add(bauer, "{sv}", "Metadata", metadaten())
 
-        let leer = g_variant_builder_new(G_VARIANT_TYPE("as"))
+        let leer = Medienleiste.mitTyp("as") { g_variant_builder_new($0) }
         defer { g_variant_builder_unref(leer) }
 
         let inhalt = g_variant_new("(sa{sv}as)", "org.mpris.MediaPlayer2.Player",
@@ -131,7 +149,7 @@ final class Medienleiste: @unchecked Sendable {
 
     /// Die Angaben, die die Kachel anzeigt.
     fileprivate func metadaten() -> OpaquePointer? {
-        let bauer = g_variant_builder_new(G_VARIANT_TYPE("a{sv}"))
+        let bauer = Medienleiste.mitTyp("a{sv}") { g_variant_builder_new($0) }
         defer { g_variant_builder_unref(bauer) }
         // Eine Kennung ist Pflicht; ohne sie halten manche Umgebungen den
         // Eintrag für unfertig und zeigen ihn gar nicht.
@@ -141,7 +159,7 @@ final class Medienleiste: @unchecked Sendable {
                               g_variant_new_int64(Int64(dauer * 1_000_000)))
         g_variant_builder_add(bauer, "{sv}", "xesam:title", g_variant_new_string(titel))
         if !untertitel.isEmpty {
-            let liste = g_variant_builder_new(G_VARIANT_TYPE("as"))
+            let liste = Medienleiste.mitTyp("as") { g_variant_builder_new($0) }
             defer { g_variant_builder_unref(liste) }
             g_variant_builder_add(liste, "s", untertitel)
             g_variant_builder_add(bauer, "{sv}", "xesam:artist",
@@ -222,7 +240,7 @@ nonisolated(unsafe) private let mprisLesen: @convention(c) (
     case "CanQuit", "CanRaise": return g_variant_new_boolean(1)
     case "HasTrackList":        return g_variant_new_boolean(0)
     case "SupportedUriSchemes", "SupportedMimeTypes":
-        let leer = g_variant_builder_new(G_VARIANT_TYPE("as"))
+        let leer = Medienleiste.mitTypOeffentlich("as") { g_variant_builder_new($0) }
         defer { g_variant_builder_unref(leer) }
         return g_variant_builder_end(leer)
     case "PlaybackStatus":
