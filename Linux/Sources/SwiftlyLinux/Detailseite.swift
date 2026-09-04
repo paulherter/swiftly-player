@@ -170,8 +170,9 @@ extension App {
             var zuteilung = GdkRectangle()
             gtk_widget_get_allocation(k, &zuteilung)
             y = zuteilung.y; hoehe = zuteilung.height
-            let art = String(cString: g_type_name(G_TYPE_FROM_INSTANCE(
-                UnsafeMutableRawPointer(k).assumingMemoryBound(to: GTypeInstance.self))))
+            // `G_TYPE_FROM_INSTANCE` ist ein Makro und in Swift unsichtbar.
+            // Der Name steht auch am Widget selbst.
+            let art = gtk_widget_get_name(k).map { String(cString: $0) } ?? "?"
             var klassen = ""
             if let liste = gtk_widget_get_css_classes(k) {
                 var i = 0
