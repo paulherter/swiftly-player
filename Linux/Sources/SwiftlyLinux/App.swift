@@ -11,7 +11,15 @@ import JellyfinKit
 /// Was hier neu ist, ist ausschließlich die Oberfläche. Alles, was entscheidet
 /// — welche Adresse gilt, was der Server bekommt, wann fortgesetzt wird —
 /// liegt in `JellyfinKit` und ist auf allen fünf Plattformen dieselbe Datei.
-final class App {
+/// **`@unchecked Sendable` mit demselben Grund wie ``Zeigerkiste``.**
+///
+/// Swift kann nicht wissen, dass GTK alles auf einem einzigen Faden abarbeitet
+/// — für den Übersetzer ist diese Klasse voller roher Zeiger, die überall
+/// gleichzeitig angefasst werden könnten. Die Zusicherung gilt, weil jeder
+/// Zugriff aus einer Task über ``aufHauptfaden`` zurückkommt und damit wieder
+/// auf demselben Faden landet. Wer hier eine Methode ergänzt, die aus einer
+/// Task heraus direkt an die Oberfläche geht, bricht sie.
+final class App: @unchecked Sendable {
 
     // Fenster und die zwei Seiten darin.
     private var fenster: Widget!
