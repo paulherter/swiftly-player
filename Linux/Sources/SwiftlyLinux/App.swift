@@ -42,12 +42,12 @@ final class App: @unchecked Sendable {
     private var meldetGerade = false
 
     // Startseite
-    private var bereich: Bereich = .start
+    var bereich: Bereich = .start
     private var reihenstapel: Widget!
     private var kopfzeile: Widget!
 
-    private var client: JellyfinClient?
-    private var adressen: Bildadresse?
+    var client: JellyfinClient?
+    var adressen: Bildadresse?
 
     // MARK: - Aufbau
 
@@ -371,7 +371,7 @@ final class App: @unchecked Sendable {
     // MARK: - Das Fenster nach der Anmeldung
 
     private var titelzeile: Widget!
-    private var inhalt: Widget!            // GtkStack: start / filme / serien / suche
+    var inhalt: Widget!            // GtkStack: start / filme / serien / suche
     private var bereichsknoepfe: [Widget?] = []
     private var bibliotheksrubrik: Widget!
     private var bibliotheksliste: Widget!
@@ -392,7 +392,20 @@ final class App: @unchecked Sendable {
     private var sortierung: [Bereich: Sortierung] = [:]
     private var chipzeilen: [Bereich: Widget] = [:]
     private var benutzerID = ""
-    private var suchtakt = 0
+    var suchtakt = 0
+
+    // MARK: Seitenstapel
+    //
+    /// **Je Bereich ein eigener Stapel**, wie `Navigator` auf dem Mac: wer
+    /// zwischen Filmen und Serien wechselt, findet zurück, wo er war.
+    var stapel: [Bereich: [Item]] = [:]
+    /// Die Staffel, mit der eine Serienseite öffnet — gesetzt, wenn der Weg
+    /// über eine Folge führte (A8).
+    var startStaffel: String?
+    var detailhuelle: Widget!
+    /// Wird beim Blättern gebraucht, um den Titel in der Kopfleiste
+    /// einzublenden — dieselbe Rechnung wie `Detailkopf.staerke` auf dem Mac.
+    var detailkopfTitel: Widget!
 
     /// **Seitenleiste links, Inhalt rechts** — der Aufbau des Macs.
     ///
@@ -419,6 +432,8 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.filme), "filme")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.serien), "serien")
         gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
+        detailhuelle = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_stack_add_named(OpaquePointer(inhalt), detailhuelle, "detail")
 
         anhaengen(quer, inhalt)
 
@@ -573,7 +588,13 @@ final class App: @unchecked Sendable {
             if fall == neu { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
             else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
         }
-        gtk_stack_set_visible_child_name(OpaquePointer(inhalt), neu.kennung)
+        // **Der Stapel entscheidet, was zu sehen ist.** Liegt auf diesem
+        // Bereich eine Detailseite, kommt sie zurück — nicht die Liste.
+        if let oben = stapel[neu]?.last {
+            detailZeigen(oben)
+        } else {
+            gtk_stack_set_visible_child_name(OpaquePointer(inhalt), neu.kennung)
+        }
         // **Jeder Bereich lädt einmal.** Auf dem Mac bleiben die Stände der
         // Bereiche liegen; wer zwischen Filmen und Serien wechselt, wartet
         // nur beim ersten Mal.
@@ -899,7 +920,7 @@ final class App: @unchecked Sendable {
     /// säßen sie rund 45 Punkt zu tief. Die Rechnung `4 + bildHoehe / 2 − 17`
     /// steht wörtlich so auf dem Mac — 4 ist der senkrechte Rand der Reihe,
     /// 17 die halbe Knopfhöhe.
-    private func reiheBauen(titel: String, art: Reihenart, items: [Item]) -> Widget! {
+    func reiheBauen(titel: String, art: Reihenart, items: [Item]) -> Widget! {
         let quer = art == .weiterschauen
         let bildHoehe = quer ? Stil.querHoehe : Stil.kachelHoehe
         let stueck = (quer ? Stil.querBreite : Stil.kachelBreite) + Stil.kachelAbstand
@@ -1042,7 +1063,14 @@ final class App: @unchecked Sendable {
         if quer, let anteil = item.gesehenerAnteil {
             balkenLegen(kaefig, breite: breite, anteil: anteil)
         }
-        return kachelhuelle(bild: kaefig, breite: breite, oben: oben, unten: unten)
+        // **Nur „Weiterschauen" springt direkt in die Wiedergabe** (A1).
+        // „Nächste Folge" und „Zuletzt hinzugefügt" öffnen die Übersicht
+        // (A2, A3) — was man nicht angefangen hat, will man erst ansehen.
+        return kachelhuelle(bild: kaefig, breite: breite, oben: oben, unten: unten) {
+            [weak self] in
+            guard let self else { return }
+            if quer { self.starte(item) } else { self.oeffne(item) }
+        }
     }
 
     /// Eine Kachel im Raster — Plakat, Name, Jahr.
@@ -1056,9 +1084,13 @@ final class App: @unchecked Sendable {
         } else {
             zeichenLegen(kaefig, serie: item.seriesId != nil || item.type == "Series")
         }
+        // Jeder Suchtreffer und jede Kachel im Raster führt auf die Seite,
+        // keiner startet (A7b).
         return kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
                             oben: item.name,
-                            unten: item.productionYear.map(String.init))
+                            unten: item.productionYear.map(String.init)) {
+            [weak self] in self?.oeffne(item)
+        }
     }
 
     /// **Die Hülle jeder Kachel — und sie ist ein Knopf.**
@@ -1071,8 +1103,8 @@ final class App: @unchecked Sendable {
     /// und Text, **1** zwischen Titel und Zweitzeile. Hier standen zuerst
     /// beide auf 8, und der Abstand darunter war doppelt so groß wie auf dem
     /// Mac
-    private func kachelhuelle(bild: Widget!, breite: Int,
-                              oben: String, unten: String?) -> Widget! {
+    func kachelhuelle(bild: Widget!, breite: Int, oben: String, unten: String?,
+                      auswahl: @escaping () -> Void) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-kachel")
         gtk_widget_set_valign(knopf, GTK_ALIGN_START)
@@ -1091,6 +1123,7 @@ final class App: @unchecked Sendable {
         anhaengen(kachel, text)
 
         gtk_button_set_child(alsKnopf(knopf), kachel)
+        beiSignal(knopf, "clicked", auswahl)
         return knopf
     }
 

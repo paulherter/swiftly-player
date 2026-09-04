@@ -230,3 +230,56 @@ func zeichenLegen(_ huelle: Widget!, serie: Bool) {
     gtk_widget_set_valign(zeichen, GTK_ALIGN_CENTER)
     gtk_overlay_add_overlay(OpaquePointer(huelle), zeichen)
 }
+
+// MARK: - Nebenknopf, Plakette, Reiter
+
+/// Nebenknopf der Knopfreihe: abgerundetes Quadrat, **nur Symbol**, 48 × 48.
+///
+/// Der Fernseher hat sich bewusst gegen Beschriftungen entschieden —
+/// „Merkliste erreicht eigentlich das Merklistensymbol an sich". Aktiv ist er
+/// weiß mit dunkler Schrift, sonst Weiß 14 % (schwebend 22 %).
+func nebenknopf(_ symbol: String, aktiv: Bool = false) -> Widget! {
+    let knopf: Widget! = gtk_button_new()
+    gtk_widget_add_css_class(knopf, "swiftly-neben")
+    if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+    let bild: Widget! = gtk_image_new_from_icon_name(symbol)
+    gtk_image_set_pixel_size(OpaquePointer(bild), 17)
+    gtk_button_set_child(alsKnopf(knopf), bild)
+    gtk_widget_set_size_request(knopf, Int32(Stil.hauptknopfHoehe),
+                                Int32(Stil.hauptknopfHoehe))
+    return knopf
+}
+
+/// Schaltet einen Nebenknopf um. **Der Zustand des Knopfes ist die Antwort**
+/// (D6) — es gibt keine Rückfrage und keine Meldung.
+func knopfzustand(_ knopf: Widget!, aktiv: Bool, symbol: String) {
+    if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+    else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
+    let bild: Widget! = gtk_image_new_from_icon_name(symbol)
+    gtk_image_set_pixel_size(OpaquePointer(bild), 17)
+    gtk_button_set_child(alsKnopf(knopf), bild)
+}
+
+/// Die Freigabeplakette — 10 halbfett, 5 × 2 innen, Ecke 3, Haarlinie.
+func plakette(_ text: String) -> Widget! {
+    let l = beschriftung(text, stil: "swiftly-plakette")
+    gtk_widget_set_valign(l, GTK_ALIGN_CENTER)
+    return l
+}
+
+/// Ein Reiter: 15, aktiv halbfett mit einem 2 Punkt starken Akzentstrich
+/// darunter. Die Haarlinie darunter läuft über die volle Breite — die
+/// zeichnet der Aufrufer, nicht der Knopf.
+func reiterknopf(_ text: String, aktiv: Bool) -> Widget! {
+    let knopf: Widget! = gtk_button_new()
+    gtk_widget_add_css_class(knopf, "swiftly-reiter")
+    if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+    let stapelchen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+    anhaengen(stapelchen, beschriftung(text))
+    let strich: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(strich, "swiftly-reiterstrich")
+    gtk_widget_set_size_request(strich, -1, 2)
+    anhaengen(stapelchen, strich)
+    gtk_button_set_child(alsKnopf(knopf), stapelchen)
+    return knopf
+}

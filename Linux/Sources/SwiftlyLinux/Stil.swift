@@ -60,6 +60,14 @@ enum Stil {
     /// hoch, nicht 44 wie am Telefon.
     static let zeileHoehe = 32
     static let hauptknopfHoehe = 48
+    /// **Feste Breite des Hauptknopfes.** Sonst richtet sich der Rest der
+    /// Reihe nach der Länge der Beschriftung, und Merkliste und Mehr stehen
+    /// auf jeder Seite woanders. 200 trägt „Fortsetzen" wie „Abspielen".
+    static let hauptknopfBreite = 200
+    /// Die Kopfzone der Detailseite: 150 oben plus 230 Block, keine Restluft.
+    static let heldHoehe = 380
+    /// Höhe der Kopfleiste einer Detailseite (Pfeil und einblendender Titel).
+    static let titelHoehe = 52
     static let feldHoehe = 38
     /// Die Breite des Anmeldeblocks. Auf dem Mac steht `.frame(width: 360)`
     /// an jedem der beiden Felder.
@@ -367,6 +375,97 @@ enum Stil {
         .swiftly-kaefig,
         .swiftly-kaefig viewport,
         .swiftly-kaefig scrolledwindow { background-color: transparent; }
+
+        /* MARK: Detailseite */
+
+        .swiftly-heldtitel { font-size: 34px; font-weight: 700; letter-spacing: -0.8px; }
+        .swiftly-angaben { font-size: 14px; }
+        .swiftly-beschreibung { color: rgba(255,255,255,0.62); font-size: \(koerper)px; }
+        .swiftly-leistentitel { font-size: 17px; font-weight: 600; }
+        .swiftly-beleg label, .swiftly-beleg image { color: \(akzent); }
+        .swiftly-warnung label, .swiftly-warnung image { color: \(warnung); }
+
+        .swiftly-plakette {
+            font-size: 10px;
+            font-weight: 600;
+            color: \(schriftLeise);
+            border: 1px solid \(rand);
+            border-radius: 3px;
+            padding: 2px 5px;
+        }
+
+        /* Die Kopfleiste schwebt über der Seite und malt nichts. */
+        .swiftly-detailkopf { background-color: transparent; }
+        button.swiftly-zurueck {
+            min-width: 40px;
+            min-height: 40px;
+            padding: 0;
+            border-radius: \(ecke)px;
+            background-color: transparent;
+            border: none;
+        }
+        button.swiftly-zurueck image { color: \(schrift); -gtk-icon-size: 20px; }
+        button.swiftly-zurueck:hover { background-color: rgba(255,255,255,0.08); }
+
+        /* **Die Kulisse blendet nach links und nach unten aus.**
+           Auf dem Mac ist das eine Maske, weil der Grund sich einfärben kann
+           und ein Anstrich dann als Fleck darin stünde. Hier färbt sich
+           nichts ein, also tun es zwei Verläufe in `grund` — mit denselben
+           Stützstellen, die auf dem Fernseher nach vier Umbauten entstanden
+           sind. */
+        .swiftly-kulisse { background-color: \(grund); border-radius: 0; }
+        .swiftly-blende-quer {
+            background-image: linear-gradient(to right,
+                \(grund) 0%, rgba(11,11,13,0.95) 15%, rgba(11,11,13,0.78) 29%,
+                rgba(11,11,13,0.50) 45%, rgba(11,11,13,0.25) 57%,
+                rgba(11,11,13,0.10) 70%, rgba(11,11,13,0.02) 85%,
+                rgba(11,11,13,0) 100%);
+        }
+        .swiftly-blende-hoch {
+            background-image: linear-gradient(to bottom,
+                rgba(11,11,13,0) 0%, rgba(11,11,13,0) 50%, rgba(11,11,13,0.12) 60%,
+                rgba(11,11,13,0.38) 70%, rgba(11,11,13,0.66) 80%,
+                rgba(11,11,13,0.86) 89%, rgba(11,11,13,0.96) 95%,
+                \(grund) 100%);
+        }
+
+        /* Nebenknopf: abgerundetes Quadrat, nur Symbol. */
+        button.swiftly-neben {
+            border-radius: \(ecke)px;
+            background-color: rgba(255,255,255,0.14);
+            padding: 0;
+            border: none;
+        }
+        button.swiftly-neben image { color: \(schrift); }
+        button.swiftly-neben:hover { background-color: rgba(255,255,255,0.22); }
+        button.swiftly-neben.swiftly-aktiv { background-color: \(schrift); }
+        button.swiftly-neben.swiftly-aktiv image { color: \(grund); }
+
+        /* Reiter: aktiv halbfett mit Akzentstrich. */
+        button.swiftly-reiter {
+            background-color: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 0;
+            font-size: 15px;
+        }
+        button.swiftly-reiter label { color: \(schriftLeise); }
+        button.swiftly-reiter:hover label { color: \(schrift); }
+        button.swiftly-reiter.swiftly-aktiv label { color: \(schrift); font-weight: 600; }
+        .swiftly-reiterstrich { background-color: transparent; }
+        button.swiftly-reiter.swiftly-aktiv .swiftly-reiterstrich {
+            background-color: \(akzent);
+        }
+
+        button.swiftly-folgenzeile {
+            background-color: transparent;
+            border: none;
+            border-radius: \(ecke)px;
+            padding: 8px;
+        }
+        button.swiftly-folgenzeile:hover { background-color: rgba(255,255,255,0.06); }
+
+        .swiftly-kopfbild { border-radius: 42px; background-color: \(flaeche); }
 
         scrollbar { background-color: transparent; }
         scrollbar slider {
