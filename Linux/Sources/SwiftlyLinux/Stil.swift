@@ -50,6 +50,11 @@ enum Stil {
     static let kachelAbstand = 12
     static let reihenAbstand = 28
 
+    /// Kleinste Fenstergröße, unter der das Raster nicht mehr aufgeht:
+    /// Seitenleiste plus zwei Kachelspalten plus Ränder. Vom Mac.
+    static let fensterMinBreite = 900
+    static let fensterMinHoehe = 560
+
     static let seitenleisteBreite = 220
     /// Ein Zeiger trifft genauer als ein Finger: Seitenleistenzeilen sind 32
     /// hoch, nicht 44 wie am Telefon.
@@ -262,6 +267,21 @@ enum Stil {
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
            Dieselbe Wirkung: gleiche Farbe, keine Linie, kein Schatten. */
+        /* **Die Fensterknöpfe hatte der Reset oben plattgemacht.**
+           `button { background: transparent; border: none; padding: 0 }` gilt
+           auch für Minimieren, Maximieren und Schließen — die standen danach
+           unsichtbar da. Sie bekommen ihre Form hier zurück. */
+        windowcontrols button {
+            min-width: 24px;
+            min-height: 24px;
+            padding: 2px;
+            margin: 0 3px;
+            border-radius: 12px;
+            background-color: rgba(255,255,255,0.10);
+        }
+        windowcontrols button:hover { background-color: rgba(255,255,255,0.20); }
+        windowcontrols button image { color: \(schrift); }
+
         headerbar {
             background-color: \(flaeche);
             background-image: none;
@@ -276,11 +296,33 @@ enum Stil {
         .swiftly-balkenspur { background-color: rgba(0,0,0,0.45); }
         .swiftly-balken { background-color: \(akzent); }
 
-        /* Plakate: eigener Grund, solange das Bild noch nicht da ist. */
+        /* Plakate: eigener Grund, solange das Bild noch nicht da ist.
+           **Und sie wachsen unter dem Zeiger.** Auf dem Mac steht dafür
+           `.scaleEffect(schwebt ? 1.04 : 1)` am Bild — nur am Bild, nicht an
+           der Kachel: der Text darunter soll stehen bleiben. GTK4 kennt
+           `transform` im Stilblatt, also geht dasselbe hier.
+           Die Kachel muss ein Knopf sein, damit `:hover` überhaupt greift —
+           auf einer schlichten Box führt GTK den Zustand nicht. */
         .swiftly-plakat {
             background-color: \(erhoeht);
             border-radius: \(eckeKachel)px;
+            transition: transform 120ms ease-out;
         }
+        button.swiftly-kachel { padding: 0; background-color: transparent; }
+        button.swiftly-kachel:hover .swiftly-plakat { transform: scale(1.04); }
+
+        /* Der Blätterpfeil: 34 rund, Grund zu 72 %, Haarlinie darum. */
+        button.swiftly-pfeil {
+            min-width: 34px;
+            min-height: 34px;
+            padding: 0;
+            margin: 0 6px;
+            border-radius: 17px;
+            background-color: rgba(11,13,13,0.72);
+            border: 1px solid \(rand);
+        }
+        button.swiftly-pfeil image { color: \(schrift); }
+        button.swiftly-pfeil:hover { background-color: rgba(11,13,13,0.92); }
 
         /* Das Raster: GTK malt Auswahl- und Randflächen, die wir nicht
            wollen — es soll nur anordnen. */
@@ -380,12 +422,14 @@ enum Stil {
         }
         let bild: Widget! = gtk_picture_new_for_filename(datei)
         gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_CONTAIN)
-        gtk_picture_set_can_shrink(OpaquePointer(bild), 1)
-        gtk_widget_set_size_request(bild, Int32(breite), Int32(hoehe))
-        gtk_widget_set_hexpand(bild, 0)
-        gtk_widget_set_vexpand(bild, 0)
-        gtk_widget_set_halign(bild, links ? GTK_ALIGN_START : GTK_ALIGN_CENTER)
-        gtk_widget_set_valign(bild, GTK_ALIGN_CENTER)
-        return bild
+        // **Und der doppelt so feine Aufbau war zugleich die Falle.** Die
+        // Marke stand doppelt so groß da, weil `set_size_request` nur ein
+        // Mindestmaß ist und ein Bild von 164 × 56 genau die verlangt, sobald
+        // Platz da ist. Der Käfig gibt die Wunschgröße des Bildes nicht nach
+        // oben weiter — dasselbe Mittel wie bei den Plakaten.
+        let kaefig = bildkaefig(bild, breite: breite, hoehe: hoehe)
+        gtk_widget_set_halign(kaefig, links ? GTK_ALIGN_START : GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(kaefig, GTK_ALIGN_CENTER)
+        return kaefig
     }
 }

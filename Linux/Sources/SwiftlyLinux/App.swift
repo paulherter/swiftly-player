@@ -55,6 +55,11 @@ final class App: @unchecked Sendable {
         fenster = gtk_application_window_new(anwendung)
         gtk_window_set_title(alsFenster(fenster), "Swiftly")
         gtk_window_set_default_size(alsFenster(fenster), 1100, 760)
+        // **Unter 900 × 560 geht das Raster nicht mehr auf** — Seitenleiste
+        // plus zwei Kachelspalten plus Ränder. Dieselbe Grenze wie auf dem
+        // Mac; ohne sie liess sich das Fenster auf Briefmarkengrösse ziehen.
+        gtk_widget_set_size_request(fenster, Int32(Stil.fensterMinBreite),
+                                    Int32(Stil.fensterMinHoehe))
 
         seiten = gtk_stack_new()
         gtk_stack_set_transition_type(OpaquePointer(seiten), GTK_STACK_TRANSITION_TYPE_CROSSFADE)
@@ -611,9 +616,23 @@ final class App: @unchecked Sendable {
         return reihe
     }
 
+    /// **Die Startseite bekommt seitlich keinen Rand.**
+    ///
+    /// Der Grund war der Rand hier — er schneidet die waagerechte
+    /// Blätterfläche mit ab.
+    ///
+    /// Auf dem Mac trägt nicht die Seite den Rand, sondern die Reihe **innen**
+    /// (`Blätterreihe.rand`): die Kacheln beginnen unter der Überschrift und
+    /// blättern trotzdem bis an die Fensterkante. Genau so hier.
     private func startbereichBauen() -> Widget! {
         reihenstapel = stapel(GTK_ORIENTATION_VERTICAL, abstand: Int32(Stil.reihenAbstand))
-        return seitenrahmen(reihenstapel)
+        let scroller = gtk_scrolled_window_new()
+        gtk_widget_set_hexpand(scroller, 1)
+        gtk_widget_set_vexpand(scroller, 1)
+        gtk_widget_set_margin_top(reihenstapel, Int32(Stil.inhaltOben))
+        gtk_widget_set_margin_bottom(reihenstapel, Int32(Stil.randAbstand))
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), reihenstapel)
+        return scroller
     }
 
     private func rasterseiteBauen(_ was: Bereich) -> Widget! {
@@ -839,25 +858,99 @@ final class App: @unchecked Sendable {
         }
     }
 
-    /// Eine waagerecht scrollende Reihe mit Postern. Überschrift 20 halbfett,
-    /// darunter 10 Luft — `Stil.reihe`.
+    /// Eine waagerecht blätternde Reihe. Überschrift 20 halbfett, darunter 10
+    /// Luft — `Stil.reihe`.
+    ///
+    /// **Keine Scrollleiste, sondern zwei Pfeile.** Sie erscheinen, wenn der
+    /// Zeiger über der Reihe steht, und nur auf der Seite, zu der es noch
+    /// etwas zu sehen gibt. So macht es `Blätterreihe` auf dem Mac; die
+    /// Leiste, die GTK von sich aus einblendet, lag über den Titeln.
+    ///
+    /// Die Pfeile sitzen auf halber **Bildhöhe**, nicht auf halber Reihenhöhe:
+    /// unter jedem Bild stehen noch zwei Textzeilen, und mittig über allem
+    /// säßen sie rund 45 Punkt zu tief. Die Rechnung `4 + bildHoehe / 2 − 17`
+    /// steht wörtlich so auf dem Mac — 4 ist der senkrechte Rand der Reihe,
+    /// 17 die halbe Knopfhöhe.
     private func reiheBauen(titel: String, art: Reihenart, items: [Item]) -> Widget! {
+        let quer = art == .weiterschauen
+        let bildHoehe = quer ? Stil.querHoehe : Stil.kachelHoehe
+        let stueck = (quer ? Stil.querBreite : Stil.kachelBreite) + Stil.kachelAbstand
+
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 10)
 
         let ueberschrift = beschriftung(titel, stil: "swiftly-reihe")
         gtk_label_set_xalign(OpaquePointer(ueberschrift), 0)
         gtk_widget_set_halign(ueberschrift, GTK_ALIGN_START)
+        gtk_widget_set_margin_start(ueberschrift, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_end(ueberschrift, Int32(Stil.randAbstand))
         anhaengen(block, ueberschrift)
 
         let scroller = gtk_scrolled_window_new()
+        // `EXTERNAL` heisst: blättern ja, Leiste nein.
         gtk_scrolled_window_set_policy(OpaquePointer(scroller),
-                                       GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER)
+                                       GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
 
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(Stil.kachelAbstand))
+        gtk_widget_set_margin_start(reihe, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_end(reihe, Int32(Stil.randAbstand))
+        // Vier Punkt Luft, damit die wachsende Kachel oben nicht abgeschnitten
+        // wird — dieselben vier wie auf dem Mac.
+        gtk_widget_set_margin_top(reihe, 4)
+        gtk_widget_set_margin_bottom(reihe, 4)
         for item in items { anhaengen(reihe, kachelBauen(item, art: art)) }
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
-        anhaengen(block, scroller)
+
+        let ueber: Widget! = gtk_overlay_new()
+        gtk_overlay_set_child(OpaquePointer(ueber), scroller)
+
+        let links = pfeilknopf("go-previous-symbolic", oben: bildHoehe, rechts: false)
+        let rechts = pfeilknopf("go-next-symbolic", oben: bildHoehe, rechts: true)
+        gtk_overlay_add_overlay(OpaquePointer(ueber), links)
+        gtk_overlay_add_overlay(OpaquePointer(ueber), rechts)
+
+        // Den Typ dieser Anpassung benennt niemand — er wird nur gereicht.
+        let anpassung = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))
+        var schwebt = false
+
+        func nachfuehren() {
+            let wert = gtk_adjustment_get_value(anpassung)
+            let seite = gtk_adjustment_get_page_size(anpassung)
+            let ganz = gtk_adjustment_get_upper(anpassung)
+            gtk_widget_set_visible(links, schwebt && wert > 1 ? 1 : 0)
+            gtk_widget_set_visible(rechts, schwebt && wert + seite < ganz - 1 ? 1 : 0)
+        }
+
+        func blaettern(_ richtung: Double) {
+            let wert = gtk_adjustment_get_value(anpassung)
+            let seite = gtk_adjustment_get_page_size(anpassung)
+            let ganz = gtk_adjustment_get_upper(anpassung)
+            // Drei Kacheln je Griff — `schrittweite` auf dem Mac.
+            let weite = Double(stueck) * 3
+            let ziel = max(0, min(ganz - seite, wert + richtung * weite))
+            sanft(von: wert, nach: ziel) { gtk_adjustment_set_value(anpassung, $0) }
+        }
+
+        beiSignal(links, "clicked") { blaettern(-1); nachfuehren() }
+        beiSignal(rechts, "clicked") { blaettern(1); nachfuehren() }
+        beiSignal(scroller, "edge-reached") { nachfuehren() }
+        beiZeiger(ueber, herein: { schwebt = true; nachfuehren() },
+                         hinaus: { schwebt = false; nachfuehren() })
+        nachfuehren()
+
+        anhaengen(block, ueber)
         return block
+    }
+
+    /// Ein Blätterpfeil, oben auf halber Bildhöhe.
+    private func pfeilknopf(_ symbol: String, oben bildHoehe: Int, rechts: Bool) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-pfeil")
+        gtk_button_set_child(alsKnopf(knopf), gtk_image_new_from_icon_name(symbol))
+        gtk_widget_set_halign(knopf, rechts ? GTK_ALIGN_END : GTK_ALIGN_START)
+        gtk_widget_set_valign(knopf, GTK_ALIGN_START)
+        gtk_widget_set_margin_top(knopf, Int32(4 + bildHoehe / 2 - 17))
+        gtk_widget_set_visible(knopf, 0)
+        return knopf
     }
 
     /// **Eine Kachel, drei Bedeutungen.** Was oben steht, was darunter, und
@@ -879,10 +972,6 @@ final class App: @unchecked Sendable {
         let breite = quer ? Stil.querBreite : Stil.kachelBreite
         let hoehe = quer ? Stil.querHoehe : Stil.kachelHoehe
 
-        let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
-        gtk_widget_set_size_request(kachel, Int32(breite), -1)
-        gtk_widget_set_valign(kachel, GTK_ALIGN_START)
-
         let (kaefig, bild) = gerahmtesBild(breite: breite, hoehe: hoehe,
                                            stil: "swiftly-plakat")
         if let adressen {
@@ -898,53 +987,67 @@ final class App: @unchecked Sendable {
             }
         }
 
-        // Der Fortschrittsbalken liegt **auf** dem Bild, unten, wie auf dem
-        // Mac. Nur bei „Weiterschauen" — sonst steht er unter Titeln, die
-        // noch gar nicht angefangen wurden.
-        if quer, let anteil = item.gesehenerAnteil {
-            anhaengen(kachel, mitBalken(kaefig, breite: breite, anteil: anteil))
-        } else {
-            anhaengen(kachel, kaefig)
-        }
-
         let (oben, unten): (String, String?) = switch art {
         case .weiterschauen: (item.seriesName ?? item.name, item.kontextzeile)
         case .naechste:      (item.seriesName ?? item.name, item.folgenkuerzel)
         case .neu:           (item.name, item.neuzugangszeile)
         }
 
-        anhaengen(kachel, kacheltitel(oben, stil: "swiftly-kacheltitel"))
-        if let unten, !unten.isEmpty {
-            let zweite = kacheltitel(unten, stil: "swiftly-zweitzeile")
-            gtk_widget_add_css_class(zweite, "dim-label")
-            anhaengen(kachel, zweite)
-        }
-        return kachel
+        // Der Fortschrittsbalken liegt **auf** dem Bild, unten, wie auf dem
+        // Mac. Nur bei „Weiterschauen" — sonst stünde er unter Titeln, die
+        // noch gar nicht angefangen wurden.
+        let obenDrauf = quer && item.gesehenerAnteil != nil
+            ? mitBalken(kaefig, breite: breite, anteil: item.gesehenerAnteil ?? 0)
+            : kaefig
+        return kachelhuelle(bild: obenDrauf, breite: breite, oben: oben, unten: unten)
     }
 
     /// Eine Kachel im Raster — Plakat, Name, Jahr.
     private func rasterkachel(_ item: Item) -> Widget! {
-        let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
-        gtk_widget_set_size_request(kachel, Int32(Stil.kachelBreite), -1)
-        gtk_widget_set_valign(kachel, GTK_ALIGN_START)
-
         let (kaefig, bild) = gerahmtesBild(breite: Stil.kachelBreite,
                                            hoehe: Stil.kachelHoehe,
                                            stil: "swiftly-plakat")
-        anhaengen(kachel, kaefig)
         if let adressen,
            let adresse = Bildwahl.hochkant(item, adressen: adressen,
                                            maxHoehe: Stil.kachelHoehe * 2) {
             bildLaden(bild, url: adresse, schluessel: "\(item.id)-hoch")
         }
+        return kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
+                            oben: item.name,
+                            unten: item.productionYear.map(String.init))
+    }
 
-        anhaengen(kachel, kacheltitel(item.name, stil: "swiftly-kacheltitel"))
-        if let jahr = item.productionYear {
-            let zweite = kacheltitel(String(jahr), stil: "swiftly-zweitzeile")
+    /// **Die Hülle jeder Kachel — und sie ist ein Knopf.**
+    ///
+    /// Nicht wegen des Klicks (den gibt es hier noch gar nicht), sondern weil
+    /// GTK den Zustand `:hover` nur auf Bedienelementen führt. Auf einer
+    /// schlichten Box griffe die Vergrößerung im Stilblatt nie.
+    ///
+    /// Die Abstände stehen in `Macbausteine.Posterkachel`: **8** zwischen Bild
+    /// und Text, **1** zwischen Titel und Zweitzeile. Hier standen zuerst
+    /// beide auf 8, und der Abstand darunter war doppelt so groß wie auf dem
+    /// Mac
+    private func kachelhuelle(bild: Widget!, breite: Int,
+                              oben: String, unten: String?) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-kachel")
+        gtk_widget_set_valign(knopf, GTK_ALIGN_START)
+
+        let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+        gtk_widget_set_size_request(kachel, Int32(breite), -1)
+        anhaengen(kachel, bild)
+
+        let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
+        anhaengen(text, kacheltitel(oben, stil: "swiftly-kacheltitel"))
+        if let unten, !unten.isEmpty {
+            let zweite = kacheltitel(unten, stil: "swiftly-zweitzeile")
             gtk_widget_add_css_class(zweite, "dim-label")
-            anhaengen(kachel, zweite)
+            anhaengen(text, zweite)
         }
-        return kachel
+        anhaengen(kachel, text)
+
+        gtk_button_set_child(alsKnopf(knopf), kachel)
+        return knopf
     }
 
     /// **Eine Beschriftung zieht die Kachel sonst auf ihre Textlänge.**
