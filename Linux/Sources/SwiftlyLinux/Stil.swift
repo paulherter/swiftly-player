@@ -418,11 +418,14 @@ enum Stil {
            Stützstellen, die auf dem Fernseher nach vier Umbauten entstanden
            sind. */
         .swiftly-kulisse { background-color: \(grund); border-radius: 0; }
+        /* Die ersten 38 % bleiben dicht — dort liegt auf dem Mac gar kein
+           Bild. Danach dieselbe Kurve, umgerechnet auf die volle Breite. */
         .swiftly-blende-quer {
             background-image: linear-gradient(to right,
-                \(grund) 0%, rgba(11,11,13,0.95) 15%, rgba(11,11,13,0.78) 29%,
-                rgba(11,11,13,0.50) 45%, rgba(11,11,13,0.25) 57%,
-                rgba(11,11,13,0.10) 70%, rgba(11,11,13,0.02) 85%,
+                \(grund) 0%, \(grund) 38%,
+                rgba(11,11,13,0.95) 47.3%, rgba(11,11,13,0.78) 56.0%,
+                rgba(11,11,13,0.50) 65.9%, rgba(11,11,13,0.25) 73.3%,
+                rgba(11,11,13,0.10) 81.4%, rgba(11,11,13,0.02) 90.7%,
                 rgba(11,11,13,0) 100%);
         }
         .swiftly-blende-hoch {

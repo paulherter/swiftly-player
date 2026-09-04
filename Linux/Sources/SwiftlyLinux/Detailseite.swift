@@ -203,9 +203,25 @@ extension App {
     /// `grund` — deshalb zwei Verläufe darüber statt einer Maske, die GTK
     /// ohnehin nicht kennt. Die Stützstellen sind dieselben.
     private func kulisse(_ titel: Item) -> Widget! {
-        let (huelle, bild) = gerahmtesBild(breite: 900, hoehe: Stil.heldHoehe,
+        // **Über die volle Breite, und der Verlauf macht daraus 62 %.**
+        //
+        // Auf dem Mac ist die Kulisse `max(breite * 0.62, 520)` breit und
+        // blendet über ihre eigene Fläche aus — sie wächst also mit dem
+        // Fenster. Eine feste Breite (erst 900) hatte genau den Fehler, den
+        //
+        // GTK hat kein Gegenstück zu `GeometryReader`, und eine Breite bei
+        // jeder Größenänderung nachzurechnen wäre Zustand, der schiefgehen
+        // kann. Deshalb andersherum: **das Bild nimmt die ganze Breite, und
+        // der Verlauf hält die ersten 38 % dicht.** Das ist dieselbe Optik,
+        // nur in Prozent statt in Punkten — und damit von sich aus
+        // mitwachsend, ohne eine einzige Zeile, die misst.
+        //
+        // Die Stützstellen unten sind die des Macs, auf die volle Breite
+        // umgerechnet: p = 0,38 + 0,62 · t, Deckung = 1 − Maske.
+        let (huelle, bild) = gerahmtesBild(breite: 1, hoehe: Stil.heldHoehe,
                                            stil: "swiftly-kulisse")
-        gtk_widget_set_halign(huelle, GTK_ALIGN_END)
+        gtk_widget_set_hexpand(huelle, 1)
+        gtk_widget_set_halign(huelle, GTK_ALIGN_FILL)
         gtk_widget_set_valign(huelle, GTK_ALIGN_START)
 
         if let adressen,
@@ -213,12 +229,6 @@ extension App {
             bildLaden(bild, url: url, schluessel: url.absoluteString)
         }
 
-        // **Die Blenden gehören in die Bildhülle, nicht in einen Überzug
-        // darum.** Zuerst lagen sie über der ganzen Fensterbreite — und ein
-        // Verlauf, der bei 0 % am linken Fensterrand beginnt, ist am linken
-        // Bildrand längst durchsichtig. Das Bild stand deshalb mit harter
-        // Kante da, und der Titel lag unlesbar darauf. In der Hülle fällt
-        // dieselbe Kurve auf die 900 Punkt des Bildes.
         for klasse in ["swiftly-blende-quer", "swiftly-blende-hoch"] {
             let blende: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
             gtk_widget_add_css_class(blende, klasse)
