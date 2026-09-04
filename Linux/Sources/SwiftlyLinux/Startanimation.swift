@@ -39,7 +39,7 @@ final class Startanimation: @unchecked Sendable {
     private var beginn = Date()
     private let fertig: () -> Void
     private var schonFertig = false
-    private var getaktet = false
+    private var getaktet = 0
 
     let anzeige: Widget
 
@@ -100,11 +100,11 @@ final class Startanimation: @unchecked Sendable {
     /// hat ihre eigene Bildrate, und die Uhr ist der gemeinsame Nenner.
     fileprivate func weiter() -> Bool {
         guard !schonFertig else { return false }
-        if bild == 0 && !getaktet {
-            getaktet = true
-            FileHandle.standardError.write(Data("[Start] Takt laeuft\n".utf8))
-        }
+        getaktet += 1
         let seit = Date().timeIntervalSince(beginn)
+        if getaktet % 10 == 1 {
+            FileHandle.standardError.write(Data("[Start] Takt \(getaktet) seit=\(seit) bild=\(bild)\n".utf8))
+        }
         let neu = min(Int(seit / dauer * Double(bilder)), bilder - 1)
         if neu != bild {
             bild = neu
