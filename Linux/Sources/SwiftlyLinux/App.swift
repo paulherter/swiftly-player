@@ -42,6 +42,7 @@ final class App: @unchecked Sendable {
     private var meldetGerade = false
 
     // Startseite
+    private var bereich: Bereich = .start
     private var reihenstapel: Widget!
     private var kopfzeile: Widget!
 
@@ -100,76 +101,108 @@ final class App: @unchecked Sendable {
     }
 
     /// Schritt eins: wo steht der Server?
+    ///
+    /// **Die Abstände sind abgeschrieben, nicht abgeschätzt.** Sie stehen in
+    /// `Sources/macOS/RootView.swift` als `.padding(.top, …)` an genau diesen
+    /// Stellen: Marke, 40 Luft, Frage, 24, Feld, 24, Knopf. Ein `GtkBox` mit
+    /// `abstand` würde sie alle gleich machen — deshalb steht der Abstand
+    /// hier bei jedem Kind einzeln als oberer Rand.
     private func serverSchrittBauen() -> Widget! {
-        let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 10)
-        raender(mitte, 40)
+        let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_set_valign(mitte, GTK_ALIGN_CENTER)
         gtk_widget_set_halign(mitte, GTK_ALIGN_CENTER)
-        gtk_widget_set_size_request(mitte, 400, -1)
 
-        anhaengen(mitte, Stil.wortmarke(hoehe: 64))
-        anhaengen(mitte, beschriftung("Wo steht dein Jellyfin-Server?", stil: "dim-label"))
+        anhaengen(mitte, Stil.wortmarke(hoehe: 44))
 
-        serverfeld = gtk_entry_new()
-        gtk_entry_set_placeholder_text(alsFeld(serverfeld), "tv.beispiel.de")
-        // Die Weltkugel im Feld — auf dem Mac steht sie dort ebenfalls.
-        gtk_entry_set_icon_from_icon_name(alsFeld(serverfeld),
-                                          GTK_ENTRY_ICON_PRIMARY, "globe-symbolic")
-        gtk_widget_set_margin_top(serverfeld, 18)
+        let frage = beschriftung("Wo steht dein Jellyfin-Server?",
+                                 stil: "swiftly-koerper")
+        gtk_widget_add_css_class(frage, "dim-label")
+        gtk_widget_set_margin_top(frage, 40)
+        anhaengen(mitte, frage)
+
+        // Die Weltkugel im Feld — auf dem Mac steht dort `Image("globe")`.
+        serverfeld = eingabezeile(symbol: "globe-symbolic", platzhalter: "tv.beispiel.de")
+        gtk_widget_set_margin_top(serverfeld, 24)
         anhaengen(mitte, serverfeld)
 
-        verbindeknopf = gtk_button_new_with_label("Verbinden")
-        gtk_widget_add_css_class(verbindeknopf, "swiftly-haupt")
-        gtk_widget_set_margin_top(verbindeknopf, 6)
-        anhaengen(mitte, verbindeknopf)
-
-        serverstand = beschriftung("", stil: "dim-label", umbruch: true)
+        serverstand = meldezeile()
         anhaengen(mitte, serverstand)
+
+        verbindeknopf = hauptknopf("Verbinden")
+        gtk_widget_set_margin_top(verbindeknopf, 24)
+        gtk_widget_set_sensitive(verbindeknopf, 0)
+        anhaengen(mitte, verbindeknopf)
 
         beiSignal(verbindeknopf, "clicked") { [weak self] in self?.verbinden() }
         beiSignal(serverfeld, "activate") { [weak self] in self?.verbinden() }
+        // Der Mac blendet den Knopf aus, solange das Feld leer ist
+        // (`.disabled(adresse.isEmpty)`). Dasselbe hier, nur muss GTK bei
+        // jeder Änderung gefragt werden statt einmal beim Auswerten.
+        beiSignal(serverfeld, "changed") { [weak self] in
+            guard let self else { return }
+            gtk_widget_set_sensitive(self.verbindeknopf,
+                                     self.text(self.serverfeld).isEmpty ? 0 : 1)
+        }
         return mitte
     }
 
     /// Schritt zwei: welches Konto?
+    ///
+    /// Marke, 34, Servername, 4, Fassung, 28, Benutzer, 10, Passwort, 24,
+    /// Knopf — aus `AnmeldeView` auf dem Mac.
     private func kontoSchrittBauen() -> Widget! {
-        let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 12)
-        raender(mitte, 40)
+        let mitte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_set_valign(mitte, GTK_ALIGN_CENTER)
         gtk_widget_set_halign(mitte, GTK_ALIGN_CENTER)
-        gtk_widget_set_size_request(mitte, 380, -1)
 
-        serverzeile = beschriftung("", stil: "title-2", umbruch: true)
+        anhaengen(mitte, Stil.wortmarke(hoehe: 44))
+
+        serverzeile = beschriftung("", stil: "swiftly-titel")
+        gtk_widget_set_margin_top(serverzeile, 34)
         anhaengen(mitte, serverzeile)
-        fassungszeile = beschriftung("", stil: "dim-label")
+
+        fassungszeile = beschriftung("", stil: "swiftly-zweitzeile")
+        gtk_widget_add_css_class(fassungszeile, "swiftly-leise")
+        gtk_widget_set_margin_top(fassungszeile, 4)
         anhaengen(mitte, fassungszeile)
 
-        benutzerfeld = gtk_entry_new()
-        gtk_entry_set_placeholder_text(alsFeld(benutzerfeld), "Benutzername")
-        gtk_widget_set_margin_top(benutzerfeld, 14)
+        benutzerfeld = eingabezeile(symbol: "avatar-default-symbolic",
+                                    platzhalter: "Benutzername")
+        gtk_widget_set_margin_top(benutzerfeld, 28)
         anhaengen(mitte, benutzerfeld)
 
-        passwortfeld = gtk_entry_new()
-        gtk_entry_set_placeholder_text(alsFeld(passwortfeld), "Passwort")
-        gtk_entry_set_visibility(alsFeld(passwortfeld), 0)
+        passwortfeld = eingabezeile(symbol: "channel-secure-symbolic",
+                                    platzhalter: "Passwort", geheim: true)
+        gtk_widget_set_margin_top(passwortfeld, 10)
         anhaengen(mitte, passwortfeld)
 
-        anmeldeknopf = gtk_button_new_with_label("Anmelden")
-        gtk_widget_add_css_class(anmeldeknopf, "swiftly-haupt")
-        gtk_widget_set_margin_top(anmeldeknopf, 8)
-        anhaengen(mitte, anmeldeknopf)
-
-        anmeldestand = beschriftung("", stil: "dim-label", umbruch: true)
+        anmeldestand = meldezeile()
         anhaengen(mitte, anmeldestand)
 
-        let zurueck = gtk_button_new_with_label("Anderer Server")
-        gtk_widget_add_css_class(zurueck, "flat")
-        gtk_widget_set_margin_top(zurueck, 6)
+        anmeldeknopf = hauptknopf("Anmelden")
+        gtk_widget_set_margin_top(anmeldeknopf, 24)
+        gtk_widget_set_sensitive(anmeldeknopf, 0)
+        anhaengen(mitte, anmeldeknopf)
+
+        // Der Mac kommt über die Fensterampel zurueck; hier braucht es einen
+        // Weg im Bild, sonst sitzt man auf dem falschen Server fest.
+        let zurueck: Widget! = gtk_button_new_with_label("Anderer Server")
+        gtk_widget_add_css_class(zurueck, "swiftly-flach")
+        gtk_widget_set_margin_top(zurueck, 14)
+        gtk_widget_set_halign(zurueck, GTK_ALIGN_CENTER)
         anhaengen(mitte, zurueck)
 
         beiSignal(anmeldeknopf, "clicked") { [weak self] in self?.anmelden() }
         beiSignal(passwortfeld, "activate") { [weak self] in self?.anmelden() }
-        beiSignal(benutzerfeld, "activate") { [weak self] in self?.anmelden() }
+        beiSignal(benutzerfeld, "activate") { [weak self] in
+            guard let self else { return }
+            gtk_widget_grab_focus(self.passwortfeld)
+        }
+        beiSignal(benutzerfeld, "changed") { [weak self] in
+            guard let self else { return }
+            gtk_widget_set_sensitive(self.anmeldeknopf,
+                                     self.text(self.benutzerfeld).isEmpty ? 0 : 1)
+        }
         beiSignal(zurueck, "clicked") { [weak self] in
             guard let self else { return }
             gtk_stack_set_visible_child_name(OpaquePointer(self.anmeldeschritte), "server")
@@ -177,17 +210,35 @@ final class App: @unchecked Sendable {
         return mitte
     }
 
+    /// Die Fehlerzeile unter den Feldern: 12 Zeilenschrift in `warnung`,
+    /// mittig, auf Blockbreite umbrechend. Sie steht immer da und ist leer,
+    /// solange nichts schiefging — sonst würde der Knopf beim ersten Fehler
+    /// nach unten springen.
+    private func meldezeile() -> Widget! {
+        let l = beschriftung("", stil: "swiftly-zweitzeile", umbruch: true)
+        gtk_widget_add_css_class(l, "swiftly-warnung")
+        gtk_widget_set_size_request(l, Int32(Stil.anmeldeBreite), -1)
+        gtk_widget_set_margin_top(l, 12)
+        gtk_widget_set_visible(l, 0)
+        return l
+    }
+
     private func text(_ feld: Widget!) -> String {
         gtk_editable_get_text(OpaquePointer(feld)).map { String(cString: $0) } ?? ""
     }
 
-    private func serverstandZeigen(_ s: String) {
-        gtk_label_set_text(OpaquePointer(serverstand), s)
+    /// **Eine leere Beschriftung ist nicht null hoch.** GTK gibt ihr trotzdem
+    /// eine Zeile, und mit dem oberen Rand stünde der Knopf dauerhaft 29
+    /// Punkt zu tief — auf dem Mac erscheint der Fehlerblock erst, wenn es
+    /// einen gibt. Also aus- und einblenden statt Text leeren.
+    private func meldung(_ zeile: Widget!, _ s: String) {
+        gtk_label_set_text(OpaquePointer(zeile), s)
+        gtk_widget_set_visible(zeile, s.isEmpty ? 0 : 1)
     }
 
-    private func anmeldestandZeigen(_ s: String) {
-        gtk_label_set_text(OpaquePointer(anmeldestand), s)
-    }
+    private func serverstandZeigen(_ s: String) { meldung(serverstand, s) }
+
+    private func anmeldestandZeigen(_ s: String) { meldung(anmeldestand, s) }
 
     // MARK: Schritt eins — verbinden
 
@@ -292,9 +343,8 @@ final class App: @unchecked Sendable {
                                deviceID: Geraet.kennung,
                                deviceName: Geraet.name)
         adressen = Bildadresse(basis: serverURL, token: token)
-        gtk_label_set_text(OpaquePointer(titelzeile),
-                           servername.map { "Swiftly · \($0)" } ?? "Swiftly")
-        kopfzeileZeigen(true)
+        self.benutzerID = benutzerID
+        sitzungAnzeigen(benutzername: benutzername, servername: servername)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
 
         // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
@@ -305,65 +355,319 @@ final class App: @unchecked Sendable {
             await c.setSession(sitzung)
             aufHauptfaden {
                 self.client = c
+                self.geladen = [.start]
                 self.startseiteLaden()
+                self.bibliothekenLaden()
             }
         }
     }
 
-    // MARK: - Startseite
+    // MARK: - Das Fenster nach der Anmeldung
 
     private var titelzeile: Widget!
-    private var abmeldeknopf: Widget!
+    private var inhalt: Widget!            // GtkStack: start / filme / serien / suche
+    private var bereichsknoepfe: [Widget?] = []
+    private var bibliotheksrubrik: Widget!
+    private var bibliotheksliste: Widget!
+    private var profilbild: Widget!
+    private var profilname: Widget!
+    private var profilserver: Widget!
+    private var filmeraster: Widget!
+    private var serienraster: Widget!
+    private var suchfeld: Widget!
+    private var suchraster: Widget!
+    private var filmezahl: Widget!
+    private var serienzahl: Widget!
+    private var geladen: Set<Bereich> = []
+    private var benutzerID = ""
 
+    /// **Seitenleiste links, Inhalt rechts** — der Aufbau des Macs.
+    ///
+    /// Auf dem Mac liegt die Seitenleiste über die volle Fensterhöhe, die
+    /// Fensterampel schwebt darüber, und `Stil.ampelHoehe` hält ihr oben 40
+    /// Punkt frei. Unter Wayland gehört die Titelzeile dem Fenster und nicht
+    /// uns; die Leiste beginnt deshalb unter einer schmalen Kopfzeile, die
+    /// dieselbe Farbe trägt wie die Leiste. Das ist die eine Abweichung, die
+    /// sich nicht wegräumen lässt, ohne die Fensterknöpfe zu verlieren.
     private func startseiteBauen() -> Widget! {
+        let quer = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
+        anhaengen(quer, seitenleisteBauen())
+
+        inhalt = gtk_stack_new()
+        // Der Bereichswechsel blendet über — auf dem Mac „Fade Through",
+        // 200 ms hinaus und 260 ms herein. GTK kennt nur eine Dauer für
+        // beides; 220 liegt dazwischen.
+        gtk_stack_set_transition_type(OpaquePointer(inhalt), GTK_STACK_TRANSITION_TYPE_CROSSFADE)
+        gtk_stack_set_transition_duration(OpaquePointer(inhalt), 220)
+        gtk_widget_set_hexpand(inhalt, 1)
+        gtk_widget_set_vexpand(inhalt, 1)
+
+        gtk_stack_add_named(OpaquePointer(inhalt), startbereichBauen(), "start")
+        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.filme), "filme")
+        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.serien), "serien")
+        gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
+
+        anhaengen(quer, inhalt)
+
+        titelzeile = beschriftung("", stil: "swiftly-zweitzeile")
+        return quer
+    }
+
+    // MARK: Seitenleiste
+
+    private func seitenleisteBauen() -> Widget! {
+        let leiste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_add_css_class(leiste, "swiftly-seitenleiste")
+        gtk_widget_set_size_request(leiste, Int32(Stil.seitenleisteBreite), -1)
+        gtk_widget_set_hexpand(leiste, 0)
+
+        // Marke: 28 hoch, 20 seitlich, 18 Luft darunter — HauptView.swift.
+        let marke = Stil.wortmarke(hoehe: 28, links: true)
+        gtk_widget_set_margin_start(marke, 20)
+        gtk_widget_set_margin_end(marke, 20)
+        gtk_widget_set_margin_top(marke, 14)
+        gtk_widget_set_margin_bottom(marke, 18)
+        anhaengen(leiste, marke)
+
+        // Die vier Bereiche, 2 Abstand, 12 seitlich.
+        let bereiche = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+        gtk_widget_set_margin_start(bereiche, 12)
+        gtk_widget_set_margin_end(bereiche, 12)
+        for fall in Bereich.allCases {
+            let zeile = seitenleistenzeile(symbol: fall.symbol,
+                                           text: fall.beschriftung,
+                                           aktiv: fall == bereich)
+            beiSignal(zeile, "clicked") { [weak self] in self?.zeige(fall) }
+            bereichsknoepfe.append(zeile)
+            anhaengen(bereiche, zeile)
+        }
+        anhaengen(leiste, bereiche)
+
+        bibliotheksrubrik = rubrik("Bibliotheken")
+        gtk_widget_set_margin_top(bibliotheksrubrik, 26)
+        gtk_widget_set_margin_bottom(bibliotheksrubrik, 8)
+        gtk_widget_set_margin_start(bibliotheksrubrik, 12)
+        gtk_widget_set_margin_end(bibliotheksrubrik, 12)
+        gtk_widget_set_visible(bibliotheksrubrik, 0)
+        anhaengen(leiste, bibliotheksrubrik)
+
+        bibliotheksliste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+        gtk_widget_set_margin_start(bibliotheksliste, 12)
+        gtk_widget_set_margin_end(bibliotheksliste, 12)
+        anhaengen(leiste, bibliotheksliste)
+
+        anhaengen(leiste, luft())
+        anhaengen(leiste, trennlinie())
+        anhaengen(leiste, profilzeileBauen())
+        return leiste
+    }
+
+    /// Wer angemeldet ist, und wo. Unten in der Leiste — 40 hoch, Bild 26,
+    /// Name 14 halbfett, Server 11 sehr leise.
+    private func profilzeileBauen() -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-profil")
+        raender(knopf, 12)
+
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+
+        profilbild = gtk_picture_new()
+        gtk_widget_add_css_class(profilbild, "swiftly-profilbild")
+        gtk_widget_set_size_request(profilbild, 26, 26)
+        gtk_widget_set_hexpand(profilbild, 0)
+        gtk_widget_set_vexpand(profilbild, 0)
+        gtk_widget_set_valign(profilbild, GTK_ALIGN_CENTER)
+        gtk_picture_set_content_fit(OpaquePointer(profilbild), GTK_CONTENT_FIT_COVER)
+        gtk_widget_set_overflow(profilbild, GTK_OVERFLOW_HIDDEN)
+        anhaengen(reihe, profilbild)
+
+        let namen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
+        gtk_widget_set_valign(namen, GTK_ALIGN_CENTER)
+        gtk_widget_set_hexpand(namen, 1)
+        profilname = beschriftung("—", stil: "swiftly-kacheltitel")
+        gtk_label_set_xalign(OpaquePointer(profilname), 0)
+        gtk_label_set_ellipsize(OpaquePointer(profilname), PANGO_ELLIPSIZE_END)
+        anhaengen(namen, profilname)
+        profilserver = beschriftung("", stil: "swiftly-rubrik")
+        gtk_widget_add_css_class(profilserver, "swiftly-leise")
+        gtk_label_set_xalign(OpaquePointer(profilserver), 0)
+        gtk_label_set_ellipsize(OpaquePointer(profilserver), PANGO_ELLIPSIZE_END)
+        anhaengen(namen, profilserver)
+        anhaengen(reihe, namen)
+
+        gtk_button_set_child(alsKnopf(knopf), reihe)
+        // Bis es eine Profilseite gibt, führt der Knopf hinaus. Auf dem Mac
+        // liegt „Abmelden" eine Ebene tiefer, hinter dem Profil.
+        beiSignal(knopf, "clicked") { [weak self] in self?.abmelden() }
+        return knopf
+    }
+
+    /// Schaltet den Bereich um und färbt die Zeilen nach.
+    private func zeige(_ neu: Bereich) {
+        bereich = neu
+        for (i, fall) in Bereich.allCases.enumerated() {
+            guard let knopf = bereichsknoepfe[i] else { continue }
+            if fall == neu { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+            else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
+        }
+        gtk_stack_set_visible_child_name(OpaquePointer(inhalt), neu.kennung)
+        // **Jeder Bereich lädt einmal.** Auf dem Mac bleiben die Stände der
+        // Bereiche liegen; wer zwischen Filmen und Serien wechselt, wartet
+        // nur beim ersten Mal.
+        guard !geladen.contains(neu) else { return }
+        geladen.insert(neu)
+        switch neu {
+        case .start:  startseiteLaden()
+        case .filme:  rasterLaden(.filme)
+        case .serien: rasterLaden(.serien)
+        case .suche:  break
+        }
+    }
+
+    // MARK: Inhaltsseiten
+
+    /// Der gemeinsame Rahmen jeder Seite: oben 52, seitlich 24 — `inhaltOben`
+    /// und `randAbstand` vom Mac.
+    private func seitenrahmen(_ kind: Widget!) -> Widget! {
         let scroller = gtk_scrolled_window_new()
+        gtk_widget_set_hexpand(scroller, 1)
         gtk_widget_set_vexpand(scroller, 1)
-
-        reihenstapel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 26)
-        raender(reihenstapel, 24)
-        gtk_scrolled_window_set_child(OpaquePointer(scroller), reihenstapel)
-
-        titelzeile = beschriftung("Swiftly", stil: "title-4")
-        abmeldeknopf = gtk_button_new_with_label("Abmelden")
-        gtk_widget_add_css_class(abmeldeknopf, "flat")
-        beiSignal(abmeldeknopf, "clicked") { [weak self] in self?.abmelden() }
+        gtk_widget_set_margin_top(kind, Int32(Stil.inhaltOben))
+        gtk_widget_set_margin_start(kind, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_end(kind, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_bottom(kind, Int32(Stil.randAbstand))
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), kind)
         return scroller
     }
 
-    private func kopfzeileFuellen() {
-        gtk_header_bar_set_title_widget(OpaquePointer(kopfzeile), titelzeile)
-        gtk_header_bar_pack_end(OpaquePointer(kopfzeile), abmeldeknopf)
-        kopfzeileZeigen(false)
+    /// Eine Seitenüberschrift mit der Zahl rechts — „Filme … 7".
+    private func seitenkopf(_ titel: String, zahl: inout Widget!) -> Widget! {
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
+        let t = beschriftung(titel, stil: "swiftly-titel-gross")
+        gtk_label_set_xalign(OpaquePointer(t), 0)
+        gtk_widget_set_hexpand(t, 1)
+        anhaengen(reihe, t)
+        zahl = beschriftung("", stil: "swiftly-koerper")
+        gtk_widget_add_css_class(zahl, "swiftly-leise")
+        gtk_widget_set_valign(zahl, GTK_ALIGN_CENTER)
+        anhaengen(reihe, zahl)
+        return reihe
     }
 
-    /// **Die Kopfzeile gehört zur Sitzung, nicht zum Fenster.**
-    ///
-    /// Servername und „Abmelden" haben auf dem Anmeldebildschirm nichts zu
-    /// suchen — sie standen dort, weil beide einmal aufgebaut werden und
-    /// niemand sie wieder ausgeblendet hat. Auf dem Anmeldeweg bleibt der
-    /// Kopf leer.
-    private func kopfzeileZeigen(_ sichtbar: Bool) {
-        gtk_widget_set_visible(titelzeile, sichtbar ? 1 : 0)
-        gtk_widget_set_visible(abmeldeknopf, sichtbar ? 1 : 0)
+    private func startbereichBauen() -> Widget! {
+        reihenstapel = stapel(GTK_ORIENTATION_VERTICAL, abstand: Int32(Stil.reihenAbstand))
+        return seitenrahmen(reihenstapel)
     }
+
+    private func rasterseiteBauen(_ was: Bereich) -> Widget! {
+        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 20)
+        var zahl: Widget!
+        anhaengen(block, seitenkopf(was.beschriftung, zahl: &zahl))
+        let raster = rasterBauen()
+        anhaengen(block, raster)
+        if was == .filme { filmeraster = raster; filmezahl = zahl }
+        else { serienraster = raster; serienzahl = zahl }
+        return seitenrahmen(block)
+    }
+
+    private func sucheBauen() -> Widget! {
+        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 20)
+        var unbenutzt: Widget!
+        anhaengen(block, seitenkopf("Suche", zahl: &unbenutzt))
+
+        suchfeld = eingabezeile(symbol: "system-search-symbolic", platzhalter: "Suchen")
+        // Auf der Suchseite geht das Feld über die Inhaltsbreite, nicht über
+        // die 360 des Anmeldeblocks.
+        gtk_widget_set_size_request(suchfeld, -1, Int32(Stil.feldHoehe))
+        gtk_widget_set_halign(suchfeld, GTK_ALIGN_FILL)
+        gtk_widget_set_hexpand(suchfeld, 1)
+        anhaengen(block, suchfeld)
+
+        suchraster = rasterBauen()
+        anhaengen(block, suchraster)
+        beiSignal(suchfeld, "activate") { [weak self] in self?.suchen() }
+        return seitenrahmen(block)
+    }
+
+    /// Ein umbrechendes Raster. GTKs `GtkFlowBox` kann genau das, was auf dem
+    /// Mac ein `LazyVGrid` mit fester Spaltenbreite tut.
+    private func rasterBauen() -> Widget! {
+        let raster: Widget! = gtk_flow_box_new()
+        gtk_flow_box_set_selection_mode(OpaquePointer(raster), GTK_SELECTION_NONE)
+        gtk_flow_box_set_homogeneous(OpaquePointer(raster), 1)
+        gtk_flow_box_set_column_spacing(OpaquePointer(raster), UInt32(Stil.kachelAbstand))
+        gtk_flow_box_set_row_spacing(OpaquePointer(raster), UInt32(Stil.reihenAbstand))
+        gtk_flow_box_set_min_children_per_line(OpaquePointer(raster), 2)
+        gtk_flow_box_set_max_children_per_line(OpaquePointer(raster), 10)
+        gtk_widget_set_valign(raster, GTK_ALIGN_START)
+        return raster
+    }
+
+    private func rasterFuellen(_ raster: Widget!, _ items: [Item]) {
+        while let kind = gtk_flow_box_get_child_at_index(OpaquePointer(raster), 0) {
+            gtk_flow_box_remove(OpaquePointer(raster),
+                                unsafeBitCast(kind, to: Widget.self))
+        }
+        for item in items {
+            gtk_flow_box_insert(OpaquePointer(raster), kachelBauen(item), -1)
+        }
+    }
+
+    // MARK: Laden
 
     private func abmelden() {
         Speicher.loeschen()
         client = nil
         adressen = nil
+        geladen.removeAll()
         leeren(reihenstapel)
         gtk_editable_set_text(OpaquePointer(passwortfeld), "")
         anmeldestandZeigen("")
-        serverstandZeigen("Abgemeldet.")
+        serverstandZeigen("")
         kopfzeileZeigen(false)
         gtk_stack_set_visible_child_name(OpaquePointer(anmeldeschritte), "server")
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "anmeldung")
     }
 
+    /// Name, Server und Bild unten in der Leiste, dazu die Bibliotheken.
+    private func sitzungAnzeigen(benutzername: String, servername: String?) {
+        gtk_label_set_text(OpaquePointer(profilname), benutzername)
+        gtk_label_set_text(OpaquePointer(profilserver), servername ?? "")
+        if let adressen, !benutzerID.isEmpty,
+           let url = adressen.benutzer(benutzerID, kante: 60) {
+            bildLaden(profilbild, url: url, schluessel: "benutzer-\(benutzerID)")
+        }
+    }
+
+    private func bibliothekenLaden() {
+        guard let client else { return }
+        Task.detached { [self] in
+            let sichten = (try? await client.userViews()) ?? []
+            aufHauptfaden { self.bibliothekenZeigen(sichten) }
+        }
+    }
+
+    private func bibliothekenZeigen(_ sichten: [Item]) {
+        leeren(bibliotheksliste)
+        gtk_widget_set_visible(bibliotheksrubrik, sichten.isEmpty ? 0 : 1)
+        for sicht in sichten {
+            // Der Sammlungstyp bestimmt das Zeichen, wie auf dem Mac.
+            let symbol: String
+            switch sicht.collectionType {
+            case "movies":  symbol = "video-x-generic-symbolic"
+            case "tvshows": symbol = "tv-symbolic"
+            case "music":   symbol = "folder-music-symbolic"
+            default:        symbol = "folder-symbolic"
+            }
+            anhaengen(bibliotheksliste,
+                      seitenleistenzeile(symbol: symbol, text: sicht.name, aktiv: false))
+        }
+    }
+
     private func startseiteLaden() {
         guard let client else { return }
         leeren(reihenstapel)
-        anhaengen(reihenstapel, beschriftung("Lade …", stil: "dim-label"))
+        anhaengen(reihenstapel, beschriftung("Lade …", stil: "swiftly-koerper"))
 
         Task.detached { [self] in
             async let weiter = try? await client.resumeItems(limit: 20)
@@ -380,12 +684,43 @@ final class App: @unchecked Sendable {
         }
     }
 
+    /// Filme und Serien. **Mit Gattung und rekursiv**, aus demselben Grund,
+    /// der in `JellyfinClient.items` steht: sonst kommen bei einer
+    /// Serienbibliothek die virtuellen Ordner statt der Serien.
+    private func rasterLaden(_ was: Bereich) {
+        guard let client else { return }
+        let gattung = was == .filme ? "Movie" : "Series"
+        Task.detached { [self] in
+            let antwort = try? await client.items(limit: 500,
+                                                  recursive: true,
+                                                  includeItemTypes: [gattung])
+            let items = antwort?.items ?? []
+            let gesamt = antwort?.totalRecordCount ?? items.count
+            aufHauptfaden {
+                let raster = was == .filme ? self.filmeraster : self.serienraster
+                let zahl = was == .filme ? self.filmezahl : self.serienzahl
+                self.rasterFuellen(raster, items)
+                gtk_label_set_text(OpaquePointer(zahl), String(gesamt))
+            }
+        }
+    }
+
+    private func suchen() {
+        guard let client else { return }
+        let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !begriff.isEmpty else { rasterFuellen(suchraster, []); return }
+        Task.detached { [self] in
+            let treffer = (try? await client.suche(begriff)) ?? []
+            aufHauptfaden { self.rasterFuellen(self.suchraster, treffer) }
+        }
+    }
+
     private func reihenZeigen(_ reihen: [(String, [Item])]) {
         leeren(reihenstapel)
         guard !reihen.isEmpty else {
             anhaengen(reihenstapel,
                       beschriftung("Nichts gefunden. Steht auf dem Server etwas?",
-                                   stil: "dim-label", umbruch: true))
+                                   stil: "swiftly-koerper", umbruch: true))
             return
         }
         for (titel, titelListe) in reihen {
@@ -393,33 +728,35 @@ final class App: @unchecked Sendable {
         }
     }
 
-    /// Eine waagerecht scrollende Reihe mit Postern.
+    /// Eine waagerecht scrollende Reihe mit Postern. Überschrift 20 halbfett,
+    /// darunter 10 Luft — `Stil.reihe`.
     private func reiheBauen(titel: String, items: [Item]) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 10)
 
-        let ueberschrift = beschriftung(titel, stil: "title-2")
+        let ueberschrift = beschriftung(titel, stil: "swiftly-reihe")
+        gtk_label_set_xalign(OpaquePointer(ueberschrift), 0)
         gtk_widget_set_halign(ueberschrift, GTK_ALIGN_START)
         anhaengen(block, ueberschrift)
 
         let scroller = gtk_scrolled_window_new()
         gtk_scrolled_window_set_policy(OpaquePointer(scroller),
                                        GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER)
-        gtk_widget_set_size_request(scroller, -1, 260)
 
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(Stil.kachelAbstand))
         for item in items { anhaengen(reihe, kachelBauen(item)) }
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
         anhaengen(block, scroller)
         return block
     }
 
+    /// Eine Kachel: Plakat 150 × 225, darunter Titel und Zweitzeile.
     private func kachelBauen(_ item: Item) -> Widget! {
-        let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 6)
-        gtk_widget_set_size_request(kachel, Int32(Stil.kachelBreiteBreit), -1)
+        let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+        gtk_widget_set_size_request(kachel, Int32(Stil.kachelBreite), -1)
+        gtk_widget_set_valign(kachel, GTK_ALIGN_START)
 
         let bild = gtk_picture_new()
-        gtk_widget_set_size_request(bild, Int32(Stil.kachelBreiteBreit),
-                                   Int32(Stil.kachelHoehe(Stil.kachelBreiteBreit)))
+        gtk_widget_set_size_request(bild, Int32(Stil.kachelBreite), Int32(Stil.kachelHoehe))
         gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_COVER)
         gtk_widget_add_css_class(bild, "swiftly-plakat")
         gtk_widget_set_overflow(bild, GTK_OVERFLOW_HIDDEN)
@@ -427,18 +764,18 @@ final class App: @unchecked Sendable {
 
         if let adressen { posterLaden(bild, item: item, adressen: adressen, kante: 300) }
 
-        let name = beschriftung(item.name, stil: "caption-heading")
+        let name = beschriftung(item.name, stil: "swiftly-kacheltitel")
         gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
-        gtk_widget_set_halign(name, GTK_ALIGN_START)
+        gtk_label_set_xalign(OpaquePointer(name), 0)
         anhaengen(kachel, name)
 
         // Bei Folgen die Serie darunter, bei Filmen das Jahr.
         let zweite = item.seriesName ?? item.productionYear.map(String.init) ?? ""
         if !zweite.isEmpty {
-            let unten = beschriftung(zweite, stil: "caption")
+            let unten = beschriftung(zweite, stil: "swiftly-zweitzeile")
             gtk_widget_add_css_class(unten, "dim-label")
             gtk_label_set_ellipsize(OpaquePointer(unten), PANGO_ELLIPSIZE_END)
-            gtk_widget_set_halign(unten, GTK_ALIGN_START)
+            gtk_label_set_xalign(OpaquePointer(unten), 0)
             anhaengen(kachel, unten)
         }
         return kachel

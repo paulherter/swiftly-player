@@ -5,10 +5,17 @@ import JellyfinKit
 /// **Swiftlys Aussehen, in GTKs Sprache übersetzt.**
 ///
 /// Die Zahlen und Farben hier sind keine neuen Entscheidungen — sie stehen so
-/// in `Sources/Shared/Farben.swift` und `Stil.swift` und gelten auf iPhone,
-/// iPad, Apple TV und Mac. Wer eine ändert, ändert sie dort und trägt sie
-/// hierher nach; eine zweite Palette wäre der sichere Weg, dass die
+/// in `Sources/Shared/Farben.swift` und `Sources/macOS/Stil.swift` und gelten
+/// auf iPhone, iPad, Apple TV und Mac. Wer eine ändert, ändert sie dort und
+/// trägt sie hierher nach; eine zweite Palette wäre der sichere Weg, dass die
 /// Plattformen auseinanderlaufen.
+///
+/// **Der Mac ist die Vorlage, nicht das Gefühl.** Am 04.09.2026 standen hier
+/// erst geschätzte Werte, und sie waren zu zweit falsch: die Feldfläche war
+/// `erhoeht` (#1E1E22) statt `flaeche` (#161619), und der Hauptknopf trug den
+/// Akzent, obwohl er auf dem Mac **weiß mit dunkler Schrift** ist. Beides
+/// stand die ganze Zeit in `Macbausteine.swift` — nachgelesen statt geraten
+/// wäre billiger gewesen.
 ///
 /// **Warum reines GTK4 und nicht libadwaita.** libadwaita ist GNOMEs
 /// Gestaltungsbibliothek: sie sorgt dafür, dass eine App wie eine GNOME-App
@@ -21,25 +28,56 @@ enum Stil {
     // MARK: Farben, wörtlich aus Farben.swift
 
     static let grund = "#0B0B0D"
+    /// Die Fläche eines Feldes und der Seitenleiste. **Nicht `erhoeht`.**
+    static let flaeche = "#161619"
     static let erhoeht = "#1E1E22"
     static let akzent = "#5CD1C2"
     static let markeAkzent = Markenpfade.akzentHex     // #2FDBC0
+    static let warnung = "#E8833A"
     static let schrift = "#FFFFFF"
     static let schriftLeise = "rgba(255,255,255,0.62)"
     static let schriftSehrLeise = "rgba(255,255,255,0.38)"
+    static let rand = "rgba(255,255,255,0.12)"
+    static let linie = "rgba(255,255,255,0.08)"
 
-    // MARK: Maße, wörtlich aus Stil.swift
+    // MARK: Maße, wörtlich aus macOS/Stil.swift
 
-    /// Allgemeine Ecke — Felder, Knöpfe, Blätter.
     static let ecke = 6
-    /// Ecke einer Kachel. Etwas runder, weil ein Plakat sonst hart wirkt.
     static let eckeKachel = 8
-    /// Breite einer Kachel im schmalen Layout; breit sind es 132.
-    static let kachelBreite = 112
-    static let kachelBreiteBreit = 132
+    /// Felder sind runder als Knöpfe — 10 gegen 6, so wie auf dem iPhone.
+    static let eckeFeld = 10
+    static let randAbstand = 24
+    static let kachelAbstand = 12
+    static let reihenAbstand = 28
 
-    /// Plakate sind 2:3. Die Höhe folgt daraus, statt geraten zu werden.
-    static func kachelHoehe(_ breite: Int) -> Int { breite * 3 / 2 }
+    static let seitenleisteBreite = 220
+    /// Ein Zeiger trifft genauer als ein Finger: Seitenleistenzeilen sind 32
+    /// hoch, nicht 44 wie am Telefon.
+    static let zeileHoehe = 32
+    static let hauptknopfHoehe = 48
+    static let feldHoehe = 38
+    /// Die Breite des Anmeldeblocks. Auf dem Mac steht `.frame(width: 360)`
+    /// an jedem der beiden Felder.
+    static let anmeldeBreite = 360
+    static let inhaltOben = 52
+
+    /// Poster, 2 : 3 — auf dem iPhone 112 × 168, auf dem Mac 150 × 225.
+    static let kachelBreite = 150
+    static let kachelHoehe = 225
+    /// Weiterschauen liegt quer, 16 : 9.
+    static let querBreite = 280
+    static let querHoehe = 158
+
+    // MARK: Schriftstufen — dieselbe Abstufung wie iPhone und Mac
+
+    static let titelGross = 28
+    static let titel = 22
+    static let reihe = 20
+    static let listentitel = 15
+    static let koerper = 15
+    static let kachelTitel = 14
+    static let zweitzeile = 12
+    static let rubrik = 11
 
     // MARK: Stilblatt
 
@@ -51,7 +89,7 @@ enum Stil {
     /// Punkt ist ein GTK-Typ.
     static var blatt: String {
         """
-        window, .background, scrolledwindow, viewport {
+        window, .background, scrolledwindow, viewport, stack {
             background-color: \(grund);
             color: \(schrift);
         }
@@ -59,74 +97,147 @@ enum Stil {
         label { color: \(schrift); }
         .dim-label { color: \(schriftLeise); }
         .swiftly-leise { color: \(schriftSehrLeise); }
+        .swiftly-warnung { color: \(warnung); }
 
-        .title-1 { font-size: 30px; font-weight: 700; }
-        .title-2 { font-size: 19px; font-weight: 600; }
-        .title-4 { font-size: 15px; font-weight: 600; }
-        .caption { font-size: 11px; }
-        .caption-heading { font-size: 12px; font-weight: 600; }
+        /* Die Schriftstufen des Macs, eins zu eins. */
+        .swiftly-titel-gross { font-size: \(titelGross)px; font-weight: 700; }
+        .swiftly-titel       { font-size: \(titel)px; font-weight: 600; }
+        .swiftly-reihe       { font-size: \(reihe)px; font-weight: 600; }
+        .swiftly-listentitel { font-size: \(listentitel)px; font-weight: 600; }
+        .swiftly-koerper     { font-size: \(koerper)px; }
+        .swiftly-kacheltitel { font-size: \(kachelTitel)px; font-weight: 500; }
+        .swiftly-zweitzeile  { font-size: \(zweitzeile)px; }
+        .swiftly-rubrik {
+            font-size: \(rubrik)px;
+            font-weight: 600;
+            letter-spacing: 0.7px;
+        }
 
+        /* MARK: Eingabefeld
+           Auf dem Mac ein eigener Baustein statt des Systemfeldes: die Fläche
+           ist `flaeche`, der Rahmen eine Haarlinie in Weiß 12 %, die Ecke 10.
+           Im Fokus wird der Rahmen zum Akzent bei halber Deckung. */
         entry {
-            background-color: \(erhoeht);
+            background-color: \(flaeche);
+            background-image: none;
             color: \(schrift);
-            border: 1px solid rgba(255,255,255,0.10);
-            border-radius: \(ecke)px;
-            padding: 9px 12px;
+            border: 1px solid \(rand);
+            border-radius: \(eckeFeld)px;
+            min-height: \(feldHoehe)px;
+            padding: 0 12px;
+            font-size: \(koerper)px;
             caret-color: \(akzent);
+            box-shadow: none;
         }
         entry:focus {
-            border-color: \(akzent);
+            border-color: rgba(92,209,194,0.5);
             outline: none;
             box-shadow: none;
         }
-        entry placeholder { color: \(schriftSehrLeise); }
-        entry image { color: \(schriftLeise); margin-right: 8px; }
+        entry placeholder, entry text placeholder { color: \(schriftSehrLeise); }
+        /* Das Symbol im Feld: 17 breit, dahinter 9 Luft — die Zahlen der
+           `Eingabezeile` auf dem Mac. */
+        entry image { color: \(schriftSehrLeise); min-width: 17px; margin-right: 9px; }
 
+        /* MARK: Hauptknopf — weiß mit dunkler Schrift, nicht im Akzent. */
         button {
             background-image: none;
-            background-color: \(erhoeht);
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
             color: \(schrift);
-            border: 1px solid rgba(255,255,255,0.10);
             border-radius: \(ecke)px;
-            padding: 10px 20px;
+            padding: 0;
+        }
+        button.swiftly-haupt {
+            background-color: \(schrift);
+            color: \(grund);
+            min-height: \(hauptknopfHoehe)px;
+            padding: 0 30px;
+            font-size: 16px;
             font-weight: 600;
         }
-        button:hover { background-color: rgba(255,255,255,0.12); }
-        button:disabled { color: \(schriftSehrLeise); }
-
-        button.swiftly-haupt {
-            background-color: \(akzent);
-            color: \(grund);
-            border: none;
-        }
-        button.swiftly-haupt:hover { background-color: shade(\(akzent), 1.08); }
+        button.swiftly-haupt:hover { background-color: rgba(255,255,255,0.88); }
+        /* Der Mac legt `.opacity(0.4)` über den ganzen Knopf. Dieselbe
+           Wirkung, nur ausgerechnet: Weiß zu 40 % über dem Grund. */
         button.swiftly-haupt:disabled {
-            background-color: rgba(92,209,194,0.35);
+            background-color: rgba(255,255,255,0.40);
             color: rgba(11,11,13,0.55);
         }
 
-        button.flat {
+        button.swiftly-flach {
             background-color: transparent;
-            border: none;
             color: \(schriftLeise);
+            font-size: \(koerper)px;
+            min-height: \(zeileHoehe)px;
+            padding: 0 10px;
+        }
+        button.swiftly-flach:hover {
+            background-color: rgba(255,255,255,0.06);
+            color: \(schrift);
+        }
+
+        /* MARK: Seitenleiste
+           Fläche wie das Feld, Zeilen 32 hoch. Der Akzent trägt die Auswahl —
+           dieselbe Regel wie auf iOS. Der Schwebezustand bekommt bewusst nur
+           Weiß: er zeigt „hier steht der Zeiger", keine Wahl. */
+        .swiftly-seitenleiste { background-color: \(flaeche); }
+
+        button.swiftly-zeile {
+            min-height: \(zeileHoehe)px;
+            padding: 0 10px;
+            color: \(schriftLeise);
+            font-size: \(koerper)px;
             font-weight: 500;
         }
-        button.flat:hover { background-color: rgba(255,255,255,0.08); color: \(schrift); }
+        button.swiftly-zeile:hover {
+            background-color: rgba(255,255,255,0.06);
+            color: \(schrift);
+        }
+        button.swiftly-zeile.swiftly-aktiv {
+            background-color: rgba(92,209,194,0.10);
+            color: \(akzent);
+        }
+        button.swiftly-zeile image { min-width: 17px; }
+
+        button.swiftly-profil {
+            min-height: 40px;
+            padding: 0 10px;
+        }
+        button.swiftly-profil:hover { background-color: rgba(255,255,255,0.06); }
+
+        .swiftly-trennlinie { background-color: \(linie); min-height: 1px; }
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
            Dieselbe Wirkung: gleiche Farbe, keine Linie, kein Schatten. */
         headerbar {
-            background-color: \(grund);
+            background-color: \(flaeche);
             background-image: none;
             border: none;
             box-shadow: none;
-            min-height: 44px;
+            min-height: 38px;
         }
 
         /* Plakate: eigener Grund, solange das Bild noch nicht da ist. */
         .swiftly-plakat {
             background-color: \(erhoeht);
             border-radius: \(eckeKachel)px;
+        }
+
+        /* Das Raster: GTK malt Auswahl- und Randflächen, die wir nicht
+           wollen — es soll nur anordnen. */
+        flowbox, flowboxchild {
+            background-color: transparent;
+            background-image: none;
+            padding: 0;
+            border: none;
+        }
+        flowboxchild:selected, flowboxchild:focus { outline: none; box-shadow: none; }
+
+        /* Das Benutzerbild ist rund. 26 Punkt, wie auf dem Mac. */
+        .swiftly-profilbild {
+            border-radius: 13px;
+            background-color: \(erhoeht);
         }
 
         scrollbar { background-color: transparent; }
@@ -184,6 +295,10 @@ enum Stil {
 
     /// Die Wortmarke als Widget, in der gewünschten Höhe.
     ///
+    /// **44 auf der Anmeldung, 28 in der Seitenleiste** — beides steht so in
+    /// `Sources/macOS/RootView.swift` und `HauptView.swift`. Geraten war sie
+    /// vorher 64, und das war eineinhalbmal zu groß.
+    ///
     /// **Zwei Fallen liegen hier hintereinander.**
     ///
     /// `GtkImage` nimmt seine Größenangabe nur für Symbole; eine geladene
@@ -198,12 +313,12 @@ enum Stil {
     ///
     /// Die Breite folgt dem Seitenverhältnis des Rahmens (3005 zu 1024, also
     /// knapp 2,94 zu 1) statt geraten zu werden.
-    static func wortmarke(hoehe: Int = 64) -> Widget! {
+    static func wortmarke(hoehe: Int = 44, links: Bool = false) -> Widget! {
         let r = Markenpfade.wortmarkeRahmen
         let breite = Int(Double(hoehe) * r.breite / r.hoehe)
         // Doppelt so fein anlegen, damit es auf feinen Bildschirmen scharf bleibt.
         guard let datei = wortmarkeDatei(hoehe: hoehe * 2) else {
-            return beschriftung("swiftly", stil: "title-1")
+            return beschriftung("swiftly", stil: "swiftly-titel-gross")
         }
         let bild: Widget! = gtk_picture_new_for_filename(datei)
         gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_CONTAIN)
@@ -211,7 +326,7 @@ enum Stil {
         gtk_widget_set_size_request(bild, Int32(breite), Int32(hoehe))
         gtk_widget_set_hexpand(bild, 0)
         gtk_widget_set_vexpand(bild, 0)
-        gtk_widget_set_halign(bild, GTK_ALIGN_CENTER)
+        gtk_widget_set_halign(bild, links ? GTK_ALIGN_START : GTK_ALIGN_CENTER)
         gtk_widget_set_valign(bild, GTK_ALIGN_CENTER)
         return bild
     }

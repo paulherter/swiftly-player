@@ -89,3 +89,18 @@ func posterLaden(_ bildfeld: Widget!, item: Item, adressen: Bildadresse, kante: 
         }
     }
 }
+
+/// Lädt ein beliebiges Bild in ein `GtkPicture` — dasselbe wie ``posterLaden``,
+/// nur mit fertiger Adresse. Gebraucht für das Benutzerbild in der
+/// Seitenleiste, das keinen `Item` hat.
+func bildLaden(_ bildfeld: Widget!, url: URL, schluessel: String) {
+    g_object_ref(bildfeld)
+    let kiste = Zeigerkiste(bildfeld)
+    Task.detached {
+        let daten = await Bildlager.shared.laden(url, schluessel: schluessel)
+        aufHauptfaden {
+            if let daten { bildSetzen(kiste.widget, daten: daten) }
+            g_object_unref(kiste.widget)
+        }
+    }
+}
