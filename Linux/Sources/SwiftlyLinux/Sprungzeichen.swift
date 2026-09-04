@@ -50,15 +50,17 @@ nonisolated(unsafe) private let sprungMalen: @convention(c) (
     let z = Unmanaged<Sprungzeichen>.fromOpaque(daten).takeUnretainedValue()
 
     let cx = Double(breite) / 2, cy = Double(hoehe) / 2
-    // Die Strichstärke und der Halbmesser wachsen mit dem Zeichen, damit
-    // grosse und kleine gleich aussehen. Die Werte sind an der 30er Grösse
-    // des Macs abgemessen.
-    let r = z.mass * 0.36
-    let strich = max(z.mass * 0.062, 1.2)
+    // Halbmesser, Strich und Pfeilkopf wachsen mit dem Zeichen, damit ein
+    // grosses und ein kleines gleich aussehen. Die Verhältnisse sind an
+    // einem Probelauf gegen `gobackward.10` abgemessen.
+    let r = z.mass * 0.34
+    let strich = max(z.mass * 0.068, 1.2)
+    let bogen = Double.pi / 180
+    let stelle = -76 * bogen
 
     cairo_save(cr)
     // **Zurück ist Vor, gespiegelt.** Ein Bild, zwei Richtungen — so kann
-    // sich der eine nicht vom anderen weg entwickeln.
+    // sich das eine nicht vom anderen weg entwickeln.
     if z.zurueck {
         cairo_translate(cr, cx, 0)
         cairo_scale(cr, -1, 1)
@@ -69,31 +71,35 @@ nonisolated(unsafe) private let sprungMalen: @convention(c) (
     cairo_set_line_width(cr, strich)
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT)
 
-    // Der Kreis mit einer Lücke oben: von 295° im Uhrzeigersinn bis 245°.
-    // Die Lücke ist damit 50 Grad breit und liegt mittig über dem Zeichen.
-    let bogen = Double.pi / 180
+    // Der Kreis mit einer Lücke oben: von −76° im Uhrzeigersinn bis 250°.
     cairo_new_path(cr)
-    cairo_arc(cr, cx, cy, r, -65 * bogen, 245 * bogen)
+    cairo_arc(cr, cx, cy, r, stelle, 250 * bogen)
     cairo_stroke(cr)
 
-    // Der Pfeilkopf sitzt am rechten Rand der Lücke und zeigt nach rechts —
-    // gespiegelt also nach links, für zurück.
-    let ax = cx + r * cos(-65 * bogen)
-    let ay = cy + r * sin(-65 * bogen)
-    let spitze = z.mass * 0.17
+    // Der Pfeilkopf sitzt am Ende der Lücke und ist **in die Laufrichtung
+    // gedreht** — ungedreht stand er quer und sah aus wie ein Fähnchen.
+    let spitze = z.mass * 0.088
+    cairo_save(cr)
+    cairo_translate(cr, cx + r * cos(stelle), cy + r * sin(stelle))
+    cairo_rotate(cr, stelle + 90 * bogen)
     cairo_new_path(cr)
-    cairo_move_to(cr, ax + spitze * 0.9, ay)
-    cairo_line_to(cr, ax - spitze * 0.35, ay - spitze * 0.85)
-    cairo_line_to(cr, ax - spitze * 0.35, ay + spitze * 0.85)
+    cairo_move_to(cr, spitze * 1.5, 0)
+    cairo_line_to(cr, -spitze * 0.5, -spitze * 1.05)
+    cairo_line_to(cr, -spitze * 0.5, spitze * 1.05)
     cairo_close_path(cr)
     cairo_fill(cr)
     cairo_restore(cr)
+    cairo_restore(cr)
 
-    // **Die Zahl steht aufrecht, auch beim Spiegeln.** Deshalb erst nach dem
-    // `restore` — sonst stünde bei „zurück" eine seitenverkehrte Zehn.
+    // **Die Farbe muss noch einmal gesetzt werden.** `cairo_restore` nimmt
+    // nicht nur die Spiegelung zurück, sondern die ganze Malerei — samt
+    // Quelle. Ohne diese Zeile stand die Zahl in der Farbe, die vor dem
+    // `save` galt: im Probelauf unsichtbar auf dem Grund, in der App
+    // zufällig das, was GTK zuletzt gesetzt hatte.
     let text = "\(z.zahl)"
+    cairo_set_source_rgba(cr, 1, 1, 1, 1)
     cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD)
-    cairo_set_font_size(cr, z.mass * 0.36)
+    cairo_set_font_size(cr, z.mass * 0.34)
     var mass = cairo_text_extents_t()
     cairo_text_extents(cr, text, &mass)
     cairo_move_to(cr, cx - mass.width / 2 - mass.x_bearing,

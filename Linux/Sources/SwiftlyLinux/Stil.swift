@@ -621,24 +621,52 @@ enum Stil {
         }
         .swiftly-warnung label, .swiftly-warnung image { color: \(warnung); }
 
-        /* Der Zeitregler: schmale Spur, Akzent für das Gesehene. */
+        /* **Der Zeitregler — und Breeze wieder mit seinen Rändern.**
+
+           Hier stand nur `min-width` und `min-height`. Das Systemthema legt
+           auf `slider` einen Rand, und GTK meldete es sogar wörtlich:
+           „slider reported min width −5, but sizes must be >= 0". Ein
+           negatives Mass verwirft GTK, und dann malt Breeze seinen eigenen
+           Regler — genau der, der unverändert wiederkam.
+
+           Dieselbe Falle wie bei `scrollbar slider` ein paar Zeilen weiter
+           oben, und dieselbe Abhilfe: **wer eine Mindestgrösse überschreibt,
+           muss Rand und Innenabstand mit überschreiben.** */
+        scale.swiftly-regler {
+            min-height: 16px;
+            padding: 0;
+            margin: 0;
+        }
         scale.swiftly-regler trough {
             min-height: 4px;
-            background-color: rgba(255,255,255,0.22);
+            margin: 0;
+            padding: 0;
+            border: none;
+            background-image: none;
+            background-color: rgba(255,255,255,0.18);
             border-radius: 2px;
+            box-shadow: none;
         }
         scale.swiftly-regler highlight {
+            margin: 0;
+            padding: 0;
+            border: none;
+            background-image: none;
             background-color: \(akzent);
             border-radius: 2px;
+            box-shadow: none;
         }
         scale.swiftly-regler slider {
             min-width: 13px;
             min-height: 13px;
+            margin: 0;
+            padding: 0;
+            border: none;
+            background-image: none;
             background-color: \(schrift);
             border-radius: 7px;
-            border: none;
             /* Der Griff liegt über dem Bild und braucht eine Kante, sonst
-               verschwindet er auf einer hellen Stelle. Auf dem Mac ist es
+               verschwindet er auf einer hellen Stelle — auf dem Mac ist es
                derselbe Schatten. */
             box-shadow: 0 1px 5px rgba(0,0,0,0.55);
         }

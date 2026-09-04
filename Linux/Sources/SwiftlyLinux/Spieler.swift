@@ -23,6 +23,12 @@ extension App {
 
         let seite = spielerSeiteBauen(item)
         gtk_stack_add_named(OpaquePointer(seiten), seite, "spieler")
+        // **Aufsteigen — die dritte der drei Bewegungen** (so auf dem Mac,
+        // `HauptView.swift:160`). Von unten herauf und wieder hinunter;
+        // genau deshalb zeigt der Winkel oben rechts nach unten.
+        gtk_stack_set_transition_type(OpaquePointer(seiten),
+                                      GTK_STACK_TRANSITION_TYPE_SLIDE_UP)
+        gtk_stack_set_transition_duration(OpaquePointer(seiten), 350)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "spieler")
         gtk_widget_set_visible(kopfzeile, 0)
 
@@ -61,7 +67,11 @@ extension App {
         spurwahlSchliessen()
         laufenderTitel = nil
         laufenderPlan = nil
+        spielerSteuerung = nil
         gtk_widget_set_visible(kopfzeile, 1)
+        gtk_stack_set_transition_type(OpaquePointer(seiten),
+                                      GTK_STACK_TRANSITION_TYPE_SLIDE_DOWN)
+        gtk_stack_set_transition_duration(OpaquePointer(seiten), 350)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
         if let seite = gtk_stack_get_child_by_name(OpaquePointer(seiten), "spieler") {
             gtk_stack_remove(OpaquePointer(seiten), seite)
@@ -175,6 +185,13 @@ extension App {
                             auswahl: @escaping () -> Void) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-spieltaste")
+        // **Mittig, nicht oben.** Die Säulen sind verschieden hoch — 78 für
+        // das Abspielzeichen, 46 für die Sprünge —, und in einer Kiste füllt
+        // ein Kind sonst die volle Höhe und legt seinen Inhalt nach oben.
+        // Dann sassen die Sprungzeichen höher als das Abspielzeichen. Weil
+        // die Kürzel darunter gleich hoch sind, liegen die Zeichen bei
+        // mittiger Ausrichtung von selbst auf einer Linie.
+        gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
         let saeule = stapel(GTK_ORIENTATION_VERTICAL, abstand: 9)
         gtk_widget_set_halign(zeichen, GTK_ALIGN_CENTER)
         gtk_widget_set_size_request(zeichen, gross ? 78 : 46, gross ? 78 : 46)
@@ -242,6 +259,11 @@ extension App {
         // Zeitleiste: Stand links, Balken, Rest rechts.
         let leiste = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
         spielerZeit = beschriftung("0:00", stil: "swiftly-spielerzeit")
+        // **Eine Breite, sonst drückt der Regler sie weg.** Der Regler
+        // dehnt sich; eine Beschriftung ohne Wunschbreite kann dabei auf
+        // null zusammenfallen, und dann steht dort gar nichts.
+        gtk_widget_set_size_request(spielerZeit, 52, -1)
+        gtk_label_set_xalign(OpaquePointer(spielerZeit), 0)
         anhaengen(leiste, spielerZeit)
         spielerRegler = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.001)
         gtk_scale_set_draw_value(alsSkala(spielerRegler), 0)
@@ -255,7 +277,9 @@ extension App {
                               Unmanaged.passUnretained(self).toOpaque(),
                               nil, GConnectFlags(rawValue: 0))
         anhaengen(leiste, spielerRegler)
-        spielerRest = beschriftung("", stil: "swiftly-spielerzeit")
+        spielerRest = beschriftung("−0:00", stil: "swiftly-spielerzeit")
+        gtk_widget_set_size_request(spielerRest, 58, -1)
+        gtk_label_set_xalign(OpaquePointer(spielerRest), 1)
         anhaengen(leiste, spielerRest)
         anhaengen(unten, leiste)
         return unten
@@ -427,7 +451,11 @@ extension App {
                 // Nur ausblenden, wenn seither nichts passiert ist — und
                 // nicht in Pause: ein Standbild ohne Steuerung sieht aus wie
                 // eine ruhige Einstellung.
-                guard self.steuerungstakt == meins, self.spielstand.laeuft else { return }
+                // **Der Player kann in den vier Sekunden zugegangen sein.**
+                // Dann steht in `spielerSteuerung` ein abgeräumtes Widget,
+                // und GTK meldet „assertion GTK_IS_WIDGET failed".
+                guard self.laufenderTitel != nil, self.spielerSteuerung != nil,
+                      self.steuerungstakt == meins, self.spielstand.laeuft else { return }
                 gtk_widget_set_opacity(self.spielerSteuerung, 0)
             }
         }

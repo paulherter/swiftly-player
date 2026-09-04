@@ -54,7 +54,14 @@ final class App: @unchecked Sendable {
 
     func aufbauen(anwendung: UnsafeMutablePointer<GtkApplication>!) {
         fenster = gtk_application_window_new(anwendung)
-        gtk_window_set_title(alsFenster(fenster), "Swiftly")
+        // **Was unter dem Zeiger steht.** In der Leiste las man „SwiftlyLinux
+        // Swiftly": das erste kommt vom Programmnamen, den GLib aus der
+        // Binärdatei nimmt, das zweite vom Fenstertitel. Der Anwendungsname
+        // heisst jetzt so wie die App, und der Titel trägt den Zusatz.
+        g_set_application_name("Swiftly")
+        g_set_prgname("swiftly")
+        gtk_window_set_title(alsFenster(fenster), "for Jellyfin")
+        gtk_window_set_icon_name("de.paulherter.swiftly")
         gtk_window_set_default_size(alsFenster(fenster), 1100, 760)
         // **Unter 900 × 560 geht das Raster nicht mehr auf** — Seitenleiste
         // plus zwei Kachelspalten plus Ränder. Dieselbe Grenze wie auf dem
@@ -1355,6 +1362,13 @@ final class App: @unchecked Sendable {
     }
 
     /// Eine Kachel im Raster — Plakat, Name, Jahr.
+    ///
+    /// **Sie behält ihre Breite.** Eine `GtkFlowBox` dehnt ihre Kinder über
+    /// die Zeile; wer das Fenster zog, sah die Plakate mitwachsen und in
+    /// krummen Massen stehen, während sie auf der Startseite fest bei 150
+    /// bleiben. Der Mac legt dort ein `LazyVGrid` mit **fester** Spaltenweite
+    /// an — der Platz, der übrig bleibt, geht in den Abstand, nicht in die
+    /// Kachel. Mittig ausgerichtet kommt genau das heraus.
     private func rasterkachel(_ item: Item) -> Widget! {
         let (kaefig, bild) = gerahmtesBild(breite: Stil.kachelBreite,
                                            hoehe: Stil.kachelHoehe,
@@ -1367,11 +1381,14 @@ final class App: @unchecked Sendable {
         }
         // Jeder Suchtreffer und jede Kachel im Raster führt auf die Seite,
         // keiner startet (A7b).
-        return kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
-                            oben: item.name,
-                            unten: item.productionYear.map(String.init)) {
+        let kachel = kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
+                                  oben: item.name,
+                                  unten: item.productionYear.map(String.init)) {
             [weak self] in self?.oeffne(item)
         }
+        gtk_widget_set_halign(kachel, GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(kachel, GTK_ALIGN_START)
+        return kachel
     }
 
     /// **Die Hülle jeder Kachel — und sie ist ein Knopf.**
