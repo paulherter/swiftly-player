@@ -49,5 +49,5 @@ enum Werteauswahl { case bitrate, ton, untertitel, zurueck, vor }
 /// VLCKit, sondern libVLC des Systems — der Text nennt deshalb, was wirklich
 /// geladen ist, statt eine Fassung zu behaupten.
 enum VLCFassung {
-    static var text: String = "3.x"
+    nonisolated(unsafe) static var text: String = "3.x"
 }

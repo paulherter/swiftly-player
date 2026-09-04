@@ -229,7 +229,7 @@ final class App: @unchecked Sendable {
         return l
     }
 
-    private func text(_ feld: Widget!) -> String {
+    func text(_ feld: Widget!) -> String {
         gtk_editable_get_text(OpaquePointer(feld)).map { String(cString: $0) } ?? ""
     }
 
@@ -391,7 +391,7 @@ final class App: @unchecked Sendable {
     private var filter: [Bereich: Bibliotheksfilter] = [:]
     private var sortierung: [Bereich: Sortierung] = [:]
     private var chipzeilen: [Bereich: Widget] = [:]
-    private var benutzerID = ""
+    var benutzerID = ""
     var suchtakt = 0
 
     // MARK: Seitenstapel
