@@ -303,15 +303,21 @@ extension App {
             // **Der Zustand des Knopfes ist die Antwort** (D6) — aber nur,
             // solange sie stimmt. Lehnt der Server ab, geht der Haken zurück
             // und sagt warum; auf dem Mac genauso.
-            Task.detached { [weak self] in
+            // Zeiger über eine Fadengrenze gehen in die Kiste — dieselbe
+            // Zusicherung wie überall hier.
+            let knopfkiste = gehalten(knopf)
+            let hakenkiste = gehalten(ruhig)
+            Task.detached { [self] in
                 do { try await client.setzeGesehen(itemID: folge.id, an: neu) }
                 catch {
                     aufHauptfaden {
-                        knopfzustand(knopf, aktiv: !neu, symbol: "object-select-symbolic")
-                        gtk_widget_set_visible(ruhig, !neu ? 1 : 0)
-                        self?.melden(lesbarerFehler(error))
+                        knopfzustand(knopfkiste.widget, aktiv: !neu,
+                                     symbol: "object-select-symbolic")
+                        gtk_widget_set_visible(hakenkiste.widget, !neu ? 1 : 0)
+                        self.melden(lesbarerFehler(error))
                     }
                 }
+                aufHauptfaden { losgelassen(knopfkiste); losgelassen(hakenkiste) }
             }
         }
         anhaengen(platz, knopf)
