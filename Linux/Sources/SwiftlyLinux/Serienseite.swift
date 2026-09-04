@@ -136,7 +136,7 @@ extension App {
                 anhaengen(liste, self.staffelzeile(staffel.name, gewaehlt: gewaehlt) {
                     [weak self] in
                     wahl.jetzt = staffel
-                    self.offeneStaffel = staffel
+                    self?.offeneStaffel = staffel
                     gtk_button_set_label(alsKnopf(pille), staffel.name)
                     gtk_popover_popdown(alsTafel(tafel))
                     self?.folgenLaden(serie: serie, staffel: staffel, in: folgenraum)
