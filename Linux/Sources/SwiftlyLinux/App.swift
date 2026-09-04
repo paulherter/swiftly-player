@@ -150,7 +150,7 @@ final class App: @unchecked Sendable {
         gtk_button_set_label(alsKnopf(anmeldeknopf), "Melde an …")
         anmeldestandZeigen("Frage \(url.absoluteString) …")
 
-        Task.detached { [weak self] in
+        Task.detached { [self] in
             let neuerClient = JellyfinClient(baseURL: url,
                                              deviceID: Geraet.kennung,
                                              deviceName: Geraet.name)
@@ -164,8 +164,8 @@ final class App: @unchecked Sendable {
                                          benutzername: benutzer,
                                          servername: info?.serverName))
                 aufHauptfaden {
-                    self?.anmeldungFertig()
-                    self?.sitzungUebernehmen(serverURL: url,
+                    self.anmeldungFertig()
+                    self.sitzungUebernehmen(serverURL: url,
                                              token: sitzung.accessToken,
                                              benutzerID: sitzung.userID,
                                              benutzername: benutzer,
@@ -173,8 +173,8 @@ final class App: @unchecked Sendable {
                 }
             } catch {
                 aufHauptfaden {
-                    self?.anmeldungFertig()
-                    self?.anmeldestandZeigen("Ging nicht: \(error.localizedDescription)")
+                    self.anmeldungFertig()
+                    self.anmeldestandZeigen("Ging nicht: \(error.localizedDescription)")
                 }
             }
         }
@@ -200,11 +200,11 @@ final class App: @unchecked Sendable {
         // deshalb nur mit `await`; erst danach darf geladen werden.
         let sitzung = Session(accessToken: token, userID: benutzerID,
                               userName: benutzername, serverURL: serverURL)
-        Task.detached { [weak self] in
+        Task.detached { [self] in
             await c.setSession(sitzung)
             aufHauptfaden {
-                self?.client = c
-                self?.startseiteLaden()
+                self.client = c
+                self.startseiteLaden()
             }
         }
     }
@@ -249,7 +249,7 @@ final class App: @unchecked Sendable {
         leeren(reihenstapel)
         anhaengen(reihenstapel, beschriftung("Lade …", stil: "dim-label"))
 
-        Task.detached { [weak self] in
+        Task.detached { [self] in
             async let weiter = try? await client.resumeItems(limit: 20)
             async let naechste = try? await client.nextUp(limit: 20)
             async let neu = try? await client.latest(limit: 20)
@@ -260,7 +260,7 @@ final class App: @unchecked Sendable {
                 ("Zuletzt hinzugefügt", await neu ?? [])
             ].filter { !$0.1.isEmpty }
 
-            aufHauptfaden { self?.reihenZeigen(reihen) }
+            aufHauptfaden { self.reihenZeigen(reihen) }
         }
     }
 
