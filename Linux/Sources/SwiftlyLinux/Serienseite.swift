@@ -96,42 +96,72 @@ extension App {
         }
         // Mit welcher Staffel geöffnet wird: der über eine Folge gewählten,
         // sonst der ersten.
-        var gewaehlt = staffeln.first { $0.id == startStaffel } ?? staffeln[0]
+        let wahl = Staffelwahl()
+        wahl.jetzt = staffeln.first { $0.id == startStaffel } ?? staffeln[0]
 
         let pille: Widget! = gtk_button_new()
         gtk_widget_add_css_class(pille, "swiftly-chip")
         gtk_widget_set_halign(pille, GTK_ALIGN_START)
-        let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
-        gtk_widget_set_visible(liste, 0)
-        let folgenraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
-
-        func beschriften() {
-            gtk_button_set_label(alsKnopf(pille), gewaehlt.name)
-        }
-        beschriften()
-
+        gtk_button_set_label(alsKnopf(pille), wahl.jetzt?.name ?? "")
         // Nur bei mehr als einer Staffel ist eine Wahl zu treffen.
         gtk_widget_set_sensitive(pille, staffeln.count > 1 ? 1 : 0)
-        beiSignal(pille, "clicked") {
-            gtk_widget_set_visible(liste, gtk_widget_get_visible(liste) == 0 ? 1 : 0)
-        }
 
-        for staffel in staffeln {
-            let eintrag: Widget! = gtk_button_new_with_label(staffel.name)
-            gtk_widget_add_css_class(eintrag, "swiftly-zeile")
-            beiSignal(eintrag, "clicked") { [weak self] in
-                gewaehlt = staffel
-                beschriften()
-                gtk_widget_set_visible(liste, 0)
-                self?.folgenLaden(serie: serie, staffel: staffel, in: folgenraum)
+        let folgenraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+
+        // **Eine Tafel, kein aufklappender Kasten in der Seite.** Auf dem Mac
+        // erscheint die Staffelliste als Blatt über der Pille — dieselbe
+        // Form wie beim Mehr-Knopf, und dieselbe Regel: kleine
+        // Entscheidungen erscheinen dort, wo sie ausgelöst wurden (E5). Mein
+        // erster Versuch schob sie als Liste in den Seitenfluss und verschob
+        // dabei alles darunter.
+        beiSignal(pille, "clicked") { [weak self] in
+            guard let self else { return }
+            let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+            gtk_widget_set_size_request(liste, 200, -1)
+            let tafel: Widget! = gtk_popover_new()
+            gtk_widget_add_css_class(tafel, "swiftly-mehr")
+            gtk_popover_set_child(alsTafel(tafel), liste)
+            gtk_popover_set_position(alsTafel(tafel), GTK_POS_BOTTOM)
+            gtk_widget_set_parent(tafel, pille)
+            for staffel in staffeln {
+                let gewaehlt = staffel.id == wahl.jetzt?.id
+                anhaengen(liste, self.staffelzeile(staffel.name, gewaehlt: gewaehlt) {
+                    [weak self] in
+                    wahl.jetzt = staffel
+                    gtk_button_set_label(alsKnopf(pille), staffel.name)
+                    gtk_popover_popdown(alsTafel(tafel))
+                    self?.folgenLaden(serie: serie, staffel: staffel, in: folgenraum)
+                })
             }
-            anhaengen(liste, eintrag)
+            gtk_popover_popup(alsTafel(tafel))
         }
 
         anhaengen(raum, pille)
-        anhaengen(raum, liste)
         anhaengen(raum, folgenraum)
-        folgenLaden(serie: serie, staffel: gewaehlt, in: folgenraum)
+        if let jetzt = wahl.jetzt {
+            folgenLaden(serie: serie, staffel: jetzt, in: folgenraum)
+        }
+    }
+
+    /// Eine Zeile in der Staffeltafel — Name links, Haken bei der gewählten.
+    private func staffelzeile(_ text: String, gewaehlt: Bool,
+                              _ auswahl: @escaping () -> Void) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-handlung")
+        if gewaehlt { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        let l = beschriftung(text, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        gtk_widget_set_hexpand(l, 1)
+        anhaengen(reihe, l)
+        if gewaehlt {
+            let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+            gtk_image_set_pixel_size(OpaquePointer(haken), 13)
+            anhaengen(reihe, haken)
+        }
+        gtk_button_set_child(alsKnopf(knopf), reihe)
+        beiSignal(knopf, "clicked", auswahl)
+        return knopf
     }
 
     private func folgenLaden(serie: Item, staffel: Item, in raum: Widget!) {
@@ -307,4 +337,11 @@ extension App {
             }
         }
     }
+}
+
+
+/// Welche Staffel gewählt ist. Wie ``Spielziel`` eine Klasse, damit Tafel und
+/// Pille denselben Wert sehen; angefasst wird sie nur auf GTKs Hauptfaden.
+final class Staffelwahl: @unchecked Sendable {
+    var jetzt: Item?
 }
