@@ -58,12 +58,16 @@ done
 wait
 
 ar rcs "$ziel/lib/librlottie.a" "$quelle"/.obj/*.o
-g++ "${flaggen[@]}" -shared $quellen -lpthread -o "$ziel/lib/librlottie.so"
+rm -f "$ziel/lib/librlottie.so"
 
 cp inc/rlottie_capi.h inc/rlottiecommon.h "$ziel/include/"
 
-# `Libs` nennt das Archiv mit vollem Pfad. Ein blosses `-lrlottie` wuerde der
-# Binder zur `.so` aufloesen, sobald beide danebenliegen.
+# **Nur `-L` und `-l`, nichts sonst.** SwiftPM liest die pkg-config-Angaben
+# nicht durch, sondern filtert sie: alles, was kein `-l` oder `-L` ist, faellt
+# weg. Ein voller Archivpfad und `-Wl,--whole-archive` kamen beim Binder nie
+# an — der Bau brach an lauter `undefined reference to lottie_animation_*` ab.
+# Deshalb `-lrlottie`, und deshalb liegt neben dem Archiv keine `.so`: sonst
+# nimmt der Binder die.
 cat > "$ziel/lib/pkgconfig/rlottie.pc" <<EOF
 prefix=$ziel
 libdir=\${prefix}/lib
@@ -72,9 +76,9 @@ includedir=\${prefix}/include
 Name: rlottie
 Description: Lottie-Abspieler
 Version: 0.2
-Libs: \${libdir}/librlottie.a -lstdc++ -lm
+Libs: -L\${libdir} -lrlottie -lstdc++ -lm
 Cflags: -I\${includedir}
 EOF
 
-echo "librlottie.a und librlottie.so liegen in $ziel/lib"
+echo "librlottie.a liegt in $ziel/lib"
 echo "PKG_CONFIG_PATH=$ziel/lib/pkgconfig muss beim Bauen gesetzt sein."
