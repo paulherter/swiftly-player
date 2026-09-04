@@ -245,6 +245,13 @@ func sanft(auf widget: Widget!, von: Double, nach: Double,
 
 // MARK: - Zeiger drüber, Zeiger weg
 
+nonisolated(unsafe) let auftragAlsBewegungOeffentlich: @convention(c) (
+    UnsafeMutableRawPointer?, Double, Double, gpointer?
+) -> Void = { _, _, _, daten in
+    guard let daten else { return }
+    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+}
+
 nonisolated(unsafe) private let auftragAlsBewegung: @convention(c) (
     UnsafeMutableRawPointer?, Double, Double, gpointer?
 ) -> Void = { _, _, _, daten in
@@ -595,6 +602,23 @@ nonisolated(unsafe) private let auftragFreigebenRoh: @convention(c) (gpointer?) 
     Unmanaged<Auftrag>.fromOpaque(daten).release()
 }
 
+
+/// Meldet jede Bewegung des Zeigers über einem Widget.
+///
+/// **Warum zusätzlich zu ``beiZeiger``:** Das Betreten des Fensters allein
+/// reicht nicht. Wer den Zeiger im Fenster ruhen lässt, bis die Steuerung
+/// zurücktritt, und ihn dann bewegt, hat sie nie wieder geholt — der Mac holt
+/// sie bei jeder echten Bewegung zurück (`PlayerScreen.swift:180`).
+///
+/// „motion" bringt die Koordinaten mit, also derselbe Rückruf wie „enter".
+func beiBewegung(_ ziel: Widget!, _ block: @escaping () -> Void) {
+    let horcher = gtk_event_controller_motion_new()
+    let a = Unmanaged.passRetained(Auftrag(block)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "motion",
+                          unsafeBitCast(auftragAlsBewegungOeffentlich, to: GCallback.self),
+                          a, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(ziel, horcher)
+}
 
 /// Meldet einen Rechtsklick — die Zeigerform des langen Drückens (A6).
 ///

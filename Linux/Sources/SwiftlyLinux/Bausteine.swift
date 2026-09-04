@@ -271,8 +271,11 @@ func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false) -> Widget!
 /// Der Fernseher hat sich bewusst gegen Beschriftungen entschieden —
 /// „Merkliste erreicht eigentlich das Merklistensymbol an sich". Aktiv ist er
 /// weiß mit dunkler Schrift, sonst Weiß 14 % (schwebend 22 %).
-func nebenknopf(_ symbol: String, aktiv: Bool = false) -> Widget! {
+func nebenknopf(_ symbol: String, name: String? = nil, aktiv: Bool = false) -> Widget! {
     let knopf: Widget! = gtk_button_new()
+    // E8: ohne Namen ist ein Knopf ohne Beschriftung für eine Vorlesehilfe
+    // nur „Taste". Auf dem Mac steht dafür `accessibilityLabel`.
+    if let name { beschriften(knopf, name) }
     gtk_widget_add_css_class(knopf, "swiftly-neben")
     if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
     let bild: Widget! = gtk_image_new_from_icon_name(symbol)

@@ -368,7 +368,7 @@ final class App: @unchecked Sendable {
             } catch {
                 aufHauptfaden {
                     self.verbindenFertig()
-                    self.serverstandZeigen("Ging nicht: \(error.localizedDescription)")
+                    self.serverstandZeigen(lesbarerFehler(error))
                 }
             }
         }
@@ -416,7 +416,7 @@ final class App: @unchecked Sendable {
             } catch {
                 aufHauptfaden {
                     self.anmeldungFertig()
-                    self.anmeldestandZeigen("Ging nicht: \(error.localizedDescription)")
+                    self.anmeldestandZeigen(lesbarerFehler(error))
                 }
             }
         }
@@ -716,6 +716,11 @@ final class App: @unchecked Sendable {
         case 0x066, 0x046:                                 // f / F
             zeige(.suche)
             gtk_widget_grab_focus(suchfeld)
+        case 0x05B:                                        // [
+            // **Zurück** — der Mac hat es als Cmd+[ im Menü „Gehe zu"
+            // (`SwiftlyApp.swift:46`). Ohne das kommt man von einer
+            // Unterseite nur über den Pfeil zurück.
+            zurueck()
         default: return false
         }
         return true
@@ -1049,7 +1054,8 @@ final class App: @unchecked Sendable {
         anhaengen(zeile, luftQuer())
 
         for fall in Sortierung.allCases {
-            let c = chip(fall.beschriftung, aktiv: fall == jetztSort)
+            let c = chip(fall.beschriftung, symbol: fall == jetztSort
+                         ? "object-select-symbolic" : nil, aktiv: fall == jetztSort)
             beiSignal(c, "clicked") { [weak self] in
                 guard let self else { return }
                 self.sortierung[was] = fall
@@ -1468,7 +1474,11 @@ final class App: @unchecked Sendable {
         // Der Fortschrittsbalken liegt **in** der Bildhülle, unten, wie auf
         // dem Mac. Nur bei „Weiterschauen" — sonst stünde er unter Titeln,
         // die noch gar nicht angefangen wurden.
-        if quer, wahlen.fortschrittAufKacheln, let anteil = item.gesehenerAnteil {
+        // **Der Balken auf der Querkachel steht immer.** Er ist keine
+        // Zierde, sondern die Auskunft, wo man stehengeblieben ist — der Mac
+        // zeichnet ihn unabhängig von der Einstellung. Die Einstellung meint
+        // die hochkanten Kacheln.
+        if quer, let anteil = item.gesehenerAnteil {
             balkenLegen(kaefig, breite: breite, anteil: anteil)
         }
         // **Nur „Weiterschauen" springt direkt in die Wiedergabe** (A1).

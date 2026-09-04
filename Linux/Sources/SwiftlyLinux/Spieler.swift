@@ -171,6 +171,8 @@ extension App {
         // verkehrt herum war.
         beiZeiger(ueber, herein: { [weak self] in self?.steuerungZeigen() },
                          hinaus: { [weak self] in self?.steuerungVerbergen() })
+        // Und jede Bewegung holt sie zurück, nicht nur das Betreten.
+        beiBewegung(ueber) { [weak self] in self?.steuerungZeigen() }
         steuerungZeigen()
         return ueber
     }

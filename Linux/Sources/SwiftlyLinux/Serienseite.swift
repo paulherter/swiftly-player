@@ -185,6 +185,17 @@ extension App {
             nachDemSchub {
                 defer { losgelassen(kiste) }
                 leeren(kiste.widget)
+                guard !folgen.isEmpty else {
+                    // **Leer ist eine Auskunft, kein leerer Kasten.** Sonst
+                    // steht dort nichts und man hält es für einen Fehler.
+                    let l = beschriftung("Keine Folgen", stil: "swiftly-koerper")
+                    gtk_widget_add_css_class(l, "swiftly-leise")
+                    gtk_widget_set_halign(l, GTK_ALIGN_CENTER)
+                    gtk_widget_set_margin_top(l, 40)
+                    gtk_widget_set_margin_bottom(l, 40)
+                    anhaengen(kiste.widget, l)
+                    return
+                }
                 for folge in folgen { anhaengen(kiste.widget, self.folgenzeile(folge)) }
             }
         }
