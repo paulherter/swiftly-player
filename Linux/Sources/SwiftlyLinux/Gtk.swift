@@ -188,21 +188,21 @@ func aufHauptfaden(_ block: @escaping @Sendable () -> Void) {
 
 /// **Ein Sprung sieht kaputt aus, auch wenn er richtig ist.**
 ///
-/// Auf dem Mac blättert die Reihe mit `easeInOut` über 280 ms. GTK bewegt
-/// eine `GtkAdjustment` nicht von selbst — der Wert wird gesetzt, und zwar
-/// sofort. Diese Hülle setzt ihn stattdessen dreißigmal in derselben Zeit,
-/// nach derselben Kennlinie.
+/// Auf dem Mac blättert die Reihe mit `easeInOut` über 280 ms. GTK bewegt eine
+/// `GtkAdjustment` nicht von selbst — der Wert wird gesetzt, und zwar sofort.
+/// Diese Hülle setzt ihn stattdessen bei jedem Bild neu.
 ///
-/// Sie hält **keinen** GTK-Zeiger, sondern einen Abschluss, der ihn setzt.
-/// Das ist nicht Zierde: welchen Typ `gtk_scrolled_window_get_hadjustment`
-/// in Swift zurückgibt, ist nicht zu erraten, und geraten wurde hier schon
-/// dreimal falsch. So muss der Typ nirgends benannt werden.
+/// **Am Bildtakt, nicht an einem Zeitgeber.** Hier stand `g_timeout_add` mit
+/// 16 ms — das sind 62 Bilder je Sekunde, und zwar auf jedem Schirm.
+/// `gtk_widget_add_tick_callback` hängt am Bildtakt des Fensters und läuft
+/// damit so schnell wie der Schirm.
 private final class Bewegung {
     let setzen: (Double) -> Void
     let von: Double
     let nach: Double
     let beginn = Date()
     static let dauer = 0.28
+    var takt: guint = 0
 
     init(von: Double, nach: Double, setzen: @escaping (Double) -> Void) {
         self.von = von
@@ -211,7 +211,9 @@ private final class Bewegung {
     }
 }
 
-nonisolated(unsafe) private let bewegungsTakt: @convention(c) (gpointer?) -> gboolean = { daten in
+nonisolated(unsafe) private let bewegungsTakt: @convention(c) (
+    UnsafeMutablePointer<GtkWidget>?, OpaquePointer?, gpointer?
+) -> gboolean = { _, _, daten in
     guard let daten else { return 0 }
     let b = Unmanaged<Bewegung>.fromOpaque(daten).takeUnretainedValue()
     let t = min(Date().timeIntervalSince(b.beginn) / Bewegung.dauer, 1)
@@ -220,16 +222,17 @@ nonisolated(unsafe) private let bewegungsTakt: @convention(c) (gpointer?) -> gbo
     b.setzen(b.von + (b.nach - b.von) * e)
     if t >= 1 {
         Unmanaged<Bewegung>.fromOpaque(daten).release()
-        return 0
+        return 0   // G_SOURCE_REMOVE
     }
     return 1
 }
 
-/// Bewegt einen Wert weich von `von` nach `nach`.
-func sanft(von: Double, nach: Double, setzen: @escaping (Double) -> Void) {
+/// Bewegt einen Wert weich von `von` nach `nach`, im Takt des Schirms.
+func sanft(auf widget: Widget!, von: Double, nach: Double,
+           setzen: @escaping (Double) -> Void) {
     guard abs(nach - von) > 0.5 else { return }
     let b = Unmanaged.passRetained(Bewegung(von: von, nach: nach, setzen: setzen)).toOpaque()
-    g_timeout_add_full(200, 16, bewegungsTakt, b, nil)
+    _ = gtk_widget_add_tick_callback(widget, bewegungsTakt, b, nil)
 }
 
 // MARK: - Zeiger drüber, Zeiger weg
@@ -262,18 +265,25 @@ func beiZeiger(_ ziel: Widget!, herein: @escaping () -> Void, hinaus: @escaping 
 // MARK: - Weiches Scrollen
 
 /// **GTK scrollt am Mausrad in Sprüngen.** Ein Rastpunkt, ein Satz — das ist
-/// das Stockige, das Am Zeigerfeld glättet GTK selbst, am Rad nicht.
+/// das Stockige. Am Zeigerfeld glättet GTK selbst, am Rad nicht.
 ///
-/// Hier wird jeder Rastpunkt in ein Ziel verwandelt, und ein Takt läuft diesem
-/// Ziel exponentiell hinterher: pro Bild ein Fünftel des Rests. Kommen weitere
-/// Rastpunkte, wandert nur das Ziel — es entsteht keine zweite Bewegung, die
-/// gegen die erste läuft.
+/// Jeder Rastpunkt wird hier zu einem Ziel, und ein Takt läuft diesem Ziel
+/// hinterher. Kommen weitere Rastpunkte, wandert nur das Ziel — es entsteht
+/// keine zweite Bewegung, die gegen die erste läuft.
+///
+/// **Zwei Sachen, die es vorher nicht getroffen haben.** Der Takt hing an
+/// `g_timeout_add` mit 16 ms, also an 62 Bildern je Sekunde statt am Schirm;
+/// auf 144 Hz fühlt sich das an wie 60. Und der Schritt war ein fester Anteil
+/// *je Bild* — damit liefe dieselbe Bewegung auf einem schnellen Schirm mehr
+/// als doppelt so schnell. Beides hängt jetzt an der **Zeit**: `1 − e^(−k·dt)`
+/// mit `k = 13,9`, was bei 16 ms genau den alten Fünftelschritt ergibt.
 private final class Weichlauf {
     let lesen: () -> Double
     let setzen: (Double) -> Void
     let obergrenze: () -> Double
     var ziel: Double
     var takt: guint = 0
+    var zuletzt: Int64 = 0
 
     init(lesen: @escaping () -> Double, setzen: @escaping (Double) -> Void,
          obergrenze: @escaping () -> Double) {
@@ -287,10 +297,20 @@ private final class Weichlauf {
 /// Wie weit ein Rastpunkt trägt. Etwa drei Textzeilen — dieselbe Größenordnung,
 /// die ein Zeigerfeld in einer Wischbewegung zurücklegt.
 private let rastweite: Double = 110
+/// Wie schnell der Rest zusammenschmilzt. Bei 16 ms bleibt ein Fünftel.
+private let weichrate: Double = 13.9
 
-nonisolated(unsafe) private let weichTakt: @convention(c) (gpointer?) -> gboolean = { daten in
+nonisolated(unsafe) private let weichTakt: @convention(c) (
+    UnsafeMutablePointer<GtkWidget>?, OpaquePointer?, gpointer?
+) -> gboolean = { _, uhr, daten in
     guard let daten else { return 0 }
     let w = Unmanaged<Weichlauf>.fromOpaque(daten).takeUnretainedValue()
+
+    // Die Zeit kommt aus dem Bildtakt, in Mikrosekunden.
+    let jetztZeit = uhr.map { gdk_frame_clock_get_frame_time($0) } ?? 0
+    let dt = w.zuletzt == 0 ? 1.0 / 60 : Double(jetztZeit - w.zuletzt) / 1_000_000
+    w.zuletzt = jetztZeit
+
     let jetzt = w.lesen()
     let rest = w.ziel - jetzt
     if abs(rest) < 0.5 {
@@ -299,26 +319,25 @@ nonisolated(unsafe) private let weichTakt: @convention(c) (gpointer?) -> gboolea
         Unmanaged<Weichlauf>.fromOpaque(daten).release()
         return 0
     }
-    w.setzen(jetzt + rest * 0.20)
+    w.setzen(jetzt + rest * (1 - exp(-weichrate * min(dt, 0.1))))
     return 1
 }
 
 nonisolated(unsafe) private let radGedreht: @convention(c) (
     UnsafeMutableRawPointer?, Double, Double, gpointer?
-) -> gboolean = { _, _, dy, daten in
+) -> gboolean = { horcher, _, dy, daten in
     guard let daten else { return 0 }
     let w = Unmanaged<Weichlauf>.fromOpaque(daten).takeUnretainedValue()
     let hoechst = w.obergrenze()
     // **Bei jedem neuen Griff neu ansetzen.** Läuft gerade nichts, ist das
-    // gemerkte Ziel womöglich veraltet — die Seite kann inzwischen neu
-    // gebaut oder von woanders gescrollt worden sein. Dann sprang die
-    // Bewegung erst zurück und dann vorwärts; das war das Federn.
-    if w.takt == 0 { w.ziel = w.lesen() }
+    // gemerkte Ziel womöglich veraltet — die Seite kann inzwischen neu gebaut
+    // oder von woanders gescrollt worden sein.
+    if w.takt == 0 { w.ziel = w.lesen(); w.zuletzt = 0 }
     w.ziel = min(max(w.ziel + dy * rastweite, 0), max(hoechst, 0))
-    if w.takt == 0 {
-        // Der Takt hält sich selbst fest, solange er läuft.
-        w.takt = g_timeout_add_full(200, 16, weichTakt,
-                                    Unmanaged.passRetained(w).toOpaque(), nil)
+    if w.takt == 0, let horcher,
+       let ziel = gtk_event_controller_get_widget(OpaquePointer(horcher)) {
+        w.takt = gtk_widget_add_tick_callback(ziel, weichTakt,
+                                              Unmanaged.passRetained(w).toOpaque(), nil)
     }
     return 1   // verbraucht: GTK soll nicht zusätzlich springen
 }
