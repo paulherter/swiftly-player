@@ -24,40 +24,43 @@ import JellyfinKit
 enum Bildfarbe {
 
     /// Der eingefärbte Grundton, oder `nil`, wenn nichts zu holen war.
+    ///
+    /// Der Weg zu den Bildpunkten ist derselbe wie in ``bildSetzen``: rohe
+    /// Bytes zu `GBytes`, daraus eine `GdkTexture`, die das Format selbst
+    /// erkennt. `gdk_texture_download` gibt sie als BGRA zu acht Bit heraus.
     static func ton(aus daten: Data) -> String? {
-        guard let bytes = daten.withUnsafeBytes({ puffer -> OpaquePointer? in
+        daten.withUnsafeBytes { puffer -> String? in
             guard let basis = puffer.baseAddress else { return nil }
-            return OpaquePointer(g_bytes_new(basis, gsize(puffer.count)))
-        }) else { return nil }
-        defer { g_bytes_unref(UnsafeMutablePointer(bytes)) }
+            guard let bytes = g_bytes_new(basis, gsize(puffer.count)) else { return nil }
+            defer { g_bytes_unref(bytes) }
 
-        var fehler: UnsafeMutablePointer<GError>?
-        guard let textur = gdk_texture_new_from_bytes(UnsafeMutablePointer(bytes), &fehler) else {
-            if let fehler { g_error_free(fehler) }
-            return nil
+            var fehler: UnsafeMutablePointer<GError>?
+            guard let textur = gdk_texture_new_from_bytes(bytes, &fehler) else {
+                if let fehler { g_error_free(fehler) }
+                return nil
+            }
+            defer { g_object_unref(UnsafeMutableRawPointer(textur)) }
+
+            let breite = Int(gdk_texture_get_width(textur))
+            let hoehe = Int(gdk_texture_get_height(textur))
+            guard breite > 0, hoehe > 0 else { return nil }
+
+            let takt = breite * 4
+            var punkte = [UInt8](repeating: 0, count: takt * hoehe)
+            punkte.withUnsafeMutableBufferPointer { speicher in
+                guard let basis = speicher.baseAddress else { return }
+                gdk_texture_download(textur, basis, gsize(takt))
+            }
+
+            var summeR = 0.0, summeG = 0.0, summeB = 0.0
+            for i in stride(from: 0, to: punkte.count, by: 4) {
+                summeB += Double(punkte[i])
+                summeG += Double(punkte[i + 1])
+                summeR += Double(punkte[i + 2])
+            }
+            let anzahl = Double(breite * hoehe) * 255
+            return farbe(r: summeR / anzahl, g: summeG / anzahl, b: summeB / anzahl)
         }
-        defer { g_object_unref(UnsafeMutableRawPointer(textur)) }
-
-        let breite = Int(gdk_texture_get_width(textur))
-        let hoehe = Int(gdk_texture_get_height(textur))
-        guard breite > 0, hoehe > 0 else { return nil }
-
-        // `gdk_texture_download` liefert BGRA zu acht Bit.
-        var punkte = [UInt8](repeating: 0, count: breite * hoehe * 4)
-        punkte.withUnsafeMutableBytes { speicher in
-            guard let basis = speicher.baseAddress else { return }
-            gdk_texture_download(textur, basis.assumingMemoryBound(to: UInt8.self),
-                                 gsize(breite * 4))
-        }
-
-        var summeR = 0.0, summeG = 0.0, summeB = 0.0
-        for i in stride(from: 0, to: punkte.count, by: 4) {
-            summeB += Double(punkte[i])
-            summeG += Double(punkte[i + 1])
-            summeR += Double(punkte[i + 2])
-        }
-        let anzahl = Double(breite * hoehe) * 255
-        return farbe(r: summeR / anzahl, g: summeG / anzahl, b: summeB / anzahl)
     }
 
     /// Mittelwert zu Farbton und Sättigung, dann abgedunkelt und entsättigt.
@@ -104,17 +107,18 @@ enum Bildfarbe {
 /// andere neu zu laden — und weil immer nur eine Detailseite offen ist,
 /// genügt einer.
 enum Tonblatt {
-    nonisolated(unsafe) private static var anbieter: OpaquePointer?
+    nonisolated(unsafe) private static var anbieter: UnsafeMutablePointer<GtkCssProvider>?
 
     static func setzen(_ ton: String) {
         if anbieter == nil {
-            anbieter = OpaquePointer(gtk_css_provider_new())
+            anbieter = gtk_css_provider_new()
             if let anzeige = gdk_display_get_default(), let anbieter {
-                gtk_style_context_add_provider_for_display(anzeige, anbieter, 900)
+                gtk_style_context_add_provider_for_display(anzeige,
+                                                           OpaquePointer(anbieter), 900)
             }
         }
         guard let anbieter else { return }
-        gtk_css_provider_load_from_string(UnsafeMutablePointer(anbieter), """
+        gtk_css_provider_load_from_string(anbieter, """
         .swiftly-kulisse { background-color: \(ton); }
         .swiftly-blende-quer {
             background-image: linear-gradient(to right,
