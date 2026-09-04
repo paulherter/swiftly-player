@@ -576,6 +576,7 @@ final class App: @unchecked Sendable {
         sitzungAnzeigen(benutzername: benutzername, servername: servername)
         serverstandHolen()
         fernsteuerungStarten()
+        uebernahmetaktStarten()
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
 
         // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
@@ -664,6 +665,11 @@ final class App: @unchecked Sendable {
     /// Die Fernsteuerung über Jellyfins Socket. Ohne sie meldet der Server
     /// `SupportsRemoteControl: false` und blendet im Dashboard die Knöpfe aus.
     var fernsteuerung: Fernsteuerung?
+    private var uebernahmezeile: Widget!
+    private var uebernahmetitel: Widget!
+    private var uebernahmegeraet: Widget!
+    private var uebernahmeangebote: [Fremdsitzung] = []
+    private var uebernahmelauf: Task<Void, Never>?
     /// Vorspann- und Abspannmarken des laufenden Titels, vom Server.
     var abschnitte: [Abschnitt] = []
     var jetzigesAngebot: Knopfangebot = .keiner
@@ -977,6 +983,15 @@ final class App: @unchecked Sendable {
         anhaengen(leiste, bibliotheksliste)
 
         anhaengen(leiste, luft())
+        // **Was auf einem anderen Gerät läuft, steht neben dem Konto.**
+        //
+        // Genau dort, wo man ohnehin hinsieht — dieselbe Stelle wie das
+        // Abzeichen auf iPhone und Fernseher, nur in der Form dieser Leiste
+        // (`macOS/HauptView.swift:473`). Sichtbar wird sie nur, wenn es
+        // wirklich etwas zu übernehmen gibt.
+        uebernahmezeile = uebernahmezeileBauen()
+        gtk_widget_set_visible(uebernahmezeile, 0)
+        anhaengen(leiste, uebernahmezeile)
         anhaengen(leiste, trennlinie())
         anhaengen(leiste, profilzeileBauen())
         return leiste
@@ -984,6 +999,111 @@ final class App: @unchecked Sendable {
 
     /// Wer angemeldet ist, und wo. Unten in der Leiste — 40 hoch, Bild 26,
     /// Name 14 halbfett, Server 11 sehr leise.
+    /// Die Zeile „läuft auf einem anderen Gerät".
+    private func uebernahmezeileBauen() -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-zeile")
+        gtk_widget_set_margin_start(knopf, 12)
+        gtk_widget_set_margin_end(knopf, 12)
+        gtk_widget_set_margin_bottom(knopf, 4)
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        let bild: Widget! = gtk_image_new_from_icon_name("media-playback-start-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(bild), 15)
+        gtk_widget_add_css_class(bild, "swiftly-akzentzeichen")
+        anhaengen(reihe, bild)
+        let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
+        uebernahmetitel = beschriftung("", stil: "swiftly-zweitzeile")
+        gtk_label_set_xalign(OpaquePointer(uebernahmetitel), 0)
+        gtk_label_set_ellipsize(OpaquePointer(uebernahmetitel), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(uebernahmetitel), 1)
+        anhaengen(text, uebernahmetitel)
+        uebernahmegeraet = beschriftung("", stil: "swiftly-zweitzeile")
+        gtk_widget_add_css_class(uebernahmegeraet, "swiftly-leise")
+        gtk_label_set_xalign(OpaquePointer(uebernahmegeraet), 0)
+        gtk_label_set_ellipsize(OpaquePointer(uebernahmegeraet), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(uebernahmegeraet), 1)
+        anhaengen(text, uebernahmegeraet)
+        gtk_widget_set_hexpand(text, 1)
+        anhaengen(reihe, text)
+        gtk_button_set_child(alsKnopf(knopf), reihe)
+        beiSignal(knopf, "clicked") { [weak self] in self?.uebernehmen() }
+        beschriften(knopf, "Wiedergabe übernehmen")
+        return knopf
+    }
+
+    /// **Fragt regelmässig, was anderswo läuft.**
+    ///
+    /// Ein Takt statt eines einmaligen Blicks: die andere Sitzung fängt an,
+    /// während diese App schon offen ist, und ein Angebot, das erst nach dem
+    /// nächsten Start erscheint, ist keins. Zehn Sekunden — der Server meldet
+    /// den Fortschritt ohnehin in dem Takt.
+    func uebernahmetaktStarten() {
+        uebernahmelauf?.cancel()
+        uebernahmelauf = Task.detached { [self] in
+            while !Task.isCancelled {
+                await self.uebernahmeFragen()
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+            }
+        }
+    }
+
+    private func uebernahmeFragen() async {
+        guard let client, !benutzerID.isEmpty else { return }
+        let sitzungen = await client.fremdsitzungen()
+        let angebote = Uebernahme.angebote(aus: sitzungen,
+                                           eigeneGeraeteID: Geraet.kennung,
+                                           eigeneBenutzerID: benutzerID)
+        aufHauptfaden {
+            self.uebernahmeangebote = angebote
+            self.uebernahmeZeigen()
+        }
+    }
+
+    private func uebernahmeZeigen() {
+        guard let zeile = uebernahmezeile else { return }
+        // **Nicht, während hier selbst etwas läuft.** Dann wäre das Angebot
+        // eine Einladung, sich selbst zu unterbrechen.
+        guard laufenderTitel == nil, let erste = uebernahmeangebote.first,
+              let titel = erste.laeuft else {
+            gtk_widget_set_visible(zeile, 0)
+            return
+        }
+        gtk_label_set_text(OpaquePointer(uebernahmetitel),
+                           titel.seriesName ?? titel.name)
+        let wo = erste.geraetename ?? erste.programm ?? "einem anderen Gerät"
+        gtk_label_set_text(OpaquePointer(uebernahmegeraet), "läuft auf \(wo)")
+        gtk_widget_set_visible(zeile, 1)
+    }
+
+    /// **Erst drüben beenden, dann hier starten** — und den Fehler nicht
+    /// schlucken. Läuft es dort weiter, während hier dasselbe beginnt, stehen
+    /// zwei Tonspuren im Raum und niemand versteht, warum.
+    ///
+    /// **Beenden, nicht anhalten.** Pausiert bleibt die Verbindung offen, die
+    /// Sitzung steht weiter in der Übersicht, und auf dem anderen Gerät liegt
+    /// der Player noch über allem. Die Stelle ist vorher gelesen, sie geht
+    /// dabei nicht verloren.
+    private func uebernehmen() {
+        guard let client, let sitzung = uebernahmeangebote.first,
+              let titel = sitzung.laeuft else { return }
+        let ab = sitzung.stand?.stelle ?? 0
+        gtk_widget_set_visible(uebernahmezeile, 0)
+        Task.detached { [self] in
+            do { try await client.fremdbefehl(.beenden, an: sitzung.id) }
+            catch {
+                aufHauptfaden {
+                    self.uebernahmeangebote = []
+                    self.anmeldestandZeigen(lesbarerFehler(error))
+                }
+                return
+            }
+            aufHauptfaden {
+                self.uebernahmeangebote = []
+                self.starte(titel, ab: ab)
+            }
+        }
+    }
+
     private func profilzeileBauen() -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-profil")
@@ -1347,7 +1467,7 @@ final class App: @unchecked Sendable {
 
     /// Ein umbrechendes Raster. GTKs `GtkFlowBox` kann genau das, was auf dem
     /// Mac ein `LazyVGrid` mit fester Spaltenbreite tut.
-    private func rasterBauen() -> Widget! {
+    func rasterBauen() -> Widget! {
         let raster: Widget! = gtk_flow_box_new()
         gtk_flow_box_set_selection_mode(OpaquePointer(raster), GTK_SELECTION_NONE)
         gtk_flow_box_set_homogeneous(OpaquePointer(raster), 1)
@@ -1431,6 +1551,9 @@ final class App: @unchecked Sendable {
     func abmelden() {
         Task.detached { [fernsteuerung] in await fernsteuerung?.beenden() }
         fernsteuerung = nil
+        uebernahmelauf?.cancel()
+        uebernahmelauf = nil
+        uebernahmeangebote = []
         Speicher.loeschen()
         client = nil
         adressen = nil

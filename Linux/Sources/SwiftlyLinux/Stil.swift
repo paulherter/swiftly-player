@@ -599,6 +599,7 @@ enum Stil {
         }
 
         /* Die Hinweiszeile: drei Sekunden, dann weg. */
+        .swiftly-akzentzeichen { color: \(akzent); }
         .swiftly-sehrleise, .swiftly-sehrleise image { color: \(schriftSehrLeise); }
 
         .swiftly-hinweis {

@@ -74,7 +74,7 @@ extension App {
             }
         case .aehnliches:
             anhaengen(raum, beschriftung("Lade …", stil: "swiftly-koerper"))
-            aehnlicheNachladen(serie, in: raum, leeren: true)
+            aehnlicheNachladen(serie, in: raum, leeren: true, alsRaster: true)
         }
     }
 
@@ -419,8 +419,16 @@ extension App {
         return huelleKnopf
     }
 
+    /// **Auf der Serienseite ein Raster, auf der Filmseite eine Reihe.**
+    ///
+    /// Auf dem Mac ist das derselbe Unterschied (`SerienView.swift:236` gegen
+    /// `DetailView`): unter einem Reiter, den man ausdrücklich gewählt hat,
+    /// steht alles auf einmal da; eine Reihe, durch die man erst blättern
+    /// muss, wäre dort ein Weg im Weg. Auf der Filmseite läuft „Ähnliches"
+    /// dagegen unter dem übrigen Inhalt mit und darf nicht die halbe Seite
+    /// nehmen.
     func aehnlicheNachladen(_ titel: Item, in raum: Widget!, leeren leeren_: Bool = false,
-                            rand: Int = Stil.randAbstand) {
+                            rand: Int = Stil.randAbstand, alsRaster: Bool = false) {
         guard let client else { return }
         let kiste = gehalten(raum)
         Task.detached { [self] in
@@ -436,8 +444,16 @@ extension App {
                     }
                     return
                 }
-                anhaengen(ziel, self.reiheBauen(titel: "Ähnliches", art: .neu,
-                                                items: treffer, rand: rand))
+                if alsRaster {
+                    let raster = self.rasterBauen()
+                    gtk_widget_set_margin_start(raster, Int32(rand))
+                    gtk_widget_set_margin_end(raster, Int32(rand))
+                    self.rasterFuellen(raster, treffer)
+                    anhaengen(ziel, raster)
+                } else {
+                    anhaengen(ziel, self.reiheBauen(titel: "Ähnliches", art: .neu,
+                                                    items: treffer, rand: rand))
+                }
             }
         }
     }
