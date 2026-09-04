@@ -39,6 +39,7 @@ final class Startanimation: @unchecked Sendable {
     private let fertig: () -> Void
     private var schonFertig = false
     private var gestartet = false
+    private var takte = 0
     /// Welches Bild schon in der Fläche steht.
     private var gerechnet = -1
 
@@ -115,6 +116,7 @@ final class Startanimation: @unchecked Sendable {
     /// `App` lösen, während noch ein Takt aussteht. Freigegeben wird sie,
     /// wenn der Takt sich abmeldet.
     func losfahren() {
+        FileHandle.standardError.write(Data("[S] losfahren gestartet=\(gestartet)\n".utf8))
         guard !gestartet else { return }
         gestartet = true
         beginn = Date()
@@ -129,6 +131,10 @@ final class Startanimation: @unchecked Sendable {
     /// hat ihre eigene Bildrate, und die Uhr ist der gemeinsame Nenner.
     fileprivate func weiter() -> Bool {
         guard !schonFertig else { return false }
+        takte += 1
+        if takte % 40 == 1 {
+            FileHandle.standardError.write(Data("[S] Takt \(takte)\n".utf8))
+        }
         let seit = Date().timeIntervalSince(beginn)
         let neu = min(Int(seit / dauer * Double(bilder)), bilder - 1)
         if neu != bild {
@@ -145,6 +151,7 @@ final class Startanimation: @unchecked Sendable {
     /// **Genau einmal**, egal ob vom Ende der Animation oder von der Frist —
     /// dieselbe Zusicherung, die auf Apple die Klasse `Einmal` gibt.
     func abschliessen() {
+        FileHandle.standardError.write(Data("[S] abschliessen schon=\(schonFertig) takte=\(takte)\n".utf8))
         guard !schonFertig else { return }
         schonFertig = true
         fertig()
