@@ -198,7 +198,7 @@ struct FolgenendeTests {
         // Position sofort, die Laenge in denselben Millisekunden noch nicht.
         // Ohne Anlaufruhe schaltete die App 629 ms nach dem Oeffnen weiter.
         #expect(!Folgenende.weiterschalten(position: 3721, dauer: 3721, seitOeffnen: 0.6))
-        #expect(Folgenende.weiterschalten(position: 3721, dauer: 3721, seitOeffnen: 60))
+        #expect(Folgenende.weiterschalten(position: 3721, dauer: 3721, seitOeffnen: 6))
     }
 }
 
