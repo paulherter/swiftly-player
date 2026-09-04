@@ -65,3 +65,13 @@
 "Fortsetzen %@" = "Resume %@";
 "Abspielen %@" = "Play %@";
 "%d Staffeln" = "%d seasons";
+"Die Adresse konnte nicht gelesen werden." = "The address could not be read.";
+"Benutzername oder Passwort stimmt nicht." = "Username or password is wrong.";
+"Dieses Konto darf das nicht." = "This account is not allowed to do that.";
+"Das gibt es auf dem Server nicht." = "The server does not have that.";
+"Der Server hat einen Fehler gemeldet." = "The server reported an error.";
+"Keine Verbindung." = "No connection.";
+"Der Server hat nicht geantwortet." = "The server did not answer.";
+"Unter dieser Adresse ist kein Server erreichbar." = "No server is reachable at this address.";
+"Der Server hat mit %ld geantwortet." = "The server answered with %ld.";
+"Die Antwort des Servers war unverständlich. (%@)" = "The server's answer was unreadable. (%@)";

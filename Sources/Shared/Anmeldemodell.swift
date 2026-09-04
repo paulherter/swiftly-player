@@ -83,37 +83,9 @@ extension AppModel {
 
     /// Fehler so, wie man sie jemandem sagen würde.
     ///
-    /// `localizedDescription` einer `URLError` ist brauchbar, die eines
-    /// selbstgebauten Fehlers ist es selten — dort steht sonst der Typname.
-    func lesbar(_ fehler: any Error) -> String {
-        if let j = fehler as? JellyfinError {
-            switch j {
-            case let .transport(text):      return text
-            case .notAuthenticated:         return String(localized: "Nicht angemeldet.")
-            case .invalidServerURL:         return String(localized: "Die Adresse konnte nicht gelesen werden.")
-            case let .http(status, _):
-                switch status {
-                case 401:  return String(localized: "Benutzername oder Passwort stimmt nicht.")
-                case 403:  return String(localized: "Dieses Konto darf das nicht.")
-                case 404:  return String(localized: "Das gibt es auf dem Server nicht.")
-                case 500...599: return String(localized: "Der Server hat einen Fehler gemeldet.")
-                default:   return String(localized: "Der Server hat mit \(status) geantwortet.")
-                }
-            case let .decoding(text):
-                return String(localized: "Die Antwort des Servers war unverständlich. (\(String(text.prefix(80))))")
-            case .noPlayableSource:
-                return String(localized: "Der Server nennt keine abspielbare Fassung.")
-            }
-        }
-        if let u = fehler as? URLError {
-            switch u.code {
-            case .notConnectedToInternet: return String(localized: "Keine Verbindung.")
-            case .timedOut:               return String(localized: "Der Server hat nicht geantwortet.")
-            case .cannotFindHost, .cannotConnectToHost:
-                return String(localized: "Unter dieser Adresse ist kein Server erreichbar.")
-            default:                      return u.localizedDescription
-            }
-        }
-        return fehler.localizedDescription
-    }
+    /// **Liegt jetzt im Paket** (``lesbarerFehler(_:)``). Er hing hier an
+    /// `String(localized:)` mit dem App-Katalog und war damit fuer die
+    /// Linux-Fassung unerreichbar — dort stand bei jeder fehlgeschlagenen
+    /// Anmeldung roh `error.localizedDescription`, was gegen D3 verstoesst.
+    func lesbar(_ fehler: any Error) -> String { lesbarerFehler(fehler) }
 }
