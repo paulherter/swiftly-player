@@ -80,11 +80,12 @@ func posterLaden(_ bildfeld: Widget!, item: Item, adressen: Bildadresse, kante: 
     // jemand weiter, räumt GTK es ab. Deshalb wird es festgehalten, solange
     // geladen wird, und danach wieder losgelassen.
     g_object_ref(bildfeld)
+    let kiste = Zeigerkiste(bildfeld)
     Task.detached {
         let daten = await Bildlager.shared.laden(url, schluessel: schluessel)
         aufHauptfaden {
-            if let daten { bildSetzen(bildfeld, daten: daten) }
-            g_object_unref(bildfeld)
+            if let daten { bildSetzen(kiste.widget, daten: daten) }
+            g_object_unref(kiste.widget)
         }
     }
 }

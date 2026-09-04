@@ -101,6 +101,18 @@ func beiSignal(_ ziel: Widget!, _ name: String, _ block: @escaping () -> Void) {
                           auftrag, auftragFreigeben, GConnectFlags(rawValue: 0))
 }
 
+/// **Ein GTK-Zeiger ist nicht „sendbar", und Swift 6 besteht darauf.**
+///
+/// Zu Recht: ein roher Zeiger sagt nichts darüber, wer ihn gleichzeitig
+/// anfassen darf. Bei GTK ist die Antwort trotzdem einfach — alles läuft auf
+/// dem Hauptfaden, und genau dorthin schickt ``aufHauptfaden`` die Arbeit
+/// zurück. Diese Kiste trägt den Zeiger über die Grenze; die Zusicherung gilt,
+/// solange sie **nur** in einem `aufHauptfaden`-Block ausgepackt wird.
+struct Zeigerkiste: @unchecked Sendable {
+    let widget: Widget!
+    init(_ widget: Widget!) { self.widget = widget }
+}
+
 // MARK: - Zurück auf den Hauptfaden
 
 nonisolated(unsafe) private let auftragImLeerlauf: @convention(c) (gpointer?) -> gboolean = { daten in
@@ -112,7 +124,7 @@ nonisolated(unsafe) private let auftragImLeerlauf: @convention(c) (gpointer?) ->
 /// **GTK ist nicht nebenläufig.** Jede Änderung an der Oberfläche muss auf
 /// dem Hauptfaden geschehen; ein Aufruf aus einer Task würde sie irgendwann
 /// still zerlegen. `g_idle_add` ist der vorgesehene Rückweg.
-func aufHauptfaden(_ block: @escaping () -> Void) {
+func aufHauptfaden(_ block: @escaping @Sendable () -> Void) {
     let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
     g_idle_add_full(200, auftragImLeerlauf, auftrag, nil)   // 200 = G_PRIORITY_DEFAULT_IDLE
 }

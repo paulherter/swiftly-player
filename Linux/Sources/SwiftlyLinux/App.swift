@@ -183,15 +183,22 @@ final class App {
         let c = JellyfinClient(baseURL: serverURL,
                                deviceID: Geraet.kennung,
                                deviceName: Geraet.name)
-        c.setSession(Session(accessToken: token, userID: benutzerID,
-                             userName: benutzername, serverURL: serverURL))
-        client = c
         adressen = Bildadresse(basis: serverURL, token: token)
-
         gtk_label_set_text(OpaquePointer(titelzeile),
                            servername.map { "Swiftly · \($0)" } ?? "Swiftly")
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
-        startseiteLaden()
+
+        // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
+        // deshalb nur mit `await`; erst danach darf geladen werden.
+        let sitzung = Session(accessToken: token, userID: benutzerID,
+                              userName: benutzername, serverURL: serverURL)
+        Task.detached { [weak self] in
+            await c.setSession(sitzung)
+            aufHauptfaden {
+                self?.client = c
+                self?.startseiteLaden()
+            }
+        }
     }
 
     // MARK: - Startseite
