@@ -36,6 +36,20 @@ final class Kulisse: @unchecked Sendable {
     private var breite = 0
     private var hoehe = 0
 
+    /// **Das fertig maskierte Bild, einmal gerechnet.**
+    ///
+    /// Ohne das rechnet jede Zeichnung die ganze Kette neu: ein 1600 Punkt
+    /// breites Bild skalieren, zwei Maskengruppen, und das bei jedem
+    /// Einzelbild. Beim Scrollen zeichnet GTK laufend — und genau solange die
+    /// Kopfzone sichtbar ist, also **oben**, ruckelte es. Weiter unten war
+    /// nichts mehr zu zeichnen und es lief.
+    ///
+    /// Gerechnet wird jetzt nur, wenn sich Größe oder Bild ändern; sonst wird
+    /// die fertige Fläche aufgelegt.
+    private var fertig: OpaquePointer?
+    private var fertigBreite = 0
+    private var fertigHoehe = 0
+
     let anzeige: Widget
 
     init() {
@@ -48,10 +62,16 @@ final class Kulisse: @unchecked Sendable {
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
     }
 
-    deinit { flaecheLoesen() }
+    deinit { flaecheLoesen(); fertigLoesen() }
 
     private func flaecheLoesen() {
         if let flaeche { cairo_surface_destroy(flaeche); self.flaeche = nil }
+    }
+
+    private func fertigLoesen() {
+        if let fertig { cairo_surface_destroy(fertig); self.fertig = nil }
+        fertigBreite = 0
+        fertigHoehe = 0
     }
 
     /// Nimmt ein heruntergeladenes Bild an.
@@ -82,6 +102,7 @@ final class Kulisse: @unchecked Sendable {
                 gdk_texture_download(textur, ziel, gsize(takt))
             }
             flaecheLoesen()
+            fertigLoesen()
             punkte.withUnsafeMutableBufferPointer { speicher in
                 guard let ziel = speicher.baseAddress else { return }
                 flaeche = cairo_image_surface_create_for_data(
@@ -103,7 +124,23 @@ final class Kulisse: @unchecked Sendable {
     ]
 
     fileprivate func malen(_ cr: OpaquePointer, _ w: Double, _ h: Double) {
-        guard let flaeche, breite > 0, hoehe > 0 else { return }
+        guard flaeche != nil, breite > 0, hoehe > 0, w > 0, h > 0 else { return }
+        if fertig == nil || fertigBreite != Int(w) || fertigHoehe != Int(h) {
+            fertigRechnen(w, h)
+        }
+        guard let fertig else { return }
+        cairo_set_source_surface(cr, fertig, 0, 0)
+        cairo_paint(cr)
+    }
+
+    /// Rechnet das maskierte Bild einmal in eine eigene Fläche.
+    private func fertigRechnen(_ w: Double, _ h: Double) {
+        guard let flaeche else { return }
+        fertigLoesen()
+        guard let ziel = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
+                                                    Int32(w), Int32(h)),
+              let cr = cairo_create(ziel) else { return }
+        defer { cairo_destroy(cr) }
 
         // **`max(breite * 0,62, 520)` — die Rechnung des Macs**, rechtsbündig.
         let bb = max(w * 0.62, 520)
@@ -115,7 +152,6 @@ final class Kulisse: @unchecked Sendable {
         let bx = x0 + (bb - Double(breite) * s) / 2
         let by = (h - Double(hoehe) * s) / 2
 
-        cairo_save(cr)
         cairo_rectangle(cr, x0, 0, bb, h)
         cairo_clip(cr)
 
@@ -147,7 +183,9 @@ final class Kulisse: @unchecked Sendable {
         cairo_mask(cr, senkrecht)
         cairo_pattern_destroy(senkrecht)
 
-        cairo_restore(cr)
+        fertig = ziel
+        fertigBreite = Int(w)
+        fertigHoehe = Int(h)
     }
 }
 
