@@ -203,6 +203,7 @@ private final class Bewegung {
     let beginn = Date()
     static let dauer = 0.28
     var takt: guint = 0
+    var teiler: Double = 1
 
     init(von: Double, nach: Double, setzen: @escaping (Double) -> Void) {
         self.von = von
@@ -219,7 +220,9 @@ nonisolated(unsafe) private let bewegungsTakt: @convention(c) (
     let t = min(Date().timeIntervalSince(b.beginn) / Bewegung.dauer, 1)
     // easeInOut, dieselbe Kennlinie wie `Animation.easeInOut` auf dem Mac.
     let e = t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
-    b.setzen(b.von + (b.nach - b.von) * e)
+    // Auf ganze Gerätepunkte, aus demselben Grund wie beim Scrollen.
+    let roh = b.von + (b.nach - b.von) * e
+    b.setzen((roh * b.teiler).rounded() / b.teiler)
     if t >= 1 {
         Unmanaged<Bewegung>.fromOpaque(daten).release()
         return 0   // G_SOURCE_REMOVE
@@ -231,7 +234,9 @@ nonisolated(unsafe) private let bewegungsTakt: @convention(c) (
 func sanft(auf widget: Widget!, von: Double, nach: Double,
            setzen: @escaping (Double) -> Void) {
     guard abs(nach - von) > 0.5 else { return }
-    let b = Unmanaged.passRetained(Bewegung(von: von, nach: nach, setzen: setzen)).toOpaque()
+    let lauf = Bewegung(von: von, nach: nach, setzen: setzen)
+    lauf.teiler = Double(max(gtk_widget_get_scale_factor(widget), 1))
+    let b = Unmanaged.passRetained(lauf).toOpaque()
     _ = gtk_widget_add_tick_callback(widget, bewegungsTakt, b, nil)
 }
 
@@ -284,6 +289,8 @@ private final class Weichlauf {
     var ziel: Double
     var takt: guint = 0
     var zuletzt: Int = 0
+    /// Wie viele Gerätepunkte auf einen Punkt kommen.
+    var teiler: Double = 1
 
     init(lesen: @escaping () -> Double, setzen: @escaping (Double) -> Void,
          obergrenze: @escaping () -> Double) {
@@ -291,6 +298,19 @@ private final class Weichlauf {
         self.setzen = setzen
         self.obergrenze = obergrenze
         self.ziel = lesen()
+    }
+
+    /// **Auf ganze Gerätepunkte einrasten.**
+    ///
+    /// Ein gebrochener Scrollstand verschiebt den ganzen Inhalt um einen
+    /// halben Bildpunkt. Dann werden **alle** Widget-Kanten mit halber
+    /// Deckung gezeichnet — und wo zwei gleichfarbige Kästen aneinander
+    /// stossen, scheint der Grund dahinter durch. Genau daher der dunkle
+    /// Strich zwischen Kopfzone und Unterbau: beide tragen denselben Ton,
+    /// dahinter liegt Schwarz, und zwei halb gedeckte Zeilen ergeben
+    /// 66 → 60 → 52 → 64. Am Bildschirmfoto gemessen.
+    func rasten(_ wert: Double) -> Double {
+        (wert * teiler).rounded() / teiler
     }
 }
 
@@ -314,12 +334,12 @@ nonisolated(unsafe) private let weichTakt: @convention(c) (
     let jetzt = w.lesen()
     let rest = w.ziel - jetzt
     if abs(rest) < 0.5 {
-        w.setzen(w.ziel)
+        w.setzen(w.rasten(w.ziel))
         w.takt = 0
         Unmanaged<Weichlauf>.fromOpaque(daten).release()
         return 0
     }
-    w.setzen(jetzt + rest * (1 - exp(-weichrate * min(dt, 0.1))))
+    w.setzen(w.rasten(jetzt + rest * (1 - exp(-weichrate * min(dt, 0.1)))))
     return 1
 }
 
@@ -336,6 +356,7 @@ nonisolated(unsafe) private let radGedreht: @convention(c) (
     w.ziel = min(max(w.ziel + dy * rastweite, 0), max(hoechst, 0))
     if w.takt == 0, let horcher,
        let ziel = gtk_event_controller_get_widget(OpaquePointer(horcher)) {
+        w.teiler = Double(max(gtk_widget_get_scale_factor(ziel), 1))
         w.takt = gtk_widget_add_tick_callback(ziel, weichTakt,
                                               Unmanaged.passRetained(w).toOpaque(), nil)
     }

@@ -1044,7 +1044,12 @@ final class App: @unchecked Sendable {
     /// säßen sie rund 45 Punkt zu tief. Die Rechnung `4 + bildHoehe / 2 − 17`
     /// steht wörtlich so auf dem Mac — 4 ist der senkrechte Rand der Reihe,
     /// 17 die halbe Knopfhöhe.
-    func reiheBauen(titel: String, art: Reihenart, items: [Item]) -> Widget! {
+    /// - Parameter rand: Der seitliche Rand. **Null, wenn der Aufrufer schon
+    ///   einen setzt** — sonst stehen die Kacheln 48 Punkt eingerückt unter
+    ///   einer Überschrift, die bei 24 beginnt. Steht wörtlich so an
+    ///   `Blätterreihe` auf dem Mac; genau daran ist es hier aufgefallen.
+    func reiheBauen(titel: String, art: Reihenart, items: [Item],
+                    rand: Int = Stil.randAbstand) -> Widget! {
         let quer = art == .weiterschauen
         let bildHoehe = quer ? Stil.querHoehe : Stil.kachelHoehe
         let stueck = (quer ? Stil.querBreite : Stil.kachelBreite) + Stil.kachelAbstand
@@ -1054,8 +1059,8 @@ final class App: @unchecked Sendable {
         let ueberschrift = beschriftung(titel, stil: "swiftly-reihe")
         gtk_label_set_xalign(OpaquePointer(ueberschrift), 0)
         gtk_widget_set_halign(ueberschrift, GTK_ALIGN_START)
-        gtk_widget_set_margin_start(ueberschrift, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_end(ueberschrift, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_start(ueberschrift, Int32(rand))
+        gtk_widget_set_margin_end(ueberschrift, Int32(rand))
         anhaengen(block, ueberschrift)
 
         let scroller = gtk_scrolled_window_new()
@@ -1064,8 +1069,8 @@ final class App: @unchecked Sendable {
                                        GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
 
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(Stil.kachelAbstand))
-        gtk_widget_set_margin_start(reihe, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_end(reihe, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_start(reihe, Int32(rand))
+        gtk_widget_set_margin_end(reihe, Int32(rand))
         // Vier Punkt Luft, damit die wachsende Kachel oben nicht abgeschnitten
         // wird — dieselben vier wie auf dem Mac.
         gtk_widget_set_margin_top(reihe, 4)

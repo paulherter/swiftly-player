@@ -66,11 +66,11 @@ extension App {
             if serie.darsteller.isEmpty {
                 anhaengen(raum, beschriftung("Keine Besetzung hinterlegt.", stil: "swiftly-koerper"))
             } else {
-                anhaengen(raum, besetzungsreihe(serie.darsteller))
+                anhaengen(raum, besetzungsreihe(serie.darsteller, rand: 0))
             }
         case .aehnliches:
             anhaengen(raum, beschriftung("Lade …", stil: "swiftly-koerper"))
-            aehnlicheNachladen(serie, in: raum, leeren: true)
+            aehnlicheNachladen(serie, in: raum, leeren: true, rand: 0)
         }
     }
 
@@ -256,19 +256,19 @@ extension App {
 
     // MARK: Besetzung und Ähnliches
 
-    func besetzungsreihe(_ leute: [Person]) -> Widget! {
+    func besetzungsreihe(_ leute: [Person], rand: Int = Stil.randAbstand) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 14)
         let titel = beschriftung("Besetzung", stil: "swiftly-listentitel")
         gtk_label_set_xalign(OpaquePointer(titel), 0)
-        gtk_widget_set_margin_start(titel, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_start(titel, Int32(rand))
         anhaengen(block, titel)
 
         let scroller = gtk_scrolled_window_new()
         gtk_scrolled_window_set_policy(OpaquePointer(scroller),
                                        GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 18)
-        gtk_widget_set_margin_start(reihe, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_end(reihe, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_start(reihe, Int32(rand))
+        gtk_widget_set_margin_end(reihe, Int32(rand))
         for person in leute { anhaengen(reihe, kopfbild(person)) }
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
         anhaengen(block, scroller)
@@ -317,7 +317,8 @@ extension App {
         return huelleKnopf
     }
 
-    func aehnlicheNachladen(_ titel: Item, in raum: Widget!, leeren leeren_: Bool = false) {
+    func aehnlicheNachladen(_ titel: Item, in raum: Widget!, leeren leeren_: Bool = false,
+                            rand: Int = Stil.randAbstand) {
         guard let client else { return }
         let kiste = gehalten(raum)
         Task.detached { [self] in
@@ -333,7 +334,8 @@ extension App {
                     }
                     return
                 }
-                anhaengen(ziel, self.reiheBauen(titel: "Ähnliches", art: .neu, items: treffer))
+                anhaengen(ziel, self.reiheBauen(titel: "Ähnliches", art: .neu,
+                                                items: treffer, rand: rand))
             }
         }
     }
