@@ -402,6 +402,15 @@ final class App: @unchecked Sendable {
     /// Die Staffel, mit der eine Serienseite öffnet — gesetzt, wenn der Weg
     /// über eine Folge führte (A8).
     var startStaffel: String?
+    /// Welche Unterseite offen ist (Profil, Quick Connect, …) — `nil`, wenn
+    /// keine. Sie leben nicht im Bereichsstapel: auf dem Mac liegen sie
+    /// ebenfalls quer dazu.
+    var offeneUnterseite: Unterseite?
+    var offeneListe: Werteauswahl?
+    var wahlen = Wahlen.lesen()
+    var benutzername = ""
+    var servername = ""
+    var serverfassung = ""
     var detailhuelle: Widget!
     /// Wird beim Blättern gebraucht, um den Titel in der Kopfleiste
     /// einzublenden — dieselbe Rechnung wie `Detailkopf.staerke` auf dem Mac.
@@ -574,9 +583,9 @@ final class App: @unchecked Sendable {
         anhaengen(reihe, namen)
 
         gtk_button_set_child(alsKnopf(knopf), reihe)
-        // Bis es eine Profilseite gibt, führt der Knopf hinaus. Auf dem Mac
-        // liegt „Abmelden" eine Ebene tiefer, hinter dem Profil.
-        beiSignal(knopf, "clicked") { [weak self] in self?.abmelden() }
+        // Auf dem Mac führt die Zeile aufs Profil; „Abmelden" liegt dort eine
+        // Ebene tiefer.
+        beiSignal(knopf, "clicked") { [weak self] in self?.unterseiteOeffnen(.profil) }
         return knopf
     }
 
@@ -758,11 +767,13 @@ final class App: @unchecked Sendable {
 
     // MARK: Laden
 
-    private func abmelden() {
+    func abmelden() {
         Speicher.loeschen()
         client = nil
         adressen = nil
         geladen.removeAll()
+        seitenstapel.removeAll()
+        offeneUnterseite = nil
         leeren(reihenstapel)
         gtk_editable_set_text(OpaquePointer(passwortfeld), "")
         anmeldestandZeigen("")
@@ -774,6 +785,8 @@ final class App: @unchecked Sendable {
 
     /// Name, Server und Bild unten in der Leiste, dazu die Bibliotheken.
     private func sitzungAnzeigen(benutzername: String, servername: String?) {
+        self.benutzername = benutzername
+        self.servername = servername ?? ""
         gtk_label_set_text(OpaquePointer(profilname), benutzername)
         gtk_label_set_text(OpaquePointer(profilserver), servername ?? "")
         if let adressen, !benutzerID.isEmpty,

@@ -467,6 +467,57 @@ enum Stil {
 
         .swiftly-kopfbild { border-radius: 42px; background-color: \(flaeche); }
 
+        /* MARK: Einstellungszeilen */
+
+        .swiftly-fuss { color: rgba(255,255,255,0.45); }
+        .swiftly-akzentzeile label { color: \(akzent); }
+        .swiftly-akzentzeile image { color: \(akzent); }
+        .swiftly-zeilenrumpf, button.swiftly-einstellzeile {
+            min-height: 44px;
+            padding: 0 12px;
+            border-radius: 0;
+            background-color: transparent;
+            border: none;
+        }
+        button.swiftly-einstellzeile:hover { background-color: rgba(255,255,255,0.05); }
+        button.swiftly-einstellzeile image { color: \(schriftLeise); }
+        button.swiftly-einstellzeile.swiftly-akzentzeile image { color: \(akzent); }
+
+        /* Der Schalter — Kapsel, Akzent wenn an. Kein GtkSwitch: der bringt
+           Form, Farbe und Maße des Systems mit (E4). */
+        .swiftly-schalter {
+            background-color: rgba(255,255,255,0.14);
+            border-radius: 11px;
+            padding: 3px;
+        }
+        .swiftly-schalter.swiftly-aktiv { background-color: \(akzent); }
+        .swiftly-knauf { background-color: \(schrift); border-radius: 8px; }
+        .swiftly-schalter.swiftly-aktiv .swiftly-knauf { background-color: \(grund); }
+
+        .swiftly-werteliste { background-color: rgba(255,255,255,0.03); }
+        button.swiftly-wertzeile {
+            min-height: 36px;
+            padding: 0 12px 0 48px;
+            border-radius: 0;
+            background-color: transparent;
+            border: none;
+        }
+        button.swiftly-wertzeile:hover { background-color: rgba(255,255,255,0.06); }
+        button.swiftly-wertzeile label { color: \(schriftLeise); }
+        button.swiftly-wertzeile.swiftly-aktiv label { color: \(schrift); }
+        button.swiftly-wertzeile.swiftly-aktiv image { color: \(akzent); }
+
+        .swiftly-profilgross { border-radius: 42px; background-color: \(flaeche); }
+
+        /* Der Quick-Connect-Code: gross, mittig, gesperrt. */
+        entry.swiftly-code {
+            font-size: 34px;
+            font-weight: 600;
+            min-height: 76px;
+            letter-spacing: 6px;
+        }
+        entry.swiftly-code text { caret-color: \(akzent); }
+
         scrollbar { background-color: transparent; }
         scrollbar slider {
             background-color: rgba(255,255,255,0.22);

@@ -283,3 +283,169 @@ func reiterknopf(_ text: String, aktiv: Bool) -> Widget! {
     gtk_button_set_child(alsKnopf(knopf), stapelchen)
     return knopf
 }
+
+// MARK: - Einstellungszeilen
+
+/// Eine Gruppe von Zeilen: Haarlinie oben, Haarlinie unten, sonst nichts.
+/// Keine Karten — dieselbe Entscheidung wie auf dem iPhone.
+func zeilengruppe() -> (aussen: Widget, raum: Widget) {
+    let aussen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+    anhaengen(aussen, trennlinie())
+    let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+    anhaengen(aussen, raum)
+    anhaengen(aussen, trennlinie())
+    return (aussen!, raum!)
+}
+
+/// Eine Gruppe mit Überschrift darüber — „QUALITÄT", „SPRACHE", „VERHALTEN".
+func einstellungsgruppe(_ titel: String) -> (aussen: Widget, raum: Widget) {
+    let aussen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+    let kopf = rubrik(titel)
+    gtk_widget_set_margin_start(kopf, 0)
+    gtk_widget_set_margin_top(kopf, 26)
+    gtk_widget_set_margin_bottom(kopf, 8)
+    anhaengen(aussen, kopf)
+    let gruppe = zeilengruppe()
+    anhaengen(aussen, gruppe.aussen)
+    return (aussen!, gruppe.raum)
+}
+
+/// Der Trennstrich **innerhalb** einer Gruppe: eingerückt um 48, damit er
+/// unter dem Symbol beginnt und nicht davor.
+func zeilenstrich() -> Widget! {
+    let l = trennlinie()
+    gtk_widget_set_margin_start(l, 48)
+    return l
+}
+
+/// Der Rumpf jeder Zeile: Symbol (22 breit), 14 Abstand, Titel, Unterzeile,
+/// rechts etwas. Mindestens 44 hoch, 12 seitlich.
+private func zeilenrumpf(symbol: String, titel: String, unter: String?,
+                         akzent: Bool, rechts: Widget?) -> Widget! {
+    let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
+    let bild: Widget! = gtk_image_new_from_icon_name(symbol)
+    gtk_image_set_pixel_size(OpaquePointer(bild), 15)
+    gtk_widget_set_size_request(bild, 22, -1)
+    anhaengen(reihe, bild)
+
+    let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+    gtk_widget_set_valign(text, GTK_ALIGN_CENTER)
+    gtk_widget_set_hexpand(text, 1)
+    let t = beschriftung(titel, stil: "swiftly-koerper")
+    gtk_label_set_xalign(OpaquePointer(t), 0)
+    anhaengen(text, t)
+    if let unter {
+        let u = beschriftung(unter, stil: "swiftly-zweitzeile")
+        gtk_widget_add_css_class(u, "swiftly-fuss")
+        gtk_label_set_xalign(OpaquePointer(u), 0)
+        anhaengen(text, u)
+    }
+    anhaengen(reihe, text)
+    if let rechts { anhaengen(reihe, rechts) }
+    if akzent { gtk_widget_add_css_class(reihe, "swiftly-akzentzeile") }
+    return reihe
+}
+
+/// Eine Zeile mit Wert rechts und optionalem Pfeil.
+func wertezeile(symbol: String, titel: String, unter: String? = nil,
+                wert: String? = nil, akzent: Bool = false, pfeil: Bool = false,
+                auswahl: (() -> Void)? = nil) -> Widget! {
+    let rechts = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+    gtk_widget_set_valign(rechts, GTK_ALIGN_CENTER)
+    if let wert, !wert.isEmpty {
+        let w = beschriftung(wert, stil: "swiftly-kacheltitel")
+        gtk_widget_add_css_class(w, "dim-label")
+        anhaengen(rechts, w)
+    }
+    if pfeil {
+        let p: Widget! = gtk_image_new_from_icon_name("go-next-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(p), 12)
+        gtk_widget_add_css_class(p, "swiftly-leise")
+        anhaengen(rechts, p)
+    }
+    let rumpf = zeilenrumpf(symbol: symbol, titel: titel, unter: unter,
+                            akzent: akzent, rechts: rechts)
+    guard let auswahl else {
+        gtk_widget_add_css_class(rumpf, "swiftly-zeilenrumpf")
+        return rumpf
+    }
+    let knopf: Widget! = gtk_button_new()
+    gtk_widget_add_css_class(knopf, "swiftly-einstellzeile")
+    gtk_button_set_child(alsKnopf(knopf), rumpf)
+    beiSignal(knopf, "clicked", auswahl)
+    return knopf
+}
+
+/// Eine Zeile mit Schalter. **Kein `GtkSwitch`** — der bringt die Kapselform,
+/// die Farbe und die Maße des Systems mit (E4).
+func schalterzeile(symbol: String, titel: String, unter: String? = nil,
+                   an: Bool, umgeschaltet: @escaping (Bool) -> Void) -> Widget! {
+    var zustand = an
+    let schalter: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(schalter, "swiftly-schalter")
+    gtk_widget_set_size_request(schalter, 38, 22)
+    gtk_widget_set_valign(schalter, GTK_ALIGN_CENTER)
+    let knauf: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(knauf, "swiftly-knauf")
+    gtk_widget_set_size_request(knauf, 16, 16)
+    gtk_widget_set_valign(knauf, GTK_ALIGN_CENTER)
+    anhaengen(schalter, knauf)
+
+    func anmalen() {
+        if zustand {
+            gtk_widget_add_css_class(schalter, "swiftly-aktiv")
+            gtk_widget_set_halign(knauf, GTK_ALIGN_END)
+        } else {
+            gtk_widget_remove_css_class(schalter, "swiftly-aktiv")
+            gtk_widget_set_halign(knauf, GTK_ALIGN_START)
+        }
+    }
+    anmalen()
+
+    let knopf: Widget! = gtk_button_new()
+    gtk_widget_add_css_class(knopf, "swiftly-einstellzeile")
+    gtk_button_set_child(alsKnopf(knopf),
+                         zeilenrumpf(symbol: symbol, titel: titel, unter: unter,
+                                     akzent: false, rechts: schalter))
+    beiSignal(knopf, "clicked") {
+        zustand.toggle()
+        anmalen()
+        umgeschaltet(zustand)
+    }
+    return knopf
+}
+
+/// Die Werteliste. Auf dem iPhone ein Blatt von unten; hier klappt sie
+/// **unter der Zeile** auf — „Auswahl bleibt am Ort", dieselbe Regel wie bei
+/// der Staffelpille (E5).
+func werteliste<W: Equatable>(_ eintraege: [(String, W)], gewaehlt: W,
+                              waehlen: @escaping (W) -> Void) -> Widget! {
+    let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+    gtk_widget_add_css_class(liste, "swiftly-werteliste")
+    for (name, wert) in eintraege {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-wertzeile")
+        if wert == gewaehlt { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        let l = beschriftung(name, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        gtk_widget_set_hexpand(l, 1)
+        anhaengen(reihe, l)
+        if wert == gewaehlt {
+            let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+            gtk_image_set_pixel_size(OpaquePointer(haken), 13)
+            anhaengen(reihe, haken)
+        }
+        gtk_button_set_child(alsKnopf(knopf), reihe)
+        beiSignal(knopf, "clicked") { waehlen(wert) }
+        anhaengen(liste, knopf)
+    }
+    return liste
+}
+
+/// Senkrechte Luft von fester Höhe.
+func luftHoch(_ hoehe: Int32) -> Widget! {
+    let l: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+    gtk_widget_set_size_request(l, -1, hoehe)
+    return l
+}
