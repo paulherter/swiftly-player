@@ -32,6 +32,14 @@ Spec
 Werkzeuge/Discord
 Werkzeuge/Grafik
 Werkzeuge/Iconbauer
+# **Claudes eigener Ordner.** Hier liegen Einstellungen, Faehigkeiten — und
+# unter `worktrees/` ganze Abzuege des Arbeitsbaums samt CLAUDE.md,
+# AppStore/, Spec/ und Rohbildern. Am 04.09.2026 lag genau so ein Abzug da:
+# nicht eingecheckt, aber auch nicht gesperrt. Ein `git add -A` haette
+# gereicht. Die Regeln darunter greifen zwar auf jeder Ebene, aber nicht auf
+# README.md oder project.yml in so einem Abzug.
+.claude
+
 MORGEN.md
 OFFEN.md
 PRUEFUNG.md
