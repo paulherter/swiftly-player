@@ -141,7 +141,11 @@ enum Stil {
             caret-color: \(akzent);
             box-shadow: none;
         }
-        entry:focus {
+        /* **`:focus` allein trifft das Feld nicht.** GTK4 setzt den Fokus
+           auf den inneren `text`-Knoten, nicht auf das `entry` darum. Der
+           Rahmen gehoert aber dem `entry` — also `:focus-within`. Am Mac ist
+           er im Fokus der Akzent bei halber Deckung. */
+        entry:focus, entry:focus-within {
             border-color: rgba(92,209,194,0.5);
             outline: none;
             box-shadow: none;
