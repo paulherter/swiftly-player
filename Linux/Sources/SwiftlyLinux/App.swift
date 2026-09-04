@@ -173,10 +173,8 @@ final class App: @unchecked Sendable {
     /// längst fertig.
     private func startbildWeg() {
         guard startanimation != nil, let bild = startbild else {
-            FileHandle.standardError.write(Data("[S] weg: nichts da\n".utf8))
             return
         }
-        FileHandle.standardError.write(Data("[S] weg laeuft\n".utf8))
         startanimation = nil
         gtk_widget_set_can_target(bild, 0)
         sanft(auf: bild, von: 1, nach: 0) { gtk_widget_set_opacity(bild, $0) }
@@ -196,10 +194,6 @@ final class App: @unchecked Sendable {
                 defer { losgelassen(kiste) }
                 gtk_widget_set_opacity(kiste.widget, 0)
                 gtk_widget_set_visible(kiste.widget, 0)
-                var r = GdkRectangle()
-                gtk_widget_get_allocation(self.inhalt, &r)
-                FileHandle.standardError.write(Data(
-                    "[S] Decke versteckt, inhalt \(r.width)x\(r.height)\n".utf8))
             }
         }
         // **Die Decke bleibt hängen, sie wird nicht abgeräumt.** Ein Widget
@@ -861,7 +855,6 @@ final class App: @unchecked Sendable {
             // Schleife, die sich selbst füttert.** Gemessen: 92 % Dauerlast,
             // schon auf dem Anmeldebildschirm, und ein Fenster, das nicht
             // mehr zum Zeichnen kam.
-            FileHandle.standardError.write(Data("[G] Mass \(breite)x\(hoehe)\n".utf8))
             guard breite != self.buehnenBreite || hoehe != self.buehnenHoehe else { return }
             self.buehnenBreite = breite
             self.buehnenHoehe = hoehe
