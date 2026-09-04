@@ -1,4 +1,10 @@
 import Foundation
+// Auf Linux liegt URLSession nicht in Foundation, sondern in einem
+// eigenen Modul. Auf Apple-Plattformen gibt es das Modul nicht — der
+// Import ist deshalb bedingt und dort wirkungslos.
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Was die Gegenstelle von uns will.
 public enum Fernbefehl: Sendable, Equatable {

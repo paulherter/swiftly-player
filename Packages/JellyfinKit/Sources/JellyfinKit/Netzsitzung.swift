@@ -1,4 +1,10 @@
 import Foundation
+// Auf Linux liegt URLSession nicht in Foundation, sondern in einem
+// eigenen Modul. Auf Apple-Plattformen gibt es das Modul nicht — der
+// Import ist deshalb bedingt und dort wirkungslos.
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 public extension URLSession {
 
@@ -24,7 +30,14 @@ public extension URLSession {
     /// Adresse als Fehler ankommt.
     static let ortsnetzfaehig: URLSession = {
         let k = URLSessionConfiguration.default
+        // **Auf Linux nur lesbar.** swift-corelibs-foundation kennt die
+        // Eigenschaft, setzt sie aber nicht um — dort gibt es kein Warten auf
+        // eine Verbindung, die noch nicht steht. Die beiden Fristen darunter
+        // greifen weiterhin und sind ohnehin das, was einen Tippfehler in der
+        // Adresse als Fehler ankommen lässt.
+        #if canImport(Darwin)
         k.waitsForConnectivity = true
+        #endif
         k.timeoutIntervalForRequest = 15
         k.timeoutIntervalForResource = 20
         return URLSession(configuration: k)
