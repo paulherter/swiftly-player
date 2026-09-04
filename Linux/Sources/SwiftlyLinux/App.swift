@@ -151,7 +151,7 @@ final class App: @unchecked Sendable {
         // Abmelden war es leer, und man tippte die Adresse von Hand.
         if Speicher.lesen() == nil, let merk = Speicher.gemerkterServer() {
             gtk_editable_set_text(OpaquePointer(serverfeld), merk.serverURL.absoluteString)
-            serverstandZeigen(merk.servername.map { "Zuletzt: \($0)" } ?? "")
+            serverstandZeigen(merk.servername.map { String(format: uebersetzt("Zuletzt: %@"), $0) } ?? "")
         }
         gtk_window_present(alsFenster(fenster))
         // Erst jetzt hat die Zeichenfläche eine Bilduhr. Siehe
@@ -231,7 +231,7 @@ final class App: @unchecked Sendable {
 
         anhaengen(mitte, Stil.wortmarke(hoehe: 44))
 
-        let frage = beschriftung("Wo steht dein Jellyfin-Server?",
+        let frage = beschriftung(uebersetzt("Wo steht dein Jellyfin-Server?"),
                                  stil: "swiftly-koerper")
         gtk_widget_add_css_class(frage, "dim-label")
         gtk_widget_set_margin_top(frage, 40)
@@ -245,7 +245,7 @@ final class App: @unchecked Sendable {
         serverstand = meldezeile()
         anhaengen(mitte, serverstand)
 
-        verbindeknopf = hauptknopf("Verbinden")
+        verbindeknopf = hauptknopf(uebersetzt("Verbinden"))
         gtk_widget_set_margin_top(verbindeknopf, 24)
         gtk_widget_set_sensitive(verbindeknopf, 0)
         anhaengen(mitte, verbindeknopf)
@@ -333,11 +333,11 @@ final class App: @unchecked Sendable {
         guard let c = anmeldeclient else { return }
         Task.detached { [self] in
             guard let vorgang = try? await c.quickConnectStarten() else {
-                aufHauptfaden { self.anmeldestandZeigen("Der Server hat keinen Code gegeben.") }
+                aufHauptfaden { self.anmeldestandZeigen(uebersetzt("Der Server hat keinen Code gegeben.")) }
                 return
             }
             aufHauptfaden {
-                self.anmeldestandZeigen("Code \(vorgang.code) — auf einem angemeldeten Gerät freigeben")
+                self.anmeldestandZeigen(String(format: uebersetzt("Code %@ — auf einem angemeldeten Gerät freigeben"), vorgang.code))
             }
             // Höchstens fünf Minuten warten; danach ist der Code ohnehin tot.
             for _ in 0..<150 {
@@ -363,7 +363,7 @@ final class App: @unchecked Sendable {
                 }
                 return
             }
-            aufHauptfaden { self.anmeldestandZeigen("Der Code ist abgelaufen.") }
+            aufHauptfaden { self.anmeldestandZeigen(uebersetzt("Der Code ist abgelaufen.")) }
         }
     }
 
@@ -394,19 +394,19 @@ final class App: @unchecked Sendable {
         anhaengen(mitte, kontenreihe)
 
         benutzerfeld = eingabezeile(symbol: "avatar-default-symbolic",
-                                    platzhalter: "Benutzername")
+                                    platzhalter: uebersetzt("Benutzername"))
         gtk_widget_set_margin_top(benutzerfeld, 28)
         anhaengen(mitte, benutzerfeld)
 
         passwortfeld = eingabezeile(symbol: "channel-secure-symbolic",
-                                    platzhalter: "Passwort", geheim: true)
+                                    platzhalter: uebersetzt("Passwort"), geheim: true)
         gtk_widget_set_margin_top(passwortfeld, 10)
         anhaengen(mitte, passwortfeld)
 
         anmeldestand = meldezeile()
         anhaengen(mitte, anmeldestand)
 
-        anmeldeknopf = hauptknopf("Anmelden")
+        anmeldeknopf = hauptknopf(uebersetzt("Anmelden"))
         gtk_widget_set_margin_top(anmeldeknopf, 24)
         gtk_widget_set_sensitive(anmeldeknopf, 0)
         anhaengen(mitte, anmeldeknopf)
@@ -416,7 +416,7 @@ final class App: @unchecked Sendable {
         // **Quick Connect als Anmeldeweg.** Bisher gab es hier nur die
         // Gegenrichtung — einen fremden Code freigeben. Wer sich anmelden
         // will, ohne sein Passwort zu tippen, konnte es nicht.
-        schnellknopf = gtk_button_new_with_label("Mit Code anmelden")
+        schnellknopf = gtk_button_new_with_label(uebersetzt("Mit Code anmelden"))
         gtk_widget_add_css_class(schnellknopf, "swiftly-flach")
         gtk_widget_set_margin_top(schnellknopf, 10)
         gtk_widget_set_halign(schnellknopf, GTK_ALIGN_CENTER)
@@ -424,7 +424,7 @@ final class App: @unchecked Sendable {
         beiSignal(schnellknopf, "clicked") { [weak self] in self?.schnellanmeldung() }
         anhaengen(mitte, schnellknopf)
 
-        let zurueck: Widget! = gtk_button_new_with_label("Anderer Server")
+        let zurueck: Widget! = gtk_button_new_with_label(uebersetzt("Anderer Server"))
         gtk_widget_add_css_class(zurueck, "swiftly-flach")
         gtk_widget_set_margin_top(zurueck, 14)
         gtk_widget_set_halign(zurueck, GTK_ALIGN_CENTER)
@@ -483,25 +483,25 @@ final class App: @unchecked Sendable {
     private func verbinden() {
         guard !meldetGerade else { return }
         let eingabe = text(serverfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !eingabe.isEmpty else { serverstandZeigen("Trag erst eine Adresse ein."); return }
+        guard !eingabe.isEmpty else { serverstandZeigen(uebersetzt("Trag erst eine Adresse ein.")); return }
 
         // Dieselbe Regel wie überall: ohne Schema bekommt eine Adresse
         // `https` vorgesetzt, außer sie sieht nach Heimnetz aus.
         guard let url = AppModelURLNormalizer.normalize(eingabe) else {
-            serverstandZeigen("Mit dieser Adresse kann ich nichts anfangen.")
+            serverstandZeigen(uebersetzt("Mit dieser Adresse kann ich nichts anfangen."))
             return
         }
 
         meldetGerade = true
         gtk_widget_set_sensitive(verbindeknopf, 0)
-        gtk_button_set_label(alsKnopf(verbindeknopf), "Verbinde …")
-        serverstandZeigen("Frage \(url.absoluteString) …")
+        gtk_button_set_label(alsKnopf(verbindeknopf), uebersetzt("Verbinde …"))
+        serverstandZeigen(String(format: uebersetzt("Frage %@ …"), url.absoluteString))
 
         Task.detached { [self] in
             let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
             do {
                 let info = try await c.publicSystemInfo()
-                let name = info.serverName ?? url.host() ?? "Server"
+                let name = info.serverName ?? url.host() ?? uebersetzt("Server")
                 let fassung = info.version ?? "?"
                 aufHauptfaden {
                     self.verbindenFertig()
@@ -531,7 +531,7 @@ final class App: @unchecked Sendable {
     private func verbindenFertig() {
         meldetGerade = false
         gtk_widget_set_sensitive(verbindeknopf, 1)
-        gtk_button_set_label(alsKnopf(verbindeknopf), "Verbinden")
+        gtk_button_set_label(alsKnopf(verbindeknopf), uebersetzt("Verbinden"))
     }
 
     // MARK: Schritt zwei — anmelden
@@ -540,11 +540,11 @@ final class App: @unchecked Sendable {
         guard !meldetGerade, let url = serverURL else { return }
         let benutzer = text(benutzerfeld).trimmingCharacters(in: .whitespacesAndNewlines)
         let passwort = text(passwortfeld)
-        guard !benutzer.isEmpty else { anmeldestandZeigen("Trag einen Benutzernamen ein."); return }
+        guard !benutzer.isEmpty else { anmeldestandZeigen(uebersetzt("Trag einen Benutzernamen ein.")); return }
 
         meldetGerade = true
         gtk_widget_set_sensitive(anmeldeknopf, 0)
-        gtk_button_set_label(alsKnopf(anmeldeknopf), "Melde an …")
+        gtk_button_set_label(alsKnopf(anmeldeknopf), uebersetzt("Melde an …"))
         anmeldestandZeigen("")
 
         let servername = gtk_label_get_text(OpaquePointer(serverzeile)).map { String(cString: $0) }
@@ -579,7 +579,7 @@ final class App: @unchecked Sendable {
     private func anmeldungFertig() {
         meldetGerade = false
         gtk_widget_set_sensitive(anmeldeknopf, 1)
-        gtk_button_set_label(alsKnopf(anmeldeknopf), "Anmelden")
+        gtk_button_set_label(alsKnopf(anmeldeknopf), uebersetzt("Anmelden"))
     }
 
     private func sitzungUebernehmen(serverURL: URL, token: String, benutzerID: String,
@@ -1001,7 +1001,7 @@ final class App: @unchecked Sendable {
         }
         anhaengen(leiste, bereiche)
 
-        bibliotheksrubrik = rubrik("Bibliotheken")
+        bibliotheksrubrik = rubrik(uebersetzt("Bibliotheken"))
         gtk_widget_set_margin_top(bibliotheksrubrik, 26)
         gtk_widget_set_margin_bottom(bibliotheksrubrik, 8)
         gtk_widget_set_margin_start(bibliotheksrubrik, 12)
@@ -1056,7 +1056,7 @@ final class App: @unchecked Sendable {
 
         let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
         gtk_widget_set_valign(text, GTK_ALIGN_CENTER)
-        let oben = beschriftung("Hier weiterschauen", stil: "swiftly-kacheltitel")
+        let oben = beschriftung(uebersetzt("Hier weiterschauen"), stil: "swiftly-kacheltitel")
         gtk_label_set_xalign(OpaquePointer(oben), 0)
         gtk_label_set_ellipsize(OpaquePointer(oben), PANGO_ELLIPSIZE_END)
         gtk_label_set_max_width_chars(OpaquePointer(oben), 1)
@@ -1071,7 +1071,7 @@ final class App: @unchecked Sendable {
 
         gtk_button_set_child(alsKnopf(knopf), reihe)
         beiSignal(knopf, "clicked") { [weak self] in self?.uebernehmen() }
-        beschriften(knopf, "Wiedergabe übernehmen")
+        beschriften(knopf, uebersetzt("Wiedergabe übernehmen"))
         return knopf
     }
 
@@ -1360,7 +1360,7 @@ final class App: @unchecked Sendable {
 
         let raster = rasterBauen()
         anhaengen(block, raster)
-        let lader = beschriftung("Lade …", stil: "swiftly-koerper")
+        let lader = beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper")
         gtk_widget_add_css_class(lader, "swiftly-leise")
         gtk_widget_set_halign(lader, GTK_ALIGN_CENTER)
         gtk_widget_set_margin_top(lader, 40)
@@ -1448,9 +1448,9 @@ final class App: @unchecked Sendable {
     private func sucheBauen() -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 20)
         var unbenutzt: Widget!
-        anhaengen(block, seitenkopf("Suche", zahl: &unbenutzt))
+        anhaengen(block, seitenkopf(uebersetzt("Suche"), zahl: &unbenutzt))
 
-        suchfeld = eingabezeile(symbol: "system-search-symbolic", platzhalter: "Suchen")
+        suchfeld = eingabezeile(symbol: "system-search-symbolic", platzhalter: uebersetzt("Suchen"))
         // Auf der Suchseite geht das Feld über die Inhaltsbreite, nicht über
         // die 360 des Anmeldeblocks.
         gtk_widget_set_size_request(suchfeld, -1, Int32(Stil.feldHoehe))
@@ -1462,8 +1462,8 @@ final class App: @unchecked Sendable {
         anhaengen(block, suchraster)
         // **Leer ist eine Auskunft.** Ohne sie steht die Seite still da, und
         // man weiss nicht, ob gesucht wurde oder nichts da ist.
-        suchleer = leerzustand("system-search-symbolic", "Nichts gefunden",
-                               "Andere Schreibweise? Die Suche findet Filme und Serien.")
+        suchleer = leerzustand("system-search-symbolic", uebersetzt("Nichts gefunden"),
+                               uebersetzt("Andere Schreibweise? Die Suche findet Filme und Serien."))
         gtk_widget_set_visible(suchleer, 0)
         anhaengen(block, suchleer)
         beiSignal(suchfeld, "activate") { [weak self] in self?.suchen() }
@@ -1634,7 +1634,7 @@ final class App: @unchecked Sendable {
         guard let j = fehler as? JellyfinError, case let .http(status, _) = j,
               status == 401 else { return }
         abmelden()
-        anmeldestandZeigen("Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
+        anmeldestandZeigen(uebersetzt("Die Anmeldung gilt nicht mehr. Bitte neu anmelden."))
     }
 
     func abmelden() {
@@ -1731,7 +1731,7 @@ final class App: @unchecked Sendable {
         // — dabei ändert sich meist nur ein Fortschrittsbalken. Ersetzt wird
         // erst, wenn die neuen Reihen da sind.
         if gtk_widget_get_first_child(reihenstapel) == nil {
-            anhaengen(reihenstapel, beschriftung("Lade …", stil: "swiftly-koerper"))
+            anhaengen(reihenstapel, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
         }
 
         // Die Wahl vor dem Faden ablesen — `wahlen` gehört dem Hauptfaden.
@@ -1758,12 +1758,12 @@ final class App: @unchecked Sendable {
             // gemischte Reihe ist die Vorgabe; wer viel neu bekommt, will sie
             // auseinander. Die Zeile fehlte auf Linux ganz.
             let letzte: [(String, Reihenart, [Item])] = getrennt
-                ? [("Neue Filme", .neu, neuzugaenge.filter { $0.type == "Movie" }),
-                   ("Neue Serien", .neu, neuzugaenge.filter { $0.type != "Movie" })]
-                : [("Zuletzt hinzugefügt", .neu, neuzugaenge)]
+                ? [(uebersetzt("Neue Filme"), .neu, neuzugaenge.filter { $0.type == "Movie" }),
+                   (uebersetzt("Neue Serien"), .neu, neuzugaenge.filter { $0.type != "Movie" })]
+                : [(uebersetzt("Zuletzt hinzugefügt"), .neu, neuzugaenge)]
             let reihen: [(String, Reihenart, [Item])] = ([
-                ("Weiterschauen", .weiterschauen, await weiter ?? []),
-                ("Nächste Folge", .naechste, await naechste ?? [])
+                (uebersetzt("Weiterschauen"), .weiterschauen, await weiter ?? []),
+                (uebersetzt("Nächste Folge"), .naechste, await naechste ?? [])
             ] + letzte).filter { !$0.2.isEmpty }
 
             aufHauptfaden { self.reihenZeigen(reihen) }
@@ -1879,8 +1879,8 @@ final class App: @unchecked Sendable {
             // Symbol, Satz, Erklärzeile — dieselbe Form wie auf dem Mac
             // (`Leerzustand`), statt einer einzelnen Textzeile.
             anhaengen(reihenstapel,
-                      leerzustand("folder-symbolic", "Hier ist noch nichts",
-                                  "Sobald der Server Titel hat, stehen sie hier."))
+                      leerzustand("folder-symbolic", uebersetzt("Hier ist noch nichts"),
+                                  uebersetzt("Sobald der Server Titel hat, stehen sie hier.")))
             return
         }
         for (titel, art, titelListe) in reihen {
@@ -2156,7 +2156,7 @@ final class App: @unchecked Sendable {
             gtk_popover_set_position(alsTafel(tafel), GTK_POS_BOTTOM)
             gtk_widget_set_parent(tafel, knopf)
             anhaengen(liste, handlungszeile("dialog-information-symbolic",
-                                            "Übersicht öffnen") {
+                                            uebersetzt("Übersicht öffnen")) {
                 gtk_popover_popdown(alsTafel(tafel))
                 uebersicht()
             })
@@ -2201,7 +2201,7 @@ nonisolated(unsafe) private let tasteGedrueckt: @convention(c) (
 enum Geraet {
     static let name: String = {
         let rechner = ProcessInfo.processInfo.hostName
-        return "Swiftly auf \(rechner)"
+        return String(format: uebersetzt("Swiftly auf %@"), rechner)
     }()
 
     static let kennung: String = {

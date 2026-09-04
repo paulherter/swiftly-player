@@ -58,12 +58,12 @@ extension App {
     /// Rückruf ist schlimmer als keiner, weil er Funktion vortäuscht.
     private func verbindungPruefen() {
         guard let client else { return }
-        pruefergebnis = "Moment …"
+        pruefergebnis = uebersetzt("Moment …")
         unterseiteOeffnen(.einstellungen, schub: .ohne)
         Task.detached { [self] in
             let ok = (try? await client.publicSystemInfo()) != nil
             aufHauptfaden {
-                self.pruefergebnis = ok ? "Erreichbar" : "Nicht erreichbar"
+                self.pruefergebnis = ok ? uebersetzt("Erreichbar") : uebersetzt("Nicht erreichbar")
                 if self.offeneUnterseite == .einstellungen {
                     self.unterseiteOeffnen(.einstellungen, schub: .ohne)
                 }
@@ -99,7 +99,7 @@ extension App {
             bildLaden(bild, url: url, schluessel: url.absoluteString, sofort: true)
         }
 
-        let name = beschriftung(benutzername.isEmpty ? "Angemeldet" : benutzername,
+        let name = beschriftung(benutzername.isEmpty ? uebersetzt("Angemeldet") : benutzername,
                                 stil: "swiftly-titel")
         anhaengen(bildblock, name)
         var teile: [String] = []
@@ -111,8 +111,8 @@ extension App {
         anhaengen(block, bildblock)
 
         let g1 = zeilengruppe()
-        anhaengen(g1.raum, wertezeile(symbol: "phone-symbolic", titel: "Quick Connect",
-                                      unter: "Code vom Fernseher eingeben",
+        anhaengen(g1.raum, wertezeile(symbol: "phone-symbolic", titel: uebersetzt("Quick Connect"),
+                                      unter: uebersetzt("Code vom Fernseher eingeben"),
                                       akzent: true, pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.quickConnect)
         })
@@ -122,14 +122,14 @@ extension App {
 
         let g2 = zeilengruppe()
         anhaengen(g2.raum, wertezeile(symbol: "media-playback-start-symbolic",
-                                      titel: "Wiedergabe",
-                                      unter: "Sprache, Untertitel, Tempo",
+                                      titel: uebersetzt("Wiedergabe"),
+                                      unter: uebersetzt("Sprache, Untertitel, Tempo"),
                                       pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.wiedergabe)
         })
         anhaengen(g2.raum, zeilenstrich())
         anhaengen(g2.raum, wertezeile(symbol: "emblem-system-symbolic",
-                                      titel: "Einstellungen", pfeil: true) { [weak self] in
+                                      titel: uebersetzt("Einstellungen"), pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.einstellungen)
         })
         anhaengen(block, g2.aussen)
@@ -138,7 +138,7 @@ extension App {
 
         let g3 = zeilengruppe()
         anhaengen(g3.raum, wertezeile(symbol: "system-log-out-symbolic",
-                                      titel: "Abmelden") { [weak self] in
+                                      titel: uebersetzt("Abmelden")) { [weak self] in
             self?.abmelden()
         })
         anhaengen(block, g3.aussen)
@@ -153,10 +153,9 @@ extension App {
     // MARK: Quick Connect
 
     private func quickConnectBauen(_ block: Widget!) {
-        anhaengen(block, unterseitenkopf("Quick Connect"))
+        anhaengen(block, unterseitenkopf(uebersetzt("Quick Connect")))
 
-        let text = beschriftung("Auf dem anderen Gerät steht ein sechsstelliger Code. "
-                                + "Gib ihn hier ein, dann meldet es sich mit deinem Konto an.",
+        let text = beschriftung(uebersetzt("Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an."),
                                 stil: "swiftly-koerper", umbruch: true)
         gtk_widget_add_css_class(text, "dim-label")
         gtk_label_set_xalign(OpaquePointer(text), 0)
@@ -176,7 +175,7 @@ extension App {
         gtk_widget_set_margin_top(stand, 12)
         anhaengen(block, stand)
 
-        let knopf = hauptknopf("Freigeben", symbol: "object-select-symbolic")
+        let knopf = hauptknopf(uebersetzt("Freigeben"), symbol: "object-select-symbolic")
         gtk_widget_set_size_request(knopf, -1, Int32(Stil.hauptknopfHoehe))
         gtk_widget_set_halign(knopf, GTK_ALIGN_FILL)
         gtk_widget_set_margin_top(knopf, 22)
@@ -204,8 +203,8 @@ extension App {
                 aufHauptfaden {
                     defer { losgelassen(knopfKiste) }
                     gtk_label_set_text(OpaquePointer(standKiste.widget),
-                                       gut ? "Freigegeben. Das andere Gerät meldet sich jetzt an."
-                                           : "Der Code stimmt nicht oder ist abgelaufen.")
+                                       gut ? uebersetzt("Freigegeben. Das andere Gerät meldet sich jetzt an.")
+                                           : uebersetzt("Der Code stimmt nicht oder ist abgelaufen."))
                     gtk_widget_add_css_class(standKiste.widget,
                                              gut ? "swiftly-beleg" : "swiftly-warnung")
                     gtk_widget_set_visible(standKiste.widget, 1)
@@ -218,10 +217,9 @@ extension App {
     // MARK: Wiedergabe
 
     private func wiedergabeBauen(_ block: Widget!) {
-        anhaengen(block, unterseitenkopf("Wiedergabe"))
+        anhaengen(block, unterseitenkopf(uebersetzt("Wiedergabe")))
 
-        let satz = beschriftung("Gilt für alles, was neu startet. "
-                                + "Im Player lässt sich jederzeit abweichen.",
+        let satz = beschriftung(uebersetzt("Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen."),
                                 stil: "swiftly-koerper", umbruch: true)
         gtk_widget_add_css_class(satz, "dim-label")
         gtk_label_set_xalign(OpaquePointer(satz), 0)
@@ -230,17 +228,17 @@ extension App {
         anhaengen(block, satz)
 
         // MARK: Qualität
-        let q = einstellungsgruppe("Qualität")
+        let q = einstellungsgruppe(uebersetzt("Qualität"))
         anhaengen(q.raum, schalterzeile(symbol: "media-playback-start-symbolic",
-                                        titel: "Immer Direct Play",
-                                        unter: "Nie umwandeln lassen — der Grund für diese App",
+                                        titel: uebersetzt("Immer Direct Play"),
+                                        unter: uebersetzt("Nie umwandeln lassen — der Grund für diese App"),
                                         an: wahlen.immerDirectPlay) { [weak self] an in
             self?.wahlen.immerDirectPlay = an
             self?.wahlen.sichern()
             self?.unterseiteOeffnen(.wiedergabe)
         })
         anhaengen(q.raum, zeilenstrich())
-        let bitrate = wertezeile(symbol: "view-list-symbolic", titel: "Höchste Bitrate",
+        let bitrate = wertezeile(symbol: "view-list-symbolic", titel: uebersetzt("Höchste Bitrate"),
                                  wert: Bitrate.text(wahlen.bitratenGrenze), pfeil: true) {
             [weak self] in self?.listeUmschalten(.bitrate)
         }
@@ -259,8 +257,7 @@ extension App {
         }
         anhaengen(block, q.aussen)
 
-        let hinweis = beschriftung("Die Bitrate greift nur, wenn Direct Play nicht erzwungen "
-                                   + "wird — sonst bliebe sie wirkungslos und stünde trotzdem da.",
+        let hinweis = beschriftung(uebersetzt("Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da."),
                                    stil: "swiftly-zweitzeile", umbruch: true)
         gtk_widget_add_css_class(hinweis, "swiftly-fuss")
         gtk_label_set_xalign(OpaquePointer(hinweis), 0)
@@ -269,8 +266,8 @@ extension App {
         anhaengen(block, hinweis)
 
         // MARK: Sprache
-        let sp = einstellungsgruppe("Sprache")
-        anhaengen(sp.raum, wertezeile(symbol: "audio-volume-high-symbolic", titel: "Ton",
+        let sp = einstellungsgruppe(uebersetzt("Sprache"))
+        anhaengen(sp.raum, wertezeile(symbol: "audio-volume-high-symbolic", titel: uebersetzt("Ton"),
                                       wert: sprachname(wahlen.tonSprache), pfeil: true) {
             [weak self] in self?.listeUmschalten(.ton)
         })
@@ -283,13 +280,13 @@ extension App {
             })
         }
         anhaengen(sp.raum, zeilenstrich())
-        anhaengen(sp.raum, wertezeile(symbol: "media-view-subtitles-symbolic", titel: "Untertitel",
-                                      wert: sprachname(wahlen.untertitelSprache, aus: "Aus"),
+        anhaengen(sp.raum, wertezeile(symbol: "media-view-subtitles-symbolic", titel: uebersetzt("Untertitel"),
+                                      wert: sprachname(wahlen.untertitelSprache, aus: uebersetzt("Aus")),
                                       pfeil: true) {
             [weak self] in self?.listeUmschalten(.untertitel)
         })
         if offeneListe == .untertitel {
-            anhaengen(sp.raum, werteliste(Sprachwahl.alle(aus: "Aus").map { ($0.name, $0.wert) },
+            anhaengen(sp.raum, werteliste(Sprachwahl.alle(aus: uebersetzt("Aus")).map { ($0.name, $0.wert) },
                                           gewaehlt: wahlen.untertitelSprache) { [weak self] wert in
                 self?.wahlen.untertitelSprache = wert
                 self?.wahlen.sichern()
@@ -298,8 +295,8 @@ extension App {
         }
         anhaengen(sp.raum, zeilenstrich())
         anhaengen(sp.raum, schalterzeile(symbol: "format-justify-left-symbolic",
-                                         titel: "Untertitel automatisch",
-                                         unter: "Nur wenn der Ton nicht in der gewählten Sprache läuft",
+                                         titel: uebersetzt("Untertitel automatisch"),
+                                         unter: uebersetzt("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
                                          an: wahlen.untertitelAutomatisch) { [weak self] an in
             self?.wahlen.untertitelAutomatisch = an
             self?.wahlen.sichern()
@@ -307,15 +304,15 @@ extension App {
         anhaengen(block, sp.aussen)
 
         // MARK: Verhalten
-        let v = einstellungsgruppe("Verhalten")
+        let v = einstellungsgruppe(uebersetzt("Verhalten"))
         anhaengen(v.raum, schalterzeile(symbol: "media-skip-forward-symbolic",
-                                        titel: "Nächste Folge automatisch",
+                                        titel: uebersetzt("Nächste Folge automatisch"),
                                         an: wahlen.naechsteAutomatisch) { [weak self] an in
             self?.wahlen.naechsteAutomatisch = an
             self?.wahlen.sichern()
         })
         anhaengen(v.raum, zeilenstrich())
-        anhaengen(v.raum, wertezeile(symbol: "media-seek-backward-symbolic", titel: "Zurückspulen",
+        anhaengen(v.raum, wertezeile(symbol: "media-seek-backward-symbolic", titel: uebersetzt("Zurückspulen"),
                                      wert: "\(wahlen.zurueckSekunden) s", pfeil: true) {
             [weak self] in self?.listeUmschalten(.zurueck)
         })
@@ -328,7 +325,7 @@ extension App {
             })
         }
         anhaengen(v.raum, zeilenstrich())
-        anhaengen(v.raum, wertezeile(symbol: "media-seek-forward-symbolic", titel: "Vorspulen",
+        anhaengen(v.raum, wertezeile(symbol: "media-seek-forward-symbolic", titel: uebersetzt("Vorspulen"),
                                      wert: "\(wahlen.vorSekunden) s", pfeil: true) {
             [weak self] in self?.listeUmschalten(.vor)
         })
@@ -343,29 +340,29 @@ extension App {
         anhaengen(block, v.aussen)
     }
 
-    private func sprachname(_ wert: String, aus: String = "Wie die Datei") -> String {
+    private func sprachname(_ wert: String, aus: String = uebersetzt("Wie die Datei")) -> String {
         wert.isEmpty ? aus : wert
     }
 
     // MARK: Einstellungen
 
     private func einstellungenBauen(_ block: Widget!) {
-        anhaengen(block, unterseitenkopf("Einstellungen"))
+        anhaengen(block, unterseitenkopf(uebersetzt("Einstellungen")))
 
         // „Querformat im Player sperren" gibt es hier **nicht**: ein Fenster
         // hat keine Ausrichtung, die man sperren könnte. Kein Weglassen,
         // sondern eine Einstellung ohne Gegenstück (VERHALTEN.md F).
-        let d = einstellungsgruppe("Darstellung")
+        let d = einstellungsgruppe(uebersetzt("Darstellung"))
         anhaengen(d.raum, schalterzeile(symbol: "view-list-symbolic",
-                                        titel: "Fortschritt auf Kacheln",
+                                        titel: uebersetzt("Fortschritt auf Kacheln"),
                                         an: wahlen.fortschrittAufKacheln) { [weak self] an in
             self?.wahlen.fortschrittAufKacheln = an
             self?.wahlen.sichern()
         })
         anhaengen(d.raum, zeilenstrich())
         anhaengen(d.raum, schalterzeile(symbol: "folder-new-symbolic",
-                                        titel: "Neuzugänge getrennt",
-                                        unter: "Neue Filme und neue Serien in eigenen Reihen",
+                                        titel: uebersetzt("Neuzugänge getrennt"),
+                                        unter: uebersetzt("Neue Filme und neue Serien in eigenen Reihen"),
                                         an: wahlen.neuzugaengeGetrennt) { [weak self] an in
             self?.wahlen.neuzugaengeGetrennt = an
             self?.wahlen.sichern()
@@ -373,15 +370,15 @@ extension App {
         })
         anhaengen(block, d.aussen)
 
-        let s = einstellungsgruppe("Server")
+        let s = einstellungsgruppe(uebersetzt("Server"))
         anhaengen(s.raum, wertezeile(symbol: "network-server-symbolic",
-                                     titel: servername.isEmpty ? "Server" : servername,
+                                     titel: servername.isEmpty ? uebersetzt("Server") : servername,
                                      wert: serverfassung))
         anhaengen(s.raum, zeilenstrich())
         // **Die Zeile stand da und tat nichts.** Der Mac stösst die Prüfung
         // an, zeigt „Moment …" und danach das Ergebnis als Wert daneben.
         let pruefzeile = wertezeile(symbol: "network-wireless-symbolic",
-                                    titel: "Verbindung prüfen",
+                                    titel: uebersetzt("Verbindung prüfen"),
                                     wert: pruefergebnis) { [weak self] in
             self?.verbindungPruefen()
         }

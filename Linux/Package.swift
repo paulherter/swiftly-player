@@ -62,7 +62,13 @@ let package = Package(
                 "CBildbruecke",
                 "CRlottie",
                 .product(name: "JellyfinKit", package: "JellyfinKit")
-            ]
+            ],
+            // **Die Oberflaeche bringt ihre Texte selbst mit.** Das Paket hat
+            // seinen eigenen Katalog; ein Buendel findet nur, was in ihm
+            // liegt. Ohne diese Zeile stuende die Oberflaeche auf Deutsch da,
+            // waehrend Laufzeiten und Fehlermeldungen uebersetzt sind — das
+            // Gemisch ist schlimmer als eine Sprache.
+            resources: [.process("Resources")]
         )
     ]
 )

@@ -19,10 +19,10 @@ enum Bereich: CaseIterable {
 
     var beschriftung: String {
         switch self {
-        case .start:  "Start"
-        case .filme:  "Filme"
-        case .serien: "Serien"
-        case .suche:  "Suche"
+        case .start:  uebersetzt("Start")
+        case .filme:  uebersetzt("Filme")
+        case .serien: uebersetzt("Serien")
+        case .suche:  uebersetzt("Suche")
         }
     }
 

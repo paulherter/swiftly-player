@@ -69,9 +69,9 @@ extension App {
                     // nicht".** Bei mehreren Servern weiss man sonst nicht,
                     // welcher gemeint ist. Wörtlich der Satz vom Mac
                     // (`Abspielsteuerung.starte`).
-                    let wo = self.servername.isEmpty ? "dem Server" : self.servername
+                    let wo = self.servername.isEmpty ? uebersetzt("dem Server") : self.servername
                     self.spielerMeldung(
-                        "Die Wiedergabe hat nicht geklappt — \(wo) hat keinen Plan geliefert.")
+                        String(format: uebersetzt("Die Wiedergabe hat nicht geklappt — %@ hat keinen Plan geliefert."), wo))
                     return
                 }
                 self.laufenderPlan = plan
@@ -236,13 +236,13 @@ extension App {
         // links ist frei. Er ist der bessere: der Zurückweg gehört nach links
         // (E9), und rechts wird es sonst eng, weil hier ein Knopf mehr steht
         // als auf dem Mac.
-        let zu = chip("Schließen", symbol: "pan-down-symbolic")
+        let zu = chip(uebersetzt("Schließen"), symbol: "pan-down-symbolic")
         beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
         anhaengen(oben, zu)
 
         anhaengen(oben, luftQuer())
 
-        let spuren = chip("Ton und Untertitel", symbol: "media-view-subtitles-symbolic")
+        let spuren = chip(uebersetzt("Ton und Untertitel"), symbol: "media-view-subtitles-symbolic")
         spielerSpurknopf = spuren
         beiSignal(spuren, "clicked") { [weak self] in self?.spurwahlZeigen() }
         anhaengen(oben, spuren)
@@ -250,7 +250,7 @@ extension App {
         // **Vollbild braucht kein Wort.** Das Zeichen ist eindeutig, und
         // neben zwei beschrifteten Chips wäre ein dritter zu viel Text für
         // eine Sache, die man einmal drückt und dann vergisst.
-        let voll = nebenknopf("view-fullscreen-symbolic", name: "Vollbild")
+        let voll = nebenknopf("view-fullscreen-symbolic", name: uebersetzt("Vollbild"))
         gtk_widget_add_css_class(voll, "swiftly-vollknopf")
         gtk_widget_set_size_request(voll, 28, 28)
         gtk_widget_set_valign(voll, GTK_ALIGN_CENTER)
@@ -286,7 +286,7 @@ extension App {
         let zurueck = Sprungzeichen(zurueck: true, zahl: wahlen.zurueckSekunden)
         spielerZurueckZeichen = zurueck
         anhaengen(reihe, spieltaste(zurueck.anzeige, kuerzel: "←",
-                                    name: "\(wahlen.zurueckSekunden) Sekunden zurück") {
+                                    name: String(format: uebersetzt("%d Sekunden zurück"), wahlen.zurueckSekunden)) {
             [weak self] in
             guard let self else { return }
             self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
@@ -298,8 +298,8 @@ extension App {
 
         let mitte = Abspielzeichen(pause: true)
         spielerAbspielzeichen = mitte
-        anhaengen(reihe, spieltaste(mitte.anzeige, kuerzel: "Leertaste",
-                                    name: "Abspielen oder anhalten", gross: true) {
+        anhaengen(reihe, spieltaste(mitte.anzeige, kuerzel: uebersetzt("Leertaste"),
+                                    name: uebersetzt("Abspielen oder anhalten"), gross: true) {
             [weak self] in
             guard let self else { return }
             self.abspieler.umschalten()
@@ -315,7 +315,7 @@ extension App {
         let vor = Sprungzeichen(zurueck: false, zahl: wahlen.vorSekunden)
         spielerVorZeichen = vor
         anhaengen(reihe, spieltaste(vor.anzeige, kuerzel: "→",
-                                    name: "\(wahlen.vorSekunden) Sekunden vor") {
+                                    name: String(format: uebersetzt("%d Sekunden vor"), wahlen.vorSekunden)) {
             [weak self] in
             guard let self else { return }
             self.abspieler.springen(Double(self.wahlen.vorSekunden))
@@ -401,7 +401,7 @@ extension App {
 
         // „Nächste Folge" erscheint erst gegen Ende (B5) — als Chip in der
         // Titelzeile, nicht als grosser Knopf. So auf dem Mac.
-        spielerWeiter = chip("Nächste Folge", symbol: "media-skip-forward-symbolic")
+        spielerWeiter = chip(uebersetzt("Nächste Folge"), symbol: "media-skip-forward-symbolic")
         gtk_widget_set_valign(spielerWeiter, GTK_ALIGN_END)
         gtk_widget_set_visible(spielerWeiter, 0)
         beiSignal(spielerWeiter, "clicked") { [weak self] in self?.angebotAusfuehren() }
@@ -424,7 +424,7 @@ extension App {
         // Für eine Vorlesehilfe ein Regler mit Namen, nicht eine namenlose
         // Fläche — sonst lässt sich die Stelle auch mit den Pfeiltasten nicht
         // sinnvoll ändern (E8).
-        beschriften(spielerRegler, "Abspielstelle")
+        beschriften(spielerRegler, uebersetzt("Abspielstelle"))
         // **`change-value` bringt Sprungart und Wert mit** — mit dem
         // schlichten Rückruf wäre das derselbe Absturz wie bei
         // `edge-reached`. Deshalb ein eigener, der die Form kennt.
@@ -622,7 +622,7 @@ extension App {
                   let plan = try? await client.playbackPlan(for: naechste.id,
                                                             profile: .vlc(maxBitrate: grenze))
             else {
-                aufHauptfaden { self.melden("Nächste Folge konnte nicht geladen werden.") }
+                aufHauptfaden { self.melden(uebersetzt("Nächste Folge konnte nicht geladen werden.")) }
                 return
             }
             aufHauptfaden {
@@ -783,7 +783,7 @@ extension App {
 
         let ton = abspieler.tonspuren
         if !ton.isEmpty {
-            let g = spurgruppe("Ton", "audio-volume-high-symbolic")
+            let g = spurgruppe(uebersetzt("Ton"), "audio-volume-high-symbolic")
             let jetzt = abspieler.tonspur
             for spur in ton {
                 // **„Disable" ist keine Tonspur.** VLC hängt den Eintrag an
@@ -799,9 +799,9 @@ extension App {
             anhaengen(tafel, g.aussen)
         }
 
-        let u = spurgruppe("Untertitel", "media-view-subtitles-symbolic")
+        let u = spurgruppe(uebersetzt("Untertitel"), "media-view-subtitles-symbolic")
         let jetztU = abspieler.untertitelspur
-        anhaengen(u.raum, wahlzeile("Aus", gewaehlt: jetztU < 0) { [weak self] in
+        anhaengen(u.raum, wahlzeile(uebersetzt("Aus"), gewaehlt: jetztU < 0) { [weak self] in
             self?.abspieler.setzeUntertitel(-1)
             self?.spurwahlSchliessen()
         })
@@ -814,7 +814,7 @@ extension App {
         }
         anhaengen(tafel, u.aussen)
 
-        let t = spurgruppe("Tempo", "preferences-system-symbolic")
+        let t = spurgruppe(uebersetzt("Tempo"), "preferences-system-symbolic")
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
         let jetztTempo = abspieler.tempo
         for wert in Tempostufen.werte {
@@ -828,9 +828,9 @@ extension App {
         anhaengen(t.raum, reihe)
         anhaengen(tafel, t.aussen)
 
-        let sz = spurgruppe("Schlafzeit", "weather-clear-night-symbolic")
+        let sz = spurgruppe(uebersetzt("Schlafzeit"), "weather-clear-night-symbolic")
         let szReihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        let aus = chip("Aus", aktiv: schlafminuten == nil)
+        let aus = chip(uebersetzt("Aus"), aktiv: schlafminuten == nil)
         beiSignal(aus, "clicked") { [weak self] in
             self?.schlafminuten = nil
             self?.spurwahlSchliessen()
@@ -933,7 +933,7 @@ extension App {
                 self.spielstand.laeuft = false
                 self.spielerAbspielzeichen?.setzen(false)
                 self.steuerungZeigen()
-                self.melden("Schlafzeit abgelaufen.")
+                self.melden(uebersetzt("Schlafzeit abgelaufen."))
             }
         }
     }

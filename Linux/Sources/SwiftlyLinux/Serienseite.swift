@@ -13,9 +13,9 @@ extension App {
         case folgen, besetzung, aehnliches
         var beschriftung: String {
             switch self {
-            case .folgen:     "Folgen"
-            case .besetzung:  "Besetzung"
-            case .aehnliches: "Ähnliches"
+            case .folgen:     uebersetzt("Folgen")
+            case .besetzung:  uebersetzt("Besetzung")
+            case .aehnliches: uebersetzt("Ähnliches")
             }
         }
     }
@@ -62,18 +62,18 @@ extension App {
         leeren(raum)
         switch was {
         case .folgen:
-            anhaengen(raum, beschriftung("Lade …", stil: "swiftly-koerper"))
+            anhaengen(raum, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
             staffelnLaden(serie, in: raum)
         case .besetzung:
             if serie.darsteller.isEmpty {
-                let leer = beschriftung("Keine Besetzung hinterlegt.", stil: "swiftly-koerper")
+                let leer = beschriftung(uebersetzt("Keine Besetzung hinterlegt."), stil: "swiftly-koerper")
                 gtk_widget_set_margin_start(leer, Int32(Stil.randAbstand))
                 anhaengen(raum, leer)
             } else {
                 anhaengen(raum, besetzungsreihe(serie.darsteller))
             }
         case .aehnliches:
-            anhaengen(raum, beschriftung("Lade …", stil: "swiftly-koerper"))
+            anhaengen(raum, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
             aehnlicheNachladen(serie, in: raum, leeren: true, alsRaster: true)
         }
     }
@@ -101,7 +101,7 @@ extension App {
     private func staffelnZeigen(_ staffeln: [Item], serie: Item, in raum: Widget!) {
         leeren(raum)
         guard !staffeln.isEmpty else {
-            anhaengen(raum, beschriftung("Keine Staffeln gefunden.", stil: "swiftly-koerper"))
+            anhaengen(raum, beschriftung(uebersetzt("Keine Staffeln gefunden."), stil: "swiftly-koerper"))
             return
         }
         // Mit welcher Staffel geöffnet wird: der über eine Folge gewählten,
@@ -188,7 +188,7 @@ extension App {
             return
         }
         leeren(raum)
-        anhaengen(raum, beschriftung("Lade …", stil: "swiftly-koerper"))
+        anhaengen(raum, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
         let kiste = gehalten(raum)
         Task.detached { [self] in
             let folgen = (try? await client.folgen(seriesID: serie.id,
@@ -207,7 +207,7 @@ extension App {
         guard !folgen.isEmpty else {
             // **Leer ist eine Auskunft, kein leerer Kasten.** Sonst steht
             // dort nichts und man hält es für einen Fehler.
-            let l = beschriftung("Keine Folgen", stil: "swiftly-koerper")
+            let l = beschriftung(uebersetzt("Keine Folgen"), stil: "swiftly-koerper")
             gtk_widget_add_css_class(l, "swiftly-leise")
             gtk_widget_set_halign(l, GTK_ALIGN_CENTER)
             gtk_widget_set_margin_top(l, 40)
@@ -360,7 +360,7 @@ extension App {
 
     func besetzungsreihe(_ leute: [Person], rand: Int = Stil.randAbstand) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 14)
-        let titel = beschriftung("Besetzung", stil: "swiftly-listentitel")
+        let titel = beschriftung(uebersetzt("Besetzung"), stil: "swiftly-listentitel")
         gtk_label_set_xalign(OpaquePointer(titel), 0)
         gtk_widget_set_margin_start(titel, Int32(rand))
         anhaengen(block, titel)
@@ -439,7 +439,7 @@ extension App {
                 if leeren_ { leeren(ziel) }
                 guard !treffer.isEmpty else {
                     if leeren_ {
-                        anhaengen(ziel, beschriftung("Nichts Ähnliches gefunden.",
+                        anhaengen(ziel, beschriftung(uebersetzt("Nichts Ähnliches gefunden."),
                                                      stil: "swiftly-koerper"))
                     }
                     return
@@ -451,7 +451,7 @@ extension App {
                     self.rasterFuellen(raster, treffer)
                     anhaengen(ziel, raster)
                 } else {
-                    anhaengen(ziel, self.reiheBauen(titel: "Ähnliches", art: .neu,
+                    anhaengen(ziel, self.reiheBauen(titel: uebersetzt("Ähnliches"), art: .neu,
                                                     items: treffer, rand: rand))
                 }
             }

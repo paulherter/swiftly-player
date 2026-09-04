@@ -192,7 +192,7 @@ extension App {
             nachDemSchub {
                 defer { losgelassen(kiste) }
                 guard !extras.isEmpty else { return }
-                anhaengen(kiste.widget, self.reiheBauen(titel: "Extras", art: .neu,
+                anhaengen(kiste.widget, self.reiheBauen(titel: uebersetzt("Extras"), art: .neu,
                                                         items: extras))
             }
         }
@@ -536,7 +536,7 @@ extension App {
         offenesZiel = ziel
 
         let angefangen = titel.fortsetzenAb
-        let haupt = hauptknopf(angefangen != nil ? "Fortsetzen" : "Abspielen",
+        let haupt = hauptknopf(angefangen != nil ? uebersetzt("Fortsetzen") : uebersetzt("Abspielen"),
                                symbol: "media-playback-start-symbolic")
         gtk_widget_set_size_request(haupt, Int32(Stil.hauptknopfBreite),
                                     Int32(Stil.hauptknopfHoehe))
@@ -571,7 +571,7 @@ extension App {
                     gtk_widget_set_sensitive(knopfKiste.widget, 1)
                     let weiter = folge.fortsetzenAb != nil
                     hauptknopfBeschriften(knopfKiste.widget,
-                                          weiter ? "Fortsetzen" : "Abspielen")
+                                          weiter ? uebersetzt("Fortsetzen") : uebersetzt("Abspielen"))
                     gtk_widget_set_visible(vornKiste.widget, weiter ? 1 : 0)
                 }
             }
@@ -611,7 +611,7 @@ extension App {
         gtk_widget_set_size_request(liste, 230, -1)
 
         var gesehen = titel.istGesehen
-        let ersteZeile = gesehen ? "Als ungesehen markieren" : "Als gesehen markieren"
+        let ersteZeile = gesehen ? uebersetzt("Als ungesehen markieren") : uebersetzt("Als gesehen markieren")
 
         let tafel: Widget! = gtk_popover_new()
         gtk_widget_add_css_class(tafel, "swiftly-mehr")
@@ -642,13 +642,13 @@ extension App {
         if titel.type == "Series" {
             if let stand = offenesZiel?.titel {
                 anhaengen(liste, handlungszeile("media-playback-start-symbolic",
-                                                "Folge von vorn abspielen") {
+                                                uebersetzt("Folge von vorn abspielen")) {
                     [weak self] in
                     gtk_popover_popdown(alsTafel(tafel))
                     self?.starte(stand, ab: 0)
                 })
                 anhaengen(liste, handlungszeile("media-skip-forward-symbolic",
-                                                "Nächste Folge abspielen") {
+                                                uebersetzt("Nächste Folge abspielen")) {
                     [weak self] in
                     gtk_popover_popdown(alsTafel(tafel))
                     guard let self, let client = self.client,
@@ -656,7 +656,7 @@ extension App {
                     Task.detached { [self] in
                         guard let naechste = try? await client.folgeNach(itemID: stand.id,
                                                                         seriesID: serie) else {
-                            aufHauptfaden { self.melden("Danach kommt nichts mehr.") }
+                            aufHauptfaden { self.melden(uebersetzt("Danach kommt nichts mehr.")) }
                             return
                         }
                         aufHauptfaden { self.starte(naechste, ab: 0) }
@@ -665,36 +665,36 @@ extension App {
             }
             if let staffel = offeneStaffel {
                 anhaengen(liste, handlungszeile("object-select-symbolic",
-                                                "\(staffel.name) als gesehen") {
+                                                String(format: uebersetzt("%@ als gesehen"), staffel.name)) {
                     [weak self] in
                     gtk_popover_popdown(alsTafel(tafel))
                     guard let self, let client = self.client else { return }
                     Task.detached { try? await client.setzeGesehen(itemID: staffel.id, an: true) }
-                    self.melden("\(staffel.name) ist als gesehen vermerkt.")
+                    self.melden(String(format: uebersetzt("%@ ist als gesehen vermerkt."), staffel.name))
                 })
             }
         } else if titel.fortsetzenAb != nil {
             anhaengen(liste, handlungszeile("media-playback-start-symbolic",
-                                            "Von vorn abspielen") {
+                                            uebersetzt("Von vorn abspielen")) {
                 [weak self] in
                 gtk_popover_popdown(alsTafel(tafel))
                 self?.starte(titel, ab: 0)
             })
             anhaengen(liste, handlungszeile("view-refresh-symbolic",
-                                            "Fortschritt zurücksetzen") {
+                                            uebersetzt("Fortschritt zurücksetzen")) {
                 [weak self] in
                 gtk_popover_popdown(alsTafel(tafel))
                 guard let self, let client = self.client else { return }
                 Task.detached { try? await client.setzeGesehen(itemID: titel.id, an: false) }
-                self.melden("Der Fortschritt ist zurückgesetzt.")
+                self.melden(uebersetzt("Der Fortschritt ist zurückgesetzt."))
             })
         }
-        anhaengen(liste, handlungszeile("video-x-generic-symbolic", "Trailer") {
+        anhaengen(liste, handlungszeile("video-x-generic-symbolic", uebersetzt("Trailer")) {
             [weak self] in
             gtk_popover_popdown(alsTafel(tafel))
             self?.trailerStarten(titel)
         })
-        anhaengen(liste, handlungszeile("view-refresh-symbolic", "Metadaten auffrischen") {
+        anhaengen(liste, handlungszeile("view-refresh-symbolic", uebersetzt("Metadaten auffrischen")) {
             [weak self] in
             guard let client = self?.client else { return }
             Task.detached { try? await client.metadatenAuffrischen(titel.id) }
@@ -729,7 +729,7 @@ extension App {
                 // beim Druck auf „Trailer" schlicht nichts, und man wusste
                 // nicht, ob der Knopf kaputt ist oder der Server nichts hat.
                 guard let film = filme.first else {
-                    self.melden("Für diesen Titel liegt kein Trailer vor.")
+                    self.melden(uebersetzt("Für diesen Titel liegt kein Trailer vor."))
                     return
                 }
                 self.starte(film, ab: 0)
