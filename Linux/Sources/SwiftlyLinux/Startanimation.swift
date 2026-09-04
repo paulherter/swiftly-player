@@ -39,7 +39,6 @@ final class Startanimation: @unchecked Sendable {
     private var beginn = Date()
     private let fertig: () -> Void
     private var schonFertig = false
-    private var getaktet = 0
 
     let anzeige: Widget
 
@@ -55,7 +54,6 @@ final class Startanimation: @unchecked Sendable {
         self.tier = tier
         bilder = Int(lottie_animation_get_totalframe(tier))
         dauer = lottie_animation_get_duration(tier)
-        FileHandle.standardError.write(Data("[Start] Bilder=\(bilder) Dauer=\(dauer)\n".utf8))
         guard bilder > 0, dauer > 0 else {
             lottie_animation_destroy(tier)
             return nil
@@ -68,12 +66,7 @@ final class Startanimation: @unchecked Sendable {
         anzeige = feld!
         gtk_drawing_area_set_draw_func(alsZeichen(feld), startMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
-        // **Der Takt hält die Animation fest.** Die Frist kann sie aus
-        // `App` lösen, während noch ein Takt aussteht; ein schwacher Zeiger
-        // zeigte dann auf abgeräumten Speicher. Freigegeben wird sie, wenn
-        // der Takt sich selbst abmeldet.
-        _ = gtk_widget_add_tick_callback(feld, startTakt,
-                                         Unmanaged.passRetained(self).toOpaque(), nil)
+
     }
 
     deinit {
@@ -93,6 +86,27 @@ final class Startanimation: @unchecked Sendable {
         return FileManager.default.fileExists(atPath: pfad) ? pfad : nil
     }
 
+    /// **Losfahren, sobald das Fenster wirklich steht.**
+    ///
+    /// Der Bildtakt hing vorher schon im `init`. Gemessen: er lief **genau
+    /// einmal**, bei 0,05 s, und danach nie wieder. Ein Widget, das noch in
+    /// keinem Fenster hängt, hat keine Bilduhr; GTK merkt sich den Rückruf
+    /// zwar, aber die Uhr fordert für ihn keine Bilder an, und was danach
+    /// einmal durchkommt, bleibt ein Zufallstreffer.
+    ///
+    /// Auf dem Mac steht an derselben Stelle dieselbe Lehre, nur für SwiftUI:
+    /// „Losfahren, sobald die Seite wirklich steht" — dort war ein
+    /// `Task.sleep` das Rennen, hier die Bilduhr.
+    ///
+    /// **Der Takt hält die Animation fest** (Falle 4): die Frist kann sie aus
+    /// `App` lösen, während noch ein Takt aussteht. Freigegeben wird sie,
+    /// wenn der Takt sich abmeldet.
+    func losfahren() {
+        beginn = Date()
+        _ = gtk_widget_add_tick_callback(anzeige, startTakt,
+                                         Unmanaged.passRetained(self).toOpaque(), nil)
+    }
+
     /// Ein Takt: welches Bild wäre jetzt dran?
     ///
     /// **Nach der Uhr, nicht nach dem Zähler.** Ein Zähler, der je Takt eins
@@ -100,18 +114,13 @@ final class Startanimation: @unchecked Sendable {
     /// hat ihre eigene Bildrate, und die Uhr ist der gemeinsame Nenner.
     fileprivate func weiter() -> Bool {
         guard !schonFertig else { return false }
-        getaktet += 1
         let seit = Date().timeIntervalSince(beginn)
-        if getaktet % 10 == 1 {
-            FileHandle.standardError.write(Data("[Start] Takt \(getaktet) seit=\(seit) bild=\(bild)\n".utf8))
-        }
         let neu = min(Int(seit / dauer * Double(bilder)), bilder - 1)
         if neu != bild {
             bild = neu
             gtk_widget_queue_draw(anzeige)
         }
         if seit >= dauer {
-            FileHandle.standardError.write(Data("[Start] fertig nach \(seit)\n".utf8))
             abschliessen()
             return false
         }
@@ -121,7 +130,6 @@ final class Startanimation: @unchecked Sendable {
     /// **Genau einmal**, egal ob vom Ende der Animation oder von der Frist —
     /// dieselbe Zusicherung, die auf Apple die Klasse `Einmal` gibt.
     func abschliessen() {
-        FileHandle.standardError.write(Data("[Start] abschliessen (schon: \(schonFertig))\n".utf8))
         guard !schonFertig else { return }
         schonFertig = true
         fertig()

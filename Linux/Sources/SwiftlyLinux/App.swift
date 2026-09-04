@@ -125,6 +125,9 @@ final class App: @unchecked Sendable {
             }
         }
         gtk_window_present(alsFenster(fenster))
+        // Erst jetzt hat die Zeichenfläche eine Bilduhr. Siehe
+        // ``Startanimation/losfahren()``.
+        startanimation?.losfahren()
 
         // Gemerkte Sitzung: gleich weiter zur Startseite, ohne Nachfragen.
         if let abgelegt = Speicher.lesen() {
@@ -138,16 +141,12 @@ final class App: @unchecked Sendable {
 
     /// Die Animation ist durch: weiter zu dem, was ohnehin schon aufgebaut ist.
     private func startbildWeg() {
-        FileHandle.standardError.write(Data("[Start] weg, ziel=\(startziel) da=\(startanimation != nil)\n".utf8))
         guard let lauf = startanimation else { return }
         startanimation = nil
         gtk_stack_set_transition_type(OpaquePointer(seiten),
                                       GTK_STACK_TRANSITION_TYPE_CROSSFADE)
         gtk_stack_set_transition_duration(OpaquePointer(seiten), 260)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), startziel)
-        let jetzt = gtk_stack_get_visible_child_name(OpaquePointer(seiten))
-            .map { String(cString: $0) } ?? "?"
-        FileHandle.standardError.write(Data("[Start] sichtbar=\(jetzt)\n".utf8))
         // Erst wenn der Übergang durch ist, sonst verschwindet das Bild
         // mitten im Blenden.
         let seitenKiste = gehalten(seiten)
