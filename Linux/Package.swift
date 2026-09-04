@@ -1,25 +1,37 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// **Ein eigenes Paket, kein Ziel im Xcode-Projekt.** Auf Linux gibt es kein
-// Xcode und keine `.xcodeproj`; gebaut wird mit SwiftPM. Die geteilte Logik
-// kommt ueber einen Pfadverweis auf `Packages/JellyfinKit` herein — dieselben
-// Dateien, die iOS, tvOS und macOS benutzen, ohne Kopie.
+// **Kein fremdes Swift-Paket fuer die Oberflaeche, und das ist eine
+// Entscheidung, keine Verlegenheit.**
+//
+// Der naheliegende Weg waere „Adwaita for Swift" gewesen — deklarativ, nah an
+// SwiftUI. Am 04.09.2026 hat sich das als Sackgasse erwiesen: das Projekt ist
+// auf GitHub archiviert, nach Codeberg umgezogen, dort antwortet der Server
+// unregelmaessig mit 504, und SwiftPM findet den Hauptzweig nicht, obwohl
+// `git ls-remote` ihn daneben anzeigt. Sechs Anlaeufe, kein Bau.
+//
+// GTK4 selbst liegt als C-Bibliothek auf jedem Linux-Rechner, der die App
+// ausfuehren soll. Ueber eine Modulzuordnung ist sie direkt ansprechbar, ohne
+// Netz, ohne Fassungsaufloesung, ohne fremde Wartung. Der Preis ist
+// imperativer Code statt eines deklarativen Baums — fuer eine Oberflaeche,
+// die ohnehin plattformeigen sein soll, ein guter Tausch.
 let package = Package(
     name: "SwiftlyLinux",
     dependencies: [
-        .package(path: "../Packages/JellyfinKit"),
-        // **Nicht GitHub.** Das Projekt liegt dort seit Oktober 2024 nur noch
-        // archiviert; die gepflegte Fassung ist nach Codeberg umgezogen und
-        // hat die Zaehlung bei 0.1.0 neu begonnen.
-        .package(url: "https://codeberg.org/aparoksha/adwaita-swift", branch: "main"),
+        // Dieselben Dateien, die iOS, tvOS und macOS benutzen. Keine Kopie.
+        .package(path: "../Packages/JellyfinKit")
     ],
     targets: [
+        .systemLibrary(
+            name: "CGtk",
+            pkgConfig: "gtk4 libadwaita-1",
+            providers: [.apt(["libgtk-4-dev", "libadwaita-1-dev"])]
+        ),
         .executableTarget(
             name: "SwiftlyLinux",
             dependencies: [
-                .product(name: "JellyfinKit", package: "JellyfinKit"),
-                .product(name: "Adwaita", package: "adwaita-swift"),
+                "CGtk",
+                .product(name: "JellyfinKit", package: "JellyfinKit")
             ]
         )
     ]
