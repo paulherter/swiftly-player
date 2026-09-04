@@ -139,8 +139,11 @@ final class App: @unchecked Sendable {
         // **Die Medientasten der Tastatur.** Unter Linux gibt es dafür kein
         // Rahmenwerk, sondern einen Standard auf dem Sitzungsbus; siehe
         // ``Medienleiste``.
-        medienleiste = Medienleiste { [weak self] griff in
-            aufHauptfaden { self?.medienGriff(griff) }
+        // `[self]`, nicht `[weak self]`: die App lebt in einer globalen
+        // Referenz, und ein schwacher Verweis waere in der verschachtelten
+        // Sendable-Huelle ohnehin nicht zu fassen.
+        medienleiste = Medienleiste { [self] griff in
+            aufHauptfaden { self.medienGriff(griff) }
         }
         VLCFassung.text = String(cString: libvlc_get_version())
         // **D8: die Startseite holt ihre Reihen neu, wenn die App in den

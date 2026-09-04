@@ -120,7 +120,7 @@ final class Medienleiste: @unchecked Sendable {
         // dürfen nebeneinander laufen; der Zusatz hinter dem Punkt trennt sie.
         name = g_bus_own_name_on_connection(
             bus, "org.mpris.MediaPlayer2.swiftly",
-            G_BUS_NAME_OWNER_FLAGS_REPLACE, nil, nil, nil, nil)
+            GBusNameOwnerFlags(rawValue: 1), nil, nil, nil, nil)   // REPLACE
     }
 
     private func abmelden() {
