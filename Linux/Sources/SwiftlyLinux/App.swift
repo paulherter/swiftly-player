@@ -1000,13 +1000,13 @@ final class App: @unchecked Sendable {
         case .neu:           (item.name, item.neuzugangszeile)
         }
 
-        // Der Fortschrittsbalken liegt **auf** dem Bild, unten, wie auf dem
-        // Mac. Nur bei „Weiterschauen" — sonst stünde er unter Titeln, die
-        // noch gar nicht angefangen wurden.
-        let obenDrauf = quer && item.gesehenerAnteil != nil
-            ? mitBalken(kaefig, breite: breite, anteil: item.gesehenerAnteil ?? 0)
-            : kaefig
-        return kachelhuelle(bild: obenDrauf, breite: breite, oben: oben, unten: unten)
+        // Der Fortschrittsbalken liegt **in** der Bildhülle, unten, wie auf
+        // dem Mac. Nur bei „Weiterschauen" — sonst stünde er unter Titeln,
+        // die noch gar nicht angefangen wurden.
+        if quer, let anteil = item.gesehenerAnteil {
+            balkenLegen(kaefig, breite: breite, anteil: anteil)
+        }
+        return kachelhuelle(bild: kaefig, breite: breite, oben: oben, unten: unten)
     }
 
     /// Eine Kachel im Raster — Plakat, Name, Jahr.
@@ -1070,32 +1070,6 @@ final class App: @unchecked Sendable {
         gtk_label_set_max_width_chars(OpaquePointer(l), 1)
         gtk_label_set_xalign(OpaquePointer(l), 0)
         return l
-    }
-
-    /// Legt den Fortschrittsbalken unten auf ein Bild.
-    ///
-    /// Zwei Lagen: eine dunkle Spur über die ganze Breite und darauf der
-    /// Akzent, so breit wie der gesehene Anteil. GTK kennt keinen Anteil als
-    /// Breitenangabe — die Kachel hat aber eine feste Breite, also lässt er
-    /// sich ausrechnen.
-    private func mitBalken(_ kaefig: Widget!, breite: Int, anteil: Double) -> Widget! {
-        let ueber: Widget! = gtk_overlay_new()
-        gtk_overlay_set_child(OpaquePointer(ueber), kaefig)
-
-        let spur: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
-        gtk_widget_add_css_class(spur, "swiftly-balkenspur")
-        gtk_widget_set_size_request(spur, -1, 4)
-        gtk_widget_set_valign(spur, GTK_ALIGN_END)
-        gtk_widget_set_halign(spur, GTK_ALIGN_FILL)
-        gtk_overlay_add_overlay(OpaquePointer(ueber), spur)
-
-        let balken: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
-        gtk_widget_add_css_class(balken, "swiftly-balken")
-        gtk_widget_set_size_request(balken, Int32(Double(breite) * min(max(anteil, 0), 1)), 4)
-        gtk_widget_set_valign(balken, GTK_ALIGN_END)
-        gtk_widget_set_halign(balken, GTK_ALIGN_START)
-        gtk_overlay_add_overlay(OpaquePointer(ueber), balken)
-        return ueber
     }
 
     func kopfzeileEinrichten() { kopfzeileFuellen() }

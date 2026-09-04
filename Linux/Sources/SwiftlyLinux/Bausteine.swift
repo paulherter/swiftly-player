@@ -135,6 +135,7 @@ func luft() -> Widget! {
 func bildkaefig(_ bild: Widget!, breite: Int, hoehe: Int) -> Widget! {
     gtk_picture_set_can_shrink(OpaquePointer(bild), 1)
     let kaefig: Widget! = gtk_scrolled_window_new()
+    gtk_widget_add_css_class(kaefig, "swiftly-kaefig")
     gtk_scrolled_window_set_policy(OpaquePointer(kaefig), GTK_POLICY_NEVER, GTK_POLICY_NEVER)
     gtk_scrolled_window_set_child(OpaquePointer(kaefig), bild)
     gtk_widget_set_size_request(kaefig, Int32(breite), Int32(hoehe))
@@ -144,17 +145,54 @@ func bildkaefig(_ bild: Widget!, breite: Int, hoehe: Int) -> Widget! {
     return kaefig
 }
 
-/// Ein Bild im Käfig, mit gerundeter Kante — Plakat, Querkachel, Profilbild.
+/// Ein Bild mit gerundeter Kante — Plakat, Querkachel, Profilbild.
+///
+/// **Die Rundung gehört an die Hülle, nicht an den Käfig.** Auf dem Mac ist
+/// `Bildflaeche` ein `ZStack` aus Grund, Bild *und* Fortschrittsbalken, und
+/// erst der ganze Stapel bekommt `.clipShape(RoundedRectangle(…))`. Der Balken
+/// liegt damit **innerhalb** der Rundung und wird beim Schweben mitvergrößert.
+///
+/// Hier lag er zuerst daneben — als Geschwister des Käfigs in einem eigenen
+/// Überzug. Jetzt ist die Hülle der Überzug: sie trägt Rundung, Beschnitt und
+/// Größe, das Bild sitzt darin, der Balken darüber.
+///
 /// Der Rückgabetyp trägt bewusst kein `!`: Swift verbietet ein implizit
-/// ausgepacktes Optional in einem Tupelfach. Beides ist an dieser Stelle
-/// ohnehin nie null — GTKs `*_new()` schlägt nicht fehl.
-func gerahmtesBild(breite: Int, hoehe: Int, stil: String) -> (kaefig: Widget, bild: Widget) {
+/// ausgepacktes Optional in einem Tupelfach. Beides ist hier nie null.
+func gerahmtesBild(breite: Int, hoehe: Int, stil: String) -> (huelle: Widget, bild: Widget) {
     let bild: Widget! = gtk_picture_new()
     gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_COVER)
     let kaefig = bildkaefig(bild, breite: breite, hoehe: hoehe)
-    // Die Rundung gehört an den Käfig: er ist es, der beschneidet.
-    gtk_widget_add_css_class(kaefig, stil)
-    return (kaefig!, bild!)
+
+    let huelle: Widget! = gtk_overlay_new()
+    gtk_overlay_set_child(OpaquePointer(huelle), kaefig)
+    gtk_widget_add_css_class(huelle, stil)
+    gtk_widget_set_overflow(huelle, GTK_OVERFLOW_HIDDEN)
+    gtk_widget_set_size_request(huelle, Int32(breite), Int32(hoehe))
+    gtk_widget_set_hexpand(huelle, 0)
+    gtk_widget_set_vexpand(huelle, 0)
+    return (huelle!, bild!)
+}
+
+/// Legt den Fortschrittsbalken unten **in** die Bildhülle.
+///
+/// Zwei Lagen, wie auf dem Mac: eine Spur in Weiß 16 % über die ganze Breite
+/// und darauf der Akzent, so breit wie der gesehene Anteil. Drei Punkt hoch —
+/// nicht vier. GTK kennt keinen Anteil als Breitenangabe, aber die Kachel hat
+/// eine feste Breite, also lässt er sich ausrechnen.
+func balkenLegen(_ huelle: Widget!, breite: Int, anteil: Double) {
+    let spur: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(spur, "swiftly-balkenspur")
+    gtk_widget_set_size_request(spur, -1, 3)
+    gtk_widget_set_valign(spur, GTK_ALIGN_END)
+    gtk_widget_set_halign(spur, GTK_ALIGN_FILL)
+    gtk_overlay_add_overlay(OpaquePointer(huelle), spur)
+
+    let balken: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(balken, "swiftly-balken")
+    gtk_widget_set_size_request(balken, Int32(Double(breite) * min(max(anteil, 0), 1)), 3)
+    gtk_widget_set_valign(balken, GTK_ALIGN_END)
+    gtk_widget_set_halign(balken, GTK_ALIGN_START)
+    gtk_overlay_add_overlay(OpaquePointer(huelle), balken)
 }
 
 // MARK: - Chip

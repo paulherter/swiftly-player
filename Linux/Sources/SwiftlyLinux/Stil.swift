@@ -282,13 +282,19 @@ enum Stil {
             background-image: none;
             border: none;
             box-shadow: none;
-            min-height: 38px;
+            /* Halb so hoch wie zuvor. Auf dem Mac ist da gar keine Leiste —
+               die Ampel schwebt über der Seitenleiste. Unter Wayland gehört
+               die Titelzeile dem Fenster, also bleibt sie; sie soll aber so
+               wenig Platz nehmen wie möglich. */
+            min-height: 19px;
+            padding: 0 4px;
         }
+        headerbar windowcontrols { margin: 0; }
 
         /* Der Fortschrittsbalken auf einer „Weiterschauen"-Kachel: dunkle
            Spur über die ganze Breite, darauf der Akzent so weit, wie gesehen
            wurde. Genau wie auf dem Mac. */
-        .swiftly-balkenspur { background-color: rgba(0,0,0,0.45); }
+        .swiftly-balkenspur { background-color: rgba(255,255,255,0.16); }
         .swiftly-balken { background-color: \(akzent); }
 
         /* Plakate: eigener Grund, solange das Bild noch nicht da ist.
@@ -299,7 +305,7 @@ enum Stil {
            Die Kachel muss ein Knopf sein, damit `:hover` überhaupt greift —
            auf einer schlichten Box führt GTK den Zustand nicht. */
         .swiftly-plakat {
-            background-color: \(erhoeht);
+            background-color: \(flaeche);
             border-radius: \(eckeKachel)px;
             transition: transform 120ms ease-out;
         }
@@ -334,6 +340,16 @@ enum Stil {
             border-radius: 13px;
             background-color: \(erhoeht);
         }
+
+        /* **Der Käfig ist ein Scrollfenster und malt sonst mit.**
+           Weiter oben steht `scrolledwindow, viewport { background-color:
+           grund }` — und der Käfig unter der Wortmarke ist genau so eines.
+           Auf der Seitenleiste (`flaeche`) stand deshalb ein schwarzes
+           Rechteck unter der Marke. Er soll gar nichts malen; wo ein Grund
+           hin soll, trägt ihn die Hülle. */
+        .swiftly-kaefig,
+        .swiftly-kaefig viewport,
+        .swiftly-kaefig scrolledwindow { background-color: transparent; }
 
         scrollbar { background-color: transparent; }
         scrollbar slider {
