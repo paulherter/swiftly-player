@@ -38,8 +38,8 @@ final class Medienleiste: @unchecked Sendable {
     /// werden muss.
     /// Legt einen Eintrag `{sv}` an. Der Wert wird in eine Variante gepackt —
     /// das verlangt der Typ `a{sv}`.
-    fileprivate static func eintragen(_ bauer: OpaquePointer?, _ name: String,
-                                      _ wert: OpaquePointer?) {
+    fileprivate static func eintragen(_ bauer: UnsafeMutablePointer<GVariantBuilder>?,
+                                      _ name: String, _ wert: OpaquePointer?) {
         guard let wert else { return }
         g_variant_builder_add_value(bauer, g_variant_new_dict_entry(
             g_variant_new_string(name), g_variant_new_variant(wert)))
