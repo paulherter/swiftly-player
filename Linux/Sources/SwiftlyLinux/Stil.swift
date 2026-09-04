@@ -674,10 +674,16 @@ enum Stil {
             border-radius: 2px;
             box-shadow: none;
         }
+        /* **Der Griff ragt aus der Spur heraus, er weitet sie nicht.**
+           Der Griff ist ein Kind der Spur; ohne negativen Rand zieht er sie
+           auf seine dreizehn Punkt auf, und dann malt sie ihren Grund ueber
+           die ganze Hoehe — das war die zu dicke Leiste, auch nachdem die
+           Warnung weg war. −5 oben und unten lassen der Spur ihre vier.
+           Genau so macht es Adwaita selbst. */
         scale.swiftly-regler slider {
             min-width: 13px;
             min-height: 13px;
-            margin: 0;
+            margin: -5px 0;
             padding: 0;
             border: none;
             background-image: none;
@@ -688,14 +694,24 @@ enum Stil {
                derselbe Schatten. */
             box-shadow: 0 1px 5px rgba(0,0,0,0.55);
         }
-        scale.swiftly-regler:hover slider { min-width: 15px; min-height: 15px; }
+        scale.swiftly-regler:hover slider {
+            min-width: 15px;
+            min-height: 15px;
+            margin: -6px 0;
+        }
 
         /* Die Spurtafel über dem Bild: 320 breit, erhoeht, Ecke 10. */
         .swiftly-tafel {
             background-color: \(erhoeht);
             border: 1px solid \(rand);
             border-radius: \(eckeFeld)px;
+            /* Sie liegt ueber bewegtem Bild und braucht eine Kante. */
+            box-shadow: 0 10px 22px rgba(0,0,0,0.45);
         }
+        /* **Die gewaehlte Zeile traegt den Akzent**, nicht eine Flaeche —
+           so auf dem Mac (`Spurwahl.Wahlzeile`). */
+        button.swiftly-wertzeile.swiftly-aktiv label,
+        button.swiftly-wertzeile.swiftly-aktiv image { color: \(akzent); }
 
         /* Die Mehr-Liste. GTKs Popover bringt einen eigenen Grund mit —
            der wird hier überschrieben, sonst stünde Apples… nein: KDEs

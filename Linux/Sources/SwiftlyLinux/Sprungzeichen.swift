@@ -170,9 +170,12 @@ final class Abspielzeichen: @unchecked Sendable {
         guard neu != pause else { return }
         pause = neu
         lauf = 0
-        // 140 ms — kurz genug, dass der Knopf im selben Moment umspringt, in
-        // dem der Ton aufhört, und lang genug, dass es keine Stufe ist.
-        laufen(auf: anzeige, dauer: 0.14) { [weak self] e in
+        // **90 ms und keine Fahrt.** Erst fuhr das alte Zeichen nach oben
+        // hinaus und das neue kam von unten nach — das sah bei zwei so
+        // verschiedenen Formen nach Durcheinander aus und dauerte zu lang.
+        // Ein kurzes Ueberblenden liest sich als Umschalten, nicht als
+        // Bewegung.
+        laufen(auf: anzeige, dauer: 0.09) { [weak self] e in
             self?.lauf = e
             self.map { gtk_widget_queue_draw($0.anzeige) }
         } fertig: { [weak self] in
@@ -235,9 +238,7 @@ nonisolated(unsafe) private let abspielMalen: @convention(c) (
         cairo_restore(cr)
     }
 
-    // Das alte Zeichen fährt nach oben hinaus, das neue kommt von unten —
-    // `replace.offUp` auf dem Mac.
     let e = min(max(z.lauf, 0), 1)
-    zeichen(!z.pause, 1 - e, -m * 0.22 * e)
-    zeichen(z.pause, e, m * 0.22 * (1 - e))
+    zeichen(!z.pause, 1 - e, 0)
+    zeichen(z.pause, e, 0)
 }

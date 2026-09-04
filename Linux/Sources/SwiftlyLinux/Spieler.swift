@@ -13,6 +13,17 @@ import JellyfinKit
 /// aussieht und wer wann gefragt wird.
 extension App {
 
+    /// **Die Fensterleiste bleibt stehen, auch im Player.**
+    ///
+    /// Sie zu verstecken war der Versuch, dem Mac zu folgen, wo die
+    /// Fensterampel im Player ausgeblendet wird. Unter Wayland gehört die
+    /// Titelzeile aber dem Fenster und nicht uns: sie zu verbergen ändert die
+    /// Höhe des Inhalts — und zwar **mitten in der Auffahrt**, sodass das
+    /// ganze Bild um ihre Höhe springt. Genau das war das Rucken.
+    ///
+    /// Das ist die eine Abweichung, die sich nicht wegräumen lässt, ohne die
+    /// Fensterknöpfe zu verlieren; sie steht in derselben Reihe wie die
+    /// schmale Kopfzeile über der Seitenleiste (VERHALTEN.md F).
     func spielerOeffnen(_ item: Item, ab: Double) {
         guard let client else { return }
         spielerSchliessen(melden: true)
@@ -35,7 +46,6 @@ extension App {
         gtk_stack_set_transition_duration(OpaquePointer(seiten), 350)
         Schubsperre.fuer(0.35)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "spieler")
-        gtk_widget_set_visible(kopfzeile, 0)
 
         // **Erst den Plan holen, dann öffnen.** Die Adresse steht nicht in
         // `Item`; sie kommt aus `/PlaybackInfo`, und dort entscheidet sich
@@ -67,13 +77,10 @@ extension App {
                                                 positionTicks: ticks)
             }
         }
-        abspieler.beenden(nurMedium: true)
         taktBeenden()
         spurwahlSchliessen()
         laufenderTitel = nil
         laufenderPlan = nil
-        spielerSteuerung = nil
-        gtk_widget_set_visible(kopfzeile, 1)
         // `UNDER_DOWN`: der Player fährt nach unten hinaus und gibt frei,
         // was darunter liegt — die Startseite bewegt sich nicht.
         gtk_stack_set_transition_type(OpaquePointer(seiten),
@@ -81,6 +88,24 @@ extension App {
         gtk_stack_set_transition_duration(OpaquePointer(seiten), 350)
         Schubsperre.fuer(0.35)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
+        // **Das Bild bleibt stehen, bis es unten ist.**
+        //
+        // Vorher hielt `beenden` das Medium sofort an — dann fuhr eine
+        // schwarze Flaeche hinunter statt der Seite, die man gerade noch
+        // gesehen hat. Angehalten wird, wenn die Fahrt durch ist.
+        let dann = spielerRahmen
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: 380_000_000)
+            aufHauptfaden {
+                self.abspieler.beenden(nurMedium: true)
+                if let seite = gtk_stack_get_child_by_name(OpaquePointer(self.seiten), "spieler"),
+                   seite == dann {
+                    gtk_stack_remove(OpaquePointer(self.seiten), seite)
+                }
+                self.spielerRahmen = nil
+                self.spielerSteuerung = nil
+            }
+        }
         if let seite = gtk_stack_get_child_by_name(OpaquePointer(seiten), "spieler") {
             gtk_stack_remove(OpaquePointer(seiten), seite)
         }
@@ -117,8 +142,11 @@ extension App {
 
         // **Die Steuerung blendet nach 4 s Ruhe aus** (B1) — nur während der
         // Wiedergabe. Jede Bewegung des Zeigers holt sie zurück.
+        // **Zeiger im Fenster: Steuerung da. Zeiger draussen: weg** — so auf
+        // dem Mac. Vorher holte auch das Verlassen sie zurueck, was genau
+        // verkehrt herum war.
         beiZeiger(ueber, herein: { [weak self] in self?.steuerungZeigen() },
-                         hinaus: { [weak self] in self?.steuerungZeigen() })
+                         hinaus: { [weak self] in self?.steuerungVerbergen() })
         steuerungZeigen()
         return ueber
     }
@@ -174,8 +202,14 @@ extension App {
         spielerAbspielzeichen = mitte
         anhaengen(reihe, spieltaste(mitte.anzeige, kuerzel: "Leertaste", gross: true) {
             [weak self] in
-            self?.abspieler.umschalten()
-            self?.steuerungZeigen()
+            guard let self else { return }
+            self.abspieler.umschalten()
+            // **Der Zustand des Knopfes ist die Antwort** (D6). Der Takt
+            // laeuft alle 500 ms; darauf zu warten hiess, dass der Ton
+            // schon eine halbe Sekunde weg war, bevor das Zeichen umsprang.
+            self.spielstand.laeuft.toggle()
+            self.spielerAbspielzeichen?.setzen(self.spielstand.laeuft)
+            self.steuerungZeigen()
         })
 
         let vor = Sprungzeichen(zurueck: false, zahl: wahlen.vorSekunden)
@@ -447,6 +481,16 @@ extension App {
         steuerungZeigen()
     }
 
+    /// Blendet die Steuerung sofort weg — **ausser in Pause**: ein Standbild
+    /// ohne Steuerung sieht aus wie eine ruhige Einstellung, nicht wie eine
+    /// angehaltene Wiedergabe.
+    func steuerungVerbergen() {
+        guard spielerSteuerung != nil, spielstand.laeuft else { return }
+        steuerungstakt += 1
+        gtk_widget_set_opacity(spielerSteuerung, 0)
+        spurwahlSchliessen()
+    }
+
     func steuerungZeigen() {
         // Der Zeiger meldet sich auch noch, während der Player hinausfährt.
         guard spielerSteuerung != nil else { return }
@@ -465,6 +509,10 @@ extension App {
                 guard self.laufenderTitel != nil, self.spielerSteuerung != nil,
                       self.steuerungstakt == meins, self.spielstand.laeuft else { return }
                 gtk_widget_set_opacity(self.spielerSteuerung, 0)
+                // **Die Tafel gehoert zur Steuerung.** Sie liegt als eigener
+                // Ueberzug daneben, also nimmt die Deckkraft der Steuerung sie
+                // nicht mit — sie blieb offen ueber einem Bild ohne Bedienung.
+                self.spurwahlSchliessen()
             }
         }
     }
@@ -490,19 +538,17 @@ extension App {
             return
         }
         let tafel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 22)
-        gtk_widget_add_css_class(tafel, "swiftly-tafel")
         raender(tafel, 20)
-        gtk_widget_set_size_request(tafel, 320, -1)
-        gtk_widget_set_halign(tafel, GTK_ALIGN_END)
-        gtk_widget_set_valign(tafel, GTK_ALIGN_START)
-        gtk_widget_set_margin_top(tafel, 70)
-        gtk_widget_set_margin_end(tafel, 18)
 
         let ton = abspieler.tonspuren
         if !ton.isEmpty {
             let g = spurgruppe("Ton", "audio-volume-high-symbolic")
             let jetzt = abspieler.tonspur
             for spur in ton {
+                // **„Disable" ist keine Tonspur.** VLC hängt den Eintrag an
+                // jede Liste; für Ton gibt es ihn auf dem Mac nicht, und ein
+                // Film ohne Ton ist auch keine Wahl, die jemand trifft.
+                guard spur.kennung >= 0 else { continue }
                 anhaengen(g.raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetzt) {
                     [weak self] in
                     self?.abspieler.setzeTonspur(spur.kennung)
@@ -560,11 +606,36 @@ extension App {
         anhaengen(sz.raum, szReihe)
         anhaengen(tafel, sz.aussen)
 
-        spurtafel = tafel
-        gtk_overlay_add_overlay(OpaquePointer(spielerRahmen), tafel)
+        // **Eine Tonspurliste kann lang sein — vierzig Untertitel sind
+        // normal.** Ohne Scroller wächst die Tafel über den Bildschirmrand
+        // hinaus, und was unten steht, ist nicht erreichbar. Der Scroller
+        // trägt die Höhengrenze, nicht die Tafel: so bleibt sie bei kurzen
+        // Listen so hoch wie ihr Inhalt.
+        let rolle: Widget! = gtk_scrolled_window_new()
+        gtk_scrolled_window_set_policy(OpaquePointer(rolle),
+                                       GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
+        gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(rolle), 1)
+        gtk_scrolled_window_set_max_content_height(OpaquePointer(rolle), 520)
+        gtk_scrolled_window_set_child(OpaquePointer(rolle), tafel)
+        weichesScrollen(rolle)
+
+        let rahmen: Widget! = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_add_css_class(rahmen, "swiftly-tafel")
+        anhaengen(rahmen, rolle)
+        gtk_widget_set_size_request(rahmen, 320, -1)
+        gtk_widget_set_halign(rahmen, GTK_ALIGN_END)
+        gtk_widget_set_valign(rahmen, GTK_ALIGN_START)
+        // Die Tafel klappt **unter dem Knopf** auf, aus dem sie stammt (E5).
+        // 18 oben plus 28 Knopfhöhe plus 18 Abstand — der Versatz vom Mac.
+        gtk_widget_set_margin_top(rahmen, 64)
+        gtk_widget_set_margin_end(rahmen, 22)
+        gtk_widget_set_margin_bottom(rahmen, 22)
+
+        spurtafel = rahmen
+        gtk_overlay_add_overlay(OpaquePointer(spielerRahmen), rahmen)
     }
 
-    private func spurwahlSchliessen() {
+    func spurwahlSchliessen() {
         if let tafel = spurtafel, spielerRahmen != nil {
             gtk_overlay_remove_overlay(OpaquePointer(spielerRahmen), tafel)
         }
@@ -599,7 +670,7 @@ extension App {
         anhaengen(reihe, l)
         if gewaehlt {
             let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-            gtk_image_set_pixel_size(OpaquePointer(haken), 13)
+            gtk_image_set_pixel_size(OpaquePointer(haken), 12)
             anhaengen(reihe, haken)
         }
         gtk_button_set_child(alsKnopf(knopf), reihe)

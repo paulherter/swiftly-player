@@ -1142,8 +1142,14 @@ final class App: @unchecked Sendable {
     func startseiteLaden() {
         guard let client else { return }
         zuletztGeladen = Date()
-        leeren(reihenstapel)
-        anhaengen(reihenstapel, beschriftung("Lade …", stil: "swiftly-koerper"))
+        // **„Lade …" nur beim ersten Mal.** Beim Nachladen (D8, und beim
+        // Schliessen des Players) steht schon alles da; es wegzuwerfen und
+        // durch ein Wort zu ersetzen, sah aus, als sei die App neu gestartet
+        // — dabei ändert sich meist nur ein Fortschrittsbalken. Ersetzt wird
+        // erst, wenn die neuen Reihen da sind.
+        if gtk_widget_get_first_child(reihenstapel) == nil {
+            anhaengen(reihenstapel, beschriftung("Lade …", stil: "swiftly-koerper"))
+        }
 
         Task.detached { [self] in
             async let weiter = try? await client.resumeItems(limit: 20)
