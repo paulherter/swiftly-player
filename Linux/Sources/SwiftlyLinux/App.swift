@@ -392,6 +392,7 @@ final class App: @unchecked Sendable {
     private var sortierung: [Bereich: Sortierung] = [:]
     private var chipzeilen: [Bereich: Widget] = [:]
     private var benutzerID = ""
+    private var suchtakt = 0
 
     /// **Seitenleiste links, Inhalt rechts** — der Aufbau des Macs.
     ///
@@ -629,7 +630,8 @@ final class App: @unchecked Sendable {
         let scroller = gtk_scrolled_window_new()
         gtk_widget_set_hexpand(scroller, 1)
         gtk_widget_set_vexpand(scroller, 1)
-        gtk_widget_set_margin_top(reihenstapel, Int32(Stil.inhaltOben))
+        gtk_widget_set_margin_top(reihenstapel,
+                                  Int32(Stil.inhaltOben + Stil.reihenkopfAusgleich))
         gtk_widget_set_margin_bottom(reihenstapel, Int32(Stil.randAbstand))
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihenstapel)
         return scroller
@@ -705,6 +707,7 @@ final class App: @unchecked Sendable {
         suchraster = rasterBauen()
         anhaengen(block, suchraster)
         beiSignal(suchfeld, "activate") { [weak self] in self?.suchen() }
+        beiSignal(suchfeld, "changed") { [weak self] in self?.sucheAngestossen() }
         return seitenrahmen(block)
     }
 
@@ -831,6 +834,31 @@ final class App: @unchecked Sendable {
                 let zahl = was == .filme ? self.filmezahl : self.serienzahl
                 self.rasterFuellen(raster, items)
                 gtk_label_set_text(OpaquePointer(zahl), String(gesamt))
+            }
+        }
+    }
+
+    /// **Gesucht wird beim Tippen, nicht auf Enter.**
+    ///
+    /// Auf dem Mac hängt die Suche an `.task(id: begriff)`: ab zwei Zeichen
+    /// wartet sie 280 ms und bricht ab, sobald weitergetippt wird. Ein
+    /// Tastendruck als Auslöser wäre eine Abweichung ohne Grund — Eingabeart
+    /// und Entfernung sind hier dieselben wie dort.
+    ///
+    /// GTK hat kein `Task.isCancelled` für Signale, also zählt ein Takt mit:
+    /// nach der Wartezeit sucht nur, wer noch der jüngste ist. Der Vergleich
+    /// läuft über ``aufHauptfaden`` und damit auf demselben Faden, auf dem
+    /// auch hochgezählt wird — sonst wäre es ein Wettlauf.
+    private func sucheAngestossen() {
+        suchtakt += 1
+        let meins = suchtakt
+        let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard begriff.count > 1 else { rasterFuellen(suchraster, []); return }
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: 280_000_000)
+            aufHauptfaden {
+                guard self.suchtakt == meins else { return }
+                self.suchen()
             }
         }
     }

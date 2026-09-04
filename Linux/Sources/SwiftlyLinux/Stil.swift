@@ -64,7 +64,24 @@ enum Stil {
     /// Die Breite des Anmeldeblocks. Auf dem Mac steht `.frame(width: 360)`
     /// an jedem der beiden Felder.
     static let anmeldeBreite = 360
-    static let inhaltOben = 52
+    /// Oberer Rand im Inhaltsbereich — auf dem Mac 52, **gemessen ab
+    /// Fensteroberkante**: dort gibt es keine Titelzeile, die Ampel schwebt
+    /// über der Seitenleiste.
+    ///
+    /// Unter Wayland gehört die Titelzeile dem Fenster, und ihre Höhe kommt
+    /// oben drauf. Genau das war der „viel zu viel Platz über Weiterschauen":
+    /// 19 plus 52 statt 52. Abgezogen stimmt der Abstand zur Fensterkante
+    /// wieder mit dem Mac überein.
+    static let kopfzeileHoehe = 19
+    static let inhaltObenMac = 52
+    static var inhaltOben: Int { inhaltObenMac - kopfzeileHoehe }
+
+    /// **Optischer Ausgleich für die Startseite.** „Filme" steht als
+    /// 28-Punkt-Titel oben, die Startseite beginnt mit „Weiterschauen" in 20.
+    /// Bei gleichem Abstand von oben stehen sie nicht gleich hoch: über den
+    /// Versalien lässt eine Zeile Platz, und der wächst mit dem Schriftgrad.
+    /// Auf dem Mac sind es nachgemessene 2,1 Punkt.
+    static let reihenkopfAusgleich = 2
 
     /// Poster, 2 : 3 — auf dem iPhone 112 × 168, auf dem Mac 150 × 225.
     static let kachelBreite = 150
