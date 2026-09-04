@@ -100,12 +100,16 @@ extension App {
         }
         taktBeenden()
         spurwahlSchliessen()
+        // **Erst den Titel löschen, dann aufräumen.** Alles, was den Zeiger
+        // versteckt, hängt daran; solange er steht, kann ein später
+        // eintreffendes Ereignis die Aufräumarbeit wieder umstossen.
+        laufenderTitel = nil
+        spielerSteuerung = nil
         zeigerZeigen(true)
         abschnitte = []
         // **Ein alter Wecker haelt sonst spaeter eine andere Wiedergabe an.**
         schlaftakt += 1
         schlafminuten = nil
-        laufenderTitel = nil
         laufenderPlan = nil
         medienstandMelden()
         // `UNDER_DOWN`: der Player fährt nach unten hinaus und gibt frei,
@@ -662,7 +666,12 @@ extension App {
     /// ohne Steuerung sieht aus wie eine ruhige Einstellung, nicht wie eine
     /// angehaltene Wiedergabe.
     func steuerungVerbergen() {
-        guard spielerSteuerung != nil, spielstand.laeuft else { return }
+        // **`laufenderTitel` zuerst.** Ohne diese Prüfung versteckte das
+        // Verlassen des wegfahrenden Fensters den Zeiger noch einmal —
+        // nachdem `spielerSchliessen` ihn schon zurückgeholt hatte. Ergebnis:
+        // ein Fenster ohne Mauszeiger, dauerhaft, bis zum Neustart.
+        guard laufenderTitel != nil, spielerSteuerung != nil,
+              spielstand.laeuft else { return }
         steuerungstakt += 1
         gtk_widget_set_opacity(spielerSteuerung, 0)
         spurwahlSchliessen()
