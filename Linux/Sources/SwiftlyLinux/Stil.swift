@@ -71,7 +71,7 @@ enum Stil {
             color: \(schrift);
             border: 1px solid rgba(255,255,255,0.10);
             border-radius: \(ecke)px;
-            padding: 12px 14px;
+            padding: 11px 14px;
             caret-color: \(akzent);
         }
         entry:focus {
@@ -88,7 +88,7 @@ enum Stil {
             color: \(schrift);
             border: 1px solid rgba(255,255,255,0.10);
             border-radius: \(ecke)px;
-            padding: 12px 20px;
+            padding: 11px 22px;
             font-weight: 600;
         }
         button:hover { background-color: rgba(255,255,255,0.12); }
@@ -182,19 +182,26 @@ enum Stil {
         }
     }
 
-    /// Die Wortmarke als Widget — mit Textrückfall, falls kein SVG-Leser da ist.
-    static func wortmarke(hoehe: Int = 44) -> Widget! {
-        if let datei = wortmarkeDatei(hoehe: hoehe) {
-            let bild: Widget! = gtk_image_new_from_file(datei)
-            gtk_image_set_pixel_size(OpaquePointer(bild), Int32(hoehe))
-            gtk_widget_set_size_request(bild, -1, Int32(hoehe))
-            // Ist die Datei nicht lesbar, liefert GTK ein Ersatzsymbol statt
-            // eines Fehlers — dann lieber der Schriftzug.
-            if gtk_image_get_storage_type(OpaquePointer(bild)) != GTK_IMAGE_PAINTABLE {
-                return beschriftung("swiftly", stil: "title-1")
-            }
-            return bild
+    /// Die Wortmarke als Widget, in der gewünschten Höhe.
+    ///
+    /// **`GtkImage` taugt dafür nicht.** Seine Größenangabe gilt für Symbole;
+    /// eine geladene Datei zeigt es in ihrer eigenen Größe und ignoriert den
+    /// Wunsch. Das war der Grund, warum die Marke klein blieb, obwohl die
+    /// Zahl stimmte. `GtkPicture` skaliert den Inhalt wirklich.
+    ///
+    /// Die Breite folgt dem Seitenverhältnis des Rahmens (3005 zu 1024, also
+    /// knapp 2,94 zu 1) statt geraten zu werden.
+    static func wortmarke(hoehe: Int = 88) -> Widget! {
+        let r = Markenpfade.wortmarkeRahmen
+        let breite = Int(Double(hoehe) * r.breite / r.hoehe)
+        guard let datei = wortmarkeDatei(hoehe: hoehe) else {
+            return beschriftung("swiftly", stil: "title-1")
         }
-        return beschriftung("swiftly", stil: "title-1")
+        let bild: Widget! = gtk_picture_new_for_filename(datei)
+        gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_CONTAIN)
+        gtk_picture_set_can_shrink(OpaquePointer(bild), 1)
+        gtk_widget_set_size_request(bild, Int32(breite), Int32(hoehe))
+        gtk_widget_set_halign(bild, GTK_ALIGN_CENTER)
+        return bild
     }
 }

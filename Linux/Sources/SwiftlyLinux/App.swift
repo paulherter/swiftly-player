@@ -107,7 +107,7 @@ final class App: @unchecked Sendable {
         gtk_widget_set_halign(mitte, GTK_ALIGN_CENTER)
         gtk_widget_set_size_request(mitte, 460, -1)
 
-        anhaengen(mitte, Stil.wortmarke(hoehe: 62))
+        anhaengen(mitte, Stil.wortmarke(hoehe: 88))
         anhaengen(mitte, beschriftung("Wo steht dein Jellyfin-Server?", stil: "dim-label"))
 
         serverfeld = gtk_entry_new()
