@@ -114,6 +114,13 @@ extension App {
         let ueber: Widget! = gtk_overlay_new()
         gtk_overlay_set_child(OpaquePointer(ueber), scroller)
         gtk_overlay_add_overlay(OpaquePointer(ueber), detailkopfBauen(item))
+
+        hinweisfeld = beschriftung("", stil: "swiftly-hinweis")
+        gtk_widget_set_visible(hinweisfeld, 0)
+        gtk_widget_set_halign(hinweisfeld, GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(hinweisfeld, GTK_ALIGN_END)
+        gtk_widget_set_margin_bottom(hinweisfeld, 32)
+        gtk_overlay_add_overlay(OpaquePointer(ueber), hinweisfeld)
         anhaengen(detailhuelle, ueber)
 
         // Der magere Listeneintrag steht sofort, der volle Satz kommt nach.
@@ -144,6 +151,30 @@ extension App {
         // noch umbricht, ruckelt — dasselbe, was auf dem Mac hinter
         // „losfahren, sobald die Seite wirklich steht" steht.
         schieben(zu: scheibe, richtung: schub)
+    }
+
+    /// **Ein kurzer Satz, der von selbst wieder geht.**
+    ///
+    /// Der Mac hat dafür den `Hinweisstreifen` — drei Sekunden, dann weg. Auf
+    /// Linux gab es gar nichts: „Fortschritt zurückgesetzt", „kein Trailer",
+    /// „danach kommt nichts mehr" fielen einfach unter den Tisch, und der
+    /// Nutzer sah einen Knopf, der scheinbar nichts tat.
+    func melden(_ text: String) {
+        guard let feld = hinweisfeld else { return }
+        gtk_label_set_text(OpaquePointer(feld), text)
+        gtk_widget_set_visible(feld, 1)
+        gtk_widget_set_opacity(feld, 1)
+        hinweistakt += 1
+        let meins = hinweistakt
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            aufHauptfaden {
+                guard self.hinweistakt == meins, self.hinweisfeld != nil else { return }
+                sanft(auf: self.hinweisfeld, von: 1, nach: 0) {
+                    gtk_widget_set_opacity(self.hinweisfeld, $0)
+                }
+            }
+        }
     }
 
     private func titelNachladen(_ item: Item, in seite: Widget!) {
@@ -427,6 +458,7 @@ extension App {
         // schon das Ziel.
         let ziel = Spielziel()
         ziel.titel = titel.type == "Series" ? nil : titel
+        offenesZiel = ziel
 
         let angefangen = titel.fortsetzenAb
         let haupt = hauptknopf(angefangen != nil ? "Fortsetzen" : "Abspielen",
@@ -520,6 +552,59 @@ extension App {
             Task.detached { try? await client.setzeGesehen(itemID: titel.id, an: neu) }
             gtk_popover_popdown(alsTafel(tafel))
         })
+        // **„Von vorn" nur, wenn es etwas zurueckzusetzen gibt** — bei einem
+        // Film, der bei null steht, waere es eine Zeile ohne Wirkung. Wortlaut
+        // und Bedingung aus `Titelhandlungen.fuerFilm`.
+        if titel.type == "Series" {
+            if let stand = offenesZiel?.titel {
+                anhaengen(liste, handlungszeile("media-playback-start-symbolic",
+                                                "Folge von vorn abspielen") {
+                    [weak self] in
+                    gtk_popover_popdown(alsTafel(tafel))
+                    self?.starte(stand, ab: 0)
+                })
+                anhaengen(liste, handlungszeile("media-skip-forward-symbolic",
+                                                "Nächste Folge abspielen") {
+                    [weak self] in
+                    gtk_popover_popdown(alsTafel(tafel))
+                    guard let self, let client = self.client,
+                          let serie = stand.seriesId else { return }
+                    Task.detached { [self] in
+                        guard let naechste = try? await client.folgeNach(itemID: stand.id,
+                                                                        seriesID: serie) else {
+                            aufHauptfaden { self.melden("Danach kommt nichts mehr.") }
+                            return
+                        }
+                        aufHauptfaden { self.starte(naechste, ab: 0) }
+                    }
+                })
+            }
+            if let staffel = offeneStaffel {
+                anhaengen(liste, handlungszeile("object-select-symbolic",
+                                                "\(staffel.name) als gesehen") {
+                    [weak self] in
+                    gtk_popover_popdown(alsTafel(tafel))
+                    guard let self, let client = self.client else { return }
+                    Task.detached { try? await client.setzeGesehen(itemID: staffel.id, an: true) }
+                    self.melden("\(staffel.name) ist als gesehen vermerkt.")
+                })
+            }
+        } else if titel.fortsetzenAb != nil {
+            anhaengen(liste, handlungszeile("media-playback-start-symbolic",
+                                            "Von vorn abspielen") {
+                [weak self] in
+                gtk_popover_popdown(alsTafel(tafel))
+                self?.starte(titel, ab: 0)
+            })
+            anhaengen(liste, handlungszeile("view-refresh-symbolic",
+                                            "Fortschritt zurücksetzen") {
+                [weak self] in
+                gtk_popover_popdown(alsTafel(tafel))
+                guard let self, let client = self.client else { return }
+                Task.detached { try? await client.setzeGesehen(itemID: titel.id, an: false) }
+                self.melden("Der Fortschritt ist zurückgesetzt.")
+            })
+        }
         anhaengen(liste, handlungszeile("video-x-generic-symbolic", "Trailer") {
             [weak self] in
             gtk_popover_popdown(alsTafel(tafel))
@@ -556,7 +641,13 @@ extension App {
         Task.detached { [self] in
             let filme = (try? await client.trailer(zu: titel.id)) ?? []
             aufHauptfaden {
-                guard let film = filme.first else { return }
+                // **Schweigen ist keine Antwort.** Ohne diese Zeile passierte
+                // beim Druck auf „Trailer" schlicht nichts, und man wusste
+                // nicht, ob der Knopf kaputt ist oder der Server nichts hat.
+                guard let film = filme.first else {
+                    self.melden("Für diesen Titel liegt kein Trailer vor.")
+                    return
+                }
                 self.starte(film, ab: 0)
             }
         }

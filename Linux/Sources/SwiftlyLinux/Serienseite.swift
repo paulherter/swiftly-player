@@ -102,13 +102,17 @@ extension App {
         // sonst der ersten.
         let wahl = Staffelwahl()
         wahl.jetzt = staffeln.first { $0.id == startStaffel } ?? staffeln[0]
+        offeneStaffel = wahl.jetzt
 
         let pille: Widget! = gtk_button_new()
         gtk_widget_add_css_class(pille, "swiftly-chip")
         gtk_widget_set_halign(pille, GTK_ALIGN_START)
         gtk_button_set_label(alsKnopf(pille), wahl.jetzt?.name ?? "")
         // Nur bei mehr als einer Staffel ist eine Wahl zu treffen.
-        gtk_widget_set_sensitive(pille, staffeln.count > 1 ? 1 : 0)
+        // **Bei einer Staffel gibt es nichts zu waehlen.** Der Mac blendet
+        // die Pille dann ganz aus; ausgegraut stehen zu lassen sieht aus wie
+        // ein Knopf, der klemmt.
+        gtk_widget_set_visible(pille, staffeln.count > 1 ? 1 : 0)
 
         let folgenraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
 
@@ -132,6 +136,7 @@ extension App {
                 anhaengen(liste, self.staffelzeile(staffel.name, gewaehlt: gewaehlt) {
                     [weak self] in
                     wahl.jetzt = staffel
+                    self.offeneStaffel = staffel
                     gtk_button_set_label(alsKnopf(pille), staffel.name)
                     gtk_popover_popdown(alsTafel(tafel))
                     self?.folgenLaden(serie: serie, staffel: staffel, in: folgenraum)

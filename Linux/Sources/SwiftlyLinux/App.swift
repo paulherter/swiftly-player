@@ -492,6 +492,14 @@ final class App: @unchecked Sendable {
     /// Die Staffel, mit der eine Serienseite öffnet — gesetzt, wenn der Weg
     /// über eine Folge führte (A8).
     var startStaffel: String?
+    /// Wohin der Hauptknopf der offenen Detailseite zeigt, und welche Staffel
+    /// dort gewählt ist. Die Mehr-Liste braucht beides — ohne sie liesse sich
+    /// „Folge von vorn" und „Staffel als gesehen" nicht anbieten.
+    var offenesZiel: Spielziel?
+    var offeneStaffel: Item?
+    /// Die Hinweiszeile der Detailseite.
+    var hinweisfeld: Widget!
+    var hinweistakt = 0
     /// Welche Unterseite offen ist (Profil, Quick Connect, …) — `nil`, wenn
     /// keine. Sie leben nicht im Bereichsstapel: auf dem Mac liegen sie
     /// ebenfalls quer dazu.

@@ -579,6 +579,15 @@ enum Stil {
         /* Der Grund der Startanimation — auf iOS eine eigene Farbe
            („Startgrund"), hier derselbe dunkle Grund wie überall. */
         .swiftly-startgrund { background-color: \(grund); }
+        /* Die Hinweiszeile: drei Sekunden, dann weg. */
+        .swiftly-hinweis {
+            font-size: 14px;
+            color: \(schrift);
+            background-color: rgba(0,0,0,0.72);
+            border: 1px solid \(rand);
+            border-radius: 10px;
+            padding: 9px 16px;
+        }
         .swiftly-spieler { background-color: #000000; }
         /* Die Steuerung liegt über dem Bild und blendet weich weg. */
         /* Zwei Schleier, oben 0,60 über 150 Punkt, unten 0,70 über 230 —
