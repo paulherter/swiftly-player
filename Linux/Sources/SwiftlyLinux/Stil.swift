@@ -141,9 +141,11 @@ enum Stil {
         let anbieter = gtk_css_provider_new()
         gtk_css_provider_load_from_string(anbieter, blatt)
         if let anzeige = gdk_display_get_default() {
+            // `GtkStyleProvider` ist eine Schnittstelle, kein Typ, den Swift
+            // benennen kann — wie `GtkEditable`. Der Anbieter geht deshalb
+            // als undurchsichtiger Zeiger hinein.
             gtk_style_context_add_provider_for_display(
-                anzeige,
-                unsafeBitCast(anbieter, to: UnsafeMutablePointer<GtkStyleProvider>.self),
+                anzeige, OpaquePointer(anbieter),
                 800)   // GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
         }
         g_object_unref(UnsafeMutableRawPointer(anbieter))
