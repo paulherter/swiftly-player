@@ -1163,7 +1163,7 @@ final class App: @unchecked Sendable {
         // Der Fortschrittsbalken liegt **in** der Bildhülle, unten, wie auf
         // dem Mac. Nur bei „Weiterschauen" — sonst stünde er unter Titeln,
         // die noch gar nicht angefangen wurden.
-        if quer, let anteil = item.gesehenerAnteil {
+        if quer, wahlen.fortschrittAufKacheln, let anteil = item.gesehenerAnteil {
             balkenLegen(kaefig, breite: breite, anteil: anteil)
         }
         // **Nur „Weiterschauen" springt direkt in die Wiedergabe** (A1).

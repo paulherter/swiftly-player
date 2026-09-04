@@ -18,8 +18,32 @@ extension App {
     /// Folge führt auf die Serienseite, mit der Staffel der Folge gewählt.
     /// Das entscheidet ``detailZeigen(_:)`` beim Aufbauen.
     func oeffne(_ item: Item) {
-        seitenstapel[bereich, default: []].append(item)
-        detailZeigen(item)
+        // **Eine Folge bekommt keine eigene Seite** (A8). Jeder Weg zu einer
+        // Folge — aus „Zuletzt hinzugefügt", aus „Nächste Folge" — führt auf
+        // die **Serienseite**, mit der Staffel der Folge schon gewählt. Eine
+        // Seite nur für eine Folge trüge nichts, was nicht in der Folgenliste
+        // schon steht.
+        guard item.type == "Episode", let serieID = item.seriesId, let client else {
+            startStaffel = nil
+            seitenstapel[bereich, default: []].append(item)
+            detailZeigen(item)
+            return
+        }
+        // **Die Staffel frisch holen, nicht die der Kachel glauben.** Der
+        // Listeneintrag trägt die Staffel, die er beim Laden hatte; wer eine
+        // Staffel zu Ende sieht und die nächste dazulegt, hat dort weiter die
+        // alte stehen. Dieselbe Abhilfe wie auf dem Mac (`StaffelZiel`).
+        Task.detached { [self] in
+            async let frisch = try? await client.item(id: item.id)
+            async let serie = try? await client.item(id: serieID)
+            let (f, s) = await (frisch, serie)
+            aufHauptfaden {
+                guard let s else { return }
+                self.startStaffel = f?.seasonId ?? item.seasonId
+                self.seitenstapel[self.bereich, default: []].append(s)
+                self.detailZeigen(s)
+            }
+        }
     }
 
     func zurueck() {

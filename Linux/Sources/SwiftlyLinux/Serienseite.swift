@@ -167,7 +167,7 @@ extension App {
         } else {
             zeichenLegen(huelle, serie: true)
         }
-        if let anteil = folge.gesehenerAnteil {
+        if wahlen.fortschrittAufKacheln, let anteil = folge.gesehenerAnteil {
             balkenLegen(huelle, breite: 160, anteil: anteil)
         }
         anhaengen(reihe, huelle)
