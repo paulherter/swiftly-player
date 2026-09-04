@@ -27,10 +27,25 @@ let package = Package(
             pkgConfig: "gtk4",
             providers: [.apt(["libgtk-4-dev"])]
         ),
+        // **libVLC des Systems, nicht VLCKit.** Auf Apple liegt VLCKit als
+        // XCFramework bei; auf Linux ist libVLC eine Systembibliothek. Was
+        // entscheidet, ob transkodiert wird, ist ohnehin das DeviceProfile im
+        // Paket — das ist auf allen Plattformen dasselbe.
+        .systemLibrary(
+            name: "CVLC",
+            pkgConfig: "libvlc",
+            providers: [.apt(["libvlc-dev"])]
+        ),
+        // Der fadenkritische Teil in C: VLCs Rueckrufe laufen auf dem
+        // Dekoderfaden und teilen sich einen Puffer mit GTKs Hauptfaden.
+        // Begruendung in bildbruecke.h.
+        .target(name: "CBildbruecke", dependencies: ["CVLC"]),
         .executableTarget(
             name: "SwiftlyLinux",
             dependencies: [
                 "CGtk",
+                "CVLC",
+                "CBildbruecke",
                 .product(name: "JellyfinKit", package: "JellyfinKit")
             ]
         )
