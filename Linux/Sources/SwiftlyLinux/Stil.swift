@@ -152,6 +152,7 @@ enum Stil {
         button.swiftly-haupt {
             background-color: \(schrift);
             color: \(grund);
+            border-radius: \(ecke)px;
             min-height: \(hauptknopfHoehe)px;
             padding: 0 30px;
             font-size: 16px;
@@ -165,6 +166,16 @@ enum Stil {
             color: rgba(11,11,13,0.55);
         }
 
+        /* **Die Farbe muss am Kind stehen, nicht nur am Knopf.**
+           Oben steht `label { color: … }` — eine Regel auf dem Element
+           selbst, und die schlägt jede geerbte Farbe. Der Hauptknopf war
+           deshalb weiß auf weiß: der Pfeil (ein `image`, von der Regel nicht
+           getroffen) stand da, die Beschriftung nicht. Also trägt jeder
+           Knopfzustand seine Farbe ausdrücklich bis ans Kind durch. */
+        button.swiftly-haupt label, button.swiftly-haupt image { color: \(grund); }
+        button.swiftly-haupt:disabled label,
+        button.swiftly-haupt:disabled image { color: rgba(11,11,13,0.55); }
+
         button.swiftly-flach {
             background-color: transparent;
             color: \(schriftLeise);
@@ -172,10 +183,11 @@ enum Stil {
             min-height: \(zeileHoehe)px;
             padding: 0 10px;
         }
+        button.swiftly-flach label { color: \(schriftLeise); }
         button.swiftly-flach:hover {
             background-color: rgba(255,255,255,0.06);
-            color: \(schrift);
         }
+        button.swiftly-flach:hover label { color: \(schrift); }
 
         /* MARK: Seitenleiste
            Fläche wie das Feld, Zeilen 32 hoch. Der Akzent trägt die Auswahl —
@@ -186,23 +198,27 @@ enum Stil {
         button.swiftly-zeile {
             min-height: \(zeileHoehe)px;
             padding: 0 10px;
-            color: \(schriftLeise);
+            border-radius: \(ecke)px;
             font-size: \(koerper)px;
             font-weight: 500;
         }
-        button.swiftly-zeile:hover {
-            background-color: rgba(255,255,255,0.06);
-            color: \(schrift);
-        }
-        button.swiftly-zeile.swiftly-aktiv {
-            background-color: rgba(92,209,194,0.10);
-            color: \(akzent);
+        button.swiftly-zeile label, button.swiftly-zeile image {
+            color: \(schriftLeise);
         }
         button.swiftly-zeile image { min-width: 17px; }
+        button.swiftly-zeile:hover { background-color: rgba(255,255,255,0.06); }
+        button.swiftly-zeile:hover label,
+        button.swiftly-zeile:hover image { color: \(schrift); }
+        button.swiftly-zeile.swiftly-aktiv {
+            background-color: rgba(92,209,194,0.10);
+        }
+        button.swiftly-zeile.swiftly-aktiv label,
+        button.swiftly-zeile.swiftly-aktiv image { color: \(akzent); }
 
         button.swiftly-profil {
             min-height: 40px;
             padding: 0 10px;
+            border-radius: \(ecke)px;
         }
         button.swiftly-profil:hover { background-color: rgba(255,255,255,0.06); }
 
