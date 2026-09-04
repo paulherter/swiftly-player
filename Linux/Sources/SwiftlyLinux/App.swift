@@ -499,6 +499,8 @@ final class App: @unchecked Sendable {
     var offeneStaffel: Item?
     /// Die Hinweiszeile der Detailseite.
     var hinweisfeld: Widget!
+    /// Wohin der Dateiauszug kommt, sobald der Plan da ist.
+    var dateiraum: Widget!
     var hinweistakt = 0
     /// Welche Unterseite offen ist (Profil, Quick Connect, …) — `nil`, wenn
     /// keine. Sie leben nicht im Bereichsstapel: auf dem Mac liegen sie

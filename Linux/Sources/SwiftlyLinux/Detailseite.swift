@@ -177,6 +177,35 @@ extension App {
         }
     }
 
+    /// **Der Dateiauszug — der Beleg für das Versprechen dieser App.**
+    ///
+    /// Container, Auflösung, Codec, Grösse, Untertitelsprachen: daran liest
+    /// man ab, **warum** Direct Play geht. Er fehlte auf Linux ganz, weil
+    /// `Dateiangaben` in `Sources/Shared` lag und von hier nicht erreichbar
+    /// war; jetzt liegt es im Paket.
+    ///
+    /// Die Werte kommen aus derselben Quelle, die auch den Plan trägt — es
+    /// wird nichts zusätzlich geholt.
+    func dateizeile(_ quelle: MediaSource) -> Widget! {
+        var teile: [String] = []
+        if let behaelter = Dateiangaben.container(quelle) { teile.append(behaelter) }
+        if let spur = Dateiangaben.videospur(quelle) {
+            teile.append(Dateiangaben.video(spur, quelle))
+        }
+        teile.append(Dateiangaben.groesse(quelle))
+        let ut = Dateiangaben.untertitel(Dateiangaben.untertitelspuren(quelle))
+        if !ut.isEmpty { teile.append(ut) }
+
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 22)
+        gtk_widget_add_css_class(reihe, "swiftly-dateizeile")
+        for text in teile where !text.isEmpty {
+            let l = beschriftung(text, stil: "swiftly-zweitzeile")
+            gtk_widget_add_css_class(l, "swiftly-leise")
+            anhaengen(reihe, l)
+        }
+        return reihe
+    }
+
     private func titelNachladen(_ item: Item, in seite: Widget!) {
         guard let client else { return }
         // **Der Zeiger geht über eine Fadengrenze**, und Swift 6 besteht auf
@@ -225,6 +254,14 @@ extension App {
                 anhaengen(unten, besetzungsreihe(titel.darsteller))
             }
             aehnlicheNachladen(titel, in: unten)
+            // **Der Dateiauszug steht ganz unten, und nur beim Film** — bei
+            // einer Serie gibt es keine Datei, nur die ihrer Folgen. Der
+            // Raum steht schon, gefüllt wird er, wenn der Plan kommt.
+            let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+            gtk_widget_set_margin_start(raum, Int32(Stil.randAbstand))
+            gtk_widget_set_margin_end(raum, Int32(Stil.randAbstand))
+            dateiraum = raum
+            anhaengen(unten, raum)
         }
     }
 
@@ -436,6 +473,12 @@ extension App {
                 anhaengen(ziel, text)
                 gtk_widget_add_css_class(ziel, plan.isLossless ? "swiftly-beleg" : "swiftly-warnung")
                 gtk_widget_set_visible(ziel, 1)
+                // Derselbe Plan trägt die Quelle — der Auszug kostet keinen
+                // zweiten Abruf.
+                if let quelle = plan.quelle, let raum = self.dateiraum {
+                    leeren(raum)
+                    anhaengen(raum, self.dateizeile(quelle))
+                }
             }
         }
     }

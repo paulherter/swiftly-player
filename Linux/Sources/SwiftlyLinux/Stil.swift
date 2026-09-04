@@ -579,6 +579,13 @@ enum Stil {
         /* Der Grund der Startanimation — auf iOS eine eigene Farbe
            („Startgrund"), hier derselbe dunkle Grund wie überall. */
         .swiftly-startgrund { background-color: \(grund); }
+        /* Der Dateiauszug: Haarlinie darüber, 14 Punkt Luft. */
+        .swiftly-dateizeile {
+            border-top: 1px solid \(linie);
+            padding-top: 14px;
+            margin-top: 8px;
+        }
+
         /* Die Hinweiszeile: drei Sekunden, dann weg. */
         .swiftly-hinweis {
             font-size: 14px;
