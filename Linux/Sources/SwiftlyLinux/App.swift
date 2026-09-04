@@ -231,7 +231,7 @@ final class App: @unchecked Sendable {
         anhaengen(mitte, frage)
 
         // Die Weltkugel im Feld — auf dem Mac steht dort `Image("globe")`.
-        serverfeld = eingabezeile(symbol: "globe-symbolic", platzhalter: "tv.beispiel.de")
+        serverfeld = eingabezeile(symbol: "web-browser-symbolic", platzhalter: "tv.beispiel.de")
         gtk_widget_set_margin_top(serverfeld, 24)
         anhaengen(mitte, serverfeld)
 

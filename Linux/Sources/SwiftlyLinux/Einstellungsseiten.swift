@@ -16,8 +16,20 @@ extension App {
 
     enum Unterseite { case profil, quickConnect, wiedergabe, einstellungen }
 
-    func unterseiteOeffnen(_ was: Unterseite, schub: Schub = .tiefer) {
-        let scheibe = naechsteScheibe()
+    /// **Einstellungen blenden über, sie schieben nicht.**
+    ///
+    /// Der Seitenschub gehört zum Blättern in Titeln — er sagt „du bist eine
+    /// Ebene tiefer". Profil, Wiedergabe und Einstellungen liegen aber
+    /// nebeneinander, nicht untereinander; sie zu schieben behauptet eine
+    /// Tiefe, die es nicht gibt. Deshalb ist ``Schub/ohne`` hier die Vorgabe.
+    ///
+    /// **Und dieselbe Seite noch einmal wird an Ort und Stelle neu gebaut.**
+    /// Wer eine Sprache wählt, löst einen Neubau aus; bisher fuhr dafür jedes
+    /// Mal eine neue Seite herein, obwohl sich nur eine Zeile geändert hat.
+    func unterseiteOeffnen(_ was: Unterseite, schub: Schub = .ohne) {
+        let anOrt = (offeneUnterseite == was)
+        let scheibe: Widget! = anOrt ? detailhuelle : naechsteScheibe()
+        if anOrt { leeren(scheibe) }
         offeneUnterseite = was
 
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
@@ -37,8 +49,8 @@ extension App {
 
         let scroller = seitenscroller()
         gtk_scrolled_window_set_child(OpaquePointer(scroller), block)
-        anhaengen(detailhuelle, scroller)
-        schieben(zu: scheibe, richtung: schub)
+        anhaengen(scheibe, scroller)
+        if !anOrt { schieben(zu: scheibe, richtung: schub) }
     }
 
     /// **Die Zeile stand da und tat nichts.** Der Mac stösst die Prüfung an,
@@ -99,7 +111,7 @@ extension App {
         anhaengen(block, bildblock)
 
         let g1 = zeilengruppe()
-        anhaengen(g1.raum, wertezeile(symbol: "user-info-symbolic", titel: "Quick Connect",
+        anhaengen(g1.raum, wertezeile(symbol: "phone-symbolic", titel: "Quick Connect",
                                       unter: "Code vom Fernseher eingeben",
                                       akzent: true, pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.quickConnect)

@@ -623,21 +623,50 @@ nonisolated(unsafe) private let auftragAnKante: @convention(c) (
     Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
 }
 
-/// Meldet jede Bewegung des Zeigers über einem Widget.
+/// Meldet **echte** Bewegungen des Zeigers über einem Widget.
 ///
-/// **Warum zusätzlich zu ``beiZeiger``:** Das Betreten des Fensters allein
-/// reicht nicht. Wer den Zeiger im Fenster ruhen lässt, bis die Steuerung
-/// zurücktritt, und ihn dann bewegt, hat sie nie wieder geholt — der Mac holt
-/// sie bei jeder echten Bewegung zurück (`PlayerScreen.swift:180`).
+/// **Warum eine Schwelle.** Auf dem Mac steht dort ausdrücklich „bei jeder
+/// echten Bewegung > 2 px" (`PlayerScreen.swift:180`). Ich hatte das
+/// weggelassen — mit sichtbarer Folge: über eine Fernsitzung schickt der
+/// Client laufend die Zeigerposition, auch wenn niemand die Maus anfasst.
+/// Jede dieser Meldungen holte die Steuerung zurück, und sie blendete nie
+/// wieder aus.
 ///
-/// „motion" bringt die Koordinaten mit, also derselbe Rückruf wie „enter".
+/// Zwei Punkte sind ausserdem der Zittertoleranz eines ruhenden Fingers oder
+/// einer optischen Maus geschuldet; ohne sie zählt schon das Rauschen.
 func beiBewegung(_ ziel: Widget!, _ block: @escaping () -> Void) {
     let horcher = gtk_event_controller_motion_new()
-    let a = Unmanaged.passRetained(Auftrag(block)).toOpaque()
+    let a = Unmanaged.passRetained(Bewegungswache(block)).toOpaque()
     g_signal_connect_data(UnsafeMutableRawPointer(horcher), "motion",
-                          unsafeBitCast(auftragAlsBewegungOeffentlich, to: GCallback.self),
-                          a, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+                          unsafeBitCast(wacheAlsBewegung, to: GCallback.self),
+                          a, wacheFreigeben, GConnectFlags(rawValue: 0))
     gtk_widget_add_controller(ziel, horcher)
+}
+
+/// Merkt sich, wo der Zeiger zuletzt war.
+final class Bewegungswache {
+    let block: () -> Void
+    var x: Double = -1
+    var y: Double = -1
+    init(_ block: @escaping () -> Void) { self.block = block }
+}
+
+nonisolated(unsafe) private let wacheAlsBewegung: @convention(c) (
+    UnsafeMutableRawPointer?, Double, Double, gpointer?
+) -> Void = { _, x, y, daten in
+    guard let daten else { return }
+    let w = Unmanaged<Bewegungswache>.fromOpaque(daten).takeUnretainedValue()
+    defer { w.x = x; w.y = y }
+    guard w.x >= 0 else { return }          // die erste Meldung zählt nicht
+    guard abs(x - w.x) > 2 || abs(y - w.y) > 2 else { return }
+    w.block()
+}
+
+nonisolated(unsafe) private let wacheFreigeben: @convention(c) (
+    gpointer?, UnsafeMutablePointer<_GClosure>?
+) -> Void = { daten, _ in
+    guard let daten else { return }
+    Unmanaged<Bewegungswache>.fromOpaque(daten).release()
 }
 
 /// Meldet einen Rechtsklick — die Zeigerform des langen Drückens (A6).
