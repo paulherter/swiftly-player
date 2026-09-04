@@ -193,11 +193,14 @@ final class App: @unchecked Sendable {
         // App startet dann in ein schwarzes Fenster. Der Wecker nimmt ihn
         // hinterher in jedem Fall weg. Blendet es weich, sieht man ihn nicht;
         // blendet es nicht, ist er trotzdem fort.
-        Task.detached { [self] in
+        // Der Zeiger geht über eine Fadengrenze, also in die Kiste.
+        let kiste = gehalten(bild)
+        Task.detached {
             try? await Task.sleep(nanoseconds: 340_000_000)
             aufHauptfaden {
-                gtk_widget_set_opacity(bild, 0)
-                gtk_widget_set_visible(bild, 0)
+                defer { losgelassen(kiste) }
+                gtk_widget_set_opacity(kiste.widget, 0)
+                gtk_widget_set_visible(kiste.widget, 0)
             }
         }
         // **Die Decke bleibt hängen, sie wird nicht abgeräumt.** Ein Widget
