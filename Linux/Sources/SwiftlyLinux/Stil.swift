@@ -558,11 +558,18 @@ enum Stil {
         }
 
         scrollbar { background-color: transparent; }
+        /* **Den Rand des Systemthemas mit zurücksetzen.** Breeze legt auf
+           `scrollbar slider` einen Rand von 4; mit unseren 6 Punkt
+           Mindestbreite bleiben davon −2 übrig, und GTK meldet genau das:
+           „slider reported min width -2, but sizes must be >= 0". Wer eine
+           Mindestgröße überschreibt, muss den Rand mit überschreiben. */
         scrollbar slider {
             background-color: rgba(255,255,255,0.22);
             border-radius: 8px;
             min-width: 6px;
             min-height: 6px;
+            margin: 0;
+            border: none;
         }
         scrollbar slider:hover { background-color: rgba(255,255,255,0.36); }
         """
