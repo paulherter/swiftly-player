@@ -70,9 +70,11 @@ extension App {
         gtk_stack_set_visible_child_name(OpaquePointer(inhalt), "detail")
 
         let seite = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        // Der Ton der Seite — solange keiner da ist, bleibt es `grund`.
-        gtk_widget_add_css_class(seite, "swiftly-detailgrund")
 
+        // **Der Ton gehört an die Scrollfläche, nicht an ihren Inhalt.** Auf
+        // dem Mac steht er als `.background` an der `ScrollView` und bleibt
+        // damit stehen, während der Inhalt darüber wegläuft. Am Inhalt würde
+        // er mitscrollen, und der Kopf der Seite wäre irgendwann schwarz.
         let scroller = gtk_scrolled_window_new()
         gtk_widget_add_css_class(scroller, "swiftly-detailgrund")
         gtk_scrolled_window_set_policy(OpaquePointer(scroller),

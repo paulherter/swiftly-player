@@ -108,11 +108,16 @@ enum Bildfarbe {
 enum Tonblatt {
     nonisolated(unsafe) private static var anbieter: UnsafeMutablePointer<GtkCssProvider>?
 
-    /// **Der Ton färbt die ganze Seite, nicht nur den Auslauf.**
+    /// **Der Ton färbt den Kopf der Seite, nicht die ganze Seite.**
     ///
-    /// Erst stand er allein in den beiden Verläufen — und genau daran lag die
-    /// harte Kante, die Auf dem Mac färbt `Bildfarbe` den Grund der Seite ein;
-    /// der Auslauf hat dann gar nichts mehr zu verbergen.
+    /// Erst stand er allein in den beiden Verläufen — daran lag die harte
+    /// Kante unten am Bild: der Verlauf endete im Bildton, die Seite darum
+    /// blieb `grund`, und dazwischen stand eine Stufe. Dann färbte er alles
+    /// gleichmäßig, und das war zu viel.
+    ///
+    /// Auf dem Mac läuft er über `heldHoehe + 260` Punkte nach `grund` aus
+    /// (`SerienView`, `DetailView`) — oben trägt er, unten ist die Seite
+    /// wieder schwarz. Die Länge steht dort, nicht hier.
     ///
     /// Oben braucht es zusätzlich eine kurze Blende. Auf dem Mac reicht das
     /// Bild bis an die Fensterkante, hier sitzt die Titelzeile darüber — ohne
@@ -136,7 +141,12 @@ enum Tonblatt {
             "rgba(\(ton.r),\(ton.g),\(ton.b),\(deckung))"
         }
         gtk_css_provider_load_from_string(anbieter, """
-        .swiftly-detailgrund { background-color: \(t(1)); }
+        .swiftly-detailgrund {
+            background-color: \(Stil.grund);
+            background-image: linear-gradient(to bottom,
+                \(t(1)) 0px, \(Stil.grund) \(Stil.heldHoehe + 260)px);
+            background-repeat: no-repeat;
+        }
         .swiftly-blende-quer {
             background-image: linear-gradient(to right,
                 \(t(1)) 0%, \(t(0.95)) 15%, \(t(0.78)) 29%, \(t(0.50)) 45%,
