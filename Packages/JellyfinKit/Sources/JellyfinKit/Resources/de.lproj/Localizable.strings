@@ -45,3 +45,7 @@
 "Nächste Folge" = "Nächste Folge";
 "Überspringen" = "Überspringen";
 "Der Server nennt keine abspielbare Fassung." = "Der Server nennt keine abspielbare Fassung.";
+
+/* Laufzeit — aus Sources/Shared/Titelangaben.swift hierher gehoben. */
+"%lld Std. %lld Min." = "%lld Std. %lld Min.";
+"%lld Min." = "%lld Min.";

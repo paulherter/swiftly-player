@@ -45,3 +45,7 @@
 "Nächste Folge" = "Next Episode";
 "Überspringen" = "Skip";
 "Der Server nennt keine abspielbare Fassung." = "The server does not offer a playable version.";
+
+/* Laufzeit — aus Sources/Shared/Titelangaben.swift hierher gehoben. */
+"%lld Std. %lld Min." = "%lld h %lld min";
+"%lld Min." = "%lld min";
