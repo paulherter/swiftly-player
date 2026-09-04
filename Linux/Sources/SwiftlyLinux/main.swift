@@ -9,12 +9,35 @@ import JellyfinKit
 /// nachgebauter Client, keine zweite Wahrheit: `publicSystemInfo()` ist
 /// dieselbe Zeile Code wie überall sonst, und `AppModelURLNormalizer` legt
 /// hier wie dort fest, ob vor eine Adresse `http` oder `https` gehört.
+
+// MARK: - Umwandlung zwischen GTKs Typen
+
+/// **GTK kennt keine Vererbung, es hat Zeigerkunst.**
 ///
-/// **Warum überall `OpaquePointer` steht.** GTK verbirgt den Aufbau seiner
-/// Typen; die Kopfdateien deklarieren sie nur vorwärts. Swift sieht deshalb
-/// keine Strukturen, sondern undurchsichtige Zeiger — und genau die sind der
-/// richtige Weg, mit GTK aus Swift zu sprechen. Das spart die ganze
-/// Umdeuterei mit `unsafeBitCast`, die ein erster Anlauf noch hatte.
+/// Jede Funktion nimmt den Typ, für den sie gedacht ist — `gtk_box_append`
+/// will eine Box, `gtk_button_set_label` einen Knopf —, aber jedes `*_new()`
+/// gibt ein `GtkWidget*` zurück. In C erledigen Makros das Umdeuten; in Swift
+/// gibt es die nicht, also stehen die Umwandlungen hier einmal beisammen.
+///
+/// Welche Typen Swift überhaupt benennen kann, ist nicht zu erraten: `GtkBox`,
+/// `GtkButton` und `GtkEntry` ja, `GtkLabel` und `GtkEditable` nein — die
+/// kommen als undurchsichtige Zeiger herein. Herausgefunden am 04.09.2026,
+/// indem der Übersetzer selbst nach den erwarteten Typen gefragt wurde,
+/// nachdem drei Anläufe daran gescheitert waren.
+private typealias Widget = UnsafeMutablePointer<GtkWidget>
+
+@inline(__always) private func alsBox(_ w: Widget!) -> UnsafeMutablePointer<GtkBox>! {
+    unsafeBitCast(w, to: UnsafeMutablePointer<GtkBox>.self)
+}
+@inline(__always) private func alsKnopf(_ w: Widget!) -> UnsafeMutablePointer<GtkButton>! {
+    unsafeBitCast(w, to: UnsafeMutablePointer<GtkButton>.self)
+}
+@inline(__always) private func alsFeld(_ w: Widget!) -> UnsafeMutablePointer<GtkEntry>! {
+    unsafeBitCast(w, to: UnsafeMutablePointer<GtkEntry>.self)
+}
+@inline(__always) private func alsFenster(_ w: Widget!) -> UnsafeMutablePointer<GtkWindow>! {
+    unsafeBitCast(w, to: UnsafeMutablePointer<GtkWindow>.self)
+}
 
 // MARK: - Zustand
 
@@ -24,28 +47,28 @@ import JellyfinKit
 /// er kann nichts einfangen. Was er sehen soll, muss an einer festen Adresse
 /// liegen.
 final class Oberflaeche {
-    var adressfeld: OpaquePointer?
-    var knopf: OpaquePointer?
-    var standzeile: OpaquePointer?
+    var adressfeld: Widget?
+    var knopf: Widget?
+    var standzeile: Widget?
     var laeuft = false
 
     /// **Muss auf dem Hauptfaden laufen.** GTK ist nicht nebenläufig; ein
     /// Aufruf aus einer Task würde die Oberfläche irgendwann still zerlegen.
     func zeige(_ text: String) {
         guard let standzeile else { return }
-        gtk_label_set_text(standzeile, text)
+        gtk_label_set_text(OpaquePointer(standzeile), text)
     }
 
     func beschaeftigt(_ ja: Bool) {
         laeuft = ja
         guard let knopf else { return }
         gtk_widget_set_sensitive(knopf, ja ? 0 : 1)
-        gtk_button_set_label(knopf, ja ? "Verbinde …" : "Verbinden")
+        gtk_button_set_label(alsKnopf(knopf), ja ? "Verbinde …" : "Verbinden")
     }
 
     var adresse: String {
         guard let adressfeld else { return "" }
-        return gtk_editable_get_text(adressfeld).map { String(cString: $0) } ?? ""
+        return gtk_editable_get_text(OpaquePointer(adressfeld)).map { String(cString: $0) } ?? ""
     }
 }
 
@@ -106,19 +129,28 @@ private func verbinden() {
     }
 }
 
-nonisolated(unsafe) private let knopfGedrueckt: @convention(c) (OpaquePointer?, gpointer?) -> Void = { _, _ in
+nonisolated(unsafe) private let ausgeloest: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void = { _, _ in
     verbinden()
+}
+
+/// `g_signal_connect` ist ein Makro und in Swift unsichtbar. Darunter liegt
+/// `g_signal_connect_data`; die Hülle hier spart die immer gleichen Nullen.
+private func beiSignal(_ ziel: UnsafeMutableRawPointer!, _ name: String,
+                       _ rueckruf: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void) {
+    g_signal_connect_data(ziel, name, unsafeBitCast(rueckruf, to: GCallback.self),
+                          nil, nil, GConnectFlags(rawValue: 0))
 }
 
 // MARK: - Fenster
 
-nonisolated(unsafe) private let fensterAufbauen: @convention(c) (OpaquePointer?, gpointer?) -> Void = { app, _ in
-    let fenster = adw_application_window_new(app)
-    gtk_window_set_title(fenster, "Swiftly")
-    gtk_window_set_default_size(fenster, 560, 400)
+nonisolated(unsafe) private let fensterAufbauen: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void = { app, _ in
+    let anwendung = app!.assumingMemoryBound(to: GtkApplication.self)
+    let fenster: Widget! = adw_application_window_new(anwendung)
+    gtk_window_set_title(alsFenster(fenster), "Swiftly")
+    gtk_window_set_default_size(alsFenster(fenster), 560, 400)
 
     // Senkrechter Stapel, mittig, mit Luft ringsum.
-    let stapel = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14)
+    let stapel: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14)
     gtk_widget_set_margin_top(stapel, 40)
     gtk_widget_set_margin_bottom(stapel, 40)
     gtk_widget_set_margin_start(stapel, 40)
@@ -126,60 +158,54 @@ nonisolated(unsafe) private let fensterAufbauen: @convention(c) (OpaquePointer?,
     gtk_widget_set_valign(stapel, GTK_ALIGN_CENTER)
     gtk_widget_set_vexpand(stapel, 1)
 
-    let titel = gtk_label_new("Swiftly")
+    let titel: Widget! = gtk_label_new("Swiftly")
     gtk_widget_add_css_class(titel, "title-1")
-    gtk_box_append(stapel, titel)
+    gtk_box_append(alsBox(stapel), titel)
 
-    let unterzeile = gtk_label_new("Wo steht dein Jellyfin?")
+    let unterzeile: Widget! = gtk_label_new("Wo steht dein Jellyfin?")
     gtk_widget_add_css_class(unterzeile, "dim-label")
-    gtk_box_append(stapel, unterzeile)
+    gtk_box_append(alsBox(stapel), unterzeile)
 
-    let feld = gtk_entry_new()
-    gtk_entry_set_placeholder_text(feld, "tv.beispiel.de")
-    gtk_editable_set_text(feld, "tv.paulherter.de")
+    let feld: Widget! = gtk_entry_new()
+    gtk_entry_set_placeholder_text(alsFeld(feld), "tv.beispiel.de")
+    gtk_editable_set_text(OpaquePointer(feld), "tv.paulherter.de")
     gtk_widget_set_margin_top(feld, 8)
-    gtk_box_append(stapel, feld)
+    gtk_box_append(alsBox(stapel), feld)
     oberflaeche.adressfeld = feld
 
-    let knopf = gtk_button_new_with_label("Verbinden")
+    let knopf: Widget! = gtk_button_new_with_label("Verbinden")
     gtk_widget_add_css_class(knopf, "suggested-action")
     gtk_widget_add_css_class(knopf, "pill")
-    gtk_box_append(stapel, knopf)
+    gtk_box_append(alsBox(stapel), knopf)
     oberflaeche.knopf = knopf
 
-    let stand = gtk_label_new("Noch nichts versucht.")
-    gtk_label_set_wrap(stand, 1)
-    gtk_label_set_justify(stand, GTK_JUSTIFY_CENTER)
+    let stand: Widget! = gtk_label_new("Noch nichts versucht.")
+    gtk_label_set_wrap(OpaquePointer(stand), 1)
+    gtk_label_set_justify(OpaquePointer(stand), GTK_JUSTIFY_CENTER)
     gtk_widget_add_css_class(stand, "dim-label")
     gtk_widget_set_margin_top(stand, 10)
-    gtk_box_append(stapel, stand)
+    gtk_box_append(alsBox(stapel), stand)
     oberflaeche.standzeile = stand
 
-    // **`g_signal_connect` ist ein Makro** und in Swift unsichtbar. Darunter
-    // liegt `g_signal_connect_data` mit null für Daten und Flags.
-    g_signal_connect_data(UnsafeMutableRawPointer(knopf), "clicked",
-                          unsafeBitCast(knopfGedrueckt, to: GCallback.self),
-                          nil, nil, GConnectFlags(rawValue: 0))
-    g_signal_connect_data(UnsafeMutableRawPointer(feld), "activate",
-                          unsafeBitCast(knopfGedrueckt, to: GCallback.self),
-                          nil, nil, GConnectFlags(rawValue: 0))
+    beiSignal(UnsafeMutableRawPointer(knopf), "clicked", ausgeloest)
+    beiSignal(UnsafeMutableRawPointer(feld), "activate", ausgeloest)
 
     // Ein AdwApplicationWindow hat keine eigene Titelzeile; die kommt als
     // erstes Kind des Inhalts dazu.
-    let inhalt = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
-    gtk_box_append(inhalt, adw_header_bar_new())
-    gtk_box_append(inhalt, stapel)
-    adw_application_window_set_content(fenster, inhalt)
+    let inhalt: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+    gtk_box_append(alsBox(inhalt), adw_header_bar_new())
+    gtk_box_append(alsBox(inhalt), stapel)
+    adw_application_window_set_content(
+        unsafeBitCast(fenster, to: UnsafeMutablePointer<AdwApplicationWindow>.self), inhalt)
 
-    gtk_window_present(fenster)
+    gtk_window_present(alsFenster(fenster))
 }
 
 // MARK: - Start
 
 let anwendung = adw_application_new("de.paulherter.swiftly", GApplicationFlags(rawValue: 0))
-g_signal_connect_data(UnsafeMutableRawPointer(anwendung), "activate",
-                      unsafeBitCast(fensterAufbauen, to: GCallback.self),
-                      nil, nil, GConnectFlags(rawValue: 0))
+beiSignal(UnsafeMutableRawPointer(anwendung), "activate", fensterAufbauen)
 
-let ergebnis = g_application_run(UnsafeMutableRawPointer(anwendung).assumingMemoryBound(to: GApplication.self), 0, nil)
+let ergebnis = g_application_run(
+    unsafeBitCast(anwendung, to: UnsafeMutablePointer<GApplication>.self), 0, nil)
 exit(ergebnis)
