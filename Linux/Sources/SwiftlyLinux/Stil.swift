@@ -423,7 +423,13 @@ enum Stil {
            nichts ein, also tun es zwei Verläufe in `grund` — mit denselben
            Stützstellen, die auf dem Fernseher nach vier Umbauten entstanden
            sind. */
-        .swiftly-kulisse { background-color: \(grund); border-radius: 0; }
+        /* **Die Kulisse malt selbst nichts.** Sie hatte einen Grund, und der
+           schaute als heller Saum um das Bild herum hervor: an den Kanten ist
+           der Verlauf durchsichtig, und wo das Bild um einen Punkt kürzer ist
+           als seine Hülle, sieht man dahinter. Zu zeigen gibt es dort nichts
+           — den Ton trägt die Seite (`swiftly-detailgrund`), also ist ein
+           Punkt Lücke unsichtbar statt hell. */
+        .swiftly-kulisse { background-color: transparent; border-radius: 0; }
         /* Die Stützstellen des Fernsehers, dort nach vier Umbauten
            entstanden. Der Ton darin wechselt mit dem Bild — ``Tonblatt``
            überschreibt beide Regeln mit einem eigenen Anbieter. */

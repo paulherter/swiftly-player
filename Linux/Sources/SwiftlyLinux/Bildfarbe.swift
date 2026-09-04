@@ -137,7 +137,6 @@ enum Tonblatt {
         }
         gtk_css_provider_load_from_string(anbieter, """
         .swiftly-detailgrund { background-color: \(t(1)); }
-        .swiftly-kulisse { background-color: \(t(1)); }
         .swiftly-blende-quer {
             background-image: linear-gradient(to right,
                 \(t(1)) 0%, \(t(0.95)) 15%, \(t(0.78)) 29%, \(t(0.50)) 45%,
