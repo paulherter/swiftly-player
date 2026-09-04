@@ -93,29 +93,19 @@ final class App: @unchecked Sendable {
 
         // **Die Startanimation liegt *über* der Oberfläche, nicht neben ihr.**
         //
-        // Der erste Anlauf gab ihr eine eigene Stapelseite. Das sieht sauber
-        // aus und ist es nicht: ein `GtkStack` legt nur sein sichtbares Kind
-        // aus. Die Hauptansicht bekam also nie eine Grösse, und weil auf ihr
-        // eine Bühne liegt, deren Ebenen ihr Mass von einer Zeichenfläche
-        // bekommen (siehe ``startseiteBauen``), stand danach ein **schwarzes
-        // Fenster** — gemessen, dreimal hintereinander.
+        // Der erste Anlauf gab ihr eine eigene Stapelseite. Das ist auch so
+        // nicht richtig — ein `GtkStack` legt nur sein sichtbares Kind aus,
+        // die Hauptansicht bekäme also nie eine Grösse. Als Überzug stellt
+        // sich die Frage nicht: darunter wird die ganze Zeit normal
+        // ausgelegt, und die Animation deckt es nur zu.
         //
-        // Als Überzug ist die Frage gar nicht erst da: darunter wird die
-        // ganze Zeit normal ausgelegt, und die Animation deckt es nur zu.
+        // **Das schwarze Fenster kam aber von woanders**, und das hat mich
+        // fünf Anläufe gekostet: die App stürzte beim zweiten Bild ab, an
+        // einer Cairo-Zusicherung. Nicht die Übergabe war kaputt, es gab
+        // hinterher schlicht keinen Prozess mehr. Siehe ``Startanimation``.
         let decke: Widget! = gtk_overlay_new()
         gtk_overlay_set_child(OpaquePointer(decke), inhalt)
-        // **Vorerst abgeschaltet, und zwar mit Absicht sichtbar.**
-        //
-        // Die Anbindung steht — rlottie baut, die Vorlage wird gelesen, 81
-        // Bilder, 1,33 s, und ein Bild kam auch schon auf den Schirm. Was
-        // nicht steht, ist der Übergang danach: das Fenster blieb schwarz,
-        // gemessen über vier Anläufe (eigene Stapelseite, dann Überzug). Eine
-        // App, die schwarz startet, ist schlimmer als eine ohne Animation,
-        // also bleibt sie aus, bis der Grund gefunden ist.
-        //
-        // `SWIFTLY_START=1` schaltet sie zum Suchen wieder an.
-        if ProcessInfo.processInfo.environment["SWIFTLY_START"] == "1",
-           let lauf = Startanimation(fertig: { [weak self] in self?.startbildWeg() }) {
+        if let lauf = Startanimation(fertig: { [weak self] in self?.startbildWeg() }) {
             startanimation = lauf
             let grund = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
             gtk_widget_add_css_class(grund, "swiftly-startgrund")
