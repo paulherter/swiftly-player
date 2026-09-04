@@ -1,0 +1,237 @@
+import CGtk
+import Foundation
+
+/// **Die Medientasten und der Eintrag in der Systemleiste.**
+///
+/// Auf Apple leistet das `MPRemoteCommandCenter` samt „Now Playing" — der
+/// Sperrbildschirm zeigt Titel und Bild, die Tasten am Gerät halten an und
+/// springen weiter. Unter Linux gibt es dafür kein Rahmenwerk, sondern einen
+/// **Standard**: `org.mpris.MediaPlayer2` auf dem Sitzungsbus. Jede
+/// Arbeitsumgebung — KDE, GNOME, Sway mit `playerctl` — bindet ihre
+/// Medientasten daran und zeigt darüber ihre Wiedergabekachel.
+///
+/// **Zwei Schnittstellen, nicht eine.** `MediaPlayer2` beschreibt die App
+/// selbst (Name, ob sie sich schliessen und nach vorn holen lässt),
+/// `MediaPlayer2.Player` die Wiedergabe. Wer nur die zweite anmeldet, taucht
+/// nirgends auf: die Umgebungen suchen nach der ersten.
+///
+/// **Eigenschaften ändern sich nicht von selbst.** D-Bus hat kein Nachfragen
+/// im Takt; wer nicht `PropertiesChanged` sendet, dessen Kachel zeigt für
+/// immer „Pausiert". Deshalb ``standMelden(laeuft:titel:untertitel:dauer:)``
+/// nach jeder Änderung.
+///
+/// `@unchecked Sendable` mit derselben Begründung wie überall hier: angefasst
+/// wird sie nur auf GTKs Hauptfaden, und der ist derselbe, auf dem GDBus
+/// zurückruft.
+final class Medienleiste: @unchecked Sendable {
+
+    /// Was die Leiste auslöst. Dieselben Griffe wie am Knopf.
+    enum Griff { case abspielen, anhalten, umschalten, beenden, weiter, zurueck }
+
+    private var verbindung: OpaquePointer?
+    private var name: guint = 0
+    private var stamm: guint = 0
+    private var spieler: guint = 0
+    private let melden: (Griff) -> Void
+
+    fileprivate var laeuft = false
+    fileprivate var titel = ""
+    fileprivate var untertitel = ""
+    fileprivate var dauer: Double = 0
+    fileprivate var stelle: Double = 0
+
+    init(melden: @escaping (Griff) -> Void) {
+        self.melden = melden
+        anmelden()
+    }
+
+    deinit { abmelden() }
+
+    fileprivate func loesen(_ griff: Griff) { melden(griff) }
+
+    // MARK: Anmelden
+
+    private func anmelden() {
+        var fehler: UnsafeMutablePointer<GError>?
+        guard let bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nil, &fehler) else {
+            // **Still.** Ohne Sitzungsbus — in einer abgeschotteten Umgebung,
+            // in einem Bauknecht — gibt es keine Medientasten, und das ist
+            // kein Grund, die App anzuhalten.
+            if let fehler { g_error_free(fehler) }
+            return
+        }
+        verbindung = OpaquePointer(bus)
+
+        guard let knoten = g_dbus_node_info_new_for_xml(Medienleiste.beschreibung, &fehler) else {
+            if let fehler { g_error_free(fehler) }
+            return
+        }
+        defer { g_dbus_node_info_unref(knoten) }
+
+        var tisch = GDBusInterfaceVTable()
+        tisch.method_call = mprisAufruf
+        tisch.get_property = mprisLesen
+        tisch.set_property = nil
+
+        let ich = Unmanaged.passUnretained(self).toOpaque()
+        stamm = g_dbus_connection_register_object(
+            bus, "/org/mpris/MediaPlayer2",
+            g_dbus_node_info_lookup_interface(knoten, "org.mpris.MediaPlayer2"),
+            &tisch, ich, nil, nil)
+        spieler = g_dbus_connection_register_object(
+            bus, "/org/mpris/MediaPlayer2",
+            g_dbus_node_info_lookup_interface(knoten, "org.mpris.MediaPlayer2.Player"),
+            &tisch, ich, nil, nil)
+
+        // **Der Name muss die Kennung tragen.** Zwei Fassungen derselben App
+        // dürfen nebeneinander laufen; der Zusatz hinter dem Punkt trennt sie.
+        name = g_bus_own_name_on_connection(
+            bus, "org.mpris.MediaPlayer2.swiftly",
+            G_BUS_NAME_OWNER_FLAGS_REPLACE, nil, nil, nil, nil)
+    }
+
+    private func abmelden() {
+        guard let bus = verbindung.map({ UnsafeMutablePointer<GDBusConnection>(OpaquePointer($0)) })
+        else { return }
+        if stamm != 0 { g_dbus_connection_unregister_object(bus, stamm) }
+        if spieler != 0 { g_dbus_connection_unregister_object(bus, spieler) }
+        if name != 0 { g_bus_unown_name(name) }
+        verbindung = nil
+    }
+
+    // MARK: Melden
+
+    /// Sagt der Umgebung, was gerade läuft. **Nach jeder Änderung**, sonst
+    /// bleibt ihre Kachel auf dem alten Stand stehen.
+    func standMelden(laeuft: Bool, titel: String, untertitel: String,
+                     dauer: Double, stelle: Double) {
+        self.laeuft = laeuft
+        self.titel = titel
+        self.untertitel = untertitel
+        self.dauer = dauer
+        self.stelle = stelle
+        guard let bus = verbindung.map({ UnsafeMutablePointer<GDBusConnection>(OpaquePointer($0)) })
+        else { return }
+
+        let bauer = g_variant_builder_new(G_VARIANT_TYPE("a{sv}"))
+        defer { g_variant_builder_unref(bauer) }
+        g_variant_builder_add(bauer, "{sv}", "PlaybackStatus",
+                              g_variant_new_string(laeuft ? "Playing" : "Paused"))
+        g_variant_builder_add(bauer, "{sv}", "Metadata", metadaten())
+
+        let leer = g_variant_builder_new(G_VARIANT_TYPE("as"))
+        defer { g_variant_builder_unref(leer) }
+
+        let inhalt = g_variant_new("(sa{sv}as)", "org.mpris.MediaPlayer2.Player",
+                                   bauer, leer)
+        g_dbus_connection_emit_signal(bus, nil, "/org/mpris/MediaPlayer2",
+                                      "org.freedesktop.DBus.Properties",
+                                      "PropertiesChanged", inhalt, nil)
+    }
+
+    /// Die Angaben, die die Kachel anzeigt.
+    fileprivate func metadaten() -> OpaquePointer? {
+        let bauer = g_variant_builder_new(G_VARIANT_TYPE("a{sv}"))
+        defer { g_variant_builder_unref(bauer) }
+        // Eine Kennung ist Pflicht; ohne sie halten manche Umgebungen den
+        // Eintrag für unfertig und zeigen ihn gar nicht.
+        g_variant_builder_add(bauer, "{sv}", "mpris:trackid",
+                              g_variant_new_object_path("/de/paulherter/swiftly/titel"))
+        g_variant_builder_add(bauer, "{sv}", "mpris:length",
+                              g_variant_new_int64(Int64(dauer * 1_000_000)))
+        g_variant_builder_add(bauer, "{sv}", "xesam:title", g_variant_new_string(titel))
+        if !untertitel.isEmpty {
+            let liste = g_variant_builder_new(G_VARIANT_TYPE("as"))
+            defer { g_variant_builder_unref(liste) }
+            g_variant_builder_add(liste, "s", untertitel)
+            g_variant_builder_add(bauer, "{sv}", "xesam:artist",
+                                  g_variant_builder_end(liste))
+        }
+        return g_variant_builder_end(bauer)
+    }
+
+    /// Was auf dem Bus steht. Nur, was die Umgebungen wirklich lesen.
+    private static let beschreibung = """
+    <node>
+      <interface name="org.mpris.MediaPlayer2">
+        <method name="Raise"/>
+        <method name="Quit"/>
+        <property name="CanQuit" type="b" access="read"/>
+        <property name="CanRaise" type="b" access="read"/>
+        <property name="HasTrackList" type="b" access="read"/>
+        <property name="Identity" type="s" access="read"/>
+        <property name="DesktopEntry" type="s" access="read"/>
+        <property name="SupportedUriSchemes" type="as" access="read"/>
+        <property name="SupportedMimeTypes" type="as" access="read"/>
+      </interface>
+      <interface name="org.mpris.MediaPlayer2.Player">
+        <method name="Play"/>
+        <method name="Pause"/>
+        <method name="PlayPause"/>
+        <method name="Stop"/>
+        <method name="Next"/>
+        <method name="Previous"/>
+        <property name="PlaybackStatus" type="s" access="read"/>
+        <property name="Metadata" type="a{sv}" access="read"/>
+        <property name="Position" type="x" access="read"/>
+        <property name="CanPlay" type="b" access="read"/>
+        <property name="CanPause" type="b" access="read"/>
+        <property name="CanSeek" type="b" access="read"/>
+        <property name="CanControl" type="b" access="read"/>
+        <property name="CanGoNext" type="b" access="read"/>
+        <property name="CanGoPrevious" type="b" access="read"/>
+      </interface>
+    </node>
+    """
+}
+
+// MARK: - Die beiden Rückrufe
+
+nonisolated(unsafe) private let mprisAufruf: @convention(c) (
+    UnsafeMutablePointer<GDBusConnection>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
+    UnsafePointer<CChar>?, UnsafePointer<CChar>?, OpaquePointer?,
+    OpaquePointer?, gpointer?
+) -> Void = { _, _, _, _, name, _, aufruf, daten in
+    guard let daten, let name else { return }
+    let leiste = Unmanaged<Medienleiste>.fromOpaque(daten).takeUnretainedValue()
+    switch String(cString: name) {
+    case "Play":      leiste.loesen(.abspielen)
+    case "Pause":     leiste.loesen(.anhalten)
+    case "PlayPause": leiste.loesen(.umschalten)
+    case "Stop":      leiste.loesen(.beenden)
+    case "Next":      leiste.loesen(.weiter)
+    case "Previous":  leiste.loesen(.zurueck)
+    // „Raise" holt das Fenster nach vorn; „Quit" beendet die App. Beides
+    // beantworten wir, ohne etwas zu tun — sonst meldet die Umgebung einen
+    // Fehler, und manche blenden den Eintrag daraufhin aus.
+    default: break
+    }
+    if let aufruf { g_dbus_method_invocation_return_value(aufruf, nil) }
+}
+
+nonisolated(unsafe) private let mprisLesen: @convention(c) (
+    UnsafeMutablePointer<GDBusConnection>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
+    UnsafePointer<CChar>?, UnsafePointer<CChar>?,
+    UnsafeMutablePointer<UnsafeMutablePointer<GError>?>?, gpointer?
+) -> OpaquePointer? = { _, _, _, _, name, _, daten in
+    guard let daten, let name else { return nil }
+    let leiste = Unmanaged<Medienleiste>.fromOpaque(daten).takeUnretainedValue()
+    switch String(cString: name) {
+    case "Identity":            return g_variant_new_string("Swiftly")
+    case "DesktopEntry":        return g_variant_new_string("de.paulherter.swiftly")
+    case "CanQuit", "CanRaise": return g_variant_new_boolean(1)
+    case "HasTrackList":        return g_variant_new_boolean(0)
+    case "SupportedUriSchemes", "SupportedMimeTypes":
+        let leer = g_variant_builder_new(G_VARIANT_TYPE("as"))
+        defer { g_variant_builder_unref(leer) }
+        return g_variant_builder_end(leer)
+    case "PlaybackStatus":
+        return g_variant_new_string(leiste.laeuft ? "Playing" : "Paused")
+    case "Metadata":            return leiste.metadaten()
+    case "Position":            return g_variant_new_int64(Int64(leiste.stelle * 1_000_000))
+    case "CanPlay", "CanPause", "CanSeek", "CanControl", "CanGoNext":
+        return g_variant_new_boolean(1)
+    case "CanGoPrevious":       return g_variant_new_boolean(0)
+    default:                    return nil
+    }
+}

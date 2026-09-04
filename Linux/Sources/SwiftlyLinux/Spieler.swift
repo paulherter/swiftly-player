@@ -107,6 +107,7 @@ extension App {
         schlafminuten = nil
         laufenderTitel = nil
         laufenderPlan = nil
+        medienstandMelden()
         // `UNDER_DOWN`: der Player fährt nach unten hinaus und gibt frei,
         // was darunter liegt — die Startseite bewegt sich nicht.
         gtk_stack_set_transition_type(OpaquePointer(seiten),
@@ -269,6 +270,7 @@ extension App {
             // schon eine halbe Sekunde weg war, bevor das Zeichen umsprang.
             self.spielstand.laeuft.toggle()
             self.spielerAbspielzeichen?.setzen(self.spielstand.laeuft)
+            self.medienstandMelden()
             self.steuerungZeigen()
         })
 
@@ -466,7 +468,7 @@ extension App {
             spielerLadeschirm = nil
         }
         if auftrag.spurenAnwenden { spurenVorwaehlen() }
-        if auftrag.startMelden { melden(.start) }
+        if auftrag.startMelden { melden(.start); medienstandMelden() }
         if auftrag.fortschrittMelden { melden(.fortschritt) }
 
         // B5: der Knopf. B6: das selbsttätige Weiterschalten — deutlich enger

@@ -136,6 +136,12 @@ final class App: @unchecked Sendable {
         gtk_window_set_child(alsFenster(fenster), decke)
 
         tastenEinrichten()
+        // **Die Medientasten der Tastatur.** Unter Linux gibt es dafür kein
+        // Rahmenwerk, sondern einen Standard auf dem Sitzungsbus; siehe
+        // ``Medienleiste``.
+        medienleiste = Medienleiste { [weak self] griff in
+            aufHauptfaden { self?.medienGriff(griff) }
+        }
         VLCFassung.text = String(cString: libvlc_get_version())
         // **D8: die Startseite holt ihre Reihen neu, wenn die App in den
         // Vordergrund kommt** — mit Frist, damit ein Wechsel hin und her nicht
@@ -665,6 +671,8 @@ final class App: @unchecked Sendable {
     /// Die Fernsteuerung über Jellyfins Socket. Ohne sie meldet der Server
     /// `SupportsRemoteControl: false` und blendet im Dashboard die Knöpfe aus.
     var fernsteuerung: Fernsteuerung?
+    /// Medientasten und die Wiedergabekachel der Arbeitsumgebung.
+    var medienleiste: Medienleiste?
     private var uebernahmezeile: Widget!
     private var uebernahmetitel: Widget!
     private var uebernahmegeraet: Widget!
@@ -1507,6 +1515,39 @@ final class App: @unchecked Sendable {
                 aufHauptfaden { self.fernbefehlAusfuehren(befehl) }
             }
         }
+    }
+
+    /// Was die Medientaste auslöst. Dieselben Griffe wie am Knopf.
+    func medienGriff(_ griff: Medienleiste.Griff) {
+        guard laufenderTitel != nil else { return }
+        switch griff {
+        case .abspielen:  abspieler.abspielen()
+        case .anhalten:   abspieler.anhalten()
+        case .umschalten: abspieler.umschalten()
+        case .beenden:    spielerSchliessen(); return
+        case .weiter:     naechsteFolge(); return
+        case .zurueck:    break
+        }
+        spielstand.laeuft = abspieler.laeuft
+        spielerAbspielzeichen?.setzen(spielstand.laeuft)
+        medienstandMelden()
+        steuerungZeigen()
+    }
+
+    /// Sagt der Umgebung, was läuft. **Nach jeder Änderung** — D-Bus fragt
+    /// nicht von selbst nach, und wer nichts meldet, dessen Kachel steht für
+    /// immer auf „Pausiert".
+    func medienstandMelden() {
+        guard let titel = laufenderTitel else {
+            medienleiste?.standMelden(laeuft: false, titel: "", untertitel: "",
+                                      dauer: 0, stelle: 0)
+            return
+        }
+        medienleiste?.standMelden(laeuft: spielstand.laeuft,
+                                  titel: titel.name,
+                                  untertitel: titel.kontextzeile ?? titel.seriesName ?? "",
+                                  dauer: spielstand.dauer,
+                                  stelle: spielstand.position)
     }
 
     /// Was ein anderes Geraet hier ausloest. Dieselben Griffe wie am Knopf.
