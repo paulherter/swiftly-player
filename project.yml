@@ -32,7 +32,7 @@ settings:
     MARKETING_VERSION: "1.0.0"
     # Muss bei JEDEM Upload hochgezaehlt werden — Apple nimmt dieselbe
     # Buildnummer je Version kein zweites Mal an (Fehler 90189).
-    CURRENT_PROJECT_VERSION: "8"
+    CURRENT_PROJECT_VERSION: "9"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
     # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
