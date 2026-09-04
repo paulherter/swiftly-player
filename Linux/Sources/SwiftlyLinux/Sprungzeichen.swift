@@ -32,6 +32,25 @@ final class Sprungzeichen: @unchecked Sendable {
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
     }
 
+    /// Wie stark das Zeichen gerade ausschlägt. Der Mac nimmt dafür
+    /// `.symbolEffect(.bounce)` — „spielt einmal ab und geht von selbst in
+    /// die Ruhelage zurück". Ein Sprung ohne Rückmeldung fühlt sich an, als
+    /// wäre der Knopf nicht angekommen.
+    fileprivate var wucht: Double = 0
+
+    /// Ein Ausschlag. Zählt **jeden** Druck, auch den zehnten hintereinander.
+    func stupsen() {
+        laufen(auf: anzeige, dauer: 0.34) { [weak self] e in
+            guard let self else { return }
+            self.wucht = sin(Double.pi * e)
+            gtk_widget_queue_draw(self.anzeige)
+        } fertig: { [weak self] in
+            guard let self else { return }
+            self.wucht = 0
+            gtk_widget_queue_draw(self.anzeige)
+        }
+    }
+
     /// Die Weite kann sich in den Einstellungen ändern, während der Player
     /// steht. Dann wird neu gezeichnet, nicht neu gebaut.
     func setzeZahl(_ neu: Int) {
@@ -57,6 +76,16 @@ nonisolated(unsafe) private let sprungMalen: @convention(c) (
     let strich = max(z.mass * 0.068, 1.2)
     let bogen = Double.pi / 180
     let stelle = -76 * bogen
+
+    // **Der Ausschlag umfasst das ganze Zeichen, Zahl eingeschlossen.**
+    // Deshalb eine Sicherung um alles, nicht nur um den Bogen.
+    cairo_save(cr)
+    if z.wucht > 0.001 {
+        let f = 1 + 0.18 * z.wucht
+        cairo_translate(cr, cx, cy)
+        cairo_scale(cr, f, f)
+        cairo_translate(cr, -cx, -cy)
+    }
 
     cairo_save(cr)
     // **Zurück ist Vor, gespiegelt.** Ein Bild, zwei Richtungen — so kann
@@ -105,4 +134,110 @@ nonisolated(unsafe) private let sprungMalen: @convention(c) (
     cairo_move_to(cr, cx - mass.width / 2 - mass.x_bearing,
                       cy - mass.height / 2 - mass.y_bearing)
     cairo_show_text(cr, text)
+    cairo_restore(cr)
+}
+
+/// **Abspielen und Pause — auch gezeichnet, und mit einem Übergang.**
+///
+/// Adwaitas `media-playback-pause-symbolic` ist bei 48 Punkt ein klobiger
+/// Doppelbalken; der Mac nimmt `pause.fill`, zwei schlanke Stäbe mit runden
+/// Enden, und dazu `.contentTransition(.symbolEffect(.replace.offUp))`.
+///
+/// Der Kommentar dort ist eindeutig, warum das nicht bloss Zierde ist: „der
+/// Knopf muss in demselben Moment umspringen, in dem der Ton aufhört, sonst
+/// wirkt der ganze Player träge." Ein Bildwechsel ohne Übergang ist genau das
+/// Stockige — es fehlt nicht Zeit, es fehlt die Bewegung.
+final class Abspielzeichen: @unchecked Sendable {
+    fileprivate var pause: Bool
+    /// 0 … 1 über den Wechsel. Bei 1 steht das neue Zeichen.
+    fileprivate var lauf: Double = 1
+    fileprivate let mass: Double
+    let anzeige: Widget
+
+    init(pause: Bool, mass: Double = 48) {
+        self.pause = pause
+        self.mass = mass
+        let feld: Widget! = gtk_drawing_area_new()
+        gtk_widget_add_css_class(feld, "swiftly-blank")
+        gtk_drawing_area_set_content_width(alsZeichen(feld), Int32(mass))
+        gtk_drawing_area_set_content_height(alsZeichen(feld), Int32(mass))
+        anzeige = feld!
+        gtk_drawing_area_set_draw_func(alsZeichen(feld), abspielMalen,
+                                       Unmanaged.passUnretained(self).toOpaque(), nil)
+    }
+
+    func setzen(_ neu: Bool) {
+        guard neu != pause else { return }
+        pause = neu
+        lauf = 0
+        // 140 ms — kurz genug, dass der Knopf im selben Moment umspringt, in
+        // dem der Ton aufhört, und lang genug, dass es keine Stufe ist.
+        laufen(auf: anzeige, dauer: 0.14) { [weak self] e in
+            self?.lauf = e
+            self.map { gtk_widget_queue_draw($0.anzeige) }
+        } fertig: { [weak self] in
+            self?.lauf = 1
+            self.map { gtk_widget_queue_draw($0.anzeige) }
+        }
+    }
+}
+
+/// Ein Stab mit runden Enden — der Baustein der Pause.
+private func stab(_ cr: OpaquePointer, _ x: Double, _ y: Double,
+                  _ b: Double, _ h: Double) {
+    let r = b / 2
+    cairo_new_path(cr)
+    cairo_arc(cr, x + r, y + r, r, Double.pi, 3 * Double.pi / 2)
+    cairo_arc(cr, x + b - r, y + r, r, 3 * Double.pi / 2, 2 * Double.pi)
+    cairo_arc(cr, x + b - r, y + h - r, r, 0, Double.pi / 2)
+    cairo_arc(cr, x + r, y + h - r, r, Double.pi / 2, Double.pi)
+    cairo_close_path(cr)
+    cairo_fill(cr)
+}
+
+nonisolated(unsafe) private let abspielMalen: @convention(c) (
+    UnsafeMutablePointer<GtkDrawingArea>?, OpaquePointer?, Int32, Int32, gpointer?
+) -> Void = { _, cr, breite, hoehe, daten in
+    guard let cr, let daten else { return }
+    let z = Unmanaged<Abspielzeichen>.fromOpaque(daten).takeUnretainedValue()
+    let cx = Double(breite) / 2, cy = Double(hoehe) / 2
+    let m = z.mass
+
+    /// Malt eines der beiden Zeichen, mit Deckkraft und Versatz nach oben.
+    func zeichen(_ pause: Bool, _ deckung: Double, _ versatz: Double) {
+        guard deckung > 0.01 else { return }
+        cairo_save(cr)
+        cairo_translate(cr, 0, versatz)
+        cairo_set_source_rgba(cr, 1, 1, 1, deckung)
+        if pause {
+            // Zwei Stäbe: je 0,155 breit, 0,52 hoch, 0,105 auseinander.
+            let b = m * 0.155, h = m * 0.52, luecke = m * 0.105
+            stab(cr, cx - luecke / 2 - b, cy - h / 2, b, h)
+            stab(cr, cx + luecke / 2, cy - h / 2, b, h)
+        } else {
+            // Ein Dreieck mit runden Ecken: derselbe Weg gefüllt **und**
+            // gestrichen, mit runden Stössen — dann sind die Spitzen rund,
+            // ohne dass jede einzeln gerechnet werden muss.
+            let r = m * 0.26, ecke = m * 0.055
+            cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND)
+            cairo_set_line_width(cr, ecke * 2)
+            cairo_new_path(cr)
+            // Etwas nach rechts gerückt: der Schwerpunkt eines Dreiecks liegt
+            // links von seiner Mitte, sonst sähe es aus, als stünde es schief.
+            let vx = cx + m * 0.045
+            cairo_move_to(cr, vx + r, cy)
+            cairo_line_to(cr, vx - r * 0.62, cy - r * 0.9)
+            cairo_line_to(cr, vx - r * 0.62, cy + r * 0.9)
+            cairo_close_path(cr)
+            cairo_fill_preserve(cr)
+            cairo_stroke(cr)
+        }
+        cairo_restore(cr)
+    }
+
+    // Das alte Zeichen fährt nach oben hinaus, das neue kommt von unten —
+    // `replace.offUp` auf dem Mac.
+    let e = min(max(z.lauf, 0), 1)
+    zeichen(!z.pause, 1 - e, -m * 0.22 * e)
+    zeichen(z.pause, e, m * 0.22 * (1 - e))
 }

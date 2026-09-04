@@ -454,7 +454,7 @@ final class App: @unchecked Sendable {
     var spielerZeit: Widget!
     var spielerRest: Widget!
     var spielerRegler: Widget!
-    var spielerSpieltaste: Widget!
+    var spielerAbspielzeichen: Abspielzeichen?
     var spielerWeiter: Widget!
     var spielerSpurknopf: Widget!
     var spielerWarnung: Widget!

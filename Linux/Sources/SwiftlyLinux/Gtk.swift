@@ -553,6 +553,17 @@ enum Schubsperre {
         aufHauptfaden { for block in offen { block() } }
     }
 
+    /// Sperrt für eine feste Zeit. Gebraucht für Bewegungen, die **GTK**
+    /// führt — ein `GtkStack` sagt nicht Bescheid, wenn er fertig ist, und
+    /// beim Schliessen des Players baut die Startseite sich gerade neu auf,
+    /// mitten in der Fahrt.
+    static func fuer(_ sekunden: Double) {
+        beginnen()
+        let auftrag = Unmanaged.passRetained(Auftrag { beenden() }).toOpaque()
+        g_timeout_add_full(200, guint(sekunden * 1000 + 30), auftragEinmal,
+                           auftrag, auftragFreigebenRoh)
+    }
+
     static func spaeter(_ block: @escaping @Sendable () -> Void) {
         guard faehrt else { beenden(); block(); return }
         warteschlange.append(block)
@@ -570,4 +581,16 @@ enum Schubsperre {
 /// erst aus.
 func nachDemSchub(_ block: @escaping @Sendable () -> Void) {
     aufHauptfaden { Schubsperre.spaeter(block) }
+}
+
+
+nonisolated(unsafe) private let auftragEinmal: @convention(c) (gpointer?) -> gboolean = { daten in
+    guard let daten else { return 0 }
+    Unmanaged<Auftrag>.fromOpaque(daten).takeUnretainedValue().block()
+    return 0   // G_SOURCE_REMOVE
+}
+
+nonisolated(unsafe) private let auftragFreigebenRoh: @convention(c) (gpointer?) -> Void = { daten in
+    guard let daten else { return }
+    Unmanaged<Auftrag>.fromOpaque(daten).release()
 }

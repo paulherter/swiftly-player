@@ -26,9 +26,14 @@ extension App {
         // **Aufsteigen — die dritte der drei Bewegungen** (so auf dem Mac,
         // `HauptView.swift:160`). Von unten herauf und wieder hinunter;
         // genau deshalb zeigt der Winkel oben rechts nach unten.
+        // **Der Grund bleibt liegen, der Player legt sich darüber.**
+        // `SLIDE_UP` schiebt beide Seiten; `OVER_UP` schiebt nur die neue
+        // herauf und lässt die alte stehen — dieselbe Unterscheidung wie beim
+        // Seitenschub, wo das Nebeneinander genauso falsch aussah.
         gtk_stack_set_transition_type(OpaquePointer(seiten),
-                                      GTK_STACK_TRANSITION_TYPE_SLIDE_UP)
+                                      GTK_STACK_TRANSITION_TYPE_OVER_UP)
         gtk_stack_set_transition_duration(OpaquePointer(seiten), 350)
+        Schubsperre.fuer(0.35)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "spieler")
         gtk_widget_set_visible(kopfzeile, 0)
 
@@ -69,9 +74,12 @@ extension App {
         laufenderPlan = nil
         spielerSteuerung = nil
         gtk_widget_set_visible(kopfzeile, 1)
+        // `UNDER_DOWN`: der Player fährt nach unten hinaus und gibt frei,
+        // was darunter liegt — die Startseite bewegt sich nicht.
         gtk_stack_set_transition_type(OpaquePointer(seiten),
-                                      GTK_STACK_TRANSITION_TYPE_SLIDE_DOWN)
+                                      GTK_STACK_TRANSITION_TYPE_UNDER_DOWN)
         gtk_stack_set_transition_duration(OpaquePointer(seiten), 350)
+        Schubsperre.fuer(0.35)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
         if let seite = gtk_stack_get_child_by_name(OpaquePointer(seiten), "spieler") {
             gtk_stack_remove(OpaquePointer(seiten), seite)
@@ -158,13 +166,13 @@ extension App {
         anhaengen(reihe, spieltaste(zurueck.anzeige, kuerzel: "←") { [weak self] in
             guard let self else { return }
             self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
+            self.spielerZurueckZeichen?.stupsen()
             self.steuerungZeigen()
         })
 
-        let mitte: Widget! = gtk_image_new_from_icon_name("media-playback-pause-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(mitte), 48)
-        spielerSpieltaste = mitte
-        anhaengen(reihe, spieltaste(mitte, kuerzel: "Leertaste", gross: true) {
+        let mitte = Abspielzeichen(pause: true)
+        spielerAbspielzeichen = mitte
+        anhaengen(reihe, spieltaste(mitte.anzeige, kuerzel: "Leertaste", gross: true) {
             [weak self] in
             self?.abspieler.umschalten()
             self?.steuerungZeigen()
@@ -175,6 +183,7 @@ extension App {
         anhaengen(reihe, spieltaste(vor.anzeige, kuerzel: "→") { [weak self] in
             guard let self else { return }
             self.abspieler.springen(Double(self.wahlen.vorSekunden))
+            self.spielerVorZeichen?.stupsen()
             self.steuerungZeigen()
         })
         return reihe
@@ -373,17 +382,14 @@ extension App {
     }
 
     private func zeitenZeigen() {
-        gtk_label_set_text(OpaquePointer(spielerZeit), zeitText(spielstand.position))
+        gtk_label_set_text(OpaquePointer(spielerZeit), Spielzeit.text(spielstand.position))
         if spielstand.dauer > 0 {
             let rest = max(0, spielstand.dauer - spielstand.position)
-            gtk_label_set_text(OpaquePointer(spielerRest), "−" + zeitText(rest))
+            gtk_label_set_text(OpaquePointer(spielerRest), "−" + Spielzeit.text(rest))
             gtk_range_set_value(alsBereich(spielerRegler),
                                 spielstand.position / spielstand.dauer)
         }
-        gtk_image_set_from_icon_name(
-            OpaquePointer(spielerSpieltaste),
-            spielstand.laeuft ? "media-playback-pause-symbolic"
-                              : "media-playback-start-symbolic")
+        spielerAbspielzeichen?.setzen(spielstand.laeuft)
     }
 
     /// **Tonspuren werden einmal gesetzt, sobald VLC sie kennt** (B8).
@@ -442,6 +448,8 @@ extension App {
     }
 
     func steuerungZeigen() {
+        // Der Zeiger meldet sich auch noch, während der Player hinausfährt.
+        guard spielerSteuerung != nil else { return }
         gtk_widget_set_opacity(spielerSteuerung, 1)
         steuerungstakt += 1
         let meins = steuerungstakt

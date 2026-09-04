@@ -582,10 +582,20 @@ enum Stil {
            die Werte vom Mac. In Anteilen ausgedrückt, weil ein Fenster
            anders hoch ist als das nächste; bei rund 800 Punkt Höhe kommt
            dasselbe heraus. */
+        /* **Zwei Schleier mit fester Höhe, nicht in Anteilen.**
+
+           In Anteilen wuchsen sie mit dem Fenster mit: bei 1200 Punkt Höhe
+           waren die unteren 29 % schon 348 Punkt statt der 230 vom Mac, und
+           die Leiste unten sah entsprechend wuchtig aus. Zwei Anstriche mit
+           `background-size` treffen die Werte genau, egal wie hoch das
+           Fenster ist. */
         .swiftly-steuerung {
-            background-image: linear-gradient(to bottom,
-                rgba(0,0,0,0.60) 0%, rgba(0,0,0,0) 19%,
-                rgba(0,0,0,0) 71%, rgba(0,0,0,0.70) 100%);
+            background-image:
+                linear-gradient(to bottom, rgba(0,0,0,0.60), rgba(0,0,0,0)),
+                linear-gradient(to top, rgba(0,0,0,0.70), rgba(0,0,0,0));
+            background-size: 100% 150px, 100% 230px;
+            background-position: top, bottom;
+            background-repeat: no-repeat;
             transition: opacity 180ms ease-out;
         }
         /* **Die Knöpfe der Mitte tragen keine Fläche.** Auf dem Mac steht
@@ -633,13 +643,18 @@ enum Stil {
            oben, und dieselbe Abhilfe: **wer eine Mindestgrösse überschreibt,
            muss Rand und Innenabstand mit überschreiben.** */
         scale.swiftly-regler {
-            min-height: 16px;
+            min-height: 14px;
             padding: 0;
             margin: 0;
         }
+        /* **Die Spur wird mit Rand auf 4 gehalten, nicht mit `min-height`.**
+           `min-height` ist ein Mindestmass — der Knoten `trough` bekommt
+           trotzdem die volle Höhe der Skala und malt seinen Grund über
+           vierzehn Punkt. Genau das war die zu dicke Leiste. Fünf Punkt Rand
+           oben und unten lassen ihm rechnerisch vier. */
         scale.swiftly-regler trough {
             min-height: 4px;
-            margin: 0;
+            margin: 5px 0;
             padding: 0;
             border: none;
             background-image: none;
