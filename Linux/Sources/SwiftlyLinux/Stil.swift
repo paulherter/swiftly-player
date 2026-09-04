@@ -176,6 +176,7 @@ enum Stil {
             font-size: \(koerper)px;
             caret-color: \(akzent);
             box-shadow: none;
+            outline: none;
         }
         /* **`:focus` allein trifft das Feld nicht.** GTK4 setzt den Fokus
            auf den inneren `text`-Knoten, nicht auf das `entry` darum. Der
@@ -198,9 +199,17 @@ enum Stil {
            selbst nachzuzeichnen, sah dann nach nichts aus: die Fensterknöpfe
            gehören dem System, nicht uns. Sie sind hier deshalb gar nicht
            erwähnt und tragen, was das Systemthema ihnen gibt. */
+        /* **Jede eigene Knopfklasse gehört in diese Liste.** Wer eine
+           vergisst, bekommt vom Systemthema Rahmen und Schatten dazu — und
+           genau so standen Schatten unter den Folgenzeilen und um den
+           Zurückpfeil, der gar kein Kasten sein soll. */
         button.swiftly-haupt, button.swiftly-flach, button.swiftly-zeile,
         button.swiftly-chip, button.swiftly-profil, button.swiftly-kachel,
-        button.swiftly-pfeil {
+        button.swiftly-pfeil, button.swiftly-zurueck, button.swiftly-neben,
+        button.swiftly-reiter, button.swiftly-folgenzeile,
+        button.swiftly-einstellzeile, button.swiftly-wertzeile,
+        button.swiftly-handlung, button.swiftly-spielrund,
+        button.swiftly-spielrund-gross {
             background-image: none;
             background-color: transparent;
             border: none;

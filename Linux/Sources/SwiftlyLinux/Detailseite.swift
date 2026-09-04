@@ -269,8 +269,18 @@ extension App {
         // Weg samt `FoundationNetworking`, und derselbe Titel wird beim
         // Zurückkommen nicht noch einmal geholt.
         Task.detached {
-            guard let daten = await Bildlager.shared.laden(url, schluessel: url.absoluteString),
-                  let ton = Bildfarbe.ton(aus: daten) else { return }
+            guard let daten = await Bildlager.shared.laden(url, schluessel: url.absoluteString)
+            else {
+                FileHandle.standardError.write(Data("[Ton] nichts geladen: \(url)\n".utf8))
+                return
+            }
+            guard let ton = Bildfarbe.ton(aus: daten) else {
+                FileHandle.standardError.write(
+                    Data("[Ton] \(daten.count) Byte, aber kein Ton berechnet\n".utf8))
+                return
+            }
+            FileHandle.standardError.write(
+                Data("[Ton] \(daten.count) Byte -> \(ton.r),\(ton.g),\(ton.b)\n".utf8))
             aufHauptfaden { Tonblatt.setzen(ton) }
         }
     }
