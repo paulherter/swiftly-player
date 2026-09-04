@@ -79,6 +79,17 @@ final class App: @unchecked Sendable {
 
         tastenEinrichten()
         VLCFassung.text = String(cString: libvlc_get_version())
+        // **D8: die Startseite holt ihre Reihen neu, wenn die App in den
+        // Vordergrund kommt** — mit Frist, damit ein Wechsel hin und her nicht
+        // jedes Mal lädt. Die Frist steht im Paket, nicht hier.
+        beiSignalRoh(UnsafeMutableRawPointer(fenster), "notify::is-active") { [weak self] in
+            guard let self, self.client != nil,
+                  gtk_window_is_active(alsFenster(self.fenster)) != 0 else { return }
+            if Auffrischung.faelligBeiRueckkehr(zuletzt: self.zuletztGeladen,
+                                                jetzt: Date()) {
+                self.startseiteLaden()
+            }
+        }
         gtk_window_present(alsFenster(fenster))
 
         // Gemerkte Sitzung: gleich weiter zur Startseite, ohne Nachfragen.
@@ -386,7 +397,7 @@ final class App: @unchecked Sendable {
     private var suchraster: Widget!
     private var filmezahl: Widget!
     private var serienzahl: Widget!
-    private var geladen: Set<Bereich> = []
+    var geladen: Set<Bereich> = []
     /// Filter und Sortierung, je Bereich getrennt. Auf dem Mac merkt sich
     /// jeder Bereich seinen Stand — wer zwischen Filmen und Serien wechselt,
     /// findet zurück, wo er war.
@@ -436,6 +447,14 @@ final class App: @unchecked Sendable {
     var spurtafel: Widget!
     var schlafminuten: Int?
     var schlaftakt = 0
+
+    // MARK: Bibliotheken (D9)
+    /// Was der Server an Bibliotheken hat. **Ab zwei derselben Gattung** wird
+    /// zwischen ihnen gewählt; bei einer erscheint kein Umschalter.
+    var sichten: [Item] = []
+    var gewaehlteBibliothek: [Bereich: String] = [:]
+    /// Wann die Startseite zuletzt geladen hat — für D8.
+    var zuletztGeladen: Date?
     var detailhuelle: Widget!
     /// Wird beim Blättern gebraucht, um den Titel in der Kopfleiste
     /// einzublenden — dieselbe Rechnung wie `Detailkopf.staerke` auf dem Mac.
@@ -615,7 +634,7 @@ final class App: @unchecked Sendable {
     }
 
     /// Schaltet den Bereich um und färbt die Zeilen nach.
-    private func zeige(_ neu: Bereich) {
+    func zeige(_ neu: Bereich) {
         bereich = neu
         for (i, fall) in Bereich.allCases.enumerated() {
             guard let knopf = bereichsknoepfe[i] else { continue }
@@ -715,11 +734,42 @@ final class App: @unchecked Sendable {
     /// `Sortierung`. Dort steht auch, was sie beim Server bedeuten, und dass
     /// „Ungesehen" bewusst den eigenen Schalter braucht statt Jellyfins
     /// `Filters=IsUnplayed` — das arbeitet bei Serien auf Folgenebene.
-    private func chipsFuellen(_ was: Bereich) {
+    /// Die Bibliotheken einer Gattung.
+    func bibliotheken(fuer was: Bereich) -> [Item] {
+        let art = was == .filme ? "movies" : "tvshows"
+        return sichten.filter { $0.collectionType == art }
+    }
+
+    func chipsFuellen(_ was: Bereich) {
         guard let zeile = chipzeilen[was] else { return }
         leeren(zeile)
         let jetztFilter = filter[was] ?? .alle
         let jetztSort = sortierung[was] ?? .name
+
+        // **Die Bibliothekswahl steht vorn, und nur ab zwei** (D9). Als Chips
+        // wie Filter und Sortierung daneben — ein aufklappendes Menü wäre ein
+        // Standardsteuerelement (E4).
+        let meine = bibliotheken(fuer: was)
+        if meine.count > 1 {
+            let gewaehlteID = gewaehlteBibliothek[was] ?? meine[0].id
+            for bib in meine {
+                let c = chip(bib.name, aktiv: bib.id == gewaehlteID)
+                beiSignal(c, "clicked") { [weak self] in
+                    guard let self, bib.id != gewaehlteID else { return }
+                    self.gewaehlteBibliothek[was] = bib.id
+                    self.chipsFuellen(was)
+                    self.rasterLaden(was)
+                }
+                anhaengen(zeile, c)
+            }
+            let strich: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+            gtk_widget_add_css_class(strich, "swiftly-trennlinie")
+            gtk_widget_set_size_request(strich, 1, 18)
+            gtk_widget_set_valign(strich, GTK_ALIGN_CENTER)
+            gtk_widget_set_margin_start(strich, 4)
+            gtk_widget_set_margin_end(strich, 4)
+            anhaengen(zeile, strich)
+        }
 
         for fall in Bibliotheksfilter.allCases {
             let c = chip(fall.beschriftung, aktiv: fall == jetztFilter)
@@ -829,6 +879,7 @@ final class App: @unchecked Sendable {
     }
 
     private func bibliothekenZeigen(_ sichten: [Item]) {
+        self.sichten = sichten
         leeren(bibliotheksliste)
         gtk_widget_set_visible(bibliotheksrubrik, sichten.isEmpty ? 0 : 1)
         for sicht in sichten {
@@ -840,13 +891,24 @@ final class App: @unchecked Sendable {
             case "music":   symbol = "folder-music-symbolic"
             default:        symbol = "folder-symbolic"
             }
-            anhaengen(bibliotheksliste,
-                      seitenleistenzeile(symbol: symbol, text: sicht.name, aktiv: false))
+            let zeile = seitenleistenzeile(symbol: symbol, text: sicht.name, aktiv: false)
+            // Eine Bibliothek führt in ihren Bereich und wählt sich dort aus.
+            let ziel: Bereich? = sicht.collectionType == "tvshows" ? .serien
+                               : sicht.collectionType == "movies" ? .filme : nil
+            beiSignal(zeile, "clicked") { [weak self] in
+                guard let self, let ziel else { return }
+                self.gewaehlteBibliothek[ziel] = sicht.id
+                self.geladen.remove(ziel)
+                self.zeige(ziel)
+                self.chipsFuellen(ziel)
+            }
+            anhaengen(bibliotheksliste, zeile)
         }
     }
 
     func startseiteLaden() {
         guard let client else { return }
+        zuletztGeladen = Date()
         leeren(reihenstapel)
         anhaengen(reihenstapel, beschriftung("Lade …", stil: "swiftly-koerper"))
 
@@ -878,8 +940,11 @@ final class App: @unchecked Sendable {
         let gattung = was == .filme ? "Movie" : "Series"
         let f = filter[was] ?? .alle
         let sort = sortierung[was] ?? .name
+        let meine = bibliotheken(fuer: was)
+        let eltern = gewaehlteBibliothek[was] ?? meine.first?.id
         Task.detached { [self] in
-            let antwort = try? await client.items(limit: 500,
+            let antwort = try? await client.items(parentID: eltern,
+                                                  limit: 500,
                                                   sortBy: sort.feld,
                                                   sortOrder: sort.richtung,
                                                   filters: f.jellyfinFilter,
