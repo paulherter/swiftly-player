@@ -24,7 +24,7 @@ import JellyfinKit
 /// kommen als undurchsichtige Zeiger herein. Herausgefunden am 04.09.2026,
 /// indem der Übersetzer selbst nach den erwarteten Typen gefragt wurde,
 /// nachdem drei Anläufe daran gescheitert waren.
-private typealias Widget = UnsafeMutablePointer<GtkWidget>
+typealias Widget = UnsafeMutablePointer<GtkWidget>
 
 @inline(__always) private func alsBox(_ w: Widget!) -> UnsafeMutablePointer<GtkBox>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkBox>.self)
@@ -47,9 +47,9 @@ private typealias Widget = UnsafeMutablePointer<GtkWidget>
 /// er kann nichts einfangen. Was er sehen soll, muss an einer festen Adresse
 /// liegen.
 final class Oberflaeche {
-    var adressfeld: Widget?
-    var knopf: Widget?
-    var standzeile: Widget?
+    fileprivate var adressfeld: Widget?
+    fileprivate var knopf: Widget?
+    fileprivate var standzeile: Widget?
     var laeuft = false
 
     /// **Muss auf dem Hauptfaden laufen.** GTK ist nicht nebenläufig; ein
