@@ -300,7 +300,19 @@ extension App {
             knopfzustand(knopf, aktiv: gesehen, symbol: "object-select-symbolic")
             gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
             let neu = gesehen
-            Task.detached { try? await client.setzeGesehen(itemID: folge.id, an: neu) }
+            // **Der Zustand des Knopfes ist die Antwort** (D6) — aber nur,
+            // solange sie stimmt. Lehnt der Server ab, geht der Haken zurück
+            // und sagt warum; auf dem Mac genauso.
+            Task.detached { [weak self] in
+                do { try await client.setzeGesehen(itemID: folge.id, an: neu) }
+                catch {
+                    aufHauptfaden {
+                        knopfzustand(knopf, aktiv: !neu, symbol: "object-select-symbolic")
+                        gtk_widget_set_visible(ruhig, !neu ? 1 : 0)
+                        self?.melden(lesbarerFehler(error))
+                    }
+                }
+            }
         }
         anhaengen(platz, knopf)
         anhaengen(zeile, platz)

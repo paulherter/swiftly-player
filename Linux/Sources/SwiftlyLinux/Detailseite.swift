@@ -628,14 +628,12 @@ extension App {
             // **Der Zustand des Knopfes ist die Antwort** (D6) — aber wenn
             // der Server ablehnt, ist die Antwort falsch. Dann nimmt sie
             // sich zurück und sagt warum; auf dem Mac genauso.
-            Task.detached { [weak self] in
+            // Hier gibt es nichts zurückzunehmen: die Liste wird bei jedem
+            // Öffnen neu aus `titel.istGesehen` gebaut. Gesagt werden muss es
+            // trotzdem — sonst sieht es aus, als hätte es geklappt.
+            Task.detached { [self] in
                 do { try await client.setzeGesehen(itemID: titel.id, an: neu) }
-                catch {
-                    aufHauptfaden {
-                        gesehen.toggle()
-                        self?.melden(lesbarerFehler(error))
-                    }
-                }
+                catch { aufHauptfaden { self.melden(lesbarerFehler(error)) } }
             }
         })
         // **„Von vorn" nur, wenn es etwas zurueckzusetzen gibt** — bei einem
