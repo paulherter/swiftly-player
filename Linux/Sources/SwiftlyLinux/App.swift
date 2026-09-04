@@ -432,6 +432,10 @@ final class App: @unchecked Sendable {
     var spielerRegler: Widget!
     var spielerSpieltaste: Widget!
     var spielerWeiter: Widget!
+    var spielerRahmen: Widget!
+    var spurtafel: Widget!
+    var schlafminuten: Int?
+    var schlaftakt = 0
     var detailhuelle: Widget!
     /// Wird beim Blättern gebraucht, um den Titel in der Kopfleiste
     /// einzublenden — dieselbe Rechnung wie `Detailkopf.staerke` auf dem Mac.

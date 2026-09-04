@@ -560,6 +560,13 @@ enum Stil {
             box-shadow: none;
         }
 
+        /* Die Spurtafel über dem Bild: 320 breit, erhoeht, Ecke 10. */
+        .swiftly-tafel {
+            background-color: \(erhoeht);
+            border: 1px solid \(rand);
+            border-radius: \(eckeFeld)px;
+        }
+
         scrollbar { background-color: transparent; }
         scrollbar slider {
             background-color: rgba(255,255,255,0.22);

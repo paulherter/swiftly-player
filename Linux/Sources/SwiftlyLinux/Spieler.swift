@@ -57,6 +57,7 @@ extension App {
         }
         abspieler.beenden(nurMedium: true)
         taktBeenden()
+        spurwahlSchliessen()
         laufenderTitel = nil
         laufenderPlan = nil
         gtk_widget_set_visible(kopfzeile, 1)
@@ -74,6 +75,7 @@ extension App {
 
     private func spielerSeiteBauen(_ item: Item) -> Widget! {
         let ueber: Widget! = gtk_overlay_new()
+        spielerRahmen = ueber
         gtk_widget_add_css_class(ueber, "swiftly-spieler")
         gtk_overlay_set_child(OpaquePointer(ueber), abspieler.anzeige)
 
@@ -329,10 +331,150 @@ extension App {
 
     // MARK: Spurwahl
 
+    /// **Ebene über dem Bild, die Wiedergabe läuft weiter, der Wechsel
+    /// greift sofort** (B11) — wörtlich die Regel der iPhone-Fassung.
+    ///
+    /// Auf dem iPhone ein Blatt von unten; hier klappt die Tafel unter dem
+    /// Knopf auf, aus dem sie stammt: **kleine Entscheidungen erscheinen
+    /// dort, wo sie ausgelöst wurden** (E5).
+    ///
+    /// „Bild" aus der iPhone-Fassung fehlt mit Absicht: dort steht die Wahl
+    /// zwischen fester und freier Ausrichtung, und ein Fenster hat keine (F).
     private func spurwahlZeigen() {
-        // **Kleine Entscheidungen klappen dort auf, wo sie ausgelöst wurden**
-        // (E5). Hier steht die Liste über dem Bild, am rechten Rand.
         steuerungZeigen()
+        if let alt = spurtafel {
+            gtk_widget_unparent(alt)
+            spurtafel = nil
+            return
+        }
+        let tafel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 22)
+        gtk_widget_add_css_class(tafel, "swiftly-tafel")
+        raender(tafel, 20)
+        gtk_widget_set_size_request(tafel, 320, -1)
+        gtk_widget_set_halign(tafel, GTK_ALIGN_END)
+        gtk_widget_set_valign(tafel, GTK_ALIGN_START)
+        gtk_widget_set_margin_top(tafel, 70)
+        gtk_widget_set_margin_end(tafel, 18)
+
+        let ton = abspieler.tonspuren
+        if !ton.isEmpty {
+            let g = spurgruppe("Ton", "audio-volume-high-symbolic")
+            let jetzt = abspieler.tonspur
+            for spur in ton {
+                anhaengen(g.raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetzt) {
+                    [weak self] in
+                    self?.abspieler.setzeTonspur(spur.kennung)
+                    self?.spurwahlSchliessen()
+                })
+            }
+            anhaengen(tafel, g.aussen)
+        }
+
+        let u = spurgruppe("Untertitel", "media-view-subtitles-symbolic")
+        let jetztU = abspieler.untertitelspur
+        anhaengen(u.raum, wahlzeile("Aus", gewaehlt: jetztU < 0) { [weak self] in
+            self?.abspieler.setzeUntertitel(-1)
+            self?.spurwahlSchliessen()
+        })
+        for spur in abspieler.untertitelspuren where spur.kennung >= 0 {
+            anhaengen(u.raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetztU) {
+                [weak self] in
+                self?.abspieler.setzeUntertitel(spur.kennung)
+                self?.spurwahlSchliessen()
+            })
+        }
+        anhaengen(tafel, u.aussen)
+
+        let t = spurgruppe("Tempo", "preferences-system-symbolic")
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        let jetztTempo = abspieler.tempo
+        for wert in Tempostufen.werte {
+            let c = chip(Tempostufen.beschriftung(wert), aktiv: abs(jetztTempo - wert) < 0.01)
+            beiSignal(c, "clicked") { [weak self] in
+                self?.abspieler.tempo = wert
+                self?.spurwahlSchliessen()
+            }
+            anhaengen(reihe, c)
+        }
+        anhaengen(t.raum, reihe)
+        anhaengen(tafel, t.aussen)
+
+        let sz = spurgruppe("Schlafzeit", "weather-clear-night-symbolic")
+        let szReihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        let aus = chip("Aus", aktiv: schlafminuten == nil)
+        beiSignal(aus, "clicked") { [weak self] in
+            self?.schlafminuten = nil
+            self?.spurwahlSchliessen()
+        }
+        anhaengen(szReihe, aus)
+        for minuten in Schlafzeiten.werte {
+            let c = chip("\(minuten)", aktiv: schlafminuten == minuten)
+            beiSignal(c, "clicked") { [weak self] in
+                self?.schlafzeitSetzen(minuten)
+                self?.spurwahlSchliessen()
+            }
+            anhaengen(szReihe, c)
+        }
+        anhaengen(sz.raum, szReihe)
+        anhaengen(tafel, sz.aussen)
+
+        spurtafel = tafel
+        gtk_overlay_add_overlay(OpaquePointer(spielerRahmen), tafel)
+    }
+
+    private func spurwahlSchliessen() {
+        if let tafel = spurtafel { gtk_widget_unparent(tafel); spurtafel = nil }
+    }
+
+    private func spurgruppe(_ titel: String, _ symbol: String) -> (aussen: Widget, raum: Widget) {
+        let aussen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+        let kopf = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 7)
+        let bild: Widget! = gtk_image_new_from_icon_name(symbol)
+        gtk_image_set_pixel_size(OpaquePointer(bild), 11)
+        gtk_widget_add_css_class(bild, "swiftly-leise")
+        anhaengen(kopf, bild)
+        anhaengen(kopf, rubrik(titel))
+        anhaengen(aussen, kopf)
+        let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        anhaengen(aussen, raum)
+        return (aussen!, raum!)
+    }
+
+    private func wahlzeile(_ text: String, gewaehlt: Bool,
+                           auswahl: @escaping () -> Void) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-wertzeile")
+        if gewaehlt { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        let l = beschriftung(text, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        gtk_label_set_ellipsize(OpaquePointer(l), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(l), 1)
+        gtk_widget_set_hexpand(l, 1)
+        anhaengen(reihe, l)
+        if gewaehlt {
+            let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+            gtk_image_set_pixel_size(OpaquePointer(haken), 13)
+            anhaengen(reihe, haken)
+        }
+        gtk_button_set_child(alsKnopf(knopf), reihe)
+        beiSignal(knopf, "clicked", auswahl)
+        return knopf
+    }
+
+    /// Der Schlafzeitgeber. Die Stufen stehen im Paket (B10).
+    private func schlafzeitSetzen(_ minuten: Int) {
+        schlafminuten = minuten
+        schlaftakt += 1
+        let meins = schlaftakt
+        Task.detached { [self] in
+            try? await Task.sleep(nanoseconds: UInt64(minuten) * 60_000_000_000)
+            aufHauptfaden {
+                guard self.schlaftakt == meins, self.schlafminuten == minuten else { return }
+                self.abspieler.anhalten()
+                self.schlafminuten = nil
+            }
+        }
     }
 }
 

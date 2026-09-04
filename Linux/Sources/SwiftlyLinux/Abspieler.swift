@@ -138,6 +138,15 @@ final class Abspieler {
         spieler.map { libvlc_video_set_spu($0, kennung) }
     }
 
+    var tonspur: Int32 { spieler.map { libvlc_audio_get_track($0) } ?? -1 }
+    var untertitelspur: Int32 { spieler.map { libvlc_video_get_spu($0) } ?? -1 }
+
+    /// Tempostufen kommen aus dem Paket (B9), nicht von hier.
+    var tempo: Float {
+        get { spieler.map { libvlc_media_player_get_rate($0) } ?? 1 }
+        set { spieler.map { libvlc_media_player_set_rate($0, newValue) } }
+    }
+
     // MARK: Bild
 
     /// **Jedes Einzelbild einmal abholen, nicht öfter.** Der Taktgeber von GTK
