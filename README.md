@@ -94,29 +94,71 @@ than "have a look around".
 
 ## 🐧 Linux
 
-One command. It works out which distribution you are on, pulls the
-dependencies from that distribution's own package sources, and builds.
+One command. It works out which distribution you are on, adds the Swiftly
+package source, and installs from it — so **updates arrive with your normal
+system update**, like any other program.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-for-jellyfin/main/Linux/Installieren/swiftly-installieren.sh | bash
 ```
 
-| Distribution | Covered by |
-|---|---|
-| Arch, CachyOS, Manjaro, EndeavourOS, Garuda | the command above, or `makepkg -si` in [`Linux/Installieren`](Linux/Installieren) |
-| Ubuntu, Linux Mint, Debian, Pop!\_OS, elementary, Zorin | the command above |
-| Fedora, Nobara, RHEL, Rocky, AlmaLinux | the command above — it offers to add RPM Fusion, where libVLC lives |
-| openSUSE Tumbleweed, Leap | the command above — it points you at Packman for VLC |
+<details>
+<summary>Or add the source yourself</summary>
 
-**Why it builds instead of downloading a binary.** A compiled program is tied
-to the glibc of the machine it was built on. Ours would be 2.44 from CachyOS;
-Ubuntu 22.04 has 2.35, and the program simply would not start there — with an
-error message that tells nobody why. Building takes a few minutes once and
-then runs everywhere.
+**Debian, Ubuntu, Linux Mint, Pop!_OS, elementary, Zorin**
 
-Everything lands under `$HOME`. Your password is asked for exactly once, for
-your distribution's packages, and the prompt comes from the package manager
-itself. To remove it again, run the same script with `--deinstallieren`.
+```sh
+echo "deb [arch=amd64 trusted=yes] https://paulherter.github.io/swiftly-for-jellyfin/deb ./" | sudo tee /etc/apt/sources.list.d/swiftly.list
+sudo apt update && sudo apt install swiftly-jellyfin
+```
+
+**Fedora, Nobara, RHEL, Rocky, AlmaLinux**
+
+```sh
+sudo tee /etc/yum.repos.d/swiftly.repo <<'EOF'
+[swiftly]
+name=Swiftly for Jellyfin
+baseurl=https://paulherter.github.io/swiftly-for-jellyfin/rpm
+enabled=1
+gpgcheck=0
+EOF
+sudo dnf install swiftly-jellyfin
+```
+
+**Arch, CachyOS, Manjaro, EndeavourOS, Garuda**
+
+```sh
+sudo tee -a /etc/pacman.conf <<'EOF'
+
+[swiftly]
+SigLevel = Optional TrustAll
+Server = https://paulherter.github.io/swiftly-for-jellyfin/arch
+EOF
+sudo pacman -Sy swiftly-jellyfin
+```
+
+**openSUSE Tumbleweed**
+
+```sh
+sudo zypper addrepo -f -G https://paulherter.github.io/swiftly-for-jellyfin/rpm swiftly
+sudo zypper install swiftly-jellyfin
+```
+
+**Anything else** — build it yourself. Same script, one flag:
+`… | bash -s -- --aus-quelle`. It pulls the dependencies from your
+distribution, fetches Swift into `$HOME`, and builds.
+
+</details>
+
+**Requirements: GTK 4.14 and libVLC.** That is what rules out the older
+releases — Debian 12 ships GTK 4.8 and could not draw the app at all. The
+packages are built against Ubuntu 24.04 for glibc, which is the same floor
+GTK already sets, so it costs nothing.
+
+**Why packages and not a Flatpak.** Measured, not assumed: the GNOME 48
+runtime carries GTK 4 but not a single libVLC library. A Flatpak would have
+to compile VLC itself — and VLC's demuxers are exactly what "never
+transcodes" rests on.
 
 <br>
 
