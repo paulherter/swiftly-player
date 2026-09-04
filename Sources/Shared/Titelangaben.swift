@@ -105,14 +105,6 @@ extension Item {
         return String(localized: "Noch \(Int((gesamt - ab) / 60)) Minuten")
     }
 
-    /// Anteil des schon Gesehenen, 0 bis 1 — für die Fortschrittsbalken.
-    var gesehenerAnteil: Double? {
-        guard let prozent = userData?.playedPercentage, prozent > 0 else { return nil }
-        return prozent / 100
-    }
-
-    var istGesehen: Bool { userData?.played ?? false }
-
     /// Beschriftung des Hauptknopfes auf einer Serienseite.
     ///
     /// **Stand hier, weil sie sonst dreimal dasteht.** iOS und tvOS hatten sie
