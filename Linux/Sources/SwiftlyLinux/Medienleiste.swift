@@ -28,27 +28,31 @@ final class Medienleiste: @unchecked Sendable {
     /// Was die Leiste auslöst. Dieselben Griffe wie am Knopf.
     enum Griff { case abspielen, anhalten, umschalten, beenden, weiter, zurueck }
 
+    /// **`GVariantType` und `GDBusConnection` sind unvollstaendige Typen** und
+    /// kommen in Swift als `OpaquePointer` an — dieselbe Falle wie bei
+    /// `GtkOverlay` und `GtkAccessible`.
+    ///
     /// **`G_VARIANT_TYPE` ist ein Makro** — in C ein blosser Cast von
     /// `const char*` auf `const GVariantType*`. In Swift gibt es das nicht;
     /// `g_variant_type_new` legt stattdessen eine Kopie an, die wieder frei
     /// werden muss.
-    private static func typ(_ text: String) -> UnsafeMutablePointer<GVariantType>? {
+    private static func typ(_ text: String) -> OpaquePointer? {
         g_variant_type_new(text)
     }
 
     static func mitTypOeffentlich<E>(_ text: String,
-                                     _ tun: (UnsafeMutablePointer<GVariantType>?) -> E) -> E {
+                                     _ tun: (OpaquePointer?) -> E) -> E {
         mitTyp(text, tun)
     }
 
     private static func mitTyp<E>(_ text: String,
-                                  _ tun: (UnsafeMutablePointer<GVariantType>?) -> E) -> E {
+                                  _ tun: (OpaquePointer?) -> E) -> E {
         let t = typ(text)
         defer { if let t { g_variant_type_free(t) } }
         return tun(t)
     }
 
-    private var verbindung: UnsafeMutablePointer<GDBusConnection>?
+    private var verbindung: OpaquePointer?
     private var name: guint = 0
     private var stamm: guint = 0
     private var spieler: guint = 0
@@ -206,7 +210,7 @@ final class Medienleiste: @unchecked Sendable {
 // MARK: - Die beiden Rückrufe
 
 nonisolated(unsafe) private let mprisAufruf: @convention(c) (
-    UnsafeMutablePointer<GDBusConnection>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
+    OpaquePointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
     UnsafePointer<CChar>?, UnsafePointer<CChar>?, OpaquePointer?,
     OpaquePointer?, gpointer?
 ) -> Void = { _, _, _, _, name, _, aufruf, daten in
@@ -228,7 +232,7 @@ nonisolated(unsafe) private let mprisAufruf: @convention(c) (
 }
 
 nonisolated(unsafe) private let mprisLesen: @convention(c) (
-    UnsafeMutablePointer<GDBusConnection>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
+    OpaquePointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
     UnsafePointer<CChar>?, UnsafePointer<CChar>?,
     UnsafeMutablePointer<UnsafeMutablePointer<GError>?>?, gpointer?
 ) -> OpaquePointer? = { _, _, _, _, name, _, daten in
