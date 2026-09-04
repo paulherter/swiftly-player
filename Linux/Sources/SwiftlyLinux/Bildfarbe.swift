@@ -120,28 +120,15 @@ enum Tonblatt {
     /// wieder schwarz.
     ///
     /// **Über der Kopfzone bleibt er hier konstant, und das ist der Punkt.**
-    /// Der Mac *maskiert* das Bild: die Blenden senken seine Deckung, und die
-    /// Seite scheint durch — was die Seite dort auch tut, es passt immer.
-    /// GTK kennt keine Maske, hier wird **übermalt**. Damit muss die Farbe an
-    /// jeder Stelle die der Seite sein, sonst liegt ein Fleck auf dem Bild.
-    ///
-    /// Genau das war der „weiße Schleier": die linken 15 % des Bildes trugen
-    /// reinen Ton, während die Seite dort schon nach Schwarz auslief — ein
-    /// hellerer Fleck, und unten dieselbe Stufe. Am Bildschirmfoto
-    /// nachgemessen: 9393 Punkte in genau 66,60,56.
-    ///
-    /// Bleibt der Ton über die Höhe der Kopfzone gleich und läuft erst
-    /// darunter aus, stimmen Übermalen und Untergrund überein. Der
-    /// Unterschied zum Mac ist ein etwas flacherer Anfang des Verlaufs.
-    ///
-    /// Oben braucht es zusätzlich eine kurze Blende. Auf dem Mac reicht das
-    /// Bild bis an die Fensterkante, hier sitzt die Titelzeile darüber — ohne
-    /// die ersten sieben Prozent stünde dort dieselbe Stufe.
+    /// Seit die Kulisse **maskiert** wird (siehe ``Kulisse``), muss der Ton
+    /// nirgends mehr zu einer übermalten Kante passen — er färbt nur noch
+    /// den Grund, auf dem das ausgeblendete Bild liegt. Das ist der Grund,
+    /// warum hier so wenig übrig ist: die beiden Verläufe, die vorher jede
+    /// Kante treffen mussten, gibt es nicht mehr.
     ///
     /// **`rgba(…)`, nicht achtstelliges Hex.** GTK meldet einen Fehler im
     /// Stilblatt nicht auf der Fehlerleitung, sondern über ein Signal; eine
-    /// Schreibweise, die es nicht kennt, fällt lautlos aus. Was sicher geht,
-    /// steht hier.
+    /// Schreibweise, die es nicht kennt, fällt lautlos aus.
     static func setzen(_ ton: (r: Int, g: Int, b: Int)) {
         if anbieter == nil {
             anbieter = gtk_css_provider_new()
@@ -167,17 +154,6 @@ enum Tonblatt {
             background-image: linear-gradient(to bottom,
                 \(t(1)) 0px, \(Stil.grund) 260px);
             background-repeat: no-repeat;
-        }
-        .swiftly-blende-quer {
-            background-image: linear-gradient(to right,
-                \(t(1)) 0%, \(t(0.95)) 15%, \(t(0.78)) 29%, \(t(0.50)) 45%,
-                \(t(0.25)) 57%, \(t(0.10)) 70%, \(t(0.02)) 85%, \(t(0)) 100%);
-        }
-        .swiftly-blende-hoch {
-            background-image: linear-gradient(to bottom,
-                \(t(1)) 0%, \(t(0)) 7%, \(t(0)) 50%, \(t(0.12)) 60%,
-                \(t(0.38)) 70%, \(t(0.66)) 80%, \(t(0.86)) 89%,
-                \(t(1)) 96%, \(t(1)) 100%);
         }
         """)
     }

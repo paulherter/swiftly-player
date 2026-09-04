@@ -427,59 +427,6 @@ enum Stil {
         button.swiftly-zurueck:hover { background-color: transparent; }
         button.swiftly-zurueck:hover image { color: rgba(255,255,255,0.72); }
 
-        /* **Die Kulisse blendet nach links und nach unten aus.**
-           Auf dem Mac ist das eine Maske, weil der Grund sich einfärben kann
-           und ein Anstrich dann als Fleck darin stünde. Hier färbt sich
-           nichts ein, also tun es zwei Verläufe in `grund` — mit denselben
-           Stützstellen, die auf dem Fernseher nach vier Umbauten entstanden
-           sind. */
-        /* **Die Kulisse malt selbst nichts.** Sie hatte einen Grund, und der
-           schaute als heller Saum um das Bild herum hervor: an den Kanten ist
-           der Verlauf durchsichtig, und wo das Bild um einen Punkt kürzer ist
-           als seine Hülle, sieht man dahinter. Zu zeigen gibt es dort nichts
-           — den Ton trägt die Seite (`swiftly-detailgrund`), also ist ein
-           Punkt Lücke unsichtbar statt hell. */
-        .swiftly-kulisse { background-color: transparent; border-radius: 0; }
-        /* Die Stützstellen des Fernsehers, dort nach vier Umbauten
-           entstanden. Der Ton darin wechselt mit dem Bild — ``Tonblatt``
-           überschreibt beide Regeln mit einem eigenen Anbieter. */
-        .swiftly-blende-quer {
-            background-image: linear-gradient(to right,
-                \(grund) 0%, rgba(11,11,13,0.95) 15%, rgba(11,11,13,0.78) 29%,
-                rgba(11,11,13,0.50) 45%, rgba(11,11,13,0.25) 57%,
-                rgba(11,11,13,0.10) 70%, rgba(11,11,13,0.02) 85%,
-                rgba(11,11,13,0) 100%);
-        }
-        .swiftly-blende-hoch {
-            background-image: linear-gradient(to bottom,
-                \(grund) 0%, rgba(11,11,13,0) 7%, rgba(11,11,13,0) 50%,
-                rgba(11,11,13,0.12) 60%, rgba(11,11,13,0.38) 70%,
-                rgba(11,11,13,0.66) 80%, rgba(11,11,13,0.86) 89%,
-                \(grund) 96%, \(grund) 100%);
-        }
-        .swiftly-kopfton { background-color: \(grund); }
-        .swiftly-tonauslauf { background-color: \(grund); padding-top: 26px; }
-        /* Malt nichts. Für Widgets, die nur ein Maß beisteuern. */
-        .swiftly-blank { background-color: transparent; background-image: none; }
-        drawingarea { background-color: transparent; }
-
-        /* MARK: Die Leiste, die beim Scrollen kommt
-           Wörtlich wie auf iPhone, iPad und Mac: unten eine Haarlinie,
-           dahinter Glas — und solange das Bild oben steht stattdessen ein
-           weicher Verlauf, damit der Pfeil auf hellem Bild lesbar bleibt.
-           **Ohne Glas.** GTK hat keine lebende Unschärfe; was den Inhalt
-           darunter verwischt, gibt es hier nicht. An ihre Stelle tritt eine
-           dunkle Fläche — dieselbe Aufgabe, anderes Mittel. */
-        .swiftly-kopfverlauf {
-            background-image: linear-gradient(to bottom,
-                rgba(11,11,13,0.70) 0%, rgba(11,11,13,0) 100%);
-        }
-        .swiftly-kopfleiste {
-            background-color: rgba(11,11,13,0.86);
-            border-bottom: 1px solid \(linie);
-            transition: opacity 120ms ease-out;
-        }
-
         /* Nebenknopf: abgerundetes Quadrat, nur Symbol. */
         button.swiftly-neben {
             border-radius: \(ecke)px;

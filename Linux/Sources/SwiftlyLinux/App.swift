@@ -461,8 +461,9 @@ final class App: @unchecked Sendable {
     var detailkopfTitel: Widget!
     var detailkopfLeiste: Widget!
     var detailkopfVerlauf: Widget!
-    /// Die Kulisse, deren Breite mit dem Fenster mitgeht.
-    var breitenhalter: Zeigerkiste?
+    /// Die Kopfbilder der offenen Seiten. Sie halten ihren Punktepuffer, und
+    /// der muss leben, solange gezeichnet wird.
+    var kulissen: [String: Kulisse] = [:]
 
     /// **Seitenleiste links, Inhalt rechts** — der Aufbau des Macs.
     ///

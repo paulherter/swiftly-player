@@ -239,115 +239,35 @@ extension App {
         gtk_widget_add_css_class(kopf, "swiftly-kopfton")
         gtk_widget_set_hexpand(kopf, 1)
 
-        // **Das Hauptkind gibt das Maß, sonst nichts.** Ein `GtkOverlay`
-        // legt seinem Hauptkind die volle Fläche zu und übergeht dessen
-        // Ausrichtung; Überzüge dagegen achten auf beides. Deshalb ist das
-        // Hauptkind eine Zeichenfläche, die nur misst — und über ihr Signal
-        // `resize` erfahren wir die Breite, die es in GTK sonst nirgends zu
-        // holen gibt.
-        let mass: Widget! = gtk_drawing_area_new()
-        // **Sie misst, sie malt nicht.** Ohne das gibt ihr das Systemthema
-        // einen eigenen Grund — und der blitzte beim Verschieben des Fensters
-        // als heller Saum um das Kopfbild auf.
-        gtk_widget_add_css_class(mass, "swiftly-blank")
-        gtk_widget_set_size_request(mass, -1, Int32(Stil.heldHoehe))
-        gtk_overlay_set_child(OpaquePointer(kopf), mass)
-
-        let (kulissenhuelle, bild) = kulisse(titel)
-        gtk_overlay_add_overlay(OpaquePointer(kopf), kulissenhuelle)
+        // **Die Kulisse ist das Hauptkind** — sie gibt das Mass (380 hoch)
+        // und malt sich selbst, maskiert statt übermalt. Warum das den
+        // Unterschied macht, steht in ``Kulisse``.
+        let bild = Kulisse()
+        kulissen[titel.id] = bild
+        gtk_overlay_set_child(OpaquePointer(kopf), bild.anzeige)
         gtk_overlay_add_overlay(OpaquePointer(kopf), heldenblock(titel))
 
-        // **`max(breite * 0,62, 520)` — wörtlich die Rechnung des Macs.**
-        // Erst stand hier eine feste Breite, dann die volle Breite mit einem
-        // Verlauf, der die linken 38 % dicht hielt. Beides war daneben: fest
-        // riss beim Ziehen am Fenster, voll rückte die Bildmitte unter den
-        // Verlauf — die Person in der Mitte des Bildes stand dann im Dunst.
-        // Das Bild gehört nach rechts und muss 62 % breit sein, nicht nur so
-        // aussehen.
-        breitenhalter = Zeigerkiste(kulissenhuelle)
-        g_signal_connect_data(UnsafeMutableRawPointer(mass), "resize",
-                              unsafeBitCast(kulisseGemessen, to: GCallback.self),
-                              Unmanaged.passUnretained(self).toOpaque(),
-                              nil, GConnectFlags(rawValue: 0))
-        tonNachladen(titel, bild: bild)
+        tonUndBildNachladen(titel, in: bild)
         return kopf
     }
 
-    /// Wird aus dem Rückruf gerufen, sobald die Kopfzone ihre Breite kennt.
-    func kulisseBreite(_ breite: Int32) {
-        guard let huelle = breitenhalter?.widget, breite > 0 else { return }
-        gtk_widget_set_size_request(huelle, Int32(max(Double(breite) * 0.62, 520)),
-                                    Int32(Stil.heldHoehe))
-    }
-
-    /// **Rechts, nicht über die volle Breite** — wie auf dem Apple TV und dem
-    /// Mac. Dort blendet eine *Maske* das Bild aus, weil der Grund sich
-    /// einfärben kann und ein Anstrich dann als Fleck darin stünde. Hier
-    /// färbt sich der Grund ebenfalls ein (``Bildfarbe``), aber die Blenden
-    /// färben sich mit — deshalb zwei Verläufe im selben Ton statt einer
-    /// Maske, die GTK ohnehin nicht kennt. Die Stützstellen sind dieselben.
-    private func kulisse(_ titel: Item) -> (Widget, Widget) {
-        // **Mit Beschnitt.** „Cover" vergrößert das Bild über die Fläche
-        // hinaus; ohne Beschnitt malt es über seine eigene Zuteilung hinaus,
-        // und dort deckt es keine Blende mehr ab. Bei einem hellen Kopfbild
-        // steht dann ein weisser Faden am Rand — und weil er von der
-        // Punktlage abhängt, kommt und geht er beim Verschieben des Fensters.
-        //
-        // Ich hatte ihn einmal entfernt, weil eine Haarlinie zu sehen war;
-        // die kam aber vom Grund darunter, nicht vom Beschnitt. Der Grund ist
-        // inzwischen weg.
-        let huelle: Widget! = gtk_overlay_new()
-        gtk_widget_set_overflow(huelle, GTK_OVERFLOW_HIDDEN)
-        gtk_widget_add_css_class(huelle, "swiftly-kulisse")
-        gtk_widget_set_hexpand(huelle, 0)
-        gtk_widget_set_vexpand(huelle, 0)
-        gtk_widget_set_halign(huelle, GTK_ALIGN_END)
-        gtk_widget_set_valign(huelle, GTK_ALIGN_START)
-        gtk_widget_set_size_request(huelle, 520, Int32(Stil.heldHoehe))
-
-        let mass: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
-        gtk_overlay_set_child(OpaquePointer(huelle), mass)
-
-        let bild: Widget! = gtk_picture_new()
-        gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_COVER)
-        gtk_picture_set_can_shrink(OpaquePointer(bild), 1)
-        gtk_overlay_add_overlay(OpaquePointer(huelle), bild)
-
-        if let adressen,
-           let url = Bildwahl.quer(titel, adressen: adressen, breite: 1600)?.url {
-            bildLaden(bild, url: url, schluessel: url.absoluteString)
-        }
-
-        for klasse in ["swiftly-blende-quer", "swiftly-blende-hoch"] {
-            let blende: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
-            gtk_widget_add_css_class(blende, klasse)
-            gtk_overlay_add_overlay(OpaquePointer(huelle), blende)
-        }
-        return (huelle!, bild!)
-    }
-
-    /// Holt ein winziges Abbild und färbt den Auslauf damit ein.
-    private func tonNachladen(_ titel: Item, bild: Widget!) {
+    /// Holt das Kopfbild und, aus einem winzigen Abbild, seinen Ton.
+    private func tonUndBildNachladen(_ titel: Item, in kulisse: Kulisse) {
         guard let adressen,
-              let url = Bildwahl.quer(titel, adressen: adressen, breite: 16)?.url
+              let gross = Bildwahl.quer(titel, adressen: adressen, breite: 1600)?.url
         else { return }
-        // Über ``Bildlager``, nicht über `URLSession` — dort liegt schon der
-        // Weg samt `FoundationNetworking`, und derselbe Titel wird beim
-        // Zurückkommen nicht noch einmal geholt.
-        Task.detached {
-            guard let daten = await Bildlager.shared.laden(url, schluessel: url.absoluteString)
-            else {
-                FileHandle.standardError.write(Data("[Ton] nichts geladen: \(url)\n".utf8))
-                return
+        let klein = Bildwahl.quer(titel, adressen: adressen, breite: 16)?.url
+
+        Task.detached { [self] in
+            if let klein,
+               let daten = await Bildlager.shared.laden(klein, schluessel: klein.absoluteString),
+               let ton = Bildfarbe.ton(aus: daten) {
+                aufHauptfaden { Tonblatt.setzen(ton) }
             }
-            guard let ton = Bildfarbe.ton(aus: daten) else {
-                FileHandle.standardError.write(
-                    Data("[Ton] \(daten.count) Byte, aber kein Ton berechnet\n".utf8))
-                return
-            }
-            FileHandle.standardError.write(
-                Data("[Ton] \(daten.count) Byte -> \(ton.r),\(ton.g),\(ton.b)\n".utf8))
-            aufHauptfaden { Tonblatt.setzen(ton) }
+            guard let daten = await Bildlager.shared.laden(gross,
+                                                           schluessel: gross.absoluteString)
+            else { return }
+            aufHauptfaden { kulisse.setzen(daten) }
         }
     }
 
@@ -623,16 +543,6 @@ extension App {
             }
         }
     }
-}
-
-
-/// Die Kopfzone hat ihre Breite gemessen. Form: `(GtkDrawingArea*, int, int,
-/// gpointer)` — vier Argumente, nicht zwei.
-nonisolated(unsafe) let kulisseGemessen: @convention(c) (
-    UnsafeMutableRawPointer?, Int32, Int32, gpointer?
-) -> Void = { _, breite, _, daten in
-    guard let daten else { return }
-    Unmanaged<App>.fromOpaque(daten).takeUnretainedValue().kulisseBreite(breite)
 }
 
 
