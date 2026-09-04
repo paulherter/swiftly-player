@@ -9,7 +9,7 @@ let package = Package(
     name: "SwiftlyLinux",
     dependencies: [
         .package(path: "../Packages/JellyfinKit"),
-        .package(url: "https://github.com/AparokshaUI/adwaita-swift", from: "0.2.6"),
+        .package(url: "https://github.com/AparokshaUI/adwaita-swift", branch: "main"),
     ],
     targets: [
         .executableTarget(
