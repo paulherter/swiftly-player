@@ -121,6 +121,7 @@ final class Startanimation: @unchecked Sendable {
             gtk_widget_queue_draw(anzeige)
         }
         if seit >= dauer {
+            FileHandle.standardError.write(Data("[S] durch nach \(seit)\n".utf8))
             abschliessen()
             return false
         }

@@ -122,7 +122,10 @@ final class App: @unchecked Sendable {
             // verschachtelten Sendable-Hülle ohnehin nicht zu fassen.
             Task.detached { [self] in
                 try? await Task.sleep(nanoseconds: 3_500_000_000)
-                aufHauptfaden { self.startanimation?.abschliessen() }
+                aufHauptfaden {
+                    FileHandle.standardError.write(Data("[S] Frist\n".utf8))
+                    self.startanimation?.abschliessen()
+                }
             }
         }
         gtk_window_set_child(alsFenster(fenster), decke)
@@ -173,6 +176,7 @@ final class App: @unchecked Sendable {
     /// Die Animation ist durch: die Decke blendet weg, darunter steht alles
     /// längst fertig.
     private func startbildWeg() {
+        FileHandle.standardError.write(Data("[S] weg lauf=\(startanimation != nil) bild=\(startbild != nil)\n".utf8))
         guard startanimation != nil, let bild = startbild else { return }
         startanimation = nil
         gtk_widget_set_can_target(bild, 0)
@@ -240,7 +244,7 @@ final class App: @unchecked Sendable {
         anhaengen(mitte, frage)
 
         // Die Weltkugel im Feld — auf dem Mac steht dort `Image("globe")`.
-        serverfeld = eingabezeile(symbol: "web-browser-symbolic", platzhalter: "tv.beispiel.de")
+        serverfeld = eingabezeile(symbol: "network-server-symbolic", platzhalter: "tv.beispiel.de")
         gtk_widget_set_margin_top(serverfeld, 24)
         anhaengen(mitte, serverfeld)
 
