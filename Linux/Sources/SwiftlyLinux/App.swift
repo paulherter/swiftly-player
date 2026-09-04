@@ -981,17 +981,25 @@ final class App: @unchecked Sendable {
 
         let (kaefig, bild) = gerahmtesBild(breite: breite, hoehe: hoehe,
                                            stil: "swiftly-plakat")
-        if let adressen {
-            // **Welches Bild, entscheidet `Bildwahl` im Paket.** Bei einer
-            // Folge hochkant das Plakat der Serie, quer der Hintergrund der
-            // Serie mit vier Rückfällen dahinter. Die Begründung zu jeder
-            // Stufe steht dort, mit Tests.
-            let adresse = quer
-                ? Bildwahl.quer(item, adressen: adressen, breite: breite * 2)?.url
-                : Bildwahl.hochkant(item, adressen: adressen, maxHoehe: hoehe * 2)
-            if let adresse {
-                bildLaden(bild, url: adresse, schluessel: "\(item.id)-\(quer ? "quer" : "hoch")")
-            }
+        // **Welches Bild, entscheidet `Bildwahl` im Paket.** Bei einer Folge
+        // hochkant das Plakat der Serie, quer der Hintergrund der Serie mit
+        // vier Rückfällen dahinter. Die Begründung zu jeder Stufe steht dort,
+        // mit Tests.
+        //
+        // Und darunter liegt noch eine Stufe, die aus
+        // `Sources/Shared/HomeView.swift` stammt: **fehlt das Querbild ganz,
+        // tritt das Plakat ein** — beschnitten, aber immer noch das Cover und
+        // kein Standbild.
+        let hoch = adressen.flatMap {
+            Bildwahl.hochkant(item, adressen: $0, maxHoehe: hoehe * 2)
+        }
+        let adresse: URL? = quer
+            ? (adressen.flatMap { Bildwahl.quer(item, adressen: $0, breite: breite * 2)?.url } ?? hoch)
+            : hoch
+        if let adresse {
+            bildLaden(bild, url: adresse, schluessel: adresse.absoluteString)
+        } else {
+            zeichenLegen(kaefig, serie: item.seriesId != nil || item.type == "Series")
         }
 
         let (oben, unten): (String, String?) = switch art {
@@ -1014,10 +1022,11 @@ final class App: @unchecked Sendable {
         let (kaefig, bild) = gerahmtesBild(breite: Stil.kachelBreite,
                                            hoehe: Stil.kachelHoehe,
                                            stil: "swiftly-plakat")
-        if let adressen,
-           let adresse = Bildwahl.hochkant(item, adressen: adressen,
-                                           maxHoehe: Stil.kachelHoehe * 2) {
-            bildLaden(bild, url: adresse, schluessel: "\(item.id)-hoch")
+        if let adresse = adressen.flatMap({ Bildwahl.hochkant(item, adressen: $0,
+                                                              maxHoehe: Stil.kachelHoehe * 2) }) {
+            bildLaden(bild, url: adresse, schluessel: adresse.absoluteString)
+        } else {
+            zeichenLegen(kaefig, serie: item.seriesId != nil || item.type == "Series")
         }
         return kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
                             oben: item.name,

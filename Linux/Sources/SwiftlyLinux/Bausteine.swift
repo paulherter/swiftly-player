@@ -210,3 +210,23 @@ func chip(_ text: String, aktiv: Bool) -> Widget! {
     gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
     return knopf
 }
+
+/// **Ein Zeichen statt Leere, wenn der Server kein Bild hat.**
+///
+/// Die Regel steht in `Sources/Shared/HomeView.swift` und ist dort begründet:
+/// „Eine leere Flaeche sieht aus wie ein Fehler in der App, und genau so
+/// wurde sie gemeldet. Ein Zeichen sagt: hier gehoert ein Bild hin, der
+/// Server hat keins."
+///
+/// Fernseher für alles mit Serie dahinter, Filmstreifen für den Rest — 22
+/// groß, sehr leise. Auf dem Mac gibt es das **nicht**; dort bleibt die
+/// Fläche leer. Das ist eine Lücke dort, keine Abweichung hier.
+func zeichenLegen(_ huelle: Widget!, serie: Bool) {
+    let zeichen: Widget! = gtk_image_new_from_icon_name(
+        serie ? "tv-symbolic" : "video-x-generic-symbolic")
+    gtk_image_set_pixel_size(OpaquePointer(zeichen), 22)
+    gtk_widget_add_css_class(zeichen, "swiftly-leise")
+    gtk_widget_set_halign(zeichen, GTK_ALIGN_CENTER)
+    gtk_widget_set_valign(zeichen, GTK_ALIGN_CENTER)
+    gtk_overlay_add_overlay(OpaquePointer(huelle), zeichen)
+}
