@@ -1,4 +1,3 @@
-// Sammelkopf fuer die C-Seite. GTK4 und libadwaita bringen ihre eigenen
-// Kopfdateien mit; Swift braucht einen einzigen Einstiegspunkt dafuer.
-#include <adwaita.h>
+// Sammelkopf fuer die C-Seite. Nur GTK4 — libadwaita ist bewusst
+// draussen, siehe Stil.swift.
 #include <gtk/gtk.h>

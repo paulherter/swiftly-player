@@ -24,8 +24,8 @@ let package = Package(
     targets: [
         .systemLibrary(
             name: "CGtk",
-            pkgConfig: "gtk4 libadwaita-1",
-            providers: [.apt(["libgtk-4-dev", "libadwaita-1-dev"])]
+            pkgConfig: "gtk4",
+            providers: [.apt(["libgtk-4-dev"])]
         ),
         .executableTarget(
             name: "SwiftlyLinux",

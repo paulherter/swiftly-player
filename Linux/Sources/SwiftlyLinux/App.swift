@@ -51,7 +51,7 @@ final class App: @unchecked Sendable {
     // MARK: - Aufbau
 
     func aufbauen(anwendung: UnsafeMutablePointer<GtkApplication>!) {
-        fenster = adw_application_window_new(anwendung)
+        fenster = gtk_application_window_new(anwendung)
         gtk_window_set_title(alsFenster(fenster), "Swiftly")
         gtk_window_set_default_size(alsFenster(fenster), 1100, 760)
 
@@ -64,12 +64,11 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(seiten), anmeldeseite, "anmeldung")
         gtk_stack_add_named(OpaquePointer(seiten), startseite, "start")
 
+        kopfzeile = gtk_header_bar_new()
+        gtk_window_set_titlebar(alsFenster(fenster), kopfzeile)
         let inhalt = stapel(GTK_ORIENTATION_VERTICAL)
-        kopfzeile = adw_header_bar_new()
-        anhaengen(inhalt, kopfzeile)
         anhaengen(inhalt, seiten)
-        adw_application_window_set_content(
-            unsafeBitCast(fenster, to: UnsafeMutablePointer<AdwApplicationWindow>.self), inhalt)
+        gtk_window_set_child(alsFenster(fenster), inhalt)
 
         gtk_window_present(alsFenster(fenster))
 
@@ -108,7 +107,7 @@ final class App: @unchecked Sendable {
         gtk_widget_set_halign(mitte, GTK_ALIGN_CENTER)
         gtk_widget_set_size_request(mitte, 380, -1)
 
-        anhaengen(mitte, beschriftung("Swiftly", stil: "title-1"))
+        anhaengen(mitte, Stil.wortmarke(hoehe: 46))
         anhaengen(mitte, beschriftung("Wo steht dein Jellyfin?", stil: "dim-label"))
 
         serverfeld = gtk_entry_new()
@@ -121,8 +120,7 @@ final class App: @unchecked Sendable {
         anhaengen(mitte, hinweis)
 
         verbindeknopf = gtk_button_new_with_label("Verbinden")
-        gtk_widget_add_css_class(verbindeknopf, "suggested-action")
-        gtk_widget_add_css_class(verbindeknopf, "pill")
+        gtk_widget_add_css_class(verbindeknopf, "swiftly-haupt")
         gtk_widget_set_margin_top(verbindeknopf, 8)
         anhaengen(mitte, verbindeknopf)
 
@@ -158,8 +156,7 @@ final class App: @unchecked Sendable {
         anhaengen(mitte, passwortfeld)
 
         anmeldeknopf = gtk_button_new_with_label("Anmelden")
-        gtk_widget_add_css_class(anmeldeknopf, "suggested-action")
-        gtk_widget_add_css_class(anmeldeknopf, "pill")
+        gtk_widget_add_css_class(anmeldeknopf, "swiftly-haupt")
         gtk_widget_set_margin_top(anmeldeknopf, 8)
         anhaengen(mitte, anmeldeknopf)
 
@@ -334,8 +331,8 @@ final class App: @unchecked Sendable {
     }
 
     private func kopfzeileFuellen() {
-        adw_header_bar_set_title_widget(OpaquePointer(kopfzeile), titelzeile)
-        adw_header_bar_pack_end(OpaquePointer(kopfzeile), abmeldeknopf)
+        gtk_header_bar_set_title_widget(OpaquePointer(kopfzeile), titelzeile)
+        gtk_header_bar_pack_end(OpaquePointer(kopfzeile), abmeldeknopf)
     }
 
     private func abmelden() {
@@ -405,12 +402,14 @@ final class App: @unchecked Sendable {
 
     private func kachelBauen(_ item: Item) -> Widget! {
         let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 6)
-        gtk_widget_set_size_request(kachel, 140, -1)
+        gtk_widget_set_size_request(kachel, Int32(Stil.kachelBreiteBreit), -1)
 
         let bild = gtk_picture_new()
-        gtk_widget_set_size_request(bild, 140, 200)
+        gtk_widget_set_size_request(bild, Int32(Stil.kachelBreiteBreit),
+                                   Int32(Stil.kachelHoehe(Stil.kachelBreiteBreit)))
         gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_COVER)
-        gtk_widget_add_css_class(bild, "card")
+        gtk_widget_add_css_class(bild, "swiftly-plakat")
+        gtk_widget_set_overflow(bild, GTK_OVERFLOW_HIDDEN)
         anhaengen(kachel, bild)
 
         if let adressen { posterLaden(bild, item: item, adressen: adressen, kante: 300) }
