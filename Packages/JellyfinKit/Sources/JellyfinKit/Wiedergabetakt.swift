@@ -27,7 +27,7 @@ public enum Wiedergabetakt {
     public static let meldeabstand: Double = 10
 
     /// Was die Ansicht zeigt und der Takt fortschreibt.
-    public struct Stand {
+    public struct Stand: Sendable {
         public var position: Double = 0
         public var dauer: Double = 0
         public var laeuft = true
@@ -52,7 +52,7 @@ public enum Wiedergabetakt {
     }
 
     /// Was nach diesem Takt zu tun ist. Die Ansicht entscheidet, wie.
-    public struct Auftrag {
+    public struct Auftrag: Sendable {
         public var ladeschirmWeg = false
         public var spurenAnwenden = false
         public var startMelden = false
@@ -65,7 +65,7 @@ public enum Wiedergabetakt {
     ///
     /// Als eigener Typ und nicht als `VLCPlayerView`, damit sich die Regeln
     /// ohne Player prüfen lassen.
-    public struct Messung {
+    public struct Messung: Sendable {
         public let dauer: Double
         public let position: Double
         public let guteStelle: Double
