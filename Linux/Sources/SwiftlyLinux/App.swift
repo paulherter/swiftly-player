@@ -253,12 +253,19 @@ final class App: @unchecked Sendable {
             async let konten = try? await c.oeffentlicheBenutzer()
             async let schnell = await c.quickConnectVerfuegbar()
             let (liste, moeglich) = await (konten ?? [], schnell)
+            // **Die Adresse vor dem Hauptfaden holen.** `benutzerbild` gehört
+            // dem Client-Actor; im Aufbau der Kachel wäre es ein Zugriff von
+            // aussen.
+            var bilder: [(OeffentlicherBenutzer, URL?)] = []
+            for benutzer in liste.prefix(6) {
+                bilder.append((benutzer, await c.benutzerbild(benutzer, kante: 128)))
+            }
             aufHauptfaden {
                 gtk_widget_set_visible(self.schnellknopf, moeglich ? 1 : 0)
                 leeren(self.kontenreihe)
                 gtk_widget_set_visible(self.kontenreihe, liste.isEmpty ? 0 : 1)
-                for benutzer in liste.prefix(6) {
-                    anhaengen(self.kontenreihe, self.kontenkachel(benutzer, c))
+                for (benutzer, bild) in bilder {
+                    anhaengen(self.kontenreihe, self.kontenkachel(benutzer, bild: bild))
                 }
                 // **Bei genau einem Konto steht der Name schon da.** Dann
                 // fehlt nur noch das Passwort.
@@ -271,12 +278,12 @@ final class App: @unchecked Sendable {
 
     /// Ein Konto als Bild mit Namen darunter.
     private func kontenkachel(_ benutzer: OeffentlicherBenutzer,
-                              _ c: JellyfinClient) -> Widget! {
+                              bild url: URL?) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-kachel")
         let saeule = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
         let (kaefig, bild) = gerahmtesBild(breite: 64, hoehe: 64, stil: "swiftly-rund")
-        if let url = c.benutzerbild(benutzer, kante: 128) {
+        if let url {
             bildLaden(bild, url: url, schluessel: "konto-\(benutzer.id)", sofort: true)
         } else {
             zeichenLegen(kaefig, serie: false)
