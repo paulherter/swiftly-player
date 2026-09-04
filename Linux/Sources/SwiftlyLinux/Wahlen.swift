@@ -15,6 +15,9 @@ struct Wahlen: Codable {
     var tonSprache = ""
     var untertitelSprache = ""
     var untertitelAutomatisch = false
+    /// **Neue Filme und neue Serien in eigenen Reihen** statt in einer.
+    /// `Startseitenmodell` wertet es aus; die Zeile fehlte auf Linux ganz.
+    var neuzugaengeGetrennt = false
 
     /// **Was dem Server als Grenze gemeldet wird.**
     ///

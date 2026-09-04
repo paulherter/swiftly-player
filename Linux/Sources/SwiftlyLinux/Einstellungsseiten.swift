@@ -350,6 +350,15 @@ extension App {
             self?.wahlen.fortschrittAufKacheln = an
             self?.wahlen.sichern()
         })
+        anhaengen(d.raum, zeilenstrich())
+        anhaengen(d.raum, schalterzeile(symbol: "folder-new-symbolic",
+                                        titel: "Neuzugänge getrennt",
+                                        unter: "Neue Filme und neue Serien in eigenen Reihen",
+                                        an: wahlen.neuzugaengeGetrennt) { [weak self] an in
+            self?.wahlen.neuzugaengeGetrennt = an
+            self?.wahlen.sichern()
+            self?.startseiteLaden()
+        })
         anhaengen(block, d.aussen)
 
         let s = einstellungsgruppe("Server")

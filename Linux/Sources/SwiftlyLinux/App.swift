@@ -1264,6 +1264,20 @@ final class App: @unchecked Sendable {
         }
     }
 
+    /// **Eine abgelaufene Anmeldung fiel bisher gar nicht auf.**
+    ///
+    /// Der Server antwortet dann mit 401, und weil hier überall `try?` steht,
+    /// kam einfach nichts zurück: leere Startseite, leeres Raster, und der
+    /// Nutzer sucht den Fehler bei sich. Der Mac fällt auf den
+    /// Anmeldebildschirm zurück und sagt, warum
+    /// (`Shared/AppModel.swift:789`).
+    func sitzungPruefen(_ fehler: any Error) {
+        guard let j = fehler as? JellyfinError, case let .http(status, _) = j,
+              status == 401 else { return }
+        abmelden()
+        anmeldestandZeigen("Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
+    }
+
     func abmelden() {
         Task.detached { [fernsteuerung] in await fernsteuerung?.beenden() }
         fernsteuerung = nil
@@ -1358,7 +1372,16 @@ final class App: @unchecked Sendable {
             anhaengen(reihenstapel, beschriftung("Lade …", stil: "swiftly-koerper"))
         }
 
+        // Die Wahl vor dem Faden ablesen — `wahlen` gehört dem Hauptfaden.
+        let getrennt = wahlen.neuzugaengeGetrennt
         Task.detached { [self] in
+            // **Hier wird der Fehler gelesen, nicht verschluckt.** Die
+            // Startseite lädt bei jedem Wechsel in den Vordergrund (D8) und
+            // ist damit die Stelle, an der eine abgelaufene Anmeldung als
+            // Erstes auffällt — vorher kam einfach nichts zurück, und die
+            // Seite blieb leer.
+            do { _ = try await client.resumeItems(limit: 1) }
+            catch { aufHauptfaden { self.sitzungPruefen(error) } }
             async let weiter = try? await client.resumeItems(limit: 20)
             async let naechste = try? await client.nextUp(limit: 20)
             async let neu = try? await client.latest(limit: 20)
@@ -1368,11 +1391,18 @@ final class App: @unchecked Sendable {
             // Übersicht, sie startet nicht. Nur ‚Weiterschauen' springt
             // direkt in die Wiedergabe." Waagerecht ist deshalb allein
             // „Weiterschauen" — auf iPhone, Fernseher und Mac genauso.
-            let reihen: [(String, Reihenart, [Item])] = [
+            let neuzugaenge = await neu ?? []
+            // **Neue Filme und neue Serien getrennt, wenn gewünscht.** Eine
+            // gemischte Reihe ist die Vorgabe; wer viel neu bekommt, will sie
+            // auseinander. Die Zeile fehlte auf Linux ganz.
+            let letzte: [(String, Reihenart, [Item])] = getrennt
+                ? [("Neue Filme", .neu, neuzugaenge.filter { $0.type == "Movie" }),
+                   ("Neue Serien", .neu, neuzugaenge.filter { $0.type != "Movie" })]
+                : [("Zuletzt hinzugefügt", .neu, neuzugaenge)]
+            let reihen: [(String, Reihenart, [Item])] = ([
                 ("Weiterschauen", .weiterschauen, await weiter ?? []),
-                ("Nächste Folge", .naechste, await naechste ?? []),
-                ("Zuletzt hinzugefügt", .neu, await neu ?? [])
-            ].filter { !$0.2.isEmpty }
+                ("Nächste Folge", .naechste, await naechste ?? [])
+            ] + letzte).filter { !$0.2.isEmpty }
 
             aufHauptfaden { self.reihenZeigen(reihen) }
         }
