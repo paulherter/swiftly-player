@@ -117,7 +117,22 @@ enum Tonblatt {
     ///
     /// Auf dem Mac läuft er über `heldHoehe + 260` Punkte nach `grund` aus
     /// (`SerienView`, `DetailView`) — oben trägt er, unten ist die Seite
-    /// wieder schwarz. Die Länge steht dort, nicht hier.
+    /// wieder schwarz.
+    ///
+    /// **Über der Kopfzone bleibt er hier konstant, und das ist der Punkt.**
+    /// Der Mac *maskiert* das Bild: die Blenden senken seine Deckung, und die
+    /// Seite scheint durch — was die Seite dort auch tut, es passt immer.
+    /// GTK kennt keine Maske, hier wird **übermalt**. Damit muss die Farbe an
+    /// jeder Stelle die der Seite sein, sonst liegt ein Fleck auf dem Bild.
+    ///
+    /// Genau das war der „weiße Schleier": die linken 15 % des Bildes trugen
+    /// reinen Ton, während die Seite dort schon nach Schwarz auslief — ein
+    /// hellerer Fleck, und unten dieselbe Stufe. Am Bildschirmfoto
+    /// nachgemessen: 9393 Punkte in genau 66,60,56.
+    ///
+    /// Bleibt der Ton über die Höhe der Kopfzone gleich und läuft erst
+    /// darunter aus, stimmen Übermalen und Untergrund überein. Der
+    /// Unterschied zum Mac ist ein etwas flacherer Anfang des Verlaufs.
     ///
     /// Oben braucht es zusätzlich eine kurze Blende. Auf dem Mac reicht das
     /// Bild bis an die Fensterkante, hier sitzt die Titelzeile darüber — ohne
@@ -144,7 +159,8 @@ enum Tonblatt {
         .swiftly-detailgrund {
             background-color: \(Stil.grund);
             background-image: linear-gradient(to bottom,
-                \(t(1)) 0px, \(Stil.grund) \(Stil.heldHoehe + 260)px);
+                \(t(1)) 0px, \(t(1)) \(Stil.heldHoehe)px,
+                \(Stil.grund) \(Stil.heldHoehe + 260)px);
             background-repeat: no-repeat;
         }
         .swiftly-blende-quer {
