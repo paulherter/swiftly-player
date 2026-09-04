@@ -58,6 +58,59 @@ final class Orientierung {
     /// also am toten Ende, und wer die Regel änderte, hätte zwei Kopien
     /// stehen lassen.
     static var querformatSperreMoeglich: Bool { !Stil.amPad }
+
+    /// **Ob das Oeffnen des Players eine sichtbare Drehung ausloest.**
+    ///
+    /// Muss **vorher** feststehen. Gemessen im Simulator: steht die Lage schon
+    /// richtig, feuert `viewWillTransition` gar nicht — wer auf den Rueckruf
+    /// wartet, wartet dann bis zum Notausgang, obwohl es nichts zu warten gab.
+    ///
+    /// Ohne feste Querformatsperre laesst die Maske beide Lagen zu, dann
+    /// erzwingt iOS nichts. Auf dem iPad wird die Anfrage ohnehin abgelehnt.
+    @MainActor
+    static func drehungErwartet(querformatFest: Bool) -> Bool {
+        guard querformatSperreMoeglich, querformatFest else { return false }
+        guard let szene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first else { return false }
+        return szene.interfaceOrientation.isPortrait
+    }
+}
+
+/// **Meldet das Ende der Drehung — das Ereignis, das SwiftUI nicht hat.**
+///
+/// Gemessen im Simulator, `requestGeometryUpdate` auf Querformat:
+///
+///     +31 ms   viewWillTransition, Dauer laut Koordinator 300 ms
+///     +33 ms   onGeometryChange meldet schon die Endwerte
+///     +349 ms  completion
+///
+/// `onGeometryChange` und `interfaceOrientation` melden also die **Anordnung**,
+/// nicht das Ende; ein Riegel darauf ist offen, bevor er gebraucht wird. Der
+/// Uebergangskoordinator ruft seine `completion` dagegen erst, wenn die
+/// Animation durch ist.
+///
+/// Dass UIKit `viewWillTransition` auch an einen so eingebetteten
+/// Kind-Controller weiterreicht — und auch dann, wenn der Anstoss
+/// `requestGeometryUpdate` ist und keine physische Drehung —, ist gemessen und
+/// nicht angenommen.
+struct Drehhorcher: UIViewControllerRepresentable {
+    let fertig: () -> Void
+
+    func makeUIViewController(context: Context) -> Horcher {
+        let h = Horcher(); h.fertig = fertig; return h
+    }
+    func updateUIViewController(_ vc: Horcher, context: Context) { vc.fertig = fertig }
+
+    final class Horcher: UIViewController {
+        var fertig: (() -> Void)?
+        override func viewWillTransition(to groesse: CGSize,
+                                         with koordinator: UIViewControllerTransitionCoordinator) {
+            super.viewWillTransition(to: groesse, with: koordinator)
+            koordinator.animate(alongsideTransition: nil) { [weak self] _ in
+                self?.fertig?()
+            }
+        }
+    }
 }
 
 /// Ohne Delegate hat iOS keine Stelle, an der es nach der erlaubten
