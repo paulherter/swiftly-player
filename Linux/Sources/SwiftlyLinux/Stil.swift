@@ -510,6 +510,18 @@ enum Stil {
         }
         /* Weiss zu vier Prozent — der Wert vom Mac. */
         .swiftly-folgenzeile.swiftly-schwebt { background-color: rgba(255,255,255,0.04); }
+        /* **Eine Haarlinie zwischen den Folgen** — der Mac hat sie
+           (`SerienView.swift:217`). Ohne sie fliessen zwei Zeilen mit langer
+           Beschreibung ineinander. */
+        .swiftly-folgenzeile { border-bottom: 1px solid \(linie); }
+        /* Der Abspielkreis, der beim Schweben ueber dem Bild erscheint. */
+        .swiftly-spielkreis {
+            background-color: rgba(0,0,0,0.55);
+            border-radius: 17px;
+            min-width: 34px;
+            min-height: 34px;
+        }
+        .swiftly-spielkreis image { color: \(schrift); }
         /* Rund, nicht abgerundet-eckig: der Mac nimmt hier den kleinen
            Aktionsknopf, kein Nebenknopf der Knopfreihe. */
         button.swiftly-hakenknopf {
@@ -587,6 +599,8 @@ enum Stil {
         }
 
         /* Die Hinweiszeile: drei Sekunden, dann weg. */
+        .swiftly-sehrleise, .swiftly-sehrleise image { color: \(schriftSehrLeise); }
+
         .swiftly-hinweis {
             font-size: 14px;
             color: \(schrift);

@@ -41,6 +41,24 @@ extension App {
         schieben(zu: scheibe, richtung: schub)
     }
 
+    /// **Die Zeile stand da und tat nichts.** Der Mac stösst die Prüfung an,
+    /// zeigt „Moment …" und danach das Ergebnis daneben — ein Knopf ohne
+    /// Rückruf ist schlimmer als keiner, weil er Funktion vortäuscht.
+    private func verbindungPruefen() {
+        guard let client else { return }
+        pruefergebnis = "Moment …"
+        unterseiteOeffnen(.einstellungen, schub: .ohne)
+        Task.detached { [self] in
+            let ok = (try? await client.publicSystemInfo()) != nil
+            aufHauptfaden {
+                self.pruefergebnis = ok ? "Erreichbar" : "Nicht erreichbar"
+                if self.offeneUnterseite == .einstellungen {
+                    self.unterseiteOeffnen(.einstellungen, schub: .ohne)
+                }
+            }
+        }
+    }
+
     /// Zurück aus einer Unterseite: erst zum Profil, von dort in den Bereich.
     private func unterseiteZurueck() {
         if offeneUnterseite == .profil {
@@ -339,8 +357,13 @@ extension App {
                                      titel: servername.isEmpty ? "Server" : servername,
                                      wert: serverfassung))
         anhaengen(s.raum, zeilenstrich())
+        // **Die Zeile stand da und tat nichts.** Der Mac stösst die Prüfung
+        // an, zeigt „Moment …" und danach das Ergebnis als Wert daneben.
         let pruefzeile = wertezeile(symbol: "network-wireless-symbolic",
-                                    titel: "Verbindung prüfen")
+                                    titel: "Verbindung prüfen",
+                                    wert: pruefergebnis) { [weak self] in
+            self?.verbindungPruefen()
+        }
         anhaengen(s.raum, pruefzeile)
         anhaengen(block, s.aussen)
 

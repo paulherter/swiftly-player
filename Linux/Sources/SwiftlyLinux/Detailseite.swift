@@ -66,6 +66,8 @@ extension App {
     // MARK: - Aufbau
 
     func detailZeigen(_ item: Item, schub: Schub = .tiefer) {
+        detailBeruehrt = false
+        abschnitte = []
         let scheibe = naechsteScheibe()
 
         let seite = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
@@ -177,6 +179,25 @@ extension App {
         }
     }
 
+    /// **Extras** — Featurettes, entfallene Szenen, Making-of.
+    ///
+    /// Der Mac hat die Reihe (`DetailView.swift:133`), Linux nicht. Sie ist
+    /// leer bei den meisten Titeln und genau deshalb leicht zu übersehen: wo
+    /// nichts ist, fällt nichts auf.
+    private func extrasNachladen(_ titel: Item, in raum: Widget!) {
+        guard let client else { return }
+        let kiste = gehalten(raum)
+        Task.detached { [self] in
+            let extras = (try? await client.extras(itemID: titel.id)) ?? []
+            nachDemSchub {
+                defer { losgelassen(kiste) }
+                guard !extras.isEmpty else { return }
+                anhaengen(kiste.widget, self.reiheBauen(titel: "Extras", art: .neu,
+                                                        items: extras))
+            }
+        }
+    }
+
     /// **Der Dateiauszug — der Beleg für das Versprechen dieser App.**
     ///
     /// Container, Auflösung, Codec, Grösse, Untertitelsprachen: daran liest
@@ -218,7 +239,14 @@ extension App {
             aufHauptfaden {
                 defer { losgelassen(kiste) }
                 // Nur nachtragen, wenn diese Seite noch die oberste ist.
-                guard let voll,
+                // **Was der Nutzer schon gewählt hat, wird nicht
+                // weggeworfen.** Der volle Satz kommt nach und ersetzte die
+                // ganze Seite — wer in der Zwischenzeit eine Staffel oder
+                // einen Reiter gewählt hatte, sah sie zurückspringen. Der
+                // Mac tauscht nur den Titel und behält den Zustand; hier
+                // wird stattdessen nicht mehr neu gebaut, sobald jemand
+                // etwas angefasst hat.
+                guard let voll, !self.detailBeruehrt,
                       self.seitenstapel[self.bereich]?.last?.id == item.id else { return }
                 leeren(kiste.widget)
                 self.aufbauenMit(voll, in: kiste.widget)
@@ -253,6 +281,7 @@ extension App {
             if !titel.darsteller.isEmpty {
                 anhaengen(unten, besetzungsreihe(titel.darsteller))
             }
+            extrasNachladen(titel, in: unten)
             aehnlicheNachladen(titel, in: unten)
             // **Der Dateiauszug steht ganz unten, und nur beim Film** — bei
             // einer Serie gibt es keine Datei, nur die ihrer Folgen. Der
@@ -595,8 +624,19 @@ extension App {
             guard let self, let client = self.client else { return }
             gesehen.toggle()
             let neu = gesehen
-            Task.detached { try? await client.setzeGesehen(itemID: titel.id, an: neu) }
             gtk_popover_popdown(alsTafel(tafel))
+            // **Der Zustand des Knopfes ist die Antwort** (D6) — aber wenn
+            // der Server ablehnt, ist die Antwort falsch. Dann nimmt sie
+            // sich zurück und sagt warum; auf dem Mac genauso.
+            Task.detached { [weak self] in
+                do { try await client.setzeGesehen(itemID: titel.id, an: neu) }
+                catch {
+                    aufHauptfaden {
+                        gesehen.toggle()
+                        self?.melden(lesbarerFehler(error))
+                    }
+                }
+            }
         })
         // **„Von vorn" nur, wenn es etwas zurueckzusetzen gibt** — bei einem
         // Film, der bei null steht, waere es eine Zeile ohne Wirkung. Wortlaut

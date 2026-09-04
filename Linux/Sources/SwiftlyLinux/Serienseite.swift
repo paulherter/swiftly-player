@@ -137,6 +137,7 @@ extension App {
                     [weak self] in
                     wahl.jetzt = staffel
                     self?.offeneStaffel = staffel
+                    self?.detailBeruehrt = true
                     gtk_button_set_label(alsKnopf(pille), staffel.name)
                     gtk_popover_popdown(alsTafel(tafel))
                     self?.folgenLaden(serie: serie, staffel: staffel, in: folgenraum)
@@ -227,6 +228,16 @@ extension App {
         if wahlen.fortschrittAufKacheln, let anteil = folge.gesehenerAnteil {
             balkenLegen(huelle, breite: 160, anteil: anteil)
         }
+        // **Ein Abspielzeichen über dem Bild, wenn der Zeiger da ist** — der
+        // Mac hat es (`SerienView.swift:443`). Ohne es sieht ein Standbild
+        // nicht danach aus, als ließe es sich anklicken.
+        let kreis: Widget! = gtk_image_new_from_icon_name("media-playback-start-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(kreis), 16)
+        gtk_widget_add_css_class(kreis, "swiftly-spielkreis")
+        gtk_widget_set_halign(kreis, GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(kreis, GTK_ALIGN_CENTER)
+        gtk_widget_set_visible(kreis, 0)
+        gtk_overlay_add_overlay(OpaquePointer(huelle), kreis)
         anhaengen(zeile, huelle)
 
         let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 5)
@@ -298,10 +309,12 @@ extension App {
             gtk_widget_add_css_class(zeile, "swiftly-schwebt")
             gtk_widget_set_visible(knopf, 1)
             gtk_widget_set_visible(ruhig, 0)
+            gtk_widget_set_visible(kreis, 1)
         }, hinaus: {
             gtk_widget_remove_css_class(zeile, "swiftly-schwebt")
             gtk_widget_set_visible(knopf, 0)
             gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
+            gtk_widget_set_visible(kreis, 0)
         })
 
         // **Eine Folge aus der Liste startet an ihrer eigenen Stelle** (A5).

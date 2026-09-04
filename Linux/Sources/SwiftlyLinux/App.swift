@@ -478,6 +478,7 @@ final class App: @unchecked Sendable {
     private var serienraster: Widget!
     private var suchfeld: Widget!
     private var suchraster: Widget!
+    private var suchleer: Widget!
     private var filmezahl: Widget!
     private var serienzahl: Widget!
     var geladen: Set<Bereich> = []
@@ -532,6 +533,10 @@ final class App: @unchecked Sendable {
     /// Vorspann- und Abspannmarken des laufenden Titels, vom Server.
     var abschnitte: [Abschnitt] = []
     var jetzigesAngebot: Knopfangebot = .keiner
+    /// Ob der Nutzer auf der offenen Detailseite schon etwas gewählt hat.
+    var detailBeruehrt = false
+    /// Was zuletzt bei „Verbindung prüfen" herauskam.
+    var pruefergebnis = ""
 
     // MARK: Spieler
     /// **Erst beim ersten Abspielen.** Der Abspieler legt ein `GtkPicture`
@@ -1129,6 +1134,12 @@ final class App: @unchecked Sendable {
 
         suchraster = rasterBauen()
         anhaengen(block, suchraster)
+        // **Leer ist eine Auskunft.** Ohne sie steht die Seite still da, und
+        // man weiss nicht, ob gesucht wurde oder nichts da ist.
+        suchleer = leerzustand("system-search-symbolic", "Nichts gefunden",
+                               "Andere Schreibweise? Die Suche findet Filme und Serien.")
+        gtk_widget_set_visible(suchleer, 0)
+        anhaengen(block, suchleer)
         beiSignal(suchfeld, "activate") { [weak self] in self?.suchen() }
         beiSignal(suchfeld, "changed") { [weak self] in self?.sucheAngestossen() }
         return seitenrahmen(block)
@@ -1161,6 +1172,27 @@ final class App: @unchecked Sendable {
         let lader = was == .filme ? filmeLader : serienLader
         guard let lader else { return }
         gtk_widget_set_visible(lader, an ? 1 : 0)
+    }
+
+    /// **Leer ist eine Auskunft, kein leerer Kasten.** Symbol, Satz,
+    /// Erklärzeile — die Form vom Mac (`Leerzustand`).
+    func leerzustand(_ symbol: String, _ titel: String, _ text: String) -> Widget! {
+        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 10)
+        gtk_widget_set_halign(block, GTK_ALIGN_CENTER)
+        gtk_widget_set_margin_top(block, 100)
+        let bild: Widget! = gtk_image_new_from_icon_name(symbol)
+        gtk_image_set_pixel_size(OpaquePointer(bild), 34)
+        gtk_widget_add_css_class(bild, "swiftly-sehrleise")
+        anhaengen(block, bild)
+        let t = beschriftung(titel, stil: "swiftly-kacheltitel")
+        gtk_widget_set_halign(t, GTK_ALIGN_CENTER)
+        anhaengen(block, t)
+        let u = beschriftung(text, stil: "swiftly-zweitzeile", umbruch: true)
+        gtk_widget_add_css_class(u, "swiftly-leise")
+        gtk_label_set_justify(OpaquePointer(u), GTK_JUSTIFY_CENTER)
+        gtk_widget_set_halign(u, GTK_ALIGN_CENTER)
+        anhaengen(block, u)
+        return block
     }
 
     /// Ein umbrechendes Raster. GTKs `GtkFlowBox` kann genau das, was auf dem
@@ -1422,7 +1454,11 @@ final class App: @unchecked Sendable {
         suchtakt += 1
         let meins = suchtakt
         let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard begriff.count > 1 else { rasterFuellen(suchraster, []); return }
+        guard begriff.count > 1 else {
+            rasterFuellen(suchraster, [])
+            gtk_widget_set_visible(suchleer, 0)
+            return
+        }
         Task.detached { [self] in
             try? await Task.sleep(nanoseconds: 280_000_000)
             aufHauptfaden {
@@ -1438,16 +1474,21 @@ final class App: @unchecked Sendable {
         guard !begriff.isEmpty else { rasterFuellen(suchraster, []); return }
         Task.detached { [self] in
             let treffer = (try? await client.suche(begriff)) ?? []
-            aufHauptfaden { self.rasterFuellen(self.suchraster, treffer) }
+            aufHauptfaden {
+                self.rasterFuellen(self.suchraster, treffer)
+                gtk_widget_set_visible(self.suchleer, treffer.isEmpty ? 1 : 0)
+            }
         }
     }
 
     private func reihenZeigen(_ reihen: [(String, Reihenart, [Item])]) {
         leeren(reihenstapel)
         guard !reihen.isEmpty else {
+            // Symbol, Satz, Erklärzeile — dieselbe Form wie auf dem Mac
+            // (`Leerzustand`), statt einer einzelnen Textzeile.
             anhaengen(reihenstapel,
-                      beschriftung("Nichts gefunden. Steht auf dem Server etwas?",
-                                   stil: "swiftly-koerper", umbruch: true))
+                      leerzustand("folder-symbolic", "Hier ist noch nichts",
+                                  "Sobald der Server Titel hat, stehen sie hier."))
             return
         }
         for (titel, art, titelListe) in reihen {
