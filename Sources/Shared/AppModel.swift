@@ -458,57 +458,16 @@ final class AppModel {
         querbild(for: item, breite: 600)?.quelle ?? "nichts"
     }
 
-    /// **Die Kette, und warum sie eine ist.**
+    /// **Die Kette liegt jetzt im Paket** — `JellyfinKit.Bildwahl.quer`.
     ///
-    /// Vorher stand hier eine einzige Zeile: Hintergrund der Serie, ueber den
-    /// Index, ohne Marke. Hat die Serie keinen, antwortet Jellyfin mit 404 —
-    /// und dann blieb die Kachel leer, weil auch der Rueckfall auf das
-    /// Hochkantposter eine Marke braucht, die fehlen kann.
-    ///
-    /// Am Server nachgemessen: eine **Folge hat nie einen eigenen
-    /// Hintergrund**, `BackdropImageTags` ist bei ihr immer leer. Der
-    /// Hintergrund haengt an der Serie und kommt als
-    /// `ParentBackdropImageTags` mit — ein Feld, das wir gar nicht gelesen
-    /// haben.
-    ///
-    /// Jede Stufe wird nur genommen, wenn ihre **Marke** dasteht. Eine Marke
-    /// ist Jellyfins Beweis, dass das Bild existiert; ohne sie raten wir und
-    /// handeln uns 404 ein, die wie ein leeres Bild aussehen.
+    /// Sie stand hier, war damit aber an SwiftUI gebunden und fuer die
+    /// Linux-Fassung unerreichbar. An ihr haengt nichts, was mit Oberflaeche
+    /// oder Uebersetzung zu tun haette; die Begruendung zu jeder Stufe steht
+    /// dort, samt der Messung, dass eine Folge nie einen eigenen Hintergrund
+    /// hat.
     private func querbild(for item: Item, breite: Int) -> (url: URL, quelle: String)? {
-        let mass = Bildmass.hoechstensBreit(breite)
-
-        func versuch(_ quelle: String, _ id: String?, _ art: Bildart,
-                     _ marke: String?) -> (URL, String)? {
-            guard let id, let marke,
-                  let url = bilder?.bauen(itemID: id, art: art, marke: marke, mass: mass)
-            else { return nil }
-            return (url, quelle)
-        }
-
-        let kette: [(URL, String)?] = [
-            // 1 · Der Hintergrund der Serie
-            versuch("Serienhintergrund",
-                    item.parentBackdropItemId ?? item.seriesId,
-                    .hintergrund, item.parentBackdropImageTags?.first),
-            // 2 · Eigener Hintergrund. Bei Filmen der Normalfall.
-            versuch("eigener Hintergrund", item.id, .hintergrund,
-                    item.backdropImageTags?.first),
-            // 3 · Das quer liegende Vorschaubild der Serie.
-            versuch("Serienvorschau", item.parentThumbItemId ?? item.seriesId,
-                    .vorschau, item.parentThumbImageTag),
-            // 4 · Das eigene Vorschaubild.
-            versuch("eigene Vorschau", item.id, .vorschau,
-                    item.imageTags?["Thumb"]),
-            // 5 · Das Standbild der Folge. Als Cover schwaecher — deshalb
-            //     zuletzt und nicht zuerst —, aber immer noch ein Bild.
-            item.seriesId != nil
-                ? versuch("Folgenstandbild", item.id, .poster,
-                          item.imageTags?["Primary"])
-                : nil,
-        ]
-
-        guard let treffer = kette.compactMap({ $0 }).first else { return nil }
-        return (treffer.0, treffer.1)
+        guard let bilder else { return nil }
+        return Bildwahl.quer(item, adressen: bilder, breite: breite)
     }
 
     /// Das Bild fuer den Sperrbildschirm und das Kontrollzentrum.
@@ -654,20 +613,15 @@ final class AppModel {
     /// Poster-URL. Wird hier gebaut statt im Client, damit die Ansichten
     /// nicht auf den Actor warten müssen.
     func imageURL(for item: Item, maxHeight: Int = 480, hochkant: Bool = false) -> URL? {
-        // Für Hochkantkacheln bei Folgen das Serienposter verwenden — das
-        // eigene Bild einer Folge ist ein 16:9-Vorschaubild und würde in
-        // einer 2:3-Kachel bis zur Unkenntlichkeit beschnitten.
-        let quelle: (id: String, marke: String)?
-        if hochkant, let serie = item.seriesId, let marke = item.seriesPrimaryImageTag {
-            quelle = (serie, marke)
-        } else if let marke = item.imageTags?["Primary"] {
-            quelle = (item.id, marke)
-        } else {
-            quelle = nil
+        guard let bilder else { return nil }
+        // Hochkant heisst bei einer Folge: das Plakat der Serie. Warum, steht
+        // in `Bildwahl.hochkant` — hier stand dieselbe Regel ein zweites Mal.
+        if hochkant {
+            return Bildwahl.hochkant(item, adressen: bilder, maxHoehe: maxHeight)
         }
-        guard let quelle else { return nil }
-        return bilder?.bauen(itemID: quelle.id, marke: quelle.marke,
-                             mass: .hoechstensHoch(maxHeight))
+        guard let marke = item.imageTags?["Primary"] else { return nil }
+        return bilder.bauen(itemID: item.id, marke: marke,
+                            mass: .hoechstensHoch(maxHeight))
     }
 
     /// Vorspann, Rückblick und Abspann einer Folge.
