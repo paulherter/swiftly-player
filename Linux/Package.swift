@@ -12,7 +12,7 @@ let package = Package(
         // **Nicht GitHub.** Das Projekt liegt dort seit Oktober 2024 nur noch
         // archiviert; die gepflegte Fassung ist nach Codeberg umgezogen und
         // hat die Zaehlung bei 0.1.0 neu begonnen.
-        .package(url: "https://codeberg.org/aparoksha/adwaita-swift", from: "0.1.0"),
+        .package(url: "https://codeberg.org/aparoksha/adwaita-swift", branch: "main"),
     ],
     targets: [
         .executableTarget(
