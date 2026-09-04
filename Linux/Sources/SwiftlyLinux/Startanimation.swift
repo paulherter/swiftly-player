@@ -54,6 +54,7 @@ final class Startanimation: @unchecked Sendable {
         self.tier = tier
         bilder = Int(lottie_animation_get_totalframe(tier))
         dauer = lottie_animation_get_duration(tier)
+        FileHandle.standardError.write(Data("[Start] Bilder=\(bilder) Dauer=\(dauer)\n".utf8))
         guard bilder > 0, dauer > 0 else {
             lottie_animation_destroy(tier)
             return nil
@@ -105,6 +106,7 @@ final class Startanimation: @unchecked Sendable {
             gtk_widget_queue_draw(anzeige)
         }
         if seit >= dauer {
+            FileHandle.standardError.write(Data("[Start] fertig nach \(seit)\n".utf8))
             abschliessen()
             return false
         }
@@ -114,6 +116,7 @@ final class Startanimation: @unchecked Sendable {
     /// **Genau einmal**, egal ob vom Ende der Animation oder von der Frist —
     /// dieselbe Zusicherung, die auf Apple die Klasse `Einmal` gibt.
     func abschliessen() {
+        FileHandle.standardError.write(Data("[Start] abschliessen (schon: \(schonFertig))\n".utf8))
         guard !schonFertig else { return }
         schonFertig = true
         fertig()
