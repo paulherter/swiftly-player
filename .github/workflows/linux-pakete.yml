@@ -127,8 +127,13 @@ jobs:
     steps:
       - name: Werkzeuge
         run: |
+          # Die letzten vier stehen fuer die Toolchain, nicht fuer die App:
+          # sie kommt von Ubuntu 24.04 und sucht Bibliotheken unter deren
+          # Namen. `libxml2-legacy` ist die mit soname 2 — Arch liefert
+          # inzwischen 16, und der Uebersetzer startet ohne sie gar nicht.
           pacman -Syu --noconfirm --needed \
-            gtk4 vlc git gcc pkgconf curl unzip which sudo
+            gtk4 vlc git gcc pkgconf curl unzip which sudo \
+            libxml2-legacy icu python sqlite libedit ncurses zlib
           useradd -m bauer
           echo "bauer ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
