@@ -93,13 +93,16 @@ extension App {
         // Vorher hielt `beenden` das Medium sofort an — dann fuhr eine
         // schwarze Flaeche hinunter statt der Seite, die man gerade noch
         // gesehen hat. Angehalten wird, wenn die Fahrt durch ist.
-        let dann = spielerRahmen
+        // Der Zeiger geht über eine Fadengrenze, also in die Kiste — dieselbe
+        // Zusicherung wie überall hier.
+        let dann = gehalten(spielerRahmen)
         Task.detached { [self] in
             try? await Task.sleep(nanoseconds: 380_000_000)
             aufHauptfaden {
+                defer { losgelassen(dann) }
                 self.abspieler.beenden(nurMedium: true)
                 if let seite = gtk_stack_get_child_by_name(OpaquePointer(self.seiten), "spieler"),
-                   seite == dann {
+                   seite == dann.widget {
                     gtk_stack_remove(OpaquePointer(self.seiten), seite)
                 }
                 self.spielerRahmen = nil
