@@ -49,11 +49,9 @@ final class App: @unchecked Sendable {
 
     var client: JellyfinClient?
     var adressen: Bildadresse?
-    /// Läuft nur beim Start und wird danach abgeräumt.
+    /// Läuft nur beim Start und blendet danach weg.
     var startanimation: Startanimation?
-    /// Wohin es nach der Animation geht. Steht schon fest, während sie läuft:
-    /// die gemerkte Sitzung wird sofort übernommen, nur nicht gezeigt.
-    var startziel = "anmeldung"
+    var startbild: Widget!
 
     // MARK: - Aufbau
 
@@ -84,18 +82,34 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(seiten), anmeldeseite, "anmeldung")
         gtk_stack_add_named(OpaquePointer(seiten), startseite, "start")
 
-        // **Die Startanimation liegt vor allem anderen.** Sie hat eine eigene
-        // Seite, damit darunter schon aufgebaut werden kann, was danach zu
-        // sehen sein soll — sonst sähe man nach ihr einen leeren Rahmen.
+        kopfzeile = gtk_header_bar_new()
+        gtk_window_set_titlebar(alsFenster(fenster), kopfzeile)
+        let inhalt = stapel(GTK_ORIENTATION_VERTICAL)
+        anhaengen(inhalt, seiten)
+
+        // **Die Startanimation liegt *über* der Oberfläche, nicht neben ihr.**
+        //
+        // Der erste Anlauf gab ihr eine eigene Stapelseite. Das sieht sauber
+        // aus und ist es nicht: ein `GtkStack` legt nur sein sichtbares Kind
+        // aus. Die Hauptansicht bekam also nie eine Grösse, und weil auf ihr
+        // eine Bühne liegt, deren Ebenen ihr Mass von einer Zeichenfläche
+        // bekommen (siehe ``startseiteBauen``), stand danach ein **schwarzes
+        // Fenster** — gemessen, dreimal hintereinander.
+        //
+        // Als Überzug ist die Frage gar nicht erst da: darunter wird die
+        // ganze Zeit normal ausgelegt, und die Animation deckt es nur zu.
+        let decke: Widget! = gtk_overlay_new()
+        gtk_overlay_set_child(OpaquePointer(decke), inhalt)
         if let lauf = Startanimation(fertig: { [weak self] in self?.startbildWeg() }) {
             startanimation = lauf
             let grund = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
             gtk_widget_add_css_class(grund, "swiftly-startgrund")
             anhaengen(grund, lauf.anzeige)
-            gtk_stack_add_named(OpaquePointer(seiten), grund, "startbild")
-            gtk_stack_set_visible_child_name(OpaquePointer(seiten), "startbild")
+            startbild = grund
+            gtk_overlay_add_overlay(OpaquePointer(decke), grund)
             // **Spätestens dann geht es weiter, egal was die Animation
             // macht** — dieselbe Frist wie auf Apple (3,5 s).
+            //
             // `[self]`, nicht `[weak self]`: die App lebt in einer globalen
             // Referenz bis zum Ende, und ein schwacher Verweis wäre in der
             // verschachtelten Sendable-Hülle ohnehin nicht zu fassen.
@@ -104,12 +118,7 @@ final class App: @unchecked Sendable {
                 aufHauptfaden { self.startanimation?.abschliessen() }
             }
         }
-
-        kopfzeile = gtk_header_bar_new()
-        gtk_window_set_titlebar(alsFenster(fenster), kopfzeile)
-        let inhalt = stapel(GTK_ORIENTATION_VERTICAL)
-        anhaengen(inhalt, seiten)
-        gtk_window_set_child(alsFenster(fenster), inhalt)
+        gtk_window_set_child(alsFenster(fenster), decke)
 
         tastenEinrichten()
         VLCFassung.text = String(cString: libvlc_get_version())
@@ -139,19 +148,18 @@ final class App: @unchecked Sendable {
         }
     }
 
-    /// Die Animation ist durch: weiter zu dem, was ohnehin schon aufgebaut ist.
+    /// Die Animation ist durch: die Decke blendet weg, darunter steht alles
+    /// längst fertig.
     private func startbildWeg() {
-        guard let lauf = startanimation else { return }
+        guard let lauf = startanimation, let bild = startbild else { return }
         startanimation = nil
-        gtk_stack_set_transition_type(OpaquePointer(seiten),
-                                      GTK_STACK_TRANSITION_TYPE_CROSSFADE)
-        gtk_stack_set_transition_duration(OpaquePointer(seiten), 260)
-        gtk_stack_set_visible_child_name(OpaquePointer(seiten), startziel)
-        // **Die Seite bleibt stehen, sie wird nicht abgeräumt.** Ein Kind aus
-        // dem Stapel zu nehmen, während sein Bildtakt noch aussteht, ist die
-        // vierte Falle: der Takt greift dann auf ein abgebautes Widget. Eine
-        // versteckte Stapelseite kostet nichts, und die Animation gibt ihren
-        // Speicher selbst frei, sobald der Takt sich abmeldet.
+        sanft(auf: bild, von: 1, nach: 0) { gtk_widget_set_opacity(bild, $0) }
+        // **Die Decke bleibt hängen, sie wird nicht abgeräumt.** Ein Widget
+        // wegzunehmen, während sein Bildtakt noch aussteht, ist die vierte
+        // Falle. Unsichtbar und ohne Treffer kostet es nichts, und die
+        // Animation gibt ihren Speicher selbst frei, sobald der Takt sich
+        // abmeldet.
+        gtk_widget_set_can_target(bild, 0)
         _ = lauf
     }
 
@@ -417,11 +425,7 @@ final class App: @unchecked Sendable {
         adressen = Bildadresse(basis: serverURL, token: token)
         self.benutzerID = benutzerID
         sitzungAnzeigen(benutzername: benutzername, servername: servername)
-        startziel = "start"
-        // Läuft die Startanimation noch, wartet der Wechsel auf sie.
-        if startanimation == nil {
-            gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
-        }
+        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
 
         // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
         // deshalb nur mit `await`; erst danach darf geladen werden.
