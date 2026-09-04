@@ -136,25 +136,22 @@ extension Fremdsitzung {
     ///
     /// Serverdaten, also `String` und nicht `LocalizedStringKey`: sonst
     /// würde ein Filmtitel als Übersetzungsschlüssel nachgeschlagen.
-    var titelzeile: String {
-        guard let t = laeuft else { return geraetename ?? "" }
-        var teile: [String] = []
-        if let serie = t.seriesName, !serie.isEmpty { teile.append(serie) }
-        else { teile.append(t.name) }
-        if let staffel = t.parentIndexNumber, let folge = t.indexNumber {
-            teile.append("S\(staffel) E\(folge)")
-        }
-        return teile.joined(separator: " · ")
-    }
+    /// **Liegt jetzt im Paket** (``Fremdsitzung/titelzeile``). Sie hing hier
+    /// und war fuer die Linux-Fassung unerreichbar; dort stand deshalb eine
+    /// eigene, kuerzere Zusammensetzung.
 
-    /// Das Symbol zum Gerät — nach dem Namen geraten, mehr gibt der Server
-    /// nicht her. `DeviceType` ist bei eigenen Clients leer.
+    /// Das Symbol zum Geraet. **Welches Geraet** es ist, entscheidet
+    /// ``Fremdsitzung/geraeteart`` im Paket — die Zuordnung darf nicht
+    /// auseinanderlaufen. Welches *Zeichen* dafuer steht, bleibt Sache der
+    /// Plattform: hier SF Symbols, auf Linux Adwaita.
     var geraetezeichen: String {
-        let name = (geraetename ?? "").lowercased()
-        if name.contains("ipad") { return "ipad" }
-        if name.contains("mac") { return "laptopcomputer" }
-        if name.contains("tv")  { return "tv" }
-        return "iphone"
+        switch geraeteart {
+        case .telefon:   "iphone"
+        case .tablet:    "ipad"
+        case .rechner:   "laptopcomputer"
+        case .fernseher: "tv"
+        case .unbekannt: "play.tv"
+        }
     }
 }
 
