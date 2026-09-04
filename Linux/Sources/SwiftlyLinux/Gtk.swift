@@ -306,6 +306,11 @@ nonisolated(unsafe) private let radGedreht: @convention(c) (
     guard let daten else { return 0 }
     let w = Unmanaged<Weichlauf>.fromOpaque(daten).takeUnretainedValue()
     let hoechst = w.obergrenze()
+    // **Bei jedem neuen Griff neu ansetzen.** Läuft gerade nichts, ist das
+    // gemerkte Ziel womöglich veraltet — die Seite kann inzwischen neu
+    // gebaut oder von woanders gescrollt worden sein. Dann sprang die
+    // Bewegung erst zurück und dann vorwärts; das war das Federn.
+    if w.takt == 0 { w.ziel = w.lesen() }
     w.ziel = min(max(w.ziel + dy * rastweite, 0), max(hoechst, 0))
     if w.takt == 0 {
         // Der Takt hält sich selbst fest, solange er läuft.
@@ -326,6 +331,8 @@ nonisolated(unsafe) private let weichlaufFreigeben: @convention(c) (
 func weichesScrollen(_ scroller: Widget!) {
     guard let anpassung = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
     else { return }
+    // GTKs eigene Trägheit läuft sonst gegen unsere Bewegung an.
+    gtk_scrolled_window_set_kinetic_scrolling(OpaquePointer(scroller), 0)
     let w = Weichlauf(
         lesen: { gtk_adjustment_get_value(anpassung) },
         setzen: { gtk_adjustment_set_value(anpassung, $0) },
