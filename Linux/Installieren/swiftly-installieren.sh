@@ -34,6 +34,9 @@ ZIEL="$HOME/.local"
 PROGRAMM="swiftly-jellyfin"
 KENNUNG="de.paulherter.swiftly"
 QUELLE_URL="${SWIFTLY_QUELLE:-https://paulherter.github.io/swiftly-for-jellyfin}"
+# Der Fingerabdruck steht hier fest, nicht nur der Schluesselring: so wird
+# geprueft, dass der heruntergeladene Schluessel auch der erwartete ist.
+FINGERABDRUCK="705D676A71BF0121804A90BAC8589885A042FB8B"
 
 rot=''; gruen=''; fett=''; blass=''; aus=''
 if [ -t 1 ]; then
@@ -121,10 +124,10 @@ quelle_eintragen() {
     case "$sippe" in
         debian)
             if [ "$signiert" = "1" ]; then
-                $sudo_ruf install -d /usr/share/keyrings
+                $sudo_ruf install -d -m755 /etc/apt/keyrings
                 curl -fsSL "$QUELLE_URL/swiftly.gpg" |
-                    $sudo_ruf gpg --dearmor -o /usr/share/keyrings/swiftly.gpg
-                echo "deb [arch=amd64 signed-by=/usr/share/keyrings/swiftly.gpg] $QUELLE_URL/deb ./" |
+                    $sudo_ruf tee /etc/apt/keyrings/swiftly.asc >/dev/null
+                echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/swiftly.asc] $QUELLE_URL/deb ./" |
                     $sudo_ruf tee /etc/apt/sources.list.d/swiftly.list >/dev/null
             else
                 echo "deb [arch=amd64 trusted=yes] $QUELLE_URL/deb ./" |
@@ -153,7 +156,14 @@ EOF
             ;;
         arch)
             local stufe="Optional TrustAll"
-            [ "$signiert" = "1" ] && stufe="Required DatabaseOptional"
+            if [ "$signiert" = "1" ]; then
+                stufe="Required DatabaseOptional"
+                # pacman fuehrt einen eigenen Schluesselbund. Ein Schluessel
+                # darin reicht nicht — er muss oertlich unterschrieben sein,
+                # sonst gilt er als unbekannt und die Installation bricht ab.
+                curl -fsSL "$QUELLE_URL/swiftly.gpg" | $sudo_ruf pacman-key --add -
+                $sudo_ruf pacman-key --lsign-key "$FINGERABDRUCK"
+            fi
             if ! grep -q '^\[swiftly\]' /etc/pacman.conf; then
                 printf '\n[swiftly]\nSigLevel = %s\nServer = %s/arch\n' \
                     "$stufe" "$QUELLE_URL" | $sudo_ruf tee -a /etc/pacman.conf >/dev/null
