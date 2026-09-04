@@ -58,10 +58,11 @@ final class App: @unchecked Sendable {
         // Swiftly": das erste kommt vom Programmnamen, den GLib aus der
         // Binärdatei nimmt, das zweite vom Fenstertitel. Der Anwendungsname
         // heisst jetzt so wie die App, und der Titel trägt den Zusatz.
+        Zeichenwerk.einrichten()
         g_set_application_name("Swiftly")
         g_set_prgname("swiftly")
         gtk_window_set_title(alsFenster(fenster), "for Jellyfin")
-        gtk_window_set_icon_name(alsFenster(fenster), "de.paulherter.swiftly")
+        gtk_window_set_icon_name(alsFenster(fenster), Zeichenwerk.kennung)
         gtk_window_set_default_size(alsFenster(fenster), 1100, 760)
         // **Unter 900 × 560 geht das Raster nicht mehr auf** — Seitenleiste
         // plus zwei Kachelspalten plus Ränder. Dieselbe Grenze wie auf dem
