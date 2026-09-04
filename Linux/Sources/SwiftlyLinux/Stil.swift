@@ -231,6 +231,26 @@ enum Stil {
         button.swiftly-zeile.swiftly-aktiv label,
         button.swiftly-zeile.swiftly-aktiv image { color: \(akzent); }
 
+        /* MARK: Chip — 28 hoch, 12 seitlich, vollrund.
+           Aktiv weiss mit dunkler Schrift, sonst leise mit Haarlinie. */
+        button.swiftly-chip {
+            min-height: 28px;
+            padding: 0 12px;
+            border-radius: 14px;
+            border: 1px solid \(rand);
+            font-size: 13px;
+            font-weight: 400;
+        }
+        button.swiftly-chip label { color: \(schriftLeise); }
+        button.swiftly-chip:hover { background-color: rgba(255,255,255,0.06); }
+        button.swiftly-chip:hover label { color: \(schrift); }
+        button.swiftly-chip.swiftly-aktiv {
+            background-color: \(schrift);
+            border-color: transparent;
+            font-weight: 600;
+        }
+        button.swiftly-chip.swiftly-aktiv label { color: \(grund); }
+
         button.swiftly-profil {
             min-height: 40px;
             padding: 0 10px;

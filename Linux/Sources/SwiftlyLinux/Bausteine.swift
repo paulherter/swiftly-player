@@ -96,6 +96,13 @@ func trennlinie() -> Widget! {
     return l
 }
 
+/// Ein waagerechter Abstandhalter — schiebt die Sortierchips nach rechts.
+func luftQuer() -> Widget! {
+    let l: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_set_hexpand(l, 1)
+    return l
+}
+
 /// Ein senkrechter Abstandhalter. GTK hat kein `Spacer`, aber eine leere Box
 /// mit `vexpand` tut dasselbe.
 func luft() -> Widget! {
@@ -148,4 +155,20 @@ func gerahmtesBild(breite: Int, hoehe: Int, stil: String) -> (kaefig: Widget, bi
     // Die Rundung gehört an den Käfig: er ist es, der beschneidet.
     gtk_widget_add_css_class(kaefig, stil)
     return (kaefig!, bild!)
+}
+
+// MARK: - Chip
+
+/// Filter- und Sortierchip. Aktiv ist er weiß mit dunkler Schrift, sonst
+/// leise mit einer Haarlinie darum — 28 hoch, 12 seitlich, vollrund.
+///
+/// Die halbfette Schrift im aktiven Zustand steht so auf dem Mac und ist
+/// kein Zufall: der Chip wird dadurch minimal breiter, und das ist die
+/// einzige Stelle, an der man die Wahl auch ohne Farbe sieht.
+func chip(_ text: String, aktiv: Bool) -> Widget! {
+    let knopf: Widget! = gtk_button_new_with_label(text)
+    gtk_widget_add_css_class(knopf, "swiftly-chip")
+    if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+    gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
+    return knopf
 }

@@ -379,6 +379,12 @@ final class App: @unchecked Sendable {
     private var filmezahl: Widget!
     private var serienzahl: Widget!
     private var geladen: Set<Bereich> = []
+    /// Filter und Sortierung, je Bereich getrennt. Auf dem Mac merkt sich
+    /// jeder Bereich seinen Stand — wer zwischen Filmen und Serien wechselt,
+    /// findet zurück, wo er war.
+    private var filter: [Bereich: Bibliotheksfilter] = [:]
+    private var sortierung: [Bereich: Sortierung] = [:]
+    private var chipzeilen: [Bereich: Widget] = [:]
     private var benutzerID = ""
 
     /// **Seitenleiste links, Inhalt rechts** — der Aufbau des Macs.
@@ -577,11 +583,54 @@ final class App: @unchecked Sendable {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 20)
         var zahl: Widget!
         anhaengen(block, seitenkopf(was.beschriftung, zahl: &zahl))
+
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        chipzeilen[was] = zeile
+        anhaengen(block, zeile)
+        chipsFuellen(was)
+
         let raster = rasterBauen()
         anhaengen(block, raster)
         if was == .filme { filmeraster = raster; filmezahl = zahl }
         else { serienraster = raster; serienzahl = zahl }
         return seitenrahmen(block)
+    }
+
+    /// **Filter links, Sortierung rechts** — die Anordnung des Macs.
+    ///
+    /// Beide Listen kommen aus `JellyfinKit.Bibliotheksfilter` und
+    /// `Sortierung`. Dort steht auch, was sie beim Server bedeuten, und dass
+    /// „Ungesehen" bewusst den eigenen Schalter braucht statt Jellyfins
+    /// `Filters=IsUnplayed` — das arbeitet bei Serien auf Folgenebene.
+    private func chipsFuellen(_ was: Bereich) {
+        guard let zeile = chipzeilen[was] else { return }
+        leeren(zeile)
+        let jetztFilter = filter[was] ?? .alle
+        let jetztSort = sortierung[was] ?? .name
+
+        for fall in Bibliotheksfilter.allCases {
+            let c = chip(fall.beschriftung, aktiv: fall == jetztFilter)
+            beiSignal(c, "clicked") { [weak self] in
+                guard let self else { return }
+                self.filter[was] = fall
+                self.chipsFuellen(was)
+                self.rasterLaden(was)
+            }
+            anhaengen(zeile, c)
+        }
+
+        anhaengen(zeile, luftQuer())
+
+        for fall in Sortierung.allCases {
+            let c = chip(fall.beschriftung, aktiv: fall == jetztSort)
+            beiSignal(c, "clicked") { [weak self] in
+                guard let self else { return }
+                self.sortierung[was] = fall
+                self.chipsFuellen(was)
+                self.rasterLaden(was)
+            }
+            anhaengen(zeile, c)
+        }
     }
 
     private func sucheBauen() -> Widget! {
@@ -709,8 +758,14 @@ final class App: @unchecked Sendable {
     private func rasterLaden(_ was: Bereich) {
         guard let client else { return }
         let gattung = was == .filme ? "Movie" : "Series"
+        let f = filter[was] ?? .alle
+        let sort = sortierung[was] ?? .name
         Task.detached { [self] in
             let antwort = try? await client.items(limit: 500,
+                                                  sortBy: sort.feld,
+                                                  sortOrder: sort.richtung,
+                                                  filters: f.jellyfinFilter,
+                                                  istGesehen: f.istGesehen,
                                                   recursive: true,
                                                   includeItemTypes: [gattung])
             let items = antwort?.items ?? []
