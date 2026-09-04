@@ -71,6 +71,7 @@ final class App: @unchecked Sendable {
         anhaengen(inhalt, seiten)
         gtk_window_set_child(alsFenster(fenster), inhalt)
 
+        tastenEinrichten()
         gtk_window_present(alsFenster(fenster))
 
         // Gemerkte Sitzung: gleich weiter zur Startseite, ohne Nachfragen.
@@ -417,6 +418,42 @@ final class App: @unchecked Sendable {
 
         titelzeile = beschriftung("", stil: "swiftly-zweitzeile")
         return quer
+    }
+
+    // MARK: Tastenkürzel
+
+    /// **Dieselben Kürzel wie auf dem Mac**, nur mit Strg statt Befehl:
+    /// 1 Start, 2 Filme, 3 Serien, F Suche. Sie stehen in
+    /// `Sources/macOS/SwiftlyApp.swift` als `Kommandoknopf`.
+    ///
+    /// Auf dem Mac hängen sie in der Menüleiste; die gibt es hier nicht, also
+    /// horcht das Fenster selbst. `GtkShortcutController` wäre der gehobene
+    /// Weg, verlangt aber Aktionen mit Namen — für vier Tasten ist ein
+    /// Tastenhorcher weniger Apparat.
+    private func tastenEinrichten() {
+        let horcher = gtk_event_controller_key_new()
+        g_signal_connect_data(UnsafeMutableRawPointer(horcher), "key-pressed",
+                              unsafeBitCast(tasteGedrueckt, to: GCallback.self),
+                              Unmanaged.passUnretained(self).toOpaque(),
+                              nil, GConnectFlags(rawValue: 0))
+        gtk_widget_add_controller(fenster, horcher)
+    }
+
+    /// Wahr heißt: verbraucht, nicht weiterreichen.
+    func taste(_ wert: UInt32, strg: Bool) -> Bool {
+        guard strg else { return false }
+        // GDKs Tastenwerte sind die ASCII-Zeichen; eigene Namen dafür gibt es
+        // in Swift nicht, weil sie in GDK Makros sind.
+        switch wert {
+        case 0x031: zeige(.start)                          // 1
+        case 0x032: zeige(.filme)                          // 2
+        case 0x033: zeige(.serien)                         // 3
+        case 0x066, 0x046:                                 // f / F
+            zeige(.suche)
+            gtk_widget_grab_focus(suchfeld)
+        default: return false
+        }
+        return true
     }
 
     // MARK: Kopfzeile
@@ -952,6 +989,17 @@ final class App: @unchecked Sendable {
     }
 
     func kopfzeileEinrichten() { kopfzeileFuellen() }
+}
+
+/// Der Tastenhorcher. Wie jeder C-Rückruf kann er nichts einfangen — die App
+/// kommt als Zeiger mit, so wie in ``Auftrag``.
+nonisolated(unsafe) private let tasteGedrueckt: @convention(c) (
+    UnsafeMutableRawPointer?, UInt32, UInt32, GdkModifierType, gpointer?
+) -> gboolean = { _, wert, _, zustand, daten in
+    guard let daten else { return 0 }
+    let app = Unmanaged<App>.fromOpaque(daten).takeUnretainedValue()
+    let strg = (zustand.rawValue & GDK_CONTROL_MASK.rawValue) != 0
+    return app.taste(wert, strg: strg) ? 1 : 0
 }
 
 /// Wie sich diese App beim Server vorstellt.
