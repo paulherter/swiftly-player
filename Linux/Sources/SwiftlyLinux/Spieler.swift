@@ -54,7 +54,13 @@ extension App {
             let plan = try? await client.playbackPlan(for: item.id)
             aufHauptfaden {
                 guard let plan else {
-                    self.spielerMeldung("Der Server nennt keine Quelle für diesen Titel.")
+                    // **D3: der Fehler nennt den Server, nicht nur „ging
+                    // nicht".** Bei mehreren Servern weiss man sonst nicht,
+                    // welcher gemeint ist. Wörtlich der Satz vom Mac
+                    // (`Abspielsteuerung.starte`).
+                    let wo = self.servername.isEmpty ? "dem Server" : self.servername
+                    self.spielerMeldung(
+                        "Die Wiedergabe hat nicht geklappt — \(wo) hat keinen Plan geliefert.")
                     return
                 }
                 self.laufenderPlan = plan
@@ -194,7 +200,9 @@ extension App {
 
         let zurueck = Sprungzeichen(zurueck: true, zahl: wahlen.zurueckSekunden)
         spielerZurueckZeichen = zurueck
-        anhaengen(reihe, spieltaste(zurueck.anzeige, kuerzel: "←") { [weak self] in
+        anhaengen(reihe, spieltaste(zurueck.anzeige, kuerzel: "←",
+                                    name: "\(wahlen.zurueckSekunden) Sekunden zurück") {
+            [weak self] in
             guard let self else { return }
             self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
             self.spielerZurueckZeichen?.stupsen()
@@ -203,7 +211,8 @@ extension App {
 
         let mitte = Abspielzeichen(pause: true)
         spielerAbspielzeichen = mitte
-        anhaengen(reihe, spieltaste(mitte.anzeige, kuerzel: "Leertaste", gross: true) {
+        anhaengen(reihe, spieltaste(mitte.anzeige, kuerzel: "Leertaste",
+                                    name: "Abspielen oder anhalten", gross: true) {
             [weak self] in
             guard let self else { return }
             self.abspieler.umschalten()
@@ -217,7 +226,9 @@ extension App {
 
         let vor = Sprungzeichen(zurueck: false, zahl: wahlen.vorSekunden)
         spielerVorZeichen = vor
-        anhaengen(reihe, spieltaste(vor.anzeige, kuerzel: "→") { [weak self] in
+        anhaengen(reihe, spieltaste(vor.anzeige, kuerzel: "→",
+                                    name: "\(wahlen.vorSekunden) Sekunden vor") {
+            [weak self] in
             guard let self else { return }
             self.abspieler.springen(Double(self.wahlen.vorSekunden))
             self.spielerVorZeichen?.stupsen()
@@ -227,10 +238,15 @@ extension App {
     }
 
     /// Ein Knopf der Mitte: das Zeichen, darunter das Kürzel.
-    private func spieltaste(_ zeichen: Widget!, kuerzel: String, gross: Bool = false,
+    private func spieltaste(_ zeichen: Widget!, kuerzel: String, name: String,
+                            gross: Bool = false,
                             auswahl: @escaping () -> Void) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-spieltaste")
+        // **E8: ein selbstgebauter Knopf erbt keine Barrierefreiheit.** Was
+        // hier steht, ist eine gemalte Fläche; ohne Namen ist er für eine
+        // Vorlesehilfe „Taste" und sonst nichts.
+        beschriften(knopf, name)
         // **Mittig, nicht oben.** Die Säulen sind verschieden hoch — 78 für
         // das Abspielzeichen, 46 für die Sprünge —, und in einer Kiste füllt
         // ein Kind sonst die volle Höhe und legt seinen Inhalt nach oben.
@@ -315,6 +331,10 @@ extension App {
         gtk_scale_set_draw_value(alsSkala(spielerRegler), 0)
         gtk_widget_add_css_class(spielerRegler, "swiftly-regler")
         gtk_widget_set_hexpand(spielerRegler, 1)
+        // Für eine Vorlesehilfe ein Regler mit Namen, nicht eine namenlose
+        // Fläche — sonst lässt sich die Stelle auch mit den Pfeiltasten nicht
+        // sinnvoll ändern (E8).
+        beschriften(spielerRegler, "Abspielstelle")
         // **`change-value` bringt Sprungart und Wert mit** — mit dem
         // schlichten Rückruf wäre das derselbe Absturz wie bei
         // `edge-reached`. Deshalb ein eigener, der die Form kennt.

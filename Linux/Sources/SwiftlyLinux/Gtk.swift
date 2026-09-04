@@ -594,3 +594,20 @@ nonisolated(unsafe) private let auftragFreigebenRoh: @convention(c) (gpointer?) 
     guard let daten else { return }
     Unmanaged<Auftrag>.fromOpaque(daten).release()
 }
+
+
+// MARK: - Was die Bedienhilfe erfährt
+
+/// Gibt einem selbstgebauten Bedienelement einen Namen.
+///
+/// **E8: wer keine Standardsteuerelemente nimmt, erbt auch deren
+/// Barrierefreiheit nicht.** Ein gemalter Knopf ist sonst nur „Taste", ein
+/// Zeitregler ein namenloses Rechteck. Auf Apple leistet das
+/// `accessibilityLabel`; in GTK4 heisst es `GTK_ACCESSIBLE_PROPERTY_LABEL`.
+func beschriften(_ ziel: Widget!, _ name: String) {
+    name.withCString { zeiger in
+        gtk_accessible_update_property(
+            unsafeBitCast(ziel, to: UnsafeMutablePointer<GtkAccessible>.self),
+            GTK_ACCESSIBLE_PROPERTY_LABEL, zeiger, -1)
+    }
+}
