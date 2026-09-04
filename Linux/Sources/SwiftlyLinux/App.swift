@@ -100,7 +100,18 @@ final class App: @unchecked Sendable {
         // ganze Zeit normal ausgelegt, und die Animation deckt es nur zu.
         let decke: Widget! = gtk_overlay_new()
         gtk_overlay_set_child(OpaquePointer(decke), inhalt)
-        if let lauf = Startanimation(fertig: { [weak self] in self?.startbildWeg() }) {
+        // **Vorerst abgeschaltet, und zwar mit Absicht sichtbar.**
+        //
+        // Die Anbindung steht — rlottie baut, die Vorlage wird gelesen, 81
+        // Bilder, 1,33 s, und ein Bild kam auch schon auf den Schirm. Was
+        // nicht steht, ist der Übergang danach: das Fenster blieb schwarz,
+        // gemessen über vier Anläufe (eigene Stapelseite, dann Überzug). Eine
+        // App, die schwarz startet, ist schlimmer als eine ohne Animation,
+        // also bleibt sie aus, bis der Grund gefunden ist.
+        //
+        // `SWIFTLY_START=1` schaltet sie zum Suchen wieder an.
+        if ProcessInfo.processInfo.environment["SWIFTLY_START"] == "1",
+           let lauf = Startanimation(fertig: { [weak self] in self?.startbildWeg() }) {
             startanimation = lauf
             let grund = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
             gtk_widget_add_css_class(grund, "swiftly-startgrund")
