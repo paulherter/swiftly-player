@@ -34,9 +34,6 @@ typealias Widget = UnsafeMutablePointer<GtkWidget>
 @inline(__always) func alsFest(_ w: Widget!) -> UnsafeMutablePointer<GtkFixed>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkFixed>.self)
 }
-@inline(__always) func alsUeberlage(_ w: Widget!) -> UnsafeMutablePointer<GtkOverlay>! {
-    unsafeBitCast(w, to: UnsafeMutablePointer<GtkOverlay>.self)
-}
 @inline(__always) func alsTafel(_ w: Widget!) -> UnsafeMutablePointer<GtkPopover>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkPopover>.self)
 }

@@ -549,8 +549,8 @@ final class App: @unchecked Sendable {
         let rahmen: Widget! = gtk_overlay_new()
         gtk_widget_set_hexpand(rahmen, 1)
         gtk_widget_set_vexpand(rahmen, 1)
-        gtk_overlay_set_child(alsUeberlage(rahmen), masz)
-        gtk_overlay_add_overlay(alsUeberlage(rahmen), buehne)
+        gtk_overlay_set_child(OpaquePointer(rahmen), masz)
+        gtk_overlay_add_overlay(OpaquePointer(rahmen), buehne)
         anhaengen(quer, rahmen)
 
         titelzeile = beschriftung("", stil: "swiftly-zweitzeile")
