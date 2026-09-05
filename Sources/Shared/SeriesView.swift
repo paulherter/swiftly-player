@@ -511,7 +511,11 @@ struct Folgenzeile: View {
     }
 
     private var nebenzeile: String {
-        guard let gesamt = folge.runtimeSeconds else { return "" }
+        // `runtimeSeconds` ist bei einer Folge ohne Angabe 0, nicht nil —
+        // die Regel im Paket fängt beides ab. Genau diese Prüfung fehlte
+        // einmal auf dem Fernseher, und dort stand „0 Min." an der Serie.
+        guard Anzeigeregeln.laufzeitZeigen(sekunden: folge.runtimeSeconds),
+              let gesamt = folge.runtimeSeconds else { return "" }
         if let rest = folge.restzeitText { return rest }
         return "\(Int(gesamt / 60)) min"
     }
