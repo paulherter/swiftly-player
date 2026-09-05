@@ -524,9 +524,6 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     @Binding var offen: Bool
     /// Wie hoch die Einträge zusammen sind — gemessen, nicht angenommen.
     @State private var inhaltshoehe: CGFloat = 0
-    /// Wie weit über dem unteren Rand das Blatt endet. Reicht ``Blatt``
-    /// durch; die Begründung steht dort.
-    var unterrand: CGFloat = 0
     let titel: LocalizedStringKey
     let eintraege: [Eintrag]
     let beschriftung: (Eintrag) -> String
@@ -534,58 +531,53 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     let waehlen: (Eintrag) -> Void
 
     var body: some View {
-        // Schleier, Auffahren, Fläche, Griff und Zug stehen in ``Blatt``.
-        // Hier steht nur noch, was drinsteht — vorher war der halbe Rumpf
-        // an dieser Stelle nachgebaut.
-        Blatt(offen: $offen, unterrand: unterrand) {
-            Blattrubrik(text: Text(titel))
+        Color.clear
+            .allowsHitTesting(false)
+            .blatt(offen: $offen) {
+                Blattrubrik(text: Text(titel))
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(eintraege) { eintrag in
-                        Button {
-                            waehlen(eintrag)
-                            schliessen()
-                        } label: {
-                            HStack {
-                                Text(beschriftung(eintrag))
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(Stil.schrift)
-                                Spacer()
-                                if istGewaehlt(eintrag) {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(Stil.akzent)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(eintraege) { eintrag in
+                            Button {
+                                waehlen(eintrag)
+                                offen = false
+                            } label: {
+                                HStack {
+                                    Text(beschriftung(eintrag))
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(Stil.schrift)
+                                    Spacer()
+                                    if istGewaehlt(eintrag) {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundStyle(Stil.akzent)
+                                    }
                                 }
+                                .padding(.horizontal, Stil.randAbstand)
+                                .frame(height: 50)
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, Stil.randAbstand)
-                            .frame(height: 50)
-                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+
+                            Trennlinie()
                         }
-                        .buttonStyle(.plain)
-
-                        Trennlinie()
                     }
+                    // Gemessen, nicht angenommen — siehe unten.
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                        action: { inhaltshoehe = $0 }
                 }
-                // Gemessen, nicht angenommen — siehe unten.
-                .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                    action: { inhaltshoehe = $0 }
+                // **So hoch wie die Einträge, höchstens 340.**
+                //
+                // `.frame(maxHeight:)` allein reicht nicht: eine `ScrollView`
+                // ist senkrecht gierig und nimmt sich die 340 auch dann, wenn
+                // vier Zeilen nur 204 brauchen. Übrig blieb ein Hohlraum unter
+                // der letzten Zeile, der nichts tut.
+                .frame(height: min(inhaltshoehe, 340))
+                .scrollIndicators(.hidden)
+
+                Blattabbruch { offen = false }
             }
-            // **So hoch wie die Einträge, höchstens 340.**
-            //
-            // `.frame(maxHeight:)` allein reicht nicht: eine `ScrollView`
-            // ist senkrecht gierig und nimmt sich die 340 auch dann, wenn
-            // vier Zeilen nur 204 brauchen. Übrig blieb ein Hohlraum unter
-            // der letzten Zeile, der nichts tut.
-            .frame(height: min(inhaltshoehe, 340))
-            .scrollIndicators(.hidden)
-
-            Blattabbruch { schliessen() }
-        }
-    }
-
-    private func schliessen() {
-        withAnimation(Stil.blattbewegung) { offen = false }
     }
 }
 
@@ -1885,122 +1877,64 @@ struct Wahlchip: View {
     }
 }
 
-/// **Der Rumpf jedes Blatts, das von unten aufgeht.**
+/// **Ein Blatt von unten: Apples Bewegung, unser Aussehen.**
 ///
-/// Fünf Dinge braucht jedes Blatt, und jedes hatte sie einzeln gelöst:
-/// Schleier, Auffahren, Fläche bis unter den Bildrand, Griff, und die Frage,
-/// wo unten aufhört. Es gab die Mechanik dreimal — nur eine davon war richtig,
-/// und die anderen beiden trugen einen Fehler, der schon behoben war.
+/// Zweimal haben wir es selbst gebaut, und zweimal war es zu wenig. Das erste
+/// Mal fehlte das Auffahren ganz. Das zweite Mal fuhr es auf, aber "* Er hat
+/// recht, und es ist keine Frage des Feinschliffs: an einem Systemblatt haengt
+/// eine Gummikante, eine Wurfgeschwindigkeit, ein Zusammenspiel von Ziehen und
+/// Scrollen und ein Rastpunkt. Das ist ein halbes Jahr Arbeit, und sie ist
+/// gemacht.
 ///
-/// **Verschieben, nicht Ein- und Aushängen.** Ein Übergang bewegt einen
-/// Rahmen; was darüber hinaus gezeichnet wird — der Hintergrund in der
-/// Sicherheitszone etwa — bleibt stehen und verschwindet erst, wenn die
-/// Ansicht abgeräumt wird. Unten blieb ein Stück stehen und ging nach einer
-/// halben Sekunde ruckartig weg. `Auswahlblatt` hatte das gelöst, indem die
-/// Karte hängen bleibt und nur um ihre **gemessene** Höhe verschoben wird;
-/// `Handlungsblatt` und das erste `Blatt` fuhren weiter über
-/// `.transition(.move)`.
+/// **Warum das E4 nicht bricht.** „Keine Apple-Standardsteuerelemente" richtet
+/// sich gegen fremdes *Aussehen* — Apples Glas, Apples Schrift, Apples
+/// Abstaende neben unseren. Genau das laesst sich seit iOS 16.4 abstellen:
+/// `presentationBackground` setzt unsere Flaeche, `presentationCornerRadius`
+/// unsere Ecke, der Inhalt ist vollstaendig unserer. Uebrig bleibt die
+/// **Bewegung**, und die wollten wir nie selbst haben. Ein Systemblatt, dessen
+/// Inneres uns gehoert, ist kein Fremdkoerper — der Nachbau war einer.
 ///
-/// **Deshalb: immer einhängen, nie in ein `if offen`.** In einem `if` steht
-/// `offen` beim Einhängen schon auf wahr, die Karte sitzt sofort an ihrem
-/// Platz, und das Auffahren fällt aus. `allowsHitTesting(offen)` sorgt dafür,
-/// dass ein geschlossenes Blatt trotzdem nichts abfängt.
-///
-/// **Der Griff** ist das Einzige, was aus Apples `.sheet` übernommen ist "*
-/// Gezogen wird am **ganzen** Blatt: eine Scrollfläche darin gewinnt den
-/// senkrechten Zug ohnehin für sich, überall sonst zieht das Blatt. So muss
-/// niemand den Strich treffen.
-struct Blatt<Inhalt: View>: View {
+/// **Was dadurch wegfaellt:** der selbstgebaute Griff
+/// (`presentationDragIndicator` bringt Apples), der Schleier, die gemessene
+/// Karte, der Zug, der Unterrand fuer die Bereichsleiste — ein Systemblatt
+/// liegt ohnehin darueber. Und die Regel „nie in ein `if offen`" gilt nicht
+/// mehr; das Blatt haengt jetzt an einer Ansicht, nicht in einem Stapel.
+struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
     @Binding var offen: Bool
-    /// Wie weit über dem unteren Rand das Blatt endet.
-    ///
-    /// **Die Seite reicht hinter die Leiste.** In den Bibliotheken liegt
-    /// unten die Bereichsleiste über dem Inhalt; ohne diesen Abstand
-    /// verschwindet die letzte Zeile darunter. Auf Seiten ohne Leiste ist er
-    /// null — deshalb sagt es der Aufrufer und nicht dieser Baustein, der
-    /// seine Umgebung nicht kennt.
-    var unterrand: CGFloat = 0
-    @ViewBuilder var inhalt: () -> Inhalt
+    @ViewBuilder var blattinhalt: () -> Blattinhalt
 
-    /// Wie hoch die Karte ist — bestimmt, wie weit sie hinausfährt.
-    @State private var kartenhoehe: CGFloat = 500
-    /// Wie weit der Finger sie heruntergezogen hat.
-    @State private var zug: CGFloat = 0
+    /// Wie hoch der Inhalt ist. **Gemessen, nicht angenommen** — sonst
+    /// bekaeme jedes Blatt Apples halbe Schirmhoehe, und unter drei Zeilen
+    /// staende ein Hohlraum.
+    @State private var hoehe: CGFloat = 260
 
-    /// Ab hier geht es zu; darunter federt es zurück.
-    private static var schwelle: CGFloat { 110 }
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            Rectangle()
-                // Der Schleier geht mit dem Zug auf: zieht man das Blatt
-                // hinunter, wird die Seite dahinter schon heller. Ohne das
-                // fühlt es sich an, als schöbe man ein Bild, statt etwas zu
-                // schliessen.
-                .fill(.black.opacity(offen ? 0.55 * (1 - min(zug / 300, 1)) : 0))
-                .ignoresSafeArea()
-                .onTapGesture { schliessen() }
-
-            VStack(spacing: 0) {
-                Capsule()
-                    .fill(Color.white.opacity(0.25))
-                    .frame(width: 36, height: 5)
-                    .padding(.top, 8)
-                    // Zu schmal zum Treffen, und das macht nichts — gezogen
-                    // wird am ganzen Blatt. Für VoiceOver ist er nichts.
-                    .accessibilityHidden(true)
-
-                inhalt()
-            }
-            .padding(.bottom, unterrand)
-            .background {
-                // **Die Fläche reicht weiter nach unten, als die Karte je
-                // fährt.** Die Feder schiesst beim Öffnen über — die Karte
-                // hebt kurz ab. Endet die Fläche an ihrer Unterkante, blitzt
-                // in dem Moment der Inhalt darunter durch. Den Bounce dafür
-                // wegzunehmen wäre der falsche Tausch: „der Bounce beim
-                // Öffnen ist toll."
-                UnevenRoundedRectangle(topLeadingRadius: Stil.eckeFlaeche,
-                                       topTrailingRadius: Stil.eckeFlaeche)
-                    .fill(Stil.flaeche)
-                    .padding(.bottom, -300)
-                    .ignoresSafeArea(edges: .bottom)
-            }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                action: { kartenhoehe = $0 }
-            .offset(y: offen ? zug : kartenhoehe + 400)
-            // Nach oben lässt es sich nicht ziehen — darüber ist nichts, was
-            // sichtbar würde. `max(0, …)` statt einer Gummikante: die wäre
-            // eine Bewegung, die nichts verspricht.
-            .gesture(
-                DragGesture()
-                    .onChanged { wert in zug = max(0, wert.translation.height) }
-                    .onEnded { wert in
-                        // Ein schneller Wisch zählt wie ein weiter Zug —
-                        // sonst muss man langsam und weit ziehen, und genau
-                        // das fühlt sich zäh an.
-                        if wert.translation.height > Self.schwelle
-                            || wert.predictedEndTranslation.height > 240 {
-                            schliessen()
-                        } else {
-                            withAnimation(Stil.blattbewegung) { zug = 0 }
-                        }
-                    }
-            )
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $offen) {
+            VStack(spacing: 0) { blattinhalt() }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // Der sichere Bereich unten gehoert zur Blatthoehe: Apple
+                // rueckt den Inhalt darueber, zeichnet die Flaeche aber
+                // hinein. Ohne die Zugabe waere das Blatt um den
+                // Home-Indikator zu kurz und der Inhalt schoebe sich.
+                .onGeometryChange(for: CGFloat.self) { $0.size.height + $0.safeAreaInsets.bottom }
+                    action: { hoehe = $0 }
+                .presentationDetents([.height(hoehe)])
+                .presentationBackground(Stil.flaeche)
+                .presentationCornerRadius(Stil.eckeFlaeche)
+                .presentationDragIndicator(.visible)
+                // Innen wird gescrollt, gezogen wird am Rand. Ohne das
+                // schliesst ein Wisch in der Staffelliste das Blatt, statt
+                // die Liste zu bewegen.
+                .presentationContentInteraction(.scrolls)
         }
-        // Der Stapel muss den Schirm füllen; sonst bemisst sich die Auflage
-        // am Inhalt und die Karte sitzt oben.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(offen)
     }
+}
 
-    private func schliessen() {
-        // Dieselbe Feder wie beim Öffnen — sonst kommt es anders zurück,
-        // als es gegangen ist.
-        withAnimation(Stil.blattbewegung) {
-            offen = false
-            zug = 0
-        }
+extension View {
+    /// Ein Blatt von unten. Siehe ``Blattmodifikator``.
+    func blatt<Inhalt: View>(offen: Binding<Bool>,
+                             @ViewBuilder inhalt: @escaping () -> Inhalt) -> some View {
+        modifier(Blattmodifikator(offen: offen, blattinhalt: inhalt))
     }
 }
 
@@ -2019,10 +1953,20 @@ struct Blattrubrik: View {
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Stil.randAbstand)
-            // 8 für den Griff, 5 hier, 5 für den Griff selbst — zusammen
-            // dieselben 18 wie früher, als über dem Titel nichts stand.
-            .padding(.top, 5)
+            // 22, damit der Griff des Systems darüber Platz hat.
+            .padding(.top, 22)
             .padding(.bottom, 12)
+    }
+}
+
+/// Die Linie über dem Fuss eines Blatts — **über die volle Breite.**
+///
+/// `Trennlinie` rückt 18 Punkt ein, weil sie zwischen Zeilen mit Symbol steht.
+/// Über einem Knopf, der die ganze Breite einnimmt, sieht dieselbe Linie aus
+/// wie ein Fehler;
+struct Blattlinie: View {
+    var body: some View {
+        Rectangle().fill(Stil.linie).frame(height: 1)
     }
 }
 
@@ -2046,7 +1990,8 @@ struct Blattabbruch: View {
 /// Anders als `Auswahlblatt`: dort wählt man einen Wert und sieht, welcher
 /// gilt. Hier löst jede Zeile etwas aus und das Blatt schliesst sich.
 ///
-/// **Immer einhängen, nicht in ein `if offen`** — siehe ``Blatt``.
+/// Hängt an einer leeren Fläche, weil ein Blatt ein Modifikator ist und
+/// keine Ansicht im Stapel — so bleiben die Aufrufstellen, wie sie waren.
 struct Handlungsblatt: View {
     @Binding var offen: Bool
     /// Woran das Blatt arbeitet — nicht das Wort „Mehr". Das stand schon auf
@@ -2058,41 +2003,39 @@ struct Handlungsblatt: View {
     let handlungen: [Titelhandlung]
 
     var body: some View {
-        Blatt(offen: $offen) {
-            Blattrubrik(text: Text(verbatim: titel))
+        Color.clear
+            .allowsHitTesting(false)
+            .blatt(offen: $offen) {
+                Blattrubrik(text: Text(verbatim: titel))
 
-            ForEach(Array(handlungen.enumerated()), id: \.element.id) { paar in
-                if paar.offset > 0 {
-                    Trennlinie()
-                        .padding(.leading, Stil.trennEinzug(breit: false) - Stil.randAbstand)
-                }
-                Button {
-                    schliessen()
-                    paar.element.tun()
-                } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: paar.element.symbol)
-                            .font(.system(size: 17))
-                            .frame(width: 20)
-                        Text(paar.element.text)
-                            .font(.system(size: 16))
-                        Spacer(minLength: 0)
+                ForEach(Array(handlungen.enumerated()), id: \.element.id) { paar in
+                    if paar.offset > 0 {
+                        Trennlinie()
+                            .padding(.leading, Stil.trennEinzug(breit: false) - Stil.randAbstand)
                     }
-                    .foregroundStyle(paar.element.warnend ? Stil.warnung : Stil.schrift)
-                    .padding(.horizontal, Stil.randAbstand)
-                    .frame(height: 50)
-                    .contentShape(Rectangle())
+                    Button {
+                        offen = false
+                        paar.element.tun()
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: paar.element.symbol)
+                                .font(.system(size: 17))
+                                .frame(width: 20)
+                            Text(paar.element.text)
+                                .font(.system(size: 16))
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(paar.element.warnend ? Stil.warnung : Stil.schrift)
+                        .padding(.horizontal, Stil.randAbstand)
+                        .frame(height: 50)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+
+                Blattlinie()
+                Blattabbruch { offen = false }
             }
-
-            Trennlinie()
-            Blattabbruch { schliessen() }
-        }
-    }
-
-    private func schliessen() {
-        withAnimation(Stil.blattbewegung) { offen = false }
     }
 }
 

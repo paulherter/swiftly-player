@@ -89,8 +89,6 @@ struct SeerrDetailView: View {
             // bringt seine eigene Sprache mit — abgerundete Ecken oben,
             // Griff, Navigationsleiste — und stand damit neben „Mehr" und
             // den Wiedergabelisten wie aus einer anderen App.
-            // Immer eingehaengt — siehe `Blatt`.
-            staffelblatt.zIndex(20)
             if let fehler {
                 Hinweisstreifen(text: fehler) { self.fehler = nil }
                     .zIndex(21)
@@ -98,6 +96,9 @@ struct SeerrDetailView: View {
 
             Detailkopf(titel: treffer.titel, versatz: versatz) { zurueck() }
         }
+        // Welche Staffeln — als Blatt von unten, an der Seite und nicht im
+        // Stapel: ein Blatt ist ein Modifikator.
+        .blatt(offen: $blattOffen) { staffelblatt }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
@@ -229,7 +230,7 @@ struct SeerrDetailView: View {
     /// selbst nach, statt ein Blatt zu oeffnen, das nur eine Frage enthaelt.
     private func gedrueckt() {
         if treffer.istSerie {
-            withAnimation(Stil.blattbewegung) { blattOffen = true }
+            blattOffen = true
             return
         }
         guard bestaetigt else {
@@ -353,38 +354,33 @@ struct SeerrDetailView: View {
         }
     }
 
-    /// Welche Staffeln — als Blatt von unten.
-    ///
-    /// Der Rumpf steht in ``Blatt``: Schleier, Auffahren, die Flaeche bis in
-    /// den unteren Sicherheitsbereich und der Griff zum Hinunterziehen. Hier
-    /// steht nur, was drinsteht. Vorher war beides an dieser Stelle
-    /// nachgebaut — und dabei fehlten das Auffahren und der Griff, und unter
-    /// dem Blatt blieb der Streifen des Home-Indikators offen.
+    /// Was im Blatt steht. Rumpf, Bewegung und Griff kommen von
+    /// ``Blattmodifikator``.
+    @ViewBuilder
     private var staffelblatt: some View {
-        Blatt(offen: $blattOffen) {
-            Blattrubrik(text: Text("Welche Staffeln?"))
+        Blattrubrik(text: Text("Welche Staffeln?"))
 
-            ScrollView {
-                VStack(spacing: 0) { staffelliste }
-            }
-            .frame(maxHeight: 320)
-
-            Trennlinie()
-
-            Button {
-                withAnimation(Stil.blattbewegung) { blattOffen = false }
-                Task { await anfragen() }
-            } label: {
-                Text(gewaehlt.isEmpty ? "Staffel wählen"
-                                      : "\(gewaehlt.count) anfragen")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.akzent)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-            }
-            .buttonStyle(.plain)
-            .disabled(gewaehlt.isEmpty)
+        ScrollView {
+            VStack(spacing: 0) { staffelliste }
         }
+        .frame(maxHeight: 320)
+
+        // Über die volle Breite, weil der Knopf darunter es auch ist.
+        Blattlinie()
+
+        Button {
+            blattOffen = false
+            Task { await anfragen() }
+        } label: {
+            Text(gewaehlt.isEmpty ? "Staffel wählen"
+                                  : "\(gewaehlt.count) anfragen")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.akzent)
+                .frame(maxWidth: .infinity)
+                .frame(height: 54)
+        }
+        .buttonStyle(.plain)
+        .disabled(gewaehlt.isEmpty)
     }
 
     private func anfragen() async {

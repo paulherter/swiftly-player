@@ -136,7 +136,7 @@ struct WiedergabeEinstellungenView: View {
     /// Blatt öffnen: erst den Inhalt setzen, dann in einer Bewegung zeigen.
     private func oeffne(_ liste: Liste) {
         gezeigteListe = liste
-        withAnimation(Stil.blattbewegung) { offeneListe = liste }
+        offeneListe = liste
     }
 
     /// Schließen — und der Inhalt bleibt stehen, dauerhaft.
@@ -147,7 +147,7 @@ struct WiedergabeEinstellungenView: View {
     /// also draußen, sobald die Bewegung durch ist — abzuräumen gibt es
     /// nichts. Was bleibt, ist eine Liste im Speicher, und die kostet nichts.
     private func schliesseBlatt() {
-        withAnimation(Stil.blattbewegung) { offeneListe = nil }
+        offeneListe = nil
     }
 
     @ViewBuilder

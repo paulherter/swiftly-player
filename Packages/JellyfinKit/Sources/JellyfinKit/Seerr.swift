@@ -141,7 +141,16 @@ public struct Seerrdetail: Sendable, Equatable, Codable {
     public let besetzung: [Seerrperson]
     /// Was Seerr sonst noch vorschlaegt. **Dieselbe Sorte Treffer wie aus
     /// der Suche**, damit die Kachel und die Seite dahinter dieselben sind.
+    ///
+    /// Kommt aus einem **zweiten** Abruf — siehe ``Seerr/vorschlaege(aus:art:)``.
     public let aehnliches: [Seerrtreffer]
+
+    /// Dieselbe Auskunft, nur mit den Vorschlaegen aus dem zweiten Abruf.
+    public func mit(aehnliches neu: [Seerrtreffer]) -> Seerrdetail {
+        Seerrdetail(beschreibung: beschreibung, genres: genres, laufzeit: laufzeit,
+                    bewertung: bewertung, staffeln: staffeln, besetzung: besetzung,
+                    aehnliches: neu)
+    }
 }
 
 /// Adresse und Sitzung. Liegt beim Nutzer, nicht hier.
@@ -229,8 +238,7 @@ public enum Seerr {
     /// Fehlt einer Staffel der Stand, ist sie **offen** — dieselbe
     /// Begründung wie beim Suchtreffer: Seerr legt den Eintrag erst mit der
     /// ersten Anfrage an.
-    /// `art` ist nur fuer die Vorschlaege da: siehe ``treffer(aus:standardArt:)``.
-    public static func detail(aus daten: Data, art: String? = nil) -> Seerrdetail? {
+    public static func detail(aus daten: Data) -> Seerrdetail? {
         struct Antwort: Decodable {
             struct Besetzung: Decodable {
                 struct Kopf: Decodable {
@@ -255,7 +263,6 @@ public enum Seerr {
             let voteAverage: Double?
             let seasons: [Staffel]?
             let credits: Besetzung?
-            let recommendations: Trefferliste?
             let mediaInfo: MedienInfo?
             struct MedienInfo: Decodable {
                 struct Staffelstand: Decodable { let seasonNumber: Int; let status: Int? }
@@ -293,8 +300,26 @@ public enum Seerr {
                            bewertung: a.voteAverage,
                            staffeln: staffeln,
                            besetzung: besetzung,
-                           aehnliches: treffer(aus: a.recommendations?.results ?? [],
-                                               standardArt: art))
+                           // **Leer, und das ist kein Versehen.** Die
+                           // Vorschlaege kommen aus einem eigenen Abruf;
+                           // ``SeerrClient/detail(art:id:)`` setzt sie nach.
+                           aehnliches: [])
+    }
+
+    /// Die Vorschlaege zu einem Titel.
+    ///
+    /// **Ein eigener Abruf, kein Feld der Detailantwort.** Genau das war der
+    /// Fehler: `credits` liefert Seerr in der Detailantwort mit, die
+    /// Vorschlaege nicht — die stehen unter `/{art}/{id}/recommendations`.
+    /// Die Besetzung war deshalb da und „Aehnliches" blieb leer, samt
+    /// Ueberschrift, auch bei Titeln, zu denen es reichlich gibt.
+    ///
+    /// `art` ist nicht Zierde: in dieser Antwort steht an den Eintraegen
+    /// **kein** `mediaType` — die Seite weiss ja, was sie ist. Ohne den
+    /// Rueckfall kaeme auch aus einer vollen Antwort nichts an.
+    public static func vorschlaege(aus daten: Data, art: String) -> [Seerrtreffer] {
+        guard let a = try? JSONDecoder().decode(Trefferliste.self, from: daten) else { return [] }
+        return treffer(aus: a.results, standardArt: art)
     }
 
     /// Den Sitzungskeks aus der Antwort auf die Anmeldung holen.
@@ -463,10 +488,26 @@ public actor SeerrClient {
     /// trägt — eine leere Beschreibung ist besser als eine Fehlermeldung für
     /// etwas, das nur schmückt.
     public func detail(art: String, id: Int) async -> Seerrdetail? {
-        guard let req = try? anfrage("\(art)/\(id)"),
+        // **Zwei Abrufe, nebeneinander.** Die Vorschlaege stehen nicht in der
+        // Detailantwort, sondern unter einem eigenen Pfad. Nacheinander
+        // waeren es zwei Wartezeiten fuer eine Seite.
+        async let haupt = hole("\(art)/\(id)")
+        async let vorschlag = hole("\(art)/\(id)/recommendations")
+        let (a, b) = await (haupt, vorschlag)
+
+        guard let a, let auskunft = Seerr.detail(aus: a) else { return nil }
+        // **Kommen keine Vorschlaege, steht die Seite trotzdem.** Sie sind
+        // eine Zugabe; ein Fehler dort darf die Beschreibung nicht kosten.
+        guard let b else { return auskunft }
+        return auskunft.mit(aehnliches: Seerr.vorschlaege(aus: b, art: art))
+    }
+
+    /// Ein GET, der bei allem ausser einer 200 nichts zurueckgibt.
+    private func hole(_ pfad: String) async -> Data? {
+        guard let req = try? anfrage(pfad),
               let (daten, antwort) = try? await sitzung.data(for: req),
               let http = antwort as? HTTPURLResponse, http.statusCode == 200 else { return nil }
-        return Seerr.detail(aus: daten, art: art)
+        return daten
     }
 
     /// Ob die gespeicherte Sitzung noch gilt.

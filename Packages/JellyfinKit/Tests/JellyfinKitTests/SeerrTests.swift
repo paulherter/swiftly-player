@@ -291,7 +291,7 @@ struct SeerrTests {
 
     @Test("Die Besetzung kommt aus credits.cast, die Crew nicht")
     func besetzung() throws {
-        let d = try #require(Seerr.detail(aus: mitAnhang, art: "movie"))
+        let d = try #require(Seerr.detail(aus: mitAnhang))
         #expect(d.besetzung.map(\.name) == ["Simon Baker", "Robin Tunney"])
         #expect(d.besetzung.first?.rolle == "Patrick Jane")
     }
@@ -300,41 +300,74 @@ struct SeerrTests {
     /// Zeile, die nichts sagt und trotzdem Platz nimmt.
     @Test("Eine leere Rolle zaehlt als keine")
     func leereRolle() throws {
-        let d = try #require(Seerr.detail(aus: mitAnhang, art: "movie"))
+        let d = try #require(Seerr.detail(aus: mitAnhang))
         #expect(d.besetzung.first { $0.name == "Robin Tunney" }?.rolle == nil)
     }
 
     @Test("Ohne Bild kommt keine Adresse, nicht eine kaputte")
     func portraetOhnePfad() throws {
-        let d = try #require(Seerr.detail(aus: mitAnhang, art: "movie"))
+        let d = try #require(Seerr.detail(aus: mitAnhang))
         #expect(d.besetzung.first?.bild()?.absoluteString
                 == "https://image.tmdb.org/t/p/w185/a.jpg")
         #expect(d.besetzung.first { $0.name == "Robin Tunney" }?.bild() == nil)
     }
 
-    /// **Der Fall, an dem es sonst still scheitert.** Unter
-    /// `recommendations` steht kein `mediaType` — die Seite weiss, was sie
-    /// ist, und Seerr spart es sich. Ohne den Rueckfall kaeme hier nichts an.
-    @Test("Vorschlaege ohne mediaType erben die Art der Seite")
-    func vorschlaegeErbenDieArt() throws {
-        let d = try #require(Seerr.detail(aus: mitAnhang, art: "movie"))
-        #expect(d.aehnliches.map(\.id) == [42, 43])
-        #expect(d.aehnliches.allSatisfy { $0.art == "movie" })
-        #expect(d.aehnliches.first?.jahr == 2011)
-        #expect(d.aehnliches.last?.stand == .da)
-    }
-
-    /// Ohne Art bleibt es beim Alten: was sich nicht ausweist, faellt heraus.
-    /// Die Suche liefert die Angabe immer mit, dort ist das richtig.
-    @Test("Ohne Art faellt weg, was sich nicht ausweist")
-    func ohneArtFaelltWeg() throws {
+    /// **Der Fehler, den ** Die Detailantwort traegt `credits`, aber keine
+    /// Vorschlaege — die stehen unter einem eigenen Pfad. Deshalb war die
+    /// Besetzung da und „Aehnliches" leer.
+    @Test("Die Detailantwort allein bringt keine Vorschlaege")
+    func detailOhneVorschlaege() throws {
         let d = try #require(Seerr.detail(aus: mitAnhang))
+        #expect(d.besetzung.count == 2)
         #expect(d.aehnliches.isEmpty)
     }
 
-    @Test("Fehlen credits und recommendations, bleiben beide leer")
+    private let vorschlagsantwort = Data(#"""
+    {
+      "page": 1,
+      "totalPages": 3,
+      "results": [
+        {"id": 42, "title": "Der Nachbar", "releaseDate": "2011-02-03",
+         "posterPath": "/p.jpg", "backdropPath": "/b.jpg"},
+        {"id": 43, "title": "Schon da", "mediaInfo": {"status": 5}}
+      ]
+    }
+    """#.utf8)
+
+    /// **Der Fall, an dem es sonst still scheitert.** In dieser Antwort steht
+    /// kein `mediaType` — die Seite weiss ja, was sie ist. Ohne den Rueckfall
+    /// kaeme auch aus einer vollen Antwort nichts an.
+    @Test("Vorschlaege ohne mediaType erben die Art der Seite")
+    func vorschlaegeErbenDieArt() {
+        let v = Seerr.vorschlaege(aus: vorschlagsantwort, art: "movie")
+        #expect(v.map(\.id) == [42, 43])
+        #expect(v.allSatisfy { $0.art == "movie" })
+        #expect(v.first?.jahr == 2011)
+        #expect(v.first?.kulisse()?.absoluteString
+                == "https://image.tmdb.org/t/p/w780/b.jpg")
+        #expect(v.last?.stand == .da)
+    }
+
+    @Test("Eine kaputte Vorschlagsantwort liefert nichts, wirft aber nicht")
+    func kaputteVorschlaege() {
+        #expect(Seerr.vorschlaege(aus: Data("nope".utf8), art: "tv").isEmpty)
+    }
+
+    /// Die Auskunft bleibt dieselbe, nur die Vorschlaege kommen dazu — so
+    /// setzt der Client die beiden Abrufe zusammen.
+    @Test("Zusammensetzen laesst alles andere unberuehrt")
+    func zusammensetzen() throws {
+        let d = try #require(Seerr.detail(aus: mitAnhang))
+        let voll = d.mit(aehnliches: Seerr.vorschlaege(aus: vorschlagsantwort, art: "movie"))
+        #expect(voll.beschreibung == d.beschreibung)
+        #expect(voll.besetzung == d.besetzung)
+        #expect(voll.laufzeit == 112)
+        #expect(voll.aehnliches.count == 2)
+    }
+
+    @Test("Fehlen die credits, bleibt die Besetzung leer")
     func ohneAnhang() throws {
-        let d = try #require(Seerr.detail(aus: Data(#"{"overview":"x"}"#.utf8), art: "tv"))
+        let d = try #require(Seerr.detail(aus: Data(#"{"overview":"x"}"#.utf8)))
         #expect(d.besetzung.isEmpty)
         #expect(d.aehnliches.isEmpty)
     }

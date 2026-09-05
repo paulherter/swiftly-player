@@ -129,8 +129,8 @@ struct SeriesDetailView: View {
             // Derselbe Kopf wie auf der Filmseite. Hier stand noch der alte
             // Verlauf mit freistehendem Pfeil — deshalb blendete auf der
             // Serienseite nie eine Leiste ein.
-            // **Immer eingehaengt, nicht in ein `if mehrOffen`** — sonst
-            // faellt das Auffahren aus; die Begruendung steht an `Blatt`.
+            // Das Blatt haengt an einer leeren Flaeche; ohne `if` gaebe es
+            // auf breiten Fenstern zwei Wege zu denselben Handlungen.
             if !breit {
                 Handlungsblatt(offen: $mehrOffen, titel: blatttitel,
                                handlungen: mehrHandlungen)
@@ -339,7 +339,7 @@ struct SeriesDetailView: View {
                 }
             }
             if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "ellipsis", titel: "Mehr") { withAnimation(Stil.blattbewegung) { mehrOffen = true } }
+            Aktionsknopf(symbol: "ellipsis", titel: "Mehr") { mehrOffen = true }
                 .alsHandlungsanker()
         }
         // Wie auf der Filmseite: die Zwischenräume verteilen die vier über die

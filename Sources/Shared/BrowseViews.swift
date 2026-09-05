@@ -238,8 +238,8 @@ struct ItemDetailView: View {
                 versatz = neu
             }
 
-            // **Immer eingehaengt, nicht in ein `if mehrOffen`** — sonst
-            // faellt das Auffahren aus; die Begruendung steht an `Blatt`.
+            // Das Blatt haengt an einer leeren Flaeche; ohne `if` gaebe es
+            // auf breiten Fenstern zwei Wege zu denselben Handlungen.
             if !breit {
                 Handlungsblatt(offen: $mehrOffen, titel: aktuell.name,
                                handlungen: mehrHandlungen)
@@ -399,7 +399,7 @@ struct ItemDetailView: View {
                 }
             }
             if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "ellipsis", titel: "Mehr") { withAnimation(Stil.blattbewegung) { mehrOffen = true } }
+            Aktionsknopf(symbol: "ellipsis", titel: "Mehr") { mehrOffen = true }
                 .alsHandlungsanker()
         }
         .padding(.horizontal, weit ? 0 : 6)

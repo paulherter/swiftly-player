@@ -245,7 +245,6 @@ struct BibliothekView: View {
         // Nur so laufen die Uebergaenge von Schleier und Karte einzeln.
         .overlay(alignment: .topTrailing) {
                 Auswahlblatt(offen: $sortierlisteOffen,
-                             unterrand: breit ? 0 : Stil.leisteHoehe,
                              titel: "Sortieren",
                              eintraege: Sortierung.allCases,
                              beschriftung: { $0.beschriftung },
@@ -254,7 +253,6 @@ struct BibliothekView: View {
         }
         .overlay(alignment: .topTrailing) {
                 Auswahlblatt(offen: $bibliothekslisteOffen,
-                             unterrand: breit ? 0 : Stil.leisteHoehe,
                              titel: "Bibliothek",
                              eintraege: auswahl,
                              beschriftung: { $0.name },
@@ -375,7 +373,7 @@ struct BibliothekView: View {
                         // `Auswahlblatt` wie bei der Sortierung, und es
                         // nimmt die Beschriftung als `String`, was hier
                         // noetig ist: Bibliotheksnamen kommen vom Server.
-                        Button { withAnimation(Stil.blattbewegung) { bibliothekslisteOffen = true } } label: {
+                        Button { bibliothekslisteOffen = true } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(gewaehlt?.name ?? "")
                                     .font(Stil.titelGross).tracking(-0.6)
@@ -455,7 +453,7 @@ struct BibliothekView: View {
                         .fixedSize(horizontal: true, vertical: false)
                         .layoutPriority(1)
                     } else {
-                        Button { withAnimation(Stil.blattbewegung) { sortierlisteOffen = true } } label: {
+                        Button { sortierlisteOffen = true } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "line.3.horizontal.decrease")
                                     .font(.system(size: 12, weight: .medium))
