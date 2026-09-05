@@ -665,10 +665,21 @@ final class App: @unchecked Sendable {
         uebernahmelauf = nil
         uebernahmeangebote = []
         // Detailseiten und geladene Bereiche gehoeren zum vorigen Konto.
+        // Ohne das zeigten Filme und Serien nach dem Wechsel dauerhaft die
+        // Titel des vorigen Kontos: `geladen` wurde bisher nur beim Abmelden
+        // geleert, und ein Bereich laedt genau einmal.
         seitenstapel.removeAll()
         geladen.removeAll()
         offeneUnterseite = nil
+        // **`.start` gilt hier schon als geladen, obwohl nichts geladen ist.**
+        // ``zeige(_:)`` wuerde sonst gleich hier ``startseiteLaden()`` rufen —
+        // und zwar mit dem **alten** Client, denn der neue steht erst nach
+        // `setSession` bereit. Zwei Ladungen liefen dann um die Wette, und wer
+        // gewinnt, entschied die Antwortzeit des Servers. Geladen wird gleich
+        // in ``sitzungEinsetzen(_:servername:)``, mit dem richtigen Client.
+        geladen.insert(.start)
         zeige(.start)
+        geladen.removeAll()
     }
 
     // MARK: Weiteres Konto
@@ -1928,9 +1939,16 @@ final class App: @unchecked Sendable {
 
     private func bibliothekenLaden() {
         guard let client else { return }
+        let stand = kontowechsel
         Task.detached { [self] in
             let sichten = (try? await client.userViews()) ?? []
-            aufHauptfaden { self.bibliothekenZeigen(sichten) }
+            aufHauptfaden {
+                // Dieselbe Eintrittskarte wie bei der Startseite: die
+                // Bibliotheken des vorigen Kontos gehoeren nicht in die Leiste
+                // des neuen.
+                guard self.kontowechsel == stand else { return }
+                self.bibliothekenZeigen(sichten)
+            }
         }
     }
 
@@ -1965,6 +1983,12 @@ final class App: @unchecked Sendable {
     func startseiteLaden() {
         guard let client else { return }
         zuletztGeladen = Date()
+        // **Wessen Antwort ist das gleich?** Der Wechsel laesst den alten
+        // Client fallen, aber eine Abfrage, die schon unterwegs ist, kommt
+        // trotzdem zurueck — und wuerde die Reihen des neuen Kontos mit denen
+        // des alten ueberschreiben. Der Zaehler ist die Eintrittskarte: passt
+        // er beim Auflegen nicht mehr, gehoert die Antwort zu niemandem.
+        let stand = kontowechsel
         // **„Lade …" nur beim ersten Mal.** Beim Nachladen (D8, und beim
         // Schliessen des Players) steht schon alles da; es wegzuwerfen und
         // durch ein Wort zu ersetzen, sah aus, als sei die App neu gestartet
@@ -2006,7 +2030,10 @@ final class App: @unchecked Sendable {
                 (uebersetzt("Nächste Folge"), .naechste, await naechste ?? [])
             ] + letzte).filter { !$0.2.isEmpty }
 
-            aufHauptfaden { self.reihenZeigen(reihen) }
+            aufHauptfaden {
+                guard self.kontowechsel == stand else { return }
+                self.reihenZeigen(reihen)
+            }
         }
     }
 
@@ -2040,6 +2067,7 @@ final class App: @unchecked Sendable {
         let sort = sortierung[was] ?? .name
         let meine = bibliotheken(fuer: was)
         let eltern = gewaehlteBibliothek[was] ?? meine.first?.id
+        let stand = kontowechsel
         Task.detached { [self] in
             let antwort = try? await client.items(parentID: eltern,
                                                   limit: 100,
@@ -2053,6 +2081,9 @@ final class App: @unchecked Sendable {
             let items = antwort?.items ?? []
             let gesamt = antwort?.totalRecordCount ?? items.count
             aufHauptfaden {
+                // Auch hier: eine Antwort des vorigen Kontos wird
+                // weggeworfen, statt an seine Titel angehaengt zu werden.
+                guard self.kontowechsel == stand else { return }
                 self.rasterLaedt.remove(was)
                 self.rasterLaderZeigen(was, false)
                 let raster = was == .filme ? self.filmeraster : self.serienraster
