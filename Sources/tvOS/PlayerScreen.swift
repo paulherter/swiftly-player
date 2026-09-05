@@ -405,6 +405,22 @@ struct PlayerScreen: View {
             guard !Task.isCancelled, !blattOffen, !folgenOffen else { return }
             steuerungSichtbar = false
         }
+
+        // **Der Ausblender muss neu anlaufen, wenn VLC den Stand meldet.**
+        //
+        // Die Wippe befiehlt nur; `laeuft` setzt erst der Rueckruf 17-25 ms
+        // spaeter (siehe `setzen`). `zeigen` stoesst die Aufgabe oben aber
+        // sofort an — die liest dann noch den Stand von *vor* dem Druck und
+        // faellt bei „fortsetzen" ueber `guard laeuft` heraus. Danach ruehrt
+        // sich nichts mehr: die Marke aendert sich nur in `zeigen`, und die
+        // Steuerung blieb stehen, bis
+        //
+        // iOS hatte die Zeile von Anfang an (`iOS/PlayerScreen.swift:401`),
+        // tvOS nie — beim Ableiten uebersehen. Dort steht
+        // `zentraleUebernehmen()` daneben; das braucht tvOS nicht, weil
+        // `anhaltenOderWeiter` aus `schaltwerk` liest und nicht aus der
+        // festgehaltenen Ansicht.
+        .onChange(of: laeuft) { _, _ in ausblendMarke += 1 }
     }
 
     /// **Das Zeichen fuer „steht" gehoert in die Mitte, nicht an den Rand.**
