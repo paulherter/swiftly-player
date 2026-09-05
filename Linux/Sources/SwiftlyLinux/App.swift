@@ -1949,6 +1949,11 @@ final class App: @unchecked Sendable {
         // Entwurf (96/72) gilt fuer den Streifen im Profil, nicht fuer die
         // Fusszeile; hier zaehlt, dass die Zeile ihre Hoehe behaelt.
         let kante = 26, versatz = 17, hoechstens = 3
+        // **Der Ring braucht seinen eigenen Platz.** Er liegt als Schatten
+        // *ausserhalb* des Kreises; ohne Zuschlag schnitt die Zone ihn unten
+        // ab Zwei Punkte ringsum, das ist die staerkste der beiden
+        // Ringstaerken (1,5 aktiv, 2 daneben), aufgerundet.
+        let ring = 2
         // Der aktive vorn, danach die anderen in ihrer Reihenfolge.
         var reihenfolge: [Session] = []
         if let bund {
@@ -1957,10 +1962,9 @@ final class App: @unchecked Sendable {
             reihenfolge = []
         }
         let sichtbar = Array(reihenfolge.prefix(hoechstens))
+        let breite = (sichtbar.isEmpty ? kante : kante + versatz * (sichtbar.count - 1))
         gtk_widget_set_size_request(profilkreise,
-                                    Int32(sichtbar.isEmpty ? kante
-                                          : kante + versatz * (sichtbar.count - 1)),
-                                    Int32(kante))
+                                    Int32(breite + 2 * ring), Int32(kante + 2 * ring))
 
         guard !sichtbar.isEmpty else {
             // Kein Bund: das eine Bild wie bisher.
@@ -1968,7 +1972,7 @@ final class App: @unchecked Sendable {
                                       kante: kante, stil: "swiftly-profilbild",
                                       schriftstil: "swiftly-zeichen26")
             profilbild = teile.bild
-            gtk_fixed_put(alsFest(profilkreise), teile.huelle, 0, 0)
+            gtk_fixed_put(alsFest(profilkreise), teile.huelle, Double(ring), Double(ring))
             profilbildLaden(teile,
                             url: benutzerID.isEmpty ? nil
                                                     : adressen?.benutzer(benutzerID, kante: 60),
@@ -1988,7 +1992,8 @@ final class App: @unchecked Sendable {
             let teile = profilzeichen(name: konto.userName, kante: kante, stil: stil,
                                       schriftstil: "swiftly-zeichen26")
             if i == 0 { profilbild = teile.bild } else { gtk_widget_set_opacity(teile.huelle, 0.55) }
-            gtk_fixed_put(alsFest(profilkreise), teile.huelle, Double(i * versatz), 0)
+            gtk_fixed_put(alsFest(profilkreise), teile.huelle,
+                          Double(ring + i * versatz), Double(ring))
             profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 60),
                             schluessel: "leiste-\(konto.userID)")
         }

@@ -667,7 +667,6 @@ enum Stil {
             min-height: 0;
         }
         button.swiftly-kontoknopf:hover { opacity: 1; }
-        button.swiftly-kontoknopf:disabled { opacity: 1; }
 
         /* Der Quick-Connect-Code: gross, mittig, gesperrt. */
         entry.swiftly-code {

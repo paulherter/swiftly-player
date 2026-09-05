@@ -541,14 +541,19 @@ extension App {
         gtk_button_set_child(alsKnopf(knopf), saeule)
         profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 200),
                         schluessel: "konto-\(konto.userID)")
-        // Das aktive Konto ist kein Ziel — ein Klick darauf täte nichts, und
-        // ein Knopf, der nichts tut, ist eine Zusage, die nicht eingehalten wird.
-        if aktiv {
-            gtk_widget_set_sensitive(knopf, 0)
-        } else {
-            let kennung = konto.userID
-            beiSignal(knopf, "clicked") { [weak self] in self?.kontoWechseln(zu: kennung) }
-        }
+        // **Das aktive Konto wird nicht gesperrt.** Der erste Anlauf setzte es
+        // auf `insensitive`, weil es dort nichts umzuschalten gibt — und GTK
+        // legt über ein gesperrtes Widget seinen eigenen Schleier: ausgerechnet
+        // das verbundene Bild stand danach abgedunkelt da, die anderen klar.
+        // Genau verkehrt herum, denn **das hellste Bild muss das verbundene
+        // sein**; daran hängt der ganze Entwurf. (Die Mac-Sitzung ist in
+        // dieselbe Falle getreten, dort über SwiftUIs `disabled`.)
+        //
+        // Der Knopf bleibt also ansprechbar. Ein Klick darauf tut nichts, denn
+        // ``kontoWechseln(zu:)`` steigt bei der eigenen Kennung sofort wieder
+        // aus — das ist billiger als ein Sonderzustand, den man ansieht.
+        let kennung = konto.userID
+        beiSignal(knopf, "clicked") { [weak self] in self?.kontoWechseln(zu: kennung) }
         return knopf
     }
 
