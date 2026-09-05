@@ -54,7 +54,7 @@ struct SerienView: View {
         self.startStaffelNummer = startStaffelNummer
         self.zurueck = zurueck
 
-        let gemerkt = Seriencache.geteilt.stand(serie.id)
+        let gemerkt = Serienspeicher.geteilt.stand(serie.id, mit: model)
         let staffeln = gemerkt?.staffeln ?? []
         _staffeln = State(initialValue: staffeln)
         _staffelnDa = State(initialValue: !staffeln.isEmpty)
@@ -269,7 +269,7 @@ struct SerienView: View {
             ?? neue.first
         staffeln = neue
         staffelnDa = true
-        Seriencache.geteilt.merken(serie.id) { $0.staffeln = neue }
+        Serienspeicher.geteilt.merken(serie.id) { $0.staffeln = neue }
         if neue.isEmpty { await folgenLaden() }
     }
 
@@ -281,7 +281,7 @@ struct SerienView: View {
         let neue = await model.folgen(serie: serie.id, staffel: gewaehlt?.id)
         folgen = neue
         if let staffel = gewaehlt?.id {
-            Seriencache.geteilt.merken(serie.id) { $0.folgen[staffel] = neue }
+            Serienspeicher.geteilt.merken(serie.id) { $0.folgen[staffel] = neue }
         }
     }
 }

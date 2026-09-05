@@ -72,7 +72,7 @@ struct StaffelZiel: View {
         self.model = model
         self.folge = folge
         self.zurueck = zurueck
-        _serie = State(initialValue: Seriencache.geteilt.serie(fuer: folge))
+        _serie = State(initialValue: Serienspeicher.geteilt.serie(fuer: folge, mit: model))
     }
 
     var body: some View {
@@ -91,7 +91,7 @@ struct StaffelZiel: View {
             async let frisch = model.item(id: folge.id)
             if serie == nil {
                 let geholt = await model.item(id: id)
-                if let geholt { Seriencache.geteilt.merken(geholt) }
+                if let geholt { Serienspeicher.geteilt.merken(geholt) }
                 serie = geholt
             }
             frischeStaffelID = await frisch?.seasonId

@@ -212,7 +212,7 @@ struct Posterkachel: View {
     var auswahl: (() -> Void)?
     /// `nil`, wenn es keine Übersicht dazu gibt (A6).
     var uebersicht: (() -> Void)?
-    /// Wird beim Überfahren gerufen — siehe `Seriencache.vorholen(_:mit:)`.
+    /// Wird beim Überfahren gerufen — siehe `Serienspeicher.vorholen(_:mit:)`.
     var vorholen: (() -> Void)?
 
     @State private var schwebt = false {
@@ -259,7 +259,7 @@ struct Querkachel: View {
     var zeichen: String?
     var auswahl: (() -> Void)?
     var uebersicht: (() -> Void)?
-    /// Wird beim Überfahren gerufen — siehe `Seriencache.vorholen(_:mit:)`.
+    /// Wird beim Überfahren gerufen — siehe `Serienspeicher.vorholen(_:mit:)`.
     var vorholen: (() -> Void)?
 
     @State private var schwebt = false {

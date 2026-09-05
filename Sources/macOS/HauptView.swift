@@ -154,6 +154,16 @@ struct HauptView: View {
         .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
         .environment(navigator)
         .environment(\.bereich, bereich)
+        // **G4: Der Seitenstapel gehört zum Konto.** Was darauf liegt, gehört
+        // nach dem Wechsel dem vorigen — eine Detailseite hängt an
+        // `.task(id: titel.id)`, eine Serienseite an der Staffel, die Suche
+        // am Begriff, und keine dieser Kennungen ändert sich dabei. Man sähe
+        // die Haken und Fortschrittsbalken des anderen Kontos, und ein Druck
+        // auf Abspielen setzte an dessen Stelle an.
+        //
+        // Hier und nicht in jeder Seite: das wären fünf Stellen, und die
+        // nächste neue Seite vergisst es.
+        .onChange(of: model.kontowechsel) { _, _ in navigator.alleLeeren() }
         // Der Player nimmt das ganze Fenster ein, Seitenleiste eingeschlossen.
         .overlay {
             if let wunsch = steuerung.wunsch {

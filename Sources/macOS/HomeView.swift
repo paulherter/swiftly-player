@@ -57,7 +57,7 @@ struct HomeView: View {
                                        zeichen: zeichen(titel),
                                        auswahl: { steuerung.starte(titel) },
                                        uebersicht: { navigator.oeffne(.titel(titel), in: bereich) },
-                                       vorholen: { Seriencache.geteilt.vorholen(titel, mit: model) })
+                                       vorholen: { Serienspeicher.geteilt.vorholen(titel, mit: model) })
                         }
                     }
                 }
@@ -82,7 +82,7 @@ struct HomeView: View {
                                              zweitzeile: folge.folgenkuerzel,
                                              bild: model.imageURL(for: folge, hochkant: true),
                                              zeichen: zeichen(folge),
-                                             vorholen: { Seriencache.geteilt.vorholen(folge, mit: model) })
+                                             vorholen: { Serienspeicher.geteilt.vorholen(folge, mit: model) })
                             }
                             .buttonStyle(.plain)
                         }
@@ -97,7 +97,7 @@ struct HomeView: View {
                                              zweitzeile: titel.neuzugangszeile,
                                              bild: model.imageURL(for: titel, hochkant: true),
                                              zeichen: zeichen(titel),
-                                             vorholen: { Seriencache.geteilt.vorholen(titel, mit: model) })
+                                             vorholen: { Serienspeicher.geteilt.vorholen(titel, mit: model) })
                             }
                             .buttonStyle(.plain)
                         }
@@ -191,7 +191,7 @@ struct HomeView: View {
         // Reihen bestehen bei Serien aus Folgen, und ein Klick darauf führt
         // auf die Serienseite (A8) — bis dahin fuhr sonst eine leere Seite
         // herein.
-        Seriencache.geteilt.vorholen(weiter + naechste + neu, mit: model)
+        Serienspeicher.geteilt.vorholen(weiter + naechste + neu, mit: model)
     }
 
 }
