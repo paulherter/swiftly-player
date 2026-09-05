@@ -60,6 +60,12 @@ public struct Seerrtreffer: Sendable, Hashable, Identifiable, Codable {
     public let titel: String
     public let jahr: Int?
     public let plakatPfad: String?
+    /// Das **Querbild**, nicht das Plakat.
+    ///
+    /// TMDB liefert beides getrennt, und der Kopf einer Detailseite braucht
+    /// das Querbild: ein hochgezogenes Plakat ist zu hoch, drückt alles
+    /// darunter nach unten und war nie dafür gedacht.
+    public let kulissePfad: String?
     public let stand: Seerrstand
 
     public var istSerie: Bool { art == "tv" }
@@ -71,8 +77,18 @@ public struct Seerrtreffer: Sendable, Hashable, Identifiable, Codable {
     /// und ohne Merkmal. `w342` ist die kleinste Grösse, die auf einem
     /// Plakat in einem Raster nicht weich aussieht.
     public func plakat(breite: Int = 342) -> URL? {
-        guard let plakatPfad, !plakatPfad.isEmpty else { return nil }
-        return URL(string: "https://image.tmdb.org/t/p/w\(breite)\(plakatPfad)")
+        Self.tmdb(plakatPfad, breite: breite)
+    }
+
+    /// Das Querbild für den Kopf einer Seite. **Nur das Querbild** — fehlt
+    /// es, kommt nichts zurück statt eines hochgezogenen Plakats.
+    public func kulisse(breite: Int = 780) -> URL? {
+        Self.tmdb(kulissePfad, breite: breite)
+    }
+
+    private static func tmdb(_ pfad: String?, breite: Int) -> URL? {
+        guard let pfad, !pfad.isEmpty else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w\(breite)\(pfad)")
     }
 }
 
@@ -141,6 +157,7 @@ public enum Seerr {
                 let releaseDate: String?
                 let firstAirDate: String?
                 let posterPath: String?
+                let backdropPath: String?
                 let mediaInfo: Info?
                 struct Info: Decodable { let status: Int? }
             }
@@ -157,6 +174,7 @@ public enum Seerr {
                 titel: titel,
                 jahr: datum.flatMap { Int($0.prefix(4)) },
                 plakatPfad: e.posterPath,
+                kulissePfad: e.backdropPath,
                 stand: e.mediaInfo?.status.flatMap(Seerrstand.init(rawValue:)) ?? .offen)
         }
     }

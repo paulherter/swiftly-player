@@ -60,7 +60,7 @@ struct SeerrDetailView: View {
             // hier ein eigenes `Bild` mit eigenem Verlauf — daher der schwarze
             // Rand oben und das fehlende Mitziehen beim Scrollen. `Heldbild`
             // und `Heldauslauf` koennen beides, seit Monaten geprueft.
-            Heldbild(url: treffer.plakat(breite: 780))
+            Heldbild(url: treffer.kulisse())
                 .overlay(alignment: .bottom) { Heldauslauf() }
                 .overlay(alignment: .bottomLeading) {
                     VStack(alignment: .leading, spacing: 5) {
@@ -182,24 +182,17 @@ struct SeerrDetailView: View {
         } else if stand.anfragbar {
             Button {
                 // **Bei einer Serie wird erst gefragt, welche Staffeln.**
-                // Sie standen als lange Liste auf der Seite und draengten
-                // Beschreibung, Besetzung und Aehnliches nach unten — dabei
-                // ist das eine Frage, die erst beim Druecken entsteht.
                 if treffer.istSerie { blattOffen = true }
                 else { Task { await anfragen() } }
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: laeuft ? "hourglass" : "plus")
-                        .font(.system(size: 16, weight: .bold))
-                    Text(laeuft ? "Wird angefragt…" : "Anfragen")
-                        .font(.system(size: 17, weight: .semibold))
-                }
-                .foregroundStyle(Stil.grund)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(Stil.akzent, in: RoundedRectangle(cornerRadius: 12))
+                Label(laeuft ? "Wird angefragt…" : "Anfragen",
+                      systemImage: laeuft ? "hourglass" : "plus")
             }
-            .buttonStyle(.plain)
+            // **Derselbe Stil wie „Fortsetzen", nur in Akzent.** Hoehe 48,
+            // Ecke Stil.ecke, Schrift 16 halbfett — vorher stand hier ein
+            // nachgebauter Knopf mit 16er Ecke und 16 Punkt Innenabstand,
+            // und der sass sichtbar tiefer und runder als das Vorbild.
+            .buttonStyle(HauptknopfStil(flaeche: Stil.akzent))
             .disabled(laeuft)
         } else {
             auskunft(standhinweis)

@@ -12,7 +12,7 @@ struct SeerrTests {
     private let antwort = Data("""
     {"page":1,"totalResults":4,"results":[
       {"id":1,"mediaType":"movie","title":"Mentalist Live","releaseDate":"2014-03-01",
-       "posterPath":"/abc.jpg"},
+       "posterPath":"/abc.jpg","backdropPath":"/quer.jpg"},
       {"id":2,"mediaType":"tv","name":"The Mentalist","firstAirDate":"2008-09-23",
        "posterPath":"/def.jpg","mediaInfo":{"status":5}},
       {"id":3,"mediaType":"tv","name":"The Mentalist (UK)","firstAirDate":"2011-01-01",
@@ -89,6 +89,24 @@ struct SeerrTests {
         let t = try #require(Seerr.treffer(ausSuche: antwort).first { $0.id == 1 })
         let u = try #require(t.plakat())
         #expect(u.absoluteString == "https://image.tmdb.org/t/p/w342/abc.jpg")
+    }
+
+    /// Der Kopf einer Seite braucht das Querbild. Ein hochgezogenes Plakat
+    /// ist zu hoch und drückt alles darunter nach unten.
+    @Test("Das Querbild kommt aus backdropPath, nicht aus dem Plakat")
+    func kulissenbild() throws {
+        let t = try #require(Seerr.treffer(ausSuche: antwort).first { $0.id == 1 })
+        let u = try #require(t.kulisse())
+        #expect(u.absoluteString == "https://image.tmdb.org/t/p/w780/quer.jpg")
+    }
+
+    /// **Kein Rückfall auf das Plakat.** Lieber gar kein Kopfbild als eines,
+    /// das die halbe Seite nach unten schiebt.
+    @Test("Ohne Querbild kommt nichts, nicht das Plakat")
+    func keinRueckfallAufsPlakat() throws {
+        let t = try #require(Seerr.treffer(ausSuche: antwort).first { $0.id == 2 })
+        #expect(t.kulisse() == nil)
+        #expect(t.plakat() != nil)
     }
 
     @Test("Ohne Pfad gibt es keine Adresse")

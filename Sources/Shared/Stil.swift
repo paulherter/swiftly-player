@@ -284,6 +284,14 @@ struct HauptknopfStil: ButtonStyle {
     /// Zeile. Breit steht er neben der Aktionsreihe und darf sie nicht
     /// wegdrücken.
     var dehnt = true
+    /// Eine andere Fläche, sonst alles gleich.
+    ///
+    /// **Für den Anfragen-Knopf bei Seerr.** Er soll an genau derselben
+    /// Stelle stehen und genauso aussehen wie „Fortsetzen" — nur in einer
+    /// anderen Farbe. Ihn daneben nachzubauen hiesse, Höhe, Ecke und
+    /// Schriftgrad ein zweites Mal zu tippen, und genau daran ist er beim
+    /// ersten Anlauf zu rund und zu hoch geraten.
+    var flaeche: Color?
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -297,7 +305,8 @@ struct HauptknopfStil: ButtonStyle {
 
     private func flaeche(gedrueckt: Bool) -> Color {
         guard freigegeben else { return Stil.flaeche }
-        return Color.white.opacity(gedrueckt ? 0.75 : 1)
+        let grund = flaeche ?? .white
+        return grund.opacity(gedrueckt ? 0.75 : 1)
     }
 }
 
