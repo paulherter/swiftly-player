@@ -35,6 +35,14 @@ Copy-Item -Path (Join-Path $quelle '*.swift') -Destination $ziel
 Copy-Item -Path (Join-Path $quelle 'Resources') -Destination $ziel -Recurse
 Write-Host ("    " + (Get-ChildItem $ziel -Filter *.swift).Count + " Dateien")
 
+# Die Bruecke zu VLC ist dieselbe C-Datei; nur die Modulzuordnungen
+# unterscheiden sich, weil die Bindenamen anders lauten.
+$bruecke = Join-Path $hier 'Sources\CBildbruecke'
+if (Test-Path $bruecke) { Remove-Item -Recurse -Force $bruecke }
+New-Item -ItemType Directory -Force -Path (Join-Path $bruecke 'include') | Out-Null
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CBildbruecke\bildbruecke.c') $bruecke
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CBildbruecke\include\bildbruecke.h') (Join-Path $bruecke 'include')
+
 # Symbol und Startanimation liegen genauso nur einmal im Repo.
 $mittel = Join-Path (Split-Path -Parent $hier) 'Linux\Ressourcen'
 $mittelZiel = Join-Path $hier 'Ressourcen'
