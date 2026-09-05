@@ -243,6 +243,8 @@ import CGtk
 final class Startanimation {
     let anzeige: Widget
     init?(fertig: @escaping () -> Void) { return nil }
+    /// Wird von der Frist in ``App`` gerufen. Hier gibt es nichts abzuschliessen.
+    func abschliessen() {}
 }
 
 #endif
