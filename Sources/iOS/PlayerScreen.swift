@@ -843,8 +843,21 @@ struct PlayerScreen: View {
     private func zurNaechstenFolge(_ folge: Item) {
         wechselt = true
         Task {
-            await model.reportStopped(item: item, plan: plan, seconds: position)
-            guard let neuerPlan = await model.plan(for: folge.id) else {
+            // **Nebeneinander, nicht nacheinander.** Beides sind Abrufe, und
+            // sie brauchen einander nicht: die Abmeldung der alten Folge hoert
+            // der Server, den Plan der neuen gibt er heraus. Hintereinander
+            // gerechnet liegt die zweite Frist hinter der ersten — bei totem
+            // Netz gemessen (Mac-Sitzung): 20,9 s plus 21,0 s. Nebeneinander
+            // ist es die laengere von beiden.
+            //
+            // Die **Reihenfolge** Stopp vor Start bleibt gewahrt:
+            // `reportStart` steht unten hinter `await gestoppt`. Nur das
+            // Warten liegt parallel.
+            async let gestoppt: Void = model.reportStopped(item: item, plan: plan,
+                                                           seconds: position)
+            async let geplant = model.plan(for: folge.id)
+            await gestoppt
+            guard let neuerPlan = await geplant else {
                 hinweis = String(localized: "Nächste Folge konnte nicht geladen werden.")
                 wechselt = false
                 return
@@ -871,14 +884,43 @@ struct PlayerScreen: View {
             // es erfahren, sonst meldet die Schleife gleich noch einmal.
             await model.reportStart(item: folge, plan: neuerPlan, seconds: 0)
             startGemeldet = true
+
+            // **Hier ist der Wechsel fertig, also faellt hier der Riegel.**
+            //
+            // Er stand bisher noch ueber den zwei Abrufen darunter, und das
+            // war der Fehler — nicht die Abrufe. Ein Riegel gilt fuer das, was
+            // er schuetzt: dass nicht zweimal gewechselt wird, waehrend der
+            // Wechsel laeuft. Ab hier laeuft er nicht mehr; Bild, Plan und
+            // Meldung an den Server stehen.
+            //
+            // Solange er lag, gab `angebot` `.keiner` zurueck — **keine
+            // Knoepfe**, und darueber lag `if wechselt { Lader }`, also ein
+            // Ladekringel ueber dem stehenden Bild. Dazu wurde weder Start
+            // noch Fortschritt gemeldet und das selbsttaetige Weiterschalten
+            // war gesperrt. Genau
+            //
+            // Die Frist dafuer ist **nicht** die Zeitgrenze der Abfrage:
+            // `Netzsitzung` setzt `waitsForConnectivity`, und damit faengt sie
+            // erst an zu laufen, wenn wieder eine Verbindung da ist. Ein WLAN,
+            // das wegnickt, hielt die Oberflaeche unbegrenzt an, ohne dass
+            // irgendetwas fehlschlaegt. Das ist die Sorte Haenger, die „aus
+            // dem Nichts" kommt.
+            wechselt = false
+            steuerungSichtbar = true
+            ausblendenVerschieben()
+
+            // Nachschlag, und zwar ohne Riegel: `folgeNach` fuellt den Knopf
+            // „naechste Folge", `abschnitte` die Sprungmarken. Kommen sie
+            // spaeter oder gar nicht, fehlt ein Knopf und ein paar Marken.
+            // Dafuer darf keine Taste stehenbleiben.
             naechsteFolge = await model.folgeNach(folge)
             // **Die neue Folge hat eigene Abschnitte.** Ohne das trüge sie
             // die des Vorgängers, und der Knopf erschiene an dessen Stellen.
             abschnitte = await model.abschnitte(fuer: folge.id)
+            // **Bleibt hinten.** Die Zentrale traegt den Befehl „naechste
+            // Folge", und der braucht `naechsteFolge` — vorgezogen zeigte er
+            // auf die Folge, die gerade laeuft.
             zentraleUebernehmen()
-            wechselt = false
-            steuerungSichtbar = true
-            ausblendenVerschieben()
         }
     }
 
