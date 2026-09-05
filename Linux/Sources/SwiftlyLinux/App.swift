@@ -622,15 +622,12 @@ final class App: @unchecked Sendable {
     /// angemeldet war. Wortgleich zu `AppModel.sitzungUebernehmen(_:)`.
     @discardableResult
     func sitzungAufnehmen(_ sitzung: Session, servername: String?) -> Bool {
-        let warAngemeldet = bund != nil
-        // Derselbe Server: das Konto kommt dazu und gilt sofort. Ein anderer
-        // Server heisst von vorn — ein Bund gehoert zu genau einem Server.
-        if var vorhanden = bund, vorhanden.passtZumServer(sitzung) {
-            vorhanden.aufnehmen(sitzung)
-            bund = vorhanden
-        } else {
-            bund = Kontenbund(sitzung)
-        }
+        // **Ob es ein Wechsel war, sagt das Paket**, nicht diese Seite. Beide
+        // Seiten leiteten es vorher aus `bund != nil` her — und die Regel, dass
+        // ein anderer Server *kein* Wechsel ist, sondern ein Neuanfang, stand
+        // damit zweimal da.
+        let (neuer, warAngemeldet) = Kontenbund.aufnehmen(sitzung, in: bund)
+        bund = neuer
         bundSichern(servername: servername)
         if warAngemeldet { aufraeumenNachWechsel() }
         sitzungEinsetzen(sitzung, servername: servername)
@@ -693,14 +690,19 @@ final class App: @unchecked Sendable {
         seitenstapel.removeAll()
         geladen.removeAll()
         offeneUnterseite = nil
-        // **`.start` gilt hier schon als geladen, obwohl nichts geladen ist.**
+        // **Der Bereich bleibt, der Stapel geht** (G4). Wer aus „Filme" heraus
+        // umschaltet, steht danach auf der Wurzel von „Filme", nicht auf der
+        // Startseite — der Stapel gehoerte dem vorigen Konto, der Bereich
+        // nicht.
+        //
+        // **Er gilt hier schon als geladen, obwohl nichts geladen ist.**
         // ``zeige(_:)`` wuerde sonst gleich hier ``startseiteLaden()`` rufen —
         // und zwar mit dem **alten** Client, denn der neue steht erst nach
         // `setSession` bereit. Zwei Ladungen liefen dann um die Wette, und wer
         // gewinnt, entschied die Antwortzeit des Servers. Geladen wird gleich
         // in ``sitzungEinsetzen(_:servername:)``, mit dem richtigen Client.
-        geladen.insert(.start)
-        zeige(.start)
+        geladen.insert(bereich)
+        zeige(bereich)
         geladen.removeAll()
     }
 
@@ -814,6 +816,12 @@ final class App: @unchecked Sendable {
                 self.geladen = [.start]
                 self.startseiteLaden()
                 self.bibliothekenLaden()
+                // **Und der Bereich, auf dem man steht, falls es nicht die
+                // Startseite ist.** Nach einem Kontowechsel bleibt der Bereich
+                // stehen (G4) — ohne diese Zeile stuende dort die Liste des
+                // vorigen Kontos, denn `geladen` kennt nur `.start`, und
+                // niemand fragt nach.
+                if self.bereich != .start { self.zeige(self.bereich) }
                 // **Erst hier, nicht früher.** `client` wird oben noch nicht
                 // gesetzt — es geht über den Akteur und ist erst nach
                 // `setSession` da. Alles, was mit `guard let client` beginnt,
