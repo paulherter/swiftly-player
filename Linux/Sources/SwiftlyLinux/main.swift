@@ -6,6 +6,21 @@ import Foundation
 /// **Die App lebt in einer globalen Referenz**, weil GTKs Rückrufe aus C
 /// kommen und nichts einfangen können. Sie wird beim Start einmal erzeugt und
 /// hält sich bis zum Ende.
+// **Pango soll unter Windows denselben Weg gehen wie unter Linux.**
+//
+// PangoCairo hat dort zwei Rueckseiten: die von Win32 und die von fontconfig.
+// Ohne Angabe nimmt es Win32 — und die kennt weder unsere mitgelieferte
+// Schrift noch dieselbe Ausrichtung der Buchstaben wie Linux und der Mac.
+// Gemessen: mit der Vorgabe blieb die Oberflaeche auf Segoe UI, obwohl Inter
+// danebenlag und ordnungsgemaess angemeldet war.
+//
+// Muss vor allem anderen stehen: die Schriftenkarte entsteht beim ersten
+// Text, und danach ist die Wahl nicht mehr zu aendern. Die 0 heisst
+// „nicht ueberschreiben" — wer es selbst setzt, behaelt seine Wahl.
+#if os(Windows)
+_ = g_setenv("PANGOCAIRO_BACKEND", "fc", 0)
+#endif
+
 nonisolated(unsafe) let app = App()
 
 nonisolated(unsafe) private let starten: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void = { anwendung, _ in
