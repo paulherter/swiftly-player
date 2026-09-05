@@ -87,6 +87,24 @@ struct HauptView: View {
         .onChange(of: anDerWurzel) { _, wurzel in
             if wurzel { imProfil = false }
         }
+        // **VERHALTEN G4: der Seitenstapel wird beim Kontowechsel geleert.**
+        //
+        // Ein Stapel gehoert zu einem Konto; was darauf liegt, gehoert dem
+        // vorigen. Eine Detailseite haengt an `.task(id: titel.id)`, eine
+        // Serienseite an der Staffel, die Suche am Begriff — **keine** dieser
+        // Kennungen aendert sich beim Wechsel. Ohne das Leeren staenden dort
+        // Haken und Fortschrittsbalken des vorigen Kontos, und ein Druck auf
+        // Abspielen setzte an dessen Stelle an und meldete sie dem neuen.
+        //
+        // Bewusst hier und nicht in jeder Seite: das waeren fuenf Stellen je
+        // Plattform, und die naechste neue Seite vergisst es. Von der
+        // Mac-Sitzung gefunden.
+        .onChange(of: model.kontowechsel) { _, _ in
+            for i in pfade.indices where !pfade[i].isEmpty {
+                pfade[i] = NavigationPath()
+            }
+            imProfil = false
+        }
         .preferredColorScheme(.dark)
     }
 
