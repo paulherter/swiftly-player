@@ -33,11 +33,14 @@ struct SeerrDetailView: View {
     @State private var fehler: String?
     @State private var angefragt = false
     @State private var detail: Seerrdetail?
-    @State private var reiter = 0
     /// Welche Staffeln angekreuzt sind. Leer heisst **alle** — so wie beim
     /// ersten Oeffnen, wo niemand etwas ausgewaehlt hat.
     @State private var gewaehlt: Set<Int> = []
     @State private var blattOffen = false
+    /// **Hat der Nutzer schon einmal gedrueckt?** Bei einem Film ist die
+    /// Anfrage sonst einen Fingerbreit entfernt Bei einer Serie fragt das
+    /// Staffelblatt ohnehin nach, das ist dort der zweite Schritt.
+    @State private var bestaetigt = false
 
     init(model: AppModel, treffer: Seerrtreffer) {
         self.model = model
@@ -60,17 +63,14 @@ struct SeerrDetailView: View {
                     }
                     .padding(.horizontal, Stil.rand(breit: breit))
                     .padding(.top, 14)
-                    .padding(.bottom, 22)
 
-                    // **Zwei statt drei.** „Folgen" gehoert zu einem Titel,
-                    // den man abspielen kann; hier gibt es nichts abzuspielen.
-                    // Welche Staffeln es gibt, beantwortet das Blatt am Knopf.
-                    Reiter(titel: ["Besetzung", "Ähnliches"], gewaehlt: $reiter)
-
-                    switch reiter {
-                    case 0: besetzung
-                    default: aehnlichesbereich
-                    }
+                    // **Zwei Reihen, keine Reiter.** Genau wie auf der
+                    // Filmseite: eine Reihe Besetzung, darunter eine Reihe
+                    // Aehnliches. Als Reiter mit Raster stand hier eine Wand
+                    // aus zwanzig Koepfen Waagerecht zeigt eine Reihe fuenf
+                    // und deutet den Rest an; wer mehr will, schiebt.
+                    besetzung
+                    aehnlichesreihe
                 }
                 .padding(.bottom, 30)
             }
@@ -97,11 +97,19 @@ struct SeerrDetailView: View {
 
             Detailkopf(titel: treffer.titel, versatz: versatz) { zurueck() }
         }
-        .animation(.easeInOut(duration: 0.16), value: reiter)
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
+        // **Die Frage steht nicht ewig.** Wer den Knopf einmal antippt und
+        // dann weiterliest, soll nicht Minuten spaeter einen Knopf vorfinden,
+        // der beim naechsten Tipp sofort anfragt.
+        .task(id: bestaetigt) {
+            guard bestaetigt else { return }
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            bestaetigt = false
+        }
         .task {
             detail = await model.seerr.detail(treffer)
             // **Nichts vorausgewaehlt.** „Man laedt ja nie alle runter im
@@ -162,12 +170,12 @@ struct SeerrDetailView: View {
     private var belegzeile: some View {
         HStack(spacing: 14) {
             HStack(spacing: 6) {
-                Image(systemName: standsymbol)
+                Image(systemName: stand.symbol)
                     .font(.system(size: 11, weight: .heavy))
-                Text(verbatim: standtext)
+                Text(verbatim: stand.wort)
                     .font(.system(size: 13, weight: .medium))
             }
-            .foregroundStyle(standfarbe)
+            .foregroundStyle(stand.farbe)
 
             if let b = detail?.bewertung, b > 0 {
                 HStack(spacing: 5) {
@@ -196,18 +204,15 @@ struct SeerrDetailView: View {
             if angefragt {
                 auskunft(String(localized: "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."))
             } else if stand.anfragbar {
-                Button {
-                    // **Bei einer Serie wird erst gefragt, welche Staffeln.**
-                    if treffer.istSerie { blattOffen = true }
-                    else { Task { await anfragen() } }
-                } label: {
+                Button(action: gedrueckt) {
                     HStack(spacing: 8) {
                         if laeuft {
                             Lader(groesse: 18, staerke: 2)
                         } else {
-                            Image(systemName: "plus").font(.system(size: 15, weight: .semibold))
+                            Image(systemName: bestaetigt ? "checkmark" : "plus")
+                                .font(.system(size: 15, weight: .semibold))
                         }
-                        Text(laeuft ? "Wird angefragt…" : "Anfragen")
+                        Text(knopftext)
                     }
                 }
                 // **Derselbe Stil wie „Fortsetzen", nur in Akzent.** Hoehe,
@@ -215,10 +220,37 @@ struct SeerrDetailView: View {
                 // nachgebauter Knopf sass sichtbar tiefer und runder.
                 .buttonStyle(HauptknopfStil(dehnt: !breit, flaeche: Stil.akzent))
                 .disabled(laeuft)
+                // Der Wechsel der Beschriftung soll zu sehen sein, sonst
+                // liest niemand, dass sich etwas geaendert hat.
+                .animation(.snappy(duration: 0.18), value: bestaetigt)
             } else {
-                auskunft(standhinweis)
+                auskunft(stand.hinweis)
             }
         }
+    }
+
+    private var knopftext: String {
+        if laeuft { return String(localized: "Wird angefragt…") }
+        return bestaetigt ? String(localized: "Wirklich anfragen?")
+                          : String(localized: "Anfragen")
+    }
+
+    /// **Zwei Stufen, und die zweite ist der eigentliche Auftrag.**
+    ///
+    /// Bei einer Serie uebernimmt das Staffelblatt die zweite Stufe: dort
+    /// steht noch einmal, was angefragt wird, und der Knopf darin loest aus.
+    /// Ein Film hat nichts auszuwaehlen — deshalb fragt hier der Knopf
+    /// selbst nach, statt ein Blatt zu oeffnen, das nur eine Frage enthaelt.
+    private func gedrueckt() {
+        if treffer.istSerie {
+            withAnimation(.snappy(duration: 0.22)) { blattOffen = true }
+            return
+        }
+        guard bestaetigt else {
+            bestaetigt = true
+            return
+        }
+        Task { await anfragen() }
     }
 
     @ViewBuilder
@@ -228,96 +260,55 @@ struct SeerrDetailView: View {
         }
     }
 
-    /// Wortgleich mit `SeriesDetailView.besetzung`, nur mit den Koepfen von
-    /// TMDB statt denen des eigenen Servers.
+    /// Wortgleich mit `ItemDetailView.besetzung`, nur mit den Koepfen von
+    /// TMDB statt denen des eigenen Servers — samt der Grenze bei zwoelf.
+    ///
+    /// Kein Pfeil daneben: eine Seite mit der vollen Besetzung gibt es hier
+    /// nicht, und ein Pfeil waere das Versprechen, dass es sie gaebe.
     @ViewBuilder
     private var besetzung: some View {
         let leute = detail?.besetzung ?? []
-        if leute.isEmpty {
-            leerhinweis("Keine Besetzung hinterlegt.")
-        } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 110), spacing: 14)],
-                      spacing: 20) {
-                ForEach(leute) { person in
-                    Besetzungskachel(bild: person.bild(), name: person.name,
-                                     rolle: person.rolle)
+        if !leute.isEmpty {
+            Abschnitt(titel: "Besetzung") {
+                HStack(alignment: .top, spacing: 14) {
+                    ForEach(leute.prefix(12)) { person in
+                        Besetzungskachel(bild: person.bild(), name: person.name,
+                                         rolle: person.rolle)
+                    }
                 }
+                .padding(.horizontal, Stil.rand(breit: breit))
             }
-            .padding(.horizontal, Stil.rand(breit: breit))
-            .padding(.top, 20)
         }
     }
 
-    /// Dasselbe Raster wie dort — mit `Seerrkachel` statt `PosterTile`,
-    /// weil auch das Vorgeschlagene nicht auf dem Server liegt und blass
-    /// gehoert.
+    /// Dieselbe Reihe wie dort — mit `Seerrkachel` statt `PosterTile`, weil
+    /// auch das Vorgeschlagene nicht auf dem Server liegt und blass gehoert.
+    ///
+    /// Das feste Mass steht hier und nicht in der Kachel: im Raster der Suche
+    /// bekommt sie ihre Breite von der Spalte, in einer Reihe hat sie keine.
     @ViewBuilder
-    private var aehnlichesbereich: some View {
+    private var aehnlichesreihe: some View {
         let andere = detail?.aehnliches ?? []
-        if andere.isEmpty {
-            leerhinweis("Nichts Ähnliches gefunden.")
-        } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: Stil.kachelBreite,
-                                                   maximum: Stil.kachelBreite + 30),
-                                         spacing: Stil.kachelAbstand)],
-                      alignment: .leading, spacing: 20) {
-                ForEach(andere) { t in
-                    NavigationLink(value: t) { Seerrkachel(treffer: t) }
+        if !andere.isEmpty {
+            Abschnitt(titel: "Ähnliche Titel") {
+                HStack(alignment: .top, spacing: Stil.kachelAbstand) {
+                    ForEach(andere) { t in
+                        NavigationLink(value: t) {
+                            Seerrkachel(treffer: t).frame(width: Stil.kachelBreite)
+                        }
                         .buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal, Stil.rand(breit: breit))
             }
-            .padding(.horizontal, Stil.rand(breit: breit))
-            .padding(.top, 20)
         }
-    }
-
-    private func leerhinweis(_ text: LocalizedStringKey) -> some View {
-        Text(text)
-            .font(Stil.koerper)
-            .foregroundStyle(Stil.schriftSehrLeise)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 40)
     }
 
     // MARK: Stand in Worten
 
-    private var standsymbol: String {
-        switch stand {
-        case .da: "checkmark"
-        case .wartetAufFreigabe: "clock"
-        case .laedt: "arrow.down.circle"
-        case .teilweiseDa: "circle.lefthalf.filled"
-        case .offen, .geloescht: "plus.circle"
-        }
-    }
-
-    private var standtext: String {
-        switch stand {
-        case .offen, .geloescht: String(localized: "Nicht auf deinem Server")
-        case .wartetAufFreigabe: String(localized: "Wartet auf Freigabe")
-        case .laedt: String(localized: "Lädt gerade")
-        case .teilweiseDa: String(localized: "Teilweise vorhanden")
-        case .da: String(localized: "Auf deinem Server")
-        }
-    }
-
-    private var standfarbe: Color {
-        switch stand {
-        case .wartetAufFreigabe, .laedt: Color.white.opacity(0.8)
-        default: Stil.akzent
-        }
-    }
-
-    private var standhinweis: String {
-        switch stand {
-        case .wartetAufFreigabe:
-            String(localized: "Deine Anfrage liegt beim Verwalter des Servers. Du musst nichts weiter tun.")
-        case .laedt:
-            String(localized: "Der Titel wird gerade geholt. Er erscheint von selbst in deiner Bibliothek.")
-        default:
-            String(localized: "Dieser Titel liegt bereits auf deinem Server.")
-        }
-    }
+    // Symbol, Wort, Farbe und Hinweis stehen in `Seerrmarke.swift` — dieselbe
+    // Tabelle, aus der auch die Kachel liest. Hier stand sie ein zweites Mal,
+    // mit anderen Symbolen und anderen Farben.
 
     private func auskunft(_ text: String) -> some View {
         Text(verbatim: text)
@@ -373,22 +364,22 @@ struct SeerrDetailView: View {
         }
     }
 
-    /// Welche Staffeln — als Blatt von unten. Dieselben Werte wie beim
-    /// „Mehr"-Blatt: Schleier 0,55, Ecken 12, Titel 13 halbfett.
+    /// Welche Staffeln — als Blatt von unten.
+    ///
+    /// Der Rumpf steht in ``Blatt``: Schleier, Auffahren, die Flaeche bis in
+    /// den unteren Sicherheitsbereich und der Griff zum Hinunterziehen. Hier
+    /// steht nur, was drinsteht. Vorher war beides an dieser Stelle
+    /// nachgebaut — und dabei fehlten das Auffahren und der Griff, und unter
+    /// dem Blatt blieb der Streifen des Home-Indikators offen.
     private var staffelblatt: some View {
-        ZStack(alignment: .bottom) {
-            Rectangle()
-                .fill(.black.opacity(0.55))
-                .ignoresSafeArea()
-                .onTapGesture { blattOffen = false }
-
+        Blatt(offen: $blattOffen) {
             VStack(spacing: 0) {
                 Text("Welche Staffeln?")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Stil.schriftLeise)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Stil.randAbstand)
-                    .padding(.top, 18)
+                    .padding(.top, 12)
                     .padding(.bottom, 12)
 
                 ScrollView {
@@ -399,7 +390,7 @@ struct SeerrDetailView: View {
                 Trennlinie()
 
                 Button {
-                    blattOffen = false
+                    withAnimation(.snappy(duration: 0.22)) { blattOffen = false }
                     Task { await anfragen() }
                 } label: {
                     Text(gewaehlt.isEmpty ? "Staffel wählen"
@@ -412,12 +403,7 @@ struct SeerrDetailView: View {
                 .buttonStyle(.plain)
                 .disabled(gewaehlt.isEmpty)
             }
-            .background(Stil.flaeche)
-            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 12,
-                                              topTrailingRadius: 12))
-            .ignoresSafeArea(edges: .bottom)
         }
-        .transition(.opacity)
     }
 
     private func anfragen() async {

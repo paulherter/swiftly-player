@@ -1892,6 +1892,101 @@ struct Wahlchip: View {
     }
 }
 
+/// Der Rumpf aller Blätter, die von unten aufgehen.
+///
+/// **Vier Dinge, die jedes Blatt braucht und die jedes einzeln falsch bekommen
+/// hat:** der Schleier dahinter, das Auffahren von unten, die Fläche bis in
+/// den unteren Sicherheitsbereich — und der Griff, an dem man es wieder
+/// hinunterzieht.
+///
+/// Das Letzte ist der Grund, warum es diesen Baustein gibt. "* Das ist die
+/// Geste, die Apples eigenes `.sheet` mitbringt und die unseren Blättern
+/// fehlte, weil sie bewusst **nicht** `.sheet` sind — ein Systemblatt bringt
+/// seine eigene Sprache mit und stand neben unseren Seiten wie aus einer
+/// anderen App. Der Griff ist das Einzige daran, was wir wollten.
+///
+/// **Wo der Zug greift.** Am ganzen Blatt und nicht nur am Griff: eine
+/// Scrollfläche darin gewinnt den senkrechten Zug ohnehin für sich, überall
+/// sonst zieht das Blatt. So muss niemand den Strich genau treffen.
+struct Blatt<Inhalt: View>: View {
+    @Binding var offen: Bool
+    /// Wie weit man ziehen muss, damit es zugeht. Darunter federt es zurück.
+    private static var schwelle: CGFloat { 110 }
+
+    @ViewBuilder var inhalt: () -> Inhalt
+
+    /// Wie weit der Finger es heruntergezogen hat.
+    @State private var zug: CGFloat = 0
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Rectangle()
+                // Der Schleier geht mit dem Zug auf: zieht man das Blatt
+                // hinunter, wird die Seite dahinter schon heller. Ohne das
+                // fühlt sich das Ziehen an, als bewege man ein Bild statt
+                // etwas zu schliessen.
+                .fill(.black.opacity(0.55 * (1 - min(zug / 300, 1))))
+                .ignoresSafeArea()
+                .onTapGesture { schliessen() }
+
+            VStack(spacing: 0) {
+                Capsule()
+                    .fill(Color.white.opacity(0.25))
+                    .frame(width: 36, height: 5)
+                    .padding(.top, 8)
+                    .padding(.bottom, 2)
+                    // Der Strich ist zu schmal zum Treffen; der Zug hängt
+                    // ohnehin am ganzen Blatt. Für VoiceOver ist er nichts.
+                    .accessibilityHidden(true)
+
+                inhalt()
+            }
+            // **Die Fläche muss selbst in den unteren Sicherheitsbereich
+            // reichen, nicht der Inhalt.**
+            //
+            // `clipShape` plus `ignoresSafeArea` auf dem Inhalt sieht richtig
+            // aus, ist es aber nicht: der Stapel richtet den Inhalt unten
+            // innerhalb des sicheren Bereichs aus, er wächst nicht von selbst
+            // nach unten. Darunter blieb ein Streifen in Höhe des
+            // Home-Indikators, durch den die Seite dahinter schien — genau das
+            // hat
+            .background {
+                UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
+                    .fill(Stil.flaeche)
+                    .ignoresSafeArea(edges: .bottom)
+            }
+            .offset(y: zug)
+            // Nach oben lässt es sich nicht ziehen — darüber ist nichts, was
+            // sichtbar würde. `max(0, …)` statt einer Gummikante: die wäre
+            // eine Bewegung, die nichts verspricht.
+            .gesture(
+                DragGesture()
+                    .onChanged { wert in zug = max(0, wert.translation.height) }
+                    .onEnded { wert in
+                        // Ein schneller Wisch zählt wie ein weiter Zug —
+                        // sonst muss man langsam und weit ziehen, und das
+                        // ist genau die Geste, die sich zäh anfühlt.
+                        let weit = wert.translation.height > Self.schwelle
+                        let schnell = wert.predictedEndTranslation.height > 240
+                        if weit || schnell {
+                            schliessen()
+                        } else {
+                            withAnimation(.snappy(duration: 0.22)) { zug = 0 }
+                        }
+                    }
+            )
+            .transition(.move(edge: .bottom))
+        }
+    }
+
+    private func schliessen() {
+        withAnimation(.snappy(duration: 0.22)) { offen = false }
+        // Zurücksetzen, damit das Blatt beim nächsten Öffnen nicht mit dem
+        // alten Versatz auffährt.
+        zug = 0
+    }
+}
+
 /// Liste von Handlungen, die von unten aufgeht.
 ///
 /// Anders als `Auswahlblatt`: dort wählt man einen Wert und sieht, welcher
