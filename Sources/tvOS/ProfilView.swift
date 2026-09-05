@@ -18,6 +18,8 @@ struct ProfilView: View {
     /// Welche Wertzeile gerade ihre Auswahl zeigt.
     @State private var offen: String?
     @State private var pruefung: String?
+    /// Zeigt Quick Connect, um ein weiteres Konto aufzunehmen.
+    @State private var kontoAufnehmen = false
 
     enum Bereichswahl: String, CaseIterable, Identifiable {
         case wiedergabe, sprachen, darstellung, server, konto
@@ -114,17 +116,32 @@ struct ProfilView: View {
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
         // damit `randSeite` nicht darauf sitzt und sich verdoppelt.
         .ignoresSafeArea(edges: .horizontal)
+        // **Quick Connect, nicht ein neues Anmeldeformular.** Ein Name und
+        // ein Passwort auf der Fernbedienung sind eine Zumutung; den Code
+        // gibt es ohnehin, und `sitzungUebernehmen` nimmt die Sitzung seit
+        // dem Kontenbund ins vorhandene Konto auf, statt es zu ersetzen.
+        .fullScreenCover(isPresented: $kontoAufnehmen) {
+            QuickConnectView(model: model) { kontoAufnehmen = false }
+        }
     }
 
     // MARK: Kopf
 
     private var kopf: some View {
         HStack(spacing: 32) {
-            Profilzeichen(name: model.session?.userName ?? "?",
-                          bild: model.benutzerbildURL(groesse: 240),
-                          groesse: 60)
-                .scaleEffect(1.66)
-                .frame(width: 100, height: 100)
+            // **Ein Kreis, solange es einer ist.** Erst mit dem zweiten Konto
+            // wird daraus eine Reihe, die man anspringen kann — vorher gäbe
+            // es nichts zu wählen, und ein fokussierbares Bild ohne Wirkung
+            // ist auf dem Fernseher eine Falle.
+            if model.konten.count > 1 {
+                Kontenstreifen(model: model)
+            } else {
+                Profilzeichen(name: model.session?.userName ?? "?",
+                              bild: model.benutzerbildURL(groesse: 240),
+                              groesse: 60)
+                    .scaleEffect(1.66)
+                    .frame(width: 100, height: 100)
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(model.session?.userName ?? "—")
@@ -206,6 +223,10 @@ struct ProfilView: View {
             }
 
         case .konto:
+            Handlungszeile(titel: "Weiteres Konto hinzufügen") { kontoAufnehmen = true }
+            // **Trifft nur das aktive Konto.** Sind noch andere da, schaltet
+            // die App auf das nächste um; erst beim letzten geht es zurück
+            // zur Anmeldung. Steht so im Zustandshalter, nicht hier.
             Handlungszeile(titel: "Abmelden") { model.signOut() }
         }
     }
@@ -392,5 +413,76 @@ struct Trennlinie: View {
         Rectangle().fill(Stil.linie)
             .frame(height: 2)
             .padding(.horizontal, 26)
+    }
+}
+
+/// Die Konten über der Profilseite — ein Kreis je Konto.
+///
+/// **Groß heißt Fokus, Ring und Punkt heißen angemeldet.** Das sind zwei
+/// verschiedene Dinge, und sie fallen nur zufällig zusammen. Der Fokus wandert
+/// beim Blättern mit; das angemeldete Konto ändert sich erst beim Drücken. Wer
+/// beides in dasselbe Zeichen legt, macht aus dem Blättern eine Anmeldung —
+/// und der Nutzer traut sich nicht mehr, überhaupt hinzusehen.
+private struct Kontenstreifen: View {
+    let model: AppModel
+
+    var body: some View {
+        HStack(spacing: 28) {
+            ForEach(model.konten, id: \.userID) { konto in
+                let aktiv = konto.userID == model.session?.userID
+                Button {
+                    model.kontoWechseln(zu: konto.userID)
+                } label: {
+                    VStack(spacing: 12) {
+                        Profilzeichen(name: konto.userName,
+                                      bild: model.benutzerbildURL(fuer: konto, groesse: 240),
+                                      groesse: 60,
+                                      hervorgehoben: aktiv)
+                            .scaleEffect(1.66)
+                            .frame(width: 100, height: 100)
+                        Circle()
+                            .fill(aktiv ? Stil.akzent : Color.clear)
+                            .frame(width: 8, height: 8)
+                    }
+                }
+                .buttonStyle(KontostreifenStil())
+                .accessibilityLabel(aktiv ? Text("\(konto.userName), angemeldet")
+                                          : Text("Zu \(konto.userName) wechseln"))
+            }
+        }
+        // **Ohne eigene Fokusgruppe kommt man hier nie hin.** Der Kopf der
+        // Seite war bisher reine Auskunft; der Fokus lief nur zwischen
+        // Bereichsmenü und Zeilen. `focusSection` macht ihn zu einem Ziel,
+        // das der Fokusmotor von unten aus anspringen kann.
+        .focusSection()
+    }
+}
+
+/// Fokus auf dem Fernseher: das Bild hebt sich, wird etwas größer und bekommt
+/// einen weißen Ring. Der Akzentring darunter bleibt sichtbar — er sagt etwas
+/// anderes.
+private struct KontostreifenStil: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Inhalt(configuration: configuration)
+    }
+
+    private struct Inhalt: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isFocused) private var fokus
+
+        var body: some View {
+            configuration.label
+                // Oben ausgerichtet und fest bemaßt: der Ring gehört um das
+                // Bild, nicht um Bild und Punkt zusammen.
+                .overlay(alignment: .top) {
+                    Circle()
+                        .strokeBorder(Color.white, lineWidth: 5)
+                        .frame(width: 100, height: 100)
+                        .opacity(fokus ? 1 : 0)
+                }
+                .scaleEffect(fokus ? 1.10 : 1)
+                .shadow(color: .black.opacity(fokus ? 0.55 : 0), radius: 18, y: 10)
+                .animation(Stil.fokusAnimation, value: fokus)
+        }
     }
 }
