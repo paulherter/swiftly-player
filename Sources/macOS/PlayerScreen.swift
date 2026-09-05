@@ -662,13 +662,20 @@ struct PlayerScreen: View {
             //
             // Solange er lag, gab `angebot` `.keiner` zurueck — **keine
             // Knoepfe** —, und auf dem iPhone liegt zusaetzlich ein
-            // Ladekringel ueber dem Bild. Die Frist dafuer ist nicht die
-            // Zeitgrenze der Abfrage: `Netzsitzung` setzt
-            // `waitsForConnectivity`, und damit faengt die Frist erst an zu
-            // laufen, **wenn wieder eine Verbindung da ist**. Ein WLAN, das
-            // kurz wegnickt, hielt die Oberflaeche also unbegrenzt an — ohne
-            // dass irgendetwas fehlschlaegt. Das ist die Sorte Haenger, die
-            // „aus dem Nichts" kommt.
+            // Ladekringel ueber dem Bild.
+            //
+            // Wie lange, steht in `Netzsitzung`: `timeoutIntervalForResource`
+            // ist 20 s und begrenzt den **ganzen** Vorgang, das Warten auf
+            // eine Verbindung eingeschlossen. Gemessen gegen eine Adresse,
+            // die nirgends geroutet wird: 20,9 s je Abruf, vier
+            // hintereinander rund 84 s.
+            //
+            // Hier stand zuerst „haelt unbegrenzt an, solange das Netz weg
+            // ist". Das war falsch, und es stand seit jeher anders in
+            // `Netzsitzung` — direkt neben `waitsForConnectivity`, mit dem
+            // Grund, warum die Frist ueberhaupt dort steht. Es braucht also
+            // keinen Ausfall ohne Ende: eine gute Minute ohne Knoepfe reicht
+            // voellig, damit es sich anfuehlt, als sei die App tot.
             wechselt = false
 
             // Nachschlag, und zwar ohne Riegel: `folgeNach` fuellt den Knopf
