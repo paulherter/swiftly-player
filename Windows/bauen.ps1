@@ -16,7 +16,8 @@ param(
     [string]$Gtk = 'C:\Werkzeuge\gtk4',
     [string]$Vlc = 'C:\Werkzeuge\vlcsdk',
     [string]$VlcLaufzeit = 'C:\Werkzeuge\vlc\vlc-3.0.21',
-    [string]$SwiftLaufzeit = 'C:\Swift\Runtimes\6.2.1\usr\bin'
+    [string]$SwiftLaufzeit = 'C:\Swift\Runtimes\6.2.1\usr\bin',
+    [string]$Rlottie = 'C:\Werkzeuge\rlottie'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -76,11 +77,17 @@ $einschluesse = @(
     "$Gtk\include\freetype2"
     "$Gtk\include"
     "$Vlc\include"
+    "$Rlottie\include"
 )
 $ccFlaggen = @()
 foreach ($e in $einschluesse) { $ccFlaggen += @('-Xcc', "-I$e") }
+# rlottie erklaert seine Schnittstelle sonst fuer eingefuehrt (dllimport) und
+# der Binder sucht `__imp_`-Symbole, die es in einer statischen Bibliothek
+# nicht gibt.
+$ccFlaggen += @('-Xcc', '-DRLOTTIE_BUILD')
 
-$binderFlaggen = @('-Xlinker', "/LIBPATH:$Gtk\lib", '-Xlinker', "/LIBPATH:$Vlc\lib")
+$binderFlaggen = @('-Xlinker', "/LIBPATH:$Gtk\lib", '-Xlinker', "/LIBPATH:$Vlc\lib",
+                   '-Xlinker', "/LIBPATH:$Rlottie\lib")
 
 # ---------------------------------------------------------------- Bauen
 

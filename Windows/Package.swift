@@ -29,6 +29,10 @@ let package = Package(
         // ein Weg weniger, der auf einem fremden Rechner anders ausfallen kann.
         .systemLibrary(name: "CGtk"),
         .systemLibrary(name: "CVLC"),
+        // rlottie fuer die Startanimation. `Werkzeuge/rlottie-bauen.ps1`
+        // uebersetzt dieselben Quellen wie auf Linux, nur mit MSVC und als
+        // statische Bibliothek.
+        .systemLibrary(name: "CRlottie"),
         .target(name: "CBildbruecke", dependencies: ["CVLC"]),
         .executableTarget(
             name: "SwiftlyWindows",
@@ -36,6 +40,7 @@ let package = Package(
                 "CGtk",
                 "CVLC",
                 "CBildbruecke",
+                "CRlottie",
                 .product(name: "JellyfinKit", package: "JellyfinKit")
             ],
             resources: [.process("Resources")]
