@@ -86,16 +86,42 @@ foreach ($e in $einschluesse) { $ccFlaggen += @('-Xcc', "-I$e") }
 # nicht gibt.
 $ccFlaggen += @('-Xcc', '-DRLOTTIE_BUILD')
 
+# ------------------------------------------------------------- Symbol
+#
+# Windows nimmt das Programmsymbol aus einer Ressourcendatei im Binaerprogramm,
+# nicht aus einer Datei daneben. `rc.exe` uebersetzt die `.rc`, und die
+# entstandene `.res` wird wie eine Bibliothek dazugebunden.
+$res = Join-Path $hier 'Mittel\swiftly.res'
+& rc.exe /nologo /fo $res (Join-Path $hier 'Mittel\swiftly.rc') | Out-Null
+if (Test-Path $res) { $binderFlaggen += @('-Xlinker', $res) }
+
 $binderFlaggen = @('-Xlinker', "/LIBPATH:$Gtk\lib", '-Xlinker', "/LIBPATH:$Vlc\lib",
                    '-Xlinker', "/LIBPATH:$Rlottie\lib")
+
+# **Kein Konsolenfenster im ausgelieferten Bau.** Swift baut sonst ein
+# Konsolenprogramm, und beim Doppelklick stuende ein schwarzes Fenster daneben.
+# Im Fehlersuchbau bleibt es: dort will man sehen, was auf stderr steht.
+if ($Konfiguration -eq 'release') {
+    $binderFlaggen += @('-Xlinker', '/SUBSYSTEM:WINDOWS', '-Xlinker', '/ENTRY:mainCRTStartup')
+}
 
 # ---------------------------------------------------------------- Bauen
 
 Sag "Bauen ($Konfiguration)"
 Push-Location $hier
 try {
-    & swift build -c $Konfiguration @ccFlaggen @binderFlaggen
-    if ($LASTEXITCODE -ne 0) { throw "Bau fehlgeschlagen ($LASTEXITCODE)" }
+    # Das Protokoll bleibt liegen: bei einem Fehlschlag steht die Ursache
+    # sonst nur im Fenster, und wer den Bau aus einem Skript ruft, sieht sie
+    # nicht.
+    $protokoll = Join-Path $hier 'bau.log'
+    & swift build -c $Konfiguration @ccFlaggen @binderFlaggen 2>&1 |
+        Tee-Object -FilePath $protokoll
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "--- Fehler aus $protokoll ---" -ForegroundColor Red
+        Select-String -Path $protokoll -Pattern 'error:' |
+            ForEach-Object { $_.Line.Trim() } | Select-Object -Unique -First 10
+        throw "Bau fehlgeschlagen ($LASTEXITCODE)"
+    }
 } finally { Pop-Location }
 
 # --------------------------------------------------------------- Starter
