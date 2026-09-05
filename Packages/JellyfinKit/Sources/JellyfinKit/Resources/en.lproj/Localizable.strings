@@ -32,6 +32,7 @@
 "Server antwortete mit %lld." = "The server answered with %lld.";
 "Antwort nicht lesbar: %@" = "Could not read the answer: %@";
 "Verbindung fehlgeschlagen: %@" = "Connection failed: %@";
+"Das andere Gerät hat nicht reagiert." = "The other device did not respond.";
 
 /* AirPlay und Abschnitte */
 "Das Bild liegt als %@ vor. AirPlay überträgt nur H.264 und HEVC." = "The video is %@. AirPlay only carries H.264 and HEVC.";
@@ -61,10 +62,10 @@
 "Keine" = "None";
 "Lädt…" = "Loading…";
 "Keine Folgen" = "No episodes";
-"Noch %d Minuten" = "%d minutes left";
+"Noch %lld Minuten" = "%lld minutes left";
 "Fortsetzen %@" = "Resume %@";
 "Abspielen %@" = "Play %@";
-"%d Staffeln" = "%d seasons";
+"%lld Staffeln" = "%lld seasons";
 "Die Adresse konnte nicht gelesen werden." = "The address could not be read.";
 "Benutzername oder Passwort stimmt nicht." = "Username or password is wrong.";
 "Dieses Konto darf das nicht." = "This account is not allowed to do that.";
@@ -73,5 +74,5 @@
 "Keine Verbindung." = "No connection.";
 "Der Server hat nicht geantwortet." = "The server did not answer.";
 "Unter dieser Adresse ist kein Server erreichbar." = "No server is reachable at this address.";
-"Der Server hat mit %ld geantwortet." = "The server answered with %ld.";
+"Der Server hat mit %lld geantwortet." = "The server answered with %lld.";
 "Die Antwort des Servers war unverständlich. (%@)" = "The server's answer was unreadable. (%@)";
