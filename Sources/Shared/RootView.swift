@@ -185,6 +185,11 @@ struct LoginView: View {
     let model: AppModel
     let serverName: String
     let version: String
+    /// Als Blatt aus dem Profil geoeffnet: derselbe Server, ein weiteres
+    /// Konto. Dann gibt es keinen Weg zu einem anderen Server — und das Blatt
+    /// muss sich selbst schliessen koennen.
+    var weiteresKonto = false
+    var fertig: () -> Void = {}
 
     @State private var benutzer = ""
     @State private var passwort = ""
@@ -208,11 +213,26 @@ struct LoginView: View {
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
-            Button("Anderer Server") { model.signOut() }
+            // Beim Hinzufuegen fuehrt „Anderer Server" ins Leere: `signOut()`
+            // wuerde das gerade angemeldete Konto abmelden. Dort steht
+            // stattdessen der Rueckweg.
+            Button(weiteresKonto ? "Abbrechen" : "Anderer Server") {
+                if weiteresKonto { fertig() } else { model.signOut() }
+            }
                 .buttonStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(Stil.schriftSehrLeise)
                 .padding(.bottom, 22)
+        }
+        // **Wer das Blatt zeigt, schliesst es auch.** Nach dem Hinzufuegen
+        // blieb es sonst stehen und es sah aus, als sei nichts passiert.
+        //
+        // `kontowechsel` steigt genau dann, wenn schon jemand angemeldet war —
+        // also beim Hinzufuegen und nicht bei der ersten Anmeldung. Und **nur
+        // ohne Fehlermeldung**: sonst verschluckt das Schliessen sie.
+        .onChange(of: model.kontowechsel) { _, _ in
+            guard weiteresKonto, model.errorMessage == nil else { return }
+            fertig()
         }
         .task {
             bekannte = await model.oeffentlicheBenutzer()

@@ -85,12 +85,42 @@ struct Lader: View {
     }
 }
 
+/// Was unten auf der Profilseite steht: „Swiftly for Jellyfin 1.0.0 (Build 10)".
+///
+/// **Aus dem Bündel gelesen, nicht getippt.** Auf dem iPhone stand hier
+/// einmal „Swiftly 1.0" — eine Zahl, die niemand mitgezogen hat und die seit
+/// der ersten Abgabe falsch war. Eine Fassungsangabe, die man von Hand
+/// pflegen muss, ist schlimmer als keine: sie sieht verlässlich aus.
+///
+/// Die Baunummer gehört dazu, weil sie in einem Fehlerbericht die eigentliche
+/// Auskunft ist — „1.0.0" haben inzwischen zehn Builds getragen.
+///
+/// **Warum hier und nicht in `ProfilView`.** Sie stand als `static` in
+/// `Sources/Shared/ProfilView.swift`, und die Datei gehört dem iPhone; der
+/// Mac hat seine eigene Profilseite und kam nicht heran. Genau so entstehen
+/// die Kopien, die dieser Datei ihren Namen gegeben haben — deshalb steht die
+/// Rechnung dort, wo alle sie sehen, und die Ansichten setzen nur den Text.
+enum Fassung {
+    static var zeile: String {
+        let b = Bundle.main.infoDictionary
+        let fassung = b?["CFBundleShortVersionString"] as? String ?? "?"
+        let bau = b?["CFBundleVersion"] as? String ?? "?"
+        return "Swiftly for Jellyfin \(fassung) (Build \(bau))"
+    }
+}
+
 /// Rundes Profilzeichen mit dem Anfangsbuchstaben.
 struct Profilzeichen: View {
     let name: String
     var bild: URL?
     var groesse: CGFloat = 34
     var hervorgehoben = false
+
+    /// Derselbe Grund wie bei `Bild`: ein abgebrochener Abruf bleibt sonst
+    /// im Fehlerzustand stehen. Im Kontenstreifen faellt das besonders auf —
+    /// dort ist das Profilbild der ganze Inhalt der Kachel, und nach einem
+    /// Wechsel staende statt der Bilder eine Reihe Buchstaben.
+    @State private var anlauf = 0
 
     var body: some View {
         ZStack {
@@ -107,10 +137,17 @@ struct Profilzeichen: View {
                 if case let .success(b) = stand {
                     b.resizable().aspectRatio(contentMode: .fill)
                 } else {
-                    buchstabe
+                    buchstabe.onAppear {
+                        guard case let .failure(f) = stand,
+                              (f as NSError).code == NSURLErrorCancelled,
+                              anlauf < 2 else { return }
+                        anlauf += 1
+                    }
                 }
             }
+            .id(anlauf)
         }
+        .onChange(of: bild) { _, _ in anlauf = 0 }
         .frame(width: groesse, height: groesse)
         .clipShape(Circle())
         .overlay {

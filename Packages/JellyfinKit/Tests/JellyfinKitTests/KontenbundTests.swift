@@ -140,3 +140,85 @@ struct KontenbundTests {
         #expect(zurueck.aktives.userID == "1")
     }
 }
+
+@Suite("Aufnehmen und Ablage")
+struct KontenbundAblageTests {
+
+    private let server = URL(string: "https://tv.paulherter.de")!
+    private func konto(_ name: String, _ kennung: String) -> Session {
+        Session(accessToken: "t-\(kennung)", userID: kennung,
+                userName: name, serverURL: server)
+    }
+
+    @Test("Ohne vorhandenen Bund ist es kein Wechsel")
+    func ersteAnmeldung() {
+        let (bund, wechsel) = Kontenbund.aufnehmen(konto("paul", "1"), in: nil)
+        #expect(!wechsel)
+        #expect(bund.konten.count == 1)
+    }
+
+    @Test("Ein zweites Konto auf demselben Server ist ein Wechsel")
+    func zweitesKonto() {
+        let erst = Kontenbund(konto("paul", "1"))
+        let (bund, wechsel) = Kontenbund.aufnehmen(konto("eltern", "2"), in: erst)
+        #expect(wechsel)
+        #expect(bund.konten.count == 2)
+        #expect(bund.aktives.userID == "2")
+    }
+
+    /// Ein Bund gehört zu genau einem Server. Wer den Server wechselt, fängt
+    /// neu an — und das ist kein Kontowechsel, sondern ein Neuanfang.
+    @Test("Ein anderer Server fängt neu an, statt zu wechseln")
+    func andererServer() {
+        let erst = Kontenbund(konto("paul", "1"))
+        let fremd = Session(accessToken: "t", userID: "9", userName: "x",
+                            serverURL: URL(string: "https://anders.example")!)
+        let (bund, wechsel) = Kontenbund.aufnehmen(fremd, in: erst)
+        #expect(!wechsel)
+        #expect(bund.konten.count == 1)
+        #expect(bund.aktives.userID == "9")
+    }
+
+    @Test("Dieselbe Anmeldung noch einmal gilt als Wechsel, nicht als Neuanfang")
+    func nochmalDasselbe() {
+        let erst = Kontenbund(konto("paul", "1"))
+        let (bund, wechsel) = Kontenbund.aufnehmen(konto("paul", "1"), in: erst)
+        #expect(wechsel)
+        #expect(bund.konten.count == 1)
+    }
+
+    @Test("Aus der Ablage kommt der Bund, wenn einer da ist")
+    func ablageBund() throws {
+        var b = Kontenbund(konto("paul", "1"))
+        b.aufnehmen(konto("eltern", "2"))
+        b.wechseln(zu: "1")
+        let daten = try JSONEncoder().encode(b)
+        let einzeln = try JSONEncoder().encode(konto("wer", "9"))
+        let zurueck = try #require(Kontenbund.ausAblage(bund: daten, einzelne: einzeln))
+        #expect(zurueck == b)
+    }
+
+    /// Der Weg für alle, die vor den Mehrfachkonten angemeldet waren.
+    @Test("Ohne Bund wird die einzelne Sitzung von früher übernommen")
+    func ablageUebernahme() throws {
+        let einzeln = try JSONEncoder().encode(konto("paul", "1"))
+        let zurueck = try #require(Kontenbund.ausAblage(bund: nil, einzelne: einzeln))
+        #expect(zurueck.konten.count == 1)
+        #expect(zurueck.aktives.userID == "1")
+    }
+
+    @Test("Ist nichts da, kommt nichts zurück")
+    func ablageLeer() {
+        #expect(Kontenbund.ausAblage(bund: nil, einzelne: nil) == nil)
+    }
+
+    /// Ein unlesbarer Bund darf nicht die Anmeldung kosten, solange die alte
+    /// Einzelsitzung noch daliegt.
+    @Test("Ein kaputter Bund fällt auf die einzelne Sitzung zurück")
+    func ablageKaputt() throws {
+        let einzeln = try JSONEncoder().encode(konto("paul", "1"))
+        let muell = Data("kein JSON".utf8)
+        let zurueck = try #require(Kontenbund.ausAblage(bund: muell, einzelne: einzeln))
+        #expect(zurueck.aktives.userID == "1")
+    }
+}

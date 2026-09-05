@@ -309,15 +309,12 @@ final class AppModel {
     /// der Aufrufer soll nicht noch einmal laden.
     @discardableResult
     func sitzungUebernehmen(_ s: Session) -> Bool {
-        let warAngemeldet = bund != nil
-        // Derselbe Server: das Konto kommt dazu und gilt sofort. Ein anderer
-        // Server heißt von vorn — ein Bund gehört zu genau einem Server.
-        if var vorhanden = bund, vorhanden.passtZumServer(s) {
-            vorhanden.aufnehmen(s)
-            bund = vorhanden
-        } else {
-            bund = Kontenbund(s)
-        }
+        // **Die Regel steht im Paket**, nicht hier: derselbe Server heisst
+        // dazunehmen und wechseln, ein anderer heisst von vorn. Beide
+        // Fassungen — diese und die von GTK — hatten sie sich selbst
+        // hergeleitet, und an dieser Antwort hängt das ganze Aufräumen.
+        let (neuerBund, warAngemeldet) = Kontenbund.aufnehmen(s, in: bund)
+        bund = neuerBund
         bundSichern()
         phase = .ready
         // **War die App schon angemeldet, ist das ein Kontowechsel.** Der
@@ -335,7 +332,24 @@ final class AppModel {
 
     /// Was nach jedem Kontowechsel neu muss — außer dem Client selbst.
     private func nachDemWechsel() {
-        views = []
+        // **Die Bibliotheken werden ersetzt, nicht erst geleert.**
+        //
+        // Hier stand `views = []`. Das ist derselbe Fehler, der schon die
+        // Vorschaubilder gekostet hat, nur an einer anderen Stelle: zwischen
+        // dem Leeren und der Antwort des Servers steht die Seitenleiste leer
+        // da und baut sich danach neu auf — auf dem Schreibtisch als Zucken
+        // der Bibliotheksliste, auf dem Telefon als Sprung.
+        //
+        // Was stehenbleibt, gehoert fuer den Bruchteil einer Sekunde noch dem
+        // vorigen Konto. Das ist verschmerzbar: die Kennungen der Bibliotheken
+        // gelten serverweit, und `loadViews` ersetzt sie in einem Zug, sobald
+        // die Antwort da ist.
+        //
+        // **Der Anstoss muss von hier kommen.** `Startseitenmodell` holt die
+        // Bibliotheken nur nach, wenn keine da sind — ohne das Leeren wuerde
+        // es also nie nachladen, und die Liste des vorigen Kontos bliebe
+        // stehen.
+        Task { await loadViews() }
         errorMessage = nil
         kontowechsel += 1
         #if os(tvOS)
@@ -859,14 +873,12 @@ final class AppModel {
     /// gelöscht: wer noch einmal eine ältere Fassung startet, soll nicht
     /// plötzlich abgemeldet sein.
     private func bundLaden() -> Kontenbund? {
-        if let daten = Keychain.load(key: Self.kontenKey),
-           let b = try? JSONDecoder().decode(Kontenbund.self, from: daten) {
-            return b
-        }
-        guard let daten = Keychain.load(key: Self.sessionKey),
-              let alt = try? JSONDecoder().decode(Session.self, from: daten) else { return nil }
-        Self.log.info("Keychain: einzelne Sitzung als Bund übernommen")
-        return Kontenbund(alt)
+        // **Wo die Daten liegen, weiß nur der Zustandshalter; was sie
+        // bedeuten, steht im Paket.** Genau diese Trennung hat gefehlt: die
+        // Übernahme der Einzelsitzung stand hier und noch einmal in der
+        // GTK-Fassung, in zwei Schreibweisen.
+        Kontenbund.ausAblage(bund: Keychain.load(key: Self.kontenKey),
+                             einzelne: Keychain.load(key: Self.sessionKey))
     }
 
     private func restoreSession() {
