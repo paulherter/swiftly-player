@@ -20,6 +20,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $hier = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+. (Join-Path $hier 'umgebung.ps1')
 $quelle = Join-Path (Split-Path -Parent $hier) 'Linux\Sources\SwiftlyLinux'
 $ziel = Join-Path $hier 'Sources\SwiftlyWindows'
 
@@ -65,6 +67,12 @@ $einschluesse = @(
     "$Gtk\include\gdk-pixbuf-2.0"
     "$Gtk\include\graphene-1.0"
     "$Gtk\lib\graphene-1.0\include"
+    "$Gtk\include\gio-win32-2.0"
+    "$Gtk\include\fribidi"
+    "$Gtk\include\epoxy"
+    "$Gtk\include\libpng16"
+    "$Gtk\include\pixman-1"
+    "$Gtk\include\freetype2"
     "$Gtk\include"
     "$Vlc\include"
 )
