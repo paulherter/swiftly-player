@@ -13,22 +13,6 @@ import SwiftUI
 /// Netflix pur und stehen neben unseren flachen Flächen fremd da.
 struct ProfilView: View {
 
-    /// „Swiftly for Jellyfin 1.0.0 (Build 7)".
-    ///
-    /// **Aus dem Bündel gelesen, nicht getippt.** Hier stand „Swiftly 1.0" —
-    /// eine Zahl, die niemand mitgezogen hat und die seit der ersten Abgabe
-    /// falsch war. Eine Fassungsangabe, die man von Hand pflegen muss, ist
-    /// schlimmer als keine: sie sieht verlässlich aus.
-    ///
-    /// Die Baunummer gehört dazu, weil sie in Fehlerberichten die eigentliche
-    /// Auskunft ist — „1.0.0" haben acht Builds getragen.
-    static var fassungszeile: String {
-        let b = Bundle.main.infoDictionary
-        let fassung = b?["CFBundleShortVersionString"] as? String ?? "?"
-        let bau = b?["CFBundleVersion"] as? String ?? "?"
-        return "Swiftly for Jellyfin \(fassung) (Build \(bau))"
-    }
-
     let model: AppModel
 
     @Environment(\.dismiss) private var zurueck
@@ -80,7 +64,7 @@ struct ProfilView: View {
                                     titel: "Abmelden", letzte: true) { model.signOut() }
                     }
 
-                    Text(verbatim: Self.fassungszeile)
+                    Text(verbatim: Fassung.zeile)
                         .font(.system(size: 12))
                         .foregroundStyle(Color.white.opacity(0.3))
                         .frame(maxWidth: .infinity, alignment: .leading)

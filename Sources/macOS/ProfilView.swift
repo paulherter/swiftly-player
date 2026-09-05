@@ -69,7 +69,10 @@ struct ProfilView: View {
                                titel: Text("Abmelden")) { model.signOut() }
                 }
 
-                Text(verbatim: "Swiftly 1.0")
+                // **Nicht getippt.** Hier stand „Swiftly 1.0" — seit der
+                // ersten Abgabe falsch, und genau diese Zeile schreibt ein
+                // Tester in seinen Fehlerbericht.
+                Text(verbatim: Fassung.zeile)
                     .font(.system(size: 12))
                     .foregroundStyle(Stil.schrift.opacity(0.3))
                     .frame(maxWidth: .infinity, alignment: .leading)
