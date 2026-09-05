@@ -97,13 +97,15 @@ extension App {
         if let bund, bund.konten.count > 1 {
             anhaengen(bildblock, kontenstreifen(bund))
         } else {
-            let (huelle, bild) = gerahmtesBild(breite: 84, hoehe: 84, stil: "swiftly-profilgross")
-            gtk_widget_set_halign(huelle, GTK_ALIGN_CENTER)
-            anhaengen(bildblock, huelle)
-            if let adressen, !benutzerID.isEmpty,
-               let url = adressen.benutzer(benutzerID, kante: 200) {
-                bildLaden(bild, url: url, schluessel: url.absoluteString, sofort: true)
-            }
+            let teile = profilzeichen(name: benutzername.isEmpty ? "?" : benutzername,
+                                      kante: 84, stil: "swiftly-profilgross",
+                                      schriftstil: "swiftly-zeichen84")
+            gtk_widget_set_halign(teile.huelle, GTK_ALIGN_CENTER)
+            anhaengen(bildblock, teile.huelle)
+            profilbildLaden(teile,
+                            url: benutzerID.isEmpty ? nil
+                                                    : adressen?.benutzer(benutzerID, kante: 200),
+                            schluessel: "konto-\(benutzerID)")
         }
 
         let name = beschriftung(benutzername.isEmpty ? uebersetzt("Angemeldet") : benutzername,
@@ -461,30 +463,42 @@ extension App {
     /// und bleibt in der Mitte, solange die Seiten es zulassen — genau das,
     /// was im Entwurf mit einem festen Abstand von links gezeichnet ist.
     private func kontenstreifen(_ bund: Kontenbund) -> Widget! {
-        let mitte: Widget! = gtk_center_box_new()
-        gtk_widget_set_hexpand(mitte, 1)
-
-        let davor = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
-        gtk_widget_set_halign(davor, GTK_ALIGN_END)
-        gtk_widget_set_margin_end(davor, 26)
-        let danach = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
-        gtk_widget_set_halign(danach, GTK_ALIGN_START)
-        gtk_widget_set_margin_start(danach, 26)
-
-        var vorAktivem = true
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(kontoAbstand))
+        gtk_widget_set_halign(reihe, GTK_ALIGN_CENTER)
         for konto in bund.konten {
-            let ist = konto.userID == bund.aktiveKennung
-            if ist {
-                gtk_center_box_set_center_widget(OpaquePointer(mitte), kontokachel(konto, aktiv: true))
-                vorAktivem = false
-                continue
-            }
-            anhaengen(vorAktivem ? davor : danach, kontokachel(konto, aktiv: false))
+            anhaengen(reihe, kontokachel(konto, aktiv: konto.userID == bund.aktiveKennung))
         }
-        gtk_center_box_set_start_widget(OpaquePointer(mitte), davor)
-        gtk_center_box_set_end_widget(OpaquePointer(mitte), danach)
-        return mitte
+
+        // **Das aktive Konto steht in der Mitte, nicht der Streifen.**
+        //
+        // Der erste Anlauf nahm dafür eine ``GtkCenterBox`` mit dem aktiven
+        // Kreis als Mittelkind. Das stellte ihn zwar mittig, legte die
+        // übrigen aber an den **äusseren** Rand ihrer Hälfte statt neben ihn:
+        // gemessen 366 Bildpunkte von Mitte zu Mitte, wo der Mac 205 hat. Die
+        // beiden standen dadurch nicht als Gruppe da, sondern der zweite hing
+        // frei im Raum.
+        //
+        // Jetzt dieselbe Rechnung wie auf dem Mac (`mittenversatz`): eine
+        // gewöhnliche Reihe, mittig gestellt, und ein Rand, der den Überhang
+        // ausgleicht. `halign: CENTER` zentriert die Box **samt Rändern**, ein
+        // Rand von m verschiebt sie also um m/2 — deshalb steht hier die volle
+        // Differenz und nicht ihre Hälfte.
+        let stelle = bund.konten.firstIndex { $0.userID == bund.aktiveKennung } ?? 0
+        let schritt = kontoDaneben + kontoAbstand
+        let davor = stelle * schritt
+        let danach = (bund.konten.count - 1 - stelle) * schritt
+        if danach > davor {
+            gtk_widget_set_margin_start(reihe, Int32(danach - davor))
+        } else if davor > danach {
+            gtk_widget_set_margin_end(reihe, Int32(davor - danach))
+        }
+        return reihe
     }
+
+    /// Die Masse des Streifens, aus dem abgenommenen Schreibtischentwurf.
+    private var kontoAktiv: Int { 96 }
+    private var kontoDaneben: Int { 72 }
+    private var kontoAbstand: Int { 26 }
 
     /// Ein Konto im Streifen: Bild, darunter der Punkt.
     ///
@@ -501,11 +515,12 @@ extension App {
         let saeule = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
 
         let zone = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_size_request(zone, -1, 96)
-        let kante = aktiv ? 96 : 72
-        let (huelle, bild) = gerahmtesBild(breite: kante, hoehe: kante,
-                                           stil: aktiv ? "swiftly-kontoaktiv"
-                                                       : "swiftly-kontoandere")
+        gtk_widget_set_size_request(zone, -1, Int32(kontoAktiv))
+        let kante = aktiv ? kontoAktiv : kontoDaneben
+        let teile = profilzeichen(name: konto.userName, kante: kante,
+                                  stil: aktiv ? "swiftly-kontoaktiv" : "swiftly-kontoandere",
+                                  schriftstil: aktiv ? "swiftly-zeichen96" : "swiftly-zeichen72")
+        let huelle = teile.huelle
         gtk_widget_set_valign(huelle, GTK_ALIGN_CENTER)
         gtk_widget_set_vexpand(huelle, 1)
         anhaengen(zone, huelle)
@@ -524,9 +539,8 @@ extension App {
         anhaengen(saeule, punktzone)
 
         gtk_button_set_child(alsKnopf(knopf), saeule)
-        if let adressen, let url = adressen.benutzer(konto.userID, kante: 200) {
-            bildLaden(bild, url: url, schluessel: url.absoluteString, sofort: true)
-        }
+        profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 200),
+                        schluessel: "konto-\(konto.userID)")
         // Das aktive Konto ist kein Ziel — ein Klick darauf täte nichts, und
         // ein Knopf, der nichts tut, ist eine Zusage, die nicht eingehalten wird.
         if aktiv {

@@ -1964,14 +1964,15 @@ final class App: @unchecked Sendable {
 
         guard !sichtbar.isEmpty else {
             // Kein Bund: das eine Bild wie bisher.
-            let (huelle, bild) = gerahmtesBild(breite: kante, hoehe: kante,
-                                               stil: "swiftly-profilbild")
-            profilbild = bild
-            gtk_fixed_put(alsFest(profilkreise), huelle, 0, 0)
-            if let adressen, !benutzerID.isEmpty,
-               let url = adressen.benutzer(benutzerID, kante: 60) {
-                bildLaden(bild, url: url, schluessel: "benutzer-\(benutzerID)", sofort: true)
-            }
+            let teile = profilzeichen(name: benutzername.isEmpty ? "?" : benutzername,
+                                      kante: kante, stil: "swiftly-profilbild",
+                                      schriftstil: "swiftly-zeichen26")
+            profilbild = teile.bild
+            gtk_fixed_put(alsFest(profilkreise), teile.huelle, 0, 0)
+            profilbildLaden(teile,
+                            url: benutzerID.isEmpty ? nil
+                                                    : adressen?.benutzer(benutzerID, kante: 60),
+                            schluessel: "leiste-\(benutzerID)")
             return
         }
 
@@ -1984,12 +1985,12 @@ final class App: @unchecked Sendable {
             // gibt es die Frage nicht.
             let stil = sichtbar.count == 1 ? "swiftly-profilbild"
                      : (i == 0 ? "swiftly-profilbild-aktiv" : "swiftly-profilbild-daneben")
-            let (huelle, bild) = gerahmtesBild(breite: kante, hoehe: kante, stil: stil)
-            if i == 0 { profilbild = bild } else { gtk_widget_set_opacity(huelle, 0.55) }
-            gtk_fixed_put(alsFest(profilkreise), huelle, Double(i * versatz), 0)
-            if let adressen, let url = adressen.benutzer(konto.userID, kante: 60) {
-                bildLaden(bild, url: url, schluessel: "benutzer-\(konto.userID)", sofort: true)
-            }
+            let teile = profilzeichen(name: konto.userName, kante: kante, stil: stil,
+                                      schriftstil: "swiftly-zeichen26")
+            if i == 0 { profilbild = teile.bild } else { gtk_widget_set_opacity(teile.huelle, 0.55) }
+            gtk_fixed_put(alsFest(profilkreise), teile.huelle, Double(i * versatz), 0)
+            profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 60),
+                            schluessel: "leiste-\(konto.userID)")
         }
     }
 
