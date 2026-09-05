@@ -159,23 +159,6 @@ public struct Textkatalog: Sendable {
 
     // MARK: Sprachwahl
 
-    /// Die Sprachwünsche des Nutzers, in absteigender Reihenfolge.
-    ///
-    /// **Aus der Umgebung, weil es sonst nichts gibt.** Linux hat keine
-    /// Apple-Spracheinstellung; was der Nutzer will, steht in `LANGUAGE`,
-    /// `LC_ALL`, `LC_MESSAGES` und `LANG` — in dieser Rangfolge, wie es jedes
-    /// gettext-Programm auf dem System auch liest. `LANGUAGE` ist eine
-    /// Doppelpunktliste („ich kann auch Englisch"), die übrigen tragen einen
-    /// Wert.
-    ///
-    /// Aus `de_DE.UTF-8@euro` wird `de-DE`, dann `de` — beides wird versucht,
-    /// damit ein Katalog mit `pt-BR` **und** einer mit `pt` gefunden wird.
-    /// `C` und `POSIX` sind keine Sprachen und fallen heraus.
-    ///
-    /// Am Ende steht immer `en`: wer Französisch fährt, bekommt lieber die
-    /// englische Fassung als eine deutsche. Fehlt auch die, bleibt der
-    /// Schlüssel stehen — und der ist der deutsche Wortlaut, nie eine
-    /// kryptische Kennung.
     /// Die Anzeigesprachen, die das System selbst meldet.
     ///
     /// **Nur auf Windows.** Dort setzt niemand `LANG`; die Sprache steht in
@@ -213,6 +196,23 @@ public struct Textkatalog: Sendable {
         #endif
     }
 
+    /// Die Sprachwünsche des Nutzers, in absteigender Reihenfolge.
+    ///
+    /// **Aus der Umgebung, weil es sonst nichts gibt.** Linux hat keine
+    /// Apple-Spracheinstellung; was der Nutzer will, steht in `LANGUAGE`,
+    /// `LC_ALL`, `LC_MESSAGES` und `LANG` — in dieser Rangfolge, wie es jedes
+    /// gettext-Programm auf dem System auch liest. `LANGUAGE` ist eine
+    /// Doppelpunktliste („ich kann auch Englisch"), die übrigen tragen einen
+    /// Wert.
+    ///
+    /// Aus `de_DE.UTF-8@euro` wird `de-DE`, dann `de` — beides wird versucht,
+    /// damit ein Katalog mit `pt-BR` **und** einer mit `pt` gefunden wird.
+    /// `C` und `POSIX` sind keine Sprachen und fallen heraus.
+    ///
+    /// Am Ende steht immer `en`: wer Französisch fährt, bekommt lieber die
+    /// englische Fassung als eine deutsche. Fehlt auch die, bleibt der
+    /// Schlüssel stehen — und der ist der deutsche Wortlaut, nie eine
+    /// kryptische Kennung.
     static func sprachwuensche(aus umgebung: [String: String],
                                system: [String] = []) -> [String] {
         var roh: [String] = []
