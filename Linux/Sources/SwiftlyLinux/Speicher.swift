@@ -24,12 +24,7 @@ enum Speicher {
         let servername: String?
     }
 
-    private static var ordner: URL {
-        let basis = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
-            .map { URL(fileURLWithPath: $0) }
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config")
-        return basis.appendingPathComponent("swiftly")
-    }
+    private static var ordner: URL { Plattform.einstellungsordner }
 
     private static var datei: URL { ordner.appendingPathComponent("sitzung.json") }
 

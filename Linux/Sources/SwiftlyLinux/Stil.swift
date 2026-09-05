@@ -141,9 +141,17 @@ enum Stil {
            beilegbar. Ohne sie faellt es auf Noto Sans zurueck, und das ist
            deutlich runder und breiter als SF.
            Ein ausgelieferter Bau muss Inter mitbringen; hier kommt sie noch
-           vom System. */
+           vom System.
+
+           **Die Kette gilt fuer beide Plattformen, ohne Verzweigung.** Was ein
+           System nicht hat, ueberspringt es: Windows kennt weder Noto Sans
+           noch DejaVu und landet auf Segoe UI Variable — der dortigen
+           Systemschrift, also demselben Verhaeltnis wie SF auf Apple. Linux
+           kennt Segoe nicht und faellt auf Noto zurueck. Eine Zeile, kein
+           `#if`, und auf jedem System die Schrift, die dort richtig ist. */
         window, .background, scrolledwindow, viewport, stack, entry, button, label {
-            font-family: Inter, "Noto Sans", "DejaVu Sans", sans-serif;
+            font-family: Inter, "Segoe UI Variable Text", "Segoe UI",
+                         "Noto Sans", "DejaVu Sans", sans-serif;
         }
 
         window, .background, stack {
