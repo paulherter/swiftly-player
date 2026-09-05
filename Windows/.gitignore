@@ -1,0 +1,6 @@
+.build/
+# Die geteilten Dateien werden vor jedem Bau aus Linux/ gespiegelt. Sie
+# gehoeren nicht ins Repo — es gibt sie schon einmal.
+Sources/SwiftlyWindows/
+Ressourcen/
+Sources/CBildbruecke/

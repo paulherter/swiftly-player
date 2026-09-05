@@ -1,3 +1,8 @@
+// **Nur wo rlottie gebaut ist.** Auf Linux legt `Werkzeuge/rlottie-bauen.sh`
+// die Bibliothek an; fuer Windows gibt es sie noch nicht. Ohne sie faellt
+// die Startanimation weg — die App startet dann sofort in die Anmeldung,
+// was kein Fehler ist, sondern nur weniger schoen.
+#if canImport(CRlottie)
 import CGtk
 import CRlottie
 import Foundation
@@ -92,12 +97,7 @@ final class Startanimation: @unchecked Sendable {
     /// Die Vorlage liegt neben der App, im selben `Ressourcen`-Ordner wie das
     /// Anwendungssymbol — hergeleitet aus dem Binärpfad.
     private static var vorlage: String? {
-        guard let selbst = try? FileManager.default
-            .destinationOfSymbolicLink(atPath: "/proc/self/exe") else { return nil }
-        var baum = URL(fileURLWithPath: selbst)
-        for _ in 0..<4 { baum.deleteLastPathComponent() }
-        let pfad = baum.appendingPathComponent("Ressourcen/startanimation.json").path
-        return FileManager.default.fileExists(atPath: pfad) ? pfad : nil
+        Plattform.mitgeliefert("startanimation.json")
     }
 
     /// **Losfahren, sobald das Fenster wirklich steht.**
@@ -231,3 +231,20 @@ nonisolated(unsafe) private let startMalen: @convention(c) (
     Unmanaged<Startanimation>.fromOpaque(daten).takeUnretainedValue()
         .malen(cr, breite, hoehe)
 }
+
+#else
+
+import CGtk
+
+/// **Ohne rlottie gibt es keine Startanimation** — und das darf die
+/// Aufrufstellen nichts angehen. Der Platzhalter hat denselben Konstruktor
+/// wie das Original, nur schlägt er fehl; damit läuft der Zweig in ``App``
+/// gar nicht erst an, und dort steht kein einziges `#if`.
+final class Startanimation {
+    let anzeige: Widget
+    init?(fertig: @escaping () -> Void) { return nil }
+    /// Wird von der Frist in ``App`` gerufen. Hier gibt es nichts abzuschliessen.
+    func abschliessen() {}
+}
+
+#endif
