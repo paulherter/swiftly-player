@@ -4,7 +4,7 @@
 
 <br>
 
-[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20iPadOS%20%7C%20tvOS%20%7C%20macOS%20%7C%20Linux-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](#-platforms)
+[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20iPadOS%20%7C%20tvOS%20%7C%20macOS%20%7C%20Linux%20%7C%20Windows-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](#-platforms)
 [![License](https://img.shields.io/badge/license-MPL--2.0-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](LICENSE)
 [![Jellyfin](https://img.shields.io/badge/Jellyfin-10.10%2B-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](https://jellyfin.org)
 
@@ -83,7 +83,7 @@ and only where distance, input or window size demand it.
 | 📺 Apple TV | **1.0.0 (9)** · beta on TestFlight |
 | 💻 Mac | **1.0.0 (9)** · beta on TestFlight |
 | 🐧 Linux | **1.0.0** · GTK4, native, same shared logic · [install](#-linux) |
-| 🪟 Windows | planned |
+| 🪟 Windows | in development — GTK4 like Linux, **the same source**, not released yet |
 
 **The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
 — one link for iPhone, iPad, Apple TV and Mac. What each build wants tested is
