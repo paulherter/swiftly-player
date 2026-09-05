@@ -481,7 +481,10 @@ struct ItemDetailView: View {
                                  breite: 210, hoehe: 118)
                             Text(extra.name)
                                 .font(Stil.kachel).foregroundStyle(Stil.schrift).lineLimit(1)
-                            if let s = extra.runtimeSeconds {
+                            // Ein Extra ohne Laufzeit meldet 0, nicht nichts —
+                            // ohne die Regel stünde dort „0 Min.".
+                            if Anzeigeregeln.laufzeitZeigen(sekunden: extra.runtimeSeconds),
+                               let s = extra.runtimeSeconds {
                                 Text(laufzeit(s)).font(Stil.klein).foregroundStyle(Stil.schriftLeise)
                             }
                         }

@@ -22,7 +22,12 @@ public enum Anzeigeregeln {
     ///
     /// Auch `nil` und negative Werte fallen heraus: ein Server, der Unsinn
     /// meldet, soll keine Anzeige erzeugen, die wie eine Angabe aussieht.
-    public static func laufzeitZeigen(sekunden: Int?) -> Bool {
+    ///
+    /// `Double`, weil `Item.runtimeSeconds` einer ist — der Server rechnet
+    /// in Ticks, und daraus wird beim Umrechnen eine Kommazahl. Wer hier
+    /// `Int` schreibt, zwingt jeden Aufrufer zu einer Umwandlung und
+    /// verliert dabei die halbe Sekunde, um die es nie ging.
+    public static func laufzeitZeigen(sekunden: Double?) -> Bool {
         guard let sekunden else { return false }
         return sekunden > 0
     }

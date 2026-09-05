@@ -173,7 +173,9 @@ struct SucheView: View {
     private func suchen(_ begriff: String) {
         aufgabe?.cancel()
         let sauber = begriff.trimmingCharacters(in: .whitespaces)
-        guard sauber.count >= 2 else {
+        // Die Schwelle steht im Paket, damit sie auf allen sechs Fassungen
+        // dieselbe ist — sie stand bisher überall einzeln getippt.
+        guard Anzeigeregeln.suchbegriffTaugt(sauber) else {
             treffer = []
             sucht = false
             return
