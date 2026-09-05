@@ -304,7 +304,11 @@ final class AppModel {
 
     /// Was nach jeder erfolgreichen Anmeldung gleich abläuft — egal ob über
     /// Passwort oder Quick Connect.
-    func sitzungUebernehmen(_ s: Session) {
+    /// Nimmt eine frische Sitzung an. Gibt zurück, ob es ein **Kontowechsel**
+    /// war — dann hat diese Funktion bereits aufgeräumt und neu geladen, und
+    /// der Aufrufer soll nicht noch einmal laden.
+    @discardableResult
+    func sitzungUebernehmen(_ s: Session) -> Bool {
         let warAngemeldet = bund != nil
         // Derselbe Server: das Konto kommt dazu und gilt sofort. Ein anderer
         // Server heißt von vorn — ein Bund gehört zu genau einem Server.
@@ -326,6 +330,7 @@ final class AppModel {
         // Name und Fassung stehen sonst nur nach einer frischen Verbindung
         // bereit — in den Einstellungen stand danach „Server · ?".
         Task { _ = await verbindungPruefen() }
+        return warAngemeldet
     }
 
     /// Was nach jedem Kontowechsel neu muss — außer dem Client selbst.

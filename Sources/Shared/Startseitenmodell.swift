@@ -37,12 +37,32 @@ final class Startseitenmodell {
     /// unverändert alt ist.
     private(set) var zuletztGeladen: Date?
 
+    /// Zu welchem Kontostand der Inhalt gehört.
+    private var fuerKonto = 0
+
     var alleLeer: Bool {
         weiterschauen.isEmpty && naechsteFolge.isEmpty
             && zuletzt.isEmpty && neueFilme.isEmpty && neueSerien.isEmpty
     }
 
     func laden(_ model: AppModel) async {
+        // **Nach einem Kontowechsel gilt nichts von vorher.** Weiter unten
+        // bleibt stehen, was nicht geantwortet hat — richtig bei einem
+        // einzelnen Aussetzer, falsch nach einem Wechsel: dort stünden dann
+        // die Titel des vorigen Kontos, und deren Bilder darf das neue
+        // Merkmal nicht holen. Auf dem Schirm sah das so aus, als fehlten
+        // einzelne Vorschaubilder und Cover; in Wahrheit gehörte die halbe
+        // Seite noch jemand anderem.
+        if fuerKonto != model.kontowechsel {
+            fuerKonto = model.kontowechsel
+            weiterschauen = []
+            naechsteFolge = []
+            zuletzt = []
+            neueFilme = []
+            neueSerien = []
+            geladen = false
+            zuletztGeladen = nil
+        }
         async let angefangen = model.weiterschauen()
         // **Die Bibliotheken müssen vorher bekannt sein.** Getrennt geholt
         // wird je Bibliothek, und deren Kennung steht erst nach `loadViews`.
