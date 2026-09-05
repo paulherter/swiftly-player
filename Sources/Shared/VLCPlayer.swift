@@ -551,6 +551,24 @@ final class VLCPlayerView: Basisansicht {
             bildfluss(jetzt: jetzt)
             letzteBekannteZeit = jetzt
             stehtSeit = nil
+            // **Die Uhr laeuft — aber kommt auch ein Bild?** Ohne diese
+            // Zeilen endete die Pruefung hier, und ein Strom, dessen Uhr
+            // weiterlaeuft, galt fuer immer als gesund. Dieselben Schwellen
+            // wie unten: `Stromwacht` haelt sie an einer Stelle, und eine
+            // falsche davon kostet den Zuschauer zehn Sekunden Film.
+            if let seit = bilderStehenSeit {
+                let dauer = Date().timeIntervalSince(seit)
+                if case .neuVerbinden = Stromwacht.rat(
+                    stillstandSeit: dauer,
+                    netzwechselVor: netzwechselSeit.map { Date().timeIntervalSince($0) },
+                    sprungOffen: offenesZiel != nil,
+                    letzterSprungVor: Date().timeIntervalSince(letzterSprungbefehl),
+                    pufferWuchsVor: melder.pufferWuchsVor) {
+                    bilderStehenSeit = nil
+                    neuVerbinden(grund: "kein neues Bild seit \(Int(dauer)) s, Uhr laeuft weiter")
+                    return
+                }
+            }
             let laenge = laengeSekunden
             // Nur mitschreiben, was plausibel ist: nach einem Abriss stuende
             // hier sonst das Filmende drin.
@@ -613,7 +631,20 @@ final class VLCPlayerView: Basisansicht {
     /// **Noch wird nur mitgeschrieben, nicht eingegriffen.** Welche der beiden
     /// es ist, weiss niemand, und eine Bremse auf Verdacht hat in dieser Datei
     /// schon einmal den Haenger erzeugt, den sie beheben sollte — siehe
-    /// `Stromwacht`. Erst messen.
+    /// `Stromwacht`. Erst messen. Seit wann kein neues Bild mehr ausgegeben
+    /// wurde.
+    ///
+    /// **Der zweite Fuehler, und der bessere.** Die Wacht darueber vergleicht
+    /// `player.time`; laeuft die Uhr, gilt der Strom als lebendig. Am
+    /// 05.09.2026 lief sie bei Auf dem Geraet gemessen: `displayedPictures`
+    /// **76 Sekunden lang** eingefroren auf 15925, Zuwachs von
+    /// `demuxReadBytes` durchgehend 0, die Uhr lief in derselben Zeit von 6388
+    /// auf 6464 s im Gleichtakt mit der Wanduhr.
+    ///
+    /// Der Fuehler war die ganze Zeit da — `bildfluss` hat ihn gelesen und
+    /// **nur ins Protokoll geschrieben**. Jetzt wirkt er.
+    private var bilderStehenSeit: Date?
+
     private func bildfluss(jetzt: Int32) {
         guard let stat = player.media?.statistics else { return }
         defer {
@@ -622,10 +653,15 @@ final class VLCPlayerView: Basisansicht {
         }
         guard let vorherBilder = letzteBilder, let vorherBytes = letzteBytes else { return }
 
+        guard stat.displayedPictures == vorherBilder else {
+            bilderStehenSeit = nil
+            return
+        }
+        bilderStehenSeit = bilderStehenSeit ?? Date()
+
         // Nur der auffaellige Fall kommt ins Protokoll. Jede Sekunde eine
         // Zeile zu schreiben, macht die Datei unlesbar und verdeckt genau
         // den Moment, um den es geht.
-        guard stat.displayedPictures == vorherBilder else { return }
 
         let bytes = stat.demuxReadBytes - vorherBytes
         Protokoll.schreib("[Bild] Uhr bei \(jetzt / 1000) s laeuft, aber kein neues Bild"
