@@ -17,7 +17,12 @@ param(
     [string]$Vlc = 'C:\Werkzeuge\vlcsdk',
     [string]$VlcLaufzeit = 'C:\Werkzeuge\vlc\vlc-3.0.21',
     [string]$SwiftLaufzeit = 'C:\Swift\Runtimes\6.2.1\usr\bin',
-    [string]$Rlottie = 'C:\Werkzeuge\rlottie'
+    [string]$Rlottie = 'C:\Werkzeuge\rlottie',
+    # **Symbole zum Nachschlagen von Abstuerzen.** Ohne das entsteht keine
+    # PDB, und ein Versatz aus dem Ereignisprotokoll laesst sich nicht in
+    # einen Funktionsnamen aufloesen — genau daran ist die Suche nach dem
+    # Startabsturz am 05.09.2026 zuerst gescheitert.
+    [switch]$Symbole
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,10 +112,18 @@ $ccFlaggen += @('-Xcc', '-DRLOTTIE_BUILD')
 # entstandene `.res` wird wie eine Bibliothek dazugebunden.
 $res = Join-Path $hier 'Mittel\swiftly.res'
 & rc.exe /nologo /fo $res (Join-Path $hier 'Mittel\swiftly.rc') | Out-Null
-if (Test-Path $res) { $binderFlaggen += @('-Xlinker', $res) }
 
+# **Erst die Liste, dann anhaengen.** Hier stand das Anhaengen der `.res`
+# *vor* dieser Zuweisung — sie hat es jedesmal weggeworfen, und das
+# Programmsymbol war in keinem Bau drin.
 $binderFlaggen = @('-Xlinker', "/LIBPATH:$Gtk\lib", '-Xlinker', "/LIBPATH:$Vlc\lib",
                    '-Xlinker', "/LIBPATH:$Rlottie\lib")
+if (Test-Path $res) { $binderFlaggen += @('-Xlinker', $res) }
+
+if ($Symbole) {
+    $ccFlaggen += @('-Xswiftc', '-g', '-Xswiftc', '-debug-info-format=codeview')
+    $binderFlaggen += @('-Xlinker', '/DEBUG')
+}
 
 # **Kein Konsolenfenster im ausgelieferten Bau.** Swift baut sonst ein
 # Konsolenprogramm, und beim Doppelklick stuende ein schwarzes Fenster daneben.
