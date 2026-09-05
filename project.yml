@@ -424,6 +424,9 @@ targets:
       # Serien, Staffeln und Folgen im Speicher — seit `2fc501c` einmal
       # geteilt statt zweimal gebaut, und mit eigener Kontopruefung.
       - path: Sources/Shared/Serienspeicher.swift
+      # Bildlader mit eigenem Speicher — entschluesselt abseits des
+      # Hauptlaufs. Lag bis 05.09.2026 in Sources/macOS.
+      - path: Sources/Shared/Netzbild.swift
       - path: Sources/Shared/Bibliotheksmodell.swift
       - path: Sources/Shared/Farben.swift
       # Bausteine ohne Plattformmaße — Reihentitel, Plakette, Lader,
