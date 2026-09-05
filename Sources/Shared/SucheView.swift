@@ -17,6 +17,12 @@ struct SucheView: View {
     @State private var treffer: [Item] = []
     @State private var sucht = false
     @State private var aufgabe: Task<Void, Never>?
+    /// Was Seerr kennt und der eigene Server nicht hat.
+    ///
+    /// **Eigener Zustand, eigene Aufgabe.** Die beiden Abrufe laufen
+    /// nebeneinander; kommt von Seerr nichts oder kommt es spät, steht
+    /// trotzdem sofort da, was der eigene Server hat.
+    @State private var seerrtreffer: [Seerrtreffer] = []
     @FocusState private var imFeld: Bool
 
     @Environment(\.breit) private var breit
@@ -73,6 +79,12 @@ struct SucheView: View {
                             // Nach Art gruppiert, wie bei Plex: in der Liste
                             // liest man Titel und Art auf einen Blick.
                             let nutzbar = rahmen.size.width - 2 * Stil.rand(breit: breit)
+                            // **Ohne Seerr keine Überschrift.** Wer nichts
+                            // angebunden hat, soll nicht „Auf deinem Server"
+                            // lesen und sich fragen, wo der andere Block ist.
+                            if !seerrtreffer.isEmpty {
+                                blockTitel("Auf deinem Server")
+                            }
                             gruppe("Serien", treffer.filter { $0.type == "Series" },
                                    nutzbar: nutzbar)
                             gruppe("Filme", treffer.filter { $0.type == "Movie" },
@@ -82,6 +94,10 @@ struct SucheView: View {
                             gruppe("Weiteres", treffer.filter {
                                 !["Series", "Movie", "Episode"].contains($0.type ?? "")
                             }, nutzbar: nutzbar)
+                            if !seerrtreffer.isEmpty {
+                                blockTitel("Kann angefragt werden").padding(.top, 8)
+                                seerrRaster(nutzbar: nutzbar)
+                            }
                         }
                     }
                 }
@@ -148,11 +164,51 @@ struct SucheView: View {
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.bottom, 10)
             } else {
-                ForEach(eintraege) { item in
-                    Trefferzeile(model: model, item: item)
+                // **Auch schmal ein Raster, nicht mehr eine Zeilenliste.**
+                // Mit Seerr stehen zwei Blöcke untereinander, und ein Plakat
+                // sagt auf einen Blick, ob ein Titel da ist — eine Zeile mit
+                // 52er Vorschaubild kann das nicht.
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(),
+                                                             spacing: Stil.kachelAbstand),
+                                         count: Stil.spalten(nutzbar: nutzbar, breit: breit)),
+                          alignment: .leading, spacing: 16) {
+                    ForEach(eintraege) { item in
+                        NavigationLink(value: item) {
+                            PosterTile(model: model, item: item, breite: nil,
+                                       auskunft: item.trefferauskunft)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.bottom, 10)
             }
         }
+    }
+
+    private func blockTitel(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .semibold))
+            .tracking(0.5)
+            .textCase(.uppercase)
+            .foregroundStyle(Stil.schriftSehrLeise)
+            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.top, 16)
+            .padding(.bottom, 4)
+    }
+
+    private func seerrRaster(nutzbar: CGFloat) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(),
+                                                     spacing: Stil.kachelAbstand),
+                                 count: Stil.spalten(nutzbar: nutzbar, breit: breit)),
+                  alignment: .leading, spacing: 16) {
+            ForEach(seerrtreffer) { t in
+                NavigationLink(value: t) { Seerrkachel(treffer: t) }
+                    .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Stil.rand(breit: breit))
+        .padding(.bottom, 10)
     }
 
     private var leerhinweis: some View {
@@ -177,6 +233,7 @@ struct SucheView: View {
         // dieselbe ist — sie stand bisher überall einzeln getippt.
         guard Anzeigeregeln.suchbegriffTaugt(sauber) else {
             treffer = []
+            seerrtreffer = []
             sucht = false
             return
         }
@@ -184,10 +241,20 @@ struct SucheView: View {
         aufgabe = Task {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
+            // **Nebeneinander, nicht nacheinander.** Der eigene Server ist
+            // der Grund, warum jemand die App benutzt; er darf nicht auf
+            // eine Zugabe warten. Deshalb wird zuerst gezeigt, was er hat.
+            async let fremd = model.seerr.suchen(sauber)
             let ergebnis = await model.suche(sauber)
             guard !Task.isCancelled else { return }
             treffer = ergebnis
             sucht = false
+
+            let dazu = await fremd
+            guard !Task.isCancelled else { return }
+            // Was der eigene Server schon hat, gehört nicht in den unteren
+            // Block — sonst stünde derselbe Titel zweimal auf der Seite.
+            seerrtreffer = dazu.filter { !$0.stand.schonDa }
         }
     }
 }

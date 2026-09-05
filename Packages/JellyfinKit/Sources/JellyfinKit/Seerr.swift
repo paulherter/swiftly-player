@@ -52,7 +52,7 @@ public enum Seerrstand: Int, Codable, Sendable, Equatable {
 }
 
 /// Ein Treffer von Seerr — ein Titel, den der eigene Server (noch) nicht hat.
-public struct Seerrtreffer: Sendable, Equatable, Identifiable, Codable {
+public struct Seerrtreffer: Sendable, Hashable, Identifiable, Codable {
     /// Die Kennung bei TMDB. Seerr nimmt sie beim Anfragen als `mediaId`.
     public let id: Int
     /// `movie` oder `tv`. Personen fallen beim Einlesen heraus.

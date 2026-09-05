@@ -142,6 +142,9 @@ extension View {
             .navigationDestination(for: LibraryRoute.self) { route in
                 ItemListView(model: model, library: route.item)
             }
+            .navigationDestination(for: Seerrtreffer.self) { treffer in
+                SeerrDetailView(model: model, treffer: treffer)
+            }
             .navigationDestination(for: Item.self) { item in
                 if item.type == "Series" {
                     SeriesDetailView(model: model, serie: item)
