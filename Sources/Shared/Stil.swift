@@ -391,6 +391,26 @@ struct Bild<Platzhalter: View>: View {
     var fortschritt: Double? = nil
     @ViewBuilder var platzhalter: () -> Platzhalter
 
+    /// **Ein abgebrochener Abruf ist kein Fehlschlag — er ist einen zweiten
+    /// Versuch wert.**
+    ///
+    /// `AsyncImage` bricht ab, sobald seine Kachel vom Schirm geht, und bleibt
+    /// danach im Fehlerzustand stehen: kommt dieselbe Kachel zurueck, versucht
+    /// es von sich aus nichts mehr. Beim Kontowechsel geht die halbe Seite
+    /// kurz durch die Haende des Layouts, und dann trifft es viele Kacheln auf
+    /// einmal. Auf tvOS am Geraet gemessen, zwanzigmal in Folge:
+    ///
+    ///     NSURLErrorDomain -999
+    ///
+    /// Das heisst „abgebrochen" — nicht abgelehnt, nicht verfehlt. Derselbe
+    /// Aufruf von aussen kam mit HTTP 200 und 158 KB zurueck. Deshalb hier ein
+    /// neuer Anlauf statt einer grauen Flaeche; hoechstens zwei, damit ein
+    /// echter Ausfall nicht in eine Schleife laeuft.
+    ///
+    /// Uebernommen aus `Sources/tvOS/Stil.swift`, wo es gemessen wurde — nicht
+    /// nachgebaut, sondern dieselbe Regel an derselben Stelle.
+    @State private var anlauf = 0
+
     var body: some View {
         rahmen
             .overlay {
@@ -398,10 +418,18 @@ struct Bild<Platzhalter: View>: View {
                     if case let .success(bild) = phase {
                         bild.resizable().aspectRatio(contentMode: .fill)
                     } else {
-                        platzhalter()
+                        platzhalter().onAppear {
+                            guard case let .failure(f) = phase,
+                                  (f as NSError).code == NSURLErrorCancelled,
+                                  anlauf < 2 else { return }
+                            anlauf += 1
+                        }
                     }
                 }
+                .id(anlauf)
             }
+            // Eine neue Adresse heisst ein frischer Anlauf.
+            .onChange(of: url) { _, _ in anlauf = 0 }
             .overlay(alignment: .bottom) {
                 if let fortschritt {
                     Kachelfortschritt(anteil: fortschritt)
