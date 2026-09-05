@@ -90,6 +90,12 @@ final class Seerrmodell {
         return await client.suchen(begriff)
     }
 
+    /// Beschreibung, Bewertung und Staffeln — für die Seite eines Titels.
+    func detail(_ treffer: Seerrtreffer) async -> Seerrdetail? {
+        guard let client else { return nil }
+        return await client.detail(art: treffer.art, id: treffer.id)
+    }
+
     /// Anfragen. Hier wird geworfen: der Nutzer hat gedrückt.
     func anfragen(_ treffer: Seerrtreffer, staffeln: [Int]? = nil) async throws {
         guard let client else { throw JellyfinError.notAuthenticated }

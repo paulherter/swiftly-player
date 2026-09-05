@@ -157,6 +157,16 @@ struct SeerrTests {
         }
     }
 
+    /// Wer eine IP tippt, meint kein `https` — dort steht praktisch nie ein
+    /// Zertifikat. Dieselbe Regel wie beim Medienserver.
+    @Test("Eine IP im Heimnetz bekommt http, ein Name https")
+    func heimnetzBekommtHttp() throws {
+        #expect(try #require(Seerr.adresse(aus: "192.168.1.9:5055")).scheme == "http")
+        #expect(try #require(Seerr.adresse(aus: "10.0.0.4")).scheme == "http")
+        #expect(try #require(Seerr.adresse(aus: "seerr.local:5055")).scheme == "http")
+        #expect(try #require(Seerr.adresse(aus: "seerr.example.de")).scheme == "https")
+    }
+
     @Test("http bleibt http, wenn es dasteht")
     func httpBleibt() throws {
         let u = try #require(Seerr.adresse(aus: "http://192.168.1.9:5055"))
@@ -166,5 +176,62 @@ struct SeerrTests {
     @Test("Leer ist keine Adresse")
     func leerIstNichts() {
         #expect(Seerr.adresse(aus: "   ") == nil)
+    }
+    // MARK: Detail
+
+    private let serie = Data("""
+    {"overview":"Ein Berater der Polizei.","episodeRunTime":[45],"voteAverage":8.1,
+     "seasons":[
+       {"seasonNumber":0,"episodeCount":3},
+       {"seasonNumber":1,"episodeCount":23},
+       {"seasonNumber":2,"episodeCount":22}],
+     "mediaInfo":{"seasons":[{"seasonNumber":1,"status":5}]}}
+    """.utf8)
+
+    @Test("Beschreibung, Laufzeit und Bewertung kommen an")
+    func detailFelder() throws {
+        let d = try #require(Seerr.detail(aus: serie))
+        #expect(d.beschreibung == "Ein Berater der Polizei.")
+        #expect(d.laufzeit == 45)
+        #expect(d.bewertung == 8.1)
+    }
+
+    /// TMDB legt Specials in Staffel 0 ab. Wer „alle Staffeln" anfragt, meint
+    /// sie nicht — und in einer Liste zum Ankreuzen stünde sie ganz oben.
+    @Test("Staffel 0 fällt heraus")
+    func staffelNullRaus() throws {
+        let d = try #require(Seerr.detail(aus: serie))
+        #expect(d.staffeln.map(\.nummer) == [1, 2])
+    }
+
+    /// Der Stand steht nicht bei der Staffel, sondern in einer zweiten Liste
+    /// daneben — das wird zusammengeführt, nicht geraten.
+    @Test("Der Stand je Staffel wird zugeordnet")
+    func staffelstaende() throws {
+        let d = try #require(Seerr.detail(aus: serie))
+        #expect(d.staffeln.first { $0.nummer == 1 }?.stand == .da)
+        #expect(d.staffeln.first { $0.nummer == 2 }?.stand == .offen)
+        #expect(d.staffeln.first { $0.nummer == 2 }?.folgen == 22)
+    }
+
+    @Test("Ein Film hat keine Staffeln, aber eine Laufzeit")
+    func filmdetail() throws {
+        let film = Data(#"{"overview":"Ein Film.","runtime":112,"voteAverage":6.9}"#.utf8)
+        let d = try #require(Seerr.detail(aus: film))
+        #expect(d.staffeln.isEmpty)
+        #expect(d.laufzeit == 112)
+    }
+
+    /// Eine leere Beschreibung ist keine Beschreibung — sonst stünde auf der
+    /// Seite eine Überschrift über nichts.
+    @Test("Leere Beschreibung zählt als keine")
+    func leereBeschreibung() throws {
+        let d = try #require(Seerr.detail(aus: Data(#"{"overview":"   "}"#.utf8)))
+        #expect(d.beschreibung == nil)
+    }
+
+    @Test("Kaputte Detailantwort liefert nichts")
+    func kaputtesDetail() {
+        #expect(Seerr.detail(aus: Data("nope".utf8)) == nil)
     }
 }

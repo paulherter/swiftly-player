@@ -14,6 +14,7 @@ struct SeerrEinstellungenView: View {
     @Environment(\.dismiss) private var zurueck
     @Environment(\.breit) private var breit
     @State private var adresse = ""
+    @State private var benutzer = ""
     @State private var passwort = ""
 
     var body: some View {
@@ -26,7 +27,10 @@ struct SeerrEinstellungenView: View {
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
-        .task { await seerr.nachsehen() }
+        .task {
+            if benutzer.isEmpty { benutzer = model.session?.userName ?? "" }
+            await seerr.nachsehen()
+        }
     }
 
     private var inhalt: some View {
@@ -75,11 +79,12 @@ struct SeerrEinstellungenView: View {
                 // Die Adresse ist die einzige Angabe, die wirklich neu ist.
                 Eingabefeld(text: $adresse, symbol: "link",
                             platzhalter: "seerr.example.de", tastatur: .adresse)
-                // **Der Name wird gezeigt, nicht gefragt.** Er ist derselbe
-                // wie am Medienserver; ihn tippen zu lassen waere eine Frage,
-                // deren Antwort wir schon kennen.
-                Wertzeile(symbol: "person", titel: Text("Benutzer"),
-                          wert: model.session?.userName ?? "—")
+                // **Vorausgefüllt, aber änderbar.** Auf beiden Seiten ist
+                // es meist dasselbe Konto — deshalb steht der Name schon da.
+                // Meist ist nicht immer: wer sich bei Seerr unter einem
+                // anderen Namen anmeldet, muss ihn überschreiben können.
+                Eingabefeld(text: $benutzer, symbol: "person",
+                            platzhalter: "Benutzername")
                 Eingabefeld(text: $passwort, symbol: "lock",
                             platzhalter: "Passwort", geheim: true)
             }
@@ -96,7 +101,7 @@ struct SeerrEinstellungenView: View {
 
             // Kein gesperrter Knopf: solange nichts dasteht, ist nichts zu
             // tun, und ein grauer Knopf behauptet das Gegenteil.
-            if !adresse.isEmpty, !passwort.isEmpty, !seerr.meldetAn {
+            if !adresse.isEmpty, !benutzer.isEmpty, !passwort.isEmpty, !seerr.meldetAn {
                 Button { Task { await verbinden() } } label: {
                     Text("Verbinden")
                         .font(Stil.koerper.weight(.semibold))
@@ -126,9 +131,7 @@ struct SeerrEinstellungenView: View {
     }
 
     private func verbinden() async {
-        await seerr.verbinden(adresse: adresse,
-                              benutzer: model.session?.userName ?? "",
-                              passwort: passwort)
+        await seerr.verbinden(adresse: adresse, benutzer: benutzer, passwort: passwort)
         if seerr.verbunden { passwort = "" }
     }
 }

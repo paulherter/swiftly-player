@@ -69,7 +69,14 @@ struct SucheView: View {
                             leerhinweis
                         } else if sucht {
                             Lader().frame(maxWidth: .infinity).padding(.top, 40)
-                        } else if treffer.isEmpty {
+                        } else if treffer.isEmpty, seerrtreffer.isEmpty {
+                            // **Beide leer, nicht nur die Bibliothek.** Hier
+                            // stand `treffer.isEmpty`, und damit gewann dieser
+                            // Zweig, sobald der eigene Server nichts hatte —
+                            // der Seerr-Block darunter wurde nie erreicht.
+                            // Genau der Fall, für den die ganze Anbindung
+                            // gebaut ist: „Blade Runner" gibt es hier nicht,
+                            // und *deshalb* will man ihn anfragen. Von
                             Text("Keine Treffer für \u{201E}\(begriff)\u{201C}")
                                 .font(Stil.koerper)
                                 .foregroundStyle(Stil.schriftLeise)
@@ -82,7 +89,10 @@ struct SucheView: View {
                             // **Ohne Seerr keine Überschrift.** Wer nichts
                             // angebunden hat, soll nicht „Auf deinem Server"
                             // lesen und sich fragen, wo der andere Block ist.
-                            if !seerrtreffer.isEmpty {
+                            // Die Überschrift trägt nur, wenn darunter
+                            // wirklich etwas steht — sonst kündigt sie einen
+                            // leeren Block an.
+                            if !seerrtreffer.isEmpty, !treffer.isEmpty {
                                 blockTitel("Auf deinem Server")
                             }
                             gruppe("Serien", treffer.filter { $0.type == "Series" },

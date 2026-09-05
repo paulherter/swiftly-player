@@ -76,6 +76,29 @@ public struct Seerrtreffer: Sendable, Hashable, Identifiable, Codable {
     }
 }
 
+
+/// Eine Staffel, wie Seerr sie kennt.
+public struct Seerrstaffel: Sendable, Hashable, Identifiable, Codable {
+    /// Die Nummer, so wie sie beim Anfragen wieder hinausgeht.
+    public let nummer: Int
+    public let folgen: Int
+    /// Was der eigene Server davon schon hat.
+    public let stand: Seerrstand
+
+    public var id: Int { nummer }
+    /// Staffel 0 ist bei TMDB das Sammelbecken für Specials.
+    public var istSpecials: Bool { nummer == 0 }
+}
+
+/// Was auf der Seite eines Titels steht, den es noch nicht gibt.
+public struct Seerrdetail: Sendable, Equatable, Codable {
+    public let beschreibung: String?
+    /// In Minuten. Bei einer Serie die Länge einer Folge.
+    public let laufzeit: Int?
+    public let bewertung: Double?
+    public let staffeln: [Seerrstaffel]
+}
+
 /// Adresse und Sitzung. Liegt beim Nutzer, nicht hier.
 public struct Seerrzugang: Codable, Sendable, Equatable {
     public let adresse: URL
@@ -135,6 +158,55 @@ public enum Seerr {
         }
     }
 
+    /// Aus Seerrs Detailantwort, was die Seite braucht.
+    ///
+    /// **Staffel 0 fällt heraus.** TMDB legt dort Specials ab; wer „alle
+    /// Staffeln" anfragt, meint sie nicht mit, und in einer Liste zum
+    /// Ankreuzen steht sie ganz oben, wo niemand sie erwartet.
+    ///
+    /// Fehlt einer Staffel der Stand, ist sie **offen** — dieselbe
+    /// Begründung wie beim Suchtreffer: Seerr legt den Eintrag erst mit der
+    /// ersten Anfrage an.
+    public static func detail(aus daten: Data) -> Seerrdetail? {
+        struct Antwort: Decodable {
+            struct Staffel: Decodable {
+                let seasonNumber: Int
+                let episodeCount: Int?
+                let mediaInfo: Info?
+            }
+            struct Info: Decodable { let status: Int? }
+            let overview: String?
+            let runtime: Int?
+            let episodeRunTime: [Int]?
+            let voteAverage: Double?
+            let seasons: [Staffel]?
+            let mediaInfo: MedienInfo?
+            struct MedienInfo: Decodable {
+                struct Staffelstand: Decodable { let seasonNumber: Int; let status: Int? }
+                let seasons: [Staffelstand]?
+            }
+        }
+        guard let a = try? JSONDecoder().decode(Antwort.self, from: daten) else { return nil }
+
+        // Der Stand je Staffel steht nicht bei der Staffel, sondern in einer
+        // zweiten Liste daneben. Erst zusammenführen, dann ausliefern.
+        var staende: [Int: Seerrstand] = [:]
+        for e in a.mediaInfo?.seasons ?? [] {
+            if let s = e.status.flatMap(Seerrstand.init(rawValue:)) { staende[e.seasonNumber] = s }
+        }
+        let staffeln = (a.seasons ?? [])
+            .filter { $0.seasonNumber > 0 }
+            .map { Seerrstaffel(nummer: $0.seasonNumber,
+                                folgen: $0.episodeCount ?? 0,
+                                stand: staende[$0.seasonNumber] ?? .offen) }
+
+        let text = a.overview?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Seerrdetail(beschreibung: (text?.isEmpty ?? true) ? nil : text,
+                           laufzeit: a.runtime ?? a.episodeRunTime?.first,
+                           bewertung: a.voteAverage,
+                           staffeln: staffeln)
+    }
+
     /// Den Sitzungskeks aus der Antwort auf die Anmeldung holen.
     ///
     /// **Seerr arbeitet mit einer Sitzung, nicht mit einem Merkmal.** Nach
@@ -180,7 +252,15 @@ public enum Seerr {
     public static func adresse(aus eingabe: String) -> URL? {
         var text = eingabe.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        if !text.lowercased().hasPrefix("http") { text = "https://" + text }
+        // **Dieselbe Regel wie beim Medienserver, nicht eine zweite.**
+        // Wer `192.168.1.9:5055` tippt, meint kein `https` — dort steht
+        // praktisch nie ein Zertifikat, und die Anmeldung scheiterte an
+        // etwas, das mit Seerr nichts zu tun hat. `AppModelURLNormalizer.istImHeimnetz`
+        // beantwortet das seit dem Jellyfin-Server; sie hier noch einmal zu
+        // schreiben wäre die Kopie, die auseinanderläuft.
+        if !text.lowercased().hasPrefix("http") {
+            text = (AppModelURLNormalizer.istImHeimnetz(text) ? "http://" : "https://") + text
+        }
         while text.hasSuffix("/") { text.removeLast() }
         for anhang in ["/api/v1", "/api"] where text.lowercased().hasSuffix(anhang) {
             text.removeLast(anhang.count)
@@ -285,6 +365,18 @@ public actor SeerrClient {
             throw JellyfinError.http(status: http.statusCode,
                                      body: String(data: daten.prefix(200), encoding: .utf8))
         }
+    }
+
+    /// Beschreibung, Bewertung und Staffeln zu einem Treffer.
+    ///
+    /// Kommt nichts, bleibt die Seite bei dem, was der Suchtreffer schon
+    /// trägt — eine leere Beschreibung ist besser als eine Fehlermeldung für
+    /// etwas, das nur schmückt.
+    public func detail(art: String, id: Int) async -> Seerrdetail? {
+        guard let req = try? anfrage("\(art)/\(id)"),
+              let (daten, antwort) = try? await sitzung.data(for: req),
+              let http = antwort as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+        return Seerr.detail(aus: daten)
     }
 
     /// Ob die gespeicherte Sitzung noch gilt.
