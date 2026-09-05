@@ -37,6 +37,11 @@ let package = Package(
         // Die Medientasten der Tastatur. Auf Linux leer — dort macht das
         // MPRIS; unter Windows braucht es eine eigene Fensterprozedur.
         .target(name: "CMedientasten"),
+        // Meldet die mitgelieferte Schrift bei fontconfig an. Sie liegt bei,
+        // weil SF Pro es nur auf dem Mac gibt und alle Plattformen gleich
+        // aussehen sollen.
+        .target(name: "CSchriften",
+                linkerSettings: [.linkedLibrary("fontconfig")]),
         .executableTarget(
             name: "SwiftlyWindows",
             dependencies: [
@@ -44,6 +49,7 @@ let package = Package(
                 "CVLC",
                 "CBildbruecke",
                 "CMedientasten",
+                "CSchriften",
                 "CRlottie",
                 .product(name: "JellyfinKit", package: "JellyfinKit")
             ],

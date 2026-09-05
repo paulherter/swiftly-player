@@ -1,4 +1,5 @@
 import CGtk
+import CSchriften
 import Foundation
 import JellyfinKit
 
@@ -830,8 +831,25 @@ enum Stil {
         """
     }
 
+    /// **Die Schrift kommt mit, sie wird nicht erwartet.**
+    ///
+    /// Auf dem Mac ist die Oberfläche in SF Pro gesetzt, und die gibt es nur
+    /// dort. Inter ist ihr nächster Verwandter und liegt neben der App; auf
+    /// Linux ist sie oft schon installiert, unter Windows nie — dort fiele
+    /// die Oberfläche sonst auf Segoe UI zurück und sähe anders aus als auf
+    /// dem Mac. Da alle Plattformen gleich aussehen sollen, wird sie hier
+    /// angemeldet, bevor das erste Stilblatt greift.
+    ///
+    /// Still im Fehlerfall: findet sich der Ordner nicht, bleibt es bei der
+    /// Schrift des Systems.
+    private static func schriftMitbringen() {
+        guard let ordner = Plattform.mitgeliefert("Schriften") else { return }
+        _ = ordner.withCString { schriften_laden($0) }
+    }
+
     /// Lädt das Stilblatt in die Anzeige.
     static func anwenden() {
+        schriftMitbringen()
         let anbieter = gtk_css_provider_new()
         meckern(anbieter)
         gtk_css_provider_load_from_string(anbieter, blatt)
