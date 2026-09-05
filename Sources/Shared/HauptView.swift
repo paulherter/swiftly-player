@@ -255,6 +255,21 @@ struct BibliothekView: View {
         //
         // Gewechselt wird nur durch Antippen — dort wird auch neu geladen.
         .task(id: stand.kennung) { await laden() }
+        // **Nach einem Kontowechsel gehört auch diese Seite dem neuen Konto.**
+        //
+        // `kennung` trägt nur Sortierung und Filter, das Konto steht nicht
+        // darin — die Aufgabe oben lief also nicht wieder an. Zurück blieben
+        // die Titel des vorigen Kontos, und `gewaehlt` zeigte auf eine
+        // Bibliothek, die es unter dem neuen Merkmal gar nicht geben muss.
+        //
+        // Die Wahl wird zurückgenommen, nicht die Liste geleert: `laden()`
+        // ersetzt sie. Wer sie vorher leert, hängt jede Kachel kurz aus, und
+        // `AsyncImage` bricht dann seinen Abruf ab — auf dem Fernseher
+        // gemessen, zwanzigmal `NSURLErrorDomain -999` in Folge.
+        .onChange(of: model.kontowechsel) { _, _ in
+            gewaehlt = nil
+            Task { await laden() }
+        }
     }
 
     private func inhalt(nutzbar: CGFloat) -> some View {

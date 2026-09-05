@@ -185,6 +185,14 @@ struct LoginView: View {
     let model: AppModel
     let serverName: String
     let version: String
+    /// Gesetzt, wenn diese Ansicht als **Blatt** über der Profilseite steht,
+    /// um ein weiteres Konto aufzunehmen — statt als erster Schirm der App.
+    ///
+    /// Zwei Dinge hängen daran, und beide wären sonst falsch: „Anderer
+    /// Server" meldet ab, was hier das laufende Konto träfe; und das Blatt
+    /// muss sich schließen, wenn es fertig ist. Beides ist keine zweite
+    /// Anmeldemaske, sondern derselbe Schirm in einer anderen Lage.
+    var fertig: (() -> Void)?
 
     @State private var benutzer = ""
     @State private var passwort = ""
@@ -208,11 +216,30 @@ struct LoginView: View {
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
-            Button("Anderer Server") { model.signOut() }
-                .buttonStyle(.plain)
-                .font(.system(size: 13))
-                .foregroundStyle(Stil.schriftSehrLeise)
-                .padding(.bottom, 22)
+            // Im Blatt nicht: „Anderer Server" meldet ab, und abgemeldet
+            // würde hier das Konto, das gerade läuft. Wer den Server wechseln
+            // will, tut das über „Abmelden" auf der Profilseite.
+            if fertig == nil {
+                Button("Anderer Server") { model.signOut() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .padding(.bottom, 22)
+            }
+        }
+        // **Wer das Blatt zeigt, schließt es auch — aber nur ohne Fehler.**
+        //
+        // Blieb es nach dem Hinzufügen stehen, war die Rückmeldung „nix
+        // passiert": angemeldet war das neue Konto längst, nur sah man es
+        // nicht. Bedingungslos schließen wäre der andere Fehler — dann
+        // verschwindet mit dem Blatt auch die Fehlermeldung, und es sieht
+        // wieder aus, als sei nichts geschehen.
+        //
+        // `kontowechsel` ist das richtige Zeichen und nicht `phase`: die
+        // steht beim Hinzufügen schon auf `.ready` und rührt sich nicht.
+        .onChange(of: model.kontowechsel) { _, _ in
+            guard model.errorMessage == nil else { return }
+            fertig?()
         }
         .task {
             bekannte = await model.oeffentlicheBenutzer()

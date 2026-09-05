@@ -87,6 +87,16 @@ struct HomeView: View {
             guard neu == .active, stand.brauchtAuffrischung else { return }
             Task { await laden() }
         }
+        // **Nach einem Kontowechsel gehört die Seite dem neuen Konto.**
+        //
+        // Und das hängt ausdrücklich **nicht** an `phase`: die steht beim
+        // Wechsel schon auf `.ready` und ändert sich nicht. Die Startseite lud
+        // deshalb nie neu und zeigte weiter die Titel des vorigen Kontos —
+        // mit Fortschrittsbalken, die zu einem anderen Menschen gehörten.
+        //
+        // Ohne Frist, anders als beim Zurückkommen: hier ist nicht „vielleicht
+        // veraltet", hier ist alles falsch.
+        .onChange(of: model.kontowechsel) { _, _ in Task { await laden() } }
     }
 
     /// Wortmarke links, Profilbild rechts.
