@@ -495,6 +495,17 @@ targets:
         # Top Shelf erst beim ersten tvOS-Upload.
         LSApplicationCategoryType: public.app-category.entertainment
         CFBundleDisplayName: Swiftly
+        # **Der Name des Buendels heisst „Swiftly", nicht „Swiftly-macOS".**
+        #
+        # Apple hat 1.0.0 (8) danach abgewiesen (Richtlinie 5.2.5): der auf
+        # dem Geraet angezeigte Name enthielt einen Begriff fuer ein
+        # Apple-Produkt. Auf dem Mac steht `CFBundleName` in der Menuezeile
+        # und unter dem Zeichen im Finder; ohne diese Zeile faellt er auf den
+        # Zielnamen zurueck, und der heisst nach dem Bauziel.
+        #
+        # `CFBundleDisplayName` allein genuegte nicht — den liest der Mac
+        # nicht ueberall.
+        CFBundleName: Swiftly
         # **Das Zeichen zusaetzlich als vollstaendige `.icns`.**
         #
         # Nachgesehen: die von Xcode aus dem Katalog erzeugte `AppIcon.icns`
@@ -551,6 +562,9 @@ targets:
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
+        # Damit auch die Datei selbst „Swiftly.app" heisst und nicht nach dem
+        # Bauziel — siehe die Begruendung bei `CFBundleName`.
+        PRODUCT_NAME: Swiftly
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
         # Dieselbe Begründung wie auf iOS und tvOS: ohne die Zugriffsgruppe
         # verweigert der Keychain das Schreiben (-34018) und die Anmeldung

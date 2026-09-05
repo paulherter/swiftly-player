@@ -48,6 +48,10 @@ final class Startanimation: @unchecked Sendable {
     /// Welches Bild schon in der Fläche steht.
     private var gerechnet = -1
 
+    /// **Lebt die Zeichenfläche noch?** Siehe den `destroy`-Auftrag in
+    /// ``init(fertig:)``.
+    private var lebt = true
+
     let anzeige: Widget
 
     /// `nil`, wenn die Vorlage fehlt oder rlottie sie nicht lesen kann. Dann
@@ -74,6 +78,22 @@ final class Startanimation: @unchecked Sendable {
         anzeige = feld!
         gtk_drawing_area_set_draw_func(alsZeichen(feld), startMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
+        // **Die Zeichenfläche hält die Animation, nicht `App`.**
+        //
+        // Der Zeichenruf oben bekommt `self` *unretained*, und gehalten wurde
+        // die Animation bisher nur vom Takt (der sich am Ende selbst
+        // freigibt) und von `App.startanimation`. `startbildWeg()` setzt die
+        // aber auf `nil`, **während das Bild noch weggeblendet wird** — die
+        // Fläche bleibt sichtbar und wird weitergezeichnet, nachdem `deinit`
+        // `lottie_animation_destroy` gerufen hat. Der nächste Strich rechnete
+        // dann auf zerstörtem Speicher:
+        //
+        //     rlottie::Animation::renderSync(unsigned __int64, rlottie::Surface, bool)
+        //
+        // Am 05.09.2026 in der Windows-VM aufgeloest — der Absturz traf jeden
+        // dritten bis vierten Start, ohne eine Zeile im Protokoll. Derselbe
+        // Fehler wie in ``Kulisse`` (a6d697b), an derselben Sorte Stelle.
+        beiSignal(feld, "destroy") { self.lebt = false }
         // **Losfahren, wenn das Widget wirklich auf dem Schirm ist.**
         //
         // `gtk_widget_add_tick_callback` fordert nur dann Bilder an, wenn das
@@ -173,7 +193,7 @@ final class Startanimation: @unchecked Sendable {
     /// Hülle um den Puffer. Eine je Bild kostet also fast nichts und hat
     /// keine Vorgeschichte.
     fileprivate func malen(_ cr: OpaquePointer, _ breite: Int32, _ hoehe: Int32) {
-        guard let tier else { return }
+        guard lebt, let tier else { return }
         let t = max(gtk_widget_get_scale_factor(anzeige), 1)
         // **Die Marke ist ein Zeichen, kein Hintergrund** — gedeckelt bei 360.
         let seite = min(Int(min(breite, hoehe)), 360)
