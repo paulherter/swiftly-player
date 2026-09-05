@@ -34,12 +34,18 @@ struct SeerrDetailView: View {
             Stil.grund.ignoresSafeArea()
             ScrollView { inhalt }.scrollIndicators(.hidden)
             Seitenpfeil { zurueck() }
+
+            // **Unser eigenes Blatt, nicht das des Systems.** Ein `.sheet`
+            // bringt seine eigene Sprache mit — abgerundete Ecken oben,
+            // Griff, Navigationsleiste — und stand damit neben „Mehr" und
+            // den Wiedergabelisten wie aus einer anderen App. Dieselben
+            // Werte wie dort: Schleier 0,55, Ecken 12, Titel 13 halbfett.
+            if blattOffen { staffelblatt }
         }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
-        .sheet(isPresented: $blattOffen) { staffelblatt }
         .task {
             detail = await model.seerr.detail(treffer)
             // **Nichts vorausgewaehlt.** „Man laedt ja nie alle runter im
@@ -91,38 +97,59 @@ struct SeerrDetailView: View {
     private var nebenzeile: String {
         var teile: [String] = []
         if let jahr = treffer.jahr { teile.append("\(jahr)") }
-        if let m = detail?.laufzeit, m > 0 {
-            teile.append(treffer.istSerie ? String(localized: "\(m) Min. je Folge")
-                                          : String(localized: "\(m) Min."))
+        if treffer.istSerie {
+            // **Wie auf der echten Seite: Staffeln, nicht Gattungen.** Dort
+            // steht „2008 · 2 Staffeln"; identisch heisst identisch.
+            let n = detail?.staffeln.count ?? 0
+            if n > 0 { teile.append(n == 1 ? String(localized: "1 Staffel")
+                                           : String(localized: "\(n) Staffeln")) }
+        } else if let m = detail?.laufzeit, m > 0 {
+            teile.append(String(localized: "\(m) Min."))
         }
         let gattungen = detail?.genres ?? []
-        if gattungen.isEmpty {
+        if !gattungen.isEmpty { teile.append(gattungen.joined(separator: ", ")) }
+        if teile.isEmpty {
             teile.append(treffer.istSerie ? String(localized: "Serie")
                                           : String(localized: "Film"))
-        } else {
-            teile.append(gattungen.joined(separator: ", "))
         }
         return teile.joined(separator: " · ")
     }
 
     /// Stand und Bewertung — dieselbe Zeile wie dort, nur ohne Direct Play:
     /// über einen Titel, den es hier nicht gibt, weiss niemand, wie er läuft.
+    /// **Dieselbe Zeile wie auf der echten Seite**, nur mit dem Stand statt
+    /// „Direct Play": Symbol, Wort, Stern. Vorher stand hier eine dicke Pille,
+    /// und genau die machte den Unterschied sichtbar, der keiner sein soll
     private var belegzeile: some View {
-        HStack(spacing: 10) {
-            Text(verbatim: standtext)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Stil.grund)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(standfarbe, in: Capsule())
+        HStack(spacing: 14) {
+            HStack(spacing: 6) {
+                Image(systemName: standsymbol)
+                    .font(.system(size: 11, weight: .heavy))
+                Text(verbatim: standtext)
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .foregroundStyle(standfarbe)
+
             if let b = detail?.bewertung, b > 0 {
-                HStack(spacing: 4) {
-                    Image(systemName: "star.fill").font(.system(size: 12))
-                    Text(verbatim: String(format: "%.1f", b))
-                        .font(.system(size: 14, weight: .medium))
+                HStack(spacing: 5) {
+                    Image(systemName: "star.fill").font(.system(size: 11))
+                    Text(verbatim: String(format: "%.1f", b)
+                            .replacingOccurrences(of: ".", with: ","))
+                        .font(.system(size: 13))
                 }
-                .foregroundStyle(Stil.schriftLeise)
+                .foregroundStyle(Color.white.opacity(0.8))
             }
             Spacer(minLength: 0)
+        }
+    }
+
+    private var standsymbol: String {
+        switch stand {
+        case .da: "checkmark"
+        case .wartetAufFreigabe: "clock"
+        case .laedt: "arrow.down.circle"
+        case .teilweiseDa: "circle.lefthalf.filled"
+        case .offen, .geloescht: "plus.circle"
         }
     }
 
@@ -138,8 +165,7 @@ struct SeerrDetailView: View {
 
     private var standfarbe: Color {
         switch stand {
-        case .wartetAufFreigabe: Color(red: 0.85, green: 0.60, blue: 0.17)
-        case .laedt: Color(red: 0.29, green: 0.56, blue: 0.85)
+        case .wartetAufFreigabe, .laedt: Color.white.opacity(0.8)
         default: Stil.akzent
         }
     }
@@ -235,8 +261,9 @@ struct SeerrDetailView: View {
                             .font(Stil.klein).foregroundStyle(Stil.schriftSehrLeise)
                     }
                 }
-                .padding(.horizontal, 13).padding(.vertical, 12)
-                .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 9))
+                .padding(.horizontal, Stil.randAbstand)
+                .frame(height: 50)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
@@ -244,41 +271,48 @@ struct SeerrDetailView: View {
 
     /// Welche Staffeln — als Blatt von unten, nicht als Liste auf der Seite.
     private var staffelblatt: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 8) {
-                    staffelliste
+        ZStack(alignment: .bottom) {
+            Rectangle()
+                .fill(.black.opacity(0.55))
+                .ignoresSafeArea()
+                .onTapGesture { blattOffen = false }
+
+            VStack(spacing: 0) {
+                Text("Welche Staffeln?")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Stil.schriftLeise)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Stil.randAbstand)
+                    .padding(.top, 18)
+                    .padding(.bottom, 12)
+
+                ScrollView {
+                    VStack(spacing: 0) { staffelliste }
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
-            }
-            .background(Stil.grund.ignoresSafeArea())
-            .safeAreaInset(edge: .bottom) {
+                .frame(maxHeight: 320)
+
+                Trennlinie()
+
                 Button {
                     blattOffen = false
                     Task { await anfragen() }
                 } label: {
-                    Text(gewaehlt.isEmpty ? "Staffel waehlen"
-                                          : "\(gewaehlt.count) Staffeln anfragen")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.grund)
+                    Text(gewaehlt.isEmpty ? "Staffel wählen"
+                                          : "\(gewaehlt.count) anfragen")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.akzent)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(gewaehlt.isEmpty ? Stil.flaeche : Stil.akzent,
-                                    in: RoundedRectangle(cornerRadius: 12))
+                        .frame(height: 54)
                 }
                 .buttonStyle(.plain)
                 .disabled(gewaehlt.isEmpty)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 12)
-                .background(Stil.grund)
             }
-            .navigationTitle(Text("Staffeln"))
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
+            .background(Stil.flaeche)
+            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 12,
+                                              topTrailingRadius: 12))
+            .ignoresSafeArea(edges: .bottom)
         }
-        .presentationDetents([.medium, .large])
+        .transition(.opacity)
     }
 
     private func anfragen() async {
