@@ -35,9 +35,18 @@ final class Navigator {
     /// deshalb nach rechts hinaus wie beim Zurückgehen, nur alle auf einmal.
     /// Es bleibt bei **einer** Bewegung, weil `HauptView` den Mitgang im
     /// selben Zug zurückzieht.
+    /// **Ausgenommen ist die Profilseite** — sie zeigt den Bund, nicht ein
+    /// Konto, und sie ist die Seite, auf der gewechselt wird. Fiele sie mit,
+    /// müsste man sie zwischen zwei Wechseln jedes Mal neu öffnen; der
+    /// Streifen steht aber genau dafür da, mehrmals umzuschalten. Steht so
+    /// in G4.
     func alleLeeren() {
         guard stapel.contains(where: { !$0.value.isEmpty }) else { return }
-        withAnimation(Stil.zeitSeitenschub) { stapel.removeAll() }
+        withAnimation(Stil.zeitSeitenschub) {
+            for (bereich, seiten) in stapel {
+                stapel[bereich] = seiten.last == .profil ? [.profil] : []
+            }
+        }
     }
 
     func zurueck(in bereich: Bereich) {

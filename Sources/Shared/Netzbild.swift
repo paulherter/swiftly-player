@@ -54,11 +54,34 @@ final class Bildspeicher {
     static var hoechstzahl = 240
     static var kantenlaenge = 1600
 
-    func bild(_ url: URL) -> Image? { bekannt[url] }
+    func bild(_ url: URL) -> Image? { bekannt[schluessel(url)] }
+
+    /// **Der Zugang gehört nicht zum Bild.** Jede Bildadresse trägt
+    /// `api_key` — nach einem Kontowechsel hiesse dasselbe Plakat plötzlich
+    /// anders, und der ganze Speicher wäre auf einen Schlag kalt: jede Kachel
+    /// neu geholt, und die alten Einträge bleiben liegen, bis sie hinten
+    /// herausfallen. Bei 240 Plätzen für zwei Konten ist das die Hälfte.
+    ///
+    /// Ein Plakat ist aber für beide Konten dasselbe Bild — der Server gibt
+    /// es unter derselben Kennung heraus, und `tag` (Jellyfins Fingerabdruck)
+    /// bleibt im Schlüssel, eine geänderte Fassung fällt also weiterhin auf.
+    /// Geholt wird mit dem vollen Weg, gemerkt ohne das Merkmal.
+    ///
+    /// Das ist G3 an einer Stelle, an der die Frage noch niemand gestellt
+    /// hatte — mit dem Unterschied, dass hier nichts zu verwerfen ist: ein
+    /// Bild trägt keinen Sehstand.
+    private func schluessel(_ url: URL) -> URL {
+        guard var teile = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let werte = teile.queryItems, werte.contains(where: { $0.name == "api_key" })
+        else { return url }
+        teile.queryItems = werte.filter { $0.name != "api_key" }
+        return teile.url ?? url
+    }
 
     func laden(_ url: URL) async -> Image? {
-        if let da = bekannt[url] { return da }
-        if let lauf = laufend[url] { return await lauf.value }
+        let merkmal = schluessel(url)
+        if let da = bekannt[merkmal] { return da }
+        if let lauf = laufend[merkmal] { return await lauf.value }
 
         // **Vor dem Abzweig gelesen.** `kantenlaenge` gehört dem Hauptlauf;
         // von der abgetrennten Aufgabe aus wäre der Zugriff ein Sprung über
@@ -85,10 +108,10 @@ final class Bildspeicher {
             return Image(decorative: kiste.bild, scale: 1)
         }
 
-        laufend[url] = lauf
+        laufend[merkmal] = lauf
         let ergebnis = await lauf.value
-        laufend[url] = nil
-        if let ergebnis { merken(ergebnis, fuer: url) }
+        laufend[merkmal] = nil
+        if let ergebnis { merken(ergebnis, fuer: merkmal) }
         return ergebnis
     }
 
