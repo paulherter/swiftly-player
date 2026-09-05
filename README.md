@@ -98,30 +98,49 @@ the question, and the app simply respects the answer.
 
 <br>
 
-## 🌟 And the ordinary things, done properly
+## 🌟 Everything else
 
-- 🎯 **Never transcode**: the device profile declares containers, codecs and
-  every subtitle format, so the server has no reason to re-encode. Undeclared
-  subtitles are the most common cause of a needless transcode, and they are
-  all declared here.
-- 🪟 **Picture in Picture** on iPhone and iPad — the one thing that sent me
-  looking for another client in the first place.
-- ⏯️ **Resume** exactly where you stopped, with the next episode following on
-  its own.
-- 🔑 **Quick Connect**, so you never type a password on a television remote.
-- 🎧 **Audio and subtitle tracks** switch while the film keeps running.
-- 📚 **Several libraries** of the same kind, and the app remembers which one
-  you were in.
-- ⏭️ **Skip intro and recap** where your server knows about them — the button
+### 🎬 Watching
+
+- **Never transcode.** The device profile declares containers, codecs and
+  *every* subtitle format, so the server has no reason to re-encode.
+  Undeclared subtitles are the most common cause of a needless transcode, and
+  they are all declared here.
+- **Resume** exactly where you stopped, with the next episode following on its
+  own.
+- **Skip intro and recap** where your server knows about them — the button
   changes what it says, instead of appearing out of nowhere.
-- 📺 **Top Shelf** on the Apple TV: what you were watching sits above the app
-  icon on the home screen, before you even open it.
-- 📡 **AirPlay sends the picture**, not just the sound — and the server still
-  does not re-encode.
-- ⌨️ **Media keys** on Linux and Windows, and the lock screen on iPhone shows
-  the artwork.
-- 🚫 **No account, no subscription, no ads, no tracking.** Nothing leaves your
+- **Audio and subtitle tracks** switch while the film keeps running.
+- **Playback speed**, and the position is reported back to the server as you
+  watch.
+
+### 📚 Finding things
+
+- **Several libraries** of the same kind, and the app remembers which one you
+  were in.
+- **Search** across your libraries, with the season and episode you meant.
+- **Top Shelf**<sup>1</sup>: what you were watching sits above the app icon on
+  the Apple TV home screen, before you even open it.
+
+### 📱 On your devices
+
+- **Picture in Picture**<sup>2</sup> — the one thing that sent me looking for
+  another client in the first place.
+- **AirPlay sends the picture**<sup>2</sup>, not just the sound — and the
+  server still does not re-encode.
+- **Lock screen and Control Centre**<sup>2</sup> show the artwork and the
+  controls.
+- **Media keys**<sup>3</sup> work, and a small window stays on top while you
+  do something else.
+- **Quick Connect**, so you never type a password on a television remote.
+
+### 🔒 Yours
+
+- **No account, no subscription, no ads, no tracking.** Nothing leaves your
   device except the requests to the server you enter yourself.
+- **Free and open source**, MPL-2.0.
+
+<sub>1 Apple TV · 2 iPhone, iPad · 3 Linux, Windows, Mac</sub>
 
 <br>
 
