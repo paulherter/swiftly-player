@@ -353,7 +353,6 @@ extension App {
         // und malt sich selbst, maskiert statt übermalt. Warum das den
         // Unterschied macht, steht in ``Kulisse``.
         let bild = Kulisse()
-        kulissen[titel.id] = bild
         gtk_overlay_set_child(OpaquePointer(kopf), bild.anzeige)
         gtk_overlay_add_overlay(OpaquePointer(kopf), heldenblock(titel))
 
