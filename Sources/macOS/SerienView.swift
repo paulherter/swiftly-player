@@ -242,7 +242,8 @@ struct SerienView: View {
                         Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
-                                         bild: model.imageURL(for: eintrag, hochkant: true))
+                                         bild: model.imageURL(for: eintrag, hochkant: true),
+                                         zeichen: "tv")
                         }
                         .buttonStyle(.plain)
                     }
@@ -439,7 +440,7 @@ struct Folgenzeile: View {
                 // eigene Vorschaubild der Folge.
                 Bildflaeche(bild: model.imageURL(for: folge, maxHeight: 220),
                             breite: bildBreite, hoehe: bildHoehe,
-                            fortschritt: fortschritt)
+                            fortschritt: fortschritt, zeichen: "tv")
                 if schwebt {
                     Circle()
                         .fill(.black.opacity(0.45))

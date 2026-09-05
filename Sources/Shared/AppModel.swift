@@ -358,8 +358,18 @@ final class AppModel {
         errorMessage = nil
         do {
             let s = try await client.authenticate(username: username, password: password)
-            sitzungUebernehmen(s)
-            await loadViews()
+            // **Nicht zusätzlich laden, wenn es ein Wechsel war** — gleiche
+            // Begründung wie bei Quick Connect: `sitzungUebernehmen` räumt
+            // dann selbst auf und stösst das Neuladen an, und ein zweiter
+            // Lauf daneben liefert sich mit dem ersten ein Rennen.
+            //
+            // Hier fiel es länger nicht auf als dort: auf dem Fernseher, wo
+            // der Profilwechsel zuerst gebaut wurde, führt „Weiteres Konto
+            // hinzufügen" auf Quick Connect. Name und Passwort sind der Weg
+            // auf iPhone, iPad und dem Schreibtisch — also genau dort, wo
+            // gleich vier Plattformen darauf gestossen wären. Von der
+            // Mac-Sitzung beim Nachlesen gefunden, nicht durch einen Fehler.
+            if !sitzungUebernehmen(s) { await loadViews() }
         } catch {
             errorMessage = lesbar(error)
         }

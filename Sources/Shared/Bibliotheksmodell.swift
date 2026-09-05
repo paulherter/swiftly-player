@@ -21,6 +21,24 @@ final class Bibliotheksmodell {
     private(set) var gestoert = false
     private var laedtNach = false
 
+    /// Zu welchem Konto gehört, was hier steht.
+    ///
+    /// **Das Regal überlebt den Kontowechsel, die Ansicht darüber nicht
+    /// unbedingt.** Auf dem Mac hängt `BibliothekView` an `.task(id:)` mit
+    /// Sortierung und Filter — beim Wechsel ändert sich davon nichts, also
+    /// lud niemand neu, und die Sammlung des vorigen Kontos stand bis zum
+    /// Neustart da. Von der Mac-Sitzung gefunden und dort in der Ansicht
+    /// behoben; hier steht die Hälfte, die alle Plattformen teilen.
+    private var fuerKonto = 0
+
+    /// Gehört, was hier steht, noch zum angemeldeten Konto?
+    ///
+    /// Die Antwort ist für jede Plattform dieselbe, das Nachladen nicht: auf
+    /// Apple hängt eine Ansicht an `.task(id:)`, auf Linux und Windows gibt
+    /// es kein `onChange` und der Zähler wird von Hand verglichen. Deshalb
+    /// steht hier die Frage und nicht der Auslöser.
+    func veraltet(_ model: AppModel) -> Bool { fuerKonto != model.kontowechsel }
+
     var sortierung: Sortierung = .name
     var filter: Bibliotheksfilter = .alle
 
@@ -52,6 +70,7 @@ final class Bibliotheksmodell {
     func laden(_ model: AppModel, art: String? = nil, bibliothek: Item? = nil) async {
         laedt = items.isEmpty
         gestoert = false
+        fuerKonto = model.kontowechsel
         guard let bib = await quelle(model, art: art, bibliothek: bibliothek) else {
             // Zwei Faelle sehen hier gleich aus: ein Server ohne Bibliothek
             // dieser Gattung, und einer, der gar nicht geantwortet hat.
@@ -81,6 +100,11 @@ final class Bibliotheksmodell {
     }
 
     func nachladen(_ model: AppModel, art: String? = nil, bibliothek: Item? = nil) async {
+        // **Nach einem Kontowechsel wird nicht angehängt.** Was dasteht,
+        // gehört dem vorigen Konto; die zweite Seite käme vom neuen, und
+        // beides zusammen ergäbe eine Sammlung, die es nirgends gibt. Wer
+        // nachlädt, ohne vorher neu geladen zu haben, bekommt hier nichts.
+        guard !veraltet(model) else { return }
         guard nochMehrDa, !laedtNach, !laedt else { return }
         guard let bib = await quelle(model, art: art, bibliothek: bibliothek) else { return }
         laedtNach = true
