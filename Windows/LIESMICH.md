@@ -61,3 +61,30 @@ Das Skript spiegelt die geteilten Quellen, baut, und legt anschliessend GTK,
 libVLC und **VLCs Module** neben das Programm. Das letzte ist kein Beiwerk:
 Windows sucht DLLs neben der ausführbaren Datei, nicht über einen Suchpfad,
 und ohne die Module startet der Abspieler ohne einen einzigen Dekoder.
+
+## Ausliefern
+
+```powershell
+.\bauen.ps1 -Konfiguration release
+.\Installieren\packen.ps1
+& "C:\Program Files\Inno Setup 7\ISCC.exe" .\Installieren\Swiftly.iss
+```
+
+Heraus kommt `Ablage\Swiftly-1.0.0-Setup.exe` — rund 80 MB, aus 356 MB Ablage.
+Der Installer legt Startmenü-Eintrag, wahlweise Desktop-Symbol und eine
+Deinstallation an; ohne Adminrechte installiert er in den eigenen Ordner, mit
+in „Programme".
+
+**Er ist nicht signiert.** Windows zeigt beim ersten Start eine
+SmartScreen-Warnung. Das lässt sich nur mit einem gekauften Zertifikat
+abstellen, nicht durch etwas im Skript.
+
+## Was noch fehlt
+
+- **Medientasten und die Wiedergabekachel.** Unter Linux macht das
+  ``Medienleiste`` über MPRIS; Windows hat dafür die *System Media Transport
+  Controls*, und die gibt es nur über WinRT. Der Code steigt ohne Sitzungsbus
+  schon von selbst still aus, die App läuft also — sie meldet sich nur nicht
+  beim System an.
+- **Keine automatischen Updates.** Linux bekommt sie über die Paketquelle;
+  für Windows gibt es bisher nur den Installer.
