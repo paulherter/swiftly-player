@@ -221,4 +221,38 @@ struct KontenbundAblageTests {
         let zurueck = try #require(Kontenbund.ausAblage(bund: muell, einzelne: einzeln))
         #expect(zurueck.aktives.userID == "1")
     }
+    /// **Der Fall, der Linux und Windows die Anmeldung gekostet hätte.**
+    ///
+    /// Dort wurde die alte Ablage roh weitergereicht, obwohl sie andere
+    /// Schlüsselnamen trägt (`token`, `benutzerID`, `benutzername`); drei von
+    /// vier passten nicht, `try?` verschluckte es, und jeder bestehende
+    /// Nutzer stand nach dem Aktualisieren vor dem Anmeldeschirm.
+    ///
+    /// Auf der Apple-Seite kann das nicht passieren — dort schreibt dieselbe
+    /// `Session` mit denselben Namen. Dieser Test hält genau das fest, mit
+    /// **wörtlichem** JSON statt einer frischen Kodierung: sonst prüfte er
+    /// nur, dass unser Kodierer zu unserem Dekodierer passt, und ginge bei
+    /// einer Umbenennung stillschweigend mit.
+    @Test("Die alte Apple-Ablage wird wörtlich übernommen")
+    func alteAppleAblage() throws {
+        let alt = Data("""
+        {"accessToken":"t-1","userID":"1","userName":"paul",
+         "serverURL":"https://tv.paulherter.de"}
+        """.utf8)
+        let bund = try #require(Kontenbund.ausAblage(bund: nil, einzelne: alt))
+        #expect(bund.aktives.userID == "1")
+        #expect(bund.aktives.userName == "paul")
+        #expect(bund.aktives.accessToken == "t-1")
+    }
+
+    /// Und die Gegenprobe: heissen die Schlüssel anders, kommt nichts zurück
+    /// — nicht etwa ein halb gefüllter Bund.
+    @Test("Fremde Schlüsselnamen liefern nichts, nicht Halbfertiges")
+    func fremdeSchluessel() {
+        let fremd = Data("""
+        {"token":"t-1","benutzerID":"1","benutzername":"paul",
+         "serverURL":"https://tv.paulherter.de"}
+        """.utf8)
+        #expect(Kontenbund.ausAblage(bund: nil, einzelne: fremd) == nil)
+    }
 }
