@@ -53,6 +53,20 @@ final class Kulisse: @unchecked Sendable {
 
     let anzeige: Widget
 
+    /// **Lebt die Zeichenfläche noch?**
+    ///
+    /// Das Kopfbild kommt aus dem Netz und trifft womöglich erst ein, wenn
+    /// die Seite längst zu ist. ``setzen(_:)`` rief dann
+    /// `gtk_widget_queue_draw` auf ein Widget, das GTK schon abgeräumt hatte:
+    ///
+    ///     Gtk-CRITICAL: gtk_widget_queue_draw: assertion 'GTK_IS_WIDGET (widget)' failed
+    ///
+    /// Die Zusicherung selbst liest den freigegebenen Speicher — sie ist
+    /// nicht die Rettung, sondern der erste Zugriff daneben. Gemessen am
+    /// 05.09.2026, als eine Serienseite verlassen wurde, bevor ihr Bild da
+    /// war.
+    private var lebt = true
+
     init() {
         let feld: Widget! = gtk_drawing_area_new()
         gtk_widget_add_css_class(feld, "swiftly-blank")
@@ -61,6 +75,13 @@ final class Kulisse: @unchecked Sendable {
         anzeige = feld!
         gtk_drawing_area_set_draw_func(alsZeichen(feld), kulisseMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
+        // **Die Zeichenfläche hält die Kulisse, nicht umgekehrt.** Der
+        // Zeichenruf oben bekommt `self` *unretained* — er darf also nicht
+        // der letzte Halter sein. Diesen Halt gibt der Auftrag hier: er hängt
+        // am Widget und wird mit ihm freigegeben. Vorher übernahm das ein
+        // Wörterbuch in ``App``, das nie geleert wurde; jede geöffnete
+        // Detailseite blieb darin liegen.
+        beiSignal(feld, "destroy") { self.lebt = false }
     }
 
     deinit { flaecheLoesen(); fertigLoesen() }
@@ -78,6 +99,8 @@ final class Kulisse: @unchecked Sendable {
 
     /// Nimmt ein heruntergeladenes Bild an.
     func setzen(_ daten: Data) {
+        // Kommt das Bild nach dem Ende der Seite, gibt es nichts mehr zu malen.
+        guard lebt else { return }
         daten.withUnsafeBytes { puffer in
             guard let basis = puffer.baseAddress,
                   let bytes = g_bytes_new(basis, gsize(puffer.count)) else { return }
