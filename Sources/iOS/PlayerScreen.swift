@@ -403,9 +403,6 @@ struct PlayerScreen: View {
             Orientierung.shared.playerGeoeffnet(querformatFest: fest)
         }
         .onChange(of: lebenslage) { _, neu in
-            // **Nur messen, nichts richten.** Siehe `geometrieNachmessen`.
-            if neu == .active { geometrieNachmessen(anlass: "aktiv") }
-
             // **Im Hintergrund anhalten — ausser es laeuft anderswo weiter.**
             //
             // Die App erklaert `UIBackgroundModes: audio`; ohne sie gaebe es
@@ -426,9 +423,6 @@ struct PlayerScreen: View {
                 laeuft = false
                 meldeFortschritt()
             }
-        }
-        .onChange(of: imKleinenFenster) { _, klein in
-            if !klein { geometrieNachmessen(anlass: "aus PiP zurueck") }
         }
         .task { await beobachten() }
         .task {
@@ -1170,41 +1164,6 @@ struct PlayerScreen: View {
 
     private func zeit(_ sekunden: Double) -> String { Spielzeit.text(sekunden) }
 
-    /// **Messung, kein Eingriff.**
-    ///
-    /// Zwei Erklaerungen kommen in Frage, und sie sind am Protokoll zu
-    /// **unterscheiden** — genau dafuer steht das hier:
-    ///
-    /// - **Drehmaske.** `Orientierung` wird nur in `onAppear`, `onDisappear`
-    /// und bei geaenderter Querformatsperre gerufen; nichts setzt sie neu,
-    /// wenn die App aus dem Hintergrund zurueckkommt, und das Kontrollzentrum
-    /// schickt sie dorthin. Dann stuende `erlaubt` auf `.portrait`, waehrend
-    /// die Szene quer liegt. - **Geometrie.** Die Szene meldet noch die
-    /// Groesse des kleinen Fensters. Das ist der Zwilling eines schon
-    /// behobenen Fehlers — damals traf es die Videoflaeche, hier waere es eine
-    /// Ebene hoeher. Dann wiche `fensterbreite` von der Fensterbreite der
-    /// Szene ab.
-    ///
-    /// Ein einzelner Wert beim Umschalten reicht nicht: der Fehler dauert zwei
-    /// Sekunden, der Augenblick des Wechsels liegt davor. Also drei Sekunden
-    /// lang alle 250 ms.
-    private func geometrieNachmessen(anlass: String) {
-        Task { @MainActor in
-            for schritt in 0..<12 {
-                let szene = UIApplication.shared.connectedScenes
-                    .compactMap { $0 as? UIWindowScene }.first
-                let fenster = szene?.keyWindow?.bounds.size ?? .zero
-                let lage = szene?.interfaceOrientation.rawValue ?? -1
-                let maske = Orientierung.shared.erlaubt.rawValue
-                Protokoll.schreib("[Geometrie] \(anlass) +\(schritt * 250) ms"
-                    + " · Fenster \(Int(fenster.width))x\(Int(fenster.height))"
-                    + " · Ansicht \(Int(fensterbreite))"
-                    + " · Lage \(lage) · Maske \(maske)"
-                    + " · PiP \(imKleinenFenster)")
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
-    }
 }
 
 /// Rueckmeldung beim Doppeltipp — dieselbe Drehung wie auf den Knoepfen,
