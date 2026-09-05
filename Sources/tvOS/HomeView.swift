@@ -66,6 +66,9 @@ struct HomeView: View {
         //
         // Die Frist von 30 Sekunden steht in `Auffrischung` und ist dort
         // geprüft — ohne sie würde jedes kurze Wegschalten neu laden.
+        // Beim Kontowechsel bleibt die Phase auf `ready` stehen; ohne das
+        // hier stünde weiter der Bestand des vorigen Kontos auf dem Schirm.
+        .onChange(of: model.kontowechsel) { _, _ in Task { await laden() } }
         .onChange(of: phase) { _, neu in
             guard neu == .active, stand.brauchtAuffrischung else { return }
             Task { await laden() }

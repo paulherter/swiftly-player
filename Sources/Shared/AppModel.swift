@@ -112,6 +112,15 @@ final class AppModel {
     /// der Profilseite. Leer, solange niemand angemeldet ist.
     private(set) var konten: [Session] = []
 
+    /// Zählt jeden Kontowechsel. Ansichten hängen sich daran, um neu zu laden.
+    ///
+    /// **Warum ein Zähler und nicht `phase`.** Beim ersten Anmelden springt
+    /// die Phase von `disconnected` auf `ready`, und daran hängt die
+    /// Startseite. Beim Wechsel zwischen zwei Konten bleibt sie auf `ready`
+    /// stehen — es passiert also nichts, und auf dem Schirm steht weiter das
+    /// vorige Konto.
+    private(set) var kontowechsel = 0
+
     /// **Die Quelle der Wahrheit dafür, wer angemeldet ist.**
     ///
     /// `session` bleibt daneben stehen, weil die halbe App sie liest; sie
@@ -296,6 +305,7 @@ final class AppModel {
     /// Was nach jeder erfolgreichen Anmeldung gleich abläuft — egal ob über
     /// Passwort oder Quick Connect.
     func sitzungUebernehmen(_ s: Session) {
+        let warAngemeldet = bund != nil
         // Derselbe Server: das Konto kommt dazu und gilt sofort. Ein anderer
         // Server heißt von vorn — ein Bund gehört zu genau einem Server.
         if var vorhanden = bund, vorhanden.passtZumServer(s) {
@@ -306,9 +316,34 @@ final class AppModel {
         }
         bundSichern()
         phase = .ready
+        // **War die App schon angemeldet, ist das ein Kontowechsel.** Der
+        // Client trägt nach dem Anmelden bereits das neue Merkmal; was fehlt,
+        // ist alles andere. Ohne das Aufräumen bleiben Bibliotheken und
+        // Startseite beim vorigen Konto stehen — und mit dem neuen Merkmal
+        // abgefragt gibt der Server sie nicht heraus. Genau so kam
+        // „Anmeldung abgelehnt", nachdem ein zweites Konto dazukam.
+        if warAngemeldet { nachDemWechsel() }
         // Name und Fassung stehen sonst nur nach einer frischen Verbindung
         // bereit — in den Einstellungen stand danach „Server · ?".
         Task { _ = await verbindungPruefen() }
+    }
+
+    /// Was nach jedem Kontowechsel neu muss — außer dem Client selbst.
+    private func nachDemWechsel() {
+        views = []
+        errorMessage = nil
+        kontowechsel += 1
+        #if os(tvOS)
+        Regal.leeren()
+        #endif
+        // **Die Fernsteuerung gehört dazu, und das sieht man ihr nicht an.**
+        // Sie wird sonst nur beim Erscheinen der Hauptansicht gestartet — die
+        // bleibt beim Wechsel aber stehen, und dann meldete sich das Gerät
+        // weiter mit dem Merkmal des vorigen Kontos am Server.
+        Task {
+            await fernsteuerungBeenden()
+            await fernsteuerungStarten()
+        }
     }
 
     func login(username: String, password: String) async {
@@ -734,19 +769,9 @@ final class AppModel {
         let neuer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
                                    deviceName: Self.deviceName, session: s)
         client = neuer
-        // Die Bibliotheken gehören dem Konto: ein zweites sieht womöglich
-        // andere. Leeren heißt, die Startseite lädt sie neu.
-        views = []
-        errorMessage = nil
         phase = .ready
-        #if os(tvOS)
-        Regal.leeren()
-        #endif
-        Task {
-            await fernsteuerungBeenden()
-            _ = await verbindungPruefen()
-            await fernsteuerungStarten()
-        }
+        nachDemWechsel()
+        Task { _ = await verbindungPruefen() }
     }
 
     func signOut() {
