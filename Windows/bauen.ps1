@@ -54,6 +54,13 @@ New-Item -ItemType Directory -Force -Path (Join-Path $tasten 'include') | Out-Nu
 Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CMedientasten\medientasten.c') $tasten
 Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CMedientasten\include\medientasten.h') (Join-Path $tasten 'include')
 
+# Und das Anmelden der mitgelieferten Schrift.
+$schrift = Join-Path $hier 'Sources\CSchriften'
+if (Test-Path $schrift) { Remove-Item -Recurse -Force $schrift }
+New-Item -ItemType Directory -Force -Path (Join-Path $schrift 'include') | Out-Null
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CSchriften\schriften.c') $schrift
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CSchriften\include\schriften.h') (Join-Path $schrift 'include')
+
 # Symbol und Startanimation liegen genauso nur einmal im Repo.
 $mittel = Join-Path (Split-Path -Parent $hier) 'Linux\Ressourcen'
 $mittelZiel = Join-Path $hier 'Ressourcen'
