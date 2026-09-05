@@ -93,6 +93,9 @@ public struct Seerrstaffel: Sendable, Hashable, Identifiable, Codable {
 /// Was auf der Seite eines Titels steht, den es noch nicht gibt.
 public struct Seerrdetail: Sendable, Equatable, Codable {
     public let beschreibung: String?
+    /// Höchstens zwei — mehr passt nicht in eine Nebenzeile, und die dritte
+    /// sagt ohnehin nichts mehr.
+    public let genres: [String]
     /// In Minuten. Bei einer Serie die Länge einer Folge.
     public let laufzeit: Int?
     public let bewertung: Double?
@@ -175,7 +178,9 @@ public enum Seerr {
                 let mediaInfo: Info?
             }
             struct Info: Decodable { let status: Int? }
+            struct Gattung: Decodable { let name: String? }
             let overview: String?
+            let genres: [Gattung]?
             let runtime: Int?
             let episodeRunTime: [Int]?
             let voteAverage: Double?
@@ -202,6 +207,7 @@ public enum Seerr {
 
         let text = a.overview?.trimmingCharacters(in: .whitespacesAndNewlines)
         return Seerrdetail(beschreibung: (text?.isEmpty ?? true) ? nil : text,
+                           genres: (a.genres ?? []).compactMap(\.name).prefix(2).map { $0 },
                            laufzeit: a.runtime ?? a.episodeRunTime?.first,
                            bewertung: a.voteAverage,
                            staffeln: staffeln)

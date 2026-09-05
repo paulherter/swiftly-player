@@ -181,6 +181,7 @@ struct SeerrTests {
 
     private let serie = Data("""
     {"overview":"Ein Berater der Polizei.","episodeRunTime":[45],"voteAverage":8.1,
+     "genres":[{"name":"Krimi"},{"name":"Drama"},{"name":"Mystery"}],
      "seasons":[
        {"seasonNumber":0,"episodeCount":3},
        {"seasonNumber":1,"episodeCount":23},
@@ -194,6 +195,14 @@ struct SeerrTests {
         #expect(d.beschreibung == "Ein Berater der Polizei.")
         #expect(d.laufzeit == 45)
         #expect(d.bewertung == 8.1)
+    }
+
+    /// Zwei reichen für eine Nebenzeile; die dritte sagt nichts mehr und
+    /// drängt die Laufzeit aus dem Bild.
+    @Test("Höchstens zwei Gattungen")
+    func hoechstensZweiGenres() throws {
+        let d = try #require(Seerr.detail(aus: serie))
+        #expect(d.genres == ["Krimi", "Drama"])
     }
 
     /// TMDB legt Specials in Staffel 0 ab. Wer „alle Staffeln" anfragt, meint

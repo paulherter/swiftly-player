@@ -21,6 +21,7 @@ struct SeerrDetailView: View {
     /// Welche Staffeln angekreuzt sind. Leer heisst **alle** — so wie beim
     /// ersten Öffnen, wo niemand etwas ausgewählt hat.
     @State private var gewaehlt: Set<Int> = []
+    @State private var blattOffen = false
 
     init(model: AppModel, treffer: Seerrtreffer) {
         self.model = model
@@ -38,55 +39,46 @@ struct SeerrDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
+        .sheet(isPresented: $blattOffen) { staffelblatt }
         .task {
             detail = await model.seerr.detail(treffer)
-            // Vorgabe: alles, was noch fehlt. Was schon da ist, kreuzt
-            // niemand an — und wer alles will, muss nichts tun.
-            gewaehlt = Set((detail?.staffeln ?? [])
-                .filter { $0.stand.anfragbar }.map(\.nummer))
+            // **Nichts vorausgewaehlt.** „Man laedt ja nie alle runter im
+            // Normalfall" — wer alles will, kreuzt alles an; wer eine will,
+            // muss nicht erst acht abwaehlen.
         }
     }
 
     private var inhalt: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Bild(url: treffer.plakat(breite: 780), hoehe: 220)
-                .frame(maxWidth: .infinity)
-                .opacity(0.5)
-                .overlay(alignment: .bottom) {
-                    LinearGradient(colors: [.clear, Stil.grund],
-                                   startPoint: .top, endPoint: .bottom)
-                        .frame(height: 110)
+            // **Derselbe Kopf wie auf der echten Detailseite.** Vorher stand
+            // hier ein eigenes `Bild` mit eigenem Verlauf — daher der schwarze
+            // Rand oben und das fehlende Mitziehen beim Scrollen. `Heldbild`
+            // und `Heldauslauf` koennen beides, seit Monaten geprueft.
+            Heldbild(url: treffer.plakat(breite: 780))
+                .overlay(alignment: .bottom) { Heldauslauf() }
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(verbatim: treffer.titel)
+                            .font(Stil.titel).tracking(-0.6)
+                            .foregroundStyle(Stil.schrift)
+                        Text(verbatim: nebenzeile)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Stil.schriftLeise)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, Stil.rand(breit: breit))
+                    .padding(.bottom, 16)
                 }
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text(verbatim: treffer.titel)
-                    .font(Stil.titel).tracking(-0.5).foregroundStyle(Stil.schrift)
-                Text(verbatim: untertitel)
-                    .font(Stil.koerper).foregroundStyle(Stil.schriftLeise)
-                    .padding(.top, 3)
-
-                plaketten.padding(.top, 12)
-
-                handlung.padding(.top, 16)
-
+            VStack(alignment: .leading, spacing: 14) {
+                belegzeile
+                handlung
                 if let text = detail?.beschreibung {
-                    Text(verbatim: text)
-                        .font(Stil.koerper)
-                        .lineSpacing(3)
-                        .foregroundStyle(Stil.schriftLeise)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 18)
-                }
-
-                if let fehler {
-                    Text(verbatim: fehler)
-                        .font(Stil.klein).foregroundStyle(Stil.warnung)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 10)
+                    Klapptext(text: text)
                 }
             }
             .padding(.horizontal, Stil.rand(breit: breit))
-            .padding(.top, -24)
+            .padding(.top, 14)
 
             Spacer(minLength: 40)
         }
@@ -94,84 +86,43 @@ struct SeerrDetailView: View {
         .frame(maxWidth: .infinity, alignment: breit ? .center : .leading)
     }
 
-    private var untertitel: String {
-        let art = treffer.istSerie ? String(localized: "Serie") : String(localized: "Film")
-        return treffer.jahr.map { "\($0) · \(art)" } ?? art
+    /// Jahr, Laufzeit und Gattung — genau wie auf der echten Detailseite,
+    /// im Bild und nicht in einer eigenen Zeile darunter.
+    private var nebenzeile: String {
+        var teile: [String] = []
+        if let jahr = treffer.jahr { teile.append("\(jahr)") }
+        if let m = detail?.laufzeit, m > 0 {
+            teile.append(treffer.istSerie ? String(localized: "\(m) Min. je Folge")
+                                          : String(localized: "\(m) Min."))
+        }
+        let gattungen = detail?.genres ?? []
+        if gattungen.isEmpty {
+            teile.append(treffer.istSerie ? String(localized: "Serie")
+                                          : String(localized: "Film"))
+        } else {
+            teile.append(gattungen.joined(separator: ", "))
+        }
+        return teile.joined(separator: " · ")
     }
 
-    /// Der Stand zuerst, dann was der Titel sonst hergibt.
-    ///
-    /// **Ohne diese Zeile sah die Seite leer aus.** Bei einem Film gibt es
-    /// keine Staffelliste, und dann standen dort nur Titel, Jahr und ein Knopf
-    /// Bewertung und Laufzeit kosten einen Abruf, den wir ohnehin machen.
-    private var plaketten: some View {
-        HStack(spacing: 7) {
+    /// Stand und Bewertung — dieselbe Zeile wie dort, nur ohne Direct Play:
+    /// über einen Titel, den es hier nicht gibt, weiss niemand, wie er läuft.
+    private var belegzeile: some View {
+        HStack(spacing: 10) {
             Text(verbatim: standtext)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Stil.grund)
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(standfarbe, in: Capsule())
             if let b = detail?.bewertung, b > 0 {
-                nebenplakette(String(format: "TMDB %.1f", b))
-            }
-            if let m = detail?.laufzeit, m > 0 {
-                nebenplakette(treffer.istSerie
-                    ? String(localized: "\(m) Min. je Folge")
-                    : String(localized: "\(m) Min."))
-            }
-        }
-    }
-
-    private func nebenplakette(_ text: String) -> some View {
-        Text(verbatim: text)
-            .font(.system(size: 12))
-            .foregroundStyle(Stil.schriftLeise)
-            .padding(.horizontal, 9).padding(.vertical, 5)
-            .background(Stil.flaeche, in: Capsule())
-    }
-
-    /// Die Staffeln zum Ankreuzen.
-    ///
-    /// **Was schon da ist, lässt sich nicht ankreuzen** — und sagt daneben,
-    /// dass es da ist. Ein Kästchen, das man drücken darf und das nichts
-    /// bewirkt, ist schlimmer als keines.
-    @ViewBuilder
-    private var staffelliste: some View {
-        if let staffeln = detail?.staffeln, !staffeln.isEmpty {
-            VStack(spacing: 6) {
-                ForEach(staffeln) { st in
-                    Button {
-                        guard st.stand.anfragbar else { return }
-                        if gewaehlt.contains(st.nummer) { gewaehlt.remove(st.nummer) }
-                        else { gewaehlt.insert(st.nummer) }
-                    } label: {
-                        HStack(spacing: 10) {
-                            Text("Staffel \(st.nummer)")
-                                .font(Stil.koerper)
-                                .foregroundStyle(st.stand.anfragbar ? Stil.schrift
-                                                                    : Stil.schriftSehrLeise)
-                            if st.folgen > 0 {
-                                Text("· \(st.folgen) Folgen")
-                                    .font(Stil.klein).foregroundStyle(Stil.schriftSehrLeise)
-                            }
-                            Spacer(minLength: 8)
-                            if st.stand.anfragbar {
-                                Image(systemName: gewaehlt.contains(st.nummer)
-                                        ? "checkmark.square.fill" : "square")
-                                    .font(.system(size: 17))
-                                    .foregroundStyle(gewaehlt.contains(st.nummer)
-                                        ? Stil.akzent : Stil.schriftSehrLeise)
-                            } else {
-                                Text(st.stand == .da ? "vorhanden" : "unterwegs")
-                                    .font(Stil.klein).foregroundStyle(Stil.schriftSehrLeise)
-                            }
-                        }
-                        .padding(.horizontal, 13).padding(.vertical, 11)
-                        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 9))
-                    }
-                    .buttonStyle(.plain)
+                HStack(spacing: 4) {
+                    Image(systemName: "star.fill").font(.system(size: 12))
+                    Text(verbatim: String(format: "%.1f", b))
+                        .font(.system(size: 14, weight: .medium))
                 }
+                .foregroundStyle(Stil.schriftLeise)
             }
+            Spacer(minLength: 0)
         }
     }
 
@@ -203,23 +154,27 @@ struct SeerrDetailView: View {
         if angefragt {
             auskunft(String(localized: "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."))
         } else if stand.anfragbar {
-            Button { Task { await anfragen() } } label: {
-                HStack(spacing: 7) {
+            Button {
+                // **Bei einer Serie wird erst gefragt, welche Staffeln.**
+                // Sie standen als lange Liste auf der Seite und draengten
+                // Beschreibung, Besetzung und Aehnliches nach unten — dabei
+                // ist das eine Frage, die erst beim Druecken entsteht.
+                if treffer.istSerie { blattOffen = true }
+                else { Task { await anfragen() } }
+            } label: {
+                HStack(spacing: 8) {
                     Image(systemName: laeuft ? "hourglass" : "plus")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 16, weight: .bold))
                     Text(laeuft ? "Wird angefragt…" : "Anfragen")
-                        .font(Stil.koerper.weight(.semibold))
+                        .font(.system(size: 17, weight: .semibold))
                 }
                 .foregroundStyle(Stil.grund)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 13)
-                .background(Stil.akzent, in: RoundedRectangle(cornerRadius: 10))
+                .padding(.vertical, 16)
+                .background(Stil.akzent, in: RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(.plain)
             .disabled(laeuft)
-            if treffer.istSerie {
-                staffelliste.padding(.top, 12)
-            }
         } else {
             auskunft(standhinweis)
         }
@@ -244,6 +199,86 @@ struct SeerrDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 13).padding(.horizontal, 14)
             .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// Die Staffeln zum Ankreuzen.
+    ///
+    /// **Was schon da ist, laesst sich nicht ankreuzen** — und sagt daneben,
+    /// dass es da ist. Ein Kaestchen, das man druecken darf und das nichts
+    /// bewirkt, ist schlimmer als keines.
+    @ViewBuilder
+    private var staffelliste: some View {
+        ForEach(detail?.staffeln ?? []) { st in
+            Button {
+                guard st.stand.anfragbar else { return }
+                if gewaehlt.contains(st.nummer) { gewaehlt.remove(st.nummer) }
+                else { gewaehlt.insert(st.nummer) }
+            } label: {
+                HStack(spacing: 10) {
+                    Text("Staffel \(st.nummer)")
+                        .font(Stil.koerper)
+                        .foregroundStyle(st.stand.anfragbar ? Stil.schrift
+                                                            : Stil.schriftSehrLeise)
+                    if st.folgen > 0 {
+                        Text("· \(st.folgen) Folgen")
+                            .font(Stil.klein).foregroundStyle(Stil.schriftSehrLeise)
+                    }
+                    Spacer(minLength: 8)
+                    if st.stand.anfragbar {
+                        Image(systemName: gewaehlt.contains(st.nummer)
+                                ? "checkmark.square.fill" : "square")
+                            .font(.system(size: 19))
+                            .foregroundStyle(gewaehlt.contains(st.nummer)
+                                ? Stil.akzent : Stil.schriftSehrLeise)
+                    } else {
+                        Text(st.stand == .da ? "vorhanden" : "unterwegs")
+                            .font(Stil.klein).foregroundStyle(Stil.schriftSehrLeise)
+                    }
+                }
+                .padding(.horizontal, 13).padding(.vertical, 12)
+                .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 9))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Welche Staffeln — als Blatt von unten, nicht als Liste auf der Seite.
+    private var staffelblatt: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 8) {
+                    staffelliste
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+            }
+            .background(Stil.grund.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    blattOffen = false
+                    Task { await anfragen() }
+                } label: {
+                    Text(gewaehlt.isEmpty ? "Staffel waehlen"
+                                          : "\(gewaehlt.count) Staffeln anfragen")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.grund)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(gewaehlt.isEmpty ? Stil.flaeche : Stil.akzent,
+                                    in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .disabled(gewaehlt.isEmpty)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 12)
+                .background(Stil.grund)
+            }
+            .navigationTitle(Text("Staffeln"))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+        }
+        .presentationDetents([.medium, .large])
     }
 
     private func anfragen() async {
