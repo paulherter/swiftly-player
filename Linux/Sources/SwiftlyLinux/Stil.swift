@@ -418,6 +418,20 @@ enum Stil {
             background-color: \(erhoeht);
         }
 
+        /* Bei mehreren Konten stehen unten zwei Kreise. Der zweite traegt
+           einen Rand in der Farbe der Leiste — er stanzt die Ueberlappung
+           aus, sonst kleben die beiden Kreise zu einer Form zusammen. */
+        .swiftly-profilbild-aktiv {
+            border-radius: 15px;
+            background-color: \(erhoeht);
+            box-shadow: 0 0 0 1.5px \(akzent);
+        }
+        .swiftly-profilbild-daneben {
+            border-radius: 15px;
+            background-color: \(erhoeht);
+            box-shadow: 0 0 0 2px \(flaeche);
+        }
+
         /* MARK: Detailseite */
 
         .swiftly-heldtitel { font-size: 34px; font-weight: 700; letter-spacing: -0.8px; }
@@ -585,6 +599,34 @@ enum Stil {
         button.swiftly-wertzeile.swiftly-aktiv image { color: \(akzent); }
 
         .swiftly-profilgross { border-radius: 42px; background-color: \(flaeche); }
+
+        /* MARK: Kontenstreifen im Profil
+
+           Der Ring liegt als Schatten aussen an, nicht als Rand: ein Rand
+           zaehlt zur Flaeche und macht das Bild um seine Staerke kleiner —
+           96 und 72 waeren dann 93 und 70, und die beiden Groessen stuenden
+           nicht mehr im Verhaeltnis des Entwurfs. */
+        .swiftly-kontoaktiv {
+            border-radius: 48px;
+            background-color: \(flaeche);
+            box-shadow: 0 0 0 1.5px \(akzent);
+        }
+        .swiftly-kontoandere {
+            border-radius: 36px;
+            background-color: \(flaeche);
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.12);
+        }
+        .swiftly-kontopunkt { border-radius: 3px; background-color: \(akzent); }
+        button.swiftly-kontoknopf {
+            background: none;
+            border: none;
+            box-shadow: none;
+            padding: 0;
+            min-width: 0;
+            min-height: 0;
+        }
+        button.swiftly-kontoknopf:hover { opacity: 1; }
+        button.swiftly-kontoknopf:disabled { opacity: 1; }
 
         /* Der Quick-Connect-Code: gross, mittig, gesperrt. */
         entry.swiftly-code {

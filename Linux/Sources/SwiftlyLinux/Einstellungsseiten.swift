@@ -91,12 +91,18 @@ extension App {
         gtk_widget_set_margin_top(bildblock, 42)
         gtk_widget_set_margin_bottom(bildblock, 30)
 
-        let (huelle, bild) = gerahmtesBild(breite: 84, hoehe: 84, stil: "swiftly-profilgross")
-        gtk_widget_set_halign(huelle, GTK_ALIGN_CENTER)
-        anhaengen(bildblock, huelle)
-        if let adressen, !benutzerID.isEmpty,
-           let url = adressen.benutzer(benutzerID, kante: 200) {
-            bildLaden(bild, url: url, schluessel: url.absoluteString, sofort: true)
+        // **Bei einem Konto steht kein Streifen da.** Wer nur eines hat, soll
+        // nicht das Gefühl haben, ihm fehle eines.
+        if let bund, bund.konten.count > 1 {
+            anhaengen(bildblock, kontenstreifen(bund))
+        } else {
+            let (huelle, bild) = gerahmtesBild(breite: 84, hoehe: 84, stil: "swiftly-profilgross")
+            gtk_widget_set_halign(huelle, GTK_ALIGN_CENTER)
+            anhaengen(bildblock, huelle)
+            if let adressen, !benutzerID.isEmpty,
+               let url = adressen.benutzer(benutzerID, kante: 200) {
+                bildLaden(bild, url: url, schluessel: url.absoluteString, sofort: true)
+            }
         }
 
         let name = beschriftung(benutzername.isEmpty ? uebersetzt("Angemeldet") : benutzername,
@@ -137,6 +143,16 @@ extension App {
         anhaengen(block, luftHoch(26))
 
         let g3 = zeilengruppe()
+        // **Eine Zeile über „Abmelden", ohne Anstrich.** Sie steht auch bei
+        // einem einzigen Konto da — das ist der Einstieg, nicht die Auskunft,
+        // dass etwas fehlt.
+        anhaengen(g3.raum, wertezeile(symbol: "contact-new-symbolic",
+                                      titel: uebersetzt("Weiteres Konto hinzufügen"),
+                                      unter: uebersetzt("Auf demselben Server"),
+                                      pfeil: true) { [weak self] in
+            self?.kontoHinzufuegenOeffnen()
+        })
+        anhaengen(g3.raum, zeilenstrich())
         anhaengen(g3.raum, wertezeile(symbol: "system-log-out-symbolic",
                                       titel: uebersetzt("Abmelden")) { [weak self] in
             self?.abmelden()
@@ -426,4 +442,99 @@ extension App {
         anhaengen(reihe, t)
         return reihe
     }
+    // MARK: Kontenstreifen
+
+    /// Der waagerechte Streifen über dem Profil, wenn mehrere Konten da sind.
+    ///
+    /// **Zwei Dinge, die man leicht verwechselt, und deren Trennung der Kern
+    /// des Entwurfs ist:**
+    ///
+    /// - **Gross ist, was in der Mitte steht.** Auf dem Schreibtisch steht das
+    ///   aktive Konto mittig im Inhaltsbereich und misst 96; die anderen
+    ///   messen 72 und stehen daneben. Grösse und Ort sagen also *nichts*
+    ///   darüber aus, wer verbunden ist — sie folgen der Auswahl.
+    /// - **Verbunden ist, was Akzentring und Punkt trägt.** Das ändert sich
+    ///   erst beim Klicken, nie beim blossen Hinsehen.
+    ///
+    /// Die Mitte macht ``GtkCenterBox``: das aktive Konto ist das Mittelkind
+    /// und bleibt in der Mitte, solange die Seiten es zulassen — genau das,
+    /// was im Entwurf mit einem festen Abstand von links gezeichnet ist.
+    private func kontenstreifen(_ bund: Kontenbund) -> Widget! {
+        let mitte: Widget! = gtk_center_box_new()
+        gtk_widget_set_hexpand(mitte, 1)
+
+        let davor = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
+        gtk_widget_set_halign(davor, GTK_ALIGN_END)
+        gtk_widget_set_margin_end(davor, 26)
+        let danach = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
+        gtk_widget_set_halign(danach, GTK_ALIGN_START)
+        gtk_widget_set_margin_start(danach, 26)
+
+        var vorAktivem = true
+        for konto in bund.konten {
+            let ist = konto.userID == bund.aktiveKennung
+            if ist {
+                gtk_center_box_set_center_widget(OpaquePointer(mitte), kontokachel(konto, aktiv: true))
+                vorAktivem = false
+                continue
+            }
+            anhaengen(vorAktivem ? davor : danach, kontokachel(konto, aktiv: false))
+        }
+        gtk_center_box_set_start_widget(OpaquePointer(mitte), davor)
+        gtk_center_box_set_end_widget(OpaquePointer(mitte), danach)
+        return mitte
+    }
+
+    /// Ein Konto im Streifen: Bild, darunter der Punkt.
+    ///
+    /// Die Zeile ist 96 hoch, egal wie gross das Bild ist — sonst hüpften die
+    /// kleineren Bilder an den oberen Rand, statt auf einer Linie mit dem
+    /// grossen zu stehen. Darunter liegen 14 Punkte Platz, in denen beim
+    /// aktiven Konto der Punkt sitzt; auch dieser Platz bleibt bei den
+    /// anderen leer stehen, damit die Bilder nicht wandern.
+    private func kontokachel(_ konto: Session, aktiv: Bool) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-kontoknopf")
+        if !aktiv { gtk_widget_set_opacity(knopf, 0.55) }
+
+        let saeule = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+
+        let zone = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_set_size_request(zone, -1, 96)
+        let kante = aktiv ? 96 : 72
+        let (huelle, bild) = gerahmtesBild(breite: kante, hoehe: kante,
+                                           stil: aktiv ? "swiftly-kontoaktiv"
+                                                       : "swiftly-kontoandere")
+        gtk_widget_set_valign(huelle, GTK_ALIGN_CENTER)
+        gtk_widget_set_vexpand(huelle, 1)
+        anhaengen(zone, huelle)
+        anhaengen(saeule, zone)
+
+        let punktzone = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_set_size_request(punktzone, -1, 14)
+        if aktiv {
+            let punkt: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+            gtk_widget_add_css_class(punkt, "swiftly-kontopunkt")
+            gtk_widget_set_size_request(punkt, 5, 5)
+            gtk_widget_set_halign(punkt, GTK_ALIGN_CENTER)
+            gtk_widget_set_margin_top(punkt, 9)
+            anhaengen(punktzone, punkt)
+        }
+        anhaengen(saeule, punktzone)
+
+        gtk_button_set_child(alsKnopf(knopf), saeule)
+        if let adressen, let url = adressen.benutzer(konto.userID, kante: 200) {
+            bildLaden(bild, url: url, schluessel: url.absoluteString, sofort: true)
+        }
+        // Das aktive Konto ist kein Ziel — ein Klick darauf täte nichts, und
+        // ein Knopf, der nichts tut, ist eine Zusage, die nicht eingehalten wird.
+        if aktiv {
+            gtk_widget_set_sensitive(knopf, 0)
+        } else {
+            let kennung = konto.userID
+            beiSignal(knopf, "clicked") { [weak self] in self?.kontoWechseln(zu: kennung) }
+        }
+        return knopf
+    }
+
 }

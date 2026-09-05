@@ -70,6 +70,65 @@ enum Speicher {
 
     static func loeschen() {
         try? FileManager.default.removeItem(at: datei)
+        try? FileManager.default.removeItem(at: kontendatei)
+    }
+
+    // MARK: Mehrere Konten
+
+    /// Der Kontenbund, wie er auf der Platte liegt.
+    ///
+    /// **Warum der Servername mitkommt.** ``Kontenbund`` trägt Sitzungen, und
+    /// eine ``Session`` kennt nur die Adresse. Der Name des Servers steht
+    /// unten in der Leiste und im Profil, bevor ``serverstandHolen()`` ihn
+    /// nachgeholt hat — ohne ihn stünde dort beim Start für einen Wimpernschlag
+    /// „·" allein.
+    struct Kontenablage: Codable {
+        var bund: Kontenbund
+        var servername: String?
+    }
+
+    private static var kontendatei: URL { ordner.appendingPathComponent("konten.json") }
+
+    /// Liest den Bund — und nimmt eine einzelne Sitzung aus der Zeit davor an.
+    ///
+    /// **Die Übernahme steht hier und nicht im Paket**, weil nur diese Seite
+    /// weiß, wo etwas liegt; auf Apple macht es `AppModel.bundLaden()` genauso.
+    /// Die alte `sitzung.json` wird **nicht gelöscht**: wer noch einmal eine
+    /// ältere Fassung startet, soll nicht plötzlich abgemeldet sein.
+    static func bundLesen() -> Kontenablage? {
+        if let daten = try? Data(contentsOf: kontendatei),
+           let ablage = try? JSONDecoder().decode(Kontenablage.self, from: daten) {
+            return ablage
+        }
+        guard let alt = lesen() else { return nil }
+        let sitzung = Session(accessToken: alt.token, userID: alt.benutzerID,
+                              userName: alt.benutzername, serverURL: alt.serverURL)
+        return Kontenablage(bund: Kontenbund(sitzung), servername: alt.servername)
+    }
+
+    /// Schreibt den Bund — **und daneben weiter die einzelne Sitzung.**
+    ///
+    /// Die alte Datei bleibt auf dem Stand des aktiven Kontos, damit eine
+    /// ältere Fassung der App nach einem Rückschritt nicht vor einem leeren
+    /// Anmeldeschirm steht. Sie kostet ein paar hundert Byte und erspart eine
+    /// Anmeldung.
+    static func bundSchreiben(_ ablage: Kontenablage) {
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                    attributes: nurIch)
+            try JSONEncoder().encode(ablage).write(to: kontendatei, options: [.atomic])
+            #if !os(Windows)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: kontendatei.path)
+            #endif
+        } catch {
+            FileHandle.standardError.write(
+                Data("Konten liessen sich nicht sichern: \(error.localizedDescription)\n".utf8))
+        }
+        let aktiv = ablage.bund.aktives
+        schreiben(.init(serverURL: aktiv.serverURL, token: aktiv.accessToken,
+                        benutzerID: aktiv.userID, benutzername: aktiv.userName,
+                        servername: ablage.servername))
     }
 
     // MARK: Zuletzt verbunden
