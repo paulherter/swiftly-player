@@ -1763,9 +1763,17 @@ final class App: @unchecked Sendable {
     }
 
     func rasterFuellen(_ raster: Widget!, _ items: [Item]) {
+        // **Dieselbe Bauart, die die App schon einmal aufgehängt hat.** Die
+        // Schleife hing am Vorhandensein eines Kindes statt am Fortschritt:
+        // schlägt `gtk_flow_box_remove` fehl — der Zeiger wird dafür blind
+        // gecastet —, liefert `get_child_at_index` dasselbe Kind wieder, und
+        // es geht ewig weiter. In ``leeren(_:)`` war genau das der Grund für
+        // einen vollen Kern und ein Protokoll mit 58 MB je Sekunde.
         while let kind = gtk_flow_box_get_child_at_index(OpaquePointer(raster), 0) {
             gtk_flow_box_remove(OpaquePointer(raster),
                                 unsafeBitCast(kind, to: Widget.self))
+            guard gtk_flow_box_get_child_at_index(OpaquePointer(raster), 0) != kind
+            else { break }
         }
         for item in items {
             gtk_flow_box_insert(OpaquePointer(raster), rasterkachel(item), -1)
