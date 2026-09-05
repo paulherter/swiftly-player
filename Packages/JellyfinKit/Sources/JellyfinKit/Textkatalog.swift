@@ -193,11 +193,16 @@ public struct Textkatalog: Sendable {
         var anzahl: ULONG = 0
         var zeichen: ULONG = 0
         // Erst fragen, wie gross der Puffer sein muss.
-        guard GetUserPreferredUILanguages(DWORD(MUI_LANGUAGE_NAME), &anzahl, nil, &zeichen).boolValue,
+        // **Kein `.boolValue`.** Swifts WinSDK-Auflage bildet `BOOL` hier
+        // bereits auf `Bool` ab; `WindowsBool` gaebe es nur bei einer
+        // Rueckgabe, die der Ueberzug nicht kennt. Gemessen beim ersten
+        // Uebersetzen unter Windows — sonst „value of type 'Bool' has no
+        // member 'boolValue'".
+        guard GetUserPreferredUILanguages(DWORD(MUI_LANGUAGE_NAME), &anzahl, nil, &zeichen),
               zeichen > 0 else { return [] }
         var puffer = [WCHAR](repeating: 0, count: Int(zeichen))
         guard GetUserPreferredUILanguages(DWORD(MUI_LANGUAGE_NAME), &anzahl,
-                                          &puffer, &zeichen).boolValue else { return [] }
+                                          &puffer, &zeichen) else { return [] }
         // Doppelt nullterminierte Liste: „de-DE\0en-US\0\0".
         var namen: [String] = []
         var anfang = 0
