@@ -14,6 +14,10 @@ import Foundation
 /// könnte sie gar nicht zeigen. Also wird gezeichnet — dann stimmt jede Zahl,
 /// und beide Richtungen sind dasselbe Bild, einmal gespiegelt.
 final class Sprungzeichen: @unchecked Sendable {
+    /// **Lebt die Zeichenfläche noch?** Siehe den `destroy`-Auftrag im
+    /// Initialisierer.
+    fileprivate var lebt = true
+
     fileprivate let zurueck: Bool
     fileprivate var zahl: Int
     fileprivate let mass: Double
@@ -30,6 +34,22 @@ final class Sprungzeichen: @unchecked Sendable {
         anzeige = feld!
         gtk_drawing_area_set_draw_func(alsZeichen(feld), sprungMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
+        // **Die Zeichenfläche hält das Zeichen, nicht `App`.**
+        //
+        // Der Zeichenruf oben bekommt `self` *unretained*. Gehalten wurde es
+        // bisher allein von einem Feld in `App` — und das wird bei **jedem**
+        // Start des Players überschrieben, weil `spielerSeiteBauen` die
+        // Steuerung jedes Mal neu aufbaut. Das alte Zeichen stirbt damit in
+        // dem Moment, in dem das neue entsteht; seine Fläche hängt aber noch
+        // in der alten Spielerseite, die 380 ms lang nach unten fährt und
+        // dabei weitergezeichnet wird. Wer in dieser Zeit den nächsten Film
+        // startet, malt auf freigegebenem Speicher.
+        //
+        // Derselbe Fehler wie in ``Kulisse`` (`a6d697b`) und in der
+        // ``Startanimation`` (`71dce00`), an derselben Sorte Stelle. Der
+        // starke Zugriff im Auftrag hält das Zeichen, solange seine Fläche
+        // lebt; die Wache in `malen` fängt den Rest.
+        beiSignal(feld, "destroy") { self.lebt = false }
     }
 
     /// Wie stark das Zeichen gerade ausschlägt. Der Mac nimmt dafür
@@ -67,6 +87,7 @@ nonisolated(unsafe) private let sprungMalen: @convention(c) (
 ) -> Void = { _, cr, breite, hoehe, daten in
     guard let cr, let daten else { return }
     let z = Unmanaged<Sprungzeichen>.fromOpaque(daten).takeUnretainedValue()
+    guard z.lebt else { return }
 
     let cx = Double(breite) / 2, cy = Double(hoehe) / 2
     // Halbmesser, Strich und Pfeilkopf wachsen mit dem Zeichen, damit ein
@@ -148,6 +169,8 @@ nonisolated(unsafe) private let sprungMalen: @convention(c) (
 /// wirkt der ganze Player träge." Ein Bildwechsel ohne Übergang ist genau das
 /// Stockige — es fehlt nicht Zeit, es fehlt die Bewegung.
 final class Abspielzeichen: @unchecked Sendable {
+    /// **Lebt die Zeichenfläche noch?** Siehe ``Sprungzeichen``.
+    fileprivate var lebt = true
     fileprivate var pause: Bool
     /// 0 … 1 über den Wechsel. Bei 1 steht das neue Zeichen.
     fileprivate var lauf: Double = 1
@@ -164,6 +187,8 @@ final class Abspielzeichen: @unchecked Sendable {
         anzeige = feld!
         gtk_drawing_area_set_draw_func(alsZeichen(feld), abspielMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
+        // Dieselbe Halterung wie bei ``Sprungzeichen`` — dort steht, warum.
+        beiSignal(feld, "destroy") { self.lebt = false }
     }
 
     func setzen(_ neu: Bool) {
@@ -203,6 +228,7 @@ nonisolated(unsafe) private let abspielMalen: @convention(c) (
 ) -> Void = { _, cr, breite, hoehe, daten in
     guard let cr, let daten else { return }
     let z = Unmanaged<Abspielzeichen>.fromOpaque(daten).takeUnretainedValue()
+    guard z.lebt else { return }
     let cx = Double(breite) / 2, cy = Double(hoehe) / 2
     let m = z.mass
 
