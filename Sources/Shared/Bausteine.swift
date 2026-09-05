@@ -85,7 +85,6 @@ struct Lader: View {
     }
 }
 
-/// Rundes Profilzeichen mit dem Anfangsbuchstaben.
 /// Was unten auf der Profilseite steht: „Swiftly for Jellyfin 1.0.0 (Build 10)".
 ///
 /// **Aus dem Bündel gelesen, nicht getippt.** Auf dem iPhone stand hier
@@ -110,6 +109,7 @@ enum Fassung {
     }
 }
 
+/// Rundes Profilzeichen mit dem Anfangsbuchstaben.
 struct Profilzeichen: View {
     let name: String
     var bild: URL?
