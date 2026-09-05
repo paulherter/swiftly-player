@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Maße, Schriftgrößen und Bausteine für den Fernseher.
