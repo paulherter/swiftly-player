@@ -525,8 +525,6 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     @Binding var offen: Bool
     /// Wie hoch die Einträge zusammen sind — gemessen, nicht angenommen.
     @State private var inhaltshoehe: CGFloat = 0
-    /// Reicht ``Blatt`` durch; die Begründung steht dort.
-    var unterrand: CGFloat = 0
     let titel: LocalizedStringKey
     let eintraege: [Eintrag]
     let beschriftung: (Eintrag) -> String
@@ -536,7 +534,7 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     var body: some View {
         Color.clear
             .allowsHitTesting(false)
-            .blatt(offen: $offen, unterrand: unterrand) {
+            .blatt(offen: $offen) {
                 Blattrubrik(text: Text(titel))
 
                 ScrollView {
@@ -1329,7 +1327,20 @@ struct Unschaerfekopf<Inhalt: View>: View {
                 // gleich deckend sein.
                 ZStack {
                     Kopfverlauf().opacity(1 - kante)
-                    Leistenglas(staerke: kante, tiefe: 0.86)
+                    // **Deckend, nicht Glas.** Erst stand hier `Leistenglas`,
+                    // und das war sichtbar **heller als die Seite**: Apples
+                    // Material traegt eine helle Schicht, und 0,86 Grundton
+                    // darueber gleicht sie nicht aus. Ueber schwarzem Grund
+                    // und bunten Plakaten wurde daraus ein grauer Block Beim
+                    // Federn nach dem Loslassen war es am staerksten zu sehen,
+                    // weil die Maske der Unschaerfe je Bild neu gerechnet
+                    // wird.
+                    //
+                    // Eine Flaeche kann nicht aufblitzen und ist genau so
+                    // dunkel wie die Seite. Der Bibliothekskopf traegt
+                    // ausserdem Schrift, keine Kacheln — dort ist Glas kein
+                    // Gewinn, sondern nur Unruhe.
+                    Stil.grund.opacity(kante)
                 }
             }
     }
@@ -1987,19 +1998,26 @@ struct Wahlchip: View {
 /// schneller Wisch schliesst, auch wenn er kurz ist.** Ueber 700 Punkt je
 /// Sekunde reicht ein Zentimeter. - **Die Schwelle haengt an der Blatthoehe**,
 /// nicht an einer festen Zahl: ein Blatt mit drei Zeilen darf nicht dieselbe
-/// Strecke verlangen wie eins mit zwoelf.
+/// Strecke verlangen wie eins mit zwoelf. Meldet nach oben, dass irgendwo
+/// darunter ein Blatt offen ist.
+///
+/// **Damit es ueber der Bereichsleiste liegt.** Ein Blatt haengt tief im
+/// Seitenstapel, die Leiste zeichnet `HauptView` darueber — also lag das Blatt
+/// darunter, und „Abbrechen" verschwand. Der Umweg ueber einen Unterrand war
+/// die Notloesung;
+///
+/// Ueber eine Vorgabe und nicht ueber durchgereichte Zustaende: sonst muesste
+/// jede Seite, die irgendwann ein Blatt bekommt, ihren Schalter bis nach oben
+/// weiterreichen — und die erste, die es vergisst, hat den Fehler wieder.
+struct Blattzustand: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
 struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
     @Binding var offen: Bool
-    /// Wie weit über dem unteren Rand das Blatt endet.
-    ///
-    /// **Die Seite reicht hinter die Leiste.** In den Bibliotheken liegt
-    /// unten die Bereichsleiste über dem Inhalt; ohne diesen Abstand
-    /// verschwindet „Abbrechen" darunter — genau das war zu sehen, nachdem
-    /// der Wert beim Umbau auf Apples `sheet` weggefallen war (ein
-    /// Systemblatt liegt über allem, unseres nicht). Auf Seiten ohne Leiste
-    /// ist er null; deshalb sagt es der Aufrufer und nicht dieser Baustein,
-    /// der seine Umgebung nicht kennt.
-    var unterrand: CGFloat = 0
     @ViewBuilder var blattinhalt: () -> Blattinhalt
 
     /// Wie hoch die Karte ist — bestimmt, wie weit sie hinausfaehrt, wie
@@ -2010,7 +2028,9 @@ struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
     @State private var zug: CGFloat = 0
 
     func body(content: Content) -> some View {
-        content.overlay { blatt }
+        content
+            .overlay { blatt }
+            .preference(key: Blattzustand.self, value: offen)
     }
 
     private var blatt: some View {
@@ -2034,7 +2054,6 @@ struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
                 blattinhalt()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, unterrand)
             .background {
                 // **Die Flaeche reicht weiter nach unten, als die Karte je
                 // faehrt.** Die Feder schiesst beim Oeffnen ueber — die Karte
@@ -2131,10 +2150,9 @@ extension View {
     /// **Immer anhaengen, nie in ein `if offen`.** In einem `if` steht `offen`
     /// beim Einhaengen schon auf wahr, die Karte sitzt sofort an ihrem Platz,
     /// und das Auffahren faellt aus.
-    func blatt<Inhalt: View>(offen: Binding<Bool>, unterrand: CGFloat = 0,
+    func blatt<Inhalt: View>(offen: Binding<Bool>,
                              @ViewBuilder inhalt: @escaping () -> Inhalt) -> some View {
-        modifier(Blattmodifikator(offen: offen, unterrand: unterrand,
-                                  blattinhalt: inhalt))
+        modifier(Blattmodifikator(offen: offen, blattinhalt: inhalt))
     }
 }
 

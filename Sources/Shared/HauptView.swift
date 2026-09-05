@@ -32,6 +32,10 @@ struct HauptView: View {
     /// bleibt stehen, siehe `Seitenleiste`.
     private var anDerWurzel: Bool { pfade[bereich.rawValue].isEmpty }
 
+    /// Ist irgendwo im Seitenstapel ein Blatt offen? Dann gehoert der Stapel
+    /// **ueber** die Bereichsleiste. Siehe ``Blattzustand``.
+    @State private var blattOffen = false
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Stil.grund.ignoresSafeArea()
@@ -59,6 +63,15 @@ struct HauptView: View {
                     }
                 }
             }
+            // **Ueber der Leiste, sobald ein Blatt offen ist.**
+            //
+            // Sie liegen im selben Stapel, und der spaetere gewinnt — also
+            // die Leiste. Ein Blatt soll sie aber verdecken, samt Schleier,
+            // so wie es Apple auch macht. Der Rang wandert deshalb mit dem
+            // Blatt und nicht dauerhaft: sonst laege die Leiste immer unter
+            // dem Inhalt und waere nicht mehr zu treffen.
+            .zIndex(blattOffen ? 1 : 0)
+            .onPreferenceChange(Blattzustand.self) { blattOffen = $0 }
 
             if !breit, anDerWurzel {
                 Navileiste(gewaehlt: $bereich)
@@ -255,7 +268,6 @@ struct BibliothekView: View {
         // Nur so laufen die Uebergaenge von Schleier und Karte einzeln.
         .overlay(alignment: .topTrailing) {
                 Auswahlblatt(offen: $filterlisteOffen,
-                             unterrand: breit ? 0 : Stil.leisteHoehe,
                              titel: "Filtern",
                              eintraege: filter,
                              beschriftung: { $0.beschriftung },
@@ -264,7 +276,6 @@ struct BibliothekView: View {
         }
         .overlay(alignment: .topTrailing) {
                 Auswahlblatt(offen: $sortierlisteOffen,
-                             unterrand: breit ? 0 : Stil.leisteHoehe,
                              titel: "Sortieren",
                              eintraege: Sortierung.allCases,
                              beschriftung: { $0.beschriftung },
@@ -273,7 +284,6 @@ struct BibliothekView: View {
         }
         .overlay(alignment: .topTrailing) {
                 Auswahlblatt(offen: $bibliothekslisteOffen,
-                             unterrand: breit ? 0 : Stil.leisteHoehe,
                              titel: "Bibliothek",
                              eintraege: auswahl,
                              beschriftung: { $0.name },
