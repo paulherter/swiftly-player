@@ -14,7 +14,7 @@ import JellyfinKit
 /// Wiedergabe getrennt, der Fernseher hat eine Seite. Linux folgt dem Mac.
 extension App {
 
-    enum Unterseite { case profil, quickConnect, wiedergabe, einstellungen }
+    enum Unterseite { case profil, quickConnect, wiedergabe, einstellungen, kontoHinzufuegen }
 
     /// **Einstellungen blenden über, sie schieben nicht.**
     ///
@@ -45,6 +45,7 @@ extension App {
         case .quickConnect:   quickConnectBauen(block)
         case .wiedergabe:     wiedergabeBauen(block)
         case .einstellungen:  einstellungenBauen(block)
+        case .kontoHinzufuegen: kontoHinzufuegenBauen(block)
         }
 
         let scroller = seitenscroller()
@@ -96,13 +97,15 @@ extension App {
         if let bund, bund.konten.count > 1 {
             anhaengen(bildblock, kontenstreifen(bund))
         } else {
-            let (huelle, bild) = gerahmtesBild(breite: 84, hoehe: 84, stil: "swiftly-profilgross")
-            gtk_widget_set_halign(huelle, GTK_ALIGN_CENTER)
-            anhaengen(bildblock, huelle)
-            if let adressen, !benutzerID.isEmpty,
-               let url = adressen.benutzer(benutzerID, kante: 200) {
-                bildLaden(bild, url: url, schluessel: url.absoluteString, sofort: true)
-            }
+            let teile = profilzeichen(name: benutzername.isEmpty ? "?" : benutzername,
+                                      kante: 84, stil: "swiftly-profilgross",
+                                      schriftstil: "swiftly-zeichen84")
+            gtk_widget_set_halign(teile.huelle, GTK_ALIGN_CENTER)
+            anhaengen(bildblock, teile.huelle)
+            profilbildLaden(teile,
+                            url: benutzerID.isEmpty ? nil
+                                                    : adressen?.benutzer(benutzerID, kante: 200),
+                            schluessel: "konto-\(benutzerID)")
         }
 
         let name = beschriftung(benutzername.isEmpty ? uebersetzt("Angemeldet") : benutzername,
@@ -150,7 +153,7 @@ extension App {
                                       titel: uebersetzt("Weiteres Konto hinzufügen"),
                                       unter: uebersetzt("Auf demselben Server"),
                                       pfeil: true) { [weak self] in
-            self?.kontoHinzufuegenOeffnen()
+            self?.unterseiteOeffnen(.kontoHinzufuegen)
         })
         anhaengen(g3.raum, zeilenstrich())
         anhaengen(g3.raum, wertezeile(symbol: "system-log-out-symbolic",
@@ -159,7 +162,7 @@ extension App {
         })
         anhaengen(block, g3.aussen)
 
-        let fuss = beschriftung("Swiftly 1.0", stil: "swiftly-zweitzeile")
+        let fuss = beschriftung(Fassung.voll, stil: "swiftly-zweitzeile")
         gtk_widget_add_css_class(fuss, "swiftly-fuss")
         gtk_label_set_xalign(OpaquePointer(fuss), 0)
         gtk_widget_set_margin_top(fuss, 26)
@@ -401,7 +404,7 @@ extension App {
         anhaengen(s.raum, pruefzeile)
         anhaengen(block, s.aussen)
 
-        let fuss = beschriftung("Swiftly 1.0 · libVLC \(VLCFassung.text)",
+        let fuss = beschriftung("\(Fassung.voll) · libVLC \(VLCFassung.text)",
                                 stil: "swiftly-zweitzeile")
         gtk_widget_add_css_class(fuss, "swiftly-fuss")
         gtk_label_set_xalign(OpaquePointer(fuss), 0)
@@ -460,30 +463,42 @@ extension App {
     /// und bleibt in der Mitte, solange die Seiten es zulassen — genau das,
     /// was im Entwurf mit einem festen Abstand von links gezeichnet ist.
     private func kontenstreifen(_ bund: Kontenbund) -> Widget! {
-        let mitte: Widget! = gtk_center_box_new()
-        gtk_widget_set_hexpand(mitte, 1)
-
-        let davor = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
-        gtk_widget_set_halign(davor, GTK_ALIGN_END)
-        gtk_widget_set_margin_end(davor, 26)
-        let danach = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
-        gtk_widget_set_halign(danach, GTK_ALIGN_START)
-        gtk_widget_set_margin_start(danach, 26)
-
-        var vorAktivem = true
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(kontoAbstand))
+        gtk_widget_set_halign(reihe, GTK_ALIGN_CENTER)
         for konto in bund.konten {
-            let ist = konto.userID == bund.aktiveKennung
-            if ist {
-                gtk_center_box_set_center_widget(OpaquePointer(mitte), kontokachel(konto, aktiv: true))
-                vorAktivem = false
-                continue
-            }
-            anhaengen(vorAktivem ? davor : danach, kontokachel(konto, aktiv: false))
+            anhaengen(reihe, kontokachel(konto, aktiv: konto.userID == bund.aktiveKennung))
         }
-        gtk_center_box_set_start_widget(OpaquePointer(mitte), davor)
-        gtk_center_box_set_end_widget(OpaquePointer(mitte), danach)
-        return mitte
+
+        // **Das aktive Konto steht in der Mitte, nicht der Streifen.**
+        //
+        // Der erste Anlauf nahm dafür eine ``GtkCenterBox`` mit dem aktiven
+        // Kreis als Mittelkind. Das stellte ihn zwar mittig, legte die
+        // übrigen aber an den **äusseren** Rand ihrer Hälfte statt neben ihn:
+        // gemessen 366 Bildpunkte von Mitte zu Mitte, wo der Mac 205 hat. Die
+        // beiden standen dadurch nicht als Gruppe da, sondern der zweite hing
+        // frei im Raum.
+        //
+        // Jetzt dieselbe Rechnung wie auf dem Mac (`mittenversatz`): eine
+        // gewöhnliche Reihe, mittig gestellt, und ein Rand, der den Überhang
+        // ausgleicht. `halign: CENTER` zentriert die Box **samt Rändern**, ein
+        // Rand von m verschiebt sie also um m/2 — deshalb steht hier die volle
+        // Differenz und nicht ihre Hälfte.
+        let stelle = bund.konten.firstIndex { $0.userID == bund.aktiveKennung } ?? 0
+        let schritt = kontoDaneben + kontoAbstand
+        let davor = stelle * schritt
+        let danach = (bund.konten.count - 1 - stelle) * schritt
+        if danach > davor {
+            gtk_widget_set_margin_start(reihe, Int32(danach - davor))
+        } else if davor > danach {
+            gtk_widget_set_margin_end(reihe, Int32(davor - danach))
+        }
+        return reihe
     }
+
+    /// Die Masse des Streifens, aus dem abgenommenen Schreibtischentwurf.
+    private var kontoAktiv: Int { 96 }
+    private var kontoDaneben: Int { 72 }
+    private var kontoAbstand: Int { 26 }
 
     /// Ein Konto im Streifen: Bild, darunter der Punkt.
     ///
@@ -500,11 +515,12 @@ extension App {
         let saeule = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
 
         let zone = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_size_request(zone, -1, 96)
-        let kante = aktiv ? 96 : 72
-        let (huelle, bild) = gerahmtesBild(breite: kante, hoehe: kante,
-                                           stil: aktiv ? "swiftly-kontoaktiv"
-                                                       : "swiftly-kontoandere")
+        gtk_widget_set_size_request(zone, -1, Int32(kontoAktiv))
+        let kante = aktiv ? kontoAktiv : kontoDaneben
+        let teile = profilzeichen(name: konto.userName, kante: kante,
+                                  stil: aktiv ? "swiftly-kontoaktiv" : "swiftly-kontoandere",
+                                  schriftstil: aktiv ? "swiftly-zeichen96" : "swiftly-zeichen72")
+        let huelle = teile.huelle
         gtk_widget_set_valign(huelle, GTK_ALIGN_CENTER)
         gtk_widget_set_vexpand(huelle, 1)
         anhaengen(zone, huelle)
@@ -523,9 +539,8 @@ extension App {
         anhaengen(saeule, punktzone)
 
         gtk_button_set_child(alsKnopf(knopf), saeule)
-        if let adressen, let url = adressen.benutzer(konto.userID, kante: 200) {
-            bildLaden(bild, url: url, schluessel: url.absoluteString, sofort: true)
-        }
+        profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 200),
+                        schluessel: "konto-\(konto.userID)")
         // Das aktive Konto ist kein Ziel — ein Klick darauf täte nichts, und
         // ein Knopf, der nichts tut, ist eine Zusage, die nicht eingehalten wird.
         if aktiv {
@@ -535,6 +550,163 @@ extension App {
             beiSignal(knopf, "clicked") { [weak self] in self?.kontoWechseln(zu: kennung) }
         }
         return knopf
+    }
+
+    // MARK: Weiteres Konto
+
+    /// Ein zweites Jellyfin-Konto auf demselben Server.
+    ///
+    /// **Eine eigene Seite, nicht der Anmeldeschirm.** Der erste Anlauf hat
+    /// einfach die Anmeldung wiederverwendet, und das sah aus wie ein Fehler:
+    /// Wortmarke und Servername wie beim Neustart, und der Quick-Connect-Code
+    /// stand in der Zeile, in der sonst Fehlermeldungen stehen — orange, unter
+    /// dem Passwortfeld. „Code 812464 — approve it on a signed-in device" las
+    /// sich damit wie eine Stoerung statt wie eine Anweisung.
+    ///
+    /// Vorlage ist `Sources/macOS/ProfilView.swift`, `KontoHinzufuegenView`:
+    /// Kopf mit Zurueck, ein Satz, der sagt was passiert, der Server als
+    /// **Anzeige** statt als Feld, Name und Passwort als Normalweg, Quick
+    /// Connect als Umschalter daneben — und der Code in einem eigenen Teil.
+    private func kontoHinzufuegenBauen(_ block: Widget!) {
+        anhaengen(block, unterseitenkopf(uebersetzt("Weiteres Konto")))
+
+        let satz = beschriftung(uebersetzt("Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen."),
+                                stil: "swiftly-koerper", umbruch: true)
+        gtk_widget_add_css_class(satz, "dim-label")
+        gtk_label_set_xalign(OpaquePointer(satz), 0)
+        gtk_label_set_justify(OpaquePointer(satz), GTK_JUSTIFY_LEFT)
+        gtk_widget_set_margin_top(satz, 14)
+        anhaengen(block, satz)
+
+        // **Wohin das Konto kommt — Anzeige, kein Feld.** Ein Bund gehoert zu
+        // genau einem Server; ihn hier noch einmal eintippen zu lassen waere
+        // eine Frage, deren Antwort feststeht.
+        let serverreihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        gtk_widget_set_margin_top(serverreihe, 22)
+        let symbol: Widget! = gtk_image_new_from_icon_name("network-server-symbolic")
+        gtk_widget_add_css_class(symbol, "swiftly-sehrleise")
+        anhaengen(serverreihe, symbol)
+        var wohin: [String] = []
+        if !servername.isEmpty { wohin.append(servername) }
+        if let url = bund?.serverURL { wohin.append(url.absoluteString) }
+        let serverzeile2 = beschriftung(wohin.joined(separator: " · "), stil: "swiftly-zweitzeile")
+        gtk_widget_add_css_class(serverzeile2, "swiftly-sehrleise")
+        gtk_widget_set_valign(serverzeile2, GTK_ALIGN_CENTER)
+        anhaengen(serverreihe, serverzeile2)
+        anhaengen(block, serverreihe)
+
+        if kontoPerCode { kontoCodeteil(block) } else { kontoFormular(block) }
+    }
+
+    /// Name und Passwort — der Normalweg auf dem Schreibtisch.
+    private func kontoFormular(_ block: Widget!) {
+        let name = eingabezeile(symbol: "avatar-default-symbolic",
+                                platzhalter: uebersetzt("Benutzername"))
+        gtk_widget_set_margin_top(name, 26)
+        anhaengen(block, name)
+
+        let wort = eingabezeile(symbol: "channel-secure-symbolic",
+                               platzhalter: uebersetzt("Passwort"), geheim: true)
+        gtk_widget_set_margin_top(wort, 10)
+        anhaengen(block, wort)
+
+        kontoStandfeld = beschriftung(kontoFehler, stil: "swiftly-zweitzeile", umbruch: true)
+        gtk_widget_add_css_class(kontoStandfeld, "swiftly-warnung")
+        gtk_label_set_xalign(OpaquePointer(kontoStandfeld), 0)
+        gtk_widget_set_visible(kontoStandfeld, kontoFehler.isEmpty ? 0 : 1)
+        gtk_widget_set_margin_top(kontoStandfeld, 12)
+        anhaengen(block, kontoStandfeld)
+
+        kontoKnopf = hauptknopf(uebersetzt("Hinzufügen"))
+        let knopf: Widget! = kontoKnopf
+        gtk_widget_set_margin_top(knopf, 22)
+        gtk_widget_set_sensitive(knopf, 0)
+        anhaengen(block, knopf)
+
+        let tun: () -> Void = { [weak self] in
+            guard let self else { return }
+            self.kontoAnmelden(benutzer: self.text(name), passwort: self.text(wort))
+        }
+        beiSignal(knopf, "clicked", tun)
+        beiSignal(wort, "activate", tun)
+        beiSignal(name, "activate") { gtk_widget_grab_focus(wort) }
+        beiSignal(name, "changed") { [weak self] in
+            guard let self else { return }
+            gtk_widget_set_sensitive(knopf, self.text(name).isEmpty ? 0 : 1)
+        }
+
+        anhaengen(block, trennerMitOder())
+
+        let umschalten: Widget! = gtk_button_new_with_label(uebersetzt("Mit Quick Connect anmelden"))
+        gtk_widget_add_css_class(umschalten, "swiftly-umriss")
+        gtk_widget_set_margin_top(umschalten, 18)
+        beiSignal(umschalten, "clicked") { [weak self] in
+            guard let self else { return }
+            self.kontoFehler = ""
+            self.kontoPerCode = true
+            self.unterseiteOeffnen(.kontoHinzufuegen, schub: .ohne)
+        }
+        anhaengen(block, umschalten)
+
+        gtk_widget_grab_focus(name)
+    }
+
+    /// Quick Connect — **der Code bekommt einen eigenen Teil.**
+    ///
+    /// Er wird auch erst hier geholt, nicht beim Oeffnen der Seite: sonst zoege
+    /// jeder Besuch einen Code beim Server, den niemand braucht.
+    private func kontoCodeteil(_ block: Widget!) {
+        let satz = beschriftung(uebersetzt("Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist."),
+                                stil: "swiftly-zweitzeile", umbruch: true)
+        gtk_widget_add_css_class(satz, "dim-label")
+        gtk_label_set_xalign(OpaquePointer(satz), 0)
+        gtk_widget_set_margin_top(satz, 26)
+        anhaengen(block, satz)
+
+        kontoCodefeld = beschriftung(kontoCode.isEmpty ? "······" : kontoCode,
+                                     stil: "swiftly-codegross")
+        gtk_widget_set_margin_top(kontoCodefeld, 14)
+        anhaengen(block, kontoCodefeld)
+
+        kontoStandfeld = beschriftung(kontoFehler, stil: "swiftly-zweitzeile", umbruch: true)
+        gtk_widget_add_css_class(kontoStandfeld, "swiftly-warnung")
+        gtk_label_set_xalign(OpaquePointer(kontoStandfeld), 0)
+        gtk_widget_set_visible(kontoStandfeld, kontoFehler.isEmpty ? 0 : 1)
+        gtk_widget_set_margin_top(kontoStandfeld, 14)
+        anhaengen(block, kontoStandfeld)
+
+        let zurueck: Widget! = gtk_button_new_with_label(uebersetzt("Lieber Name und Passwort"))
+        gtk_widget_add_css_class(zurueck, "swiftly-umriss")
+        gtk_widget_set_margin_top(zurueck, 22)
+        beiSignal(zurueck, "clicked") { [weak self] in
+            guard let self else { return }
+            self.kontoCodelauf?.cancel()
+            self.kontoCodelauf = nil
+            self.kontoCode = ""
+            self.kontoFehler = ""
+            self.kontoPerCode = false
+            self.unterseiteOeffnen(.kontoHinzufuegen, schub: .ohne)
+        }
+        anhaengen(block, zurueck)
+
+        if kontoCode.isEmpty && kontoCodelauf == nil { kontoCodeHolen() }
+    }
+
+    private func trennerMitOder() -> Widget! {
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        gtk_widget_set_margin_top(reihe, 18)
+        let links: Widget! = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL)
+        gtk_widget_set_hexpand(links, 1)
+        gtk_widget_set_valign(links, GTK_ALIGN_CENTER)
+        anhaengen(reihe, links)
+        let wort = beschriftung(uebersetzt("oder"), stil: "swiftly-zweitzeile")
+        gtk_widget_add_css_class(wort, "swiftly-sehrleise")
+        anhaengen(reihe, wort)
+        let rechts: Widget! = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL)
+        gtk_widget_set_hexpand(rechts, 1)
+        gtk_widget_set_valign(rechts, GTK_ALIGN_CENTER)
+        anhaengen(reihe, rechts)
+        return reihe
     }
 
 }
