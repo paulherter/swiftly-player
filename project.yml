@@ -421,6 +421,9 @@ targets:
       # dabei `naechsteFolge(ohne:)` verloren, sodass angefangene Titel
       # zweimal auf der Seite standen.
       - path: Sources/Shared/Startseitenmodell.swift
+      # Serien, Staffeln und Folgen im Speicher — seit `2fc501c` einmal
+      # geteilt statt zweimal gebaut, und mit eigener Kontopruefung.
+      - path: Sources/Shared/Serienspeicher.swift
       - path: Sources/Shared/Bibliotheksmodell.swift
       - path: Sources/Shared/Farben.swift
       # Bausteine ohne Plattformmaße — Reihentitel, Plakette, Lader,

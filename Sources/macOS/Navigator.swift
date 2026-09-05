@@ -29,6 +29,17 @@ final class Navigator {
         stapel[bereich, default: []].append(ziel)
     }
 
+    /// Alles weg — **G4**: ein Stapel gehört zu einem Konto.
+    ///
+    /// Ohne Anweisung von aussen wäre das ein Sprung; die Seiten fahren
+    /// deshalb nach rechts hinaus wie beim Zurückgehen, nur alle auf einmal.
+    /// Es bleibt bei **einer** Bewegung, weil `HauptView` den Mitgang im
+    /// selben Zug zurückzieht.
+    func alleLeeren() {
+        guard stapel.contains(where: { !$0.value.isEmpty }) else { return }
+        withAnimation(Stil.zeitSeitenschub) { stapel.removeAll() }
+    }
+
     func zurueck(in bereich: Bereich) {
         guard !(stapel[bereich] ?? []).isEmpty else { return }
         withAnimation(Stil.zeitSeitenschub) {
