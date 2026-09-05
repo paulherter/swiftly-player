@@ -822,7 +822,25 @@ final class VLCPlayerView: Basisansicht {
                 Protokoll.schreib("[Audio] FEHLER: \(error.localizedDescription)")
             }
         }
-        Protokoll.schreib("[Audio] beim Öffnen: \(Int(sitzung.sampleRate)) Hz · aktiv seit Start")
+        // **Wie viele Kanäle nimmt der Ausgang überhaupt an?**
+        //
+        // Swiftfin meldet, dass sein VLCKit-Player bei 5.1-Dateien nur Stereo
+        // ausgibt, während der native Player alle Kanäle liefert
+        // (jellyfin/Swiftfin#2199, offen); Streamyfin hatte bei 7.1 gar keinen
+        // Ton (#1515). Für eine App, die niemals transkodieren will, wäre ein
+        // stiller Downmix im Client der peinlichste Fehler überhaupt: der
+        // Server liefert brav Direct Play, und wir werfen die Kanäle weg.
+        //
+        // Ob das bei uns passiert, sagt kein Quelltext, sondern nur diese
+        // Zeile am Gerät. `maximumOutputNumberOfChannels` ist, was die Route
+        // könnte; `currentRoute.outputs.channels` ist, was sie gerade führt.
+        // Am iPhone-Lautsprecher sind zwei Kanäle richtig — interessant wird
+        // es an HDMI, AirPlay und am Apple TV.
+        let ausgang = sitzung.currentRoute.outputs.first
+        Protokoll.schreib("[Audio] beim Öffnen: \(Int(sitzung.sampleRate)) Hz"
+            + " · Ausgang \(ausgang?.portType.rawValue ?? "—")"
+            + " führt \(ausgang?.channels?.count ?? 0) Kanäle"
+            + ", könnte \(sitzung.maximumOutputNumberOfChannels)")
         #endif
 
         letzteAdresse = url
@@ -1131,6 +1149,46 @@ final class VLCPlayerView: Basisansicht {
     ///
     /// `nil`, solange kein Medium geladen ist.
     var statistik: VLCMedia.Stats? { player.media?.statistics }
+
+    /// **Kommen die Kanäle durch, oder mischt jemand still auf Stereo?**
+    ///
+    /// Swiftfin meldet, dass ihr VLCKit-Player 5.1 auf Stereo mischt, während
+    /// ihr nativer Player alle Kanäle liefert (jellyfin/Swiftfin#2199, offen);
+    /// Streamyfin hatte bei 7.1 gar keinen Ton (#1515). Für eine App, die
+    /// niemals transkodieren will, wäre ein stiller Downmix im Client der
+    /// peinlichste Fehler: der Server liefert Direct Play, und wir werfen die
+    /// Kanäle weg, ohne dass es jemand sieht.
+    ///
+    /// **Die Zeile ist erst am Fernseher aussagekräftig.** Am iPhone hat der
+    /// Lautsprecher zwei Kanäle, und zwei am Ausgang sind dort richtig —
+    /// dasselbe Ergebnis bedeutet dort also nichts. Erst wenn die Route mehr
+    /// könnte (HDMI am Apple TV, ein AirPlay-Empfänger), sagt ein Stereo-
+    /// Ausgang etwas aus.
+    func kanaeleNachmessen() {
+        // **Zwei verschiedene Spurlisten, und das ist kein Versehen.**
+        // `player.audioTracks` sagt, was *gewaehlt* ist — nur dort gibt es
+        // `isSelected` und einen Namen. `media.audioTracks` beschreibt die
+        // *Datei* und traegt als einzige die Kanalzahl, dafuer keinen Namen.
+        // Statt beide ueber einen bruechigen Namensvergleich zu verheiraten,
+        // steht hier schlicht beides untereinander: was gewaehlt ist, und was
+        // die Datei ueberhaupt anbietet.
+        let gewaehlt = player.audioTracks.first(where: \.isSelected)?.trackName ?? "—"
+        let spuren = (player.media?.audioTracks ?? []).map { spur -> String in
+            let sprache = spur.language ?? spur.trackDescription ?? "?"
+            return "\(sprache) \(spur.audio?.channelsNumber ?? 0)ch"
+        }.joined(separator: ", ")
+
+        #if os(macOS)
+        Protokoll.schreib("[Kanäle] gewählt: \(gewaehlt) · Datei: \(spuren)")
+        #else
+        let sitzung = AVAudioSession.sharedInstance()
+        let ausgang = sitzung.currentRoute.outputs.first
+        Protokoll.schreib("[Kanäle] gewählt: \(gewaehlt) · Datei: \(spuren)"
+            + " · Ausgang \(ausgang?.portType.rawValue ?? "—")"
+            + " nimmt \(ausgang?.channels?.count ?? 0)"
+            + ", könnte \(sitzung.maximumOutputNumberOfChannels)")
+        #endif
+    }
 
     /// Wählt Ton- und Untertitelspur nach den Voreinstellungen.
     ///

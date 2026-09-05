@@ -32,6 +32,7 @@
 "Server antwortete mit %lld." = "Server antwortete mit %lld.";
 "Antwort nicht lesbar: %@" = "Antwort nicht lesbar: %@";
 "Verbindung fehlgeschlagen: %@" = "Verbindung fehlgeschlagen: %@";
+"Das andere Gerät hat nicht reagiert." = "Das andere Gerät hat nicht reagiert.";
 
 /* AirPlay und Abschnitte */
 "Das Bild liegt als %@ vor. AirPlay überträgt nur H.264 und HEVC." = "Das Bild liegt als %@ vor. AirPlay überträgt nur H.264 und HEVC.";
@@ -45,3 +46,33 @@
 "Nächste Folge" = "Nächste Folge";
 "Überspringen" = "Überspringen";
 "Der Server nennt keine abspielbare Fassung." = "Der Server nennt keine abspielbare Fassung.";
+
+/* Laufzeit — aus Sources/Shared/Titelangaben.swift hierher gehoben. */
+"%lld Std. %lld Min." = "%lld Std. %lld Min.";
+"%lld Min." = "%lld Min.";
+
+/* Wiedergabewahlen — aus Sources/Shared hierher gehoben. */
+"Unbegrenzt" = "Unbegrenzt";
+"%lld Mbit/s" = "%lld Mbit/s";
+"Wie die Datei" = "Wie die Datei";
+
+"Film" = "Film";
+"Serie" = "Serie";
+"Folge" = "Folge";
+"Keine" = "Keine";
+"Lädt…" = "Lädt…";
+"Keine Folgen" = "Keine Folgen";
+"Noch %lld Minuten" = "Noch %lld Minuten";
+"Fortsetzen %@" = "Fortsetzen %@";
+"Abspielen %@" = "Abspielen %@";
+"%lld Staffeln" = "%lld Staffeln";
+"Die Adresse konnte nicht gelesen werden." = "Die Adresse konnte nicht gelesen werden.";
+"Benutzername oder Passwort stimmt nicht." = "Benutzername oder Passwort stimmt nicht.";
+"Dieses Konto darf das nicht." = "Dieses Konto darf das nicht.";
+"Das gibt es auf dem Server nicht." = "Das gibt es auf dem Server nicht.";
+"Der Server hat einen Fehler gemeldet." = "Der Server hat einen Fehler gemeldet.";
+"Keine Verbindung." = "Keine Verbindung.";
+"Der Server hat nicht geantwortet." = "Der Server hat nicht geantwortet.";
+"Unter dieser Adresse ist kein Server erreichbar." = "Unter dieser Adresse ist kein Server erreichbar.";
+"Der Server hat mit %lld geantwortet." = "Der Server hat mit %lld geantwortet.";
+"Die Antwort des Servers war unverständlich. (%@)" = "Die Antwort des Servers war unverständlich. (%@)";

@@ -83,19 +83,32 @@ struct Netzbild: View {
     let url: URL?
     /// Wie das Bild seine Fläche füllt.
     var art: ContentMode = .fill
+    /// Was stehen soll, wenn kein Bild kommt — als Systemzeichen.
+    ///
+    /// **Eine leere Fläche sieht aus wie ein Fehler in der App**, und genau so
+    /// wurde sie gemeldet. Ein Zeichen sagt: hier gehört ein Bild hin, der
+    /// Server hat keins. Steht seit je in der iPhone-Fassung; der Mac hatte
+    /// es nie.
+    var zeichen: String?
 
     @State private var bild: Image?
     @State private var sichtbar = false
+    /// Kein Bild zu erwarten: keine Adresse, oder der Abruf kam ohne Bild
+    /// zurück. Erst dann tritt das Zeichen ein — nicht schon währenddessen,
+    /// sonst blitzte es vor jeder Kachel kurz auf.
+    @State private var ohneBild = false
 
     /// **Was bekannt ist, steht sofort** — nicht erst im nächsten Durchgang.
     /// Ein nachgereichter Wert kommt zu spät, der leere Durchgang hat dann
     /// schon stattgefunden, und genau der ist das Aufblitzen.
-    @MainActor init(url: URL?, art: ContentMode = .fill) {
+    @MainActor init(url: URL?, art: ContentMode = .fill, zeichen: String? = nil) {
         self.url = url
         self.art = art
+        self.zeichen = zeichen
         let sofort = url.flatMap { Bildspeicher.geteilt.bild($0) }
         _bild = State(initialValue: sofort)
         _sichtbar = State(initialValue: sofort != nil)
+        _ohneBild = State(initialValue: url == nil)
     }
 
     var body: some View {
@@ -103,11 +116,20 @@ struct Netzbild: View {
             if let bild {
                 bild.resizable().aspectRatio(contentMode: art)
                     .opacity(sichtbar ? 1 : 0)
+            } else if ohneBild, let zeichen {
+                Image(systemName: zeichen)
+                    .font(.system(size: 22))
+                    .foregroundStyle(Stil.schriftSehrLeise)
             }
         }
         .task(id: url) {
-            guard let url, bild == nil else { return }
-            guard let geladen = await Bildspeicher.geteilt.laden(url) else { return }
+            guard let url else { ohneBild = true; return }
+            guard bild == nil else { return }
+            ohneBild = false
+            guard let geladen = await Bildspeicher.geteilt.laden(url) else {
+                ohneBild = true
+                return
+            }
             bild = geladen
             // 220 ms, dieselbe Zeit wie ein Sprung im Player — lang genug,
             // dass fünfzig Kacheln wie eine Bewegung wirken statt wie fünfzig.

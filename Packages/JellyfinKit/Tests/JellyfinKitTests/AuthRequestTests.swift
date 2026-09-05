@@ -1,5 +1,11 @@
 import Foundation
 import Testing
+// Auf Linux liegt URLSession nicht in Foundation, sondern in einem
+// eigenen Modul. Auf Apple-Plattformen gibt es das Modul nicht — der
+// Import ist deshalb bedingt und dort wirkungslos.
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import JellyfinKit
 
 // .serialized, weil sich die Tests den statischen Mitschnitt der Spy-Klasse

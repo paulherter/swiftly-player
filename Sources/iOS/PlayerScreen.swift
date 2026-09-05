@@ -402,9 +402,30 @@ struct PlayerScreen: View {
         .onChange(of: querformatFest) { _, fest in
             Orientierung.shared.playerGeoeffnet(querformatFest: fest)
         }
-        // **Nur messen, nichts richten.** Siehe `geometrieNachmessen`.
         .onChange(of: lebenslage) { _, neu in
+            // **Nur messen, nichts richten.** Siehe `geometrieNachmessen`.
             if neu == .active { geometrieNachmessen(anlass: "aktiv") }
+
+            // **Im Hintergrund anhalten — ausser es laeuft anderswo weiter.**
+            //
+            // Die App erklaert `UIBackgroundModes: audio`; ohne sie gaebe es
+            // kein Bild-im-Bild und keinen Sperrbildschirm. Der Preis ist,
+            // dass ein weggewischtes Video unbemerkt weiterlaeuft: der
+            // Fortschritt zieht davon, und beim Zurueckkommen steht die Folge
+            // womoeglich als gesehen da. Swiftfin hatte das zweimal
+            // (#871, spaeter als Rueckfall #2175).
+            //
+            // Die Regel steht in `Hintergrundregel` im Paket, mit Tests und
+            // mit den beiden Ausnahmen, um die es dabei geht.
+            if neu == .background,
+               Hintergrundregel.anhalten(imKleinenFenster: imKleinenFenster,
+                                         aufAnderemGeraet: airplayPlan != nil,
+                                         laeuft: laeuft) {
+                Protokoll.schreib("[Lebenslage] Hintergrund ohne PiP/AirPlay → anhalten")
+                surface?.pause()
+                laeuft = false
+                meldeFortschritt()
+            }
         }
         .onChange(of: imKleinenFenster) { _, klein in
             if !klein { geometrieNachmessen(anlass: "aus PiP zurueck") }
@@ -1031,6 +1052,7 @@ struct PlayerScreen: View {
                                         untertitel: model.untertitelSprache,
                                         automatisch: model.untertitelAutomatisch)
             }
+            if auftrag.spurenAnwenden { surface.kanaeleNachmessen() }
             // Waehrend des Wechsels schweigen. Sonst geht ein Fortschritt
             // fuer den **alten** Titel hinaus, nachdem sein Ende schon
             // gemeldet wurde — die Reihenfolge, die C4 zusagt, waere gebrochen.

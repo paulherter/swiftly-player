@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Maße, Schriftgrößen und Bausteine für den Fernseher.
@@ -301,6 +302,23 @@ struct Bild: View {
     /// Fortschritt am unteren Rand, innerhalb der Maske.
     var fortschritt: Double? = nil
 
+    /// **Ein abgebrochener Abruf ist kein Fehlschlag — er ist einen zweiten
+    /// Versuch wert.**
+    ///
+    /// `AsyncImage` bricht ab, sobald seine Kachel vom Schirm geht, und
+    /// bleibt danach im Fehlerzustand stehen: kommt dieselbe Kachel zurück,
+    /// versucht es von sich aus nichts mehr. Beim Kontowechsel geht die halbe
+    /// Seite kurz durch die Hände des Fokusmotors, und dann trifft es viele
+    /// Kacheln auf einmal. Am Gerät gemessen, zwanzigmal in Folge:
+    ///
+    ///     NSURLErrorDomain -999
+    ///
+    /// Das heißt „abgebrochen" — nicht abgelehnt, nicht verfehlt. Derselbe
+    /// Aufruf von außen kam mit HTTP 200 und 158 KB zurück. Deshalb hier ein
+    /// neuer Anlauf statt einer grauen Fläche; höchstens zwei, damit ein
+    /// echter Ausfall nicht in eine Schleife läuft.
+    @State private var anlauf = 0
+
     var body: some View {
         Color.clear
             .frame(width: breite, height: hoehe)
@@ -310,10 +328,18 @@ struct Bild: View {
                     if case let .success(bild) = phase {
                         bild.resizable().aspectRatio(contentMode: .fill)
                     } else {
-                        Stil.flaeche
+                        Stil.flaeche.onAppear {
+                            guard case let .failure(f) = phase,
+                                  (f as NSError).code == NSURLErrorCancelled,
+                                  anlauf < 2 else { return }
+                            anlauf += 1
+                        }
                     }
                 }
+                .id(anlauf)
             }
+            // Eine neue Adresse heißt ein frischer Anlauf.
+            .onChange(of: url) { _, _ in anlauf = 0 }
             .overlay(alignment: .bottom) {
                 if let fortschritt {
                     Fortschrittsbalken(anteil: fortschritt)

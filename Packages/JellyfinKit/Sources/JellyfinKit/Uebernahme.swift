@@ -90,6 +90,48 @@ public enum Fremdbefehl: String, Sendable {
     case beenden  = "Stop"
 }
 
+public extension Fremdsitzung {
+
+    /// „Adults · S2 E1" — was auf der anderen Seite läuft.
+    ///
+    /// **Lag in `Sources/Shared` und war fuer Linux unerreichbar.** Dort
+    /// stand deshalb eine eigene, kuerzere Fassung: Titel oben, Geraet
+    /// darunter. Dieselbe Auskunft, anders zusammengesetzt — genau die Sorte
+    /// Abweichung, die niemand meldet.
+    ///
+    /// Uebersetzt wird hier nichts: Serienname und Folgennummer kommen vom
+    /// Server, und „S2 E1" steht in jeder Sprache so da.
+    var titelzeile: String {
+        guard let t = laeuft else { return geraetename ?? "" }
+        var teile: [String] = []
+        if let serie = t.seriesName, !serie.isEmpty { teile.append(serie) }
+        else { teile.append(t.name) }
+        if let staffel = t.parentIndexNumber, let folge = t.indexNumber {
+            teile.append("S\(staffel) E\(folge)")
+        }
+        return teile.joined(separator: " · ")
+    }
+
+    /// **Welches Geraet** — nach dem Namen geraten, mehr gibt der Server
+    /// nicht her. `DeviceType` ist bei eigenen Clients leer.
+    ///
+    /// Die *Zeichen* bleiben Sache der Plattform: SF Symbols auf Apple,
+    /// Adwaita auf Linux. Geteilt wird nur die Entscheidung, **welches
+    /// Geraet** es ist — die darf nicht auseinanderlaufen.
+    enum Geraeteart: Sendable { case telefon, tablet, rechner, fernseher, unbekannt }
+
+    var geraeteart: Geraeteart {
+        let name = (geraetename ?? "").lowercased()
+        if name.contains("ipad") { return .tablet }
+        if name.contains("mac") || name.contains("pc") || name.contains("linux") {
+            return .rechner
+        }
+        if name.contains("iphone") || name.contains("phone") { return .telefon }
+        if name.contains("tv") || name.contains("appletv") { return .fernseher }
+        return .unbekannt
+    }
+}
+
 // MARK: - Welche Sitzung angeboten wird
 
 /// Entscheidet, ob es etwas zu übernehmen gibt.

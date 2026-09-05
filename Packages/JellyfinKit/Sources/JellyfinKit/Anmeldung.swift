@@ -1,4 +1,10 @@
 import Foundation
+// Auf Linux liegt URLSession nicht in Foundation, sondern in einem
+// eigenen Modul. Auf Apple-Plattformen gibt es das Modul nicht — der
+// Import ist deshalb bedingt und dort wirkungslos.
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Wer auf diesem Server sichtbar ist, noch bevor man angemeldet ist.
 public struct OeffentlicherBenutzer: Codable, Sendable, Identifiable, Equatable {

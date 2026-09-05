@@ -1,0 +1,5 @@
+module CRlottie [system] {
+    header "include/bruecke.h"
+    link "rlottie"
+    export *
+}

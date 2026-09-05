@@ -198,6 +198,18 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         return "S\(staffel) • E\(folge)"
     }
 
+    /// Anteil des schon Gesehenen, 0 bis 1 — für die Fortschrittsbalken.
+    ///
+    /// **Aus `Sources/Shared/Titelangaben.swift` hierher gehoben.** Dort war
+    /// sie für Linux unerreichbar, obwohl an ihr nichts hängt, was mit
+    /// Oberfläche oder Übersetzung zu tun hätte.
+    public var gesehenerAnteil: Double? {
+        guard let prozent = userData?.playedPercentage, prozent > 0 else { return nil }
+        return prozent / 100
+    }
+
+    public var istGesehen: Bool { userData?.played ?? false }
+
     /// Zweitzeile für „Zuletzt hinzugefügt": *was* dazugekommen ist.
     ///
     /// Jellyfin fasst neue Folgen zusammen — kam eine ganze Staffel dazu,
