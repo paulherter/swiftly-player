@@ -46,8 +46,15 @@ struct HomeView: View {
                     Reihe(titel: "Weiterschauen", quer: true) {
                         ForEach(weiter, id: \.id) { titel in
                             Querkachel(titel: kopf(titel), zweitzeile: titel.kontextzeile,
-                                       bild: model.querbildURL(for: titel),
+                                       // **Fehlt das waagerechte Bild, tritt
+                                       // das Plakat ein** — beschnitten, aber
+                                       // immer noch das Cover und kein
+                                       // Standbild. Wörtlich wie auf dem
+                                       // iPhone.
+                                       bild: model.querbildURL(for: titel)
+                                           ?? model.imageURL(for: titel, hochkant: true),
                                        fortschritt: fortschritt(titel),
+                                       zeichen: zeichen(titel),
                                        auswahl: { steuerung.starte(titel) },
                                        uebersicht: { navigator.oeffne(.titel(titel), in: bereich) },
                                        vorholen: { Seriencache.geteilt.vorholen(titel, mit: model) })
@@ -74,6 +81,7 @@ struct HomeView: View {
                                 Posterkachel(titel: kopf(folge),
                                              zweitzeile: folge.folgenkuerzel,
                                              bild: model.imageURL(for: folge, hochkant: true),
+                                             zeichen: zeichen(folge),
                                              vorholen: { Seriencache.geteilt.vorholen(folge, mit: model) })
                             }
                             .buttonStyle(.plain)
@@ -88,6 +96,7 @@ struct HomeView: View {
                                 Posterkachel(titel: titel.name,
                                              zweitzeile: titel.neuzugangszeile,
                                              bild: model.imageURL(for: titel, hochkant: true),
+                                             zeichen: zeichen(titel),
                                              vorholen: { Seriencache.geteilt.vorholen(titel, mit: model) })
                             }
                             .buttonStyle(.plain)
@@ -120,6 +129,19 @@ struct HomeView: View {
         .ohneKanteneffekt()
         .overlay { if !geladen { Lader() } }
         .task { await laden() }
+        // **Der Kontowechsel hängt nicht an `phase`.**
+        //
+        // Naheliegend wäre gewesen, auf `model.phase` zu horchen. Der steht
+        // beim Wechsel aber schon auf `.ready` und ändert sich nicht — die
+        // Startseite lud nie neu und zeigte weiter die Titel des vorigen
+        // Kontos. `.task` hilft ebenso wenig: die Ansicht bleibt stehen, sie
+        // erscheint ja nicht neu. Der Zähler in `AppModel` ist das Einzige,
+        // was sich zuverlässig ändert.
+        //
+        // Und es geht über `auffrischen()`, nicht über `laden()`: das würde
+        // an `stand.geladen` abprallen. Geleert wird nichts — `Startseiten-
+        // modell` ersetzt die Reihen selbst, sobald die neuen da sind.
+        .onChange(of: model.kontowechsel) { _, _ in Task { await auffrischen() } }
         // **Auch beim Zurückkommen ins Fenster** (D8).
         //
         // `.task` deckt „Ansicht erscheint" ab — also den Leistenwechsel und
@@ -151,6 +173,10 @@ struct HomeView: View {
     /// `0.0`. Folgenlos, weil `Bildflaeche` den Balken ohnehin nur
     /// `if fortschritt > 0` zeichnet — beides führt zu keinem Balken.
     private func fortschritt(_ titel: Item) -> Double? { titel.gesehenerAnteil }
+
+    /// Fernseher für alles, was zu einer Serie gehört, sonst Filmstreifen —
+    /// dieselbe Unterscheidung wie in der iPhone-Fassung.
+    private func zeichen(_ titel: Item) -> String { titel.seriesId != nil ? "tv" : "film" }
 
     private func laden() async {
         guard !stand.geladen else { return }

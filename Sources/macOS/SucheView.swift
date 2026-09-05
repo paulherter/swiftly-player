@@ -39,7 +39,8 @@ struct SucheView: View {
                             Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                                 Posterkachel(titel: eintrag.name,
                                              zweitzeile: eintrag.trefferauskunft,
-                                             bild: model.imageURL(for: eintrag, hochkant: true))
+                                             bild: model.imageURL(for: eintrag, hochkant: true),
+                                             zeichen: eintrag.type == "Series" ? "tv" : "film")
                             }
                             .buttonStyle(.plain)
                         }
