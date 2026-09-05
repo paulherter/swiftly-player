@@ -64,7 +64,11 @@ struct HauptView: View {
         HStack(spacing: 0) {
             Seitenleiste(model: model, bereich: $bereich,
                          uebernahme: uebernahme.angebot,
-                         uebernehmen: { abzeichenGedrueckt() }) {
+                         uebernehmen: { abzeichenGedrueckt() },
+                         bibliothekWaehlen: { bibliothekAusLeiste($0) },
+                         gewaehlteBibliothek: { art in
+                             art == "movies" ? filmbibliothek : serienbibliothek
+                         }) {
                 navigator.oeffne(.profil, in: bereich)
             }
             // **Der Sicherheitsrand der Titelleiste gilt links genauso wenig
@@ -389,10 +393,24 @@ struct HauptView: View {
         case .einstellungen:    EinstellungenView(model: model) { zurueck() }
         case .wiedergabe:       WiedergabeEinstellungenView(model: model) { zurueck() }
         case .quickConnect:     QuickConnectView(model: model) { zurueck() }
+        case .kontoHinzufuegen: KontoHinzufuegenView(model: model) { zurueck() }
         }
     }
 
     private func zurueck() { navigator.zurueck(in: bereich) }
+
+    /// Eine Bibliothek aus der Seitenleiste: sie **wählt** die Sammlung und
+    /// wechselt in deren Bereich. Die Wahl wird gemerkt, damit sie beim
+    /// nächsten Öffnen noch gilt — dieselbe Stelle, die auch die Chips über
+    /// dem Regal benutzen.
+    private func bibliothekAusLeiste(_ bib: Item) {
+        model.bibliothekWaehlen(bib, art: bib.collectionType ?? "")
+        switch bib.collectionType {
+        case "movies":  filmbibliothek = bib;   bereich = .filme
+        case "tvshows": serienbibliothek = bib; bereich = .serien
+        default:        break
+        }
+    }
 
     private func ausfuehren(_ kommando: Kommando) {
         switch kommando {
@@ -436,6 +454,11 @@ struct Seitenleiste: View {
     /// Was auf einem anderen Gerät läuft — `nil`, wenn nichts.
     var uebernahme: Fremdsitzung?
     var uebernehmen: () -> Void
+    let bibliothekWaehlen: (Item) -> Void
+    /// Welche Sammlung der jeweiligen Gattung gerade gezeigt wird. Als
+    /// Abfrage und nicht als Wert: die Stände liegen in `HauptView`, und die
+    /// Leiste soll sie nicht doppelt führen.
+    let gewaehlteBibliothek: (String) -> Item?
     let zumProfil: () -> Void
 
     var body: some View {
@@ -456,11 +479,28 @@ struct Seitenleiste: View {
             }
             .padding(.horizontal, 12)
 
-            if !model.views.isEmpty {
+            // **Die Rubrik stand da, die Zeilen darunter fehlten.** Ein
+            // Titel über nichts — beim Vergleich mit der Linux-Fassung
+            // aufgefallen, wo die Sammlungen aufgeführt sind.
+            //
+            // Aufgeführt wird, was wir auch öffnen können: Filme und Serien.
+            // Eine Musiksammlung stünde sonst da und führte ins Leere.
+            if !sammlungen.isEmpty {
                 Seitenleistenrubrik(text: "Bibliotheken")
                     .padding(.horizontal, 12)
                     .padding(.top, 26)
                     .padding(.bottom, 8)
+
+                VStack(spacing: 2) {
+                    ForEach(sammlungen, id: \.id) { bib in
+                        Seitenleistenzeile(symbol: bib.collectionType == "movies" ? "film" : "tv",
+                                           name: bib.name,
+                                           aktiv: istAktiv(bib)) {
+                            bibliothekWaehlen(bib)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
             }
 
             Spacer(minLength: 0)
@@ -495,6 +535,21 @@ struct Seitenleiste: View {
         .animation(.easeInOut(duration: 0.22), value: uebernahme?.id)
         .task { if model.views.isEmpty { await model.loadViews() } }
     }
+
+    private var sammlungen: [Item] {
+        model.views.filter { $0.collectionType == "movies" || $0.collectionType == "tvshows" }
+    }
+
+    /// Hervorgehoben wird eine Sammlung nur, wenn ihr Bereich auch offen ist
+    /// — sonst stünden zwei Zeilen gleichzeitig im Akzent, ohne dass eine
+    /// davon zu sehen wäre.
+    private func istAktiv(_ bib: Item) -> Bool {
+        switch bib.collectionType {
+        case "movies":  bereich == .filme  && gewaehlteBibliothek("movies")?.id == bib.id
+        case "tvshows": bereich == .serien && gewaehlteBibliothek("tvshows")?.id == bib.id
+        default:        false
+        }
+    }
 }
 
 /// Wer angemeldet ist, und wo. Unten in der Seitenleiste — auf dem iPhone
@@ -505,8 +560,7 @@ struct Profilzeile: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Profilzeichen(name: model.session?.userName ?? "?",
-                              bild: model.benutzerbildURL(groesse: 60), groesse: 26)
+            zeichen
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: model.session?.userName ?? "—")
                     .font(Stil.kachelTitel)
@@ -525,6 +579,40 @@ struct Profilzeile: View {
                     in: RoundedRectangle(cornerRadius: Stil.ecke))
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
+    }
+
+    /// **Bei mehreren Konten liegen zwei Kreise übereinander.** Das aktive
+    /// vorn mit Akzentring, dahinter angeschnitten das nächste — der Rand in
+    /// der Farbe der Leiste schneidet es frei, wie bei einer Gruppe von
+    /// Teilnehmerbildern.
+    ///
+    /// Es bleibt bei **einem** zweiten Kreis, auch wenn es mehr Konten sind.
+    /// Hier unten ist die Aussage „da ist noch eines" — welche und wie viele
+    /// steht auf der Profilseite, einen Klick entfernt.
+    @ViewBuilder
+    private var zeichen: some View {
+        let weitere = model.konten.first { $0.userID != model.session?.userID }
+        HStack(spacing: -9) {
+            Profilzeichen(name: model.session?.userName ?? "?",
+                          bild: model.benutzerbildURL(groesse: 60), groesse: 26,
+                          hervorgehoben: weitere != nil)
+                // **Das verbundene Konto liegt oben.** Ein `HStack` mit
+                // negativem Abstand zeichnet in der Reihenfolge der Auslage,
+                // also läge sonst das zweite obenauf — und damit das Bild
+                // vorn, an dem gerade niemand angemeldet ist.
+                .zIndex(1)
+                // Freigeschnitten wird das obere, nicht das untere: ein Saum
+                // in der Farbe der Leiste, zwei Punkt breit, damit die beiden
+                // Kreise sich nicht berühren. Er liegt hinter dem Bild, sonst
+                // deckte er den Akzentring zu.
+                .background { Circle().fill(Stil.flaeche).padding(-2) }
+            if let weitere {
+                Profilzeichen(name: weitere.userName,
+                              bild: model.benutzerbildURL(fuer: weitere, groesse: 60),
+                              groesse: 26)
+                    .opacity(0.55)
+            }
+        }
     }
 
 }

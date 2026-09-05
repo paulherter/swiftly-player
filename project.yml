@@ -451,6 +451,9 @@ targets:
       - path: Sources/Shared/VLCPlayer.swift
       # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
       - path: Sources/Shared/Uebernahmemodell.swift
+      # Der Code-Weg beim Aufnehmen eines weiteren Kontos: Code holen,
+      # im Zweisekundentakt nachfragen, fuenf Minuten Gueltigkeit.
+      - path: Sources/Shared/QuickConnectModell.swift
       - path: Sources/Shared/Localizable.xcstrings
       # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
       # deutsch kommt hier heraus.
