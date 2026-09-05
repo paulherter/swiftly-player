@@ -95,15 +95,27 @@ enum Speicher {
     /// weiß, wo etwas liegt; auf Apple macht es `AppModel.bundLaden()` genauso.
     /// Die alte `sitzung.json` wird **nicht gelöscht**: wer noch einmal eine
     /// ältere Fassung startet, soll nicht plötzlich abgemeldet sein.
+    /// Liest den Bund. **Was er bedeutet, steht im Paket** —
+    /// ``Kontenbund/ausAblage(bund:einzelne:)`` kennt die Übernahme aus der
+    /// Zeit vor den Mehrfachkonten und den Rückfall, wenn der Bund unlesbar
+    /// ist. Hier steht nur noch, **wo** die Daten liegen.
+    ///
+    /// Die mittlere Stufe ist eine Altlast von einem einzigen Nachmittag: die
+    /// erste Fassung legte Bund und Servername zusammen in eine Hülle. Sie
+    /// steht hier, damit niemand ein Konto neu anmelden muss; mit dem nächsten
+    /// Schreiben ist sie weg.
     static func bundLesen() -> Kontenablage? {
-        if let daten = try? Data(contentsOf: kontendatei),
-           let ablage = try? JSONDecoder().decode(Kontenablage.self, from: daten) {
-            return ablage
+        let kontenDaten = try? Data(contentsOf: kontendatei)
+        let einzelDaten = try? Data(contentsOf: datei)
+        if let b = Kontenbund.ausAblage(bund: kontenDaten, einzelne: nil) {
+            return Kontenablage(bund: b, servername: gemerkterServer()?.servername)
         }
-        guard let alt = lesen() else { return nil }
-        let sitzung = Session(accessToken: alt.token, userID: alt.benutzerID,
-                              userName: alt.benutzername, serverURL: alt.serverURL)
-        return Kontenablage(bund: Kontenbund(sitzung), servername: alt.servername)
+        if let d = kontenDaten,
+           let huelle = try? JSONDecoder().decode(Kontenablage.self, from: d) {
+            return huelle
+        }
+        guard let b = Kontenbund.ausAblage(bund: nil, einzelne: einzelDaten) else { return nil }
+        return Kontenablage(bund: b, servername: lesen()?.servername)
     }
 
     /// Schreibt den Bund — **und daneben weiter die einzelne Sitzung.**
@@ -116,7 +128,10 @@ enum Speicher {
         do {
             try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
                                                     attributes: nurIch)
-            try JSONEncoder().encode(ablage).write(to: kontendatei, options: [.atomic])
+            // **Der reine Bund, keine Hülle.** So liest ihn
+            // ``Kontenbund/ausAblage(bund:einzelne:)`` unmittelbar; der
+            // Servername steht ohnehin im Merkzettel.
+            try JSONEncoder().encode(ablage.bund).write(to: kontendatei, options: [.atomic])
             #if !os(Windows)
             try FileManager.default.setAttributes([.posixPermissions: 0o600],
                                                   ofItemAtPath: kontendatei.path)
