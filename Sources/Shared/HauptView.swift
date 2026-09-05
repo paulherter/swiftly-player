@@ -255,6 +255,7 @@ struct BibliothekView: View {
         // Nur so laufen die Uebergaenge von Schleier und Karte einzeln.
         .overlay(alignment: .topTrailing) {
                 Auswahlblatt(offen: $filterlisteOffen,
+                             unterrand: breit ? 0 : Stil.leisteHoehe,
                              titel: "Filtern",
                              eintraege: filter,
                              beschriftung: { $0.beschriftung },
@@ -263,6 +264,7 @@ struct BibliothekView: View {
         }
         .overlay(alignment: .topTrailing) {
                 Auswahlblatt(offen: $sortierlisteOffen,
+                             unterrand: breit ? 0 : Stil.leisteHoehe,
                              titel: "Sortieren",
                              eintraege: Sortierung.allCases,
                              beschriftung: { $0.beschriftung },
@@ -271,6 +273,7 @@ struct BibliothekView: View {
         }
         .overlay(alignment: .topTrailing) {
                 Auswahlblatt(offen: $bibliothekslisteOffen,
+                             unterrand: breit ? 0 : Stil.leisteHoehe,
                              titel: "Bibliothek",
                              eintraege: auswahl,
                              beschriftung: { $0.name },

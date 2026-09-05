@@ -525,6 +525,8 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     @Binding var offen: Bool
     /// Wie hoch die Einträge zusammen sind — gemessen, nicht angenommen.
     @State private var inhaltshoehe: CGFloat = 0
+    /// Reicht ``Blatt`` durch; die Begründung steht dort.
+    var unterrand: CGFloat = 0
     let titel: LocalizedStringKey
     let eintraege: [Eintrag]
     let beschriftung: (Eintrag) -> String
@@ -534,7 +536,7 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     var body: some View {
         Color.clear
             .allowsHitTesting(false)
-            .blatt(offen: $offen) {
+            .blatt(offen: $offen, unterrand: unterrand) {
                 Blattrubrik(text: Text(titel))
 
                 ScrollView {
@@ -1310,13 +1312,25 @@ struct Unschaerfekopf<Inhalt: View>: View {
                 Rectangle().fill(Stil.linie).frame(height: 1).opacity(kante)
             }
             .background {
-                // Nur ein Verlauf, keine Unschärfe.
+                // **Ohne Versatz nur ein Verlauf, mit Versatz eine Leiste.**
                 //
                 // Auf der Startseite laufen Kacheln durch, keine Schrift —
                 // dort muss nichts lesbar gehalten werden, es soll nur nicht
                 // hart abschneiden. Ein Verlauf tut das ruhiger als Glas und
                 // braucht keine Haarlinie.
-                Kopfverlauf()
+                //
+                // In der Bibliothek läuft Schrift durch, und dort war eine
+                // Haarlinie allein sinnlos: darüber blieb alles durchsichtig,
+                // die Linie trennte nichts. Fest — und zwar genau so, wie
+                // `Detailkopf` es seit jeher macht: offen im Ruhezustand,
+                // geschlossen beim Scrollen. Das ist die Grammatik, die die
+                // App schon hat. 0,86 ist derselbe Wert wie in der
+                // `Navileiste` unten — die beiden Leisten der App sollen
+                // gleich deckend sein.
+                ZStack {
+                    Kopfverlauf().opacity(1 - kante)
+                    Leistenglas(staerke: kante, tiefe: 0.86)
+                }
             }
     }
 }
@@ -1976,6 +1990,16 @@ struct Wahlchip: View {
 /// Strecke verlangen wie eins mit zwoelf.
 struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
     @Binding var offen: Bool
+    /// Wie weit über dem unteren Rand das Blatt endet.
+    ///
+    /// **Die Seite reicht hinter die Leiste.** In den Bibliotheken liegt
+    /// unten die Bereichsleiste über dem Inhalt; ohne diesen Abstand
+    /// verschwindet „Abbrechen" darunter — genau das war zu sehen, nachdem
+    /// der Wert beim Umbau auf Apples `sheet` weggefallen war (ein
+    /// Systemblatt liegt über allem, unseres nicht). Auf Seiten ohne Leiste
+    /// ist er null; deshalb sagt es der Aufrufer und nicht dieser Baustein,
+    /// der seine Umgebung nicht kennt.
+    var unterrand: CGFloat = 0
     @ViewBuilder var blattinhalt: () -> Blattinhalt
 
     /// Wie hoch die Karte ist — bestimmt, wie weit sie hinausfaehrt, wie
@@ -2010,6 +2034,7 @@ struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
                 blattinhalt()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, unterrand)
             .background {
                 // **Die Flaeche reicht weiter nach unten, als die Karte je
                 // faehrt.** Die Feder schiesst beim Oeffnen ueber — die Karte
@@ -2025,6 +2050,17 @@ struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
             .onGeometryChange(for: CGFloat.self) { $0.size.height }
                 action: { kartenhoehe = $0 }
             .offset(y: offen ? zug : kartenhoehe + 400)
+            // **Das Auffahren gehört hierher, nicht an die Aufrufstellen.**
+            //
+            // Es hing an einem `withAnimation` bei jedem Öffner — fünf
+            // Stellen, und beim Umbau auf Apples `sheet` fielen alle fünf
+            // weg, weil ein Systemblatt sich selbst animiert. Danach war das
+            // Blatt beim Öffnen „einfach zack da" und fuhr nur noch hinaus.
+            //
+            // **Beim Schliessen bewusst `nil`:** dann gilt die Feder, die
+            // `schliessen(mit:)` mitbringt, samt dem Schwung des Fingers.
+            // Eine Animation an dieser Stelle würde sie überschreiben.
+            .animation(offen ? Stil.blattbewegung : nil, value: offen)
             .gesture(ziehen)
         }
         // Der Stapel muss den Schirm fuellen; sonst bemisst sich die Auflage
@@ -2095,9 +2131,10 @@ extension View {
     /// **Immer anhaengen, nie in ein `if offen`.** In einem `if` steht `offen`
     /// beim Einhaengen schon auf wahr, die Karte sitzt sofort an ihrem Platz,
     /// und das Auffahren faellt aus.
-    func blatt<Inhalt: View>(offen: Binding<Bool>,
+    func blatt<Inhalt: View>(offen: Binding<Bool>, unterrand: CGFloat = 0,
                              @ViewBuilder inhalt: @escaping () -> Inhalt) -> some View {
-        modifier(Blattmodifikator(offen: offen, blattinhalt: inhalt))
+        modifier(Blattmodifikator(offen: offen, unterrand: unterrand,
+                                  blattinhalt: inhalt))
     }
 }
 
