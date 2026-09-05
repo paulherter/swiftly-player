@@ -636,9 +636,21 @@ final class App: @unchecked Sendable {
               neu.konten.contains(where: { $0.userID == kennung }) else { return }
         neu.wechseln(zu: kennung)
         bund = neu
-        bundSichern(servername: servername.isEmpty ? nil : servername)
+        let name = servername.isEmpty ? nil : servername
+        // **Wer im Profil umschaltet, bleibt im Profil** — wie auf dem Mac.
+        // Ring und Punkt wandern dann sichtbar zum anderen Kreis, und genau
+        // das ist die Rueckmeldung, um die es im Entwurf geht: „verbunden ist,
+        // was Akzentring und Punkt traegt, und das aendert sich beim Klicken".
+        // Wer stattdessen auf die Startseite geworfen wuerde, saehe die
+        // Antwort auf seinen eigenen Klick nie.
+        let warImProfil = offeneUnterseite == .profil
+        bundSichern(servername: name)
         aufraeumenNachWechsel()
-        sitzungEinsetzen(neu.aktives, servername: servername.isEmpty ? nil : servername)
+        sitzungEinsetzen(neu.aktives, servername: name)
+        // **Erst danach.** Die Seite liest `benutzerID` und `adressen`, und
+        // die stellt ``sitzungEinsetzen(_:servername:)``; davor gebaut zeigte
+        // sie den Namen des Kontos, von dem man gerade weggegangen ist.
+        if warImProfil { unterseiteOeffnen(.profil, schub: .ohne) }
     }
 
     /// Was nach jedem Kontowechsel neu muss — ausser dem Client selbst.
@@ -1830,9 +1842,13 @@ final class App: @unchecked Sendable {
         if let alter = bund, let rest = alter.entfernt(alter.aktiveKennung) {
             bund = rest
             let name = servername.isEmpty ? nil : servername
+            let warImProfil = offeneUnterseite == .profil
             bundSichern(servername: name)
             aufraeumenNachWechsel()
             sitzungEinsetzen(rest.aktives, servername: name)
+            // Auch hier im Profil bleiben: dass ein Konto aus dem Streifen
+            // verschwunden ist, ist die Antwort auf den Knopf.
+            if warImProfil { unterseiteOeffnen(.profil, schub: .ohne) }
             return
         }
         bund = nil
