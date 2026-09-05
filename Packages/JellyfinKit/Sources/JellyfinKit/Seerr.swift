@@ -93,6 +93,26 @@ public struct Seerrtreffer: Sendable, Hashable, Identifiable, Codable {
 }
 
 
+/// Ein Mensch aus der Besetzung.
+///
+/// **Rolle, nicht Beruf.** Seerr fuehrt unter `credits.cast` die Darsteller
+/// mit ihrer Figur; die Crew steht daneben und gehoert nicht auf eine Seite,
+/// auf der man einen Titel anfragt.
+public struct Seerrperson: Sendable, Hashable, Identifiable, Codable {
+    public let id: Int
+    public let name: String
+    /// Die Figur, die er spielt. Kann fehlen.
+    public let rolle: String?
+    public let bildPfad: String?
+
+    /// Das Portraet bei TMDB. `w185` ist die kleinste Groesse, die auf einem
+    /// 76er Kreis nicht weich wird.
+    public func bild(breite: Int = 185) -> URL? {
+        guard let bildPfad, !bildPfad.isEmpty else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w\(breite)\(bildPfad)")
+    }
+}
+
 /// Eine Staffel, wie Seerr sie kennt.
 public struct Seerrstaffel: Sendable, Hashable, Identifiable, Codable {
     /// Die Nummer, so wie sie beim Anfragen wieder hinausgeht.
@@ -116,6 +136,12 @@ public struct Seerrdetail: Sendable, Equatable, Codable {
     public let laufzeit: Int?
     public let bewertung: Double?
     public let staffeln: [Seerrstaffel]
+    /// Die Besetzung, in der Reihenfolge, in der Seerr sie liefert — das ist
+    /// die Reihenfolge der Wichtigkeit, nicht das Alphabet.
+    public let besetzung: [Seerrperson]
+    /// Was Seerr sonst noch vorschlaegt. **Dieselbe Sorte Treffer wie aus
+    /// der Suche**, damit die Kachel und die Seite dahinter dieselben sind.
+    public let aehnliches: [Seerrtreffer]
 }
 
 /// Adresse und Sitzung. Liegt beim Nutzer, nicht hier.
@@ -148,24 +174,39 @@ public enum Seerr {
     /// `offen`, nicht „unbekannt". Seerr legt den Eintrag erst mit der
     /// ersten Anfrage an.
     public static func treffer(ausSuche daten: Data) -> [Seerrtreffer] {
-        struct Antwort: Decodable {
-            struct Eintrag: Decodable {
-                let id: Int
-                let mediaType: String?
-                let title: String?
-                let name: String?
-                let releaseDate: String?
-                let firstAirDate: String?
-                let posterPath: String?
-                let backdropPath: String?
-                let mediaInfo: Info?
-                struct Info: Decodable { let status: Int? }
-            }
-            let results: [Eintrag]
+        guard let a = try? JSONDecoder().decode(Trefferliste.self, from: daten) else { return [] }
+        return treffer(aus: a.results, standardArt: nil)
+    }
+
+    /// Die Form, in der Seerr Trefferlisten ausliefert — Suche wie
+    /// Vorschlaege. **Einmal beschrieben, zweimal benutzt.**
+    struct Trefferliste: Decodable {
+        struct Eintrag: Decodable {
+            let id: Int
+            let mediaType: String?
+            let title: String?
+            let name: String?
+            let releaseDate: String?
+            let firstAirDate: String?
+            let posterPath: String?
+            let backdropPath: String?
+            let mediaInfo: Info?
+            struct Info: Decodable { let status: Int? }
         }
-        guard let a = try? JSONDecoder().decode(Antwort.self, from: daten) else { return [] }
-        return a.results.compactMap { e in
-            guard let art = e.mediaType, art == "movie" || art == "tv" else { return nil }
+        let results: [Eintrag]
+    }
+
+    /// **`standardArt` ist der Unterschied zwischen Suche und Vorschlag.**
+    ///
+    /// In der Suche steht an jedem Eintrag, was er ist — dort *muss* die
+    /// Angabe kommen, sonst waere ein Schauspieler nicht von einem Film zu
+    /// unterscheiden. Unter `recommendations` einer Filmseite stehen nur
+    /// Filme, und Seerr spart sich das Feld. Ohne diesen Rueckfall kam dort
+    /// nie ein Treffer an, obwohl die Antwort voll war.
+    static func treffer(aus eintraege: [Trefferliste.Eintrag],
+                        standardArt: String?) -> [Seerrtreffer] {
+        eintraege.compactMap { e in
+            guard let art = e.mediaType ?? standardArt, art == "movie" || art == "tv" else { return nil }
             guard let titel = e.title ?? e.name, !titel.isEmpty else { return nil }
             let datum = e.releaseDate ?? e.firstAirDate
             return Seerrtreffer(
@@ -188,8 +229,18 @@ public enum Seerr {
     /// Fehlt einer Staffel der Stand, ist sie **offen** — dieselbe
     /// Begründung wie beim Suchtreffer: Seerr legt den Eintrag erst mit der
     /// ersten Anfrage an.
-    public static func detail(aus daten: Data) -> Seerrdetail? {
+    /// `art` ist nur fuer die Vorschlaege da: siehe ``treffer(aus:standardArt:)``.
+    public static func detail(aus daten: Data, art: String? = nil) -> Seerrdetail? {
         struct Antwort: Decodable {
+            struct Besetzung: Decodable {
+                struct Kopf: Decodable {
+                    let id: Int
+                    let name: String?
+                    let character: String?
+                    let profilePath: String?
+                }
+                let cast: [Kopf]?
+            }
             struct Staffel: Decodable {
                 let seasonNumber: Int
                 let episodeCount: Int?
@@ -203,6 +254,8 @@ public enum Seerr {
             let episodeRunTime: [Int]?
             let voteAverage: Double?
             let seasons: [Staffel]?
+            let credits: Besetzung?
+            let recommendations: Trefferliste?
             let mediaInfo: MedienInfo?
             struct MedienInfo: Decodable {
                 struct Staffelstand: Decodable { let seasonNumber: Int; let status: Int? }
@@ -223,12 +276,25 @@ public enum Seerr {
                                 folgen: $0.episodeCount ?? 0,
                                 stand: staende[$0.seasonNumber] ?? .offen) }
 
+        // **Wer keinen Namen hat, ist keine Besetzung.** Und mehr als zwanzig
+        // Koepfe liest niemand — TMDB fuehrt bei grossen Serien ueber hundert,
+        // und jeder davon waere ein Bild, das geholt wird.
+        let besetzung = (a.credits?.cast ?? []).compactMap { k -> Seerrperson? in
+            guard let name = k.name, !name.isEmpty else { return nil }
+            return Seerrperson(id: k.id, name: name,
+                               rolle: (k.character?.isEmpty ?? true) ? nil : k.character,
+                               bildPfad: k.profilePath)
+        }.prefix(20).map { $0 }
+
         let text = a.overview?.trimmingCharacters(in: .whitespacesAndNewlines)
         return Seerrdetail(beschreibung: (text?.isEmpty ?? true) ? nil : text,
                            genres: (a.genres ?? []).compactMap(\.name).prefix(2).map { $0 },
                            laufzeit: a.runtime ?? a.episodeRunTime?.first,
                            bewertung: a.voteAverage,
-                           staffeln: staffeln)
+                           staffeln: staffeln,
+                           besetzung: besetzung,
+                           aehnliches: treffer(aus: a.recommendations?.results ?? [],
+                                               standardArt: art))
     }
 
     /// Den Sitzungskeks aus der Antwort auf die Anmeldung holen.
@@ -400,7 +466,7 @@ public actor SeerrClient {
         guard let req = try? anfrage("\(art)/\(id)"),
               let (daten, antwort) = try? await sitzung.data(for: req),
               let http = antwort as? HTTPURLResponse, http.statusCode == 200 else { return nil }
-        return Seerr.detail(aus: daten)
+        return Seerr.detail(aus: daten, art: art)
     }
 
     /// Ob die gespeicherte Sitzung noch gilt.

@@ -261,4 +261,81 @@ struct SeerrTests {
     func kaputtesDetail() {
         #expect(Seerr.detail(aus: Data("nope".utf8)) == nil)
     }
+
+    // MARK: Besetzung und Vorschlaege
+
+    /// Woertliches JSON, kein selbst kodiertes: an dieser Antwort haengt, ob
+    /// die beiden Reiter der Seite ueberhaupt etwas zeigen.
+    private let mitAnhang = Data(#"""
+    {
+      "overview": "Ein Film.",
+      "runtime": 112,
+      "credits": {
+        "cast": [
+          {"id": 1, "name": "Simon Baker", "character": "Patrick Jane",
+           "profilePath": "/a.jpg"},
+          {"id": 2, "name": "Robin Tunney", "character": "", "profilePath": null},
+          {"id": 3, "character": "Namenlos"}
+        ],
+        "crew": [{"id": 9, "name": "Bruno Heller", "job": "Creator"}]
+      },
+      "recommendations": {
+        "results": [
+          {"id": 42, "title": "Der Nachbar", "releaseDate": "2011-02-03",
+           "posterPath": "/p.jpg", "backdropPath": "/b.jpg"},
+          {"id": 43, "title": "Schon da", "mediaInfo": {"status": 5}}
+        ]
+      }
+    }
+    """#.utf8)
+
+    @Test("Die Besetzung kommt aus credits.cast, die Crew nicht")
+    func besetzung() throws {
+        let d = try #require(Seerr.detail(aus: mitAnhang, art: "movie"))
+        #expect(d.besetzung.map(\.name) == ["Simon Baker", "Robin Tunney"])
+        #expect(d.besetzung.first?.rolle == "Patrick Jane")
+    }
+
+    /// Eine leere Figur ist keine Figur — sonst stuende unter dem Namen eine
+    /// Zeile, die nichts sagt und trotzdem Platz nimmt.
+    @Test("Eine leere Rolle zaehlt als keine")
+    func leereRolle() throws {
+        let d = try #require(Seerr.detail(aus: mitAnhang, art: "movie"))
+        #expect(d.besetzung.first { $0.name == "Robin Tunney" }?.rolle == nil)
+    }
+
+    @Test("Ohne Bild kommt keine Adresse, nicht eine kaputte")
+    func portraetOhnePfad() throws {
+        let d = try #require(Seerr.detail(aus: mitAnhang, art: "movie"))
+        #expect(d.besetzung.first?.bild()?.absoluteString
+                == "https://image.tmdb.org/t/p/w185/a.jpg")
+        #expect(d.besetzung.first { $0.name == "Robin Tunney" }?.bild() == nil)
+    }
+
+    /// **Der Fall, an dem es sonst still scheitert.** Unter
+    /// `recommendations` steht kein `mediaType` — die Seite weiss, was sie
+    /// ist, und Seerr spart es sich. Ohne den Rueckfall kaeme hier nichts an.
+    @Test("Vorschlaege ohne mediaType erben die Art der Seite")
+    func vorschlaegeErbenDieArt() throws {
+        let d = try #require(Seerr.detail(aus: mitAnhang, art: "movie"))
+        #expect(d.aehnliches.map(\.id) == [42, 43])
+        #expect(d.aehnliches.allSatisfy { $0.art == "movie" })
+        #expect(d.aehnliches.first?.jahr == 2011)
+        #expect(d.aehnliches.last?.stand == .da)
+    }
+
+    /// Ohne Art bleibt es beim Alten: was sich nicht ausweist, faellt heraus.
+    /// Die Suche liefert die Angabe immer mit, dort ist das richtig.
+    @Test("Ohne Art faellt weg, was sich nicht ausweist")
+    func ohneArtFaelltWeg() throws {
+        let d = try #require(Seerr.detail(aus: mitAnhang))
+        #expect(d.aehnliches.isEmpty)
+    }
+
+    @Test("Fehlen credits und recommendations, bleiben beide leer")
+    func ohneAnhang() throws {
+        let d = try #require(Seerr.detail(aus: Data(#"{"overview":"x"}"#.utf8), art: "tv"))
+        #expect(d.besetzung.isEmpty)
+        #expect(d.aehnliches.isEmpty)
+    }
 }
