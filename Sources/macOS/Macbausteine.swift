@@ -16,7 +16,12 @@ import SwiftUI
 /// dort war der Daumen die Grenze, hier die Fensterhöhe.
 struct Seitenleistenzeile: View {
     let symbol: String
-    let beschriftung: LocalizedStringKey
+    var beschriftung: LocalizedStringKey = ""
+    /// Für Zeilen, deren Text vom Server kommt — der Name einer Bibliothek
+    /// ist keine Beschriftung aus dem Katalog. Als `LocalizedStringKey`
+    /// übergeben, würde „Filme" als Schlüssel nachgeschlagen und ein
+    /// englischer Nutzer bekäme dort etwas anderes zu lesen.
+    var name: String?
     let aktiv: Bool
     let auswahl: () -> Void
 
@@ -28,8 +33,11 @@ struct Seitenleistenzeile: View {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .medium))
                     .frame(width: 17)
-                Text(beschriftung)
-                    .font(Stil.koerper.weight(.medium))
+                Group {
+                    if let name { Text(verbatim: name) } else { Text(beschriftung) }
+                }
+                .font(Stil.koerper.weight(.medium))
+                .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
@@ -199,6 +207,8 @@ struct Posterkachel: View {
     let zweitzeile: String?
     let bild: URL?
     var fortschritt: Double?
+    /// Zeichen für den Fall, dass der Server kein Bild hat.
+    var zeichen: String?
     var auswahl: (() -> Void)?
     /// `nil`, wenn es keine Übersicht dazu gibt (A6).
     var uebersicht: (() -> Void)?
@@ -214,7 +224,7 @@ struct Posterkachel: View {
                      name: [titel, zweitzeile].compactMap { $0 }.joined(separator: ", ")) {
             VStack(alignment: .leading, spacing: 8) {
                 Bildflaeche(bild: bild, breite: Stil.kachelBreite, hoehe: Stil.kachelHoehe,
-                            fortschritt: fortschritt)
+                            fortschritt: fortschritt, zeichen: zeichen)
                     .scaleEffect(schwebt ? 1.04 : 1)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -245,6 +255,8 @@ struct Querkachel: View {
     let zweitzeile: String?
     let bild: URL?
     var fortschritt: Double?
+    /// Zeichen für den Fall, dass der Server kein Bild hat.
+    var zeichen: String?
     var auswahl: (() -> Void)?
     var uebersicht: (() -> Void)?
     /// Wird beim Überfahren gerufen — siehe `Seriencache.vorholen(_:mit:)`.
@@ -259,7 +271,7 @@ struct Querkachel: View {
                      name: [titel, zweitzeile].compactMap { $0 }.joined(separator: ", ")) {
             VStack(alignment: .leading, spacing: 8) {
                 Bildflaeche(bild: bild, breite: Stil.querBreite, hoehe: Stil.querHoehe,
-                            fortschritt: fortschritt)
+                            fortschritt: fortschritt, zeichen: zeichen)
                     .scaleEffect(schwebt ? 1.04 : 1)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -329,11 +341,13 @@ struct Bildflaeche: View {
     let breite: CGFloat
     let hoehe: CGFloat
     var fortschritt: Double?
+    /// Zeichen für den Fall, dass der Server kein Bild hat.
+    var zeichen: String?
 
     var body: some View {
         ZStack(alignment: .bottom) {
             Stil.flaeche
-            Netzbild(url: bild)
+            Netzbild(url: bild, zeichen: zeichen)
             if let fortschritt, fortschritt > 0 {
                 GeometryReader { raum in
                     ZStack(alignment: .leading) {

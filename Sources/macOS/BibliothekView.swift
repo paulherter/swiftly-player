@@ -95,7 +95,8 @@ struct BibliothekView: View {
                         Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
-                                         bild: model.imageURL(for: eintrag, hochkant: true))
+                                         bild: model.imageURL(for: eintrag, hochkant: true),
+                                         zeichen: art == "tvshows" ? "tv" : "film")
                         }
                         .buttonStyle(.plain)
                         .task {
@@ -123,6 +124,20 @@ struct BibliothekView: View {
         .ohneKanteneffekt()
         .overlay { if regal.laedt { Lader() } }
         .task(id: regal.kennung) { await laden() }
+        // **Auch das Regal gehört zu einem Konto.** `.task(id:)` hängt an
+        // Sortierung und Filter — die ändern sich beim Kontowechsel nicht,
+        // und das Regal lebt in `HauptView`, überlebt also den
+        // Leistenwechsel. Ohne diese Zeile stand nach dem Umschalten weiter
+        // die Bibliothek des vorigen Kontos da, und zwar bis zum Neustart.
+        //
+        // Die gemerkte Bibliothek muss mit weg: sie ist ein `Item` des
+        // vorigen Kontos, und das neue sieht womöglich eine andere Auswahl.
+        // Geleert wird nichts — `Bibliotheksmodell` ersetzt die Einträge
+        // erst, wenn die neuen da sind.
+        .onChange(of: model.kontowechsel) { _, _ in
+            gewaehlt = nil
+            Task { await laden() }
+        }
     }
 
     /// Für das Nachladen genügt eine Schätzung: ob die drittletzte Reihe bei
