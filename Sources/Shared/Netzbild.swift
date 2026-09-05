@@ -5,6 +5,13 @@ import SwiftUI
 /// Ein Bild aus dem Netz — geholt, **abseits des Hauptlaufs entschlüsselt**,
 /// gemerkt und eingeblendet.
 ///
+/// **Liegt seit dem 05.09.2026 hier statt in `Sources/macOS`.** Vorher gab es
+/// drei Bildlader: diesen, `Bild` in `Sources/Shared/Stil.swift` für iPhone
+/// und iPad, und noch einmal dasselbe `Bild` in `Sources/tvOS/Stil.swift` —
+/// eine Kopie mit demselben Kommentar. Die beiden anderen tragen einen
+/// Anlaufzähler gegen `NSURLErrorCancelled`; das ist ein Verband um eine
+/// Eigenschaft von `AsyncImage` und kein Bau, der das Problem nicht hat.
+///
 /// Vorher stand hier `AsyncImage`. Drei Dinge waren daran falsch:
 ///
 /// 1. **Es entschlüsselt auf dem Hauptlauf.** Ein Raster mit fünfzig Kacheln
@@ -33,8 +40,19 @@ final class Bildspeicher {
     /// Läufe, die schon unterwegs sind. Ohne das holt ein Raster dasselbe
     /// Bild mehrfach, wenn es in zwei Reihen vorkommt.
     private var laufend: [URL: Task<Image?, Never>] = [:]
-    /// Genug für zwei volle Raster; darüber fliegt das Älteste raus.
-    private let hoechstzahl = 240
+
+    /// **Zwei Zahlen, die die Plattform setzt, keine Festwerte.**
+    ///
+    /// Sie waren auf dem Mac eingetragen, und dort waren sie richtig. Auf dem
+    /// Apple TV sind die Kacheln größer, der Arbeitsspeicher aber deutlich
+    /// kleiner — wer die Mac-Zahlen dorthin mitnimmt, rät zweimal. Also
+    /// stehen sie da, wo jemand sie beantworten kann.
+    ///
+    /// `hoechstzahl` ist die Zahl der Bilder im Speicher; auf dem Mac reicht
+    /// sie für zwei volle Raster. `kantenlaenge` ist die längste Kante beim
+    /// Entschlüsseln — größer heißt schärfer und teurer.
+    static var hoechstzahl = 240
+    static var kantenlaenge = 1600
 
     func bild(_ url: URL) -> Image? { bekannt[url] }
 
@@ -42,6 +60,10 @@ final class Bildspeicher {
         if let da = bekannt[url] { return da }
         if let lauf = laufend[url] { return await lauf.value }
 
+        // **Vor dem Abzweig gelesen.** `kantenlaenge` gehört dem Hauptlauf;
+        // von der abgetrennten Aufgabe aus wäre der Zugriff ein Sprung über
+        // die Isolationsgrenze, den Swift 6 zu Recht nicht durchlässt.
+        let kante = Self.kantenlaenge
         let lauf = Task<Image?, Never> {
             guard let (daten, _) = try? await URLSession.shared.data(from: url) else { return nil }
             let kiste = await Task.detached(priority: .userInitiated) { () -> Bildkiste? in
@@ -53,7 +75,7 @@ final class Bildspeicher {
                     // CoreGraphics das Entschlüsseln bis zum ersten Zeichnen
                     // auf — und das ist wieder der Hauptlauf.
                     kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 1600
+                    kCGImageSourceThumbnailMaxPixelSize: kante
                 ]
                 guard let roh = CGImageSourceCreateThumbnailAtIndex(
                     quelle, 0, regeln as CFDictionary) else { return nil }
@@ -73,7 +95,7 @@ final class Bildspeicher {
     private func merken(_ bild: Image, fuer url: URL) {
         if bekannt[url] == nil { reihenfolge.append(url) }
         bekannt[url] = bild
-        while reihenfolge.count > hoechstzahl {
+        while reihenfolge.count > Self.hoechstzahl {
             bekannt[reihenfolge.removeFirst()] = nil
         }
     }
