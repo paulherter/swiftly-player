@@ -106,7 +106,6 @@ enum Speicher {
     /// Schreiben ist sie weg.
     static func bundLesen() -> Kontenablage? {
         let kontenDaten = try? Data(contentsOf: kontendatei)
-        let einzelDaten = try? Data(contentsOf: datei)
         if let b = Kontenbund.ausAblage(bund: kontenDaten, einzelne: nil) {
             return Kontenablage(bund: b, servername: gemerkterServer()?.servername)
         }
@@ -114,8 +113,24 @@ enum Speicher {
            let huelle = try? JSONDecoder().decode(Kontenablage.self, from: d) {
             return huelle
         }
-        guard let b = Kontenbund.ausAblage(bund: nil, einzelne: einzelDaten) else { return nil }
-        return Kontenablage(bund: b, servername: lesen()?.servername)
+        // **Die alte Datei traegt deutsche Schluessel, `Session` englische.**
+        //
+        // `Kontenbund.ausAblage(bund:einzelne:)` entschluesselt die einzelne
+        // Ablage als `Session` — die will `accessToken`, `userID`, `userName`.
+        // In `sitzung.json` stehen aber `token`, `benutzerID`, `benutzername`;
+        // drei von vier Schluesseln passen nicht, das Entschluesseln scheitert
+        // still, und die Uebernahme lieferte `nil`. Wirkung: **jeder Nutzer
+        // mit gemerkter Anmeldung stand nach dem Aktualisieren vor dem
+        // Anmeldeschirm** — genau das, was der Kommentar oben ausschliessen
+        // soll. Am 05.09.2026 in der Windows-VM aufgefallen, nachdem die
+        // Sitzung ohne Zutun weg war.
+        //
+        // Deshalb wird hier umgesetzt statt roh weitergereicht: `Abgelegt`
+        // ist das Format dieser Seite, und nur diese Seite kennt es.
+        guard let alt = lesen() else { return nil }
+        let sitzung = Session(accessToken: alt.token, userID: alt.benutzerID,
+                              userName: alt.benutzername, serverURL: alt.serverURL)
+        return Kontenablage(bund: Kontenbund(sitzung), servername: alt.servername)
     }
 
     /// Schreibt den Bund — **und daneben weiter die einzelne Sitzung.**
