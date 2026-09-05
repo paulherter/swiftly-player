@@ -899,12 +899,13 @@ struct PlayerScreen: View {
             // noch Fortschritt gemeldet und das selbsttaetige Weiterschalten
             // war gesperrt. Genau
             //
-            // Die Frist dafuer ist **nicht** die Zeitgrenze der Abfrage:
-            // `Netzsitzung` setzt `waitsForConnectivity`, und damit faengt sie
-            // erst an zu laufen, wenn wieder eine Verbindung da ist. Ein WLAN,
-            // das wegnickt, hielt die Oberflaeche unbegrenzt an, ohne dass
-            // irgendetwas fehlschlaegt. Das ist die Sorte Haenger, die „aus
-            // dem Nichts" kommt.
+            // Unbegrenzt ist die Wartezeit dabei **nicht** —
+            // `Netzsitzung.ortsnetzfaehig` setzt `timeoutIntervalForResource`
+            // auf 20 s, und das begrenzt den ganzen Vorgang einschliesslich
+            // des Wartens auf eine Verbindung. Es braucht auch keine
+            // Unendlichkeit: vier Abrufe hintereinander sind rund 84 Sekunden,
+            // mit WLAN und ohne. So lange sieht ein stehendes Bild mit
+            // laufender Uhr aus wie „haengt", nicht wie „laedt".
             wechselt = false
             steuerungSichtbar = true
             ausblendenVerschieben()
