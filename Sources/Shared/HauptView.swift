@@ -474,6 +474,20 @@ struct BibliothekView: View {
 
     private func laden() async {
         if model.views.isEmpty { await model.loadViews() }
+        // **Die gemerkte Bibliothek gehört einem Konto.**
+        //
+        // `gewaehlt` hält ein `Item` mit einer Kennung, die der Server dem
+        // *vorigen* Konto herausgegeben hat. `quelle(_:art:bibliothek:)` nimmt
+        // eine genannte Bibliothek unbesehen — die Abfrage ginge also mit dem
+        // neuen Merkmal auf eine fremde Kennung.
+        //
+        // Dass zwei Konten dieselben Bibliotheken sehen, ist keine Zusicherung
+        // des Servers, sondern der Normalfall bei Wer den Zugriff einschränkt
+        // — der eigentliche Grund für ein zweites Konto, bekommt hier eine
+        // leere Seite.
+        //
+        // `veraltet` beantwortet genau diese Frage und steht schon im Modell.
+        if stand.veraltet(model) { gewaehlt = nil }
         if gewaehlt == nil { gewaehlt = model.gewaehlteBibliothek(art: art) }
         await stand.laden(model, art: art, bibliothek: gewaehlt)
     }

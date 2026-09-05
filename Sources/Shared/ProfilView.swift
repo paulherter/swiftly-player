@@ -274,7 +274,11 @@ private struct Kontenstreifen: View {
     /// wenig ins Bild.
     private var viele: Bool { model.konten.count >= 4 }
     private var kleinesMass: CGFloat { viele ? 56 : 64 }
-    private var abstand: CGFloat { viele ? 22 : 26 }
+    /// **22, und zwar immer.** Der Entwurf setzt in beiden Artboards
+    /// `gap: 22px` — bei zwei Konten wie bei vier. Kleiner werden nur die
+    /// Kreise, nicht der Zwischenraum; sonst wandert bei zwei Konten auch der
+    /// Rand, und die Zahl aus dem Entwurf stimmt nirgends mehr.
+    private static let abstand: CGFloat = 22
 
     var body: some View {
         VStack(spacing: 0) {
@@ -283,7 +287,6 @@ private struct Kontenstreifen: View {
         }
         .padding(.top, 56)
         .padding(.bottom, 30)
-        .onAppear { if zentriert == nil { zentriert = model.session?.userID } }
         // Nach einem Wechsel wandert die Mitte auf das neue Konto — sonst
         // stünde der Ring beim einen und die große Kachel beim anderen, ohne
         // dass jemand gescrollt hätte.
@@ -294,7 +297,7 @@ private struct Kontenstreifen: View {
 
     private var streifen: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: abstand) {
+            HStack(spacing: Self.abstand) {
                 ForEach(model.konten, id: \.userID) { konto in
                     kachel(konto).id(konto.userID)
                 }
@@ -308,7 +311,24 @@ private struct Kontenstreifen: View {
         .contentMargins(.horizontal, max((breite - 84) / 2, 0), for: .scrollContent)
         .scrollTargetBehavior(.viewAligned)
         .scrollPosition(id: $zentriert, anchor: .center)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { breite = $0 }
+        // **Erst die Breite, dann die Mitte.**
+        //
+        // Der Rand oben hängt an `breite`; solange die null ist, gibt es
+        // keinen, und ein Einrasten auf die Mitte läuft ins Leere. Das stand
+        // vorher in `onAppear`, also verlässlich *vor* der ersten Messung.
+        //
+        // Bei zwei Konten fällt es nicht auf — da passt der Streifen ohnehin
+        // nebeneinander. Ab vier stünde er beim Öffnen am linken Anschlag
+        // statt beim angemeldeten Konto, und damit fängt ausgerechnet der
+        // Fall, für den der Streifen gebaut ist, mit einer Lüge an: groß wäre
+        // irgendwer, nur nicht der, den man erwartet.
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { neu in
+            let ersteMessung = breite == 0
+            breite = neu
+            if ersteMessung, neu > 0, zentriert == nil {
+                zentriert = model.session?.userID
+            }
+        }
     }
 
     private func kachel(_ konto: Session) -> some View {
