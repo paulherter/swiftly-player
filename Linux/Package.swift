@@ -45,6 +45,14 @@ let package = Package(
         // Dekoderfaden und teilen sich einen Puffer mit GTKs Hauptfaden.
         // Begruendung in bildbruecke.h.
         .target(name: "CBildbruecke", dependencies: ["CVLC"]),
+        // Die Medientasten der Tastatur. Auf Linux leer — dort macht das
+        // MPRIS; unter Windows braucht es eine eigene Fensterprozedur.
+        .target(name: "CMedientasten"),
+        // Meldet die mitgelieferte Schrift bei fontconfig an. Sie liegt bei,
+        // weil SF Pro es nur auf dem Mac gibt und alle Plattformen gleich
+        // aussehen sollen.
+        .target(name: "CSchriften",
+                linkerSettings: [.linkedLibrary("fontconfig")]),
         // **rlottie fuer die Startanimation.** Die Vorlage kommt als Lottie
         // aus After Effects und liegt in `Sources/Shared/Mittel` — dieselbe
         // Datei, die iOS, tvOS und macOS abspielen. Nachbauen kaeme nicht in
@@ -65,6 +73,8 @@ let package = Package(
                 "CGtk",
                 "CVLC",
                 "CBildbruecke",
+                "CMedientasten",
+                "CSchriften",
                 "CRlottie",
                 .product(name: "JellyfinKit", package: "JellyfinKit")
             ],

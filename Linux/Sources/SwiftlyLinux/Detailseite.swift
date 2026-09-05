@@ -353,7 +353,6 @@ extension App {
         // und malt sich selbst, maskiert statt übermalt. Warum das den
         // Unterschied macht, steht in ``Kulisse``.
         let bild = Kulisse()
-        kulissen[titel.id] = bild
         gtk_overlay_set_child(OpaquePointer(kopf), bild.anzeige)
         gtk_overlay_add_overlay(OpaquePointer(kopf), heldenblock(titel))
 
@@ -613,11 +612,13 @@ extension App {
         var gesehen = titel.istGesehen
         let ersteZeile = gesehen ? uebersetzt("Als ungesehen markieren") : uebersetzt("Als gesehen markieren")
 
-        let tafel: Widget! = gtk_popover_new()
-        gtk_widget_add_css_class(tafel, "swiftly-mehr")
+        // **Die vorige Tafel zuerst weg.** `mehrZeigen` läuft bei jedem Klick;
+        // ohne das hinge nach dem dritten Klick die dritte Tafel am Knopf und
+        // die beiden davor daneben.
+        if let alt = offeneTafel { gtk_widget_unparent(alt); offeneTafel = nil }
+        let tafel = tafelAn(knopf)
         gtk_popover_set_child(alsTafel(tafel), liste)
-        gtk_popover_set_position(alsTafel(tafel), GTK_POS_BOTTOM)
-        gtk_widget_set_parent(tafel, knopf)
+        offeneTafel = tafel
 
         anhaengen(liste, handlungszeile("object-select-symbolic", ersteZeile) {
             [weak self] in

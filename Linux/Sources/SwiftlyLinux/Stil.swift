@@ -1,4 +1,5 @@
 import CGtk
+import CSchriften
 import Foundation
 import JellyfinKit
 
@@ -141,9 +142,17 @@ enum Stil {
            beilegbar. Ohne sie faellt es auf Noto Sans zurueck, und das ist
            deutlich runder und breiter als SF.
            Ein ausgelieferter Bau muss Inter mitbringen; hier kommt sie noch
-           vom System. */
+           vom System.
+
+           **Die Kette gilt fuer beide Plattformen, ohne Verzweigung.** Was ein
+           System nicht hat, ueberspringt es: Windows kennt weder Noto Sans
+           noch DejaVu und landet auf Segoe UI Variable — der dortigen
+           Systemschrift, also demselben Verhaeltnis wie SF auf Apple. Linux
+           kennt Segoe nicht und faellt auf Noto zurueck. Eine Zeile, kein
+           `#if`, und auf jedem System die Schrift, die dort richtig ist. */
         window, .background, scrolledwindow, viewport, stack, entry, button, label {
-            font-family: Inter, "Noto Sans", "DejaVu Sans", sans-serif;
+            font-family: Inter, "Segoe UI Variable Text", "Segoe UI",
+                         "Noto Sans", "DejaVu Sans", sans-serif;
         }
 
         window, .background, stack {
@@ -822,8 +831,25 @@ enum Stil {
         """
     }
 
+    /// **Die Schrift kommt mit, sie wird nicht erwartet.**
+    ///
+    /// Auf dem Mac ist die Oberfläche in SF Pro gesetzt, und die gibt es nur
+    /// dort. Inter ist ihr nächster Verwandter und liegt neben der App; auf
+    /// Linux ist sie oft schon installiert, unter Windows nie — dort fiele
+    /// die Oberfläche sonst auf Segoe UI zurück und sähe anders aus als auf
+    /// dem Mac. Da alle Plattformen gleich aussehen sollen, wird sie hier
+    /// angemeldet, bevor das erste Stilblatt greift.
+    ///
+    /// Still im Fehlerfall: findet sich der Ordner nicht, bleibt es bei der
+    /// Schrift des Systems.
+    private static func schriftMitbringen() {
+        guard let ordner = Plattform.mitgeliefert("Schriften") else { return }
+        _ = ordner.withCString { schriften_laden($0) }
+    }
+
     /// Lädt das Stilblatt in die Anzeige.
     static func anwenden() {
+        schriftMitbringen()
         let anbieter = gtk_css_provider_new()
         meckern(anbieter)
         gtk_css_provider_load_from_string(anbieter, blatt)

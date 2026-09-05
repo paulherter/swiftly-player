@@ -108,7 +108,36 @@ final class AppModel {
     private(set) var client: JellyfinClient?
     private(set) var session: Session?
 
+    /// Alle Konten auf diesem Server, in der Reihenfolge des Streifens über
+    /// der Profilseite. Leer, solange niemand angemeldet ist.
+    private(set) var konten: [Session] = []
+
+    /// Zählt jeden Kontowechsel. Ansichten hängen sich daran, um neu zu laden.
+    ///
+    /// **Warum ein Zähler und nicht `phase`.** Beim ersten Anmelden springt
+    /// die Phase von `disconnected` auf `ready`, und daran hängt die
+    /// Startseite. Beim Wechsel zwischen zwei Konten bleibt sie auf `ready`
+    /// stehen — es passiert also nichts, und auf dem Schirm steht weiter das
+    /// vorige Konto.
+    private(set) var kontowechsel = 0
+
+    /// **Die Quelle der Wahrheit dafür, wer angemeldet ist.**
+    ///
+    /// `session` bleibt daneben stehen, weil die halbe App sie liest; sie
+    /// wird von hier aus nachgezogen und nirgends sonst gesetzt. Zwei
+    /// Stellen, die dasselbe behaupten dürfen, laufen sonst auseinander —
+    /// bei `trefferauskunft` ist genau das passiert.
+    private var bund: Kontenbund? {
+        didSet {
+            konten = bund?.konten ?? []
+            session = bund?.aktives
+        }
+    }
+
     private static let sessionKey = "session"
+    /// Der Schlüssel für den ganzen Bund. Der alte oben bleibt liegen: wer
+    /// noch einmal eine ältere Fassung startet, findet dort seine Sitzung.
+    private static let kontenKey = "konten"
     static let log = Logger(subsystem: "de.paulherter.swiftly", category: "start")
 
     /// Stabile Geräte-ID. Jellyfin listet damit die Sitzung im Dashboard.
@@ -275,13 +304,51 @@ final class AppModel {
 
     /// Was nach jeder erfolgreichen Anmeldung gleich abläuft — egal ob über
     /// Passwort oder Quick Connect.
-    func sitzungUebernehmen(_ s: Session) {
-        session = s
-        persist(s)
+    /// Nimmt eine frische Sitzung an. Gibt zurück, ob es ein **Kontowechsel**
+    /// war — dann hat diese Funktion bereits aufgeräumt und neu geladen, und
+    /// der Aufrufer soll nicht noch einmal laden.
+    @discardableResult
+    func sitzungUebernehmen(_ s: Session) -> Bool {
+        let warAngemeldet = bund != nil
+        // Derselbe Server: das Konto kommt dazu und gilt sofort. Ein anderer
+        // Server heißt von vorn — ein Bund gehört zu genau einem Server.
+        if var vorhanden = bund, vorhanden.passtZumServer(s) {
+            vorhanden.aufnehmen(s)
+            bund = vorhanden
+        } else {
+            bund = Kontenbund(s)
+        }
+        bundSichern()
         phase = .ready
+        // **War die App schon angemeldet, ist das ein Kontowechsel.** Der
+        // Client trägt nach dem Anmelden bereits das neue Merkmal; was fehlt,
+        // ist alles andere. Ohne das Aufräumen bleiben Bibliotheken und
+        // Startseite beim vorigen Konto stehen — und mit dem neuen Merkmal
+        // abgefragt gibt der Server sie nicht heraus. Genau so kam
+        // „Anmeldung abgelehnt", nachdem ein zweites Konto dazukam.
+        if warAngemeldet { nachDemWechsel() }
         // Name und Fassung stehen sonst nur nach einer frischen Verbindung
         // bereit — in den Einstellungen stand danach „Server · ?".
         Task { _ = await verbindungPruefen() }
+        return warAngemeldet
+    }
+
+    /// Was nach jedem Kontowechsel neu muss — außer dem Client selbst.
+    private func nachDemWechsel() {
+        views = []
+        errorMessage = nil
+        kontowechsel += 1
+        #if os(tvOS)
+        Regal.leeren()
+        #endif
+        // **Die Fernsteuerung gehört dazu, und das sieht man ihr nicht an.**
+        // Sie wird sonst nur beim Erscheinen der Hauptansicht gestartet — die
+        // bleibt beim Wechsel aber stehen, und dann meldete sich das Gerät
+        // weiter mit dem Merkmal des vorigen Kontos am Server.
+        Task {
+            await fernsteuerungBeenden()
+            await fernsteuerungStarten()
+        }
     }
 
     func login(username: String, password: String) async {
@@ -442,6 +509,12 @@ final class AppModel {
     func benutzerbildURL(groesse: Int = 120) -> URL? {
         guard let session else { return nil }
         return bilder?.benutzer(session.userID, kante: groesse * 2)
+    }
+
+    /// Dasselbe für ein bestimmtes Konto — für den Streifen, in dem mehrere
+    /// nebeneinander stehen und nur eines das aktive ist.
+    func benutzerbildURL(fuer konto: Session, groesse: Int = 120) -> URL? {
+        bilder?.benutzer(konto.userID, kante: groesse * 2)
     }
 
     /// Waagerechtes Bild für die Reihe „Weiterschauen".
@@ -672,6 +745,43 @@ final class AppModel {
         }
     }
 
+    /// Auf ein anderes Konto desselben Servers umschalten.
+    ///
+    /// **Kein neues Passwort.** Beide Merkmale liegen im Schlüsselbund; der
+    /// Wechsel tauscht nur, welches gilt. Was danach neu aufgebaut werden
+    /// muss, steht in ``neuVerbinden()`` — es ist mehr, als man denkt.
+    func kontoWechseln(zu kennung: String) {
+        guard var neu = bund, neu.aktiveKennung != kennung,
+              neu.konten.contains(where: { $0.userID == kennung }) else { return }
+        neu.wechseln(zu: kennung)
+        bund = neu
+        bundSichern()
+        neuVerbinden()
+    }
+
+    /// Baut alles neu auf, was am angemeldeten Konto hängt.
+    ///
+    /// **Die Fernsteuerung gehört dazu, und das sieht man ihr nicht an.**
+    /// Sie wird sonst nur beim Erscheinen der Hauptansicht gestartet — die
+    /// bleibt beim Kontowechsel aber stehen, und dann meldete sich das Gerät
+    /// weiter mit dem Merkmal des vorigen Kontos am Server. Auf dem iPhone
+    /// wäre danach die falsche Wiedergabe zum Übernehmen angeboten worden.
+    private func neuVerbinden() {
+        guard let s = session else { return }
+        // **Beim Wechsel wird nicht abgemeldet.** `abmelden()` schickt ein
+        // `Sessions/Logout` an den Server und zieht das Merkmal ein — richtig
+        // beim Abmelden, verheerend beim Umschalten: das Konto, von dem man
+        // weggeht, waere danach unbrauchbar, und der Weg zurueck endet in
+        // „Anmeldung abgelehnt". Der alte Client wird einfach fallen
+        // gelassen; das Merkmal bleibt gueltig und liegt im Schluesselbund.
+        let neuer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
+                                   deviceName: Self.deviceName, session: s)
+        client = neuer
+        phase = .ready
+        nachDemWechsel()
+        Task { _ = await verbindungPruefen() }
+    }
+
     func signOut() {
         // Der Socket lief vorher weiter — mit einem Zugangsmerkmal, das der
         // Nutzer gerade loswerden wollte. Seit die Fernsteuerung sich nach
@@ -681,6 +791,18 @@ final class AppModel {
             await fernsteuerungBeenden()
             await alter?.abmelden()
         }
+        // **Abmelden trifft nur das aktive Konto.** Sind noch andere da,
+        // schaltet die App auf das nächste um, statt zur Serveranmeldung
+        // zurückzufallen — wer den Server ganz verlassen will, meldet jedes
+        // Konto einzeln ab. Ein Knopf, eine Bedeutung.
+        if let rest = bund?.entfernt(bund?.aktiveKennung ?? "") {
+            bund = rest
+            bundSichern()
+            neuVerbinden()
+            return
+        }
+
+        Keychain.delete(key: Self.kontenKey)
         Keychain.delete(key: Self.sessionKey)
         // Sonst stehen im Top Shelf weiter die Titel des vorigen Kontos.
         //
@@ -694,7 +816,7 @@ final class AppModel {
         #if os(tvOS)
         Regal.leeren()
         #endif
-        session = nil
+        bund = nil
         client = nil
         views = []
         errorMessage = nil
@@ -703,12 +825,13 @@ final class AppModel {
 
     // MARK: - Sitzung sichern
 
-    func persist(_ s: Session) {
+    func bundSichern() {
+        guard let bund else { return }
         do {
-            try Keychain.save(JSONEncoder().encode(s), key: Self.sessionKey)
+            try Keychain.save(JSONEncoder().encode(bund), key: Self.kontenKey)
             // Sofort zurücklesen: ein Schreibfehler, der erst beim nächsten
             // Start auffällt, kostet unnötig eine Anmeldung.
-            guard Keychain.load(key: Self.sessionKey) != nil else {
+            guard Keychain.load(key: Self.kontenKey) != nil else {
                 Self.log.error("Keychain: Sitzung geschrieben, aber nicht lesbar")
                 errorMessage = String(localized: "Sitzung ließ sich nicht sichern — du müsstest dich neu anmelden.")
                 return
@@ -719,10 +842,27 @@ final class AppModel {
         }
     }
 
+    /// Liest den Bund — und nimmt eine einzelne Sitzung aus der Zeit davor an.
+    ///
+    /// **Die Übernahme steht hier und nicht im Paket**, weil nur der
+    /// Zustandshalter weiß, wo etwas liegt. Der alte Eintrag wird nicht
+    /// gelöscht: wer noch einmal eine ältere Fassung startet, soll nicht
+    /// plötzlich abgemeldet sein.
+    private func bundLaden() -> Kontenbund? {
+        if let daten = Keychain.load(key: Self.kontenKey),
+           let b = try? JSONDecoder().decode(Kontenbund.self, from: daten) {
+            return b
+        }
+        guard let daten = Keychain.load(key: Self.sessionKey),
+              let alt = try? JSONDecoder().decode(Session.self, from: daten) else { return nil }
+        Self.log.info("Keychain: einzelne Sitzung als Bund übernommen")
+        return Kontenbund(alt)
+    }
+
     private func restoreSession() {
-        guard let data = Keychain.load(key: Self.sessionKey),
-              let s = try? JSONDecoder().decode(Session.self, from: data) else { return }
-        session = s
+        guard let wieder = bundLaden() else { return }
+        bund = wieder
+        let s = wieder.aktives
         let neuer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
                                    deviceName: Self.deviceName, session: s)
         client = neuer
@@ -739,8 +879,18 @@ final class AppModel {
             // Anmeldebildschirm, sondern in „Kein Kontakt zum Server" — und
             // von dort gibt es keinen Weg zurück außer über das Profilmenü.
             guard await neuer.sitzungGiltNoch() else {
+                let name = session?.userName
                 signOut()
-                errorMessage = String(localized: "Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
+                // **Nach dem Abmelden kann noch ein Konto da sein.** Seit es
+                // mehrere gibt, schaltet `signOut` auf das nächste um statt
+                // zur Serveranmeldung zurückzufallen — und dann wäre „bitte
+                // neu anmelden" schlicht falsch: der Nutzer ist angemeldet,
+                // nur mit einem anderen Konto.
+                if let weiter = session?.userName {
+                    errorMessage = String(localized: "Die Anmeldung von \(name ?? "?") gilt nicht mehr. Jetzt angemeldet als \(weiter).")
+                } else {
+                    errorMessage = String(localized: "Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
+                }
                 return
             }
         }

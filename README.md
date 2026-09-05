@@ -1,18 +1,26 @@
 <div align="center">
 
-<img src=".github/bilder/banner.png" alt="Swiftly for Jellyfin" width="100%">
+<img src=".github/bilder/wortmarke.svg" alt="Swiftly" width="300">
 
 <br>
 
-[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20iPadOS%20%7C%20tvOS%20%7C%20macOS%20%7C%20Linux-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](#-platforms)
-[![License](https://img.shields.io/badge/license-MPL--2.0-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](LICENSE)
-[![Jellyfin](https://img.shields.io/badge/Jellyfin-10.10%2B-0B0B0D?style=flat-square&labelColor=0B0B0D&color=5CD1C2)](https://jellyfin.org)
-
-<br>
-
-[![Join the beta on TestFlight](https://img.shields.io/badge/TestFlight-Join%20the%20beta-0B0B0D?style=for-the-badge&labelColor=0B0B0D&color=5CD1C2&logo=apple&logoColor=0B0B0D)](https://testflight.apple.com/join/MqeP2cnj)
+[![Plattformen](https://img.shields.io/badge/iOS_·_iPadOS_·_tvOS_·_macOS_·_Linux_·_Windows-1E1E22?style=flat-square&labelColor=1E1E22)](#-platforms)
 &nbsp;
-[![Discord](https://img.shields.io/badge/Discord-Bugs%20%26%20feedback-0B0B0D?style=for-the-badge&labelColor=0B0B0D&color=5865F2&logo=discord&logoColor=white)](https://discord.gg/MeGwfv3UwN)
+[![Lizenz](https://img.shields.io/badge/MPL--2.0-1E1E22?style=flat-square&labelColor=1E1E22)](LICENSE)
+&nbsp;
+[![Jellyfin](https://img.shields.io/badge/Jellyfin_10.10+-1E1E22?style=flat-square&labelColor=1E1E22)](https://jellyfin.org)
+
+<br>
+
+[![Join the beta on TestFlight](https://img.shields.io/badge/Join_the_beta-5CD1C2?style=for-the-badge&logo=apple&logoColor=FFFFFF)](https://testflight.apple.com/join/MqeP2cnj)
+&nbsp;
+[![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=5CD1C2)](#-windows)
+&nbsp;
+[![Install on Linux](https://img.shields.io/badge/Linux-1E1E22?style=for-the-badge&logo=linux&logoColor=5CD1C2)](#-linux)
+&nbsp;
+[![Bugs and feedback on Discord](https://img.shields.io/badge/Discord-1E1E22?style=for-the-badge&logo=discord&logoColor=5CD1C2)](https://discord.gg/MeGwfv3UwN)
+
+<br>
 
 </div>
 
@@ -82,13 +90,118 @@ and only where distance, input or window size demand it.
 | 📲 iPad | **1.0.0 (9)** · ships with the iPhone app |
 | 📺 Apple TV | **1.0.0 (9)** · beta on TestFlight |
 | 💻 Mac | **1.0.0 (9)** · beta on TestFlight |
-| 🐧 Linux | in development — GTK4, native, same shared logic |
-| 🪟 Windows | planned |
+| 🐧 Linux | **1.0.0** · GTK4, native, same shared logic · [install](#-linux) |
+| 🪟 Windows | **1.0.0** · GTK4 like Linux, **the same source** · [download](#-windows) |
 
 **The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
 — one link for iPhone, iPad, Apple TV and Mac. What each build wants tested is
 written in its release notes, and it is usually five specific things rather
 than "have a look around".
+
+<br>
+
+## 🐧 Linux
+
+One command. It works out which distribution you are on, adds the Swiftly
+package source, and installs from it — so **updates arrive with your normal
+system update**, like any other program.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-for-jellyfin/main/Linux/Installieren/swiftly-installieren.sh | bash
+```
+
+<details>
+<summary>Or add the source yourself</summary>
+
+**Debian, Ubuntu, Linux Mint, Pop!_OS, elementary, Zorin**
+
+```sh
+sudo install -d -m755 /etc/apt/keyrings
+curl -fsSL https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg | sudo tee /etc/apt/keyrings/swiftly.asc >/dev/null
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/swiftly.asc] https://paulherter.github.io/swiftly-for-jellyfin/deb ./" | sudo tee /etc/apt/sources.list.d/swiftly.list
+sudo apt update && sudo apt install swiftly-jellyfin
+```
+
+**Fedora, Nobara, RHEL, Rocky, AlmaLinux**
+
+```sh
+sudo tee /etc/yum.repos.d/swiftly.repo <<'EOF'
+[swiftly]
+name=Swiftly for Jellyfin
+baseurl=https://paulherter.github.io/swiftly-for-jellyfin/rpm
+enabled=1
+gpgcheck=1
+gpgkey=https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg
+EOF
+sudo dnf install swiftly-jellyfin
+```
+
+**Arch, CachyOS, Manjaro, EndeavourOS, Garuda**
+
+```sh
+curl -fsSL https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg | sudo pacman-key --add -
+sudo pacman-key --lsign-key 705D676A71BF0121804A90BAC8589885A042FB8B
+sudo tee -a /etc/pacman.conf <<'EOF'
+
+[swiftly]
+SigLevel = Required DatabaseOptional
+Server = https://paulherter.github.io/swiftly-for-jellyfin/arch
+EOF
+sudo pacman -Sy swiftly-jellyfin
+```
+
+**openSUSE Tumbleweed**
+
+```sh
+sudo rpm --import https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg
+sudo zypper addrepo -f https://paulherter.github.io/swiftly-for-jellyfin/rpm swiftly
+sudo zypper install swiftly-jellyfin
+```
+
+**Anything else** — build it yourself. Same script, one flag:
+`… | bash -s -- --aus-quelle`. It pulls the dependencies from your
+distribution, fetches Swift into `$HOME`, and builds.
+
+</details>
+
+The packages are signed; the key's fingerprint is
+`705D 676A 71BF 0121 804A  90BA C858 9885 A042 FB8B`.
+
+**Requirements: GTK 4.14 and libVLC.** That is what rules out the older
+releases — Debian 12 ships GTK 4.8 and could not draw the app at all. The
+packages are built against Ubuntu 24.04 for glibc, which is the same floor
+GTK already sets, so it costs nothing.
+
+**Why packages and not a Flatpak.** Measured, not assumed: the GNOME 48
+runtime carries GTK 4 but not a single libVLC library. A Flatpak would have
+to compile VLC itself — and VLC's demuxers are exactly what "never
+transcodes" rests on.
+
+<br>
+
+## 🪟 Windows
+
+**[Download Swiftly-1.0.0-Setup.exe](https://github.com/paulherter/swiftly-for-jellyfin/releases/download/v1.0.0/Swiftly-1.0.0-Setup.exe)** — 80 MB, Windows 10 and 11, 64-bit.
+
+The installer puts Swiftly where it belongs: Program Files (or your own folder
+if you run it without admin rights — you choose in the dialog), a Start menu
+entry, an optional desktop icon, and a proper uninstall. No unpacking a zip and
+wondering where the folder should go.
+
+**Windows will warn you the first time.** SmartScreen shows a blue box saying
+the publisher is unknown: click **More info**, then **Run anyway**. That warning
+is not about this app being unsafe — it means the installer carries no paid
+code-signing certificate. Jellyfin's own desktop app is in exactly the same
+position. The checksum below is there so you can verify what you downloaded:
+
+```
+SHA256  2a8a30616de1399fb5643fa8ae0118f9c828eb352b1a6cd7f0e6c3dbc9899b3f
+```
+
+**It is the same program as on Linux** — the same 8,900 lines of interface,
+mirrored into the Windows build; what differs sits behind seven `#if` marks in
+those same files. GTK 4, libVLC and the Swift runtime all ship inside the
+installer, so there is nothing else to install.
 
 <br>
 
@@ -109,7 +222,8 @@ than "have a look around".
 - Your own Jellyfin server, **10.10 or newer**. Swiftly for Jellyfin hosts
   nothing and has no account of its own — you sign in with the credentials you
   already have.
-- iOS 18, tvOS 18 or macOS 15.
+- iOS 18, tvOS 18 or macOS 15 — or a Linux desktop with GTK 4 and libVLC,
+  which the installer takes care of.
 
 <br>
 

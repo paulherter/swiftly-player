@@ -265,7 +265,12 @@ if [ "$brauche_swift" = "1" ]; then
     ( cd "$ARBEIT"
       curl -fsSLO "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
       tar -xzf "swiftly-$(uname -m).tar.gz" )
-    "$ARBEIT/swiftly" init --quiet-shell-followup --assume-yes --skip-install
+    # swiftly kennt nicht jede Distribution — auf Arch bricht es mit
+    # "Unsupported Linux platform" ab. Die Toolchain von Ubuntu 24.04 laeuft
+    # dort trotzdem, weil die glibc neuer ist.
+    "$ARBEIT/swiftly" init --quiet-shell-followup --assume-yes --skip-install ||
+    "$ARBEIT/swiftly" init --quiet-shell-followup --assume-yes --skip-install \
+        --overwrite --platform ubuntu24.04
     # Nicht ueber env.sh: die Datei legt swiftly je nach Fassung woanders
     # oder gar nicht an, und ein `.` auf eine fehlende Datei bricht mit
     # `set -e` den ganzen Lauf ab. Der Pfad reicht.
@@ -329,6 +334,8 @@ install -m755 "$binaer" "$ZIEL/share/$PROGRAMM/$PROGRAMM"
 strip "$ZIEL/share/$PROGRAMM/$PROGRAMM" 2>/dev/null || true
 rm -rf "$ZIEL/share/$PROGRAMM"/*.resources
 cp -r "$quelle/Linux/.build/release"/*.resources "$ZIEL/share/$PROGRAMM/" 2>/dev/null || true
+rm -rf "$ZIEL/share/$PROGRAMM/Ressourcen"
+cp -r "$quelle/Linux/Ressourcen" "$ZIEL/share/$PROGRAMM/Ressourcen"
 ln -sf "$ZIEL/share/$PROGRAMM/$PROGRAMM" "$ZIEL/bin/$PROGRAMM"
 
 for grad in 32 64 128 256 512; do

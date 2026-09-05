@@ -65,7 +65,16 @@ struct QuickConnectView: View {
         .onExitCommand(perform: schliessen)
         .onChange(of: stand.freigegeben) { _, neu in
             guard let neu else { return }
-            Task { await model.anmeldenMitQuickConnect(neu) }
+            Task {
+                await model.anmeldenMitQuickConnect(neu)
+                // **Das Blatt schließt sich selbst.** Beim ersten Anmelden
+                // verschwand es nur nebenbei: `RootView` tauscht bei
+                // `phase == .ready` den ganzen Bildschirm. Über einer bereits
+                // angemeldeten App passiert das nicht — der Code wurde
+                // freigegeben, das Konto kam dazu, und die Seite blieb
+                // trotzdem stehen, als sei nichts geschehen.
+                if model.errorMessage == nil { schliessen() }
+            }
         }
     }
 

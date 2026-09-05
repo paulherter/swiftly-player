@@ -34,10 +34,33 @@ final class Abspieler {
         // Keine Benutzeroberfläche von VLC, keine eigenen Fenster: wir stellen
         // das Bild selbst dar. `--no-video-title-show` unterdrückt die
         // Einblendung, die VLC sonst über jedes Bild legt.
-        var argumente: [UnsafePointer<CChar>?] = []
-        for wort in ["--no-xlib", "--no-video-title-show", "--quiet"] {
-            argumente.append(strdup(wort))
+        var woerter = ["--no-video-title-show", "--quiet"]
+        #if os(Linux)
+        // Sagt VLC, dass es Xlib nicht anfassen soll — wir zeichnen selbst.
+        // Unter Windows kennt VLC die Angabe nicht und beschwert sich.
+        woerter.insert("--no-xlib", at: 0)
+        #endif
+
+        #if os(Windows)
+        // **libVLC findet seine Module nicht von selbst.** Auf Linux liegen
+        // sie an einem festen Ort im System; unter Windows liegen sie neben
+        // der DLL, und danach sucht libVLC nur, wenn es aus seinem eigenen
+        // Verzeichnis geladen wurde. Ohne den Hinweis startet der Abspieler
+        // ohne einen einzigen Dekoder — das Bild bliebe schwarz, ohne
+        // Fehlermeldung.
+        if ProcessInfo.processInfo.environment["VLC_PLUGIN_PATH"] == nil,
+           let selbst = Plattform.programmpfad {
+            let module = URL(fileURLWithPath: selbst)
+                .deletingLastPathComponent()
+                .appendingPathComponent("plugins").path
+            if FileManager.default.fileExists(atPath: module) {
+                module.withCString { _ = g_setenv("VLC_PLUGIN_PATH", $0, 1) }
+            }
         }
+        #endif
+
+        var argumente: [UnsafePointer<CChar>?] = []
+        for wort in woerter { argumente.append(strdup(wort)) }
         kern = libvlc_new(Int32(argumente.count), &argumente)
         for zeiger in argumente { free(UnsafeMutableRawPointer(mutating: zeiger)) }
 

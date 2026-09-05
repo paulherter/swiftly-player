@@ -19,12 +19,7 @@ enum Zeichenwerk {
     /// `Linux/.build/<Ziel>/debug/SwiftlyLinux` → vier Ebenen hinauf ist
     /// `Linux/`, und dort liegt `Ressourcen`.
     private static var mitgeliefert: URL? {
-        guard let selbst = try? FileManager.default
-            .destinationOfSymbolicLink(atPath: "/proc/self/exe") else { return nil }
-        var baum = URL(fileURLWithPath: selbst)
-        for _ in 0..<4 { baum.deleteLastPathComponent() }
-        let ordner = baum.appendingPathComponent("Ressourcen/icons")
-        return FileManager.default.fileExists(atPath: ordner.path) ? ordner : nil
+        Plattform.mitgeliefert("icons").map { URL(fileURLWithPath: $0) }
     }
 
     /// Legt Symbol und Eintrag ab, wenn sie fehlen oder älter sind.
@@ -33,8 +28,15 @@ enum Zeichenwerk {
     /// die App deshalb anzuhalten oder zu meckern wäre schlimmer als das
     /// Symbol.
     static func einrichten() {
-        let dm = FileManager.default
         guard let quelle = mitgeliefert else { return }
+
+        // **Der Eintrag im Menue ist eine Linux-Sache.** Er entsteht, weil
+        // Wayland das Symbol nicht vom Fenster nimmt, sondern aus der
+        // `.desktop`-Datei. Windows fuehrt seine Verknuepfungen anders, und
+        // ein Programm, das ungefragt ins Startmenue schreibt, waere dort
+        // aufdringlich — das gehoert in die Installation, nicht in den Start.
+        #if os(Linux)
+        let dm = FileManager.default
         let heim = URL(fileURLWithPath: NSHomeDirectory())
         let ziel = heim.appendingPathComponent(".local/share/icons/hicolor")
 
@@ -70,7 +72,10 @@ enum Zeichenwerk {
             try? eintrag.write(to: wo, atomically: true, encoding: .utf8)
         }
 
+        #endif
+
         // Damit GTK das Bild auch ohne Neustart der Sitzung findet.
+        // Das gilt auf beiden Plattformen: das Fenstersymbol kommt hier her.
         if let anzeige = gdk_display_get_default() {
             gtk_icon_theme_add_search_path(gtk_icon_theme_get_for_display(anzeige),
                                            quelle.path)

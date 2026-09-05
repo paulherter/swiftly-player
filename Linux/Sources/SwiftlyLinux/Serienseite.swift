@@ -122,6 +122,16 @@ extension App {
 
         let folgenraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
 
+        // **Einmal angelegt, nicht bei jedem Klick.** Vorher entstand hier je
+        // Klick eine neue Tafel, die am Knopf hängenblieb; beim Verlassen der
+        // Seite meldete GTK „Finalizing GtkButton, but it still has children
+        // left" und ließ einen Zeiger stehen. Genau daran ist die App beim
+        // Öffnen einer Serie gestorben.
+        let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_set_size_request(liste, 200, -1)
+        let tafel = tafelAn(pille)
+        gtk_popover_set_child(alsTafel(tafel), liste)
+
         // **Eine Tafel, kein aufklappender Kasten in der Seite.** Auf dem Mac
         // erscheint die Staffelliste als Blatt über der Pille — dieselbe
         // Form wie beim Mehr-Knopf, und dieselbe Regel: kleine
@@ -130,13 +140,7 @@ extension App {
         // dabei alles darunter.
         beiSignal(pille, "clicked") { [weak self] in
             guard let self else { return }
-            let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-            gtk_widget_set_size_request(liste, 200, -1)
-            let tafel: Widget! = gtk_popover_new()
-            gtk_widget_add_css_class(tafel, "swiftly-mehr")
-            gtk_popover_set_child(alsTafel(tafel), liste)
-            gtk_popover_set_position(alsTafel(tafel), GTK_POS_BOTTOM)
-            gtk_widget_set_parent(tafel, pille)
+            leeren(liste)
             for staffel in staffeln {
                 let gewaehlt = staffel.id == wahl.jetzt?.id
                 anhaengen(liste, self.staffelzeile(staffel.name, gewaehlt: gewaehlt) {

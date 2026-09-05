@@ -156,6 +156,11 @@ final class App: @unchecked Sendable {
             serverstandZeigen(merk.servername.map { String(format: uebersetzt("Zuletzt: %@"), $0) } ?? "")
         }
         gtk_window_present(alsFenster(fenster))
+        // **Erst jetzt gibt es eine Fensterfläche.** Vorher hat das Fenster
+        // kein Gegenstück im Fenstersystem, und ohne das lassen sich die
+        // Medientasten nicht anmelden. Auf Linux tut die Zeile nichts — dort
+        // erledigt das der Sitzungsbus.
+        medienleiste?.anFenster(fenster)
         // Die Animation fährt selbst los, sobald ihre Fläche aufgelegt ist —
         // siehe ``Startanimation/losfahren()``. Von hier aus wäre es zu früh.
 
@@ -706,6 +711,9 @@ final class App: @unchecked Sendable {
     var abschnitte: [Abschnitt] = []
     var jetzigesAngebot: Knopfangebot = .keiner
     /// Ob der Nutzer auf der offenen Detailseite schon etwas gewählt hat.
+    /// Die zuletzt aufgeklappte Tafel des Mehr-Knopfs. Sie wird beim nächsten
+    /// Klick gelöst — sonst hängen sie sich am Knopf auf.
+    var offeneTafel: Widget?
     var detailBeruehrt = false
     /// Was zuletzt bei „Verbindung prüfen" herauskam.
     var pruefergebnis = ""
@@ -780,9 +788,6 @@ final class App: @unchecked Sendable {
     var detailkopfTitel: Widget!
     var detailkopfLeiste: Widget!
     var detailkopfVerlauf: Widget!
-    /// Die Kopfbilder der offenen Seiten. Sie halten ihren Punktepuffer, und
-    /// der muss leben, solange gezeichnet wird.
-    var kulissen: [String: Kulisse] = [:]
 
     /// **Seitenleiste links, Inhalt rechts** — der Aufbau des Macs.
     ///
@@ -2168,11 +2173,8 @@ final class App: @unchecked Sendable {
 
         if let uebersicht {
             let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-            let tafel: Widget! = gtk_popover_new()
-            gtk_widget_add_css_class(tafel, "swiftly-mehr")
+            let tafel = tafelAn(knopf)
             gtk_popover_set_child(alsTafel(tafel), liste)
-            gtk_popover_set_position(alsTafel(tafel), GTK_POS_BOTTOM)
-            gtk_widget_set_parent(tafel, knopf)
             anhaengen(liste, handlungszeile("dialog-information-symbolic",
                                             uebersetzt("Übersicht öffnen")) {
                 gtk_popover_popdown(alsTafel(tafel))

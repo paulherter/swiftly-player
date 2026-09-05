@@ -37,12 +37,25 @@ final class Startseitenmodell {
     /// unverändert alt ist.
     private(set) var zuletztGeladen: Date?
 
+    /// Zu welchem Kontostand der Inhalt gehört.
+    private var fuerKonto = 0
+
     var alleLeer: Bool {
         weiterschauen.isEmpty && naechsteFolge.isEmpty
             && zuletzt.isEmpty && neueFilme.isEmpty && neueSerien.isEmpty
     }
 
     func laden(_ model: AppModel) async {
+        // **Zu welchem Konto dieser Lauf gehört.** Erst beim Übernehmen
+        // unten wird daraus etwas — hier wird nichts geleert.
+        //
+        // Das war mein erster Versuch, und er hat den Fehler nur verschoben:
+        // die Seite vorweg leerzuräumen nimmt sämtliche Kacheln vom Schirm,
+        // und mit ihnen bricht jede laufende Bildladung ab. Gemessen am
+        // Gerät, zwanzigmal in Folge: `NSURLErrorDomain -999`, also
+        // „abgebrochen" — nicht abgelehnt, nicht verfehlt. Auch die Kacheln,
+        // die gleich darauf neu entstanden, gerieten noch in den Abbruch.
+        let diesesKonto = model.kontowechsel
         async let angefangen = model.weiterschauen()
         // **Die Bibliotheken müssen vorher bekannt sein.** Getrennt geholt
         // wird je Bibliothek, und deren Kennung steht erst nach `loadViews`.
@@ -66,20 +79,27 @@ final class Startseitenmodell {
 
         // Nur übernehmen, was auch wirklich geantwortet hat. Sonst räumt ein
         // einzelner Aussetzer die ganze Seite leer — genau das ist passiert.
-        if let a { weiterschauen = a }
-        if let b { naechsteFolge = b }
+        // **Beim Wechsel wird ersetzt, nicht ergänzt.** Sonst bliebe stehen,
+        // was nicht geantwortet hat — und das gehörte dem vorigen Konto.
+        // Ohne Wechsel gilt weiter: ein einzelner Aussetzer darf die Seite
+        // nicht leerräumen.
+        let wechsel = diesesKonto != fuerKonto
+        fuerKonto = diesesKonto
+
+        if let a { weiterschauen = a } else if wechsel { weiterschauen = [] }
+        if let b { naechsteFolge = b } else if wechsel { naechsteFolge = [] }
         // **Die nicht gewaehlte Form wird geleert, nicht bloss nicht
         // geholt.** Sonst bliebe die Reihe von vorhin stehen: wer umschaltet,
         // saehe „Zuletzt hinzugefuegt" **und** die beiden neuen. Genau das
         // ist beim ersten Versuch passiert.
         if getrennt {
             zuletzt = []
-            if let d { neueFilme = d }
-            if let e { neueSerien = e }
+            if let d { neueFilme = d } else if wechsel { neueFilme = [] }
+            if let e { neueSerien = e } else if wechsel { neueSerien = [] }
         } else {
             neueFilme = []
             neueSerien = []
-            if let c { zuletzt = c }
+            if let c { zuletzt = c } else if wechsel { zuletzt = [] }
         }
 
         // Ein Abbruch ist kein Ausfall — dieselbe Unterscheidung wie in
