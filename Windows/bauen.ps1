@@ -47,6 +47,13 @@ New-Item -ItemType Directory -Force -Path (Join-Path $bruecke 'include') | Out-N
 Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CBildbruecke\bildbruecke.c') $bruecke
 Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CBildbruecke\include\bildbruecke.h') (Join-Path $bruecke 'include')
 
+# Die Medientasten sind ebenfalls derselbe C-Code.
+$tasten = Join-Path $hier 'Sources\CMedientasten'
+if (Test-Path $tasten) { Remove-Item -Recurse -Force $tasten }
+New-Item -ItemType Directory -Force -Path (Join-Path $tasten 'include') | Out-Null
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CMedientasten\medientasten.c') $tasten
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CMedientasten\include\medientasten.h') (Join-Path $tasten 'include')
+
 # Symbol und Startanimation liegen genauso nur einmal im Repo.
 $mittel = Join-Path (Split-Path -Parent $hier) 'Linux\Ressourcen'
 $mittelZiel = Join-Path $hier 'Ressourcen'
