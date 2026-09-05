@@ -259,6 +259,69 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     public var runtimeSeconds: Double? {
         runTimeTicks.map { Double($0) / 10_000_000 }
     }
+    /// Eine **vorläufige Serie** aus dem, was eine Folge ohnehin trägt.
+    ///
+    /// Ein Listeneintrag einer Folge kennt `seriesId` und `seriesName` —
+    /// mehr braucht eine Serienseite nicht, um aufzumachen: die Kennung für
+    /// alle weiteren Abrufe, den Namen für die Überschrift, die Gattung für
+    /// die Weichen. Das Kulissenbild ist ohnehin dasselbe, `querbildURL`
+    /// baut es aus `seriesId ?? id`. Alles Weitere — Beschreibung,
+    /// Bewertung, Staffelzahl — holt die Seite sich selbst nach und schreibt
+    /// es darüber.
+    ///
+    /// **Warum das hier steht und nicht in einer Ansicht.** Die tvOS-Fassung
+    /// hat sich dasselbe Ding über einen Umweg durch JSON gebaut, weil `Item`
+    /// keinen öffentlichen Erzeuger hat, und im Kommentar daneben vermerkt:
+    /// „gehört ins Paket". Genau so ist es — es ist eine Aussage über unser
+    /// Datenmodell, keine über eine Oberfläche, und hier ist sie ohne
+    /// Simulator prüfbar.
+    ///
+    /// Gibt `nil` zurück, wenn die Folge keine Serie nennt: dann gibt es
+    /// nichts vorwegzunehmen.
+    public static func vorlaeufigeSerie(zu folge: Item) -> Item? {
+        guard let id = folge.seriesId, let name = folge.seriesName else { return nil }
+        return Item(id: id, name: name, type: "Series")
+    }
+
+    /// Ein Eintrag aus dem Nötigsten. Alles Weitere kommt vom Server.
+    public init(id: String, name: String, type: String? = nil,
+                collectionType: String? = nil, productionYear: Int? = nil,
+                overview: String? = nil, runTimeTicks: Int64? = nil,
+                seriesName: String? = nil, indexNumber: Int? = nil,
+                parentIndexNumber: Int? = nil, seriesId: String? = nil,
+                seasonId: String? = nil, genres: [String]? = nil,
+                officialRating: String? = nil, communityRating: Double? = nil,
+                childCount: Int? = nil, localTrailerCount: Int? = nil,
+                backdropImageTags: [String]? = nil,
+                seriesPrimaryImageTag: String? = nil, people: [Person]? = nil,
+                studios: [NameID]? = nil, taglines: [String]? = nil,
+                criticRating: Double? = nil, remoteTrailers: [MediaURL]? = nil,
+                imageTags: [String: String]? = nil, userData: UserItemData? = nil,
+                mediaSources: [MediaSource]? = nil,
+                parentBackdropImageTags: [String]? = nil,
+                parentBackdropItemId: String? = nil,
+                parentThumbImageTag: String? = nil,
+                parentThumbItemId: String? = nil) {
+        self.id = id; self.name = name; self.type = type
+        self.collectionType = collectionType; self.productionYear = productionYear
+        self.overview = overview; self.runTimeTicks = runTimeTicks
+        self.seriesName = seriesName; self.indexNumber = indexNumber
+        self.parentIndexNumber = parentIndexNumber; self.seriesId = seriesId
+        self.seasonId = seasonId; self.genres = genres
+        self.officialRating = officialRating; self.communityRating = communityRating
+        self.childCount = childCount; self.localTrailerCount = localTrailerCount
+        self.backdropImageTags = backdropImageTags
+        self.seriesPrimaryImageTag = seriesPrimaryImageTag; self.people = people
+        self.studios = studios; self.taglines = taglines
+        self.criticRating = criticRating; self.remoteTrailers = remoteTrailers
+        self.imageTags = imageTags; self.userData = userData
+        self.mediaSources = mediaSources
+        self.parentBackdropImageTags = parentBackdropImageTags
+        self.parentBackdropItemId = parentBackdropItemId
+        self.parentThumbImageTag = parentThumbImageTag
+        self.parentThumbItemId = parentThumbItemId
+    }
+
 }
 
 // Für NavigationLink(value:). Die id genügt — sie ist serverweit eindeutig,
