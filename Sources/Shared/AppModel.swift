@@ -871,8 +871,18 @@ final class AppModel {
             // Anmeldebildschirm, sondern in „Kein Kontakt zum Server" — und
             // von dort gibt es keinen Weg zurück außer über das Profilmenü.
             guard await neuer.sitzungGiltNoch() else {
+                let name = session?.userName
                 signOut()
-                errorMessage = String(localized: "Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
+                // **Nach dem Abmelden kann noch ein Konto da sein.** Seit es
+                // mehrere gibt, schaltet `signOut` auf das nächste um statt
+                // zur Serveranmeldung zurückzufallen — und dann wäre „bitte
+                // neu anmelden" schlicht falsch: der Nutzer ist angemeldet,
+                // nur mit einem anderen Konto.
+                if let weiter = session?.userName {
+                    errorMessage = String(localized: "Die Anmeldung von \(name ?? "?") gilt nicht mehr. Jetzt angemeldet als \(weiter).")
+                } else {
+                    errorMessage = String(localized: "Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
+                }
                 return
             }
         }
