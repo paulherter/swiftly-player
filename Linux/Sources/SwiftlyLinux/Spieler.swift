@@ -33,7 +33,13 @@ extension App {
         seitOeffnen = Date()
 
         let seite = spielerSeiteBauen(item)
-        gtk_stack_add_named(OpaquePointer(seiten), seite, "spieler")
+        // **Jede Spielerseite bekommt ihren eigenen Namen.** Alle „spieler" zu
+        // nennen ging nur, solange die vorige beim Schliessen sofort aus dem
+        // Stapel flog — und genau das nahm ihr die Abfahrt nach unten. Mit
+        // einem laufenden Zaehler koennen alte und neue Seite fuer die Dauer
+        // der Fahrt nebeneinander liegen, ohne sich den Namen zu streiten.
+        spielerZaehler += 1
+        gtk_stack_add_named(OpaquePointer(seiten), seite, "spieler-\(spielerZaehler)")
         // **Aufsteigen — die dritte der drei Bewegungen** (so auf dem Mac,
         // `HauptView.swift:160`). Von unten herauf und wieder hinunter;
         // genau deshalb zeigt der Winkel oben rechts nach unten.
@@ -45,7 +51,7 @@ extension App {
                                       GTK_STACK_TRANSITION_TYPE_OVER_UP)
         gtk_stack_set_transition_duration(OpaquePointer(seiten), 350)
         Schubsperre.fuer(0.35)
-        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "spieler")
+        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "spieler-\(spielerZaehler)")
 
         // **Erst den Plan holen, dann öffnen.** Die Adresse steht nicht in
         // `Item`; sie kommt aus `/PlaybackInfo`, und dort entscheidet sich
@@ -131,17 +137,22 @@ extension App {
             try? await Task.sleep(nanoseconds: 380_000_000)
             aufHauptfaden {
                 defer { losgelassen(dann) }
+                // **Nur aufraeumen, wenn inzwischen kein neuer Film laeuft.**
+                // Der Wecker gehoert zu *dieser* Seite; startet jemand
+                // innerhalb der 380 ms den naechsten Titel, haette er sonst
+                // dessen Medium angehalten und dessen Felder geleert. Dass es
+                // nie auffiel, lag allein daran, dass das Holen des Plans
+                // meist laenger dauert als die Fahrt.
+                guard self.laufenderTitel == nil else { return }
                 self.abspieler.beenden(nurMedium: true)
-                if let seite = gtk_stack_get_child_by_name(OpaquePointer(self.seiten), "spieler"),
-                   seite == dann.widget {
-                    gtk_stack_remove(OpaquePointer(self.seiten), seite)
+                if gtk_widget_get_parent(dann.widget) != nil {
+                    gtk_stack_remove(OpaquePointer(self.seiten), dann.widget)
                 }
-                self.spielerRahmen = nil
-                self.spielerSteuerung = nil
+                if self.spielerRahmen == dann.widget {
+                    self.spielerRahmen = nil
+                    self.spielerSteuerung = nil
+                }
             }
-        }
-        if let seite = gtk_stack_get_child_by_name(OpaquePointer(seiten), "spieler") {
-            gtk_stack_remove(OpaquePointer(seiten), seite)
         }
         // **Die Startseite holt ihre Reihen neu, wenn der Player zugeht**
         // (D8) — ohne Frist. Eine zu Ende gesehene Folge stünde sonst weiter

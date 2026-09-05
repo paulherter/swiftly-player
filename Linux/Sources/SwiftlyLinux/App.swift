@@ -953,6 +953,8 @@ final class App: @unchecked Sendable {
     var spielerZeit: Widget!
     var spielerRest: Widget!
     var spielerRegler: Widget!
+    /// Zaehlt die Spielerseiten. Siehe ``spielerOeffnen(_:ab:)``.
+    var spielerZaehler = 0
     var spielerAbspielzeichen: Abspielzeichen?
     var spielerWeiter: Widget!
     var spielerSpurknopf: Widget!
