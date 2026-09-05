@@ -44,6 +44,13 @@ Copy-Item "$Gtk\share\glib-2.0" "$Ziel\share" -Recurse -Force
 Copy-Item "$Gtk\share\icons" "$Ziel\share" -Recurse -Force
 if (Test-Path "$Gtk\share\gtk-4.0") { Copy-Item "$Gtk\share\gtk-4.0" "$Ziel\share" -Recurse -Force }
 Copy-Item "$Gtk\lib\gdk-pixbuf-2.0" "$Ziel\lib" -Recurse -Force
+# **`etc` gehoert dazu.** Dort liegt die Einstellung von fontconfig. Ohne sie
+# findet Pango keine Schrift, und GTK bricht beim ersten Fenster ab — gemessen,
+# mit derselben Zugriffsverletzung, die auch eine fehlende Schemadatei erzeugt.
+if (Test-Path "$Gtk\etc") { Copy-Item "$Gtk\etc" "$Ziel\etc" -Recurse -Force }
+foreach ($m in @('fontconfig','locale','themes','mime')) {
+    if (Test-Path "$Gtk\share\$m") { Copy-Item "$Gtk\share\$m" "$Ziel\share" -Recurse -Force }
+}
 
 Sag 'Swift-Laufzeit'
 Copy-Item "$SwiftLaufzeit\*.dll" "$Ziel\bin" -Force
