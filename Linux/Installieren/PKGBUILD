@@ -45,6 +45,7 @@ package() {
         [ -d "$buendel" ] || continue
         cp -r "$buendel" "$pkgdir/usr/lib/$pkgname/"
     done
+    cp -r "$q/Linux/Ressourcen" "$pkgdir/usr/lib/$pkgname/Ressourcen"
     install -d "$pkgdir/usr/bin"
     ln -s "/usr/lib/$pkgname/$pkgname" "$pkgdir/usr/bin/$pkgname"
 

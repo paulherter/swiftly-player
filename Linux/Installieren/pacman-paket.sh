@@ -33,6 +33,7 @@ done
 cp "$quelle/Linux/Installieren/$KENNUNG.desktop" \
    "$quelle/Linux/Installieren/$KENNUNG.metainfo.xml" "$werk/inhalt/"
 cp -r "$quelle/Linux/Ressourcen/icons" "$werk/inhalt/icons"
+cp -r "$quelle/Linux/Ressourcen" "$werk/inhalt/Ressourcen"
 cp "$quelle/LICENSE" "$werk/inhalt/LICENSE"
 
 cat > "$werk/PKGBUILD" <<PKG
@@ -51,6 +52,7 @@ package() {
     for buendel in "\$startdir/inhalt"/*.resources; do
         [ -d "\$buendel" ] && cp -r "\$buendel" "\$pkgdir/usr/lib/$PROGRAMM/"
     done
+    cp -r "\$startdir/inhalt/Ressourcen" "\$pkgdir/usr/lib/$PROGRAMM/Ressourcen"
     install -d "\$pkgdir/usr/bin"
     ln -s "/usr/lib/$PROGRAMM/$PROGRAMM" "\$pkgdir/usr/bin/$PROGRAMM"
 

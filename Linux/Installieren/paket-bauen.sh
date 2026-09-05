@@ -32,6 +32,9 @@ baum_fuellen() {
     for buendel in "$bau"/*.resources; do
         [ -d "$buendel" ] && cp -r "$buendel" "$w/usr/lib/$PROGRAMM/"
     done
+    # Startanimation und mitgelieferte Schrift. `Plattform.mitgeliefert`
+    # sucht sie neben dem Programm.
+    cp -r "$quelle/Linux/Ressourcen" "$w/usr/lib/$PROGRAMM/Ressourcen"
     install -d "$w/usr/bin"
     ln -sf "/usr/lib/$PROGRAMM/$PROGRAMM" "$w/usr/bin/$PROGRAMM"
 

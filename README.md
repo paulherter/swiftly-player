@@ -12,6 +12,8 @@
 
 [![Join the beta on TestFlight](https://img.shields.io/badge/TestFlight-Join%20the%20beta-0B0B0D?style=for-the-badge&labelColor=0B0B0D&color=5CD1C2&logo=apple&logoColor=0B0B0D)](https://testflight.apple.com/join/MqeP2cnj)
 &nbsp;
+[![Download for Windows](https://img.shields.io/badge/Windows-Download%20the%20installer-0B0B0D?style=for-the-badge&labelColor=0B0B0D&color=5CD1C2&logo=windows&logoColor=0B0B0D)](https://github.com/paulherter/swiftly-for-jellyfin/releases/latest)
+&nbsp;
 [![Discord](https://img.shields.io/badge/Discord-Bugs%20%26%20feedback-0B0B0D?style=for-the-badge&labelColor=0B0B0D&color=5865F2&logo=discord&logoColor=white)](https://discord.gg/MeGwfv3UwN)
 
 </div>
@@ -83,7 +85,7 @@ and only where distance, input or window size demand it.
 | 📺 Apple TV | **1.0.0 (9)** · beta on TestFlight |
 | 💻 Mac | **1.0.0 (9)** · beta on TestFlight |
 | 🐧 Linux | **1.0.0** · GTK4, native, same shared logic · [install](#-linux) |
-| 🪟 Windows | in development — GTK4 like Linux, **the same source**, not released yet |
+| 🪟 Windows | **1.0.0** · GTK4 like Linux, **the same source** · [download](#-windows) |
 
 **The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
 — one link for iPhone, iPad, Apple TV and Mac. What each build wants tested is
@@ -168,6 +170,32 @@ GTK already sets, so it costs nothing.
 runtime carries GTK 4 but not a single libVLC library. A Flatpak would have
 to compile VLC itself — and VLC's demuxers are exactly what "never
 transcodes" rests on.
+
+<br>
+
+## 🪟 Windows
+
+**[Download Swiftly-1.0.0-Setup.exe](https://github.com/paulherter/swiftly-for-jellyfin/releases/download/v1.0.0/Swiftly-1.0.0-Setup.exe)** — 80 MB, Windows 10 and 11, 64-bit.
+
+The installer puts Swiftly where it belongs: Program Files (or your own folder
+if you run it without admin rights — you choose in the dialog), a Start menu
+entry, an optional desktop icon, and a proper uninstall. No unpacking a zip and
+wondering where the folder should go.
+
+**Windows will warn you the first time.** SmartScreen shows a blue box saying
+the publisher is unknown: click **More info**, then **Run anyway**. That warning
+is not about this app being unsafe — it means the installer carries no paid
+code-signing certificate. Jellyfin's own desktop app is in exactly the same
+position. The checksum below is there so you can verify what you downloaded:
+
+```
+SHA256  2a8a30616de1399fb5643fa8ae0118f9c828eb352b1a6cd7f0e6c3dbc9899b3f
+```
+
+**It is the same program as on Linux** — the same 8,900 lines of interface,
+mirrored into the Windows build; what differs sits behind seven `#if` marks in
+those same files. GTK 4, libVLC and the Swift runtime all ship inside the
+installer, so there is nothing else to install.
 
 <br>
 
