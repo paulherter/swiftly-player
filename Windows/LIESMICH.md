@@ -32,7 +32,6 @@ geteilten Dateien** — nicht in einer Kopie:
 |---|---|---|
 | `Plattform.swift` | Binärpfad, Ort der Mittel, Einstellungsordner | `/proc/self/exe` und `XDG_CONFIG_HOME` gibt es hier nicht |
 | `Zeichenwerk.swift` | `.desktop`-Eintrag nur auf Linux | Wayland nimmt das Fenstersymbol aus der Datei; Windows nicht |
-| `Startanimation.swift` | Platzhalter ohne rlottie | für Windows ist rlottie noch nicht gebaut |
 | `Speicher.swift` | Unix-Rechte nur auf Linux | `%APPDATA%` ist über die Zugriffsliste ohnehin privat |
 | `Abspieler.swift` | `--no-xlib` weg, `VLC_PLUGIN_PATH` gesetzt | libVLC findet seine Module hier nicht von selbst |
 | `bildbruecke.c` | SRWLOCK statt pthread | `pthread` gibt es unter MSVC nicht |
@@ -55,7 +54,35 @@ Andere Orte gehen auch; `bauen.ps1` nimmt sie als Parameter.
 ```powershell
 .\bauen.ps1            # bauen
 .\bauen.ps1 -Starten   # bauen und starten
+.\bauen.ps1 -Symbole   # zusaetzlich eine PDB erzeugen
 ```
+
+**`-Symbole`, wenn etwas abstuerzt.** Ohne Debug-Informationen entsteht keine
+PDB, und das Windows-Ereignisprotokoll meldet einen Absturz nur als Versatz
+in der Binaerdatei. Mit PDB laesst er sich aufloesen:
+
+```powershell
+# Versatz aus dem Ereignis („Fault offset") plus Bildbasis 0x140000000
+'0x1401b1f84' | & llvm-symbolizer.exe --obj=.build\debug\SwiftlyWindows.exe --demangle
+```
+
+Genau so wurde am 05.09.2026 der Startabsturz gefunden, der jeden dritten bis
+vierten Start traf: `rlottie::Animation::renderSync` auf freigegebenem
+Speicher. Sieben Vermutungen davor waren alle falsch — die PDB hat es in
+einem Durchgang beantwortet.
+
+## Die Pakettests laufen hier
+
+```powershell
+cd ..\Packages\JellyfinKit
+swift test
+```
+
+**194 Tests in 35 Suiten, alle gruen** (05.09.2026, `908a097`). Das ist mehr
+als eine Formalie: `JellyfinKit` ist damit auf einer dritten Plattform
+*belegt* und nicht nur uebersetzt. Wer Logik ins Paket hebt, statt sie in die
+Ansicht zu schreiben, kann sie hier ohne Oberflaeche pruefen — auf Windows
+genauso wie auf dem Mac.
 
 Das Skript spiegelt die geteilten Quellen, baut, und legt anschliessend GTK,
 libVLC und **VLCs Module** neben das Programm. Das letzte ist kein Beiwerk:
@@ -81,10 +108,8 @@ abstellen, nicht durch etwas im Skript.
 
 ## Was noch fehlt
 
-- **Medientasten und die Wiedergabekachel.** Unter Linux macht das
-  ``Medienleiste`` über MPRIS; Windows hat dafür die *System Media Transport
-  Controls*, und die gibt es nur über WinRT. Der Code steigt ohne Sitzungsbus
-  schon von selbst still aus, die App läuft also — sie meldet sich nur nicht
-  beim System an.
+- **Die Wiedergabekachel im Infobereich.** Die Medientasten der Tastatur
+  gehen (`8544ab0`); die Kachel mit Titel und Bild braucht die *System Media
+  Transport Controls* und damit WinRT — eigener Vorgang.
 - **Keine automatischen Updates.** Linux bekommt sie über die Paketquelle;
   für Windows gibt es bisher nur den Installer.
