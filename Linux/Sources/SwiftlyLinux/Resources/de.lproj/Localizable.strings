@@ -15,6 +15,15 @@
 "Als ungesehen markieren" = "Als ungesehen markieren";
 "Andere Schreibweise? Die Suche findet Filme und Serien." = "Andere Schreibweise? Die Suche findet Filme und Serien.";
 "Anderer Server" = "Anderer Server";
+"Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen." = "Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen.";
+"Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist." = "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.";
+"Hinzufügen" = "Hinzufügen";
+"Lieber Name und Passwort" = "Lieber Name und Passwort";
+"Mit Quick Connect anmelden" = "Mit Quick Connect anmelden";
+"Weiteres Konto" = "Weiteres Konto";
+"oder" = "oder";
+"Auf demselben Server" = "Auf demselben Server";
+"Weiteres Konto hinzufügen" = "Weiteres Konto hinzufügen";
 "Angemeldet" = "Angemeldet";
 "Anmelden" = "Anmelden";
 "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an." = "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an.";

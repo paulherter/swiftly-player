@@ -182,6 +182,45 @@ func gerahmtesBild(breite: Int, hoehe: Int, stil: String) -> (huelle: Widget, bi
     return (huelle!, bild!)
 }
 
+/// Ein rundes Profilzeichen: Verlauf, darüber das Bild — und **statt** des
+/// Bildes der erste Buchstabe des Namens, wenn keines kommt.
+///
+/// **Der Buchstabe ist Rückfall, nicht Untergrund.** Wortgleich zu
+/// `Sources/Shared/Bausteine.swift`, `Profilzeichen`: läge er immer darunter,
+/// schiene er bei jedem Konto *mit* Bild kurz durch, bis das Bild da ist. Er
+/// wird deshalb erst sichtbar, wenn ``bildLaden`` meldet, dass nichts ankam —
+/// dafür gibt es dessen `fertig`-Rückruf.
+///
+/// Der Verlauf steht im Stilblatt an der übergebenen Klasse; er trägt immer
+/// und fällt nicht auf, wenn ein Bild darüberliegt.
+func profilzeichen(name: String, kante: Int, stil: String,
+                   schriftstil: String) -> (huelle: Widget, bild: Widget, zeichen: Widget) {
+    let (huelle, bild) = gerahmtesBild(breite: kante, hoehe: kante, stil: stil)
+    let zeichen = beschriftung(String(name.prefix(1)).uppercased(), stil: schriftstil)
+    gtk_widget_set_halign(zeichen, GTK_ALIGN_CENTER)
+    gtk_widget_set_valign(zeichen, GTK_ALIGN_CENTER)
+    gtk_widget_set_visible(zeichen, 0)
+    gtk_overlay_add_overlay(OpaquePointer(huelle), zeichen)
+    return (huelle, bild, zeichen!)
+}
+
+/// Lädt das Profilbild und blendet den Buchstaben ein, wenn keines kommt.
+///
+/// Ohne Adresse steht der Buchstabe sofort da — dann ist schon klar, dass
+/// nichts kommt.
+func profilbildLaden(_ teile: (huelle: Widget, bild: Widget, zeichen: Widget),
+                     url: URL?, schluessel: String) {
+    guard let url else {
+        gtk_widget_set_visible(teile.zeichen, 1)
+        return
+    }
+    let kiste = Zeigerkiste(teile.zeichen)
+    bildLaden(teile.bild, url: url, schluessel: schluessel, sofort: true) { kam in
+        guard !kam else { return }
+        gtk_widget_set_visible(kiste.widget, 1)
+    }
+}
+
 /// Legt den Fortschrittsbalken unten **in** die Bildhülle.
 ///
 /// Zwei Lagen, wie auf dem Mac: eine Spur in Weiß 16 % über die ganze Breite
