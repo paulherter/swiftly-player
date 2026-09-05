@@ -768,9 +768,12 @@ final class AppModel {
     /// wäre danach die falsche Wiedergabe zum Übernehmen angeboten worden.
     private func neuVerbinden() {
         guard let s = session else { return }
-        let alter = client
-        Task { await alter?.abmelden() }
-
+        // **Beim Wechsel wird nicht abgemeldet.** `abmelden()` schickt ein
+        // `Sessions/Logout` an den Server und zieht das Merkmal ein — richtig
+        // beim Abmelden, verheerend beim Umschalten: das Konto, von dem man
+        // weggeht, waere danach unbrauchbar, und der Weg zurueck endet in
+        // „Anmeldung abgelehnt". Der alte Client wird einfach fallen
+        // gelassen; das Merkmal bleibt gueltig und liegt im Schluesselbund.
         let neuer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
                                    deviceName: Self.deviceName, session: s)
         client = neuer
