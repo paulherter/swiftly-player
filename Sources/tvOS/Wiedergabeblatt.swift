@@ -195,6 +195,8 @@ struct Wiedergabeblatt: View {
                     // sondern der Ausgabekadenz — siehe `Bildtakt`. Ohne diese
                     // Zeile sieht man dem Bild nicht an, ob der Fernseher
                     // mitgeschaltet hat.
+                    Wertfeld(titel: "Bildfläche", wert: flaechenzeile,
+                             warnung: !flaecheStimmt)
                     Wertfeld(titel: "Ausgang", wert: ausgangzeile,
                              warnung: !Bildtakt.erlaubt)
                     // **Direct Play und Direct Stream sind nicht dasselbe.**
@@ -270,6 +272,51 @@ struct Wiedergabeblatt: View {
     ///
     /// Drei Faelle, und der mittlere ist der, den Dann steht die Rate zwar
     /// fest, aber der Ausgang bleibt auf 60 Hz und das Bild judert weiter.
+    /// **Wie gross die Bildflaeche ist und wie gross VLC darin malt.**
+    ///
+    /// Aus dem Code ist er nicht zu sehen: unsere Raender sind links und
+    /// rechts derselbe Wert. Ein Foto taugt auch nicht — der Bildschirm
+    /// spiegelt das Zimmer, meine Helligkeitsmessung darauf hat zweimal
+    /// danebengegriffen. Also wird abgelesen statt geschaetzt: die Groesse der
+    /// Zeichenflaeche gegen die Ebene, die VLC hineinlegt.
+    ///
+    /// Stimmen beide, liegt es nicht an der Geometrie und die Suche geht
+    /// woanders weiter. Fehlen rechts zwei Punkte, stehen sie hier.
+    private var flaechenzeile: String {
+        let aussen = flaeche.bounds.size
+        guard let innen = tiefsteEbene(flaeche) else {
+            return "\(zahl(aussen.width))×\(zahl(aussen.height)) · keine Ebene"
+        }
+        return "\(zahl(aussen.width))×\(zahl(aussen.height))"
+            + " → \(zahl(innen.width))×\(zahl(innen.height))"
+            + " bei \(zahl(innen.origin.x)),\(zahl(innen.origin.y))"
+    }
+
+    /// Ob die Ebene die Flaeche fuellt — sonst traegt die Zeile eine Warnung.
+    private var flaecheStimmt: Bool {
+        guard let innen = tiefsteEbene(flaeche) else { return false }
+        let aussen = flaeche.bounds
+        return abs(innen.minX - aussen.minX) < 1 && abs(innen.minY - aussen.minY) < 1
+            && abs(innen.maxX - aussen.maxX) < 1 && abs(innen.maxY - aussen.maxY) < 1
+    }
+
+    /// Halbe Punkte sind hier die Auskunft — deshalb nicht gerundet, aber
+    /// auch nicht mit sechs Nachkommastellen.
+    private func zahl(_ w: CGFloat) -> String {
+        w == w.rounded() ? "\(Int(w))" : String(format: "%.1f", w)
+    }
+
+    /// VLC haengt seine Ausgabe zwei Ebenen tief ein (`VLCVideoUIView`, darin
+    /// die Anzeigeansicht). Gesucht ist die unterste, denn die traegt das
+    /// Bild — in den Koordinaten der Zeichenflaeche.
+    private func tiefsteEbene(_ ansicht: UIView) -> CGRect? {
+        guard let kind = ansicht.subviews.max(by: {
+            $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height
+        }) else { return nil }
+        guard let enkel = tiefsteEbene(kind) else { return kind.frame }
+        return kind.convert(enkel, to: ansicht)
+    }
+
     private var ausgangzeile: String {
         // **VLCs Wert, nicht der des Servers.**
         //
