@@ -110,6 +110,11 @@ final class AppModel {
 
     /// Alle Konten auf diesem Server, in der Reihenfolge des Streifens über
     /// der Profilseite. Leer, solange niemand angemeldet ist.
+    /// Die Anbindung an Seerr. **Liegt hier, weil sie eine Sitzung hält** —
+    /// eine Ansicht, die sie besitzt, verliert sie beim Schliessen, und ein
+    /// zweites Modell daneben hätte einen zweiten Zugang.
+    let seerr = Seerrmodell()
+
     private(set) var konten: [Session] = []
 
     /// Zählt jeden Kontowechsel. Ansichten hängen sich daran, um neu zu laden.

@@ -189,3 +189,109 @@ public enum Seerr {
         return URL(string: text)
     }
 }
+
+/// Der Abruf. Alles, was hier passiert, hängt am Netz — was es **bedeutet**,
+/// steht oben in ``Seerr`` und ist ohne Netz geprüft.
+public actor SeerrClient {
+    private let zugang: Seerrzugang
+    private let sitzung: URLSession
+
+    public init(zugang: Seerrzugang, sitzung: URLSession = .ortsnetzfaehig) {
+        self.zugang = zugang
+        self.sitzung = sitzung
+    }
+
+    /// Anmelden mit den Zugangsdaten des **Medienservers**.
+    ///
+    /// Seerr fragt Jellyfin selbst, ob Name und Passwort stimmen, und legt
+    /// dafür eine eigene Sitzung an. Zurück kommt der Keks, den jeder weitere
+    /// Aufruf mitträgt.
+    public static func anmelden(an adresse: URL, benutzer: String, passwort: String,
+                                sitzung: URLSession = .ortsnetzfaehig) async throws -> Seerrzugang {
+        var req = URLRequest(url: adresse.appendingPathComponent("api/v1/auth/jellyfin"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(
+            withJSONObject: ["username": benutzer, "password": passwort])
+
+        let (daten, antwort) = try await sitzung.data(for: req)
+        guard let http = antwort as? HTTPURLResponse else {
+            throw JellyfinError.transport("Keine Antwort von Seerr.")
+        }
+        switch http.statusCode {
+        case 200, 201: break
+        case 401, 403:
+            throw JellyfinError.transport("Name oder Passwort stimmen nicht.")
+        case 404:
+            throw JellyfinError.transport("Unter dieser Adresse antwortet kein Seerr.")
+        default:
+            throw JellyfinError.http(status: http.statusCode,
+                                     body: String(data: daten.prefix(200), encoding: .utf8))
+        }
+        // **Der Keks ist der Zugang.** Ohne ihn wäre die Anmeldung zwar
+        // gelungen, aber der nächste Aufruf stünde wieder davor.
+        guard let kopf = http.value(forHTTPHeaderField: "Set-Cookie"),
+              let keks = Seerr.keks(ausKopf: kopf) else {
+            throw JellyfinError.transport("Seerr hat keine Sitzung mitgegeben.")
+        }
+        return Seerrzugang(adresse: adresse, keks: keks)
+    }
+
+    private func anfrage(_ pfad: String, methode: String = "GET",
+                         abfrage: [URLQueryItem] = [], rumpf: Data? = nil) throws -> URLRequest {
+        var teile = URLComponents(url: zugang.adresse.appendingPathComponent("api/v1/" + pfad),
+                                  resolvingAgainstBaseURL: false)
+        if !abfrage.isEmpty { teile?.queryItems = abfrage }
+        guard let url = teile?.url else { throw JellyfinError.transport("Adresse unbrauchbar.") }
+        var req = URLRequest(url: url)
+        req.httpMethod = methode
+        req.setValue(zugang.keks, forHTTPHeaderField: "Cookie")
+        if let rumpf {
+            req.httpBody = rumpf
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        return req
+    }
+
+    /// Suchen. Fehler sind hier kein Grund zu werfen: die Seerr-Treffer sind
+    /// eine Zugabe zur eigenen Bibliothek, und wenn Seerr schweigt, soll die
+    /// Suche trotzdem etwas zeigen.
+    public func suchen(_ begriff: String) async -> [Seerrtreffer] {
+        guard let req = try? anfrage("search", abfrage: [.init(name: "query", value: begriff)]),
+              let (daten, antwort) = try? await sitzung.data(for: req),
+              let http = antwort as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+        return Seerr.treffer(ausSuche: daten)
+    }
+
+    /// Anfragen. Hier wird sehr wohl geworfen — der Nutzer hat gedrückt und
+    /// muss erfahren, ob es geklappt hat.
+    public func anfragen(art: String, id: Int, staffeln: [Int]? = nil) async throws {
+        let rumpf = try JSONSerialization.data(
+            withJSONObject: Seerr.anfrageRumpf(art: art, id: id, staffeln: staffeln))
+        let req = try anfrage("request", methode: "POST", rumpf: rumpf)
+        let (daten, antwort) = try await sitzung.data(for: req)
+        guard let http = antwort as? HTTPURLResponse else {
+            throw JellyfinError.transport("Keine Antwort von Seerr.")
+        }
+        switch http.statusCode {
+        case 200, 201: return
+        case 401, 403:
+            throw JellyfinError.transport("Deine Seerr-Anmeldung gilt nicht mehr.")
+        case 409:
+            // Kein Fehler: jemand war schneller. Der Stand sagt es beim
+            // nächsten Laden von selbst.
+            return
+        default:
+            throw JellyfinError.http(status: http.statusCode,
+                                     body: String(data: daten.prefix(200), encoding: .utf8))
+        }
+    }
+
+    /// Ob die gespeicherte Sitzung noch gilt.
+    public func gilt() async -> Bool {
+        guard let req = try? anfrage("auth/me"),
+              let (_, antwort) = try? await sitzung.data(for: req),
+              let http = antwort as? HTTPURLResponse else { return false }
+        return http.statusCode == 200
+    }
+}

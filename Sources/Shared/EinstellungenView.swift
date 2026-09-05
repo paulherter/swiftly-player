@@ -49,11 +49,13 @@ struct EinstellungenView: View {
             // auf dem iPad kostet nichts.
             if breit {
                 HStack(alignment: .top, spacing: 56) {
-                    darstellung.frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 0) { darstellung; integration }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     server.frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
                 darstellung
+                integration
                 server
             }
 
@@ -95,6 +97,23 @@ struct EinstellungenView: View {
                         unter: Text("Neue Filme und neue Serien in eigenen Reihen"),
                         an: Binding(get: { model.neuzugangGetrennt },
                                     set: { model.neuzugangGetrennt = $0 }))
+        }
+    }
+
+    /// **Steht zwischen Darstellung und Server, und das ist kein Zufall.**
+    /// Es ist ein zweiter Dienst, kein zweiter Server — und es ist eine
+    /// Zugabe: wer nichts anbindet, sieht ausser dieser einen Zeile nirgends
+    /// etwas davon.
+    private var integration: some View {
+        Einstellungsgruppe(titel: "Integration") {
+            NavigationLink {
+                SeerrEinstellungenView(model: model, seerr: model.seerr)
+            } label: {
+                Wertzeile(symbol: "sparkle.magnifyingglass", titel: Text("Seerr"),
+                          unter: Text("Anfragen, was noch nicht da ist"),
+                          wert: model.seerr.verbunden ? String(localized: "Verbunden") : nil)
+            }
+            .buttonStyle(.plain)
         }
     }
 
