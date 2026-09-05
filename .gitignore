@@ -19,6 +19,12 @@ Vendor
 CLAUDE.md
 VERHALTEN.md
 Erfahrungen.md
+# Arbeitsunterlagen wie die drei darueber: der Ablauf und die Fallen.
+# Sie gehoeren ins Arbeitsverzeichnis, nicht in die oeffentliche Ablage —
+# sie erklaeren, wie wir arbeiten, und nennen dabei Messungen, Fehlgriffe
+# und Namen.
+ABLAUF.md
+Fallen/
 
 # **Riegel, kein Aufraeumen.** Diese Pfade liegen in ../Swiftly-Notizen und
 # sind hier nicht vorhanden. Der Eintrag verhindert, dass sie es je wieder
