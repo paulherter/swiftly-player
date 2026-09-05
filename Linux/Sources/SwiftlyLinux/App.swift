@@ -711,6 +711,9 @@ final class App: @unchecked Sendable {
     var abschnitte: [Abschnitt] = []
     var jetzigesAngebot: Knopfangebot = .keiner
     /// Ob der Nutzer auf der offenen Detailseite schon etwas gewählt hat.
+    /// Die zuletzt aufgeklappte Tafel des Mehr-Knopfs. Sie wird beim nächsten
+    /// Klick gelöst — sonst hängen sie sich am Knopf auf.
+    var offeneTafel: Widget?
     var detailBeruehrt = false
     /// Was zuletzt bei „Verbindung prüfen" herauskam.
     var pruefergebnis = ""
@@ -2173,11 +2176,8 @@ final class App: @unchecked Sendable {
 
         if let uebersicht {
             let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-            let tafel: Widget! = gtk_popover_new()
-            gtk_widget_add_css_class(tafel, "swiftly-mehr")
+            let tafel = tafelAn(knopf)
             gtk_popover_set_child(alsTafel(tafel), liste)
-            gtk_popover_set_position(alsTafel(tafel), GTK_POS_BOTTOM)
-            gtk_widget_set_parent(tafel, knopf)
             anhaengen(liste, handlungszeile("dialog-information-symbolic",
                                             uebersetzt("Übersicht öffnen")) {
                 gtk_popover_popdown(alsTafel(tafel))

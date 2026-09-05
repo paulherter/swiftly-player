@@ -60,6 +60,31 @@ func anhaengen(_ eltern: Widget!, _ kind: Widget!) {
 
 /// Leert eine Box. GTK bietet dafür nichts Fertiges — man muss sich von vorn
 /// durchhangeln, bis kein Kind mehr da ist.
+/// Eine Tafel, die an ihrem Anker hängt — und mit ihm verschwindet.
+///
+/// **GTK räumt ein Popover nicht mit seinem Anker ab.** Es wird zwar über
+/// `gtk_widget_set_parent` dessen Kind, aber niemand löst es wieder: wird der
+/// Anker zerstört, meldet GTK
+///
+///     Finalizing GtkButton …, but it still has children left: GtkPopover …
+///
+/// und lässt einen Zeiger stehen. Solange man nur zusieht, fällt das nicht
+/// auf; sobald derselbe Speicher wieder gebraucht wird, nimmt es die App mit.
+/// Genau so ist sie beim Öffnen einer Serie abgestürzt — und die Startseite
+/// hängt eine solche Tafel an **jede** Kachel.
+///
+/// Deshalb hier: anhängen und im selben Atemzug das Lösen bestellen. Wer eine
+/// Tafel braucht, nimmt diese Funktion und nicht `gtk_popover_new` von Hand.
+func tafelAn(_ anker: Widget!, stil: String = "swiftly-mehr",
+             lage: GtkPositionType = GTK_POS_BOTTOM) -> Widget! {
+    let tafel: Widget! = gtk_popover_new()
+    gtk_widget_add_css_class(tafel, stil)
+    gtk_popover_set_position(alsTafel(tafel), lage)
+    gtk_widget_set_parent(tafel, anker)
+    beiSignal(anker, "destroy") { gtk_widget_unparent(tafel) }
+    return tafel
+}
+
 func leeren(_ box: Widget!) {
     while let kind = gtk_widget_get_first_child(box) {
         gtk_box_remove(alsBox(box), kind)
