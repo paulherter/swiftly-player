@@ -217,6 +217,11 @@ struct ProfilView: View {
             Anzeigezeile(titel: "Adresse", wert: model.serverName ?? "—")
             Trennlinie()
             Anzeigezeile(titel: "Fassung", wert: model.serverVersion.map { "Jellyfin \($0)" } ?? "—")
+            // **Ohne diese Zeile kann niemand sagen, was er benutzt.** Ein
+            // Tester wurde am 05.09.2026 nach seiner Baunummer gefragt und
+            // fand nur die Jellyfin-Fassung — die Angabe, an der ein
+            // Fehlerbericht haengt, gab es auf dem Fernseher gar nicht.
+            Anzeigezeile(titel: "Swiftly", wert: Fassung.zeile)
             Trennlinie()
             Handlungszeile(titel: "Verbindung prüfen") {
                 Task { pruefung = await model.verbindungPruefen() }
