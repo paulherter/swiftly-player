@@ -15,7 +15,8 @@ param(
     [string]$Konfiguration = 'debug',
     [string]$Gtk = 'C:\Werkzeuge\gtk4',
     [string]$Vlc = 'C:\Werkzeuge\vlcsdk',
-    [string]$VlcLaufzeit = 'C:\Werkzeuge\vlc\vlc-3.0.21'
+    [string]$VlcLaufzeit = 'C:\Werkzeuge\vlc\vlc-3.0.21',
+    [string]$SwiftLaufzeit = 'C:\Swift\Runtimes\6.2.1\usr\bin'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,19 +91,32 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Bau fehlgeschlagen ($LASTEXITCODE)" }
 } finally { Pop-Location }
 
-# ------------------------------------------------------- Danebenlegen
+# --------------------------------------------------------------- Starter
 #
-# Windows sucht DLLs neben dem Programm, nicht ueber einen Suchpfad wie
-# `LD_LIBRARY_PATH`. Also kommen GTK und libVLC dorthin — und VLCs Module
-# gleich mit, sonst startet der Abspieler ohne einen einzigen Dekoder.
+# **Warum ein Starter und keine DLLs neben dem Programm.**
+#
+# Der naheliegende Weg waere gewesen, GTK einfach neben die `.exe` zu legen —
+# Windows sucht DLLs ja dort zuerst. Gemessen: dann startet die App nicht.
+# GTK leitet aus dem Ort seiner DLL ab, wo seine Datendateien liegen (`../share`
+# mit den GSettings-Schemata und den Symbolen). Neben unserem Programm findet es
+# dort nichts und bricht ab, sobald das erste Fenster entstehen soll.
+#
+# Der Starter setzt stattdessen die Pfade und laesst GTK in seinem eigenen
+# Verzeichnis. Dazu die Swift-Laufzeit — ohne sie meldet Windows nur
+# „Foundation.dll was not found", was nach einem Fehler im Programm aussieht.
 
 $bau = Join-Path $hier ".build\$Konfiguration"
-Sag 'Bibliotheken danebenlegen'
-Copy-Item "$Gtk\bin\*.dll" $bau -Force -EA SilentlyContinue
-Copy-Item "$VlcLaufzeit\libvlc.dll", "$VlcLaufzeit\libvlccore.dll" $bau -Force -EA SilentlyContinue
-if (-not (Test-Path "$bau\plugins")) {
-    Copy-Item "$VlcLaufzeit\plugins" $bau -Recurse -Force -EA SilentlyContinue
-}
+Sag 'Starter schreiben'
+$starter = @"
+@echo off
+rem Erzeugt von bauen.ps1 — nicht von Hand aendern.
+set "PATH=$Gtk\bin;$SwiftLaufzeit;$VlcLaufzeit;%PATH%"
+set "GSETTINGS_SCHEMA_DIR=$Gtk\share\glib-2.0\schemas"
+set "XDG_DATA_DIRS=$Gtk\share"
+set "VLC_PLUGIN_PATH=$VlcLaufzeit\plugins"
+start "" "%~dp0SwiftlyWindows.exe" %*
+"@
+Set-Content -Path (Join-Path $bau 'Swiftly.cmd') -Value $starter -Encoding ascii
 
-Sag "fertig: $bau\SwiftlyWindows.exe"
-if ($Starten) { & "$bau\SwiftlyWindows.exe" }
+Sag "fertig: $bau\Swiftly.cmd"
+if ($Starten) { & (Join-Path $bau 'Swiftly.cmd') }
