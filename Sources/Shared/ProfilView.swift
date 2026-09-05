@@ -356,9 +356,16 @@ private struct Kontenstreifen: View {
         // ergibt die 153, mit denen der Entwurf beginnt.
         .contentMargins(.horizontal, max(0, (breite - Self.gross) / 2),
                         for: .scrollContent)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { breite = $0 }
-        // Beim Öffnen steht das angemeldete Konto in der Mitte.
-        .onAppear { if mitte == nil { mitte = model.session?.userID } }
+        // **Erst mit der Breite, dann die Mitte.** Der Rand oben haengt an
+        // `breite`; solange die null ist, gibt es keinen, und ein Einrasten
+        // auf die Mitte liefe ins Leere. Bei zwei Konten faellt das nicht auf
+        // — da passt ohnehin alles —, ab vier schon: der Streifen stuende
+        // beim Oeffnen am linken Anschlag statt beim angemeldeten Konto.
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { neu in
+            let ersteMessung = breite == 0
+            breite = neu
+            if ersteMessung, neu > 0 { mitte = model.session?.userID }
+        }
         // Nach einem Wechsel rückt das neue Konto nach — sonst bliebe der
         // Streifen dort stehen, wo der Finger ihn abgelegt hat, und der Ring
         // wanderte allein.
