@@ -116,6 +116,12 @@ struct Profilzeichen: View {
     var groesse: CGFloat = 34
     var hervorgehoben = false
 
+    /// Derselbe Grund wie bei `Bild`: ein abgebrochener Abruf bleibt sonst
+    /// im Fehlerzustand stehen. Im Kontenstreifen faellt das besonders auf —
+    /// dort ist das Profilbild der ganze Inhalt der Kachel, und nach einem
+    /// Wechsel staende statt der Bilder eine Reihe Buchstaben.
+    @State private var anlauf = 0
+
     var body: some View {
         ZStack {
             // Der Verlauf traegt immer: er steht hinter dem Bild und faellt
@@ -131,10 +137,17 @@ struct Profilzeichen: View {
                 if case let .success(b) = stand {
                     b.resizable().aspectRatio(contentMode: .fill)
                 } else {
-                    buchstabe
+                    buchstabe.onAppear {
+                        guard case let .failure(f) = stand,
+                              (f as NSError).code == NSURLErrorCancelled,
+                              anlauf < 2 else { return }
+                        anlauf += 1
+                    }
                 }
             }
+            .id(anlauf)
         }
+        .onChange(of: bild) { _, _ in anlauf = 0 }
         .frame(width: groesse, height: groesse)
         .clipShape(Circle())
         .overlay {

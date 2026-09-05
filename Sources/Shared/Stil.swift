@@ -395,22 +395,20 @@ struct Bild<Platzhalter: View>: View {
     /// Versuch wert.**
     ///
     /// `AsyncImage` bricht ab, sobald seine Kachel vom Schirm geht, und bleibt
-    /// danach im Fehlerzustand stehen: kommt dieselbe Kachel zurück, versucht
+    /// danach im Fehlerzustand stehen: kommt dieselbe Kachel zurueck, versucht
     /// es von sich aus nichts mehr. Beim Kontowechsel geht die halbe Seite
-    /// kurz durch die Hände des Auslegemotors, und dann trifft es viele
-    /// Kacheln auf einmal. Auf dem Fernseher gemessen, zwanzigmal in Folge:
+    /// kurz durch die Haende des Layouts, und dann trifft es viele Kacheln auf
+    /// einmal. Auf tvOS am Geraet gemessen, zwanzigmal in Folge:
     ///
     ///     NSURLErrorDomain -999
     ///
-    /// Das heißt „abgebrochen" — nicht abgelehnt, nicht verfehlt. Derselbe
-    /// Aufruf von außen kam mit HTTP 200 und 158 KB zurück. Deshalb hier ein
-    /// neuer Anlauf statt einer grauen Fläche; höchstens zwei, damit ein
-    /// echter Ausfall nicht in eine Schleife läuft.
+    /// Das heisst „abgebrochen" — nicht abgelehnt, nicht verfehlt. Derselbe
+    /// Aufruf von aussen kam mit HTTP 200 und 158 KB zurueck. Deshalb hier ein
+    /// neuer Anlauf statt einer grauen Flaeche; hoechstens zwei, damit ein
+    /// echter Ausfall nicht in eine Schleife laeuft.
     ///
-    /// Wortgleich zu `Sources/tvOS/Stil.swift` — dort ist es zuerst gemessen
-    /// worden. Die beiden `Bild`-Fassungen sind schon vorher zwei gewesen
-    /// (die hier trägt einen eigenen Platzhalter und ein Verhältnis); wenn
-    /// sie einmal zusammengelegt werden, gehört das hier mit.
+    /// Uebernommen aus `Sources/tvOS/Stil.swift`, wo es gemessen wurde — nicht
+    /// nachgebaut, sondern dieselbe Regel an derselben Stelle.
     @State private var anlauf = 0
 
     var body: some View {
@@ -430,7 +428,7 @@ struct Bild<Platzhalter: View>: View {
                 }
                 .id(anlauf)
             }
-            // Eine neue Adresse heißt ein frischer Anlauf.
+            // Eine neue Adresse heisst ein frischer Anlauf.
             .onChange(of: url) { _, _ in anlauf = 0 }
             .overlay(alignment: .bottom) {
                 if let fortschritt {

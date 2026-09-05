@@ -18,12 +18,6 @@ struct ProfilView: View {
     @Environment(\.dismiss) private var zurueck
     @Environment(\.breit) private var breit
 
-    /// Welches Konto gerade **in der Mitte** des Streifens steht.
-    ///
-    /// Nicht welches angemeldet ist — das ist `model.session?.userID`. Die
-    /// beiden auseinanderzuhalten ist der Kern des Entwurfs: groß ist, was in
-    /// der Mitte steht, verbunden ist, was Ring und Punkt trägt.
-    @State private var mitte: String?
     @State private var kontoAufnehmen = false
 
     var body: some View {
@@ -32,7 +26,8 @@ struct ProfilView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    bildblock
+                    if model.konten.count > 1 { Kontenstreifen(model: model) }
+                    else { bildblock }
 
                     gruppe {
                         Profilzeile(symbol: "rectangle.and.text.magnifyingglass",
@@ -54,15 +49,17 @@ struct ProfilView: View {
                     Color.clear.frame(height: 26)
 
                     gruppe {
-                        // **Ohne Anstrich, und über „Abmelden".** Wer nur ein
-                        // Konto hat, soll nicht das Gefühl bekommen, ihm fehle
-                        // eines — deshalb steht die Zeile still da und nicht
-                        // im Akzent wie Quick Connect.
+                        // Ohne Anstrich, und bewusst immer da: wer nur ein
+                        // Konto hat, soll nicht das Gefuehl haben, ihm fehle
+                        // eines. Fuehrt auf die Anmeldung **ohne Serverfeld**
+                        // — es ist derselbe Server.
                         Profilzeile(symbol: "person.badge.plus",
                                     titel: "Weiteres Konto hinzufügen",
-                                    unter: "Auf demselben Server") {
-                            kontoAufnehmen = true
-                        }
+                                    unter: "Auf demselben Server") { kontoAufnehmen = true }
+                        // **Trifft nur das aktive Konto.** Sind noch andere
+                        // da, schaltet die App auf das naechste um; erst beim
+                        // letzten geht es zurueck zur Anmeldung. Steht so im
+                        // Zustandshalter, nicht hier.
                         Profilzeile(symbol: "rectangle.portrait.and.arrow.right",
                                     titel: "Abmelden", letzte: true) { model.signOut() }
                     }
@@ -92,71 +89,34 @@ struct ProfilView: View {
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
-        // **Ein Blatt, keine Unterseite.** Ein weiteres Konto aufzunehmen ist
-        // ein Einschub und kein Ort, an dem man bleibt; danach steht man
-        // wieder hier. Der Server steht schon fest, deshalb ohne Serverfeld —
-        // `LoginView` ist ohnehin der zweite Schritt und kennt keins.
-        .sheet(isPresented: $kontoAufnehmen) {
+        .fullScreenCover(isPresented: $kontoAufnehmen) {
+            // Dieselbe Anmeldung wie beim ersten Konto, nur ohne den Weg zu
+            // einem anderen Server — und sie schliesst sich selbst.
             LoginView(model: model,
-                      serverName: model.serverName ?? "Server",
-                      version: model.serverVersion ?? "?",
-                      fertig: { kontoAufnehmen = false })
+                      serverName: model.serverName ?? "",
+                      version: model.serverVersion ?? "",
+                      weiteresKonto: true) { kontoAufnehmen = false }
         }
     }
 
-    /// **Ein Kreis, solange es einer ist.** Erst mit dem zweiten Konto wird
-    /// daraus ein Streifen. Vorher gäbe es nichts zu wählen, und ein Bild, das
-    /// auf Antippen nichts tut, ist schlechter als eins, das gar nicht danach
-    /// aussieht.
-    @ViewBuilder private var bildblock: some View {
-        if model.konten.count > 1 {
-            VStack(spacing: 0) {
-                Kontenstreifen(model: model, mitte: $mitte)
-                beschriftung.padding(.top, 14)
-            }
-            .padding(.top, 56)
-            .padding(.bottom, 30)
-        } else {
-            VStack(spacing: 10) {
-                Profilzeichen(name: model.session?.userName ?? "?",
-                              bild: model.benutzerbildURL(groesse: 200),
-                              groesse: 84)
-                beschriftung
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 56)
-            .padding(.bottom, 30)
-        }
-    }
-
-    /// Name und Zeile darunter — beide gehören dem Konto **in der Mitte**.
-    ///
-    /// Steht dort ein anderes als das angemeldete, sagt die zweite Zeile, was
-    /// zu tun ist. Sonst steht dort der Server, wie bisher. So trägt die
-    /// Beschriftung die Bedeutung, die der große Kreis ausdrücklich *nicht*
-    /// hat.
-    private var beschriftung: some View {
-        let konto = model.konten.first { $0.userID == mitte } ?? model.session
-        let istAngemeldet = konto?.userID == model.session?.userID
-        return VStack(spacing: 3) {
-            Text(konto?.userName ?? "Angemeldet")
-                .font(.system(size: 22, weight: .semibold))
-                .tracking(-0.3)
-                .foregroundStyle(Stil.schrift)
-            if istAngemeldet {
+    private var bildblock: some View {
+        VStack(spacing: 10) {
+            Profilzeichen(name: model.session?.userName ?? "?",
+                          bild: model.benutzerbildURL(groesse: 200),
+                          groesse: 84)
+            VStack(spacing: 3) {
+                Text(model.session?.userName ?? "Angemeldet")
+                    .font(.system(size: 22, weight: .semibold))
+                    .tracking(-0.3)
+                    .foregroundStyle(Stil.schrift)
                 Text(untertitel)
                     .font(.system(size: 13))
                     .foregroundStyle(Color.white.opacity(0.45))
-            } else {
-                Text("Tippen, um zu wechseln")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Stil.akzent)
             }
         }
         .frame(maxWidth: .infinity)
-        // Sonst springt die Seite, wenn der Name eines Kontos zwei Zeilen
-        // braucht und der des Nachbarn eine.
-        .animation(.easeInOut(duration: 0.15), value: konto?.userID)
+        .padding(.top, 56)
+        .padding(.bottom, 30)
     }
 
     private var untertitel: String {
@@ -287,111 +247,122 @@ struct QuickConnectView: View {
     }
 }
 
-// MARK: - Der Kontenstreifen
+// MARK: - Kontenstreifen
 
-/// Die Konten dieses Servers, waagerecht, mit dem mittleren groß.
+/// Mehrere Jellyfin-Konten auf demselben Server, waagerecht über der Seite.
 ///
-/// **Zwei Zustände, die man nicht verwechseln darf.**
+/// **Groß ist, was in der Mitte steht — verbunden ist, was Ring und Punkt
+/// trägt.** Die Trennung dieser beiden ist der Kern des Entwurfs. Die Größe
+/// folgt dem Scrollen und bedeutet nichts; sie sagt nur, was man gerade
+/// ansieht. Erst das Antippen meldet um, und erst danach wandern Akzentring
+/// und Punkt mit. Wer beides zusammenlegt, hat einen Streifen gebaut, der
+/// beim Scrollen ständig zu wechseln scheint.
 ///
-/// *Groß* ist, was gerade in der Mitte steht. Das ändert sich beim Scrollen
-/// und bedeutet nichts weiter — es ist die Leserichtung, nicht die Anmeldung.
-///
-/// *Verbunden* ist, was den Akzentring und den Punkt darunter trägt. Das
-/// ändert sich erst beim Antippen. Beide können auf verschiedenen Kreisen
-/// liegen, und genau dafür ist der Entwurf gebaut: man schiebt sich durch die
-/// Konten, sieht groß, wen man gerade betrachtet, und sieht am Ring weiterhin,
-/// wer angemeldet ist.
-///
-/// Die Vorlage ist `Sources/tvOS/ProfilView.swift`. Verschieden ist nur, was
-/// die Eingabeart verlangt: dort trägt der **Fokus**, was hier die Mitte
-/// trägt, und dort steht der Streifen fest, weil eine Fernbedienung ihn
-/// durchläuft. Hier wird geschoben.
+/// Bei **einem** Konto steht hier nichts — dann bleibt der einzelne Bildblock
+/// der Profilseite, unverändert.
 private struct Kontenstreifen: View {
     let model: AppModel
-    @Binding var mitte: String?
 
-    /// Breite des Streifens — daraus kommt der Rand, mit dem auch das erste
-    /// und das letzte Konto die Mitte erreichen können.
+    /// Welches Konto gerade mittig steht. Anfangs das angemeldete, damit der
+    /// Streifen nicht irgendwo beginnt.
+    @State private var zentriert: String?
+    /// Breite des Streifens — daraus der Rand, den die äußeren Kacheln
+    /// brauchen, um überhaupt in die Mitte scrollen zu können.
     @State private var breite: CGFloat = 0
 
-    /// Ab vier Konten werden die Nachbarn kleiner, damit mehr hineinpasst.
-    /// Der mittlere bleibt bei 84.
-    private var nebenGroesse: CGFloat { model.konten.count >= 4 ? 56 : 64 }
-
-    private static let gross: CGFloat = 84
+    /// Ab vier Konten rücken die Nachbarn eine Stufe zurück, sonst passt zu
+    /// wenig ins Bild.
+    private var viele: Bool { model.konten.count >= 4 }
+    private var kleinesMass: CGFloat { viele ? 56 : 64 }
+    private var abstand: CGFloat { viele ? 22 : 26 }
 
     var body: some View {
+        VStack(spacing: 0) {
+            streifen
+            beschriftung
+        }
+        .padding(.top, 56)
+        .padding(.bottom, 30)
+        .onAppear { if zentriert == nil { zentriert = model.session?.userID } }
+        // Nach einem Wechsel wandert die Mitte auf das neue Konto — sonst
+        // stünde der Ring beim einen und die große Kachel beim anderen, ohne
+        // dass jemand gescrollt hätte.
+        .onChange(of: model.kontowechsel) { _, _ in
+            withAnimation(.easeOut(duration: 0.25)) { zentriert = model.session?.userID }
+        }
+    }
+
+    private var streifen: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 22) {
+            HStack(spacing: abstand) {
                 ForEach(model.konten, id: \.userID) { konto in
-                    knopf(konto)
+                    kachel(konto).id(konto.userID)
                 }
             }
             .scrollTargetLayout()
         }
         .scrollIndicators(.hidden)
-        // Einrasten, damit immer genau ein Konto in der Mitte steht — sonst
-        // wäre „groß ist, was in der Mitte steht" eine Behauptung, die
-        // zwischen zwei Kreisen niemand einlöst.
+        // Ohne diesen Rand kommen die äußeren Kacheln nie in die Mitte — der
+        // Streifen ließe sich scrollen, das erste und letzte Konto würden
+        // aber nie groß.
+        .contentMargins(.horizontal, max((breite - 84) / 2, 0), for: .scrollContent)
         .scrollTargetBehavior(.viewAligned)
-        .scrollPosition(id: $mitte, anchor: .center)
-        // Ohne diesen Rand erreichen das erste und das letzte Konto die Mitte
-        // nie: sie stoßen vorher an den Rand des Streifens. (390 − 84) / 2
-        // ergibt die 153, mit denen der Entwurf beginnt.
-        .contentMargins(.horizontal, max(0, (breite - Self.gross) / 2),
-                        for: .scrollContent)
-        // **Erst mit der Breite, dann die Mitte.** Der Rand oben haengt an
-        // `breite`; solange die null ist, gibt es keinen, und ein Einrasten
-        // auf die Mitte liefe ins Leere. Bei zwei Konten faellt das nicht auf
-        // — da passt ohnehin alles —, ab vier schon: der Streifen stuende
-        // beim Oeffnen am linken Anschlag statt beim angemeldeten Konto.
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { neu in
-            let ersteMessung = breite == 0
-            breite = neu
-            if ersteMessung, neu > 0 { mitte = model.session?.userID }
-        }
-        // Nach einem Wechsel rückt das neue Konto nach — sonst bliebe der
-        // Streifen dort stehen, wo der Finger ihn abgelegt hat, und der Ring
-        // wanderte allein.
-        .onChange(of: model.kontowechsel) { _, _ in
-            withAnimation(.snappy(duration: 0.28)) { mitte = model.session?.userID }
-        }
+        .scrollPosition(id: $zentriert, anchor: .center)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { breite = $0 }
     }
 
-    private func knopf(_ konto: Session) -> some View {
+    private func kachel(_ konto: Session) -> some View {
         let verbunden = konto.userID == model.session?.userID
-        let inDerMitte = konto.userID == mitte
-        let groesse = inDerMitte ? Self.gross : nebenGroesse
+        let mittig = konto.userID == zentriert
+        let mass = mittig ? 84 : kleinesMass
         return Button {
-            guard !verbunden else { return }
             model.kontoWechseln(zu: konto.userID)
         } label: {
             VStack(spacing: 0) {
-                // Feste Höhe und mittig: sonst wandern die kleinen Kreise mit
-                // ihrer eigenen Höhe nach oben, und der Streifen wippt beim
-                // Scrollen.
-                Profilzeichen(name: konto.userName,
-                              bild: model.benutzerbildURL(fuer: konto, groesse: 240),
-                              groesse: groesse,
-                              hervorgehoben: verbunden)
-                    .frame(height: Self.gross)
-                // Der Punkt sagt dasselbe wie der Ring, nur von unten — er
-                // trägt die Aussage dorthin, wo auch bei einem hellen
-                // Profilbild noch Grund ist.
+                // Feste Höhe, damit die Reihe beim Wachsen nicht springt.
+                ZStack {
+                    Profilzeichen(name: konto.userName,
+                                  bild: model.benutzerbildURL(fuer: konto, groesse: 240),
+                                  groesse: mass,
+                                  hervorgehoben: verbunden)
+                }
+                .frame(height: 84)
+
+                // Der Punkt gehört zum Ring, nicht zur Größe: beide sagen
+                // „verbunden".
                 Circle()
                     .fill(verbunden ? Stil.akzent : Color.clear)
                     .frame(width: 5, height: 5)
-                    .frame(height: 13, alignment: .bottom)
+                    .padding(.top, 8)
+                    .frame(height: 13, alignment: .top)
             }
-            // Voll nur, was gemeint ist: die Mitte, weil man sie liest, und
-            // das verbundene Konto, weil es gilt. Der Rest tritt zurück.
-            .opacity(inDerMitte || verbunden ? 1 : 0.55)
-            .contentShape(Rectangle())
+            // Verbunden bleibt hell, auch weit außen. Gedimmt wird nur, was
+            // weder verbunden noch angesehen ist.
+            .opacity(verbunden || mittig ? 1 : 0.55)
+            .animation(.easeOut(duration: 0.2), value: mittig)
         }
         .buttonStyle(.plain)
-        .animation(.snappy(duration: 0.24), value: inDerMitte)
+        // E8: eigene Bedienelemente sagen VoiceOver ihren Zustand.
         .accessibilityLabel(verbunden ? Text("\(konto.userName), angemeldet")
                                       : Text("Zu \(konto.userName) wechseln"))
         .accessibilityAddTraits(verbunden ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// Name dessen, was in der Mitte steht — nicht dessen, was verbunden ist.
+    /// Sonst widerspräche die Zeile dem, was darüber groß dasteht.
+    private var beschriftung: some View {
+        let konto = model.konten.first { $0.userID == zentriert } ?? model.session
+        return VStack(spacing: 3) {
+            Text(konto?.userName ?? "")
+                .font(.system(size: 22, weight: .semibold))
+                .tracking(-0.3)
+                .foregroundStyle(Stil.schrift)
+            Text(konto?.userID == model.session?.userID
+                 ? "Angemeldet" : "Tippen, um zu wechseln")
+                .font(.system(size: 13))
+                .foregroundStyle(Stil.akzent)
+        }
+        .padding(.top, 14)
+        .animation(.easeOut(duration: 0.2), value: zentriert)
     }
 }

@@ -254,22 +254,20 @@ struct BibliothekView: View {
         // ueber den Plakaten, die der zweite Lauf gerade geladen hatte.
         //
         // Gewechselt wird nur durch Antippen — dort wird auch neu geladen.
-        .task(id: stand.kennung) { await laden() }
-        // **Nach einem Kontowechsel gehört auch diese Seite dem neuen Konto.**
         //
-        // `kennung` trägt nur Sortierung und Filter, das Konto steht nicht
-        // darin — die Aufgabe oben lief also nicht wieder an. Zurück blieben
-        // die Titel des vorigen Kontos, und `gewaehlt` zeigte auf eine
-        // Bibliothek, die es unter dem neuen Merkmal gar nicht geben muss.
+        // **Der Kontowechsel gehoert in die Kennung.** Sie trug nur Sortierung
+        // und Filter; beim Wechsel aendert sich daran nichts, und die
+        // Bibliothek zeigte weiter die Titel des vorigen Kontos. Auf dem Mac
+        // ist genau das gelandet. `Bibliotheksmodell.veraltet(_:)` verweigert
+        // seit `main` das Anhaengen — den Anstoss zum Neuladen muss die
+        // Ansicht geben, und `.task(id:)` ist die Stelle, an der sie es schon
+        // fuer Sortierung und Filter tut.
         //
-        // Die Wahl wird zurückgenommen, nicht die Liste geleert: `laden()`
-        // ersetzt sie. Wer sie vorher leert, hängt jede Kachel kurz aus, und
-        // `AsyncImage` bricht dann seinen Abruf ab — auf dem Fernseher
-        // gemessen, zwanzigmal `NSURLErrorDomain -999` in Folge.
-        .onChange(of: model.kontowechsel) { _, _ in
-            gewaehlt = nil
-            Task { await laden() }
-        }
+        // Ueber die Kennung und nicht ueber ein zusaetzliches `onChange`: so
+        // wird die laufende Anfrage des alten Kontos abgebrochen, statt neben
+        // der neuen weiterzulaufen. Dass ein Abbruch hier kein Ausfall ist,
+        // steht in `laden()`.
+        .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await laden() }
     }
 
     private func inhalt(nutzbar: CGFloat) -> some View {

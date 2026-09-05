@@ -68,6 +68,11 @@ struct HomeView: View {
         // eigene Einstellung erst, wenn man die Seite von Hand nachlud, und
         // hielt sie fuer wirkungslos.
         .task(id: model.neuzugangGetrennt) { await laden() }
+        // **Nicht an `phase` haengen.** Die steht beim Kontowechsel schon auf
+        // `.ready` und aendert sich nicht — die Startseite lud nie neu und
+        // zeigte die Titel des vorigen Kontos. Auf tvOS ist genau das bei
+        // `kontowechsel` ist der Zaehler, der dafuer da ist.
+        .onChange(of: model.kontowechsel) { _, _ in Task { await laden() } }
         .fullScreenCover(item: $abspielen, onDismiss: { Task { await laden() } }) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
@@ -87,16 +92,6 @@ struct HomeView: View {
             guard neu == .active, stand.brauchtAuffrischung else { return }
             Task { await laden() }
         }
-        // **Nach einem Kontowechsel gehört die Seite dem neuen Konto.**
-        //
-        // Und das hängt ausdrücklich **nicht** an `phase`: die steht beim
-        // Wechsel schon auf `.ready` und ändert sich nicht. Die Startseite lud
-        // deshalb nie neu und zeigte weiter die Titel des vorigen Kontos —
-        // mit Fortschrittsbalken, die zu einem anderen Menschen gehörten.
-        //
-        // Ohne Frist, anders als beim Zurückkommen: hier ist nicht „vielleicht
-        // veraltet", hier ist alles falsch.
-        .onChange(of: model.kontowechsel) { _, _ in Task { await laden() } }
     }
 
     /// Wortmarke links, Profilbild rechts.
