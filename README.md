@@ -29,14 +29,12 @@
 **Swiftly for Jellyfin is a client for your own Jellyfin server. It is meant to
 be plain, and to just work.**
 
-There is no long feature list here, and that is deliberate. It opens, it finds
-your library, it plays. Resume where you stopped, subtitles, Picture in
-Picture — the ordinary things, done properly, instead of a hundred switches
-nobody ever touches.
+It opens, it finds your library, it plays. Most of it is the ordinary things
+done properly, instead of a hundred switches nobody ever touches — and
+underneath, it works hard **never to make your server transcode**, so the
+picture stays untouched and your CPU stays cool.
 
-Underneath, it works hard not to make your server transcode, so the picture
-stays untouched and your CPU stays cool. You should never have to think about
-that, which is rather the point.
+But three things it does that no other Jellyfin client does at all.
 
 <br>
 
@@ -59,7 +57,48 @@ that, which is rather the point.
 
 <br>
 
-## 🌟 Features
+## ✨ Three things you will not find elsewhere
+
+### 📲 Continue on this device
+
+You are watching on the Apple TV. You get up, take your phone — and there is a
+badge next to your profile picture. **Tap it, and the film carries on here,
+from the same second.** The television stops on its own; you do not pause
+anything, you do not scroll to find where you were.
+
+It works in every direction: TV to phone, phone to Mac, Mac to TV. If two of
+your devices are playing, Swiftly asks which one you meant. Only your own
+account is offered, and only devices that are actually reachable.
+
+I have not seen this in another Jellyfin client, and it is the thing people
+notice on day one and then cannot do without.
+
+### 👥 Several Jellyfin accounts on one server
+
+Your household has one server and several accounts on it — yours, your
+partner's, the children's. Swiftly holds **all of them at once**.
+
+Above "Sign out" there is "Add another account". After that, a strip at the
+top of your profile switches between them: press a picture, and you are in
+that account. **No password, no signing out, no waiting** — both logins stay
+in the keychain, and Continue Watching, Next Up and everything else changes
+with them.
+
+Signing out affects only the account you are on. The others stay.
+
+### 📺 Every Apple TV profile keeps its own login
+
+The Apple TV already knows who is watching — it has profiles at the top of the
+screen. Swiftly follows them.
+
+**Switch the tvOS profile, and Swiftly is in that person's Jellyfin account.**
+Their Continue Watching, their watched marks, their Top Shelf on the home
+screen. Nobody has to sign anything in or out; the television already asked
+the question, and the app simply respects the answer.
+
+<br>
+
+## 🌟 And the ordinary things, done properly
 
 - 🎯 **Never transcode**: the device profile declares containers, codecs and
   every subtitle format, so the server has no reason to re-encode. Undeclared
@@ -73,6 +112,14 @@ that, which is rather the point.
 - 🎧 **Audio and subtitle tracks** switch while the film keeps running.
 - 📚 **Several libraries** of the same kind, and the app remembers which one
   you were in.
+- ⏭️ **Skip intro and recap** where your server knows about them — the button
+  changes what it says, instead of appearing out of nowhere.
+- 📺 **Top Shelf** on the Apple TV: what you were watching sits above the app
+  icon on the home screen, before you even open it.
+- 📡 **AirPlay sends the picture**, not just the sound — and the server still
+  does not re-encode.
+- ⌨️ **Media keys** on Linux and Windows, and the lock screen on iPhone shows
+  the artwork.
 - 🚫 **No account, no subscription, no ads, no tracking.** Nothing leaves your
   device except the requests to the server you enter yourself.
 
@@ -86,10 +133,10 @@ and only where distance, input or window size demand it.
 
 | Platform | State |
 |---|---|
-| 📱 iPhone | **1.0.0 (9)** · beta on TestFlight |
-| 📲 iPad | **1.0.0 (9)** · ships with the iPhone app |
-| 📺 Apple TV | **1.0.0 (9)** · beta on TestFlight |
-| 💻 Mac | **1.0.0 (9)** · beta on TestFlight |
+| 📱 iPhone | **1.0.0 (11)** · beta on TestFlight |
+| 📲 iPad | **1.0.0 (11)** · ships with the iPhone app |
+| 📺 Apple TV | **1.0.0 (11)** · beta on TestFlight |
+| 💻 Mac | **1.0.0 (11)** · beta on TestFlight |
 | 🐧 Linux | **1.0.0** · GTK4, native, same shared logic · [install](#-linux) |
 | 🪟 Windows | **1.0.0** · GTK4 like Linux, **the same source** · [download](#-windows) |
 
