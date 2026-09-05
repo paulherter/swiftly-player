@@ -188,6 +188,23 @@
         }
       }
     },
+    "%@ — %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — %@"
+          }
+        }
+      }
+    },
     "%@%@": {
       "extractionState": "manual",
       "localizations": {
@@ -218,6 +235,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@, %@"
+          }
+        }
+      }
+    },
+    "%@, angemeldet": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, angemeldet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, signed in"
           }
         }
       }
@@ -634,6 +668,40 @@
         }
       }
     },
+    "Als gesehen markieren": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als gesehen markieren"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mark as watched"
+          }
+        }
+      }
+    },
+    "Als ungesehen markieren": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als ungesehen markieren"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mark as unwatched"
+          }
+        }
+      }
+    },
     "Anderer Server": {
       "extractionState": "manual",
       "localizations": {
@@ -715,6 +783,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "The other device shows a six-digit code. Enter it here and that device signs in with your account."
+          }
+        }
+      }
+    },
+    "Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The device you pick will close, and playback continues here at the same spot."
+          }
+        }
+      }
+    },
+    "Auf demselben Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf demselben Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On the same server"
           }
         }
       }
@@ -1025,6 +1127,23 @@
         }
       }
     },
+    "Der Fernseher nimmt diesen Film nicht an (%@). Läuft weiter auf dem iPhone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Fernseher nimmt diesen Film nicht an (%@). Läuft weiter auf dem iPhone."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The TV will not take this film (%@). Playing on the iPhone instead."
+          }
+        }
+      }
+    },
     "Der Fortschritt ist zurückgesetzt.": {
       "extractionState": "manual",
       "localizations": {
@@ -1174,6 +1293,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "The server did not provide a source for this title."
+          }
+        }
+      }
+    },
+    "Der Server war nicht erreichbar. Hat Swiftly die Erlaubnis, Geräte im heimischen Netz zu suchen? Sie steht in den Systemeinstellungen unter „Swiftly · Lokales Netzwerk\".": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server war nicht erreichbar. Hat Swiftly die Erlaubnis, Geräte im heimischen Netz zu suchen? Sie steht in den Systemeinstellungen unter „Swiftly · Lokales Netzwerk\"."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server could not be reached. Does Swiftly have permission to find devices on your home network? It is in Settings under \"Swiftly · Local Network\"."
           }
         }
       }
@@ -1772,6 +1908,23 @@
         }
       }
     },
+    "Gerät": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerät"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device"
+          }
+        }
+      }
+    },
     "Gesehen": {
       "extractionState": "manual",
       "localizations": {
@@ -1836,6 +1989,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nothing here yet"
+          }
+        }
+      }
+    },
+    "Hier weiterschauen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hier weiterschauen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue here"
           }
         }
       }
@@ -2231,6 +2401,23 @@
         }
       }
     },
+    "Neue Filme und neue Serien in eigenen Reihen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Filme und neue Serien in eigenen Reihen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Separate rows for new movies and new shows"
+          }
+        }
+      }
+    },
     "Neuen Code holen": {
       "extractionState": "manual",
       "localizations": {
@@ -2261,6 +2448,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "New code"
+          }
+        }
+      }
+    },
+    "Neuzugänge getrennt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuzugänge getrennt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Split recently added"
           }
         }
       }
@@ -2690,6 +2894,23 @@
         }
       }
     },
+    "Schließen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        }
+      }
+    },
     "Serie": {
       "extractionState": "manual",
       "localizations": {
@@ -3098,6 +3319,23 @@
         }
       }
     },
+    "Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Titel, Serie oder Name. Ab zwei Zeichen wird gesucht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Title, show or name. Searching starts at two characters."
+          }
+        }
+      }
+    },
     "Titel, Serie, Person": {
       "extractionState": "manual",
       "localizations": {
@@ -3489,6 +3727,40 @@
         }
       }
     },
+    "Weiteres Konto": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiteres Konto"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another account"
+          }
+        }
+      }
+    },
+    "Weiteres Konto hinzufügen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiteres Konto hinzufügen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add another account"
+          }
+        }
+      }
+    },
     "Weiterschauen": {
       "extractionState": "manual",
       "localizations": {
@@ -3591,6 +3863,40 @@
         }
       }
     },
+    "Wo weiterschauen?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wo weiterschauen?"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where do you want to continue?"
+          }
+        }
+      }
+    },
+    "Zu %@ wechseln": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu %@ wechseln"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to %@"
+          }
+        }
+      }
+    },
     "Zuklappen": {
       "extractionState": "manual",
       "localizations": {
@@ -3621,6 +3927,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recently added"
+          }
+        }
+      }
+    },
+    "Zuletzt hinzugefügte Filme": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zuletzt hinzugefügte Filme"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently Added Movies"
+          }
+        }
+      }
+    },
+    "Zuletzt hinzugefügte Serien": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zuletzt hinzugefügte Serien"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently Added Shows"
           }
         }
       }
@@ -3706,6 +4046,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "the server"
+          }
+        }
+      }
+    },
+    "keine Antwort vom Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "keine Antwort vom Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no response from the server"
           }
         }
       }
@@ -3842,244 +4199,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open overview"
-          }
-        }
-      }
-    },
-    "Der Server war nicht erreichbar. Hat Swiftly die Erlaubnis, Geräte im heimischen Netz zu suchen? Sie steht in den Systemeinstellungen unter „Swiftly · Lokales Netzwerk\".": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Server war nicht erreichbar. Hat Swiftly die Erlaubnis, Geräte im heimischen Netz zu suchen? Sie steht in den Systemeinstellungen unter „Swiftly · Lokales Netzwerk\"."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The server could not be reached. Does Swiftly have permission to find devices on your home network? It is in Settings under \"Swiftly · Local Network\"."
-          }
-        }
-      }
-    },
-    "keine Antwort vom Server": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "keine Antwort vom Server"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "no response from the server"
-          }
-        }
-      }
-    },
-    "Der Fernseher nimmt diesen Film nicht an (%@). Läuft weiter auf dem iPhone.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der Fernseher nimmt diesen Film nicht an (%@). Läuft weiter auf dem iPhone."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The TV will not take this film (%@). Playing on the iPhone instead."
-          }
-        }
-      }
-    },
-    "Hier weiterschauen": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hier weiterschauen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Continue here"
-          }
-        }
-      }
-    },
-    "Wo weiterschauen?": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wo weiterschauen?"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Where do you want to continue?"
-          }
-        }
-      }
-    },
-    "Gerät": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gerät"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Device"
-          }
-        }
-      }
-    },
-    "Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The device you pick will close, and playback continues here at the same spot."
-          }
-        }
-      }
-    },
-    "%@ — %@": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ — %@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ — %@"
-          }
-        }
-      }
-    },
-    "Als gesehen markieren": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Als gesehen markieren"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mark as watched"
-          }
-        }
-      }
-    },
-    "Als ungesehen markieren": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Als ungesehen markieren"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mark as unwatched"
-          }
-        }
-      }
-    },
-    "Neuzugänge getrennt": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Neuzugänge getrennt"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Split recently added"
-          }
-        }
-      }
-    },
-    "Neue Filme und neue Serien in eigenen Reihen": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Neue Filme und neue Serien in eigenen Reihen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Separate rows for new movies and new shows"
-          }
-        }
-      }
-    },
-    "Zuletzt hinzugefügte Filme": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zuletzt hinzugefügte Filme"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recently Added Movies"
-          }
-        }
-      }
-    },
-    "Zuletzt hinzugefügte Serien": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zuletzt hinzugefügte Serien"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recently Added Shows"
           }
         }
       }
