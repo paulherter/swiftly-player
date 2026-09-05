@@ -102,15 +102,12 @@ struct SeerrEinstellungenView: View {
             // Kein gesperrter Knopf: solange nichts dasteht, ist nichts zu
             // tun, und ein grauer Knopf behauptet das Gegenteil.
             if !adresse.isEmpty, !benutzer.isEmpty, !passwort.isEmpty, !seerr.meldetAn {
-                Button { Task { await verbinden() } } label: {
-                    Text("Verbinden")
-                        .font(Stil.koerper.weight(.semibold))
-                        .foregroundStyle(Stil.grund)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(Stil.akzent, in: RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
+                // **Derselbe Knopf wie ueberall, nicht der dritte Nachbau.**
+                // Er stand hier mit 15 statt 16 Punkt, Innenabstand 13 statt
+                // Hoehe 48 und Ecke 10 statt 6 — dieselbe Sorte Abweichung
+                // wie beim Anfragen-Knopf, nur eine Seite weiter.
+                Button("Verbinden") { Task { await verbinden() } }
+                    .buttonStyle(HauptknopfStil(flaeche: Stil.akzent))
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.top, 20)
             } else if seerr.meldetAn {

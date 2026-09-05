@@ -85,8 +85,8 @@ struct QuickConnectAnmeldung: View {
                     .monospacedDigit()
                     .foregroundStyle(Stil.schrift)
                     .frame(width: 46, height: 60)
-                    .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Stil.rand) }
+                    .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
+                    .overlay { RoundedRectangle(cornerRadius: Stil.eckeFeld).strokeBorder(Stil.rand) }
             }
         }
         .frame(maxWidth: .infinity)

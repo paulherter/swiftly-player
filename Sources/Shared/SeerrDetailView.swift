@@ -89,7 +89,8 @@ struct SeerrDetailView: View {
             // bringt seine eigene Sprache mit — abgerundete Ecken oben,
             // Griff, Navigationsleiste — und stand damit neben „Mehr" und
             // den Wiedergabelisten wie aus einer anderen App.
-            if blattOffen { staffelblatt.zIndex(20) }
+            // Immer eingehaengt — siehe `Blatt`.
+            staffelblatt.zIndex(20)
             if let fehler {
                 Hinweisstreifen(text: fehler) { self.fehler = nil }
                     .zIndex(21)
@@ -162,32 +163,17 @@ struct SeerrDetailView: View {
         return teile.joined(separator: " · ")
     }
 
-    /// **Dieselbe Zeile wie dort**, nur mit dem Stand statt „Direct Play":
-    /// ueber einen Titel, den es hier nicht gibt, weiss niemand, wie er
-    /// laeuft. Symbol, Wort, Stern — in denselben Groessen und Abstaenden;
-    /// deshalb steht der Aufbau hier und nicht in `Belegzeile`, die den
-    /// Wiedergabeplan als Eingabe hat.
+    /// **Wirklich dieselbe Zeile wie dort.** Sie stand hier ein zweites Mal
+    /// nachgebaut, mit denselben Zahlen — Symbol 11 heavy, Wort 13 medium,
+    /// Abstaende 6 und 14. Jetzt reicht die Seite nur noch Symbol, Wort und
+    /// Farbe hinein; die Masse stehen an einer Stelle.
+    ///
+    /// **Null ist keine Bewertung.** TMDB liefert bei einem unbewerteten
+    /// Titel eine Null, und daraus wuerde „★ 0,0" — eine Auskunft, die
+    /// falsch ist. Deshalb faellt sie hier heraus und nicht erst dort.
     private var belegzeile: some View {
-        HStack(spacing: 14) {
-            HStack(spacing: 6) {
-                Image(systemName: stand.symbol)
-                    .font(.system(size: 11, weight: .heavy))
-                Text(verbatim: stand.wort)
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .foregroundStyle(stand.farbe)
-
-            if let b = detail?.bewertung, b > 0 {
-                HStack(spacing: 5) {
-                    Image(systemName: "star.fill").font(.system(size: 11))
-                    Text(verbatim: String(format: "%.1f", b)
-                            .replacingOccurrences(of: ".", with: ","))
-                        .font(.system(size: 13))
-                }
-                .foregroundStyle(Color.white.opacity(0.8))
-            }
-            Spacer(minLength: 0)
-        }
+        Belegzeile(bewertung: (detail?.bewertung).flatMap { $0 > 0 ? $0 : nil },
+                   eigen: (symbol: stand.symbol, wort: stand.wort, farbe: stand.farbe))
     }
 
     /// **Ein Stand ist keine Schaltflaeche.**
@@ -243,7 +229,7 @@ struct SeerrDetailView: View {
     /// selbst nach, statt ein Blatt zu oeffnen, das nur eine Frage enthaelt.
     private func gedrueckt() {
         if treffer.istSerie {
-            withAnimation(.snappy(duration: 0.22)) { blattOffen = true }
+            withAnimation(Stil.blattbewegung) { blattOffen = true }
             return
         }
         guard bestaetigt else {
@@ -317,7 +303,10 @@ struct SeerrDetailView: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 13).padding(.horizontal, 14)
-            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 10))
+            // Flaechenmass, nicht Feldmass: der Kasten ist eine Flaeche,
+            // kein Eingabefeld. Er stand auf 10, weil das die Zahl war, die
+            // gerade in der Naehe stand.
+            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
     }
 
     // MARK: Staffeln
@@ -373,36 +362,28 @@ struct SeerrDetailView: View {
     /// dem Blatt blieb der Streifen des Home-Indikators offen.
     private var staffelblatt: some View {
         Blatt(offen: $blattOffen) {
-            VStack(spacing: 0) {
-                Text("Welche Staffeln?")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Stil.schriftLeise)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Stil.randAbstand)
-                    .padding(.top, 12)
-                    .padding(.bottom, 12)
+            Blattrubrik(text: Text("Welche Staffeln?"))
 
-                ScrollView {
-                    VStack(spacing: 0) { staffelliste }
-                }
-                .frame(maxHeight: 320)
-
-                Trennlinie()
-
-                Button {
-                    withAnimation(.snappy(duration: 0.22)) { blattOffen = false }
-                    Task { await anfragen() }
-                } label: {
-                    Text(gewaehlt.isEmpty ? "Staffel wählen"
-                                          : "\(gewaehlt.count) anfragen")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.akzent)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                }
-                .buttonStyle(.plain)
-                .disabled(gewaehlt.isEmpty)
+            ScrollView {
+                VStack(spacing: 0) { staffelliste }
             }
+            .frame(maxHeight: 320)
+
+            Trennlinie()
+
+            Button {
+                withAnimation(Stil.blattbewegung) { blattOffen = false }
+                Task { await anfragen() }
+            } label: {
+                Text(gewaehlt.isEmpty ? "Staffel wählen"
+                                      : "\(gewaehlt.count) anfragen")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.akzent)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+            }
+            .buttonStyle(.plain)
+            .disabled(gewaehlt.isEmpty)
         }
     }
 

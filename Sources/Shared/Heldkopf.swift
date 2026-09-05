@@ -244,14 +244,17 @@ struct Handlungstafel: View {
             }
         }
         .background {
-            RoundedRectangle(cornerRadius: 12).fill(Stil.flaeche)
+            RoundedRectangle(cornerRadius: Stil.eckeFlaeche).fill(Stil.flaeche)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 12).strokeBorder(Stil.rand)
+            RoundedRectangle(cornerRadius: Stil.eckeFlaeche).strokeBorder(Stil.rand)
         }
     }
 
     private func schliessen() {
-        withAnimation(.snappy(duration: 0.22)) { offen = false }
+        // Dieselbe Feder wie die Blätter. Sie stand als `Stil.blattbewegung`
+        // schon da, mit dem Kommentar „sonst hätten vier Blätter vier
+        // Kurven" — und genau das war eingetreten.
+        withAnimation(Stil.blattbewegung) { offen = false }
     }
 }

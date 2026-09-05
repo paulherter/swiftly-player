@@ -238,7 +238,9 @@ struct ItemDetailView: View {
                 versatz = neu
             }
 
-            if mehrOffen, !breit {
+            // **Immer eingehaengt, nicht in ein `if mehrOffen`** — sonst
+            // faellt das Auffahren aus; die Begruendung steht an `Blatt`.
+            if !breit {
                 Handlungsblatt(offen: $mehrOffen, titel: aktuell.name,
                                handlungen: mehrHandlungen)
                     .zIndex(20)
@@ -397,7 +399,7 @@ struct ItemDetailView: View {
                 }
             }
             if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "ellipsis", titel: "Mehr") { withAnimation(.snappy(duration: 0.22)) { mehrOffen = true } }
+            Aktionsknopf(symbol: "ellipsis", titel: "Mehr") { withAnimation(Stil.blattbewegung) { mehrOffen = true } }
                 .alsHandlungsanker()
         }
         .padding(.horizontal, weit ? 0 : 6)
@@ -530,7 +532,11 @@ struct Abschnitt<Inhalt: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 5) {
-                Text(titel).font(Stil.reihe).foregroundStyle(Stil.schrift)
+                // **Nicht selbst gesetzt.** Der Grad war derselbe, die
+                // Sperrung fehlte — „Weiterschauen" auf der Startseite steht
+                // auf −0,3, „Besetzung" hier stand auf null. Auf der
+                // Seerr-Seite treffen inzwischen beide Formen aufeinander.
+                Reihentitel(text: titel)
                 if pfeil {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
