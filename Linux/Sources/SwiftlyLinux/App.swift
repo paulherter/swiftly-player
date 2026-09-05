@@ -45,11 +45,32 @@ final class App: @unchecked Sendable {
     private var anmeldeknopf: Widget!
     private var anmeldestand: Widget!
     private var meldetGerade = false
+    private var zurueckknopf: Widget!
+
+    // MARK: Weiteres Konto — Zustand der Unterseite
+
+    /// Umgeschaltet auf den Code-Weg. Der Vorgang laeuft erst dann an — sonst
+    /// zoege jeder Besuch der Seite einen Code beim Server, den niemand
+    /// braucht. Wortgleich zu `perCode` auf dem Mac.
+    var kontoPerCode = false
+    var kontoCode = ""
+    var kontoFehler = ""
+    var kontoCodelauf: Task<Void, Never>?
+    /// Die Felder der Seite. **Als Felder der Klasse, nicht als Argumente über
+    /// die Fadengrenze** — ein `Widget` ist ein roher Zeiger und damit nicht
+    /// `Sendable`; angefasst wird es ohnehin nur auf GTKs Hauptfaden.
+    var kontoKnopf: Widget!
+    var kontoStandfeld: Widget!
+    var kontoCodefeld: Widget!
 
     // Startseite
     var bereich: Bereich = .start
     private var reihenstapel: Widget!
     var kopfzeile: Widget!
+
+    /// Die Kreise unten in der Leiste. Ein ``GtkFixed``, weil sie sich
+    /// ueberlappen — GTK kennt keine negativen Raender.
+    private var profilkreise: Widget!
 
     var client: JellyfinClient?
     var adressen: Bildadresse?
@@ -151,7 +172,7 @@ final class App: @unchecked Sendable {
         }
         // **Der zuletzt benutzte Server steht schon im Feld.** Nach dem
         // Abmelden war es leer, und man tippte die Adresse von Hand.
-        if Speicher.lesen() == nil, let merk = Speicher.gemerkterServer() {
+        if Speicher.bundLesen() == nil, let merk = Speicher.gemerkterServer() {
             gtk_editable_set_text(OpaquePointer(serverfeld), merk.serverURL.absoluteString)
             serverstandZeigen(merk.servername.map { String(format: uebersetzt("Zuletzt: %@"), $0) } ?? "")
         }
@@ -165,12 +186,11 @@ final class App: @unchecked Sendable {
         // siehe ``Startanimation/losfahren()``. Von hier aus wäre es zu früh.
 
         // Gemerkte Sitzung: gleich weiter zur Startseite, ohne Nachfragen.
-        if let abgelegt = Speicher.lesen() {
-            sitzungUebernehmen(serverURL: abgelegt.serverURL,
-                               token: abgelegt.token,
-                               benutzerID: abgelegt.benutzerID,
-                               benutzername: abgelegt.benutzername,
-                               servername: abgelegt.servername)
+        // **Der Bund, nicht die einzelne Sitzung** — sonst stuende nach einem
+        // Neustart nur noch ein Konto im Streifen.
+        if let ablage = Speicher.bundLesen() {
+            bund = ablage.bund
+            sitzungEinsetzen(ablage.bund.aktives, servername: ablage.servername)
         }
     }
 
@@ -352,22 +372,14 @@ final class App: @unchecked Sendable {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard (try? await c.quickConnectFreigegeben(vorgang)) == true else { continue }
                 guard let sitzung = try? await c.anmeldenMitQuickConnect(vorgang) else { break }
-                let name = sitzung.userName
                 aufHauptfaden {
-                    guard let url = self.serverURL else { return }
+                    // Adresse, Name und Kennung stehen jetzt alle in der
+                    // Sitzung selbst — `serverURL` wird hier nicht mehr
+                    // gebraucht.
                     let servername = gtk_label_get_text(OpaquePointer(self.serverzeile))
                         .map { String(cString: $0) }
-                    Speicher.schreiben(.init(serverURL: url,
-                                             token: sitzung.accessToken,
-                                             benutzerID: sitzung.userID,
-                                             benutzername: name,
-                                             servername: servername))
                     self.anmeldestandZeigen("")
-                    self.sitzungUebernehmen(serverURL: url,
-                                            token: sitzung.accessToken,
-                                            benutzerID: sitzung.userID,
-                                            benutzername: name,
-                                            servername: servername)
+                    self.sitzungAufnehmen(sitzung, servername: servername)
                 }
                 return
             }
@@ -432,11 +444,11 @@ final class App: @unchecked Sendable {
         beiSignal(schnellknopf, "clicked") { [weak self] in self?.schnellanmeldung() }
         anhaengen(mitte, schnellknopf)
 
-        let zurueck: Widget! = gtk_button_new_with_label(uebersetzt("Anderer Server"))
-        gtk_widget_add_css_class(zurueck, "swiftly-flach")
-        gtk_widget_set_margin_top(zurueck, 14)
-        gtk_widget_set_halign(zurueck, GTK_ALIGN_CENTER)
-        anhaengen(mitte, zurueck)
+        zurueckknopf = gtk_button_new_with_label(uebersetzt("Anderer Server"))
+        gtk_widget_add_css_class(zurueckknopf, "swiftly-flach")
+        gtk_widget_set_margin_top(zurueckknopf, 14)
+        gtk_widget_set_halign(zurueckknopf, GTK_ALIGN_CENTER)
+        anhaengen(mitte, zurueckknopf)
 
         beiSignal(anmeldeknopf, "clicked") { [weak self] in self?.anmelden() }
         beiSignal(passwortfeld, "activate") { [weak self] in self?.anmelden() }
@@ -449,7 +461,7 @@ final class App: @unchecked Sendable {
             gtk_widget_set_sensitive(self.anmeldeknopf,
                                      self.text(self.benutzerfeld).isEmpty ? 0 : 1)
         }
-        beiSignal(zurueck, "clicked") { [weak self] in
+        beiSignal(zurueckknopf, "clicked") { [weak self] in
             guard let self else { return }
             gtk_stack_set_visible_child_name(OpaquePointer(self.anmeldeschritte), "server")
         }
@@ -561,19 +573,12 @@ final class App: @unchecked Sendable {
             let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
             do {
                 let sitzung = try await c.authenticate(username: benutzer, password: passwort)
-                Speicher.schreiben(.init(serverURL: url,
-                                         token: sitzung.accessToken,
-                                         benutzerID: sitzung.userID,
-                                         benutzername: benutzer,
-                                         servername: servername))
                 aufHauptfaden {
                     self.anmeldungFertig()
                     gtk_editable_set_text(OpaquePointer(self.passwortfeld), "")
-                    self.sitzungUebernehmen(serverURL: url,
-                                            token: sitzung.accessToken,
-                                            benutzerID: sitzung.userID,
-                                            benutzername: benutzer,
-                                            servername: servername)
+                    // Sichern macht ``sitzungAufnehmen(_:servername:)`` selbst —
+                    // es muss den Bund kennen, bevor etwas auf die Platte geht.
+                    self.sitzungAufnehmen(sitzung, servername: servername)
                 }
             } catch {
                 aufHauptfaden {
@@ -590,8 +595,208 @@ final class App: @unchecked Sendable {
         gtk_button_set_label(alsKnopf(anmeldeknopf), uebersetzt("Anmelden"))
     }
 
-    private func sitzungUebernehmen(serverURL: URL, token: String, benutzerID: String,
-                                    benutzername: String, servername: String?) {
+    // MARK: - Mehrere Konten auf demselben Server
+
+    /// Die Konten dieses Servers und welches gerade gilt.
+    ///
+    /// **Der Bund liegt hier, nicht in der Ansicht.** Alle Regeln, die daran
+    /// hängen — dasselbe Konto zweimal, welches nach dem Entfernen gilt, eine
+    /// alte Einzelsitzung von früher — stehen in ``Kontenbund`` im Paket und
+    /// sind dort mit 14 Tests abgedeckt. Hier steht nur, was Linux davon
+    /// sichtbar macht.
+    var bund: Kontenbund?
+
+    /// Steigt bei jedem Wechsel. Wer beim Neuzeichnen vergleichen muss, ob
+    /// seine Daten noch zum angemeldeten Konto gehören, vergleicht diesen Wert.
+    ///
+    /// **Auf Apple hängt daran ein `onChange`.** Das gibt es hier nicht — die
+    /// Oberfläche ist imperativ, also ruft ``aufraeumenNachWechsel()`` direkt
+    /// auf, was neu muss. Der Zähler bleibt trotzdem: eine Aufgabe, die vor
+    /// dem Wechsel losgeschickt wurde und danach zurückkommt, erkennt an ihm,
+    /// dass ihre Antwort zum vorigen Konto gehört.
+    var kontowechsel = 0
+
+    /// Nimmt eine frische Sitzung an — nach Anmeldung oder Quick Connect.
+    ///
+    /// Gibt zurück, ob es ein **Kontowechsel** war, also ob schon jemand
+    /// angemeldet war. Wortgleich zu `AppModel.sitzungUebernehmen(_:)`.
+    @discardableResult
+    func sitzungAufnehmen(_ sitzung: Session, servername: String?) -> Bool {
+        let warAngemeldet = bund != nil
+        // Derselbe Server: das Konto kommt dazu und gilt sofort. Ein anderer
+        // Server heisst von vorn — ein Bund gehoert zu genau einem Server.
+        if var vorhanden = bund, vorhanden.passtZumServer(sitzung) {
+            vorhanden.aufnehmen(sitzung)
+            bund = vorhanden
+        } else {
+            bund = Kontenbund(sitzung)
+        }
+        bundSichern(servername: servername)
+        if warAngemeldet { aufraeumenNachWechsel() }
+        sitzungEinsetzen(sitzung, servername: servername)
+        return warAngemeldet
+    }
+
+    /// Auf ein anderes Konto desselben Servers umschalten.
+    ///
+    /// **Kein neues Passwort.** Beide Merkmale liegen in `konten.json`; der
+    /// Wechsel tauscht nur, welches gilt.
+    func kontoWechseln(zu kennung: String) {
+        guard var neu = bund, neu.aktiveKennung != kennung,
+              neu.konten.contains(where: { $0.userID == kennung }) else { return }
+        neu.wechseln(zu: kennung)
+        bund = neu
+        let name = servername.isEmpty ? nil : servername
+        // **Wer im Profil umschaltet, bleibt im Profil** — wie auf dem Mac.
+        // Ring und Punkt wandern dann sichtbar zum anderen Kreis, und genau
+        // das ist die Rueckmeldung, um die es im Entwurf geht: „verbunden ist,
+        // was Akzentring und Punkt traegt, und das aendert sich beim Klicken".
+        // Wer stattdessen auf die Startseite geworfen wuerde, saehe die
+        // Antwort auf seinen eigenen Klick nie.
+        let warImProfil = offeneUnterseite == .profil
+        bundSichern(servername: name)
+        aufraeumenNachWechsel()
+        sitzungEinsetzen(neu.aktives, servername: name)
+        // **Erst danach.** Die Seite liest `benutzerID` und `adressen`, und
+        // die stellt ``sitzungEinsetzen(_:servername:)``; davor gebaut zeigte
+        // sie den Namen des Kontos, von dem man gerade weggegangen ist.
+        if warImProfil { unterseiteOeffnen(.profil, schub: .ohne) }
+    }
+
+    /// Was nach jedem Kontowechsel neu muss — ausser dem Client selbst.
+    ///
+    /// **Hier wird nicht abgemeldet.** `abmelden()` schickt ein
+    /// `Sessions/Logout` und zieht das Merkmal ein — richtig beim Abmelden,
+    /// verheerend beim Umschalten: das Konto, von dem man weggeht, waere
+    /// danach unbrauchbar, und der Weg zurueck endet in „Anmeldung
+    /// abgelehnt". Der alte Client wird einfach fallen gelassen.
+    ///
+    /// **Und die Reihen werden nicht geleert.** Auf Apple hat genau das zwei
+    /// Runden gekostet: wer erst leert und dann laedt, haengt jede Kachel kurz
+    /// aus, und `AsyncImage` bricht dann seinen Abruf ab. Hier ersetzt
+    /// ``reihenZeigen(_:)`` ohnehin erst, wenn die neuen Reihen da sind —
+    /// diese Funktion fasst den Reihenstapel deshalb gar nicht an.
+    private func aufraeumenNachWechsel() {
+        kontowechsel += 1
+        // **Die Fernsteuerung gehoert dazu, und das sieht man ihr nicht an.**
+        // Sie laeuft sonst mit dem Merkmal des vorigen Kontos weiter, und das
+        // iPhone saehe die Linux-Sitzung dann unter dem falschen Namen.
+        Task.detached { [fernsteuerung] in await fernsteuerung?.beenden() }
+        fernsteuerung = nil
+        uebernahmelauf?.cancel()
+        uebernahmelauf = nil
+        uebernahmeangebote = []
+        // Detailseiten und geladene Bereiche gehoeren zum vorigen Konto.
+        // Ohne das zeigten Filme und Serien nach dem Wechsel dauerhaft die
+        // Titel des vorigen Kontos: `geladen` wurde bisher nur beim Abmelden
+        // geleert, und ein Bereich laedt genau einmal.
+        seitenstapel.removeAll()
+        geladen.removeAll()
+        offeneUnterseite = nil
+        // **`.start` gilt hier schon als geladen, obwohl nichts geladen ist.**
+        // ``zeige(_:)`` wuerde sonst gleich hier ``startseiteLaden()`` rufen —
+        // und zwar mit dem **alten** Client, denn der neue steht erst nach
+        // `setSession` bereit. Zwei Ladungen liefen dann um die Wette, und wer
+        // gewinnt, entschied die Antwortzeit des Servers. Geladen wird gleich
+        // in ``sitzungEinsetzen(_:servername:)``, mit dem richtigen Client.
+        geladen.insert(.start)
+        zeige(.start)
+        geladen.removeAll()
+    }
+
+    // MARK: Weiteres Konto
+
+    /// Meldet ein weiteres Konto mit Name und Passwort an.
+    ///
+    /// **Die Seite schliesst sich selbst — aber nur, wenn es geklappt hat.**
+    /// Bei einem Fehler bleibt sie stehen und zeigt ihn; sie hier zu
+    /// schliessen hiesse, die Meldung zu verschlucken.
+    func kontoAnmelden(benutzer: String, passwort: String) {
+        let name = benutzer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let url = bund?.serverURL else { return }
+        gtk_widget_set_sensitive(kontoKnopf, 0)
+        hauptknopfBeschriften(kontoKnopf, uebersetzt("Melde an …"))
+        gtk_widget_set_visible(kontoStandfeld, 0)
+
+        let servername = self.servername.isEmpty ? nil : self.servername
+        Task.detached { [self] in
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
+            do {
+                let sitzung = try await c.authenticate(username: name, password: passwort)
+                aufHauptfaden {
+                    self.kontoFehler = ""
+                    self.kontoPerCode = false
+                    self.sitzungAufnehmen(sitzung, servername: servername)
+                    // Zurueck aufs Profil — dort steht der Streifen, in dem
+                    // das neue Konto jetzt mit Ring und Punkt steht. Das ist
+                    // die Antwort auf „Hinzufuegen".
+                    self.unterseiteOeffnen(.profil, schub: .ohne)
+                }
+            } catch {
+                aufHauptfaden {
+                    gtk_widget_set_sensitive(self.kontoKnopf, 1)
+                    hauptknopfBeschriften(self.kontoKnopf, uebersetzt("Hinzufügen"))
+                    self.kontoFehlerZeigen(lesbarerFehler(error))
+                }
+            }
+        }
+    }
+
+    /// Holt einen Quick-Connect-Code und wartet, bis er freigegeben wird.
+    func kontoCodeHolen() {
+        guard let url = bund?.serverURL else { return }
+        let servername = self.servername.isEmpty ? nil : self.servername
+        kontoCodelauf = Task.detached { [self] in
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
+            guard let vorgang = try? await c.quickConnectStarten() else {
+                aufHauptfaden { self.kontoFehlerZeigen(uebersetzt("Der Server hat keinen Code gegeben.")) }
+                return
+            }
+            aufHauptfaden {
+                self.kontoCode = vorgang.code
+                gtk_label_set_text(OpaquePointer(self.kontoCodefeld), vorgang.code)
+            }
+            // Hoechstens fuenf Minuten; danach ist der Code ohnehin tot.
+            for _ in 0..<150 {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if Task.isCancelled { return }
+                guard (try? await c.quickConnectFreigegeben(vorgang)) == true else { continue }
+                guard let sitzung = try? await c.anmeldenMitQuickConnect(vorgang) else { break }
+                aufHauptfaden {
+                    self.kontoCode = ""
+                    self.kontoFehler = ""
+                    self.kontoPerCode = false
+                    self.kontoCodelauf = nil
+                    self.sitzungAufnehmen(sitzung, servername: servername)
+                    self.unterseiteOeffnen(.profil, schub: .ohne)
+                }
+                return
+            }
+            aufHauptfaden { self.kontoFehlerZeigen(uebersetzt("Der Code ist abgelaufen.")) }
+        }
+    }
+
+    /// Eine Meldung in die Zeile unter den Feldern — **nicht** dorthin, wo der
+    /// Code steht. Die beiden auseinanderzuhalten ist der halbe Grund, warum
+    /// diese Seite eine eigene ist.
+    private func kontoFehlerZeigen(_ text: String) {
+        kontoFehler = text
+        guard let feld = kontoStandfeld else { return }
+        gtk_label_set_text(OpaquePointer(feld), text)
+        gtk_widget_set_visible(feld, text.isEmpty ? 0 : 1)
+    }
+
+    private func bundSichern(servername: String?) {
+        guard let bund else { return }
+        Speicher.bundSchreiben(.init(bund: bund, servername: servername))
+    }
+
+    /// Setzt eine Sitzung in Betrieb: Client, Bildadressen, Anzeige, Laden.
+    private func sitzungEinsetzen(_ sitzung: Session, servername: String?) {
+        let serverURL = sitzung.serverURL
+        let token = sitzung.accessToken
+        let benutzerID = sitzung.userID
+        let benutzername = sitzung.userName
         let c = JellyfinClient(baseURL: serverURL,
                                deviceID: Geraet.kennung,
                                deviceName: Geraet.name)
@@ -602,8 +807,6 @@ final class App: @unchecked Sendable {
 
         // **`JellyfinClient` ist ein Akteur.** Die Sitzung einzusetzen geht
         // deshalb nur mit `await`; erst danach darf geladen werden.
-        let sitzung = Session(accessToken: token, userID: benutzerID,
-                              userName: benutzername, serverURL: serverURL)
         Task.detached { [self] in
             await c.setSession(sitzung)
             aufHauptfaden {
@@ -1190,11 +1393,12 @@ final class App: @unchecked Sendable {
 
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
 
-        let (bildkaefigChen, bild) = gerahmtesBild(breite: 26, hoehe: 26,
-                                                   stil: "swiftly-profilbild")
-        profilbild = bild
-        gtk_widget_set_valign(bildkaefigChen, GTK_ALIGN_CENTER)
-        anhaengen(reihe, bildkaefigChen)
+        // **Die Zone traegt bei mehreren Konten mehrere Kreise** und wird
+        // deshalb bei jeder Anmeldung neu gefuellt, statt ein festes Bild zu
+        // halten. ``profilkreiseAuffrischen()`` baut sie.
+        profilkreise = gtk_fixed_new()
+        gtk_widget_set_valign(profilkreise, GTK_ALIGN_CENTER)
+        anhaengen(reihe, profilkreise)
 
         let namen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
         gtk_widget_set_valign(namen, GTK_ALIGN_CENTER)
@@ -1660,7 +1864,26 @@ final class App: @unchecked Sendable {
         anmeldestandZeigen(uebersetzt("Die Anmeldung gilt nicht mehr. Bitte neu anmelden."))
     }
 
+    /// Meldet das **aktive** Konto ab.
+    ///
+    /// **Bleibt eines übrig, schaltet die App darauf um**, statt zur
+    /// Serveranmeldung zurückzufallen — alle Konten auf einmal zu entfernen
+    /// wäre eine zweite Bedeutung für denselben Knopf. Welches danach gilt,
+    /// entscheidet ``Kontenbund/entfernt(_:)`` im Paket.
     func abmelden() {
+        if let alter = bund, let rest = alter.entfernt(alter.aktiveKennung) {
+            bund = rest
+            let name = servername.isEmpty ? nil : servername
+            let warImProfil = offeneUnterseite == .profil
+            bundSichern(servername: name)
+            aufraeumenNachWechsel()
+            sitzungEinsetzen(rest.aktives, servername: name)
+            // Auch hier im Profil bleiben: dass ein Konto aus dem Streifen
+            // verschwunden ist, ist die Antwort auf den Knopf.
+            if warImProfil { unterseiteOeffnen(.profil, schub: .ohne) }
+            return
+        }
+        bund = nil
         Task.detached { [fernsteuerung] in await fernsteuerung?.beenden() }
         fernsteuerung = nil
         uebernahmelauf?.cancel()
@@ -1703,17 +1926,91 @@ final class App: @unchecked Sendable {
         self.servername = servername ?? ""
         gtk_label_set_text(OpaquePointer(profilname), benutzername)
         gtk_label_set_text(OpaquePointer(profilserver), servername ?? "")
-        if let adressen, !benutzerID.isEmpty,
-           let url = adressen.benutzer(benutzerID, kante: 60) {
-            bildLaden(profilbild, url: url, schluessel: "benutzer-\(benutzerID)", sofort: true)
+        profilkreiseAuffrischen()
+    }
+
+    /// Die Kreise unten in der Leiste — der aktive vorn, die anderen dahinter.
+    ///
+    /// **Warum sie hier stehen und nicht nur im Profil.** Der Streifen im
+    /// Profil beantwortet die Frage „mit welchem Konto bin ich hier?" erst,
+    /// nachdem man ihn geoeffnet hat. Zwei Kreise unten in der Leiste sagen
+    /// es beilaeufig — und genau so steht es im abgenommenen Entwurf.
+    ///
+    /// **Hoechstens drei.** Der Platz ist eine Zeile in einer 220 breiten
+    /// Leiste; wer sechs Konten haette, saehe sonst nur noch Kreise und
+    /// keinen Namen mehr.
+    private func profilkreiseAuffrischen() {
+        guard let profilkreise else { return }
+        leeren(profilkreise)
+
+        // **26, nicht 30.** Die Zeile war auf 26 gebaut — mit 30 stand das
+        // Bild groesser da als sein Platz, und GTK schnitt es unten und links
+        // an: „der Kreis ist kein richtiger Kreis". Die Groesse aus dem
+        // Entwurf (96/72) gilt fuer den Streifen im Profil, nicht fuer die
+        // Fusszeile; hier zaehlt, dass die Zeile ihre Hoehe behaelt.
+        let kante = 26, versatz = 17, hoechstens = 3
+        // **Der Ring braucht seinen eigenen Platz.** Er liegt als Schatten
+        // *ausserhalb* des Kreises; ohne Zuschlag schnitt die Zone ihn unten
+        // ab Zwei Punkte ringsum, das ist die staerkste der beiden
+        // Ringstaerken (1,5 aktiv, 2 daneben), aufgerundet.
+        let ring = 2
+        // Der aktive vorn, danach die anderen in ihrer Reihenfolge.
+        var reihenfolge: [Session] = []
+        if let bund {
+            reihenfolge = [bund.aktives] + bund.konten.filter { $0.userID != bund.aktiveKennung }
+        } else if !benutzerID.isEmpty {
+            reihenfolge = []
+        }
+        let sichtbar = Array(reihenfolge.prefix(hoechstens))
+        let breite = (sichtbar.isEmpty ? kante : kante + versatz * (sichtbar.count - 1))
+        gtk_widget_set_size_request(profilkreise,
+                                    Int32(breite + 2 * ring), Int32(kante + 2 * ring))
+
+        guard !sichtbar.isEmpty else {
+            // Kein Bund: das eine Bild wie bisher.
+            let teile = profilzeichen(name: benutzername.isEmpty ? "?" : benutzername,
+                                      kante: kante, stil: "swiftly-profilbild",
+                                      schriftstil: "swiftly-zeichen26")
+            profilbild = teile.bild
+            gtk_fixed_put(alsFest(profilkreise), teile.huelle, Double(ring), Double(ring))
+            profilbildLaden(teile,
+                            url: benutzerID.isEmpty ? nil
+                                                    : adressen?.benutzer(benutzerID, kante: 60),
+                            schluessel: "leiste-\(benutzerID)")
+            return
+        }
+
+        // **Von hinten nach vorn.** In einem ``GtkFixed`` liegt obenauf, was
+        // zuletzt dazukommt; der aktive Kreis muss die anderen ueberdecken,
+        // damit sein Akzentring nicht angeschnitten wird.
+        for (i, konto) in sichtbar.enumerated().reversed() {
+            // Ein einzelnes Konto sieht aus wie eh und je — ohne Ring. Der
+            // Ring beantwortet die Frage „welches von mehreren"; bei einem
+            // gibt es die Frage nicht.
+            let stil = sichtbar.count == 1 ? "swiftly-profilbild"
+                     : (i == 0 ? "swiftly-profilbild-aktiv" : "swiftly-profilbild-daneben")
+            let teile = profilzeichen(name: konto.userName, kante: kante, stil: stil,
+                                      schriftstil: "swiftly-zeichen26")
+            if i == 0 { profilbild = teile.bild } else { gtk_widget_set_opacity(teile.huelle, 0.55) }
+            gtk_fixed_put(alsFest(profilkreise), teile.huelle,
+                          Double(ring + i * versatz), Double(ring))
+            profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 60),
+                            schluessel: "leiste-\(konto.userID)")
         }
     }
 
     private func bibliothekenLaden() {
         guard let client else { return }
+        let stand = kontowechsel
         Task.detached { [self] in
             let sichten = (try? await client.userViews()) ?? []
-            aufHauptfaden { self.bibliothekenZeigen(sichten) }
+            aufHauptfaden {
+                // Dieselbe Eintrittskarte wie bei der Startseite: die
+                // Bibliotheken des vorigen Kontos gehoeren nicht in die Leiste
+                // des neuen.
+                guard self.kontowechsel == stand else { return }
+                self.bibliothekenZeigen(sichten)
+            }
         }
     }
 
@@ -1748,6 +2045,12 @@ final class App: @unchecked Sendable {
     func startseiteLaden() {
         guard let client else { return }
         zuletztGeladen = Date()
+        // **Wessen Antwort ist das gleich?** Der Wechsel laesst den alten
+        // Client fallen, aber eine Abfrage, die schon unterwegs ist, kommt
+        // trotzdem zurueck — und wuerde die Reihen des neuen Kontos mit denen
+        // des alten ueberschreiben. Der Zaehler ist die Eintrittskarte: passt
+        // er beim Auflegen nicht mehr, gehoert die Antwort zu niemandem.
+        let stand = kontowechsel
         // **„Lade …" nur beim ersten Mal.** Beim Nachladen (D8, und beim
         // Schliessen des Players) steht schon alles da; es wegzuwerfen und
         // durch ein Wort zu ersetzen, sah aus, als sei die App neu gestartet
@@ -1789,7 +2092,10 @@ final class App: @unchecked Sendable {
                 (uebersetzt("Nächste Folge"), .naechste, await naechste ?? [])
             ] + letzte).filter { !$0.2.isEmpty }
 
-            aufHauptfaden { self.reihenZeigen(reihen) }
+            aufHauptfaden {
+                guard self.kontowechsel == stand else { return }
+                self.reihenZeigen(reihen)
+            }
         }
     }
 
@@ -1823,6 +2129,7 @@ final class App: @unchecked Sendable {
         let sort = sortierung[was] ?? .name
         let meine = bibliotheken(fuer: was)
         let eltern = gewaehlteBibliothek[was] ?? meine.first?.id
+        let stand = kontowechsel
         Task.detached { [self] in
             let antwort = try? await client.items(parentID: eltern,
                                                   limit: 100,
@@ -1836,6 +2143,9 @@ final class App: @unchecked Sendable {
             let items = antwort?.items ?? []
             let gesamt = antwort?.totalRecordCount ?? items.count
             aufHauptfaden {
+                // Auch hier: eine Antwort des vorigen Kontos wird
+                // weggeworfen, statt an seine Titel angehaengt zu werden.
+                guard self.kontowechsel == stand else { return }
                 self.rasterLaedt.remove(was)
                 self.rasterLaderZeigen(was, false)
                 let raster = was == .filme ? self.filmeraster : self.serienraster

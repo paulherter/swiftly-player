@@ -121,11 +121,19 @@ func bildSetzen(_ bildfeld: Widget!, daten: Data, schluessel: String) {
 /// `sofort` für die wenigen grossen — das Kopfbild, das Plakat oben. Die
 /// vielen kleinen (Folgen, Besetzung, Ähnliches) warten, bis die Seite
 /// steht; sie sind es, die die Fahrt kosten.
-func bildLaden(_ bildfeld: Widget!, url: URL, schluessel: String, sofort: Bool = false) {
+/// - Parameter fertig: Wird auf dem Hauptfaden gerufen, sobald feststeht, ob
+///   ein Bild ankam. **Dafür gibt es genau einen Grund:** ein Profilzeichen
+///   zeigt den Buchstaben erst, wenn klar ist, dass kein Bild kommt. Ihn
+///   vorsorglich darunterzulegen hiesse, dass er bei jedem Konto *mit* Bild
+///   kurz aufblitzt — dieselbe Falle, die auf Apple in `Profilzeichen` steht:
+///   „Der Buchstabe ist Rückfall, nicht Untergrund."
+func bildLaden(_ bildfeld: Widget!, url: URL, schluessel: String, sofort: Bool = false,
+               fertig: (@Sendable (Bool) -> Void)? = nil) {
     // **Schon entpackt heisst: gar keine Arbeit mehr.** Kein Umweg über eine
     // Aufgabe, kein Warten auf die Fahrt — das Bild steht einfach da.
     if let textur = Bildspeicher.holen(schluessel) {
         gtk_picture_set_paintable(OpaquePointer(bildfeld), textur)
+        fertig?(true)
         return
     }
     g_object_ref(bildfeld)
@@ -135,6 +143,7 @@ func bildLaden(_ bildfeld: Widget!, url: URL, schluessel: String, sofort: Bool =
         let auflegen: @Sendable () -> Void = {
             if let daten { bildSetzen(kiste.widget, daten: daten, schluessel: schluessel) }
             g_object_unref(kiste.widget)
+            fertig?(daten != nil)
         }
         // `gdk_texture_new_from_bytes` packt auf dem Hauptfaden aus; ein
         // Dutzend Folgenbilder mitten in der Fahrt kosten sichtbar Bilder.

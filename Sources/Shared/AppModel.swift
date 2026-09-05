@@ -335,7 +335,24 @@ final class AppModel {
 
     /// Was nach jedem Kontowechsel neu muss — außer dem Client selbst.
     private func nachDemWechsel() {
-        views = []
+        // **Die Bibliotheken werden ersetzt, nicht erst geleert.**
+        //
+        // Hier stand `views = []`. Das ist derselbe Fehler, der schon die
+        // Vorschaubilder gekostet hat, nur an einer anderen Stelle: zwischen
+        // dem Leeren und der Antwort des Servers steht die Seitenleiste leer
+        // da und baut sich danach neu auf — auf dem Schreibtisch als Zucken
+        // der Bibliotheksliste, auf dem Telefon als Sprung.
+        //
+        // Was stehenbleibt, gehoert fuer den Bruchteil einer Sekunde noch dem
+        // vorigen Konto. Das ist verschmerzbar: die Kennungen der Bibliotheken
+        // gelten serverweit, und `loadViews` ersetzt sie in einem Zug, sobald
+        // die Antwort da ist.
+        //
+        // **Der Anstoss muss von hier kommen.** `Startseitenmodell` holt die
+        // Bibliotheken nur nach, wenn keine da sind — ohne das Leeren wuerde
+        // es also nie nachladen, und die Liste des vorigen Kontos bliebe
+        // stehen.
+        Task { await loadViews() }
         errorMessage = nil
         kontowechsel += 1
         #if os(tvOS)

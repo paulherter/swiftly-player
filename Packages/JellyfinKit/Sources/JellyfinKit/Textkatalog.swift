@@ -1,5 +1,8 @@
 #if !canImport(Darwin)
 import Foundation
+#if os(Windows)
+import WinSDK
+#endif
 
 // **Warum es diese Datei gibt: auf Linux übersetzt Foundation nicht.**
 //
@@ -156,6 +159,43 @@ public struct Textkatalog: Sendable {
 
     // MARK: Sprachwahl
 
+    /// Die Anzeigesprachen, die das System selbst meldet.
+    ///
+    /// **Nur auf Windows.** Dort setzt niemand `LANG`; die Sprache steht in
+    /// den Systemeinstellungen und ist über `GetUserPreferredUILanguages` zu
+    /// haben. Ohne diese Quelle bekäme jeder Windows-Nutzer Englisch — die
+    /// Windows-Sitzung hat es in ihrer VM gemessen: leere Umgebung,
+    /// `UICulture: en-US`, Katalogwahl `en`, auch auf einem deutschen System.
+    ///
+    /// **Auf Linux bleibt die Liste absichtlich leer.** Foundation meldet dort
+    /// `Locale.preferredLanguages == ["en-001"]`, unabhängig von allem — genau
+    /// die Falschauskunft, wegen der diese Datei überhaupt existiert. Sie hier
+    /// einzuspeisen hiesse, den Fehler durch die Hintertür zurückzuholen.
+    static func systemsprachen() -> [String] {
+        #if os(Windows)
+        var anzahl: ULONG = 0
+        var zeichen: ULONG = 0
+        // Erst fragen, wie gross der Puffer sein muss.
+        guard GetUserPreferredUILanguages(DWORD(MUI_LANGUAGE_NAME), &anzahl, nil, &zeichen).boolValue,
+              zeichen > 0 else { return [] }
+        var puffer = [WCHAR](repeating: 0, count: Int(zeichen))
+        guard GetUserPreferredUILanguages(DWORD(MUI_LANGUAGE_NAME), &anzahl,
+                                          &puffer, &zeichen).boolValue else { return [] }
+        // Doppelt nullterminierte Liste: „de-DE\0en-US\0\0".
+        var namen: [String] = []
+        var anfang = 0
+        for (i, zeichenwert) in puffer.enumerated() where zeichenwert == 0 {
+            if i > anfang {
+                namen.append(String(decoding: puffer[anfang..<i], as: UTF16.self))
+            }
+            anfang = i + 1
+        }
+        return namen
+        #else
+        return []
+        #endif
+    }
+
     /// Die Sprachwünsche des Nutzers, in absteigender Reihenfolge.
     ///
     /// **Aus der Umgebung, weil es sonst nichts gibt.** Linux hat keine
@@ -173,7 +213,8 @@ public struct Textkatalog: Sendable {
     /// englische Fassung als eine deutsche. Fehlt auch die, bleibt der
     /// Schlüssel stehen — und der ist der deutsche Wortlaut, nie eine
     /// kryptische Kennung.
-    static func sprachwuensche(aus umgebung: [String: String]) -> [String] {
+    static func sprachwuensche(aus umgebung: [String: String],
+                               system: [String] = []) -> [String] {
         var roh: [String] = []
         if let liste = umgebung["LANGUAGE"] {
             roh += liste.split(separator: ":").map(String.init)
@@ -181,6 +222,10 @@ public struct Textkatalog: Sendable {
         for name in ["LC_ALL", "LC_MESSAGES", "LANG"] {
             if let wert = umgebung[name] { roh.append(wert) }
         }
+        // **Die Umgebung schlägt das System.** Wer `LANG` setzt, meint es —
+        // das ist ein Eingriff von Hand, und der soll gewinnen. Auf Windows
+        // ist die Liste normalerweise leer, dort entscheidet das System.
+        roh += system
 
         var wuensche: [String] = []
         for eintrag in roh {
@@ -208,7 +253,8 @@ public struct Textkatalog: Sendable {
         // unten liest sie; griffe sie über `self` darauf zu, verlangte der
         // Compiler die vollständige Initialisierung, bevor das erste Feld
         // steht.
-        let gewaehlt = Self.sprachwuensche(aus: ProcessInfo.processInfo.environment)
+        let gewaehlt = Self.sprachwuensche(aus: ProcessInfo.processInfo.environment,
+                                           system: Self.systemsprachen())
             .first { vorhanden.contains($0) } ?? bundle.developmentLocalization ?? "de"
         sprache = gewaehlt
 

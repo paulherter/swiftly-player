@@ -85,9 +85,32 @@ func tafelAn(_ anker: Widget!, stil: String = "swiftly-mehr",
     return tafel
 }
 
-func leeren(_ box: Widget!) {
-    while let kind = gtk_widget_get_first_child(box) {
-        gtk_box_remove(alsBox(box), kind)
+/// Nimmt alle Kinder aus einem Behälter — **aus jedem, nicht nur aus Boxen.**
+///
+/// **Die Fassung davor hat die App aufgehängt.** Sie rief `gtk_box_remove`,
+/// und der Zeiger wurde dafür blind gecastet. Ist der Behälter keine
+/// `GtkBox`, scheitert der Aufruf an seiner Zusicherung und **entfernt
+/// nichts** — `gtk_widget_get_first_child` liefert daraufhin dasselbe Kind,
+/// und die Schleife läuft ewig. Gemessen am 05.09.2026: der Hauptfaden auf
+/// `R`, ein voller Kern, alle anderen Fäden schlafend, und ein Protokoll, das
+/// mit 58 MB je Sekunde auf 7,7 GB wuchs:
+///
+/// ```
+/// Gtk-CRITICAL **: gtk_box_remove: assertion 'GTK_IS_BOX (box)' failed
+/// ```
+///
+/// Ausgelöst hat es ein `GtkFixed` (die Kreise unten in der Leiste), aber der
+/// Fehler war nicht der Aufrufer — es war diese Schleife: **sie hing am
+/// Vorhandensein eines Kindes statt am Fortschritt.**
+///
+/// Beides ist deshalb geändert. `gtk_widget_unparent` trägt für jedes Widget,
+/// womit der Fehlerfall gar nicht mehr entstehen kann; und die Wache am Ende
+/// bricht ab, falls ein Kind trotzdem einmal hängenbleibt. Lieber ein
+/// Behälter, der nicht ganz leer wird, als eine App, die steht.
+func leeren(_ behaelter: Widget!) {
+    while let kind = gtk_widget_get_first_child(behaelter) {
+        gtk_widget_unparent(kind)
+        guard gtk_widget_get_first_child(behaelter) != kind else { return }
     }
 }
 

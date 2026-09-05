@@ -39,6 +39,11 @@ enum Stil {
     static let schriftLeise = "rgba(255,255,255,0.62)"
     static let schriftSehrLeise = "rgba(255,255,255,0.38)"
     static let rand = "rgba(255,255,255,0.12)"
+    /// **Der Grund jedes Profilzeichens.** Wörtlich die beiden Farben aus
+    /// `Sources/Shared/Bausteine.swift`, `Profilzeichen.grund` — dort als
+    /// `Color(red:green:blue:)`, hier als Hex: #2C6C66 nach #17403D, von oben
+    /// links nach unten rechts.
+    static let profilverlauf = "linear-gradient(135deg, #2C6C66, #17403D)"
     static let linie = "rgba(255,255,255,0.08)"
 
     // MARK: Maße, wörtlich aus macOS/Stil.swift
@@ -415,7 +420,21 @@ enum Stil {
         /* Das Benutzerbild ist rund. 26 Punkt, wie auf dem Mac. */
         .swiftly-profilbild {
             border-radius: 13px;
-            background-color: \(erhoeht);
+            background-image: \(profilverlauf);
+        }
+
+        /* Bei mehreren Konten stehen unten zwei Kreise. Der zweite traegt
+           einen Rand in der Farbe der Leiste — er stanzt die Ueberlappung
+           aus, sonst kleben die beiden Kreise zu einer Form zusammen. */
+        .swiftly-profilbild-aktiv {
+            border-radius: 13px;
+            background-image: \(profilverlauf);
+            box-shadow: 0 0 0 1.5px \(akzent);
+        }
+        .swiftly-profilbild-daneben {
+            border-radius: 13px;
+            background-image: \(profilverlauf);
+            box-shadow: 0 0 0 2px \(flaeche);
         }
 
         /* MARK: Detailseite */
@@ -584,7 +603,70 @@ enum Stil {
         button.swiftly-wertzeile.swiftly-aktiv label { color: \(schrift); }
         button.swiftly-wertzeile.swiftly-aktiv image { color: \(akzent); }
 
-        .swiftly-profilgross { border-radius: 42px; background-color: \(flaeche); }
+        .swiftly-profilgross { border-radius: 42px; background-image: \(profilverlauf); }
+
+        /* **Der Buchstabe, wenn kein Bild kommt.** Die Groesse ist auf Apple
+           `groesse * 0.38`; hier steht sie je Kreisgroesse fest, weil GTKs
+           Stilblatt nichts rechnen kann. 96 -> 36, 84 -> 32, 72 -> 27,
+           26 -> 10. */
+        .swiftly-zeichen96 { font-size: 36px; font-weight: 600; color: \(schrift); }
+        .swiftly-zeichen84 { font-size: 32px; font-weight: 600; color: \(schrift); }
+        .swiftly-zeichen72 { font-size: 27px; font-weight: 600; color: \(schrift); }
+        .swiftly-zeichen26 { font-size: 10px; font-weight: 600; color: \(schrift); }
+
+        /* MARK: Weiteres Konto
+
+           Der zweite Weg auf einer Seite: Rand statt Flaeche. Auf dem Mac ist
+           das `Umrissknopf` — dort steht er ebenfalls nur an dieser einen
+           Stelle. */
+        button.swiftly-umriss {
+            border: 1px solid \(rand);
+            border-radius: \(ecke)px;
+            background: none;
+            box-shadow: none;
+            min-height: 40px;
+            color: \(schrift);
+            font-size: \(koerper)px;
+        }
+        button.swiftly-umriss:hover { background-color: rgba(255,255,255,0.06); }
+
+        /* Der Quick-Connect-Code bekommt einen eigenen Teil — nicht die Zeile,
+           in der Fehler stehen. Gross, mittig, auf eigener Flaeche. */
+        .swiftly-codegross {
+            font-size: 40px;
+            font-weight: 600;
+            letter-spacing: 6px;
+            background-color: \(flaeche);
+            border-radius: \(ecke)px;
+            padding: 18px 0;
+        }
+
+        /* MARK: Kontenstreifen im Profil
+
+           Der Ring liegt als Schatten aussen an, nicht als Rand: ein Rand
+           zaehlt zur Flaeche und macht das Bild um seine Staerke kleiner —
+           96 und 72 waeren dann 93 und 70, und die beiden Groessen stuenden
+           nicht mehr im Verhaeltnis des Entwurfs. */
+        .swiftly-kontoaktiv {
+            border-radius: 48px;
+            background-image: \(profilverlauf);
+            box-shadow: 0 0 0 1.5px \(akzent);
+        }
+        .swiftly-kontoandere {
+            border-radius: 36px;
+            background-image: \(profilverlauf);
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.12);
+        }
+        .swiftly-kontopunkt { border-radius: 3px; background-color: \(akzent); }
+        button.swiftly-kontoknopf {
+            background: none;
+            border: none;
+            box-shadow: none;
+            padding: 0;
+            min-width: 0;
+            min-height: 0;
+        }
+        button.swiftly-kontoknopf:hover { opacity: 1; }
 
         /* Der Quick-Connect-Code: gross, mittig, gesperrt. */
         entry.swiftly-code {
