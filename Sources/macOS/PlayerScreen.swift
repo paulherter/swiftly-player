@@ -618,8 +618,21 @@ struct PlayerScreen: View {
         guard !wechselt else { return }
         wechselt = true
         Task {
-            await model.reportStopped(item: titel, plan: plan, seconds: stand.position)
-            guard let neuerPlan = await model.plan(for: folge.id) else {
+            // **Nebeneinander, nicht nacheinander.** Beides sind Abrufe, und
+            // sie brauchen einander nicht: die Abmeldung der alten Folge
+            // hoert der Server, der Plan der neuen kommt von ihm. Hintereinander
+            // gerechnet liegt die zweite Frist hinter der ersten — bei totem
+            // Netz gemessen: 20,9 s plus 21,0 s. Nebeneinander ist es die
+            // laengere von beiden.
+            //
+            // Die **Reihenfolge** Stopp vor Start bleibt trotzdem gewahrt:
+            // `reportStart` steht unten hinter `await gestoppt`. Nur das
+            // Warten liegt jetzt parallel.
+            async let gestoppt: Void = model.reportStopped(item: titel, plan: plan,
+                                                           seconds: stand.position)
+            async let geplant = model.plan(for: folge.id)
+            await gestoppt
+            guard let neuerPlan = await geplant else {
                 melde(String(localized: "Nächste Folge konnte nicht geladen werden."))
                 wechselt = false
                 return
@@ -638,11 +651,38 @@ struct PlayerScreen: View {
             // Folge für einen alten, längst eingesteuerten Titel. Auf tvOS
             // hat genau das eine Folge übersprungen.
             seitStart = Date()
-            naechsteFolge = await model.folgeNach(folge)
-            // Die neue Folge hat eigene Abschnitte.
-            abschnitte = await model.abschnitte(fuer: folge.id)
-            zentraleUebernehmen()
+
+            // **Hier ist der Wechsel fertig, also faellt hier der Riegel.**
+            //
+            // Er stand bisher noch ueber den zwei Abrufen darunter, und das
+            // war der Fehler — nicht die Abrufe. Ein Riegel gilt fuer das, was
+            // er schuetzt: dass nicht zweimal gewechselt wird, waehrend der
+            // Wechsel laeuft. Ab hier laeuft er nicht mehr; Bild, Plan und
+            // Meldung an den Server stehen.
+            //
+            // Solange er lag, gab `angebot` `.keiner` zurueck — **keine
+            // Knoepfe** —, und auf dem iPhone liegt zusaetzlich ein
+            // Ladekringel ueber dem Bild. Die Frist dafuer ist nicht die
+            // Zeitgrenze der Abfrage: `Netzsitzung` setzt
+            // `waitsForConnectivity`, und damit faengt die Frist erst an zu
+            // laufen, **wenn wieder eine Verbindung da ist**. Ein WLAN, das
+            // kurz wegnickt, hielt die Oberflaeche also unbegrenzt an — ohne
+            // dass irgendetwas fehlschlaegt. Das ist die Sorte Haenger, die
+            // „aus dem Nichts" kommt.
             wechselt = false
+
+            // Nachschlag, und zwar ohne Riegel: `folgeNach` fuellt den Knopf
+            // „naechste Folge", `abschnitte` die Sprungmarken. Kommen sie
+            // spaeter oder gar nicht, fehlt ein Knopf und ein paar Marken.
+            // Dafuer darf keine Taste stehenbleiben.
+            naechsteFolge = await model.folgeNach(folge)
+            abschnitte = await model.abschnitte(fuer: folge.id)
+            // **Bleibt hinten.** Die Zentrale traegt den Befehl „naechste
+            // Folge", und der braucht `naechsteFolge` — vorgezogen zeigte er
+            // auf die Folge, die gerade laeuft. Das war vorher auch schon so;
+            // an der Reihenfolge aendert sich nichts, nur der Riegel liegt
+            // nicht mehr darueber.
+            zentraleUebernehmen()
         }
     }
 
