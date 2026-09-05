@@ -887,18 +887,7 @@ final class AppModel {
     }
 
     private func restoreSession() {
-        // **Vorübergehende Spur.** Zwei Möglichkeiten, und sie führen zu
-        // verschiedenen Reparaturen: entweder der Schlüsselbund gibt nur noch
-        // ein Konto her (dann ging beim Sichern etwas verloren), oder er gibt
-        // beide her und das Merkmal wird beim Prüfen abgelehnt (dann zieht
-        // `signOut` auf das andere Konto um). Am Protokoll zu trennen.
-        guard let wieder = bundLaden() else {
-            Protokoll.schreib("[Start] Schluesselbund leer — keine Anmeldung")
-            return
-        }
-        Protokoll.schreib("[Start] Bund geladen · Konten=\(wieder.konten.count)"
-            + " · aktiv=\(wieder.aktives.userName)"
-            + " · alle=\(wieder.konten.map(\.userName).joined(separator: ","))")
+        guard let wieder = bundLaden() else { return }
         bund = wieder
         let s = wieder.aktives
         let neuer = JellyfinClient(baseURL: s.serverURL, deviceID: Self.deviceID,
@@ -916,10 +905,7 @@ final class AppModel {
             // Ein widerrufenes Merkmal führte damit nicht auf den
             // Anmeldebildschirm, sondern in „Kein Kontakt zum Server" — und
             // von dort gibt es keinen Weg zurück außer über das Profilmenü.
-            let giltNoch = await neuer.sitzungGiltNoch()
-            Protokoll.schreib("[Start] sitzungGiltNoch=\(giltNoch)"
-                + " fuer \(s.userName)")
-            guard giltNoch else {
+            guard await neuer.sitzungGiltNoch() else {
                 let name = session?.userName
                 signOut()
                 // **Nach dem Abmelden kann noch ein Konto da sein.** Seit es
