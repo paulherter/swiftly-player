@@ -52,13 +52,17 @@ final class Serienspeicher {
     /// derselben Serie sie achtmal.
     private var laufend: Set<String> = []
 
-    func serie(fuer folge: Item) -> Item? {
-        folge.seriesId.flatMap { bekannt[$0] }
+    func serie(fuer folge: Item, mit model: AppModel) -> Item? {
+        guard gueltig(model) else { return nil }
+        return folge.seriesId.flatMap { bekannt[$0] }
     }
 
     func merken(_ serie: Item) { bekannt[serie.id] = serie }
 
-    func stand(_ serie: String) -> Stand? { staende[serie] }
+    func stand(_ serie: String, mit model: AppModel) -> Stand? {
+        guard gueltig(model) else { return nil }
+        return staende[serie]
+    }
 
     func merken(_ serie: String, _ aendern: (inout Stand) -> Void) {
         if staende[serie] == nil {
@@ -86,6 +90,7 @@ final class Serienspeicher {
 
     /// Holt die Serien zu diesen Folgen, sofern noch nicht bekannt.
     func vorholen(_ folgen: [Item], mit model: AppModel) {
+        _ = gueltig(model)
         let offen = Set(folgen.compactMap(\.seriesId))
             .subtracting(bekannt.keys)
             .subtracting(laufend)
@@ -100,16 +105,32 @@ final class Serienspeicher {
         }
     }
 
-    /// Beim Kontowechsel gehört alles weg.
+    /// Zu welchem Kontostand gehört, was hier liegt.
     ///
-    /// Was hier liegt, gehört dem Konto, das es geholt hat — Titel, die das
-    /// nächste womöglich gar nicht sehen darf. `AppModel.nachDemWechsel()`
-    /// ruft das; ohne diese Zeile stünde nach dem Umschalten die Serie des
-    /// vorigen Kontos sofort und ohne Abruf da.
-    func leeren() {
+    /// **Der Speicher fragt selbst, statt dass jede Ansicht ans Räumen denken
+    /// muss.** Das ist der Unterschied zu einem `leeren()`, das irgendwer
+    /// rufen müsste: hier kann es niemand vergessen, weil jeder Zugriff
+    /// ohnehin durch `stand(_:)` oder `serie(fuer:)` geht.
+    ///
+    /// **Und der Schaden steckt nicht in den Titeln, sondern im Sehstand.**
+    /// Ein zwischengespeichertes `Item` trägt `userData` mit `played` und
+    /// `playbackPositionTicks` — also den Stand des Kontos, das es geholt
+    /// hat. Ohne diese Prüfung sähe man nach einem Wechsel auf einer Seite
+    /// aus dem Speicher fremde Haken und fremde Fortschrittsbalken, und
+    /// „Weiterschauen" setzte an fremder Stelle an und meldete sie dem neuen
+    /// Konto. Von der Mac-Sitzung am Quelltext gefunden, bevor es jemandem
+    /// auffiel.
+    private var fuerKonto = 0
+
+    /// Gehört der Inhalt noch zum angemeldeten Konto? Wenn nicht, wird er
+    /// hier und jetzt verworfen.
+    private func gueltig(_ model: AppModel) -> Bool {
+        guard fuerKonto != model.kontowechsel else { return true }
+        fuerKonto = model.kontowechsel
         bekannt.removeAll()
         staende.removeAll()
         reihenfolge.removeAll()
         laufend.removeAll()
+        return false
     }
 }

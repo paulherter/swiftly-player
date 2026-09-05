@@ -52,6 +52,51 @@ public struct Kontenbund: Codable, Sendable, Equatable {
                                                                    : erstes.userID
     }
 
+    /// Ein Konto aufnehmen — und dabei sagen, ob es ein **Wechsel** war.
+    ///
+    /// **Warum das hier steht und nicht bei den Aufrufern.** Beide Fassungen
+    /// leiteten es sich selbst her: „war vorher schon ein Bund da, also ist
+    /// es ein Wechsel" — einmal in `AppModel.sitzungUebernehmen`, einmal in
+    /// der GTK-Fassung. Zwei Herleitungen derselben Regel, und an dieser
+    /// Antwort hängt viel: ob die Startseite geräumt wird, ob die
+    /// Fernsteuerung neu aufgebaut wird, ob ein zweites Laden angestossen
+    /// wird. Wer sie falsch herleitet, bekommt genau die Fehler, die uns den
+    /// 05.09.2026 gekostet haben.
+    ///
+    /// **Ein anderer Server ist kein Wechsel, sondern ein Neuanfang.** Ein
+    /// Bund gehört zu genau einem Server; passt die Sitzung nicht dazu,
+    /// entsteht ein neuer Bund, und das vorige Konto ist keins mehr.
+    public static func aufnehmen(_ neu: Session,
+                                 in vorhanden: Kontenbund?) -> (bund: Kontenbund,
+                                                                warWechsel: Bool) {
+        guard var bund = vorhanden, bund.passtZumServer(neu) else {
+            return (Kontenbund(neu), false)
+        }
+        bund.aufnehmen(neu)
+        return (bund, true)
+    }
+
+    /// Aus dem, was in der Ablage liegt — mit der Übernahme aus der Zeit vor
+    /// den Mehrfachkonten.
+    ///
+    /// **Auch das stand zweimal**, in `AppModel.bundLaden()` und in der
+    /// GTK-Fassung: erst den Bund versuchen, sonst die einzelne Sitzung von
+    /// früher, sonst gar nichts. Dass die alte Einzelsitzung liegen bleibt
+    /// statt gelöscht zu werden, ist Absicht — wer noch einmal eine ältere
+    /// Fassung startet, soll nicht plötzlich abgemeldet sein.
+    ///
+    /// **Wo die Daten herkommen, bleibt Sache der Plattform** (Schlüsselbund,
+    /// Datei, Registrierung). Hier steht nur, was sie bedeuten.
+    public static func ausAblage(bund: Data?, einzelne: Data?) -> Kontenbund? {
+        let leser = JSONDecoder()
+        if let bund, let b = try? leser.decode(Kontenbund.self, from: bund) {
+            return b
+        }
+        guard let einzelne,
+              let alt = try? leser.decode(Session.self, from: einzelne) else { return nil }
+        return Kontenbund(alt)
+    }
+
     /// Nimmt ein Konto auf und macht es zum aktiven.
     ///
     /// **Dasselbe Konto zweimal gibt es nicht.** Meldet sich jemand erneut
