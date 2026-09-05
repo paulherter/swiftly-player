@@ -45,12 +45,23 @@ final class App: @unchecked Sendable {
     private var anmeldeknopf: Widget!
     private var anmeldestand: Widget!
     private var meldetGerade = false
-    /// Der Knopf unter der Anmeldung. Er heisst „Anderer Server", solange man
-    /// sich anmeldet — und „Abbrechen", wenn ein **weiteres** Konto dazukommt:
-    /// der Server steht dann fest, und der Weg zurueck fuehrt ins Profil.
     private var zurueckknopf: Widget!
-    /// Laeuft gerade das Hinzufuegen eines weiteren Kontos?
-    private var weiteresKonto = false
+
+    // MARK: Weiteres Konto — Zustand der Unterseite
+
+    /// Umgeschaltet auf den Code-Weg. Der Vorgang laeuft erst dann an — sonst
+    /// zoege jeder Besuch der Seite einen Code beim Server, den niemand
+    /// braucht. Wortgleich zu `perCode` auf dem Mac.
+    var kontoPerCode = false
+    var kontoCode = ""
+    var kontoFehler = ""
+    var kontoCodelauf: Task<Void, Never>?
+    /// Die Felder der Seite. **Als Felder der Klasse, nicht als Argumente über
+    /// die Fadengrenze** — ein `Widget` ist ein roher Zeiger und damit nicht
+    /// `Sendable`; angefasst wird es ohnehin nur auf GTKs Hauptfaden.
+    var kontoKnopf: Widget!
+    var kontoStandfeld: Widget!
+    var kontoCodefeld: Widget!
 
     // Startseite
     var bereich: Bereich = .start
@@ -452,7 +463,6 @@ final class App: @unchecked Sendable {
         }
         beiSignal(zurueckknopf, "clicked") { [weak self] in
             guard let self else { return }
-            if self.weiteresKonto { self.kontoHinzufuegenAbbrechen(); return }
             gtk_stack_set_visible_child_name(OpaquePointer(self.anmeldeschritte), "server")
         }
         return mitte
@@ -696,53 +706,84 @@ final class App: @unchecked Sendable {
 
     // MARK: Weiteres Konto
 
-    /// Öffnet die Anmeldung für ein **weiteres** Konto auf demselben Server.
+    /// Meldet ein weiteres Konto mit Name und Passwort an.
     ///
-    /// **Ohne Serverfeld** — es ist derselbe Server, und ihn noch einmal
-    /// eintippen zu lassen wäre eine Frage, deren Antwort schon feststeht.
-    /// Der Schritt „Server" wird deshalb übersprungen; Name und Fassung
-    /// stehen bereits oben.
-    ///
-    /// **Der Weg zurück muss im Bild stehen.** Wer sich hier anders
-    /// entscheidet, ist ja noch angemeldet — ohne „Abbrechen" säße er auf
-    /// einer Anmeldung fest, die er nicht braucht.
-    func kontoHinzufuegenOeffnen() {
-        guard let alter = bund else { return }
-        let url = alter.serverURL
-        serverURL = url
-        weiteresKonto = true
-        gtk_button_set_label(alsKnopf(zurueckknopf), uebersetzt("Abbrechen"))
+    /// **Die Seite schliesst sich selbst — aber nur, wenn es geklappt hat.**
+    /// Bei einem Fehler bleibt sie stehen und zeigt ihn; sie hier zu
+    /// schliessen hiesse, die Meldung zu verschlucken.
+    func kontoAnmelden(benutzer: String, passwort: String) {
+        let name = benutzer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let url = bund?.serverURL else { return }
+        gtk_widget_set_sensitive(kontoKnopf, 0)
+        hauptknopfBeschriften(kontoKnopf, uebersetzt("Melde an …"))
+        gtk_widget_set_visible(kontoStandfeld, 0)
 
-        gtk_label_set_text(OpaquePointer(serverzeile),
-                           servername.isEmpty ? (url.host() ?? uebersetzt("Server")) : servername)
-        gtk_label_set_text(OpaquePointer(fassungszeile),
-                           serverfassung.isEmpty ? "" : "Jellyfin \(serverfassung)")
-        gtk_editable_set_text(OpaquePointer(benutzerfeld), "")
-        gtk_editable_set_text(OpaquePointer(passwortfeld), "")
-        anmeldestandZeigen("")
-
-        offeneUnterseite = nil
-        kopfzeileZeigen(false)
-        gtk_stack_set_visible_child_name(OpaquePointer(anmeldeschritte), "konto")
-        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "anmeldung")
-        gtk_widget_grab_focus(benutzerfeld)
-
-        // **Wer schaut?** Dieselbe Reihe wie bei der ersten Anmeldung — und
-        // hier ist sie mehr wert als dort: der Nutzer sucht ein zweites Konto
-        // auf einem Server, den er kennt.
-        let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
-        kontenHolen(c)
+        let servername = self.servername.isEmpty ? nil : self.servername
+        Task.detached { [self] in
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
+            do {
+                let sitzung = try await c.authenticate(username: name, password: passwort)
+                aufHauptfaden {
+                    self.kontoFehler = ""
+                    self.kontoPerCode = false
+                    self.sitzungAufnehmen(sitzung, servername: servername)
+                    // Zurueck aufs Profil — dort steht der Streifen, in dem
+                    // das neue Konto jetzt mit Ring und Punkt steht. Das ist
+                    // die Antwort auf „Hinzufuegen".
+                    self.unterseiteOeffnen(.profil, schub: .ohne)
+                }
+            } catch {
+                aufHauptfaden {
+                    gtk_widget_set_sensitive(self.kontoKnopf, 1)
+                    hauptknopfBeschriften(self.kontoKnopf, uebersetzt("Hinzufügen"))
+                    self.kontoFehlerZeigen(lesbarerFehler(error))
+                }
+            }
+        }
     }
 
-    /// Zurück ins Profil, ohne etwas zu ändern.
-    private func kontoHinzufuegenAbbrechen() {
-        weiteresKonto = false
-        gtk_button_set_label(alsKnopf(zurueckknopf), uebersetzt("Anderer Server"))
-        anmeldestandZeigen("")
-        gtk_editable_set_text(OpaquePointer(passwortfeld), "")
-        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
-        kopfzeileZeigen(true)
-        unterseiteOeffnen(.profil)
+    /// Holt einen Quick-Connect-Code und wartet, bis er freigegeben wird.
+    func kontoCodeHolen() {
+        guard let url = bund?.serverURL else { return }
+        let servername = self.servername.isEmpty ? nil : self.servername
+        kontoCodelauf = Task.detached { [self] in
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
+            guard let vorgang = try? await c.quickConnectStarten() else {
+                aufHauptfaden { self.kontoFehlerZeigen(uebersetzt("Der Server hat keinen Code gegeben.")) }
+                return
+            }
+            aufHauptfaden {
+                self.kontoCode = vorgang.code
+                gtk_label_set_text(OpaquePointer(self.kontoCodefeld), vorgang.code)
+            }
+            // Hoechstens fuenf Minuten; danach ist der Code ohnehin tot.
+            for _ in 0..<150 {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if Task.isCancelled { return }
+                guard (try? await c.quickConnectFreigegeben(vorgang)) == true else { continue }
+                guard let sitzung = try? await c.anmeldenMitQuickConnect(vorgang) else { break }
+                aufHauptfaden {
+                    self.kontoCode = ""
+                    self.kontoFehler = ""
+                    self.kontoPerCode = false
+                    self.kontoCodelauf = nil
+                    self.sitzungAufnehmen(sitzung, servername: servername)
+                    self.unterseiteOeffnen(.profil, schub: .ohne)
+                }
+                return
+            }
+            aufHauptfaden { self.kontoFehlerZeigen(uebersetzt("Der Code ist abgelaufen.")) }
+        }
+    }
+
+    /// Eine Meldung in die Zeile unter den Feldern — **nicht** dorthin, wo der
+    /// Code steht. Die beiden auseinanderzuhalten ist der halbe Grund, warum
+    /// diese Seite eine eigene ist.
+    private func kontoFehlerZeigen(_ text: String) {
+        kontoFehler = text
+        guard let feld = kontoStandfeld else { return }
+        gtk_label_set_text(OpaquePointer(feld), text)
+        gtk_widget_set_visible(feld, text.isEmpty ? 0 : 1)
     }
 
     private func bundSichern(servername: String?) {
@@ -761,15 +802,6 @@ final class App: @unchecked Sendable {
                                deviceName: Geraet.name)
         adressen = Bildadresse(basis: serverURL, token: token)
         self.benutzerID = benutzerID
-        // **Der Anmeldeschirm schliesst sich selbst** — aber nur hier, also
-        // nach einer Anmeldung, die durchging. Bei einem Fehler bleibt er
-        // stehen und zeigt ihn; ihn dort zu schliessen hiesse, die Meldung zu
-        // verschlucken.
-        if weiteresKonto {
-            weiteresKonto = false
-            gtk_button_set_label(alsKnopf(zurueckknopf), uebersetzt("Anderer Server"))
-            kopfzeileZeigen(true)
-        }
         sitzungAnzeigen(benutzername: benutzername, servername: servername)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
 
@@ -1911,7 +1943,12 @@ final class App: @unchecked Sendable {
         guard let profilkreise else { return }
         leeren(profilkreise)
 
-        let kante = 30, versatz = 20, hoechstens = 3
+        // **26, nicht 30.** Die Zeile war auf 26 gebaut — mit 30 stand das
+        // Bild groesser da als sein Platz, und GTK schnitt es unten und links
+        // an: „der Kreis ist kein richtiger Kreis". Die Groesse aus dem
+        // Entwurf (96/72) gilt fuer den Streifen im Profil, nicht fuer die
+        // Fusszeile; hier zaehlt, dass die Zeile ihre Hoehe behaelt.
+        let kante = 26, versatz = 17, hoechstens = 3
         // Der aktive vorn, danach die anderen in ihrer Reihenfolge.
         var reihenfolge: [Session] = []
         if let bund {
@@ -1942,9 +1979,12 @@ final class App: @unchecked Sendable {
         // zuletzt dazukommt; der aktive Kreis muss die anderen ueberdecken,
         // damit sein Akzentring nicht angeschnitten wird.
         for (i, konto) in sichtbar.enumerated().reversed() {
-            let (huelle, bild) = gerahmtesBild(breite: kante, hoehe: kante,
-                                               stil: i == 0 ? "swiftly-profilbild-aktiv"
-                                                            : "swiftly-profilbild-daneben")
+            // Ein einzelnes Konto sieht aus wie eh und je — ohne Ring. Der
+            // Ring beantwortet die Frage „welches von mehreren"; bei einem
+            // gibt es die Frage nicht.
+            let stil = sichtbar.count == 1 ? "swiftly-profilbild"
+                     : (i == 0 ? "swiftly-profilbild-aktiv" : "swiftly-profilbild-daneben")
+            let (huelle, bild) = gerahmtesBild(breite: kante, hoehe: kante, stil: stil)
             if i == 0 { profilbild = bild } else { gtk_widget_set_opacity(huelle, 0.55) }
             gtk_fixed_put(alsFest(profilkreise), huelle, Double(i * versatz), 0)
             if let adressen, let url = adressen.benutzer(konto.userID, kante: 60) {

@@ -12,7 +12,13 @@
 "Als ungesehen markieren" = "Mark as unwatched";
 "Andere Schreibweise? Die Suche findet Filme und Serien." = "Try another spelling. Search finds movies and shows.";
 "Anderer Server" = "Another server";
-"Abbrechen" = "Cancel";
+"Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen." = "A second Jellyfin account on the same server. Both stay signed in; you switch between them at the top of the profile page.";
+"Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist." = "Enter this code in Jellyfin on a device you are already signed in on.";
+"Hinzufügen" = "Add";
+"Lieber Name und Passwort" = "Use name and password instead";
+"Mit Quick Connect anmelden" = "Sign in with Quick Connect";
+"Weiteres Konto" = "Another account";
+"oder" = "or";
 "Auf demselben Server" = "On the same server";
 "Weiteres Konto hinzufügen" = "Add another account";
 "Angemeldet" = "Signed in";

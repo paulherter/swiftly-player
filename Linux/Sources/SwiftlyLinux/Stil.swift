@@ -422,12 +422,12 @@ enum Stil {
            einen Rand in der Farbe der Leiste — er stanzt die Ueberlappung
            aus, sonst kleben die beiden Kreise zu einer Form zusammen. */
         .swiftly-profilbild-aktiv {
-            border-radius: 15px;
+            border-radius: 13px;
             background-color: \(erhoeht);
             box-shadow: 0 0 0 1.5px \(akzent);
         }
         .swiftly-profilbild-daneben {
-            border-radius: 15px;
+            border-radius: 13px;
             background-color: \(erhoeht);
             box-shadow: 0 0 0 2px \(flaeche);
         }
@@ -599,6 +599,33 @@ enum Stil {
         button.swiftly-wertzeile.swiftly-aktiv image { color: \(akzent); }
 
         .swiftly-profilgross { border-radius: 42px; background-color: \(flaeche); }
+
+        /* MARK: Weiteres Konto
+
+           Der zweite Weg auf einer Seite: Rand statt Flaeche. Auf dem Mac ist
+           das `Umrissknopf` — dort steht er ebenfalls nur an dieser einen
+           Stelle. */
+        button.swiftly-umriss {
+            border: 1px solid \(rand);
+            border-radius: \(ecke)px;
+            background: none;
+            box-shadow: none;
+            min-height: 40px;
+            color: \(schrift);
+            font-size: \(koerper)px;
+        }
+        button.swiftly-umriss:hover { background-color: rgba(255,255,255,0.06); }
+
+        /* Der Quick-Connect-Code bekommt einen eigenen Teil — nicht die Zeile,
+           in der Fehler stehen. Gross, mittig, auf eigener Flaeche. */
+        .swiftly-codegross {
+            font-size: 40px;
+            font-weight: 600;
+            letter-spacing: 6px;
+            background-color: \(flaeche);
+            border-radius: \(ecke)px;
+            padding: 18px 0;
+        }
 
         /* MARK: Kontenstreifen im Profil
 
