@@ -102,6 +102,20 @@ struct PosterTile: View {
                     Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
                 }
             }
+            // **Drei Zustaende, drei Zeichen.** Balken heisst angefangen,
+            // Haken heisst gesehen, eine Zahl heisst: so viel liegt hier.
+            // Bis hierher gab es nur den Balken — und bei einer Serie sagt
+            // der gar nichts, weil er den Stand der angefangenen Folge zeigt
+            // und nicht den der Serie.
+            .overlay(alignment: .topTrailing) {
+                if let marke = Anzeigeregeln.kachelmarke(
+                    art: item.type,
+                    staffeln: item.childCount,
+                    gesehen: item.userData?.played,
+                    offeneFolgen: item.userData?.unplayedItemCount) {
+                    Kachelplakette(marke: marke)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(titelzeile)

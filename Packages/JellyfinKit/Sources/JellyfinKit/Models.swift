@@ -335,12 +335,19 @@ public struct UserItemData: Codable, Sendable, Equatable {
     public let played: Bool?
     public let isFavorite: Bool?
     public let playedPercentage: Double?
+    /// Wie viele Folgen einer Serie noch offen sind.
+    ///
+    /// **Der Server schickt es seit jeher mit, wir haben es nie gelesen.**
+    /// Deshalb konnte eine Serienkachel nichts sagen: der Fortschrittsbalken
+    /// zeigt den Stand der angefangenen *Folge*, nicht den der Serie.
+    public let unplayedItemCount: Int?
 
     enum CodingKeys: String, CodingKey {
         case playbackPositionTicks = "PlaybackPositionTicks"
         case played = "Played"
         case isFavorite = "IsFavorite"
         case playedPercentage = "PlayedPercentage"
+        case unplayedItemCount = "UnplayedItemCount"
     }
 }
 

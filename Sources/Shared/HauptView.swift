@@ -199,6 +199,16 @@ struct BibliothekView: View {
     /// geteilt mit der tvOS-Fassung.
     @State private var stand = Bibliotheksmodell()
     @State private var sortierlisteOffen = false
+    @State private var filterlisteOffen = false
+    /// Wie weit gescrollt wurde — daran hängt die Haarlinie unter dem Kopf.
+    @State private var versatz: CGFloat = 0
+    /// Wie hoch der Kopf ist. **Gemessen, nicht getippt.**
+    ///
+    /// Hier stand `112`, für Titel plus Chipreihe gerechnet. Seit unter dem
+    /// Titel der Servername steht, war die Zahl falsch, und sie wäre es beim
+    /// nächsten Zusatz wieder — die erste Kachelreihe verschwand dann unter
+    /// dem Kopf, ohne dass ein Bau es meldet.
+    @State private var kopfhoehe: CGFloat = 112
     /// Welche Bibliothek dieser Gattung gezeigt wird.
     ///
     /// Ein Server kann mehrere Filmbibliotheken haben — im TestFlight eine
@@ -243,6 +253,14 @@ struct BibliothekView: View {
         // geprüften Stand war er unverändert da.
         // **Ohne `if` — der Behaelter bleibt, das Blatt gattert sich selbst.**
         // Nur so laufen die Uebergaenge von Schleier und Karte einzeln.
+        .overlay(alignment: .topTrailing) {
+                Auswahlblatt(offen: $filterlisteOffen,
+                             titel: "Filtern",
+                             eintraege: filter,
+                             beschriftung: { $0.beschriftung },
+                             istGewaehlt: { $0 == stand.filter },
+                             waehlen: { stand.filter = $0 })
+        }
         .overlay(alignment: .topTrailing) {
                 Auswahlblatt(offen: $sortierlisteOffen,
                              titel: "Sortieren",
@@ -320,13 +338,20 @@ struct BibliothekView: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .contentMargins(.top, (breit ? 118 + Stil.kopfOben : 112)
-                            + (fensterknoepfe ? Fensterknoepfe.hoehe : 0),
-                            for: .scrollContent)
+            // Null im Ruhezustand: `contentOffset` beginnt bei minus dem
+            // oberen Rand, den `contentMargins` gesetzt hat.
+            .onScrollGeometryChange(for: CGFloat.self) {
+                $0.contentOffset.y + $0.contentInsets.top
+            } action: { _, neu in versatz = neu }
+            // Der Kopf misst sich selbst; die Zugabe ist der Abstand, der
+            // vorher als Teil der 112 mitlief.
+            .contentMargins(.top, kopfhoehe + 20, for: .scrollContent)
             .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
                             for: .scrollContent)
 
             kopf
+                .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                    action: { kopfhoehe = $0 }
 
             if stand.laedt {
                 Lader()
@@ -358,33 +383,48 @@ struct BibliothekView: View {
     }
 
     private var kopf: some View {
-        Unschaerfekopf {
+        Unschaerfekopf(versatz: versatz) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .bottom) {
-                    // **Nur ab zwei Bibliotheken ein Menü.**
-                    //
-                    // Wer eine hat — und das sind fast alle — sieht genau das
-                    // Gleiche wie vorher: eine Überschrift, kein Zeichen, kein
-                    // Tippziel. Ein Umschalter, der nichts umzuschalten hat,
-                    // ist eine Frage ohne Antwort.
-                    if auswahl.count > 1 {
-                        // Kein `Menu` — E4 im Register: keine
-                        // Apple-Standardsteuerelemente. Dasselbe
-                        // `Auswahlblatt` wie bei der Sortierung, und es
-                        // nimmt die Beschriftung als `String`, was hier
-                        // noetig ist: Bibliotheksnamen kommen vom Server.
-                        Button { bibliothekslisteOffen = true } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                Text(gewaehlt?.name ?? "")
-                                    .font(Stil.titelGross).tracking(-0.6)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(Stil.schriftLeise)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        // **Nur ab zwei Bibliotheken ein Menü.**
+                        //
+                        // Wer eine hat — und das sind fast alle — sieht genau
+                        // das Gleiche wie vorher: eine Überschrift, kein
+                        // Zeichen, kein Tippziel. Ein Umschalter, der nichts
+                        // umzuschalten hat, ist eine Frage ohne Antwort.
+                        if auswahl.count > 1 {
+                            // Kein `Menu` — E4 im Register. Dasselbe
+                            // `Auswahlblatt` wie bei der Sortierung, und es
+                            // nimmt die Beschriftung als `String`, was hier
+                            // nötig ist: Bibliotheksnamen kommen vom Server.
+                            Button { bibliothekslisteOffen = true } label: {
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Text(gewaehlt?.name ?? "")
+                                        .font(Stil.titelGross).tracking(-0.6)
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(Stil.schriftLeise)
+                                }
                             }
+                            .buttonStyle(.plain)
+                        } else {
+                            Text(titel).font(Stil.titelGross).tracking(-0.6)
                         }
-                        .buttonStyle(.plain)
-                    } else {
-                        Text(titel).font(Stil.titelGross).tracking(-0.6)
+
+                        // **Wo bin ich hier eigentlich?**
+                        //
+                        // Der Servername stand auf keiner einzigen Seite —
+                        // man musste ins Profil, um es zu sehen. Bei mehreren
+                        // Konten auf einem Gerät ist das keine Kleinigkeit,
+                        // sondern der Unterschied zwischen zwei Bibliotheken,
+                        // die gleich heissen.
+                        if let server = model.serverName, !server.isEmpty {
+                            Text(verbatim: server)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Stil.schriftSehrLeise)
+                                .lineLimit(1)
+                        }
                     }
                     Spacer(minLength: 0)
                     // Breit steht das Profilzeichen in der Seitenleiste, und
@@ -399,77 +439,55 @@ struct BibliothekView: View {
                 }
                 .foregroundStyle(Stil.schrift)
 
-                // Filter links, Sortierung rechts abgesetzt: das eine grenzt
-                // ein, das andere ordnet nur um — zwei verschiedene Fragen.
-                HStack(spacing: 8) {
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 8) {
-                            ForEach(filter) { f in
-                                Wahlchip(text: f.beschriftung, an: stand.filter == f) {
-                                    stand.filter = f
-                                }
-                            }
-                        }
-                        // Platz für das Ausblenden am Rand, damit der letzte
-                        // Chip nicht unter der Sortierpille klebt.
-                        .padding(.trailing, 18)
-                    }
-                    .scrollIndicators(.hidden)
-                    // Am rechten Rand ausblenden statt hart abschneiden — so
-                    // sieht man auch, dass dort noch etwas weitergeht.
-                    .mask {
-                        LinearGradient(stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black, location: 0.88),
-                            .init(color: .clear, location: 1),
-                        ], startPoint: .leading, endPoint: .trailing)
-                    }
+                steuerzeile
+            }
+        }
+    }
 
-                    // Schmal: eine Pille, die ein Blatt öffnet — für vier
-                    // Möglichkeiten ist auf 390 Punkt kein Platz.
-                    //
-                    // Breit: die Möglichkeiten stehen offen nebeneinander, wie
-                    // auf dem Fernseher. Ein Blatt für etwas, das daneben
-                    // hinpasst, ist ein Umweg. Das Zeichen davor ist nötig,
-                    // sonst stehen zwei Akzentchips in einer Reihe und man
-                    // sieht nicht, welche Frage welche ist.
-                    if breit {
-                        // Aufbau wie auf dem iPhone: die Filterreihe scrollt,
-                        // die Sortierung steht rechts abgesetzt und weicht
-                        // nicht. Dort ist sie eine Pille, hier stehen die
-                        // Möglichkeiten offen — aber die Rangfolge beim
-                        // Platzmangel ist dieselbe, sonst wurden hochkant
-                        // beide Reihen gestaucht.
-                        HStack(spacing: 8) {
-                            Image(systemName: "line.3.horizontal.decrease")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Stil.schriftSehrLeise)
-                            ForEach(Sortierung.allCases) { s in
-                                Wahlchip(text: s.beschriftung, an: stand.sortierung == s) {
-                                    stand.sortierung = s
-                                }
-                            }
-                        }
-                        .fixedSize(horizontal: true, vertical: false)
-                        .layoutPriority(1)
-                    } else {
-                        Button { sortierlisteOffen = true } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "line.3.horizontal.decrease")
-                                    .font(.system(size: 12, weight: .medium))
-                                Text(stand.sortierung.beschriftung)
-                                    .font(.system(size: 13, weight: .medium))
-                            }
-                            .foregroundStyle(Stil.schrift)
-                            .padding(.horizontal, 11)
-                            .frame(height: 30)
-                            .background(Stil.erhoeht, in: Capsule())
-                            .overlay { Capsule().strokeBorder(Stil.rand) }
-                        }
-                        .buttonStyle(.plain)
+    /// **Werte, keine Möglichkeiten.**
+    ///
+    /// Hier stand eine waagerecht scrollende Reihe Filterchips plus eine
+    /// Sortierpille: drei Wörter, von denen eines leuchtet, und man muss die
+    /// Farbe deuten, um den Zustand zu lesen. Dazu trug der aktive Chip
+    /// Akzent und die Pille daneben nicht — zwei Fragen, zwei Grammatiken.
+    ///
+    /// Jetzt zwei Pillen, die ihren **Wert** zeigen, und rechts die Anzahl.
+    /// Der Preis ist ehrlich: filtern kostet zwei Tipp statt einem. Dafür
+    /// passt die Zeile auf jedes iPhone, egal wie viele Filter dazukommen,
+    /// und die Ausblendmaske am rechten Rand fällt ersatzlos weg.
+    ///
+    /// **Breit bleibt es offen.** Dort ist Platz, und ein Blatt für etwas,
+    /// das daneben hinpasst, ist ein Umweg — dieselbe Begründung wie vorher.
+    @ViewBuilder
+    private var steuerzeile: some View {
+        HStack(spacing: 8) {
+            if breit {
+                ForEach(filter) { f in
+                    Wahlchip(text: f.beschriftung, an: stand.filter == f) {
+                        stand.filter = f
                     }
                 }
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .padding(.leading, 6)
+                ForEach(Sortierung.allCases) { s in
+                    Wahlchip(text: s.beschriftung, an: stand.sortierung == s) {
+                        stand.sortierung = s
+                    }
+                }
+            } else {
+                Wertpille(symbol: "line.3.horizontal.decrease",
+                          text: stand.filter.beschriftung) { filterlisteOffen = true }
+                Wertpille(symbol: "arrow.up.arrow.down",
+                          text: stand.sortierung.beschriftung) { sortierlisteOffen = true }
             }
+
+            Spacer(minLength: 8)
+
+            // Erst wenn wir sie kennen. Eine Null, die noch keine ist, wäre
+            // eine falsche Auskunft.
+            if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
         }
     }
 

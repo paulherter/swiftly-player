@@ -1,3 +1,4 @@
+import JellyfinKit
 import SwiftUI
 
 /// Maße, Schriftgrößen und Bausteine für das iPhone. Die Farben stehen in
@@ -1285,7 +1286,19 @@ struct Leistenglas: View {
 struct Unschaerfekopf<Inhalt: View>: View {
     @Environment(\.breit) private var breit
     @Environment(\.fensterknoepfe) private var fensterknoepfe
+    /// Wie weit die Seite gescrollt ist. **Nur wer ihn angibt, bekommt die
+    /// Haarlinie** — auf der Startseite laufen Kacheln durch und dort ist
+    /// eine Kante falsch. In der Bibliothek läuft Schrift durch, und ohne
+    /// Kante sieht der Übergang aus wie Brei statt wie eine Trennung.
+    var versatz: CGFloat?
     @ViewBuilder var inhalt: () -> Inhalt
+
+    /// Dieselbe Mechanik wie in `Detailkopf`: über dreissig Punkt Weg steht
+    /// die Linie voll.
+    private var kante: Double {
+        guard let versatz else { return 0 }
+        return Double(min(max(versatz / 30, 0), 1))
+    }
 
     var body: some View {
         inhalt()
@@ -1293,6 +1306,9 @@ struct Unschaerfekopf<Inhalt: View>: View {
             .padding(.top, (breit ? Stil.kopfOben : 0)
                      + (fensterknoepfe ? Fensterknoepfe.hoehe : 0))
             .padding(.bottom, 12)
+            .background(alignment: .bottom) {
+                Rectangle().fill(Stil.linie).frame(height: 1).opacity(kante)
+            }
             .background {
                 // Nur ein Verlauf, keine Unschärfe.
                 //
@@ -1852,6 +1868,57 @@ struct FlussReihe: Layout {
     }
 }
 
+/// **Eine Pille, die ihren Wert zeigt und ein Blatt öffnet.**
+///
+/// Der Unterschied zu `Wahlchip` ist die Frage, die sie beantwortet: der Chip
+/// ist *eine Möglichkeit unter mehreren offenen* und leuchtet, wenn er gilt;
+/// die Pille ist *der geltende Wert selbst*. Eine Reihe Chips liest sich als
+/// aufgeklapptes Menü, das jemand offen gelassen hat — eine Reihe Pillen als
+/// Werkzeugleiste. Genau daran hing
+///
+/// Sie stand als Aufbau schon einmal da, mitten in der Bibliotheksseite, nur
+/// für die Sortierung. Beim zweiten Bedarf wäre sie zweimal dagestanden.
+struct Wertpille: View {
+    let symbol: String
+    let text: String
+    let tun: () -> Void
+
+    var body: some View {
+        Button(action: tun) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Stil.schriftLeise)
+                Text(verbatim: text)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Stil.schrift)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 30)
+            .background(Stil.erhoeht, in: Capsule())
+            .overlay { Capsule().strokeBorder(Stil.rand) }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Wie viele Titel in dieser Bibliothek liegen.
+///
+/// **Eine Angabe, keine Handlung** — also leise Schrift und kein Kasten. Plex
+/// setzt sie als gefüllte Kapsel; dort ist sie ein Knopf. Sie beantwortet
+/// „bin ich hier durch?", und ohne sie scrollt man ins Ungewisse.
+struct Zaehlmarke: View {
+    let anzahl: Int
+
+    var body: some View {
+        Text(verbatim: anzahl.formatted())
+            .font(.system(size: 13, weight: .medium))
+            .monospacedDigit()
+            .foregroundStyle(Stil.schriftSehrLeise)
+            .accessibilityLabel(Text("\(anzahl) Titel"))
+    }
+}
+
 /// Auswahlchip: eine Möglichkeit aus wenigen, ohne Liste.
 ///
 /// Für Filter und kurze Wertebereiche. Eine Liste wäre hier mehr Aufwand als
@@ -1877,61 +1944,157 @@ struct Wahlchip: View {
     }
 }
 
-/// **Ein Blatt von unten: Apples Bewegung, unser Aussehen.**
+/// **Ein Blatt von unten — unseres, mit Apples Physik nachgerechnet.**
 ///
-/// Zweimal haben wir es selbst gebaut, und zweimal war es zu wenig. Das erste
-/// Mal fehlte das Auffahren ganz. Das zweite Mal fuhr es auf, aber "* Er hat
-/// recht, und es ist keine Frage des Feinschliffs: an einem Systemblatt haengt
-/// eine Gummikante, eine Wurfgeschwindigkeit, ein Zusammenspiel von Ziehen und
-/// Scrollen und ein Rastpunkt. Das ist ein halbes Jahr Arbeit, und sie ist
-/// gemacht.
+/// Drei Anläufe, und der dritte ist der, der bleibt. Der Reihe nach, weil
+/// jeder Anlauf etwas beigetragen hat:
 ///
-/// **Warum das E4 nicht bricht.** „Keine Apple-Standardsteuerelemente" richtet
-/// sich gegen fremdes *Aussehen* — Apples Glas, Apples Schrift, Apples
-/// Abstaende neben unseren. Genau das laesst sich seit iOS 16.4 abstellen:
-/// `presentationBackground` setzt unsere Flaeche, `presentationCornerRadius`
-/// unsere Ecke, der Inhalt ist vollstaendig unserer. Uebrig bleibt die
-/// **Bewegung**, und die wollten wir nie selbst haben. Ein Systemblatt, dessen
-/// Inneres uns gehoert, ist kein Fremdkoerper — der Nachbau war einer.
+/// 1. **Selbst gebaut, ohne Auffahren.** `.transition(.move)` liess beim
+/// Schliessen den Hintergrund in der Sicherheitszone stehen — unter dem Blatt
+/// blieb ein Streifen. 2. **Selbst gebaut, mit gemessener Karte.** Der
+/// Streifen war weg, das Auffahren da. Aber "* Zu Recht: es fehlte alles, was
+/// eine Bewegung geschmeidig macht — Gummikante, Wurfgeschwindigkeit, eine
+/// Feder, die den Schwung des Fingers uebernimmt. 3. **Apples `sheet`.**
+/// Loeste das, brachte aber **iOS 26** mit: dort schwebt ein Blatt mit
+/// Teilhoehe, mit Rand links und rechts und Abstand nach unten; an den Rand
+/// geht es nur noch bei voller Hoehe. Nachgelesen, nicht geraten — **eine API
+/// dagegen gibt es nicht.**
 ///
-/// **Was dadurch wegfaellt:** der selbstgebaute Griff
-/// (`presentationDragIndicator` bringt Apples), der Schleier, die gemessene
-/// Karte, der Zug, der Unterrand fuer die Bereichsleiste — ein Systemblatt
-/// liegt ohnehin darueber. Und die Regel „nie in ein `if offen`" gilt nicht
-/// mehr; das Blatt haengt jetzt an einer Ansicht, nicht in einem Stapel.
+/// Also wieder unseres — aber diesmal mit dem, was in Anlauf 2 gefehlt hat,
+/// und das ist nachrechenbar und kein Gefuehl:
+///
+/// - **Gummikante nach oben.** Nach oben gibt es nichts zu sehen, also darf es
+/// sich kaum bewegen — aber es muss sich *etwas* bewegen, sonst fuehlt sich
+/// der Finger an, als sei er auf Beton. Dieselbe Formel wie `UIScrollView`. -
+/// **Der Schwung geht in die Feder.** `DragGesture` liefert seit iOS 17
+/// `velocity`; die Geschwindigkeit beim Loslassen wird auf die Restentfernung
+/// umgerechnet und als `initialVelocity` uebergeben. Das ist der ganze
+/// Unterschied zwischen „springt zurueck" und „gleitet zurueck". - **Ein
+/// schneller Wisch schliesst, auch wenn er kurz ist.** Ueber 700 Punkt je
+/// Sekunde reicht ein Zentimeter. - **Die Schwelle haengt an der Blatthoehe**,
+/// nicht an einer festen Zahl: ein Blatt mit drei Zeilen darf nicht dieselbe
+/// Strecke verlangen wie eins mit zwoelf.
 struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
     @Binding var offen: Bool
     @ViewBuilder var blattinhalt: () -> Blattinhalt
 
-    /// Wie hoch der Inhalt ist. **Gemessen, nicht angenommen** — sonst
-    /// bekaeme jedes Blatt Apples halbe Schirmhoehe, und unter drei Zeilen
-    /// staende ein Hohlraum.
-    @State private var hoehe: CGFloat = 260
+    /// Wie hoch die Karte ist — bestimmt, wie weit sie hinausfaehrt, wie
+    /// stark die Gummikante nachgibt und ab wann ein Zug zum Schliessen
+    /// reicht. **Gemessen, nicht angenommen.**
+    @State private var kartenhoehe: CGFloat = 400
+    /// Wie weit der Finger sie gerade verschoben hat.
+    @State private var zug: CGFloat = 0
 
     func body(content: Content) -> some View {
-        content.sheet(isPresented: $offen) {
-            VStack(spacing: 0) { blattinhalt() }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                // Der sichere Bereich unten gehoert zur Blatthoehe: Apple
-                // rueckt den Inhalt darueber, zeichnet die Flaeche aber
-                // hinein. Ohne die Zugabe waere das Blatt um den
-                // Home-Indikator zu kurz und der Inhalt schoebe sich.
-                .onGeometryChange(for: CGFloat.self) { $0.size.height + $0.safeAreaInsets.bottom }
-                    action: { hoehe = $0 }
-                .presentationDetents([.height(hoehe)])
-                .presentationBackground(Stil.flaeche)
-                .presentationCornerRadius(Stil.eckeFlaeche)
-                .presentationDragIndicator(.visible)
-                // Innen wird gescrollt, gezogen wird am Rand. Ohne das
-                // schliesst ein Wisch in der Staffelliste das Blatt, statt
-                // die Liste zu bewegen.
-                .presentationContentInteraction(.scrolls)
+        content.overlay { blatt }
+    }
+
+    private var blatt: some View {
+        ZStack(alignment: .bottom) {
+            Rectangle()
+                // Der Schleier geht mit dem Zug auf: zieht man das Blatt
+                // hinunter, wird die Seite dahinter schon heller.
+                .fill(.black.opacity(offen ? 0.55 * (1 - anteil) : 0))
+                .ignoresSafeArea()
+                .onTapGesture { schliessen(mit: 0) }
+
+            VStack(spacing: 0) {
+                Capsule()
+                    .fill(Color.white.opacity(0.25))
+                    .frame(width: 36, height: 5)
+                    .padding(.top, 8)
+                    // Zu schmal zum Treffen, und das macht nichts — gezogen
+                    // wird am ganzen Blatt. Fuer VoiceOver ist er nichts.
+                    .accessibilityHidden(true)
+
+                blattinhalt()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                // **Die Flaeche reicht weiter nach unten, als die Karte je
+                // faehrt.** Die Feder schiesst beim Oeffnen ueber — die Karte
+                // hebt kurz ab. Endet die Flaeche an ihrer Unterkante, blitzt
+                // in dem Moment der Inhalt darunter durch. „Der Bounce beim
+                // Oeffnen ist toll."
+                UnevenRoundedRectangle(topLeadingRadius: Stil.eckeFlaeche,
+                                       topTrailingRadius: Stil.eckeFlaeche)
+                    .fill(Stil.flaeche)
+                    .padding(.bottom, -400)
+                    .ignoresSafeArea(edges: .bottom)
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                action: { kartenhoehe = $0 }
+            .offset(y: offen ? zug : kartenhoehe + 400)
+            .gesture(ziehen)
+        }
+        // Der Stapel muss den Schirm fuellen; sonst bemisst sich die Auflage
+        // am Inhalt und die Karte sitzt oben.
+        //
+        // **Ohne `ignoresSafeArea` am Stapel**, und das ist der Unterschied
+        // zwischen einem Knopf ueber dem Home-Indikator und einem darunter:
+        // der Inhalt endet am sicheren Bereich, nur die Flaeche laeuft
+        // darueber hinaus.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(offen)
+    }
+
+    /// Wie weit das Blatt auf dem Weg nach draussen ist, 0 bis 1 — daran
+    /// haengt der Schleier.
+    private var anteil: Double {
+        Double(min(max(zug, 0) / max(kartenhoehe, 1), 1))
+    }
+
+    private var ziehen: some Gesture {
+        DragGesture()
+            .onChanged { wert in
+                let weg = wert.translation.height
+                // Nach unten eins zu eins, nach oben mit Widerstand.
+                zug = weg >= 0 ? weg : -gummi(-weg)
+            }
+            .onEnded { wert in
+                let schnell = wert.velocity.height
+                // Ein Viertel der Blatthoehe, oder ein schneller Wisch.
+                if wert.translation.height > kartenhoehe * 0.25 || schnell > 700 {
+                    schliessen(mit: schnell)
+                } else {
+                    withAnimation(feder(nach: 0, mit: schnell)) { zug = 0 }
+                }
+            }
+    }
+
+    /// Die Gummikante von `UIScrollView`: je weiter man zieht, desto weniger
+    /// gibt es nach. `c = 0.55` ist Apples Beiwert.
+    private func gummi(_ weg: CGFloat) -> CGFloat {
+        let d = max(kartenhoehe, 1)
+        return (1 - (1 / (weg * 0.55 / d + 1))) * d
+    }
+
+    /// Eine Feder, die den Schwung des Fingers uebernimmt.
+    ///
+    /// `initialVelocity` zaehlt in **Einheiten der Wertaenderung je Sekunde**,
+    /// nicht in Punkten — deshalb durch die Restentfernung teilen. Ohne diese
+    /// Umrechnung ist die Zahl entweder wirkungslos oder schleudert.
+    private func feder(nach ziel: CGFloat, mit schwung: CGFloat) -> Animation {
+        let strecke = max(abs(ziel - zug), 1)
+        let anfang = min(max(Double(schwung / strecke), -25), 25)
+        return .interpolatingSpring(mass: 1, stiffness: 280, damping: 32,
+                                    initialVelocity: anfang)
+    }
+
+    private func schliessen(mit schwung: CGFloat) {
+        withAnimation(feder(nach: kartenhoehe + 400, mit: schwung)) {
+            offen = false
+            zug = 0
         }
     }
 }
 
 extension View {
     /// Ein Blatt von unten. Siehe ``Blattmodifikator``.
+    ///
+    /// **Immer anhaengen, nie in ein `if offen`.** In einem `if` steht `offen`
+    /// beim Einhaengen schon auf wahr, die Karte sitzt sofort an ihrem Platz,
+    /// und das Auffahren faellt aus.
     func blatt<Inhalt: View>(offen: Binding<Bool>,
                              @ViewBuilder inhalt: @escaping () -> Inhalt) -> some View {
         modifier(Blattmodifikator(offen: offen, blattinhalt: inhalt))
@@ -1941,21 +2104,73 @@ extension View {
 /// Die Rubrik über dem Inhalt eines Blatts.
 ///
 /// Nimmt `Text` und keinen Schlüssel: mal steht dort ein fester Titel
-/// („Sortieren nach"), mal ein Filmtitel vom Server, der nicht übersetzt
-/// werden darf.
+/// („Sortieren"), mal ein Filmtitel vom Server, der nicht übersetzt werden
+/// darf.
+///
+/// **13 Punkt grau war zu leise.** Der Grad war für ein Blatt mit vier Zeilen
+/// gebaut; ein Filterblatt nimmt den halben Schirm ein, und dort las sich
+/// derselbe Titel wie eine Fußnote über der Hauptsache. Jetzt 17 halbfett in
+/// Weiß, mit einer Kante darunter — Plex' Blätter machen es genauso, nur
+/// zentriert. **Das Zentrieren übernehmen wir nicht:** unsere Köpfe sind
+/// linksbündig, überall, und E9 sagt das auch für Köpfe.
 struct Blattrubrik: View {
     let text: Text
 
     var body: some View {
-        text
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Stil.schriftLeise)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Stil.randAbstand)
-            // 22, damit der Griff des Systems darüber Platz hat.
-            .padding(.top, 22)
-            .padding(.bottom, 12)
+        VStack(spacing: 0) {
+            text
+                .font(.system(size: 17, weight: .semibold))
+                .tracking(-0.2)
+                .foregroundStyle(Stil.schrift)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Stil.randAbstand)
+                // 8 für den Griff, 5 für seine Höhe, 5 hier — zusammen
+                // dieselben 18 wie früher, als über dem Titel nichts stand.
+                .padding(.top, 5)
+                .padding(.bottom, 14)
+            Blattlinie()
+        }
+    }
+}
+
+/// Die Plakette oben rechts auf einer Kachel.
+///
+/// **In Weiß auf Dunkel, nicht in Akzent.** Der Akzent trägt Fortschritt und
+/// Auswahl; eine Plakette ist eine Angabe. Plex färbt seine gelb
+///
+/// Welche Auskunft draufsteht, entscheidet `Anzeigeregeln.kachelmarke` im
+/// Paket; hier steht nur der Wortlaut und wie sie aussieht.
+struct Kachelplakette: View {
+    let marke: Kachelmarke
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if marke == .gesehen {
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+            }
+            if let text = wortlaut {
+                Text(verbatim: text).font(.system(size: 10, weight: .semibold))
+            }
+        }
+        .foregroundStyle(Stil.schrift)
+        .padding(.horizontal, wortlaut == nil ? 5 : 6)
+        .padding(.vertical, 3)
+        .background {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Stil.grund.opacity(0.78))
+                .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(Stil.rand) }
+        }
+        .padding(6)
+    }
+
+    private var wortlaut: String? {
+        switch marke {
+        case .gesehen: nil
+        case .offen(let n): String(localized: "\(n) offen")
+        case .staffeln(let n): n == 1 ? String(localized: "1 Staffel")
+                                      : String(localized: "\(n) Staffeln")
+        }
     }
 }
 
