@@ -206,7 +206,8 @@ struct Titelreihe: View {
                         Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
-                                         bild: model.imageURL(for: eintrag, hochkant: true))
+                                         bild: model.imageURL(for: eintrag, hochkant: true),
+                                         zeichen: eintrag.type == "Series" ? "tv" : "film")
                         }
                         .buttonStyle(.plain)
                     }

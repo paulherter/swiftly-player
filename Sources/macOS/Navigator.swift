@@ -48,6 +48,7 @@ enum Seitenziel: Hashable, Identifiable {
     case einstellungen
     case wiedergabe
     case quickConnect
+    case kontoHinzufuegen
 
     var id: String {
         switch self {
@@ -56,6 +57,7 @@ enum Seitenziel: Hashable, Identifiable {
         case .einstellungen:    "einstellungen"
         case .wiedergabe:       "wiedergabe"
         case .quickConnect:     "quickconnect"
+        case .kontoHinzufuegen: "kontohinzufuegen"
         }
     }
 
