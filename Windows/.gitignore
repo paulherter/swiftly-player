@@ -6,3 +6,8 @@ Ressourcen/
 Sources/CBildbruecke/
 Sources/CMedientasten/
 Sources/CSchriften/
+
+# Was beim Bauen entsteht.
+Ablage/
+Mittel/*.res
+bau.log
