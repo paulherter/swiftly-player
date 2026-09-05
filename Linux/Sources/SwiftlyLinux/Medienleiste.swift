@@ -78,7 +78,11 @@ final class Medienleiste: @unchecked Sendable {
         anmelden()
     }
 
-    deinit { abmelden() }
+    deinit {
+        abmelden()
+        medientasten_abmelden()
+        tastenziel = nil
+    }
 
     fileprivate func loesen(_ griff: Griff) { melden(griff) }
 
@@ -274,5 +278,46 @@ nonisolated(unsafe) private let mprisLesen: @convention(c) (
         return g_variant_new_boolean(1)
     case "CanGoPrevious":       return g_variant_new_boolean(0)
     default:                    return nil
+    }
+}
+
+// MARK: - Medientasten der Tastatur
+
+import CMedientasten
+
+/// **Wohin die Tastendrücke gehen.** Der Rückruf kommt aus C und kann nichts
+/// einfangen; die Verbindung zur Leiste steht deshalb hier.
+nonisolated(unsafe) private var tastenziel: ((Medienleiste.Griff) -> Void)?
+
+private let tastenrueckruf: @convention(c) (Int32) -> Void = { kennung in
+    let griff: Medienleiste.Griff
+    switch kennung {
+    case 1:  griff = .beenden
+    case 2:  griff = .weiter
+    case 3:  griff = .zurueck
+    default: griff = .umschalten
+    }
+    tastenziel?(griff)
+}
+
+extension Medienleiste {
+
+    /// Hängt die Medientasten der Tastatur an das Fenster.
+    ///
+    /// **Auf Linux tut das nichts** — dort meldet ``anmelden()`` die App auf
+    /// dem Sitzungsbus an, und die Arbeitsumgebung schickt die Tasten von
+    /// selbst. Unter Windows gibt es keinen solchen Dienst: die Tasten kommen
+    /// als `WM_APPCOMMAND` an das Vordergrundfenster, und für den Hintergrund
+    /// muss man sie eigens anmelden. Beides braucht eine eigene
+    /// Fensterprozedur, und die steht in ``CMedientasten``.
+    ///
+    /// Die Aufrufstelle bleibt dadurch frei von Verzweigungen: auf beiden
+    /// Plattformen dieselbe Zeile, nur mit verschiedener Wirkung.
+    func anFenster(_ fenster: Widget) {
+        // `GtkNative` ist eine Schnittstelle, kein Typ — sie kommt in Swift
+        // als `OpaquePointer` an, dieselbe Falle wie bei `GtkOverlay`.
+        guard let flaeche = gtk_native_get_surface(OpaquePointer(fenster)) else { return }
+        tastenziel = { [weak self] griff in self?.loesen(griff) }
+        medientasten_anmelden(UnsafeMutableRawPointer(flaeche), tastenrueckruf)
     }
 }

@@ -34,12 +34,16 @@ let package = Package(
         // statische Bibliothek.
         .systemLibrary(name: "CRlottie"),
         .target(name: "CBildbruecke", dependencies: ["CVLC"]),
+        // Die Medientasten der Tastatur. Auf Linux leer — dort macht das
+        // MPRIS; unter Windows braucht es eine eigene Fensterprozedur.
+        .target(name: "CMedientasten"),
         .executableTarget(
             name: "SwiftlyWindows",
             dependencies: [
                 "CGtk",
                 "CVLC",
                 "CBildbruecke",
+                "CMedientasten",
                 "CRlottie",
                 .product(name: "JellyfinKit", package: "JellyfinKit")
             ],

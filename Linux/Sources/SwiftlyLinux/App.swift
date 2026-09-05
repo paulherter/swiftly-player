@@ -156,6 +156,11 @@ final class App: @unchecked Sendable {
             serverstandZeigen(merk.servername.map { String(format: uebersetzt("Zuletzt: %@"), $0) } ?? "")
         }
         gtk_window_present(alsFenster(fenster))
+        // **Erst jetzt gibt es eine Fensterfläche.** Vorher hat das Fenster
+        // kein Gegenstück im Fenstersystem, und ohne das lassen sich die
+        // Medientasten nicht anmelden. Auf Linux tut die Zeile nichts — dort
+        // erledigt das der Sitzungsbus.
+        medienleiste?.anFenster(fenster)
         // Die Animation fährt selbst los, sobald ihre Fläche aufgelegt ist —
         // siehe ``Startanimation/losfahren()``. Von hier aus wäre es zu früh.
 
