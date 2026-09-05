@@ -25,8 +25,12 @@ nonisolated(unsafe) private let starten: @convention(c) (UnsafeMutableRawPointer
 //
 // Der Preis ist, dass sich die App unter Windows zweimal starten lässt. Das
 // ist dort auch das übliche Verhalten.
+//
+// `G_APPLICATION_NON_UNIQUE` kommt nicht als Name in Swift an — die Aufzählung
+// heisst in glib seit 2.74 anders, und die alten Namen sind nur noch Makros.
+// 32 ist der Wert, den sie seit jeher trägt (das sechste Bit).
 #if os(Windows)
-let merkmale = G_APPLICATION_NON_UNIQUE
+let merkmale = GApplicationFlags(rawValue: 32)
 #else
 let merkmale = GApplicationFlags(rawValue: 0)
 #endif
