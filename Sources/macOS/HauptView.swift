@@ -4,23 +4,38 @@ import SwiftUI
 /// Welchen Bereich die Seitenleiste zeigt. Dieselben vier wie in der Leiste
 /// unten auf dem iPhone.
 enum Bereich: String, Hashable, CaseIterable {
-    case start, filme, serien, suche
+    case start, filme, serien, downloads, suche
+
+    /// Was in der Seitenleiste steht. **H1:** ohne den Schalter gibt es die
+    /// Downloadzeile nicht.
+    ///
+    /// Downloads steht **oben bei den Bereichen**, nicht unten bei den
+    /// Sammlungen — anders als die Merkliste. Die ist eine Bibliothek, deren
+    /// Grenze der Haken ist; Downloads ist keine Auswahl aus dem Server,
+    /// sondern das, was auf dieser Maschine liegt. Auf dem iPhone ist es aus
+    /// demselben Grund ein Reiter und kein Ziel im Kopf.
+    static func sichtbare(downloads: Bool) -> [Bereich] {
+        downloads ? [.start, .filme, .serien, .downloads, .suche]
+                  : [.start, .filme, .serien, .suche]
+    }
 
     var symbol: String {
         switch self {
-        case .start:  "house"
-        case .filme:  "film"
-        case .serien: "tv"
-        case .suche:  "magnifyingglass"
+        case .start:     "house"
+        case .filme:     "film"
+        case .serien:    "tv"
+        case .suche:     "magnifyingglass"
+        case .downloads: "arrow.down.circle"
         }
     }
 
     var beschriftung: LocalizedStringKey {
         switch self {
-        case .start:  "Start"
-        case .filme:  "Filme"
-        case .serien: "Serien"
-        case .suche:  "Suche"
+        case .start:     "Start"
+        case .filme:     "Filme"
+        case .serien:    "Serien"
+        case .suche:     "Suche"
+        case .downloads: "Downloads"
         }
     }
 }
@@ -392,6 +407,7 @@ struct HauptView: View {
         case .serien: BibliothekView(model: model, art: "tvshows", titel: "Serien",
                                      regal: serienregal, gewaehlt: $serienbibliothek)
         case .suche:  SucheView(model: model)
+        case .downloads: DownloadsView(model: model)
         }
     }
 
@@ -485,7 +501,7 @@ struct Seitenleiste: View {
                 .padding(.bottom, 18)
 
             VStack(spacing: 2) {
-                ForEach(Bereich.allCases, id: \.self) { fall in
+                ForEach(Bereich.sichtbare(downloads: model.downloadsAn), id: \.self) { fall in
                     Seitenleistenzeile(symbol: fall.symbol,
                                        beschriftung: fall.beschriftung,
                                        aktiv: bereich == fall) { bereich = fall }
