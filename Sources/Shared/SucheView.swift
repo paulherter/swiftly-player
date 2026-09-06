@@ -119,6 +119,9 @@ struct SucheView: View {
                 .simultaneousGesture(TapGesture().onEnded { imFeld = false })
             }
             }
+            // Ueber dem Inhalt, unter allem, was die Seite sonst noch
+            // auflegt — siehe `bereichsleiste()`.
+            .bereichsleiste()
         }
         // Erst die Tastatur, dann der Weg zurück — wie überall in iOS.
         //

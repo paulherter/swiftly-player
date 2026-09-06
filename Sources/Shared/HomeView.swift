@@ -26,6 +26,9 @@ struct HomeView: View {
             Stil.grund.ignoresSafeArea()
 
             inhalt
+                // Unter dem Kopf und unter der Uebernahmeauswahl, ueber dem
+                // Inhalt — siehe `bereichsleiste()`.
+                .bereichsleiste()
             kopf
 
             if !stand.geladen || bereitet {

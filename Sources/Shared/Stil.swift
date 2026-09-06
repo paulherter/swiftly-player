@@ -1115,6 +1115,62 @@ struct Navileiste: View {
     }
 }
 
+/// Wohin ein Antippen der Bereichsleiste geht — oder `nil`, wo es keine gibt.
+///
+/// Über die Umgebung und nicht als Argument: sonst müsste jede Wurzelansicht
+/// die Bindung durchreichen, und die nächste, die dazukommt, vergisst es.
+private struct Bereichswahlschluessel: EnvironmentKey {
+    static let defaultValue: Binding<Bereich>? = nil
+}
+
+extension EnvironmentValues {
+    var bereichswahl: Binding<Bereich>? {
+        get { self[Bereichswahlschluessel.self] }
+        set { self[Bereichswahlschluessel.self] = newValue }
+    }
+}
+
+extension View {
+    /// Legt die Bereichsleiste unten an diese Ansicht.
+    ///
+    /// **Sie gehört in die Wurzelansicht, nicht über den Seitenstapel.** Dort
+    /// hing sie, und daraus folgten zwei Fehler, die wie zwei aussahen und
+    /// einer waren:
+    ///
+    /// **Beim Blättern auf eine Unterseite verschwand sie schlagartig.** Sie
+    /// hing an „ist der Pfad leer" und wurde ausgehängt, während die neue
+    /// Seite noch von rechts hereinfuhr. Liegt sie in der Wurzel, schiebt der
+    /// Stapel die neue Seite von selbst darüber — es gibt nichts auszuhängen.
+    /// - **Ein Blatt lag darunter.** Ein Blatt hängt in der Seite, die Leiste
+    /// lag eine Ebene höher. Der Umweg über einen Unterrand versteckte es nur;
+    /// der Versuch, den Seitenstapel darüber zu heben, deckte die Leiste mit
+    /// undurchsichtigem Grund zu — sie war weg statt gedämpft.
+    ///
+    /// In der Wurzel stimmt die Reihenfolge von selbst: Inhalt, Leiste, Blatt.
+    /// Deshalb steht dieser Aufruf **vor** den Blättern einer Seite.
+    func bereichsleiste() -> some View {
+        modifier(Bereichsleiste())
+    }
+}
+
+private struct Bereichsleiste: ViewModifier {
+    @Environment(\.breit) private var breit
+    @Environment(\.bereichswahl) private var wahl
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .bottom) {
+            if !breit, let wahl {
+                Navileiste(gewaehlt: wahl)
+                    // Der Tastaturbereich muss *hier* ignoriert werden, nicht
+                    // in der Leiste selbst: schrumpfen tut der Stapel
+                    // drumherum, und ein `ignoresSafeArea` im Kind hält den
+                    // Elternteil nicht davon ab.
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
+            }
+        }
+    }
+}
+
 /// Dieselbe Leiste, um 90 Grad gedreht — für die breite Fassung.
 ///
 /// **Nicht die Kopfleiste vom Fernseher.** Die liegt dort oben, weil eine
@@ -1339,8 +1395,13 @@ struct Unschaerfekopf<Inhalt: View>: View {
                     // Eine Flaeche kann nicht aufblitzen und ist genau so
                     // dunkel wie die Seite. Der Bibliothekskopf traegt
                     // ausserdem Schrift, keine Kacheln — dort ist Glas kein
-                    // Gewinn, sondern nur Unruhe.
-                    Stil.grund.opacity(kante)
+                    // Gewinn, sondern nur Unruhe. **Bis unter die
+                    // Statusleiste.** `Kopfverlauf` bringt sein eigenes
+                    // `ignoresSafeArea` mit, eine blosse Flaeche nicht — sie
+                    // endete an der Oberkante des Kopfes, und darueber liefen
+                    // die Plakate ungebremst bis nach ganz oben. Genau das war
+                    // zu sehen.
+                    Stil.grund.opacity(kante).ignoresSafeArea(edges: .top)
                 }
             }
     }
@@ -1998,24 +2059,7 @@ struct Wahlchip: View {
 /// schneller Wisch schliesst, auch wenn er kurz ist.** Ueber 700 Punkt je
 /// Sekunde reicht ein Zentimeter. - **Die Schwelle haengt an der Blatthoehe**,
 /// nicht an einer festen Zahl: ein Blatt mit drei Zeilen darf nicht dieselbe
-/// Strecke verlangen wie eins mit zwoelf. Meldet nach oben, dass irgendwo
-/// darunter ein Blatt offen ist.
-///
-/// **Damit es ueber der Bereichsleiste liegt.** Ein Blatt haengt tief im
-/// Seitenstapel, die Leiste zeichnet `HauptView` darueber — also lag das Blatt
-/// darunter, und „Abbrechen" verschwand. Der Umweg ueber einen Unterrand war
-/// die Notloesung;
-///
-/// Ueber eine Vorgabe und nicht ueber durchgereichte Zustaende: sonst muesste
-/// jede Seite, die irgendwann ein Blatt bekommt, ihren Schalter bis nach oben
-/// weiterreichen — und die erste, die es vergisst, hat den Fehler wieder.
-struct Blattzustand: PreferenceKey {
-    static let defaultValue = false
-    static func reduce(value: inout Bool, nextValue: () -> Bool) {
-        value = value || nextValue()
-    }
-}
-
+/// Strecke verlangen wie eins mit zwoelf.
 struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
     @Binding var offen: Bool
     @ViewBuilder var blattinhalt: () -> Blattinhalt
@@ -2028,9 +2072,7 @@ struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
     @State private var zug: CGFloat = 0
 
     func body(content: Content) -> some View {
-        content
-            .overlay { blatt }
-            .preference(key: Blattzustand.self, value: offen)
+        content.overlay { blatt }
     }
 
     private var blatt: some View {

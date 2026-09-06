@@ -27,14 +27,11 @@ struct HauptView: View {
     @Environment(\.breit) private var breit
     @Environment(\.fensterknoepfe) private var fensterknoepfe
 
-    /// Auf Unterseiten weicht die Leiste — dort zählt der Inhalt, und der
-    /// Zurückweg ist der Wisch von links. **Nur unten**: die Seitenleiste
-    /// bleibt stehen, siehe `Seitenleiste`.
+    /// Liegt nichts auf dem Stapel dieses Bereichs? Nur noch dafür da, den
+    /// Profilzweig zu schliessen — die Bereichsleiste hängt seit dem Umzug in
+    /// die Wurzelansichten nicht mehr daran.
     private var anDerWurzel: Bool { pfade[bereich.rawValue].isEmpty }
 
-    /// Ist irgendwo im Seitenstapel ein Blatt offen? Dann gehoert der Stapel
-    /// **ueber** die Bereichsleiste. Siehe ``Blattzustand``.
-    @State private var blattOffen = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -62,27 +59,12 @@ struct HauptView: View {
                         }
                     }
                 }
+                // Die Wurzelansichten legen sich die Leiste selbst an —
+                // siehe `bereichsleiste()`. Hier steht nur, wohin ein Tippen
+                // darauf geht.
+                .environment(\.bereichswahl, $bereich)
             }
-            // **Ueber der Leiste, sobald ein Blatt offen ist.**
-            //
-            // Sie liegen im selben Stapel, und der spaetere gewinnt — also
-            // die Leiste. Ein Blatt soll sie aber verdecken, samt Schleier,
-            // so wie es Apple auch macht. Der Rang wandert deshalb mit dem
-            // Blatt und nicht dauerhaft: sonst laege die Leiste immer unter
-            // dem Inhalt und waere nicht mehr zu treffen.
-            .zIndex(blattOffen ? 1 : 0)
-            .onPreferenceChange(Blattzustand.self) { blattOffen = $0 }
 
-            if !breit, anDerWurzel {
-                Navileiste(gewaehlt: $bereich)
-                    // Der Tastaturbereich muss *hier* ignoriert werden, nicht
-                    // in der Leiste selbst: schrumpfen tut der Stapel drumherum,
-                    // und ein ignoresSafeArea im Kind haelt den Elternteil nicht
-                    // davon ab. Der volle Rahmen davor sorgt dafuer, dass die
-                    // Leiste am echten unteren Rand haengt.
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .ignoresSafeArea(.keyboard, edges: .bottom)
-            }
         }
         // Bewusst ohne Übergang: die Leiste soll fest liegen und beim
         // Zurückkommen einfach wieder da sein, so wie der Inhalt dahinter
@@ -254,6 +236,9 @@ struct BibliothekView: View {
         GeometryReader { rahmen in
             inhalt(nutzbar: rahmen.size.width - 2 * Stil.rand(breit: breit))
         }
+        // **Vor den Blaettern.** Die Reihenfolge ist der ganze Punkt: Inhalt,
+        // Leiste, Blatt. Die Begruendung steht an `bereichsleiste()`.
+        .bereichsleiste()
         // **Die Blätter gehören an die Seite, nicht an die Kopfzeile.**
         //
         // Sie hingen an `kopf`. Eine Auflage bekommt den Rahmen dessen, worauf
