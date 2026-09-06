@@ -11,6 +11,9 @@ struct SucheView: View {
 
     @State private var begriff = ""
     @State private var treffer: [Item] = []
+    /// Was Seerr kennt und der eigene Server nicht — leer, wenn nichts
+    /// angebunden ist.
+    @State private var seerrtreffer: [Seerrtreffer] = []
     @State private var gesucht = false
     @FocusState private var imFeld: Bool
 
@@ -52,9 +55,37 @@ struct SucheView: View {
                         }
                     }
                     .padding(.top, 24)
-                } else if gesucht, !begriff.isEmpty {
+                } else if gesucht, !begriff.isEmpty, seerrtreffer.isEmpty {
+                    // **Beide leer, nicht nur die Bibliothek.** Stuende hier
+                    // `treffer.isEmpty`, gewaenne dieser Zweig, sobald der
+                    // eigene Server nichts hat — und der Seerr-Block darunter
+                    // wuerde nie erreicht. Genau der Fall, fuer den die ganze
+                    // Anbindung gebaut ist.
                     Leerzustand(symbol: "tray", titel: "Nichts gefunden")
                         .padding(.top, 120)
+                }
+
+                if !seerrtreffer.isEmpty {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Kann angefragt werden")
+                            .font(.system(size: 13, weight: .semibold))
+                            .tracking(0.5)
+                            .textCase(.uppercase)
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                        Spacer(minLength: 8)
+                        Zaehlmarke(anzahl: seerrtreffer.count)
+                    }
+                    .padding(.top, treffer.isEmpty ? 30 : 40)
+
+                    LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {
+                        ForEach(seerrtreffer) { t in
+                            Button { navigator.oeffne(.seerrTitel(t), in: bereich) } label: {
+                                Seerrkachel(treffer: t)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.top, 18)
                 }
             }
             .padding(.horizontal, Stil.randAbstand)
@@ -72,11 +103,22 @@ struct SucheView: View {
         .ohneKanteneffekt()
         .onAppear { imFeld = true }
         .task(id: begriff) {
-            guard begriff.count > 1 else { treffer = []; gesucht = false; return }
+            guard begriff.count > 1 else {
+                treffer = []; seerrtreffer = []; gesucht = false; return
+            }
             // Kurz warten, statt bei jedem Tastendruck zu fragen.
             try? await Task.sleep(for: .milliseconds(280))
             guard !Task.isCancelled else { return }
-            treffer = await model.suche(begriff)
+            // **Nebeneinander, nicht nacheinander.** Seerr ist eine Zugabe;
+            // kommt von dort nichts oder kommt es spaet, steht trotzdem
+            // sofort da, was der eigene Server hat.
+            async let eigene = model.suche(begriff)
+            async let fremde = model.seerr.suchen(begriff)
+            let (a, b) = await (eigene, fremde)
+            treffer = a
+            // Was schon auf dem Server liegt, gehoert in den oberen Block —
+            // sonst staende derselbe Titel zweimal auf der Seite.
+            seerrtreffer = b.filter { !$0.stand.schonDa }
             gesucht = true
         }
         .onReceive(NotificationCenter.default.publisher(for: Kommandopost.name)) { post in

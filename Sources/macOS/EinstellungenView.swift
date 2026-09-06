@@ -11,6 +11,8 @@ struct EinstellungenView: View {
     let model: AppModel
     let zurueck: () -> Void
 
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
     @State private var pruefung: String?
     @State private var pruefe = false
 
@@ -20,9 +22,10 @@ struct EinstellungenView: View {
                 Unterseitenkopf(titel: "Einstellungen", zurueck: zurueck)
 
                 darstellung
+                integration
                 server
 
-                Text(verbatim: "Swiftly 1.0 · VLCKit 4.0.0-a23")
+                Text(verbatim: "\(Fassung.zeile) · VLCKit 4.0.0-a23")
                     .font(.system(size: 12))
                     .foregroundStyle(Stil.schrift.opacity(0.3))
                     .padding(.top, 26)
@@ -54,6 +57,19 @@ struct EinstellungenView: View {
                           titel: Text("Fortschritt auf Kacheln"),
                           an: Binding(get: { model.fortschrittAufKacheln },
                                       set: { model.fortschrittAufKacheln = $0 }))
+        }
+    }
+
+    /// **Steht zwischen Darstellung und Server, und das ist kein Zufall.**
+    /// Es ist ein zweiter Dienst, kein zweiter Server — und es ist eine
+    /// Zugabe: wer nichts anbindet, sieht ausser dieser einen Zeile nirgends
+    /// etwas davon.
+    private var integration: some View {
+        Einstellungsgruppe(titel: "Integration") {
+            Wertezeile(symbol: "sparkle.magnifyingglass", titel: Text("Seerr"),
+                       unter: Text("Anfragen, was noch nicht da ist"),
+                       wert: model.seerr.verbunden ? String(localized: "Verbunden") : nil,
+                       aktion: { navigator.oeffne(.seerr, in: bereich) })
         }
     }
 

@@ -400,6 +400,8 @@ struct HauptView: View {
         switch ziel {
         case let .titel(item):  DetailView(model: model, item: item) { zurueck() }
         case .merkliste:        MerklisteView(model: model) { zurueck() }
+        case .seerr:            SeerrEinstellungenView(model: model, seerr: model.seerr) { zurueck() }
+        case let .seerrTitel(t): SeerrDetailView(model: model, treffer: t) { zurueck() }
         case .profil:           ProfilView(model: model) { zurueck() }
         case .einstellungen:    EinstellungenView(model: model) { zurueck() }
         case .wiedergabe:       WiedergabeEinstellungenView(model: model) { zurueck() }

@@ -67,6 +67,10 @@ enum Seitenziel: Hashable, Identifiable {
     /// Die Merkliste — kein eigener Bereich, sondern eine Seite aus der
     /// Leiste. Auf dem iPhone haengt sie am Zeichen oben rechts.
     case merkliste
+    /// Seerr anbinden — eine Zugabe, deshalb hinter den Einstellungen.
+    case seerr
+    /// Ein Titel, den der eigene Server nicht hat — aus der Suche.
+    case seerrTitel(Seerrtreffer)
     case profil
     case einstellungen
     case wiedergabe
@@ -77,6 +81,8 @@ enum Seitenziel: Hashable, Identifiable {
         switch self {
         case let .titel(item):  "titel-\(item.id)"
         case .merkliste:        "merkliste"
+        case .seerr:            "seerr"
+        case let .seerrTitel(t): "seerr-\(t.art)-\(t.id)"
         case .profil:           "profil"
         case .einstellungen:    "einstellungen"
         case .wiedergabe:       "wiedergabe"
