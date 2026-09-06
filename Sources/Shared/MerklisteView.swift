@@ -64,9 +64,14 @@ enum Merkgattung: String, CaseIterable, Identifiable {
     case alle, filme, serien
     var id: String { rawValue }
 
+    /// **Nicht „Alle".** Auf der Bibliotheksseite steht an derselben Stelle
+    /// eine Pille mit demselben Wort — die meint dort aber den *Zustand*
+    /// (alle, angefangen, gemerkt, ungesehen), hier die *Gattung*. Gleiches
+    /// Wort, gleiches Zeichen, gleicher Platz, zwei Bedeutungen: das ist
+    /// keine Kürze, sondern eine Falle.
     var beschriftung: String {
         switch self {
-        case .alle:   String(localized: "Alle")
+        case .alle:   String(localized: "Filme & Serien")
         case .filme:  String(localized: "Filme")
         case .serien: String(localized: "Serien")
         }
@@ -90,6 +95,13 @@ struct MerklisteView: View {
     @State private var gattung: Merkgattung = .alle
     @State private var gattungslisteOffen = false
     @State private var sortierlisteOffen = false
+    /// Wie weit gescrollt wurde — daran hängt die Kante unter dem Kopf.
+    ///
+    /// **Fehlte hier.** Filme und Serien haben sie seit gestern; diese Seite
+    /// ist beim Bauen ohne den Wert entstanden, und damit lief ihr Inhalt
+    /// weiter unter einem halben Verlauf durch statt hinter einer Leiste.
+    /// Dieselbe Seitenart, zwei Verhalten.
+    @State private var versatz: CGFloat = 0
 
     var body: some View {
         GeometryReader { rahmen in
@@ -97,7 +109,7 @@ struct MerklisteView: View {
         }
         .overlay(alignment: .topTrailing) {
             Auswahlblatt(offen: $gattungslisteOffen,
-                         titel: "Zeigen",
+                         titel: "Gattung",
                          eintraege: Merkgattung.allCases,
                          beschriftung: { $0.beschriftung },
                          istGewaehlt: { $0 == gattung },
@@ -154,6 +166,10 @@ struct MerklisteView: View {
             }
             .scrollIndicators(.hidden)
             .animation(Stil.einblenden, value: stand.items.isEmpty)
+            // Null im Ruhezustand — wie in der Bibliothek.
+            .onScrollGeometryChange(for: CGFloat.self) {
+                $0.contentOffset.y + $0.contentInsets.top
+            } action: { _, neu in versatz = neu }
             .contentMargins(.top, kopfhoehe + 20, for: .scrollContent)
             .contentMargins(.bottom, 24, for: .scrollContent)
 
@@ -175,7 +191,7 @@ struct MerklisteView: View {
     @State private var kopfhoehe: CGFloat = 112
 
     private var kopf: some View {
-        Unschaerfekopf {
+        Unschaerfekopf(versatz: versatz) {
             VStack(alignment: .leading, spacing: 14) {
                 Unterseitenkopf(titel: String(localized: "Merkliste"),
                                 zurueck: { zurueck() }) { EmptyView() }
@@ -184,7 +200,10 @@ struct MerklisteView: View {
                     .padding(.horizontal, -Stil.rand(breit: breit))
 
                 HStack(spacing: 8) {
-                    Wertpille(symbol: "line.3.horizontal.decrease",
+                    // **Ein anderes Zeichen als der Filter.** Ein Trichter
+                    // engt ein, ein Raster wählt aus — und die beiden Pillen
+                    // stehen auf zwei Seiten an derselben Stelle.
+                    Wertpille(symbol: "square.grid.2x2",
                               text: gattung.beschriftung) { gattungslisteOffen = true }
                     Wertpille(symbol: "arrow.up.arrow.down",
                               text: stand.sortierung.beschriftung) { sortierlisteOffen = true }

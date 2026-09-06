@@ -1705,11 +1705,13 @@ struct Suchfeld: View {
 
             if !text.isEmpty {
                 Button { text = "" } label: {
+                    // **Kein Kreis mehr.** Mit den vier Aktionskreisen ist
+                    // die Kreisform aus der App verschwunden — dieser hier
+                    // war der letzte Kreis, der ein Knopf ist. Runde
+                    // Porträts und das Profilbild bleiben: das sind Bilder.
                     Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(Stil.grund)
-                        .frame(width: 18, height: 18)
-                        .background(Color.white.opacity(0.16), in: Circle())
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Stil.schriftLeise)
                         // **Der Kreis bleibt 18, das Ziel wird 44.** Es war
                         // die kleinste Trefferfläche der App — weniger als
                         // die Hälfte von Apples Mindestmaß. Sichtbar ändert
@@ -1851,7 +1853,12 @@ struct Belegzeile: View {
                 .foregroundStyle(Color.white.opacity(0.8))
             }
 
-            if let freigabe { Plakette(text: freigabe) }
+            // **Ecke 8, nicht der Standardwert 3.** Die Skala ist seit
+            // heute 10/10/12/16, und eine Marke mit 3 sitzt direkt neben
+            // Dingen mit 10 — sie war das eckigste Element der Seite. Hier
+            // und nicht am Baustein: `Plakette` steht auch im Mac- und
+            // Fernseherziel, und die haben ihre eigene Skala.
+            if let freigabe { Plakette(text: freigabe, rundung: 8) }
 
             Spacer(minLength: 0)
         }
@@ -2516,9 +2523,11 @@ struct Kachelplakette: View {
         .padding(.horizontal, wortlaut == nil ? 5 : 6)
         .padding(.vertical, 3)
         .background {
-            RoundedRectangle(cornerRadius: 6)
+            // 9, nicht 6: die Kachel darunter hat 10, und eine Marke, die
+            // eckiger ist als ihr Untergrund, fällt auf.
+            RoundedRectangle(cornerRadius: 9)
                 .fill(Stil.grund.opacity(0.78))
-                .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(Stil.rand) }
+                .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(Stil.rand) }
         }
         .padding(6)
     }

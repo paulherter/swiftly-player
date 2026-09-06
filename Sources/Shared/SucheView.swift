@@ -104,7 +104,7 @@ struct SucheView: View {
                             // wirklich etwas steht — sonst kündigt sie einen
                             // leeren Block an.
                             if !seerrtreffer.isEmpty, !treffer.isEmpty {
-                                blockTitel("Auf deinem Server")
+                                blockTitel("Auf deinem Server", treffer.count)
                             }
                             gruppe("Serien", treffer.filter { $0.type == "Series" },
                                    nutzbar: nutzbar)
@@ -116,7 +116,7 @@ struct SucheView: View {
                                 !["Series", "Movie", "Episode"].contains($0.type ?? "")
                             }, nutzbar: nutzbar)
                             if !seerrtreffer.isEmpty {
-                                blockTitel("Kann angefragt werden").padding(.top, 8)
+                                blockTitel("Kann angefragt werden", seerrtreffer.count).padding(.top, 8)
                                 seerrRaster(nutzbar: nutzbar)
                             }
                         }
@@ -213,15 +213,25 @@ struct SucheView: View {
         }
     }
 
-    private func blockTitel(_ text: LocalizedStringKey) -> some View {
-        Text(text)
-            .font(.system(size: 13, weight: .semibold))
-            .tracking(0.5)
-            .textCase(.uppercase)
-            .foregroundStyle(Stil.schriftSehrLeise)
-            .padding(.horizontal, Stil.rand(breit: breit))
-            .padding(.top, 16)
-            .padding(.bottom, 4)
+    /// **Die Rubrik sagt jetzt auch, wie viel.**
+    ///
+    /// Bibliothek und Merkliste tragen rechts eine Zählmarke; sie beantwortet
+    /// „bin ich hier durch?". In der Suche fehlte sie — dabei ist gerade dort
+    /// interessant, wie viel überhaupt kam, und beim zweiten Block nebenbei,
+    /// wie viel Seerr anzubieten hat.
+    private func blockTitel(_ text: LocalizedStringKey, _ anzahl: Int) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(text)
+                .font(.system(size: 13, weight: .semibold))
+                .tracking(0.5)
+                .textCase(.uppercase)
+                .foregroundStyle(Stil.schriftSehrLeise)
+            Spacer(minLength: 8)
+            if anzahl > 0 { Zaehlmarke(anzahl: anzahl) }
+        }
+        .padding(.horizontal, Stil.rand(breit: breit))
+        .padding(.top, 16)
+        .padding(.bottom, 4)
     }
 
     private func seerrRaster(nutzbar: CGFloat) -> some View {
