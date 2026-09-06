@@ -372,24 +372,24 @@ struct DownloadsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
-            // Der Kopf sitzt als Sicherheitsrand, nicht als Auflage — die
-            // Begruendung steht ausfuehrlich in `HauptView`. Kurz: sein
-            // oberer Rand kam aus einer eigenen Messung, die als
-            // `contentMargins` in dieselbe Flaeche zurueckging, und dieser
-            // Kreis schwang. `safeAreaInset` misst nichts.
-            .safeAreaInset(edge: .top, spacing: 0) { kopf }
             .contentMargins(.bottom, bearbeiten ? 84 : 24, for: .scrollContent)
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
             } action: { _, neu in versatz = neu }
             .animation(Stil.einblenden, value: verwaltung.posten.count)
             // **Nur die Scrollflaeche zieht sich beim Wechsel heran.**
-            //
-            // Hier stand `bereichsinhalt` ganz unten an der Seite — dann
-            // wandert der feste Kopf mit, und beim Oeffnen der Downloads schob
-            // sich die obere Leiste mit der Bewegung mit. Auf Start, Filme und
-            // Serien haengt sie seit je an der Flaeche allein;
             .bereichsinhalt()
+            // **Und der Kopf danach, nicht davor.**
+            //
+            // Modifikatoren wickeln sich von innen nach aussen: was vor
+            // `bereichsinhalt` steht, steckt darin und wird mitbewegt. Der
+            // Kopf stand davor, also schob er sich beim Oeffnen der
+            // Downloadseite mit herein. Auf Filme und Serien steht er seit der
+            // Umstellung dahinter, und genau deshalb liegt er dort fest.
+            //
+            // Er sitzt als Sicherheitsrand statt als Auflage; die Begruendung
+            // dafuer steht ausfuehrlich in `HauptView`.
+            .safeAreaInset(edge: .top, spacing: 0) { kopf }
 
 
             if verwaltung.posten.isEmpty {
