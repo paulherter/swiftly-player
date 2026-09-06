@@ -14,14 +14,15 @@ import SwiftUI
 /// war, und der Bereich stand auf einer Sammlung, die man dort nie gewaehlt
 /// hatte.
 ///
-/// **Das Regal gehoert hier der Seite**, anders als bei `BibliothekView`. Dort
-/// liegt es aussen, weil die Wurzel bei jedem Leistenwechsel weggeworfen wird;
-/// eine Seite auf dem Stapel wird das nicht — sie lebt, solange sie offen ist,
-/// und mit ihr ihr Stand.
+/// **Sie ist eine Wurzel, keine Seite.** Filme und Serien sind Wurzeln, also
+/// ist das hier eine: kein Hereinfahren von rechts, kein Zurueckpfeil.
+///
+/// Das Regal gehoert der Ansicht. Bei den Bereichen liegt es aussen, weil die
+/// Wurzel bei jedem Leistenwechsel weggeworfen wird — hier ist genau das
+/// gewollt: eine andere Bibliothek ist ein anderes Regal.
 struct Bibliotheksseite: View {
     let model: AppModel
     let bibliothek: Item
-    let zurueck: () -> Void
 
     @State private var regal = Bibliotheksmodell()
     @State private var gewaehlt: Item?
@@ -32,8 +33,7 @@ struct Bibliotheksseite: View {
                        titel: LocalizedStringKey(bibliothek.name),
                        regal: regal,
                        gewaehlt: $gewaehlt,
-                       nurDiese: true,
-                       zurueck: zurueck)
+                       nurDiese: true)
             .onAppear { if gewaehlt == nil { gewaehlt = bibliothek } }
     }
 }

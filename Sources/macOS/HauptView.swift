@@ -84,6 +84,13 @@ struct HauptView: View {
     /// kann mehrere haben. Liegt aus demselben Grund hier wie die Regale.
     @State private var filmbibliothek: Item?
     @State private var serienbibliothek: Item?
+    /// **Eine der uebrigen Bibliotheken, als Wurzel.**
+    ///
+    /// Nicht als Seite auf dem Stapel: eine Seite faehrt von rechts herein und
+    /// traegt einen Zurueckpfeil, und Filme und Serien sind Wurzeln — also ist
+    /// das hier eine. Gesetzt heisst: sie steht statt der Wurzel des Bereichs;
+    /// jeder Klick auf einen Bereich setzt sie zurueck.
+    @State private var offeneBibliothek: Item?
 
     init(model: AppModel) {
         self.model = model
@@ -99,7 +106,9 @@ struct HauptView: View {
                          gewaehlteBibliothek: { art in
                              art == "movies" ? filmbibliothek : serienbibliothek
                          },
-                         bibliothekOeffnen: { navigator.oeffne(.bibliothek($0), in: bereich) },
+                         bibliothekOeffnen: { offeneBibliothek = $0 },
+                         offeneKennung: offeneBibliothek?.id,
+                         schliesseBibliothek: { offeneBibliothek = nil },
                          zumProfil: { navigator.oeffne(.profil, in: bereich) })
             // **Der Sicherheitsrand der Titelleiste gilt links genauso wenig
             // wie rechts.** Vorher hielt nur der Inhaltsbereich ihn nicht
@@ -336,7 +345,10 @@ struct HauptView: View {
                     // zweiten Weg hinein; ohne sie stand die Wurzel weiter im
                     // Baum, mit Chips bei x = 4 unter der Leiste.
                     .accessibilityHidden(tiefe > 0)
-                    .id(bereich)
+                    // Die Kennung traegt die offene Bibliothek mit: ohne sie
+                    // wechselte der Inhalt, ohne dass SwiftUI die Wurzel neu
+                    // baut, und der Stand der vorigen bliebe stehen.
+                    .id(offeneBibliothek?.id ?? bereich.rawValue)
                     // **Die Wurzel liegt ausdrücklich unten.** Ohne feste
                     // Ebenen fuhr die Seite unter den Kacheln der Startseite
                     // herein, und das sah aus wie Durchsichtigkeit.
@@ -471,6 +483,15 @@ struct HauptView: View {
 
     @ViewBuilder
     private var wurzel: some View {
+        if let bib = offeneBibliothek {
+            Bibliotheksseite(model: model, bibliothek: bib)
+        } else {
+            bereichswurzel
+        }
+    }
+
+    @ViewBuilder
+    private var bereichswurzel: some View {
         switch bereich {
         case .start:  HomeView(model: model, stand: startseite)
         case .filme:  BibliothekView(model: model, art: "movies", titel: "Filme",
@@ -489,8 +510,9 @@ struct HauptView: View {
         case let .titel(item):  DetailView(model: model, item: item) { zurueck() }
         case .seerr:            SeerrEinstellungenView(model: model, seerr: model.seerr) { zurueck() }
         case let .seerrTitel(t): SeerrDetailView(model: model, treffer: t) { zurueck() }
-        case let .bibliothek(bib): Bibliotheksseite(model: model, bibliothek: bib,
-                                                   zurueck: { zurueck() })
+        // Nicht mehr erreichbar — eine Bibliothek ist eine Wurzel. Der Fall
+        // steht hier, damit ein wiederhergestellter alter Stapel nicht bricht.
+        case .bibliothek: Color.clear.onAppear { zurueck() }
         case .profil:           ProfilView(model: model) { zurueck() }
         // Nicht mehr erreichbar — die Merkliste ist ein Bereich. Der Fall
         // steht hier, damit ein wiederhergestellter alter Stapel nicht
@@ -566,6 +588,11 @@ struct Seitenleiste: View {
     /// Leiste soll sie nicht doppelt führen.
     let gewaehlteBibliothek: (String) -> Item?
     let bibliothekOeffnen: (Item) -> Void
+    /// Welche der uebrigen Bibliotheken gerade offen ist, wenn eine.
+    let offeneKennung: String?
+    private var bibliothekOffen: Bool { offeneKennung != nil }
+    private func bibliothekSchliessen() { schliesseBibliothek() }
+    let schliesseBibliothek: () -> Void
     let zumProfil: () -> Void
 
     var body: some View {
@@ -581,7 +608,10 @@ struct Seitenleiste: View {
                 ForEach(Bereich.obenGruppe, id: \.self) { fall in
                     Seitenleistenzeile(symbol: fall.symbol,
                                        beschriftung: fall.beschriftung,
-                                       aktiv: bereich == fall) { bereich = fall }
+                                       aktiv: bereich == fall && !bibliothekOffen) {
+                        bereich = fall
+                        bibliothekSchliessen()
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -595,7 +625,10 @@ struct Seitenleiste: View {
                 ForEach(Bereich.meinsGruppe(downloads: model.downloadsAn), id: \.self) { fall in
                     Seitenleistenzeile(symbol: fall.symbol,
                                        beschriftung: fall.beschriftung,
-                                       aktiv: bereich == fall) { bereich = fall }
+                                       aktiv: bereich == fall && !bibliothekOffen) {
+                        bereich = fall
+                        bibliothekSchliessen()
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -620,7 +653,7 @@ struct Seitenleiste: View {
                         // stand dann die Ueberschrift "Filme".
                         Seitenleistenzeile(symbol: bib.collectionType == "movies" ? "film" : "tv",
                                            name: bib.name,
-                                           aktiv: false) {
+                                           aktiv: offeneKennung == bib.id) {
                             bibliothekOeffnen(bib)
                         }
                     }
@@ -672,41 +705,27 @@ struct Seitenleiste: View {
         .task { if model.views.isEmpty { await model.loadViews() } }
     }
 
-    /// **Die Rubrik zeigt die *anderen* Bibliotheken, nicht alle.**
+    /// **Die Rubrik zeigt die uebrigen Bibliotheken.**
     ///
-    /// Vorher standen dort alle vier, und zwei davon hiessen genauso wie die
-    /// Bereiche darueber: „Filme" und „Serien" kamen zweimal vor, einmal als
-    /// Ort und einmal als Sammlung.
+    /// Oben stehen Filme und Serien; die beiden Sammlungen, die diese Bereiche
+    /// zeigen, gehoeren nicht noch einmal hierher.
     ///
-    /// Ausgelassen wird deshalb die Bibliothek, die ihr Bereich **gerade
-    /// zeigt**. Nicht die mit dem Namen „Filme" — Namen sind Serversache und
-    /// heissen auf einem englischen Server anders. Was der Bereich zeigt,
-    /// weiss die App dagegen genau.
+    /// **Gefragt wird das Modell, nicht die Ansicht.**
+    /// `model.gewaehlteBibliothek(art:)` liest die gemerkte Wahl aus den
+    /// Einstellungen und faellt still auf die erste zurueck. Vorher stand hier
+    /// `filmbibliothek`, also der Zustand der *Ansicht* — und der ist beim
+    /// ersten Aufbau noch `nil`. Die Liste zeigte deshalb erst „Filme", und
+    /// sobald die Bibliotheksseite ihre Wahl gesetzt hatte, sprang sie auf
+    /// „Filmabend".
     ///
-    /// Hat jede Gattung nur eine Bibliothek, bleibt danach nichts uebrig und
-    /// die Rubrik faellt ganz weg: dann *sind* Filme und Serien die
-    /// Bibliotheken, und sie stehen schon oben.
-    ///
-    /// **Was das bedeutet, wenn man eine anklickt:** sie wandert aus der Liste
-    /// heraus, und die vorige tritt an ihre Stelle. Die Rubrik ist damit immer
-    /// „wohin ich wechseln kann" — nie eine Liste, in der eine Zeile nichts
-    /// tut, weil sie schon offen ist.
+    /// Bleibt nichts uebrig, faellt die Rubrik ganz weg: dann *sind* Filme und
+    /// Serien die Bibliotheken, und sie stehen schon oben.
     private var sammlungen: [Item] {
-        model.views
+        let offen = Set([model.gewaehlteBibliothek(art: "movies")?.id,
+                         model.gewaehlteBibliothek(art: "tvshows")?.id].compactMap { $0 })
+        return model.views
             .filter { $0.collectionType == "movies" || $0.collectionType == "tvshows" }
-            .filter { bib in
-                guard let art = bib.collectionType else { return true }
-                return offene(art)?.id != bib.id
-            }
-    }
-
-    /// Welche Bibliothek dieser Gattung der Bereich gerade zeigt.
-    ///
-    /// `gewaehlteBibliothek` gibt `nil` zurueck, solange niemand gewaehlt hat
-    /// — dann gilt dieselbe Regel wie in `BibliothekView`: die erste ihrer
-    /// Gattung.
-    private func offene(_ art: String) -> Item? {
-        gewaehlteBibliothek(art) ?? model.views.first { $0.collectionType == art }
+            .filter { !offen.contains($0.id) }
     }
 
     /// Hervorgehoben wird eine Sammlung nur, wenn ihr Bereich auch offen ist
