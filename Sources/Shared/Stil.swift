@@ -48,26 +48,29 @@ static let einblenden: Animation = .easeInOut(duration: 0.28)
 
     /// **Die Eckenskala — vier Zahlen, und je größer die Fläche, desto
     /// runder.** Sie stand nicht als Regel da, sondern als vier Zahlen an
-    /// vierzig Stellen; prompt hat der Auskunftskasten auf der Seerr-Seite
-    /// das Feldmaß genommen, obwohl er eine Fläche ist. Wer etwas Neues
-    /// baut, nimmt die Zahl, die zur Art des Dings passt — nicht die, die
-    /// gerade in der Nähe stand.
+    /// vierzig Stellen; prompt hat der Auskunftskasten auf der Seerr-Seite das
+    /// Feldmaß genommen, obwohl er eine Fläche ist. Wer etwas Neues baut,
+    /// nimmt die Zahl, die zur Art des Dings passt — nicht die, die gerade in
+    /// der Nähe stand.
     ///
-    /// | Was | Ecke |
-    /// |---|---|
-    /// | Knopf | 6 |
-    /// | Plakat, Kachel | 8 |
-    /// | Feld, Eingabe | 10 |
-    /// | Fläche, Blatt, Tafel | 12 |
-    /// | Chip, Hinweis | Kapsel |
-    static let ecke: CGFloat = 6
-    /// Kacheln sind eine Spur runder als der Rest. Ausdrücklich nur eine
-    /// Spur — „wirklich minimal" war die Vorgabe.
-    static let eckeKachel: CGFloat = 8
+    /// | Was | Ecke | |---|---| | Knopf, Plakat, Kachel | 10 | | Feld, Eingabe
+    /// | 12 | | Fläche, Blatt, Tafel | 16 | | Chip, Hinweis | Kapsel |
+    ///
+    /// **Am 06.09.2026 einmal aufgerundet, um vier Punkte.** Vorher stand
+    /// 6/8/10/12, und Zwei Punkte Unterschied zwischen zwei Dingen, die
+    /// nebeneinander stehen, liest man nicht als Rangfolge, sondern als
+    /// Versehen.
+    ///
+    /// Knopf und Kachel tragen deshalb **dieselbe** Ecke — beides sind kleine
+    /// Gegenstände, und die Rangfolge fängt erst darüber an. „Nicht so extrem
+    /// viel, aber einfach ein bisschen mehr."
+    static let ecke: CGFloat = 10
+    /// Plakate und Kacheln — dieselbe Ecke wie ein Knopf.
+    static let eckeKachel: CGFloat = 10
     /// Such- und Eingabefelder.
-    static let eckeFeld: CGFloat = 10
+    static let eckeFeld: CGFloat = 12
     /// Was eine eigene Fläche ist: Blätter, die Tafel, Auskunftskästen.
-    static let eckeFlaeche: CGFloat = 12
+    static let eckeFlaeche: CGFloat = 16
     static let randAbstand: CGFloat = 18
     static let kachelAbstand: CGFloat = 12
     static let reihenAbstand: CGFloat = 28

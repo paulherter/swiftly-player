@@ -166,6 +166,9 @@ extension View {
                     ItemDetailView(model: model, item: item)
                 }
             }
+            .navigationDestination(for: MerklisteRoute.self) { _ in
+                MerklisteView(model: model)
+            }
             .navigationDestination(for: ProfilRoute.self) { _ in
                 ProfilView(model: model)
             }

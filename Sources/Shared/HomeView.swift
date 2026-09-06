@@ -118,33 +118,62 @@ struct HomeView: View {
 
     private var kopfzeile: some View {
         Unschaerfekopf {
-            HStack(alignment: .bottom) {
+            HStack(alignment: .center, spacing: 0) {
                 Wortmarke(hoehe: 30)
                 Spacer(minLength: 0)
-                // **Links vom Profilbild, dicht daneben.** Dasselbe wie auf
-                // dem Fernseher; nur ohne Text, weil oben auf dem Telefon
-                // kein Platz für eine Zeile ist. Der Titel steht im Blatt,
-                // das sich beim Antippen öffnet.
+
+                // **Drei Zeichen, eine Sprache.**
+                //
+                // Das Angebot war ein Kreis mit Fläche und Rand — richtig,
+                // solange es allein neben dem Profilbild stand: es ist ein
+                // Angebot, keine dauerhafte Schaltfläche, und sollte
+                // auffallen. Sobald die Merkliste dazukam, las sich derselbe
+                // Kreis neben einem nackten Zeichen wie zwei verschiedene
+                // Arten von Knopf.
+                //
+                // Was es heraushebt, ist jetzt nicht die **Form**, sondern die
+                // **Farbe** — und das ist ohnehin unsere Regel: der Akzent
+                // trägt Zustand, keine Flächen.
+                //
+                // Links vom Rest, nicht dazwischen: das Flüchtige gehört an
+                // den Rand der Gruppe, sonst schiebt es beim Kommen und Gehen
+                // die dauerhaften Ziele hin und her.
                 if let angebot = uebernahme.angebot {
                     Button { abzeichenGedrueckt() } label: {
                         Image(systemName: angebot.geraetezeichen)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 20))
                             .foregroundStyle(Stil.akzent)
-                            .frame(width: 34, height: 34)
-                            .background(Stil.akzent.opacity(0.14), in: Circle())
-                            .overlay(Circle().strokeBorder(Stil.akzent.opacity(0.28)))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Text("Hier weiterschauen"))
                     .accessibilityValue(Text(angebot.titelzeile))
-                    .padding(.trailing, 10)
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
+
+                NavigationLink(value: MerklisteRoute()) {
+                    Image(systemName: "bookmark")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Stil.schrift)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Merkliste"))
+
                 NavigationLink(value: ProfilRoute()) {
                     Profilzeichen(name: model.session?.userName ?? "?",
                                   bild: model.benutzerbildURL())
+                        // Dieselben 44 wie die Zeichen daneben — sichtbar
+                        // bleibt der Kreis 30.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // Die Zeichen bringen ihre Trefferfläche mit; ohne diesen
+                // Ausgleich stünde das Profilbild 13 Punkt vom Rand statt 18.
+                .padding(.trailing, -13)
             }
             .foregroundStyle(Stil.schrift)
             .animation(.easeInOut(duration: 0.22), value: uebernahme.angebot?.id)

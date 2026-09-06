@@ -682,6 +682,38 @@ final class AppModel {
         }
     }
 
+    /// Alles Gemerkte — **quer über alle Bibliotheken**.
+    ///
+    /// Deshalb ohne `parentID`: die Merkliste ist keine Bibliothek, ihre
+    /// Grenze ist der Haken und nicht ein Ordner auf der Platte. Und deshalb
+    /// **rekursiv**: ohne das liefert Jellyfin nur, was ganz oben liegt, und
+    /// das ist bei einem Server mit virtuellen Ordnern so gut wie nichts.
+    ///
+    /// `art` ist hier der Gattungsfilter der Seite: `nil` heisst Filme **und**
+    /// Serien. Ohne die Aufzaehlung kaemen auch Staffeln, Folgen und
+    /// Sammlungen mit — alles, woran je ein Haken hing.
+    func gemerkte(art: String? = nil,
+                  sortierung: Sortierung = .neueste,
+                  ab startIndex: Int = 0,
+                  anzahl: Int = AppModel.seitengroesse) async -> (titel: [Item], gesamt: Int)? {
+        guard let client else { return nil }
+        let gattungen = art.map { Bibliotheksgattung.typen(zu: $0) } ?? ["Movie", "Series"]
+        do {
+            let antwort = try await client.items(parentID: nil,
+                                                 limit: anzahl,
+                                                 startIndex: startIndex,
+                                                 sortBy: sortierung.feld,
+                                                 sortOrder: sortierung.richtung,
+                                                 filters: ["IsFavorite"],
+                                                 recursive: true,
+                                                 includeItemTypes: gattungen)
+            return (antwort.items, antwort.totalRecordCount)
+        } catch {
+            errorMessage = lesbar(error)
+            return nil
+        }
+    }
+
     /// Groß genug, dass man beim ersten Wischen nicht ans Ende kommt, klein
     /// genug, dass die erste Seite schnell steht.
     static let seitengroesse = 60
