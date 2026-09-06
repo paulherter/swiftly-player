@@ -5,6 +5,7 @@ struct MerklisteView: View {
     let model: AppModel
 
     @Environment(\.breit) private var breit
+    @Environment(\.bereichAktiv) private var bereichAktiv
     @State private var stand = Merklistenmodell()
     @State private var gattung: Merkgattung = .alle
     @State private var gattungslisteOffen = false
@@ -83,7 +84,19 @@ struct MerklisteView: View {
             // Null im Ruhezustand — wie in der Bibliothek.
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
-            } action: { _, neu in versatz = neu }
+            } action: { _, neu in
+                // Wie dort: eine Messung aus dem Hintergrund waere ein
+                // voll gescrollter Kopf fuer ein, zwei Bilder.
+                guard bereichAktiv else { return }
+                versatz = neu
+            }
+            // **Das Heranziehen beim Bereichswechsel — es fehlte hier.**
+            //
+            // Filme und Serien tragen es seit dem Umbau, die Merkliste ist
+            // ohne es entstanden: breit ist sie ein Bereich wie die beiden,
+            // sprang aber hart herein. Nur die Scrollflaeche, nicht der Kopf
+            // darueber.
+            .bereichsinhalt()
             // Der Kopf sitzt als Sicherheitsrand, nicht als Auflage — die
             // Begruendung steht ausfuehrlich in `HauptView`. Kurz: sein
             // oberer Rand kam aus einer eigenen Messung, die als
@@ -149,12 +162,13 @@ struct MerklisteView: View {
                                 stand.gattung = fall.art
                             }
                         }
-                        Image(systemName: "arrow.up.arrow.down")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Stil.schriftSehrLeise)
-                            .padding(.leading, 6)
+                        // Rechts aussen wie in der Bibliothek und auf dem Mac.
+                        Spacer(minLength: 12)
                         ForEach(Sortierung.allCases) { fall in
-                            Wahlchip(text: fall.beschriftung, an: stand.sortierung == fall) {
+                            Wahlchip(text: fall.beschriftung,
+                                     symbol: fall == stand.sortierung
+                                             ? "line.3.horizontal.decrease" : nil,
+                                     an: stand.sortierung == fall) {
                                 stand.sortierung = fall
                             }
                         }

@@ -54,6 +54,35 @@ struct SeerrDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    // **Breit derselbe Kopf wie eine echte Detailseite.**
+                    //
+                    // Hier stand auch im Querformat der schmale Aufbau: ein
+                    // Streifen ueber die ganze Breite, Titel darunter, Knopf
+                    // darunter. Auf einem 1000 Punkt breiten Fenster ist das
+                    // der Briefschlitz, gegen den `Heldkopf` gebaut wurde —
+                    // und die Seite stand damit neben Film und Serie wie aus
+                    // einer anderen App. Auf dem Mac ist genau das der
+                    // Unterschied: Plakat und Text nebeneinander, die
+                    // Beschreibung als eigener Block darunter.
+                    //
+                    // Kein Fortschritt: was es hier noch nicht gibt, hat auch
+                    // niemand halb gesehen.
+                    if breit {
+                        Heldkopf(bild: treffer.kulisse(),
+                                 poster: treffer.plakat(),
+                                 titel: treffer.titel,
+                                 nebenzeile: nebenzeile) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                belegzeile
+                                hauptknopf
+                            }
+                        }
+                        beschreibung
+                            .frame(maxWidth: Stil.lesebreite, alignment: .leading)
+                            .padding(.horizontal, Stil.randSeiteBreit)
+                            .padding(.top, 18)
+                            .padding(.bottom, 22)
+                    } else {
                     hero
 
                     VStack(alignment: .leading, spacing: 14) {
@@ -63,6 +92,7 @@ struct SeerrDetailView: View {
                     }
                     .padding(.horizontal, Stil.rand(breit: breit))
                     .padding(.top, 14)
+                    }
 
                     // **Zwei Reihen, keine Reiter.** Genau wie auf der
                     // Filmseite: eine Reihe Besetzung, darunter eine Reihe

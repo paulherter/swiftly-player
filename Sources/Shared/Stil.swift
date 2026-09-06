@@ -2368,18 +2368,33 @@ struct Zaehlmarke: View {
 /// Nutzen — man sieht ohnehin alles auf einmal.
 struct Wahlchip: View {
     let text: String
+    /// Ein Zeichen vor dem Wort — der Trichter am gewaehlten Sortierwert,
+    /// wie auf dem Mac. `nil` heisst: nur das Wort.
+    var symbol: String?
     let an: Bool
     let aktion: () -> Void
 
     var body: some View {
         Button(action: aktion) {
-            Text(text)
-                .font(.system(size: 13, weight: an ? .semibold : .regular))
+            // **Gewaehlt ist weiss, nicht Akzent.**
+            //
+            // Hier war es der Akzent, und damit sah dieselbe Chipreihe auf
+            // dem iPad anders aus als auf dem Mac, wo sie weiss ist. Es passt
+            // auch besser zur Regel: der Akzent traegt Zustand, und "dieser
+            // Filter gilt gerade" ist eine Auswahl. Auf dem Fernseher ist es
+            // aus demselben Grund geaendert worden.
+            HStack(spacing: 6) {
+                if let symbol {
+                    Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                }
+                Text(text)
+                    .font(.system(size: 13, weight: an ? .semibold : .regular))
+            }
                 .foregroundStyle(an ? Stil.grund : Stil.schrift)
                 .padding(.horizontal, 13)
                 .frame(height: 30)
-                .background(an ? Stil.akzent : Stil.erhoeht, in: Capsule())
-                .overlay { Capsule().strokeBorder(an ? Stil.akzent : Stil.rand) }
+                .background(an ? Stil.schrift : Stil.erhoeht, in: Capsule())
+                .overlay { Capsule().strokeBorder(an ? Stil.schrift : Stil.rand) }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(text)

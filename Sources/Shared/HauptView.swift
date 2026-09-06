@@ -46,6 +46,12 @@ struct HauptView: View {
         ZStack(alignment: .bottom) {
             Stil.grund.ignoresSafeArea()
 
+            // **Die Leiste steht ausserhalb des Inhalts — der Schalter muss
+            // es auch.** Der Wert hing am inneren `ZStack`, also nur am
+            // Inhalt; die `Seitenleiste` daneben bekam den Vorgabewert
+            // („aus") und liess den Reiter Downloads breit einfach weg,
+            // auch wenn er in den Einstellungen an war. Hier umschliesst er
+            // beide.
             HStack(spacing: 0) {
                 if breit {
                     Seitenleiste(gewaehlt: $bereich, imProfil: imProfil,
@@ -86,11 +92,6 @@ struct HauptView: View {
                 // `bereichsleiste()`. Hier steht nur, wohin ein Tippen darauf
                 // geht.
                 .environment(\.bereichswahl, $bereich)
-                .environment(\.downloadleiste,
-                             Downloadleiste(an: model.downloadsAn,
-                                            laufen: model.downloads.posten
-                                                .filter { $0.stand == .laedt || $0.stand == .wartet }
-                                                .count))
                 // **Wer den Schalter umlegt, waehrend er auf der Seite
                 // steht, darf nicht dort stehenbleiben.** Der Reiter
                 // verschwindet, die Seite bliebe sonst ohne Weg zurueck.
@@ -104,6 +105,11 @@ struct HauptView: View {
                     if !jetztBreit, bereich == .merkliste { bereich = .start }
                 }
             }
+            .environment(\.downloadleiste,
+                         Downloadleiste(an: model.downloadsAn,
+                                        laufen: model.downloads.posten
+                                            .filter { $0.stand == .laedt || $0.stand == .wartet }
+                                            .count))
 
         }
         // Bewusst ohne Übergang: die Leiste soll fest liegen und beim
@@ -587,12 +593,17 @@ struct BibliothekView: View {
                         stand.filter = f
                     }
                 }
-                Image(systemName: "arrow.up.arrow.down")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Stil.schriftSehrLeise)
-                    .padding(.leading, 6)
+                // **Die Sortierung steht rechts aussen** — wie auf dem Mac,
+                // wo dasselbe Fenster dieselbe Breite hat. Sie stand hier
+                // unmittelbar hinter den Filtern, durch ein Zeichen getrennt;
+                // zwei Fassungen derselben Reihe auf zwei Geraeten, die sonst
+                // gleich aussehen. Hochkant bleibt es bei den Pillen, dort
+                // ist der Platz nicht da.
+                Spacer(minLength: 12)
                 ForEach(Sortierung.allCases) { s in
-                    Wahlchip(text: s.beschriftung, an: stand.sortierung == s) {
+                    Wahlchip(text: s.beschriftung,
+                             symbol: s == stand.sortierung ? "line.3.horizontal.decrease" : nil,
+                             an: stand.sortierung == s) {
                         stand.sortierung = s
                     }
                 }
