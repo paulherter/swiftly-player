@@ -364,11 +364,15 @@ struct DownloadsView: View {
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.bottom, 24)
-                // **Lesemaß, nicht Fensterbreite.** Breit läuft eine Zeile
-                // aus Bild, Titel und einem Ring sonst über die ganze Seite
-                // und hat in der Mitte nichts zu sagen. Dieselbe Grenze wie
-                // auf dem Mac.
-                .frame(maxWidth: breit ? 900 : .infinity, alignment: .leading)
+                // **Volle Breite, wie jede andere Seite.**
+                //
+                // Hier stand eine Grenze bei 900 Punkt, mit der Begruendung,
+                // eine Zeile aus Bild, Titel und Ring habe in der Mitte nichts
+                // zu sagen. Das stimmt fuer sich — nur endeten damit
+                // Trennlinien und Ringe rund dreihundert Punkt vor dem Rand,
+                // waehrend Titel und Balken im Kopf darueber bis nach rechts
+                // liefen. Zwei Kanten auf einer Seite, und die Seite sah
+                // abgeschnitten aus.
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
