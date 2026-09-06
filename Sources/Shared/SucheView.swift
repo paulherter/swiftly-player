@@ -128,6 +128,9 @@ struct SucheView: View {
                 // Tippen ins Leere schliesst die Tastatur — sonst kommt man
                 // aus dem Feld gar nicht mehr heraus.
                 .simultaneousGesture(TapGesture().onEnded { imFeld = false })
+                // Nur die Trefferflaeche zieht sich heran, nicht das Suchfeld
+                // darueber — siehe `bereichsinhalt()`.
+                .bereichsinhalt()
             }
             }
             // Ueber dem Inhalt, unter allem, was die Seite sonst noch

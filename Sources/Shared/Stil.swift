@@ -1210,34 +1210,45 @@ extension View {
     func bereichsleiste() -> some View {
         modifier(Bereichsleiste())
     }
+
+    /// Zieht diesen Inhalt beim Bereichswechsel eine Spur heran.
+    ///
+    /// **Gehört an die Scrollfläche, nicht an die Seite.** Es sass am ganzen
+    /// Seitenkörper, und der trägt oben die Kopfzeile: auf Filme und Serien
+    /// wanderten Titel und Profilbild mit, auf der Startseite nicht — dort
+    /// lag es zufällig schon an der richtigen Stelle. Zwei Seiten, zwei
+    /// Verhalten, und das obendrein.
+    ///
+    /// Die Kopfzeile ist eine Leiste wie die untere: sie liegt fest, und der
+    /// Inhalt bewegt sich darunter.
+    func bereichsinhalt() -> some View {
+        modifier(Bereichsinhalt())
+    }
+}
+
+private struct Bereichsinhalt: ViewModifier {
+    @Environment(\.bereichAktiv) private var aktiv
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(aktiv ? 1 : Stil.bereichsmass)
+            // **Ein fester Grund hinter dem bewegten Inhalt.**
+            //
+            // Zieht er sich heran, gibt er an allen Rändern etwas frei — und
+            // was dort zum Vorschein kommt, gehört nicht mehr ihm. Dieser
+            // Grund ist derselbe Ton und bewegt sich nicht mit; damit gibt es
+            // dort nichts freizugeben.
+            .background(Stil.grund.ignoresSafeArea())
+            .animation(Stil.bereichswechsel, value: aktiv)
+    }
 }
 
 private struct Bereichsleiste: ViewModifier {
     @Environment(\.breit) private var breit
     @Environment(\.bereichswahl) private var wahl
-    @Environment(\.bereichAktiv) private var aktiv
 
     func body(content: Content) -> some View {
-        content
-            // **Das Heranziehen gilt der Seite, nicht der Leiste.** Es sass
-            // eine Ebene hoeher, am ganzen Bereichsstapel — und der traegt
-            // die Leiste. Die wanderte also mit, und eine Leiste, die beim
-            // Umschalten wandert, ist genau das, was man nicht will. Hier
-            // liegt sie ausserhalb des Effekts: erst der Inhalt bewegt sich,
-            // dann kommt sie darueber.
-            .scaleEffect(aktiv ? 1 : Stil.bereichsmass)
-            // **Ein fester Grund hinter der bewegten Seite.**
-            //
-            // Zieht sich die Seite heran, gibt sie an allen vier Raendern
-            // etwas frei — und was dort zum Vorschein kommt, gehoert nicht
-            // mehr ihr. Oben, wo die Seite ihren Kopf ueber den sicheren
-            // Bereich zieht, war genau das zu sehen: ein schwarzer Streifen
-            // ueber Titel und Profilbild. Dieser Grund ist derselbe Ton wie
-            // die Seite und bewegt sich nicht mit; damit gibt es dort nichts
-            // mehr freizugeben.
-            .background(Stil.grund.ignoresSafeArea())
-            .animation(Stil.bereichswechsel, value: aktiv)
-            .overlay(alignment: .bottom) {
+        content.overlay(alignment: .bottom) {
             if !breit, let wahl {
                 Navileiste(gewaehlt: wahl)
                     // **Der volle Rahmen davor ist nicht schmückend.** Die
@@ -1312,11 +1323,9 @@ struct Seitenleiste: View {
         // Wie unten: der Grund muss bis an beide Kanten laufen, nicht nur bis
         // zum sicheren Bereich.
         .background {
-            ZStack {
-                Unschaerfe()
-                Stil.grund.opacity(0.86)
-            }
-            .ignoresSafeArea()
+            // Deckend wie die Leiste unten auf dem iPhone und wie beide
+            // Koepfe — dieselbe Begruendung, dieselbe Farbe.
+            Stil.grund.ignoresSafeArea()
         }
         .overlay(alignment: .trailing) {
             Rectangle().fill(Stil.linie).frame(width: 1).ignoresSafeArea()
@@ -1407,6 +1416,22 @@ struct Unschaerfe: UIViewRepresentable {
 /// anfing zu verschwinden und die Kanten der Buchstaben dahinter wieder
 /// scharf wurden. Apples Leisten sind über ihre ganze Höhe gleich und setzen
 /// unten eine Haarlinie — das liest sich als Fläche, nicht als Schleier.
+/// **Zurzeit benutzt das niemand — und das ist Absicht.**
+///
+/// Am 06.09.2026 sind alle drei Glasleisten der iPhone-Fassung auf eine
+/// deckende Fläche umgestellt worden: die Bereichsleiste unten, der
+/// Bibliothekskopf und der Kopf der Detailseiten. Der Grund steht bei jeder
+/// einzeln, er ist überall derselbe — **Apples Materialien tragen alle eine
+/// helle Schicht**, auch das dünnste. Über unserem Grund (#0B0B0D) und
+/// bunten Plakaten wird daraus ein grauer Block, und beim Federn blitzt er
+/// auf, weil `Unschaerfe` ihre Stärke über eine Maske regelt, die je Bild
+/// neu gerechnet wird.
+///
+/// Der Baustein bleibt stehen, weil in ihm eine Messung steckt, die man
+/// sonst zweimal macht (siehe `Unschaerfe`: `.dark` ist seit iOS 13
+/// abgekündigt und zeichnet mit einer Ebenenmaske gar nicht mehr). **Wer ihn
+/// wieder einsetzt, prüft vorher am Gerät, ob die Leiste heller ist als die
+/// Seite.**
 struct Leistenglas: View {
     var staerke: Double = 1
     /// Wie viel Grundton mit hineinspielt.
@@ -1762,7 +1787,12 @@ struct Detailkopf: View {
                 LinearGradient(colors: [Stil.grund.opacity(0.7), Stil.grund.opacity(0)],
                                startPoint: .top, endPoint: .bottom)
                     .opacity(1 - staerke)
-                Leistenglas(staerke: staerke)
+                // **Dieselbe Leiste wie unten.** Hier stand `Leistenglas`, und
+                // damit war der Kopf einer Detailseite aus einem anderen Stoff
+                // als die Bereichsleiste und der Bibliothekskopf, die beide
+                // deckend sind. Apples Material traegt ausserdem eine helle
+                // Schicht — ueber einem Heldbild fiel das am staerksten auf.
+                Stil.grund.opacity(staerke)
             }
             .ignoresSafeArea(edges: .top)
         }

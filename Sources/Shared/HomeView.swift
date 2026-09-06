@@ -26,6 +26,9 @@ struct HomeView: View {
             Stil.grund.ignoresSafeArea()
 
             inhalt
+                // Der Wechsel zieht die Scrollflaeche heran — die Kopfzeile
+                // darueber liegt fest, siehe `bereichsinhalt()`.
+                .bereichsinhalt()
                 // Unter dem Kopf und unter der Uebernahmeauswahl, ueber dem
                 // Inhalt — siehe `bereichsleiste()`.
                 .bereichsleiste()

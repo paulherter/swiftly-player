@@ -404,6 +404,9 @@ struct BibliothekView: View {
             .contentMargins(.top, kopfhoehe + 20, for: .scrollContent)
             .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
                             for: .scrollContent)
+            // Nur die Scrollflaeche zieht sich beim Wechsel heran; der Kopf
+            // darueber liegt fest wie die Leiste unten.
+            .bereichsinhalt()
 
             kopf
                 .onGeometryChange(for: CGFloat.self) { $0.size.height }
