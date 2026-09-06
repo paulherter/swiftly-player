@@ -20,15 +20,19 @@ struct ProfilView: View {
     @State private var pruefung: String?
     /// Zeigt Quick Connect, um ein weiteres Konto aufzunehmen.
     @State private var kontoAufnehmen = false
+    /// Seerr anbinden — als eigene Seite ueber allem: drei Felder und eine
+    /// Bildschirmtastatur brauchen den Platz, den eine Zeile nicht hat.
+    @State private var seerrOffen = false
 
     enum Bereichswahl: String, CaseIterable, Identifiable {
-        case wiedergabe, sprachen, darstellung, server, konto
+        case wiedergabe, sprachen, darstellung, integration, server, konto
         var id: String { rawValue }
         var name: LocalizedStringKey {
             switch self {
             case .wiedergabe:  "Wiedergabe"
             case .sprachen:    "Sprachen"
             case .darstellung: "Darstellung"
+            case .integration: "Integration"
             case .server:      "Server"
             case .konto:       "Konto"
             }
@@ -123,6 +127,9 @@ struct ProfilView: View {
         .fullScreenCover(isPresented: $kontoAufnehmen) {
             QuickConnectView(model: model) { kontoAufnehmen = false }
         }
+        .fullScreenCover(isPresented: $seerrOffen) {
+            SeerrAnbindenView(model: model, seerr: model.seerr) { seerrOffen = false }
+        }
     }
 
     // MARK: Kopf
@@ -211,6 +218,19 @@ struct ProfilView: View {
         case .darstellung:
             Schalterzeile(titel: "Fortschritt auf Kacheln", an: model.fortschrittAufKacheln) {
                 model.fortschrittAufKacheln.toggle()
+            }
+
+        case .integration:
+            // **Ein zweiter Dienst, kein zweiter Server** — deshalb eine
+            // eigene Rubrik und nicht unter „Server". Und eine Zugabe: wer
+            // nichts anbindet, sieht ausser dieser Zeile nirgends etwas
+            // davon.
+            Anzeigezeile(titel: "Seerr",
+                         wert: model.seerr.verbunden ? String(localized: "Verbunden")
+                                                     : String(localized: "Nicht verbunden"))
+            Trennlinie()
+            Handlungszeile(titel: model.seerr.verbunden ? "Ändern" : "Anbinden") {
+                seerrOffen = true
             }
 
         case .server:

@@ -14,6 +14,9 @@ struct SucheView: View {
 
     @State private var begriff = ""
     @State private var treffer: [Item] = []
+    /// Was Seerr kennt und der eigene Server nicht — leer, wenn nichts
+    /// angebunden ist.
+    @State private var seerrtreffer: [Seerrtreffer] = []
     @State private var laeuft = false
     @State private var gesucht = false
     @FocusState private var amFeld: Bool
@@ -90,6 +93,27 @@ struct SucheView: View {
                                                     .unplayedItemCount))
                             }
                             .buttonStyle(KachelStil())
+                        }
+                    }
+                    .padding(.horizontal, Stil.randSeite)
+                    .scrollClipDisabled()
+                }
+
+                if !seerrtreffer.isEmpty {
+                    HStack(alignment: .firstTextBaseline, spacing: 20) {
+                        Text("Kann angefragt werden")
+                            .font(Stil.reihe)
+                            .foregroundStyle(Stil.schrift)
+                        Zaehlmarke(anzahl: seerrtreffer.count)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, Stil.randSeite)
+
+                    LazyVGrid(columns: spalten, alignment: .leading,
+                              spacing: Stil.gitterZeile) {
+                        ForEach(seerrtreffer) { t in
+                            NavigationLink(value: t) { Seerrkachel(treffer: t) }
+                                .buttonStyle(KachelStil())
                         }
                     }
                     .padding(.horizontal, Stil.randSeite)
@@ -192,7 +216,16 @@ struct SucheView: View {
         let wort = begriff.trimmingCharacters(in: .whitespaces)
         guard !wort.isEmpty else { return }
         laeuft = treffer.isEmpty
-        treffer = await model.suche(wort)
+        // **Nebeneinander, nicht nacheinander.** Seerr ist eine Zugabe;
+        // kommt von dort nichts oder kommt es spaet, steht trotzdem sofort
+        // da, was der eigene Server hat.
+        async let eigene = model.suche(wort)
+        async let fremde = model.seerr.suchen(wort)
+        let (a, b) = await (eigene, fremde)
+        treffer = a
+        // Was schon auf dem Server liegt, gehoert in den oberen Block —
+        // sonst staende derselbe Titel zweimal auf der Seite.
+        seerrtreffer = b.filter { !$0.stand.schonDa }
         gesucht = true
         laeuft = false
     }

@@ -409,6 +409,9 @@ extension View {
             .navigationDestination(for: LibraryRoute.self) { route in
                 BibliothekView(model: model, bibliothek: route.item)
             }
+            .navigationDestination(for: Seerrtreffer.self) { treffer in
+                SeerrDetailView(model: model, treffer: treffer)
+            }
             // Dieselbe Weiche wie auf dem iPhone: eine Serie führt auf die
             // Serienseite, eine einzelne Folge auf die Staffel, in der sie
             // steht — eine eigene Seite nur für eine Folge trägt nichts, was
