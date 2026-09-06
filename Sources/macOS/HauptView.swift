@@ -294,6 +294,10 @@ struct HauptView: View {
     /// Wie viele Seiten im **aktuellen** Bereich gezeigt werden.
     private var tiefe: Int { gezeigteTiefe[bereich] ?? 0 }
 
+    /// Was gerade die Wurzel ist — ein Bereich oder eine der uebrigen
+    /// Bibliotheken. Aendert sie sich, wird die Wurzel neu gebaut.
+    private var wurzelkennung: String { offeneBibliothek?.id ?? bereich.rawValue }
+
     private var inhalt: some View {
         GeometryReader { raum in
             let breite = raum.size.width
@@ -318,6 +322,23 @@ struct HauptView: View {
                 // Unter der Kennung gehören sie zur jeweiligen Wurzel. Die
                 // ausscheidende behält ihren Stand und blendet einfach aus.
                 wurzel
+                    // **Der Wechsel blendet ueber — und zwar nur die Wurzel.**
+                    //
+                    // Hier stand nichts, und die uebrigen Bibliotheken
+                    // erschienen deshalb hart, waehrend alles andere weich
+                    // kommt.
+                    //
+                    // **Die Reihenfolge ist der Punkt.** Die Anweisung steht
+                    // unmittelbar an der Wurzel, also vor dem Versatz und dem
+                    // Schleier darum. Frueher hing am Elternteil ein
+                    // `.animation(value: bereich)` — das galt fuer *alles*,
+                    // was sich im selben Durchgang aenderte, also auch fuer
+                    // `tiefe`: die ausscheidende Wurzel fuhr ihren Mitgang
+                    // zurueck und der Schleier blendete aus. Genau das ist
+                    // "die komische Einblendung mit dem dunklen Verlauf"
+                    // gewesen, und genau deshalb steht sie hier innen.
+                    .transition(.opacity)
+                    .animation(Stil.einblenden, value: wurzelkennung)
                     .offset(x: tiefe > 0 ? mitgang : 0)
                     .overlay {
                         Color.black.opacity(tiefe > 0 ? 0.28 : 0)
@@ -348,7 +369,7 @@ struct HauptView: View {
                     // Die Kennung traegt die offene Bibliothek mit: ohne sie
                     // wechselte der Inhalt, ohne dass SwiftUI die Wurzel neu
                     // baut, und der Stand der vorigen bliebe stehen.
-                    .id(offeneBibliothek?.id ?? bereich.rawValue)
+                    .id(wurzelkennung)
                     // **Die Wurzel liegt ausdrücklich unten.** Ohne feste
                     // Ebenen fuhr die Seite unter den Kacheln der Startseite
                     // herein, und das sah aus wie Durchsichtigkeit.

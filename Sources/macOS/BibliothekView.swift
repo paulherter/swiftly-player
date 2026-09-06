@@ -81,27 +81,19 @@ struct BibliothekView: View {
                 }
 
                 HStack(spacing: 8) {
-                    // **Die Bibliothekswahl steht vorn, und nur ab zwei.**
+                    // **Die Bibliothekswahl ist weg.**
                     //
-                    // Als Chips wie Filter und Sortierung daneben — auf dem
-                    // Mac steht alles offen nebeneinander, und ein `Menu`
-                    // waere ein Apple-Standardsteuerelement (E4).
-                    if auswahl.count > 1, !nurDiese {
-                        ForEach(auswahl) { bib in
-                            Chip(beschriftung: bib.name,
-                                 aktiv: bib.id == gewaehlt?.id) {
-                                guard bib.id != gewaehlt?.id else { return }
-                                model.bibliothekWaehlen(bib, art: art)
-                                gewaehlt = bib
-                                Task { await laden() }
-                            }
-                        }
-                        Rectangle()
-                            .fill(Stil.rand)
-                            .frame(width: 1, height: 18)
-                            .padding(.horizontal, 4)
-                    }
-
+                    // Sie stand hier als Chips vorn: bei mehreren Sammlungen
+                    // einer Gattung konnte man hier umschalten. Seit die
+                    // uebrigen Bibliotheken links in der Leiste stehen und
+                    // sich als eigene Wurzel oeffnen, waere das ein zweiter
+                    // Weg zur selben Sache — und einer, der die Ueberschrift
+                    // nicht mitnimmt: „Filme" blieb stehen, obwohl „Filmabend"
+                    // gemeint war.
+                    //
+                    // Welche Sammlung ein Bereich zeigt, entscheidet damit
+                    // allein die gemerkte Wahl im Modell — und die Leiste
+                    // zeigt daneben, was es sonst noch gibt.
                     ForEach(Bibliotheksfilter.allCases) { fall in
                         Chip(beschriftung: fall.beschriftung, aktiv: regal.filter == fall) {
                             regal.filter = fall
@@ -210,6 +202,5 @@ struct BibliothekView: View {
     }
 
     /// Alle Bibliotheken dieser Gattung. Ab zwei wird der Titel zum Menue.
-    private var auswahl: [Item] { model.bibliotheken(art: art) }
 
 }
