@@ -51,8 +51,18 @@ struct Downloadring: View {
                 bogen(anteil: posten?.anteil ?? 0, farbe: Stil.schriftLeise)
                 bild("play.fill", 11, Stil.schrift)
             case .fertig:
+                // **Ein Pfeil, kein Haken.**
+                //
+                // Der Haken gehoert der Frage „hab ich das gesehen" — und in
+                // der Folgenliste steht er zwei Zentimeter weiter links. Zwei
+                // Haken nebeneinander, die Verschiedenes meinen, sind keine
+                // Auskunft, sondern ein Suchbild.
+                //
+                // Gefuellt heisst hier fertig, wie ueberall sonst: dieselbe
+                // Form wie beim Laden, nur voll statt hohl. Man liest sie als
+                // „der Download ist ganz", nicht als „erledigt".
                 Circle().fill(Stil.akzent)
-                bild("checkmark", 13, Stil.grund)
+                bild("arrow.down", 13, Stil.grund)
             case .fehler:
                 Circle().strokeBorder(Stil.warnung, lineWidth: 2)
                 bild("exclamationmark", 13, Stil.warnung)
@@ -137,7 +147,10 @@ struct Downloadfeld: View {
                     Downloadring(posten: p, mass: 22) {}
                         .allowsHitTesting(false)
                 } else {
-                    Image(systemName: posten == nil ? "arrow.down" : "checkmark.circle.fill")
+                    // Dieselbe Unterscheidung wie am Ring: gefuellt heisst
+                    // geladen, und es bleibt ein Pfeil. Der Haken daneben in
+                    // derselben Reihe heisst „gesehen".
+                    Image(systemName: posten == nil ? "arrow.down" : "arrow.down.circle.fill")
                         .font(.system(size: 19, weight: .medium))
                         .foregroundStyle(posten == nil ? Stil.schrift : Stil.akzent)
                 }
