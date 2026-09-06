@@ -200,10 +200,15 @@ struct SeerrDetailView: View {
                         Text(knopftext)
                     }
                 }
-                // **Derselbe Stil wie „Fortsetzen", nur in Akzent.** Hoehe,
-                // Ecke und Schriftgrad stehen dort und nicht hier — ein
-                // nachgebauter Knopf sass sichtbar tiefer und runder.
-                .buttonStyle(HauptknopfStil(dehnt: !breit, flaeche: Stil.akzent))
+                // **Derselbe Knopf wie „Fortsetzen", ohne Wenn und Aber.**
+                // Er war einmal in Akzent — aber der Stand darueber traegt
+                // ihn schon, und zweimal dieselbe Farbe auf einer Seite macht
+                // aus einem Zeichen fuer Zustand eine Grundfarbe. Was ihn
+                // unterscheidet, ist das Wort darauf.
+                //
+                // Hoehe, Ecke und Schriftgrad stehen im Stil und nicht hier —
+                // ein nachgebauter Knopf sass sichtbar tiefer und runder.
+                .buttonStyle(HauptknopfStil(dehnt: !breit))
                 .disabled(laeuft)
                 // Der Wechsel der Beschriftung soll zu sehen sein, sonst
                 // liest niemand, dass sich etwas geaendert hat.

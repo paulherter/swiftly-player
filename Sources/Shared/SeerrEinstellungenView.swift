@@ -107,7 +107,7 @@ struct SeerrEinstellungenView: View {
                 // Hoehe 48 und Ecke 10 statt 6 — dieselbe Sorte Abweichung
                 // wie beim Anfragen-Knopf, nur eine Seite weiter.
                 Button("Verbinden") { Task { await verbinden() } }
-                    .buttonStyle(HauptknopfStil(flaeche: Stil.akzent))
+                    .buttonStyle(HauptknopfStil())
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.top, 20)
             } else if seerr.meldetAn {

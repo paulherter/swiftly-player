@@ -331,14 +331,6 @@ struct HauptknopfStil: ButtonStyle {
     /// Zeile. Breit steht er neben der Aktionsreihe und darf sie nicht
     /// wegdrücken.
     var dehnt = true
-    /// Eine andere Fläche, sonst alles gleich.
-    ///
-    /// **Für den Anfragen-Knopf bei Seerr.** Er soll an genau derselben
-    /// Stelle stehen und genauso aussehen wie „Fortsetzen" — nur in einer
-    /// anderen Farbe. Ihn daneben nachzubauen hiesse, Höhe, Ecke und
-    /// Schriftgrad ein zweites Mal zu tippen, und genau daran ist er beim
-    /// ersten Anlauf zu rund und zu hoch geraten.
-    var flaeche: Color?
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -350,10 +342,19 @@ struct HauptknopfStil: ButtonStyle {
                         in: RoundedRectangle(cornerRadius: Stil.ecke))
     }
 
+    /// **Weiss, und zwar überall.**
+    ///
+    /// Hier liess sich einmal eine andere Fläche setzen — für den
+    /// Anfragen-Knopf bei Seerr, in Akzent. Das ist wieder heraus: auf einer
+    /// Seerr-Seite trägt der Stand schon Akzent, und ein Knopf in derselben
+    /// Farbe daneben macht aus einem Zeichen für *Zustand* eine Grundfarbe.
+    ///
+    /// **E2 sagt genau das:** der Akzent trägt Fortschritt, Auswahl und den
+    /// Direct-Play-Beleg — nie die Grundfarbe eines Knopfes. Die Regel stand
+    /// da, bevor der Parameter kam.
     private func flaeche(gedrueckt: Bool) -> Color {
         guard freigegeben else { return Stil.flaeche }
-        let grund = flaeche ?? .white
-        return grund.opacity(gedrueckt ? 0.75 : 1)
+        return Color.white.opacity(gedrueckt ? 0.75 : 1)
     }
 }
 
@@ -1164,6 +1165,31 @@ struct Navileiste: View {
         .overlay(alignment: .top) {
             Rectangle().fill(Stil.linie).frame(height: 1)
         }
+    }
+}
+
+/// Das Profilbild oben rechts — auf **jeder** Wurzelseite an derselben Stelle.
+///
+/// **Es stand zweimal da und ist prompt verrutscht.** Auf der Startseite kam
+/// mit der Merkliste eine Trefferfläche von 44 Punkt dazu, auf Filme und
+/// Serien blieb es beim nackten Kreis von 30 — und damit saß dasselbe Bild auf
+/// zwei Seiten an zwei Stellen.
+///
+/// Die 44 sind richtig (E12), aber sie ragen 7 Punkt über den Kreis hinaus;
+/// ohne den Ausgleich stünde der Kreis 7 Punkt weiter innen als der Rand der
+/// Seite. Diese Rechnung gehört an **eine** Stelle.
+struct Profilziel: View {
+    let name: String
+    let bild: URL?
+
+    var body: some View {
+        NavigationLink(value: ProfilRoute()) {
+            Profilzeichen(name: name, bild: bild)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, -7)
     }
 }
 

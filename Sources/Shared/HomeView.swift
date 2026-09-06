@@ -153,7 +153,12 @@ struct HomeView: View {
                 }
 
                 NavigationLink(value: MerklisteRoute()) {
-                    Image(systemName: "bookmark")
+                    // **Gefüllt, nicht als Umriss.** Ein hohles Lesezeichen
+                    // bei 20 Punkt ist fast nur Kontur In der Knopfreihe auf
+                    // den Detailseiten heißt gefüllt „gemerkt"; hier ist es
+                    // kein Zustand, sondern ein Ziel, und dort steht es
+                    // allein.
+                    Image(systemName: "bookmark.fill")
                         .font(.system(size: 20))
                         .foregroundStyle(Stil.schrift)
                         .frame(width: 44, height: 44)
@@ -162,18 +167,8 @@ struct HomeView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Merkliste"))
 
-                NavigationLink(value: ProfilRoute()) {
-                    Profilzeichen(name: model.session?.userName ?? "?",
-                                  bild: model.benutzerbildURL())
-                        // Dieselben 44 wie die Zeichen daneben — sichtbar
-                        // bleibt der Kreis 30.
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                // Die Zeichen bringen ihre Trefferfläche mit; ohne diesen
-                // Ausgleich stünde das Profilbild 13 Punkt vom Rand statt 18.
-                .padding(.trailing, -13)
+                Profilziel(name: model.session?.userName ?? "?",
+                           bild: model.benutzerbildURL())
             }
             .foregroundStyle(Stil.schrift)
             .animation(.easeInOut(duration: 0.22), value: uebernahme.angebot?.id)

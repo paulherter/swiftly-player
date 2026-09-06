@@ -496,11 +496,8 @@ struct BibliothekView: View {
                     // Breit steht das Profilzeichen in der Seitenleiste, und
                     // zwar für alle vier Bereiche. Hier wäre es das zweite.
                     if !breit {
-                        NavigationLink(value: ProfilRoute()) {
-                            Profilzeichen(name: model.session?.userName ?? "?",
-                                          bild: model.benutzerbildURL())
-                        }
-                        .buttonStyle(.plain)
+                        Profilziel(name: model.session?.userName ?? "?",
+                                   bild: model.benutzerbildURL())
                     }
                 }
                 .foregroundStyle(Stil.schrift)
