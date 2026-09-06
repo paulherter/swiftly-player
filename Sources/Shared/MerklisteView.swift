@@ -113,14 +113,37 @@ struct MerklisteView: View {
                     // schon in einem.
                     .padding(.horizontal, -Stil.rand(breit: breit))
 
+                // **Schmal zeigt Werte, breit zeigt Moeglichkeiten** — E15,
+                // dieselbe Regel wie in der Bibliothek. Auf dem iPad ist
+                // Platz, und ein Blatt fuer etwas, das daneben hinpasst, ist
+                // ein Umweg.
+                //
+                // Das Zeichen unterscheidet die beiden Pillen: ein Trichter
+                // engt ein, ein Raster waehlt aus — und die Pille der
+                // Bibliothek steht auf der Nachbarseite an derselben Stelle.
                 HStack(spacing: 8) {
-                    // **Ein anderes Zeichen als der Filter.** Ein Trichter
-                    // engt ein, ein Raster wählt aus — und die beiden Pillen
-                    // stehen auf zwei Seiten an derselben Stelle.
-                    Wertpille(symbol: "square.grid.2x2",
-                              text: gattung.beschriftung) { gattungslisteOffen = true }
-                    Wertpille(symbol: "arrow.up.arrow.down",
-                              text: stand.sortierung.beschriftung) { sortierlisteOffen = true }
+                    if breit {
+                        ForEach(Merkgattung.allCases) { fall in
+                            Wahlchip(text: fall.beschriftung, an: gattung == fall) {
+                                gattung = fall
+                                stand.gattung = fall.art
+                            }
+                        }
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                            .padding(.leading, 6)
+                        ForEach(Sortierung.allCases) { fall in
+                            Wahlchip(text: fall.beschriftung, an: stand.sortierung == fall) {
+                                stand.sortierung = fall
+                            }
+                        }
+                    } else {
+                        Wertpille(symbol: "square.grid.2x2",
+                                  text: gattung.beschriftung) { gattungslisteOffen = true }
+                        Wertpille(symbol: "arrow.up.arrow.down",
+                                  text: stand.sortierung.beschriftung) { sortierlisteOffen = true }
+                    }
                     Spacer(minLength: 8)
                     if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
                 }

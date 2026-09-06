@@ -1416,6 +1416,22 @@ struct Seitenleiste: View {
 
             Spacer(minLength: 0)
 
+            // **Die Merkliste steht bei den Zielen, nicht bei den
+            // Bereichen.** Auf dem iPhone haengt sie am Zeichen oben rechts,
+            // direkt neben dem Profil — hier steht dasselbe Paar unten in der
+            // Leiste. Was zusammengehoert, steht zusammen (E24); nur die
+            // Richtung wechselt mit der Leiste.
+            NavigationLink(value: MerklisteRoute()) {
+                Image(systemName: "bookmark.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Stil.schrift)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Merkliste"))
+            .padding(.bottom, 8)
+
             Button(action: aufsProfil) {
                 Profilzeichen(name: name, bild: bild, hervorgehoben: imProfil)
             }
