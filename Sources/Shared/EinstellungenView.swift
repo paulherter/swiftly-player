@@ -59,7 +59,10 @@ struct EinstellungenView: View {
                 server
             }
 
-            Text("Swiftly 1.0 · VLCKit 4.0.0-a23")
+            // **Nicht getippt.** Hier stand „Swiftly 1.0" — eine Zahl, die
+            // seit 1.0.1 falsch war und die niemand mitzieht. Der Mac las
+            // sie schon aus dem Bündel; das hier war die letzte Kopie.
+            Text(verbatim: "\(Fassung.zeile) · VLCKit 4.0.0-a23")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.white.opacity(0.3))
                 .padding(.horizontal, Stil.rand(breit: breit))

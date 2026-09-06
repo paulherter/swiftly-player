@@ -100,9 +100,16 @@ struct Heldkopf<Inhalt: View>: View {
             // `aspectRatio(nil, contentMode: .fit)` auf einem `Color.clear` —
             // das hat keine eigene Größe. Das Bild rutschte nach links und
             // brach hart ab, im schmalen Fenster verschwand es ganz.
-            AsyncImage(url: bild) { stand in
+            // Die `transaction` blendet den Wechsel der Lagen weich; ohne
+            // sie schaltet `AsyncImage` hart um, und das Heldbild ist die
+            // groesste Flaeche der Seite. **Nichts erscheint hart** —
+            // GESTALTUNG, Abschnitt E. Als letzte Stelle nachgezogen, die
+            // es noch ohne machte.
+            AsyncImage(url: bild,
+                       transaction: Transaction(animation: Stil.einblenden)) { stand in
                 if case let .success(b) = stand {
                     b.resizable().aspectRatio(contentMode: .fill)
+                        .transition(.opacity)
                 }
             }
             // Von links, damit die Schrift steht.
