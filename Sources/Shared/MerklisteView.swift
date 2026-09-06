@@ -107,8 +107,11 @@ struct MerklisteView: View {
     private var kopf: some View {
         Unschaerfekopf(versatz: versatz) {
             VStack(alignment: .leading, spacing: 14) {
+                // **Breit ist die Merkliste eine Wurzel** — ein Bereich in
+                // der Seitenleiste — und eine Wurzel hat keinen Zurueckpfeil.
+                // Schmal faehrt sie als Seite herein und behaelt ihn.
                 Unterseitenkopf(titel: String(localized: "Merkliste"),
-                                zurueck: { zurueck() }) { EmptyView() }
+                                zurueck: breit ? nil : { zurueck() }) { EmptyView() }
                     // Der Kopf bringt seinen eigenen Rand mit; hier steht er
                     // schon in einem.
                     .padding(.horizontal, -Stil.rand(breit: breit))

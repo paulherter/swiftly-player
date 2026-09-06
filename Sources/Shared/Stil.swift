@@ -734,19 +734,31 @@ struct Unterseitenkopf<Rechts: View>: View {
     /// Trägt den Namen einer Bibliothek — der kommt vom Server und wird
     /// deshalb nicht übersetzt.
     let titel: String
-    let zurueck: () -> Void
+    /// `nil` heisst: **diese Seite ist eine Wurzel, kein Weg.**
+    ///
+    /// Die Merkliste ist auf dem iPad ein Bereich in der Leiste und auf dem
+    /// iPhone eine Seite, die von rechts hereinfaehrt. Derselbe Kopf, zwei
+    /// Rollen — und ein Zurueckpfeil auf einer Wurzel zeigt nirgendwohin.
+    var zurueck: (() -> Void)?
     @ViewBuilder var rechts: () -> Rechts
 
     var body: some View {
         HStack(spacing: 4) {
-            Button(action: zurueck) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Stil.schrift)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            if let zurueck {
+                Button(action: zurueck) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Stil.schrift)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                // Ohne Pfeil beginnt der Titel dort, wo er sonst auch steht —
+                // sonst ruckte er auf der Wurzel um 44 Punkt nach links, und
+                // die Seite saehe anders aus als ihre Nachbarn.
+                Color.clear.frame(width: 12, height: 44)
             }
-            .buttonStyle(.plain)
 
             Text(titel)
                 .font(.system(size: 22, weight: .semibold))
@@ -1092,18 +1104,30 @@ enum Bereich: Int, CaseIterable, Identifiable {
     // `suche` eingefuegt, ruecke `suche` von 3 auf 4 — und jeder Stapel
     // laege danach unter einem fremden Bereich. Wo es in der Leiste steht,
     // sagt ``sichtbare(downloads:)``, nicht die Reihenfolge hier.
-    case start, filme, serien, suche, downloads
+    case start, filme, serien, suche, downloads, merkliste
     var id: Int { rawValue }
 
     /// Die Leiste, in ihrer Reihenfolge. **H1:** ohne den Schalter gibt es
-    /// den vierten Platz gar nicht.
+    /// den Downloadplatz gar nicht.
     ///
     /// Downloads steht links neben der Suche, und die Suche bleibt ganz
     /// rechts — sie ist die einzige, die man mit dem Daumen im Halbschlaf
     /// trifft, und sie stand dort seit der ersten Fassung.
-    static func sichtbare(downloads: Bool) -> [Bereich] {
-        downloads ? [.start, .filme, .serien, .downloads, .suche]
-                  : [.start, .filme, .serien, .suche]
+    ///
+    /// **Die Merkliste gibt es nur breit.** Schmal haengt sie am Zeichen
+    /// oben rechts, neben dem Profil — unten waeren es sechs Reiter, und der
+    /// Platz gehoert dort den vier Orten, zwischen denen man staendig
+    /// wechselt. Breit gibt es die Zeichengruppe nicht, die wohnt in der
+    /// Leiste; dort ist die Merkliste eine Zeile wie Filme und Serien.
+    /// Vorher stand sie dort als `NavigationLink` unten bei den Zielen — und
+    /// tat **nichts**, weil die Seitenleiste ausserhalb des
+    /// `NavigationStack` liegt und ein Link ohne Stapel ins Leere zeigt.
+    static func sichtbare(downloads: Bool, breit: Bool = false) -> [Bereich] {
+        var liste: [Bereich] = [.start, .filme, .serien]
+        if breit { liste.append(.merkliste) }
+        if downloads { liste.append(.downloads) }
+        liste.append(.suche)
+        return liste
     }
 
     var name: LocalizedStringKey {
@@ -1113,6 +1137,7 @@ enum Bereich: Int, CaseIterable, Identifiable {
         case .serien:    "Serien"
         case .suche:     "Suche"
         case .downloads: "Downloads"
+        case .merkliste: "Merkliste"
         }
     }
 
@@ -1125,6 +1150,7 @@ enum Bereich: Int, CaseIterable, Identifiable {
         // **Der Kreis gehoert dazu.** Ein nackter Pfeil zwischen Haus, Film,
         // Fernseher und Lupe liest sich als Richtungszeichen, nicht als Ort.
         case .downloads: "arrow.down.circle"
+        case .merkliste: "bookmark.fill"
         }
     }
 }
@@ -1477,7 +1503,7 @@ struct Seitenleiste: View {
                 .padding(.top, Stil.kopfOben + (fensterknoepfe ? Fensterknoepfe.hoehe : 0))
                 .padding(.bottom, 30)
 
-            ForEach(Bereich.sichtbare(downloads: downloads.an)) { bereich in
+            ForEach(Bereich.sichtbare(downloads: downloads.an, breit: true)) { bereich in
                 Bereichsknopf(bereich: bereich,
                               aktiv: bereich == gewaehlt && !imProfil,
                               hoehe: 64,
@@ -1488,21 +1514,12 @@ struct Seitenleiste: View {
 
             Spacer(minLength: 0)
 
-            // **Die Merkliste steht bei den Zielen, nicht bei den
-            // Bereichen.** Auf dem iPhone haengt sie am Zeichen oben rechts,
-            // direkt neben dem Profil — hier steht dasselbe Paar unten in der
-            // Leiste. Was zusammengehoert, steht zusammen (E24); nur die
-            // Richtung wechselt mit der Leiste.
-            NavigationLink(value: MerklisteRoute()) {
-                Image(systemName: "bookmark.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Stil.schrift)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Merkliste"))
-            .padding(.bottom, 8)
+            // **Die Merkliste stand hier und steht jetzt oben bei den
+            // Bereichen.** Als `NavigationLink` tat sie hier nichts: die
+            // Seitenleiste liegt ausserhalb des `NavigationStack`, und ein
+            // Link ohne Stapel zeigt ins Leere. Unten blieb also nur das
+            // Profil — was auch stimmiger ist, denn das Profil ist kein Ort
+            // in der App, sondern wer man ist.
 
             Button(action: aufsProfil) {
                 Profilzeichen(name: name, bild: bild, hervorgehoben: imProfil)

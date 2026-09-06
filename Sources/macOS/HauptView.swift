@@ -4,7 +4,7 @@ import SwiftUI
 /// Welchen Bereich die Seitenleiste zeigt. Dieselben vier wie in der Leiste
 /// unten auf dem iPhone.
 enum Bereich: String, Hashable, CaseIterable {
-    case start, filme, serien, downloads, suche
+    case start, filme, serien, merkliste, downloads, suche
 
     /// Was in der Seitenleiste steht. **H1:** ohne den Schalter gibt es die
     /// Downloadzeile nicht.
@@ -15,8 +15,8 @@ enum Bereich: String, Hashable, CaseIterable {
     /// sondern das, was auf dieser Maschine liegt. Auf dem iPhone ist es aus
     /// demselben Grund ein Reiter und kein Ziel im Kopf.
     static func sichtbare(downloads: Bool) -> [Bereich] {
-        downloads ? [.start, .filme, .serien, .downloads, .suche]
-                  : [.start, .filme, .serien, .suche]
+        downloads ? [.start, .filme, .serien, .merkliste, .downloads, .suche]
+                  : [.start, .filme, .serien, .merkliste, .suche]
     }
 
     var symbol: String {
@@ -26,6 +26,7 @@ enum Bereich: String, Hashable, CaseIterable {
         case .serien:    "tv"
         case .suche:     "magnifyingglass"
         case .downloads: "arrow.down.circle"
+        case .merkliste: "bookmark.fill"
         }
     }
 
@@ -36,6 +37,7 @@ enum Bereich: String, Hashable, CaseIterable {
         case .serien:    "Serien"
         case .suche:     "Suche"
         case .downloads: "Downloads"
+        case .merkliste: "Merkliste"
         }
     }
 }
@@ -84,8 +86,7 @@ struct HauptView: View {
                          gewaehlteBibliothek: { art in
                              art == "movies" ? filmbibliothek : serienbibliothek
                          },
-                         zumProfil: { navigator.oeffne(.profil, in: bereich) },
-                         zurMerkliste: { navigator.oeffne(.merkliste, in: bereich) })
+                         zumProfil: { navigator.oeffne(.profil, in: bereich) })
             // **Der Sicherheitsrand der Titelleiste gilt links genauso wenig
             // wie rechts.** Vorher hielt nur der Inhaltsbereich ihn nicht
             // ein; die Leiste stand deshalb rund dreissig Punkt tiefer als
@@ -464,6 +465,7 @@ struct HauptView: View {
                                      regal: serienregal, gewaehlt: $serienbibliothek)
         case .suche:  SucheView(model: model)
         case .downloads: DownloadsView(model: model)
+        case .merkliste: MerklisteView(model: model)
         }
     }
 
@@ -471,10 +473,13 @@ struct HauptView: View {
     private func seite(_ ziel: Seitenziel) -> some View {
         switch ziel {
         case let .titel(item):  DetailView(model: model, item: item) { zurueck() }
-        case .merkliste:        MerklisteView(model: model) { zurueck() }
         case .seerr:            SeerrEinstellungenView(model: model, seerr: model.seerr) { zurueck() }
         case let .seerrTitel(t): SeerrDetailView(model: model, treffer: t) { zurueck() }
         case .profil:           ProfilView(model: model) { zurueck() }
+        // Nicht mehr erreichbar — die Merkliste ist ein Bereich. Der Fall
+        // steht hier, damit ein wiederhergestellter alter Stapel nicht
+        // bricht; er schliesst sich einfach.
+        case .merkliste:        Color.clear.onAppear { zurueck() }
         case .einstellungen:    EinstellungenView(model: model) { zurueck() }
         case .wiedergabe:       WiedergabeEinstellungenView(model: model) { zurueck() }
         case .quickConnect:     QuickConnectView(model: model) { zurueck() }
@@ -545,7 +550,6 @@ struct Seitenleiste: View {
     /// Leiste soll sie nicht doppelt führen.
     let gewaehlteBibliothek: (String) -> Item?
     let zumProfil: () -> Void
-    let zurMerkliste: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -588,15 +592,16 @@ struct Seitenleiste: View {
                 }
                 .padding(.horizontal, 12)
 
-                // **Die Merkliste ist eine Bibliothek, deren Grenze der Haken
-                // ist.** Deshalb steht sie hier bei den Sammlungen und nicht
-                // als fuenfter Bereich — auf dem iPhone haengt sie am Zeichen
-                // oben rechts, hier an der Leiste, in deren eigener Sprache.
-                Seitenleistenzeile(symbol: "bookmark.fill",
-                                   beschriftung: "Merkliste",
-                                   aktiv: false) { zurMerkliste() }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
+                // **Die Merkliste stand hier und steht jetzt oben bei den
+                // Bereichen.** Sie war eine Seite, die von rechts hereinfuhr —
+                // mit Zurueckpfeil, ohne Hervorhebung in der Leiste (`aktiv:
+                // false` stand fest verdrahtet da), und auf einem Stapel, auf
+                // den danach auch das Profil kam.
+                //
+                // Er hat recht, und die alte Begruendung war schief: dass ihre
+                // Grenze der Haken ist, macht sie zu einer Bibliothek — und
+                // Bibliotheken fahren hier auch nicht herein. Ein Ort in der
+                // Leiste ist ein Ort, kein Weg.
             }
 
             Spacer(minLength: 0)

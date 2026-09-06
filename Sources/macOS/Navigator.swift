@@ -64,7 +64,11 @@ final class Navigator {
 /// Lesen, welche Ziele es überhaupt gibt.
 enum Seitenziel: Hashable, Identifiable {
     case titel(Item)
-    /// Die Merkliste — kein eigener Bereich, sondern eine Seite aus der
+    /// **Nicht mehr in Gebrauch.** Die Merkliste ist seit dem 06.09.2026 ein
+    /// eigener Bereich in der Leiste; der Fall bleibt nur stehen, damit ein
+    /// alter, wiederhergestellter Stapel nicht bricht.
+    ///
+    /// Vorher: eine Seite aus der
     /// Leiste. Auf dem iPhone haengt sie am Zeichen oben rechts.
     case merkliste
     /// Seerr anbinden — eine Zugabe, deshalb hinter den Einstellungen.

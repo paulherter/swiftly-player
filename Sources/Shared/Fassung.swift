@@ -23,10 +23,28 @@ import Foundation
 /// die Kopien, die dieser Datei ihren Namen gegeben haben — deshalb steht die
 /// Rechnung dort, wo alle sie sehen, und die Ansichten setzen nur den Text.
 enum Fassung {
+
+    /// Die Fassung des Abspielers. **Einmal, nicht dreimal getippt** — sie
+    /// stand wörtlich in `Sources/Shared/EinstellungenView.swift` und noch
+    /// einmal in `Sources/macOS/EinstellungenView.swift`. Beim nächsten
+    /// VLCKit-Wechsel hätte einer davon überlebt.
+    static let abspieler = "VLCKit 4.0.0-a23"
+
+    /// Wer die App ist. **Auf der Profilseite**, wo jemand nachsieht, welche
+    /// Fassung er hat.
     static var zeile: String {
         let b = Bundle.main.infoDictionary
         let fassung = b?["CFBundleShortVersionString"] as? String ?? "?"
         let bau = b?["CFBundleVersion"] as? String ?? "?"
         return "Swiftly for Jellyfin \(fassung) (Build \(bau))"
     }
+
+    /// Dieselbe Zeile plus den Unterbau. **In den Einstellungen**, weil dort
+    /// der Fehlerbericht entsteht.
+    ///
+    /// Die beiden waren uneinheitlich, und Sie sind es weiter — aber jetzt aus
+    /// einem Grund und aus **einer** Quelle: das Profil sagt, wer die App ist,
+    /// die Einstellungen sagen, woraus sie besteht. Wer einen Fehler meldet,
+    /// wird zu den Einstellungen geschickt, nicht ins Profil.
+    static var mitUnterbau: String { zeile + " · " + abspieler }
 }

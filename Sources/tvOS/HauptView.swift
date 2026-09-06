@@ -72,6 +72,13 @@ struct HauptView: View {
     /// `nil` heisst: Menue nicht anfassen, durchfallen lassen — auf Start,
     /// auf Unterseiten und im Player.
     private var zurueckAufStart: (() -> Void)? {
+        // **Ist eine Tafel offen, gehoert Menue ihr.**
+        //
+        // Zurueck heisst erst „diese Auswahl geht zu" und dann erst „ich gehe
+        // weg" Die Tafel hat ihr eigenes `onExitCommand`; sie bekommt es aber
+        // nur, wenn diese Behandlung hier den Befehl nicht vorher abfaengt.
+        // `nil` laesst ihn durch.
+        guard !tafelOffen else { return nil }
         guard bereich != .start, pfade[bereich.rawValue].isEmpty,
               abspielen == nil else { return nil }
         return { bereich = .start }

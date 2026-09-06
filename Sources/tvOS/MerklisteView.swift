@@ -20,6 +20,15 @@ struct MerklisteView: View {
 
     @State private var stand = Merklistenmodell()
     @State private var gattung: Merkgattung = .alle
+    /// **Wie in der Bibliothek, nicht anders.** Die Sortierung stand hier als
+    /// zweite Chipreihe neben der Gattung — auf Filme und Serien ist sie ein
+    /// Knopf, der eine Tafel unter sich aufklappt. Zwei Fassungen derselben
+    /// Frage auf Nachbarseiten; Und die Chipreihe hatte einen zweiten
+    /// Nachteil: sie faengt die Menue-Taste nicht, also verliess Zurueck die
+    /// Seite, statt die Auswahl zu schliessen.
+    @State private var sortierwahlOffen = false
+    @FocusState private var amSortierknopf: Bool
+    @Environment(\.tafelOffen) private var tafelOffen
 
     private var spalten: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: Stil.gitterSpalte),
@@ -55,6 +64,25 @@ struct MerklisteView: View {
                 }
             }
         }
+        // Hinter der offenen Tafel ist nichts fokussierbar — wie in der
+        // Bibliothek; sonst steigt der Fokus aus der Tafel heraus.
+        .disabled(sortierwahlOffen)
+        .overlay(alignment: .topTrailing) {
+            if sortierwahlOffen {
+                Handlungstafel(handlungen: sortierhandlungen, offen: $sortierwahlOffen)
+                    .padding(.trailing, Stil.randSeite)
+                    .padding(.top, Stil.erstesEnde + 16)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: sortierwahlOffen)
+        // Die Seite schaltet sich selbst ab, die Kopfleiste gehoert ihr aber
+        // nicht — die muss `HauptView` stilllegen.
+        .onChange(of: sortierwahlOffen) { _, offen in
+            tafelOffen.wrappedValue = offen
+            if !offen { amSortierknopf = true }
+        }
+        .onDisappear { tafelOffen.wrappedValue = false }
         .animation(Stil.einblenden, value: stand.items.isEmpty)
         .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await stand.laden(model) }
     }
@@ -76,14 +104,37 @@ struct MerklisteView: View {
                 .fill(Stil.rand)
                 .frame(width: 2, height: Stil.chipHoehe * 0.6)
 
-            ForEach(Sortierung.allCases) { fall in
-                Button(fall.beschriftung) { stand.sortierung = fall }
-                    .buttonStyle(ChipStil(an: stand.sortierung == fall))
-            }
-
             Spacer(minLength: 40)
 
-            if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
+            if stand.gesamt > 0 {
+                Text("\(stand.gesamt) · sortiert nach")
+                    .font(Stil.klein)
+                    .foregroundStyle(Stil.schriftSehrLeise)
+            }
+
+            Button { sortierwahlOffen.toggle() } label: {
+                HStack(spacing: 14) {
+                    Text(stand.sortierung.beschriftung)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Stil.schrift.opacity(0.6))
+                }
+            }
+            .buttonStyle(KnopfStil(hoehe: Stil.chipHoehe))
+            .focused($amSortierknopf)
+            .accessibilityLabel(Text("Sortierung, \(stand.sortierung.beschriftung)"))
+        }
+        .focusSection()
+    }
+
+    private var sortierhandlungen: [Titelhandlung] {
+        Sortierung.allCases.map { fall in
+            Titelhandlung(symbol: stand.sortierung == fall ? "checkmark" : "arrow.up.arrow.down",
+                          // `beschriftung` ist eine fertige Zeichenkette —
+                          // sie wird im Modell uebersetzt, nicht hier.
+                          text: LocalizedStringKey(fall.beschriftung)) {
+                stand.sortierung = fall
+            }
         }
     }
 

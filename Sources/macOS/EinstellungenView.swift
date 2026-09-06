@@ -26,7 +26,7 @@ struct EinstellungenView: View {
                 integration
                 server
 
-                Text(verbatim: "\(Fassung.zeile) · VLCKit 4.0.0-a23")
+                Text(verbatim: Fassung.mitUnterbau)
                     .font(.system(size: 12))
                     .foregroundStyle(Stil.schrift.opacity(0.3))
                     .padding(.top, 26)

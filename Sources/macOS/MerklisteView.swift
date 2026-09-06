@@ -17,7 +17,6 @@ struct MerklisteView: View {
     let model: AppModel
     /// Wird von der Kopfzeile gerufen; hier gibt es keinen eigenen Pfeil —
     /// den zeichnet `HauptView` über jeder aufgeschobenen Seite.
-    let zurueck: () -> Void
 
     @State private var stand = Merklistenmodell()
     @State private var gattung: Merkgattung = .alle

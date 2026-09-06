@@ -20,7 +20,7 @@ struct HauptView: View {
     /// mitwachsen, ohne dass jemand die Stelle ansieht.
     @State private var pfade = [NavigationPath(), NavigationPath(),
                                 NavigationPath(), NavigationPath(),
-                                NavigationPath()]
+                                NavigationPath(), NavigationPath()]
     /// Der Profilzweig ist offen. Nur für die Seitenleiste: dort trägt dann
     /// das Profilzeichen die Auswahl statt eines der vier Bereiche.
     ///
@@ -93,6 +93,12 @@ struct HauptView: View {
                 .onChange(of: model.downloadsAn) { _, an in
                     if !an, bereich == .downloads { bereich = .start }
                 }
+                // Dasselbe fuer die Merkliste: sie gibt es nur breit. Wer im
+                // Querformat dort steht und das Fenster schmal zieht, stuende
+                // sonst in einem Bereich, den die Leiste nicht mehr zeigt.
+                .onChange(of: breit) { _, jetztBreit in
+                    if !jetztBreit, bereich == .merkliste { bereich = .start }
+                }
             }
 
         }
@@ -151,6 +157,13 @@ struct HauptView: View {
                     }
                 case .downloads:
                     DownloadsView(model: model)
+                case .merkliste:
+                    // **Breit ist sie ein Ort, kein Weg.** Schmal faehrt sie
+                    // als Seite von rechts herein, weil sie dort am Zeichen
+                    // oben rechts haengt; breit steht sie in der Leiste, und
+                    // was in einer Leiste steht, faehrt nicht herein. Deshalb
+                    // ohne Zurueckpfeil
+                    MerklisteView(model: model)
                 }
             }
             .zielorte(model: model)
