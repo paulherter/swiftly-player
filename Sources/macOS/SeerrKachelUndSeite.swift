@@ -91,6 +91,8 @@ struct SeerrDetailView: View {
     /// **Hat der Nutzer schon einmal gedrückt?** Bei einem Film ist die
     /// Anfrage sonst einen Klick entfernt.
     @State private var bestaetigt = false
+    /// Wie weit die Seite steht — die Kopfleiste blendet daran ein.
+    @State private var kopfstand = Kopfstand()
 
     @Environment(Navigator.self) private var navigator
     @Environment(\.bereich) private var bereich
@@ -114,69 +116,123 @@ struct SeerrDetailView: View {
                 // Zeile der von `Heldenkopf` in `DetailView`.
                 held.zIndex(1)
 
-                VStack(alignment: .leading, spacing: 0) {
+                // **Wie auf der echten Seite:** 26 Punkt zwischen den
+                // Reihen, derselbe Rand, dieselbe Ueberschrift. Hier stand
+                // spacing 0 mit eigenen `padding(.top, 34)` an jeder Reihe.
+                VStack(alignment: .leading, spacing: 26) {
                     besetzung
                     aehnliches
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Stil.randAbstand)
+                .padding(.top, 26)
                 .padding(.bottom, 40)
             }
         }
         .scrollIndicators(.never)
         .ohneKanteneffekt()
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
+            kopfstand.versatz = neu
+        }
+        // **Dieselbe Kopfleiste wie die echte Seite.** Sie blendet ein, wenn
+        // der grosse Titel unter ihr verschwindet, und der Zurueckpfeil
+        // steckt in ihr. Vorher stand hier ein runder `Aktionsknopf` mitten
+        // im Bild — den hat die echte Seite nicht.
+        .overlay(alignment: .top) {
+            Detailkopf(titel: treffer.titel, stand: kopfstand, zurueck: zurueck)
+        }
         .task { detail = await model.seerr.detail(treffer) }
     }
 
-    /// Wie `Heldenkopf`: das Bild rechts, der Block darueber, feste Hoehe.
+    /// **Woertlich der Aufbau von `Heldenkopf` in `DetailView`.**
+    ///
+    /// Nicht „aehnlich" — dieselben Stellen, dieselbe Breite, dieselben Grade.
+    /// Was hier abweicht, weicht ab, weil es die Sache verlangt: statt „Direct
+    /// Play" steht der Stand, denn ueber einen Titel, den es hier nicht gibt,
+    /// weiss niemand, wie er laeuft.
+    ///
+    /// 0    Titel        42 54   Angaben      20 92   Beschreibung 66   (drei
+    /// Zeilen) 182  Knopfreihe   48 230  Ende
     private var held: some View {
         ZStack(alignment: .topLeading) {
             // Das Querbild steht am Treffer, nicht am Detail — Seerr liefert
             // es schon in der Suche mit. Faellt es aus, bleibt die Flaeche
-            // leer statt ein hochgezogenes Plakat zu zeigen; das steht so an
-            // `Seerrtreffer.kulisse` und gilt hier genauso.
+            // leer statt ein hochgezogenes Plakat zu zeigen.
             Kulisse(url: treffer.kulisse(breite: 1280),
                     hoehe: Stil.heldHoehe * 1.62)
 
-            VStack(alignment: .leading, spacing: 0) {
-                // **Der Titel kommt von TMDB und ist kein Schluessel.** Der
-                // gemeinsame Kopf nimmt einen `LocalizedStringKey`; „The
-                // Mentalist" wuerde dort nachgeschlagen.
-                HStack(spacing: 14) {
-                    Aktionsknopf(symbol: "chevron.left", titel: "Zurück",
-                                 auswahl: zurueck)
-                    Text(verbatim: treffer.titel)
-                        .font(.system(size: 34, weight: .bold))
-                        .tracking(-0.8)
-                        .foregroundStyle(Stil.schrift)
-                    Spacer(minLength: 0)
-                }
-
-                Text(verbatim: nebenzeile)
-                    .font(Stil.koerper)
-                    .foregroundStyle(Stil.schriftLeise)
-                    .padding(.top, 6)
-
-                belegzeile.padding(.top, 14)
-
-                if let text = detail?.beschreibung {
-                    Text(verbatim: text)
-                        .font(Stil.koerper)
-                        .foregroundStyle(Stil.schrift.opacity(0.78))
-                        .lineSpacing(4)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 640, alignment: .leading)
-                        .padding(.top, 16)
-                }
-
-                handlung.padding(.top, 20)
-            }
-            .padding(.leading, Stil.randAbstand)
-            .padding(.trailing, Stil.randAbstand)
-            .padding(.top, Stil.titelHoehe + 40)
+            block
+                .padding(.leading, Stil.randAbstand)
+                .padding(.top, Stil.titelHoehe + 98)
         }
         .frame(height: Stil.heldHoehe, alignment: .topLeading)
+    }
+
+    private var block: some View {
+        ZStack(alignment: .topLeading) {
+            // **Der Titel kommt von TMDB und ist kein Schluessel.**
+            Text(verbatim: treffer.titel)
+                .font(.system(size: 34, weight: .bold))
+                .tracking(-0.8)
+                .foregroundStyle(Stil.schrift)
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+                .frame(width: 640, height: 42, alignment: .leading)
+                .offset(y: 0)
+
+            angabenReihe
+                .frame(width: 640, height: 20, alignment: .leading)
+                .clipped()
+                .offset(y: 54)
+
+            Text(verbatim: detail?.beschreibung ?? "")
+                .font(Stil.koerper)
+                .lineSpacing(3)
+                .foregroundStyle(Stil.schrift.opacity(0.62))
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+                .frame(width: 640, height: 66, alignment: .topLeading)
+                .clipped()
+                .offset(y: 92)
+
+            handlung
+                .frame(height: Stil.hauptknopfHoehe, alignment: .leading)
+                .offset(y: 182)
+        }
+        .frame(width: 640, height: 230, alignment: .topLeading)
+    }
+
+    /// Jahr, Staffeln oder Laufzeit, Genres, Bewertung — **eine Zeile**,
+    /// nicht zwei. Sie stand hier auf zwei verteilt, mit dem Stand darunter;
+    /// die echte Seite setzt alles nebeneinander, und dahinter kommt der
+    /// Beleg. Hier ist der Beleg der Stand.
+    private var angabenReihe: some View {
+        HStack(spacing: 14) {
+            Text(verbatim: nebenzeile)
+                .font(.system(size: 14))
+                .foregroundStyle(Stil.schriftLeise)
+            if let bewertung = detail?.bewertung {
+                HStack(spacing: 5) {
+                    Image(systemName: "star.fill").font(.system(size: 10))
+                    // `String(format:)` wie nebenan — die echte Seite zeigt
+                    // „8.4", hier stand „8,4". Zwei Schreibweisen derselben
+                    // Zahl auf zwei Seiten.
+                    Text(verbatim: String(format: "%.1f", bewertung))
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(Stil.schriftLeise)
+            }
+            HStack(spacing: 6) {
+                Image(systemName: stand.symbol)
+                    .font(.system(size: 11, weight: .heavy))
+                Text(stand.wort)
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .foregroundStyle(stand.farbe)
+            Spacer(minLength: 0)
+        }
+        .lineLimit(1)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var nebenzeile: String {
@@ -309,18 +365,21 @@ struct SeerrDetailView: View {
     private var besetzung: some View {
         let leute = detail?.besetzung ?? []
         if !leute.isEmpty {
-            Text("Besetzung")
-                .font(Stil.reihe).foregroundStyle(Stil.schrift)
-                .padding(.top, 34)
-            // Derselbe Baustein wie auf einer echten Detailseite — die
-            // Koepfe kommen nur von TMDB statt vom eigenen Server.
-            Blätterreihe(rand: 0, breiteJeStueck: 84 + 18, bildHoehe: 84) {
-                ForEach(leute.prefix(12)) { person in
-                    Kopfbild(name: person.name, rolle: person.rolle,
-                             bild: person.bild())
+            // **Aufbau von `Besetzungsreihe`, Zeile fuer Zeile.** Der
+            // Baustein selbst nimmt `[Person]` vom eigenen Server; hier
+            // kommen die Koepfe von TMDB. Alles andere ist gleich: 14 Punkt
+            // Abstand, 16 halbfett, dieselbe Blaetterreihe.
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Besetzung")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Stil.schrift)
+                Blätterreihe(rand: 0, breiteJeStueck: 84 + 18, bildHoehe: 84) {
+                    ForEach(leute.prefix(12)) { person in
+                        Kopfbild(name: person.name, rolle: person.rolle,
+                                 bild: person.bild())
+                    }
                 }
             }
-            .padding(.top, 14)
         }
     }
 
@@ -328,18 +387,22 @@ struct SeerrDetailView: View {
     private var aehnliches: some View {
         let andere = detail?.aehnliches ?? []
         if !andere.isEmpty {
-            Text("Ähnliche Titel")
-                .font(Stil.reihe).foregroundStyle(Stil.schrift)
-                .padding(.top, 34)
-            Blätterreihe(rand: 0) {
-                ForEach(andere) { t in
-                    Button { navigator.oeffne(.seerrTitel(t), in: bereich) } label: {
-                        Seerrkachel(treffer: t)
+            // Aufbau von `Titelreihe` — dieselbe Ueberschrift, derselbe
+            // Abstand, dieselbe Blaetterreihe. Nur die Kachel ist eine
+            // andere, weil der Titel hier noch nicht auf dem Server liegt.
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Ähnliche Titel")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Stil.schrift)
+                Blätterreihe(rand: 0) {
+                    ForEach(andere) { t in
+                        Button { navigator.oeffne(.seerrTitel(t), in: bereich) } label: {
+                            Seerrkachel(treffer: t)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
-            .padding(.top, 14)
         }
     }
 

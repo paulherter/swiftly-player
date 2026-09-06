@@ -150,11 +150,13 @@ struct Ladetafel: View {
                 } else {
                     hinweis("Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht.")
                 }
+                abbrechen
             } else if !Downloadregeln.darfLaden(imWLAN: verwaltung.imWLAN,
                                                nurUeberWLAN: verwaltung.nurUeberWLAN) {
                 angabe("internaldrive", "Größe", Downloadregeln.groesse(bytes))
                 angabe("wifi.slash", "Kein WLAN", String(localized: "Mobilfunk"), warnend: true)
                 knopf("In die Warteschlange") { starten() }
+                abbrechen
             } else {
                 angabe("internaldrive", "Größe", Downloadregeln.groesse(bytes))
                 if let c = posten.first?.container {
@@ -164,6 +166,7 @@ struct Ladetafel: View {
                        Downloadregeln.groesse(auskunft.freiDanach))
                 knopf("Laden") { starten() }
                 hinweis("Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird.")
+                abbrechen
             }
         }
         .frame(width: 320, alignment: .leading)
@@ -171,6 +174,25 @@ struct Ladetafel: View {
         .overlay(RoundedRectangle(cornerRadius: Stil.eckeFeld)
             .strokeBorder(Stil.rand, lineWidth: 1))
         .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
+    }
+
+    /// Der Ausweg. **Immer da**, auch wenn die Lage schon einen zweiten Knopf
+    /// hat — sonst haengt die Antwort „doch nicht" an der Frage, welche der
+    /// drei Lagen gerade gilt.
+    private var abbrechen: some View {
+        Button { offen = false } label: {
+            Text("Abbrechen")
+                .font(.system(size: 13))
+                .foregroundStyle(Stil.schriftLeise)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+        // **Escape, und zwar so.** `onExitCommand` haengt auf dem Mac an der
+        // Antwortkette, und eine Tafel in einer Auflage steht nicht darin —
+        // die Taste kam nie an. `cancelAction` bindet sie an diesen Knopf,
+        // und das ist auf dem Schreibtisch ohnehin der uebliche Weg.
+        .keyboardShortcut(.cancelAction)
+        .padding(.bottom, 12)
     }
 
     private var kopf: String {
