@@ -133,10 +133,26 @@ struct WiedergabeEinstellungenView: View {
         }
     }
 
-    /// Blatt öffnen: erst den Inhalt setzen, dann in einer Bewegung zeigen.
+    /// Blatt öffnen: erst den Inhalt setzen, **dann** zeigen — und zwar in
+    /// zwei Durchgängen, nicht in einem.
+    ///
+    /// **Sonst misst sich die Karte, während sie schon fährt.** Beide Zeilen
+    /// standen hier untereinander und landeten damit in derselben
+    /// Aktualisierung: die Karte bekam ihren Inhalt und ihre Bewegung
+    /// gleichzeitig. Ihre Höhe ist aber das, woran die Bewegung hängt — beim
+    /// **ersten** Öffnen war sie null (es gab noch keinen Inhalt), und dann
+    /// stand die Rubrik schon an ihrem Platz, während der Rest hineinfuhr.
+    ///
+    /// Danach fiel es nicht mehr auf, weil der vorige Inhalt stehen bleibt und
+    /// die Höhe schon ungefähr stimmte. Beim Wechsel von einer langen auf eine
+    /// kurze Liste wäre es wiedergekommen.
+    ///
+    /// Der `Task` schiebt das Zeigen um einen Durchgang: dazwischen wird die
+    /// Karte einmal mit ihrem neuen Inhalt gemessen — geschlossen und
+    /// unsichtbar. Das kostet einen Bildaufbau und nichts sonst.
     private func oeffne(_ liste: Liste) {
         gezeigteListe = liste
-        offeneListe = liste
+        Task { @MainActor in offeneListe = liste }
     }
 
     /// Schließen — und der Inhalt bleibt stehen, dauerhaft.

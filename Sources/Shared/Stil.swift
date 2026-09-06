@@ -2198,6 +2198,17 @@ struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
                 // hinunter, wird die Seite dahinter schon heller.
                 .fill(.black.opacity(offen ? 0.55 * (1 - anteil) : 0))
                 .ignoresSafeArea()
+                // **Dieselbe Kurve wie die Karte.** Sie hing nur an der Karte,
+                // nicht am Schleier — und der wurde deshalb hart gesetzt: beim
+                // Oeffnen war er sofort da, waehrend die Karte noch heraufkam.
+                // Beim Schliessen fiel es nicht auf, weil `schliessen(mit:)`
+                // den Wechsel ohnehin in eine Animation packt und der Schleier
+                // sie mitnimmt.
+                //
+                // Am Zug haengt sie nicht: `value: offen` heisst, dass nur das
+                // Auf und Zu laeuft. Waehrend der Finger zieht, folgt der
+                // Schleier ihm eins zu eins.
+                .animation(Stil.blattbewegung, value: offen)
                 .onTapGesture { schliessen(mit: 0) }
 
             VStack(spacing: 0) {
