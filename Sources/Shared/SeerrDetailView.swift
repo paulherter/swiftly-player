@@ -393,7 +393,11 @@ struct SeerrDetailView: View {
         do {
             // Leer heisst alle — Seerr versteht das Wort `all`, und wer
             // nichts angekreuzt hat, will nicht nichts.
-            let staffeln = gewaehlt.isEmpty ? nil : Array(gewaehlt).sorted()
+            // **Nie leer.** `nil` bedeutet bei Seerr „alle Staffeln", und das
+            // ist der Fall, den niemand versehentlich ausloesen soll — wer
+            // nur nachsieht, welche es gibt, fragt sonst die ganze Serie an.
+            guard !gewaehlt.isEmpty else { return }
+            let staffeln = Array(gewaehlt).sorted()
             try await model.seerr.anfragen(treffer, staffeln: staffeln)
             angefragt = true
             stand = .wartetAufFreigabe

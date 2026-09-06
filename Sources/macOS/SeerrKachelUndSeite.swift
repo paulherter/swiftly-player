@@ -161,6 +161,27 @@ struct SeerrDetailView: View {
         // der grosse Titel unter ihr verschwindet, und der Zurueckpfeil
         // steckt in ihr. Vorher stand hier ein runder `Aktionsknopf` mitten
         // im Bild — den hat die echte Seite nicht.
+        // **Die Staffelliste haengt an der Seite, nicht im Block.** Der Fang
+        // liegt darunter: ein Klick daneben schliesst sie, wie bei der
+        // Ladetafel.
+        .overlay(alignment: .topLeading) {
+            if treffer.istSerie, staffelnOffen {
+                ZStack(alignment: .topLeading) {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(Stil.zeitSprung) { staffelnOffen = false }
+                        }
+                    staffelliste
+                        .padding(.leading, Stil.randAbstand)
+                        // Unter dem Knopf: der Block beginnt bei
+                        // `titelHoehe + 98`, die Knopfreihe darin bei 182.
+                        .padding(.top, Stil.titelHoehe + 98 + 182
+                                       + Stil.hauptknopfHoehe + 10)
+                }
+                .transition(.opacity)
+            }
+        }
         .overlay(alignment: .top) {
             Detailkopf(titel: treffer.titel, stand: kopfstand, zurueck: zurueck)
         }
@@ -309,15 +330,19 @@ struct SeerrDetailView: View {
         if angefragt {
             auskunft(String(localized: "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."))
         } else if stand.anfragbar {
-            VStack(alignment: .leading, spacing: 12) {
+            // **Nur der Knopf.** Die Staffelliste stand hier daneben, in einem
+            // `VStack` — und der steckt in einem Block mit **fester** Hoehe
+            // (230, Knopfreihe bei 182). Waechst er, rutscht der Knopf nach
+            // oben statt die Liste nach unten. Die Liste haengt jetzt als
+            // Tafel an der Seite, wie die Ladetafel.
+            HStack(spacing: 12) {
                 Hauptknopf(beschriftung: knopftext,
                            symbol: bestaetigt ? "checkmark" : "plus") { gedrueckt() }
                     .frame(maxWidth: 320)
-
-                if treffer.istSerie, staffelnOffen { staffelliste }
                 if let fehler {
                     Text(verbatim: fehler)
                         .font(Stil.zweitzeile).foregroundStyle(Stil.warnung)
+                        .lineLimit(2)
                 }
             }
         } else {
@@ -327,7 +352,13 @@ struct SeerrDetailView: View {
 
     private var knopftext: LocalizedStringKey {
         if laeuft { return "Wird angefragt…" }
-        if treffer.istSerie { return staffelnOffen ? "Anfragen" : "Staffeln wählen" }
+        if treffer.istSerie {
+            guard staffelnOffen else { return "Staffeln wählen" }
+            // **Die Zahl steht auf dem Knopf.** Vorher stand dort „Anfragen",
+            // und was angefragt wurde, war nicht abzulesen — leer hiess alle.
+            return gewaehlt.isEmpty ? "Staffeln wählen"
+                                    : "\(gewaehlt.count) Staffeln anfragen"
+        }
         return bestaetigt ? "Wirklich anfragen?" : "Anfragen"
     }
 
@@ -337,8 +368,15 @@ struct SeerrDetailView: View {
     private func gedrueckt() {
         guard !laeuft else { return }
         if treffer.istSerie {
-            if staffelnOffen { Task { await anfragen() } }
-            else { withAnimation(Stil.zeitSprung) { staffelnOffen = true } }
+            // **Ohne Auswahl passiert nichts.** Vorher hiess leer „alle", und
+            // wer nur nachsehen wollte, welche Staffeln es gibt, fragte die
+            // ganze Serie an.
+            guard staffelnOffen else {
+                withAnimation(Stil.zeitSprung) { staffelnOffen = true }
+                return
+            }
+            guard !gewaehlt.isEmpty else { return }
+            Task { await anfragen() }
             return
         }
         guard bestaetigt else { bestaetigt = true; return }
@@ -348,7 +386,8 @@ struct SeerrDetailView: View {
     /// **Was schon da ist, lässt sich nicht ankreuzen** — und sagt daneben,
     /// dass es da ist.
     private var staffelliste: some View {
-        VStack(spacing: 0) {
+        ScrollView {
+          VStack(spacing: 0) {
             ForEach(detail?.staffeln ?? []) { st in
                 Button {
                     guard st.stand.anfragbar else { return }
@@ -378,10 +417,20 @@ struct SeerrDetailView: View {
                 }
                 .buttonStyle(.plain)
             }
+          }
         }
+        .scrollIndicators(.never)
+        // **Sie schwebt, also traegt sie einen Schatten** — wie die
+        // Ladetafel und die Handlungsliste. Vorher lag sie im Fluss, dort
+        // war keiner noetig.
+        //
+        // Und sie hat eine Hoehe: sieben Staffeln passen, zwanzig nicht.
+        // `Der Chef` hat neun, `Perry Mason` neun — es kommt vor.
         .frame(maxWidth: 320, alignment: .leading)
-        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
+        .frame(maxHeight: 380)
+        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
         .overlay(RoundedRectangle(cornerRadius: Stil.eckeFlaeche).strokeBorder(Stil.rand))
+        .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
@@ -445,9 +494,12 @@ struct SeerrDetailView: View {
         laeuft = true
         defer { laeuft = false }
         do {
-            // Leer heisst alle — Seerr versteht das Wort `all`, und wer
-            // nichts angekreuzt hat, will nicht nichts.
-            let staffeln = gewaehlt.isEmpty ? nil : Array(gewaehlt).sorted()
+            // **Nie leer.** `gedrueckt()` laesst es gar nicht so weit
+            // kommen; hier steht der Riegel ein zweites Mal, weil `nil` bei
+            // Seerr „alle Staffeln" bedeutet und das der Fall ist, den
+            // niemand versehentlich ausloesen soll.
+            guard !gewaehlt.isEmpty else { return }
+            let staffeln = Array(gewaehlt).sorted()
             try await model.seerr.anfragen(treffer, staffeln: staffeln)
             angefragt = true
             stand = .wartetAufFreigabe
