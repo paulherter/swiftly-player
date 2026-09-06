@@ -1,6 +1,11 @@
 <div align="center">
 
-<img src=".github/bilder/wortmarke.svg" alt="Swiftly" width="300">
+<img src=".github/bilder/wortmarke.svg" alt="Swiftly for Jellyfin" width="300">
+
+# Swiftly for Jellyfin
+
+**A native Jellyfin client for iPhone, iPad, Apple TV, Mac, Linux and Windows.**
+It never transcodes — every file plays as Direct Play or Direct Stream.
 
 <br>
 

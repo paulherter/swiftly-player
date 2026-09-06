@@ -379,6 +379,13 @@ struct DownloadsView: View {
                 $0.contentOffset.y + $0.contentInsets.top
             } action: { _, neu in versatz = neu }
             .animation(Stil.einblenden, value: verwaltung.posten.count)
+            // **Nur die Scrollflaeche zieht sich beim Wechsel heran.**
+            //
+            // Hier stand `bereichsinhalt` ganz unten an der Seite — dann
+            // wandert der feste Kopf mit, und beim Oeffnen der Downloads schob
+            // sich die obere Leiste mit der Bewegung mit. Auf Start, Filme und
+            // Serien haengt sie seit je an der Flaeche allein;
+            .bereichsinhalt()
 
             kopf
                 // **Nur bei einer echten Aenderung uebernehmen.**
@@ -394,7 +401,7 @@ struct DownloadsView: View {
                 // irren, sehen kann man es nicht.
                 .onGeometryChange(for: CGFloat.self) { $0.size.height }
                     action: { neu in
-                        if abs(neu - kopfhoehe) >= 1 { kopfhoehe = neu }
+                        if abs(neu - kopfhoehe) >= 4 { kopfhoehe = neu }
                     }
 
             if verwaltung.posten.isEmpty {
@@ -428,7 +435,6 @@ struct DownloadsView: View {
                 }
             ])
         }
-        .bereichsinhalt()
     }
 
     @ViewBuilder

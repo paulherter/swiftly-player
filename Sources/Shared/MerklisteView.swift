@@ -96,12 +96,13 @@ struct MerklisteView: View {
                 // Bruchteile eines Punktes, schaukelt er sich auf, und die
                 // ganze Seite faehrt sichtbar auf und ab.
                 //
-                // Ein Punkt Schwelle bricht den Kreis, ohne etwas zu kosten:
-                // um weniger als einen Punkt darf sich der obere Rand ruhig
-                // irren, sehen kann man es nicht.
+                // **Vier Punkte Schwelle.** Ein Punkt hat nicht gereicht — das
+                // Zittern war groesser. Vier sind immer noch weit unter jeder
+                // echten Aenderung: kommt eine Zeile dazu, sind das sechzehn
+                // Punkte und mehr. Was darunter liegt, ist Rauschen.
                 .onGeometryChange(for: CGFloat.self) { $0.size.height }
                     action: { neu in
-                        if abs(neu - kopfhoehe) >= 1 { kopfhoehe = neu }
+                        if abs(neu - kopfhoehe) >= 4 { kopfhoehe = neu }
                     }
 
             if stand.items.isEmpty, !stand.laedt {

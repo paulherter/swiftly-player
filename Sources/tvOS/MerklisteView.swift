@@ -64,6 +64,13 @@ struct MerklisteView: View {
                 }
             }
         }
+        // **Der seitliche Systemrand faellt weg** — wie in der Bibliothek und
+        // auf der Startseite. Ohne das sitzt `randSeite` auf dem Rand, den
+        // tvOS ohnehin freihaelt, und der Abstand liegt doppelt an: die
+        // Chipreihe stand rund sechzig Punkt weiter rechts als dieselbe Reihe
+        // auf Filme und Serien.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(edges: .horizontal)
         // Hinter der offenen Tafel ist nichts fokussierbar — wie in der
         // Bibliothek; sonst steigt der Fokus aus der Tafel heraus.
         .disabled(sortierwahlOffen)
