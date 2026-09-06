@@ -29,7 +29,7 @@ settings:
     SWIFT_EMIT_LOC_STRINGS: "YES"
     # Muss mit der Version in App Store Connect uebereinstimmen,
     # sonst laesst sich der Build dort nicht anhaengen.
-    # 1.0.1 seit dem 07.09.2026: das Gestaltungsupdate. Zwanzig Befunde aus
+    # 1.0.1 seit dem 06.09.2026: das Gestaltungsupdate. Zwanzig Befunde aus
     # zwei Durchgaengen, ein gemeinsames Blatt, kein Ladering mehr in der
     # Oberflaeche, Kachelmarken, die Merkliste — und die Uebernahme auf
     # iPad, Mac und Fernseher. Steht so auch in App Store Connect.
