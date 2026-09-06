@@ -45,15 +45,24 @@ struct MerklisteView: View {
                             stand.gattung = fall.art
                         }
                     }
-                    Rectangle().fill(Stil.rand).frame(width: 1, height: 18)
-                        .padding(.horizontal, 4)
+                    // **Rechts, und mit demselben Zeichen wie nebenan.**
+                    //
+                    // Die Sortierung stand hier links, unmittelbar hinter der
+                    // Gattung und durch einen Strich getrennt — auf Filme und
+                    // Serien steht sie rechts aussen, mit einem Trichter am
+                    // gewaehlten Wert. Zwei Fassungen derselben Frage auf
+                    // Nachbarseiten; der Strich faellt damit weg, denn der
+                    // Abstand trennt jetzt.
+                    Spacer()
                     ForEach(Sortierung.allCases) { fall in
-                        Chip(beschriftung: fall.beschriftung, aktiv: stand.sortierung == fall) {
+                        Chip(beschriftung: fall.beschriftung,
+                             symbol: fall == stand.sortierung ? "line.3.horizontal.decrease" : nil,
+                             aktiv: stand.sortierung == fall) {
                             stand.sortierung = fall
                         }
                     }
                 }
-                .padding(.top, 18)
+                .padding(.top, 14)
 
                 LazyVGrid(columns: spalten, alignment: .leading, spacing: 24) {
                     ForEach(stand.items, id: \.id) { eintrag in

@@ -100,6 +100,25 @@ struct BibliothekView: View {
                 }
                 .padding(.top, 14)
 
+                // **Der Platzhalter steht im Fluss, nicht als Auflage.**
+                //
+                // Er hing als `.overlay(alignment:.topLeading)` mit einem
+                // festen Abstand von oben — die Kopfzone darueber ist aber
+                // nicht immer gleich hoch: die Bibliothekschips gibt es erst
+                // ab zwei Bibliotheken, und die stehen erst da, wenn
+                // `model.views` angekommen ist. Beim **ersten** Umschalten war
+                // das noch nicht so, der Platzhalter sass also zu weit oben
+                // und legte sich ueber die Chipreihe.
+                //
+                // Im Fluss kann das nicht passieren: er steht dort, wo das
+                // Raster stuende, und wandert mit allem darueber.
+                if regal.items.isEmpty, regal.laedt {
+                    Rasterplatzhalter(spalten: geschaetzteSpalten, reihen: 2)
+                        .padding(.top, 22)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+
                 LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {
                     ForEach(regal.items, id: \.id) { eintrag in
                         Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
@@ -143,15 +162,6 @@ struct BibliothekView: View {
         // schon in seiner Form da und wird ueberblendet, sobald die Titel
         // ankommen — die Seite ist dann leer, nicht am Warten.
         // GESTALTUNG, Abschnitt G.
-        .overlay(alignment: .topLeading) {
-            if regal.items.isEmpty, regal.laedt {
-                Rasterplatzhalter(spalten: geschaetzteSpalten, reihen: 2)
-                    .padding(.horizontal, Stil.randAbstand)
-                    .padding(.top, Stil.inhaltOben + 22)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
-            }
-        }
         .animation(Stil.einblenden, value: regal.items.isEmpty)
         .task(id: regal.kennung) { await laden() }
         // **Auch das Regal gehört zu einem Konto.** `.task(id:)` hängt an

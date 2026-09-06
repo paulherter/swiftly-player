@@ -105,16 +105,49 @@ struct SeerrDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // **Der Titel kommt von TMDB und ist kein Schlüssel.** Der
+                // **Derselbe Kopf wie auf einer echten Detailseite.**
+                //
+                // Hier stand eine Titelzeile ohne Bild Dieselbe Sorte Fehler
+                // wie damals auf dem iPhone: nachgebaut statt uebernommen.
+                // `Kulisse` nimmt eine blanke Adresse, das Querbild von TMDB
+                // passt also ohne Umweg hinein; der Aufbau ist Zeile fuer
+                // Zeile der von `Heldenkopf` in `DetailView`.
+                held.zIndex(1)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    besetzung
+                    aehnliches
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Stil.randAbstand)
+                .padding(.bottom, 40)
+            }
+        }
+        .scrollIndicators(.never)
+        .ohneKanteneffekt()
+        .task { detail = await model.seerr.detail(treffer) }
+    }
+
+    /// Wie `Heldenkopf`: das Bild rechts, der Block darueber, feste Hoehe.
+    private var held: some View {
+        ZStack(alignment: .topLeading) {
+            // Das Querbild steht am Treffer, nicht am Detail — Seerr liefert
+            // es schon in der Suche mit. Faellt es aus, bleibt die Flaeche
+            // leer statt ein hochgezogenes Plakat zu zeigen; das steht so an
+            // `Seerrtreffer.kulisse` und gilt hier genauso.
+            Kulisse(url: treffer.kulisse(breite: 1280),
+                    hoehe: Stil.heldHoehe * 1.62)
+
+            VStack(alignment: .leading, spacing: 0) {
+                // **Der Titel kommt von TMDB und ist kein Schluessel.** Der
                 // gemeinsame Kopf nimmt einen `LocalizedStringKey`; „The
-                // Mentalist" würde dort nachgeschlagen. Deshalb hier die
-                // Zeile selbst, mit denselben Werten.
+                // Mentalist" wuerde dort nachgeschlagen.
                 HStack(spacing: 14) {
                     Aktionsknopf(symbol: "chevron.left", titel: "Zurück",
                                  auswahl: zurueck)
                     Text(verbatim: treffer.titel)
-                        .font(.system(size: 28, weight: .bold))
-                        .tracking(-0.6)
+                        .font(.system(size: 34, weight: .bold))
+                        .tracking(-0.8)
                         .foregroundStyle(Stil.schrift)
                     Spacer(minLength: 0)
                 }
@@ -124,31 +157,26 @@ struct SeerrDetailView: View {
                     .foregroundStyle(Stil.schriftLeise)
                     .padding(.top, 6)
 
-                belegzeile.padding(.top, 18)
-
-                handlung.padding(.top, 18)
+                belegzeile.padding(.top, 14)
 
                 if let text = detail?.beschreibung {
                     Text(verbatim: text)
                         .font(Stil.koerper)
                         .foregroundStyle(Stil.schrift.opacity(0.78))
                         .lineSpacing(4)
+                        .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 700, alignment: .leading)
-                        .padding(.top, 22)
+                        .frame(maxWidth: 640, alignment: .leading)
+                        .padding(.top, 16)
                 }
 
-                besetzung
-                aehnliches
+                handlung.padding(.top, 20)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Stil.randAbstand)
-            .padding(.top, Stil.inhaltOben)
-            .padding(.bottom, 40)
+            .padding(.leading, Stil.randAbstand)
+            .padding(.trailing, Stil.randAbstand)
+            .padding(.top, Stil.titelHoehe + 40)
         }
-        .scrollIndicators(.never)
-        .ohneKanteneffekt()
-        .task { detail = await model.seerr.detail(treffer) }
+        .frame(height: Stil.heldHoehe, alignment: .topLeading)
     }
 
     private var nebenzeile: String {
