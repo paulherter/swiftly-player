@@ -138,8 +138,6 @@ the question, and the app simply respects the answer.
 
 - **Picture in Picture**<sup>2</sup> — the one thing that sent me looking for
   another client in the first place.
-- **AirPlay sends the picture**<sup>2</sup>, not just the sound — and the
-  server still does not re-encode.
 - **Lock screen and Control Centre**<sup>2</sup> show the artwork and the
   controls.
 - **Media keys**<sup>3</sup> work, and a small window stays on top while you
