@@ -264,6 +264,11 @@ extension Stil {
     /// träge genug.
     static let fokusAnimation = Animation.easeOut(duration: 0.14)
 
+    /// Wie Inhalt erscheint, wenn er angekommen ist — dieselbe Kurve wie auf
+    /// dem iPhone. **Nichts erscheint hart** (E18): Bilder blenden ein,
+    /// Inhalt loest Platzhalter ab.
+    static let einblenden = Animation.easeInOut(duration: 0.28)
+
     // MARK: Seitenwechsel
 
     /// Überblenden zwischen zwei Bereichen.

@@ -109,11 +109,30 @@ struct Profilzeichen: View {
             // er immer darunter und das Bild darueber — waehrend dessen
             // Aufblende schien er hindurch, und wer ein Profilbild hatte, sah
             // fuer einen Moment ein grosses „P" darin. Er gehoert deshalb in
-            // den Zweig, in dem kein Bild ankommt.
-            AsyncImage(url: bild) { stand in
-                if case let .success(b) = stand {
+            // den Zweig, in dem kein Bild ankommt. **Und `.empty` heisst
+            // „laeuft noch", nicht „kein Bild".**
+            //
+            // Der Absatz darueber hat den Buchstaben aus dem Untergrund in den
+            // Rueckfallzweig geholt — aber der Zweig fing weiterhin *jede*
+            // Lage ausser Erfolg ab, auch die des laufenden Abrufs. Deshalb
+            // blitzte er weiter: nicht mehr unter dem Bild, sondern davor. Am
+            // staerksten beim **ersten** Wechsel von der Startseite auf Filme
+            // oder Serien, weil dort eine neue Ansicht entsteht und deren
+            // `AsyncImage` von vorn anfaengt, obwohl das Bild laengst im
+            // Speicher liegt. Danach war es weg, und genau so hat
+            //
+            // Waehrend des Abrufs steht deshalb nur der Verlauf. Dieselbe
+            // Unterscheidung wie in `Bild`, dieselbe Ursache, dieselbe
+            // Behebung.
+            AsyncImage(url: bild,
+                       transaction: Transaction(animation: Stil.einblenden)) { stand in
+                switch stand {
+                case let .success(b):
                     b.resizable().aspectRatio(contentMode: .fill)
-                } else {
+                        .transition(.opacity)
+                case .empty where bild != nil:
+                    Color.clear
+                default:
                     buchstabe.onAppear {
                         guard case let .failure(f) = stand,
                               (f as NSError).code == NSURLErrorCancelled,

@@ -147,6 +147,11 @@ extension Stil {
     /// Sprung, auch wenn nichts ruckelt.
     static let zeitEinblenden = Animation.easeOut(duration: 0.25)
 
+    /// Wie Inhalt erscheint, wenn er angekommen ist — dieselbe Kurve wie auf
+    /// dem iPhone. **Nichts erscheint hart** (E18): Bilder blenden ein,
+    /// Inhalt loest Platzhalter ab.
+    static let einblenden = Animation.easeInOut(duration: 0.28)
+
     // MARK: Der Wechsel in der Leiste — „Fade Through"
     //
     // **Nachgelesen, nicht ausgedacht.** Der Übergang hat einen Namen und eine
