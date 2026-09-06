@@ -121,7 +121,12 @@ struct BibliothekView: View {
         // zurueck.
         .onDisappear { tafelOffen.wrappedValue = false }
         .animation(Stil.einblenden, value: stand.laedt)
-        .task(id: stand.kennung) { await laden() }
+        // **Und der Kontowechsel gehoert in die Kennung.** Er stand nur
+        // hier nicht: `stand.kennung` traegt Bibliothek, Filter und
+        // Sortierung — alles Werte, die sich beim Wechsel nicht aendern.
+        // Die Seite behielt damit die Titel des vorigen Kontos, samt deren
+        // Haken. iPhone und iPad haengen den Zaehler seit je an.
+        .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await laden() }
     }
 
     /// **Je Bereich ein eigener Grundton.**

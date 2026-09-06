@@ -192,6 +192,21 @@ struct HauptView: View {
         #endif
         .onDisappear { Task { await model.fernsteuerungBeenden() } }
         .onChange(of: bereich) { _, neu in besucht.insert(neu) }
+        // **VERHALTEN G4: der Seitenstapel wird beim Kontowechsel geleert.**
+        //
+        // Er stand hier nicht. iPhone und iPad leeren ihre `pfade`, der Mac
+        // ruft `navigator.alleLeeren()` — nur der Fernseher behielt, was
+        // offen war. Ein Stapel gehoert aber zu einem Konto: eine
+        // Detailseite haengt an `.task(id: titel.id)`, eine Serienseite an
+        // der Staffel, und **keine** dieser Kennungen aendert sich beim
+        // Wechsel. Ohne das Leeren staenden dort Haken und
+        // Fortschrittsbalken des vorigen Kontos, und ein Druck auf
+        // Abspielen setzte an dessen Stelle an und meldete sie dem neuen.
+        .onChange(of: model.kontowechsel) { _, _ in
+            for i in pfade.indices where !pfade[i].isEmpty {
+                pfade[i] = NavigationPath()
+            }
+        }
         .onOpenURL { adresse in
             guard adresse.scheme == "swiftly", adresse.host == "titel" else { return }
             let kennung = adresse.lastPathComponent

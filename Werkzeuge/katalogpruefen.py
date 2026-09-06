@@ -14,7 +14,18 @@ wurzel = pathlib.Path(__file__).resolve().parent.parent
 katalog = json.loads((wurzel / "Sources/Shared/Localizable.xcstrings").read_text())["strings"]
 
 # Die Stellen, an denen eine Beschriftung als festes Wort im Code steht.
-muster = re.compile(r'(?:Text\(|titel:\s*|unter:\s*|beschriftung:\s*|platzhalter:\s*|'
+# **Zweimal erweitert, zweimal weil es sonst durchgerutscht waere.**
+#
+# Der erste Bogen kannte nur `Text(` und die benannten Argumente. Am
+# 06.09.2026 fanden sich damit trotzdem 50 weitere Beschriftungen, die nie im
+# Katalog standen — sie stehen in `Button(`, in `String(localized:)` oder als
+# Wert eines `switch`. Englische Nutzer lasen dort Deutsch: Downloadzustaende
+# („wartet", „angehalten", „frei"), die halbe Seerr-Marke und die
+# Auskunftskarten im Player.
+muster = re.compile(r'(?:Text\(|Button\(|Toggle\(|Label\(|Menu\(|Section\(|'
+                    r'String\(localized:\s*|navigationTitle\(|\.help\(|'
+                    r'confirmationDialog\(|'
+                    r'titel:\s*|unter:\s*|beschriftung:\s*|platzhalter:\s*|'
                     r'kopfzeile:\s*|hinweis:\s*|text:\s*|wort:\s*|ansage:\s*)"([^"\\]{3,})"')
 
 fehlt, roh = set(), set()

@@ -532,6 +532,23 @@
         }
       }
     },
+    "1 Staffel": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Staffel"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 season"
+          }
+        }
+      }
+    },
     "1×": {
       "extractionState": "manual",
       "localizations": {
@@ -651,6 +668,23 @@
         }
       }
     },
+    "Aktiv": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktiv"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active"
+          }
+        }
+      }
+    },
     "Aktualisieren": {
       "extractionState": "manual",
       "localizations": {
@@ -736,6 +770,23 @@
         }
       }
     },
+    "Anfragen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anfragen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request"
+          }
+        }
+      }
+    },
     "Anfragen, was noch nicht da ist": {
       "extractionState": "manual",
       "localizations": {
@@ -749,6 +800,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Request what isn’t there yet"
+          }
+        }
+      }
+    },
+    "Angefragt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angefragt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requested"
+          }
+        }
+      }
+    },
+    "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requested. Once it is approved, it downloads on its own."
           }
         }
       }
@@ -800,6 +885,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sign in"
+          }
+        }
+      }
+    },
+    "Auf deinem Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf deinem Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On your server"
           }
         }
       }
@@ -1382,6 +1484,40 @@
         }
       }
     },
+    "Deine Anfrage ist durch. Der Titel erscheint von selbst in deiner Bibliothek.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Anfrage ist durch. Der Titel erscheint von selbst in deiner Bibliothek."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your request went through. The title will show up in your library on its own."
+          }
+        }
+      }
+    },
+    "Deine Anfrage liegt beim Verwalter des Servers. Du musst nichts weiter tun.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Anfrage liegt beim Verwalter des Servers. Du musst nichts weiter tun."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your request is with whoever runs the server. There is nothing else for you to do."
+          }
+        }
+      }
+    },
     "Demuxer": {
       "extractionState": "manual",
       "localizations": {
@@ -1671,6 +1807,23 @@
         }
       }
     },
+    "Die Datei liess sich nicht ablegen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Datei liess sich nicht ablegen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file could not be saved."
+          }
+        }
+      }
+    },
     "Die Folge konnte nicht geladen werden.": {
       "extractionState": "manual",
       "localizations": {
@@ -1701,6 +1854,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Playback failed — %@ did not return a plan."
+          }
+        }
+      }
+    },
+    "Diese Adresse ergibt keine.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Adresse ergibt keine."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That is not a usable address."
+          }
+        }
+      }
+    },
+    "Dieser Titel liegt bereits auf deinem Server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Titel liegt bereits auf deinem Server."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This title is already on your server."
           }
         }
       }
@@ -1960,6 +2147,23 @@
         }
       }
     },
+    "Fehlgeschlagen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fehlgeschlagen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed"
+          }
+        }
+      }
+    },
     "Fertig": {
       "extractionState": "manual",
       "localizations": {
@@ -2006,6 +2210,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Movies"
+          }
+        }
+      }
+    },
+    "Filme & Serien": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filme & Serien"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Movies & Shows"
           }
         }
       }
@@ -2401,6 +2622,23 @@
         }
       }
     },
+    "Grundtakt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grundtakt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "base rate"
+          }
+        }
+      }
+    },
     "Hier ist noch nichts": {
       "extractionState": "manual",
       "localizations": {
@@ -2588,6 +2826,23 @@
         }
       }
     },
+    "Kein Netz": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Netz"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No network"
+          }
+        }
+      }
+    },
     "Keine": {
       "extractionState": "manual",
       "localizations": {
@@ -2601,6 +2856,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "None"
+          }
+        }
+      }
+    },
+    "Keine Adresse vom Server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Adresse vom Server."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No address from the server."
           }
         }
       }
@@ -2741,6 +3013,23 @@
         }
       }
     },
+    "Laedt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laedt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading"
+          }
+        }
+      }
+    },
     "Leertaste": {
       "extractionState": "manual",
       "localizations": {
@@ -2771,6 +3060,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Use name and password instead"
+          }
+        }
+      }
+    },
+    "Lädt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lädt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading"
           }
         }
       }
@@ -2839,6 +3145,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Continues as soon as the network is back."
+          }
+        }
+      }
+    },
+    "MISSTRAUT": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MISSTRAUT"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DISTRUSTED"
           }
         }
       }
@@ -2945,6 +3268,23 @@
         }
       }
     },
+    "Mobilfunk": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mobilfunk"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cellular"
+          }
+        }
+      }
+    },
     "Moment…": {
       "extractionState": "manual",
       "localizations": {
@@ -3047,6 +3387,23 @@
         }
       }
     },
+    "Nicht auf deinem Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht auf deinem Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not on your server"
+          }
+        }
+      }
+    },
     "Nicht genug Platz": {
       "extractionState": "manual",
       "localizations": {
@@ -3060,6 +3417,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "Not enough space"
+          }
+        }
+      }
+    },
+    "Nicht verbunden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht verbunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not connected"
+          }
+        }
+      }
+    },
+    "Nichts auf dem Gerät": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts auf dem Gerät"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing on this device"
+          }
+        }
+      }
+    },
+    "Nichts auf diesem Mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts auf diesem Mac"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing on this Mac"
           }
         }
       }
@@ -3128,6 +3536,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld minutes left"
+          }
+        }
+      }
+    },
+    "Noch nichts": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch nichts"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing yet"
           }
         }
       }
@@ -3642,6 +4067,23 @@
         }
       }
     },
+    "Sitzung abgelaufen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sitzung abgelaufen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session expired"
+          }
+        }
+      }
+    },
     "Sitzung ließ sich nicht sichern — du müsstest dich neu anmelden.": {
       "extractionState": "manual",
       "localizations": {
@@ -3965,23 +4407,6 @@
         }
       }
     },
-    "Swiftly 1.0": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly 1.0"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swiftly 1.0"
-          }
-        }
-      }
-    },
     "Swiftly 1.0 · VLCKit 4.0.0-a23": {
       "extractionState": "manual",
       "localizations": {
@@ -3995,6 +4420,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Swiftly 1.0 · VLCKit 4.0.0-a23"
+          }
+        }
+      }
+    },
+    "Teilweise vorhanden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teilweise vorhanden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partly available"
           }
         }
       }
@@ -4182,6 +4624,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unlimited"
+          }
+        }
+      }
+    },
+    "Unbekannt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unbekannt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown"
           }
         }
       }
@@ -4560,6 +5019,23 @@
         }
       }
     },
+    "Wartet auf Freigabe": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wartet auf Freigabe"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for approval"
+          }
+        }
+      }
+    },
     "Weiteres Konto": {
       "extractionState": "manual",
       "localizations": {
@@ -4692,6 +5168,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Playback settings"
+          }
+        }
+      }
+    },
+    "Wird angefragt…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird angefragt…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requesting…"
+          }
+        }
+      }
+    },
+    "Wirklich anfragen?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wirklich anfragen?"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Really request it?"
           }
         }
       }
@@ -4917,6 +5427,57 @@
         }
       }
     },
+    "angefragt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "angefragt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "requested"
+          }
+        }
+      }
+    },
+    "angehalten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "angehalten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "paused"
+          }
+        }
+      }
+    },
+    "auf deinem Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "auf deinem Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "on your server"
+          }
+        }
+      }
+    },
     "dem Server": {
       "extractionState": "manual",
       "localizations": {
@@ -4930,6 +5491,142 @@
           "stringUnit": {
             "state": "translated",
             "value": "the server"
+          }
+        }
+      }
+    },
+    "fps · Anpassung aus": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · Anpassung aus"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · matching off"
+          }
+        }
+      }
+    },
+    "fps · Anzeige stumm": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · Anzeige stumm"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · display not reporting"
+          }
+        }
+      }
+    },
+    "fps · laut Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · laut Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · per server"
+          }
+        }
+      }
+    },
+    "fps · ohne Wechsel": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · ohne Wechsel"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · no switch"
+          }
+        }
+      }
+    },
+    "frei": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "frei"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "free"
+          }
+        }
+      }
+    },
+    "gesehen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "gesehen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "watched"
+          }
+        }
+      }
+    },
+    "kann angefragt werden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "kann angefragt werden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "can be requested"
+          }
+        }
+      }
+    },
+    "kein Matroska": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "kein Matroska"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "not Matroska"
           }
         }
       }
@@ -4951,6 +5648,23 @@
         }
       }
     },
+    "nicht mehr auf dem Server": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nicht mehr auf dem Server"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no longer on the server"
+          }
+        }
+      }
+    },
     "oder": {
       "extractionState": "manual",
       "localizations": {
@@ -4964,6 +5678,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "or"
+          }
+        }
+      }
+    },
+    "ohne Endung": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ohne Endung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no extension"
           }
         }
       }
@@ -4985,6 +5716,40 @@
         }
       }
     },
+    "teilweise": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "teilweise"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "partly"
+          }
+        }
+      }
+    },
+    "teilweise vorhanden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "teilweise vorhanden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "partly available"
+          }
+        }
+      }
+    },
     "tv.beispiel.de": {
       "extractionState": "manual",
       "localizations": {
@@ -4998,6 +5763,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "tv.example.com"
+          }
+        }
+      }
+    },
+    "vertraut": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "vertraut"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "trusted"
+          }
+        }
+      }
+    },
+    "von": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "von"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "of"
+          }
+        }
+      }
+    },
+    "wartet": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "wartet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "waiting"
+          }
+        }
+      }
+    },
+    "wartet auf Freigabe": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "wartet auf Freigabe"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "waiting for approval"
           }
         }
       }
