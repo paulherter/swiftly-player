@@ -99,6 +99,7 @@ struct HauptView: View {
                          gewaehlteBibliothek: { art in
                              art == "movies" ? filmbibliothek : serienbibliothek
                          },
+                         bibliothekOeffnen: { navigator.oeffne(.bibliothek($0), in: bereich) },
                          zumProfil: { navigator.oeffne(.profil, in: bereich) })
             // **Der Sicherheitsrand der Titelleiste gilt links genauso wenig
             // wie rechts.** Vorher hielt nur der Inhaltsbereich ihn nicht
@@ -488,6 +489,8 @@ struct HauptView: View {
         case let .titel(item):  DetailView(model: model, item: item) { zurueck() }
         case .seerr:            SeerrEinstellungenView(model: model, seerr: model.seerr) { zurueck() }
         case let .seerrTitel(t): SeerrDetailView(model: model, treffer: t) { zurueck() }
+        case let .bibliothek(bib): Bibliotheksseite(model: model, bibliothek: bib,
+                                                   zurueck: { zurueck() })
         case .profil:           ProfilView(model: model) { zurueck() }
         // Nicht mehr erreichbar — die Merkliste ist ein Bereich. Der Fall
         // steht hier, damit ein wiederhergestellter alter Stapel nicht
@@ -562,6 +565,7 @@ struct Seitenleiste: View {
     /// Abfrage und nicht als Wert: die Stände liegen in `HauptView`, und die
     /// Leiste soll sie nicht doppelt führen.
     let gewaehlteBibliothek: (String) -> Item?
+    let bibliothekOeffnen: (Item) -> Void
     let zumProfil: () -> Void
 
     var body: some View {
@@ -610,10 +614,14 @@ struct Seitenleiste: View {
 
                 VStack(spacing: 2) {
                     ForEach(sammlungen, id: \.id) { bib in
+                        // **Eine eigene Seite, kein Umschalter.** Vorher rief
+                        // das hier `bibliothekWaehlen` — der Filme-Bereich
+                        // sprang auf diese Sammlung um, und ueber "Filmabend"
+                        // stand dann die Ueberschrift "Filme".
                         Seitenleistenzeile(symbol: bib.collectionType == "movies" ? "film" : "tv",
                                            name: bib.name,
-                                           aktiv: istAktiv(bib)) {
-                            bibliothekWaehlen(bib)
+                                           aktiv: false) {
+                            bibliothekOeffnen(bib)
                         }
                     }
                 }

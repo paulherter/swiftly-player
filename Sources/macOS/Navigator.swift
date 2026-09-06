@@ -64,6 +64,12 @@ final class Navigator {
 /// Lesen, welche Ziele es überhaupt gibt.
 enum Seitenziel: Hashable, Identifiable {
     case titel(Item)
+    /// **Eine Bibliothek als eigene Seite.**
+    ///
+    /// Fuer die Sammlungen neben Filme und Serien. Sie schalten den
+    /// Filme-Bereich ausdruecklich **nicht** um Vorher taten sie genau das,
+    /// und dann stand ueber "Filmabend" die Ueberschrift "Filme".
+    case bibliothek(Item)
     /// **Nicht mehr in Gebrauch.** Die Merkliste ist seit dem 06.09.2026 ein
     /// eigener Bereich in der Leiste; der Fall bleibt nur stehen, damit ein
     /// alter, wiederhergestellter Stapel nicht bricht.
@@ -84,6 +90,7 @@ enum Seitenziel: Hashable, Identifiable {
     var id: String {
         switch self {
         case let .titel(item):  "titel-\(item.id)"
+        case let .bibliothek(b): "bibliothek-\(b.id)"
         case .merkliste:        "merkliste"
         case .seerr:            "seerr"
         case let .seerrTitel(t): "seerr-\(t.art)-\(t.id)"

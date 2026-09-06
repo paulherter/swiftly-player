@@ -29,6 +29,12 @@ struct BibliothekView: View {
     /// Aus demselben Grund wie das Regal **von aussen**: als `@State` fiele
     /// die Wahl bei jedem Leistenwechsel auf die erste Bibliothek zurück.
     @Binding var gewaehlt: Item?
+    /// **Nur diese eine Bibliothek.** Auf einer eigenen Seite gibt es keine
+    /// Auswahl: die Seite *ist* die Bibliothek. Die Chipreihe faellt damit
+    /// weg, und der Zurueckpfeil kommt dazu.
+    var nurDiese = false
+    /// `nil` heisst: eine Wurzel, kein Weg — dann ohne Pfeil.
+    var zurueck: (() -> Void)?
 
     private var spalten: [GridItem] {
         [GridItem(.adaptive(minimum: Stil.kachelBreite, maximum: Stil.kachelBreite),
@@ -40,6 +46,18 @@ struct BibliothekView: View {
             VStack(alignment: .leading, spacing: 0) {
 
                 HStack(alignment: .firstTextBaseline) {
+                    if let zurueck {
+                        Button(action: zurueck) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(Stil.schrift)
+                                .frame(width: 40, height: 40)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Zurück"))
+                        .padding(.leading, -8)
+                    }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(titel)
                             .font(Stil.titelGross)
@@ -68,7 +86,7 @@ struct BibliothekView: View {
                     // Als Chips wie Filter und Sortierung daneben — auf dem
                     // Mac steht alles offen nebeneinander, und ein `Menu`
                     // waere ein Apple-Standardsteuerelement (E4).
-                    if auswahl.count > 1 {
+                    if auswahl.count > 1, !nurDiese {
                         ForEach(auswahl) { bib in
                             Chip(beschriftung: bib.name,
                                  aktiv: bib.id == gewaehlt?.id) {
