@@ -108,14 +108,30 @@ struct MerklisteView: View {
     private var kopf: some View {
         Unschaerfekopf(versatz: versatz) {
             VStack(alignment: .leading, spacing: 14) {
-                // **Breit ist die Merkliste eine Wurzel** — ein Bereich in
-                // der Seitenleiste — und eine Wurzel hat keinen Zurueckpfeil.
-                // Schmal faehrt sie als Seite herein und behaelt ihn.
-                Unterseitenkopf(titel: String(localized: "Merkliste"),
-                                zurueck: breit ? nil : { zurueck() }) { EmptyView() }
-                    // Der Kopf bringt seinen eigenen Rand mit; hier steht er
-                    // schon in einem.
-                    .padding(.horizontal, -Stil.rand(breit: breit))
+                // **Breit ist die Merkliste eine Wurzel, schmal ein Weg** —
+                // und die beiden tragen verschiedene Koepfe.
+                //
+                // Breit steht sie als Bereich in der Seitenleiste, neben
+                // Filme und Serien; dort gehoert derselbe Kopf hin wie dort:
+                // grosser Titel, buendig am Rand, kein Pfeil. Ein
+                // `Unterseitenkopf` ohne Pfeil sieht zwar aehnlich aus, setzt
+                // den Titel aber um eine Knopfbreite anders — nebeneinander
+                // in derselben Leiste faellt genau das auf.
+                //
+                // Schmal haengt sie am Zeichen oben rechts und faehrt als
+                // Seite herein; dann ist der Pfeil richtig.
+                if breit {
+                    Text("Merkliste")
+                        .font(Stil.titelGross)
+                        .tracking(-0.6)
+                        .foregroundStyle(Stil.schrift)
+                } else {
+                    Unterseitenkopf(titel: String(localized: "Merkliste"),
+                                    zurueck: { zurueck() }) { EmptyView() }
+                        // Der Kopf bringt seinen eigenen Rand mit; hier steht
+                        // er schon in einem.
+                        .padding(.horizontal, -Stil.rand(breit: breit))
+                }
 
                 // **Schmal zeigt Werte, breit zeigt Moeglichkeiten** — E15,
                 // dieselbe Regel wie in der Bibliothek. Auf dem iPad ist
