@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /deb/
+Disallow: /rpm/
+Disallow: /arch/
+
+Sitemap: https://paulherter.github.io/swiftly-for-jellyfin/sitemap.xml
