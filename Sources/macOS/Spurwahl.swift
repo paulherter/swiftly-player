@@ -23,7 +23,35 @@ struct Spurwahl: View {
     let waehleTon: (VLCMediaPlayer.Track) -> Void
     let waehleUntertitel: (VLCMediaPlayer.Track?) -> Void
 
+    /// Wie hoch der Inhalt tatsaechlich waere.
+    @State private var inhaltshoehe: CGFloat = 0
+
     var body: some View {
+        // **Sie scrollt, sobald sie zu hoch wird.**
+        //
+        // Vorher war sie ein blanker Stapel ohne Grenze: eine Datei mit acht
+        // Tonspuren und einem Dutzend Untertiteln waechst ueber das Fenster
+        // hinaus, und was unten steht, ist nicht mehr zu erreichen.
+        //
+        // **Gemessen, nicht `maxHeight`.** Eine `ScrollView` nimmt sich
+        // senkrecht alles, was sie kriegen kann; mit `maxHeight` allein
+        // stuende die Tafel bei zwei Spuren mit einer handbreit Leere
+        // darunter. Dieselbe Falle wie bei der Staffelwahl.
+        ScrollView {
+          inhalt
+            .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                action: { inhaltshoehe = $0 }
+        }
+        .scrollIndicators(.never)
+        .frame(width: 320, alignment: .leading)
+        .frame(height: min(max(inhaltshoehe, 80), 520))
+        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
+        .overlay(RoundedRectangle(cornerRadius: Stil.eckeFeld)
+            .strokeBorder(Stil.rand, lineWidth: 1))
+        .shadow(color: .black.opacity(0.45), radius: 22, y: 10)
+    }
+
+    private var inhalt: some View {
         VStack(alignment: .leading, spacing: 22) {
             if !tonspuren.isEmpty {
                 Gruppe(titel: "Ton", symbol: "speaker.wave.2") {
@@ -78,11 +106,7 @@ struct Spurwahl: View {
             }
         }
         .padding(20)
-        .frame(width: 320, alignment: .leading)
-        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
-        .overlay(RoundedRectangle(cornerRadius: Stil.eckeFeld)
-            .strokeBorder(Stil.rand, lineWidth: 1))
-        .shadow(color: .black.opacity(0.45), radius: 22, y: 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

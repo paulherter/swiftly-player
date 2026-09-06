@@ -236,11 +236,24 @@ struct PlayerScreen: View {
         // findet, ohne sie zu kennen.
         .background {
             VStack {
-                Button("") { umschalten() }.keyboardShortcut(.space, modifiers: [])
-                Button("") { springe(-Double(model.zurueckSekunden)) }
-                    .keyboardShortcut(.leftArrow, modifiers: [])
-                Button("") { springe(Double(model.vorSekunden)) }
-                    .keyboardShortcut(.rightArrow, modifiers: [])
+                // **Bei offener Spurwahl gehoeren die Tasten ihr.**
+                //
+                // Diese Knoepfe liegen unsichtbar im Hintergrund und galten
+                // deshalb immer — auch waehrend die Tafel offen war. Wer dort
+                // durch die Tonspuren ging, hielt mit der Leertaste den Film
+                // an und sprang mit den Pfeilen darin herum.
+                //
+                // Escape bleibt: es schliesst dann die Tafel, nicht den Player
+                // — erst die Auswahl zu, dann weggehen.
+                Group {
+                    Button("") { umschalten() }.keyboardShortcut(.space, modifiers: [])
+                    Button("") { springe(-Double(model.zurueckSekunden)) }
+                        .keyboardShortcut(.leftArrow, modifiers: [])
+                    Button("") { springe(Double(model.vorSekunden)) }
+                        .keyboardShortcut(.rightArrow, modifiers: [])
+                }
+                .disabled(spurwahlOffen)
+
                 Button("") { fluchttaste() }.keyboardShortcut(.escape, modifiers: [])
                 // „Kleines Fenster" ist vorerst aus der Oberfläche raus;
                 // der Kurzbefehl geht mit, sonst gäbe es einen Weg dorthin,
@@ -310,6 +323,16 @@ struct PlayerScreen: View {
             .padding(.leading, 12)
             // Die Tafel klappt unter dem Knopf auf — kleine Entscheidungen
             // bleiben am Ort. Die Wiedergabe läuft dabei weiter.
+            // Ein Klick daneben schliesst — der Fang liegt unter der Tafel.
+            .overlay {
+                if spurwahlOffen {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(Stil.zeitSprung) { spurwahlOffen = false }
+                        }
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 if spurwahlOffen, let flaeche {
                     Spurwahl(tonspuren: flaeche.tonspuren,
@@ -557,6 +580,12 @@ struct PlayerScreen: View {
     /// die Wiedergabe — und das ist keine Kleinigkeit, wenn man mitten drin
     /// ist.
     private func fluchttaste() {
+        // **Erst die Auswahl, dann der Player.** Zurueck heisst zuerst
+        // „dieses Fenster geht zu" — dieselbe Regel wie auf dem Fernseher.
+        if spurwahlOffen {
+            withAnimation(Stil.zeitSprung) { spurwahlOffen = false }
+            return
+        }
         if halter.istVollbild {
             halter.vollbildUmschalten()
         } else {
