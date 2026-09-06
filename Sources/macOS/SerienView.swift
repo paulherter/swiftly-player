@@ -75,12 +75,6 @@ struct SerienView: View {
 
     /// **Die ganze Staffel, der Reihe nach.** H4 laesst immer nur einen
     /// laufen; was schon da ist, kommt nicht noch einmal in die Schlange.
-    private func folgeLaden(_ folge: Item) {
-        guard let p = posten(folge) else { return }
-        ladeposten = [p]
-        withAnimation(Stil.zeitSprung) { staffeltafelOffen = true }
-    }
-
     private func staffelLaden() {
         let offene = folgen.filter { model.downloads.posten(fuer: $0.id) == nil }
         ladeposten = offene.compactMap { posten($0) }
@@ -186,6 +180,30 @@ struct SerienView: View {
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
             kopfstand.versatz = neu
         }
+        // **Die Ladetafel haengt an der Seite, nicht am Chip.**
+        //
+        // Am Chip lag nichts hinter ihr, was einen Klick daneben haette
+        // auffangen koennen Hier liegt der Fang ueber der ganzen Seite und die
+        // Tafel darauf; ein Klick daneben trifft den Fang.
+        .overlay {
+            if staffeltafelOffen, !ladeposten.isEmpty {
+                ZStack(alignment: .topTrailing) {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(Stil.zeitSprung) { staffeltafelOffen = false }
+                        }
+                    Ladetafel(model: model, posten: ladeposten,
+                              titel: gewaehlt?.name ?? serie.name,
+                              bilder: ladebilder,
+                              offen: $staffeltafelOffen)
+                        // Unter dem Chip, der sie geoeffnet hat.
+                        .padding(.trailing, Stil.randAbstand)
+                        .padding(.top, Stil.heldHoehe + 92)
+                }
+                .transition(.opacity)
+            }
+        }
         .overlay(alignment: .top) {
             Detailkopf(titel: serie.name, stand: kopfstand, zurueck: zurueck)
         }
@@ -247,16 +265,6 @@ struct SerienView: View {
                                  symbol: "arrow.down", aktiv: false) {
                                 staffelLaden()
                             }
-                            .overlay(alignment: .topTrailing) {
-                                if staffeltafelOffen, !ladeposten.isEmpty {
-                                    Ladetafel(model: model, posten: ladeposten,
-                                              titel: gewaehlt?.name ?? serie.name,
-                                              bilder: ladebilder,
-                                              offen: $staffeltafelOffen)
-                                        .offset(y: 36)   // Chiphoehe 28 plus Luft
-                                        .transition(.opacity.combined(with: .move(edge: .top)))
-                                }
-                            }
                         }
                     }
                     .padding(.bottom, 18)
@@ -308,8 +316,7 @@ struct SerienView: View {
                     // trägt deshalb die Zeile selbst, siehe `Folgenzeile`.
                     VStack(spacing: 0) {
                         ForEach(folgen, id: \.id) { folge in
-                            Folgenzeile(model: model, folge: folge,
-                                        laden: { folgeLaden(folge) })
+                            Folgenzeile(model: model, folge: folge)
                             if folge.id != folgen.last?.id {
                                 Rectangle().fill(Stil.linie).frame(height: 1)
                             }
@@ -514,14 +521,10 @@ struct Staffelzeile: View {
 struct Folgenzeile: View {
     let model: AppModel
     let folge: Item
-    /// Was ein Klick auf den leeren Ring ausloest. `nil` heisst: kein Ring.
-    var laden: (() -> Void)?
 
     @State private var schwebt = false
     @State private var gesehen = false
     @Environment(Abspielsteuerung.self) private var steuerung
-
-    private var geladen: Downloadposten? { model.downloads.posten(fuer: folge.id) }
 
     /// 16 : 9 — dasselbe Verhältnis wie die 116 × 65 des iPhones.
     private let bildBreite: CGFloat = 160
@@ -595,16 +598,6 @@ struct Folgenzeile: View {
             }
             .frame(width: Stil.knopfRund, alignment: .trailing)
 
-            // **Der Ring rechts daneben, wo bisher nichts stand.** Nur wenn
-            // die Funktion an ist — sonst bleibt die Zeile, wie sie war. Er
-            // traegt einen Pfeil und keinen Haken: der Haken links davon
-            // heisst „gesehen", und zwei gleiche Zeichen fuer zwei Fragen
-            // waeren keine Auskunft.
-            if model.downloadsAn {
-                Downloadring(posten: geladen, mass: 22) {
-                    ringGeklickt(geladen, model.downloads) { laden?() }
-                }
-            }
         }
         .padding(.vertical, 12)
         // Der Rand des Abschnitts, hier innen — damit die Fläche beim

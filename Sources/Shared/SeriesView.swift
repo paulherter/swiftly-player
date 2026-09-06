@@ -425,8 +425,7 @@ struct SeriesDetailView: View {
                                beschriftung: ist ? "Ungesehen" : "Gesehen",
                                aktion: { gesehenUmschalten(folge) },
                                tippen: { starte(folge) }) {
-                        Folgenzeile(model: model, folge: folge,
-                                    laden: { folgeLaden(folge) })
+                        Folgenzeile(model: model, folge: folge)
                     }
                     Rectangle().fill(Stil.linie).frame(height: 1)
                         .padding(.leading, Stil.randAbstand)
@@ -534,13 +533,6 @@ struct SeriesDetailView: View {
         return karte
     }
 
-    private func folgeLaden(_ folge: Item) {
-        guard let p = posten(folge) else { return }
-        ladeposten = [p]
-        ladetitel = "\(folge.indexNumber.map { "\($0). " } ?? "")\(folge.name)"
-        ladeblatt = true
-    }
-
     /// **Die ganze Staffel, der Reihe nach.** Gleichzeitig gäbe es nicht: H4
     /// lässt immer nur einen laufen, der Rest wartet sichtbar. Was schon da
     /// ist, kommt nicht noch einmal in die Schlange.
@@ -569,8 +561,6 @@ struct Folgenzeile: View {
     @Environment(\.breit) private var breit
     let model: AppModel
     let folge: Item
-    /// Was ein Tipp auf den leeren Ring auslöst. `nil` heisst: kein Ring.
-    var laden: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -599,22 +589,12 @@ struct Folgenzeile: View {
                     .padding(.top, 3)
             }
 
-            // **Der Ring steht rechts, wo bisher nichts stand.** Nur wenn
-            // die Funktion an ist — sonst bleibt die Zeile, wie sie war.
-            if model.downloadsAn {
-                Downloadring(posten: geladen, mass: 24) {
-                    ringGetippt(geladen, model.downloads) { laden?() }
-                }
-                .padding(.top, -10)
-                .padding(.trailing, -10)
-            }
         }
         .padding(.horizontal, Stil.rand(breit: breit))
         .padding(.vertical, 12)
         .contentShape(Rectangle())
     }
 
-    private var geladen: Downloadposten? { model.downloads.posten(fuer: folge.id) }
 
     private var nebenzeile: String {
         // `runtimeSeconds` ist bei einer Folge ohne Angabe 0, nicht nil —

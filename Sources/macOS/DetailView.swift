@@ -500,6 +500,19 @@ struct Heldenkopf: View {
                                   bilder: ladebilder, offen: $ladetafelOffen)
                             .offset(y: Stil.hauptknopfHoehe + 8)
                             .transition(.opacity.combined(with: .move(edge: .top)))
+                            .zIndex(30)
+                    }
+                }
+                // Ein Klick daneben schliesst — dieselbe Erwartung wie beim
+                // Mehr-Menue. Der Fang liegt unter der Tafel, nicht darueber.
+                .background {
+                    if ladetafelOffen {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .frame(width: 4000, height: 4000)
+                            .onTapGesture {
+                                withAnimation(Stil.zeitSprung) { ladetafelOffen = false }
+                            }
                     }
                 }
             }
