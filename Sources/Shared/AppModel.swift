@@ -52,6 +52,30 @@ final class AppModel {
     var zurueckSekunden: Int { didSet { merken(zurueckSekunden, "zurueckSek") } }
     var vorSekunden: Int { didSet { merken(vorSekunden, "vorSek") } }
 
+    /// **H1 — aus, bis man es einschaltet.**
+    ///
+    /// Ohne diesen Schalter gibt es weder den Reiter unten noch das Feld auf
+    /// der Detailseite noch die Ringe in der Folgenliste. Wie bei Seerr: wer
+    /// es nicht will, sieht ausser der einen Zeile in den Einstellungen
+    /// nichts davon.
+    var downloadsAn: Bool {
+        didSet {
+            merken(downloadsAn, "downloadsAn")
+            // Ein ausgeschalteter Download laedt nicht weiter. Was auf der
+            // Platte liegt, bleibt liegen — H10 fragt beim Ausschalten, was
+            // damit geschehen soll, und diese Zeile haelt nur an.
+            if !downloadsAn { downloads.allesAnhalten() }
+        }
+    }
+    /// **H5.** An bei der ersten Aktivierung — bei Originaldateien ist alles
+    /// andere unfreundlich.
+    var nurUeberWLAN: Bool {
+        didSet {
+            merken(nurUeberWLAN, "nurUeberWLAN")
+            downloads.nurUeberWLAN = nurUeberWLAN
+        }
+    }
+
 
     private func merken(_ wert: Any, _ name: String) {
         UserDefaults.standard.set(wert, forKey: name)
@@ -105,7 +129,18 @@ final class AppModel {
     var serverVersion: String?
     var isWorking = false
 
-    private(set) var client: JellyfinClient?
+    /// **Ein Haken, und zwar hier.**
+    ///
+    /// `client` wird an fuenf Stellen gesetzt — beim Verbinden, beim
+    /// Anmelden, beim Kontowechsel, beim Wiederherstellen und beim
+    /// Abmelden —, und die Downloads muessen an allen fuenfen mitgehen.
+    /// Fuenf Aufrufe an fuenf Stellen sind vier Gelegenheiten, einen zu
+    /// vergessen; genau so ist die Fernsteuerung beim Kontowechsel
+    /// haengengeblieben. `session` steht dabei schon richtig: `bund` wird
+    /// auf jedem der fuenf Wege vor `client` gesetzt.
+    private(set) var client: JellyfinClient? {
+        didSet { downloads.anmelden(client: client, konto: session?.userID) }
+    }
     private(set) var session: Session?
 
     /// Alle Konten auf diesem Server, in der Reihenfolge des Streifens über
@@ -114,6 +149,11 @@ final class AppModel {
     /// eine Ansicht, die sie besitzt, verliert sie beim Schliessen, und ein
     /// zweites Modell daneben hätte einen zweiten Zugang.
     let seerr = Seerrmodell()
+
+    /// Was auf dem Geraet liegt. **Liegt hier aus demselben Grund wie
+    /// `seerr`:** sie haelt eine Hintergrundsitzung, und eine Ansicht, die
+    /// sie besaesse, verloere sie beim Schliessen — mitten im Download.
+    let downloads = Downloadverwaltung()
 
     private(set) var konten: [Session] = []
 
@@ -180,6 +220,13 @@ final class AppModel {
         neuzugangGetrennt = ablage.object(forKey: "neuGetrennt") as? Bool ?? false
         zurueckSekunden = ablage.object(forKey: "zurueckSek") as? Int ?? 10
         vorSekunden = ablage.object(forKey: "vorSek") as? Int ?? 30
+        downloadsAn = ablage.object(forKey: "downloadsAn") as? Bool ?? false
+        nurUeberWLAN = ablage.object(forKey: "nurUeberWLAN") as? Bool ?? true
+
+        // `didSet` laeuft waehrend `init` nicht — der Schalter muss einmal
+        // von Hand durchgereicht werden, sonst laedt die Verwaltung beim
+        // ersten Start ueber Mobilfunk, obwohl die Vorgabe das verbietet.
+        downloads.nurUeberWLAN = nurUeberWLAN
 
         Self.keychainSelbsttest()
         restoreSession()
