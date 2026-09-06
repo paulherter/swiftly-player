@@ -248,8 +248,14 @@ struct SucheView: View {
         .padding(.bottom, 10)
     }
 
+    /// **Breit steht er unter dem Feld, nicht in der Mitte.**
+    ///
+    /// Schmal fuellt das Suchfeld die Zeile, und ein mittiger Hinweis steht
+    /// unter seiner Mitte. Breit ist das Feld nur `lesebreite` lang und sitzt
+    /// links — der Hinweis stand dann in der Mitte des Fensters, also neben
+    /// dem, worauf er sich bezieht.
     private var leerhinweis: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: breit ? .leading : .center, spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(Stil.schriftSehrLeise)
@@ -257,7 +263,8 @@ struct SucheView: View {
                 .font(Stil.koerper)
                 .foregroundStyle(Stil.schriftLeise)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: breit ? .leading : .center)
+        .padding(.horizontal, breit ? Stil.rand(breit: true) : 0)
         .padding(.top, 70)
     }
 

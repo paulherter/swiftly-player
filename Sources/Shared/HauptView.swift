@@ -551,6 +551,15 @@ struct BibliothekView: View {
                         }
                     }
                     Spacer(minLength: 0)
+                    // **Breit steht die Zahl hier oben, nicht in der
+                    // Chipreihe** — genau wie auf dem Mac, wo sie neben dem
+                    // Titel sitzt. Blieb sie unten, stand hinter den
+                    // Sortierchips noch etwas, und die zwei Zwischenraeume
+                    // teilten sich den Platz zu gleichen Teilen: die Chips
+                    // landeten in der Mitte statt rechts.
+                    if breit, stand.gesamt > 0 {
+                        Zaehlmarke(anzahl: stand.gesamt)
+                    }
                     // Breit steht das Profilzeichen in der Seitenleiste, und
                     // zwar für alle vier Bereiche. Hier wäre es das zweite.
                     // Dieselbe Gruppe wie auf der Startseite — Merkliste
@@ -612,13 +621,13 @@ struct BibliothekView: View {
                           text: stand.filter.beschriftung) { filterlisteOffen = true }
                 Wertpille(symbol: "arrow.up.arrow.down",
                           text: stand.sortierung.beschriftung) { sortierlisteOffen = true }
+
+                Spacer(minLength: 8)
+
+                // Erst wenn wir sie kennen. Eine Null, die noch keine ist,
+                // wäre eine falsche Auskunft.
+                if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
             }
-
-            Spacer(minLength: 8)
-
-            // Erst wenn wir sie kennen. Eine Null, die noch keine ist, wäre
-            // eine falsche Auskunft.
-            if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
         }
     }
 

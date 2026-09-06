@@ -1428,7 +1428,17 @@ private struct Bereichsinhalt: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(aktiv ? 1 : Stil.bereichsmass)
+            // **Unten verankert, nicht mittig.**
+            //
+            // Mittig bewegen sich beide Kanten, und die untere ist die einzige
+            // sichtbare: der Inhalt wird an ihr abgeschnitten, also ruecken
+            // beim Heranziehen ein paar Punkt Grund darunter — ein dunkler
+            // Strich, der am Ende der Bewegung verschwindet.
+            //
+            // Am unteren Rand verankert steht diese Kante still; die obere
+            // wandert dafuer doppelt so weit, und dort liegt ohnehin nur der
+            // freie Rand unter der Kopfzeile.
+            .scaleEffect(aktiv ? 1 : Stil.bereichsmass, anchor: .bottom)
             // **Ein fester Grund hinter dem bewegten Inhalt.**
             //
             // Zieht er sich heran, gibt er an allen Rändern etwas frei — und

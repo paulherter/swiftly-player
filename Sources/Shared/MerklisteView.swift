@@ -134,10 +134,19 @@ struct MerklisteView: View {
                 // Schmal haengt sie am Zeichen oben rechts und faehrt als
                 // Seite herein; dann ist der Pfeil richtig.
                 if breit {
-                    Text("Merkliste")
-                        .font(Stil.titelGross)
-                        .tracking(-0.6)
-                        .foregroundStyle(Stil.schrift)
+                    // Die Zahl steht neben dem Titel und nicht hinter den
+                    // Chips — sonst teilen sich zwei Zwischenraeume den
+                    // Platz, und die Sortierchips landen in der Mitte statt
+                    // rechts. Dieselbe Stelle wie in der Bibliothek und auf
+                    // dem Mac.
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Merkliste")
+                            .font(Stil.titelGross)
+                            .tracking(-0.6)
+                            .foregroundStyle(Stil.schrift)
+                        Spacer(minLength: 0)
+                        if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
+                    }
                 } else {
                     Unterseitenkopf(titel: String(localized: "Merkliste"),
                                     zurueck: { zurueck() }) { EmptyView() }
@@ -177,9 +186,10 @@ struct MerklisteView: View {
                                   text: gattung.beschriftung) { gattungslisteOffen = true }
                         Wertpille(symbol: "arrow.up.arrow.down",
                                   text: stand.sortierung.beschriftung) { sortierlisteOffen = true }
+
+                        Spacer(minLength: 8)
+                        if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
                     }
-                    Spacer(minLength: 8)
-                    if stand.gesamt > 0 { Zaehlmarke(anzahl: stand.gesamt) }
                 }
             }
         }
