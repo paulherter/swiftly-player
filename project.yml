@@ -213,6 +213,7 @@ targets:
       # Die Fassungsangabe fuer die Profilseite — eine Rechnung, drei Ansichten.
       - path: Sources/Shared/Fassung.swift
       - path: Sources/Shared/Bibliotheksmodell.swift
+      - path: Sources/Shared/Merklistenmodell.swift
       - path: Sources/Shared/SVGPfad.swift
       # Die Abspiel-Maschinerie teilen sich beide Plattformen: derselbe
       # `mkv_trusted`-Kniff, dieselbe Stillstandserkennung. Bild-im-Bild
@@ -436,6 +437,7 @@ targets:
       # Hauptlaufs. Lag bis 05.09.2026 in Sources/macOS.
       - path: Sources/Shared/Netzbild.swift
       - path: Sources/Shared/Bibliotheksmodell.swift
+      - path: Sources/Shared/Merklistenmodell.swift
       - path: Sources/Shared/Farben.swift
       # Bausteine ohne Plattformmaße — Reihentitel, Plakette, Lader,
       # Profilzeichen. Lagen dreimal da.

@@ -68,9 +68,9 @@ struct HauptView: View {
                          bibliothekWaehlen: { bibliothekAusLeiste($0) },
                          gewaehlteBibliothek: { art in
                              art == "movies" ? filmbibliothek : serienbibliothek
-                         }) {
-                navigator.oeffne(.profil, in: bereich)
-            }
+                         },
+                         zumProfil: { navigator.oeffne(.profil, in: bereich) },
+                         zurMerkliste: { navigator.oeffne(.merkliste, in: bereich) })
             // **Der Sicherheitsrand der Titelleiste gilt links genauso wenig
             // wie rechts.** Vorher hielt nur der Inhaltsbereich ihn nicht
             // ein; die Leiste stand deshalb rund dreissig Punkt tiefer als
@@ -399,6 +399,7 @@ struct HauptView: View {
     private func seite(_ ziel: Seitenziel) -> some View {
         switch ziel {
         case let .titel(item):  DetailView(model: model, item: item) { zurueck() }
+        case .merkliste:        MerklisteView(model: model) { zurueck() }
         case .profil:           ProfilView(model: model) { zurueck() }
         case .einstellungen:    EinstellungenView(model: model) { zurueck() }
         case .wiedergabe:       WiedergabeEinstellungenView(model: model) { zurueck() }
@@ -470,6 +471,7 @@ struct Seitenleiste: View {
     /// Leiste soll sie nicht doppelt führen.
     let gewaehlteBibliothek: (String) -> Item?
     let zumProfil: () -> Void
+    let zurMerkliste: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -511,6 +513,16 @@ struct Seitenleiste: View {
                     }
                 }
                 .padding(.horizontal, 12)
+
+                // **Die Merkliste ist eine Bibliothek, deren Grenze der Haken
+                // ist.** Deshalb steht sie hier bei den Sammlungen und nicht
+                // als fuenfter Bereich — auf dem iPhone haengt sie am Zeichen
+                // oben rechts, hier an der Leiste, in deren eigener Sprache.
+                Seitenleistenzeile(symbol: "bookmark.fill",
+                                   beschriftung: "Merkliste",
+                                   aktiv: false) { zurMerkliste() }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
             }
 
             Spacer(minLength: 0)

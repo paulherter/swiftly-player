@@ -64,6 +64,9 @@ final class Navigator {
 /// Lesen, welche Ziele es überhaupt gibt.
 enum Seitenziel: Hashable, Identifiable {
     case titel(Item)
+    /// Die Merkliste — kein eigener Bereich, sondern eine Seite aus der
+    /// Leiste. Auf dem iPhone haengt sie am Zeichen oben rechts.
+    case merkliste
     case profil
     case einstellungen
     case wiedergabe
@@ -73,6 +76,7 @@ enum Seitenziel: Hashable, Identifiable {
     var id: String {
         switch self {
         case let .titel(item):  "titel-\(item.id)"
+        case .merkliste:        "merkliste"
         case .profil:           "profil"
         case .einstellungen:    "einstellungen"
         case .wiedergabe:       "wiedergabe"
