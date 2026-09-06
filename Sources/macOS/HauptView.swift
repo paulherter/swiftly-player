@@ -366,10 +366,7 @@ struct HauptView: View {
                     // zweiten Weg hinein; ohne sie stand die Wurzel weiter im
                     // Baum, mit Chips bei x = 4 unter der Leiste.
                     .accessibilityHidden(tiefe > 0)
-                    // Die Kennung traegt die offene Bibliothek mit: ohne sie
-                    // wechselte der Inhalt, ohne dass SwiftUI die Wurzel neu
-                    // baut, und der Stand der vorigen bliebe stehen.
-                    .id(wurzelkennung)
+                    .id(bereich)
                     // **Die Wurzel liegt ausdrücklich unten.** Ohne feste
                     // Ebenen fuhr die Seite unter den Kacheln der Startseite
                     // herein, und das sah aus wie Durchsichtigkeit.
@@ -473,9 +470,22 @@ struct HauptView: View {
             //
             // Vorher trugen Wurzel und Seitenstapel je eine eigene. Dann
             // verschwindet ein offener Seitenstapel schlagartig, während die
-            // Wurzel darunter noch blendet. Ein Bereich ist ein Stück — was
-            // in ihm offen war, geht mit ihm.
-            .id(bereich)
+            // Wurzel darunter noch blendet. Ein Bereich ist ein Stück — was in
+            // ihm offen war, geht mit ihm. **Die offene Bibliothek gehoert in
+            // diese Kennung.**
+            //
+            // Hier stand `bereich` allein. Ein Wechsel zwischen den uebrigen
+            // Bibliotheken aendert den Bereich aber nicht — die Kennung blieb
+            // also gleich, das Stueck wurde nicht getauscht, und die
+            // Fade-Through-Blende lief nie.
+            //
+            // Ich hatte es zuerst an der Wurzel selbst versucht, eine Ebene
+            // tiefer. Das kann nicht wirken: beim Wechsel wird die Wurzel samt
+            // ihren Modifikatoren weggeworfen und neu gebaut, ein `.animation`
+            // an ihr kennt ihr eigenes Erscheinen also gar nicht. Anweisungen
+            // fuer Ein- und Austritt gehoeren an das, was bleibt — und das ist
+            // dieses Stueck hier.
+            .id(wurzelkennung)
             // „Fade Through": das Alte blendet in 100 ms aus, danach kommt
             // das Neue in 200 ms und wächst dabei von 92 % auf 100 %. Die
             // Zahlen und das Warum stehen bei `Stil.zeitBereichHerein`.
@@ -488,7 +498,7 @@ struct HauptView: View {
             // steht sie an dem Stück, das getauscht wird; darin gibt es
             // nichts zu bewegen, weil das alte seinen Stand behält und das
             // neue frisch gezeichnet wird.
-            .animation(.default, value: bereich)
+            .animation(.default, value: wurzelkennung)
         }
         .onChange(of: navigator.seiten(bereich).count, initial: true) { alt, neu in
             guard neu != tiefe else { return }
