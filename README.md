@@ -39,6 +39,13 @@ done properly, instead of a hundred switches nobody ever touches — and
 underneath, it works hard **never to make your server transcode**, so the
 picture stays untouched and your CPU stays cool.
 
+If you came here looking for a **Jellyfin app for iPhone or iPad**, a
+**Jellyfin client for Apple TV**, a **native Jellyfin player for macOS**, or a
+**Jellyfin desktop client for Linux or Windows** — that is all one app, and
+this is it. Picture in Picture, Direct Play without transcoding, several
+accounts on one server, and handing a running film from one device to the
+next.
+
 But three things it does that no other Jellyfin client does at all.
 
 <br>
@@ -157,10 +164,10 @@ and only where distance, input or window size demand it.
 
 | Platform | State |
 |---|---|
-| 📱 iPhone | **1.0.0 (11)** · beta on TestFlight |
-| 📲 iPad | **1.0.0 (11)** · ships with the iPhone app |
-| 📺 Apple TV | **1.0.0 (11)** · beta on TestFlight |
-| 💻 Mac | **1.0.0 (11)** · beta on TestFlight |
+| 📱 iPhone | **1.0.1 (1)** · beta on TestFlight |
+| 📲 iPad | **1.0.1 (1)** · ships with the iPhone app |
+| 📺 Apple TV | **1.0.1 (1)** · beta on TestFlight |
+| 💻 Mac | **1.0.1 (1)** · beta on TestFlight |
 | 🐧 Linux | **1.0.0** · GTK4, native, same shared logic · [install](#-linux) |
 | 🪟 Windows | **1.0.0** · GTK4 like Linux, **the same source** · [download](#-windows) |
 
