@@ -322,9 +322,9 @@ struct SeriesDetailView: View {
     /// Beschriftung. Vorher standen hier zwei breite Knöpfe, dadurch sahen
     /// die beiden Seiten unterschiedlich aus.
     private var aktionsreihe: some View {
-        HStack(spacing: weit ? 4 : 0) {
+        HStack(spacing: 8) {
             Aktionsknopf(symbol: gemerkt ? "bookmark.fill" : "bookmark",
-                         titel: "Merkliste", aktiv: gemerkt) {
+                         titel: "Merkliste", aktiv: gemerkt, dehnt: !weit) {
                 gemerkt.toggle()
                 Task {
                     if let grund = await model.setzeMerkliste(serie, an: gemerkt) {
@@ -333,11 +333,9 @@ struct SeriesDetailView: View {
                     }
                 }
             }
-            if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "film", titel: "Trailer") { trailerStarten() }
-            if !weit { Spacer(minLength: 0) }
+            Aktionsknopf(symbol: "film", titel: "Trailer", dehnt: !weit) { trailerStarten() }
             Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
-                         titel: "Gesehen", aktiv: gesehen) {
+                         titel: "Gesehen", aktiv: gesehen, dehnt: !weit) {
                 gesehen.toggle()
                 Task {
                     if let grund = await model.setzeGesehen(serie, an: gesehen) {
@@ -346,14 +344,12 @@ struct SeriesDetailView: View {
                     }
                 }
             }
-            if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "ellipsis", titel: "Mehr") { mehrOffen = true }
+            Aktionsknopf(symbol: "ellipsis", titel: "Mehr", dehnt: !weit) { mehrOffen = true }
                 .alsHandlungsanker()
         }
-        // Wie auf der Filmseite: die Zwischenräume verteilen die vier über die
-        // ganze Breite. Ohne sie klebten sie in der Mitte. Breit stehen sie
-        // neben dem Abspielknopf und sollen zusammenbleiben.
-        .padding(.horizontal, weit ? 0 : 6)
+        // Kein eigener Rand mehr: die vier Felder teilen sich die Zeile und
+        // enden dort, wo der Knopf darüber endet. Die Zwischenräume, die die
+        // Kreise über die Breite verteilten, sind mit ihnen weggefallen.
     }
 
     @ViewBuilder

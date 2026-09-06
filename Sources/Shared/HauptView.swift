@@ -495,9 +495,14 @@ struct BibliothekView: View {
                     Spacer(minLength: 0)
                     // Breit steht das Profilzeichen in der Seitenleiste, und
                     // zwar für alle vier Bereiche. Hier wäre es das zweite.
+                    // Dieselbe Gruppe wie auf der Startseite — Merkliste
+                    // und Profil gehoeren zusammen, also stehen sie ueberall
+                    // zusammen. Das Angebot „hier weiterschauen" bleibt der
+                    // Startseite: ein Tipp darauf startet die Wiedergabe, und
+                    // der Player haengt dort.
                     if !breit {
-                        Profilziel(name: model.session?.userName ?? "?",
-                                   bild: model.benutzerbildURL())
+                        Kopfziele(name: model.session?.userName ?? "?",
+                                  bild: model.benutzerbildURL())
                     }
                 }
                 .foregroundStyle(Stil.schrift)

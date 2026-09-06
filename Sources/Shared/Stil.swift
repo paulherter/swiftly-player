@@ -769,27 +769,43 @@ extension Unterseitenkopf where Rechts == EmptyView {
 }
 
 /// Runder Knopf mit Beschriftung darunter — die Aktionsreihe auf Detailseiten.
+/// Eine Nebenhandlung auf einer Detailseite — Merkliste, Trailer, Gesehen,
+/// Mehr.
+///
+/// **Vier Felder, keine Kreise.** Es waren vier gefüllte Scheiben mit einer
+/// Beschriftung darunter — und damit die einzigen Kreise der ganzen App: sonst
+/// gibt es nur Rechtecke mit unserer Ecke und Kapseln. Von zwölf nachgesehenen
+/// Streaming-Apps setzt genau eine Kreise, und die stellt sie **neben** den
+/// Abspielknopf statt darunter.
+///
+/// Die Wahl fiel auf die Form von Paramount+: vier gleich breite Felder, nur
+/// Zeichen, keine Wörter. Der Preis ist bekannt und angenommen — vier Zeichen
+/// ohne Beschriftung muss man kennen. Für die Sprachausgabe bleibt die
+/// Beschriftung erhalten, sie steht nur nicht mehr im Bild.
+///
+/// **Was an ist, trägt Akzent — das Zeichen, nicht die Fläche.** Eine gefüllte
+/// Akzentscheibe wäre der Akzent als Grundfarbe, und das verbietet E2.
 struct Aktionsknopf: View {
     let symbol: String
+    /// Steht nicht mehr im Bild, aber in der Sprachausgabe.
     let titel: LocalizedStringKey
     var aktiv: Bool = false
+    /// Über die volle Breite, oder nur so breit wie nötig.
+    ///
+    /// Schmal teilen sich vier Felder die Zeile. Breit steht die Reihe neben
+    /// dem Abspielknopf und darf ihn nicht wegdrücken.
+    var dehnt = true
     let aktion: () -> Void
 
     var body: some View {
         Button(action: aktion) {
-            VStack(spacing: 7) {
-                Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(aktiv ? Stil.grund : Stil.schrift)
-                    .frame(width: 44, height: 44)
-                    .background(aktiv ? Stil.akzent : Color.white.opacity(0.09), in: Circle())
-                Text(titel)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Stil.schrift.opacity(0.75))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-            }
-            .frame(width: 68)
+            Image(systemName: symbol)
+                .font(.system(size: 19, weight: .medium))
+                .foregroundStyle(aktiv ? Stil.akzent : Stil.schrift)
+                .frame(maxWidth: dehnt ? .infinity : nil)
+                .frame(width: dehnt ? nil : 56, height: 44)
+                .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(titel))
@@ -898,20 +914,32 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
         Button {
             if eintraege.count > 1 { offen.toggle() }
         } label: {
-            HStack(spacing: 8) {
+            // **Eine Überschrift mit Winkel, keine Pille.**
+            //
+            // Sie war ein gefüllter Kasten — der einzige der ganzen Seite,
+            // und er stand direkt unter einer Reiterreihe, die ohne Flächen
+            // auskommt. Zwei Steuerarten übereinander, und die untere wirkte
+            // lauter als die obere, obwohl sie weniger tut.
+            //
+            // Sie **ist** eine Überschrift: sie sagt, was darunter kommt.
+            // Deshalb derselbe Grad wie unsere Reihenüberschriften, und der
+            // Winkel verrät, dass man sie wechseln kann. Sieben von acht
+            // nachgesehenen Streaming-Apps machen es genauso.
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text(beschriftung)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(Stil.reihe)
+                    .tracking(-0.3)
                     .foregroundStyle(Stil.schrift)
                 if eintraege.count > 1 {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Stil.schriftLeise)
                         .rotationEffect(.degrees(offen ? 180 : 0))
                 }
             }
-            .padding(.horizontal, 14)
+            // Die Trefferfläche bleibt, auch ohne Fläche darunter.
             .frame(height: 36)
-            .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke))
+            .contentShape(Rectangle())
         }
         .accessibilityLabel(beschriftung)
         .accessibilityHint(eintraege.count > 1 ? "Öffnet die Auswahl" : "")
@@ -1167,6 +1195,52 @@ struct Navileiste: View {
         }
     }
 }
+
+/// Die Ziele oben rechts — auf **jeder** Wurzelseite dieselben, in derselben
+/// Reihenfolge, mit denselben Abständen.
+///
+/// **Sie gehören zusammen, also stehen sie zusammen.** Merkliste und Profil
+/// standen auf der Startseite nebeneinander und auf Filme und Serien allein;
+/// dieselbe Ecke des Bildschirms hielt auf zwei Seiten Verschiedenes bereit.
+///
+/// `vorn` ist der Platz für das, was nur eine Seite hat — auf der Startseite
+/// das Angebot „hier weiterschauen". Es steht links vom Rest, weil es kommt
+/// und geht: dazwischen würde es die dauerhaften Ziele hin und her schieben.
+struct Kopfziele<Vorn: View>: View {
+    let name: String
+    let bild: URL?
+    @ViewBuilder var vorn: () -> Vorn
+
+    var body: some View {
+        HStack(spacing: 0) {
+            vorn()
+
+            NavigationLink(value: MerklisteRoute()) {
+                // **Gefüllt, nicht als Umriss.** Ein hohles Lesezeichen bei
+                // 20 Punkt ist fast nur Kontur. In der Knopfreihe auf den
+                // Detailseiten heisst gefüllt „gemerkt"; hier ist es kein
+                // Zustand, sondern ein Ziel, und dort steht es allein.
+                Image(systemName: "bookmark.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Stil.schrift)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Merkliste"))
+
+            Profilziel(name: name, bild: bild)
+        }
+    }
+}
+
+extension Kopfziele where Vorn == EmptyView {
+    init(name: String, bild: URL?) {
+        self.init(name: name, bild: bild) { EmptyView() }
+    }
+}
+
+/// Das Profilbild oben rechts — auf **jeder** Wurzelseite an derselben Stelle.
 
 /// Das Profilbild oben rechts — auf **jeder** Wurzelseite an derselben Stelle.
 ///
@@ -1574,18 +1648,28 @@ struct Kopfverlauf: View {
     /// wird davon nichts, weil er dort schon unter acht Prozent liegt.
     var zugabe: CGFloat = 17
 
-    /// **Alle Stufen um ein Fünftel angehoben** (06.09.2026), damit die
-    /// Wortmarke auf hellen Plakaten besser steht. Oben bei 0,98 gekappt
-    /// statt 1,10: eine ganz deckende Kante wäre keine Verstärkung mehr,
-    /// sondern ein Deckel.
+    /// **Kräftiger, aber ohne Knick** (06.09.2026).
+    ///
+    /// Der erste Versuch hat die alten Werte einfach mit 1,2 multipliziert und
+    /// oben bei 0,98 gekappt. Genau das erzeugt den Knick, vor dem der Absatz
+    /// oben warnt: die Kappung macht den Anfang flach, und was an Abfall
+    /// wegfällt, muss die nächste Strecke mittragen — aus −0,8 je Einheit
+    /// wurden −2,4.
+    ///
+    /// **Nicht der Wert zählt, sondern das Gefälle.** Neun Stützpunkte, deren
+    /// Steigung erst zunimmt und am Ende wieder abnimmt — nirgends mehr als
+    /// −2,2 je Einheit, und das ist weniger als im alten Verlauf. Kräftiger
+    /// ist er trotzdem: bei halber Höhe deckt er 0,84 statt 0,80.
     var body: some View {
         LinearGradient(stops: [
             .init(color: Stil.grund.opacity(0.98), location: 0),
-            .init(color: Stil.grund.opacity(0.96), location: 0.40),
-            .init(color: Stil.grund.opacity(0.89), location: 0.60),
-            .init(color: Stil.grund.opacity(0.55), location: 0.74),
-            .init(color: Stil.grund.opacity(0.26), location: 0.86),
-            .init(color: Stil.grund.opacity(0.08), location: 0.94),
+            .init(color: Stil.grund.opacity(0.94), location: 0.30),
+            .init(color: Stil.grund.opacity(0.85), location: 0.48),
+            .init(color: Stil.grund.opacity(0.70), location: 0.62),
+            .init(color: Stil.grund.opacity(0.52), location: 0.73),
+            .init(color: Stil.grund.opacity(0.34), location: 0.82),
+            .init(color: Stil.grund.opacity(0.19), location: 0.89),
+            .init(color: Stil.grund.opacity(0.09), location: 0.95),
             .init(color: Stil.grund.opacity(0),    location: 1),
         ], startPoint: .top, endPoint: .bottom)
         .padding(.bottom, -zugabe)

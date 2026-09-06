@@ -397,9 +397,9 @@ struct ItemDetailView: View {
     private var aktionsreihe: some View {
         // Schmal verteilen die Spacer die vier Knöpfe über die Zeile; breit
         // stehen sie neben dem Abspielknopf und sollen zusammenbleiben.
-        HStack(spacing: weit ? 4 : 0) {
+        HStack(spacing: 8) {
             Aktionsknopf(symbol: gemerkt ? "bookmark.fill" : "bookmark",
-                         titel: "Merkliste", aktiv: gemerkt) {
+                         titel: "Merkliste", aktiv: gemerkt, dehnt: !weit) {
                 gemerkt.toggle()
                 // Sofort umschalten, damit der Knopf antwortet — aber
                 // zurückdrehen, wenn der Server nein sagt. Vorher blieb die
@@ -411,11 +411,9 @@ struct ItemDetailView: View {
                     }
                 }
             }
-            if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "film", titel: "Trailer") { trailerStarten() }
-            if !weit { Spacer(minLength: 0) }
+            Aktionsknopf(symbol: "film", titel: "Trailer", dehnt: !weit) { trailerStarten() }
             Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
-                         titel: "Gesehen", aktiv: gesehen) {
+                         titel: "Gesehen", aktiv: gesehen, dehnt: !weit) {
                 gesehen.toggle()
                 Task {
                     if let grund = await model.setzeGesehen(aktuell, an: gesehen) {
@@ -424,11 +422,11 @@ struct ItemDetailView: View {
                     }
                 }
             }
-            if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "ellipsis", titel: "Mehr") { mehrOffen = true }
+            Aktionsknopf(symbol: "ellipsis", titel: "Mehr", dehnt: !weit) { mehrOffen = true }
                 .alsHandlungsanker()
         }
-        .padding(.horizontal, weit ? 0 : 6)
+        // Kein eigener Rand mehr: die vier Felder teilen sich die Zeile und
+        // enden dort, wo der Knopf darüber endet.
     }
 
     @ViewBuilder
