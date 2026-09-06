@@ -178,6 +178,11 @@ struct SeerrDetailView: View {
     /// Der Fokus muss beim Aufklappen in die Tafel wandern — tvOS legt ihn
     /// nicht von selbst um, solange der Ausloeser stehenbleibt.
     @FocusState private var ersteZeile: Int?
+    /// **Der Startfokus gehoert auf den Knopf**, und dorthin kehrt er auch
+    /// zurueck, wenn die Tafel zugeht: eine Tafel ist kein Ortswechsel,
+    /// sondern etwas, das ueber dem Knopf aufklappt. Dieselbe Ueberlegung
+    /// wie beim Mehr-Knopf der Detailseite.
+    @FocusState private var amKnopf: Bool
 
     init(model: AppModel, treffer: Seerrtreffer) {
         self.model = model
@@ -189,7 +194,30 @@ struct SeerrDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 kopf
-                besetzung
+
+                // **Reihen wie auf jeder anderen Seite, nicht ein Block.**
+                //
+                // Hier stand die Besetzung als blosser `ScrollView` mit
+                // Kacheln darin: ohne Knopf gibt es nichts zu fokussieren,
+                // also kam man mit der Fernbedienung gar nicht hinunter, und
+                // der Rand kam vom Aussenblock, den es jetzt nicht mehr gibt.
+                // `reihenabschnitt` traegt den Rand, den Titel und die
+                // Abstaende — dieselbe Funktion wie Start-, Film- und
+                // Serienseite.
+                if !aehnliches.isEmpty {
+                    reihenabschnitt {
+                        Reihentitel(text: "Ähnliche Titel")
+                    } inhalt: {
+                        seerrstreifen
+                    }
+                }
+                if !besetzung.isEmpty {
+                    reihenabschnitt {
+                        Reihentitel(text: "Besetzung")
+                    } inhalt: {
+                        besetzungsstreifen
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, Stil.abschlussLuft)
@@ -207,6 +235,8 @@ struct SeerrDetailView: View {
         // beim Mehr-Blatt der Detailseite. `focusSection` ordnet den Fokus
         // nur; ohne die Sperre springt ein Druck nach links aus der Tafel
         // heraus, und sie bleibt offen stehen.
+        .defaultFocus($amKnopf, true, priority: .userInitiated)
+        .onChange(of: staffelnOffen) { _, offen in if !offen { amKnopf = true } }
         .disabled(staffelnOffen)
         .overlay(alignment: .topLeading) {
             if staffelnOffen {
@@ -329,6 +359,7 @@ struct SeerrDetailView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Button(knopftext) { gedrueckt() }
                     .buttonStyle(KnopfStil())
+                    .focused($amKnopf)
                 if let fehler {
                     Text(verbatim: fehler).font(Stil.klein).foregroundStyle(Stil.warnung)
                 }
@@ -446,22 +477,36 @@ struct SeerrDetailView: View {
         (detail?.staffeln ?? []).first { $0.stand.anfragbar }?.nummer
     }
 
-    @ViewBuilder
-    private var besetzung: some View {
-        let leute = detail?.besetzung ?? []
-        if !leute.isEmpty {
-            Text("Besetzung")
-                .font(Stil.reihe).foregroundStyle(Stil.schrift)
-                .padding(.top, 50)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 28) {
-                    ForEach(leute.prefix(12)) { person in
-                        Besetzungskachel(bild: person.bild(breite: 300),
-                                         name: person.name, rolle: person.rolle)
-                    }
+    private var besetzung: [Seerrperson] { Array((detail?.besetzung ?? []).prefix(12)) }
+    private var aehnliches: [Seerrtreffer] { Array((detail?.aehnliches ?? []).prefix(20)) }
+
+    /// **Jede Kachel ist ein Knopf, auch wenn sie nirgends hinfuehrt.**
+    ///
+    /// Auf dem Fernseher bewegt der Fokus die Seite; was kein Fokusziel ist,
+    /// erreicht man nicht. Ein Kopf ohne Knopf war deshalb nicht nur nicht
+    /// anklickbar, er machte die ganze Reihe unerreichbar. `Besetzungsstreifen`
+    /// auf der Detailseite macht es genauso.
+    private var besetzungsstreifen: some View {
+        streifen {
+            ForEach(besetzung) { person in
+                Button {} label: {
+                    Besetzungskachel(bild: person.bild(breite: 300),
+                                     name: person.name, rolle: person.rolle)
                 }
+                .buttonStyle(KachelStil())
             }
-            .padding(.top, 20)
+        }
+    }
+
+    /// „Aehnliche Titel" — die gab es hier gar nicht, obwohl Seerr sie
+    /// mitliefert und iPhone, iPad und Mac sie zeigen. Jede fuehrt auf ihre
+    /// eigene Anfragenseite.
+    private var seerrstreifen: some View {
+        streifen {
+            ForEach(aehnliches) { t in
+                NavigationLink(value: t) { Seerrkachel(treffer: t) }
+                    .buttonStyle(KachelStil())
+            }
         }
     }
 
