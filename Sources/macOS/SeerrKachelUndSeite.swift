@@ -96,6 +96,8 @@ struct SeerrDetailView: View {
     /// Der Ton des Kopfbildes. **Fehlte hier ganz** — die Seite war deshalb
     /// schlicht schwarz, wo jede andere den Verlauf traegt.
     @State private var farbe = Bildfarbe()
+    /// Wie hoch die Staffelliste tatsaechlich waere.
+    @State private var listenhoehe: CGFloat = 0
 
     @Environment(Navigator.self) private var navigator
     @Environment(\.bereich) private var bereich
@@ -418,16 +420,23 @@ struct SeerrDetailView: View {
                 .buttonStyle(.plain)
             }
           }
+          .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listenhoehe = $0 }
         }
         .scrollIndicators(.never)
-        // **Sie schwebt, also traegt sie einen Schatten** — wie die
-        // Ladetafel und die Handlungsliste. Vorher lag sie im Fluss, dort
-        // war keiner noetig.
+        // **Sie schwebt, also traegt sie einen Schatten** — wie die Ladetafel
+        // und die Handlungsliste. Vorher lag sie im Fluss, dort war keiner
+        // noetig.
         //
-        // Und sie hat eine Hoehe: sieben Staffeln passen, zwanzig nicht.
-        // `Der Chef` hat neun, `Perry Mason` neun — es kommt vor.
+        // **Und sie ist so hoch wie ihre Liste, hoechstens aber 380.** Hier
+        // stand `maxHeight: 380` allein — eine `ScrollView` nimmt sich
+        // senkrecht aber alles, was sie kriegen kann, also stand die Kachel
+        // bei sieben Staffeln mit einer handbreit Leere darunter da.
+        //
+        // Gemessen wird der Inhalt, nicht geschaetzt: eine Staffelzeile ist 38
+        // Punkt hoch, aber ob eine Serie sieben oder zwanzig hat, weiss nur
+        // der Server. `Der Chef` hat neun, `Perry Mason` neun.
         .frame(maxWidth: 320, alignment: .leading)
-        .frame(maxHeight: 380)
+        .frame(height: min(max(listenhoehe, 38), 380))
         .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
         .overlay(RoundedRectangle(cornerRadius: Stil.eckeFlaeche).strokeBorder(Stil.rand))
         .shadow(color: .black.opacity(0.4), radius: 18, y: 8)

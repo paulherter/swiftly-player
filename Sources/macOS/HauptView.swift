@@ -664,8 +664,41 @@ struct Seitenleiste: View {
         .task { if model.views.isEmpty { await model.loadViews() } }
     }
 
+    /// **Die Rubrik zeigt die *anderen* Bibliotheken, nicht alle.**
+    ///
+    /// Vorher standen dort alle vier, und zwei davon hiessen genauso wie die
+    /// Bereiche darueber: „Filme" und „Serien" kamen zweimal vor, einmal als
+    /// Ort und einmal als Sammlung.
+    ///
+    /// Ausgelassen wird deshalb die Bibliothek, die ihr Bereich **gerade
+    /// zeigt**. Nicht die mit dem Namen „Filme" — Namen sind Serversache und
+    /// heissen auf einem englischen Server anders. Was der Bereich zeigt,
+    /// weiss die App dagegen genau.
+    ///
+    /// Hat jede Gattung nur eine Bibliothek, bleibt danach nichts uebrig und
+    /// die Rubrik faellt ganz weg: dann *sind* Filme und Serien die
+    /// Bibliotheken, und sie stehen schon oben.
+    ///
+    /// **Was das bedeutet, wenn man eine anklickt:** sie wandert aus der Liste
+    /// heraus, und die vorige tritt an ihre Stelle. Die Rubrik ist damit immer
+    /// „wohin ich wechseln kann" — nie eine Liste, in der eine Zeile nichts
+    /// tut, weil sie schon offen ist.
     private var sammlungen: [Item] {
-        model.views.filter { $0.collectionType == "movies" || $0.collectionType == "tvshows" }
+        model.views
+            .filter { $0.collectionType == "movies" || $0.collectionType == "tvshows" }
+            .filter { bib in
+                guard let art = bib.collectionType else { return true }
+                return offene(art)?.id != bib.id
+            }
+    }
+
+    /// Welche Bibliothek dieser Gattung der Bereich gerade zeigt.
+    ///
+    /// `gewaehlteBibliothek` gibt `nil` zurueck, solange niemand gewaehlt hat
+    /// — dann gilt dieselbe Regel wie in `BibliothekView`: die erste ihrer
+    /// Gattung.
+    private func offene(_ art: String) -> Item? {
+        gewaehlteBibliothek(art) ?? model.views.first { $0.collectionType == art }
     }
 
     /// Hervorgehoben wird eine Sammlung nur, wenn ihr Bereich auch offen ist
