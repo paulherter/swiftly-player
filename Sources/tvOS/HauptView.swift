@@ -488,7 +488,7 @@ struct StaffelZiel: View {
         self.model = model
         self.folge = folge
         _serie = State(initialValue:
-            folge.seriesId.flatMap { Serienspeicher.geteilt.stand($0)?.serie }
+            folge.seriesId.flatMap { Serienspeicher.geteilt.stand($0, mit: model)?.serie }
             ?? StaffelZiel.vorlaeufig(zu: folge))
     }
 

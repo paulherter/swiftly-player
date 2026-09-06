@@ -175,6 +175,9 @@ struct SeerrDetailView: View {
     @State private var gewaehlt: Set<Int> = []
     @State private var staffelnOffen = false
     @State private var bestaetigt = false
+    /// Der Fokus muss beim Aufklappen in die Tafel wandern — tvOS legt ihn
+    /// nicht von selbst um, solange der Ausloeser stehenbleibt.
+    @FocusState private var ersteZeile: Int?
 
     init(model: AppModel, treffer: Seerrtreffer) {
         self.model = model
@@ -185,37 +188,96 @@ struct SeerrDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text(verbatim: treffer.titel)
-                    .font(Stil.titelGross)
-                    .foregroundStyle(Stil.schrift)
-
-                Text(verbatim: nebenzeile)
-                    .font(Stil.koerper)
-                    .foregroundStyle(Stil.schriftLeise)
-                    .padding(.top, 10)
-
-                belegzeile.padding(.top, 22)
-
-                handlung.padding(.top, 28)
-
-                if let text = detail?.beschreibung {
-                    Text(verbatim: text)
-                        .font(Stil.koerper)
-                        .foregroundStyle(Stil.schrift.opacity(0.78))
-                        .lineSpacing(6)
-                        .frame(width: 1000, alignment: .leading)
-                        .padding(.top, 30)
-                }
-
+                kopf
                 besetzung
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Stil.randSeite)
-            .padding(.top, Stil.leisteUnten + 40)
-            .padding(.bottom, 80)
+            .padding(.bottom, Stil.abschlussLuft)
         }
+        .scrollIndicators(.hidden)
+        // **Der seitliche Rand wird einmal vergeben, nicht zweimal.**
+        //
+        // Er fehlte hier, und deshalb sass die Seite als einzige doppelt so
+        // weit innen: tvOS haelt selbst 80 Punkt frei, `Stil.randSeite` legt
+        // noch einmal 80 darauf. Dieselbe Zeile steht mit ihrer Begruendung in
+        // `DetailView`.
+        .ignoresSafeArea()
         .bildgrund(url: treffer.kulisse(breite: 1280))
+        // **Solange die Tafel offen ist, ist der Rest kein Fokusziel** — wie
+        // beim Mehr-Blatt der Detailseite. `focusSection` ordnet den Fokus
+        // nur; ohne die Sperre springt ein Druck nach links aus der Tafel
+        // heraus, und sie bleibt offen stehen.
+        .disabled(staffelnOffen)
+        .overlay(alignment: .topLeading) {
+            if staffelnOffen {
+                staffeltafel
+                    .padding(.leading, Stil.randSeite)
+                    .padding(.top, Handlungstafel.unterDerKnopfreihe)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Stil.fokusAnimation, value: staffelnOffen)
         .task { detail = await model.seerr.detail(treffer) }
+    }
+
+    /// **Derselbe Kopf wie auf einer echten Detailseite.**
+    ///
+    /// Hier stand eine Titelzeile ohne Bild: die Seite trug nur den gefaerbten
+    /// Grund, das Querbild von TMDB sah man nie. Aufbau, Masse und Reihenfolge
+    /// sind die von `Detailkopf` — Kulisse rechts, Kopfschatten darueber, der
+    /// Textblock links bei 140 + Versatz.
+    private var kopf: some View {
+        ZStack(alignment: .topLeading) {
+            Kulisse(url: treffer.kulisse(breite: 1280))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+
+            Kopfschatten()
+
+            block
+                .padding(.leading, Stil.randSeite)
+                .padding(.top, 140 + Stil.kopfversatzDetail)
+        }
+        .frame(height: Stil.heldenHoeheDetail, alignment: .topLeading)
+        .focusSection()
+    }
+
+    /// Titel, Angaben, Beschreibung, Knopf — die Reihenfolge von
+    /// `Kopfauskunft`, mit denselben Graden und Hoehen. Der Stand steht in
+    /// der Angabenzeile statt in einer eigenen darunter; so bleibt der Knopf
+    /// auf der Hoehe, auf der er auf jeder anderen Seite steht — und die
+    /// Tafel darunter trifft ihre Stelle.
+    private var block: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(verbatim: treffer.titel)
+                .font(.system(size: 60, weight: .bold))
+                .tracking(-1.4)
+                .foregroundStyle(Stil.schrift)
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+                .frame(height: 68, alignment: .leading)
+
+            HStack(spacing: 24) {
+                Text(verbatim: nebenzeile)
+                    .font(.system(size: 29))
+                    .foregroundStyle(Stil.schrift.opacity(0.62))
+                    .lineLimit(1)
+                belegzeile
+            }
+            .frame(height: 34)
+            .padding(.top, 14)
+
+            Text(verbatim: detail?.beschreibung ?? "")
+                .font(.system(size: 29))
+                .lineSpacing(Stil.beschreibungLuft)
+                .foregroundStyle(Stil.schrift.opacity(0.62))
+                .lineLimit(3)
+                .padding(.top, 22)
+                .frame(width: 1000, height: Stil.beschreibungHoehe(3),
+                       alignment: .topLeading)
+
+            handlung.padding(.top, 36)
+        }
+        .frame(width: 1000, alignment: .topLeading)
     }
 
     private var nebenzeile: String {
@@ -257,8 +319,8 @@ struct SeerrDetailView: View {
         }
     }
 
-    /// **Ein Stand ist keine Schaltfläche.** Was wartet oder lädt, lässt sich
-    /// nicht noch einmal anfragen; dort steht eine Auskunft.
+    /// **Ein Stand ist keine Schaltflaeche.** Was wartet oder laedt, laesst
+    /// sich nicht noch einmal anfragen; dort steht eine Auskunft.
     @ViewBuilder
     private var handlung: some View {
         if angefragt {
@@ -267,7 +329,6 @@ struct SeerrDetailView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Button(knopftext) { gedrueckt() }
                     .buttonStyle(KnopfStil())
-                if treffer.istSerie, staffelnOffen { staffelliste }
                 if let fehler {
                     Text(verbatim: fehler).font(Stil.klein).foregroundStyle(Stil.warnung)
                 }
@@ -279,56 +340,110 @@ struct SeerrDetailView: View {
 
     private var knopftext: LocalizedStringKey {
         if laeuft { return "Wird angefragt…" }
-        if treffer.istSerie { return staffelnOffen ? "Anfragen" : "Staffeln wählen" }
+        if treffer.istSerie { return "Staffeln wählen" }
         return bestaetigt ? "Wirklich anfragen?" : "Anfragen"
     }
 
     /// **Zwei Stufen, und die zweite ist der eigentliche Auftrag.** Mit einer
     /// Fernbedienung ist ein Klick besonders schnell passiert.
+    ///
+    /// Bei einer Serie uebernimmt die Tafel die zweite Stufe: dort wird
+    /// gewaehlt, und die letzte Zeile darin loest aus. Vorher trug der Knopf
+    /// beide Stufen — er hiess erst „Staffeln waehlen", dann „Anfragen" —,
+    /// und die Liste hing als gewoehnlicher Block darunter im Fluss.
     private func gedrueckt() {
         guard !laeuft else { return }
-        if treffer.istSerie {
-            if staffelnOffen { Task { await anfragen() } }
-            else { staffelnOffen = true }
-            return
-        }
+        if treffer.istSerie { staffelnOffen = true; return }
         guard bestaetigt else { bestaetigt = true; return }
         Task { await anfragen() }
     }
 
-    private var staffelliste: some View {
-        VStack(spacing: 0) {
+    /// **Die Staffelwahl ist eine Tafel, kein Block im Fluss.**
+    ///
+    /// Sie stand als schlichte Liste unter dem Knopf, mit `.plain`-Knoepfen:
+    /// damit malte tvOS seine eigene weisse Fokuspille darueber, die Zeilen
+    /// sassen nicht in unserem Raster, und die Menuetaste schloss sie nicht,
+    /// weil niemand zuhoerte.
+    ///
+    /// Aufbau, Breite, Rundung, Schatten und Fokusfuehrung sind die von
+    /// `Handlungstafel` — dieselbe Tafel, die auf der Detailseite unter dem
+    /// Mehr-Knopf aufgeht. Was sie unterscheidet, ist die Mehrfachwahl: sie
+    /// schliesst sich beim Antippen einer Zeile **nicht**, und die letzte
+    /// Zeile ist der Auftrag.
+    private var staffeltafel: some View {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(detail?.staffeln ?? []) { st in
                 Button {
                     guard st.stand.anfragbar else { return }
                     if gewaehlt.contains(st.nummer) { gewaehlt.remove(st.nummer) }
                     else { gewaehlt.insert(st.nummer) }
                 } label: {
-                    HStack(spacing: 16) {
-                        Image(systemName: st.stand.anfragbar
-                              ? (gewaehlt.contains(st.nummer) ? "checkmark.square.fill" : "square")
-                              : "checkmark.circle")
-                            .foregroundStyle(gewaehlt.contains(st.nummer) ? Stil.akzent
-                                                                          : Stil.schriftSehrLeise)
-                        Text("Staffel \(st.nummer)")
-                            .foregroundStyle(st.stand.anfragbar ? Stil.schrift
-                                                                : Stil.schriftSehrLeise)
-                        if st.folgen > 0 {
-                            Text("· \(st.folgen) Folgen").foregroundStyle(Stil.schriftSehrLeise)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .font(Stil.koerper)
-                    .padding(.horizontal, 22)
-                    .frame(height: 60)
-                    .contentShape(Rectangle())
+                    staffelzeile(st)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ZeilenStil())
+                .focused($ersteZeile, equals: st.nummer)
+            }
+
+            Rectangle().fill(Stil.rand).frame(height: 1)
+
+            // **Nie leer abschicken.** Ohne Staffeln bedeutet die Anfrage bei
+            // Seerr „alle" — der Fall, den niemand versehentlich ausloesen
+            // soll. Solange nichts gewaehlt ist, sagt die Zeile das auch.
+            Button {
+                guard !gewaehlt.isEmpty else { return }
+                staffelnOffen = false
+                Task { await anfragen() }
+            } label: {
+                HStack(spacing: 22) {
+                    Image(systemName: "plus").frame(width: 38)
+                    Text(gewaehlt.isEmpty ? "Staffel wählen"
+                                          : "\(gewaehlt.count) anfragen")
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.schrift)
+            }
+            .buttonStyle(ZeilenStil())
+        }
+        .frame(width: 620)
+        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke + 8))
+        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke + 8))
+        .overlay(RoundedRectangle(cornerRadius: Stil.ecke + 8).strokeBorder(Stil.rand))
+        .shadow(color: .black.opacity(0.5), radius: 40, y: 16)
+        .focusSection()
+        .task { ersteZeile = erstWaehlbare }
+        .onExitCommand { staffelnOffen = false }
+    }
+
+    /// Die Zeile selbst — als eigener Baustein, damit der Uebersetzer sie in
+    /// endlicher Zeit prueft: als ein Ausdruck im `label` brach er ab.
+    private func staffelzeile(_ st: Seerrstaffel) -> some View {
+        let an = gewaehlt.contains(st.nummer)
+        let frei = st.stand.anfragbar
+        return HStack(spacing: 22) {
+            Image(systemName: zeichen(fuer: st))
+                .frame(width: 38)
+                .foregroundStyle(an ? Stil.akzent : Stil.schriftSehrLeise)
+            Text("Staffel \(st.nummer)")
+            Spacer(minLength: 0)
+            if st.folgen > 0 {
+                Text("\(st.folgen) Folgen")
+                    .foregroundStyle(Stil.schriftSehrLeise)
             }
         }
-        .frame(width: 620, alignment: .leading)
-        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
-        .overlay(RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand))
+        // Was schon dasteht, ist kein Angebot.
+        .foregroundStyle(frei ? Stil.schrift : Stil.schriftSehrLeise)
+    }
+
+    /// Kaestchen, Haken, oder der Kringel fuer das, was schon da ist.
+    private func zeichen(fuer st: Seerrstaffel) -> String {
+        guard st.stand.anfragbar else { return "checkmark.circle" }
+        return gewaehlt.contains(st.nummer) ? "checkmark.square.fill" : "square"
+    }
+
+    /// Worauf der Fokus faellt, wenn die Tafel aufgeht: die erste Staffel,
+    /// die ueberhaupt zu haben ist.
+    private var erstWaehlbare: Int? {
+        (detail?.staffeln ?? []).first { $0.stand.anfragbar }?.nummer
     }
 
     @ViewBuilder

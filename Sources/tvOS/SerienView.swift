@@ -4,59 +4,17 @@ import SwiftUI
 /// Die Serienseite: oben derselbe Kopf wie bei einem Film, darunter die
 /// Folgen, die Besetzung und Ähnliches.
 ///
-/// **Keine Reiter mehr.** Vorher standen „Folgen", „Besetzung" und „Ähnliches"
-/// als drei Schalter nebeneinander, und nur einer war jeweils zu sehen. Der
-/// Entwurf legt sie stattdessen untereinander — dieselbe Bauart wie die
-/// Startseite, jede Reihe ein `Section`-Abschnitt. Damit entfällt auch der
-/// Umweg, den die Reiter nötig gemacht hatten: ein eigener `onMoveCommand`,
-/// der den Fokus von Hand nach oben schob, weil links über „Folgen" nichts
-/// Fokussierbares stand.
+/// **Keine Reiter mehr.** Vorher standen „Folgen", „Besetzung" und
+/// „Ähnliches" als drei Schalter nebeneinander, und nur einer war jeweils zu
+/// sehen. Der Entwurf legt sie stattdessen untereinander — dieselbe Bauart
+/// wie die Startseite, jede Reihe ein `Section`-Abschnitt. Damit entfällt
+/// auch der Umweg, den die Reiter nötig gemacht hatten: ein eigener
+/// `onMoveCommand`, der den Fokus von Hand nach oben schob, weil links über
+/// „Folgen" nichts Fokussierbares stand.
 ///
 /// Die Folgen sind jetzt ein waagerechter Streifen mit denselben Querkacheln
-/// wie „Weiterschauen", nicht mehr eine senkrechte Liste. `Folgenzeile` bleibt
-/// trotzdem — das Folgenblatt im Player benutzt sie weiter. **Was einmal
-/// geholt wurde, bleibt fuer den Rueckweg liegen.**
-///
-/// Die Serienseite holte bei jedem Oeffnen alles neu: Staffeln, Stand, Folgen.
-/// Solange der Seitenwechsel ueberblendete, hat das niemand gesehen — die
-/// Ueberblendung war laenger als der Abruf. Ohne sie schneidet man hart hinein
-/// und sieht „Laedt…" am Hauptknopf und den Ring, wo die Folgen stehen.
-///
-/// Der Abruf ist nicht langsamer geworden, er war nur verdeckt. Die Antwort
-/// ist deshalb nicht, die Ueberblendung zurueckzuholen, sondern beim zweiten
-/// Mal gar nicht erst zu warten.
-///
-/// Absichtlich **nur fuers Bild**, nicht als Wahrheit: beim Erscheinen laeuft
-/// der Abruf trotzdem und schreibt frische Werte darueber. Wer eine Folge als
-/// gesehen markiert und zurueckkommt, sieht den neuen Stand — nur eben ohne
-/// Loch davor.
-@MainActor
-final class Serienspeicher {
-    static let geteilt = Serienspeicher()
-
-    struct Stand {
-        /// Die Serie selbst — fuer den Umweg von einer Folge aus, der sie
-        /// sonst jedes Mal nachholt. Siehe `StaffelZiel`.
-        var serie: Item?
-        var staffeln: [Item] = []
-        var weiterMit: Item?
-        var folgen: [String: [Item]] = [:]   // je Staffel
-    }
-
-    private var bekannt: [String: Stand] = [:]
-    private var reihenfolge: [String] = []
-
-    func stand(_ serie: String) -> Stand? { bekannt[serie] }
-
-    func merken(_ serie: String, _ aendern: (inout Stand) -> Void) {
-        if bekannt[serie] == nil {
-            bekannt[serie] = Stand()
-            reihenfolge.append(serie)
-        }
-        aendern(&bekannt[serie]!)
-        while reihenfolge.count > 12 { bekannt[reihenfolge.removeFirst()] = nil }
-    }
-}
+/// wie „Weiterschauen", nicht mehr eine senkrechte Liste. `Folgenzeile`
+/// bleibt trotzdem — das Folgenblatt im Player benutzt sie weiter.
 
 struct SerienView: View {
     let model: AppModel
@@ -89,7 +47,7 @@ struct SerienView: View {
         self.startStaffelID = startStaffelID
         self.startFolge = startFolge
 
-        let gemerkt = Serienspeicher.geteilt.stand(serie.id)
+        let gemerkt = Serienspeicher.geteilt.stand(serie.id, mit: model)
         _staffeln = State(initialValue: gemerkt?.staffeln ?? [])
         _weiterMit = State(initialValue: gemerkt?.weiterMit ?? startFolge)
 

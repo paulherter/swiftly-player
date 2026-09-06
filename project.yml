@@ -236,6 +236,13 @@ targets:
       - path: Sources/Shared/Fassung.swift
       - path: Sources/Shared/Bibliotheksmodell.swift
       - path: Sources/Shared/Merklistenmodell.swift
+      # **Den Serienspeicher gab es hier noch ein zweites Mal.** Die
+      # geteilte Datei ist aus genau dieser Fassung herausgeloest worden,
+      # der Fernseher behielt aber seine Kopie — und der fehlte, was beim
+      # Herausloesen dazukam: die Frage, zu welchem Konto der Inhalt
+      # gehoert. Nach einem Kontowechsel standen dort fremde Haken und
+      # fremde Fortschrittsbalken.
+      - path: Sources/Shared/Serienspeicher.swift
       - path: Sources/Shared/SVGPfad.swift
       # Die Abspiel-Maschinerie teilen sich beide Plattformen: derselbe
       # `mkv_trusted`-Kniff, dieselbe Stillstandserkennung. Bild-im-Bild
