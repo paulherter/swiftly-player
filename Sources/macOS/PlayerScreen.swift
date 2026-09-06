@@ -288,8 +288,26 @@ struct PlayerScreen: View {
                 .frame(height: 230)
                 .frame(maxHeight: .infinity, alignment: .bottom)
 
+            // **Der Fang liegt ueber der Steuerung, nicht auf dem Chip.**
+            //
+            // Als Auflage am Chip deckte er nur den Chip selbst ab — daneben
+            // zu klicken traf ihn gar nicht. Hier faengt er jeden Klick, der
+            // nicht in die Tafel geht, und schliesst sie.
+            if spurwahlOffen {
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(Stil.zeitSprung) { spurwahlOffen = false }
+                    }
+            }
+
             VStack(spacing: 0) {
-                kopf
+                // **Der Kopf liegt oben — sonst decken ihn Mitte und Fuss
+                // zu.** In einem `VStack` zeichnet das spaetere Kind ueber dem
+                // frueheren, und die Tafel haengt am Chip im Kopf. Die
+                // Abspielleiste und die Knopfreihe kommen danach und lagen
+                // deshalb ueber ihr.
+                kopf.zIndex(1)
                 Spacer()
                 mitte
                 Spacer()
@@ -323,16 +341,6 @@ struct PlayerScreen: View {
             .padding(.leading, 12)
             // Die Tafel klappt unter dem Knopf auf — kleine Entscheidungen
             // bleiben am Ort. Die Wiedergabe läuft dabei weiter.
-            // Ein Klick daneben schliesst — der Fang liegt unter der Tafel.
-            .overlay {
-                if spurwahlOffen {
-                    Color.black.opacity(0.001)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(Stil.zeitSprung) { spurwahlOffen = false }
-                        }
-                }
-            }
             .overlay(alignment: .topTrailing) {
                 if spurwahlOffen, let flaeche {
                     Spurwahl(tonspuren: flaeche.tonspuren,
