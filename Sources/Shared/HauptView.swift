@@ -64,10 +64,18 @@ struct HauptView: View {
                         }
                     }
                 }
-                .animation(Stil.bereichswechsel, value: bereich)
-                // Die Wurzelansichten legen sich die Leiste selbst an —
-                // siehe `bereichsleiste()`. Hier steht nur, wohin ein Tippen
-                // darauf geht.
+                // **Kein Überblenden.** Hier lief die Deckkraft über dieselbe
+                // Kurve, und damit waren im Wechsel *beide* Seiten halb
+                // durchsichtig: durch sie hindurch sah man den schwarzen Grund
+                // darunter — oben um die Dynamic Island, unten schoben sich
+                // Kacheln durch die Leiste.
+                //
+                // Ohne Animation schaltet die Deckkraft hart, und übrig bleibt
+                // das, was gemeint war: die eintretende Seite zieht sich um
+                // zwei Punkte heran. Man merkt sie, man sieht sie nicht. Die
+                // Wurzelansichten legen sich die Leiste selbst an — siehe
+                // `bereichsleiste()`. Hier steht nur, wohin ein Tippen darauf
+                // geht.
                 .environment(\.bereichswahl, $bereich)
             }
 
@@ -400,7 +408,13 @@ struct BibliothekView: View {
                     text: "\(model.serverAdresse ?? String(localized: "Der Server")) hat nicht geantwortet. Läuft der Server, und bist du im selben Netz?",
                     hauptknopf: ("Erneut versuchen", { Task { await laden() } }))
                     .padding(.bottom, Stil.leisteHoehe)
-            } else if stand.items.isEmpty {
+            } else if stand.items.isEmpty, !stand.laedt {
+                // **`!laedt` ist nicht schmückend.** Es stand hier, solange
+                // daneben ein Ladering hing; beim Ausbau ist es mit
+                // weggefallen, und seither blitzte beim ersten Öffnen eine
+                // Sekunde lang „Hier ist noch nichts" auf, bevor die Titel
+                // kamen. Eine leere Bibliothek zu melden, bevor man gefragt
+                // hat, ist eine falsche Auskunft.
                 Leerzustand(
                     symbol: stand.filter == .alle ? "tray" : "line.3.horizontal.decrease",
                     kopfzeile: stand.filter == .alle ? "Hier ist noch nichts"

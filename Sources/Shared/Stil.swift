@@ -15,14 +15,14 @@ extension Stil {
 /// **Sehr wenig, mit Absicht.** 0,97 und 0,22 Sekunden — man sieht es nicht,
 /// man merkt es. Genau so macht es iOS beim Wechsel zwischen Reitern, und
 /// genau deshalb fühlt sich ein Wechsel dort weich an statt wie ein Schnitt.
-static let bereichswechsel: Animation = .easeInOut(duration: 0.22)
+static let bereichswechsel: Animation = .easeOut(duration: 0.20)
 /// Wie stark der eintretende Bereich zusammengezogen anfängt.
 ///
-/// **0,99, nicht 0,97.** Mit 0,97 wanderte die Oberkante einer 844 Punkt hohen
-/// Seite zwölf Punkt nach innen — das ist keine Andeutung mehr, sondern eine
-/// Bewegung, und an den Rändern wurde sie als Kante sichtbar. Vier Punkte
-/// reichen: man sieht sie nicht, man merkt sie.
-static let bereichsmass: CGFloat = 0.99
+/// **0,995, und dreimal nach unten korrigiert.** Mit 0,97 wanderte die
+/// Oberkante einer 844 Punkt hohen Seite zwölf Punkt nach innen, mit 0,99 noch
+/// vier — beides war als Kante zu sehen. Zwei Punkte sind die Grenze, an der
+/// die Bewegung noch trägt und nichts mehr auffällt.
+static let bereichsmass: CGFloat = 0.995
 
 /// Wie Inhalt erscheint, wenn er vom Server angekommen ist.
 ///
