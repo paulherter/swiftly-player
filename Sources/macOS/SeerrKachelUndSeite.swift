@@ -93,6 +93,9 @@ struct SeerrDetailView: View {
     @State private var bestaetigt = false
     /// Wie weit die Seite steht — die Kopfleiste blendet daran ein.
     @State private var kopfstand = Kopfstand()
+    /// Der Ton des Kopfbildes. **Fehlte hier ganz** — die Seite war deshalb
+    /// schlicht schwarz, wo jede andere den Verlauf traegt.
+    @State private var farbe = Bildfarbe()
 
     @Environment(Navigator.self) private var navigator
     @Environment(\.bereich) private var bereich
@@ -131,6 +134,26 @@ struct SeerrDetailView: View {
         }
         .scrollIndicators(.never)
         .ohneKanteneffekt()
+        .toolbar(.hidden)
+        .toolbarBackground(.hidden, for: .windowToolbar)
+        // **Der Verlauf aus dem Bild — er fehlte hier ganz.**
+        //
+        // Jede echte Detailseite traegt ihn: der Ton laeuft unter dem
+        // Heldenbild noch ein Stueck weiter und verliert sich im Grundton.
+        // Ohne ihn war die Seite schlicht schwarz
+        //
+        // **Und daran hing der zweite Befund mit.** Die Kulisse ist 1,62 mal
+        // so hoch wie die Kopfzone und laeuft mit ihrer weichen Blende
+        // darueber hinaus — ueber die Besetzungsreihe. Lag darunter kein
+        // Grund, schien sie durch, und die Koepfe wurden nach rechts hin
+        // durchsichtig. Mit `background(Stil.grund)` steht etwas dahinter.
+        .background(alignment: .top) {
+            LinearGradient(colors: [farbe.ton, Stil.grund],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: Stil.heldHoehe + 260)
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .background(Stil.grund)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
             kopfstand.versatz = neu
         }
@@ -141,6 +164,7 @@ struct SeerrDetailView: View {
         .overlay(alignment: .top) {
             Detailkopf(titel: treffer.titel, stand: kopfstand, zurueck: zurueck)
         }
+        .task { await farbe.laden(treffer.kulisse(breite: 780)) }
         .task { detail = await model.seerr.detail(treffer) }
     }
 
