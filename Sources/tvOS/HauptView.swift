@@ -388,6 +388,8 @@ struct HauptView: View {
                 case .serien:
                     BibliothekView(model: model, art: "tvshows",
                                    filter: [.alle, .angefangen, .merkliste])
+                case .merkliste:
+                    MerklisteView(model: model)
                 case .suche:
                     SucheView(model: model, aktiv: bereich == .suche)
                 }
@@ -507,7 +509,9 @@ struct StaffelZiel: View {
                 // Folge steht schon bereit, also steht er auch hier, und der
                 // Uebergang auf die Serienseite ist damit nur noch der
                 // Inhalt, nicht der ganze Schirm.
-                Lader.fern
+                // Kein Ring: der gefaerbte Grund steht schon, die Seite
+                // kommt gleich von selbst.
+                Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .bildgrund(url: model.querbildURL(for: folge, breite: 1600)
                                     ?? model.backdropURL(for: folge))

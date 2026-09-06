@@ -33,7 +33,17 @@ struct HomeView: View {
     var body: some View {
         ZStack {
             if !stand.geladen {
-                Lader.fern
+                // **Kein Ladering.** Statt eines Punktes auf drei Meter
+                // Entfernung stehen zwei Reihen in ihrer Form da und werden
+                // ueberblendet, sobald die Titel kommen.
+                VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
+                    Reihenplatzhalter(quer: true)
+                    Reihenplatzhalter()
+                }
+                .padding(.horizontal, Stil.randSeite)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, Stil.leisteUnten + 40)
+                .transition(.opacity)
             } else if stand.gestoert {
                 Leerzustand(symbol: "wifi.exclamationmark",
                             titel: "Der Server antwortet nicht",

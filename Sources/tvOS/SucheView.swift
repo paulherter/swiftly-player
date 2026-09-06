@@ -45,9 +45,15 @@ struct SucheView: View {
                 }
                 .padding(.horizontal, Stil.randSeite)
 
-                if laeuft {
-                    Lader.fern.frame(maxWidth: .infinity).padding(.top, 80)
-                } else if treffer.isEmpty && gesucht {
+                if laeuft, treffer.isEmpty {
+                    // Kein Ring: das Raster steht in seiner Form. Sind schon
+                    // Treffer da, bleiben die stehen, statt einem Ring zu
+                    // weichen.
+                    Rasterplatzhalter(reihen: 1)
+                        .padding(.horizontal, Stil.randSeite)
+                        .padding(.top, 40)
+                        .transition(.opacity)
+                } else if treffer.isEmpty && gesucht, !laeuft {
                     Leerzustand(symbol: "magnifyingglass",
                                 titel: "Nichts gefunden",
                                 hinweis: "Versuch es mit einem anderen Wort.")

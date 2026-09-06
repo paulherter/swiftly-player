@@ -46,7 +46,13 @@ struct BibliothekView: View {
     var body: some View {
         ZStack {
             if stand.laedt {
-                Lader.fern
+                // Kein Ladering: das Raster steht schon in seiner Form und
+                // wird ueberblendet, sobald die Titel da sind.
+                Rasterplatzhalter()
+                    .padding(.horizontal, Stil.randSeite)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.top, Stil.leisteUnten + 90)
+                    .transition(.opacity)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 30) {
@@ -114,6 +120,7 @@ struct BibliothekView: View {
         // Wer die Seite mit offener Tafel verlaesst, liesse die Leiste tot
         // zurueck.
         .onDisappear { tafelOffen.wrappedValue = false }
+        .animation(Stil.einblenden, value: stand.laedt)
         .task(id: stand.kennung) { await laden() }
     }
 
@@ -254,7 +261,14 @@ struct BibliothekView: View {
                     Kachelinhalt(bild: model.imageURL(for: item, maxHeight: 600,
                                                       hochkant: true),
                                  titel: item.name,
-                                 mitUnterzeile: false)
+                                 fortschritt: item.userData?.playedPercentage
+                                     .map { $0 / 100 },
+                                 mitUnterzeile: false,
+                                 marke: Anzeigeregeln.kachelmarke(
+                                    art: item.type,
+                                    staffeln: item.childCount,
+                                    gesehen: item.userData?.played,
+                                    offeneFolgen: item.userData?.unplayedItemCount))
                 }
                 .buttonStyle(KachelStil())
                 // Nachladen, sobald die drittletzte Reihe auftaucht — dann

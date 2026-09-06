@@ -31,7 +31,21 @@ struct Folgenblatt: View {
                 .padding(.bottom, 36)
 
                 if laedt {
-                    Lader.fern.frame(maxWidth: .infinity).padding(.vertical, 100)
+                    // Drei Zeilen in ihrer Form statt eines Rings.
+                    VStack(spacing: 4) {
+                        ForEach(0 ..< 4, id: \.self) { _ in
+                            HStack(spacing: 24) {
+                                Ladefeld().frame(width: 300, height: 169)
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Ladefeld(ecke: 4).frame(width: 380, height: 24)
+                                    Ladefeld(ecke: 4).frame(width: 160, height: 18)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 10)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 } else {
                     ScrollView {
                         VStack(spacing: 4) {

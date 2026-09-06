@@ -329,9 +329,14 @@ struct Bild: View {
             .frame(width: breite, height: hoehe)
             .frame(maxWidth: breite == nil ? .infinity : nil)
             .overlay {
-                AsyncImage(url: url) { phase in
+                // Die `transaction` blendet den Wechsel der Lagen weich;
+                // ohne sie schaltet `AsyncImage` hart um. **Nichts erscheint
+                // hart** — GESTALTUNG, Abschnitt E.
+                AsyncImage(url: url,
+                           transaction: Transaction(animation: Stil.einblenden)) { phase in
                     if case let .success(bild) = phase {
                         bild.resizable().aspectRatio(contentMode: .fill)
+                            .transition(.opacity)
                     } else {
                         Stil.flaeche.onAppear {
                             guard case let .failure(f) = phase,
