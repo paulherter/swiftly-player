@@ -668,6 +668,23 @@
         }
       }
     },
+    "Alles entfernen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alles entfernen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove everything"
+          }
+        }
+      }
+    },
     "Als gesehen markieren": {
       "extractionState": "manual",
       "localizations": {
@@ -715,6 +732,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Different server"
+          }
+        }
+      }
+    },
+    "Anfragen, was noch nicht da ist": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anfragen, was noch nicht da ist"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request what isn’t there yet"
           }
         }
       }
@@ -770,6 +804,23 @@
         }
       }
     },
+    "Auf dem Gerät": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf dem Gerät"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On this device"
+          }
+        }
+      }
+    },
     "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an.": {
       "extractionState": "manual",
       "localizations": {
@@ -821,6 +872,74 @@
         }
       }
     },
+    "Auf jeder Film- und Serienseite gibt es ein Feld zum Laden. Geladene Titel laufen auch ohne Netz — in voller Qualität, weil Swiftly nie umrechnet.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf jeder Film- und Serienseite gibt es ein Feld zum Laden. Geladene Titel laufen auch ohne Netz — in voller Qualität, weil Swiftly nie umrechnet."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every movie and show page has a button to download. Downloaded titles play without a connection — in full quality, because Swiftly never re-encodes."
+          }
+        }
+      }
+    },
+    "Auf jeder Film- und Serienseite gibt es einen Knopf zum Laden. Geladene Titel laufen auch ohne Netz — in voller Qualität, weil Swiftly nie umrechnet.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf jeder Film- und Serienseite gibt es einen Knopf zum Laden. Geladene Titel laufen auch ohne Netz — in voller Qualität, weil Swiftly nie umrechnet."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every movie and show page has a button to download. Downloaded titles play without a connection — in full quality, because Swiftly never re-encodes."
+          }
+        }
+      }
+    },
+    "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every movie and show page has “Watchlist” in the button row. What you tap there collects here."
+          }
+        }
+      }
+    },
+    "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort auswählst, sammelt sich hier.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort auswählst, sammelt sich hier."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every movie and show page has “Watchlist” in the button row. What you pick there collects here."
+          }
+        }
+      }
+    },
     "Aufklappen": {
       "extractionState": "manual",
       "localizations": {
@@ -851,6 +970,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "Off"
+          }
+        }
+      }
+    },
+    "Ausgang": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausgang"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output"
+          }
+        }
+      }
+    },
+    "Auslieferung": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auslieferung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivery"
+          }
+        }
+      }
+    },
+    "Bearbeiten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bearbeiten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        }
+      }
+    },
+    "Behalten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Behalten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep"
           }
         }
       }
@@ -923,6 +1110,23 @@
         }
       }
     },
+    "Bibliothek": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bibliothek"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Library"
+          }
+        }
+      }
+    },
     "Bibliotheken": {
       "extractionState": "manual",
       "localizations": {
@@ -957,6 +1161,23 @@
         }
       }
     },
+    "Bild entschlüsselt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bild entschlüsselt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video decoded"
+          }
+        }
+      }
+    },
     "Bild im Bild": {
       "extractionState": "manual",
       "localizations": {
@@ -987,6 +1208,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Preparing Picture in Picture…"
+          }
+        }
+      }
+    },
+    "Bildfläche": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bildfläche"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picture area"
           }
         }
       }
@@ -1106,6 +1344,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "File"
+          }
+        }
+      }
+    },
+    "Datei braucht": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datei braucht"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File needs"
+          }
+        }
+      }
+    },
+    "Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your password isn’t saved — only the session Seerr issues for it."
+          }
+        }
+      }
+    },
+    "Demuxer": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demuxer"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demuxer"
           }
         }
       }
@@ -1467,6 +1756,40 @@
         }
       }
     },
+    "Downloads": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads"
+          }
+        }
+      }
+    },
+    "Downloads ausschalten?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads ausschalten?"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn downloads off?"
+          }
+        }
+      }
+    },
     "Ein": {
       "extractionState": "manual",
       "localizations": {
@@ -1480,6 +1803,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "On"
+          }
+        }
+      }
+    },
+    "Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A second Jellyfin account on the same server. Both stay signed in; switch between them at the top of the profile page."
           }
         }
       }
@@ -1501,6 +1841,23 @@
         }
       }
     },
+    "Eingang": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingang"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input"
+          }
+        }
+      }
+    },
     "Einstellungen": {
       "extractionState": "manual",
       "localizations": {
@@ -1514,6 +1871,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Settings"
+          }
+        }
+      }
+    },
+    "Entfernen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entfernen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
           }
         }
       }
@@ -1683,6 +2057,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Clear filter"
+          }
+        }
+      }
+    },
+    "Filtern": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filtern"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filter"
           }
         }
       }
@@ -1891,6 +2282,23 @@
         }
       }
     },
+    "Gattung": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gattung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kind"
+          }
+        }
+      }
+    },
     "Gehe zu": {
       "extractionState": "manual",
       "localizations": {
@@ -1938,6 +2346,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Watched"
+          }
+        }
+      }
+    },
+    "Gezeigt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gezeigt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Displayed"
           }
         }
       }
@@ -2010,6 +2435,23 @@
         }
       }
     },
+    "Hinzufügen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hinzufügen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
+        }
+      }
+    },
     "Höchste Bitrate": {
       "extractionState": "manual",
       "localizations": {
@@ -2044,6 +2486,23 @@
         }
       }
     },
+    "Integration": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integration"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integration"
+          }
+        }
+      }
+    },
     "Jellyfin %@": {
       "extractionState": "manual",
       "localizations": {
@@ -2074,6 +2533,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open Jellyfin in a browser and sign in"
+          }
+        }
+      }
+    },
+    "Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jellyseerr or Overseerr. With it, search also finds what isn’t on your server yet — and lets you request it."
+          }
+        }
+      }
+    },
+    "Kann angefragt werden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kann angefragt werden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can be requested"
           }
         }
       }
@@ -2231,6 +2724,23 @@
         }
       }
     },
+    "Laden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download"
+          }
+        }
+      }
+    },
     "Leertaste": {
       "extractionState": "manual",
       "localizations": {
@@ -2244,6 +2754,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Space"
+          }
+        }
+      }
+    },
+    "Lieber Name und Passwort": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lieber Name und Passwort"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use name and password instead"
           }
         }
       }
@@ -2316,6 +2843,23 @@
         }
       }
     },
+    "MKV-Index": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MKV-Index"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MKV index"
+          }
+        }
+      }
+    },
     "Mehr": {
       "extractionState": "manual",
       "localizations": {
@@ -2329,6 +2873,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "More"
+          }
+        }
+      }
+    },
+    "Meins": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meins"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mine"
           }
         }
       }
@@ -2486,6 +3047,23 @@
         }
       }
     },
+    "Nicht genug Platz": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht genug Platz"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not enough space"
+          }
+        }
+      }
+    },
     "Nichts gefunden": {
       "extractionState": "manual",
       "localizations": {
@@ -2554,6 +3132,40 @@
         }
       }
     },
+    "Noch nichts geladen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch nichts geladen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing downloaded yet"
+          }
+        }
+      }
+    },
+    "Noch nichts gemerkt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch nichts gemerkt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing on your watchlist yet"
+          }
+        }
+      }
+    },
     "Nochmal versuchen": {
       "extractionState": "manual",
       "localizations": {
@@ -2584,6 +3196,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Only when the audio is in another language"
+          }
+        }
+      }
+    },
+    "Nur über WLAN": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur über WLAN"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi‑Fi only"
           }
         }
       }
@@ -2669,6 +3298,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tap your profile at the top right, then Quick Connect"
+          }
+        }
+      }
+    },
+    "Offline": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline"
           }
         }
       }
@@ -2911,6 +3557,23 @@
         }
       }
     },
+    "Seerr": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr"
+          }
+        }
+      }
+    },
     "Serie": {
       "extractionState": "manual",
       "localizations": {
@@ -3115,6 +3778,23 @@
         }
       }
     },
+    "Speicher": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speicher"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage"
+          }
+        }
+      }
+    },
     "Sprache": {
       "extractionState": "manual",
       "localizations": {
@@ -3179,6 +3859,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Season"
+          }
+        }
+      }
+    },
+    "Staffel laden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffel laden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download season"
           }
         }
       }
@@ -3319,6 +4016,40 @@
         }
       }
     },
+    "Titel auf diesen Mac laden und ohne Netz sehen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Titel auf diesen Mac laden und ohne Netz sehen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download titles to this Mac and watch without a connection"
+          }
+        }
+      }
+    },
+    "Titel aufs Gerät laden und ohne Netz sehen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Titel aufs Gerät laden und ohne Netz sehen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download titles to this device and watch without a connection"
+          }
+        }
+      }
+    },
     "Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.": {
       "extractionState": "manual",
       "localizations": {
@@ -3370,6 +4101,23 @@
         }
       }
     },
+    "Ton entschlüsselt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton entschlüsselt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio decoded"
+          }
+        }
+      }
+    },
     "Ton und Untertitel": {
       "extractionState": "manual",
       "localizations": {
@@ -3383,6 +4131,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Audio and subtitles"
+          }
+        }
+      }
+    },
+    "Ton verloren": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton verloren"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio lost"
           }
         }
       }
@@ -3540,6 +4305,23 @@
         }
       }
     },
+    "Verbinde…": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinde…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting…"
+          }
+        }
+      }
+    },
     "Verbindung prüfen": {
       "extractionState": "manual",
       "localizations": {
@@ -3557,6 +4339,23 @@
         }
       }
     },
+    "Verbindung trennen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbindung trennen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect"
+          }
+        }
+      }
+    },
     "Verbindung unterbrochen": {
       "extractionState": "manual",
       "localizations": {
@@ -3570,6 +4369,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connection lost"
+          }
+        }
+      }
+    },
+    "Verbunden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected"
           }
         }
       }
@@ -3621,6 +4437,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Try a different word."
+          }
+        }
+      }
+    },
+    "Verworfen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verworfen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dropped"
           }
         }
       }
@@ -3778,6 +4611,23 @@
         }
       }
     },
+    "Welche Staffeln?": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welche Staffeln?"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Which seasons?"
+          }
+        }
+      }
+    },
     "Wer schaut?": {
       "extractionState": "manual",
       "localizations": {
@@ -3893,6 +4743,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Switch to %@"
+          }
+        }
+      }
+    },
+    "Zu spät": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu spät"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Late"
           }
         }
       }
@@ -4033,6 +4900,23 @@
         }
       }
     },
+    "Zähler": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zähler"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Counter"
+          }
+        }
+      }
+    },
     "dem Server": {
       "extractionState": "manual",
       "localizations": {
@@ -4080,6 +4964,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "or"
+          }
+        }
+      }
+    },
+    "seerr.example.de": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "seerr.example.de"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "seerr.example.com"
           }
         }
       }
@@ -4182,6 +5083,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Opens the list"
+          }
+        }
+      }
+    },
+    "Über Mobilfunk warten Downloads": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Über Mobilfunk warten Downloads"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Over cellular, downloads wait"
           }
         }
       }
