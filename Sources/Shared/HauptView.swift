@@ -55,19 +55,11 @@ struct HauptView: View {
                         if besucht.contains(b) {
                             stapel(b)
                                 .opacity(bereich == b ? 1 : 0)
-                                // **Der eintretende Bereich kommt eine Spur
-                                // zu klein heran.** 0,97 und 0,22 Sekunden —
-                                // man sieht es nicht, man merkt es. Genau so
-                                // macht es iOS beim Wechsel zwischen Reitern,
-                                // und deshalb fuehlt sich ein Wechsel dort
-                                // weich an statt wie ein Schnitt.
-                                //
-                                // Nur Groesse und Deckkraft, keine Unschaerfe:
-                                // ein `blur` ueber einer ganzen Seite zwingt
-                                // sie in eine eigene Zeichenebene, und das
-                                // kostet bei jedem Wechsel mehr, als es
-                                // aussieht.
-                                .scaleEffect(bereich == b ? 1 : Stil.bereichsmass)
+                                // **Das Heranziehen liegt eine Ebene
+                                // tiefer**, in `bereichsleiste()` — sonst
+                                // wandert die Leiste mit. Hier steht nur, wer
+                                // vorn ist.
+                                .environment(\.bereichAktiv, bereich == b)
                                 .allowsHitTesting(bereich == b)
                         }
                     }

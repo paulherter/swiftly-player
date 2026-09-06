@@ -9,6 +9,9 @@ import SwiftUI
 /// Bestätigung.
 struct Seerrkachel: View {
     let treffer: Seerrtreffer
+    /// Plakat und Text blenden zusammen ein — dieselbe Begründung wie bei
+    /// `PosterTile`.
+    @State private var da = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -27,6 +30,11 @@ struct Seerrkachel: View {
                 .font(Stil.klein)
                 .foregroundStyle(Stil.schriftSehrLeise)
                 .lineLimit(1)
+        }
+        .opacity(da ? 1 : 0)
+        .onAppear {
+            guard !da else { return }
+            withAnimation(Stil.einblenden) { da = true }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(verbatim: "\(treffer.titel), \(ansage)"))

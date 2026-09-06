@@ -275,11 +275,11 @@ struct SeriesDetailView: View {
                 if let stand { starte(stand) }
             } label: {
                 HStack(spacing: 8) {
-                        // Kein Ring im Knopf: die Beschriftung sagt es
-                        // ohnehin („Laedt…"), und ein zweites Zeichen daneben
-                        // ist Laerm.
-                        Image(systemName: "play.fill").font(.system(size: 15))
-                            .opacity(bereitet ? 0.5 : 1)
+                    // Kein Ring im Knopf: die Beschriftung sagt es ohnehin
+                    // („Lädt…"), und ein zweites Zeichen daneben ist Lärm.
+                    Image(systemName: "play.fill").font(.system(size: 15))
+                        .opacity(bereitet ? 0.5 : 1)
+                    Text(knopftext)
                 }
             }
             .buttonStyle(HauptknopfStil(dehnt: !breit))

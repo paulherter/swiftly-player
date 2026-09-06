@@ -86,6 +86,15 @@ struct PosterTile: View {
         return item.productionYear.map(String.init)
     }
 
+    /// **Plakat und Text blenden zusammen ein.**
+    ///
+    /// Das Bild blendet seit dem Umbau von selbst ein, der Titel darunter
+    /// stand sofort da — beim Wechsel der Bibliothek sah man erst die
+    /// Beschriftungen und dann die Plakate hineinlaufen. Die Kachel blendet
+    /// deshalb als Ganzes ein, und das Bild darin bringt seinen eigenen
+    /// weichen Wechsel mit.
+    @State private var da = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             // Feste Breite: feste Höhe. Füllt die Kachel ihre Spalte, folgt
@@ -136,6 +145,11 @@ struct PosterTile: View {
         // zweizeiligen Titeln rutschten die kürzeren Kacheln dadurch nach
         // unten und die Poster lagen nicht mehr auf einer Linie.
         .frame(maxHeight: .infinity, alignment: .top)
+        .opacity(da ? 1 : 0)
+        .onAppear {
+            guard !da else { return }
+            withAnimation(Stil.einblenden) { da = true }
+        }
         // Eine Aussage je Kachel statt zweier Bruchstücke, und der
         // Fortschritt kommt mit — er ist eine Zeichnung im Bild und fiel für
         // VoiceOver bisher heraus.

@@ -15,9 +15,14 @@ extension Stil {
 /// **Sehr wenig, mit Absicht.** 0,97 und 0,22 Sekunden — man sieht es nicht,
 /// man merkt es. Genau so macht es iOS beim Wechsel zwischen Reitern, und
 /// genau deshalb fühlt sich ein Wechsel dort weich an statt wie ein Schnitt.
-static let bereichswechsel: Animation = .easeOut(duration: 0.22)
+static let bereichswechsel: Animation = .easeInOut(duration: 0.22)
 /// Wie stark der eintretende Bereich zusammengezogen anfängt.
-static let bereichsmass: CGFloat = 0.97
+///
+/// **0,99, nicht 0,97.** Mit 0,97 wanderte die Oberkante einer 844 Punkt hohen
+/// Seite zwölf Punkt nach innen — das ist keine Andeutung mehr, sondern eine
+/// Bewegung, und an den Rändern wurde sie als Kante sichtbar. Vier Punkte
+/// reichen: man sieht sie nicht, man merkt sie.
+static let bereichsmass: CGFloat = 0.99
 
 /// Wie Inhalt erscheint, wenn er vom Server angekommen ist.
 ///
@@ -1163,10 +1168,20 @@ private struct Bereichswahlschluessel: EnvironmentKey {
     static let defaultValue: Binding<Bereich>? = nil
 }
 
+/// Ist dieser Bereich der vorderste? Steuert das Heranziehen beim Wechsel.
+private struct BereichAktivSchluessel: EnvironmentKey {
+    static let defaultValue = true
+}
+
 extension EnvironmentValues {
     var bereichswahl: Binding<Bereich>? {
         get { self[Bereichswahlschluessel.self] }
         set { self[Bereichswahlschluessel.self] = newValue }
+    }
+
+    var bereichAktiv: Bool {
+        get { self[BereichAktivSchluessel.self] }
+        set { self[BereichAktivSchluessel.self] = newValue }
     }
 }
 
@@ -1196,9 +1211,19 @@ extension View {
 private struct Bereichsleiste: ViewModifier {
     @Environment(\.breit) private var breit
     @Environment(\.bereichswahl) private var wahl
+    @Environment(\.bereichAktiv) private var aktiv
 
     func body(content: Content) -> some View {
-        content.overlay(alignment: .bottom) {
+        content
+            // **Das Heranziehen gilt der Seite, nicht der Leiste.** Es sass
+            // eine Ebene hoeher, am ganzen Bereichsstapel — und der traegt
+            // die Leiste. Die wanderte also mit, und eine Leiste, die beim
+            // Umschalten wandert, ist genau das, was man nicht will. Hier
+            // liegt sie ausserhalb des Effekts: erst der Inhalt bewegt sich,
+            // dann kommt sie darueber.
+            .scaleEffect(aktiv ? 1 : Stil.bereichsmass)
+            .animation(Stil.bereichswechsel, value: aktiv)
+            .overlay(alignment: .bottom) {
             if !breit, let wahl {
                 Navileiste(gewaehlt: wahl)
                     // **Der volle Rahmen davor ist nicht schmückend.** Die
