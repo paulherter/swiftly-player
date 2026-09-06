@@ -181,8 +181,21 @@ struct SerienView: View {
                         .padding(.bottom, 18)
                 }
                 if laedt {
-                    Lader().frame(height: 200)
-                        .transition(.opacity)
+                    // Drei Zeilen in ihrer Form statt eines Rings.
+                    VStack(spacing: 0) {
+                        ForEach(0 ..< 3, id: \.self) { _ in
+                            HStack(spacing: 16) {
+                                Ladefeld().frame(width: 160, height: 90)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Ladefeld(ecke: 3).frame(width: 220, height: 14)
+                                    Ladefeld(ecke: 3).frame(width: 90, height: 11)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 10)
+                        }
+                    }
+                    .transition(.opacity)
                 } else if folgen.isEmpty {
                     Leerzustand(symbol: "tray", titel: "Keine Folgen")
                         .frame(height: 200)

@@ -40,16 +40,26 @@ struct BibliothekView: View {
             VStack(alignment: .leading, spacing: 0) {
 
                 HStack(alignment: .firstTextBaseline) {
-                    Text(titel)
-                        .font(Stil.titelGross)
-                        .tracking(-0.6)
-                        .foregroundStyle(Stil.schrift)
-                    Spacer()
-                    if regal.gesamt > 0 {
-                        Text(verbatim: "\(regal.gesamt)")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Stil.schriftSehrLeise)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(titel)
+                            .font(Stil.titelGross)
+                            .tracking(-0.6)
+                            .foregroundStyle(Stil.schrift)
+                        // **Wo bin ich hier eigentlich?** Der Servername
+                        // stand auf keiner Seite; bei mehreren Konten mit
+                        // gleich benannten Bibliotheken ist er der einzige
+                        // Unterschied. GESTALTUNG, Abschnitt J.
+                        if let server = model.serverName, !server.isEmpty {
+                            Text(verbatim: server)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Stil.schriftSehrLeise)
+                                .lineLimit(1)
+                        }
                     }
+                    Spacer()
+                    // Der gemeinsame Baustein statt einer zweiten Fassung —
+                    // sie stand hier zeichengleich nachgebaut.
+                    if regal.gesamt > 0 { Zaehlmarke(anzahl: regal.gesamt) }
                 }
 
                 HStack(spacing: 8) {
@@ -96,6 +106,13 @@ struct BibliothekView: View {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
                                          bild: model.imageURL(for: eintrag, hochkant: true),
+                                         fortschritt: eintrag.userData?.playedPercentage
+                                             .map { $0 / 100 },
+                                         marke: Anzeigeregeln.kachelmarke(
+                                            art: eintrag.type,
+                                            staffeln: eintrag.childCount,
+                                            gesehen: eintrag.userData?.played,
+                                            offeneFolgen: eintrag.userData?.unplayedItemCount),
                                          zeichen: art == "tvshows" ? "tv" : "film")
                         }
                         .buttonStyle(.plain)
@@ -122,7 +139,20 @@ struct BibliothekView: View {
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
         .ohneKanteneffekt()
-        .overlay { if regal.laedt { Lader() } }
+        // **Kein Ladering.** Statt eines drehenden Rings steht das Raster
+        // schon in seiner Form da und wird ueberblendet, sobald die Titel
+        // ankommen — die Seite ist dann leer, nicht am Warten.
+        // GESTALTUNG, Abschnitt G.
+        .overlay(alignment: .topLeading) {
+            if regal.items.isEmpty, regal.laedt {
+                Rasterplatzhalter(spalten: geschaetzteSpalten, reihen: 2)
+                    .padding(.horizontal, Stil.randAbstand)
+                    .padding(.top, Stil.inhaltOben + 22)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(Stil.einblenden, value: regal.items.isEmpty)
         .task(id: regal.kennung) { await laden() }
         // **Auch das Regal gehört zu einem Konto.** `.task(id:)` hängt an
         // Sortierung und Filter — die ändern sich beim Kontowechsel nicht,

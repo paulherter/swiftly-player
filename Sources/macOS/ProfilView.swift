@@ -452,7 +452,6 @@ struct KontoHinzufuegenView: View {
                 .padding(.top, 14)
 
             HStack(spacing: 10) {
-                Lader(groesse: 14, staerke: 2)
                 Text("Läuft ab in \(stand.restsekunden / 60):\(String(format: "%02d", stand.restsekunden % 60))")
                     .font(Stil.zweitzeile)
                     .foregroundStyle(Stil.schriftSehrLeise)
@@ -464,7 +463,10 @@ struct KontoHinzufuegenView: View {
                 .foregroundStyle(Stil.warnung)
                 .padding(.top, 26)
         } else {
-            Lader().padding(.top, 26)
+            // Der Code kommt gleich; solange steht seine Form da.
+            Ladefeld(ecke: Stil.eckeFeld)
+                .frame(width: 240, height: 64)
+                .padding(.top, 26)
         }
 
         fehlerzeile

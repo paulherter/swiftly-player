@@ -83,7 +83,8 @@ struct StaffelZiel: View {
                            startStaffelNummer: folge.parentIndexNumber,
                            zurueck: zurueck)
             } else {
-                Lader()
+                // Kein Ring: die Seite kommt gleich von selbst.
+                Color.clear
             }
         }
         .task {

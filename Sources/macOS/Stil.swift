@@ -61,9 +61,18 @@ extension Stil {
 
     // MARK: Maße
 
-    static let ecke: CGFloat = 6
-    static let eckeKachel: CGFloat = 8
-    static let eckeFeld: CGFloat = 10
+    /// **Die Eckenskala.** Dieselbe Regel wie auf dem iPhone (GESTALTUNG,
+    /// Abschnitt B): je grösser die Fläche, desto runder — und Knopf und
+    /// Kachel teilen sich die kleinste Stufe, weil beides kleine Gegenstände
+    /// sind. Am 07.09.2026 gemeinsam um vier Punkte angehoben; vorher waren
+    /// Knopf 6 und Plakat 8, und zwei Punkte Unterschied zwischen zwei
+    /// Dingen, die nebeneinander stehen, liest man nicht als Rangfolge,
+    /// sondern als Versehen.
+    static let ecke: CGFloat = 10
+    static let eckeKachel: CGFloat = 10
+    static let eckeFeld: CGFloat = 12
+    /// Was eine eigene Fläche ist: Blätter, Tafeln, Auskunftskästen.
+    static let eckeFlaeche: CGFloat = 16
     static let randAbstand: CGFloat = 24
     static let kachelAbstand: CGFloat = 12
     static let reihenAbstand: CGFloat = 28
