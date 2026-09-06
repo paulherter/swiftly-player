@@ -150,9 +150,7 @@ struct SeriesDetailView: View {
             }
             if !ladeposten.isEmpty {
                 Ladeblatt(offen: $ladeblatt, model: model, posten: ladeposten,
-                          titel: ladetitel,
-                          plakat: model.plakatURL(itemID: serie.id,
-                                                  marke: serie.imageTags?["Primary"]))
+                          titel: ladetitel, bilder: ladebilder)
                     .zIndex(20)
             }
             if let meldung {
@@ -518,6 +516,22 @@ struct SeriesDetailView: View {
             laufzeitTicks: folge.runTimeTicks, container: quelle?.container,
             quelle: quelle?.id, bytes: quelle?.size ?? 0,
             gesehen: folge.userData?.played ?? false)
+    }
+
+    /// Das Plakat der Serie plus das Querbild jeder Folge, die geladen wird.
+    private var ladebilder: [String: URL] {
+        var karte: [String: URL] = [:]
+        if let plakat = model.plakatURL(itemID: serie.id,
+                                        marke: serie.imageTags?["Primary"]) {
+            karte[serie.id] = plakat
+        }
+        for p in ladeposten {
+            if let f = folgen.first(where: { $0.id == p.id }),
+               let bild = model.imageURL(for: f, maxHeight: 220) {
+                karte[p.id] = bild
+            }
+        }
+        return karte
     }
 
     private func folgeLaden(_ folge: Item) {

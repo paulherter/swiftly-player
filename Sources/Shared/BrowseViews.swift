@@ -290,8 +290,9 @@ struct ItemDetailView: View {
             if let posten = alsPosten {
                 Ladeblatt(offen: $ladeblatt, model: model, posten: [posten],
                           titel: aktuell.name,
-                          plakat: model.plakatURL(itemID: aktuell.id,
-                                                  marke: aktuell.imageTags?["Primary"]))
+                          bilder: [aktuell.id: model.plakatURL(
+                              itemID: aktuell.id,
+                              marke: aktuell.imageTags?["Primary"])].compactMapValues { $0 })
                     .zIndex(20)
             }
             if let meldung {
@@ -445,21 +446,8 @@ struct ItemDetailView: View {
             // mit ihren vier Feldern; deshalb wächst sie hier statt eine
             // fünfte Stelle immer freizuhalten.
             if model.downloadsAn, aktuell.type != "Series" {
-                Aktionsknopf(symbol: "arrow.down", titel: "Laden",
-                             aktiv: geladen != nil, dehnt: !weit) {
+                Downloadfeld(posten: geladen, dehnt: !weit) {
                     ringGetippt(geladen, model.downloads) { ladeblatt = true }
-                }
-                .overlay {
-                    // Läuft der Download, tritt der Ring an die Stelle des
-                    // Zeichens — dasselbe Zeichen wie in der Liste, nur in
-                    // einem Feld statt in einer Zeile.
-                    if let g = geladen, g.stand != .fertig {
-                        Downloadring(posten: g, mass: 22) {
-                            ringGetippt(g, model.downloads) {}
-                        }
-                        .allowsHitTesting(false)
-                        .background(Stil.flaeche)
-                    }
                 }
             }
 

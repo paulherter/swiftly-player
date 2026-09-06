@@ -108,6 +108,51 @@ func ringGetippt(_ posten: Downloadposten?, _ verwaltung: Downloadverwaltung,
     }
 }
 
+/// Das fünfte Feld der Aktionsreihe.
+///
+/// Heisst **`Downloadfeld`** und nicht `Ladefeld`: das ist seit dem
+/// Gestaltungsdurchgang der Platzhalter in der Form des Inhalts, und zwei
+/// Bausteine gleichen Namens in einer App sind der Anfang davon, dass jemand
+/// den falschen nimmt.
+///
+/// **Ein eigener Baustein statt eines `Aktionsknopf` mit Auflage.** Zuerst
+/// stand hier der Ring als `.overlay` über dem Knopf, mit einem eigenen
+/// Grund darunter, damit das Zeichen darunter verschwindet — und dieser
+/// Grund war ein Rechteck über einer Fläche mit 10 Punkt Ecke. Die vier
+/// Ecken wären quadratisch übermalt gewesen, und zwar nur an diesem einen
+/// Feld der Reihe. Ein Feld, das zwei Sachen zeigen kann, zeigt sie im
+/// selben Baum, statt eine über die andere zu legen.
+///
+/// Masse und Fläche sind wörtlich die von ``Aktionsknopf`` — es steht in
+/// derselben Reihe, und das darf man nicht sehen.
+struct Downloadfeld: View {
+    let posten: Downloadposten?
+    var dehnt = true
+    let tippen: () -> Void
+
+    var body: some View {
+        Button(action: tippen) {
+            Group {
+                if let p = posten, p.stand != .fertig {
+                    Downloadring(posten: p, mass: 22) {}
+                        .allowsHitTesting(false)
+                } else {
+                    Image(systemName: posten == nil ? "arrow.down" : "checkmark.circle.fill")
+                        .font(.system(size: 19, weight: .medium))
+                        .foregroundStyle(posten == nil ? Stil.schrift : Stil.akzent)
+                }
+            }
+            .frame(maxWidth: dehnt ? .infinity : nil)
+            .frame(width: dehnt ? nil : 56, height: 44)
+            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Laden"))
+        .accessibilityAddTraits(posten == nil ? .isButton : [.isButton, .isSelected])
+    }
+}
+
 // MARK: - Eine Zeile
 
 /// **Zeilen, keine Kacheln.**
@@ -133,8 +178,8 @@ struct Downloadzeile: View {
                     .transition(.opacity)
             }
 
-            Netzbild(url: bildadresse, zeichen: "film")
-                .frame(width: 64, height: 96)
+            Netzbild(url: bildadresse, zeichen: quer ? "tv" : "film")
+                .frame(width: quer ? 104 : 64, height: quer ? 59 : 96)
                 .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel))
 
             VStack(alignment: .leading, spacing: 3) {
@@ -165,15 +210,30 @@ struct Downloadzeile: View {
         .padding(.vertical, 10)
         .contentShape(Rectangle())
         .animation(Stil.einblenden, value: bearbeiten)
-        .onTapGesture { if bearbeiten { gewaehlt.toggle() } }
+        // **Die Geste darf es nur im Auswahlmodus geben.**
+        //
+        // Hier stand sie fest, mit einem `if bearbeiten` im Rumpf — und ein
+        // `onTapGesture` schluckt den Tipp auch dann, wenn sein Rumpf nichts
+        // tut. Die Serienzeile liegt in einem `NavigationLink`, und der kam
+        // dadurch nie an: ein Tipp auf „Breaking Bad" passierte einfach
+        // nichts. Am Geraet gesehen, nicht im Bau.
+        .modifier(Auswahltipp(an: bearbeiten) { gewaehlt.toggle() })
     }
 
     /// **Erst die Platte, dann der Server.** Ohne Netz gibt es nur die
     /// Platte, und genau dann wird diese Seite gebraucht.
+    ///
+    /// Eine Gruppenzeile trägt das Plakat der Serie, eine Folgenzeile ihr
+    /// eigenes Querbild — sonst stünde in der Folgenliste dreimal dasselbe.
     private var bildadresse: URL? {
-        verwaltung.plakat(fuer: posten)
-            ?? model.plakatURL(itemID: posten.serienId ?? posten.id)
+        let gruppig = gruppe != nil
+        return verwaltung.bild(fuer: posten, alsGruppe: gruppig)
+            ?? model.plakatURL(itemID: gruppig ? (posten.serienId ?? posten.id) : posten.id)
     }
+
+    /// Hochkant für Filme und Serien, quer für eine einzelne Folge — dieselbe
+    /// Unterscheidung wie in der Folgenliste der Serienseite.
+    private var quer: Bool { gruppe == nil && posten.art == .folge }
 
     private var unterzeile: String {
         if let g = gruppe {
@@ -215,6 +275,24 @@ struct Downloadzeile: View {
         case .laedt:  Stil.akzent
         case .fehler: Stil.warnung
         default:      Stil.schriftLeise
+        }
+    }
+}
+
+/// Eine Tippgeste, die es nur gibt, wenn sie gebraucht wird.
+///
+/// Ohne diesen Umweg müsste die Geste fest hängen und im Rumpf prüfen — und
+/// dann verschluckt sie den Tipp trotzdem, weil SwiftUI beim Verteilen nicht
+/// in den Rumpf sieht.
+private struct Auswahltipp: ViewModifier {
+    let an: Bool
+    let tun: () -> Void
+
+    func body(content: Content) -> some View {
+        if an {
+            content.onTapGesture(perform: tun)
+        } else {
+            content
         }
     }
 }
@@ -290,6 +368,11 @@ struct DownloadsView: View {
             }
         }
         .safeAreaInset(edge: .bottom) { if bearbeiten { loeschleiste } }
+        .bereichsleiste()
+        // **Nach der Leiste, nicht davor.** Auflagen liegen in der
+        // Reihenfolge, in der sie angehängt werden; davor angehängt schnitt
+        // die Bereichsleiste dem Blatt den unteren Rand ab. Dieselbe
+        // Reihenfolge steht seit `e916847` in den anderen Wurzelansichten.
         .overlay(alignment: .topTrailing) {
             Handlungsblatt(offen: $loeschblatt, titel: loeschtitel, handlungen: [
                 Titelhandlung(symbol: "trash", text: "Entfernen", warnend: true) {
@@ -299,7 +382,6 @@ struct DownloadsView: View {
                 }
             ])
         }
-        .bereichsleiste()
         .bereichsinhalt()
     }
 
@@ -427,6 +509,16 @@ struct DownloadsView: View {
         .accessibilityHidden(true)
     }
 
+    /// **Über der Bereichsleiste, nicht darunter.**
+    ///
+    /// `bereichsleiste()` legt die Leiste als Auflage über die Seite; ein
+    /// `safeAreaInset` steckt dagegen im Inhalt und liegt damit darunter.
+    /// Ohne den Abstand ragte vom Knopf nur ein weisser Streifen über der
+    /// Leiste hervor — am Gerät gesehen, im Bau nicht zu bemerken.
+    ///
+    /// Die Leiste bleibt stehen und wird nicht ausgeblendet: wer beim
+    /// Aufräumen den Bereich wechseln will, soll das können, ohne erst den
+    /// Auswahlmodus zu verlassen.
     private var loeschleiste: some View {
         Button { loeschblatt = true } label: {
             Text(verbatim: loeschtitel)
@@ -434,7 +526,7 @@ struct DownloadsView: View {
         .buttonStyle(HauptknopfStil(dehnt: true))
         .disabled(gewaehlt.isEmpty)
         .padding(.horizontal, Stil.rand(breit: breit))
-        .padding(.bottom, 8)
+        .padding(.bottom, breit ? 8 : Stil.leisteHoehe + 8)
         .background(Stil.grund.ignoresSafeArea())
     }
 }

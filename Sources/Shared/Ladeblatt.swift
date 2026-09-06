@@ -20,9 +20,10 @@ struct Ladeblatt: View {
     let posten: [Downloadposten]
     /// Für den Titel: „Dune: Part Two" oder „Staffel 2".
     let titel: String
-    /// Das Plakat wandert mit auf die Platte — sonst steht die Liste im
-    /// Flugzeug ohne Bilder da.
-    var plakat: URL?
+    /// Kennung → Bildadresse. Wandert mit auf die Platte, sonst steht die
+    /// Liste im Flugzeug ohne Bilder da. Bei einer Serie gehören beide
+    /// hinein: das Plakat der Serie und das Querbild jeder Folge.
+    var bilder: [String: URL] = [:]
     /// Was hinterher gezeigt werden soll, etwa eine Meldung.
     var danach: () -> Void = {}
 
@@ -155,11 +156,7 @@ struct Ladeblatt: View {
 
     private func starten() {
         offen = false
-        if posten.count == 1 {
-            verwaltung.anstossen(posten[0], plakat: plakat)
-        } else {
-            verwaltung.anstossen(posten, plakat: plakat)
-        }
+        verwaltung.anstossen(posten, bilder: bilder)
         danach()
     }
 }

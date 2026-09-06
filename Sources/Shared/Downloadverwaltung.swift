@@ -204,40 +204,52 @@ final class Downloadverwaltung {
     /// zeigen auf den Server, den es dann nicht gibt. Ein Plakat ist ein paar
     /// Dutzend Kilobyte neben achtzehn Gigabyte — die einzige Stelle, an der
     /// sich zusätzliches Laden nicht lohnt zu diskutieren.
-    func anstossen(_ neu: Downloadposten, plakat: URL? = nil) {
-        guard !posten.contains(where: { $0.id == neu.id }) else { return }
-        posten.append(neu)
-        sichern()
-        if let plakat { plakatSichern(fuer: neu, von: plakat) }
-        takt()
+    /// Einen Titel in die Schlange stellen.
+    ///
+    /// `bilder` bildet Kennungen auf Bildadressen ab: die des Titels selbst,
+    /// und bei einer Folge zusätzlich die der Serie. **Beide werden
+    /// gebraucht** — die Liste zeigt für eine Serie das Plakat, die
+    /// Folgenliste darunter das Querbild jeder Folge, so wie überall sonst
+    /// in der App. Nur das Serienplakat zu sichern hiesse, dass in der
+    /// Folgenliste dreimal dasselbe Bild steht.
+    func anstossen(_ neu: Downloadposten, bilder: [String: URL] = [:]) {
+        anstossen([neu], bilder: bilder)
     }
 
     /// Eine ganze Staffel. Der Reihe nach, nicht gleichzeitig — H4 sorgt
     /// dafür von selbst, weil immer nur einer läuft.
-    func anstossen(_ viele: [Downloadposten], plakat: URL? = nil) {
+    func anstossen(_ viele: [Downloadposten], bilder: [String: URL] = [:]) {
         for p in viele where !posten.contains(where: { $0.id == p.id }) {
             posten.append(p)
-            if let plakat { plakatSichern(fuer: p, von: plakat) }
+            if let eigen = bilder[p.id] { bildSichern(p.konto, p.id, von: eigen) }
+            if let sid = p.serienId, let serie = bilder[sid] {
+                bildSichern(p.konto, sid, von: serie)
+            }
         }
         sichern()
         takt()
     }
 
-    // MARK: Das Plakat
+    // MARK: Die Bilder
 
-    private static func plakatweg(_ p: Downloadposten) -> URL {
-        ordner().appendingPathComponent("\(p.konto)-\(p.serienId ?? p.id).jpg")
+    private static func bildweg(_ konto: String, _ kennung: String) -> URL {
+        ordner().appendingPathComponent("\(konto)-\(kennung).jpg")
     }
 
-    /// Das Titelbild auf dem Gerät — oder `nil`, dann nimmt die Zeile die
-    /// Adresse vom Server.
-    func plakat(fuer p: Downloadposten) -> URL? {
-        let weg = Self.plakatweg(p)
+    /// Das Bild auf dem Gerät — oder `nil`, dann nimmt die Zeile die Adresse
+    /// vom Server. **Ohne Netz gibt es nur die Platte**, und genau dann wird
+    /// diese Seite gebraucht.
+    ///
+    /// `alsGruppe` fragt nach dem Plakat der Serie statt nach dem Bild der
+    /// einzelnen Folge.
+    func bild(fuer p: Downloadposten, alsGruppe: Bool = false) -> URL? {
+        let kennung = alsGruppe ? (p.serienId ?? p.id) : p.id
+        let weg = Self.bildweg(p.konto, kennung)
         return FileManager.default.fileExists(atPath: weg.path) ? weg : nil
     }
 
-    private func plakatSichern(fuer p: Downloadposten, von adresse: URL) {
-        let ziel = Self.plakatweg(p)
+    private func bildSichern(_ konto: String, _ kennung: String, von adresse: URL) {
+        let ziel = Self.bildweg(konto, kennung)
         guard !FileManager.default.fileExists(atPath: ziel.path) else { return }
         Task {
             guard let (daten, _) = try? await URLSession.shared.data(from: adresse),
@@ -275,13 +287,13 @@ final class Downloadverwaltung {
         if let p = posten.first(where: { $0.id == id }) {
             try? FileManager.default.removeItem(
                 at: Self.ordner().appendingPathComponent(p.dateiname))
-            // Das Plakat teilen sich alle Folgen einer Serie — es geht erst
-            // mit der letzten. Sonst stuende die vorletzte Folge ohne Bild da.
-            let geschwister = posten.contains {
-                $0.id != id && ($0.serienId ?? $0.id) == (p.serienId ?? p.id)
-            }
-            if !geschwister {
-                try? FileManager.default.removeItem(at: Self.plakatweg(p))
+            // Das eigene Bild geht immer mit.
+            try? FileManager.default.removeItem(at: Self.bildweg(p.konto, p.id))
+            // Das Serienplakat teilen sich alle Folgen — es geht erst mit der
+            // letzten. Sonst stuende die vorletzte Folge ohne Bild da.
+            if let sid = p.serienId,
+               !posten.contains(where: { $0.id != id && $0.serienId == sid }) {
+                try? FileManager.default.removeItem(at: Self.bildweg(p.konto, sid))
             }
         }
         posten.removeAll { $0.id == id }
