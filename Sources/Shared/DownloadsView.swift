@@ -396,12 +396,22 @@ struct DownloadsView: View {
                 // Bruchteile eines Punktes, schaukelt er sich auf, und die
                 // ganze Seite faehrt sichtbar auf und ab.
                 //
-                // Ein Punkt Schwelle bricht den Kreis, ohne etwas zu kosten:
-                // um weniger als einen Punkt darf sich der obere Rand ruhig
-                // irren, sehen kann man es nicht.
+                // Sie darf nur wachsen — die Begruendung steht unten.
                 .onGeometryChange(for: CGFloat.self) { $0.size.height }
                     action: { neu in
-                        if abs(neu - kopfhoehe) >= 4 { kopfhoehe = neu }
+                        // **Sie waechst nur.** Eine Schwelle hat nicht
+                        // gereicht: der Kopf ist mal eine Zeile hoeher (der
+                        // Servername steht erst da, wenn er geholt ist), und
+                        // jede Aenderung geht als oberer Rand in dieselbe
+                        // Flaeche zurueck, die ihn misst. Der Kreis schwingt
+                        // dann zwischen zwei Hoehen
+                        //
+                        // Nur nach oben kann er nicht schwingen: ist der
+                        // groesste Stand einmal erreicht, aendert sich nichts
+                        // mehr. Ein Rand, der um eine Zeile zu gross ist,
+                        // waehrend der Servername noch fehlt, faellt niemandem
+                        // auf; ein Kopf, der ueber den Postern liegt, schon.
+                        if neu > kopfhoehe { kopfhoehe = neu }
                     }
 
             if verwaltung.posten.isEmpty {

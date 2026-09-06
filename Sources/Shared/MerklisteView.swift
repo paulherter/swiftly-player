@@ -96,13 +96,22 @@ struct MerklisteView: View {
                 // Bruchteile eines Punktes, schaukelt er sich auf, und die
                 // ganze Seite faehrt sichtbar auf und ab.
                 //
-                // **Vier Punkte Schwelle.** Ein Punkt hat nicht gereicht — das
-                // Zittern war groesser. Vier sind immer noch weit unter jeder
-                // echten Aenderung: kommt eine Zeile dazu, sind das sechzehn
-                // Punkte und mehr. Was darunter liegt, ist Rauschen.
+                // Sie darf nur wachsen — die Begruendung steht unten.
                 .onGeometryChange(for: CGFloat.self) { $0.size.height }
                     action: { neu in
-                        if abs(neu - kopfhoehe) >= 4 { kopfhoehe = neu }
+                        // **Sie waechst nur.** Eine Schwelle hat nicht
+                        // gereicht: der Kopf ist mal eine Zeile hoeher (der
+                        // Servername steht erst da, wenn er geholt ist), und
+                        // jede Aenderung geht als oberer Rand in dieselbe
+                        // Flaeche zurueck, die ihn misst. Der Kreis schwingt
+                        // dann zwischen zwei Hoehen
+                        //
+                        // Nur nach oben kann er nicht schwingen: ist der
+                        // groesste Stand einmal erreicht, aendert sich nichts
+                        // mehr. Ein Rand, der um eine Zeile zu gross ist,
+                        // waehrend der Servername noch fehlt, faellt niemandem
+                        // auf; ein Kopf, der ueber den Postern liegt, schon.
+                        if neu > kopfhoehe { kopfhoehe = neu }
                     }
 
             if stand.items.isEmpty, !stand.laedt {
