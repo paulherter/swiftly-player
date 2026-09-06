@@ -303,6 +303,22 @@ struct BibliothekView: View {
         // der neuen weiterzulaufen. Dass ein Abbruch hier kein Ausfall ist,
         // steht in `laden()`.
         .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await laden() }
+        // **Die Bibliotheken koennen nach der Seite eintreffen.**
+        //
+        // `laden()` waehlt sie beim ersten Lauf aus `model.views` — und wenn
+        // die Liste zu dem Zeitpunkt noch leer ist (kalter Start, langsamer
+        // Server), bleibt die Wahl `nil`: der Titel steht ohne Namen da und
+        // die Seite zeigt alle Gattungen gemischt, bis jemand von Hand
+        // umschaltet. Nichts stiess ein zweites Mal an.
+        //
+        // Ueber die Kennungen und nicht ueber die Anzahl: verschwindet eine
+        // Bibliothek und kommt eine neue dazu, bleibt die Anzahl gleich.
+        .onChange(of: auswahl.map(\.id)) { _, _ in
+            guard gewaehlt == nil || !auswahl.contains(where: { $0.id == gewaehlt?.id })
+            else { return }
+            gewaehlt = model.gewaehlteBibliothek(art: art)
+            Task { await laden() }
+        }
     }
 
     private func inhalt(nutzbar: CGFloat) -> some View {

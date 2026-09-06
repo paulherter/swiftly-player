@@ -1161,10 +1161,17 @@ private struct Bereichsleiste: ViewModifier {
         content.overlay(alignment: .bottom) {
             if !breit, let wahl {
                 Navileiste(gewaehlt: wahl)
-                    // Der Tastaturbereich muss *hier* ignoriert werden, nicht
-                    // in der Leiste selbst: schrumpfen tut der Stapel
-                    // drumherum, und ein `ignoresSafeArea` im Kind hält den
-                    // Elternteil nicht davon ab.
+                    // **Der volle Rahmen davor ist nicht schmückend.** Die
+                    // Auflage misst sich an ihrem Gastgeber, und der ist bei
+                    // offener Tastatur bereits geschrumpft — die Leiste stand
+                    // dann mitten im Bild, über der Tastatur. Erst der volle
+                    // Rahmen plus das Ignorieren des Tastaturbereichs hängt
+                    // sie wieder an den **echten** unteren Rand.
+                    //
+                    // Auf der Suchseite ist genau das gewollt: die Tastatur
+                    // legt sich darüber, die Leiste bleibt darunter stehen
+                    // und ist wieder da, sobald das Feld schliesst.
+                    .frame(maxHeight: .infinity, alignment: .bottom)
                     .ignoresSafeArea(.keyboard, edges: .bottom)
             }
         }
@@ -2114,14 +2121,20 @@ struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
             // **Das Auffahren gehört hierher, nicht an die Aufrufstellen.**
             //
             // Es hing an einem `withAnimation` bei jedem Öffner — fünf
-            // Stellen, und beim Umbau auf Apples `sheet` fielen alle fünf
-            // weg, weil ein Systemblatt sich selbst animiert. Danach war das
-            // Blatt beim Öffnen „einfach zack da" und fuhr nur noch hinaus.
+            // Stellen, und beim Umbau auf Apples `sheet` fielen alle fünf weg,
+            // weil ein Systemblatt sich selbst animiert. Danach war das Blatt
+            // beim Öffnen „einfach zack da" und fuhr nur noch hinaus.
             //
-            // **Beim Schliessen bewusst `nil`:** dann gilt die Feder, die
-            // `schliessen(mit:)` mitbringt, samt dem Schwung des Fingers.
-            // Eine Animation an dieser Stelle würde sie überschreiben.
-            .animation(offen ? Stil.blattbewegung : nil, value: offen)
+            // **In beide Richtungen.** Beim Schliessen stand hier `nil`, damit
+            // die Feder aus `schliessen(mit:)` samt Fingerschwung gilt. Das
+            // ging nur beim Ziehen auf: wer „Abbrechen" drückt, daneben tippt
+            // oder etwas auswaehlt, setzt `offen` ohne jede Animation — und
+            // dann war das Blatt schlagartig weg.
+            //
+            // Der Preis ist klein und die Sicherheit gross: der Fingerschwung
+            // wirkt weiter dort, wo man ihn spuert — beim Zurueckfedern, das
+            // ueber `zug` laeuft und diese Animation gar nicht beruehrt.
+            .animation(Stil.blattbewegung, value: offen)
             .gesture(ziehen)
         }
         // Der Stapel muss den Schirm fuellen; sonst bemisst sich die Auflage
