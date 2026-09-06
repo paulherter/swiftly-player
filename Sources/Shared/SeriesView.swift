@@ -119,12 +119,21 @@ struct SeriesDetailView: View {
             .coordinateSpace(.named("blatt"))
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
                 versatz = neu
+                // **Scrollen schliesst die Staffelliste, Tippen nicht mehr.**
+                //
+                // Hier hing eine `simultaneousGesture` auf der ganzen
+                // Scrollflaeche, die beim Tippen schloss. „Simultan" heisst
+                // woertlich, was es sagt: tippte man die Pille selbst an,
+                // feuerten **beide** — die Geste schloss, und der Knopf
+                // schaltete daraufhin von zu auf offen. Es sah aus, als ginge
+                // das Fenster zu und sofort wieder auf, und genau so hat
+                //
+                // Scrollen ist die Bewegung, bei der eine aufgeklappte Liste
+                // wirklich stoert — und sie kann mit keinem Knopf um dieselbe
+                // Beruehrung streiten.
+                if staffellisteOffen { staffellisteOffen = false }
             }
             .ignoresSafeArea(edges: .top)
-            // Tippen daneben schließt die Staffelliste.
-            .simultaneousGesture(TapGesture().onEnded {
-                if staffellisteOffen { staffellisteOffen = false }
-            })
 
             // Derselbe Kopf wie auf der Filmseite. Hier stand noch der alte
             // Verlauf mit freistehendem Pfeil — deshalb blendete auf der

@@ -1568,16 +1568,24 @@ struct Kopfverlauf: View {
     ///
     /// Wer hier erhöht, muss die Zahl gegen `contentMargins(.top:)` der
     /// Startseite prüfen — die ist die knappste im Projekt.
-    var zugabe: CGFloat = 14
+    ///
+    /// **Von 14 auf 17.** „Wirklich absolut minimal tiefer." Der Ausklang
+    /// reicht damit knapp an die erste Reihe der Startseite heran; sichtbar
+    /// wird davon nichts, weil er dort schon unter acht Prozent liegt.
+    var zugabe: CGFloat = 17
 
+    /// **Alle Stufen um ein Fünftel angehoben** (06.09.2026), damit die
+    /// Wortmarke auf hellen Plakaten besser steht. Oben bei 0,98 gekappt
+    /// statt 1,10: eine ganz deckende Kante wäre keine Verstärkung mehr,
+    /// sondern ein Deckel.
     var body: some View {
         LinearGradient(stops: [
-            .init(color: Stil.grund.opacity(0.92), location: 0),
-            .init(color: Stil.grund.opacity(0.90), location: 0.40),
-            .init(color: Stil.grund.opacity(0.74), location: 0.60),
-            .init(color: Stil.grund.opacity(0.46), location: 0.74),
-            .init(color: Stil.grund.opacity(0.22), location: 0.86),
-            .init(color: Stil.grund.opacity(0.07), location: 0.94),
+            .init(color: Stil.grund.opacity(0.98), location: 0),
+            .init(color: Stil.grund.opacity(0.96), location: 0.40),
+            .init(color: Stil.grund.opacity(0.89), location: 0.60),
+            .init(color: Stil.grund.opacity(0.55), location: 0.74),
+            .init(color: Stil.grund.opacity(0.26), location: 0.86),
+            .init(color: Stil.grund.opacity(0.08), location: 0.94),
             .init(color: Stil.grund.opacity(0),    location: 1),
         ], startPoint: .top, endPoint: .bottom)
         .padding(.bottom, -zugabe)
@@ -1682,17 +1690,25 @@ struct Klapptext: View {
 
 /// Weicher Auslauf am unteren Rand des Heldenbilds.
 ///
-/// Vorher stiess das Bild hart auf die dunkle Fläche darunter. Der Verlauf
-/// läuft über die letzten 130 Punkt in den Grundton aus — bewusst flach, ein
-/// starker Verlauf frisst das Bild auf.
+/// Vorher stiess das Bild hart auf die dunkle Fläche darunter.
+///
+/// **Von 130 auf 190 Punkt** (06.09.2026). Titel und Nebenzeile stehen rund 70
+/// Punkt über der Unterkante; bei 130 lag dort erst gut die Hälfte an Deckung,
+/// und auf hellen Plakaten stand der Titel damit fast blank auf dem Bild.
+///
+/// Höher **und** flacher: der Anfang bleibt weit unter dem alten Wert, damit
+/// der Verlauf nicht das halbe Bild auffrisst — er beginnt nur früher und
+/// erreicht die Textzeile mit mehr Deckung.
 struct Heldauslauf: View {
     var body: some View {
         LinearGradient(stops: [
             .init(color: Stil.grund.opacity(0),    location: 0),
-            .init(color: Stil.grund.opacity(0.55), location: 0.45),
+            .init(color: Stil.grund.opacity(0.28), location: 0.32),
+            .init(color: Stil.grund.opacity(0.58), location: 0.56),
+            .init(color: Stil.grund.opacity(0.85), location: 0.78),
             .init(color: Stil.grund,               location: 1),
         ], startPoint: .top, endPoint: .bottom)
-        .frame(height: 130)
+        .frame(height: 190)
         .allowsHitTesting(false)
     }
 }
