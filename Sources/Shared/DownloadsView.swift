@@ -357,6 +357,12 @@ struct DownloadsView: View {
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.bottom, 24)
+                // **Lesemaß, nicht Fensterbreite.** Breit läuft eine Zeile
+                // aus Bild, Titel und einem Ring sonst über die ganze Seite
+                // und hat in der Mitte nichts zu sagen. Dieselbe Grenze wie
+                // auf dem Mac.
+                .frame(maxWidth: breit ? 900 : .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
             .contentMargins(.top, kopfhoehe + 12, for: .scrollContent)
@@ -454,38 +460,46 @@ struct DownloadsView: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: 0)
-                    if !breit {
+                    // **Bearbeiten gibt es breit wie schmal.**
+                    //
+                    // Schmal steht es in der Zeichengruppe oben rechts — an
+                    // der Stelle, an der auf der Startseite das Angebot
+                    // „hier weiterschauen" steht, links vom Paar aus
+                    // Merkliste und Profil. Breit gibt es diese Gruppe nicht,
+                    // die wohnt in der Seitenleiste; dann steht es allein.
+                    // Es nur schmal zu zeigen hiesse, dass man auf dem iPad
+                    // nichts entfernen kann.
+                    if breit {
+                        bearbeitenknopf
+                    } else {
                         Kopfziele(name: model.session?.userName ?? "?",
-                                  bild: model.benutzerbildURL()) {
-                            // **Bearbeiten statt des Übernahmezeichens.** Auf
-                            // dieser Seite ist Entfernen die zweithäufigste
-                            // Handlung; das Zeichen steht an der Stelle, an
-                            // der auf der Startseite das Angebot „hier
-                            // weiterschauen" steht — links vom Paar aus
-                            // Merkliste und Profil.
-                            if !verwaltung.posten.isEmpty {
-                                Button {
-                                    withAnimation(Stil.einblenden) {
-                                        bearbeiten.toggle()
-                                        if !bearbeiten { gewaehlt = [] }
-                                    }
-                                } label: {
-                                    Image(systemName: bearbeiten ? "xmark" : "pencil")
-                                        .font(.system(size: 18, weight: .medium))
-                                        .foregroundStyle(bearbeiten ? Stil.akzent : Stil.schrift)
-                                        .frame(width: 44, height: 44)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(Text("Bearbeiten"))
-                            }
-                        }
+                                  bild: model.benutzerbildURL()) { bearbeitenknopf }
                     }
                 }
                 .foregroundStyle(Stil.schrift)
 
                 if !verwaltung.posten.isEmpty { speicherbalken }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var bearbeitenknopf: some View {
+        if !verwaltung.posten.isEmpty {
+            Button {
+                withAnimation(Stil.einblenden) {
+                    bearbeiten.toggle()
+                    if !bearbeiten { gewaehlt = [] }
+                }
+            } label: {
+                Image(systemName: bearbeiten ? "xmark" : "pencil")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(bearbeiten ? Stil.akzent : Stil.schrift)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Bearbeiten"))
         }
     }
 
