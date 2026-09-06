@@ -190,16 +190,23 @@ struct ChipStil: ButtonStyle {
                 .frame(height: Stil.chipHoehe)
                 .background(flaeche, in: Capsule())
                 .overlay {
-                    Capsule().strokeBorder(an ? Stil.akzent : Stil.rand, lineWidth: 2)
+                    Capsule().strokeBorder(an ? Stil.schrift : Stil.rand, lineWidth: 2)
                 }
                 .scaleEffect(fokus ? 1.06 : 1)
                 .animation(Stil.fokusAnimation, value: fokus)
         }
 
-        /// Auswahl ist Akzent, Fokus ist die ruhige Fläche — und beides
-        /// zusammen bleibt Akzent, weil die Auswahl die stärkere Aussage ist.
+        /// **Auswahl ist Weiss, nicht Akzent** — wie auf Mac und iPad.
+        ///
+        /// Hier war sie der Akzent, und damit sah dieselbe Chipreihe auf dem
+        /// Fernseher anders aus als ueberall sonst.
+        ///
+        /// Es passt auch besser zur Regel: der Akzent traegt Zustand, und
+        /// „dieser Filter gilt gerade" ist eine Auswahl, keine Auszeichnung.
+        /// Fokus bleibt die ruhige Flaeche, und beides zusammen bleibt Weiss,
+        /// weil die Auswahl die staerkere Aussage ist.
         private var flaeche: Color {
-            if an { return Stil.akzent }
+            if an { return Stil.schrift }
             return fokus ? Stil.fokusflaeche : Stil.erhoeht
         }
     }

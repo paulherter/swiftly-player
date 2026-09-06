@@ -381,8 +381,21 @@ struct DownloadsView: View {
             .animation(Stil.einblenden, value: verwaltung.posten.count)
 
             kopf
+                // **Nur bei einer echten Aenderung uebernehmen.**
+                //
+                // Die gemessene Kopfhoehe geht als `contentMargins(.top,)` in
+                // dieselbe Scrollflaeche zurueck, die sie misst — das ist ein
+                // Kreis. Solange die Hoehe steht, ruht er; wackelt sie um
+                // Bruchteile eines Punktes, schaukelt er sich auf, und die
+                // ganze Seite faehrt sichtbar auf und ab.
+                //
+                // Ein Punkt Schwelle bricht den Kreis, ohne etwas zu kosten:
+                // um weniger als einen Punkt darf sich der obere Rand ruhig
+                // irren, sehen kann man es nicht.
                 .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                    action: { kopfhoehe = $0 }
+                    action: { neu in
+                        if abs(neu - kopfhoehe) >= 1 { kopfhoehe = neu }
+                    }
 
             if verwaltung.posten.isEmpty {
                 // **Kein Knopf „Was kann ich laden".** Netflix hat einen, weil

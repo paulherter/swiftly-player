@@ -97,13 +97,10 @@ struct MerklisteView: View {
                 .buttonStyle(ChipStil(an: gattung == fall))
             }
 
-            // Senkrechter Strich statt Abstand: zwei Chipsorten nebeneinander
-            // sehen sonst aus wie eine Reihe, und man sieht nicht, welche
-            // Frage welche ist.
-            Rectangle()
-                .fill(Stil.rand)
-                .frame(width: 2, height: Stil.chipHoehe * 0.6)
-
+            // Der Strich, der hier stand, trennte die Gattung von einer
+            // zweiten Chipreihe. Die ist zur Tafel geworden und steht rechts
+            // — jetzt trennt der Abstand, und ein Strich mitten im Nichts
+            // bliebe stehen.
             Spacer(minLength: 40)
 
             if stand.gesamt > 0 {

@@ -52,8 +52,21 @@ struct HauptView: View {
 
     @State private var bereich: Bereich = .start
     @State private var besucht: Set<Bereich> = [.start]
-    @State private var pfade = [NavigationPath(), NavigationPath(),
-                                NavigationPath(), NavigationPath()]
+    /// **Einer je Bereich — abgeleitet, nicht abgezaehlt.**
+    ///
+    /// Hier standen vier feste Eintraege. Seit die Merkliste dazugekommen
+    /// ist, gibt es fuenf Bereiche, und `suche` traegt den Rohwert 4: jeder
+    /// Zugriff auf `pfade[bereich.rawValue]` lief ins Leere. Die App stuerzte
+    /// beim Klick auf „Suche" ab — `Array._checkSubscript`, sauber im Bericht.
+    ///
+    /// Auf dem iPhone steht daneben der Kommentar, `allCases.count` sei
+    /// verlockend, aber gefaehrlich: es wachse still mit, ohne dass jemand
+    /// die Stelle ansieht. Das stimmt — und wiegt trotzdem leichter als ein
+    /// Absturz. Still mitwachsen heisst hier: es funktioniert. Nicht
+    /// mitwachsen heisst: es bricht, und zwar erst beim Antippen des
+    /// letzten Reiters.
+    @State private var pfade = Array(repeating: NavigationPath(),
+                                     count: Bereich.allCases.count)
 
     /// **Der Player gehoert hierher, nicht in die Seite.**
     ///

@@ -14,13 +14,17 @@ struct HauptView: View {
     @State private var besucht: Set<Bereich> = [.start]
     /// Wohin der Wisch nach rechts aus der Suche zurueckfuehrt.
     @State private var vorigerBereich: Bereich = .start
-    /// **Einer je Bereich, nach `rawValue`.** Fuenf seit den Downloads —
-    /// `Bereich.allCases.count` waere hier verlockend, ist aber ein
-    /// `@State`-Anfangswert und wuerde bei jeder neuen Bereichsart still
-    /// mitwachsen, ohne dass jemand die Stelle ansieht.
-    @State private var pfade = [NavigationPath(), NavigationPath(),
-                                NavigationPath(), NavigationPath(),
-                                NavigationPath(), NavigationPath()]
+    /// **Einer je Bereich — abgeleitet, nicht abgezaehlt.**
+    ///
+    /// Hier standen sie einzeln, mit der Begruendung, `allCases.count` wuerde
+    /// still mitwachsen, ohne dass jemand die Stelle ansieht. Am 06.09.2026
+    /// hat genau diese Vorsicht auf dem Fernseher einen Absturz gekostet:
+    /// dort blieben es vier Eintraege, als die Merkliste den fuenften Bereich
+    /// brachte, und der Klick auf „Suche" lief ins Leere. Still mitwachsen
+    /// heisst: es funktioniert. Nicht mitwachsen heisst: es bricht, und zwar
+    /// erst beim letzten Reiter.
+    @State private var pfade = Array(repeating: NavigationPath(),
+                                     count: Bereich.allCases.count)
     /// Der Profilzweig ist offen. Nur für die Seitenleiste: dort trägt dann
     /// das Profilzeichen die Auswahl statt eines der vier Bereiche.
     ///
@@ -446,8 +450,21 @@ struct BibliothekView: View {
             .bereichsinhalt()
 
             kopf
+                // **Nur bei einer echten Aenderung uebernehmen.**
+                //
+                // Die gemessene Kopfhoehe geht als `contentMargins(.top,)` in
+                // dieselbe Scrollflaeche zurueck, die sie misst — das ist ein
+                // Kreis. Solange die Hoehe steht, ruht er; wackelt sie um
+                // Bruchteile eines Punktes, schaukelt er sich auf, und die
+                // ganze Seite faehrt sichtbar auf und ab.
+                //
+                // Ein Punkt Schwelle bricht den Kreis, ohne etwas zu kosten:
+                // um weniger als einen Punkt darf sich der obere Rand ruhig
+                // irren, sehen kann man es nicht.
                 .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                    action: { kopfhoehe = $0 }
+                    action: { neu in
+                        if abs(neu - kopfhoehe) >= 1 { kopfhoehe = neu }
+                    }
 
             if stand.gestoert {
                 // Derselbe Text wie auf der Startseite, samt Serveradresse.

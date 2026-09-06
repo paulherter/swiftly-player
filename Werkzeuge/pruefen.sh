@@ -70,6 +70,10 @@ for zweig in ios ipad mac tvos linux windows; do
 done
 
 echo
+echo "── Katalog ────────────────────────────────────────────"
+python3 "$(dirname "$0")/katalogpruefen.py" || fehler=1
+echo
+
 echo "── Offene Spalten in der Aenderungsliste ──────────────"
 liste="../Swiftly-Notizen/AppStore/Aenderungen.md"
 if [ -f "$liste" ]; then
