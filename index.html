@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swiftly for Jellyfin — Jellyfin client for iPhone, iPad, Apple TV, Mac, Linux and Windows</title>
+<meta name="description" content="Swiftly for Jellyfin is a native Jellyfin client for iPhone, iPad, Apple TV, Mac, Linux and Windows. It never transcodes: every file plays as Direct Play or Direct Stream. Picture in Picture, several accounts on one server, and handing a running film from one device to the next.">
+<meta name="theme-color" content="#0B0B0D">
+<link rel="canonical" href="https://paulherter.github.io/swiftly-for-jellyfin/">
+<meta property="og:site_name" content="Swiftly for Jellyfin">
+<meta property="og:title" content="Swiftly for Jellyfin — a Jellyfin client that never transcodes">
+<meta property="og:description" content="Native on iPhone, iPad, Apple TV, Mac, Linux and Windows. Picture in Picture, Direct Play, several accounts on one server.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://paulherter.github.io/swiftly-for-jellyfin/">
+<meta property="og:image" content="https://paulherter.github.io/swiftly-for-jellyfin/bilder/startseite.png">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Swiftly for Jellyfin",
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "iOS, iPadOS, tvOS, macOS, Linux, Windows",
+  "description": "A native Jellyfin client that never transcodes \u2014 every file plays as Direct Play or Direct Stream.",
+  "url": "https://paulherter.github.io/swiftly-for-jellyfin/",
+  "downloadUrl": "https://github.com/paulherter/swiftly-for-jellyfin",
+  "license": "https://www.mozilla.org/en-US/MPL/2.0/",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "EUR"},
+  "author": {"@type": "Person", "name": "Paul Herter"}
+}
+</script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Crect width='1024' height='1024' rx='230' fill='%2317181B'/%3E%3Cpath fill='%232FDBC0' d='M440.1,280l285,163.2c38,21.7,51.2,70,29.6,108-7,12.3-17.2,22.5-29.6,29.6l-285,163.2c-37.9,21.8-86.3,8.6-108.1-29.3-6.9-12-10.5-25.6-10.5-39.4v-326.6c0-43.7,35.5-79.2,79.2-79.2,13.8,0,27.4,3.6,39.4,10.5Z'/%3E%3C/svg%3E">
+
+<style>
+/* ------------------------------------------------------------------
+   Farben und Rundungen stammen aus Sources/Shared/Farben.swift und
+   Stil.swift. Wer sie dort aendert, aendert sie hier mit.
+
+   **Ein Verlauf, eine Farbe, eine Stelle.** Der Akzent liegt als
+   Kulisse ueber dem Kopf der Seite und sonst nirgends. Rhythmus machen
+   die Abschnitte ueber ihre Anordnung — links, mittig, Raster —, nicht
+   ueber abwechselnde Farbfelder.
+
+   Die Ausblendkurve stammt aus `Kulissenblende`: abgetastet ueber
+   t*t*(3-2t), damit der Verlauf an keinem Ende einen Knick hat, an dem
+   ein Band entstehen koennte.
+   ------------------------------------------------------------------ */
+:root {
+  color-scheme: dark;
+
+  --grund:    #0B0B0D;
+  --flaeche:  #161619;
+  --erhoeht:  #1E1E22;
+
+  --schrift:      #FFFFFF;
+  --leise:        rgba(255,255,255,.62);
+  --sehr-leise:   rgba(255,255,255,.38);
+  --linie:        rgba(255,255,255,.07);
+  --rand:         rgba(255,255,255,.12);
+
+  --akzent:   #5CD1C2;   /* Stil.akzent */
+  --marke:    #2FDBC0;   /* Marke.markeAkzent — nur Wortmarke und Zeichen */
+  --warnung:  #E8833A;   /* Stil.warnung — nur wenn der Server transkodiert */
+
+  /* Fremde Marken, nur in ihren eigenen Symbolen. */
+  --windows:  #2A8FE0;
+  --tux:      #F5BD0C;
+
+  --ecke:          6px;
+  --ecke-plakette: 3px;
+
+  --schrift-familie: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                     "Segoe UI", Roboto, system-ui, sans-serif;
+  --schrift-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo,
+                  "Cascadia Mono", monospace;
+
+  --breite: 1060px;
+  --rand-aussen: 20px;
+  --abschnitt: 60px;
+
+  --auslauf: linear-gradient(to bottom,
+      rgba(255,255,255,1.000) 0%,
+      rgba(255,255,255,0.985) 7.1%,
+      rgba(255,255,255,0.945) 14.3%,
+      rgba(255,255,255,0.882) 21.4%,
+      rgba(255,255,255,0.802) 28.6%,
+      rgba(255,255,255,0.708) 35.7%,
+      rgba(255,255,255,0.606) 42.9%,
+      rgba(255,255,255,0.500) 50%,
+      rgba(255,255,255,0.394) 57.1%,
+      rgba(255,255,255,0.292) 64.3%,
+      rgba(255,255,255,0.198) 71.4%,
+      rgba(255,255,255,0.118) 78.6%,
+      rgba(255,255,255,0.055) 85.7%,
+      rgba(255,255,255,0.015) 92.9%,
+      rgba(255,255,255,0.000) 100%);
+}
+
+@media (min-width: 700px) {
+  :root { --rand-aussen: 24px; --abschnitt: 88px; }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+body {
+  margin: 0;
+  background: var(--grund);
+  color: var(--schrift);
+  font-family: var(--schrift-familie);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--akzent);
+  outline-offset: 3px;
+  border-radius: var(--ecke);
+}
+
+/* `height: auto` ist der Punkt: die Bilder tragen width/height als
+   Attribut, damit beim Laden nichts springt. Ohne diese Zeile staucht
+   `max-width` nur die Breite und die Hoehe bleibt stehen. */
+img { max-width: 100%; height: auto; display: block; }
+
+.bahn {
+  width: 100%;
+  max-width: var(--breite);
+  margin-inline: auto;
+  padding-inline: var(--rand-aussen);
+}
+
+/* ------------------------------------------------------------ Wortmarke */
+
+.marke-zeile { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; }
+.marke-zeile .wortmarke { height: 24px; width: auto; display: block; }
+.marke-zeile .fuer {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sehr-leise);
+  white-space: nowrap;
+}
+@media (min-width: 700px) {
+  .marke-zeile .wortmarke { height: 26px; }
+  .marke-zeile .fuer { font-size: 14px; }
+}
+
+/* ------------------------------------------------------------------ Kopf
+   Statisch, nicht klebend: so laeuft die Kulisse hinter der Leiste
+   durch, und es braucht weder Weichzeichner noch Schatten, um die
+   Leiste vom Inhalt zu trennen. */
+
+.kopf-inhalt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 20px;
+}
+.kopf-wege {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 14px;
+  color: var(--leise);
+}
+@media (min-width: 700px) { .kopf-wege { gap: 26px; } }
+.kopf-wege a { text-decoration: none; transition: color .15s ease; }
+.kopf-wege a:hover { color: var(--schrift); }
+
+/* --------------------------------------------------------------- Kulisse
+   Der einzige Verlauf der Seite. Eine Farbe, oben, ausgeblendet statt
+   uebermalt. */
+
+.oben { position: relative; overflow: hidden; }
+.kulisse {
+  position: absolute;
+  inset: -180px -10% auto -10%;
+  height: 900px;
+  pointer-events: none;
+  background:
+    radial-gradient(48% 52% at 70% 30%, rgba(92,209,194,.30), transparent 68%),
+    radial-gradient(64% 56% at 24% 12%, rgba(92,209,194,.13), transparent 72%);
+  -webkit-mask-image: var(--auslauf);
+          mask-image: var(--auslauf);
+}
+.oben > .bahn { position: relative; }
+
+/* ---------------------------------------------------------------- Titel */
+
+.held {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 44px;
+  padding-block: 36px 48px;
+}
+@media (min-width: 940px) {
+  .held {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+    align-items: center;
+    gap: 56px;
+    padding-block: 60px 64px;
+  }
+}
+
+.aufschrift {
+  margin: 0 0 20px;
+  font-family: var(--schrift-mono);
+  font-size: 11.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--sehr-leise);
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(32px, 7.4vw, 56px);
+  line-height: 1.06;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.vorspann { margin: 18px 0 0; max-width: 31em; font-size: 16.5px; color: var(--leise); }
+
+/* ---------------------------------------------------------------- Knopf
+   Alle gleich. Die Plattform erkennt man am Symbol, nicht an einer
+   Sonderfarbe — und beim Ueberfahren passiert dasselbe wie in der App:
+   die Flaeche wird eine Spur heller. Kein Schein, kein Schatten. */
+
+.knopfreihe { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 28px; }
+
+.knopf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 11px 18px;
+  border-radius: var(--ecke);
+  border: 1px solid var(--rand);
+  background: var(--flaeche);
+  color: var(--schrift);
+  text-decoration: none;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  transition: background .15s ease, border-color .15s ease;
+}
+.knopf:hover { background: var(--erhoeht); border-color: rgba(255,255,255,.22); }
+.knopf svg { width: 19px; height: 19px; flex: none; }
+
+@media (max-width: 460px) { .knopfreihe > .knopf { flex: 1 1 calc(50% - 5px); } }
+
+.kleingedruckt { margin: 18px 0 0; font-size: 13.5px; color: var(--sehr-leise); }
+.kleingedruckt a { color: var(--leise); }
+
+/* ------------------------------------------------------------- Plakette */
+
+.plakette {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid var(--rand);
+  border-radius: var(--ecke-plakette);
+  font-family: var(--schrift-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  color: var(--leise);
+  white-space: nowrap;
+}
+.plakette.gut     { color: var(--akzent);  border-color: rgba(92,209,194,.4); }
+.plakette.schlimm { color: var(--warnung); border-color: rgba(232,131,58,.4); }
+
+/* ---------------------------------------------------------- Bildschirme */
+
+.geraete { display: flex; justify-content: center; align-items: flex-end; gap: 14px; }
+.geraet {
+  flex: 0 1 164px;
+  padding: 1px;
+  border-radius: 18px;
+  /* Neutral, damit der Akzent der Kulisse gehoert. */
+  background: linear-gradient(165deg, rgba(255,255,255,.24), rgba(255,255,255,.05) 60%, rgba(255,255,255,.10));
+  box-shadow: 0 20px 44px rgba(0,0,0,.45);
+}
+.geraet img { border-radius: 17px; }
+.geraet.mitte { flex-basis: 200px; }
+.geraet.seite { margin-bottom: 24px; }
+@media (max-width: 620px) {
+  .geraet.seite { display: none; }
+  .geraet.mitte { flex-basis: 236px; }
+}
+
+/* -------------------------------------------------------- Abschnitte
+   Die Ueberschrift ist das Wort, nicht ein Satz darueber. */
+
+.abschnitt { padding-block: var(--abschnitt); }
+.abschnitt + .abschnitt { border-top: 1px solid var(--linie); }
+
+/* **Eine Regel, viermal dieselbe.** Die Ueberschrift eines Abschnitts
+   steht mittig, der Inhalt darunter links. Das ist der Unterschied zu
+   dem, was vorher unordentlich wirkte: dort war mal ein Abschnitt ganz
+   mittig und der naechste ganz links, ohne dass eine Regel dahinterstand.
+   Hier sieht jeder Abschnitt gleich aus — die Abwechslung sitzt
+   innerhalb des Abschnitts, nicht zwischen ihnen.
+
+   Der Titel oben ist die Ausnahme. Er ist kein Abschnitt, sondern der
+   Kopf der Seite. */
+h2 {
+  margin: 0;
+  font-size: clamp(24px, 4.2vw, 32px);
+  line-height: 1.14;
+  letter-spacing: -0.026em;
+  font-weight: 700;
+}
+.satz { margin: 12px 0 0; color: var(--leise); max-width: 34em; }
+
+/* **Abwechselnd, und zwar ganz.** Features rechts, Playback links,
+   Platforms rechts, Download links — Ueberschrift und Inhalt eines
+   Abschnitts gehen immer gemeinsam auf dieselbe Seite. Ein Abschnitt,
+   dessen Kopf woanders steht als sein Inhalt, war genau das, was vorher
+   unordentlich wirkte.
+
+   Rechts heisst gespiegelt, nicht nur rechts ausgerichtet: das Symbol
+   sitzt dann rechts vom Text und das Bild rechts von der Liste. Sonst
+   zeigt der Aufbau nach links und nur die Schrift nach rechts. */
+
+.rechts { text-align: right; }
+.rechts .satz { margin-left: auto; margin-right: 0; }
+
+/* Bild nach rechts, Liste nach links. */
+@media (min-width: 900px) {
+  .rechts .merkmale { grid-template-columns: minmax(0, 1fr) 236px; }
+  .rechts .merkmale > .punkte { grid-column: 1; grid-row: 1; }
+  .rechts .merkmale > .bild-im-bild { grid-column: 2; grid-row: 1; }
+}
+
+/* Symbol nach rechts vom Text. */
+.rechts .punkt { grid-template-columns: minmax(0, 1fr) 32px; }
+.rechts .punkt > .zeichen { grid-column: 2; grid-row: 1; justify-self: end; }
+.rechts .punkt > div      { grid-column: 1; grid-row: 1; }
+
+/* Kachelinhalt nach rechts. */
+.rechts .plattform { align-items: flex-end; }
+
+/* ------------------------------------------------------------ Merkmale */
+
+.merkmale {
+  display: grid;
+  gap: 40px;
+  margin-top: 38px;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 900px) {
+  .merkmale { grid-template-columns: 236px minmax(0, 1fr); gap: 60px; margin-top: 40px; }
+}
+.punkte { border-top: 1px solid var(--linie); }
+.punkt {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 15px;
+  align-items: start;
+  padding: 17px 0;
+  border-bottom: 1px solid var(--linie);
+}
+.punkt .zeichen {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: grid; place-items: center;
+  background: rgba(92,209,194,.10);
+  border: 1px solid rgba(92,209,194,.20);
+  color: var(--akzent);
+}
+.punkt .zeichen svg { width: 17px; height: 17px; display: block; }
+.punkt h3 { margin: 0 0 2px; font-size: 15.5px; font-weight: 600; letter-spacing: -0.012em; }
+.punkt p { margin: 0; font-size: 14.5px; color: var(--leise); }
+
+.bild-im-bild {
+  margin: 0;
+  padding: 1px;
+  border-radius: 18px;
+  background: linear-gradient(165deg, rgba(255,255,255,.22), rgba(255,255,255,.04) 60%, rgba(255,255,255,.10));
+  box-shadow: 0 18px 40px rgba(0,0,0,.4);
+  justify-self: center;
+  max-width: 236px;
+}
+.bild-im-bild img { border-radius: 17px; }
+
+/* -------------------------------------------------------- Wiedergabe
+   Eine Kante fuer alles. Der Unterschied zwischen den Abschnitten kommt
+   aus dem Aufbau — Raster, Bild, Blockbreite —, nicht aus der
+   Ausrichtung: zwei Achsen gleichzeitig zu verstellen wirkt unordentlich,
+   nicht abwechslungsreich. Dieser Block ist schmaler als die Bahn, aber
+   er beginnt an derselben Stelle wie alles andere. */
+
+.belege {
+  margin: 32px 0 0;
+  border-top: 1px solid var(--linie);
+}
+.beleg-zeile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 20px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--linie);
+}
+.beleg-zeile .datei {
+  font-family: var(--schrift-mono);
+  font-size: 12.5px;
+  color: var(--leise);
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.beleg-fuss { margin: 18px 0 0; font-size: 13.5px; color: var(--sehr-leise); }
+@media (max-width: 620px) {
+  .beleg-zeile { flex-direction: column; align-items: flex-start; gap: 7px; }
+  .beleg-zeile .datei { white-space: normal; overflow-x: visible; }
+}
+
+/* -------------------------------------------------- Plattformen
+   Raster statt Liste: sechs gleichwertige Kacheln, keine Rangfolge. */
+
+.plattformen {
+  display: grid;
+  gap: 10px;
+  margin-top: 32px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 760px) { .plattformen { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.plattform {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--linie);
+  border-radius: 10px;
+  background: var(--flaeche);
+}
+.plattform > svg { width: 22px; height: 22px; }
+.plattform .name { font-weight: 600; font-size: 15.5px; letter-spacing: -0.012em; }
+.plattform .stand { margin-top: auto; }
+
+/* -------------------------------------------------------------- Holen
+   Wieder mittig, als Schlusspunkt. */
+
+/* Auch der Schluss steht links — siehe oben. */
+
+/* --------------------------------------------------------------- Fuss */
+
+.fuss {
+  border-top: 1px solid var(--linie);
+  padding-block: 32px 46px;
+  font-size: 13.5px;
+  color: var(--sehr-leise);
+}
+.fuss-inhalt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 28px;
+  align-items: center;
+  justify-content: space-between;
+}
+.fuss-wege { display: flex; flex-wrap: wrap; gap: 14px 22px; }
+.fuss a { color: var(--leise); text-decoration: none; }
+.fuss a:hover { color: var(--schrift); text-decoration: underline; }
+.fuss p { margin: 22px 0 0; max-width: 52em; line-height: 1.65; }
+
+.springen { position: absolute; left: -9999px; top: 0; }
+.springen:focus { left: 14px; top: 10px; z-index: 40; }
+</style>
+</head>
+
+<body>
+
+<a class="knopf springen" href="#holen">Skip to downloads</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="wortmarke" viewBox="23 -778 3005 1024">
+      <path fill="#FFFFFF" d="M262.0 8.0 Q224.0 8.0 184.5 -1.0 Q145.0 -10.0 111.0 -30.0 Q77.0 -50.0 54.0 -85.0 Q31.0 -120.0 23.0 -173.0 L183.0 -173.0 Q189.0 -157.0 201.5 -145.5 Q214.0 -134.0 232.5 -128.5 Q251.0 -123.0 270.0 -123.0 Q283.0 -123.0 295.0 -125.0 Q307.0 -127.0 316.5 -132.0 Q326.0 -137.0 331.0 -144.5 Q336.0 -152.0 336.0 -163.0 Q336.0 -177.0 327.5 -184.5 Q319.0 -192.0 304.0 -196.5 Q289.0 -201.0 270.0 -205.0 Q251.0 -210.0 230.5 -213.5 Q210.0 -217.0 191.0 -222.0 Q152.0 -231.0 117.0 -247.5 Q82.0 -264.0 60.0 -294.5 Q38.0 -325.0 38.0 -376.0 Q38.0 -420.0 57.0 -451.0 Q76.0 -482.0 108.0 -501.0 Q140.0 -520.0 179.0 -528.5 Q218.0 -537.0 257.0 -537.0 Q312.0 -537.0 359.0 -519.5 Q406.0 -502.0 437.5 -463.5 Q469.0 -425.0 477.0 -363.0 L324.0 -363.0 Q321.0 -383.0 301.0 -395.0 Q281.0 -407.0 251.0 -407.0 Q240.0 -407.0 229.0 -405.0 Q218.0 -403.0 209.5 -399.0 Q201.0 -395.0 195.5 -388.0 Q190.0 -381.0 190.0 -371.0 Q190.0 -364.0 195.0 -356.5 Q200.0 -349.0 210.0 -343.5 Q220.0 -338.0 235.0 -334.0 Q266.0 -327.0 298.5 -321.0 Q331.0 -315.0 360.0 -308.0 Q392.0 -300.0 422.0 -285.0 Q452.0 -270.0 471.5 -242.0 Q491.0 -214.0 491.0 -166.0 Q491.0 -116.0 470.5 -82.0 Q450.0 -48.0 416.0 -29.0 Q382.0 -10.0 342.0 -1.0 Q302.0 8.0 262.0 8.0 Z"/>
+      <path fill="#FFFFFF" d="M644.0 -0.0 L477.0 -527.0 L650.0 -527.0 L738.0 -186.0 L833.0 -527.0 L1005.0 -527.0 L1100.0 -186.0 L1187.0 -527.0 L1356.0 -527.0 L1189.0 -0.0 L1013.0 -0.0 L916.0 -333.0 L820.0 -0.0 Z"/>
+      <path fill="#FFFFFF" d="M1370.0 -0.0 L1370.0 -527.0 L1529.0 -527.0 L1529.0 -0.0 Z"/>
+      <path fill="#FFFFFF" d="M1638.0 -0.0 L1638.0 -386.0 L1561.0 -386.0 L1561.0 -527.0 L1638.0 -527.0 L1638.0 -572.0 Q1638.0 -633.0 1658.0 -672.0 Q1678.0 -711.0 1720.5 -729.0 Q1763.0 -747.0 1827.0 -747.0 L1923.0 -747.0 L1923.0 -606.0 L1847.0 -606.0 Q1828.0 -606.0 1817.0 -600.5 Q1806.0 -595.0 1801.5 -583.5 Q1797.0 -572.0 1797.0 -555.0 L1797.0 -527.0 L1923.0 -527.0 L1923.0 -386.0 L1797.0 -386.0 L1797.0 -0.0 Z"/>
+      <path fill="#FFFFFF" d="M2187.0 -0.0 Q2119.0 -0.0 2074.5 -15.5 Q2030.0 -31.0 2008.5 -69.5 Q1987.0 -108.0 1987.0 -178.0 L1987.0 -386.0 L1911.0 -386.0 L1911.0 -527.0 L1987.0 -527.0 L1987.0 -663.0 L2146.0 -663.0 L2146.0 -527.0 L2251.0 -527.0 L2251.0 -386.0 L2146.0 -386.0 L2146.0 -201.0 Q2146.0 -175.0 2155.0 -158.5 Q2164.0 -142.0 2201.0 -142.0 L2246.0 -142.0 L2246.0 -0.0 Z"/>
+      <path fill="#FFFFFF" d="M2281.0 -0.0 L2281.0 -708.0 L2440.0 -708.0 L2440.0 -0.0 Z"/>
+      <path fill="#FFFFFF" d="M2739.0 246.0 Q2679.0 246.0 2621.0 230.0 Q2563.0 214.0 2510.0 178.0 L2560.0 50.0 Q2590.0 71.0 2633.5 86.5 Q2677.0 102.0 2731.0 102.0 Q2807.0 102.0 2838.5 68.0 Q2870.0 34.0 2870.0 -32.0 L2870.0 -48.0 Q2853.0 -27.0 2828.5 -15.0 Q2804.0 -3.0 2777.0 2.5 Q2750.0 8.0 2723.0 8.0 Q2647.0 8.0 2601.0 -24.0 Q2555.0 -56.0 2534.0 -112.0 Q2513.0 -168.0 2513.0 -238.0 L2513.0 -527.0 L2671.0 -527.0 L2671.0 -269.0 Q2671.0 -248.0 2674.0 -224.5 Q2677.0 -201.0 2686.0 -181.0 Q2695.0 -161.0 2715.0 -148.5 Q2735.0 -136.0 2769.0 -136.0 Q2814.0 -136.0 2835.0 -158.0 Q2856.0 -180.0 2862.5 -212.5 Q2869.0 -245.0 2869.0 -278.0 L2869.0 -527.0 L3028.0 -527.0 L3028.0 -101.0 Q3028.0 -24.0 3014.5 39.5 Q3001.0 103.0 2969.0 149.0 Q2937.0 195.0 2881.0 220.5 Q2825.0 246.0 2739.0 246.0 Z"/>
+      <path fill="#2FDBC0" d="M1407.4 -748.5 L1508.1 -690.8 A28.0 28.0 0 0 1 1508.1 -642.2 L1407.4 -584.5 A28.0 28.0 0 0 1 1365.5 -608.8 L1365.5 -724.2 A28.0 28.0 0 0 1 1407.4 -748.5 Z"/>
+    </symbol>
+
+    <!-- Tux, auf Knopfgroesse vereinfacht: heller Koerper, weil ein
+         schwarzer Pinguin auf #0B0B0D nicht zu sehen waere. -->
+    <symbol id="tux" viewBox="0 0 24 24">
+      <path fill="#F5BD0C" d="M11.4 19.3c.35 1.2-1.1 2.6-3.2 3.05-1.6.35-2.85.05-3-.6-.15-.7.75-1.6 2-2.35 1.5-.9 3.85-1.35 4.2-.1z"/>
+      <path fill="#F5BD0C" d="M12.6 19.3c-.35 1.2 1.1 2.6 3.2 3.05 1.6.35 2.85.05 3-.6.15-.7-.75-1.6-2-2.35-1.5-.9-3.85-1.35-4.2-.1z"/>
+      <path fill="#EDEDEF" d="M12 1.9c-2.6 0-4.3 2-4.3 4.5 0 .9.1 1.5-.3 2.3-.4.8-1 1.6-1.5 2.5-.8 1.5-1.4 3-1.4 4.7 0 2.5 1.5 4.3 3.4 5.1 1.2.5 2.6.7 4.1.7s2.9-.2 4.1-.7c1.9-.8 3.4-2.6 3.4-5.1 0-1.7-.6-3.2-1.4-4.7-.5-.9-1.1-1.7-1.5-2.5-.4-.8-.3-1.4-.3-2.3 0-2.5-1.7-4.5-4.3-4.5z"/>
+      <path fill="#0B0B0D" d="M12 3.1c1.8 0 3 1.4 3 3.3 0 1.3-.4 2.1-1.1 2.7-.5.5-1.2.7-1.9.7s-1.4-.2-1.9-.7C9.4 8.5 9 7.7 9 6.4c0-1.9 1.2-3.3 3-3.3z"/>
+      <circle fill="#FFFFFF" cx="10.6" cy="6.2" r="1.15"/>
+      <circle fill="#FFFFFF" cx="13.4" cy="6.2" r="1.15"/>
+      <circle fill="#0B0B0D" cx="10.9" cy="6.4" r=".5"/>
+      <circle fill="#0B0B0D" cx="13.1" cy="6.4" r=".5"/>
+      <path fill="#F5BD0C" d="M12 6.9c.85 0 1.55.42 1.55.95s-.7.95-1.55.95-1.55-.42-1.55-.95.7-.95 1.55-.95z"/>
+    </symbol>
+
+    <symbol id="windows" viewBox="0 0 24 24">
+      <path fill="#2A8FE0" d="M3 5.55 10.35 4.5v6.95H3zM11.65 4.31 21 3v8.45h-9.35zM3 12.55h7.35v6.95L3 18.45zM11.65 12.55H21V21l-9.35-1.31z"/>
+    </symbol>
+
+    <symbol id="testflight" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/>
+      <circle cx="12" cy="12" r="3.3" fill="currentColor"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ================================================= Kopf und Titel -->
+<div class="oben">
+  <div class="kulisse" aria-hidden="true"></div>
+
+  <header class="bahn">
+    <div class="kopf-inhalt">
+      <a class="marke-zeile" href="#" aria-label="Swiftly for Jellyfin">
+        <svg class="wortmarke" viewBox="0 0 3005 1024" aria-hidden="true"><use href="#wortmarke"/></svg>
+        <span class="fuer">for Jellyfin</span>
+      </a>
+
+      <nav class="kopf-wege">
+        <a href="https://github.com/paulherter/swiftly-for-jellyfin">GitHub</a>
+        <a href="https://discord.gg/MeGwfv3UwN">Discord</a>
+        <a href="#holen">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="bahn held">
+    <div>
+      <p class="aufschrift">Jellyfin client · Apple · Windows · Linux</p>
+
+      <h1>It opens, it finds your library, it plays.</h1>
+
+      <p class="vorspann">
+        <strong>Swiftly for Jellyfin</strong> is a native Jellyfin client for
+        iPhone, iPad, Apple TV, Mac, Linux and Windows — one app, six platforms,
+        and it never makes your server transcode.
+      </p>
+
+      <div class="knopfreihe">
+        <a class="knopf" href="https://testflight.apple.com/join/MqeP2cnj">
+          <svg aria-hidden="true"><use href="#testflight"/></svg>
+          TestFlight
+        </a>
+        <!-- TODO: App-Store-Knopf, sobald 1.0.0 freigegeben ist. -->
+        <a class="knopf" href="https://github.com/paulherter/swiftly-for-jellyfin/releases/download/v1.0.0/Swiftly-1.0.0-Setup.exe">
+          <svg aria-hidden="true"><use href="#windows"/></svg>
+          Windows
+        </a>
+        <a class="knopf" href="https://github.com/paulherter/swiftly-for-jellyfin#-linux">
+          <svg aria-hidden="true"><use href="#tux"/></svg>
+          Linux
+        </a>
+      </div>
+
+      <p class="kleingedruckt">
+        Free, no account. Needs your own
+        <a href="https://jellyfin.org">Jellyfin</a> server, 10.10 or newer.
+      </p>
+    </div>
+
+    <div class="geraete" aria-label="Swiftly for Jellyfin on iPhone">
+      <div class="geraet seite">
+        <img src="bilder/detail-spritefright.png" alt="A film detail page" width="414" height="900" loading="lazy">
+      </div>
+      <div class="geraet mitte">
+        <img src="bilder/startseite.png" alt="The home screen" width="414" height="900">
+      </div>
+      <div class="geraet seite">
+        <img src="bilder/player-quer.png" alt="The player with its controls visible" width="414" height="900" loading="lazy">
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ========================================================= Merkmale -->
+<section class="bahn abschnitt rechts">
+  <h2>Features</h2>
+
+  <div class="merkmale">
+    <figure class="bild-im-bild">
+      <img src="bilder/bild-im-bild.png" alt="Picture in Picture over the home screen" width="415" height="900" loading="lazy">
+    </figure>
+
+    <div class="punkte">
+      <div class="punkt">
+        <span class="zeichen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="2.2" y="4.5" width="19.6" height="14" rx="2.2"/><rect x="12" y="11.4" width="8.6" height="6" rx="1.4" fill="currentColor" stroke="none"/></svg>
+        </span>
+        <div>
+          <h3>Picture in Picture</h3>
+          <p>Keep watching while you do something else. iPhone and iPad.</p>
+        </div>
+      </div>
+
+      <div class="punkt">
+        <span class="zeichen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3.2 12a8.8 8.8 0 1 0 2.6-6.2"/><path d="M3.2 4.2v4h4"/><path d="M12 8.2V12l2.8 1.9"/></svg>
+        </span>
+        <div>
+          <h3>Resume</h3>
+          <p>Picks up where you stopped, on any device.</p>
+        </div>
+      </div>
+
+      <div class="punkt">
+        <span class="zeichen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 5.5 9 6.5-9 6.5z" fill="currentColor" stroke="none"/><path d="M19 5.5v13"/></svg>
+        </span>
+        <div>
+          <h3>Next episode</h3>
+          <p>Starts on its own. Skip intro and credits where your server knows them.</p>
+        </div>
+      </div>
+
+      <div class="punkt">
+        <span class="zeichen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="2.6" y="4.4" width="18.8" height="12.4" rx="2"/><path d="M8 20.4h8"/><circle cx="9" cy="10.6" r=".95" fill="currentColor" stroke="none"/><circle cx="12" cy="10.6" r=".95" fill="currentColor" stroke="none"/><circle cx="15" cy="10.6" r=".95" fill="currentColor" stroke="none"/></svg>
+        </span>
+        <div>
+          <h3>Quick Connect</h3>
+          <p>A six-digit code in a browser. No password on a remote.</p>
+        </div>
+      </div>
+
+      <div class="punkt">
+        <span class="zeichen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.6 4.4 5.9v5.3c0 4.7 3.2 7.9 7.6 9.2 4.4-1.3 7.6-4.5 7.6-9.2V5.9z"/><path d="m9 11.8 2.1 2.1 4-4"/></svg>
+        </span>
+        <div>
+          <h3>No account, no analytics</h3>
+          <p>Nothing leaves your device but the requests to your own server.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= Wiedergabe -->
+<section class="bahn abschnitt wiedergabe">
+  <h2>Playback</h2>
+  <p class="satz">No transcoding. Your server sends the file, Swiftly plays it.</p>
+
+  <div class="belege">
+    <div class="beleg-zeile">
+      <span class="datei">MKV · HEVC 10-bit · TrueHD 7.1 · PGS subtitles</span>
+      <span class="plakette gut">Direct Play</span>
+    </div>
+    <div class="beleg-zeile">
+      <span class="datei">MKV · H.264 · DTS-HD MA · SRT subtitles</span>
+      <span class="plakette gut">Direct Play</span>
+    </div>
+    <div class="beleg-zeile">
+      <span class="datei">AVI · MPEG-4 Part 2 · MP3</span>
+      <span class="plakette">Direct Stream</span>
+    </div>
+  </div>
+
+  <p class="beleg-fuss">
+    Says <span class="plakette schlimm">Transcoding</span> instead? Tell us.
+  </p>
+</section>
+
+<!-- ====================================================== Plattformen -->
+<section class="bahn abschnitt rechts">
+  <h2>Platforms</h2>
+
+  <div class="plattformen">
+    <div class="plattform">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--sehr-leise)" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M10.5 18.6h3"/></svg>
+      <span class="name">iPhone</span>
+      <span class="stand"><span class="plakette gut">1.0.1 · TestFlight</span></span>
+    </div>
+    <div class="plattform">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--sehr-leise)" aria-hidden="true"><rect x="3.5" y="3" width="17" height="18" rx="2.5"/><path d="M10.5 18.4h3"/></svg>
+      <span class="name">iPad</span>
+      <span class="stand"><span class="plakette gut">1.0.1 · TestFlight</span></span>
+    </div>
+    <div class="plattform">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--sehr-leise)" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      <span class="name">Apple TV</span>
+      <span class="stand"><span class="plakette gut">1.0.1 · TestFlight</span></span>
+    </div>
+    <div class="plattform">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--sehr-leise)" aria-hidden="true"><rect x="2.5" y="4" width="19" height="12.5" rx="2"/><path d="M2 20h20"/></svg>
+      <span class="name">Mac</span>
+      <span class="stand"><span class="plakette gut">1.0.1 · TestFlight</span></span>
+    </div>
+    <div class="plattform">
+      <svg aria-hidden="true"><use href="#windows"/></svg>
+      <span class="name">Windows</span>
+      <span class="stand"><span class="plakette gut">1.0.0 · Download</span></span>
+    </div>
+    <div class="plattform">
+      <svg aria-hidden="true"><use href="#tux"/></svg>
+      <span class="name">Linux</span>
+      <span class="stand"><span class="plakette gut">1.0.0 · Package repo</span></span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ Holen -->
+<section class="bahn abschnitt holen" id="holen">
+  <h2>Download</h2>
+  <p class="satz">One TestFlight link covers iPhone, iPad, Apple TV and Mac. Windows has an installer, Linux a package source.</p>
+
+  <div class="knopfreihe">
+    <a class="knopf" href="https://testflight.apple.com/join/MqeP2cnj">
+      <svg aria-hidden="true"><use href="#testflight"/></svg>
+      TestFlight
+    </a>
+    <!-- TODO: App-Store-Knopf, sobald 1.0.0 freigegeben ist. -->
+    <a class="knopf" href="https://github.com/paulherter/swiftly-for-jellyfin/releases/download/v1.0.0/Swiftly-1.0.0-Setup.exe">
+      <svg aria-hidden="true"><use href="#windows"/></svg>
+      Windows
+    </a>
+    <a class="knopf" href="https://github.com/paulherter/swiftly-for-jellyfin#-linux">
+      <svg aria-hidden="true"><use href="#tux"/></svg>
+      Linux
+    </a>
+  </div>
+
+  <p class="kleingedruckt">
+    Jellyfin 10.10 or newer · iOS 18 · tvOS 18 · macOS 15 · MPL-2.0
+  </p>
+</section>
+
+<footer class="fuss">
+  <div class="bahn">
+    <div class="fuss-inhalt">
+      <a class="marke-zeile" href="#" aria-label="Swiftly for Jellyfin">
+        <svg class="wortmarke" viewBox="0 0 3005 1024" aria-hidden="true"><use href="#wortmarke"/></svg>
+        <span class="fuer">for Jellyfin</span>
+      </a>
+
+      <nav class="fuss-wege">
+        <a href="https://github.com/paulherter/swiftly-for-jellyfin">Source on GitHub</a>
+        <a href="https://discord.gg/MeGwfv3UwN">Discord</a>
+        <a href="https://testflight.apple.com/join/MqeP2cnj">TestFlight</a>
+        <a href="https://jellyfin.org">Jellyfin</a>
+      </nav>
+    </div>
+
+    <p>
+      Swiftly for Jellyfin is not affiliated with the Jellyfin project and
+      hosts no content of its own. The code is licensed under the MPL-2.0; the
+      name, the wordmark and the app icon are not. Playback uses
+      <a href="https://code.videolan.org/videolan/VLCKit">VLCKit</a>
+      (LGPL-2.1-or-later). Windows and the Windows logo are trademarks of
+      Microsoft; Tux is by Larry Ewing. The films in the screenshots are by the
+      <a href="https://studio.blender.org/films/">Blender Foundation</a>,
+      released under Creative Commons Attribution.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
