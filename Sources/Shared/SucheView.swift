@@ -255,7 +255,7 @@ struct SucheView: View {
     /// links — der Hinweis stand dann in der Mitte des Fensters, also neben
     /// dem, worauf er sich bezieht.
     private var leerhinweis: some View {
-        VStack(alignment: breit ? .leading : .center, spacing: 8) {
+        VStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(Stil.schriftSehrLeise)
@@ -263,6 +263,14 @@ struct SucheView: View {
                 .font(Stil.koerper)
                 .foregroundStyle(Stil.schriftLeise)
         }
+        // **Mittig unter dem Feld, nicht mittig im Fenster.**
+        //
+        // Er stand in der Mitte der ganzen Breite, das Feld darueber aber
+        // links in seiner Lesebreite — der Hinweis schwebte also neben dem,
+        // worauf er sich bezieht. Linksbuendig war es dann das andere Extrem:
+        // Zeichen und Satz klebten an der Kante eines leeren Fensters. Jetzt
+        // bekommt er dieselbe Spalte wie das Feld und steht in deren Mitte.
+        .frame(maxWidth: breit ? Stil.lesebreite : .infinity)
         .frame(maxWidth: .infinity, alignment: breit ? .leading : .center)
         .padding(.horizontal, breit ? Stil.rand(breit: true) : 0)
         .padding(.top, 70)
