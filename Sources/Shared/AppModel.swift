@@ -247,6 +247,11 @@ final class AppModel {
             let info = try await client.publicSystemInfo()
             serverName = info.serverName ?? serverName
             serverVersion = info.version ?? serverVersion
+            // **Hier und nicht in einem eigenen Takt.** Das ist der eine
+            // Punkt, an dem nachgewiesen ist, dass der Server antwortet —
+            // und die Prüfung läuft ohnehin nach jedem Verbinden, Anmelden
+            // und Kontowechsel. Ein zweiter Wecker daneben würde raten.
+            await nachmeldungenAbschicken()
             return String(localized: "Erreichbar — Jellyfin \(info.version ?? "?")")
         } catch {
             return error.localizedDescription
@@ -873,14 +878,72 @@ final class AppModel {
     }
 
     func reportStopped(item: Item, plan: PlaybackPlan, seconds: Double) async {
-        guard let client else { return }
+        let ticks = JellyfinClient.ticks(fromSeconds: seconds)
+        guard let client else { nachmelden(item.id, ticks); return }
         do {
-            try await client.reportStopped(itemID: item.id, plan: plan,
-                                           positionTicks: JellyfinClient.ticks(fromSeconds: seconds))
+            try await client.reportStopped(itemID: item.id, plan: plan, positionTicks: ticks)
             Self.log.info("Wiedergabe gemeldet: Ende bei \(Int(seconds)) s")
         } catch {
-            Self.log.error("Ende-Meldung fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+            // **Hier entsteht die Angabe, für die es Downloads gibt.**
+            //
+            // Wer einen Titel im Flugzeug sieht, erzeugt genau eine Auskunft,
+            // die niemand sonst hat: wo er aufgehört hat. Ginge sie hier
+            // verloren, hätte der Server den Stand vom Start des Flugs, und
+            // zu Hause liefe die Folge von vorn los. H8, zweite Hälfte.
+            Self.log.error("Ende-Meldung fehlgeschlagen, wird nachgemeldet: \(error.localizedDescription, privacy: .public)")
+            nachmelden(item.id, ticks)
         }
+    }
+
+    // MARK: H8 — was der Server noch nicht weiss
+
+    private static let nachmeldeschluessel = "nachmeldungen"
+
+    private var nachmeldungen: [Nachmeldung] {
+        get {
+            guard let roh = UserDefaults.standard.data(forKey: Self.nachmeldeschluessel)
+            else { return [] }
+            return (try? JSONDecoder().decode([Nachmeldung].self, from: roh)) ?? []
+        }
+        set {
+            guard let roh = try? JSONEncoder().encode(newValue) else { return }
+            UserDefaults.standard.set(roh, forKey: Self.nachmeldeschluessel)
+        }
+    }
+
+    private func nachmelden(_ itemID: String, _ ticks: Int64) {
+        guard let konto = session?.userID else { return }
+        nachmeldungen = Nachmelderegeln.aufnehmen(
+            Nachmeldung(itemID: itemID, konto: konto, ticks: ticks),
+            in: nachmeldungen)
+    }
+
+    /// Alles Liegengebliebene abschicken. Läuft nach jeder erfolgreichen
+    /// Verbindungsprüfung — also genau dann, wenn der Server nachweislich
+    /// wieder da ist, statt in einem eigenen Takt zu raten.
+    func nachmeldungenAbschicken() async {
+        guard let client, let konto = session?.userID else { return }
+        let offen = Nachmelderegeln.faellig(nachmeldungen, konto: konto)
+        guard !offen.isEmpty else { return }
+        var geschafft: [String] = []
+        for m in offen {
+            // Ein Plan von der Platte reicht: `reportStopped` braucht daraus
+            // nur die Kennungen, und die Sitzung gab es offline ohnehin nicht.
+            let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: "/"), container: nil)
+            do {
+                try await client.reportStopped(itemID: m.itemID, plan: plan,
+                                               positionTicks: m.ticks)
+                geschafft.append(m.id)
+            } catch {
+                // **Abbrechen, nicht weiterprobieren.** Scheitert eine, ist
+                // der Server wieder weg; die übrigen scheiterten auch und
+                // stünden danach als verloren da.
+                break
+            }
+        }
+        guard !geschafft.isEmpty else { return }
+        nachmeldungen = Nachmelderegeln.erledigt(geschafft, in: nachmeldungen)
+        Self.log.info("\(geschafft.count) Stellen nachgemeldet")
     }
 
     /// Auf ein anderes Konto desselben Servers umschalten.

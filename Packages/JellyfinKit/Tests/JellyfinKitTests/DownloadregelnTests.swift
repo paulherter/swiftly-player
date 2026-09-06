@@ -287,3 +287,68 @@ struct DownloadregelnTests {
         #expect(p.dateiname == "u1-a")
     }
 }
+
+@Suite("Nachmeldung")
+struct NachmeldungTests {
+
+    private func m(_ item: String, _ ticks: Int64, _ sek: TimeInterval,
+                   konto: String = "u1") -> Nachmeldung {
+        Nachmeldung(itemID: item, konto: konto, ticks: ticks,
+                    wann: Date(timeIntervalSince1970: 1_000_000 + sek))
+    }
+
+    @Test("Eine Angabe je Titel — die neueste gilt")
+    func neueGewinnt() {
+        var a: [Nachmeldung] = []
+        a = Nachmelderegeln.aufnehmen(m("f1", 100, 10), in: a)
+        a = Nachmelderegeln.aufnehmen(m("f1", 900, 20), in: a)
+        #expect(a.count == 1)
+        #expect(a[0].ticks == 900)
+    }
+
+    @Test("Eine nachtraeglich hereinkommende alte Meldung ueberschreibt nicht")
+    func aeltereVerliert() {
+        var a: [Nachmeldung] = []
+        a = Nachmelderegeln.aufnehmen(m("f1", 900, 20), in: a)
+        a = Nachmelderegeln.aufnehmen(m("f1", 100, 10), in: a)
+        #expect(a[0].ticks == 900)
+    }
+
+    @Test("Zwei Konten teilen sich keinen Stand")
+    func kontenGetrennt() {
+        var a: [Nachmeldung] = []
+        a = Nachmelderegeln.aufnehmen(m("f1", 100, 10, konto: "u1"), in: a)
+        a = Nachmelderegeln.aufnehmen(m("f1", 900, 20, konto: "u2"), in: a)
+        #expect(a.count == 2)
+        #expect(Nachmelderegeln.faellig(a, konto: "u1").map(\.ticks) == [100])
+        #expect(Nachmelderegeln.faellig(a, konto: "u2").map(\.ticks) == [900])
+    }
+
+    @Test("Faellig kommt aelteste zuerst")
+    func reihenfolge() {
+        var a: [Nachmeldung] = []
+        a = Nachmelderegeln.aufnehmen(m("b", 1, 30), in: a)
+        a = Nachmelderegeln.aufnehmen(m("a", 1, 10), in: a)
+        #expect(Nachmelderegeln.faellig(a, konto: "u1").map(\.itemID) == ["a", "b"])
+    }
+
+    @Test("Erledigtes faellt heraus, der Rest bleibt")
+    func erledigt() {
+        var a: [Nachmeldung] = []
+        a = Nachmelderegeln.aufnehmen(m("a", 1, 10), in: a)
+        a = Nachmelderegeln.aufnehmen(m("b", 1, 20), in: a)
+        let rest = Nachmelderegeln.erledigt(["u1/a"], in: a)
+        #expect(rest.map(\.itemID) == ["b"])
+    }
+
+    @Test("Woertliches JSON — das Format traegt ueber die Zeit")
+    func format() throws {
+        let roh = """
+        {"itemID":"abc","konto":"u1","ticks":123456789,"wann":757382400}
+        """
+        let n = try JSONDecoder().decode(Nachmeldung.self, from: Data(roh.utf8))
+        #expect(n.itemID == "abc")
+        #expect(n.ticks == 123_456_789)
+        #expect(n.id == "u1/abc")
+    }
+}
