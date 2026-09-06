@@ -403,17 +403,33 @@ struct SeerrDetailView: View {
     /// Zeile ist der Auftrag.
     private var staffeltafel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(detail?.staffeln ?? []) { st in
-                Button {
-                    guard st.stand.anfragbar else { return }
-                    if gewaehlt.contains(st.nummer) { gewaehlt.remove(st.nummer) }
-                    else { gewaehlt.insert(st.nummer) }
-                } label: {
-                    staffelzeile(st)
+            // **Sieben Staffeln passen nicht auf den Schirm.**
+            //
+            // Die Tafel setzt bei 542 an; sieben Zeilen zu 84 plus die
+            // Auftragszeile sind 673 und enden damit hinter der unteren
+            // Bildkante. Ohne Flaeche zum Schieben war alles ab der fuenften
+            // unerreichbar — samt der Zeile, die anfragt.
+            //
+            // Vier Zeilen hoch, der Rest wird geschoben — der Fokus nimmt die
+            // Flaeche von selbst mit. Die Auftragszeile steht **ausserhalb**
+            // davon und ist damit immer zu sehen.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(detail?.staffeln ?? []) { st in
+                        Button {
+                            guard st.stand.anfragbar else { return }
+                            if gewaehlt.contains(st.nummer) { gewaehlt.remove(st.nummer) }
+                            else { gewaehlt.insert(st.nummer) }
+                        } label: {
+                            staffelzeile(st)
+                        }
+                        .buttonStyle(ZeilenStil())
+                        .focused($ersteZeile, equals: st.nummer)
+                    }
                 }
-                .buttonStyle(ZeilenStil())
-                .focused($ersteZeile, equals: st.nummer)
             }
+            .scrollIndicators(.hidden)
+            .frame(height: tafelhoehe)
 
             Rectangle().fill(Stil.rand).frame(height: 1)
 
@@ -461,8 +477,17 @@ struct SeerrDetailView: View {
                     .foregroundStyle(Stil.schriftSehrLeise)
             }
         }
-        // Was schon dasteht, ist kein Angebot.
-        .foregroundStyle(frei ? Stil.schrift : Stil.schriftSehrLeise)
+        // Was schon dasteht, ist kein Angebot — und was gewaehlt ist, sagt es
+        // nicht nur mit einem kleinen Kaestchen: die ganze Zeile nimmt die
+        // Akzentfarbe an.
+        .foregroundStyle(an ? Stil.akzent : (frei ? Stil.schrift : Stil.schriftSehrLeise))
+    }
+
+    /// Hoechstens vier Zeilen — darunter wird geschoben. Bei weniger
+    /// Staffeln ist die Tafel genau so hoch, wie sie Zeilen hat.
+    private var tafelhoehe: CGFloat {
+        let anzahl = min(detail?.staffeln.count ?? 0, 4)
+        return CGFloat(max(anzahl, 1)) * Stil.zeilenHoehe
     }
 
     /// Kaestchen, Haken, oder der Kringel fuer das, was schon da ist.
