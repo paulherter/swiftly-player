@@ -275,12 +275,11 @@ struct SeriesDetailView: View {
                 if let stand { starte(stand) }
             } label: {
                 HStack(spacing: 8) {
-                    if bereitet {
-                        Lader(groesse: 18, staerke: 2)
-                    } else {
+                        // Kein Ring im Knopf: die Beschriftung sagt es
+                        // ohnehin („Laedt…"), und ein zweites Zeichen daneben
+                        // ist Laerm.
                         Image(systemName: "play.fill").font(.system(size: 15))
-                    }
-                    Text(knopftext)
+                            .opacity(bereitet ? 0.5 : 1)
                 }
             }
             .buttonStyle(HauptknopfStil(dehnt: !breit))
@@ -555,7 +554,6 @@ struct SeasonView: View {
                 }
             }
             .scrollIndicators(.hidden)
-            if laedt { Lader() }
         }
         .navigationTitle(staffel.name)
         #if os(iOS)

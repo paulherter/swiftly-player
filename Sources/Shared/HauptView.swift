@@ -55,10 +55,24 @@ struct HauptView: View {
                         if besucht.contains(b) {
                             stapel(b)
                                 .opacity(bereich == b ? 1 : 0)
+                                // **Der eintretende Bereich kommt eine Spur
+                                // zu klein heran.** 0,97 und 0,22 Sekunden —
+                                // man sieht es nicht, man merkt es. Genau so
+                                // macht es iOS beim Wechsel zwischen Reitern,
+                                // und deshalb fuehlt sich ein Wechsel dort
+                                // weich an statt wie ein Schnitt.
+                                //
+                                // Nur Groesse und Deckkraft, keine Unschaerfe:
+                                // ein `blur` ueber einer ganzen Seite zwingt
+                                // sie in eine eigene Zeichenebene, und das
+                                // kostet bei jedem Wechsel mehr, als es
+                                // aussieht.
+                                .scaleEffect(bereich == b ? 1 : Stil.bereichsmass)
                                 .allowsHitTesting(bereich == b)
                         }
                     }
                 }
+                .animation(Stil.bereichswechsel, value: bereich)
                 // Die Wurzelansichten legen sich die Leiste selbst an —
                 // siehe `bereichsleiste()`. Hier steht nur, wohin ein Tippen
                 // darauf geht.
@@ -327,6 +341,17 @@ struct BibliothekView: View {
             Stil.grund.ignoresSafeArea()
 
             ScrollView {
+                // **Platzhalter statt Ring.** Solange nichts da ist, steht
+                // das Raster schon in seiner Form — die Seite ist dann leer,
+                // nicht am Warten. Ueberblendet wird, sobald die Titel da
+                // sind.
+                if stand.items.isEmpty, stand.laedt {
+                    Rasterplatzhalter(spalten: anzahl)
+                        .padding(.horizontal, Stil.rand(breit: breit))
+                        .padding(.top, 8)
+                        .transition(.opacity)
+                }
+
                 LazyVGrid(columns: spalten(anzahl), alignment: .leading, spacing: 20) {
                     ForEach(stand.items) { item in
                         NavigationLink(value: item) {
@@ -344,14 +369,19 @@ struct BibliothekView: View {
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.top, 8)
+                .opacity(stand.items.isEmpty ? 0 : 1)
 
+                // **Kein Ring beim Nachladen.** Die naechste Reihe kommt
+                // ohnehin von selbst; ein Ring darunter sagt nur, dass
+                // gerade etwas laeuft, und genau das soll man nicht merken.
                 if stand.nochMehrDa {
-                    Lader(groesse: 22, staerke: 2)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 22)
+                    Rasterplatzhalter(spalten: anzahl, reihen: 1)
+                        .padding(.horizontal, Stil.rand(breit: breit))
+                        .padding(.top, 20)
                 }
             }
             .scrollIndicators(.hidden)
+            .animation(Stil.einblenden, value: stand.items.isEmpty)
             // Null im Ruhezustand: `contentOffset` beginnt bei minus dem
             // oberen Rand, den `contentMargins` gesetzt hat.
             .onScrollGeometryChange(for: CGFloat.self) {
@@ -367,9 +397,7 @@ struct BibliothekView: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height }
                     action: { kopfhoehe = $0 }
 
-            if stand.laedt {
-                Lader()
-            } else if stand.gestoert {
+            if stand.gestoert {
                 // Derselbe Text wie auf der Startseite, samt Serveradresse.
                 // Vorher stand hier „Hier ist noch nichts" — dieselbe Ursache,
                 // zwei Diagnosen, und die falsche schickt einen zum Server
@@ -560,7 +588,8 @@ struct StaffelZiel: View {
                                  startStaffelID: frischeStaffelID ?? folge.seasonId,
                                  startStaffelNummer: folge.parentIndexNumber)
             } else {
-                Lader()
+                // Kein Ring: die Seite kommt gleich von selbst.
+                Color.clear
             }
         }
         #if os(iOS)

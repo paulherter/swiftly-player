@@ -67,8 +67,19 @@ struct SucheView: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if begriff.isEmpty {
                             leerhinweis
-                        } else if sucht {
-                            Lader().frame(maxWidth: .infinity).padding(.top, 40)
+                        } else if sucht, treffer.isEmpty, seerrtreffer.isEmpty {
+                            // **Kein Ring.** Solange noch nichts da ist,
+                            // steht das Raster in seiner Form; sind schon
+                            // Treffer da, bleiben die stehen, statt einem
+                            // Ring zu weichen.
+                            Rasterplatzhalter(
+                                spalten: Stil.spalten(
+                                    nutzbar: rahmen.size.width - 2 * Stil.rand(breit: breit),
+                                    breit: breit),
+                                reihen: 2)
+                                .padding(.horizontal, Stil.rand(breit: breit))
+                                .padding(.top, 12)
+                                .transition(.opacity)
                         } else if treffer.isEmpty, seerrtreffer.isEmpty {
                             // **Beide leer, nicht nur die Bibliothek.** Hier
                             // stand `treffer.isEmpty`, und damit gewann dieser

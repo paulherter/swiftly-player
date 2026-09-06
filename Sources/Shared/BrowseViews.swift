@@ -39,9 +39,7 @@ struct ItemListView: View {
                 .scrollIndicators(.hidden)
             }
 
-            if laedt {
-                Lader()
-            } else if items.isEmpty {
+            if !laedt, items.isEmpty {
                 ContentUnavailableView("Nichts gefunden", systemImage: "tray")
             }
         }

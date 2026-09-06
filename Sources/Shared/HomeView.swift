@@ -31,9 +31,8 @@ struct HomeView: View {
                 .bereichsleiste()
             kopf
 
-            if !stand.geladen || bereitet {
-                Lader()
-            } else if stand.weiterschauen.isEmpty, stand.naechsteFolge.isEmpty, stand.zuletzt.isEmpty {
+            if stand.geladen, stand.weiterschauen.isEmpty,
+               stand.naechsteFolge.isEmpty, stand.zuletzt.isEmpty {
                 nichtsDa
             }
 
@@ -201,6 +200,14 @@ struct HomeView: View {
     private var inhalt: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: Stil.reihenAbstand) {
+                // **Die Reihen stehen schon, bevor sie Inhalt haben.** Statt
+                // eines Rings mitten auf der Seite: zwei Reihen in ihrer
+                // Form, die überblenden, sobald die Titel da sind. Man sieht
+                // sofort, was für eine Seite das wird.
+                if !stand.geladen {
+                    Reihenplatzhalter(quer: true)
+                    Reihenplatzhalter()
+                }
                 if !stand.weiterschauen.isEmpty {
                     Reihe(model: model, titel: "Weiterschauen",
                           items: stand.weiterschauen, quer: true, direkt: starte,
@@ -235,6 +242,7 @@ struct HomeView: View {
             }
             .padding(.top, 8)
         }
+        .animation(Stil.einblenden, value: stand.geladen)
         .scrollIndicators(.hidden)
         // Oben unter dem unscharfen Kopf durch, unten über der Leiste enden.
         //

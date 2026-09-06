@@ -42,7 +42,12 @@ struct QuickConnectAnmeldung: View {
                             .frame(maxWidth: .infinity)
                             .padding(.top, 40)
                     } else {
-                        Lader().frame(maxWidth: .infinity).padding(.top, 40)
+                        // Der Code kommt gleich; solange steht seine Form da.
+                        Ladefeld(ecke: Stil.eckeFeld)
+                            .frame(height: 60)
+                            .frame(maxWidth: 260)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 40)
                     }
 
                     anleitung

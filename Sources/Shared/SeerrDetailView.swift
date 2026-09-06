@@ -193,12 +193,10 @@ struct SeerrDetailView: View {
             } else if stand.anfragbar {
                 Button(action: gedrueckt) {
                     HStack(spacing: 8) {
-                        if laeuft {
-                            Lader(groesse: 18, staerke: 2)
-                        } else {
-                            Image(systemName: bestaetigt ? "checkmark" : "plus")
-                                .font(.system(size: 15, weight: .semibold))
-                        }
+                        // Kein Ring: der Text sagt „Wird angefragt…".
+                        Image(systemName: bestaetigt ? "checkmark" : "plus")
+                            .font(.system(size: 15, weight: .semibold))
+                            .opacity(laeuft ? 0.5 : 1)
                         Text(knopftext)
                     }
                 }

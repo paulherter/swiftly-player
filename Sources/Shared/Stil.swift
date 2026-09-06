@@ -9,7 +9,27 @@ import SwiftUI
 /// undurchsichtig, damit das Bildmaterial die einzige Farbe im Raum ist.
 extension Stil {
 
-    /// Wie ein Blatt von unten hereinfährt.
+    /// Wie ein Bereich wechselt: der Inhalt kommt aus einer Spur zu klein
+/// heran und blendet dabei ein.
+///
+/// **Sehr wenig, mit Absicht.** 0,97 und 0,22 Sekunden — man sieht es nicht,
+/// man merkt es. Genau so macht es iOS beim Wechsel zwischen Reitern, und
+/// genau deshalb fühlt sich ein Wechsel dort weich an statt wie ein Schnitt.
+static let bereichswechsel: Animation = .easeOut(duration: 0.22)
+/// Wie stark der eintretende Bereich zusammengezogen anfängt.
+static let bereichsmass: CGFloat = 0.97
+
+/// Wie Inhalt erscheint, wenn er vom Server angekommen ist.
+///
+/// **Der Ladering ist aus der Oberfläche verschwunden.** Er stand auf jeder
+/// Seite, die etwas holt, und ein drehender Ring sagt nur „warte" — er zeigt
+/// weder, was kommt, noch wie viel. An seiner Stelle stehen jetzt Platzhalter
+/// in der Form des kommenden Inhalts, und wenn er da ist, wird überblendet.
+static let einblenden: Animation = .easeInOut(duration: 0.28)
+
+/// Wie ein Blatt von unten hereinfährt.
+
+/// Wie ein Blatt von unten hereinfährt.
     ///
     /// **Auf Apples Blatt gelegt, nicht geraten.** Schnell heran, kein
     /// Nachschwingen — dieselbe Kennlinie, die `.sheet` zeigt. Sie steht
@@ -448,10 +468,30 @@ struct Bild<Platzhalter: View>: View {
     var body: some View {
         rahmen
             .overlay {
-                AsyncImage(url: url) { phase in
-                    if case let .success(bild) = phase {
+                // **Waehrend des Ladens steht kein Zeichen da.**
+                //
+                // Hier hiess jede Lage ausser `.success` „Platzhalter", und
+                // der Platzhalter der Aufrufer ist das Filmsymbol — die
+                // Auskunft „zu diesem Titel gibt es kein Bild". Waehrend des
+                // Abrufs ist das schlicht falsch, und man sah es: bei jedem
+                // Wechsel blitzte einen Lidschlag lang das Ersatzbild auf und
+                // wurde dann vom echten ueberdeckt.
+                //
+                // `.empty` heisst „laeuft noch" — dort steht die pulsierende
+                // Flaeche. Nur wenn gar keine Adresse da ist, ist `.empty`
+                // endgueltig, und dann tritt das Zeichen ein.
+                //
+                // Die `transaction` blendet den Wechsel der Lagen weich; ohne
+                // sie schaltet `AsyncImage` hart um.
+                AsyncImage(url: url,
+                           transaction: Transaction(animation: Stil.einblenden)) { phase in
+                    switch phase {
+                    case let .success(bild):
                         bild.resizable().aspectRatio(contentMode: .fill)
-                    } else {
+                            .transition(.opacity)
+                    case .empty where url != nil:
+                        Ladefeld(ecke: 0)
+                    default:
                         platzhalter().onAppear {
                             guard case let .failure(f) = phase,
                                   (f as NSError).code == NSURLErrorCancelled,
@@ -2424,13 +2464,16 @@ struct Leerzustand: View {
                     .fill(Stil.flaeche)
                     .overlay { Circle().strokeBorder(Color.white.opacity(0.10)) }
                     .frame(width: 78, height: 78)
-                if laedt {
-                    Lader()
-                } else {
-                    Image(systemName: symbol)
-                        .font(.system(size: 30, weight: .light))
-                        .foregroundStyle(Stil.schriftLeise)
-                }
+                // Kein Ring, auch hier nicht: das Zeichen selbst atmet,
+                // solange es laeuft. Ein Ring haette gesagt „warte", das
+                // Zeichen sagt weiter, worum es geht.
+                Image(systemName: symbol)
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(Stil.schriftLeise)
+                    .opacity(laedt ? 0.45 : 1)
+                    .animation(laedt ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                                     : Stil.einblenden,
+                               value: laedt)
             }
 
             Text(kopfzeile)
@@ -2537,5 +2580,102 @@ struct Eingabefeld: View {
 
     private var platz: Text {
         Text(platzhalter).foregroundColor(Color.white.opacity(0.38))
+    }
+}
+
+
+// MARK: - Platzhalter statt Ladering
+
+/// Eine Fläche in der Form dessen, was gleich kommt.
+///
+/// Heisst `Ladefeld` und nicht `Platzhalter`, weil `Bild` seinen Gattungsnamen
+/// schon so nennt — zwei gleiche Namen in einer Datei liest niemand mehr
+/// auseinander, und der Übersetzer erst recht nicht.
+///
+/// **Warum kein drehender Ring.** Ein Ring sagt „warte"; ein Platzhalter
+/// sagt, *was* kommt und wie viel — die Seite steht schon, sie ist nur noch
+/// leer. Das ist der Unterschied zwischen „die App hängt" und „gleich da",
+/// und er kostet nichts.
+///
+/// Das Pulsieren läuft über `.opacity` mit `repeatForever`: das übernimmt
+/// Core Animation und rechnet auf dem Renderserver weiter, ohne dass SwiftUI
+/// je Bild etwas neu bauen muss. Ein `TimelineView` je Kachel wäre bei
+/// dreissig Platzhaltern dreissig Uhren.
+struct Ladefeld: View {
+    var ecke: CGFloat = Stil.eckeKachel
+    @State private var hell = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: ecke)
+            .fill(Stil.flaeche)
+            .opacity(hell ? 1 : 0.5)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    hell = true
+                }
+            }
+            // Für die Sprachausgabe ist ein Platzhalter nichts — sie soll
+            // „Lädt" hören, und das sagt der Rahmen darum.
+            .accessibilityHidden(true)
+    }
+}
+
+/// Ein Plakat mit zwei Textzeilen darunter, alles als Platzhalter.
+struct Kachelplatzhalter: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Ladefeld()
+                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+            VStack(alignment: .leading, spacing: 5) {
+                Ladefeld(ecke: 3).frame(height: 11)
+                Ladefeld(ecke: 3).frame(width: 42, height: 9)
+            }
+        }
+    }
+}
+
+/// Ein Raster aus Plakat-Platzhaltern, so breit wie das echte.
+struct Rasterplatzhalter: View {
+    let spalten: Int
+    /// Wie viele Reihen. Zwei genügen: mehr sieht niemand, bevor die Antwort
+    /// da ist, und jede weitere ist Arbeit für nichts.
+    var reihen: Int = 3
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Stil.kachelAbstand),
+                                 count: spalten),
+                  alignment: .leading, spacing: 20) {
+            ForEach(0 ..< (spalten * reihen), id: \.self) { _ in
+                Kachelplatzhalter()
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lädt")
+    }
+}
+
+/// Eine Reihe aus Plakat-Platzhaltern, für die Startseite.
+struct Reihenplatzhalter: View {
+    @Environment(\.breit) private var breit
+    var quer = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Ladefeld(ecke: 4)
+                .frame(width: 148, height: 18)
+                .padding(.horizontal, Stil.rand(breit: breit))
+            HStack(spacing: Stil.kachelAbstand) {
+                ForEach(0 ..< 4, id: \.self) { _ in
+                    Ladefeld()
+                        .frame(width: quer ? Stil.reihenQuerBreite(breit: breit)
+                                           : Stil.reihenBreite(breit: breit),
+                               height: quer ? Stil.reihenQuerHoehe(breit: breit)
+                                            : Stil.reihenHoehe(breit: breit))
+                }
+            }
+            .padding(.horizontal, Stil.rand(breit: breit))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lädt")
     }
 }
