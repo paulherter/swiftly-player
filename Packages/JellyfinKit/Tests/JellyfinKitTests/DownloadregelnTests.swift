@@ -352,3 +352,33 @@ struct NachmeldungTests {
         #expect(n.id == "u1/abc")
     }
 }
+
+@Suite("Ein Download wird zum Item")
+struct DownloadpostenItemTests {
+
+    @Test("Eine Folge traegt Serie, Staffel und Nummer mit")
+    func folge() {
+        let p = Downloadposten(id: "e1", konto: "u1", art: .folge, titel: "Der Einstieg",
+                               serie: "Breaking Bad", serienId: "s1",
+                               staffel: 1, folge: 3,
+                               laufzeitTicks: 38_400_000_000, bytes: 1)
+        let i = p.alsItem
+        #expect(i.id == "e1")
+        #expect(i.name == "Der Einstieg")
+        #expect(i.type == "Episode")
+        #expect(i.seriesName == "Breaking Bad")
+        #expect(i.seriesId == "s1")
+        #expect(i.parentIndexNumber == 1)
+        #expect(i.indexNumber == 3)
+        #expect(i.runTimeTicks == 38_400_000_000)
+    }
+
+    @Test("Ein Film ist ein Film und traegt keine Serie")
+    func film() {
+        let p = Downloadposten(id: "m1", konto: "u1", art: .film, titel: "Arrival", bytes: 1)
+        let i = p.alsItem
+        #expect(i.type == "Movie")
+        #expect(i.seriesId == nil)
+        #expect(i.seriesName == nil)
+    }
+}

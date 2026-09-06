@@ -48,21 +48,41 @@ final class Seerrmodell {
     /// Seerr daraufhin ausstellt.
     func verbinden(adresse eingabe: String, benutzer: String, passwort: String) async {
         fehler = nil
-        guard let url = Seerr.adresse(aus: eingabe) else {
+        // **Zwei Adressen, wenn wir das Schema geraten haben.**
+        //
+        // Vorher stand hier eine. Ging das Raten daneben, lief die Anmeldung
+        // in eine Zeitueberschreitung, und man musste `https://` selbst davor
+        // tippen 09.2026 auf dem Mac: „ich muss selber HTTPS eingeben." Der
+        // Medienserver weicht in dem Fall laengst aufs andere Schema aus;
+        // Seerr tut es jetzt auch. Wer es selbst hinschreibt, bekommt keinen
+        // zweiten Versuch: das ist dann eine Entscheidung.
+        let adressen = Seerr.adressen(aus: eingabe)
+        guard !adressen.isEmpty else {
             fehler = String(localized: "Diese Adresse ergibt keine.")
             return
         }
         meldetAn = true
         defer { meldetAn = false }
-        do {
-            let neu = try await SeerrClient.anmelden(an: url, benutzer: benutzer,
-                                                     passwort: passwort)
-            sichern(neu)
-            zugang = neu
-            traegt = true
-        } catch {
-            fehler = error.localizedDescription
+
+        var letzter: Error?
+        for url in adressen {
+            do {
+                let neu = try await SeerrClient.anmelden(an: url, benutzer: benutzer,
+                                                         passwort: passwort)
+                sichern(neu)
+                zugang = neu
+                traegt = true
+                fehler = nil
+                return
+            } catch {
+                letzter = error
+                // **Nur bei einem Netzfehler weiterprobieren.** Sagt Seerr
+                // „Passwort falsch", ist die Adresse richtig und das andere
+                // Schema waere nur eine zweite Zeitueberschreitung obendrauf.
+                guard (error as? URLError) != nil else { break }
+            }
         }
+        fehler = letzter?.localizedDescription
     }
 
     /// Trennen. Nur unsere Seite — bei Seerr selbst bleibt alles, wie es ist.

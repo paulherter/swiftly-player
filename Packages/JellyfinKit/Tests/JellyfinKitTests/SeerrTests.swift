@@ -372,3 +372,35 @@ struct SeerrTests {
         #expect(d.aehnliches.isEmpty)
     }
 }
+
+@Suite("Seerr-Adresse")
+struct SeerrAdresseTests {
+
+    @Test("Ohne Schema wird geraten — und der zweite Versuch steht daneben")
+    func zweiterVersuch() {
+        let a = Seerr.adressen(aus: "seerr.beispiel.de")
+        #expect(a.map(\.absoluteString) == ["https://seerr.beispiel.de",
+                                            "http://seerr.beispiel.de"])
+        // Eine Adresse im Heimnetz raet andersherum — und weicht nach oben aus.
+        let b = Seerr.adressen(aus: "192.168.1.9:5055")
+        #expect(b.map(\.absoluteString) == ["http://192.168.1.9:5055",
+                                            "https://192.168.1.9:5055"])
+    }
+
+    @Test("Wer das Schema selbst tippt, bekommt keinen zweiten Versuch")
+    func getipptesSchemaGiltt() {
+        #expect(Seerr.adressen(aus: "https://seerr.beispiel.de").count == 1)
+        #expect(Seerr.adressen(aus: "http://192.168.1.9:5055").count == 1)
+    }
+
+    @Test("Der Anhang faellt weg, das Schema bleibt")
+    func anhang() {
+        #expect(Seerr.adressen(aus: "https://seerr.beispiel.de/api/v1")
+                    .map(\.absoluteString) == ["https://seerr.beispiel.de"])
+    }
+
+    @Test("Leere Eingabe ergibt nichts")
+    func leer() {
+        #expect(Seerr.adressen(aus: "   ").isEmpty)
+    }
+}

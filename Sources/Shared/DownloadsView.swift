@@ -179,6 +179,9 @@ struct Downloadzeile: View {
     var gruppe: (titel: String, folgen: [Downloadposten])?
     var bearbeiten = false
     @Binding var gewaehlt: Bool
+    /// Was ein Tipp auf eine fertige Zeile tut. `nil` bei einer Gruppe — die
+    /// fuehrt weiter, statt zu starten.
+    var starten: (() -> Void)?
 
     private var verwaltung: Downloadverwaltung { model.downloads }
 
@@ -230,7 +233,12 @@ struct Downloadzeile: View {
         // tut. Die Serienzeile liegt in einem `NavigationLink`, und der kam
         // dadurch nie an: ein Tipp auf „Breaking Bad" passierte einfach
         // nichts. Am Geraet gesehen, nicht im Bau.
-        .modifier(Auswahltipp(an: bearbeiten) { gewaehlt.toggle() })
+        // **Ein Tipp spielt ab.** Das fehlte ganz: die Zeile trug nur die
+        // Auswahl im Bearbeitenmodus. Abspielen und nicht die Detailseite —
+        // die braucht den Server, und wer hier steht, hat womoeglich keinen.
+        .modifier(Auswahltipp(an: bearbeiten || starten != nil) {
+            if bearbeiten { gewaehlt.toggle() } else { starten?() }
+        })
     }
 
     /// **Erst die Platte, dann der Server.** Ohne Netz gibt es nur die
@@ -387,6 +395,12 @@ struct DownloadsView: View {
             }
         }
         .safeAreaInset(edge: .bottom) { if bearbeiten { loeschleiste } }
+        #if os(iOS)
+        .fullScreenCover(item: $abspielen) { wunsch in
+            PlayerScreen(model: model, item: wunsch.item,
+                         plan: wunsch.plan, startAt: wunsch.startAt)
+        }
+        #endif
         .bereichsleiste()
         // **Nach der Leiste, nicht davor.** Auflagen liegen in der
         // Reihenfolge, in der sie angehängt werden; davor angehängt schnitt
@@ -409,7 +423,8 @@ struct DownloadsView: View {
         switch g {
         case let .einzeln(p):
             Downloadzeile(model: model, posten: p, bearbeiten: bearbeiten,
-                          gewaehlt: bindung(fuer: [p.id]))
+                          gewaehlt: bindung(fuer: [p.id]),
+                          starten: p.stand == .fertig ? { spiele(p) } : nil)
         case let .serie(id, titel, folgen):
             if bearbeiten {
                 Downloadzeile(model: model, posten: folgen[0],
@@ -434,6 +449,18 @@ struct DownloadsView: View {
             set: { an in
                 if an { gewaehlt.formUnion(ids) } else { gewaehlt.subtract(ids) }
             })
+    }
+
+    @State private var abspielen: Abspielwunsch?
+
+    /// **Ohne Server.** `model.plan` nimmt die Datei von der Platte, wenn eine
+    /// da ist (H8), und das `Item` dafuer baut sich der Posten selbst — im
+    /// Flugzeug gibt es keinen, der eines liefern koennte.
+    private func spiele(_ p: Downloadposten) {
+        Task {
+            guard let plan = await model.plan(for: p.id) else { return }
+            abspielen = Abspielwunsch(item: p.alsItem, plan: plan, startAt: 0)
+        }
     }
 
     private var loeschtitel: String {
@@ -575,6 +602,15 @@ struct DownloadserieView: View {
     @State private var versatz: CGFloat = 0
     @State private var kopfhoehe: CGFloat = 96
 
+    @State private var abspielen: Abspielwunsch?
+
+    private func spiele(_ p: Downloadposten) {
+        Task {
+            guard let plan = await model.plan(for: p.id) else { return }
+            abspielen = Abspielwunsch(item: p.alsItem, plan: plan, startAt: 0)
+        }
+    }
+
     private var folgen: [Downloadposten] {
         model.downloads.posten
             .filter { $0.serienId == route.serienId }
@@ -588,7 +624,8 @@ struct DownloadserieView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(folgen) { p in
-                        Downloadzeile(model: model, posten: p, gewaehlt: .constant(false))
+                        Downloadzeile(model: model, posten: p, gewaehlt: .constant(false),
+                                      starten: p.stand == .fertig ? { spiele(p) } : nil)
                         if p.id != folgen.last?.id { Trennlinie() }
                     }
                 }
@@ -615,6 +652,10 @@ struct DownloadserieView: View {
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
+        .fullScreenCover(item: $abspielen) { wunsch in
+            PlayerScreen(model: model, item: wunsch.item,
+                         plan: wunsch.plan, startAt: wunsch.startAt)
+        }
         #endif
     }
 }

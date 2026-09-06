@@ -99,6 +99,23 @@ public struct Downloadposten: Codable, Sendable, Equatable, Identifiable {
         return min(1, max(0, Double(geladen) / Double(bytes)))
     }
 
+    /// Ein `Item` aus dem, was hier steht — **fuer die Wiedergabe ohne Netz.**
+    ///
+    /// Der Player braucht ein `Item`, und offline gibt es keinen Server, der
+    /// eines liefert. Alles Noetige steht ohnehin im Posten: Kennung, Titel,
+    /// Laufzeit, und bei einer Folge Serie, Staffel und Nummer.
+    ///
+    /// **Ausdruecklich kein Ersatz fuer den Server**, sobald einer da ist:
+    /// Handlung, Besetzung und Fortschritt fehlen. Fuer das Abspielen aus der
+    /// Downloadliste heraus braucht es sie nicht.
+    public var alsItem: Item {
+        Item(id: id, name: titel,
+             type: art == .folge ? "Episode" : "Movie",
+             runTimeTicks: laufzeitTicks,
+             seriesName: serie, indexNumber: folge,
+             parentIndexNumber: staffel, seriesId: serienId)
+    }
+
     /// Der Dateiname auf der Platte. Konto und Kennung, damit zwei Konten
     /// sich nicht ins Gehege kommen (H11), und die Endung des Containers,
     /// damit VLC den Demuxer erraet — bei Matroska haengt daran

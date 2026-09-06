@@ -227,6 +227,8 @@ struct DownloadsView: View {
 
     @State private var bearbeiten = false
     @State private var gewaehlt: Set<String> = []
+    /// Welche Serien aufgeklappt sind.
+    @State private var offeneSerien: Set<String> = []
 
     private var verwaltung: Downloadverwaltung { model.downloads }
 
@@ -301,10 +303,28 @@ struct DownloadsView: View {
         case let .einzeln(p):
             MacDownloadzeile(model: model, posten: p, bearbeiten: bearbeiten,
                              gewaehlt: bindung(fuer: [p.id]))
-        case let .serie(_, titel, folgen):
+        case let .serie(id, titel, folgen):
+            // **Aufklappen statt weiterblaettern.** Auf dem iPhone fuehrt die
+            // Zeile auf eine eigene Seite; hier ist Platz, und eine Liste,
+            // die sich an Ort und Stelle oeffnet, ist die Sprache des
+            // Schreibtischs — Finder, Mail, Musik machen es genauso.
             MacDownloadzeile(model: model, posten: folgen[0],
                              gruppe: (titel, folgen), bearbeiten: bearbeiten,
-                             gewaehlt: bindung(fuer: folgen.map(\.id)))
+                             gewaehlt: bindung(fuer: folgen.map(\.id)),
+                             offen: offeneSerien.contains(id),
+                             auffalten: bearbeiten ? nil : {
+                                 withAnimation(Stil.einblenden) {
+                                     if offeneSerien.contains(id) { offeneSerien.remove(id) }
+                                     else { offeneSerien.insert(id) }
+                                 }
+                             })
+            if offeneSerien.contains(id) {
+                ForEach(folgen) { f in
+                    MacDownloadzeile(model: model, posten: f, bearbeiten: bearbeiten,
+                                     gewaehlt: bindung(fuer: [f.id]))
+                        .padding(.leading, 34)
+                }
+            }
         }
     }
 
@@ -376,8 +396,13 @@ struct MacDownloadzeile: View {
     var gruppe: (titel: String, folgen: [Downloadposten])?
     var bearbeiten = false
     @Binding var gewaehlt: Bool
+    /// Nur fuer eine Gruppenzeile: ist sie aufgeklappt?
+    var offen = false
+    /// Nur fuer eine Gruppenzeile — `nil` heisst: keine Gruppe.
+    var auffalten: (() -> Void)?
 
     @State private var schwebt = false
+    @Environment(Abspielsteuerung.self) private var steuerung
     private var verwaltung: Downloadverwaltung { model.downloads }
 
     var body: some View {
@@ -424,6 +449,11 @@ struct MacDownloadzeile: View {
                 Downloadring(posten: posten) {
                     ringGeklickt(posten, verwaltung) {}
                 }
+            } else {
+                Image(systemName: offen ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .frame(width: 36)
             }
         }
         .padding(.vertical, 12)
@@ -432,7 +462,18 @@ struct MacDownloadzeile: View {
                     in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
         .contentShape(Rectangle())
         .onHover { schwebt = $0 }
-        .onTapGesture { if bearbeiten { gewaehlt.toggle() } }
+        // **Ein Klick spielt ab.** Das fehlte ganz — die Zeile hatte nur die
+        // Auswahl im Bearbeitenmodus, und
+        //
+        // Abspielen und nicht die Detailseite: die braucht den Server, und wer
+        // hier steht, hat womoeglich keinen. `model.plan` nimmt die Datei von
+        // der Platte, ohne zu fragen (H8), und das `Item` dafuer baut sich der
+        // Posten selbst.
+        .onTapGesture {
+            if bearbeiten { gewaehlt.toggle() }
+            else if let auffalten { auffalten() }
+            else if posten.stand == .fertig { steuerung.starte(posten.alsItem) }
+        }
     }
 
     private var quer: Bool { gruppe == nil && posten.art == .folge }

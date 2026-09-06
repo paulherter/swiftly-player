@@ -14,9 +14,22 @@ enum Bereich: String, Hashable, CaseIterable {
     /// Grenze der Haken ist; Downloads ist keine Auswahl aus dem Server,
     /// sondern das, was auf dieser Maschine liegt. Auf dem iPhone ist es aus
     /// demselben Grund ein Reiter und kein Ziel im Kopf.
-    static func sichtbare(downloads: Bool) -> [Bereich] {
-        downloads ? [.start, .filme, .serien, .merkliste, .downloads, .suche]
-                  : [.start, .filme, .serien, .merkliste, .suche]
+    /// **Oben, was der Server hat.** Vier Zeilen, wie eh und je.
+    static let obenGruppe: [Bereich] = [.start, .filme, .serien, .suche]
+
+    /// **Und darunter, was mir gehoert.**
+    ///
+    /// Sechs gleichrangige Zeilen untereinander lasen sich als eine Liste, in
+    /// der nichts mehr zusammengehoert Merkliste und Downloads sind aber nicht
+    /// dieselbe Sorte Ort wie Filme und Serien: die beiden sind **Sammlungen
+    /// des Servers**, diese zwei sind **meine** — was ich mir gemerkt und was
+    /// ich auf diese Maschine geholt habe. Die Trennung stand also schon da,
+    /// sie war nur nicht zu sehen.
+    ///
+    /// Leer, solange Downloads aus ist und nichts gemerkt wurde — dann gibt es
+    /// die Rubrik gar nicht.
+    static func meinsGruppe(downloads: Bool) -> [Bereich] {
+        downloads ? [.merkliste, .downloads] : [.merkliste]
     }
 
     var symbol: String {
@@ -561,7 +574,21 @@ struct Seitenleiste: View {
                 .padding(.bottom, 18)
 
             VStack(spacing: 2) {
-                ForEach(Bereich.sichtbare(downloads: model.downloadsAn), id: \.self) { fall in
+                ForEach(Bereich.obenGruppe, id: \.self) { fall in
+                    Seitenleistenzeile(symbol: fall.symbol,
+                                       beschriftung: fall.beschriftung,
+                                       aktiv: bereich == fall) { bereich = fall }
+                }
+            }
+            .padding(.horizontal, 12)
+
+            Seitenleistenrubrik(text: "Meins")
+                .padding(.horizontal, 12)
+                .padding(.top, 26)
+                .padding(.bottom, 8)
+
+            VStack(spacing: 2) {
+                ForEach(Bereich.meinsGruppe(downloads: model.downloadsAn), id: \.self) { fall in
                     Seitenleistenzeile(symbol: fall.symbol,
                                        beschriftung: fall.beschriftung,
                                        aktiv: bereich == fall) { bereich = fall }

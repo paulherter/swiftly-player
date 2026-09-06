@@ -383,6 +383,32 @@ public enum Seerr {
         while text.hasSuffix("/") { text.removeLast() }
         return URL(string: text)
     }
+
+    /// Die Adressen, die probiert werden — in dieser Reihenfolge.
+    ///
+    /// **Weil Raten manchmal danebengeht.** `adresse(aus:)` waehlt das Schema
+    /// nach derselben Regel wie beim Medienserver, und die trifft die meisten
+    /// Faelle. Trifft sie daneben, lief die Anmeldung bisher in eine
+    /// Zeitueberschreitung, und der Nutzer musste `https://` selbst davor
+    /// tippen — genau so ist es 09.2026 auf dem Mac gegangen.
+    ///
+    /// Der Medienserver kennt den zweiten Versuch laengst
+    /// (``AppModelURLNormalizer.andersHerum``); Seerr bekommt ihn jetzt auch.
+    ///
+    /// **Nur wenn wir geraten haben.** Wer das Schema selbst hinschreibt, hat
+    /// entschieden — dann wird nicht dahinter ausgewichen. Das ist auch der
+    /// Grund, warum die Liste hier entsteht und nicht an der Aufrufstelle: ob
+    /// geraten wurde, weiss nur diese Funktion.
+    public static func adressen(aus eingabe: String) -> [URL] {
+        guard let erste = adresse(aus: eingabe) else { return [] }
+        let getippt = eingabe.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased().hasPrefix("http")
+        guard !getippt else { return [erste] }
+        var teile = URLComponents(url: erste, resolvingAgainstBaseURL: false)
+        teile?.scheme = erste.scheme == "https" ? "http" : "https"
+        guard let zweite = teile?.url else { return [erste] }
+        return [erste, zweite]
+    }
 }
 
 /// Der Abruf. Alles, was hier passiert, hängt am Netz — was es **bedeutet**,
