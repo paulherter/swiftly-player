@@ -1041,6 +1041,10 @@ final class Fensterhalter {
     /// Die Ampel verschwindet im kleinen Fenster — dort gehört sie nicht hin —
     /// **und sie geht im Player mit der Steuerung.**
     ///
+    /// Genau richtig: sie ist Bedienung, und Bedienung tritt nach vier
+    /// Sekunden Ruhe zurück (B1). Ein Film, über dem drei bunte Punkte kleben,
+    /// ist kein Vollbild.
+    ///
     /// **Im Vollbild fassen wir sie nicht an.** Dort blendet macOS die ganze
     /// Titelleiste samt Ampel von sich aus aus und schiebt sie herunter,
     /// sobald der Zeiger an den oberen Rand geht — so kennt man es vom Mac,
@@ -1049,10 +1053,11 @@ final class Fensterhalter {
     ///
     /// Im Player stand sie früher ebenfalls nicht, mit der Begründung, sie
     /// stünde dann neben dem Winkel, der zurücklegt: zwei Schließer mit
-    /// verschiedener Wirkung. Das war meine Entscheidung, nicht Ein Fenster
-    /// ohne Ampel ist auf dem Mac kein Fenster — man kann es nicht mehr
-    /// schließen, nicht ablegen, nicht zoomen. Und das Verstecken hinterliess
-    /// obendrein einen hellen Streifen, wo die Knöpfe gesessen hatten.
+    /// verschiedener Wirkung. Das war eine Entscheidung am Quelltext, und sie
+    /// war falsch. Ein Fenster ohne Ampel ist auf dem Mac kein Fenster — man
+    /// kann es nicht mehr schließen, nicht ablegen, nicht zoomen. Und das
+    /// Verstecken hinterliess obendrein einen hellen Streifen, wo die Knöpfe
+    /// gesessen hatten.
     ///
     /// Der Winkel bleibt daneben stehen und rückt dafür nach rechts aus: er
     /// schliesst den **Player**, die Ampel das **Fenster**. Zwei Handlungen,

@@ -8,8 +8,9 @@ import VLCKit
 /// **Sagt dem Fernseher, mit welcher Bildrate der Film läuft.**
 ///
 /// Das war die Ursache dafür, dass sich die Wiedergabe stockend anfühlte,
-/// obwohl nichts fehlte. Es wurde also nichts verworfen und nichts verpasst —
-/// die Bilder kamen nur ungleichmäßig auf den Schirm.
+/// obwohl nichts fehlte. die Messung: 4 zu späte Bilder auf 4888, und die
+/// vier stammten vom Spulen. Es wurde also nichts verworfen und nichts
+/// verpasst — die Bilder kamen nur ungleichmäßig auf den Schirm.
 ///
 /// **Warum.** Ein Film liegt in 23,976 oder 24 Bildern je Sekunde vor, der
 /// Apple TV gibt aber 60 Hz aus. 24 geht in 60 nicht auf, also wird jedes

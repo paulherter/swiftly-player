@@ -40,7 +40,7 @@ public enum Bildwahl {
         }
 
         let kette: [(URL, String)?] = [
-            // 1 · Der Hintergrund der Serie
+            // 1 · Der Hintergrund der Serie — der Wunsch nach einer Art Cover.
             versuch("Serienhintergrund",
                     item.parentBackdropItemId ?? item.seriesId,
                     .hintergrund, item.parentBackdropImageTags?.first),

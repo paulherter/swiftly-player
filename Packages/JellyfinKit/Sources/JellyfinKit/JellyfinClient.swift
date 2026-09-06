@@ -689,7 +689,8 @@ public actor JellyfinClient {
         // fiel der Plan bisher stillschweigend auf die **Originaldatei**
         // zurueck (`/stream?static=true`) — und die reichten wir an AVPlayer
         // weiter, der sie nicht oeffnen kann. Auf dem Fernseher: Schwarzbild.
-        // Am 03.09.2026 auf
+        // Am 03.09.2026 auf dem Testgerät gemessen, genau diese Adresse stand im
+        // Protokoll.
         //
         // Fuer den VLC-Weg ist derselbe Rueckfall richtig — VLC oeffnet die
         // Datei ja. Hier ist er falsch, also wird hier geprueft.

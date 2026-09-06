@@ -888,10 +888,12 @@ struct PlayerScreen: View {
             // Meldung an den Server stehen.
             //
             // Solange er lag, gab `angebot` `.keiner` zurueck — **keine
-            // Knoepfe**, und darueber lag `if wechselt { Lader }`, also ein
-            // Ladekringel ueber dem stehenden Bild. Dazu wurde weder Start
+            // Knoepfe** —, und darueber lag `if wechselt { Lader() }`, also
+            // ein Ladekringel ueber dem stehenden Bild. Dazu wurde weder Start
             // noch Fortschritt gemeldet und das selbsttaetige Weiterschalten
-            // war gesperrt. Genau
+            // war gesperrt. Genau die drei Beobachtungen aus dem Test: Bild steht, keine
+            // Taste reagiert, und die Uhr laeuft trotzdem weiter, weil die
+            // Taktschleife unabhaengig davon tickt.
             //
             // Unbegrenzt ist die Wartezeit dabei **nicht** —
             // `Netzsitzung.ortsnetzfaehig` setzt `timeoutIntervalForResource`

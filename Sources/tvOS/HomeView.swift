@@ -211,6 +211,10 @@ struct HomeView: View {
         .ignoresSafeArea()
         // **Derselbe gefaerbte Grund wie auf den Detailseiten.**
         //
+        // Genau das ist der Gewinn — beim Oeffnen einer Seite aendert sich der
+        // Hintergrund nicht mehr, weil er schon derselbe war. Es gibt nichts
+        // mehr zu ueberblenden, also auch nichts, was dabei zucken koennte.
+        //
         // Er haengt am **entprellten** Bild, nicht am Fokus: sonst rechnete
         // beim Durchhalten der Fernbedienung jeder Zwischenschritt einen
         // eigenen Ton.

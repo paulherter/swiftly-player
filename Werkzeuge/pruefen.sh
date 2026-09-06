@@ -4,12 +4,12 @@
 #
 # **Warum die Zweigprüfung dazugehört.** Am 05.09.2026 trug der tvos-Zweig
 # sieben Commits, die nie in main ankamen — darunter zwei Behebungen von
-# Fehlern, die Der Build, der an dem Tag zu den Testern ging, hatte sie nicht.
-# Kein Bau und kein Test hätte das gezeigt: beide prüfen, was da ist, nicht was
-# fehlt.
+# gemeldeten Fehlern. Der Build, der an dem Tag zu den Testern
+# ging, hatte sie nicht. Kein Bau und kein Test hätte das gezeigt: beide
+# prüfen, was da ist, nicht was fehlt.
 #
-# Werkzeuge/pruefen.sh          alles Werkzeuge/pruefen.sh schnell  nur Tests
-# und Zweige, ohne Simulatorbau
+#   Werkzeuge/pruefen.sh          alles
+#   Werkzeuge/pruefen.sh schnell  nur Tests und Zweige, ohne Simulatorbau
 #
 # Rückgabe 0 heisst: alles grün und nichts liegengeblieben.
 

@@ -136,6 +136,8 @@ extension Stil {
     /// ist immer gleich hoch, also steht die Knopfreihe immer an derselben
     /// Stelle. **Wo das oberste Element jeder Seite endet.**
     ///
+    /// Stimmt, und es war es nicht:
+    ///
     /// Start, Detail   Titel 68 ab 196   endet 264 Bibliothek      Chips 48 ab
     /// 190   endet 238 Suche           Feld  76 ab 190   endet 266
     ///
@@ -186,9 +188,11 @@ extension Stil {
     /// Der Abstand unter der Knopfreihe — 64 aus `Film-Neu.dc.html`.
     ///
     /// Einmal auf 36 gekuerzt, weil ich glaubte, die erste Reihe rage 26 Punkt
-    /// ueber den Schirm hinaus. **Sie tut es nicht.** An Die Rechnung davor
-    /// stand auf zwei geschaetzten Werten (Reihentitel 46, Beschriftung 122),
-    /// und beide waren zu gross.
+    /// ueber den Schirm hinaus. **Sie tut es nicht.** An dem Bildschirmfoto mit der
+    /// Kachelbreite als Massstab nachgemessen endet sie samt Beschriftung bei
+    /// rund 1005 — 75 Punkt Luft. Die Rechnung davor stand auf zwei
+    /// geschaetzten Werten (Reihentitel 46, Beschriftung 122), und beide waren
+    /// zu gross.
     ///
     /// Die Zahl aus der Tafel gilt also weiter. Was beim Fokussieren passiert,
     /// kommt nicht von der Hoehe.

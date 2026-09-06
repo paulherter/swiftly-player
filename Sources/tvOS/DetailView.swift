@@ -131,6 +131,10 @@ struct Detailkopf<Knoepfe: View>: View {
 
 /// Der Merklistenknopf — **nur das Symbol, ohne Beschriftung.**
 ///
+/// Stimmt: das Lesezeichen ist eines der wenigen Symbole, die für sich stehen,
+/// und gefüllt gegen leer sagt den Zustand mit. Fünf beschriftete Pillen waren
+/// zu viel für eine Reihe.
+///
 /// „Gesehen" ist ganz aus der Reihe heraus und steht in der Handlungstafel —
 /// siehe `gesehenHandlung`. Damit bleiben vier Ziele: Fortsetzen, Von vorn,
 /// Merkliste, Mehr.

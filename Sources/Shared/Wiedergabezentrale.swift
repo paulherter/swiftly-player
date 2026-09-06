@@ -255,7 +255,8 @@ final class Wiedergabezentrale {
     /// Ohne sie glaubte tvOS durchgehend, es liefe, und schickte jedesmal
     /// `pauseCommand`. Deshalb hielt der erste Druck an und jeder weitere tat
     /// nichts: es kam nie `play`, nie `togglePlayPause`, immer nur „anhalten".
-    /// Gefunden hat es
+    /// Gefunden hat es der Blick auf die eingebaute Spur — dort stand
+    /// `anhalten · zentrale`, zweimal hintereinander.
     private func zustandMelden(_ laeuft: Bool) {
         MPNowPlayingInfoCenter.default().playbackState = laeuft ? .playing : .paused
     }

@@ -42,11 +42,11 @@ settings:
     # Noetig ist das nicht: die Bedingung gilt innerhalb einer Fassung, und
     # fuer 1.0.1 liegt bei Apple noch gar nichts. Am 06.09.2026 live in App
     # Store Connect nachgesehen — hoechster Stand dort ist auf allen drei
-    # Plattformen **1.0.0 (11)**, kein 1.0.1. 0.1, also Bau 1.
+    # Plattformen **1.0.0 (11)**, kein 1.0.1. Es ist der erste Bau von
+    # 1.0.1, also Bau 1.
     #
-    # Vor einem Zuruecksetzen immer erst nachsehen: cd
-    # Swiftly-Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta
-    # --probe
+    # Vor einem Zuruecksetzen immer erst nachsehen:
+    #   cd Swiftly-Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
     CURRENT_PROJECT_VERSION: "1"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
@@ -269,17 +269,18 @@ targets:
       - package: Lottie
       # Der Top Shelf ist ein eigenes Ziel und wird mit eingebettet.
       - target: Swiftly-TopShelf
-      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im XCFramework
-      # nachgesehen). Bild-im-Bild gibt es hier nicht, der Abspieler schon —
-      # und mit ihm der `mkv_trusted`-Kniff. **VERSUCH: selbst gebaute Fassung
-      # mit einem Patch am mkv-Sucher.**
+      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im
+      # XCFramework nachgesehen). Bild-im-Bild gibt es hier nicht, der
+      # Abspieler schon — und mit ihm der `mkv_trusted`-Kniff.
+      # **VERSUCH: selbst gebaute Fassung mit einem Patch am mkv-Sucher.**
       #
-      # VLC 4 koppelt `index_range` an `b_fastseekable`, und das ist über HTTP
-      # nie wahr. Damit hat eine Matroska, deren Cues sich nicht auswerten
-      # lassen, gar keinen Weg mehr, nach vorn zu springen: jeder Sprung landet
-      # am Dateianfang und der Demuxer liest sich vorwärts durch — bei VLC 3
-      # ruft dieselbe Zeile ohne diesen Vorbehalt, und genau deshalb springt
-      # Swiftfin in derselben Datei sofort.
+      # VLC 4 koppelt `index_range()` an `b_fastseekable`, und das ist über
+      # HTTP nie wahr. Damit hat eine Matroska, deren Cues sich nicht
+      # auswerten lassen, gar keinen Weg mehr, nach vorn zu springen: jeder
+      # Sprung landet am Dateianfang und der Demuxer liest sich vorwärts
+      # durch — bei der Testfolge 30 bis 90 Sekunden. VLC 3 ruft dieselbe
+      # Zeile ohne diesen Vorbehalt, und genau deshalb springt Swiftfin in
+      # derselben Datei sofort.
       #
       # Gebaut aus VLCKit 4.0.0-a23, also unserer Fassung, plus dem einen
       # Patch. Quelle und Bauskript liegen unter /Users/paul/VLC-Bau.

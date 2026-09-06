@@ -249,6 +249,8 @@ final class VLCPlayerView: Basisansicht {
             // `player.media` gesetzt ist — der Tonausgang existiert da noch
             // gar nicht und `volume` steht auf 0 oder -1. Gemerkt und spaeter
             // „wiederhergestellt" hiess damit: dauerhaft stumm.
+            //
+            // Genau das.
             let jetzt = ton.volume
             lautstaerkeVorher = jetzt > 0 ? jetzt : 100
             ton.volume = 0

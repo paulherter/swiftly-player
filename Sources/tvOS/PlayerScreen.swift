@@ -217,7 +217,7 @@ struct PlayerScreen: View {
 
             // **Deckend, nicht nur ein Ring.**
             //
-            // Vorher stand hier `Lader` allein — ein schwebender Ring ueber
+            // Vorher stand hier `Lader()` allein — ein schwebender Ring ueber
             // dem laufenden Bild. VLC steuert die Fortsetzstelle erst nach dem
             // ersten Bild an, und in dieser Zeit war der Anfang des Films zu
             // sehen. Der Ladeschirm hat ihn nicht verdeckt, weil er nichts
@@ -227,7 +227,7 @@ struct PlayerScreen: View {
             // der geteilten Taktlogik gelesen — unter anderem, um `laeuft`
             // gegen VLC gleichzurichten. Wer ihn zum Anzeigeschalter umwidmet,
             // haelt bei einem haengenden Wechsel auch den Gleichrichter an.
-            // Genau daran kann
+            // Genau daran kann der verdrehte Pausezustand gelegen haben.
             if !erstesBildDa || Bildtakt.schaltetUm {
                 ZStack {
                     Color.black
@@ -245,11 +245,11 @@ struct PlayerScreen: View {
             if erstesBildDa {
                 // **Dieselbe Stelle, dieselbe Groesse wie das Pausezeichen.**
                 //
-                // Der richtige Weg: man koennte es genau dahin machen, wo der
-                // Pauseknopf ist, sodass es so aussieht wie, als wuerde es an
-                // exakt derselben Stelle laden." Zwei Zustandsauskuenfte ueber
-                // dieselbe Sache gehoeren an denselben Platz — sonst sucht das
-                // Auge zweimal.
+                // Der richtige Weg: man koennte es genau
+                // dahin machen, wo der Pauseknopf ist, sodass es so aussieht
+                // wie, als wuerde es an exakt derselben Stelle laden." Zwei
+                // Zustandsauskuenfte ueber dieselbe Sache gehoeren an
+                // denselben Platz — sonst sucht das Auge zweimal.
                 if stockt {
                     // **Ohne Teller.** Der Ring bringt seine Form selbst mit;
                     // ein Kreis um einen Kreis sieht aus wie ein Versehen. Das
@@ -306,6 +306,12 @@ struct PlayerScreen: View {
             fokus = da ? .leiste : .ruhe
         }
         // **Nach dem Anhalten den Fokus zurueckholen.**
+        //
+        // kein Klick, keine Richtung, nichts. Das ist kein Play/Pause-Fehler,
+        // sondern ein Fokusverlust: ohne fokussiertes Element nimmt tvOS
+        // ueberhaupt keine Eingabe mehr an, und der Player steht als Standbild
+        // da. Dieselbe Lehre wie heute Morgen — der Fokus kommt nicht von
+        // selbst, er muss gelegt werden.
         .onChange(of: laeuft) { _, _ in
             guard !blattOffen, !folgenOffen else { return }
             fokus = .leiste
@@ -1107,10 +1113,12 @@ struct PlayerScreen: View {
 
             // **Im Stehen den Fokus halten.**
             //
-            // Genau das bewirkt Einmalig beim Umschalten reichte das nicht;
-            // SwiftUI raeumt den Fokus danach noch auf. Solange angehalten ist
-            // und kein Blatt offen steht, wird er deshalb in jedem Takt neu
-            // gesetzt.
+            // Genau das bewirkt der Umweg ueber die Einstellungen: das Blatt
+            // geht zu, und dabei legt `steuerungWecken` den Fokus zurueck auf
+            // die Leiste — danach laesst sich wieder abspielen. Einmalig beim
+            // Umschalten reichte das nicht; SwiftUI raeumt den Fokus danach
+            // noch auf. Solange angehalten ist und kein Blatt offen steht,
+            // wird er deshalb in jedem Takt neu gesetzt.
             //
             // Nur im Stehen: waehrend der Wiedergabe soll der Fokus auf die
             // Knoepfe oben wandern duerfen. Und nur, wenn er **nirgends**

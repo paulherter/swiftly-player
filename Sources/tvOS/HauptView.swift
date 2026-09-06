@@ -509,6 +509,10 @@ struct StaffelZiel: View {
 
     /// **Eine vorlaeufige Serie aus dem, was die Folge ohnehin traegt.**
     ///
+    /// Nicht das Bild — die **Serie**. Ein Listeneintrag einer Folge traegt
+    /// nur `seriesId` und `seriesName`, und `SerienView` braucht ein `Item`.
+    /// Dafuer lief ein Abruf beim Server, und der war die Wartezeit.
+    ///
     /// Gebraucht wird davon beim Aufmachen fast nichts: `id` fuer alle
     /// weiteren Abrufe, `name` fuer die Ueberschrift, `type` fuer die Weichen.
     /// Das Kulissenbild ist ohnehin dasselbe — `querbildURL` baut es aus

@@ -84,8 +84,10 @@ func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
     // hineingeht. Beim Oeffnen fehlte sie deshalb, und die Kacheln standen 20
     // Punkt zu hoch; beim ersten Fokussieren kam sie dazu und alles rueckte.
     //
-    // An Die Differenz ist auf den Punkt `reihenLuft` — deshalb war es nie ein
-    // Scrollen und nie das Section-Verhalten, obwohl beides danach aussah.
+    // An zwei Bildschirmfotos gemessen: Reihentitel steht in beiden bei 683, die
+    // Kacheln bei 742 und 762. Die Differenz ist auf den Punkt `reihenLuft` —
+    // deshalb war es nie ein Scrollen und nie das Section-Verhalten, obwohl
+    // beides danach aussah.
     //
     // Aussen liegt sie im Layout und gilt immer. Beschnitten wird die
     // gewachsene Kachel trotzdem nicht: dafuer sorgt `scrollClipDisabled`.

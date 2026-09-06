@@ -274,6 +274,9 @@ struct Wiedergabeblatt: View {
     /// fest, aber der Ausgang bleibt auf 60 Hz und das Bild judert weiter.
     /// **Wie gross die Bildflaeche ist und wie gross VLC darin malt.**
     ///
+    /// Ausserhalb des Players ist nichts zu sehen, drinnen bei jedem Titel —
+    /// also stammt der Rand von hier und nicht vom Fernseher.
+    ///
     /// Aus dem Code ist er nicht zu sehen: unsere Raender sind links und
     /// rechts derselbe Wert. Ein Foto taugt auch nicht — der Bildschirm
     /// spiegelt das Zimmer, meine Helligkeitsmessung darauf hat zweimal
@@ -335,12 +338,11 @@ struct Wiedergabeblatt: View {
         //
         // Ich hatte die Zahl als Beweis danebengestellt: „angepasst" sei nur
         // Absicht, erst der Schirmtakt zeige, ob der Fernseher es getan hat.
-        // Auf dem Schirm stand dann „23,976 fps · angepasst · 50 Hz" — ein
-        // Widerspruch, den es nicht gibt: der Wechsel hatte stattgefunden,
-        // aber die Auskunft folgt dem Inhaltsmodus nicht, sie nennt das
-        // eingestellte Format. Als Beweis taugt sie also nicht, als Grundtakt
-        // schon — und genau dagegen rechnet `passt`, was weiterhin richtig
-        // ist.
+        // Auf dem Schirm stand dann „23,976 fps · angepasst · 50 Hz" — ein Widerspruch,
+        // den es nicht gibt: der Wechsel hatte stattgefunden, aber die
+        // Auskunft folgt dem Inhaltsmodus nicht, sie nennt das eingestellte
+        // Format. Als Beweis taugt sie also nicht, als Grundtakt schon — und
+        // genau dagegen rechnet `passt`, was weiterhin richtig ist.
         //
         // Steht hier eine Zahl, die nicht aufgeht, kostet dieser Titel ein
         // Schwarzbild. Das ist die Auskunft, die man wirklich braucht.

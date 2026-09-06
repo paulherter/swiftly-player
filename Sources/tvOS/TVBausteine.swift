@@ -912,6 +912,9 @@ struct Kulissenblende: ViewModifier {
         content
             // **Die urspruengliche Kurve, nur als Maske statt als Anstrich.**
             //
+            // Stimmt — und das Gute daran war nie die Technik, sondern die
+            // Kurve. Sie ist hier unveraendert uebernommen.
+            //
             // Uebersetzt: die alte Fassung malte `Stil.grund` mit der
             // Deckkraft `o` **ueber** das Bild. Sichtbar blieb also `1 − o`.
             // Genau diese Werte stehen jetzt als Maske da:

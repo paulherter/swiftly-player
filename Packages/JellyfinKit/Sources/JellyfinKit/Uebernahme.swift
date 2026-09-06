@@ -13,7 +13,8 @@ public struct Fremdsitzung: Sendable, Equatable, Decodable, Identifiable {
     ///
     /// **Unverzichtbar, und das war ein Irrtum.** `controllableByUserId`
     /// liefert nicht die *eigenen* Sitzungen, sondern die, die dieser Nutzer
-    /// **bedienen darf** — als Administrator sind das alle. Auf Auf dem
+    /// **bedienen darf** — als Administrator sind das alle. Auf dem Testserver
+    /// stand deshalb im Abzeichen, was jemand anders gerade schaute. Auf dem
     /// Prüfserver fiel es nicht auf: dort ist das Konto kein Administrator,
     /// und die Antwort enthielt ohnehin nur eigene Sitzungen.
     public let benutzerID: String?
@@ -154,7 +155,8 @@ public enum Uebernahme {
     ///
     /// **Eine Liste, keine einzelne Sitzung.** Läuft auf zwei Geräten etwas,
     /// soll die Oberfläche fragen, welches gemeint ist, statt eines davon zu
-    /// erraten. "
+    /// erraten. Die Regel dazu: wenn auf zwei Geräten etwas läuft, kommt
+    /// ein Auswahlfenster."
     ///
     /// - Parameters: - eigeneGeraeteID: Ohne die zeigt das Gerät sich selbst
     /// an. Der häufigste Fehler an dieser Stelle, und er fällt erst auf, wenn

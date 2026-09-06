@@ -2327,7 +2327,7 @@ struct FlussReihe: Layout {
 /// ist *eine Möglichkeit unter mehreren offenen* und leuchtet, wenn er gilt;
 /// die Pille ist *der geltende Wert selbst*. Eine Reihe Chips liest sich als
 /// aufgeklapptes Menü, das jemand offen gelassen hat — eine Reihe Pillen als
-/// Werkzeugleiste. Genau daran hing
+/// Werkzeugleiste. Genau daran hing der unfertige Eindruck.
 ///
 /// Sie stand als Aufbau schon einmal da, mitten in der Bibliotheksseite, nur
 /// für die Sortierung. Beim zweiten Bedarf wäre sie zweimal dagestanden.

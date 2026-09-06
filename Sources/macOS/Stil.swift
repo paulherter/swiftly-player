@@ -178,8 +178,9 @@ extension Stil {
     //
     // Zur Einordnung: eine macOS-Seitenleiste schaltet sonst ohne Blende um
     // (Finder, Mail, Systemeinstellungen). Das hier ist eine bewusste
-    // Abweichung, Solange jeder Wechsel neu geladen hat, hätte eine Blende die
-    // Wartezeit nur verlängert.
+    // Abweichung, eine bewusste Entscheidung — und sie trägt erst, seit die Stände der
+    // Bereiche liegen bleiben. Solange jeder Wechsel neu geladen hat, hätte
+    // eine Blende die Wartezeit nur verlängert.
 
     /// Das Alte geht. Nur blenden, nicht schrumpfen.
     ///

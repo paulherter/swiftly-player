@@ -14,8 +14,10 @@ struct SeriesDetailView: View {
     var startStaffelID: String? = nil
     /// Die **Nummer** der Staffel, aus der man kommt.
     ///
-    /// **Weil die Kennung fehlen kann.** Am Geraet gemessen: Damit griffen
-    /// beide Kennungsvergleiche ins Leere und die Wahl fiel auf
+    /// **Weil die Kennung fehlen kann.** Am Geraet gemessen: dem Testserver
+    /// liefert an einer Folge kein `SeasonId` — weder im Listeneintrag noch
+    /// beim Einzelabruf, weder ueber `Shows/NextUp` noch sonstwo. Damit
+    /// griffen beide Kennungsvergleiche ins Leere und die Wahl fiel auf
     /// `staffeln.first`: oben stand „Abspielen S6 E1", unten Staffel 5.
     ///
     /// Die Nummer steht dagegen immer da — an der Folge als

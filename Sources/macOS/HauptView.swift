@@ -353,7 +353,10 @@ struct HauptView: View {
                     // lagen ihre Chips und Poster **unter der Seitenleiste**.
                     // Am laufenden Fenster nachgesehen: der Filterchip
                     // „Serien" stand bei x = 4, die Leistenzeile „Filme" bei x
-                    // = 12 — und der Klick ging an den Chip. Das war
+                    // = 12 — und der Klick ging an den Chip. Das war das
+                    // „ich druecke links und es oeffnet sich Attack on Titan"
+                    // und ebenso das „die Leiste reagiert auf nichts mehr":
+                    // sie bekam den Klick nie.
                     //
                     // `clipped()` half nicht und `clipShape` auch nicht —
                     // beide beschneiden das Bild, die Trefferflaeche der
