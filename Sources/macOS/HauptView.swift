@@ -105,11 +105,39 @@ struct HauptView: View {
                 .frame(width: 1)
                 .frame(maxHeight: .infinity)
                 .ignoresSafeArea(.container, edges: .vertical)
+            // **Die Leiste liegt oben — sichtbar und fuer Klicks.**
+            //
+            // In einem `HStack` zeichnet das spaetere Kind ueber dem
+            // frueheren, und die Leiste steht als erste da. Das war so lange
+            // egal, wie der Inhalt in seiner Spalte blieb. Bleibt er aber
+            // nicht: `wurzel` bekommt beim Oeffnen einer Seite `mitgang`, also
+            // **minus dreissig Prozent der Inhaltsbreite**, und ragte damit
+            // unter die Leiste — dort oben auf, weil spaeter deklariert. Ein
+            // Klick auf „Lieblingsfolgen" landete auf dem Poster, das
+            // zufaellig darunter lag; Und wer auf „Serien" klickte, schaltete
+            // nichts um, weil die Leiste den Klick nie bekam — daher „die
+            // gesamte Leiste reagiert auf nichts mehr".
+            .zIndex(1)
 
             ZStack {
                 Stil.grund
                 inhalt
             }
+            // **Und der Inhalt bleibt in seiner Spalte — auch fuer Klicks.**
+            //
+            // Hier stand zuerst `clipped()`. Das schneidet nur das **Bild**:
+            // die Wurzel war danach sauber an der Haarlinie abgeschnitten,
+            // und der Klick auf „Filme" landete trotzdem weiter im Raster
+            // dahinter. Am laufenden Fenster nachgesehen — der Baum zeigte
+            // die Chips der Wurzel bei **x = −117**, also unter der Leiste,
+            // und ein Klick auf die Leistenzeile wurde an die Scrollflaeche
+            // zugestellt.
+            //
+            // `clipShape` beschneidet **auch die Trefferflaeche**; das sagt
+            // Apples Beschreibung ausdruecklich, `clipped()` sagt es nicht.
+            // Der Versatz selbst bleibt — er ist die Bewegung, die den
+            // Eindruck von Ebenen macht.
+            .clipShape(Rectangle())
             // **Der Leistenwechsel wird nicht überblendet.**
             //
             // Hier stand `.animation(Stil.zeitSeite, value: bereich)`. Eine
@@ -271,6 +299,28 @@ struct HauptView: View {
                         Color.black.opacity(tiefe > 0 ? 0.28 : 0)
                             .allowsHitTesting(false)
                     }
+                    // **Was unter einer Seite liegt, nimmt keine Klicks.**
+                    //
+                    // Das ist die eigentliche Regel — der Schleier darueber
+                    // sagt sie ja schon: die Wurzel ist verdeckt, also ist sie
+                    // nicht bedienbar. Ohne diese Zeile blieb sie es, und weil
+                    // `mitgang` sie um dreissig Prozent nach links schiebt,
+                    // lagen ihre Chips und Poster **unter der Seitenleiste**.
+                    // Am laufenden Fenster nachgesehen: der Filterchip
+                    // „Serien" stand bei x = 4, die Leistenzeile „Filme" bei x
+                    // = 12 — und der Klick ging an den Chip. Das war
+                    //
+                    // `clipped()` half nicht und `clipShape` auch nicht —
+                    // beide beschneiden das Bild, die Trefferflaeche der
+                    // Kinder bleibt, wo sie ist.
+                    .allowsHitTesting(tiefe == 0)
+                    // **Und aus dem Bedienungshilfen-Baum ebenso.** Eine
+                    // verdeckte Seite gehoert dort nicht hin — VoiceOver
+                    // liefe sonst durch Knoepfe, die niemand sieht. Es ist
+                    // dieselbe Aussage wie `allowsHitTesting`, nur fuer den
+                    // zweiten Weg hinein; ohne sie stand die Wurzel weiter im
+                    // Baum, mit Chips bei x = 4 unter der Leiste.
+                    .accessibilityHidden(tiefe > 0)
                     .id(bereich)
                     // **Die Wurzel liegt ausdrücklich unten.** Ohne feste
                     // Ebenen fuhr die Seite unter den Kacheln der Startseite
@@ -320,6 +370,12 @@ struct HauptView: View {
                                 .offset(x: -28)
                                 .allowsHitTesting(false)
                         }
+                        // Dieselbe Regel eine Ebene hoeher: von den Seiten
+                        // des Stapels nimmt nur die oberste Klicks. Die
+                        // darunter tragen denselben Schleier wie die Wurzel,
+                        // und was rechts draussen wartet, ist gar nicht da.
+                        .allowsHitTesting(obenauf)
+                        .accessibilityHidden(!obenauf)
                         .zIndex(Double(platz + 1))
                         // **Losfahren, sobald die Seite wirklich steht.**
                         //
