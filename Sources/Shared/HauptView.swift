@@ -258,7 +258,6 @@ struct BibliothekView: View {
     /// Titel der Servername steht, war die Zahl falsch, und sie wäre es beim
     /// nächsten Zusatz wieder — die erste Kachelreihe verschwand dann unter
     /// dem Kopf, ohne dass ein Bau es meldet.
-    @State private var kopfhoehe: CGFloat = 112
     /// Welche Bibliothek dieser Gattung gezeigt wird.
     ///
     /// Ein Server kann mehrere Filmbibliotheken haben — im TestFlight eine
@@ -440,41 +439,33 @@ struct BibliothekView: View {
                 guard bereichAktiv else { return }
                 versatz = neu
             }
-            // Der Kopf misst sich selbst; die Zugabe ist der Abstand, der
-            // vorher als Teil der 112 mitlief.
-            .contentMargins(.top, kopfhoehe + 20, for: .scrollContent)
             .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
                             for: .scrollContent)
             // Nur die Scrollflaeche zieht sich beim Wechsel heran; der Kopf
             // darueber liegt fest wie die Leiste unten.
             .bereichsinhalt()
+            // **Der Kopf sitzt als Sicherheitsrand, nicht als Auflage.**
+            //
+            // Vorher hing er als Auflage darueber, und sein oberer Rand kam
+            // aus einer eigenen Messung: `onGeometryChange` schrieb die Hoehe
+            // in einen Zustand, der als `contentMargins(.top,)` in
+            // **dieselbe** Flaeche zurueckging. Das ist ein Kreis, und er
+            // schwang: der Servername steht erst da, wenn er geholt ist, mit
+            // ihm waechst der Kopf um eine Zeile, der Rand aendert sich, der
+            // Inhalt rutscht, die Geometrie aendert sich wieder.
+            //
+            // Zwei Daempfungen habe ich davor probiert und beide waren falsch:
+            // eine Schwelle greift nicht, weil der Sprung eine ganze Zeile
+            // ist, und "nur wachsen" macht aus einer einzigen zu grossen
+            // Messung einen bleibenden Riesenabstand — genau das war das Loch
+            // danach.
+            //
+            // `safeAreaInset` misst nichts. SwiftUI legt den Kopf oben an,
+            // zieht den Einzug selbst nach und laesst den Inhalt darunter
+            // durchlaufen — dasselbe Bild, ohne Rueckkopplung. Es gibt keine
+            // Zahl mehr, die falsch sein koennte.
+            .safeAreaInset(edge: .top, spacing: 0) { kopf }
 
-            kopf
-                // **Nur bei einer echten Aenderung uebernehmen.**
-                //
-                // Die gemessene Kopfhoehe geht als `contentMargins(.top,)` in
-                // dieselbe Scrollflaeche zurueck, die sie misst — das ist ein
-                // Kreis. Solange die Hoehe steht, ruht er; wackelt sie um
-                // Bruchteile eines Punktes, schaukelt er sich auf, und die
-                // ganze Seite faehrt sichtbar auf und ab.
-                //
-                // Sie darf nur wachsen — die Begruendung steht unten.
-                .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                    action: { neu in
-                        // **Sie waechst nur.** Eine Schwelle hat nicht
-                        // gereicht: der Kopf ist mal eine Zeile hoeher (der
-                        // Servername steht erst da, wenn er geholt ist), und
-                        // jede Aenderung geht als oberer Rand in dieselbe
-                        // Flaeche zurueck, die ihn misst. Der Kreis schwingt
-                        // dann zwischen zwei Hoehen
-                        //
-                        // Nur nach oben kann er nicht schwingen: ist der
-                        // groesste Stand einmal erreicht, aendert sich nichts
-                        // mehr. Ein Rand, der um eine Zeile zu gross ist,
-                        // waehrend der Servername noch fehlt, faellt niemandem
-                        // auf; ein Kopf, der ueber den Postern liegt, schon.
-                        if neu > kopfhoehe { kopfhoehe = neu }
-                    }
 
             if stand.gestoert {
                 // Derselbe Text wie auf der Startseite, samt Serveradresse.

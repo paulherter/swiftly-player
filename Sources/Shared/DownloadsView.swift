@@ -325,7 +325,6 @@ struct DownloadsView: View {
 
     @Environment(\.breit) private var breit
     @State private var versatz: CGFloat = 0
-    @State private var kopfhoehe: CGFloat = 112
     @State private var bearbeiten = false
     @State private var gewaehlt: Set<String> = []
     @State private var loeschblatt = false
@@ -373,7 +372,12 @@ struct DownloadsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
-            .contentMargins(.top, kopfhoehe + 12, for: .scrollContent)
+            // Der Kopf sitzt als Sicherheitsrand, nicht als Auflage — die
+            // Begruendung steht ausfuehrlich in `HauptView`. Kurz: sein
+            // oberer Rand kam aus einer eigenen Messung, die als
+            // `contentMargins` in dieselbe Flaeche zurueckging, und dieser
+            // Kreis schwang. `safeAreaInset` misst nichts.
+            .safeAreaInset(edge: .top, spacing: 0) { kopf }
             .contentMargins(.bottom, bearbeiten ? 84 : 24, for: .scrollContent)
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
@@ -387,32 +391,6 @@ struct DownloadsView: View {
             // Serien haengt sie seit je an der Flaeche allein;
             .bereichsinhalt()
 
-            kopf
-                // **Nur bei einer echten Aenderung uebernehmen.**
-                //
-                // Die gemessene Kopfhoehe geht als `contentMargins(.top,)` in
-                // dieselbe Scrollflaeche zurueck, die sie misst — das ist ein
-                // Kreis. Solange die Hoehe steht, ruht er; wackelt sie um
-                // Bruchteile eines Punktes, schaukelt er sich auf, und die
-                // ganze Seite faehrt sichtbar auf und ab.
-                //
-                // Sie darf nur wachsen — die Begruendung steht unten.
-                .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                    action: { neu in
-                        // **Sie waechst nur.** Eine Schwelle hat nicht
-                        // gereicht: der Kopf ist mal eine Zeile hoeher (der
-                        // Servername steht erst da, wenn er geholt ist), und
-                        // jede Aenderung geht als oberer Rand in dieselbe
-                        // Flaeche zurueck, die ihn misst. Der Kreis schwingt
-                        // dann zwischen zwei Hoehen
-                        //
-                        // Nur nach oben kann er nicht schwingen: ist der
-                        // groesste Stand einmal erreicht, aendert sich nichts
-                        // mehr. Ein Rand, der um eine Zeile zu gross ist,
-                        // waehrend der Servername noch fehlt, faellt niemandem
-                        // auf; ein Kopf, der ueber den Postern liegt, schon.
-                        if neu > kopfhoehe { kopfhoehe = neu }
-                    }
 
             if verwaltung.posten.isEmpty {
                 // **Kein Knopf „Was kann ich laden".** Netflix hat einen, weil
@@ -629,7 +607,6 @@ struct DownloadserieView: View {
 
     @Environment(\.breit) private var breit
     @State private var versatz: CGFloat = 0
-    @State private var kopfhoehe: CGFloat = 96
 
     @State private var abspielen: Abspielwunsch?
 
@@ -661,22 +638,24 @@ struct DownloadserieView: View {
                 .padding(.horizontal, Stil.rand(breit: breit))
             }
             .scrollIndicators(.hidden)
-            .contentMargins(.top, kopfhoehe + 12, for: .scrollContent)
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
             } action: { _, neu in versatz = neu }
-
-            Unschaerfekopf(versatz: versatz) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Unterseitenkopf(titel: route.titel, zurueck: { schliessen() }) { EmptyView() }
-                        .padding(.horizontal, -Stil.rand(breit: breit))
-                    Text(verbatim: String(localized: "\(folgen.count) Folgen") + " · "
-                         + Downloadregeln.groesse(folgen.reduce(0) { $0 + $1.bytes }))
-                        .font(.system(size: 13))
-                        .foregroundStyle(Stil.schriftSehrLeise)
+            // Auch hier als Sicherheitsrand statt als Auflage — siehe
+            // `HauptView`.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Unschaerfekopf(versatz: versatz) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Unterseitenkopf(titel: route.titel,
+                                        zurueck: { schliessen() }) { EmptyView() }
+                            .padding(.horizontal, -Stil.rand(breit: breit))
+                        Text(verbatim: String(localized: "\(folgen.count) Folgen") + " · "
+                             + Downloadregeln.groesse(folgen.reduce(0) { $0 + $1.bytes }))
+                            .font(.system(size: 13))
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                    }
                 }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { kopfhoehe = $0 }
         }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)

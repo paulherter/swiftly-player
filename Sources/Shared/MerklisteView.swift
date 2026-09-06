@@ -84,35 +84,14 @@ struct MerklisteView: View {
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
             } action: { _, neu in versatz = neu }
-            .contentMargins(.top, kopfhoehe + 20, for: .scrollContent)
+            // Der Kopf sitzt als Sicherheitsrand, nicht als Auflage — die
+            // Begruendung steht ausfuehrlich in `HauptView`. Kurz: sein
+            // oberer Rand kam aus einer eigenen Messung, die als
+            // `contentMargins` in dieselbe Flaeche zurueckging, und dieser
+            // Kreis schwang. `safeAreaInset` misst nichts.
+            .safeAreaInset(edge: .top, spacing: 0) { kopf }
             .contentMargins(.bottom, 24, for: .scrollContent)
 
-            kopf
-                // **Nur bei einer echten Aenderung uebernehmen.**
-                //
-                // Die gemessene Kopfhoehe geht als `contentMargins(.top,)` in
-                // dieselbe Scrollflaeche zurueck, die sie misst — das ist ein
-                // Kreis. Solange die Hoehe steht, ruht er; wackelt sie um
-                // Bruchteile eines Punktes, schaukelt er sich auf, und die
-                // ganze Seite faehrt sichtbar auf und ab.
-                //
-                // Sie darf nur wachsen — die Begruendung steht unten.
-                .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                    action: { neu in
-                        // **Sie waechst nur.** Eine Schwelle hat nicht
-                        // gereicht: der Kopf ist mal eine Zeile hoeher (der
-                        // Servername steht erst da, wenn er geholt ist), und
-                        // jede Aenderung geht als oberer Rand in dieselbe
-                        // Flaeche zurueck, die ihn misst. Der Kreis schwingt
-                        // dann zwischen zwei Hoehen
-                        //
-                        // Nur nach oben kann er nicht schwingen: ist der
-                        // groesste Stand einmal erreicht, aendert sich nichts
-                        // mehr. Ein Rand, der um eine Zeile zu gross ist,
-                        // waehrend der Servername noch fehlt, faellt niemandem
-                        // auf; ein Kopf, der ueber den Postern liegt, schon.
-                        if neu > kopfhoehe { kopfhoehe = neu }
-                    }
 
             if stand.items.isEmpty, !stand.laedt {
                 // **Der Leerzustand sagt, wie man hineinkommt.** Sonst steht
@@ -125,7 +104,6 @@ struct MerklisteView: View {
         }
     }
 
-    @State private var kopfhoehe: CGFloat = 112
 
     private var kopf: some View {
         Unschaerfekopf(versatz: versatz) {
