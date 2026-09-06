@@ -228,6 +228,8 @@ struct BibliothekView: View {
 
     @Environment(\.breit) private var breit
     @Environment(\.fensterknoepfe) private var fensterknoepfe
+    /// Ist dieser Bereich vorn? Nur dann gilt, was die Scrollflaeche meldet.
+    @Environment(\.bereichAktiv) private var bereichAktiv
 
     /// Die Spaltenzahl folgt der Breite, die Kacheln füllen ihre Spalte.
     ///
@@ -386,7 +388,17 @@ struct BibliothekView: View {
             // oberen Rand, den `contentMargins` gesetzt hat.
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
-            } action: { _, neu in versatz = neu }
+            } action: { _, neu in
+                // **Nur solange dieser Bereich vorn ist.**
+                //
+                // Waehrend des Wechsels rechnet die Scrollflaeche ihre
+                // Geometrie neu, und dabei kommen Zwischenstaende heraus:
+                // Versatz null, oberer Einzug schon gesetzt — daraus wird
+                // rechnerisch ein voll gescrollter Kopf, also eine deckende
+                // schwarze Leiste, fuer ein, zwei Bilder. Genau die hat
+                guard bereichAktiv else { return }
+                versatz = neu
+            }
             // Der Kopf misst sich selbst; die Zugabe ist der Abstand, der
             // vorher als Teil der 112 mitlief.
             .contentMargins(.top, kopfhoehe + 20, for: .scrollContent)

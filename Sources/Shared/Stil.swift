@@ -1145,14 +1145,18 @@ struct Navileiste: View {
         // sicheren Bereich — sonst blitzt unter der Leiste weiter Inhalt
         // durch, im Bereich des Home-Indikators.
         .background {
-            // Fast deckend. Der weiche Blur gehört an den oberen Rand, wo man
-            // Titel über durchlaufendem Bild lesen muss — hier unten stehen
-            // nur vier Beschriftungen, die einfach stehen sollen.
-            ZStack {
-                Unschaerfe()
-                Stil.grund.opacity(0.86)
-            }
-            .ignoresSafeArea(edges: .bottom)
+            // **Deckend, kein Glas.** „Fast deckend" hiess: 14 Prozent des
+            // Inhalts scheinen durch, und im Bereichswechsel sah man genau
+            // das — Kacheln, die sich sichtbar durch die Leiste schoben.
+            // Dasselbe Material hat schon den Bibliothekskopf heller gemacht
+            // als die Seite; hier unten stehen vier Beschriftungen, die
+            // einfach stehen sollen, und dafuer ist Glas kein Gewinn.
+            //
+            // `Stil.grund` und nicht `flaeche`: die Leiste soll keine eigene
+            // Flaeche sein, sondern der Grund, auf dem die Seite endet. Die
+            // Haarlinie darueber ist alles, was sie braucht — genau so wie
+            // der Kopf oben seit gestern.
+            Stil.grund.ignoresSafeArea(edges: .bottom)
         }
         .overlay(alignment: .top) {
             Rectangle().fill(Stil.linie).frame(height: 1)
@@ -1222,6 +1226,16 @@ private struct Bereichsleiste: ViewModifier {
             // liegt sie ausserhalb des Effekts: erst der Inhalt bewegt sich,
             // dann kommt sie darueber.
             .scaleEffect(aktiv ? 1 : Stil.bereichsmass)
+            // **Ein fester Grund hinter der bewegten Seite.**
+            //
+            // Zieht sich die Seite heran, gibt sie an allen vier Raendern
+            // etwas frei — und was dort zum Vorschein kommt, gehoert nicht
+            // mehr ihr. Oben, wo die Seite ihren Kopf ueber den sicheren
+            // Bereich zieht, war genau das zu sehen: ein schwarzer Streifen
+            // ueber Titel und Profilbild. Dieser Grund ist derselbe Ton wie
+            // die Seite und bewegt sich nicht mit; damit gibt es dort nichts
+            // mehr freizugeben.
+            .background(Stil.grund.ignoresSafeArea())
             .animation(Stil.bereichswechsel, value: aktiv)
             .overlay(alignment: .bottom) {
             if !breit, let wahl {
