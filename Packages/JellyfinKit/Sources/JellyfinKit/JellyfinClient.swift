@@ -735,6 +735,27 @@ public actor JellyfinClient {
         return url
     }
 
+    /// Die Adresse, unter der ein Titel heruntergeladen wird. **H2.**
+    ///
+    /// Es ist dieselbe Adresse wie beim Abspielen — `/stream?static=true`,
+    /// also die unveraenderte Datei von der Platte des Servers. Genau das
+    /// ist die Zusage: was heruntergeladen wird, ist das, was auch gestreamt
+    /// wuerde, Bit fuer Bit. Eine App, die fuer Downloads doch transkodieren
+    /// laesst, bricht sie an der Stelle, an der es am meisten auffaellt.
+    ///
+    /// **Ohne `playSessionId`, und das ist der ganze Unterschied.** Ein
+    /// Download ist keine Wiedergabe: mit einer Sitzungskennung stuende das
+    /// Geraet am Server als „spielt gerade" da, taeuchte in der Fernsteuerung
+    /// auf und wuerde als Uebernahme angeboten — waehrend niemand hinsieht.
+    ///
+    /// **Nicht `/Items/{id}/Download`.** Der Weg gaebe dieselben Bytes,
+    /// verlangt aber das Recht `EnableContentDownloading` am Konto; wer es
+    /// nicht hat, bekaeme eine 403 statt einer Datei. Diese Adresse braucht
+    /// nur das Recht, das ohnehin noetig ist, um den Titel zu sehen.
+    public func downloadURL(itemID: String, mediaSourceID: String?) throws -> URL {
+        try streamURL(itemID: itemID, mediaSourceID: mediaSourceID, playSessionID: nil)
+    }
+
     /// Hintergrundbild für die Serienseite. `nil`, wenn keins hinterlegt ist.
     public func backdropURL(for item: Item, maxWidth: Int = 1200) -> URL? {
         guard let tag = item.backdropImageTags?.first, let token = session?.accessToken else { return nil }
