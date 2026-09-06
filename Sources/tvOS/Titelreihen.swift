@@ -200,7 +200,15 @@ struct Titelstreifen: View {
                     NavigationLink(value: item) {
                         Kachelinhalt(bild: model.imageURL(for: item, maxHeight: 600,
                                                           hochkant: true),
-                                     titel: item.name, mitUnterzeile: false)
+                                     titel: item.name,
+                                     fortschritt: item.userData?.playedPercentage
+                                         .map { $0 / 100 },
+                                     mitUnterzeile: false,
+                                     marke: Anzeigeregeln.kachelmarke(
+                                        art: item.type,
+                                        staffeln: item.childCount,
+                                        gesehen: item.userData?.played,
+                                        offeneFolgen: item.userData?.unplayedItemCount))
                     }
                     .buttonStyle(KachelStil())
                 }

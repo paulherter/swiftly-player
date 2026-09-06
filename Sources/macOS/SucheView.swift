@@ -40,6 +40,12 @@ struct SucheView: View {
                                 Posterkachel(titel: eintrag.name,
                                              zweitzeile: eintrag.trefferauskunft,
                                              bild: model.imageURL(for: eintrag, hochkant: true),
+                                             fortschritt: eintrag.userData?.playedPercentage.map { $0 / 100 },
+                                             marke: Anzeigeregeln.kachelmarke(
+                                             art: eintrag.type,
+                                             staffeln: eintrag.childCount,
+                                             gesehen: eintrag.userData?.played,
+                                             offeneFolgen: eintrag.userData?.unplayedItemCount),
                                              zeichen: eintrag.type == "Series" ? "tv" : "film")
                             }
                             .buttonStyle(.plain)

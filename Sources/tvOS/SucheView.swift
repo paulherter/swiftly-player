@@ -79,7 +79,15 @@ struct SucheView: View {
                                                                   maxHeight: 600,
                                                                   hochkant: true),
                                              titel: item.name,
-                                             unterzeile: gattungUndJahr(item))
+                                             unterzeile: gattungUndJahr(item),
+                                             fortschritt: item.userData?
+                                                 .playedPercentage.map { $0 / 100 },
+                                             marke: Anzeigeregeln.kachelmarke(
+                                                art: item.type,
+                                                staffeln: item.childCount,
+                                                gesehen: item.userData?.played,
+                                                offeneFolgen: item.userData?
+                                                    .unplayedItemCount))
                             }
                             .buttonStyle(KachelStil())
                         }
