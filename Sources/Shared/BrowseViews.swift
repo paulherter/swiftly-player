@@ -176,6 +176,7 @@ struct ItemDetailView: View {
     @State private var versatz: CGFloat = 0
 
     @State private var plan: PlaybackPlan?
+    @State private var ladeblatt = false
     @State private var pruefe = true
     @State private var abspielen: Abspielwunsch?
     @State private var mehrOffen = false
@@ -187,6 +188,21 @@ struct ItemDetailView: View {
     @State private var gesehen = false
 
     private var aktuell: Item { frisch ?? item }
+
+    /// Was von diesem Titel schon auf dem Gerät liegt — `nil` heisst nichts.
+    private var geladen: Downloadposten? { model.downloads.posten(fuer: aktuell.id) }
+
+    /// Der Eintrag, den ein Download bekäme. Die Größe kommt aus derselben
+    /// Quelle, die der Player nähme — **H2**, es ist dieselbe Datei.
+    private var alsPosten: Downloadposten? {
+        guard let konto = model.session?.userID else { return nil }
+        let quelle = plan?.quelle ?? aktuell.mediaSources?.first
+        return Downloadposten(
+            id: aktuell.id, konto: konto, art: .film, titel: aktuell.name,
+            laufzeitTicks: aktuell.runTimeTicks, container: quelle?.container,
+            quelle: quelle?.id, bytes: quelle?.size ?? 0,
+            gesehen: aktuell.userData?.played ?? false)
+    }
 
     private var fortsetzenAb: Double? { aktuell.fortsetzenAb }
 
@@ -269,6 +285,13 @@ struct ItemDetailView: View {
             if !breit {
                 Handlungsblatt(offen: $mehrOffen, titel: aktuell.name,
                                handlungen: mehrHandlungen)
+                    .zIndex(20)
+            }
+            if let posten = alsPosten {
+                Ladeblatt(offen: $ladeblatt, model: model, posten: [posten],
+                          titel: aktuell.name,
+                          plakat: model.plakatURL(itemID: aktuell.id,
+                                                  marke: aktuell.imageTags?["Primary"]))
                     .zIndex(20)
             }
             if let meldung {
@@ -395,7 +418,7 @@ struct ItemDetailView: View {
     }
 
     private var aktionsreihe: some View {
-        // Schmal verteilen die Spacer die vier Knöpfe über die Zeile; breit
+        // Schmal verteilen die Spacer die Knöpfe über die Zeile; breit
         // stehen sie neben dem Abspielknopf und sollen zusammenbleiben.
         HStack(spacing: 8) {
             Aktionsknopf(symbol: gemerkt ? "bookmark.fill" : "bookmark",
@@ -411,6 +434,35 @@ struct ItemDetailView: View {
                     }
                 }
             }
+            // **Das fünfte Feld, und nur wenn die Funktion an ist.**
+            //
+            // An zweiter Stelle, nicht am Ende: Merkliste und Download sind
+            // das Paar „für später" und gehören nebeneinander. Fünf Felder
+            // auf 354 Punkt ergeben 62 je Feld — über den 44, die eine
+            // Trefferfläche braucht.
+            //
+            // Wer die Funktion nie einschaltet, sieht die Reihe unverändert
+            // mit ihren vier Feldern; deshalb wächst sie hier statt eine
+            // fünfte Stelle immer freizuhalten.
+            if model.downloadsAn, aktuell.type != "Series" {
+                Aktionsknopf(symbol: "arrow.down", titel: "Laden",
+                             aktiv: geladen != nil, dehnt: !weit) {
+                    ringGetippt(geladen, model.downloads) { ladeblatt = true }
+                }
+                .overlay {
+                    // Läuft der Download, tritt der Ring an die Stelle des
+                    // Zeichens — dasselbe Zeichen wie in der Liste, nur in
+                    // einem Feld statt in einer Zeile.
+                    if let g = geladen, g.stand != .fertig {
+                        Downloadring(posten: g, mass: 22) {
+                            ringGetippt(g, model.downloads) {}
+                        }
+                        .allowsHitTesting(false)
+                        .background(Stil.flaeche)
+                    }
+                }
+            }
+
             Aktionsknopf(symbol: "film", titel: "Trailer", dehnt: !weit) { trailerStarten() }
             Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
                          titel: "Gesehen", aktiv: gesehen, dehnt: !weit) {

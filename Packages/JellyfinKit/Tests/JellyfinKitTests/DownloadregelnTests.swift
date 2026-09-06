@@ -218,6 +218,23 @@ struct DownloadregelnTests {
         #expect(posten("abc", konto: "u1").dateiname != posten("abc", konto: "u2").dateiname)
     }
 
+    // MARK: H8 — der Plan von der Platte
+
+    @Test("Eine Datei vom Geraet ist Direct Play, ohne Sitzung und ohne Grund")
+    func planVonDerPlatte() {
+        let datei = URL(fileURLWithPath: "/tmp/u1-abc.mkv")
+        let plan = PlaybackPlan.vonDerPlatte(datei, container: "mkv", mediaSourceID: "q1")
+        #expect(plan.url == datei)
+        #expect(plan.method == .directPlay)
+        #expect(plan.isLossless)
+        // Es *ist* die unveraenderte Datei — es kann keinen Grund geben.
+        #expect(plan.reasons.isEmpty)
+        // Ohne Server keine Sitzung.
+        #expect(plan.playSessionID == nil)
+        #expect(plan.container == "mkv")
+        #expect(plan.mediaSourceID == "q1")
+    }
+
     // MARK: Das Format traegt ueber die Zeit
 
     @Test("Woertliches JSON — ein umbenanntes Feld faellt hier auf")

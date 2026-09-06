@@ -1,5 +1,6 @@
 import Foundation
 import JellyfinKit
+import Network
 import Observation
 #if canImport(UIKit)
 import UIKit
@@ -168,8 +169,23 @@ final class Downloadverwaltung {
     }
 
     private func platzMessen() {
-        let werte = try? Self.ordner().resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        // **`…ForImportantUsage` gibt es auf tvOS nicht**, und das ist keine
+        // Willkuer: ein Apple TV hat keinen Nutzerspeicher, ueber den man
+        // Auskunft geben koennte — es raeumt selbst weg. Genau deshalb steht
+        // in VERHALTEN F, dass es dort keine Downloads gibt; die Klasse ruht
+        // hier nur mit, weil `AppModel` allen gehoert.
+        //
+        // Die Zahl ist ausserdem eine andere als die schlichte freie
+        // Kapazitaet: sie zaehlt mit, was iOS fuer eine wichtige Anforderung
+        // freiraeumen wuerde — also das, was ein Download tatsaechlich
+        // bekommt.
+        #if os(tvOS)
+        frei = 0
+        #else
+        let werte = try? Self.ordner().resourceValues(
+            forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         frei = Int64(werte?.volumeAvailableCapacityForImportantUsage ?? 0)
+        #endif
     }
 
     // MARK: Anstossen
@@ -181,21 +197,53 @@ final class Downloadverwaltung {
     }
 
     /// Einen Titel in die Schlange stellen. Startet ihn, wenn er dran ist.
-    func anstossen(_ neu: Downloadposten) {
+    ///
+    /// `plakat` ist die Adresse des Titelbilds und wird **mitgeladen**. Ohne
+    /// das stünde die Downloadseite im Flugzeug ohne Bilder da: der
+    /// Bildspeicher der App hält nur im Arbeitsspeicher, und die Adressen
+    /// zeigen auf den Server, den es dann nicht gibt. Ein Plakat ist ein paar
+    /// Dutzend Kilobyte neben achtzehn Gigabyte — die einzige Stelle, an der
+    /// sich zusätzliches Laden nicht lohnt zu diskutieren.
+    func anstossen(_ neu: Downloadposten, plakat: URL? = nil) {
         guard !posten.contains(where: { $0.id == neu.id }) else { return }
         posten.append(neu)
         sichern()
+        if let plakat { plakatSichern(fuer: neu, von: plakat) }
         takt()
     }
 
     /// Eine ganze Staffel. Der Reihe nach, nicht gleichzeitig — H4 sorgt
     /// dafür von selbst, weil immer nur einer läuft.
-    func anstossen(_ viele: [Downloadposten]) {
+    func anstossen(_ viele: [Downloadposten], plakat: URL? = nil) {
         for p in viele where !posten.contains(where: { $0.id == p.id }) {
             posten.append(p)
+            if let plakat { plakatSichern(fuer: p, von: plakat) }
         }
         sichern()
         takt()
+    }
+
+    // MARK: Das Plakat
+
+    private static func plakatweg(_ p: Downloadposten) -> URL {
+        ordner().appendingPathComponent("\(p.konto)-\(p.serienId ?? p.id).jpg")
+    }
+
+    /// Das Titelbild auf dem Gerät — oder `nil`, dann nimmt die Zeile die
+    /// Adresse vom Server.
+    func plakat(fuer p: Downloadposten) -> URL? {
+        let weg = Self.plakatweg(p)
+        return FileManager.default.fileExists(atPath: weg.path) ? weg : nil
+    }
+
+    private func plakatSichern(fuer p: Downloadposten, von adresse: URL) {
+        let ziel = Self.plakatweg(p)
+        guard !FileManager.default.fileExists(atPath: ziel.path) else { return }
+        Task {
+            guard let (daten, _) = try? await URLSession.shared.data(from: adresse),
+                  daten.count > 0 else { return }
+            try? daten.write(to: ziel, options: .atomic)
+        }
     }
 
     func anhalten(_ id: String) {
@@ -227,6 +275,14 @@ final class Downloadverwaltung {
         if let p = posten.first(where: { $0.id == id }) {
             try? FileManager.default.removeItem(
                 at: Self.ordner().appendingPathComponent(p.dateiname))
+            // Das Plakat teilen sich alle Folgen einer Serie — es geht erst
+            // mit der letzten. Sonst stuende die vorletzte Folge ohne Bild da.
+            let geschwister = posten.contains {
+                $0.id != id && ($0.serienId ?? $0.id) == (p.serienId ?? p.id)
+            }
+            if !geschwister {
+                try? FileManager.default.removeItem(at: Self.plakatweg(p))
+            }
         }
         posten.removeAll { $0.id == id }
         sichern()
@@ -366,17 +422,49 @@ final class Downloadverwaltung {
 
     // MARK: Netz
 
-    /// Ob gerade WLAN anliegt.
+    /// Ob gerade WLAN anliegt. Steuert H5.
+    private(set) var imWLAN = true
+    /// Gar keine Verbindung. **Der Tag, für den die Funktion gebaut ist** —
+    /// die Seite wechselt dann ihre Kopfzeile.
+    private(set) var keinNetz = false
+
+    /// **`NWPathMonitor`, und nicht selbst geraten.**
     ///
-    /// **Ausdrücklich keine eigene Netzüberwachung.** `NWPathMonitor` wäre
-    /// die saubere Antwort, kostet aber einen dauerhaft laufenden Beobachter
-    /// — und genau eine solche Dauerlast hat auf Linux einen ganzen Kern
-    /// gefressen (Zeile 51 der Änderungsliste). Hier reicht die Frage im
-    /// Takt, und der Takt läuft nur, wenn sich etwas ändert.
-    @ObservationIgnored private var imWLANGemerkt = true
-    var imWLAN: Bool {
-        get { imWLANGemerkt }
-        set { let alt = imWLANGemerkt; imWLANGemerkt = newValue; if alt != newValue { takt() } }
+    /// Ich hatte hier zuerst gar keine Überwachung stehen, mit dem Hinweis
+    /// auf die Dauerlast, die auf Linux einen Kern gefressen hat. Das war
+    /// falsch zusammengezogen: dort war es ein offener
+    /// `URLSessionWebSocketTask`, nicht ein Pfadbeobachter — nachgemessen,
+    /// Zeile 51 der Änderungsliste. Und ohne Beobachter stünde `imWLAN`
+    /// dauerhaft auf `true`, womit H5 gar nichts täte: der Schalter „Nur
+    /// über WLAN" wäre eine Zeile ohne Wirkung, und das ist schlechter als
+    /// keine Zeile.
+    ///
+    /// Er läuft nur, solange die Funktion eingeschaltet ist.
+    @ObservationIgnored private var wache: NWPathMonitor?
+
+    func netzBeobachten() {
+        guard wache == nil else { return }
+        let w = NWPathMonitor()
+        w.pathUpdateHandler = { [weak self] pfad in
+            let wlan = pfad.usesInterfaceType(.wifi) || pfad.usesInterfaceType(.wiredEthernet)
+            let weg = pfad.status != .satisfied
+            Task { @MainActor in self?.netzlage(imWLAN: wlan, keinNetz: weg) }
+        }
+        w.start(queue: DispatchQueue(label: "de.paulherter.swiftly.netzwache"))
+        wache = w
+    }
+
+    func netzNichtMehrBeobachten() {
+        wache?.cancel()
+        wache = nil
+    }
+
+    private func netzlage(imWLAN wlan: Bool, keinNetz weg: Bool) {
+        guard wlan != imWLAN || weg != keinNetz else { return }
+        imWLAN = wlan
+        keinNetz = weg
+        // Der Takt hält an oder fährt fort — je nachdem, was jetzt gilt.
+        takt()
     }
 
     // MARK: H9 — der Titel ist vom Server verschwunden

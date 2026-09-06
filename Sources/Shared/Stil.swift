@@ -1085,24 +1085,46 @@ struct Zeitregler: View {
 /// Die vier Bereiche unten. Ersetzt die Knöpfe „Filme" und „Serien", die
 /// vorher als Kacheln auf der Startseite standen.
 enum Bereich: Int, CaseIterable, Identifiable {
-    case start, filme, serien, suche
+    // **`downloads` steht hinten, obwohl es vorn angezeigt wird.**
+    //
+    // Die Rohwerte sind Feldindizes: `HauptView` haelt seine Seitenstapel als
+    // `pfade[bereich.rawValue]`. Wuerde `downloads` zwischen `serien` und
+    // `suche` eingefuegt, ruecke `suche` von 3 auf 4 — und jeder Stapel
+    // laege danach unter einem fremden Bereich. Wo es in der Leiste steht,
+    // sagt ``sichtbare(downloads:)``, nicht die Reihenfolge hier.
+    case start, filme, serien, suche, downloads
     var id: Int { rawValue }
+
+    /// Die Leiste, in ihrer Reihenfolge. **H1:** ohne den Schalter gibt es
+    /// den vierten Platz gar nicht.
+    ///
+    /// Downloads steht links neben der Suche, und die Suche bleibt ganz
+    /// rechts — sie ist die einzige, die man mit dem Daumen im Halbschlaf
+    /// trifft, und sie stand dort seit der ersten Fassung.
+    static func sichtbare(downloads: Bool) -> [Bereich] {
+        downloads ? [.start, .filme, .serien, .downloads, .suche]
+                  : [.start, .filme, .serien, .suche]
+    }
 
     var name: LocalizedStringKey {
         switch self {
-        case .start:  "Start"
-        case .filme:  "Filme"
-        case .serien: "Serien"
-        case .suche:  "Suche"
+        case .start:     "Start"
+        case .filme:     "Filme"
+        case .serien:    "Serien"
+        case .suche:     "Suche"
+        case .downloads: "Downloads"
         }
     }
 
     var symbol: String {
         switch self {
-        case .start:  "house"
-        case .filme:  "film"
-        case .serien: "tv"
-        case .suche:  "magnifyingglass"
+        case .start:     "house"
+        case .filme:     "film"
+        case .serien:    "tv"
+        case .suche:     "magnifyingglass"
+        // **Der Kreis gehoert dazu.** Ein nackter Pfeil zwischen Haus, Film,
+        // Fernseher und Lupe liest sich als Richtungszeichen, nicht als Ort.
+        case .downloads: "arrow.down.circle"
         }
     }
 }
@@ -1124,6 +1146,12 @@ private struct Bereichsknopf: View {
     /// Feste Zeilenhöhe. Die Leiste unten gibt keine vor — dort teilen sich
     /// die vier die Höhe der Leiste selbst.
     var hoehe: CGFloat?
+    /// Wie viele Downloads gerade laufen. `0` heisst: keine Marke.
+    ///
+    /// **Die Zahl der laufenden, nicht die der fertigen.** Ein Abzeichen, das
+    /// dauerhaft „12" sagt, ist nach zwei Tagen unsichtbar; eines, das
+    /// erscheint und wieder verschwindet, sagt etwas.
+    var laufen: Int = 0
     let waehlen: () -> Void
 
     var body: some View {
@@ -1137,6 +1165,22 @@ private struct Bereichsknopf: View {
         let kern = VStack(spacing: 4) {
             Image(systemName: bereich.symbol)
                 .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
+                .overlay(alignment: .topTrailing) {
+                    if laufen > 0 {
+                        Text(verbatim: laufen.formatted())
+                            .font(.system(size: 9, weight: .bold))
+                            .monospacedDigit()
+                            .foregroundStyle(Stil.grund)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Stil.akzent, in: Capsule())
+                            // Nach aussen versetzt: auf dem Zeichen selbst
+                            // deckt sie den Pfeil zu, und dann sieht man
+                            // nicht mehr, welcher Reiter es ist.
+                            .offset(x: 11, y: -7)
+                            .accessibilityLabel(Text("\(laufen) laden gerade"))
+                    }
+                }
             Text(bereich.name)
                 .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
         }
@@ -1162,11 +1206,15 @@ private struct Bereichsknopf: View {
 /// Haarlinie oben, 22-pt-Symbole.
 struct Navileiste: View {
     @Binding var gewaehlt: Bereich
+    /// H1 — ohne den Schalter gibt es den fuenften Platz nicht.
+    var mitDownloads = false
+    var laufen = 0
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(Bereich.allCases) { bereich in
-                Bereichsknopf(bereich: bereich, aktiv: bereich == gewaehlt) {
+            ForEach(Bereich.sichtbare(downloads: mitDownloads)) { bereich in
+                Bereichsknopf(bereich: bereich, aktiv: bereich == gewaehlt,
+                              laufen: bereich == .downloads ? laufen : 0) {
                     gewaehlt = bereich
                 }
             }
@@ -1280,6 +1328,21 @@ private struct BereichAktivSchluessel: EnvironmentKey {
     static let defaultValue = true
 }
 
+/// Ob es den Downloadreiter gibt und wie viele gerade laufen.
+///
+/// **Aus demselben Grund über die Umgebung wie ``bereichswahl``:** die Leiste
+/// wird von drei Wurzelansichten angelegt, und die vierte, die dazukommt,
+/// vergisst sonst das Durchreichen. Beides zusammen in einem Wert, weil beides
+/// dieselbe Leiste betrifft und immer gemeinsam gesetzt wird.
+struct Downloadleiste: Equatable {
+    var an = false
+    var laufen = 0
+}
+
+private struct DownloadleisteSchluessel: EnvironmentKey {
+    static let defaultValue = Downloadleiste()
+}
+
 extension EnvironmentValues {
     var bereichswahl: Binding<Bereich>? {
         get { self[Bereichswahlschluessel.self] }
@@ -1289,6 +1352,11 @@ extension EnvironmentValues {
     var bereichAktiv: Bool {
         get { self[BereichAktivSchluessel.self] }
         set { self[BereichAktivSchluessel.self] = newValue }
+    }
+
+    var downloadleiste: Downloadleiste {
+        get { self[DownloadleisteSchluessel.self] }
+        set { self[DownloadleisteSchluessel.self] = newValue }
     }
 }
 
@@ -1349,11 +1417,13 @@ private struct Bereichsinhalt: ViewModifier {
 private struct Bereichsleiste: ViewModifier {
     @Environment(\.breit) private var breit
     @Environment(\.bereichswahl) private var wahl
+    @Environment(\.downloadleiste) private var downloads
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottom) {
             if !breit, let wahl {
-                Navileiste(gewaehlt: wahl)
+                Navileiste(gewaehlt: wahl, mitDownloads: downloads.an,
+                           laufen: downloads.laufen)
                     // **Der volle Rahmen davor ist nicht schmückend.** Die
                     // Auflage misst sich an ihrem Gastgeber, und der ist bei
                     // offener Tastatur bereits geschrumpft — die Leiste stand
@@ -1392,6 +1462,7 @@ private struct Bereichsleiste: ViewModifier {
 /// mehr als ein senkrechter.
 struct Seitenleiste: View {
     @Environment(\.fensterknoepfe) private var fensterknoepfe
+    @Environment(\.downloadleiste) private var downloads
     @Binding var gewaehlt: Bereich
     /// Die Profilseite ist offen — dann trägt keiner der vier Bereiche die
     /// Auswahl, sondern das Zeichen unten.
@@ -1406,10 +1477,11 @@ struct Seitenleiste: View {
                 .padding(.top, Stil.kopfOben + (fensterknoepfe ? Fensterknoepfe.hoehe : 0))
                 .padding(.bottom, 30)
 
-            ForEach(Bereich.allCases) { bereich in
+            ForEach(Bereich.sichtbare(downloads: downloads.an)) { bereich in
                 Bereichsknopf(bereich: bereich,
                               aktiv: bereich == gewaehlt && !imProfil,
-                              hoehe: 64) {
+                              hoehe: 64,
+                              laufen: bereich == .downloads ? downloads.laufen : 0) {
                     gewaehlt = bereich
                 }
             }
@@ -2295,6 +2367,30 @@ struct Wahlchip: View {
         .buttonStyle(.plain)
         .accessibilityLabel(text)
         .accessibilityAddTraits(an ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// Ein Chip, der etwas **tut**, statt etwas zu **wählen**.
+///
+/// Dieselbe Höhe, dieselbe Kapsel, derselbe Rand wie ``Wahlchip`` — er steht
+/// oft direkt daneben, und zwei Chips in einer Zeile, die sich in der Form
+/// unterscheiden, sähen aus wie zwei Sorten Frage. Verschieden ist nur, dass
+/// er keinen An-Zustand hat: eine Handlung ist nicht gewählt, sie geschieht.
+struct Chipknopf<Inhalt: View>: View {
+    @ViewBuilder var inhalt: () -> Inhalt
+    let aktion: () -> Void
+
+    var body: some View {
+        Button(action: aktion) {
+            inhalt()
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Stil.schrift)
+                .padding(.horizontal, 13)
+                .frame(height: 30)
+                .background(Stil.erhoeht, in: Capsule())
+                .overlay { Capsule().strokeBorder(Stil.rand) }
+        }
+        .buttonStyle(.plain)
     }
 }
 

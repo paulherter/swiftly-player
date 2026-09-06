@@ -195,6 +195,12 @@ targets:
       - path: Sources/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
+      # **Nur die Verwaltung, nicht die Ansichten.** Downloads gibt es
+      # laut VERHALTEN F nur auf iPhone und iPad; `AppModel` haelt sie
+      # aber, und `AppModel` gehoert allen. Die Klasse ruht hier:
+      # `downloadsAn` ist aus, also faengt weder Netzwache noch
+      # Hintergrundsitzung je an.
+      - path: Sources/Shared/Downloadverwaltung.swift
       - path: Sources/Shared/Anmeldemodell.swift
       - path: Sources/Shared/Abspielwunsch.swift
       - path: Sources/Shared/Farben.swift
@@ -424,6 +430,12 @@ targets:
       - path: Sources/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
+      # **Nur die Verwaltung, nicht die Ansichten.** Downloads gibt es
+      # laut VERHALTEN F nur auf iPhone und iPad; `AppModel` haelt sie
+      # aber, und `AppModel` gehoert allen. Die Klasse ruht hier:
+      # `downloadsAn` ist aus, also faengt weder Netzwache noch
+      # Hintergrundsitzung je an.
+      - path: Sources/Shared/Downloadverwaltung.swift
       - path: Sources/Shared/Anmeldemodell.swift
       - path: Sources/Shared/Abspielwunsch.swift
       # Die Startseite laedt fuer alle Plattformen gleich — und sie muss es,

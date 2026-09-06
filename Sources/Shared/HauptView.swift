@@ -14,8 +14,13 @@ struct HauptView: View {
     @State private var besucht: Set<Bereich> = [.start]
     /// Wohin der Wisch nach rechts aus der Suche zurueckfuehrt.
     @State private var vorigerBereich: Bereich = .start
+    /// **Einer je Bereich, nach `rawValue`.** Fuenf seit den Downloads —
+    /// `Bereich.allCases.count` waere hier verlockend, ist aber ein
+    /// `@State`-Anfangswert und wuerde bei jeder neuen Bereichsart still
+    /// mitwachsen, ohne dass jemand die Stelle ansieht.
     @State private var pfade = [NavigationPath(), NavigationPath(),
-                                NavigationPath(), NavigationPath()]
+                                NavigationPath(), NavigationPath(),
+                                NavigationPath()]
     /// Der Profilzweig ist offen. Nur für die Seitenleiste: dort trägt dann
     /// das Profilzeichen die Auswahl statt eines der vier Bereiche.
     ///
@@ -77,6 +82,17 @@ struct HauptView: View {
                 // `bereichsleiste()`. Hier steht nur, wohin ein Tippen darauf
                 // geht.
                 .environment(\.bereichswahl, $bereich)
+                .environment(\.downloadleiste,
+                             Downloadleiste(an: model.downloadsAn,
+                                            laufen: model.downloads.posten
+                                                .filter { $0.stand == .laedt || $0.stand == .wartet }
+                                                .count))
+                // **Wer den Schalter umlegt, waehrend er auf der Seite
+                // steht, darf nicht dort stehenbleiben.** Der Reiter
+                // verschwindet, die Seite bliebe sonst ohne Weg zurueck.
+                .onChange(of: model.downloadsAn) { _, an in
+                    if !an, bereich == .downloads { bereich = .start }
+                }
             }
 
         }
@@ -133,6 +149,8 @@ struct HauptView: View {
                     SucheView(model: model, aktiv: bereich == .suche) {
                         bereich = vorigerBereich
                     }
+                case .downloads:
+                    DownloadsView(model: model)
                 }
             }
             .zielorte(model: model)
@@ -168,6 +186,9 @@ extension View {
             }
             .navigationDestination(for: MerklisteRoute.self) { _ in
                 MerklisteView(model: model)
+            }
+            .navigationDestination(for: DownloadserieRoute.self) { route in
+                DownloadserieView(model: model, route: route)
             }
             .navigationDestination(for: ProfilRoute.self) { _ in
                 ProfilView(model: model)

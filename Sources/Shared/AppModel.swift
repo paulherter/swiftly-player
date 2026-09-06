@@ -64,7 +64,14 @@ final class AppModel {
             // Ein ausgeschalteter Download laedt nicht weiter. Was auf der
             // Platte liegt, bleibt liegen — H10 fragt beim Ausschalten, was
             // damit geschehen soll, und diese Zeile haelt nur an.
-            if !downloadsAn { downloads.allesAnhalten() }
+            if downloadsAn {
+                downloads.netzBeobachten()
+            } else {
+                downloads.allesAnhalten()
+                // Der Pfadbeobachter kostet nichts Nennenswertes, laeuft aber
+                // auch fuer nichts, solange die Funktion aus ist.
+                downloads.netzNichtMehrBeobachten()
+            }
         }
     }
     /// **H5.** An bei der ersten Aktivierung — bei Originaldateien ist alles
@@ -73,6 +80,7 @@ final class AppModel {
         didSet {
             merken(nurUeberWLAN, "nurUeberWLAN")
             downloads.nurUeberWLAN = nurUeberWLAN
+        if downloadsAn { downloads.netzBeobachten() }
         }
     }
 
@@ -538,6 +546,15 @@ final class AppModel {
         return Bildadresse(basis: session.serverURL, token: session.accessToken)
     }
 
+    /// Das Plakat eines Titels. **Ohne Marke**, weil der Aufrufer sie nicht
+    /// immer hat — Jellyfin gibt das Bild auch so heraus; die Marke ist nur
+    /// fuer den Zwischenspeicher gut.
+    /// 300 Punkt hoch: die Zeile zeigt 96, und ein Plakat, das mitgeladen
+    /// wird, soll auch auf dem iPad taugen.
+    func plakatURL(itemID: String, marke: String? = nil) -> URL? {
+        bilder?.bauen(itemID: itemID, marke: marke, mass: .hoechstensHoch(300))
+    }
+
     /// Porträt eines Mitwirkenden.
     func personBild(_ person: Person, maxHeight: Int = 220) -> URL? {
         bilder?.bauen(itemID: person.id, marke: person.primaryImageTag,
@@ -774,6 +791,19 @@ final class AppModel {
     /// Fragt den Server, wie er diesen Titel ausliefern würde.
     ///
     func plan(for itemID: String) async -> PlaybackPlan? {
+        // **H8 — liegt die Datei hier, braucht es den Server nicht.**
+        //
+        // Und zwar vor dem `guard`: ohne Netz ist `client` zwar da, aber
+        // `playbackPlan` liefe in seine Frist und käme mit nichts zurück.
+        // Genau dafür ist heruntergeladen worden; ein Ladeschirm, der zwanzig
+        // Sekunden auf einen Server wartet, den es im Flugzeug nicht gibt,
+        // wäre die Funktion, die sich selbst aufhebt.
+        //
+        // Der Nutzer merkt davon nichts — kein zweiter Knopf, keine Wahl.
+        if let datei = downloads.datei(fuer: itemID) {
+            let p = downloads.posten(fuer: itemID)
+            return .vonDerPlatte(datei, container: p?.container, mediaSourceID: p?.quelle)
+        }
         guard let client else { return nil }
         do {
             let plan = try await client.playbackPlan(for: itemID,
