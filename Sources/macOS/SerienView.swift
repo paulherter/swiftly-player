@@ -182,6 +182,41 @@ struct SerienView: View {
                     .padding(.top, 20)
             }
             .padding(.bottom, 40)
+            // **Die Ladetafel liegt im Inhalt, nicht auf der Seite.**
+            //
+            // Sie hing als Auflage ueber der ganzen Seite. Zwei Sachen waren
+            // daran falsch: der Fang darunter deckte die Scrollflaeche zu,
+            // also liess sich bei offener Tafel nicht mehr scrollen — und die
+            // Tafel stand fest im Fenster, waehrend die Folge, zu der sie
+            // gehoert, darunter wegwanderte.
+            //
+            // Im Inhalt loest sich beides von selbst: das Rad trifft die
+            // Scrollflaeche, weil der Fang in ihr liegt, und die Tafel geht
+            // mit der Zeile mit, weil sie an derselben Stelle des Inhalts
+            // haengt. Ihr Platz ist dann ein Wert im Inhalt und keiner im
+            // Fenster — deshalb sitzt der benannte Raum hier und nicht
+            // aussen.
+            .coordinateSpace(.named("serienseite"))
+            .overlay(alignment: .topTrailing) {
+                if staffeltafelOffen, !ladeposten.isEmpty {
+                    ZStack(alignment: .topTrailing) {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(Stil.zeitSprung) { staffeltafelOffen = false }
+                            }
+                        Ladetafel(model: model, posten: ladeposten,
+                                  titel: ladetitel,
+                                  bilder: ladebilder,
+                                  offen: $staffeltafelOffen)
+                            // Unter dem Chip — oder unter der Folge, von der
+                            // aus sie geoeffnet wurde.
+                            .padding(.trailing, Stil.randAbstand)
+                            .padding(.top, tafelOben ?? (Stil.heldHoehe + 92))
+                    }
+                    .transition(.opacity)
+                }
+            }
         }
         .scrollIndicators(.never)
         // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
@@ -206,35 +241,6 @@ struct SerienView: View {
         .background(Stil.grund)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
             kopfstand.versatz = neu
-        }
-        // Der Raum, in dem eine Folgenzeile ihre Unterkante meldet — die
-        // Tafel liegt als Auflage auf derselben Seite und rechnet in
-        // denselben Werten.
-        .coordinateSpace(.named("serienseite"))
-        // **Die Ladetafel haengt an der Seite, nicht am Chip.**
-        //
-        // Am Chip lag nichts hinter ihr, was einen Klick daneben haette
-        // auffangen koennen Hier liegt der Fang ueber der ganzen Seite und die
-        // Tafel darauf; ein Klick daneben trifft den Fang.
-        .overlay {
-            if staffeltafelOffen, !ladeposten.isEmpty {
-                ZStack(alignment: .topTrailing) {
-                    Color.black.opacity(0.001)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(Stil.zeitSprung) { staffeltafelOffen = false }
-                        }
-                    Ladetafel(model: model, posten: ladeposten,
-                              titel: ladetitel,
-                              bilder: ladebilder,
-                              offen: $staffeltafelOffen)
-                        // Unter dem Chip — oder unter der Folge, von der aus
-                        // sie geoeffnet wurde.
-                        .padding(.trailing, Stil.randAbstand)
-                        .padding(.top, tafelOben ?? (Stil.heldHoehe + 92))
-                }
-                .transition(.opacity)
-            }
         }
         .overlay(alignment: .top) {
             Detailkopf(titel: serie.name, stand: kopfstand, zurueck: zurueck)
