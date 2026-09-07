@@ -604,15 +604,30 @@ final class AppModel {
 
     /// Das Profilbild aus Jellyfin. Fehlt es, antwortet der Server mit 404
     /// und die Ansicht faellt auf den Anfangsbuchstaben zurueck.
-    func benutzerbildURL(groesse: Int = 120) -> URL? {
+    /// **Immer dieselbe Kante, egal wie gross es gezeigt wird.**
+    ///
+    /// Hier stand eine Groesse als Argument, und die Aufrufer nutzten sie:
+    /// 120 in der Kopfzeile, 200 auf der Profilseite, 240 im Kontenstreifen.
+    /// Drei Groessen sind **drei Adressen** — und damit drei Eintraege im
+    /// `Bildspeicher`, von denen jeder einzeln geholt werden will. Deshalb
+    /// blendete das Profilbild beim Oeffnen der Profilseite jedes Mal neu
+    /// ein, obwohl dasselbe Gesicht oben in der Leiste schon stand.
+    ///
+    /// 480 ist die groesste Stelle (240 Punkt im Kontenstreifen, doppelt fuer
+    /// Retina). Ein Avatar in dieser Kante ist ein paar Kilobyte; einmal
+    /// geholt traegt er jede Stelle, und `Bildspeicher` entschluesselt ihn
+    /// ohnehin auf sein eigenes Mass herunter.
+    static let benutzerbildKante = 480
+
+    func benutzerbildURL() -> URL? {
         guard let session else { return nil }
-        return bilder?.benutzer(session.userID, kante: groesse * 2)
+        return bilder?.benutzer(session.userID, kante: Self.benutzerbildKante)
     }
 
     /// Dasselbe für ein bestimmtes Konto — für den Streifen, in dem mehrere
     /// nebeneinander stehen und nur eines das aktive ist.
-    func benutzerbildURL(fuer konto: Session, groesse: Int = 120) -> URL? {
-        bilder?.benutzer(konto.userID, kante: groesse * 2)
+    func benutzerbildURL(fuer konto: Session) -> URL? {
+        bilder?.benutzer(konto.userID, kante: Self.benutzerbildKante)
     }
 
     /// Waagerechtes Bild für die Reihe „Weiterschauen".

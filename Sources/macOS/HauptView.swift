@@ -816,7 +816,7 @@ struct Profilzeile: View {
         let weitere = model.konten.first { $0.userID != model.session?.userID }
         HStack(spacing: -9) {
             Profilzeichen(name: model.session?.userName ?? "?",
-                          bild: model.benutzerbildURL(groesse: 60), groesse: 26,
+                          bild: model.benutzerbildURL(), groesse: 26,
                           hervorgehoben: weitere != nil)
                 // **Das verbundene Konto liegt oben.** Ein `HStack` mit
                 // negativem Abstand zeichnet in der Reihenfolge der Auslage,
@@ -830,7 +830,7 @@ struct Profilzeile: View {
                 .background { Circle().fill(Stil.flaeche).padding(-2) }
             if let weitere {
                 Profilzeichen(name: weitere.userName,
-                              bild: model.benutzerbildURL(fuer: weitere, groesse: 60),
+                              bild: model.benutzerbildURL(fuer: weitere),
                               groesse: 26)
                     .opacity(0.55)
             }

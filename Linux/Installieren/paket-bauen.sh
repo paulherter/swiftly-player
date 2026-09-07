@@ -68,7 +68,7 @@ Architecture: amd64
 Depends: libgtk-4-1 (>= 4.14), libvlc5 | libvlc-bin, vlc-plugin-base, libc6 (>= 2.39)
 Maintainer: Paul Herter <accounts@paulherter.de>
 Installed-Size: $groesse
-Homepage: https://github.com/paulherter/swiftly-for-jellyfin
+Homepage: https://github.com/paulherter/swiftly-player
 Description: Jellyfin client that never transcodes
  Swiftly plays everything on your Jellyfin server as Direct Play or Direct
  Stream. The server never re-encodes, so the picture stays untouched and the
@@ -90,7 +90,7 @@ Version:        $fassung
 Release:        1
 Summary:        Jellyfin client that never transcodes
 License:        MPL-2.0
-URL:            https://github.com/paulherter/swiftly-for-jellyfin
+URL:            https://github.com/paulherter/swiftly-player
 BuildArch:      x86_64
 Requires:       gtk4 >= 4.14
 Requires:       vlc-libs

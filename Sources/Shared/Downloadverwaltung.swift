@@ -385,8 +385,29 @@ final class Downloadverwaltung {
 
     // MARK: Rückmeldungen aus der Sitzung
 
+    /// Zuletzt veroeffentlichter Stand je Download — siehe `fortschritt`.
+    @ObservationIgnored private var gemeldet: [String: Int64] = [:]
+
     private func fortschritt(_ id: String, geladen: Int64, gesamt: Int64) {
         guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
+
+        // **Nicht jede Rueckmeldung ist eine Aenderung, die man sieht.**
+        //
+        // `URLSession` meldet den Fortschritt im Takt der ankommenden Pakete
+        // — bei einer schnellen Leitung viele Male je Bild. Jede Meldung
+        // schreibt in `posten`, und weil `@Observable` die **ganze** Liste
+        // als eine Eigenschaft fuehrt, zeichnet danach jede Ansicht neu, die
+        // irgendetwas daraus liest: in einer Folgenliste also jede Zeile
+        // samt Ring. Das ist das Flackern.
+        //
+        // Ein halbes Prozent ist bei einem 28-Punkt-Ring rund ein halbes
+        // Pixel Bogen — darunter gibt es nichts zu sehen, und der letzte
+        // Schritt auf voll kommt ohnehin ueber `abgeschlossen`.
+        let grenze = max(Int64(1), (gesamt > 0 ? gesamt : posten[i].bytes) / 200)
+        let vorher = gemeldet[id] ?? 0
+        guard geladen - vorher >= grenze || geladen < vorher else { return }
+        gemeldet[id] = geladen
+
         posten[i].geladen = geladen
         // Sagt der Server im Katalog keine Grösse, nimmt der Balken die aus
         // der Antwort. **Nicht gesichert** — das wäre ein Schreibvorgang je
@@ -406,6 +427,7 @@ final class Downloadverwaltung {
 
     private func abgeschlossen(_ id: String, gelungen: Bool) {
         aufgaben[id] = nil
+        gemeldet[id] = nil
         guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
         if gelungen {
             posten[i].stand = .fertig

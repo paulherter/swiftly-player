@@ -144,7 +144,7 @@ struct ProfilView: View {
                 Kontenstreifen(model: model)
             } else {
                 Profilzeichen(name: model.session?.userName ?? "?",
-                              bild: model.benutzerbildURL(groesse: 240),
+                              bild: model.benutzerbildURL(),
                               groesse: 60)
                     .scaleEffect(1.66)
                     .frame(width: 100, height: 100)
@@ -460,7 +460,7 @@ private struct Kontenstreifen: View {
                 } label: {
                     VStack(spacing: 12) {
                         Profilzeichen(name: konto.userName,
-                                      bild: model.benutzerbildURL(fuer: konto, groesse: 240),
+                                      bild: model.benutzerbildURL(fuer: konto),
                                       groesse: 60,
                                       hervorgehoben: aktiv)
                             .scaleEffect(1.66)

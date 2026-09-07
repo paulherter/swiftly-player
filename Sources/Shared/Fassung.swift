@@ -7,7 +7,7 @@ import Foundation
 // 05.09.2026, als ein Tester nach seiner Baunummer gefragt wurde und sie
 // nirgends stand. Genau die Angabe, die ein Fehlerbericht braucht.
 
-/// Was unten auf der Profilseite steht: „Swiftly for Jellyfin 1.0.1 (Build 12)".
+/// Was unten auf der Profilseite steht: „Swiftly Player 1.0.1 (Build 1)".
 ///
 /// **Aus dem Bündel gelesen, nicht getippt.** Auf dem iPhone stand hier
 /// einmal „Swiftly 1.0" — eine Zahl, die niemand mitgezogen hat und die seit
@@ -36,7 +36,14 @@ enum Fassung {
         let b = Bundle.main.infoDictionary
         let fassung = b?["CFBundleShortVersionString"] as? String ?? "?"
         let bau = b?["CFBundleVersion"] as? String ?? "?"
-        return "Swiftly for Jellyfin \(fassung) (Build \(bau))"
+        // **„Swiftly Player", nicht „Swiftly for Jellyfin".**
+        //
+        // Apple hat die Einreichung am 07.09.2026 nach Richtlinie 4.1(c)
+        // abgelehnt: der Name einer App darf die Produktmarke eines anderen
+        // Entwicklers nicht tragen. Der Store-Eintrag heisst deshalb jetzt
+        // „Swiftly Player", und diese Zeile steht im Profil derselben App —
+        // sie muss dasselbe sagen.
+        return "Swiftly Player \(fassung) (Build \(bau))"
     }
 
     /// Dieselbe Zeile plus den Unterbau. **In den Einstellungen**, weil dort

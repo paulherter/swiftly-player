@@ -150,11 +150,21 @@ struct SeriesDetailView: View {
                                handlungen: mehrHandlungen)
                     .zIndex(20)
             }
-            if !ladeposten.isEmpty {
-                Ladeblatt(offen: $ladeblatt, model: model, posten: ladeposten,
-                          titel: ladetitel, bilder: ladebilder)
-                    .zIndex(20)
-            }
+            // **Das Blatt steht immer im Baum, auch leer.**
+            //
+            // Es hing an `if !ladeposten.isEmpty` — und beim **ersten**
+            // Oeffnen wurden Posten und `offen` im selben Durchgang gesetzt.
+            // Damit entstand die Ansicht in dem Moment, in dem sie schon
+            // offen sein sollte: es gab keinen geschlossenen Zustand, von dem
+            // aus sie haette hereinfahren koennen. Das Fenster stand
+            // schlagartig da und der Titel gleich an seinem Platz; ab dem
+            // zweiten Mal fuhr es, weil die Ansicht dann schon existierte.
+            //
+            // `Ladeblatt` traegt leere Posten ohne Weiteres — `bytes` ist
+            // dann 0, und geschlossen zeichnet es ohnehin nichts.
+            Ladeblatt(offen: $ladeblatt, model: model, posten: ladeposten,
+                      titel: ladetitel, bilder: ladebilder)
+                .zIndex(20)
             if let meldung {
                 Hinweisstreifen(text: meldung) { self.meldung = nil }
                     .zIndex(21)

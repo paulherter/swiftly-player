@@ -98,7 +98,7 @@ jobs:
             echo "::warning::Kein SIGNIERSCHLUESSEL hinterlegt — die Quelle bleibt unsigniert."
           fi
           cp Linux/Installieren/quelle-einrichten.sh seite/ 2>/dev/null || true
-          echo "swiftly-for-jellyfin" > seite/.nojekyll
+          echo "swiftly-player" > seite/.nojekyll
 
       - name: Auf Pages stellen
         uses: peaceiris/actions-gh-pages@v4

@@ -411,7 +411,7 @@ struct Kopfleiste: View {
 
                 Button(action: aufsProfil) {
                     Profilzeichen(name: model.session?.userName ?? "?",
-                                  bild: model.benutzerbildURL(groesse: 180),
+                                  bild: model.benutzerbildURL(),
                                   groesse: 60)
                 }
                 .buttonStyle(ProfilStil())
