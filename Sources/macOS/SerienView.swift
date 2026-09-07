@@ -75,6 +75,19 @@ struct SerienView: View {
 
     /// **Die ganze Staffel, der Reihe nach.** H4 laesst immer nur einen
     /// laufen; was schon da ist, kommt nicht noch einmal in die Schlange.
+    /// **Eine einzelne Folge laden** — wie auf dem iPhone seit `beb6a79`.
+    ///
+    /// Die Tafel sitzt an derselben Stelle wie bei einer Staffel: sie
+    /// beantwortet dieselbe Frage, und ein zweiter Ort dafuer waere ein
+    /// zweiter Ort zum Suchen.
+    private func folgeGeklickt(_ folge: Item) {
+        ringGeklickt(model.downloads.posten(fuer: folge.id), model.downloads) {
+            guard let p = posten(folge) else { return }
+            ladeposten = [p]
+            withAnimation(Stil.zeitSprung) { staffeltafelOffen = true }
+        }
+    }
+
     private func staffelLaden() {
         let offene = folgen.filter { model.downloads.posten(fuer: $0.id) == nil }
         ladeposten = offene.compactMap { posten($0) }
@@ -316,7 +329,9 @@ struct SerienView: View {
                     // trägt deshalb die Zeile selbst, siehe `Folgenzeile`.
                     VStack(spacing: 0) {
                         ForEach(folgen, id: \.id) { folge in
-                            Folgenzeile(model: model, folge: folge)
+                            Folgenzeile(model: model, folge: folge) {
+                                folgeGeklickt(folge)
+                            }
                             if folge.id != folgen.last?.id {
                                 Rectangle().fill(Stil.linie).frame(height: 1)
                             }
@@ -521,6 +536,8 @@ struct Staffelzeile: View {
 struct Folgenzeile: View {
     let model: AppModel
     let folge: Item
+    /// Was ein Klick auf den Ring tut. `nil` heisst: keine Ladespalte.
+    var ringtipp: (() -> Void)?
 
     @State private var schwebt = false
     @State private var gesehen = false
@@ -541,9 +558,29 @@ struct Folgenzeile: View {
                 // es für jede Zeile **dasselbe** Bild. Die iPhone-Fassung
                 // nimmt hier `imageURL(for: folge, maxHeight: 220)`, also das
                 // eigene Vorschaubild der Folge.
+                // **Das Vorschaubild traegt den Sehstand** — wie auf dem
+                // iPhone seit `beb6a79`. Es zeigte schon den
+                // Fortschrittsbalken, also „wie weit bin ich"; der Haken ist
+                // dessen Ende. Damit steht der Sehstand an einer Stelle statt
+                // an zweien, und die Spalte rechts gehoert dem Download.
                 Bildflaeche(bild: model.imageURL(for: folge, maxHeight: 220),
                             breite: bildBreite, hoehe: bildHoehe,
-                            fortschritt: fortschritt, zeichen: "tv")
+                            // Ein voller Balken **und** ein Haken waeren
+                            // dieselbe Auskunft zweimal.
+                            fortschritt: gesehen ? nil : fortschritt,
+                            zeichen: "tv")
+                    .opacity(gesehen ? 0.45 : 1)
+                    .overlay(alignment: .topTrailing) {
+                        if gesehen {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(Stil.schrift)
+                                .frame(width: 20, height: 20)
+                                .background(Stil.grund.opacity(0.72), in: Circle())
+                                .padding(6)
+                        }
+                    }
+                    .animation(Stil.einblenden, value: gesehen)
                 if schwebt {
                     Circle()
                         .fill(.black.opacity(0.45))
@@ -560,7 +597,8 @@ struct Folgenzeile: View {
                 HStack(spacing: 8) {
                     Text(verbatim: kopfzeile)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Stil.schrift)
+                        // Gesehenes tritt zurueck, es verschwindet nicht.
+                        .foregroundStyle(gesehen ? Stil.schriftLeise : Stil.schrift)
                         .lineLimit(2)
                     Spacer(minLength: 0)
                     if let sekunden = folge.runtimeSeconds {
@@ -583,20 +621,26 @@ struct Folgenzeile: View {
             // damit war beim Überfliegen der Liste nicht zu erkennen, wie
             // weit man ist. Zum *Ändern* braucht es den Zeiger, zum *Sehen*
             // nicht.
-            ZStack {
+            // **Rechts steht der Zustand des Downloads, nicht der des
+            // Sehens.** Der Haken als *Auskunft* ist auf das Bild gezogen;
+            // was hier bleibt, ist der Haken als *Handlung* — und der
+            // erscheint wie eh nur unter dem Zeiger. Das ist der eine
+            // erlaubte Unterschied zum iPhone: dort ist die Handlung ein
+            // Wisch, hier das Schweben (VERHALTEN F, Eingabeart).
+            HStack(spacing: 6) {
                 if schwebt {
                     Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
                                  titel: "Gesehen", an: gesehen) {
                         gesehen.toggle()
                         Task { _ = await model.setzeGesehen(folge, an: gesehen) }
                     }
-                } else if gesehen {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Stil.schriftSehrLeise)
+                }
+                if let ringtipp, model.downloadsAn {
+                    Downloadring(posten: model.downloads.posten(fuer: folge.id),
+                                 mass: 24) { ringtipp() }
                 }
             }
-            .frame(width: Stil.knopfRund, alignment: .trailing)
+            .frame(width: breiteRechts, alignment: .trailing)
 
         }
         .padding(.vertical, 12)
@@ -631,4 +675,11 @@ struct Folgenzeile: View {
 
     /// Aus `Item.gesehenerAnteil` — siehe die Begründung in `HomeView`.
     private var fortschritt: Double? { folge.gesehenerAnteil }
+
+    /// Platz fuer beide Zeichen, wenn es beide gibt — sonst bleibt die Zeile
+    /// beim Ueberfahren nicht ruhig, sondern rueckt.
+    private var breiteRechts: CGFloat {
+        (ringtipp != nil && model.downloadsAn) ? Stil.knopfRund * 2 + 6
+                                               : Stil.knopfRund
+    }
 }
