@@ -78,8 +78,8 @@ struct HauptView: View {
     @State private var uebernahme = Uebernahmemodell()
     /// Bei mehr als einem Gerät wird gefragt statt geraten.
     @State private var auswahlOffen = false
-    @State private var filmregal = Bibliotheksmodell()
-    @State private var serienregal = Bibliotheksmodell()
+    @State private var filmregal = Bibliotheksmodell(merkname: "movies")
+    @State private var serienregal = Bibliotheksmodell(merkname: "tvshows")
     /// Welche Bibliothek der jeweiligen Gattung gezeigt wird — ein Server
     /// kann mehrere haben. Liegt aus demselben Grund hier wie die Regale.
     @State private var filmbibliothek: Item?

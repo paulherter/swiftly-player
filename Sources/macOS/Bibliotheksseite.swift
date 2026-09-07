@@ -24,8 +24,17 @@ struct Bibliotheksseite: View {
     let model: AppModel
     let bibliothek: Item
 
-    @State private var regal = Bibliotheksmodell()
+    @State private var regal: Bibliotheksmodell
     @State private var gewaehlt: Item?
+
+    /// Jede Bibliothek merkt sich ihre eigene Sortierung — siehe
+    /// `Bibliotheksmodell`. Der Name ist ihre Kennung, nicht ihre Gattung:
+    /// zwei Filmbibliotheken sind zwei Orte.
+    init(model: AppModel, bibliothek: Item) {
+        self.model = model
+        self.bibliothek = bibliothek
+        _regal = State(initialValue: Bibliotheksmodell(merkname: bibliothek.id))
+    }
 
     var body: some View {
         BibliothekView(model: model,

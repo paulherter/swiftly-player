@@ -226,6 +226,12 @@ targets:
       # Plattformmaße. Lagen dreimal da; die Maße gibt jetzt das Ziel als
       # Parameter mit, siehe `Plakette.fern` und `Lader.fern` in Stil.swift.
       - path: Sources/Shared/Bausteine.swift
+      # **Der Bildspeicher, an dem `Profilzeichen` haengt.** Er merkt sich,
+      # was schon geholt wurde, und antwortet synchron — nur deshalb steht
+      # ein bekanntes Profilbild im ersten Durchgang da statt nach einem
+      # Aufblitzen des Verlaufs. Der Fernseher hat daneben weiter seinen
+      # eigenen `Bild`-Baustein fuer die Kacheln.
+      - path: Sources/Shared/Netzbild.swift
       - path: Sources/Shared/QuickConnectModell.swift
       - path: Sources/Shared/Wiedergabezentrale.swift
       - path: Sources/Shared/Startseitenmodell.swift

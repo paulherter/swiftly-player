@@ -299,7 +299,8 @@ struct SucheView: View {
             async let fremd = model.seerr.suchen(sauber)
             let ergebnis = await model.suche(sauber)
             guard !Task.isCancelled else { return }
-            treffer = ergebnis
+            // Doppelte Kennungen lassen einen Tipp danebengreifen.
+            treffer = Listenregeln.ohneDoppelte(ergebnis)
             sucht = false
 
             let dazu = await fremd
