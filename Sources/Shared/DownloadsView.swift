@@ -370,8 +370,18 @@ struct DownloadsView: View {
                     if !laufend.isEmpty {
                         Gruppentitel(text: verwaltung.keinNetz ? "Wartet auf Netz" : "Lädt gerade")
                             .padding(.top, 4)
+                        // **Auch was laeuft, laesst sich entfernen.**
+                        //
+                        // Diese Zeilen bekamen `gewaehlt: .constant(false)`
+                        // und kein `bearbeiten` — sie liessen sich also gar
+                        // nicht ankreuzen. Wer einen Download versehentlich
+                        // angestossen hat, musste warten, bis er fertig war,
+                        // um ihn wieder loszuwerden. `entfernen` bricht die
+                        // Aufgabe ohnehin ab; es fehlte nur der Weg dorthin.
                         ForEach(laufend) { p in
-                            Downloadzeile(model: model, posten: p, gewaehlt: .constant(false))
+                            Downloadzeile(model: model, posten: p,
+                                          bearbeiten: bearbeiten,
+                                          gewaehlt: bindung(fuer: [p.id]))
                             if p.id != laufend.last?.id { Trennlinie() }
                         }
                     }

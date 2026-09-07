@@ -33,6 +33,13 @@ struct SerienView: View {
     @State private var staffelOffen = false
     @State private var staffeltafelOffen = false
     @State private var ladeposten: [Downloadposten] = []
+    /// Was in der Tafel oben steht — „Staffel 5" oder der Name einer Folge.
+    /// Er stand fest auf der Staffel, auch wenn nur eine Folge geladen wurde.
+    @State private var ladetitel = ""
+    /// Wo die Tafel aufgeht. Bei der Staffel unter dem Chip, bei einer Folge
+    /// unter **dieser** Folge — sonst klappt sie irgendwo auf und man sucht,
+    /// worauf sie sich bezieht.
+    @State private var tafelOben: CGFloat?
 
     // MARK: Downloads
 
@@ -80,10 +87,15 @@ struct SerienView: View {
     /// Die Tafel sitzt an derselben Stelle wie bei einer Staffel: sie
     /// beantwortet dieselbe Frage, und ein zweiter Ort dafuer waere ein
     /// zweiter Ort zum Suchen.
-    private func folgeGeklickt(_ folge: Item) {
+    private func folgeGeklickt(_ folge: Item, unter kante: CGFloat) {
         ringGeklickt(model.downloads.posten(fuer: folge.id), model.downloads) {
             guard let p = posten(folge) else { return }
             ladeposten = [p]
+            // **Der Titel ist die Folge, nicht die Staffel.** Er stand fest
+            // auf `gewaehlt?.name` — in der Tafel las man dann „Staffel 5
+            // laden", waehrend eine einzige Folge in der Schlange stand.
+            ladetitel = folge.name
+            tafelOben = kante
             withAnimation(Stil.zeitSprung) { staffeltafelOffen = true }
         }
     }
@@ -92,6 +104,8 @@ struct SerienView: View {
         let offene = folgen.filter { model.downloads.posten(fuer: $0.id) == nil }
         ladeposten = offene.compactMap { posten($0) }
         guard !ladeposten.isEmpty else { return }
+        ladetitel = gewaehlt?.name ?? serie.name
+        tafelOben = nil
         withAnimation(Stil.zeitSprung) { staffeltafelOffen.toggle() }
     }
     @State private var laedt = true
@@ -193,6 +207,10 @@ struct SerienView: View {
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
             kopfstand.versatz = neu
         }
+        // Der Raum, in dem eine Folgenzeile ihre Unterkante meldet — die
+        // Tafel liegt als Auflage auf derselben Seite und rechnet in
+        // denselben Werten.
+        .coordinateSpace(.named("serienseite"))
         // **Die Ladetafel haengt an der Seite, nicht am Chip.**
         //
         // Am Chip lag nichts hinter ihr, was einen Klick daneben haette
@@ -207,12 +225,13 @@ struct SerienView: View {
                             withAnimation(Stil.zeitSprung) { staffeltafelOffen = false }
                         }
                     Ladetafel(model: model, posten: ladeposten,
-                              titel: gewaehlt?.name ?? serie.name,
+                              titel: ladetitel,
                               bilder: ladebilder,
                               offen: $staffeltafelOffen)
-                        // Unter dem Chip, der sie geoeffnet hat.
+                        // Unter dem Chip — oder unter der Folge, von der aus
+                        // sie geoeffnet wurde.
                         .padding(.trailing, Stil.randAbstand)
-                        .padding(.top, Stil.heldHoehe + 92)
+                        .padding(.top, tafelOben ?? (Stil.heldHoehe + 92))
                 }
                 .transition(.opacity)
             }
@@ -329,8 +348,8 @@ struct SerienView: View {
                     // trägt deshalb die Zeile selbst, siehe `Folgenzeile`.
                     VStack(spacing: 0) {
                         ForEach(folgen, id: \.id) { folge in
-                            Folgenzeile(model: model, folge: folge) {
-                                folgeGeklickt(folge)
+                            Folgenzeile(model: model, folge: folge) { kante in
+                                folgeGeklickt(folge, unter: kante)
                             }
                             if folge.id != folgen.last?.id {
                                 Rectangle().fill(Stil.linie).frame(height: 1)
@@ -536,11 +555,14 @@ struct Staffelzeile: View {
 struct Folgenzeile: View {
     let model: AppModel
     let folge: Item
-    /// Was ein Klick auf den Ring tut. `nil` heisst: keine Ladespalte.
-    var ringtipp: (() -> Void)?
+    /// Was ein Klick auf den Ring tut — mit der Unterkante der Zeile, damit
+    /// die Tafel darunter aufgeht und nicht irgendwo.
+    var ringtipp: ((CGFloat) -> Void)?
 
     @State private var schwebt = false
     @State private var gesehen = false
+    /// Wo die Zeile endet, im Raum der Seite — die Tafel geht darunter auf.
+    @State private var unterkante: CGFloat = 0
     @Environment(Abspielsteuerung.self) private var steuerung
 
     /// 16 : 9 — dasselbe Verhältnis wie die 116 × 65 des iPhones.
@@ -637,7 +659,7 @@ struct Folgenzeile: View {
                 }
                 if let ringtipp, model.downloadsAn {
                     Downloadring(posten: model.downloads.posten(fuer: folge.id),
-                                 mass: 24) { ringtipp() }
+                                 mass: 24) { ringtipp(unterkante) }
                 }
             }
             .frame(width: breiteRechts, alignment: .trailing)
@@ -657,6 +679,9 @@ struct Folgenzeile: View {
         .frame(height: bildHoehe + 24)
         .background(schwebt ? Stil.schrift.opacity(0.04) : .clear)
         .contentShape(Rectangle())
+        .onGeometryChange(for: CGFloat.self) {
+            $0.frame(in: .named("serienseite")).maxY
+        } action: { unterkante = $0 }
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
         // Eine Folge startet an ihrer eigenen Position — nicht an der der

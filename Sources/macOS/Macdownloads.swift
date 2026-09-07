@@ -278,9 +278,13 @@ struct DownloadsView: View {
 
                     if !laufend.isEmpty {
                         rubrik(verwaltung.keinNetz ? "Wartet auf Netz" : "Lädt gerade")
+                        // Dieselbe Luecke wie auf dem iPhone: was laeuft,
+                        // liess sich nicht ankreuzen und damit nicht
+                        // entfernen.
                         ForEach(laufend) { p in
                             MacDownloadzeile(model: model, posten: p,
-                                             gewaehlt: .constant(false))
+                                             bearbeiten: bearbeiten,
+                                             gewaehlt: bindung(fuer: [p.id]))
                             trenner(nachDem: p.id == laufend.last?.id)
                         }
                     }
