@@ -427,7 +427,9 @@ struct SeriesDetailView: View {
                                beschriftung: ist ? "Ungesehen" : "Gesehen",
                                aktion: { gesehenUmschalten(folge) },
                                tippen: { starte(folge) }) {
-                        Folgenzeile(model: model, folge: folge)
+                        Folgenzeile(model: model, folge: folge) {
+                            folgeGetippt(folge)
+                        }
                     }
                     Rectangle().fill(Stil.linie).frame(height: 1)
                         .padding(.leading, Stil.randAbstand)
@@ -546,6 +548,24 @@ struct SeriesDetailView: View {
         ladeblatt = true
     }
 
+    /// **Eine einzelne Folge laden.**
+    ///
+    /// Aus einer Nutzermeldung: eine Anime-Staffel hat ueber hundert Folgen,
+    /// und fuer die Bahnfahrt sollen zwei davon mit. Eine ganze Staffel ist
+    /// dafuer die falsche Groessenordnung.
+    ///
+    /// Was ein Tipp auf den Ring tut, steht in `ringGetippt` und ist an allen
+    /// Stellen dasselbe: anhalten, fortsetzen, oder — wenn noch nichts da ist
+    /// — das Blatt oeffnen, das die Groesse nennt, bevor etwas beginnt.
+    private func folgeGetippt(_ folge: Item) {
+        ringGetippt(model.downloads.posten(fuer: folge.id), model.downloads) {
+            guard let p = posten(folge) else { return }
+            ladeposten = [p]
+            ladetitel = folge.name
+            ladeblatt = true
+        }
+    }
+
     private func starte(_ folge: Item) {
         guard !bereitet else { return }
         bereitet = true
@@ -563,17 +583,27 @@ struct Folgenzeile: View {
     @Environment(\.breit) private var breit
     let model: AppModel
     let folge: Item
+    /// Was ein Tipp auf den Ring tut. `nil` heisst: diese Liste hat keine
+    /// Ladespalte — die Staffelansicht ueber die Bibliothek etwa.
+    var ringtipp: (() -> Void)?
+
+    private var gesehen: Bool { folge.userData?.played ?? false }
+    private var geladen: Downloadposten? { model.downloads.posten(fuer: folge.id) }
+    /// Die Spalte gibt es nur mit dem Schalter — H1.
+    private var mitSpalte: Bool { ringtipp != nil && model.downloadsAn }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Bild(url: model.imageURL(for: folge, maxHeight: 220),
-                 breite: 116, hoehe: 65, ecke: Stil.eckeKachel,
-                 fortschritt: folge.userData?.playedPercentage.map { $0 / 100 })
+            vorschau
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(folge.indexNumber.map { "\($0). " } ?? "")\(folge.name)")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Stil.schrift)
+                    // **Gesehenes tritt zurueck, es verschwindet nicht.** Der
+                    // gedaempfte Titel ist die dritte Auskunft neben dem
+                    // abgedunkelten Bild und dem Haken darauf — zusammen liest
+                    // man den Zustand, ohne ein Zeichen suchen zu muessen.
+                    .foregroundStyle(gesehen ? Stil.schriftLeise : Stil.schrift)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
 
@@ -584,17 +614,52 @@ struct Folgenzeile: View {
 
             Spacer(minLength: 0)
 
-            if folge.userData?.played == true {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Stil.schriftSehrLeise)
-                    .padding(.top, 3)
+            // **Die rechte Spalte gehoert dem Download, und ihm allein.**
+            //
+            // Hier stand der Haken fuer „gesehen". Ein zweites rundes Zeichen
+            // daneben waere dasselbe Suchbild, das wir bei zwei Haken schon
+            // einmal hatten: zwei Formen nebeneinander, die Verschiedenes
+            // meinen. Der Haken ist deshalb auf das Vorschaubild gezogen —
+            // dort steht ohnehin schon der Fortschrittsbalken, also die
+            // Auskunft „wie weit bin ich", und der Haken ist deren Ende.
+            //
+            // Netflix macht es genauso: rechts nur der Pfeil, der Sehstand
+            // auf dem Bild. Prime Video legt beides in dieselbe Spalte, und
+            // genau dort wird es mehrdeutig.
+            if mitSpalte {
+                Downloadring(posten: geladen, mass: 26) { ringtipp?() }
+                    // Mittig zur Kachel: sie ist 65 hoch, die Trefferflaeche
+                    // 44. (65 − 44) / 2 = 10,5.
+                    .padding(.top, 10)
             }
-
         }
         .padding(.horizontal, Stil.rand(breit: breit))
         .padding(.vertical, 12)
         .contentShape(Rectangle())
+    }
+
+    /// Das Vorschaubild traegt den Sehstand: angefangen als Balken, gesehen
+    /// als Haken auf abgedunkeltem Grund. Dasselbe Abzeichen wie oben rechts
+    /// auf einer Plakatkachel — kein neues Zeichen, nur an einem Ort mehr.
+    private var vorschau: some View {
+        Bild(url: model.imageURL(for: folge, maxHeight: 220),
+             breite: 116, hoehe: 65, ecke: Stil.eckeKachel,
+             // Ein voller Balken **und** ein Haken waeren dieselbe Auskunft
+             // zweimal.
+             fortschritt: gesehen ? nil
+                                  : folge.userData?.playedPercentage.map { $0 / 100 })
+            .opacity(gesehen ? 0.45 : 1)
+            .overlay(alignment: .topTrailing) {
+                if gesehen {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(Stil.schrift)
+                        .frame(width: 18, height: 18)
+                        .background(Stil.grund.opacity(0.72), in: Circle())
+                        .padding(5)
+                }
+            }
+            .animation(Stil.einblenden, value: gesehen)
     }
 
 
