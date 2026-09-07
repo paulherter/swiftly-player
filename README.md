@@ -166,8 +166,8 @@ and only where distance, input or window size demand it.
 | 📲 iPad | **1.0.1 (1)** · ships with the iPhone app |
 | 📺 Apple TV | **1.0.1 (1)** · beta on TestFlight |
 | 💻 Mac | **1.0.1 (1)** · beta on TestFlight |
-| 🐧 Linux | **1.0.0** · GTK4, native, same shared logic · [install](#-linux) |
-| 🪟 Windows | **1.0.0** · GTK4 like Linux, **the same source** · [download](#-windows) |
+| 🐧 Linux | **1.0.0** · being rebuilt under the new name · [install](#-linux) |
+| 🪟 Windows | **1.0.0** · being rebuilt under the new name · [download](#-windows) |
 
 **The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
 — one link for iPhone, iPad, Apple TV and Mac. What each build wants tested is
@@ -177,6 +177,24 @@ than "have a look around".
 <br>
 
 ## 🐧 Linux
+
+> **The Linux build still says Swiftly for Jellyfin.** The app was renamed to
+> **Swiftly Player** in September 2026; the Apple builds carry the new name
+> already, the desktop packages are being rebuilt. What is offered here still
+> works — it is the shipped 1.0.0.
+>
+> **If you added the package source before the rename**, the address moved.
+> Point it at the new one — it is one line, and updates keep arriving with your
+> normal system update:
+>
+> ```sh
+> sudo sed -i 's|swiftly-for-jellyfin|swiftly-player|' /etc/apt/sources.list.d/swiftly.list   # apt
+> sudo sed -i 's|swiftly-for-jellyfin|swiftly-player|' /etc/yum.repos.d/swiftly.repo          # dnf
+> sudo sed -i 's|swiftly-for-jellyfin|swiftly-player|' /etc/pacman.conf                       # pacman
+> ```
+>
+> The old address keeps answering, so nothing breaks if you do not — but new
+> versions appear only under the new one.
 
 One command. It works out which distribution you are on, adds the Swiftly
 package source, and installs from it — so **updates arrive with your normal
@@ -256,6 +274,9 @@ transcodes" rests on.
 <br>
 
 ## 🪟 Windows
+
+> **The Windows build still says Swiftly for Jellyfin** and is being rebuilt
+> under the new name. The installer below is the shipped 1.0.0 and works.
 
 **[Download Swiftly-1.0.0-Setup.exe](https://github.com/paulherter/swiftly-player/releases/download/v1.0.0/Swiftly-1.0.0-Setup.exe)** — 80 MB, Windows 10 and 11, 64-bit.
 
