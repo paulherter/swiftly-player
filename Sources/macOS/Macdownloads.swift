@@ -26,10 +26,17 @@ struct Downloadring: View {
     @State private var schwebt = false
 
     var body: some View {
-        Button(action: tippen) { zeichen }
+        // Dieselbe Falle wie auf dem iPhone: `frame` und `contentShape`
+        // standen **hinter** dem Knopf, also an der Huelle. Ein Knopf nimmt
+        // seine Flaeche von dem, was er zeichnet — und das sind hier Linien.
+        // Beim Laden lag in der Mitte nur ein kleines Quadrat, alles daneben
+        // ging ins Leere.
+        Button(action: tippen) {
+            zeichen
+                .frame(width: mass + 10, height: mass + 10)
+                .contentShape(Rectangle())
+        }
             .buttonStyle(.plain)
-            .frame(width: mass + 10, height: mass + 10)
-            .contentShape(Rectangle())
             .onHover { schwebt = $0 }
             .help(hilfe)
             .accessibilityLabel(Text(hilfe))

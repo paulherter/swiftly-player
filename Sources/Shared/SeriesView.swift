@@ -552,10 +552,27 @@ struct SeriesDetailView: View {
     /// ist, kommt nicht noch einmal in die Schlange.
     private func staffelLaden() {
         let offene = folgen.filter { model.downloads.posten(fuer: $0.id) == nil }
-        ladeposten = offene.compactMap { posten($0) }
-        guard !ladeposten.isEmpty else { return }
-        ladetitel = gewaehlteStaffel?.name ?? serie.name
-        ladeblatt = true
+        let neue = offene.compactMap { posten($0) }
+        guard !neue.isEmpty else { return }
+        blattZeigen(neue, titel: gewaehlteStaffel?.name ?? serie.name)
+    }
+
+    /// **Erst den Inhalt setzen, dann zeigen — und zwar einen Durchgang
+    /// spaeter.**
+    ///
+    /// Das Blatt faehrt um seine gemessene Hoehe herein. Wird der Inhalt im
+    /// selben Durchgang gesetzt, in dem `offen` umspringt, gilt fuer die
+    /// Bewegung noch die **alte** Messung: die Karte faehrt, die Texte darin
+    /// wechseln waehrenddessen und stehen dann einfach da. Der `Task` schiebt
+    /// das Zeigen um einen Durchgang; dazwischen wird die Karte einmal mit
+    /// ihrem neuen Inhalt gemessen — geschlossen und unsichtbar.
+    ///
+    /// Dieselbe Stelle, dieselbe Loesung wie bei den Auswahlblaettern in
+    /// `a6dab91`.
+    private func blattZeigen(_ neue: [Downloadposten], titel: String) {
+        ladeposten = neue
+        ladetitel = titel
+        Task { @MainActor in ladeblatt = true }
     }
 
     /// **Eine einzelne Folge laden.**
@@ -570,9 +587,7 @@ struct SeriesDetailView: View {
     private func folgeGetippt(_ folge: Item) {
         ringGetippt(model.downloads.posten(fuer: folge.id), model.downloads) {
             guard let p = posten(folge) else { return }
-            ladeposten = [p]
-            ladetitel = folge.name
-            ladeblatt = true
+            blattZeigen([p], titel: folge.name)
         }
     }
 
