@@ -290,10 +290,14 @@ body,
             rgba(11,11,13,.78) 50%, rgba(11,11,13,.56) 60%, rgba(11,11,13,.34) 70%,
             rgba(11,11,13,.18) 80%, rgba(11,11,13,.07) 90%, rgba(11,11,13,0) 100%),
         linear-gradient(to bottom,
-            rgba(11,11,13,0) 0%, rgba(11,11,13,0) 34%, rgba(11,11,13,.10) 46%,
-            rgba(11,11,13,.28) 56%, rgba(11,11,13,.50) 66%, rgba(11,11,13,.72) 75%,
-            rgba(11,11,13,.88) 83%, rgba(11,11,13,.97) 91%,
-            rgb(11,11,13) 97%, rgb(11,11,13) 100%) !important;
+            /* **Fertig, bevor das Bild endet.** Das Bild ist 92 Prozent
+               hoch; stand der Verlauf dort erst bei 97, war er noch
+               durchsichtig genug, dass man die Bildkante sah. Bei 88
+               Prozent bei `grund` angekommen liegt die Kante darunter. */
+            rgba(11,11,13,0) 0%, rgba(11,11,13,0) 32%, rgba(11,11,13,.10) 44%,
+            rgba(11,11,13,.28) 54%, rgba(11,11,13,.52) 64%, rgba(11,11,13,.76) 73%,
+            rgba(11,11,13,.92) 81%, rgb(11,11,13) 88%,
+            rgb(11,11,13) 100%) !important;
 }
 
 /* Auswahl und Markierung tragen den Akzent — er zeigt Auswahl. */
