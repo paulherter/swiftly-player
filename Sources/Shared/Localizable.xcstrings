@@ -1025,6 +1025,23 @@
         }
       }
     },
+    "An": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On"
+          }
+        }
+      }
+    },
     "Anbinden": {
       "localizations": {
         "de": {
@@ -1212,16 +1229,16 @@
     "Anpassung aus": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "matching off"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Anpassung aus"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "matching off"
           }
         }
       }
@@ -1229,16 +1246,16 @@
     "Anzeige stumm": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "display not reporting"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Anzeige stumm"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "display not reporting"
           }
         }
       }
@@ -1246,16 +1263,16 @@
     "Anzeigen": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Anzeigen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show"
           }
         }
       }
@@ -1617,16 +1634,16 @@
     "Beschädigt": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Corrupt"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Beschädigt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corrupt"
           }
         }
       }
@@ -1767,19 +1784,36 @@
         }
       }
     },
-    "Bildrate an den Film anpassen": {
+    "Bildformat": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bildformat"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Match frame rate to the film"
+            "value": "Aspect"
           }
-        },
+        }
+      }
+    },
+    "Bildrate an den Film anpassen": {
+      "extractionState": "manual",
+      "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Bildrate an den Film anpassen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match frame rate to the film"
           }
         }
       }
@@ -2480,13 +2514,13 @@
     "Direct Stream": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
+        "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Direct Stream"
           }
         },
-        "de": {
+        "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Direct Stream"
@@ -2930,6 +2964,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fill screen"
+          }
+        }
+      }
+    },
+    "Formatfüllend schneidet links und rechts ab, damit keine Balken bleiben. Geht auch mit zwei Fingern im Bild.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formatfüllend schneidet links und rechts ab, damit keine Balken bleiben. Geht auch mit zwei Fingern im Bild."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fill screen crops the left and right edges so no bars remain. Pinch on the video to switch."
           }
         }
       }
@@ -3433,6 +3484,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Add to queue"
+          }
+        }
+      }
+    },
+    "In dieser Datei": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In dieser Datei"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In this file"
           }
         }
       }
@@ -3980,13 +4048,13 @@
     "Matroska": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
+        "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Matroska"
           }
         },
-        "de": {
+        "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Matroska"
@@ -4744,16 +4812,16 @@
     },
     "Schild anzeigen": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show overlay"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Schild anzeigen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show overlay"
           }
         }
       }
@@ -4761,16 +4829,16 @@
     "Schirm": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Display"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Schirm"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display"
           }
         }
       }
@@ -5167,16 +5235,16 @@
     "Sprünge": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Discontinuities"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Sprünge"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discontinuities"
           }
         }
       }
@@ -5300,16 +5368,16 @@
     "Stelle": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "At"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Stelle"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "At"
           }
         }
       }
@@ -5401,21 +5469,22 @@
     "Takt": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cadence"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Takt"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cadence"
+          }
         }
       }
     },
     "Technik": {
+      "extractionState": "stale",
       "localizations": {
         "de": {
           "stringUnit": {
@@ -5434,32 +5503,32 @@
     "Technikschild": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Technical overlay"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Technikschild"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technical overlay"
           }
         }
       }
     },
     "Technikschild im Player": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Technical overlay in the player"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Technikschild im Player"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technical overlay in the player"
           }
         }
       }
@@ -5652,16 +5721,16 @@
     },
     "Ton weg": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "audio lost"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Ton weg"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "audio lost"
           }
         }
       }
@@ -5686,16 +5755,16 @@
     "Transkodiert": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Transcoded"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Transkodiert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcoded"
           }
         }
       }
@@ -6429,16 +6498,33 @@
     "Zeigt": {
       "extractionState": "manual",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Showing"
           }
-        },
+        }
+      }
+    },
+    "Zeigt Bildrate, Vorrat und verworfene Bilder über dem Film.": {
+      "extractionState": "manual",
+      "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zeigt"
+            "value": "Zeigt Bildrate, Vorrat und verworfene Bilder über dem Film."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows frame rate, buffer and dropped frames over the video."
           }
         }
       }
@@ -6446,16 +6532,16 @@
     "Zeigt Ø": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Showing Ø"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Zeigt Ø"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Showing Ø"
           }
         }
       }
@@ -6663,6 +6749,23 @@
         }
       }
     },
+    "angefordert %@ Hz": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "angefordert %@ Hz"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "requested %@ Hz"
+          }
+        }
+      }
+    },
     "angefragt": {
       "extractionState": "manual",
       "localizations": {
@@ -6768,16 +6871,16 @@
     "fps · in Swiftly aus": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "fps · off in Swiftly"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "fps · in Swiftly aus"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · off in Swiftly"
           }
         }
       }
@@ -6869,16 +6972,16 @@
     "in Swiftly aus": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "off in Swiftly"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "in Swiftly aus"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "off in Swiftly"
           }
         }
       }
@@ -6988,16 +7091,16 @@
     "ohne Wechsel": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "no switch"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "ohne Wechsel"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no switch"
           }
         }
       }
@@ -7172,16 +7275,16 @@
     },
     "zu spät": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "late"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "zu spät"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "late"
           }
         }
       }
