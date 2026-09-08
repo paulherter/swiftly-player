@@ -1436,7 +1436,7 @@ final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
     /// die Demuxer-Suche, die `debug` braucht, reicht ein gesetzter
     /// Schluessel — dann darf es auch langsam sein.
     var level: VLCLogLevel = UserDefaults.standard.bool(forKey: "vlcAusfuehrlich")
-        ? .debug : .warning
+        ? .debug : .info
 
     /// **Nach Inhalt sieben, nicht nach Modul.**
     ///
@@ -1453,9 +1453,24 @@ final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
     /// er sagt nichts, was die Bereichsanfragen nicht schon sagen.
     private static let flut = ["frame of", "window update", "setting:", "headers:"]
 
+    /// **Was auf `info` trotzdem durchkommt.**
+    ///
+    /// Die Stufe steht auf `info`, weil genau dort die eine Zeile faellt, die
+    /// sagt, *womit* dekodiert wird -- „using video decoder module ...".
+    /// Ohne sie ist nicht zu entscheiden, ob HEVC ueber VideoToolbox laeuft
+    /// oder auf der CPU, und beide Faelle sehen von aussen gleich aus.
+    /// Geschrieben wird deshalb nur, was diese Frage beantwortet, dazu alles
+    /// ab Warnung -- der Rest wird verworfen, bevor er eine Sperre oder die
+    /// Platte sieht.
+    private static let gesucht = ["decoder module", "using video", "using audio",
+                                  "videotoolbox", "hardware", "vout display",
+                                  "picture is too late", "clock"]
+
     func handleMessage(_ nachricht: String, logLevel: VLCLogLevel, context: VLCLogContext?) {
         let text = nachricht.lowercased()
         guard !Self.flut.contains(where: { text.contains($0) }) else { return }
+        let wichtig = logLevel == .error || logLevel == .warning
+        guard wichtig || Self.gesucht.contains(where: { text.contains($0) }) else { return }
         let modul = context?.module ?? "?"
         Protokoll.schreib("[vlc/\(modul)] \(nachricht)")
     }
