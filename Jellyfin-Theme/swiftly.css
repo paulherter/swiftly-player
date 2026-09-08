@@ -226,49 +226,48 @@ body,
     opacity: 1 !important;
 }
 
-/* --- Die Kulissenblende, ohne Maske ---
+/* --- Die Kulissenblende ---
    **Safari zeichnet keine Maske auf einem Element mit `z-index: -1`.**
-   Bewiesen, nicht vermutet: mit `mask-image: none` erscheint das Bild
-   sofort — in Safari wie in Chromium. Zwei Maskenebenen waren nicht das
-   Problem, eine war es auch.
+   Bewiesen: mit `mask-image: none` erscheint das Bild sofort. Also der
+   Weg, vor dem `Kulisse.swift` warnt — ein Anstrich statt einer Maske.
+   Die Warnung dort gilt, weil sich der Hintergrund der App einfaerbt;
+   hier liegt hinter der Kulisse nur `html`, und das traegt `grund`.
 
-   Also der Weg, vor dem `Kulisse.swift` warnt: ein **Anstrich** statt
-   einer Maske. Dort ist die Warnung richtig, weil sich der Hintergrund
-   der App einfaerbt. Hier stimmt die Voraussetzung: hinter der Kulisse
-   liegt nur noch `html`, und das traegt `grund` — sonst nichts.
+   **Die Kulisse ist 62 Prozent breit und sitzt rechts** — wie auf dem
+   Mac (`Kulisse.swift`: `raum.size.width * 0.62`, rechts ausgerichtet).
+   Jellyfin spannt sie ueber die volle Breite; `background-position:
+   right` half nicht, weil bei `background-size: cover` waagerecht nichts
+   zu verschieben ist. Es war nie die Position, es war die Breite.
 
-   Der Verlauf liegt auf einer eigenen Ebene **im** Kulissenbehaelter,
-   also weiterhin hinter allem. Zwei Verlaeufe in einer Eigenschaft, keine
-   Verrechnung — das koennen alle Browser.
+   **Und der Verlauf muss frueher fertig sein, als ich dachte.** Unter dem
+   Heldbild beginnt `.detailPageWrapperContainer`, und der ist deckend —
+   gemessen ab y 408 bei 900 Punkt Fensterhoehe, also bei 45 Prozent. Mein
+   Verlauf war dort erst auf halber Strecke und lief in eine harte Kante.
+   Jetzt ist er bei 45 Prozent bei `grund` angekommen. */
+.backdropImage {
+    left: auto !important;
+    right: 0 !important;
+    width: 62% !important;
+    background-position: center center !important;
+}
 
-   Die Stuetzstellen sind die aus `Kulissenblende`, umgedreht: wo die
-   Maske durchlaesst, ist der Anstrich durchsichtig. */
 .backdropContainer::after {
     content: "";
     position: absolute;
     inset: 0;
     pointer-events: none;
-    /* **Mit `!important`.** Ohne es kam der Verlauf nicht durch — Pauls
-       Rot-Probe hat es gezeigt: eine `background-color` an derselben
-       Stelle malte, ein `background-image` nicht. Die Ebene stimmte also
-       die ganze Zeit, nur die Auszeichnungsstaerke nicht. */
+    /* Waagerecht: bis zur linken Kante der Kulisse voll gedeckt, dann
+       auslaufend. Senkrecht: bei 45 Prozent bei `grund`, dort uebernimmt
+       der Inhaltsbehaelter. */
     background-image:
         linear-gradient(to right,
-            rgb(11,11,13) 0%, rgba(11,11,13,.98) 12%, rgba(11,11,13,.88) 26%,
-            rgba(11,11,13,.62) 42%, rgba(11,11,13,.34) 56%, rgba(11,11,13,.14) 70%,
-            rgba(11,11,13,.04) 85%, rgba(11,11,13,0) 100%),
+            rgb(11,11,13) 0%, rgb(11,11,13) 36%, rgba(11,11,13,.92) 44%,
+            rgba(11,11,13,.70) 54%, rgba(11,11,13,.42) 66%, rgba(11,11,13,.20) 78%,
+            rgba(11,11,13,.06) 90%, rgba(11,11,13,0) 100%),
         linear-gradient(to bottom,
-            rgba(11,11,13,0) 0%, rgba(11,11,13,0) 40%, rgba(11,11,13,.30) 56%,
-            rgba(11,11,13,.62) 70%, rgba(11,11,13,.86) 83%, rgba(11,11,13,.97) 93%,
+            rgba(11,11,13,0) 0%, rgba(11,11,13,0) 22%, rgba(11,11,13,.18) 30%,
+            rgba(11,11,13,.48) 36%, rgba(11,11,13,.78) 41%, rgb(11,11,13) 45%,
             rgb(11,11,13) 100%) !important;
-}
-
-/* **Rechts, nicht mittig.** Auf dem Mac liegt die Kulisse rechts und
-   laeuft nach links aus; Jellyfin zentriert sie. Mit dem Anstrich links
-   waere ein zentriertes Bild genau an der Stelle abgeschnitten, die
-   etwas zeigt. */
-.backdropImage {
-    background-position: right center !important;
 }
 
 /* Auswahl und Markierung tragen den Akzent — er zeigt Auswahl. */
@@ -1225,6 +1224,7 @@ a[data-role=button]:focus {
     display: none !important;
 }
 
+.detailPageWrapperContainer,
 .noBackdropTransparency .detailPageWrapperContainer {
     background-color: var(--sw-grund) !important;
     background-image: none !important;
