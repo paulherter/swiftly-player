@@ -22,6 +22,20 @@
 # Skript es als `fehlt` — die Zuordnung kann also nicht stillschweigend
 # veralten.
 #
+# **Eine fehlende Datei ist der staerkste Befund, den es hier geben kann.**
+# Deshalb wird sie nicht uebersprungen, sondern unten eigens aufgefuehrt. Am
+# 08.09.2026 war genau das der Fall, der einen Tag gekostet hat: auf Linux gab
+# es die Bibliotheksseite gar nicht, ein Klick schaltete nur den Filme-Bereich
+# um — und niemand hat gefragt, warum die Spalte leer ist.
+#
+# `-` heisst „gibt es dort nicht, und das ist geprueft" (Absicht, mit Grund in
+# der Zeile). `?` heisst „gibt es dort nicht" — und das wird gemeldet.
+#
+# Ein `~` vor dem Namen heisst **grob**: die Zeile stellt Dateien
+# gegenueber, die nicht dasselbe zuschneiden. `App.swift` auf Linux traegt
+# vier Apple-Dateien auf einmal und ist dort staendig in Bewegung; ein
+# Datumsvergleich sagt da fast immer „juenger", ohne dass es etwas bedeutet.
+#
 # Die iOS-Spalte zeigt oft nach `Sources/Shared`: die iPhone- und
 # iPad-Ansichten liegen dort, weil sie geteilt sind.
 #
@@ -38,75 +52,106 @@ cd "$(dirname "$0")/.." || exit 1
 
 # Ansicht : iOS/iPad : tvOS : macOS : Linux+Windows
 ZUORDNUNG=(
-  "Start:Sources/Shared/HomeView.swift:Sources/tvOS/HomeView.swift:Sources/macOS/HomeView.swift:Linux/Sources/SwiftlyLinux/Bereich.swift"
+  "Start:Sources/Shared/HomeView.swift:Sources/tvOS/HomeView.swift:Sources/macOS/HomeView.swift:Linux/Sources/SwiftlyLinux/App.swift"
   "Detailseite:Sources/Shared/BrowseViews.swift:Sources/tvOS/DetailView.swift:Sources/macOS/DetailView.swift:Linux/Sources/SwiftlyLinux/Detailseite.swift"
   "Serienseite:Sources/Shared/SeriesView.swift:Sources/tvOS/SerienView.swift:Sources/macOS/SerienView.swift:Linux/Sources/SwiftlyLinux/Serienseite.swift"
-  "Bibliothek:Sources/Shared/BrowseViews.swift:Sources/tvOS/BibliothekView.swift:Sources/macOS/BibliothekView.swift:Linux/Sources/SwiftlyLinux/Bereich.swift"
+  "Bibliotheksseite:Sources/Shared/BrowseViews.swift:Sources/tvOS/BibliothekView.swift:Sources/macOS/Bibliotheksseite.swift:?"
+  "Bibliotheksliste:Sources/Shared/BrowseViews.swift:Sources/tvOS/BibliothekView.swift:Sources/macOS/BibliothekView.swift:Linux/Sources/SwiftlyLinux/App.swift"
   "Player:Sources/iOS/PlayerScreen.swift:Sources/tvOS/PlayerScreen.swift:Sources/macOS/PlayerScreen.swift:Linux/Sources/SwiftlyLinux/Spieler.swift"
+  "VLC-Anbindung:Sources/Shared/VLCPlayer.swift:Sources/Shared/VLCPlayer.swift:Sources/Shared/VLCPlayer.swift:Linux/Sources/SwiftlyLinux/Abspieler.swift"
   "Profil:Sources/Shared/ProfilView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/ProfilView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift"
   "Einstellungen:Sources/Shared/EinstellungenView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/EinstellungenView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift"
-  "Wiedergabe:Sources/Shared/WiedergabeEinstellungenView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/WiedergabeEinstellungenView.swift:Linux/Sources/SwiftlyLinux/Wahlen.swift"
-  "Suche:Sources/Shared/SucheView.swift:Sources/tvOS/SucheView.swift:Sources/macOS/SucheView.swift:Linux/Sources/SwiftlyLinux/Bereich.swift"
-  "Merkliste:Sources/Shared/MerklisteView.swift:Sources/tvOS/MerklisteView.swift:Sources/macOS/MerklisteView.swift:-"
+  "Wiedergabe:Sources/Shared/WiedergabeEinstellungenView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/WiedergabeEinstellungenView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift"
+  "Suche:Sources/Shared/SucheView.swift:Sources/tvOS/SucheView.swift:Sources/macOS/SucheView.swift:Linux/Sources/SwiftlyLinux/App.swift"
+  "Merkliste:Sources/Shared/MerklisteView.swift:Sources/tvOS/MerklisteView.swift:Sources/macOS/MerklisteView.swift:?"
   "Downloads:Sources/Shared/DownloadsView.swift:-:Sources/macOS/Macdownloads.swift:Linux/Sources/SwiftlyLinux/Downloadseite.swift"
-  "Seerr:Sources/Shared/SeerrDetailView.swift:Sources/tvOS/SeerrView.swift:Sources/macOS/SeerrKachelUndSeite.swift:Linux/Sources/SwiftlyLinux/Seerrseite.swift"
-  "Rahmen:Sources/Shared/HauptView.swift:Sources/tvOS/HauptView.swift:Sources/macOS/HauptView.swift:Linux/Sources/SwiftlyLinux/App.swift"
+  "Downloadverwaltung:Sources/Shared/Downloadverwaltung.swift:-:Sources/Shared/Downloadverwaltung.swift:Linux/Sources/SwiftlyLinux/Downloadverwaltung.swift"
+  "Seerr-Seite:Sources/Shared/SeerrDetailView.swift:Sources/tvOS/SeerrView.swift:Sources/macOS/SeerrKachelUndSeite.swift:Linux/Sources/SwiftlyLinux/Seerrseite.swift"
+  "Seerr-Zugang:Sources/Shared/SeerrEinstellungenView.swift:-:Sources/macOS/SeerrEinstellungenView.swift:Linux/Sources/SwiftlyLinux/Seerr.swift"
+  "~Rahmen:Sources/Shared/HauptView.swift:Sources/tvOS/HauptView.swift:Sources/macOS/HauptView.swift:Linux/Sources/SwiftlyLinux/App.swift"
+  "Bereiche:Sources/Shared/HauptView.swift:Sources/tvOS/HauptView.swift:Sources/macOS/HauptView.swift:Linux/Sources/SwiftlyLinux/Bereich.swift"
   "Stil:Sources/Shared/Stil.swift:Sources/tvOS/Stil.swift:Sources/macOS/Stil.swift:Linux/Sources/SwiftlyLinux/Stil.swift"
+  "Bausteine:Sources/Shared/Bausteine.swift:Sources/tvOS/TVBausteine.swift:Sources/macOS/Macbausteine.swift:Linux/Sources/SwiftlyLinux/Bausteine.swift"
+  "Bildlader:Sources/Shared/Netzbild.swift:Sources/Shared/Netzbild.swift:Sources/Shared/Netzbild.swift:Linux/Sources/SwiftlyLinux/Bilder.swift"
   "Bildfarbe:-:-:Sources/macOS/Bildfarbe.swift:Linux/Sources/SwiftlyLinux/Bildfarbe.swift"
-  "Technikschild:Sources/Shared/BrowseViews.swift:-:Sources/macOS/DetailView.swift:Linux/Sources/SwiftlyLinux/Technikschild.swift"
+  "Technikschild:Sources/Shared/Technikschild.swift:-:Sources/macOS/DetailView.swift:Linux/Sources/SwiftlyLinux/Technikschild.swift"
+  "Schluesselbund:Sources/Shared/Keychain.swift:Sources/Shared/Keychain.swift:Sources/Shared/Keychain.swift:Linux/Sources/SwiftlyLinux/Speicher.swift"
+  "Medienleiste:Sources/Shared/Wiedergabezentrale.swift:Sources/Shared/Wiedergabezentrale.swift:Sources/Shared/Wiedergabezentrale.swift:Linux/Sources/SwiftlyLinux/Medienleiste.swift"
+  "Fassung:Sources/Shared/Bausteine.swift:Sources/Shared/Bausteine.swift:Sources/Shared/Bausteine.swift:Linux/Sources/SwiftlyLinux/Fassung.swift"
+  "Startanimation:Sources/Shared/Startanimation.swift:Sources/Shared/Startanimation.swift:Sources/Shared/Startanimation.swift:Linux/Sources/SwiftlyLinux/Startanimation.swift"
+  "Kulisse:Sources/Shared/Heldkopf.swift:Sources/tvOS/Titelreihen.swift:Sources/macOS/Kulisse.swift:Linux/Sources/SwiftlyLinux/Kulisse.swift"
 )
 
 filter="${1:-}"
+PLATTFORMEN=("iOS/iPad" "tvOS" "macOS" "Linux/Win")
 
-# Kuerzel, Alter, Zeitstempel — der Zeitstempel entscheidet, wer die juengste
-# Fassung hat.
 zeitstempel() {
   local pfad="$1"
-  { [ "$pfad" = "-" ] || [ ! -f "$pfad" ]; } && { echo 0; return; }
+  case "$pfad" in -|\?) echo 0; return;; esac
+  [ ! -f "$pfad" ] && { echo 0; return; }
   git log -1 --format=%ct -- "$pfad" 2>/dev/null || echo 0
 }
 
 text() {
   local pfad="$1"
-  [ "$pfad" = "-" ] && { echo "-"; return; }
-  [ ! -f "$pfad" ] && { echo "FEHLT"; return; }
+  [ "$pfad" = "-" ] && { echo "keine (geprueft)"; return; }
+  [ "$pfad" = "?" ] && { echo "KEINE"; return; }
+  [ ! -f "$pfad" ] && { echo "PFAD FEHLT"; return; }
   local kurz alter
   kurz=$(git log -1 --format=%h -- "$pfad" 2>/dev/null)
   [ -z "$kurz" ] && { echo "nicht eingecheckt"; return; }
-  alter=$(git log -1 --format=%cr -- "$pfad" 2>/dev/null | sed 's/ ago//; s/minutes/min/; s/hours/h/; s/days/T/; s/weeks/W/')
+  alter=$(git log -1 --format=%cr -- "$pfad" 2>/dev/null \
+          | sed 's/ ago//; s/minutes*/min/; s/hours*/h/; s/days*/T/; s/weeks*/W/; s/months*/M/')
   echo "$kurz $alter"
 }
 
-printf '%-15s%-21s%-21s%-21s%-21s\n' "Ansicht" "iOS/iPad" "tvOS" "macOS" "Linux/Windows"
-printf '%s\n' "--------------------------------------------------------------------------------------------"
+printf '%-19s%-21s%-21s%-21s%-21s\n' "Ansicht" "iOS/iPad" "tvOS" "macOS" "Linux/Win"
+printf '%s\n' "------------------------------------------------------------------------------------------------"
 
-fehlend=0
+ohne=()
+kaputt=0
 for zeile in "${ZUORDNUNG[@]}"; do
   IFS=':' read -r name ios tv mac linux <<< "$zeile"
+  grob=0
+  case "$name" in "~"*) grob=1; name="${name#\~}";; esac
   [ -n "$filter" ] && [[ "$name" != *"$filter"* ]] && continue
 
-  t1=$(zeitstempel "$ios"); t2=$(zeitstempel "$tv")
-  t3=$(zeitstempel "$mac"); t4=$(zeitstempel "$linux")
-  hoechst=$t1
-  for t in $t2 $t3 $t4; do [ "$t" -gt "$hoechst" ] && hoechst=$t; done
+  pfade=("$ios" "$tv" "$mac" "$linux")
+  hoechst=0
+  for p in "${pfade[@]}"; do
+    t=$(zeitstempel "$p"); [ "$t" -gt "$hoechst" ] && hoechst=$t
+  done
 
-  printf '%-15s' "$name"
-  for paar in "$ios:$t1" "$tv:$t2" "$mac:$t3" "$linux:$t4"; do
-    pfad="${paar%:*}"; t="${paar##*:}"
-    [ "$pfad" != "-" ] && [ ! -f "$pfad" ] && fehlend=1
+  printf '%-19s' "$name$([ $grob = 1 ] && echo ' ~')"
+  for i in 0 1 2 3; do
+    p="${pfade[$i]}"
+    t=$(zeitstempel "$p")
+    [ "$p" = "?" ] && ohne+=("$name — ${PLATTFORMEN[$i]}")
+    case "$p" in -|\?) : ;; *) [ ! -f "$p" ] && kaputt=1;; esac
     marke=" "
-    # Die juengste Fassung bekommt den Stern — sie ist die Vorlage, und wer
-    # eine andere Spalte anfasst, arbeitet gegen einen aelteren Stand.
-    [ "$t" != 0 ] && [ "$t" = "$hoechst" ] && marke="*"
-    printf '%s%-20s' "$marke" "$(text "$pfad")"
+    # Der Stern nur, wo der Vergleich etwas bedeutet: eine grobe Zeile
+    # vergleicht Dateien mit verschiedenem Zuschnitt.
+    [ "$grob" = 0 ] && [ "$t" != 0 ] && [ "$t" = "$hoechst" ] && marke="*"
+    printf '%s%-20s' "$marke" "$(text "$p")"
   done
   printf '\n'
 done
 
-printf '\n%s\n' "* = juengste Fassung dieser Ansicht. Wer eine andere Spalte uebernimmt,"
-printf '%s\n'   "  arbeitet gegen einen aelteren Stand — dann erst dort nachlesen."
+printf '\n%s\n' "* juengste Fassung. Wer eine andere Spalte uebernimmt, arbeitet gegen einen"
+printf '%s\n'   "  aelteren Stand — dann erst dort nachlesen. ~ heisst grob: die Dateien"
+printf '%s\n'   "  schneiden nicht dasselbe zu, das Datum sagt dort wenig."
 
-if [ "$fehlend" = 1 ]; then
-  printf '\n%s\n' "FEHLT heisst: die Zuordnung in diesem Skript zeigt auf eine Datei, die es"
-  printf '%s\n'   "nicht mehr gibt — umbenannt oder verschoben. Bitte hier nachziehen."
+if [ ${#ohne[@]} -gt 0 ]; then
+  printf '\n%s\n' "OHNE GEGENSTUECK — der staerkste Befund, den es hier gibt:"
+  for e in "${ohne[@]}"; do printf '  %s\n' "$e"; done
+  printf '%s\n' "  Entweder fehlt die Ansicht dort wirklich, oder sie steckt in einer"
+  printf '%s\n' "  fremden Datei und niemand weiss es. Am 08.09.2026 war es das erste:"
+  printf '%s\n' "  auf Linux gab es keine Bibliotheksseite, ein Klick schaltete nur den"
+  printf '%s\n' "  Filme-Bereich um. Ist es geprueft und Absicht, Bindestrich statt"
+  printf '%s\n' "  Fragezeichen in die Zuordnung eintragen."
+fi
+
+if [ "$kaputt" = 1 ]; then
+  printf '\n%s\n' "PFAD FEHLT heisst: die Zuordnung zeigt auf eine Datei, die es nicht mehr"
+  printf '%s\n'   "gibt — umbenannt oder verschoben. Hier im Skript nachziehen."
 fi
