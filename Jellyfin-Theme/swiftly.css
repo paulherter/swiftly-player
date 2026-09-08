@@ -1554,6 +1554,23 @@ a[data-role=button]:focus {
 .layout-desktop .detailPagePrimaryContainer.detailRibbon {
     flex-direction: column !important;
     align-items: flex-start !important;
+    /* **Und das Band muss mitwachsen.**
+       Jellyfin gibt ihm eine feste Hoehe — dort ist es eine *Zeile*, und
+       eine Zeile ist so hoch wie ihr hoechstes Stueck. Auf `column`
+       gedreht wird der Inhalt hoeher, die Box nicht: die Knopfreihe lief
+       aus dem Kasten heraus, und alles darunter zeichnete darueber.
+
+       Gemessen an einer Folge: Box 107 hoch, Inhalt bis 558, und
+       `.detailPagePrimaryContent` begann bei 425. Mit `height: auto`
+       endet das Band bei 584 und der Inhalt beginnt dort — 26 Punkt
+       Luft statt 133 Punkt Ueberlappung.
+
+       **Warum ich das nicht gesehen habe:** ich hatte berechnete Werte
+       abgefragt (`flexDirection`, `fontSize`) und daraus geschlossen, es
+       sitze. Ob sich zwei Kaesten ueberlagern, sagt nur ihre Geometrie. */
+    height: auto !important;
+    min-height: 0 !important;
+    padding-bottom: 26px !important;
 }
 
 /* **Kein Plakat.** Auf dem Apple TV ist es weggefallen, weil es nur den
