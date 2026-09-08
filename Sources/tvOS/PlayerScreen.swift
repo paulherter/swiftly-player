@@ -34,6 +34,9 @@ struct PlayerScreen: View {
     @State private var plan: PlaybackPlan
 
     @State private var flaeche: VLCPlayerView?
+    /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
+    @AppStorage("technikschild") private var technikschild = false
+    @State private var spielwerte: Spielwerte?
     @State private var position: Double
     /// Wann der Player geöffnet wurde — `Zeitannahme` braucht es, um
     /// Aufbauzucken von echter Bewegung zu unterscheiden.
@@ -280,6 +283,28 @@ struct PlayerScreen: View {
                     wechsleZu(folge)
                 }
                 .transition(.opacity)
+            }
+        }
+        // **Das Technikschild.** Es liegt ueber allem, nimmt aber weder Fokus
+        // noch Eingaben — auf dem Fernseher waere ein fokussierbares Schild
+        // ein Ziel, das die Fernbedienung anfahren kann und das dann nichts
+        // tut. Angeschaltet wird es im Wiedergabeblatt.
+        .overlay(alignment: .topLeading) {
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte, fern: true)
+                    .padding(.leading, Stil.randSeite)
+                    .padding(.top, Stil.randOben)
+                    .allowsHitTesting(false)
+                    .focusable(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Stil.einblenden, value: technikschild)
+        .task(id: technikschild) {
+            guard technikschild else { return }
+            while !Task.isCancelled {
+                spielwerte = Spielwerte(flaeche?.statistik)
+                try? await Task.sleep(for: .seconds(2))
             }
         }
         .ignoresSafeArea()

@@ -32,6 +32,7 @@ struct Wiedergabeblatt: View {
     @FocusState private var amChip: Kategorie?
     /// Die Zaehler, im selben Takt nachgefuehrt wie der Player selbst.
     @State private var zaehler: Spielwerte?
+    @AppStorage("technikschild") private var technikschild = false
 
 
     enum Kategorie: String, CaseIterable, Identifiable {
@@ -163,65 +164,24 @@ struct Wiedergabeblatt: View {
                                   an: schlafminuten == minuten) { schlafminuten = minuten }
                     }
 
-                // **Werte, keine Wahl.** Deshalb `Wertfeld` und nicht
-                // `Wahlkarte`: nichts hiervon laesst sich druecken, und eine
-                // Karte, die aussieht wie die vier daneben, verspraeche das.
-                // Aus demselben Grund ist die Reihe hier nicht fokussierbar.
+                // **Aus dem Auszug ist ein Schalter geworden.**
+                //
+                // Hier standen dieselben Zahlen als Reiter, und das ist die
+                // falsche Form fuer die Frage, die sie beantworten: „laeuft
+                // es gerade rund" sieht man nicht einmal nach, man sieht ihm
+                // zu. Ein Blatt verdeckt dabei genau das Bild, um das es
+                // geht, und geht wieder zu. Die Zahlen stehen jetzt als
+                // `Technikschild` oben links ueber dem laufenden Film; hier
+                // bleibt nur, es an- und auszuschalten.
                 case .technik:
-                    if let z = zaehler {
-                        Wertfeld(titel: "Verworfen", wert: "\(z.verworfen)",
-                                 warnung: z.verworfen > 0)
-                        Wertfeld(titel: "Zu spät", wert: "\(z.zuSpaet)",
-                                 warnung: z.zuSpaet > 0)
-                        Wertfeld(titel: "Gezeigt", wert: "\(z.gezeigt)")
-                        Wertfeld(titel: "Ton verloren", wert: "\(z.tonVerloren)",
-                                 warnung: z.tonVerloren > 0)
-                        Wertfeld(titel: "Eingang", wert: z.eingang)
-                        Wertfeld(titel: "Demuxer", wert: z.demuxer)
-                        Wertfeld(titel: "Bild entschlüsselt", wert: "\(z.videoBloecke)")
-                        Wertfeld(titel: "Ton entschlüsselt", wert: "\(z.tonBloecke)")
-                    } else {
-                        Wertfeld(titel: "Zähler", wert: String(localized: "Noch nichts"))
+                    Wahlkarte(name: String(localized: "Schild anzeigen"),
+                              marke: nil, an: technikschild) {
+                        technikschild = true
                     }
-
-                    // **Die Zaehler zuerst, die Herkunftsangaben dahinter.**
-                    //
-                    // Sie standen vorn, weil sie beim Suchen nach dem
-                    // Sprungfehler die wichtigsten waren. Fuer den taeglichen
-                    // Blick ist es umgekehrt: wer den Reiter oeffnet, will
-                    // wissen, ob Bilder verlorengehen. **Steht vor den
-                    // Zaehlern, weil es die Frage davor beantwortet.** „Es
-                    // ruckelt, aber nichts fehlt" ist keine Sache der Zaehler,
-                    // sondern der Ausgabekadenz — siehe `Bildtakt`. Ohne diese
-                    // Zeile sieht man dem Bild nicht an, ob der Fernseher
-                    // mitgeschaltet hat.
-                    Wertfeld(titel: "Bildfläche", wert: flaechenzeile,
-                             warnung: !flaecheStimmt)
-                    Wertfeld(titel: "Ausgang", wert: ausgangzeile,
-                             warnung: !Bildtakt.erlaubt)
-                    // **Direct Play und Direct Stream sind nicht dasselbe.**
-                    //
-                    // Der Haken unten zeigt beide gleich, weil beide das Bild
-                    // unangetastet lassen. Beim Direct Stream packt der Server
-                    // den Behaelter aber live um — der Anlauf dauert, und
-                    // Spulen wird zaeh. Wer nur den Haken sieht, sucht den
-                    // Fehler im Player.
-                    Wertfeld(titel: "Auslieferung", wert: plan.method.rawValue,
-                             warnung: plan.method != .directPlay)
-                    // Ohne `mkv_trusted` verwirft VLC 4 den Index der Datei
-                    // und ein Sprung landet am Dateianfang. Siehe `oeffnen`.
-                    Wertfeld(titel: "MKV-Index", wert: behaelterzeile,
-                             warnung: istMkv && !flaeche.matroskaVertraut)
-                    // **Die Zahl, an der sich „zu langsam" entscheidet.**
-                    //
-                    // Direct Play heisst: die Datei muss in Echtzeit ueber die
-                    // Leitung. Schafft der Weg vom Server ihre Bitrate nicht,
-                    // laeuft der Puffer leer — egal wie richtig alles andere
-                    // eingestellt ist. Daneben steht „Eingang", was wirklich
-                    // ankommt. Liegt der deutlich darunter, ist die Ursache
-                    // gefunden und sie liegt nicht im Player.
-                    Wertfeld(titel: "Datei braucht", wert: bedarfzeile,
-                             warnung: false)
+                    Wahlkarte(name: String(localized: "Aus"),
+                              marke: nil, an: !technikschild) {
+                        technikschild = false
+                    }
                 }
             }
             .padding(.vertical, 10)
@@ -412,65 +372,6 @@ struct Wiedergabeblatt: View {
         let bekannt = ["SRT", "ASS", "SSA", "PGS", "VTT", "SUB", "DVBSUB"]
         let gross = name.uppercased()
         return bekannt.first { gross.contains($0) }
-    }
-}
-
-/// VLCs Zaehlwerk, uebersetzt.
-///
-/// **Warum das ueberhaupt jemand sehen will:** diese App transkodiert nie.
-/// Ob das gutgeht, sieht man einer Wiedergabe nicht an — ein Bild, das
-/// stockt, und ein Bild, das still Einzelbilder wegwirft, sehen aus drei
-/// Metern gleich aus. `verworfen` ist der Unterschied. Steht dort eine Null,
-/// laeuft die Datei wirklich glatt; steigt sie waehrend des Zusehens, ist
-/// die Datei zu schwer fuer das Geraet, und zwar unabhaengig davon, was der
-/// Server meldet.
-///
-/// Die Rohwerte sind kumulativ seit Beginn der Wiedergabe, nicht pro
-/// Sekunde — deshalb steht hier auch nichts von „pro Sekunde".
-struct Spielwerte {
-    let verworfen: UInt64
-    let zuSpaet: UInt64
-    let gezeigt: UInt64
-    let tonVerloren: UInt64
-    let videoBloecke: UInt64
-    let tonBloecke: UInt64
-    /// Bitraten kommen als Byte pro Sekunde in `Float` — hier gleich als
-    /// Text, damit die Umrechnung an einer Stelle steht.
-    let eingang: String
-    let demuxer: String
-
-    init?(_ roh: VLCMedia.Stats?) {
-        guard let roh else { return nil }
-        // **Hat VLC die Struktur gar nicht gefuellt, kommt Speicherschrott.**
-        //
-        // `statistics` liefert sie auch dann, wenn das Medium noch keine hat;
-        // die Felder stehen dann auf dem, was zufaellig im Speicher lag. Eine
-        // Milliarde Bilder waeren bei 60 Hz ueber ein halbes Jahr am Stueck —
-        // was darueber liegt, ist keine Messung.
-        let grenze: UInt64 = 1_000_000_000
-        guard roh.displayedPictures < grenze, roh.lostPictures < grenze,
-              roh.latePictures < grenze, roh.decodedVideo < grenze,
-              roh.decodedAudio < grenze, roh.lostAudioBuffers < grenze
-        else { return nil }
-        verworfen    = roh.lostPictures
-        zuSpaet      = roh.latePictures
-        gezeigt      = roh.displayedPictures
-        tonVerloren  = roh.lostAudioBuffers
-        videoBloecke = roh.decodedVideo
-        tonBloecke   = roh.decodedAudio
-        eingang      = Spielwerte.rate(roh.inputBitrate)
-        demuxer      = Spielwerte.rate(roh.demuxBitrate)
-    }
-
-    /// VLC misst in Byte je Sekunde. Mal acht sind Bit, und ab einem Mbit
-    /// schreibt sich das lesbarer in Mbit/s.
-    private static func rate(_ bytesProSekunde: Float) -> String {
-        let bit = Double(bytesProSekunde) * 8
-        if bit <= 0 { return "—" }
-        if bit >= 1_000_000 {
-            return String(format: "%.1f Mbit/s", bit / 1_000_000)
-        }
-        return String(format: "%.0f kbit/s", bit / 1_000)
     }
 }
 

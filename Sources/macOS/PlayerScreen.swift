@@ -28,6 +28,9 @@ struct PlayerScreen: View {
     @State private var wechselt = false
     @State private var hinweis: String?
     @State private var flaeche: VLCPlayerView?
+    /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
+    @AppStorage("technikschild") private var technikschild = false
+    @State private var spielwerte: Spielwerte?
     @State private var stand: Wiedergabetakt.Stand
 
     /// **Was der Knopf zeigt, bis der Takt nachkommt.**
@@ -168,6 +171,29 @@ struct PlayerScreen: View {
 
             if schirmWeg, steuerungDa {
                 steuerung.transition(.opacity)
+            }
+        }
+        // **Das Technikschild.** Auskunft, kein Bedienteil — es nimmt keine
+        // Klicks und steht deshalb auch der Steuerung nicht im Weg.
+        // Angeschaltet wird es in den Wiedergabe-Einstellungen.
+        .overlay(alignment: .topLeading) {
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte)
+                    .padding(.leading, Stil.randAbstand)
+                    // Unter der Fensterampel: sie liegt im Vollbild nicht da,
+                    // im Fenster schon, und ein Schild darunter ist in beiden
+                    // Lagen richtig.
+                    .padding(.top, 44)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Stil.einblenden, value: technikschild)
+        .task(id: technikschild) {
+            guard technikschild else { return }
+            while !Task.isCancelled {
+                spielwerte = Spielwerte(flaeche?.statistik)
+                try? await Task.sleep(for: .seconds(2))
             }
         }
         .background(Fensterzugriff(halter: halter))

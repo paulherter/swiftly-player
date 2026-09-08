@@ -232,6 +232,10 @@ targets:
       # Aufblitzen des Verlaufs. Der Fernseher hat daneben weiter seinen
       # eigenen `Bild`-Baustein fuer die Kacheln.
       - path: Sources/Shared/Netzbild.swift
+      # VLCs Zaehlwerk und das Technikschild darueber — beide teilen sich
+      # alle vier Plattformen, seit es das Schild ueberall gibt.
+      - path: Sources/Shared/Spielwerte.swift
+      - path: Sources/Shared/Technikschild.swift
       - path: Sources/Shared/QuickConnectModell.swift
       - path: Sources/Shared/Wiedergabezentrale.swift
       - path: Sources/Shared/Startseitenmodell.swift
@@ -478,6 +482,8 @@ targets:
       - path: Sources/Shared/Serienspeicher.swift
       # Bildlader mit eigenem Speicher — entschluesselt abseits des
       # Hauptlaufs. Lag bis 05.09.2026 in Sources/macOS.
+      - path: Sources/Shared/Spielwerte.swift
+      - path: Sources/Shared/Technikschild.swift
       - path: Sources/Shared/Netzbild.swift
       - path: Sources/Shared/Bibliotheksmodell.swift
       - path: Sources/Shared/Merklistenmodell.swift

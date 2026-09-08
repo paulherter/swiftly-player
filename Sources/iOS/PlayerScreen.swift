@@ -19,6 +19,10 @@ struct PlayerScreen: View {
     @State private var plan: PlaybackPlan
 
     @State private var surface: VLCPlayerView?
+    /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
+    @AppStorage("technikschild") private var technikschild = false
+    @State private var spielwerte: Spielwerte?
+
     @State private var pipAvailable = false
     @State private var stelltWiederHer = false
     /// Läuft gerade im kleinen Fenster.
@@ -359,6 +363,28 @@ struct PlayerScreen: View {
                 .ignoresSafeArea()
                 .transition(.opacity)
                 .zIndex(10)
+            }
+        }
+        // **Das Technikschild.** Es liegt ueber allem und nimmt nichts an:
+        // eine Auskunft, kein Bedienteil. Angeschaltet wird es in den
+        // Wiedergabe-Einstellungen; wer es nicht sucht, sieht es nie.
+        .overlay(alignment: .topLeading) {
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte)
+                    .padding(.leading, Stil.randAbstand)
+                    .padding(.top, 12)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Stil.einblenden, value: technikschild)
+        // Zwei Sekunden sind schnell genug, um einem Ruckler zuzusehen, und
+        // langsam genug, dass die Zahlen lesbar stehenbleiben.
+        .task(id: technikschild) {
+            guard technikschild else { return }
+            while !Task.isCancelled {
+                spielwerte = Spielwerte(surface?.statistik)
+                try? await Task.sleep(for: .seconds(2))
             }
         }
         .animation(.easeInOut(duration: 0.2), value: airplayPlan?.url)
