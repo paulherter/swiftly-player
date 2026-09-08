@@ -1209,6 +1209,23 @@
         }
       }
     },
+    "Anzeigen": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anzeigen"
+          }
+        }
+      }
+    },
     "Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht.": {
       "localizations": {
         "de": {
@@ -5189,6 +5206,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Technical"
+          }
+        }
+      }
+    },
+    "Technikschild": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technical overlay"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technikschild"
           }
         }
       }

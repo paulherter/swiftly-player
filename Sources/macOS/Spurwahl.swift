@@ -25,6 +25,7 @@ struct Spurwahl: View {
 
     /// Wie hoch der Inhalt tatsaechlich waere.
     @State private var inhaltshoehe: CGFloat = 0
+    @AppStorage("technikschild") private var technikschild = false
 
     var body: some View {
         // **Sie scrollt, sobald sie zu hoch wird.**
@@ -102,6 +103,24 @@ struct Spurwahl: View {
                             schlafminuten = minuten
                         }
                     }
+                }
+            }
+
+            // **Der Schalter fuer das Technikschild — hier und nicht nur in
+            // den Einstellungen.**
+            //
+            // Wer ein Ruckeln sieht, sieht es *waehrend* er zusieht. Ihn
+            // dafuer aus dem Player und wieder zurueck zu schicken heisst,
+            // dass er das Ruckeln beim Nachsehen nicht mehr vor sich hat. Die
+            // Frage entsteht hier, also gehoert der Schalter hierher.
+            VStack(alignment: .leading, spacing: 10) {
+                Spaltentitel(text: "Technikschild",
+                             symbol: "waveform.badge.magnifyingglass")
+                HStack(spacing: 8) {
+                    Chip(beschriftung: String(localized: "Anzeigen"),
+                         aktiv: technikschild) { technikschild = true }
+                    Chip(beschriftung: String(localized: "Aus"),
+                         aktiv: !technikschild) { technikschild = false }
                 }
             }
         }

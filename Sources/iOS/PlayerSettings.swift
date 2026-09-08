@@ -36,6 +36,7 @@ struct PlayerSettingsSheet: View {
     private let schlafzeiten = Schlafzeiten.werte
 
     @State private var breite: CGFloat = 0
+    @AppStorage("technikschild") private var technikschild = false
 
     /// Auch dieser Kopf sitzt oben links, und auch er liegt im Fenster
     /// unter der Ampel. Er steht im Player und erbt dessen Lage.
@@ -108,6 +109,7 @@ struct PlayerSettingsSheet: View {
                     geschwindigkeit
                     if bildWahlMoeglich { bild }
                     schlafzeit
+                    technik
                 }
             }
         }
@@ -125,6 +127,7 @@ struct PlayerSettingsSheet: View {
                 geschwindigkeit
                 if bildWahlMoeglich { bild }
                 schlafzeit
+                technik
             }
             .padding(.bottom, 28)
         }
@@ -269,6 +272,23 @@ struct PlayerSettingsSheet: View {
     /// darf. In den Einstellungen ist die Zeile deshalb schon weg — hier
     /// stand sie noch, und zwar wirkungslos.
     private var bildWahlMoeglich: Bool { Orientierung.querformatSperreMoeglich }
+
+    /// **Der Schalter fuer das Technikschild — hier und nicht nur in den
+    /// Einstellungen.**
+    ///
+    /// Wer ein Ruckeln sieht, sieht es *waehrend* er zusieht. Ihn dafuer aus
+    /// dem Player, in die Einstellungen und wieder zurueck zu schicken heisst,
+    /// dass er das Ruckeln beim Nachsehen nicht mehr vor sich hat. Die Frage
+    /// entsteht hier, also gehoert der Schalter hierher.
+    private var technik: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            spaltentitel("Technikschild")
+            FlussReihe {
+                chip("Anzeigen", an: technikschild) { technikschild = true }
+                chip("Aus", an: !technikschild) { technikschild = false }
+            }
+        }
+    }
 
     private var schlafzeit: some View {
         VStack(alignment: .leading, spacing: 10) {
