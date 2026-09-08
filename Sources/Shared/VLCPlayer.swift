@@ -989,6 +989,23 @@ final class VLCPlayerView: Basisansicht {
         // Bereichs-Scan der Matroska unerreichbar. Zurueck auf 16 MiB.
         medium.addOption(":prefetch-buffer-size=16384")
 
+        // **Nach einer laengeren Pause ist die Verbindung weg.**
+        //
+        // Am 08.09.2026 zweimal mitgeschrieben: 25 Sekunden pausiert, und
+        // beim Fortsetzen steht `local stream N error: Cancellation (0x8)`
+        // im Protokoll -- der Server hat den untaetigen Strom abgeraeumt.
+        // VLC baut daraufhin alles neu auf (PCR zuruecksetzen, neu suchen,
+        // puffern), und weil iOS im Hintergrund zusaetzlich die
+        // Dekodersitzung entwertet hatte (`kVTInvalidSessionErr`), dauert
+        // das rund zwei Sekunden.
+        //
+        // `http-reconnect` laesst VLC den Abriss selbst auffangen, statt ihn
+        // als Stromende zu behandeln. Es aendert nichts, solange die
+        // Verbindung haelt.
+        if url.isFileURL == false {
+            medium.addOption(":http-reconnect")
+        }
+
         // **Am Vorrat lag es nicht -- nachgemessen, nicht vermutet.**
         //
         // Hier stand kurz `:network-caching=10000`, weil VLCs Voreinstellung

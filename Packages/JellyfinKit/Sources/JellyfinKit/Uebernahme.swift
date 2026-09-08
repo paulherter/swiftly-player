@@ -209,4 +209,28 @@ public enum Uebernahme {
         }
         return true
     }
+
+    /// **Warum eine Sitzung durchgefallen ist -- in einem Wort.**
+    ///
+    /// `taugt` gibt nur wahr oder falsch zurueck, und fuenf Gruende sehen von
+    /// aussen gleich aus: das Abzeichen fehlt, und man weiss nicht, ob der
+    /// Server nichts liefert, ob die Sitzung einem anderen Konto gehoert oder
+    /// ob sie nur zu alt ist. Diese Auskunft steht deshalb neben der Regel
+    /// und nicht in der Ansicht -- sie gehoert zu den fuenf Bedingungen und
+    /// laeuft mit ihnen mit, wenn sie sich aendern.
+    public static func warumNicht(_ s: Fremdsitzung, eigeneGeraeteID: String,
+                                  eigeneBenutzerID: String,
+                                  jetzt: Date = Date()) -> String? {
+        if s.geraeteID == eigeneGeraeteID { return "wir selbst" }
+        guard let wem = s.benutzerID else { return "kein Konto genannt" }
+        guard wem == eigeneBenutzerID else { return "fremdes Konto" }
+        guard let titel = s.laeuft else { return "spielt nichts" }
+        guard !titel.id.isEmpty else { return "Titel ohne Kennung" }
+        guard s.nimmtBefehle else { return "nimmt keine Befehle" }
+        if let regung = s.letzteRegung {
+            let alter = jetzt.timeIntervalSince(regung)
+            if alter > stillefrist { return "still seit \(Int(alter)) s" }
+        }
+        return nil
+    }
 }
