@@ -180,6 +180,16 @@ struct HauptView: View {
         .animation(.easeInOut(duration: 0.2), value: abspielen?.id)
         .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
         .task { await model.fernsteuerungStarten() }
+        // **Einmal je Start, und ohne Antwort passiert nichts.**
+        //
+        // `Downloadposten.gesehen` und `nochAufDemServer` wurden nie
+        // gesetzt: der Ausweg bei Platzmangel bot deshalb immer eine leere
+        // Liste an, und der Hinweis „gibt es nicht mehr" stand an keiner
+        // Zeile, obwohl die Ansicht ihn zeichnet. Beides beantwortet eine
+        // einzige Abfrage — was zurueckkommt, traegt den Fortschritt, was
+        // fehlt, ist fort. `HauptView` ist je Plattform eigen, deshalb
+        // braucht jede ihren eigenen Aufruf.
+        .task { await model.downloadsNachziehen() }
         // **Nur solange nichts läuft.** Im Player wäre die Abfrage sinnlos —
         // die Leiste ist weg, und der Server hätte alle zehn Sekunden eine
         // Anfrage mehr zu beantworten, während es aufs Bild ankommt.

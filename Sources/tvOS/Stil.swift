@@ -652,47 +652,6 @@ struct Hinweisstreifen: View {
 
 // MARK: - Umbrechende Reihe
 
-/// Reihe, die umbricht, wenn die Breite nicht reicht.
-///
-/// `HStack` bricht nie um, und ein Gitter bräuchte feste Spalten — für
-/// verschieden breite Chips ist beides falsch.
-struct FlussReihe: Layout {
-    var abstand: CGFloat = 14
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews,
-                      cache: inout ()) -> CGSize {
-        let breite = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, zeilenhoehe: CGFloat = 0
-        for teil in subviews {
-            let mass = teil.sizeThatFits(.unspecified)
-            if x + mass.width > breite, x > 0 {
-                x = 0
-                y += zeilenhoehe + abstand
-                zeilenhoehe = 0
-            }
-            x += mass.width + abstand
-            zeilenhoehe = max(zeilenhoehe, mass.height)
-        }
-        return CGSize(width: breite, height: y + zeilenhoehe)
-    }
-
-    func placeSubviews(in rahmen: CGRect, proposal: ProposedViewSize,
-                       subviews: Subviews, cache: inout ()) {
-        var x = rahmen.minX, y = rahmen.minY, zeilenhoehe: CGFloat = 0
-        for teil in subviews {
-            let mass = teil.sizeThatFits(.unspecified)
-            if x + mass.width > rahmen.maxX, x > rahmen.minX {
-                x = rahmen.minX
-                y += zeilenhoehe + abstand
-                zeilenhoehe = 0
-            }
-            teil.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(mass))
-            x += mass.width + abstand
-            zeilenhoehe = max(zeilenhoehe, mass.height)
-        }
-    }
-}
-
 /// Rubrik über einer Gruppe von Zeilen.
 struct Gruppentitel: View {
     let text: LocalizedStringKey
