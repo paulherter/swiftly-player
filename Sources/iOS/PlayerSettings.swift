@@ -62,6 +62,13 @@ struct PlayerSettingsSheet: View {
 
     @State private var ebene: Ebene = .wurzel
 
+    /// **In welche Richtung der letzte Wechsel ging.**
+    ///
+    /// Ohne das kann der Uebergang nicht wissen, ob er nach links oder nach
+    /// rechts schieben soll -- und ein Zurueck, das sich anfuehlt wie ein
+    /// Vorwaerts, verliert genau die Ortsangabe, die die Bewegung geben soll.
+    @State private var vorwaerts = true
+
     /// Auch dieser Kopf sitzt oben links, und auch er liegt im Fenster
     /// unter der Ampel. Er steht im Player und erbt dessen Lage.
     /// Selbst gerechnet und nicht aus der Umgebung gelesen: der Player ist
@@ -110,6 +117,8 @@ struct PlayerSettingsSheet: View {
     private var tafel: some View {
         VStack(alignment: .leading, spacing: 12) {
             kopfzeile
+                .id(ebene == .wurzel)
+                .transition(.opacity)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     switch ebene {
@@ -124,6 +133,16 @@ struct PlayerSettingsSheet: View {
             }
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize)
+            // **Der Wechsel schiebt, er blendet nicht.** Die Richtung ist die
+            // Ortsangabe: hinein geht nach links weg und von rechts herein,
+            // zurueck andersherum. Ohne `id` haelt SwiftUI die Ansicht fuer
+            // dieselbe und tauscht den Inhalt ohne Uebergang -- genau das
+            // war das harte Umspringen.
+            .id(ebene)
+            .transition(uebergang)
+            // Ohne Beschnitt schoebe der abgehende Inhalt sichtbar ueber den
+            // Rand der Karte hinaus.
+            .clipped()
         }
         .padding(14)
         .frame(width: 356)
@@ -204,17 +223,17 @@ struct PlayerSettingsSheet: View {
     private var wurzelinhalt: some View {
         VStack(alignment: .leading, spacing: 12) {
             gruppe {
-                navzeile("speaker.wave.2.fill", "Ton", tonJetzt ?? String(localized: "Keine")) { ebene = .ton }
+                navzeile("speaker.wave.2.fill", "Ton", tonJetzt ?? String(localized: "Keine")) { hinein(.ton) }
                 trenner
                 navzeile("captions.bubble.fill", "Untertitel",
-                         untertitelJetzt ?? String(localized: "Aus")) { ebene = .untertitel }
+                         untertitelJetzt ?? String(localized: "Aus")) { hinein(.untertitel) }
                 trenner
                 navzeile("aspectratio", "Bildformat",
-                         String(localized: bildfuellend ? "Formatfüllend" : "Ganzes Bild")) { ebene = .bildformat }
+                         String(localized: bildfuellend ? "Formatfüllend" : "Ganzes Bild")) { hinein(.bildformat) }
                 trenner
-                navzeile("speedometer", "Tempo", beschriftung(tempo)) { ebene = .tempo }
+                navzeile("speedometer", "Tempo", beschriftung(tempo)) { hinein(.tempo) }
                 trenner
-                navzeile("moon.fill", "Schlafzeit", schlafwort) { ebene = .schlafzeit }
+                navzeile("moon.fill", "Schlafzeit", schlafwort) { hinein(.schlafzeit) }
             }
 
             // **Schalter stehen getrennt von Wegen.** Eine Zeile, die
@@ -407,8 +426,26 @@ struct PlayerSettingsSheet: View {
         schlafminuten.map { "\($0)" } ?? String(localized: "Aus")
     }
 
+    /// Federnd statt linear: `easeOut` ueber 0,18 s kam an, ohne dass die
+    /// Bewegung ein Ende hatte. Eine Feder laeuft aus, und das liest sich
+    /// als „angekommen".
+    private static let bewegung = Animation.spring(response: 0.34, dampingFraction: 0.86)
+
+    private var uebergang: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: vorwaerts ? .trailing : .leading).combined(with: .opacity),
+            removal: .move(edge: vorwaerts ? .leading : .trailing).combined(with: .opacity)
+        )
+    }
+
+    private func hinein(_ ziel: Ebene) {
+        vorwaerts = true
+        withAnimation(Self.bewegung) { ebene = ziel }
+    }
+
     private func zurueck() {
-        withAnimation(.easeOut(duration: 0.18)) { ebene = .wurzel }
+        vorwaerts = false
+        withAnimation(Self.bewegung) { ebene = .wurzel }
     }
 
     private func schliessen() {
