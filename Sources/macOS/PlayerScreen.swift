@@ -414,7 +414,8 @@ struct PlayerScreen: View {
                              gewaehlterUntertitel: flaeche.gewaehlterUntertitel?.trackName,
                              tempo: $tempo, schlafminuten: $schlafminuten,
                              waehleTon: { flaeche.waehleTonspur($0); steuerungZeigen() },
-                             waehleUntertitel: { flaeche.waehleUntertitel($0); steuerungZeigen() })
+                             waehleUntertitel: { flaeche.waehleUntertitel($0); steuerungZeigen() },
+                             bildfuellendSetzen: { flaeche.bildfuellend($0) })
                         .offset(y: 46)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }

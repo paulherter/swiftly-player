@@ -71,21 +71,34 @@ struct Wiedergabeblatt: View {
                     .foregroundStyle(Stil.schriftLeise)
                     .lineLimit(1)
 
-                HStack(spacing: 16) {
-                    ForEach(Kategorie.allCases) { k in
-                        Button(k.name) { kategorie = k }
-                            .buttonStyle(ChipStil(an: kategorie == k))
-                            .focused($amChip, equals: k)
+                // **Links die Leiste, rechts die Werte.**
+                //
+                // Vorher stand die Kategorienreihe waagerecht und die Karten
+                // darunter -- ebenfalls waagerecht. Damit lag beides auf
+                // derselben Achse, und der Fokus wanderte beim Wechseln
+                // zwischen zwei Reihen, die gleich aussahen. Getrennte Achsen
+                // sagen, was was ist: senkrecht waehlt man den Bereich,
+                // rechts steht, was darin zur Wahl steht.
+                //
+                // So macht es auch Apples eigener Abspieler.
+                HStack(alignment: .top, spacing: 44) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Kategorie.allCases) { k in
+                            Button(k.name) { kategorie = k }
+                                .buttonStyle(ChipStil(an: kategorie == k))
+                                .focused($amChip, equals: k)
+                        }
                     }
+                    .frame(width: 340, alignment: .leading)
+                    .focusSection()
+
+                    VStack(alignment: .leading, spacing: 20) {
+                        karten
+                        beleg
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .focusSection()
                 .padding(.top, 24)
-
-                karten
-                    .padding(.top, 34)
-
-                beleg
-                    .padding(.top, 34)
             }
             .padding(.horizontal, Stil.randSeite)
             .padding(.bottom, Stil.randOben)
@@ -116,8 +129,8 @@ struct Wiedergabeblatt: View {
 
     @ViewBuilder
     private var karten: some View {
-        ScrollView(.horizontal) {
-            LazyHStack(spacing: 24) {
+        ScrollView(.vertical) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 switch kategorie {
                 case .untertitel:
                     Wahlkarte(name: String(localized: "Aus"), marke: nil,
@@ -212,7 +225,10 @@ struct Wiedergabeblatt: View {
         }
         .scrollClipDisabled()
         .scrollIndicators(.hidden)
-        .frame(height: 150)
+        // Aus der waagerechten Reihe stammte eine feste Hoehe von 150 -- das
+        // war die Hoehe *einer* Karte. Senkrecht steht dort eine Liste, und
+        // die darf so hoch werden, wie das Blatt es zulaesst.
+        .frame(maxHeight: 330)
         .focusSection()
     }
 

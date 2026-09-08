@@ -78,11 +78,6 @@ struct PlayerSettingsSheet: View {
     /// darauf gedeckelt; erst wenn er nicht mehr passt, begrenzt der Rand
     /// und es wird gescrollt.
     @State private var inhaltshoehe: CGFloat = 0
-    /// Wie hoch die Flaeche ist, in der der Inhalt steht.
-    @State private var sichthoehe: CGFloat = 0
-
-    /// Passt der Inhalt nicht, wird gescrollt -- und das muss man sehen.
-    private var scrollt: Bool { inhaltshoehe > sichthoehe + 1 }
 
     /// Auch dieser Kopf sitzt oben links, und auch er liegt im Fenster
     /// unter der Ampel. Er steht im Player und erbt dessen Lage.
@@ -90,6 +85,14 @@ struct PlayerSettingsSheet: View {
     /// ein `fullScreenCover` und haengt ausserhalb der Ansicht, die den Wert
     /// setzt. Ob die Umgebung dorthin durchreicht, will ich nicht annehmen —
     /// angenommen hatte ich hier schon zweimal genug.
+    /// **Breit genug fuer zwei Spalten?**
+    ///
+    /// Auf dem iPad ist Platz, links die Liste und rechts die Auswahl
+    /// gleichzeitig zu zeigen -- dann muss man nicht hin und her, sondern
+    /// sieht beim Umstellen, was man umstellt. Auf dem iPhone waere dafuer
+    /// keine der beiden Spalten breit genug.
+    private var breit: Bool { breite >= 900 }
+
     private var imFenster: Bool {
         Fensterknoepfe.imFenster(fensterbreite: breite)
     }
@@ -130,6 +133,74 @@ struct PlayerSettingsSheet: View {
     /// Karte an der Seite hat die volle Hoehe, laesst das Bild daneben stehen
     /// und braucht keinen einzigen Bildlauf fuer die Uebersicht.
     private var tafel: some View {
+        Group {
+            if breit { breiteTafel } else { schmaleTafel }
+        }
+    }
+
+    /// **iPad: links die Liste, rechts die Auswahl.**
+    ///
+    /// Dieselben Bausteine wie schmal, nur beide Ebenen nebeneinander. Die
+    /// Zeile links traegt keinen Winkel mehr -- sie fuehrt nicht weg, sie
+    /// waehlt aus, was rechts steht.
+    private var breiteTafel: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                kopfzeile
+                ScrollView {
+                    wurzelinhalt.padding(.bottom, 14)
+                }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+            .frame(width: 300)
+
+            Stil.linie.frame(width: 1)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(ebene.titel)
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(Stil.schrift)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) { auswahlinhalt }
+                        .padding(.bottom, 14)
+                }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+                .id(ebene)
+                .transition(.opacity)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+        }
+        .frame(width: 720)
+        .frame(maxHeight: 470)
+        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Stil.rand)
+        }
+        .shadow(color: .black.opacity(0.5), radius: 24, y: 10)
+        .padding(.trailing, 20)
+        .padding(.vertical, 20)
+        .padding(.top, imFenster ? Fensterknoepfe.hoehe : 0)
+    }
+
+    /// Was rechts steht -- oder schmal, eine Ebene tiefer.
+    @ViewBuilder private var auswahlinhalt: some View {
+        switch ebene {
+        case .wurzel, .ton: tonauswahl
+        case .untertitel:   untertitelauswahl
+        case .bildformat:   bildformatauswahl
+        case .tempo:        tempoauswahl
+        case .schlafzeit:   schlafzeitauswahl
+        }
+    }
+
+    private var schmaleTafel: some View {
         VStack(alignment: .leading, spacing: 12) {
             kopfzeile
                 .id(ebene == .wurzel)
@@ -155,36 +226,19 @@ struct PlayerSettingsSheet: View {
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: inhaltshoehe > 0 ? inhaltshoehe : nil)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { hoch in
-                sichthoehe = hoch
-            }
-            // **Ein schmaler Weichzeichner an der Unterkante, sonst nichts.**
+            // **Die Liste laeuft bis an den Rand der Box und hoert dort auf.**
             //
             // Im Querformat passen sieben Zeilen zu je 44 Punkt -- Apples
             // Mindestmass fuer ein Tippziel -- plus Kopf nicht in die rund
             // 330 Punkte, die nach dem Home-Anzeiger bleiben. Es wird also
-            // gescrollt, und das darf man sehen.
+            // gescrollt.
             //
-            // Hier stand zuerst eine Blende, die den Inhalt an beiden Enden
-            // durchsichtig zog. Das nimmt der Karte ihre Kante: sie hoert
-            // dann nirgends auf, sie verlaeuft. Jetzt laeuft der Inhalt bis
-            // an den Rand der Box und wird dort hart beschnitten -- davor
-            // liegt nur ein schmaler Streifen, der das Letzte unscharf
-            // zieht, damit die Kante nicht wie ein Zeichenfehler aussieht.
-            //
-            // Nur wenn es wirklich scrollt.
-            .overlay(alignment: .bottom) {
-                if scrollt {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .frame(height: 22)
-                        .mask {
-                            LinearGradient(colors: [.clear, .black],
-                                           startPoint: .top, endPoint: .bottom)
-                        }
-                        .allowsHitTesting(false)
-                }
-            }
+            // Zwei Versuche standen hier vorher und sind beide wieder raus:
+            // eine Blende, die den Inhalt an beiden Enden durchsichtig zog
+            // (die nimmt der Karte ihre Kante -- sie hoert dann nirgends
+            // auf, sie verlaeuft), und ein schmaler Weichzeichner davor. Die
+            // klare Kante der Box ist die bessere Auskunft: sie sagt, wo die
+            // Box endet, und mehr braucht es nicht.
             // **Der Wechsel schiebt, er blendet nicht.** Die Richtung ist die
             // Ortsangabe: hinein geht nach links weg und von rechts herein,
             // zurueck andersherum. Ohne `id` haelt SwiftUI die Ansicht fuer
@@ -224,7 +278,7 @@ struct PlayerSettingsSheet: View {
     /// Liste, in der man steht.
     private var kopfzeile: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            if ebene == .wurzel {
+            if ebene == .wurzel || breit {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Wiedergabe")
                         .font(.system(size: 19, weight: .semibold))
@@ -284,17 +338,17 @@ struct PlayerSettingsSheet: View {
     private var wurzelinhalt: some View {
         VStack(alignment: .leading, spacing: 12) {
             gruppe {
-                navzeile("speaker.wave.2.fill", "Ton", tonJetzt ?? String(localized: "Keine")) { hinein(.ton) }
+                navzeile("speaker.wave.2.fill", "Ton", tonJetzt ?? String(localized: "Keine"), ziel: .ton) { hinein(.ton) }
                 trenner
                 navzeile("captions.bubble.fill", "Untertitel",
-                         untertitelJetzt ?? String(localized: "Aus")) { hinein(.untertitel) }
+                         untertitelJetzt ?? String(localized: "Aus"), ziel: .untertitel) { hinein(.untertitel) }
                 trenner
                 navzeile("aspectratio", "Bildformat",
-                         String(localized: bildfuellend ? "Formatfüllend" : "Ganzes Bild")) { hinein(.bildformat) }
+                         String(localized: bildfuellend ? "Formatfüllend" : "Ganzes Bild"), ziel: .bildformat) { hinein(.bildformat) }
                 trenner
-                navzeile("speedometer", "Tempo", beschriftung(tempo)) { hinein(.tempo) }
+                navzeile("speedometer", "Tempo", beschriftung(tempo), ziel: .tempo) { hinein(.tempo) }
                 trenner
-                navzeile("moon.fill", "Schlafzeit", schlafwort) { hinein(.schlafzeit) }
+                navzeile("moon.fill", "Schlafzeit", schlafwort, ziel: .schlafzeit) { hinein(.schlafzeit) }
             }
 
             // **Schalter stehen getrennt von Wegen.** Eine Zeile, die
@@ -405,9 +459,15 @@ struct PlayerSettingsSheet: View {
         Stil.linie.frame(height: 1).padding(.leading, 46)
     }
 
+    /// **Zweispaltig fuehrt die Zeile nicht weg, sie waehlt aus.**
+    ///
+    /// Deshalb faellt dort der Winkel weg -- er verspricht einen Wechsel, den
+    /// es nicht gibt -- und stattdessen ist markiert, was rechts steht.
     private func navzeile(_ zeichen: String, _ name: LocalizedStringKey,
-                          _ wert: String, aktion: @escaping () -> Void) -> some View {
-        Button(action: aktion) {
+                          _ wert: String, ziel: Ebene? = nil,
+                          aktion: @escaping () -> Void) -> some View {
+        let markiert = breit && ziel == ebene
+        return Button(action: aktion) {
             HStack(spacing: 12) {
                 Image(systemName: zeichen)
                     .font(.system(size: 15))
@@ -421,12 +481,15 @@ struct PlayerSettingsSheet: View {
                     .font(.system(size: 15))
                     .foregroundStyle(Stil.schriftLeise)
                     .lineLimit(1)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Stil.schriftSehrLeise)
+                if !breit {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Stil.schriftSehrLeise)
+                }
             }
             .padding(.horizontal, 14)
             .frame(height: 44)
+            .background(markiert ? Stil.akzent.opacity(0.14) : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
