@@ -134,6 +134,23 @@ if ($Konfiguration -eq 'release') {
 
 # ---------------------------------------------------------------- Bauen
 
+# **Eine laufende App haelt ihre eigene .exe fest.**
+#
+# Windows sperrt das Programm, solange es laeuft; der Binder scheitert dann
+# mit `failed to write output ... permission denied`, und das liest sich wie
+# ein Rechteproblem am Verzeichnis. Es ist keines -- es ist die vorige
+# Fassung, die noch offen ist. Am 08.09.2026 genau daran haengengeblieben.
+$laeuft = Get-Process -Name 'SwiftlyWindows' -ErrorAction SilentlyContinue
+if ($laeuft) {
+    Sag "laufende Fassung beenden ($($laeuft.Count))"
+    $laeuft | Stop-Process -Force
+    # `Stop-Process` kehrt zurueck, bevor das Handle wirklich zu ist.
+    for ($i = 0; $i -lt 40; $i++) {
+        if (-not (Get-Process -Name 'SwiftlyWindows' -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 100
+    }
+}
+
 Sag "Bauen ($Konfiguration)"
 Push-Location $hier
 try {

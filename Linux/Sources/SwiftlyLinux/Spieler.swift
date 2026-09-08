@@ -85,6 +85,7 @@ extension App {
                 self.abspieler.oeffnen(plan.url, ab: ab)
                 // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
                 self.abspieler.bildfuellend(self.wahlen.bildfuellend)
+                self.technikschildSetzen(self.wahlen.technikschild)
                 self.spielstand.position = ab
                 self.taktStarten()
             }
@@ -108,6 +109,7 @@ extension App {
         }
         taktBeenden()
         spurwahlSchliessen()
+        technikschildSetzen(false)
         // **Erst den Titel löschen, dann aufräumen.** Alles, was den Zeiger
         // versteckt, hängt daran; solange er steht, kann ein später
         // eintreffendes Ereignis die Aufräumarbeit wieder umstossen.
@@ -484,6 +486,10 @@ extension App {
     /// gefragt und ausgeführt.
     func takten() {
         guard laufenderTitel != nil else { return }
+        // Das Schild haengt am selben Takt wie alles andere: 500 ms.
+        // Schneller sieht man nur Flackern, langsamer verpasst man den
+        // Ruckler.
+        MainActor.assumeIsolated { technikschildNachfuehren() }
         let messung = Wiedergabetakt.Messung(
             dauer: abspieler.dauer,
             position: abspieler.position,
@@ -668,6 +674,7 @@ extension App {
                 self.abspieler.oeffnen(plan.url, ab: 0)
                 // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
                 self.abspieler.bildfuellend(self.wahlen.bildfuellend)
+                self.technikschildSetzen(self.wahlen.technikschild)
                 self.abspieler.tempo = tempo
                 Task.detached { [self] in
                     let marken = await client.abschnitte(fuer: naechste.id)
@@ -914,6 +921,8 @@ extension App {
             return Tempostufen.beschriftung(abspieler.tempo)
         case .schlafzeit:
             return schlafminuten.map { "\($0)" } ?? uebersetzt("Aus")
+        case .technik:
+            return uebersetzt(wahlen.technikschild ? "An" : "Aus")
         }
     }
 
@@ -985,6 +994,23 @@ extension App {
                     self?.spurtafelBauen()
                 })
             }
+        case .technik:
+            anhaengen(raum, wahlzeile(uebersetzt("Anzeigen"),
+                                      gewaehlt: wahlen.technikschild) { [weak self] in
+                guard let self else { return }
+                self.wahlen.technikschild = true
+                self.wahlen.sichern()
+                self.technikschildSetzen(true)
+                self.spurtafelBauen()
+            })
+            anhaengen(raum, wahlzeile(uebersetzt("Aus"),
+                                      gewaehlt: !wahlen.technikschild) { [weak self] in
+                guard let self else { return }
+                self.wahlen.technikschild = false
+                self.wahlen.sichern()
+                self.technikschildSetzen(false)
+                self.spurtafelBauen()
+            })
         }
     }
 

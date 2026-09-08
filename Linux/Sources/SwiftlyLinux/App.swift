@@ -978,6 +978,10 @@ final class App: @unchecked Sendable {
     var spurtafel: Widget!
     /// Welcher Bereich im Wiedergabemenue gerade links gewaehlt ist.
     var spurbereich: Spurbereich = .ton
+    /// Das Technikschild ueber dem Film — `nil`, wenn es aus ist.
+    var technikschild: Widget!
+    /// Der letzte Stand der Zaehler; die naechste Messung rechnet daraus.
+    var technikzaehler: Zaehlwerk?
     var schlafminuten: Int?
     var schlaftakt = 0
 

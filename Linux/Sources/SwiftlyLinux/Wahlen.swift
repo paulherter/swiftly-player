@@ -41,6 +41,12 @@ struct Wahlen: Codable {
     /// steht sie in `@AppStorage("bildfuellend")`; hier liegt sie in
     /// derselben Datei wie die uebrigen Wahlen.
     var bildfuellend = false
+    /// **Das Technikschild — die Auskunft, die stehenbleibt.**
+    ///
+    /// Wer ein Ruckeln sieht, sieht es *waehrend* er zusieht. Der Schalter
+    /// gehoert deshalb in den Player, nicht in die Einstellungen; genau so
+    /// steht es auf den Apple-Fassungen.
+    var technikschild = false
 
     private static var datei: URL {
         URL(fileURLWithPath: NSHomeDirectory())
@@ -71,7 +77,7 @@ enum Werteauswahl { case bitrate, ton, untertitel, zurueck, vor }
 /// Tempo, zuletzt die Schlafzeit. `Technikschild` fehlt hier noch — es gibt
 /// das Schild auf Linux und Windows bisher nicht.
 enum Spurbereich: CaseIterable {
-    case ton, untertitel, bildformat, tempo, schlafzeit
+    case ton, untertitel, bildformat, tempo, schlafzeit, technik
 
     var titel: String {
         switch self {
@@ -80,6 +86,7 @@ enum Spurbereich: CaseIterable {
         case .bildformat: return uebersetzt("Bildformat")
         case .tempo:      return uebersetzt("Tempo")
         case .schlafzeit: return uebersetzt("Schlafzeit")
+        case .technik:    return uebersetzt("Technikschild")
         }
     }
 
@@ -90,6 +97,7 @@ enum Spurbereich: CaseIterable {
         case .bildformat: return "view-fullscreen-symbolic"
         case .tempo:      return "preferences-system-symbolic"
         case .schlafzeit: return "weather-clear-night-symbolic"
+        case .technik:    return "utilities-system-monitor-symbolic"
         }
     }
 }

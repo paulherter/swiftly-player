@@ -130,3 +130,20 @@
 "Formatfüllend" = "Formatfüllend";
 "Ganzes Bild" = "Ganzes Bild";
 "Keine" = "Keine";
+
+/* Technikschild (08.09.2026) */
+"Anzeigen" = "Anzeigen";
+"Beschädigt" = "Beschädigt";
+"Bild" = "Bild";
+"Dekodiert Ø" = "Dekodiert Ø";
+"Demuxer" = "Demuxer";
+"Eingang" = "Eingang";
+"Gezeigt" = "Gezeigt";
+"Lauf" = "Lauf";
+"Sprünge" = "Sprünge";
+"Stelle" = "Stelle";
+"Technikschild" = "Technikschild";
+"Ton weg" = "Ton weg";
+"Verworfen" = "Verworfen";
+"Vorrat" = "Vorrat";
+"Zeigt Ø" = "Zeigt Ø";

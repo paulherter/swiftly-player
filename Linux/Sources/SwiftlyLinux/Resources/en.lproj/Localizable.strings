@@ -127,3 +127,20 @@
 "Formatfüllend" = "Fill screen";
 "Ganzes Bild" = "Fit screen";
 "Keine" = "None";
+
+/* Technikschild (08.09.2026) */
+"Anzeigen" = "Show";
+"Beschädigt" = "Corrupt";
+"Bild" = "Video";
+"Dekodiert Ø" = "Decoded avg";
+"Demuxer" = "Demuxer";
+"Eingang" = "Input";
+"Gezeigt" = "Shown";
+"Lauf" = "Pace";
+"Sprünge" = "Discontinuities";
+"Stelle" = "Position";
+"Technikschild" = "Technical overlay";
+"Ton weg" = "Audio lost";
+"Verworfen" = "Dropped";
+"Vorrat" = "Buffer";
+"Zeigt Ø" = "Showing Ø";

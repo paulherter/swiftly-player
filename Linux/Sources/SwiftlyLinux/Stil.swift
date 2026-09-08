@@ -853,6 +853,19 @@ enum Stil {
         }
 
         /* Die Spurtafel über dem Bild: 320 breit, erhoeht, Ecke 10. */
+        /* **Das Technikschild.** Feste Zeichenbreite, damit die Zahlen
+           untereinander stehen und nicht bei jedem Takt springen — dieselbe
+           Begruendung wie auf den Apple-Fassungen. Deckend genug, um ueber
+           bewegtem Bild lesbar zu bleiben. */
+        .swiftly-technikschild {
+            font-family: monospace;
+            font-size: 12px;
+            color: rgba(255,255,255,0.92);
+            background-color: rgba(11,11,13,0.82);
+            border: 1px solid \(rand);
+            border-radius: \(eckeFeld)px;
+            padding: 10px 14px;
+        }
         .swiftly-tafel {
             background-color: \(erhoeht);
             border: 1px solid \(rand);

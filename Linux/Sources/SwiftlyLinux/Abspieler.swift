@@ -187,6 +187,37 @@ final class Abspieler {
         set { spieler.map { libvlc_media_player_set_rate($0, newValue) } }
     }
 
+    // MARK: Zaehlwerk
+
+    /// **VLCs Zaehler, roh — gerechnet wird im Paket.**
+    ///
+    /// `libvlc_media_get_stats` fuehrt dieselben Summen, die VLCKit auf den
+    /// Apple-Fassungen liefert; die Rechnung darueber liegt in
+    /// ``JellyfinKit/Zaehlwerk`` und ist damit nur einmal da.
+    ///
+    /// Das Medium wird ueber den Spieler geholt und danach wieder
+    /// freigegeben: `libvlc_media_player_get_media` erhoeht den Zaehler, und
+    /// ohne das Gegenstueck bliebe bei jedem Abruf eine Referenz stehen — im
+    /// Halbsekundentakt waere das ein Leck, das niemandem auffiele.
+    var zaehlwerte: Zaehlwerk.Rohwerte? {
+        guard let spieler, let medium = libvlc_media_player_get_media(spieler) else { return nil }
+        defer { libvlc_media_release(medium) }
+        var s = libvlc_media_stats_t()
+        guard libvlc_media_get_stats(medium, &s) != 0 else { return nil }
+        // Die Felder sind vorzeichenbehaftet; negativ waere Schrott, und der
+        // Riegel dagegen steht im Paket. Hier wird nur nicht unter null
+        // gerechnet.
+        func u(_ v: Int32) -> UInt64 { v > 0 ? UInt64(v) : 0 }
+        func u(_ v: UInt64) -> UInt64 { v }
+        return Zaehlwerk.Rohwerte(
+            gelesen: u(s.i_read_bytes), entpackt: u(s.i_demux_read_bytes),
+            gezeigt: u(s.i_displayed_pictures), verworfen: u(s.i_lost_pictures),
+            zuSpaet: 0,
+            videoBloecke: u(s.i_decoded_video), tonBloecke: u(s.i_decoded_audio),
+            tonGespielt: u(s.i_played_abuffers), tonVerloren: u(s.i_lost_abuffers),
+            beschaedigt: u(s.i_demux_corrupted), spruenge: u(s.i_demux_discontinuity))
+    }
+
     // MARK: Bild
 
     /// **Ganzes Bild oder formatfuellend — und warum es hier anders geht als
