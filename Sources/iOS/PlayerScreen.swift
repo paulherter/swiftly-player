@@ -336,7 +336,7 @@ struct PlayerScreen: View {
             // gilt. Dauerhaft montiert wuerde er sonst bei jedem Takt
             // `surface?.tonspuren` und `?.untertitelspuren` lesen, und die
             // gehen direkt in VLCKit — rund acht Aufrufe je Sekunde, dauerhaft.
-            PlayerSettingsSheet(surface: surface, offen: $zeigeEinstellungen,
+            PlayerSettingsSheet(surface: surface, plan: plan, offen: $zeigeEinstellungen,
                                 tempo: $tempo, schlafminuten: $schlafminuten,
                                 querformatFest: $querformatFest)
                 .opacity(zeigeEinstellungen ? 1 : 0)
