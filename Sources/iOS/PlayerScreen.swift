@@ -28,11 +28,8 @@ struct PlayerScreen: View {
     /// Formatfuellend statt ganzes Bild. Bleibt ueber Folgen hinweg stehen --
     /// wer einmal die Balken weghaben will, will das meist auch danach.
     @AppStorage("bildfuellend") private var bildfuellend = false
-    /// Was die Finger gerade tun, als Faktor auf den aktuellen Zustand.
-    /// 1 heisst „so wie eingestellt"; dazwischen folgt das Bild der Geste.
-    @State private var zoom: CGFloat = 1
-    /// Groesse der Videoflaeche -- fuer den Faktor zwischen den zwei Zustaenden.
-    @State private var flaeche: CGSize = .zero
+    /// Verhindert, dass eine einzige Zieh-Geste mehrfach umschaltet.
+    @State private var zoomSchonGeschaltet = false
 
     @State private var pipAvailable = false
     @State private var stelltWiederHer = false
@@ -250,13 +247,6 @@ struct PlayerScreen: View {
             // die Videoflaeche mitgenommen — sie wuchs bei jedem Einblenden
             // sichtbar von klein auf gross.
             .transaction { $0.animation = nil }
-            // **Nach dem Riegel, nicht davor.** Die Zeile darueber nimmt der
-            // Flaeche jede Animation; stuende der Zoom darunter, waere er
-            // davon mitbetroffen und wuerde wieder hart springen. Hier
-            // aussen liegt er ausserhalb dieses Riegels und darf federn.
-            .scaleEffect(zoom)
-            .clipped()
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { flaeche = $0 }
 
             // Solange im kleinen Fenster gespielt wird, ist der Player hier
             // nur noch eine schwarze Fläche — dann darf man auch nichts
@@ -461,45 +451,37 @@ struct PlayerScreen: View {
         // ganze Bild mit Balken, oder formatfuellend mit Beschnitt. Ein
         // dritter waere nur eine Streckung, und die will niemand.
         //
-        // **Das Bild folgt den Fingern, statt am Ende umzuspringen.** Erst
-        // wurde nur `videoFitMode` umgeschaltet -- das sass hart, ohne
-        // Zwischenschritt, und ein eingeblendetes Wort musste erklaeren, was
-        // gerade passiert war. Jetzt zieht `scaleEffect` waehrend der Geste
-        // mit, und am Ende federt es in den naechstgelegenen Zustand.
+        // **Ohne Beschriftung.** Hier stand ein eingeblendetes Wort, das
+        // sagte, was gerade gilt. Es kam bei jedem Griff, stand im Bild und
+        // musste weggetippt werden -- was passiert, sieht man ohnehin.
         //
-        // Der Tausch am Schluss ist unsichtbar, weil beide Wege dieselbe
-        // Groesse ergeben: `zoomweite` ist genau das Verhaeltnis zwischen
-        // „ganz hinein" und „ganz ausfuellen", also das, was `videoFitMode`
-        // selbst rechnet. Deshalb wird dabei nicht animiert -- es steht
-        // schon da.
+        // **Und ohne mitziehende Animation.** Ein Versuch, das Bild waehrend
+        // der Geste per `scaleEffect` mitlaufen zu lassen, hat es
+        // verschlechtert: der Zoom lief nicht mehr voll durch, und das
+        // `clipped()` dazu sass ausserhalb von `ignoresSafeArea` und
+        // beschnitt das Bild am sicheren Bereich statt am Bildschirmrand.
+        // Zurueckgenommen -- ein harter, richtiger Wechsel ist besser als
+        // ein weicher, der danebenliegt.
+        //
+        // `simultaneousGesture`, damit Tippen und Spulen darunter weiter
+        // treffen. Der Riegel ist noetig, weil `onChanged` waehrend einer
+        // Geste dutzendfach feuert: ohne ihn haette ein einziges
+        // Auseinanderziehen zwischen beiden Zustaenden geflackert.
         .simultaneousGesture(
-            MagnifyGesture(minimumScaleDelta: 0.01)
+            MagnifyGesture(minimumScaleDelta: 0.05)
                 .onChanged { wert in
-                    guard !imKleinenFenster, zoomweite > 1.01 else { return }
-                    // Nach unten ist bei „ganz hinein" Schluss, nach oben bei
-                    // „ganz ausfuellen" -- weiter zu ziehen brauchte niemand.
-                    let spanne = bildfuellend ? (1 / zoomweite)...1 : 1...zoomweite
-                    zoom = min(max(wert.magnification, spanne.lowerBound), spanne.upperBound)
-                }
-                .onEnded { _ in
-                    guard !imKleinenFenster, zoomweite > 1.01 else { return }
-                    // Ueber die Haelfte gezogen heisst: der andere Zustand war
-                    // gemeint. Auf halbem Weg loszulassen federt zurueck.
-                    let mitte = bildfuellend ? (1 + 1 / zoomweite) / 2 : (1 + zoomweite) / 2
-                    let hinueber = bildfuellend ? zoom < mitte : zoom > mitte
-                    let ziel: CGFloat = hinueber ? (bildfuellend ? 1 / zoomweite : zoomweite) : 1
-                    withAnimation(.easeOut(duration: 0.22)) { zoom = ziel }
-                    guard hinueber else { return }
-                    Task {
-                        try? await Task.sleep(for: .seconds(0.22))
-                        bildfuellend.toggle()
-                        surface?.bildfuellend(bildfuellend)
-                        // Ohne Animation: die Geometrie ist bereits die, die
-                        // `videoFitMode` gleich selbst herstellt.
-                        var ohne = Transaction(); ohne.disablesAnimations = true
-                        withTransaction(ohne) { zoom = 1 }
+                    guard !zoomSchonGeschaltet, !imKleinenFenster else { return }
+                    if wert.magnification > 1.15, !bildfuellend {
+                        zoomSchonGeschaltet = true
+                        bildfuellend = true
+                        surface?.bildfuellend(true)
+                    } else if wert.magnification < 0.85, bildfuellend {
+                        zoomSchonGeschaltet = true
+                        bildfuellend = false
+                        surface?.bildfuellend(false)
                     }
                 }
+                .onEnded { _ in zoomSchonGeschaltet = false }
         )
         // Beim Oeffnen und beim Folgenwechsel den gemerkten Zustand anlegen.
         .onChange(of: surface == nil) { _, _ in surface?.bildfuellend(bildfuellend) }
@@ -1279,25 +1261,6 @@ struct PlayerScreen: View {
                         bildURL: model.sperrbildURL(for: item))
     }
 
-    /// **Wie weit zwischen „ganz hinein" und „ganz ausfuellen" liegt.**
-    ///
-    /// Das Bild wird einmal so gelegt, dass es vollstaendig hineinpasst
-    /// (kleinerer Faktor), und einmal so, dass es die Flaeche ausfuellt
-    /// (groesserer). Ihr Verhaeltnis ist der ganze Weg der Geste -- und
-    /// zugleich das, was `videoFitMode` beim Umschalten selbst rechnet,
-    /// weshalb der Tausch am Ende nichts verschiebt.
-    ///
-    /// 1, solange die Groessen fehlen oder Bild und Flaeche dasselbe
-    /// Verhaeltnis haben: dann gibt es nichts umzuschalten, und die Geste
-    /// bleibt still, statt ein Bild zu bewegen, das schon passt.
-    private var zoomweite: CGFloat {
-        let bild = surface?.videoSize ?? .zero
-        guard bild.width > 0, bild.height > 0,
-              flaeche.width > 0, flaeche.height > 0 else { return 1 }
-        let hinein = min(flaeche.width / bild.width, flaeche.height / bild.height)
-        let ausfuellen = max(flaeche.width / bild.width, flaeche.height / bild.height)
-        return hinein > 0 ? ausfuellen / hinein : 1
-    }
 
     private func meldeFortschritt() {
         Task {
