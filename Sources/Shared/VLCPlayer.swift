@@ -1212,6 +1212,11 @@ final class VLCPlayerView: Basisansicht {
     func bildfuellend(_ an: Bool) {
         player.videoFitMode = an ? .larger : .smaller
     }
+
+    /// Die Bildgroesse des Stroms in Pixeln, `zero` bevor das erste Bild da
+    /// ist. Wird gebraucht, um auszurechnen, wie weit zwischen „ganz hinein"
+    /// und „ganz ausfuellen" liegt.
+    var videoSize: CGSize { player.videoSize }
     func resume() { player.play();  refreshPiPState() }
     func stop() {
         absichtlichBeendet = true
