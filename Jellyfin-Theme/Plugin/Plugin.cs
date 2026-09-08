@@ -3,6 +3,8 @@ using System.Text;
 using Jellyfin.Plugin.Swiftly.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Model.Branding;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 using Microsoft.Extensions.Logging;
@@ -36,17 +38,29 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     private const string MarkeAuf = "<!-- swiftly-thema:anfang -->";
     private const string MarkeZu = "<!-- swiftly-thema:ende -->";
 
+    // **In CSS ist ein HTML-Kommentar keiner.** `<!--` und `-->` überliest
+    // ein Stilblatt zwar (sie stammen aus der Zeit, als man Stil in eine
+    // Seite schrieb und ihn vor alten Browsern verstecken musste) — der Text
+    // *dazwischen* nicht. Der wäre eine kaputte Regel, und eine kaputte Regel
+    // vor einem `@import` macht den `@import` ungültig: er gilt nur, solange
+    // vor ihm nichts als Regel steht. Das Thema wäre still ausgeblieben.
+    private const string MarkeAufCss = "/* swiftly-thema:anfang */";
+    private const string MarkeZuCss = "/* swiftly-thema:ende */";
+
     private readonly ILogger<Plugin> _log;
     private readonly string _webPfad;
+    private readonly IServerConfigurationManager _serverKonfig;
 
     public Plugin(
         IApplicationPaths applicationPaths,
         IXmlSerializer xmlSerializer,
-        ILogger<Plugin> logger)
+        ILogger<Plugin> logger,
+        IServerConfigurationManager serverKonfig)
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
         _log = logger;
+        _serverKonfig = serverKonfig;
         _webPfad = applicationPaths.WebPath;
 
         Einhaengen();
@@ -81,11 +95,30 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// </summary>
     public void Einhaengen()
     {
+        if (UeberIndexDatei())
+        {
+            // Der volle Weg hat geklappt: Stilblatt **und** Skript.
+            UeberBranding(false);
+            return;
+        }
+
+        // **Der Rückfall.** Ohne Schreibrecht auf das Web-Verzeichnis bleibt
+        // Jellyfins eigenes Feld für genau diesen Zweck: das Branding-CSS.
+        // Es kostet das Skript — ein Stilblatt kann kein Skript nachladen —,
+        // und damit die drei Sachen, die es tut. Das Aussehen kommt
+        // vollständig an; nur die Schalter aus dem Dashboard wirken dann
+        // über das Stilblatt statt über Klassen an der Wurzel.
+        UeberBranding(true);
+    }
+
+    /// <summary>Der volle Weg. <c>true</c>, wenn die Zeile liegt.</summary>
+    private bool UeberIndexDatei()
+    {
         var datei = Path.Combine(_webPfad, "index.html");
         if (!File.Exists(datei))
         {
-            _log.LogWarning("Swiftly: {Datei} gibt es nicht — nichts eingehängt.", datei);
-            return;
+            _log.LogWarning("Swiftly: {Datei} gibt es nicht.", datei);
+            return false;
         }
 
         try
@@ -93,12 +126,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             var text = File.ReadAllText(datei, Encoding.UTF8);
             var ohne = Ausschneiden(text);
 
-            // Die Fassung hängt am Zeitpunkt der Einstellungen: ändert Paul
-            // den Akzent, ändert sich die Adresse, und der Browser holt neu.
-            var stand = Configuration.Akzent.GetHashCode(StringComparison.Ordinal)
-                        ^ Configuration.Kachelbreite
-                        ^ (Configuration.Seitenleiste ? 2 : 0)
-                        ^ (Configuration.MeineMedienAusblenden ? 4 : 0);
+            // Die Fassung hängt am Stand der Einstellungen: ändert Paul den
+            // Akzent, ändert sich die Adresse, und der Browser holt neu.
+            var stand = Stand();
 
             var zeile = string.Create(CultureInfo.InvariantCulture,
                 $"{MarkeAuf}<script defer src=\"/Swiftly/swiftly.js?v={stand:x}\"></script>{MarkeZu}");
@@ -111,20 +141,136 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             if (neu != text)
             {
                 File.WriteAllText(datei, neu, Encoding.UTF8);
-                _log.LogInformation("Swiftly: in {Datei} eingehängt.", datei);
+                _log.LogInformation("Swiftly: in {Datei} eingehängt — mit Skript.", datei);
             }
+
+            return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            // **Kein Grund, den Server zu stören.** Ohne Schreibrecht auf das
-            // Web-Verzeichnis bleibt das Thema aus; alles andere läuft weiter.
-            _log.LogError(e, "Swiftly: {Datei} lässt sich nicht schreiben. Thema bleibt aus.", datei);
+            // **Kein Grund, den Server zu stören.** Eine Paketinstallation
+            // legt die Weboberfläche nach /usr/share/jellyfin/web; das gehört
+            // root, und der Dienst läuft als jellyfin. Das ist so gewollt.
+            _log.LogInformation(
+                "Swiftly: {Datei} ist nicht schreibbar ({Grund}) — nehme das Branding-CSS.",
+                datei, e.GetType().Name);
+            return false;
         }
     }
 
-    /// <summary>Nimmt die Zeile wieder heraus.</summary>
+    /// <summary>
+    /// Der Rückfallweg: Jellyfins eigenes Feld für zusätzliches CSS.
+    ///
+    /// **Warum nicht gleich so.** Ein Stilblatt kann kein Skript nachladen,
+    /// und das Skript benennt unter anderem die gerade offene Seite — etwas,
+    /// das eine CSS-Regel nicht selbst herausfinden kann. Deshalb erst die
+    /// `index.html`, und nur wenn die nicht geht, dieser Weg.
+    ///
+    /// **Und warum unser <c>@import</c> hinter alle anderen kommt.** Ein
+    /// <c>@import</c> gilt nur, solange vor ihm nichts als Regel steht — er
+    /// muss also nach oben. Steht dort schon ein fremdes Thema, gewinnt bei
+    /// gleicher Auszeichnungsstärke das spätere: also hinter das letzte.
+    /// </summary>
+    private void UeberBranding(bool einhaengen)
+    {
+        try
+        {
+            var marken = _serverKonfig.GetConfiguration<BrandingOptions>("branding");
+            var alt = marken.CustomCss ?? string.Empty;
+            var ohne = Ausschneiden(alt, MarkeAufCss, MarkeZuCss);
+
+            string neu;
+            if (!einhaengen)
+            {
+                neu = ohne;
+            }
+            else
+            {
+                var stand = Stand();
+                var block = $"{MarkeAufCss}\n@import url(\"/Swiftly/swiftly.css?v={stand:x}\");\n{MarkeZuCss}\n";
+                var stelle = NachDenImporten(ohne);
+                neu = ohne.Insert(stelle, block);
+
+                var fremd = ohne.Trim();
+                if (fremd.Length > 0)
+                {
+                    _log.LogWarning(
+                        "Swiftly: im Branding-CSS steht noch anderes ({Zeichen} Zeichen). "
+                        + "Zwei Themen kämpfen um jede Farbe — bitte herausnehmen.",
+                        fremd.Length);
+                }
+            }
+
+            if (neu != alt)
+            {
+                marken.CustomCss = neu;
+                _serverKonfig.SaveConfiguration("branding", marken);
+                _log.LogInformation(einhaengen
+                    ? "Swiftly: über das Branding-CSS eingehängt — ohne Skript."
+                    : "Swiftly: aus dem Branding-CSS entfernt.");
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            _log.LogError(e, "Swiftly: auch das Branding-CSS lässt sich nicht setzen. Thema bleibt aus.");
+        }
+    }
+
+    /// <summary>
+    /// Hinter den führenden <c>@charset</c>- und <c>@import</c>-Zeilen —
+    /// dort darf ein weiterer <c>@import</c> stehen, und dort gewinnt er.
+    /// </summary>
+    private static int NachDenImporten(string css)
+    {
+        var i = 0;
+        while (i < css.Length)
+        {
+            while (i < css.Length && char.IsWhiteSpace(css[i]))
+            {
+                i++;
+            }
+
+            if (css.AsSpan(i).StartsWith("/*", StringComparison.Ordinal))
+            {
+                var e = css.IndexOf("*/", i, StringComparison.Ordinal);
+                if (e < 0)
+                {
+                    return i;
+                }
+
+                i = e + 2;
+                continue;
+            }
+
+            if (!css.AsSpan(i).StartsWith("@import", StringComparison.OrdinalIgnoreCase)
+                && !css.AsSpan(i).StartsWith("@charset", StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+
+            var s = css.IndexOf(';', i);
+            if (s < 0)
+            {
+                return css.Length;
+            }
+
+            i = s + 1;
+        }
+
+        return css.Length;
+    }
+
+    private int Stand() =>
+        Configuration.Akzent.GetHashCode(StringComparison.Ordinal)
+        ^ Configuration.Kachelbreite
+        ^ (Configuration.Seitenleiste ? 2 : 0)
+        ^ (Configuration.MeineMedienAusblenden ? 4 : 0);
+
+    /// <summary>Nimmt die Zeile wieder heraus — auf beiden Wegen.</summary>
     public void Aushaengen()
     {
+        UeberBranding(false);
+
         var datei = Path.Combine(_webPfad, "index.html");
         if (!File.Exists(datei))
         {
@@ -156,23 +302,29 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         Einhaengen();
     }
 
-    private static string Ausschneiden(string text)
+    private static string Ausschneiden(string text) => Ausschneiden(text, MarkeAuf, MarkeZu);
+
+    /// <summary>
+    /// Nimmt jeden Block zwischen den Marken heraus — auch mehrere, falls
+    /// eine frühere Fassung einen liegengelassen hat.
+    /// </summary>
+    private static string Ausschneiden(string text, string auf, string zu)
     {
         while (true)
         {
-            var a = text.IndexOf(MarkeAuf, StringComparison.Ordinal);
+            var a = text.IndexOf(auf, StringComparison.Ordinal);
             if (a < 0)
             {
                 return text;
             }
 
-            var z = text.IndexOf(MarkeZu, a, StringComparison.Ordinal);
+            var z = text.IndexOf(zu, a, StringComparison.Ordinal);
             if (z < 0)
             {
                 return text.Remove(a);
             }
 
-            text = text.Remove(a, z - a + MarkeZu.Length);
+            text = text.Remove(a, z - a + zu.Length);
         }
     }
 }
