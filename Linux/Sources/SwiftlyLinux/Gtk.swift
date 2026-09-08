@@ -79,6 +79,16 @@ func anhaengen(_ eltern: Widget!, _ kind: Widget!) {
 ///
 /// Deshalb hier: anhängen und im selben Atemzug das Lösen bestellen. Wer eine
 /// Tafel braucht, nimmt diese Funktion und nicht `gtk_popover_new` von Hand.
+/// **Der Anker haelt die Tafel, und wer sie merkt, muss sie vergessen.**
+///
+/// Beim Zerstoeren des Ankers wird die Tafel abgehaengt und damit
+/// freigegeben. Ein Feld, das sie weiter merkt, zeigt danach auf toten
+/// Speicher — und der naechste `gtk_widget_unparent` darauf ist ein
+/// Absturz. Genau so ist die App am 08.09.2026 gestorben, im Kern
+/// nachgelesen: `mehrZeigen`, `gtk_widget_unparent`, SIGSEGV.
+///
+/// Wer die Tafel in einem Feld haelt, nimmt deshalb ``App/tafelOeffnen(an:stil:)``
+/// und nicht diese Funktion allein.
 func tafelAn(_ anker: Widget!, stil: String = "swiftly-mehr",
              lage: GtkPositionType = GTK_POS_BOTTOM) -> Widget! {
     let tafel: Widget! = gtk_popover_new()

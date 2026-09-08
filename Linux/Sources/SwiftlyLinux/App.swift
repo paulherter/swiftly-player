@@ -989,6 +989,32 @@ final class App: @unchecked Sendable {
     /// Die zuletzt aufgeklappte Tafel des Mehr-Knopfs. Sie wird beim nächsten
     /// Klick gelöst — sonst hängen sie sich am Knopf auf.
     var offeneTafel: Widget?
+
+    /// **Eine Tafel oeffnen und sie richtig merken.**
+    ///
+    /// Die vorige kommt weg — sonst hinge nach dem dritten Klick die dritte
+    /// Tafel am Knopf und die beiden davor daneben. Und die neue vergisst
+    /// sich selbst, sobald GTK sie abraeumt: `tafelAn` haengt sie beim
+    /// Zerstoeren des Ankers ab, und ein Feld, das dann noch auf sie zeigt,
+    /// ist ein Zeiger auf freigegebenen Speicher. Der naechste Klick auf
+    /// „Mehr" war damit ein Absturz — im Kern nachgelesen, nicht vermutet.
+    ///
+    /// Dieselbe Klasse Fehler wie bei den Zeichenflaechen, die sich selbst
+    /// halten muessen: wer ein GTK-Objekt in einem Swift-Feld merkt, muss
+    /// auf sein Ende hoeren.
+    func tafelOeffnen(an knopf: Widget!, stil: String = "swiftly-mehr") -> Widget! {
+        tafelSchliessen()
+        let tafel = tafelAn(knopf, stil: stil)
+        offeneTafel = tafel
+        beiSignal(tafel, "destroy") { [weak self] in self?.offeneTafel = nil }
+        return tafel
+    }
+
+    func tafelSchliessen() {
+        guard let alt = offeneTafel else { return }
+        offeneTafel = nil
+        gtk_widget_unparent(alt)
+    }
     var detailBeruehrt = false
     /// Was zuletzt bei „Verbindung prüfen" herauskam.
     var pruefergebnis = ""
@@ -2202,12 +2228,34 @@ final class App: @unchecked Sendable {
         }
     }
 
+    /// **Die Rubrik zeigt die *uebrigen* Bibliotheken.**
+    ///
+    /// Oben stehen Filme und Serien; die beiden Sammlungen, die genau diese
+    /// Bereiche zeigen, gehoeren nicht noch einmal hierher. Bleibt nichts
+    /// uebrig, faellt die Rubrik ganz weg — dann *sind* Filme und Serien die
+    /// Bibliotheken, und sie stehen schon oben.
+    ///
+    /// Hier stand bisher jede Sammlung, auch die beiden. Auf einem Server mit
+    /// genau einer Filmbibliothek und einer Serienbibliothek — dem Normalfall —
+    /// stand damit alles doppelt da. Die Regel steht seit jeher in
+    /// `HauptView.sammlungen` auf dem Mac.
+    private var uebrigeSammlungen: [Item] {
+        let schonOben = Set([
+            gewaehlteBibliothek[.filme] ?? bibliotheken(fuer: .filme).first?.id,
+            gewaehlteBibliothek[.serien] ?? bibliotheken(fuer: .serien).first?.id,
+        ].compactMap { $0 })
+        return sichten
+            .filter { $0.collectionType == "movies" || $0.collectionType == "tvshows" }
+            .filter { !schonOben.contains($0.id) }
+    }
+
     private func bibliothekenZeigen(_ sichten: [Item]) {
         self.sichten = sichten
         leeren(bibliotheksliste)
         bibliotheksknoepfe = [:]
-        gtk_widget_set_visible(bibliotheksrubrik, sichten.isEmpty ? 0 : 1)
-        for sicht in sichten {
+        let uebrige = uebrigeSammlungen
+        gtk_widget_set_visible(bibliotheksrubrik, uebrige.isEmpty ? 0 : 1)
+        for sicht in uebrige {
             // Der Sammlungstyp bestimmt das Zeichen, wie auf dem Mac.
             let symbol: String
             switch sicht.collectionType {

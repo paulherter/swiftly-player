@@ -626,13 +626,8 @@ extension App {
         var gesehen = titel.istGesehen
         let ersteZeile = gesehen ? uebersetzt("Als ungesehen markieren") : uebersetzt("Als gesehen markieren")
 
-        // **Die vorige Tafel zuerst weg.** `mehrZeigen` läuft bei jedem Klick;
-        // ohne das hinge nach dem dritten Klick die dritte Tafel am Knopf und
-        // die beiden davor daneben.
-        if let alt = offeneTafel { gtk_widget_unparent(alt); offeneTafel = nil }
-        let tafel = tafelAn(knopf)
+        let tafel = tafelOeffnen(an: knopf)
         gtk_popover_set_child(alsTafel(tafel), liste)
-        offeneTafel = tafel
 
         anhaengen(liste, handlungszeile("object-select-symbolic", ersteZeile) {
             [weak self] in
@@ -792,10 +787,8 @@ extension App {
         let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_set_size_request(liste, 280, -1)
 
-        if let alt = offeneTafel { gtk_widget_unparent(alt); offeneTafel = nil }
-        let tafel = tafelAn(knopf)
+        let tafel = tafelOeffnen(an: knopf)
         gtk_popover_set_child(alsTafel(tafel), liste)
-        offeneTafel = tafel
 
         // Steht er schon in der Liste, geht es nicht ums Anfangen.
         if let vorhanden = downloads.posten(fuer: titel.id) {

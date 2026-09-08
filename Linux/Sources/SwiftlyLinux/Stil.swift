@@ -493,8 +493,13 @@ enum Stil {
             background-image: linear-gradient(to bottom,
                 rgba(11,11,13,0.70) 0%, rgba(11,11,13,0) 100%);
         }
+        /* **Deckend, nicht durchscheinend.** Auf Apple ist die Leiste beim
+           Scrollen `Stil.grund` mit voller Deckung; hier standen 0,86, und
+           darunter liefen die Plakate sichtbar durch. Der Grund dort steht
+           ausdruecklich dabei: eine Flaeche kann nicht aufblitzen und ist
+           genau so dunkel wie die Seite. */
         .swiftly-kopfleiste {
-            background-color: rgba(11,11,13,0.86);
+            background-color: \(grund);
             border-bottom: 1px solid \(linie);
         }
 
