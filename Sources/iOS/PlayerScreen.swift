@@ -440,6 +440,14 @@ struct PlayerScreen: View {
         // Auch die Griffe erneuern: sonst rechnet `umschalten` weiter mit
         // dem Stand von vorhin.
         .onChange(of: laeuft) { _, _ in ausblendMarke += 1; zentraleUebernehmen() }
+        // **Nach dem Schliessen faengt die Uhr von vorn an.**
+        //
+        // Der Riegel oben (`!zeigeEinstellungen`) haelt die Steuerung
+        // richtigerweise offen, solange die Tafel steht -- aber er sitzt
+        // *nach* dem Schlafen. Die Aufgabe endet damit, ohne etwas
+        // wegzunehmen, und ohne neue Marke laeuft keine zweite an: die
+        // Steuerung waere nach dem Schliessen dauerhaft stehen geblieben.
+        .onChange(of: zeigeEinstellungen) { _, offen in if !offen { ausblendMarke += 1 } }
         .onChange(of: tempo) { _, neu in surface?.tempo = neu }
         .onChange(of: schlafminuten) { _, neu in schlafzeitSetzen(neu) }
         .onChange(of: querformatFest) { _, fest in

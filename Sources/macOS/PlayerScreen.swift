@@ -267,6 +267,8 @@ struct PlayerScreen: View {
             if weg > 2 { steuerungZeigen() }
         }
         .onAppear { steuerungZeigen() }
+        // Nach dem Schliessen der Tafel laeuft die Viersekundenuhr neu an.
+        .onChange(of: spurwahlOffen) { _, offen in if !offen { steuerungZeigen() } }
         .onAppear {
             zentraleUebernehmen()
             // **Auch die Fernsteuerung, nicht nur der Sperrbildschirm.**
@@ -672,6 +674,10 @@ struct PlayerScreen: View {
     /// Ohne die vier Sekunden — für den Fall, dass der Zeiger das Fenster
     /// verlässt.
     private func steuerungSofortWeg() {
+        // Auch hier: eine offene Auswahl bleibt. Den Zeiger aus dem Fenster
+        // zu schieben ist kein Grund, eine Entscheidung abzuraeumen, die
+        // gerade getroffen wird.
+        guard !spurwahlOffen else { return }
         ruheAufgabe?.cancel()
         withAnimation(.easeInOut(duration: 0.34)) {
             steuerungDa = false
@@ -687,7 +693,17 @@ struct PlayerScreen: View {
         ruheAufgabe?.cancel()
         ruheAufgabe = Task {
             try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, stand.laeuft, !amRegler else { return }
+            // **Solange die Tafel offen ist, wird nichts weggenommen.**
+            //
+            // Sie stand mit im Ausblenden -- wer die Einstellungen oeffnete
+            // und die Maus liegen liess, sah nach vier Sekunden alles
+            // verschwinden, die Auswahl eingeschlossen. Eine offene Auswahl
+            // ist Aufmerksamkeit; sie zaehlt wie eine Hand am Regler.
+            //
+            // Die Uhr faengt nach dem Schliessen von vorn an, siehe unten --
+            // dieser Riegel sitzt nach dem Schlafen, die Aufgabe endet hier
+            // also, ohne eine neue anzustossen.
+            guard !Task.isCancelled, stand.laeuft, !amRegler, !spurwahlOffen else { return }
             withAnimation(.easeInOut(duration: 0.34)) {
                 steuerungDa = false
                 halter.setzeSteuerung(false)
