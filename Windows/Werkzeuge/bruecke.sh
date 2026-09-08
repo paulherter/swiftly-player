@@ -18,8 +18,10 @@ port="${PORT:-8099}"
 
 rm -rf "$lieferung"; mkdir -p "$lieferung"
 # `zip` fehlt auf CachyOS; bsdtar kommt mit libarchive und kann es auch.
-( cd "$wurzel" && bsdtar -a -cf "$lieferung/quellen.zip" \
-      --exclude '*/.build/*' --exclude '*/.git/*' \
+# `._*` sind macOS-Beidateien; sie passen auf `*.swift` und landen sonst im
+# Bau. `COPYFILE_DISABLE` verhindert, dass bsdtar neue erzeugt.
+( cd "$wurzel" && COPYFILE_DISABLE=1 bsdtar -a -cf "$lieferung/quellen.zip" \
+      --exclude '*/.build/*' --exclude '*/.git/*' --exclude '._*' \
       Linux/Sources Linux/Ressourcen Windows Packages/JellyfinKit )
 cp "$(dirname "${BASH_SOURCE[0]}")/hol.ps1" "$lieferung/hol.ps1"
 

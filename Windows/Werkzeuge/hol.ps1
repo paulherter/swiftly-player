@@ -17,7 +17,26 @@ $w = 'http://10.0.2.2:8099'
 $heim = $env:USERPROFILE
 Write-Host "== Hole Quellen ==" -ForegroundColor Cyan
 Invoke-WebRequest "$w/quellen.zip" -OutFile "$heim\quellen.zip" -UseBasicParsing
+
+# **Erst raeumen, dann auspacken.** `Expand-Archive -Force` legt darueber und
+# entfernt nichts. Wer eine Datei umbenennt oder loescht, hat danach beide in
+# der VM - und `bauen.ps1` spiegelt, was daliegt. Am 09.09.2026 lagen so 54
+# Swift-Dateien statt 24, und der Bau brach an einer Datei ab, die es im
+# gelieferten Stand gar nicht gab.
+#
+# Geraeumt wird nur die Spiegelquelle, nicht der ganze Auscheck: dort liegen
+# `.build` und die geholten Werkzeuge, und die noch einmal zu holen kostet
+# Minuten.
+$quelle = "C:\swiftly\Linux\Sources"
+if (Test-Path $quelle) { Remove-Item -Recurse -Force $quelle }
+
 Expand-Archive "$heim\quellen.zip" -DestinationPath C:\swiftly -Force
+
+# **AppleDouble faellt raus.** macOS legt neben jeder Datei ein `._name` an,
+# sobald sie ueber ein fremdes Dateisystem geht. Die passen auf `*.swift`,
+# werden mitgespiegelt und landen im Bau.
+Get-ChildItem C:\swiftly -Recurse -Force -Filter "._*" -ErrorAction SilentlyContinue |
+  Remove-Item -Force -ErrorAction SilentlyContinue
 Write-Host "== Baue ==" -ForegroundColor Cyan
 Set-Location C:\swiftly\Windows
 & .\bauen.ps1 *>&1 | Tee-Object "$heim\bau.log" | Out-Null
