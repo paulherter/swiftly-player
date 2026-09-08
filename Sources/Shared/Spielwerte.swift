@@ -70,6 +70,25 @@ struct Spielwerte {
     let basisGezeigt: UInt64
     let basisZeit: Date
 
+    /// **Wie schnell die Stelle vorankommt, gemessen an der echten Uhr.**
+    ///
+    /// Ein Film laeuft in Echtzeit: in einer Sekunde rueckt die Stelle um
+    /// eine Sekunde vor. Steht hier weniger als 1, bleibt die Wiedergabe
+    /// zurueck — und *das* ist Haengen, unabhaengig davon, wie viele Bilder
+    /// dabei gezeichnet wurden.
+    ///
+    /// Diese Zahl war noetig, weil `gezeigt` allein luegt. Am 08.09.2026
+    /// standen auf dem Apple TV 1015 gezeigte Bilder bei Stelle 0:28 — 28
+    /// Sekunden Film sind aber nur 671 Bilder. VLC zeichnet ein stehendes
+    /// Bild neu, wenn der Strom nicht nachkommt, und zaehlt jede
+    /// Wiederholung mit. Ein Zaehler, der beim Haengen *schneller* laeuft,
+    /// taugt nicht als Bildrate.
+    let laufAnteil: Double?
+    /// Die Stelle dieser Messung und die des Fensteranfangs, beide in
+    /// Sekunden.
+    let stelle: Double
+    let basisStelle: Double
+
     /// **Die Rate wird selbst gerechnet, nicht abgelesen.**
     ///
     /// `inputBitrate` und `demuxBitrate` sind Fliesskommafelder, die VLC
@@ -90,8 +109,9 @@ struct Spielwerte {
     /// ist schlimmer als keine.
     let gemessenAm: Date
 
-    init?(_ roh: VLCMedia.Stats?, vorher: Spielwerte? = nil) {
+    init?(_ roh: VLCMedia.Stats?, stelle: Double, vorher: Spielwerte? = nil) {
         let jetzt = Date()
+        self.stelle = stelle
         let sekunden = vorher.map { jetzt.timeIntervalSince($0.gemessenAm) } ?? 0
         gemessenAm = jetzt
         guard let roh else { return nil }
@@ -123,22 +143,38 @@ struct Spielwerte {
         // nachgezogen. Springt der Zaehler zurueck — Sprung, Folgenwechsel —,
         // faengt das Fenster von vorn an.
         let fenster: TimeInterval = 20
-        if let vorher, roh.displayedPictures >= vorher.basisGezeigt,
+        // **Ein Sprung macht das Fenster ungueltig.** Die Zaehler laufen
+        // dabei weiter, die Stelle aber springt — ohne diese Pruefung waere
+        // `laufAnteil` nach jedem Vorspulen minutenlang Unsinn. Plausibel
+        // ist eine Stelle, die vorwaerts geht und dabei hoechstens doppelt
+        // so schnell wie die Uhr.
+        let stelleLaeuftFort = vorher.map {
+            stelle >= $0.stelle && stelle - $0.stelle <= sekunden * 2 + 1
+        } ?? false
+        if let vorher, stelleLaeuftFort, roh.displayedPictures >= vorher.basisGezeigt,
            jetzt.timeIntervalSince(vorher.basisZeit) < fenster {
             basisGezeigt = vorher.basisGezeigt
             basisZeit = vorher.basisZeit
-        } else if let vorher, roh.displayedPictures >= vorher.gezeigt {
+            basisStelle = vorher.basisStelle
+        } else if let vorher, stelleLaeuftFort, roh.displayedPictures >= vorher.gezeigt {
             basisGezeigt = vorher.gezeigt
             basisZeit = vorher.gemessenAm
+            basisStelle = vorher.stelle
         } else {
             basisGezeigt = roh.displayedPictures
             basisZeit = jetzt
+            basisStelle = stelle
         }
         let spanne = jetzt.timeIntervalSince(basisZeit)
         if spanne >= 4, roh.displayedPictures >= basisGezeigt {
             zeigtProSekunde = Double(roh.displayedPictures - basisGezeigt) / spanne
         } else {
             zeigtProSekunde = nil
+        }
+        if spanne >= 4, stelle >= basisStelle {
+            laufAnteil = (stelle - basisStelle) / spanne
+        } else {
+            laufAnteil = nil
         }
         eingang      = Spielwerte.rate(roh.readBytes, vorher?.gelesen, sekunden)
         demuxer      = Spielwerte.rate(roh.demuxReadBytes, vorher?.entpackt, sekunden)

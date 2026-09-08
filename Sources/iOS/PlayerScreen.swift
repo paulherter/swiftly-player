@@ -385,7 +385,7 @@ struct PlayerScreen: View {
             while !Task.isCancelled {
                 // Die Rate entsteht aus der Differenz zum letzten Mal —
                 // siehe `Spielwerte`.
-                spielwerte = Spielwerte(surface?.statistik, vorher: spielwerte)
+                spielwerte = Spielwerte(surface?.statistik, stelle: surface?.positionSeconds ?? 0, vorher: spielwerte)
                 try? await Task.sleep(for: .seconds(2))
             }
         }
@@ -1098,7 +1098,18 @@ struct PlayerScreen: View {
                                zeigtBild: surface.zeigtBild,
                                stelltEin: surface.stelltEin,
                                laeuft: surface.isPlaying,
-                               hatTonspuren: !surface.tonspuren.isEmpty),
+                               // **Die Spurliste nur lesen, solange sie
+                               // gebraucht wird.** `Wiedergabetakt` fragt
+                               // `hatTonspuren` allein, bis die Spuren gesetzt
+                               // sind; danach ist der Wert unbenutzt. Gelesen
+                               // wurde er trotzdem -- zweimal je Sekunde, den
+                               // ganzen Film lang. `player.audioTracks` baut die
+                               // Liste jedes Mal neu auf, unter der Sperre des
+                               // laufenden Players. Genau der Dauergriff, vor
+                               // dem der Kommentar an `Bildtakt.nochNachzumessen`
+                               // ein paar Zeilen weiter oben warnt; das `||`
+                               // kuerzt ihn weg, sobald er nichts mehr traegt.
+                               hatTonspuren: spurenGesetzt || !surface.tonspuren.isEmpty),
                 stelltWiederHer: stelltWiederHer,
                 sprungLaeuft: sprungBis.map { Date() < $0 } ?? false,
                 amSchieben: amSchieben,

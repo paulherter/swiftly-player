@@ -100,7 +100,7 @@ struct Wiedergabeblatt: View {
         .task(id: kategorie) {
             guard kategorie == .technik else { return }
             while !Task.isCancelled {
-                zaehler = Spielwerte(flaeche.statistik, vorher: zaehler)
+                zaehler = Spielwerte(flaeche.statistik, stelle: flaeche.positionSeconds, vorher: zaehler)
                 try? await Task.sleep(for: .milliseconds(500))
             }
         }

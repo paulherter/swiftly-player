@@ -86,6 +86,8 @@ struct Technikschild: View {
                 zeile("\(String(localized: "Eingang")) \(werte.eingang)")
                 zeile("\(String(localized: "Demuxer")) \(werte.demuxer)")
                 zeigtzeile(werte)
+                laufzeile(werte)
+                vorratzeile(werte)
                 verlustzeile(werte)
                 stromzeile(werte)
             }
@@ -256,6 +258,69 @@ struct Technikschild: View {
         let hinkt = if let ist = w.zeigtProSekunde, let soll { ist < soll - 2 } else { false }
         return Text(verbatim: text)
             .foregroundStyle(hinkt ? Stil.warnung : Stil.schriftLeise)
+    }
+
+    /// **Die einzige Zahl, die Haengen wirklich misst.**
+    ///
+    /// Ein Film laeuft in Echtzeit: in einer Sekunde rueckt die Stelle um
+    /// eine Sekunde vor. `Lauf 100 %` heisst, die Wiedergabe haelt Schritt
+    /// mit der Uhr; alles darunter ist verlorene Zeit, und zwar genau die,
+    /// die man als Stocken sieht.
+    ///
+    /// Sie steht hier, weil `Gezeigt` das Gegenteil behauptet, wenn es eng
+    /// wird: VLC zeichnet ein stehendes Bild neu, solange nichts nachkommt,
+    /// und zaehlt jede Wiederholung als gezeigtes Bild. Beim Haengen laeuft
+    /// dieser Zaehler also *schneller*. Am 08.09.2026 standen so 1015
+    /// gezeigte Bilder bei Stelle 0:28, wo 671 hingehoert haetten — waehrend
+    /// das Bild sichtbar stand.
+    private func laufzeile(_ w: Spielwerte) -> some View {
+        var text = "\(String(localized: "Lauf")) "
+        if let anteil = w.laufAnteil {
+            text += "\(Int((anteil * 100).rounded())) %"
+        } else {
+            text += "—"
+        }
+        // Unter 97 Prozent ist kein Messrauschen mehr: das sind mehr als
+        // anderthalb Sekunden auf eine Minute.
+        let haengt = (w.laufAnteil ?? 1) < 0.97
+        return Text(verbatim: text)
+            .foregroundStyle(haengt ? Stil.warnung : Stil.schriftLeise)
+    }
+
+    /// **Wie viel Vorrat vor der Nadel liegt.**
+    ///
+    /// VLC nennt keine Puffersekunden, aber es zaehlt beides, was man dafuer
+    /// braucht: `readBytes` ist, was aus dem Netz kam, `demuxReadBytes`, was
+    /// der Demuxer davon schon verbraucht hat. Die Differenz liegt also
+    /// gelesen und unverbraucht dazwischen -- der Vorrat, in Bytes. Geteilt
+    /// durch das, was die Datei je Sekunde braucht, sind das Sekunden.
+    ///
+    /// Genau diese Zahl zeigt ein anderer Client, der dieselbe Datei am
+    /// selben Server glatt abspielt, mit gut elf Sekunden an. Sie sagt als
+    /// einzige vorher, ob es gleich haengt: geht sie gegen null, steht das
+    /// Bild ein bis zwei Sekunden spaeter.
+    ///
+    /// Ein Mittelwert als Nenner ist grob -- eine actionreiche Stelle
+    /// braucht mehr als die Datei im Schnitt. Fuer die Frage „reicht der
+    /// Vorrat oder nicht" ist das genau genug, und die Bytes daneben stehen
+    /// ungerechnet da.
+    private func vorratzeile(_ w: Spielwerte) -> some View {
+        let bytes = w.gelesen >= w.entpackt ? w.gelesen - w.entpackt : 0
+        var text = "\(String(localized: "Vorrat")) "
+        var knapp = false
+        if let groesse = quelle?.size, groesse > 0,
+           let dauer = flaeche?.durationSeconds, dauer > 1 {
+            let jeSekunde = Double(groesse) / dauer
+            let sekunden = Double(bytes) / jeSekunde
+            text += String(format: "%.1f", sekunden).replacingOccurrences(of: ".", with: ",")
+            text += " s"
+            knapp = sekunden < 2
+        } else {
+            text += "—"
+        }
+        text += " · \(bytes / 1024) KiB"
+        return Text(verbatim: text)
+            .foregroundStyle(knapp ? Stil.warnung : Stil.schriftLeise)
     }
 
     /// **Was am Strom selbst kaputt war.**

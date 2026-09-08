@@ -3724,6 +3724,23 @@
         }
       }
     },
+    "Lauf": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lauf"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pace"
+          }
+        }
+      }
+    },
     "Leertaste": {
       "extractionState": "manual",
       "localizations": {
@@ -6017,6 +6034,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Play from the start"
+          }
+        }
+      }
+    },
+    "Vorrat": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorrat"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buffer"
           }
         }
       }
