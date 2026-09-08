@@ -976,6 +976,8 @@ final class App: @unchecked Sendable {
     var sprungtakt = 0
     var spielerRahmen: Widget!
     var spurtafel: Widget!
+    /// Welcher Bereich im Wiedergabemenue gerade links gewaehlt ist.
+    var spurbereich: Spurbereich = .ton
     var schlafminuten: Int?
     var schlaftakt = 0
 

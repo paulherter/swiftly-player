@@ -124,3 +124,9 @@
 "dem Server" = "dem Server";
 "Ähnliches" = "Ähnliches";
 "Übersicht öffnen" = "Übersicht öffnen";
+
+/* Wiedergabemenue: Bildformat (08.09.2026) */
+"Bildformat" = "Bildformat";
+"Formatfüllend" = "Formatfüllend";
+"Ganzes Bild" = "Ganzes Bild";
+"Keine" = "Keine";

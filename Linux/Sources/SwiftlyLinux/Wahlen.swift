@@ -33,6 +33,14 @@ struct Wahlen: Codable {
     var zurueckSekunden = 10
     var vorSekunden = 30
     var fortschrittAufKacheln = true
+    /// **Bild formatfuellend statt vollstaendig.**
+    ///
+    /// Dieselbe Wahl wie die Zusammenziehgeste auf iPhone und iPad und die
+    /// Zeile im Wiedergabemenue auf Mac und Fernseher — zwei Zustaende, kein
+    /// dritter, weil der nur eine Streckung waere. Auf den Apple-Fassungen
+    /// steht sie in `@AppStorage("bildfuellend")`; hier liegt sie in
+    /// derselben Datei wie die uebrigen Wahlen.
+    var bildfuellend = false
 
     private static var datei: URL {
         URL(fileURLWithPath: NSHomeDirectory())
@@ -56,6 +64,35 @@ struct Wahlen: Codable {
 
 /// Welche Werteliste gerade aufgeklappt ist.
 enum Werteauswahl { case bitrate, ton, untertitel, zurueck, vor }
+
+/// **Welcher Bereich im Wiedergabemenue links gewaehlt ist.**
+///
+/// Die Reihenfolge ist die der Mac-Fassung: erst die Spuren, dann Bild und
+/// Tempo, zuletzt die Schlafzeit. `Technikschild` fehlt hier noch — es gibt
+/// das Schild auf Linux und Windows bisher nicht.
+enum Spurbereich: CaseIterable {
+    case ton, untertitel, bildformat, tempo, schlafzeit
+
+    var titel: String {
+        switch self {
+        case .ton:        return uebersetzt("Ton")
+        case .untertitel: return uebersetzt("Untertitel")
+        case .bildformat: return uebersetzt("Bildformat")
+        case .tempo:      return uebersetzt("Tempo")
+        case .schlafzeit: return uebersetzt("Schlafzeit")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .ton:        return "audio-volume-high-symbolic"
+        case .untertitel: return "media-view-subtitles-symbolic"
+        case .bildformat: return "view-fullscreen-symbolic"
+        case .tempo:      return "preferences-system-symbolic"
+        case .schlafzeit: return "weather-clear-night-symbolic"
+        }
+    }
+}
 
 /// Die Fassung von libVLC, für die Fußzeile der Einstellungen.
 ///

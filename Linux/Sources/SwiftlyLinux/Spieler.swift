@@ -83,6 +83,8 @@ extension App {
                 self.laufenderPlan = plan
                 self.warnungZeigen(plan)
                 self.abspieler.oeffnen(plan.url, ab: ab)
+                // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
+                self.abspieler.bildfuellend(self.wahlen.bildfuellend)
                 self.spielstand.position = ab
                 self.taktStarten()
             }
@@ -664,6 +666,8 @@ extension App {
                 let tempo = self.abspieler.tempo
                 // Die nächste Folge startet **von vorn** (B5).
                 self.abspieler.oeffnen(plan.url, ab: 0)
+                // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
+                self.abspieler.bildfuellend(self.wahlen.bildfuellend)
                 self.abspieler.tempo = tempo
                 Task.detached { [self] in
                     let marken = await client.abschnitte(fuer: naechste.id)
@@ -780,111 +784,208 @@ extension App {
     ///
     /// „Bild" aus der iPhone-Fassung fehlt mit Absicht: dort steht die Wahl
     /// zwischen fester und freier Ausrichtung, und ein Fenster hat keine (F).
+    /// **Links waehlen, rechts sehen** — die Form der Mac-Fassung.
+    ///
+    /// Vorher stand alles gleichzeitig ausgeklappt untereinander: jede
+    /// Tonspur, jeder Untertitel, Tempo, Schlafzeit. Bei einer Datei mit acht
+    /// Spuren ist das eine Rolle, in der man den eingestellten Stand suchen
+    /// muss. Jetzt traegt die Leiste links den **aktuellen Wert** neben dem
+    /// Namen, und rechts steht nur, was zum gewaehlten Bereich gehoert.
+    ///
+    /// Die Tafel klappt weiter **unter dem Knopf** auf, aus dem sie stammt
+    /// (E5) — kleine Entscheidungen erscheinen dort, wo sie ausgeloest wurden.
     private func spurwahlZeigen() {
         steuerungZeigen()
-        if let alt = spurtafel {
-            // **Ein Überzug wird über den Überzug entfernt**, nicht über
-            // `gtk_widget_unparent` — der lässt GTKs Buchführung stehen.
-            gtk_overlay_remove_overlay(OpaquePointer(spielerRahmen), alt)
-            spurtafel = nil
+        if spurtafel != nil {
+            // **Ein Ueberzug wird ueber den Ueberzug entfernt**, nicht ueber
+            // `gtk_widget_unparent` — der laesst GTKs Buchfuehrung stehen.
+            spurwahlSchliessen()
             return
         }
-        let tafel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 22)
-        raender(tafel, 20)
+        spurbereich = .ton
+        spurtafelBauen()
+    }
 
-        let ton = abspieler.tonspuren
-        if !ton.isEmpty {
-            let g = spurgruppe(uebersetzt("Ton"), "audio-volume-high-symbolic")
-            let jetzt = abspieler.tonspur
-            for spur in ton {
-                // **„Disable" ist keine Tonspur.** VLC hängt den Eintrag an
-                // jede Liste; für Ton gibt es ihn auf dem Mac nicht, und ein
-                // Film ohne Ton ist auch keine Wahl, die jemand trifft.
-                guard spur.kennung >= 0 else { continue }
-                anhaengen(g.raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetzt) {
-                    [weak self] in
-                    self?.abspieler.setzeTonspur(spur.kennung)
-                    self?.spurwahlSchliessen()
-                })
-            }
-            anhaengen(tafel, g.aussen)
+    /// Baut die Tafel neu auf. Wird auch beim Bereichswechsel gerufen: GTK
+    /// hat kein „Inhalt tauschen" wie SwiftUI, und eine Tafel mit zwei
+    /// Spalten neu zu bauen kostet weniger als ein Ausraeumen von Hand --
+    /// genau die Sorte Schleife, die in `Fallen/` steht.
+    private func spurtafelBauen() {
+        if let alt = spurtafel, spielerRahmen != nil {
+            gtk_overlay_remove_overlay(OpaquePointer(spielerRahmen), alt)
+            spurtafel = nil
         }
 
-        let u = spurgruppe(uebersetzt("Untertitel"), "media-view-subtitles-symbolic")
-        let jetztU = abspieler.untertitelspur
-        anhaengen(u.raum, wahlzeile(uebersetzt("Aus"), gewaehlt: jetztU < 0) { [weak self] in
-            self?.abspieler.setzeUntertitel(-1)
-            self?.spurwahlSchliessen()
-        })
-        for spur in abspieler.untertitelspuren where spur.kennung >= 0 {
-            anhaengen(u.raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetztU) {
-                [weak self] in
-                self?.abspieler.setzeUntertitel(spur.kennung)
-                self?.spurwahlSchliessen()
-            })
-        }
-        anhaengen(tafel, u.aussen)
+        let spalten = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
 
-        let t = spurgruppe(uebersetzt("Tempo"), "preferences-system-symbolic")
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        let jetztTempo = abspieler.tempo
-        for wert in Tempostufen.werte {
-            let c = chip(Tempostufen.beschriftung(wert), aktiv: abs(jetztTempo - wert) < 0.01)
-            beiSignal(c, "clicked") { [weak self] in
-                self?.abspieler.tempo = wert
-                self?.spurwahlSchliessen()
-            }
-            anhaengen(reihe, c)
+        // --- Leiste links ------------------------------------------------
+        let leiste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 3)
+        raender(leiste, 10)
+        gtk_widget_set_size_request(leiste, 250, -1)
+        for b in Spurbereich.allCases {
+            anhaengen(leiste, leistenzeile(b))
         }
-        anhaengen(t.raum, reihe)
-        anhaengen(tafel, t.aussen)
+        anhaengen(spalten, leiste)
 
-        let sz = spurgruppe(uebersetzt("Schlafzeit"), "weather-clear-night-symbolic")
-        let szReihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        let aus = chip(uebersetzt("Aus"), aktiv: schlafminuten == nil)
-        beiSignal(aus, "clicked") { [weak self] in
-            self?.schlafminuten = nil
-            self?.spurwahlSchliessen()
-        }
-        anhaengen(szReihe, aus)
-        for minuten in Schlafzeiten.werte {
-            let c = chip("\(minuten)", aktiv: schlafminuten == minuten)
-            beiSignal(c, "clicked") { [weak self] in
-                self?.schlafzeitSetzen(minuten)
-                self?.spurwahlSchliessen()
-            }
-            anhaengen(szReihe, c)
-        }
-        anhaengen(sz.raum, szReihe)
-        anhaengen(tafel, sz.aussen)
+        let strich: Widget! = gtk_separator_new(GTK_ORIENTATION_VERTICAL)
+        gtk_widget_add_css_class(strich, "swiftly-linie")
+        anhaengen(spalten, strich)
+
+        // --- Auswahl rechts ----------------------------------------------
+        let rechts = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+        raender(rechts, 16)
+        gtk_widget_set_hexpand(rechts, 1)
+        anhaengen(rechts, rubrik(spurbereich.titel))
+        let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        anhaengen(rechts, raum)
+        auswahlFuellen(raum)
 
         // **Eine Tonspurliste kann lang sein — vierzig Untertitel sind
-        // normal.** Ohne Scroller wächst die Tafel über den Bildschirmrand
-        // hinaus, und was unten steht, ist nicht erreichbar. Der Scroller
-        // trägt die Höhengrenze, nicht die Tafel: so bleibt sie bei kurzen
-        // Listen so hoch wie ihr Inhalt.
+        // normal.** Der Scroller traegt die Hoehengrenze, nicht die Tafel: so
+        // bleibt sie bei kurzen Listen so hoch wie ihr Inhalt.
         let rolle: Widget! = gtk_scrolled_window_new()
         gtk_scrolled_window_set_policy(OpaquePointer(rolle),
                                        GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
         gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(rolle), 1)
-        gtk_scrolled_window_set_max_content_height(OpaquePointer(rolle), 520)
-        gtk_scrolled_window_set_child(OpaquePointer(rolle), tafel)
+        gtk_scrolled_window_set_max_content_height(OpaquePointer(rolle), 420)
+        gtk_scrolled_window_set_child(OpaquePointer(rolle), rechts)
         weichesScrollen(rolle)
+        gtk_widget_set_hexpand(rolle, 1)
+        anhaengen(spalten, rolle)
 
         let rahmen: Widget! = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_add_css_class(rahmen, "swiftly-tafel")
-        anhaengen(rahmen, rolle)
-        gtk_widget_set_size_request(rahmen, 320, -1)
+        anhaengen(rahmen, spalten)
+        gtk_widget_set_size_request(rahmen, 640, -1)
         gtk_widget_set_halign(rahmen, GTK_ALIGN_END)
         gtk_widget_set_valign(rahmen, GTK_ALIGN_START)
-        // Die Tafel klappt **unter dem Knopf** auf, aus dem sie stammt (E5).
-        // 18 oben plus 28 Knopfhöhe plus 18 Abstand — der Versatz vom Mac.
+        // 18 oben plus 28 Knopfhoehe plus 18 Abstand — der Versatz vom Mac.
         gtk_widget_set_margin_top(rahmen, 64)
         gtk_widget_set_margin_end(rahmen, 22)
         gtk_widget_set_margin_bottom(rahmen, 22)
 
         spurtafel = rahmen
         gtk_overlay_add_overlay(OpaquePointer(spielerRahmen), rahmen)
+    }
+
+    /// Eine Zeile der Leiste: Zeichen, Name und der Stand.
+    private func leistenzeile(_ b: Spurbereich) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-wertzeile")
+        if b == spurbereich { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 9)
+        let bild: Widget! = gtk_image_new_from_icon_name(b.symbol)
+        gtk_image_set_pixel_size(OpaquePointer(bild), 13)
+        anhaengen(reihe, bild)
+        let l = beschriftung(b.titel, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        anhaengen(reihe, l)
+        let fueller = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
+        gtk_widget_set_hexpand(fueller, 1)
+        anhaengen(reihe, fueller)
+        let w = beschriftung(spurwert(b), stil: "swiftly-leise")
+        gtk_label_set_ellipsize(OpaquePointer(w), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(w), 18)
+        anhaengen(reihe, w)
+        gtk_button_set_child(alsKnopf(knopf), reihe)
+        beiSignal(knopf, "clicked") { [weak self] in
+            guard let self, self.spurbereich != b else { return }
+            self.spurbereich = b
+            self.spurtafelBauen()
+        }
+        return knopf
+    }
+
+    /// **Der Stand neben dem Namen — das ist der ganze Punkt der Leiste.**
+    private func spurwert(_ b: Spurbereich) -> String {
+        switch b {
+        case .ton:
+            let jetzt = abspieler.tonspur
+            return abspieler.tonspuren.first { $0.kennung == jetzt }?.name
+                ?? uebersetzt("Keine")
+        case .untertitel:
+            let jetzt = abspieler.untertitelspur
+            guard jetzt >= 0 else { return uebersetzt("Aus") }
+            return abspieler.untertitelspuren.first { $0.kennung == jetzt }?.name
+                ?? uebersetzt("Aus")
+        case .bildformat:
+            return uebersetzt(wahlen.bildfuellend ? "Formatfüllend" : "Ganzes Bild")
+        case .tempo:
+            return Tempostufen.beschriftung(abspieler.tempo)
+        case .schlafzeit:
+            return schlafminuten.map { "\($0)" } ?? uebersetzt("Aus")
+        }
+    }
+
+    /// Was rechts steht — nur der gewaehlte Bereich.
+    private func auswahlFuellen(_ raum: Widget!) {
+        switch spurbereich {
+        case .ton:
+            let jetzt = abspieler.tonspur
+            for spur in abspieler.tonspuren {
+                // **„Disable" ist keine Tonspur.** VLC haengt den Eintrag an
+                // jede Liste; fuer Ton gibt es ihn auf dem Mac nicht, und ein
+                // Film ohne Ton ist auch keine Wahl, die jemand trifft.
+                guard spur.kennung >= 0 else { continue }
+                anhaengen(raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetzt) {
+                    [weak self] in
+                    self?.abspieler.setzeTonspur(spur.kennung)
+                    self?.spurtafelBauen()
+                })
+            }
+        case .untertitel:
+            let jetzt = abspieler.untertitelspur
+            anhaengen(raum, wahlzeile(uebersetzt("Aus"), gewaehlt: jetzt < 0) { [weak self] in
+                self?.abspieler.setzeUntertitel(-1)
+                self?.spurtafelBauen()
+            })
+            for spur in abspieler.untertitelspuren where spur.kennung >= 0 {
+                anhaengen(raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetzt) {
+                    [weak self] in
+                    self?.abspieler.setzeUntertitel(spur.kennung)
+                    self?.spurtafelBauen()
+                })
+            }
+        case .bildformat:
+            anhaengen(raum, wahlzeile(uebersetzt("Ganzes Bild"),
+                                      gewaehlt: !wahlen.bildfuellend) { [weak self] in
+                guard let self else { return }
+                self.wahlen.bildfuellend = false
+                self.wahlen.sichern()
+                self.abspieler.bildfuellend(false)
+                self.spurtafelBauen()
+            })
+            anhaengen(raum, wahlzeile(uebersetzt("Formatfüllend"),
+                                      gewaehlt: wahlen.bildfuellend) { [weak self] in
+                guard let self else { return }
+                self.wahlen.bildfuellend = true
+                self.wahlen.sichern()
+                self.abspieler.bildfuellend(true)
+                self.spurtafelBauen()
+            })
+        case .tempo:
+            let jetzt = abspieler.tempo
+            for wert in Tempostufen.werte {
+                anhaengen(raum, wahlzeile(Tempostufen.beschriftung(wert),
+                                          gewaehlt: abs(jetzt - wert) < 0.01) { [weak self] in
+                    self?.abspieler.tempo = wert
+                    self?.spurtafelBauen()
+                })
+            }
+        case .schlafzeit:
+            anhaengen(raum, wahlzeile(uebersetzt("Aus"),
+                                      gewaehlt: schlafminuten == nil) { [weak self] in
+                self?.schlafminuten = nil
+                self?.spurtafelBauen()
+            })
+            for minuten in Schlafzeiten.werte {
+                anhaengen(raum, wahlzeile("\(minuten)",
+                                          gewaehlt: schlafminuten == minuten) { [weak self] in
+                    self?.schlafzeitSetzen(minuten)
+                    self?.spurtafelBauen()
+                })
+            }
+        }
     }
 
     func spurwahlSchliessen() {

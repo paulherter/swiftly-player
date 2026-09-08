@@ -189,6 +189,25 @@ final class Abspieler {
 
     // MARK: Bild
 
+    /// **Ganzes Bild oder formatfuellend — und warum es hier anders geht als
+    /// auf den Apple-Fassungen.**
+    ///
+    /// Dort setzt VLCKit `videoFitMode`, weil VLC dort selbst zeichnet. Hier
+    /// zeichnet VLC gar nicht: die Einzelbilder kommen ueber `bildbruecke`
+    /// als Textur herein und werden von einem `GtkPicture` eingepasst.
+    /// `libvlc_video_set_crop_geometry` griffe also ins Leere.
+    ///
+    /// Das richtige Mittel ist deshalb GTKs eigenes: `CONTAIN` legt das ganze
+    /// Bild hinein und laesst Balken stehen, `COVER` fuellt und schneidet ab.
+    /// Beides ohne Verzerren — `FILL` waere genau die Streckung, die es auf
+    /// keiner Plattform geben soll.
+    func bildfuellend(_ an: Bool) {
+        guard let bildfeld else { return }
+        gtk_picture_set_content_fit(OpaquePointer(bildfeld),
+                                    an ? GTK_CONTENT_FIT_COVER : GTK_CONTENT_FIT_CONTAIN)
+    }
+
+
     /// **Jedes Einzelbild einmal abholen, nicht öfter.** Der Taktgeber von GTK
     /// schlägt im Rhythmus des Bildschirms; kam seit dem letzten Mal nichts
     /// Neues, gibt die Brücke `false` zurück und es passiert nichts.
