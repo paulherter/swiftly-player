@@ -87,6 +87,17 @@ struct Seitenleistenrubrik: View {
 struct Chip: View {
     let beschriftung: String
     var symbol: String?
+    /// **Nur das Zeichen, aber weiter in seiner Kapsel.**
+    ///
+    /// In der Werkzeugleiste des Players sagt das Zeichen genug -- es ist
+    /// dasselbe wie auf iPhone und iPad, und eine Beschriftung daneben macht
+    /// die Leiste breiter, ohne etwas zu erklaeren. Der Rahmen bleibt: ein
+    /// nacktes Zeichen ueber bewegtem Bild sieht aus, als schwebe es dort
+    /// zufaellig, und auf einem Rechner erwartet man einen Knopf.
+    ///
+    /// Die Beschriftung bleibt trotzdem gesetzt -- sie wird zum Kurzhinweis
+    /// unter dem Zeiger und zu dem, was VoiceOver vorliest.
+    var nurSymbol = false
     let aktiv: Bool
     let auswahl: () -> Void
 
@@ -98,10 +109,12 @@ struct Chip: View {
                 if let symbol {
                     Image(systemName: symbol).font(.system(size: 12, weight: .semibold))
                 }
-                Text(beschriftung).font(.system(size: 13, weight: aktiv ? .semibold : .regular))
+                if !nurSymbol {
+                    Text(beschriftung).font(.system(size: 13, weight: aktiv ? .semibold : .regular))
+                }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 28)
+            .padding(.horizontal, nurSymbol ? 0 : 12)
+            .frame(width: nurSymbol ? 34 : nil, height: 28)
             .foregroundStyle(aktiv ? Stil.grund : (schwebt ? Stil.schrift : Stil.schriftLeise))
             .background(aktiv ? Stil.schrift : (schwebt ? Stil.schrift.opacity(0.06) : .clear),
                         in: Capsule())
@@ -109,6 +122,8 @@ struct Chip: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .help(beschriftung)
+        .accessibilityLabel(beschriftung)
         .onHover { schwebt = $0 }
         .animation(Stil.zeitUmschalten, value: aktiv)
         .animation(Stil.zeitSchweben, value: schwebt)

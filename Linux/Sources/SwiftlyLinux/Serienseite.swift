@@ -343,12 +343,36 @@ extension App {
         anhaengen(platz, knopf)
         anhaengen(zeile, platz)
 
+        // **H1 und „Download je Folge".** Auf dem Mac steht neben dem
+        // Gesehen-Knopf ein Downloadring je Folge, sobald Downloads an sind
+        // — und der Grund steht in der Aenderungsliste: eine Anime-Staffel
+        // hat ueber hundert Folgen, und eine ganze Staffel zu laden ist
+        // selten das, was gemeint war. Hier fehlte er ganz; die Serienseite
+        // hatte gar keinen Ladeknopf, weil der in der Knopfreihe nur bei
+        // Filmen steht.
+        var ladeknopf: Widget!
+        if downloadsAn {
+            ladeknopf = nebenknopf(ladeknopfsymbol(downloads.posten(fuer: folge.id)),
+                                   name: uebersetzt("Laden"),
+                                   aktiv: downloads.posten(fuer: folge.id)?.stand == .fertig)
+            gtk_widget_set_size_request(ladeknopf, 34, 34)
+            gtk_widget_set_valign(ladeknopf, GTK_ALIGN_START)
+            gtk_widget_set_margin_top(ladeknopf, 2)
+            gtk_widget_set_visible(ladeknopf, 0)
+            beiSignal(ladeknopf, "clicked") { [weak self] in
+                self?.ladetafelZeigen(folge, an: ladeknopf)
+            }
+            anhaengen(zeile, ladeknopf)
+        }
+
         beiZeiger(zeile, herein: {
+            if ladeknopf != nil { gtk_widget_set_visible(ladeknopf, 1) }
             gtk_widget_add_css_class(zeile, "swiftly-schwebt")
             gtk_widget_set_visible(knopf, 1)
             gtk_widget_set_visible(ruhig, 0)
             gtk_widget_set_visible(kreis, 1)
         }, hinaus: {
+            if ladeknopf != nil { gtk_widget_set_visible(ladeknopf, 0) }
             gtk_widget_remove_css_class(zeile, "swiftly-schwebt")
             gtk_widget_set_visible(knopf, 0)
             gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)

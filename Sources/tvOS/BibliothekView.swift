@@ -29,13 +29,25 @@ struct BibliothekView: View {
 
     /// Blättern, Filtern und Sortieren stehen in `Bibliotheksmodell` —
     /// geteilt mit der iPhone-Fassung.
-    @State private var stand = Bibliotheksmodell()
+    @State private var stand: Bibliotheksmodell
     @State private var sortierwahlOffen = false
     /// Welche Bibliothek dieser Gattung gezeigt wird — nur wenn die Ansicht
     /// ueber die Gattung kam. Kommt sie ueber den Sprungpfad, ist die
     /// Bibliothek benannt und es gibt nichts zu waehlen.
     @State private var gewaehlt: Item?
     @FocusState private var amSortierknopf: Bool
+
+    /// Der Merkname steht beim Anlegen fest — siehe `Bibliotheksmodell`.
+    /// Eine benannte Bibliothek merkt sich ihre eigene Sortierung, eine
+    /// Gattung die ihrer Gattung.
+    init(model: AppModel, art: String? = nil, bibliothek: Item? = nil,
+         filter: [Bibliotheksfilter] = Bibliotheksfilter.allCases) {
+        self.model = model
+        self.art = art
+        self.bibliothek = bibliothek
+        self.filter = filter
+        _stand = State(initialValue: Bibliotheksmodell(merkname: bibliothek?.id ?? art))
+    }
     @Environment(\.tafelOffen) private var tafelOffen
 
     private var spalten: [GridItem] {

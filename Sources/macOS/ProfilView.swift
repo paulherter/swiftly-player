@@ -111,7 +111,7 @@ struct ProfilView: View {
                 Kontenstreifen(model: model)
             } else {
                 Profilzeichen(name: model.session?.userName ?? "?",
-                              bild: model.benutzerbildURL(groesse: 200), groesse: 84)
+                              bild: model.benutzerbildURL(), groesse: 84)
             }
             VStack(spacing: 3) {
                 Text(verbatim: model.session?.userName ?? String(localized: "Angemeldet"))
@@ -163,8 +163,7 @@ private struct Kontenstreifen: View {
             ForEach(model.konten, id: \.userID) { konto in
                 let aktiv = konto.userID == model.session?.userID
                 Kontokreis(name: konto.userName,
-                           bild: model.benutzerbildURL(fuer: konto,
-                                                       groesse: aktiv ? 200 : 150),
+                           bild: model.benutzerbildURL(fuer: konto),
                            groesse: aktiv ? aktivGross : danebenGross,
                            hoehe: aktivGross,
                            aktiv: aktiv) {

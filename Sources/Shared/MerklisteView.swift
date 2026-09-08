@@ -6,8 +6,11 @@ struct MerklisteView: View {
 
     @Environment(\.breit) private var breit
     @Environment(\.bereichAktiv) private var bereichAktiv
-    @State private var stand = Merklistenmodell()
-    @State private var gattung: Merkgattung = .alle
+    @State private var stand: Merklistenmodell
+    /// Die Pille der Ansicht und die Gattung im Modell muessen beim Start
+    /// dasselbe sagen — das Modell holt sie aus der Ablage, die Ansicht
+    /// liest sie von dort ab.
+    @State private var gattung: Merkgattung
     @State private var gattungslisteOffen = false
     @State private var sortierlisteOffen = false
     /// Wie weit gescrollt wurde — daran hängt die Kante unter dem Kopf.
@@ -17,6 +20,13 @@ struct MerklisteView: View {
     /// weiter unter einem halben Verlauf durch statt hinter einer Leiste.
     /// Dieselbe Seitenart, zwei Verhalten.
     @State private var versatz: CGFloat = 0
+
+    init(model: AppModel) {
+        self.model = model
+        let frisch = Merklistenmodell()
+        _stand = State(initialValue: frisch)
+        _gattung = State(initialValue: Merkgattung.zu(art: frisch.gattung))
+    }
 
     var body: some View {
         GeometryReader { rahmen in

@@ -23,11 +23,25 @@ struct Downloadring: View {
     let tippen: () -> Void
 
     var body: some View {
-        Button(action: tippen) { zeichen }
-            .buttonStyle(.plain)
-            .frame(width: max(mass, 44), height: max(mass, 44))
-            .contentShape(Rectangle())
-            .accessibilityLabel(Text(ansage))
+        // **Die Trefferflaeche gehoert in den Knopf, nicht um ihn herum.**
+        //
+        // `frame` und `contentShape` standen **hinter** dem `Button` — also
+        // an der Huelle, nicht an seiner Beschriftung. Ein Knopf nimmt seine
+        // Flaeche aber von dem, was er zeichnet, und gezeichnet werden hier
+        // **Linien**: `Circle().strokeBorder` trifft nur auf dem Strich, der
+        // Bogen ebenso. Zwischen ihnen war nichts.
+        //
+        // Beim Zustand ohne Download fiel es nicht auf — dort liegt ein
+        // Pfeil in der Mitte, und der ist eine Flaeche. Beim Laden liegt dort
+        // ein Quadrat von acht Punkt, und alles daneben ging ins Leere: der
+        // Ring liess sich starten, aber nicht anhalten.
+        Button(action: tippen) {
+            zeichen
+                .frame(width: max(mass, 44), height: max(mass, 44))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(ansage))
     }
 
     @ViewBuilder private var zeichen: some View {
@@ -80,6 +94,15 @@ struct Downloadring: View {
                 .stroke(farbe, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .padding(1)
+                // **Der Bogen waechst, er springt nicht.**
+                //
+                // Ohne eigene Kurve setzt jede Meldung den Bogen hart auf den
+                // neuen Wert. Bei einer schnellen Leitung sind das viele
+                // kleine Spruenge in Folge, und mit runden Enden sieht das
+                // aus, als zittere der Ring. Linear und ueber eine knappe
+                // halbe Sekunde laeuft er ruhig — und bleibt trotzdem ehrlich,
+                // weil er nie zurueckfaellt.
+                .animation(.linear(duration: 0.4), value: anteil)
         }
     }
 
@@ -347,8 +370,18 @@ struct DownloadsView: View {
                     if !laufend.isEmpty {
                         Gruppentitel(text: verwaltung.keinNetz ? "Wartet auf Netz" : "Lädt gerade")
                             .padding(.top, 4)
+                        // **Auch was laeuft, laesst sich entfernen.**
+                        //
+                        // Diese Zeilen bekamen `gewaehlt: .constant(false)`
+                        // und kein `bearbeiten` — sie liessen sich also gar
+                        // nicht ankreuzen. Wer einen Download versehentlich
+                        // angestossen hat, musste warten, bis er fertig war,
+                        // um ihn wieder loszuwerden. `entfernen` bricht die
+                        // Aufgabe ohnehin ab; es fehlte nur der Weg dorthin.
                         ForEach(laufend) { p in
-                            Downloadzeile(model: model, posten: p, gewaehlt: .constant(false))
+                            Downloadzeile(model: model, posten: p,
+                                          bearbeiten: bearbeiten,
+                                          gewaehlt: bindung(fuer: [p.id]))
                             if p.id != laufend.last?.id { Trennlinie() }
                         }
                     }

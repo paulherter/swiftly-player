@@ -854,6 +854,22 @@ final class VLCPlayerView: Basisansicht {
         if sitzung.sampleRate < 1 {
             do {
                 try sitzung.setCategory(.playback, mode: .moviePlayback)
+            // **Systemhinweise duerfen den Film nicht anhalten.**
+            //
+            // Die Mitteilungszentrale herunterzuziehen loeste eine
+            // Tonunterbrechung aus, und die hielt die Wiedergabe an --
+            // dreimal derselbe Handgriff, dreimal `pausing` von VLC. Anhalten
+            // soll aber nur, wer die App wirklich verlaesst: ohne
+            // Bild-im-Bild in den Hintergrund, geschlossen, oder Geraet aus.
+            //
+            // `setPrefersNoInterruptionsFromSystemAlerts` ist genau dafuer
+            // da. Apples Dokumentation sagt nicht ausdruecklich, dass die
+            // Mitteilungszentrale darunter faellt -- deshalb wird der Grund
+            // der Unterbrechung zusaetzlich mitgeschrieben, statt es
+            // anzunehmen.
+            if #available(iOS 14.5, tvOS 14.5, *) {
+                try? sitzung.setPrefersNoInterruptionsFromSystemAlerts(true)
+            }
                 try sitzung.setActive(true)
                 Protokoll.schreib("[Audio] nachgezogen · \(Int(sitzung.sampleRate)) Hz")
             } catch {
@@ -972,6 +988,37 @@ final class VLCPlayerView: Basisansicht {
         // als vorher. `STREAM_CAN_FASTSEEK` bleibt aus, und damit bleibt der
         // Bereichs-Scan der Matroska unerreichbar. Zurueck auf 16 MiB.
         medium.addOption(":prefetch-buffer-size=16384")
+
+        // **Nach einer laengeren Pause ist die Verbindung weg.**
+        //
+        // Am 08.09.2026 zweimal mitgeschrieben: 25 Sekunden pausiert, und
+        // beim Fortsetzen steht `local stream N error: Cancellation (0x8)`
+        // im Protokoll -- der Server hat den untaetigen Strom abgeraeumt.
+        // VLC baut daraufhin alles neu auf (PCR zuruecksetzen, neu suchen,
+        // puffern), und weil iOS im Hintergrund zusaetzlich die
+        // Dekodersitzung entwertet hatte (`kVTInvalidSessionErr`), dauert
+        // das rund zwei Sekunden.
+        //
+        // `http-reconnect` laesst VLC den Abriss selbst auffangen, statt ihn
+        // als Stromende zu behandeln. Es aendert nichts, solange die
+        // Verbindung haelt.
+        if url.isFileURL == false {
+            medium.addOption(":http-reconnect")
+        }
+
+        // **Am Vorrat lag es nicht -- nachgemessen, nicht vermutet.**
+        //
+        // Hier stand kurz `:network-caching=10000`, weil VLCs Voreinstellung
+        // von 1000 ms duenn aussah und ein anderer Client elf Sekunden Vorrat
+        // anzeigt. Die Messung am Geraet hat das erledigt: gelesen minus
+        // entpackt ergab **211 Sekunden**. Der `prefetch`-Filter oben haelt
+        // 16 MiB, und das sind bei dieser Bitrate dreieinhalb Minuten Inhalt.
+        // Der Zeitvorlauf haette daran nichts geaendert, aber jeden Sprung
+        // teurer gemacht.
+        //
+        // Was „Eingang 0 kbit/s" beim stehenden Bild wirklich hiess: nicht
+        // „es kommt nichts", sondern „es muss gerade nichts kommen". Der
+        // Engpass liegt hinter dem Demuxer, nicht davor.
 
 
         // **Die Entscheidung muss ablesbar sein.**
@@ -1151,6 +1198,25 @@ final class VLCPlayerView: Basisansicht {
     var laeuftGemeldet: ((Bool) -> Void)?
 
     func pause()  { player.pause(); refreshPiPState() }
+
+    /// **Wie das Bild in die Flaeche gelegt wird -- ganz oder formatfuellend.**
+    ///
+    /// `Smaller` legt das ganze Bild hinein und laesst Balken stehen, `Larger`
+    /// fuellt die Flaeche und schneidet ab. Beides ohne Verzerren; ein
+    /// dritter Zustand waere nur eine falsche Streckung, deshalb gibt es
+    /// zwei.
+    ///
+    /// Nicht ueber `videoAspectRatio`: das setzt ein Seitenverhaeltnis und
+    /// zieht das Bild darauf, statt es zu beschneiden. Gesichter werden dabei
+    /// breit, und genau das will niemand.
+    func bildfuellend(_ an: Bool) {
+        player.videoFitMode = an ? .larger : .smaller
+    }
+
+    /// Die Bildgroesse des Stroms in Pixeln, `zero` bevor das erste Bild da
+    /// ist. Wird gebraucht, um auszurechnen, wie weit zwischen „ganz hinein"
+    /// und „ganz ausfuellen" liegt.
+    var videoSize: CGSize { player.videoSize }
     func resume() { player.play();  refreshPiPState() }
     func stop() {
         absichtlichBeendet = true
@@ -1408,7 +1474,21 @@ final class Zeichenflaeche: Basisansicht {
 /// beantwortet, wo die Wartezeit herkommt: Zugriffsschicht, Demuxer, Puffer,
 /// Decoder — dazu alles, was VLC selbst als Fehler oder Warnung einstuft.
 final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
-    var level: VLCLogLevel = .debug
+    /// **Die Stufe ist selbst eine Last, kein blosser Filter.**
+    ///
+    /// Auf `debug` meldet VLC waehrend der Wiedergabe hunderte Zeilen je
+    /// Sekunde, und jede laeuft hier durch `print`, eine Sperre und einen
+    /// Dateischreibvorgang. Wer damit misst, wie gleichmaessig Bilder auf
+    /// den Schirm kommen, misst zu einem guten Teil sich selbst — am
+    /// 08.09.2026 sind so vier Messungen am Apple TV entstanden, deren
+    /// Ruckeln womoeglich vom Protokollieren stammte.
+    ///
+    /// `warning` laesst genau das durch, was zur Ausgabe etwas sagt: VLC
+    /// stuft verspaetete Bilder und Uhrabweichungen als Warnung ein. Fuer
+    /// die Demuxer-Suche, die `debug` braucht, reicht ein gesetzter
+    /// Schluessel — dann darf es auch langsam sein.
+    var level: VLCLogLevel = UserDefaults.standard.bool(forKey: "vlcAusfuehrlich")
+        ? .debug : .info
 
     /// **Nach Inhalt sieben, nicht nach Modul.**
     ///
@@ -1425,9 +1505,24 @@ final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
     /// er sagt nichts, was die Bereichsanfragen nicht schon sagen.
     private static let flut = ["frame of", "window update", "setting:", "headers:"]
 
+    /// **Was auf `info` trotzdem durchkommt.**
+    ///
+    /// Die Stufe steht auf `info`, weil genau dort die eine Zeile faellt, die
+    /// sagt, *womit* dekodiert wird -- „using video decoder module ...".
+    /// Ohne sie ist nicht zu entscheiden, ob HEVC ueber VideoToolbox laeuft
+    /// oder auf der CPU, und beide Faelle sehen von aussen gleich aus.
+    /// Geschrieben wird deshalb nur, was diese Frage beantwortet, dazu alles
+    /// ab Warnung -- der Rest wird verworfen, bevor er eine Sperre oder die
+    /// Platte sieht.
+    private static let gesucht = ["decoder module", "using video", "using audio",
+                                  "videotoolbox", "hardware", "vout display",
+                                  "picture is too late", "clock"]
+
     func handleMessage(_ nachricht: String, logLevel: VLCLogLevel, context: VLCLogContext?) {
         let text = nachricht.lowercased()
         guard !Self.flut.contains(where: { text.contains($0) }) else { return }
+        let wichtig = logLevel == .error || logLevel == .warning
+        guard wichtig || Self.gesucht.contains(where: { text.contains($0) }) else { return }
         let modul = context?.module ?? "?"
         Protokoll.schreib("[vlc/\(modul)] \(nachricht)")
     }

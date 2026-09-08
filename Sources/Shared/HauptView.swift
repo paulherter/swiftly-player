@@ -253,9 +253,24 @@ struct BibliothekView: View {
 
     /// Blättern, Filtern und Sortieren stehen in `Bibliotheksmodell` —
     /// geteilt mit der tvOS-Fassung.
-    @State private var stand = Bibliotheksmodell()
+    @State private var stand: Bibliotheksmodell
     @State private var sortierlisteOffen = false
     @State private var filterlisteOffen = false
+
+    /// **Der Merkname muss beim Anlegen feststehen.**
+    ///
+    /// Sortierung und Filter kommen aus der Ablage, und sie muessen schon im
+    /// ersten Durchgang richtig stehen — sonst zeigt die Chipreihe einen
+    /// Wimpernschlag lang „A–Z" und springt dann. Ein `@State` mit
+    /// Anfangswert kann das, ein nachtraegliches Setzen nicht.
+    init(model: AppModel, art: String, titel: LocalizedStringKey,
+         filter: [Bibliotheksfilter] = Bibliotheksfilter.allCases) {
+        self.model = model
+        self.art = art
+        self.titel = titel
+        self.filter = filter
+        _stand = State(initialValue: Bibliotheksmodell(merkname: art))
+    }
     /// Wie weit gescrollt wurde — daran hängt die Haarlinie unter dem Kopf.
     @State private var versatz: CGFloat = 0
     /// Wie hoch der Kopf ist. **Gemessen, nicht getippt.**

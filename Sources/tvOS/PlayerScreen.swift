@@ -34,6 +34,9 @@ struct PlayerScreen: View {
     @State private var plan: PlaybackPlan
 
     @State private var flaeche: VLCPlayerView?
+    /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
+    @AppStorage("technikschild") private var technikschild = false
+    @State private var spielwerte: Spielwerte?
     @State private var position: Double
     /// Wann der Player geöffnet wurde — `Zeitannahme` braucht es, um
     /// Aufbauzucken von echter Bewegung zu unterscheiden.
@@ -200,6 +203,10 @@ struct PlayerScreen: View {
             VideoFlaeche(url: startPlan.url, startAt: startAt,
                          container: startPlan.container) { neu in
                 flaeche = neu
+                // Was im Blatt unter „Bild" gewaehlt wurde, gilt auch fuer
+                // die naechste Folge -- derselbe Schluessel wie die Geste
+                // auf dem iPhone.
+                neu.bildfuellend(UserDefaults.standard.bool(forKey: "bildfuellend"))
                 neu.onWiederherstellung = { stelltWiederHer = $0 }
                 // **Der Knopf haengt an VLCs Meldung, nicht am Druck.**
                 //
@@ -280,6 +287,31 @@ struct PlayerScreen: View {
                     wechsleZu(folge)
                 }
                 .transition(.opacity)
+            }
+        }
+        // **Das Technikschild.** Es liegt ueber allem, nimmt aber weder Fokus
+        // noch Eingaben — auf dem Fernseher waere ein fokussierbares Schild
+        // ein Ziel, das die Fernbedienung anfahren kann und das dann nichts
+        // tut. Angeschaltet wird es im Wiedergabeblatt.
+        .overlay(alignment: .topLeading) {
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte, flaeche: flaeche, fern: true)
+                    .padding(.leading, Stil.randSeite)
+                    .padding(.top, Stil.randOben)
+                    .allowsHitTesting(false)
+                    .focusable(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Stil.einblenden, value: technikschild)
+        .task(id: technikschild) {
+            guard technikschild else { return }
+            while !Task.isCancelled {
+                // Die Rate entsteht aus der Differenz zum letzten Mal —
+                // siehe `Spielwerte`.
+                spielwerte = Spielwerte(flaeche?.statistik, stelle: flaeche?.positionSeconds ?? 0,
+                                        laeuft: flaeche?.isPlaying ?? false, vorher: spielwerte)
+                try? await Task.sleep(for: .seconds(2))
             }
         }
         .ignoresSafeArea()
@@ -1075,7 +1107,18 @@ struct PlayerScreen: View {
                                zeigtBild: flaeche.zeigtBild,
                                stelltEin: flaeche.stelltEin,
                                laeuft: flaeche.isPlaying,
-                               hatTonspuren: !flaeche.tonspuren.isEmpty),
+                               // **Die Spurliste nur lesen, solange sie
+                               // gebraucht wird.** `Wiedergabetakt` fragt
+                               // `hatTonspuren` allein, bis die Spuren gesetzt
+                               // sind; danach ist der Wert unbenutzt. Gelesen
+                               // wurde er trotzdem -- zweimal je Sekunde, den
+                               // ganzen Film lang. `player.audioTracks` baut die
+                               // Liste jedes Mal neu auf, unter der Sperre des
+                               // laufenden Players. Genau der Dauergriff, vor
+                               // dem der Kommentar an `Bildtakt.nochNachzumessen`
+                               // ein paar Zeilen weiter oben warnt; das `||`
+                               // kuerzt ihn weg, sobald er nichts mehr traegt.
+                               hatTonspuren: spurenGesetzt || !flaeche.tonspuren.isEmpty),
                 stelltWiederHer: stelltWiederHer,
                 sprungLaeuft: sprungBis.map { Date() < $0 } ?? false,
                 // Am Fernseher liegt kein Finger am Regler.

@@ -45,6 +45,31 @@ for weg in dateien:
         if englisch.get("state") != "translated":
             roh.add((weg, treffer))
 
+# **Der Bogen findet nur, was er kennt — der Katalog selbst weiss mehr.**
+#
+# Am 07.09.2026 hat ein Nutzer „12 offen" auf einem englischen Geraet
+# gemeldet. Der Schluessel dazu heisst `%lld offen` und entsteht aus
+# `String(localized: "\(n) offen")` — ein Literal mit eingesetztem Wert, und
+# genau daran kommt kein Muster heran, das nach `"..."` ohne Backslash sucht.
+#
+# Die Gegenprobe ist einfacher als jedes Muster: **jeder Eintrag im Katalog
+# braucht eine englische Fassung.** Wie der Schluessel entstanden ist, spielt
+# dann keine Rolle mehr. Xcode traegt neue Schluessel beim Bauen selbst ein;
+# ab da faellt hier auf, dass die Uebersetzung fehlt.
+for schluessel, eintrag in katalog.items():
+    if not eintrag.get("shouldTranslate", True):
+        continue
+    en = eintrag.get("localizations", {}).get("en")
+    if en is None:
+        roh.add(("Katalog", schluessel))
+        continue
+    if "variations" in en:
+        for form in en["variations"].get("plural", {}).values():
+            if form.get("stringUnit", {}).get("state") != "translated":
+                roh.add(("Katalog", schluessel))
+    elif en.get("stringUnit", {}).get("state") != "translated":
+        roh.add(("Katalog", schluessel))
+
 for name, menge in (("nicht im Katalog", fehlt), ("ohne englische Fassung", roh)):
     for weg, text in sorted(menge):
         print(f"  {name}: {weg.split('/')[-1]} · {text[:64]}")

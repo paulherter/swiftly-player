@@ -12,6 +12,7 @@ import SwiftUI
 /// (Profil, Einstellungen, Wiedergabe), hier nebeneinander, weil Breite da
 /// ist und jeder gesparte Sprung auf der Fernbedienung zählt.
 struct ProfilView: View {
+    @AppStorage("bildrateAnpassen") private var bildrateAnpassen = true
     let model: AppModel
 
     @State private var bereich: Bereichswahl = .wiedergabe
@@ -144,7 +145,7 @@ struct ProfilView: View {
                 Kontenstreifen(model: model)
             } else {
                 Profilzeichen(name: model.session?.userName ?? "?",
-                              bild: model.benutzerbildURL(groesse: 240),
+                              bild: model.benutzerbildURL(),
                               groesse: 60)
                     .scaleEffect(1.66)
                     .frame(width: 100, height: 100)
@@ -185,6 +186,25 @@ struct ProfilView: View {
                 model.untertitelAutomatisch.toggle()
             }
             Trennlinie()
+            Trennlinie()
+            // **Der Schalter fuer die Bildratenanpassung.**
+            //
+            // Am 08.09.2026 an einem Geraet gemessen: dieselbe Folge laeuft
+            // in Swiftfin fluessig, und Swiftfin schaltet die Bildrate nicht
+            // um. Bei uns stockte es sichtbar, waehrend jeder Zaehler auf
+            // null stand — kein verworfenes Bild, keines zu spaet, nichts
+            // beschaedigt. Der einzige greifbare Unterschied war dieser
+            // Wechsel.
+            //
+            // 24 Hz nativ ist auf dem Papier das Richtige: jedes Bild steht
+            // gleich lang. Auf einem Fernseher, dessen Bewegungsverarbeitung
+            // bei 60 Hz glaettet, kann es trotzdem schlechter aussehen. Das
+            // haengt am Geraet, nicht an der Datei — also entscheidet es der
+            // Zuschauer. An bleibt die Vorgabe.
+            Schalterzeile(titel: "Bildrate an den Film anpassen",
+                          an: bildrateAnpassen) {
+                bildrateAnpassen.toggle()
+            }
             Schalterzeile(titel: "Nächste Folge automatisch", an: model.naechsteAutomatisch) {
                 model.naechsteAutomatisch.toggle()
             }
@@ -460,7 +480,7 @@ private struct Kontenstreifen: View {
                 } label: {
                     VStack(spacing: 12) {
                         Profilzeichen(name: konto.userName,
-                                      bild: model.benutzerbildURL(fuer: konto, groesse: 240),
+                                      bild: model.benutzerbildURL(fuer: konto),
                                       groesse: 60,
                                       hervorgehoben: aktiv)
                             .scaleEffect(1.66)

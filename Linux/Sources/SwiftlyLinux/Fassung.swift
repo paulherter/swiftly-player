@@ -18,7 +18,7 @@ enum Fassung {
     static let nummer = "1.0.0"
     static let bau = "10"
 
-    /// „Swiftly for Jellyfin 1.0.0 (Build 10)" — der volle Name, wie ihn die
+    /// „Swiftly Player 1.0.0 (Build 10)" — der volle Name, wie ihn die
     /// anderen Plattformen im Profil zeigen.
-    static var voll: String { "Swiftly for Jellyfin \(nummer) (Build \(bau))" }
+    static var voll: String { "Swiftly Player \(nummer) (Build \(bau))" }
 }

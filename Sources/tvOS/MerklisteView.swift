@@ -18,8 +18,18 @@ import SwiftUI
 struct MerklisteView: View {
     let model: AppModel
 
-    @State private var stand = Merklistenmodell()
-    @State private var gattung: Merkgattung = .alle
+    @State private var stand: Merklistenmodell
+
+    init(model: AppModel) {
+        self.model = model
+        let frisch = Merklistenmodell()
+        _stand = State(initialValue: frisch)
+        _gattung = State(initialValue: Merkgattung.zu(art: frisch.gattung))
+    }
+    /// Die Pille der Ansicht und die Gattung im Modell muessen beim Start
+    /// dasselbe sagen — das Modell holt sie aus der Ablage, die Ansicht
+    /// liest sie von dort ab.
+    @State private var gattung: Merkgattung
     /// **Wie in der Bibliothek, nicht anders.** Die Sortierung stand hier als
     /// zweite Chipreihe neben der Gattung — auf Filme und Serien ist sie ein
     /// Knopf, der eine Tafel unter sich aufklappt. Zwei Fassungen derselben

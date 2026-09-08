@@ -212,6 +212,40 @@ struct ChipStil: ButtonStyle {
     }
 }
 
+/// **Eine Zeile in der Einstellungsleiste des Players.**
+///
+/// Wie `ChipStil`, nur ueber die volle Breite und mit eckigen Ecken statt
+/// einer Kapsel: die Leiste ist eine Liste, keine Reihe von Marken. Auswahl
+/// ist wieder Weiss, Fokus die ruhige Flaeche -- dieselbe Regel wie ueberall,
+/// damit die Leiste sich nicht wie ein Fremdkoerper liest.
+struct LeistenStil: ButtonStyle {
+    let an: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        Inhalt(configuration: configuration, an: an)
+    }
+
+    private struct Inhalt: View {
+        let configuration: ButtonStyleConfiguration
+        let an: Bool
+        @Environment(\.isFocused) private var fokus
+
+        var body: some View {
+            configuration.label
+                .accessibilityAddTraits(an ? [.isButton, .isSelected] : .isButton)
+                .foregroundStyle(an ? Stil.grund : Stil.schrift)
+                .background(flaeche, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .scaleEffect(fokus ? 1.03 : 1)
+                .animation(Stil.fokusAnimation, value: fokus)
+        }
+
+        private var flaeche: Color {
+            if an { return Stil.schrift }
+            return fokus ? Stil.fokusflaeche : .clear
+        }
+    }
+}
+
 /// Zeile in einer Auswahlliste — Spurwahl, Einstellungen.
 struct ZeilenStil: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -411,7 +445,7 @@ struct Kopfleiste: View {
 
                 Button(action: aufsProfil) {
                     Profilzeichen(name: model.session?.userName ?? "?",
-                                  bild: model.benutzerbildURL(groesse: 180),
+                                  bild: model.benutzerbildURL(),
                                   groesse: 60)
                 }
                 .buttonStyle(ProfilStil())

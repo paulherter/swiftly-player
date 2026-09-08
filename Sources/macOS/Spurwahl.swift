@@ -25,50 +25,164 @@ struct Spurwahl: View {
 
     /// Wie hoch der Inhalt tatsaechlich waere.
     @State private var inhaltshoehe: CGFloat = 0
+    /// **Beide Spalten zaehlen, nicht nur die rechte.**
+    ///
+    /// Gemessen wurde erst nur der Inhalt rechts. Bei einer einzigen Tonspur
+    /// sind das rund 260 Punkte -- die Leiste links braucht aber ueber 310,
+    /// lief also ueber und wurde oben und unten beschnitten. Die Tafel ist so
+    /// hoch wie die hoehere der beiden.
+    @State private var leistenhoehe: CGFloat = 0
+    @AppStorage("technikschild") private var technikschild = false
+    @AppStorage("bildfuellend") private var bildfuellend = false
+    let bildfuellendSetzen: (Bool) -> Void
+
+    /// **Links waehlen, rechts sehen.**
+    ///
+    /// Vorher stand alles gleichzeitig ausgeklappt untereinander -- jede
+    /// Tonspur, jeder Untertitel, Tempo, Schlafzeit, Technik. Bei einer Datei
+    /// mit acht Spuren ist das eine Rolle, in der man den eingestellten Stand
+    /// suchen muss. Jetzt traegt die Leiste links den aktuellen Wert, und
+    /// rechts steht nur, was zu ihr gehoert.
+    enum Bereich: String, CaseIterable, Identifiable {
+        case ton, untertitel, bildformat, tempo, schlafzeit
+        var id: String { rawValue }
+        var name: LocalizedStringKey {
+            switch self {
+            case .ton:        "Ton"
+            case .untertitel: "Untertitel"
+            case .bildformat: "Bildformat"
+            case .tempo:      "Tempo"
+            case .schlafzeit: "Schlafzeit"
+            }
+        }
+        /// **Mit `return`, obwohl es ohne ginge.** Der Katalogpruefer sucht
+        /// unter anderem nach `titel: "..."` -- und `case .untertitel:`
+        /// endet genau darauf. Ohne das Wort dazwischen haelt er den
+        /// Symbolnamen fuer einen Text, der uebersetzt gehoert.
+        var symbol: String {
+            switch self {
+            case .ton:        return "speaker.wave.2"
+            case .untertitel: return "captions.bubble"
+            case .bildformat: return "aspectratio"
+            case .tempo:      return "speedometer"
+            case .schlafzeit: return "moon"
+            }
+        }
+    }
+
+    @State private var bereich: Bereich = .ton
 
     var body: some View {
-        // **Sie scrollt, sobald sie zu hoch wird.**
-        //
-        // Vorher war sie ein blanker Stapel ohne Grenze: eine Datei mit acht
-        // Tonspuren und einem Dutzend Untertiteln waechst ueber das Fenster
-        // hinaus, und was unten steht, ist nicht mehr zu erreichen.
-        //
+        HStack(alignment: .top, spacing: 0) {
+            leiste
+            Stil.linie.frame(width: 1)
+            ScrollView {
+                auswahl
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                        action: { inhaltshoehe = $0 }
+            }
+            .scrollIndicators(.never)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .id(bereich)
+            .transition(.opacity)
+        }
+        .frame(width: 660)
         // **Gemessen, nicht `maxHeight`.** Eine `ScrollView` nimmt sich
         // senkrecht alles, was sie kriegen kann; mit `maxHeight` allein
         // stuende die Tafel bei zwei Spuren mit einer handbreit Leere
         // darunter. Dieselbe Falle wie bei der Staffelwahl.
-        ScrollView {
-          inhalt
-            .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                action: { inhaltshoehe = $0 }
-        }
-        .scrollIndicators(.never)
-        .frame(width: 320, alignment: .leading)
-        .frame(height: min(max(inhaltshoehe, 80), 520))
-        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
+        .frame(height: min(max(max(inhaltshoehe + 36, leistenhoehe), 200), 460))
+        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
+        .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld))
         .overlay(RoundedRectangle(cornerRadius: Stil.eckeFeld)
             .strokeBorder(Stil.rand, lineWidth: 1))
         .shadow(color: .black.opacity(0.45), radius: 22, y: 10)
     }
 
-    private var inhalt: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            if !tonspuren.isEmpty {
-                Gruppe(titel: "Ton", symbol: "speaker.wave.2") {
-                    ForEach(tonspuren, id: \.trackId) { spur in
-                        Wahlzeile(text: spur.trackName,
-                                  gewaehlt: spur.trackName == gewaehlterTon) {
-                            waehleTon(spur)
-                        }
+    private var leiste: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Bereich.allCases) { b in
+                Button { withAnimation(.easeOut(duration: 0.16)) { bereich = b } } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: b.symbol)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Stil.akzent)
+                            .frame(width: 18)
+                        Text(b.name)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Stil.schrift)
+                        Spacer(minLength: 8)
+                        Text(wert(b))
+                            .font(.system(size: 13))
+                            .foregroundStyle(Stil.schriftLeise)
+                            .lineLimit(1)
                     }
+                    .padding(.horizontal, 12)
+                    .frame(height: 40)
+                    .background(bereich == b ? Stil.akzent.opacity(0.14) : .clear,
+                                in: RoundedRectangle(cornerRadius: 8))
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
 
-            Gruppe(titel: "Untertitel", symbol: "captions.bubble") {
-                Wahlzeile(text: String(localized: "Aus"),
-                          gewaehlt: gewaehlterUntertitel == nil) {
-                    waehleUntertitel(nil)
+            Divider().overlay(Stil.linie).padding(.vertical, 8)
+
+            // Der macOS-`Schalter` zeichnet nur, er schaltet nicht -- der
+            // Knopf liegt aussen herum. Anders als der geteilte auf iOS.
+            Button { technikschild.toggle() } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "waveform.badge.magnifyingglass")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Stil.akzent)
+                        .frame(width: 18)
+                    Text("Technikschild")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Stil.schrift)
+                    Spacer(minLength: 8)
+                    Schalter(an: technikschild)
                 }
+                .padding(.horizontal, 12)
+                .frame(height: 40)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+        }
+        .padding(10)
+        .frame(width: 260)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { leistenhoehe = $0 }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Stil.grund.opacity(0.5))
+    }
+
+    /// Der aktuelle Stand, neben dem Namen -- das ist der ganze Punkt der
+    /// Leiste: ein Blick sagt, was eingestellt ist.
+    private func wert(_ b: Bereich) -> String {
+        switch b {
+        case .ton:        gewaehlterTon ?? String(localized: "Keine")
+        case .untertitel: gewaehlterUntertitel ?? String(localized: "Aus")
+        case .bildformat: String(localized: bildfuellend ? "Formatfüllend" : "Ganzes Bild")
+        case .tempo:      Tempostufen.beschriftung(tempo)
+        case .schlafzeit: schlafminuten.map { "\($0)" } ?? String(localized: "Aus")
+        }
+    }
+
+    @ViewBuilder private var auswahl: some View {
+        switch bereich {
+        case .ton:
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(tonspuren, id: \.trackId) { spur in
+                    Wahlzeile(text: spur.trackName,
+                              gewaehlt: spur.trackName == gewaehlterTon) { waehleTon(spur) }
+                }
+            }
+        case .untertitel:
+            VStack(alignment: .leading, spacing: 0) {
+                Wahlzeile(text: String(localized: "Aus"),
+                          gewaehlt: gewaehlterUntertitel == nil) { waehleUntertitel(nil) }
                 ForEach(untertitel, id: \.trackId) { spur in
                     Wahlzeile(text: spur.trackName,
                               gewaehlt: spur.trackName == gewaehlterUntertitel) {
@@ -76,39 +190,39 @@ struct Spurwahl: View {
                     }
                 }
             }
-
-            VStack(alignment: .leading, spacing: 10) {
-                Spaltentitel(text: "Tempo", symbol: "slider.horizontal.3")
-                HStack(spacing: 8) {
-                    ForEach(Tempostufen.werte, id: \.self) { wert in
-                        Chip(beschriftung: Tempostufen.beschriftung(wert),
-                             aktiv: tempo == wert) {
-                            tempo = wert
-                        }
-                    }
+        case .bildformat:
+            VStack(alignment: .leading, spacing: 0) {
+                Wahlzeile(text: String(localized: "Ganzes Bild"), gewaehlt: !bildfuellend) {
+                    bildfuellend = false
+                    bildfuellendSetzen(false)
+                }
+                Wahlzeile(text: String(localized: "Formatfüllend"), gewaehlt: bildfuellend) {
+                    bildfuellend = true
+                    bildfuellendSetzen(true)
                 }
             }
-
-            // „Bild" aus der iPhone-Fassung fehlt hier mit Absicht: dort steht
-            // die Wahl zwischen fester und freier Ausrichtung, und ein Fenster
-            // hat keine Ausrichtung (VERHALTEN.md F).
-            VStack(alignment: .leading, spacing: 10) {
-                Spaltentitel(text: "Schlafzeit", symbol: "moon")
-                HStack(spacing: 8) {
-                    Chip(beschriftung: String(localized: "Aus"),
-                         aktiv: schlafminuten == nil) { schlafminuten = nil }
-                    ForEach(Schlafzeiten.werte, id: \.self) { minuten in
-                        Chip(beschriftung: "\(minuten)", aktiv: schlafminuten == minuten) {
-                            schlafminuten = minuten
-                        }
+        case .tempo:
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Tempostufen.werte, id: \.self) { wert in
+                    Wahlzeile(text: Tempostufen.beschriftung(wert),
+                              gewaehlt: tempo == wert) { tempo = wert }
+                }
+            }
+        case .schlafzeit:
+            VStack(alignment: .leading, spacing: 0) {
+                Wahlzeile(text: String(localized: "Aus"),
+                          gewaehlt: schlafminuten == nil) { schlafminuten = nil }
+                ForEach(Schlafzeiten.werte, id: \.self) { minuten in
+                    Wahlzeile(text: "\(minuten)", gewaehlt: schlafminuten == minuten) {
+                        schlafminuten = minuten
                     }
                 }
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
+
 }
+
 
 // MARK: - Bausteine
 

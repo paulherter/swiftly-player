@@ -68,6 +68,43 @@ enum Speicher {
         }
     }
 
+    // MARK: Seerr
+
+    /// **Der Seerr-Zugang liegt neben der Sitzung, nicht im Schluesselbund.**
+    ///
+    /// Auf den Apple-Fassungen geht er in die Keychain, mit der Begruendung:
+    /// „Der Keks ist ein Zugang zu einem Dienst, der Titel anfordern kann."
+    /// Ein Gegenstueck dazu gibt es hier nicht ohne neue Abhaengigkeit
+    /// (libsecret) — also dieselbe Ablage wie die Sitzung, mit denselben
+    /// Rechten: Ordner 0700, Datei 0600. Das ist schwaecher als ein
+    /// Schluesselbund und wird hier ausdruecklich so benannt, statt es als
+    /// gleichwertig auszugeben.
+    private static var seerrdatei: URL { ordner.appendingPathComponent("seerr.json") }
+
+    static func seerrLesen() -> Seerrzugang? {
+        guard let daten = try? Data(contentsOf: seerrdatei) else { return nil }
+        return try? JSONDecoder().decode(Seerrzugang.self, from: daten)
+    }
+
+    static func seerrSchreiben(_ zugang: Seerrzugang?) {
+        guard let zugang else {
+            try? FileManager.default.removeItem(at: seerrdatei)
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                    attributes: nurIch)
+            try JSONEncoder().encode(zugang).write(to: seerrdatei, options: [.atomic])
+            #if !os(Windows)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: seerrdatei.path)
+            #endif
+        } catch {
+            FileHandle.standardError.write(
+                Data("Seerr-Zugang ließ sich nicht sichern: \(error.localizedDescription)\n".utf8))
+        }
+    }
+
     static func loeschen() {
         try? FileManager.default.removeItem(at: datei)
         try? FileManager.default.removeItem(at: kontendatei)
@@ -85,6 +122,34 @@ enum Speicher {
     struct Kontenablage: Codable {
         var bund: Kontenbund
         var servername: String?
+    }
+
+    // MARK: - Downloads
+
+    /// **Die Liste, nicht die Dateien.** Was geladen wurde, liegt als Film
+    /// oder Folge im Downloadordner; hier steht nur, was es ist und wie weit
+    /// es ist. Beides zusammenzuwerfen waere der Fehler, den ein
+    /// abgebrochener Download sofort sichtbar macht: die Datei ist halb da,
+    /// die Liste weiss es, und nur mit beidem laesst sich fortsetzen.
+    private static var downloaddatei: URL { ordner.appendingPathComponent("downloads.json") }
+
+    /// Wo die geladenen Dateien liegen — neben der Liste, nicht darin.
+    static var downloadordner: URL { ordner.appendingPathComponent("Downloads") }
+
+    static func downloadsLesen() -> [Downloadposten] {
+        guard let daten = try? Data(contentsOf: downloaddatei) else { return [] }
+        return (try? JSONDecoder().decode([Downloadposten].self, from: daten)) ?? []
+    }
+
+    static func downloadsSchreiben(_ posten: [Downloadposten]) {
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                    attributes: nurIch)
+            try JSONEncoder().encode(posten).write(to: downloaddatei, options: [.atomic])
+        } catch {
+            FileHandle.standardError.write(
+                Data("Downloadliste ließ sich nicht sichern: \(error.localizedDescription)\n".utf8))
+        }
     }
 
     private static var kontendatei: URL { ordner.appendingPathComponent("konten.json") }

@@ -32,18 +32,37 @@ struct Wiedergabeblatt: View {
     @FocusState private var amChip: Kategorie?
     /// Die Zaehler, im selben Takt nachgefuehrt wie der Player selbst.
     @State private var zaehler: Spielwerte?
+    @AppStorage("technikschild") private var technikschild = false
+    /// Derselbe Schluessel wie auf dem iPhone -- was dort die Geste setzt,
+    /// setzt hier die Karte.
+    @AppStorage("bildfuellend") private var bildfuellend = false
 
 
     enum Kategorie: String, CaseIterable, Identifiable {
-        case untertitel, ton, tempo, schlafzeit, technik
+        case untertitel, ton, bild, tempo, schlafzeit, technik
         var id: String { rawValue }
         var name: LocalizedStringKey {
             switch self {
             case .untertitel: "Untertitel"
             case .ton:        "Ton"
+            case .bild:       "Bild"
             case .tempo:      "Tempo"
             case .schlafzeit: "Schlafzeit"
-            case .technik:    "Technik"
+            case .technik:    "Technikschild"
+            }
+        }
+
+        /// **Mit `return`, obwohl es ohne ginge.** Der Katalogpruefer sucht
+        /// nach `titel: "..."`, und `case .untertitel:` endet genau darauf --
+        /// ohne das Wort dazwischen haelt er den Symbolnamen fuer Text.
+        var symbol: String {
+            switch self {
+            case .untertitel: return "captions.bubble.fill"
+            case .ton:        return "speaker.wave.2.fill"
+            case .bild:       return "aspectratio"
+            case .tempo:      return "speedometer"
+            case .schlafzeit: return "moon.fill"
+            case .technik:    return "chart.bar.fill"
             }
         }
     }
@@ -61,26 +80,47 @@ struct Wiedergabeblatt: View {
             .ignoresSafeArea(edges: .bottom)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text(titel)
-                    .font(Stil.knopf)
-                    .foregroundStyle(Stil.schriftLeise)
-                    .lineLimit(1)
-
-                HStack(spacing: 16) {
-                    ForEach(Kategorie.allCases) { k in
-                        Button(k.name) { kategorie = k }
-                            .buttonStyle(ChipStil(an: kategorie == k))
-                            .focused($amChip, equals: k)
-                    }
+                // **Der Beleg steht neben dem Titel, nicht unter allem.**
+                //
+                // Er sass unten quer unter beiden Spalten und las sich wie
+                // eine Fusszeile. Was der Server ausliefert, gehoert aber
+                // nach oben zum Titel: es beschreibt, was hier laeuft.
+                HStack(alignment: .firstTextBaseline, spacing: 24) {
+                    Text(titel)
+                        .font(Stil.knopf)
+                        .foregroundStyle(Stil.schriftLeise)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    beleg
                 }
-                .focusSection()
-                .padding(.top, 24)
 
-                karten
-                    .padding(.top, 34)
+                // **Links die Leiste, rechts die Werte.**
+                //
+                // Vorher stand die Kategorienreihe waagerecht und die Karten
+                // darunter -- ebenfalls waagerecht. Damit lag beides auf
+                // derselben Achse, und der Fokus wanderte beim Wechseln
+                // zwischen zwei Reihen, die gleich aussahen. Getrennte Achsen
+                // sagen, was was ist: senkrecht waehlt man den Bereich,
+                // rechts steht, was darin zur Wahl steht.
+                //
+                // So macht es auch Apples eigener Abspieler.
+                HStack(alignment: .top, spacing: 48) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        spaltenmarke("Einstellungen")
+                        ForEach(Kategorie.allCases) { k in
+                            leistenzeile(k)
+                        }
+                    }
+                    .frame(width: 460, alignment: .leading)
+                    .focusSection()
 
-                beleg
-                    .padding(.top, 34)
+                    VStack(alignment: .leading, spacing: 10) {
+                        spaltenmarke(kategorie.name)
+                        karten
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.top, 28)
             }
             .padding(.horizontal, Stil.randSeite)
             .padding(.bottom, Stil.randOben)
@@ -99,19 +139,68 @@ struct Wiedergabeblatt: View {
         .task(id: kategorie) {
             guard kategorie == .technik else { return }
             while !Task.isCancelled {
-                zaehler = Spielwerte(flaeche.statistik)
+                zaehler = Spielwerte(flaeche.statistik, stelle: flaeche.positionSeconds,
+                                     laeuft: flaeche.isPlaying, vorher: zaehler)
                 try? await Task.sleep(for: .milliseconds(500))
             }
         }
         .onExitCommand { offen = false }
     }
 
+    /// **Die Zeile traegt den Namen und den Stand.**
+    ///
+    /// Das war der Punkt des ganzen Umbaus: ein Blick sagt, was eingestellt
+    /// ist. Als Chip stand dort nur der Name, und den Stand fand man erst,
+    /// wenn man die Kategorie geoeffnet hatte.
+    private func leistenzeile(_ k: Kategorie) -> some View {
+        Button { kategorie = k } label: {
+            HStack(spacing: 18) {
+                Image(systemName: k.symbol)
+                    .font(.system(size: 24))
+                    .frame(width: 30)
+                Text(k.name)
+                    .font(.system(size: 27, weight: kategorie == k ? .semibold : .regular))
+                Spacer(minLength: 12)
+                Text(wert(k))
+                    .font(.system(size: 25))
+                    .opacity(0.55)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 22)
+            .frame(height: 62)
+        }
+        .buttonStyle(LeistenStil(an: kategorie == k))
+        .focused($amChip, equals: k)
+    }
+
+    private func spaltenmarke(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(.system(size: 19, weight: .medium))
+            .textCase(.uppercase)
+            .tracking(1.6)
+            .foregroundStyle(Stil.schriftSehrLeise)
+            .padding(.horizontal, 22)
+            .padding(.bottom, 8)
+    }
+
+    /// Was gerade gilt -- neben dem Namen in der Leiste.
+    private func wert(_ k: Kategorie) -> String {
+        switch k {
+        case .untertitel: untertitelJetzt ?? String(localized: "Aus")
+        case .ton:        tonJetzt ?? String(localized: "Keine")
+        case .bild:       String(localized: bildfuellend ? "Formatfüllend" : "Ganzes Bild")
+        case .tempo:      Tempostufen.beschriftung(tempo)
+        case .schlafzeit: schlafminuten.map { "\($0)" } ?? String(localized: "Aus")
+        case .technik:    String(localized: technikschild ? "An" : "Aus")
+        }
+    }
+
     // MARK: Karten
 
     @ViewBuilder
     private var karten: some View {
-        ScrollView(.horizontal) {
-            LazyHStack(spacing: 24) {
+        ScrollView(.vertical) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 switch kategorie {
                 case .untertitel:
                     Wahlkarte(name: String(localized: "Aus"), marke: nil,
@@ -163,72 +252,53 @@ struct Wiedergabeblatt: View {
                                   an: schlafminuten == minuten) { schlafminuten = minuten }
                     }
 
-                // **Werte, keine Wahl.** Deshalb `Wertfeld` und nicht
-                // `Wahlkarte`: nichts hiervon laesst sich druecken, und eine
-                // Karte, die aussieht wie die vier daneben, verspraeche das.
-                // Aus demselben Grund ist die Reihe hier nicht fokussierbar.
-                case .technik:
-                    if let z = zaehler {
-                        Wertfeld(titel: "Verworfen", wert: "\(z.verworfen)",
-                                 warnung: z.verworfen > 0)
-                        Wertfeld(titel: "Zu spät", wert: "\(z.zuSpaet)",
-                                 warnung: z.zuSpaet > 0)
-                        Wertfeld(titel: "Gezeigt", wert: "\(z.gezeigt)")
-                        Wertfeld(titel: "Ton verloren", wert: "\(z.tonVerloren)",
-                                 warnung: z.tonVerloren > 0)
-                        Wertfeld(titel: "Eingang", wert: z.eingang)
-                        Wertfeld(titel: "Demuxer", wert: z.demuxer)
-                        Wertfeld(titel: "Bild entschlüsselt", wert: "\(z.videoBloecke)")
-                        Wertfeld(titel: "Ton entschlüsselt", wert: "\(z.tonBloecke)")
-                    } else {
-                        Wertfeld(titel: "Zähler", wert: String(localized: "Noch nichts"))
+                // **Aus dem Auszug ist ein Schalter geworden.**
+                //
+                // Hier standen dieselben Zahlen als Reiter, und das ist die
+                // falsche Form fuer die Frage, die sie beantworten: „laeuft
+                // es gerade rund" sieht man nicht einmal nach, man sieht ihm
+                // zu. Ein Blatt verdeckt dabei genau das Bild, um das es
+                // geht, und geht wieder zu. Die Zahlen stehen jetzt als
+                // **Dasselbe wie das Zusammenziehen auf dem iPhone.**
+                //
+                // Zwei Zustaende: das ganze Bild mit Balken, oder
+                // formatfuellend mit Beschnitt. Ein dritter waere nur eine
+                // Streckung. Am Fernseher gibt es keine Finger, also steht
+                // hier, was dort die Geste macht -- derselbe gemerkte Wert,
+                // damit beide Plattformen dasselbe meinen.
+                case .bild:
+                    Wahlkarte(name: String(localized: "Ganzes Bild"),
+                              marke: nil, an: !bildfuellend) {
+                        bildfuellend = false
+                        flaeche.bildfuellend(false)
+                    }
+                    Wahlkarte(name: String(localized: "Formatfüllend"),
+                              marke: nil, an: bildfuellend) {
+                        bildfuellend = true
+                        flaeche.bildfuellend(true)
                     }
 
-                    // **Die Zaehler zuerst, die Herkunftsangaben dahinter.**
-                    //
-                    // Sie standen vorn, weil sie beim Suchen nach dem
-                    // Sprungfehler die wichtigsten waren. Fuer den taeglichen
-                    // Blick ist es umgekehrt: wer den Reiter oeffnet, will
-                    // wissen, ob Bilder verlorengehen. **Steht vor den
-                    // Zaehlern, weil es die Frage davor beantwortet.** „Es
-                    // ruckelt, aber nichts fehlt" ist keine Sache der Zaehler,
-                    // sondern der Ausgabekadenz — siehe `Bildtakt`. Ohne diese
-                    // Zeile sieht man dem Bild nicht an, ob der Fernseher
-                    // mitgeschaltet hat.
-                    Wertfeld(titel: "Bildfläche", wert: flaechenzeile,
-                             warnung: !flaecheStimmt)
-                    Wertfeld(titel: "Ausgang", wert: ausgangzeile,
-                             warnung: !Bildtakt.erlaubt)
-                    // **Direct Play und Direct Stream sind nicht dasselbe.**
-                    //
-                    // Der Haken unten zeigt beide gleich, weil beide das Bild
-                    // unangetastet lassen. Beim Direct Stream packt der Server
-                    // den Behaelter aber live um — der Anlauf dauert, und
-                    // Spulen wird zaeh. Wer nur den Haken sieht, sucht den
-                    // Fehler im Player.
-                    Wertfeld(titel: "Auslieferung", wert: plan.method.rawValue,
-                             warnung: plan.method != .directPlay)
-                    // Ohne `mkv_trusted` verwirft VLC 4 den Index der Datei
-                    // und ein Sprung landet am Dateianfang. Siehe `oeffnen`.
-                    Wertfeld(titel: "MKV-Index", wert: behaelterzeile,
-                             warnung: istMkv && !flaeche.matroskaVertraut)
-                    // **Die Zahl, an der sich „zu langsam" entscheidet.**
-                    //
-                    // Direct Play heisst: die Datei muss in Echtzeit ueber die
-                    // Leitung. Schafft der Weg vom Server ihre Bitrate nicht,
-                    // laeuft der Puffer leer — egal wie richtig alles andere
-                    // eingestellt ist. Daneben steht „Eingang", was wirklich
-                    // ankommt. Liegt der deutlich darunter, ist die Ursache
-                    // gefunden und sie liegt nicht im Player.
-                    Wertfeld(titel: "Datei braucht", wert: bedarfzeile,
-                             warnung: false)
+                // `Technikschild` oben links ueber dem laufenden Film; hier
+                // bleibt nur, es an- und auszuschalten.
+                case .technik:
+                    Wahlkarte(name: String(localized: "Schild anzeigen"),
+                              marke: nil, an: technikschild) {
+                        technikschild = true
+                    }
+                    Wahlkarte(name: String(localized: "Aus"),
+                              marke: nil, an: !technikschild) {
+                        technikschild = false
+                    }
                 }
             }
             .padding(.vertical, 10)
         }
         .scrollClipDisabled()
         .scrollIndicators(.hidden)
-        .frame(height: 150)
+        // Aus der waagerechten Reihe stammte eine feste Hoehe von 150 -- das
+        // war die Hoehe *einer* Karte. Senkrecht steht dort eine Liste, und
+        // die darf so hoch werden, wie das Blatt es zulaesst.
+        .frame(maxHeight: 330)
         .focusSection()
     }
 
@@ -358,6 +428,7 @@ struct Wiedergabeblatt: View {
         case .bereit:       return text + " " + String(localized: "fps · ohne Wechsel") + grund
         case .abgeschaltet: return text + " " + String(localized: "fps · Anpassung aus") + grund
         case .unerreichbar: return text + " " + String(localized: "fps · Anzeige stumm") + grund
+        case .inSwiftlyAus: return text + " " + String(localized: "fps · in Swiftly aus") + grund
         }
     }
 
@@ -412,65 +483,6 @@ struct Wiedergabeblatt: View {
         let bekannt = ["SRT", "ASS", "SSA", "PGS", "VTT", "SUB", "DVBSUB"]
         let gross = name.uppercased()
         return bekannt.first { gross.contains($0) }
-    }
-}
-
-/// VLCs Zaehlwerk, uebersetzt.
-///
-/// **Warum das ueberhaupt jemand sehen will:** diese App transkodiert nie.
-/// Ob das gutgeht, sieht man einer Wiedergabe nicht an — ein Bild, das
-/// stockt, und ein Bild, das still Einzelbilder wegwirft, sehen aus drei
-/// Metern gleich aus. `verworfen` ist der Unterschied. Steht dort eine Null,
-/// laeuft die Datei wirklich glatt; steigt sie waehrend des Zusehens, ist
-/// die Datei zu schwer fuer das Geraet, und zwar unabhaengig davon, was der
-/// Server meldet.
-///
-/// Die Rohwerte sind kumulativ seit Beginn der Wiedergabe, nicht pro
-/// Sekunde — deshalb steht hier auch nichts von „pro Sekunde".
-struct Spielwerte {
-    let verworfen: UInt64
-    let zuSpaet: UInt64
-    let gezeigt: UInt64
-    let tonVerloren: UInt64
-    let videoBloecke: UInt64
-    let tonBloecke: UInt64
-    /// Bitraten kommen als Byte pro Sekunde in `Float` — hier gleich als
-    /// Text, damit die Umrechnung an einer Stelle steht.
-    let eingang: String
-    let demuxer: String
-
-    init?(_ roh: VLCMedia.Stats?) {
-        guard let roh else { return nil }
-        // **Hat VLC die Struktur gar nicht gefuellt, kommt Speicherschrott.**
-        //
-        // `statistics` liefert sie auch dann, wenn das Medium noch keine hat;
-        // die Felder stehen dann auf dem, was zufaellig im Speicher lag. Eine
-        // Milliarde Bilder waeren bei 60 Hz ueber ein halbes Jahr am Stueck —
-        // was darueber liegt, ist keine Messung.
-        let grenze: UInt64 = 1_000_000_000
-        guard roh.displayedPictures < grenze, roh.lostPictures < grenze,
-              roh.latePictures < grenze, roh.decodedVideo < grenze,
-              roh.decodedAudio < grenze, roh.lostAudioBuffers < grenze
-        else { return nil }
-        verworfen    = roh.lostPictures
-        zuSpaet      = roh.latePictures
-        gezeigt      = roh.displayedPictures
-        tonVerloren  = roh.lostAudioBuffers
-        videoBloecke = roh.decodedVideo
-        tonBloecke   = roh.decodedAudio
-        eingang      = Spielwerte.rate(roh.inputBitrate)
-        demuxer      = Spielwerte.rate(roh.demuxBitrate)
-    }
-
-    /// VLC misst in Byte je Sekunde. Mal acht sind Bit, und ab einem Mbit
-    /// schreibt sich das lesbarer in Mbit/s.
-    private static func rate(_ bytesProSekunde: Float) -> String {
-        let bit = Double(bytesProSekunde) * 8
-        if bit <= 0 { return "—" }
-        if bit >= 1_000_000 {
-            return String(format: "%.1f Mbit/s", bit / 1_000_000)
-        }
-        return String(format: "%.0f kbit/s", bit / 1_000)
     }
 }
 
@@ -550,7 +562,7 @@ struct Wahlkarte: View {
                         .foregroundStyle(Stil.akzent)
                 }
             }
-            .frame(width: 380, height: 130, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
             .padding(.horizontal, 26)
         }
         .buttonStyle(KartenStil())

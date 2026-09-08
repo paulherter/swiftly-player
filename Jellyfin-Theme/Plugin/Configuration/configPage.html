@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <title>Swiftly</title>
+</head>
+<body>
+<div id="SwiftlyConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
+    <div data-role="content">
+        <div class="content-primary">
+
+            <form id="SwiftlyConfigForm">
+
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Swiftly</h2>
+                    <p class="fieldDescription">
+                        Bringt die Weboberfläche auf das Erscheinungsbild der Swiftly-App —
+                        genauer: auf das der macOS-Fassung. Nach dem Speichern die Seite
+                        einmal neu laden.
+                    </p>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="Akzent">Akzentfarbe</label>
+                    <input is="emby-input" type="text" id="Akzent" name="Akzent"
+                           pattern="#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?" />
+                    <div class="fieldDescription">
+                        Trägt Fortschritt, Auswahl und den Direct-Play-Beleg — nie eine Fläche.
+                        Voreinstellung <code>#5CD1C2</code>, der Akzent der App.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="Kachelbreite">
+                        Breite eines Plakats
+                    </label>
+                    <input is="emby-input" type="number" id="Kachelbreite" name="Kachelbreite"
+                           min="90" max="320" step="10" />
+                    <div class="fieldDescription">
+                        In Punkten. 150 wie auf dem Mac: dort ist die Kachel fest, und die
+                        Spaltenzahl ergibt sich daraus — Jellyfin macht es andersherum.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="Seitenleiste" />
+                        <span>Stehende Seitenleiste</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        Jellyfins Schublade bleibt offen stehen und wird auf 220 Punkt gebracht,
+                        wie auf dem Mac. Der einzige Schalter hier, der wirklich am Aufbau
+                        dreht — deshalb abschaltbar.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="MeineMedienAusblenden" />
+                        <span>„Meine Medien“ auf der Startseite ausblenden</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        Auf dem Mac gibt es die Reihe nicht — die Bibliotheken stehen in der
+                        Leiste, und zweimal derselbe Weg auf einer Seite ist einer zu viel.
+                    </div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span>Speichern</span>
+                    </button>
+                </div>
+
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var kennung = 'b7f4c1a2-3d6e-4c58-9a10-5f2e8c7d4b39';
+
+            function fuellen(c) {
+                document.querySelector('#Akzent').value = c.Akzent || '#5CD1C2';
+                document.querySelector('#Kachelbreite').value = c.Kachelbreite || 150;
+                document.querySelector('#Seitenleiste').checked = c.Seitenleiste !== false;
+                document.querySelector('#MeineMedienAusblenden').checked =
+                    c.MeineMedienAusblenden !== false;
+            }
+
+            document.querySelector('#SwiftlyConfigPage')
+                .addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(kennung).then(function (c) {
+                        fuellen(c);
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+            document.querySelector('#SwiftlyConfigForm')
+                .addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(kennung).then(function (c) {
+                        c.Akzent = document.querySelector('#Akzent').value;
+                        c.Kachelbreite = parseInt(
+                            document.querySelector('#Kachelbreite').value, 10) || 150;
+                        c.Seitenleiste = document.querySelector('#Seitenleiste').checked;
+                        c.MeineMedienAusblenden =
+                            document.querySelector('#MeineMedienAusblenden').checked;
+                        ApiClient.updatePluginConfiguration(kennung, c)
+                            .then(Dashboard.processPluginConfigurationUpdateResult);
+                    });
+                    return false;
+                });
+        })();
+    </script>
+</div>
+</body>
+</html>

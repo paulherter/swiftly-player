@@ -66,6 +66,19 @@ final class Uebernahmemodell {
         angebote = Uebernahme.angebote(aus: sitzungen,
                                        eigeneGeraeteID: AppModel.deviceID,
                                        eigeneBenutzerID: benutzer)
+        // **Warum nichts angeboten wird, muss ablesbar sein.** Fuenf Gruende
+        // sehen von aussen gleich aus -- das Abzeichen fehlt schlicht. In der
+        // ausgelieferten Fassung faellt das hier heraus.
+        if angebote.isEmpty {
+            let gruende = sitzungen.map { s in
+                let wer = s.geraetename ?? s.programm ?? "?"
+                let warum = Uebernahme.warumNicht(s, eigeneGeraeteID: AppModel.deviceID,
+                                                  eigeneBenutzerID: benutzer) ?? "taugt"
+                return "\(wer): \(warum)"
+            }
+            Protokoll.schreib("[Uebernahme] \(sitzungen.count) Sitzungen, kein Angebot"
+                + (gruende.isEmpty ? "" : " — " + gruende.joined(separator: " · ")))
+        }
     }
 
     /// Das andere Gerät anhalten und hier weitermachen.

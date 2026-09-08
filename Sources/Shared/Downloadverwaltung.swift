@@ -258,8 +258,20 @@ final class Downloadverwaltung {
         }
     }
 
+    /// **Wer absichtlich angehalten hat.**
+    ///
+    /// `URLSession` meldet einen Abbruch als Fehler — dieselbe Rueckmeldung,
+    /// die auch der Netzwechsel und der abgestuerzte Server ausloesen. Ohne
+    /// dieses Merkmal kann `gescheitert` die drei nicht unterscheiden und
+    /// setzt auf `.fehler`, sobald der Server keine Fortsetzdaten mitgibt.
+    /// Der Ring zeigte dann Rot statt Pause, und ein zweiter Tipp darauf
+    /// heisst „nochmal versuchen": das Laden ging weiter. Genau so gemeldet —
+    /// „wenn ich auf Pause gehe, laedt der weiter runter".
+    @ObservationIgnored private var absichtlichAngehalten: Set<String> = []
+
     func anhalten(_ id: String) {
         guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
+        absichtlichAngehalten.insert(id)
         if let aufgabe = aufgaben[id] {
             aufgabe.cancel { [weak self] daten in
                 Task { @MainActor in
@@ -275,6 +287,7 @@ final class Downloadverwaltung {
 
     func fortsetzen(_ id: String) {
         guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
+        absichtlichAngehalten.remove(id)
         posten[i].stand = .wartet
         posten[i].grund = nil
         sichern()
@@ -282,6 +295,7 @@ final class Downloadverwaltung {
     }
 
     func entfernen(_ id: String) {
+        absichtlichAngehalten.remove(id)
         if let aufgabe = aufgaben[id] { aufgabe.cancel(); aufgaben[id] = nil }
         fortsetzdaten[id] = nil
         if let p = posten.first(where: { $0.id == id }) {
@@ -385,8 +399,29 @@ final class Downloadverwaltung {
 
     // MARK: Rückmeldungen aus der Sitzung
 
+    /// Zuletzt veroeffentlichter Stand je Download — siehe `fortschritt`.
+    @ObservationIgnored private var gemeldet: [String: Int64] = [:]
+
     private func fortschritt(_ id: String, geladen: Int64, gesamt: Int64) {
         guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
+
+        // **Nicht jede Rueckmeldung ist eine Aenderung, die man sieht.**
+        //
+        // `URLSession` meldet den Fortschritt im Takt der ankommenden Pakete
+        // — bei einer schnellen Leitung viele Male je Bild. Jede Meldung
+        // schreibt in `posten`, und weil `@Observable` die **ganze** Liste
+        // als eine Eigenschaft fuehrt, zeichnet danach jede Ansicht neu, die
+        // irgendetwas daraus liest: in einer Folgenliste also jede Zeile
+        // samt Ring. Das ist das Flackern.
+        //
+        // Ein halbes Prozent ist bei einem 28-Punkt-Ring rund ein halbes
+        // Pixel Bogen — darunter gibt es nichts zu sehen, und der letzte
+        // Schritt auf voll kommt ohnehin ueber `abgeschlossen`.
+        let grenze = max(Int64(1), (gesamt > 0 ? gesamt : posten[i].bytes) / 200)
+        let vorher = gemeldet[id] ?? 0
+        guard geladen - vorher >= grenze || geladen < vorher else { return }
+        gemeldet[id] = geladen
+
         posten[i].geladen = geladen
         // Sagt der Server im Katalog keine Grösse, nimmt der Balken die aus
         // der Antwort. **Nicht gesichert** — das wäre ein Schreibvorgang je
@@ -406,6 +441,7 @@ final class Downloadverwaltung {
 
     private func abgeschlossen(_ id: String, gelungen: Bool) {
         aufgaben[id] = nil
+        gemeldet[id] = nil
         guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
         if gelungen {
             posten[i].stand = .fertig
@@ -423,6 +459,22 @@ final class Downloadverwaltung {
         aufgaben[id] = nil
         if let fortsetzen { fortsetzdaten[id] = fortsetzen }
         guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
+
+        // **Wer selbst angehalten hat, bekommt keinen Fehler zu sehen.**
+        //
+        // Der Abbruch kommt hier als Fehler an, weil `URLSession` ihn so
+        // meldet. Ob er von der Pausetaste kam oder vom weggebrochenen Netz,
+        // steht in der Meldung nicht — nur wir wissen es. Ohne das blieb ein
+        // Halt ohne Fortsetzdaten als `.fehler` stehen, der Ring wurde rot,
+        // und der naechste Tipp hiess „nochmal versuchen" statt „weiter".
+        if absichtlichAngehalten.remove(id) != nil {
+            posten[i].stand = .angehalten
+            posten[i].grund = nil
+            sichern()
+            takt()
+            return
+        }
+
         // Ein abgebrochener Download mit Fortsetzdaten ist kein Fehler,
         // sondern eine Pause — meist der Netzwechsel. Als Fehler gezeigt,
         // stünde ein rotes Zeichen da, wo nur die U-Bahn schuld war.

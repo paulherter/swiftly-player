@@ -28,6 +28,9 @@ struct PlayerScreen: View {
     @State private var wechselt = false
     @State private var hinweis: String?
     @State private var flaeche: VLCPlayerView?
+    /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
+    @AppStorage("technikschild") private var technikschild = false
+    @State private var spielwerte: Spielwerte?
     @State private var stand: Wiedergabetakt.Stand
 
     /// **Was der Knopf zeigt, bis der Takt nachkommt.**
@@ -117,6 +120,12 @@ struct PlayerScreen: View {
         _stand = State(initialValue: .init(position: wunsch.startAt))
     }
 
+    /// Formatfuellend statt ganzes Bild -- dieselbe Wahl wie die Geste auf
+    /// dem iPhone und die Karte am Fernseher, unter demselben Schluessel.
+    @AppStorage("bildfuellend") private var bildfuellend = false
+    /// Verhindert, dass ein einziges Zusammenziehen mehrfach umschaltet.
+    @State private var zoomSchonGeschaltet = false
+
     var body: some View {
         ZStack {
             Color.black
@@ -128,6 +137,10 @@ struct PlayerScreen: View {
                 // Der Knopf hängt an VLCs eigener Meldung, nicht am Takt und
                 // nicht am Klick — siehe `laeuftAnzeige`.
                 neu.laeuftGemeldet = { laeuft in laeuftAnzeige = laeuft }
+                // Was einmal gewaehlt wurde, gilt auch fuer die naechste
+                // Folge -- derselbe Schluessel wie die Geste auf dem iPhone
+                // und die Karte am Fernseher.
+                neu.bildfuellend(bildfuellend)
             }
             .ignoresSafeArea()
             // Ohne das nimmt die Animation der Steuerung die Videofläche mit
@@ -135,6 +148,32 @@ struct PlayerScreen: View {
             // Eine Narbe der iPhone-Fassung, die mit Bild-im-Bild nichts zu
             // tun hat und uns genauso trifft.
             .transaction { $0.animation = nil }
+            // **Zusammenziehen am Trackpad wechselt das Bildformat.**
+            //
+            // Dasselbe wie die Geste auf dem iPhone, nur mit zwei Fingern auf
+            // dem Trackpad; am Fernseher steht dafuer eine Karte im Blatt.
+            // Zwei Zustaende -- ganzes Bild mit Balken, oder formatfuellend
+            // mit Beschnitt. Ein dritter waere nur eine Streckung.
+            //
+            // Der Riegel ist noetig, weil `onChanged` waehrend einer Geste
+            // dutzendfach feuert: ohne ihn haette ein einziges Auseinander-
+            // ziehen zwischen beiden Zustaenden geflackert.
+            .simultaneousGesture(
+                MagnifyGesture(minimumScaleDelta: 0.05)
+                    .onChanged { wert in
+                        guard !zoomSchonGeschaltet else { return }
+                        if wert.magnification > 1.15, !bildfuellend {
+                            zoomSchonGeschaltet = true
+                            bildfuellend = true
+                            flaeche?.bildfuellend(true)
+                        } else if wert.magnification < 0.85, bildfuellend {
+                            zoomSchonGeschaltet = true
+                            bildfuellend = false
+                            flaeche?.bildfuellend(false)
+                        }
+                    }
+                    .onEnded { _ in zoomSchonGeschaltet = false }
+            )
 
             // **Deckend**, nicht nur ein Rädchen. Vorher stand hier ein
             // durchsichtiger `Lader()`, und das Video lief die ganze Zeit
@@ -170,6 +209,32 @@ struct PlayerScreen: View {
                 steuerung.transition(.opacity)
             }
         }
+        // **Das Technikschild.** Auskunft, kein Bedienteil — es nimmt keine
+        // Klicks und steht deshalb auch der Steuerung nicht im Weg.
+        // Angeschaltet wird es in den Wiedergabe-Einstellungen.
+        .overlay(alignment: .topLeading) {
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte, flaeche: flaeche)
+                    .padding(.leading, Stil.randAbstand)
+                    // Unter der Fensterampel: sie liegt im Vollbild nicht da,
+                    // im Fenster schon, und ein Schild darunter ist in beiden
+                    // Lagen richtig.
+                    .padding(.top, 44)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Stil.einblenden, value: technikschild)
+        .task(id: technikschild) {
+            guard technikschild else { return }
+            while !Task.isCancelled {
+                // Die Rate entsteht aus der Differenz zum letzten Mal —
+                // siehe `Spielwerte`.
+                spielwerte = Spielwerte(flaeche?.statistik, stelle: flaeche?.positionSeconds ?? 0,
+                                        laeuft: flaeche?.isPlaying ?? false, vorher: spielwerte)
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .background(Fensterzugriff(halter: halter))
         // Der Zeiger ruft die Steuerung — nicht ein Klick. Ein Klick ins Bild
         // täte auf dem Mac nichts Erwartbares.
@@ -202,6 +267,8 @@ struct PlayerScreen: View {
             if weg > 2 { steuerungZeigen() }
         }
         .onAppear { steuerungZeigen() }
+        // Nach dem Schliessen der Tafel laeuft die Viersekundenuhr neu an.
+        .onChange(of: spurwahlOffen) { _, offen in if !offen { steuerungZeigen() } }
         .onAppear {
             zentraleUebernehmen()
             // **Auch die Fernsteuerung, nicht nur der Sperrbildschirm.**
@@ -334,8 +401,8 @@ struct PlayerScreen: View {
             // (`Fensterhalter.setzeKlein`) bleibt stehen, sie ist nur nicht
             // mehr erreichbar.
             Spacer(minLength: 0)
-            Chip(beschriftung: String(localized: "Ton und Untertitel"),
-                 symbol: "slider.horizontal.3", aktiv: spurwahlOffen) {
+            Chip(beschriftung: String(localized: "Wiedergabe"),
+                 symbol: "slider.horizontal.3", nurSymbol: true, aktiv: spurwahlOffen) {
                 withAnimation(Stil.zeitSprung) { spurwahlOffen.toggle() }
             }
             .padding(.leading, 12)
@@ -349,7 +416,8 @@ struct PlayerScreen: View {
                              gewaehlterUntertitel: flaeche.gewaehlterUntertitel?.trackName,
                              tempo: $tempo, schlafminuten: $schlafminuten,
                              waehleTon: { flaeche.waehleTonspur($0); steuerungZeigen() },
-                             waehleUntertitel: { flaeche.waehleUntertitel($0); steuerungZeigen() })
+                             waehleUntertitel: { flaeche.waehleUntertitel($0); steuerungZeigen() },
+                             bildfuellendSetzen: { flaeche.bildfuellend($0) })
                         .offset(y: 46)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -359,7 +427,7 @@ struct PlayerScreen: View {
             // aufsteigt und wieder dorthin verschwindet. Das Zeichen
             // beschreibt eine Bewegung, die es hier wirklich gibt.
             Chip(beschriftung: String(localized: "Schließen"),
-                 symbol: "chevron.down", aktiv: false) { beenden() }
+                 symbol: "chevron.down", nurSymbol: true, aktiv: false) { beenden() }
                 .padding(.leading, 12)
         }
         .padding(.trailing, 22)
@@ -606,6 +674,10 @@ struct PlayerScreen: View {
     /// Ohne die vier Sekunden — für den Fall, dass der Zeiger das Fenster
     /// verlässt.
     private func steuerungSofortWeg() {
+        // Auch hier: eine offene Auswahl bleibt. Den Zeiger aus dem Fenster
+        // zu schieben ist kein Grund, eine Entscheidung abzuraeumen, die
+        // gerade getroffen wird.
+        guard !spurwahlOffen else { return }
         ruheAufgabe?.cancel()
         withAnimation(.easeInOut(duration: 0.34)) {
             steuerungDa = false
@@ -621,7 +693,17 @@ struct PlayerScreen: View {
         ruheAufgabe?.cancel()
         ruheAufgabe = Task {
             try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, stand.laeuft, !amRegler else { return }
+            // **Solange die Tafel offen ist, wird nichts weggenommen.**
+            //
+            // Sie stand mit im Ausblenden -- wer die Einstellungen oeffnete
+            // und die Maus liegen liess, sah nach vier Sekunden alles
+            // verschwinden, die Auswahl eingeschlossen. Eine offene Auswahl
+            // ist Aufmerksamkeit; sie zaehlt wie eine Hand am Regler.
+            //
+            // Die Uhr faengt nach dem Schliessen von vorn an, siehe unten --
+            // dieser Riegel sitzt nach dem Schlafen, die Aufgabe endet hier
+            // also, ohne eine neue anzustossen.
+            guard !Task.isCancelled, stand.laeuft, !amRegler, !spurwahlOffen else { return }
             withAnimation(.easeInOut(duration: 0.34)) {
                 steuerungDa = false
                 halter.setzeSteuerung(false)
@@ -772,7 +854,18 @@ struct PlayerScreen: View {
                                zeigtBild: flaeche.zeigtBild,
                                stelltEin: flaeche.stelltEin,
                                laeuft: flaeche.isPlaying,
-                               hatTonspuren: !flaeche.tonspuren.isEmpty),
+                               // **Die Spurliste nur lesen, solange sie
+                               // gebraucht wird.** `Wiedergabetakt` fragt
+                               // `hatTonspuren` allein, bis die Spuren gesetzt
+                               // sind; danach ist der Wert unbenutzt. Gelesen
+                               // wurde er trotzdem -- zweimal je Sekunde, den
+                               // ganzen Film lang. `player.audioTracks` baut die
+                               // Liste jedes Mal neu auf, unter der Sperre des
+                               // laufenden Players. Genau der Dauergriff, vor
+                               // dem der Kommentar an `Bildtakt.nochNachzumessen`
+                               // ein paar Zeilen weiter oben warnt; das `||`
+                               // kuerzt ihn weg, sobald er nichts mehr traegt.
+                               hatTonspuren: stand.spurenGesetzt || !flaeche.tonspuren.isEmpty),
                 stelltWiederHer: false,
                 sprungLaeuft: sprungBis.map { Date() < $0 } ?? false,
                 // Kein Finger, aber ein Zeiger — dieselbe Frage.

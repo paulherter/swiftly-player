@@ -154,6 +154,22 @@
         }
       }
     },
+    "%@ laden": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ laden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download %@"
+          }
+        }
+      }
+    },
     "%@ von %@": {
       "extractionState": "manual",
       "localizations": {
@@ -269,6 +285,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld"
+          }
+        }
+      }
+    },
+    "%lld Folgen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Folgen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld episodes"
           }
         }
       }
@@ -481,6 +513,22 @@
         }
       }
     },
+    "%lld Staffeln anfragen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Staffeln anfragen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request %lld seasons"
+          }
+        }
+      }
+    },
     "%lld Std. %lld Min.": {
       "extractionState": "manual",
       "localizations": {
@@ -498,6 +546,182 @@
         }
       }
     },
+    "%lld Titel": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Titel"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld titles"
+          }
+        }
+      }
+    },
+    "%lld Titel auf diesem Gerät": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Titel auf diesem Gerät"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld titles on this device"
+          }
+        }
+      }
+    },
+    "%lld Titel auf diesem Mac": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Titel auf diesem Mac"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld titles on this Mac"
+          }
+        }
+      }
+    },
+    "%lld Titel bleiben auf dem Gerät": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Titel bleiben auf dem Gerät"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld titles stay on the device"
+          }
+        }
+      }
+    },
+    "%lld Titel bleiben auf diesem Mac": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Titel bleiben auf diesem Mac"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld titles stay on this Mac"
+          }
+        }
+      }
+    },
+    "%lld Titel spielbar": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Titel spielbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld titles ready to play"
+          }
+        }
+      }
+    },
+    "%lld Treffer": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Treffer"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld results"
+          }
+        }
+      }
+    },
+    "%lld anfragen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld anfragen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request %lld"
+          }
+        }
+      }
+    },
+    "%lld entfernen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld entfernen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove %lld"
+          }
+        }
+      }
+    },
+    "%lld laden gerade": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld laden gerade"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld downloading"
+          }
+        }
+      }
+    },
+    "%lld offen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld offen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld left"
+          }
+        }
+      }
+    },
     "%lld s": {
       "extractionState": "manual",
       "localizations": {
@@ -511,6 +735,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld s"
+          }
+        }
+      }
+    },
+    "%lld · sortiert nach": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld · sortiert nach"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld · sorted by"
           }
         }
       }
@@ -736,6 +976,22 @@
         }
       }
     },
+    "Als gesehen merken": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als gesehen merken"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mark as watched"
+          }
+        }
+      }
+    },
     "Als ungesehen markieren": {
       "extractionState": "manual",
       "localizations": {
@@ -749,6 +1005,55 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mark as unwatched"
+          }
+        }
+      }
+    },
+    "Als ungesehen merken": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als ungesehen merken"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mark as unwatched"
+          }
+        }
+      }
+    },
+    "An": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On"
+          }
+        }
+      }
+    },
+    "Anbinden": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anbinden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
           }
         }
       }
@@ -838,6 +1143,22 @@
         }
       }
     },
+    "Angehalten, fortsetzen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angehalten, fortsetzen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused — resume"
+          }
+        }
+      }
+    },
     "Angemeldet": {
       "extractionState": "manual",
       "localizations": {
@@ -885,6 +1206,105 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sign in"
+          }
+        }
+      }
+    },
+    "Anmelden…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anmelden…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signing in…"
+          }
+        }
+      }
+    },
+    "Anpassung aus": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anpassung aus"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "matching off"
+          }
+        }
+      }
+    },
+    "Anzeige stumm": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anzeige stumm"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "display not reporting"
+          }
+        }
+      }
+    },
+    "Anzeigen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anzeigen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show"
+          }
+        }
+      }
+    },
+    "Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Even after removing what you have watched there is not enough space."
+          }
+        }
+      }
+    },
+    "Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht. In den Einstellungen unter Offline steht, was belegt ist.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht. In den Einstellungen unter Offline steht, was belegt ist."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Even after removing what you have watched there is not enough space. Settings → Offline shows what is using it."
           }
         }
       }
@@ -970,6 +1390,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "On the same server"
+          }
+        }
+      }
+    },
+    "Auf diesem Mac": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf diesem Mac"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On this Mac"
           }
         }
       }
@@ -1195,6 +1631,23 @@
         }
       }
     },
+    "Beschädigt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beschädigt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corrupt"
+          }
+        }
+      }
+    },
     "Besetzung": {
       "extractionState": "manual",
       "localizations": {
@@ -1331,6 +1784,40 @@
         }
       }
     },
+    "Bildformat": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bildformat"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aspect"
+          }
+        }
+      }
+    },
+    "Bildrate an den Film anpassen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bildrate an den Film anpassen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match frame rate to the film"
+          }
+        }
+      }
+    },
     "Code eintippen — hier gehts dann von allein weiter": {
       "extractionState": "manual",
       "localizations": {
@@ -1378,6 +1865,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Container"
+          }
+        }
+      }
+    },
+    "Danach frei": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Danach frei"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free afterwards"
           }
         }
       }
@@ -1518,6 +2021,23 @@
         }
       }
     },
+    "Dekodiert Ø": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dekodiert Ø"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decoded avg"
+          }
+        }
+      }
+    },
     "Demuxer": {
       "extractionState": "manual",
       "localizations": {
@@ -1548,6 +2068,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "The code has expired. Get a new one."
+          }
+        }
+      }
+    },
+    "Der Download startet von selbst, sobald WLAN da ist.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Download startet von selbst, sobald WLAN da ist."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The download starts on its own as soon as you are on Wi-Fi."
           }
         }
       }
@@ -1773,6 +2309,22 @@
         }
       }
     },
+    "Die Anmeldung von %@ gilt nicht mehr. Jetzt angemeldet als %@.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Die Anmeldung von %1$@ gilt nicht mehr. Jetzt angemeldet als %2$@."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The sign-in for %@ has expired. Now signed in as %@."
+          }
+        }
+      }
+    },
     "Die Antwort des Servers war unverständlich. (%@)": {
       "extractionState": "manual",
       "localizations": {
@@ -1875,6 +2427,22 @@
         }
       }
     },
+    "Diese Datei": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Datei"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This file"
+          }
+        }
+      }
+    },
     "Dieser Titel liegt bereits auf deinem Server.": {
       "extractionState": "manual",
       "localizations": {
@@ -1939,6 +2507,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Direct Play"
+          }
+        }
+      }
+    },
+    "Direct Stream": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct Stream"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct Stream"
           }
         }
       }
@@ -2164,6 +2749,22 @@
         }
       }
     },
+    "Fehlgeschlagen, erneut versuchen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fehlgeschlagen, erneut versuchen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed — try again"
+          }
+        }
+      }
+    },
     "Fertig": {
       "extractionState": "manual",
       "localizations": {
@@ -2350,6 +2951,40 @@
         }
       }
     },
+    "Formatfüllend": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formatfüllend"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fill screen"
+          }
+        }
+      }
+    },
+    "Formatfüllend schneidet links und rechts ab, damit keine Balken bleiben. Geht auch mit zwei Fingern im Bild.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formatfüllend schneidet links und rechts ab, damit keine Balken bleiben. Geht auch mit zwei Fingern im Bild."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fill screen crops the left and right edges so no bars remain. Pinch on the video to switch."
+          }
+        }
+      }
+    },
     "Fortschritt auf Kacheln": {
       "extractionState": "manual",
       "localizations": {
@@ -2435,6 +3070,38 @@
         }
       }
     },
+    "Frei auf dem Gerät": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frei auf dem Gerät"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free on this device"
+          }
+        }
+      }
+    },
+    "Frei auf diesem Mac": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frei auf diesem Mac"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free on this Mac"
+          }
+        }
+      }
+    },
     "Frei drehbar": {
       "extractionState": "manual",
       "localizations": {
@@ -2503,6 +3170,23 @@
         }
       }
     },
+    "Ganzes Bild": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ganzes Bild"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fit screen"
+          }
+        }
+      }
+    },
     "Gattung": {
       "extractionState": "manual",
       "localizations": {
@@ -2533,6 +3217,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Go to"
+          }
+        }
+      }
+    },
+    "Geladen, entfernen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geladen, entfernen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloaded — remove"
           }
         }
       }
@@ -2571,6 +3271,38 @@
         }
       }
     },
+    "Gesehene Titel": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesehene Titel"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched titles"
+          }
+        }
+      }
+    },
+    "Gesehene entfernen und laden": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesehene entfernen und laden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove watched and download"
+          }
+        }
+      }
+    },
     "Gezeigt": {
       "extractionState": "manual",
       "localizations": {
@@ -2583,7 +3315,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Displayed"
+            "value": "Shown"
           }
         }
       }
@@ -2635,6 +3367,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "base rate"
+          }
+        }
+      }
+    },
+    "Größe": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Größe"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Size"
           }
         }
       }
@@ -2724,6 +3472,39 @@
         }
       }
     },
+    "In die Warteschlange": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In die Warteschlange"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to queue"
+          }
+        }
+      }
+    },
+    "In dieser Datei": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In dieser Datei"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In this file"
+          }
+        }
+      }
+    },
     "Integration": {
       "extractionState": "manual",
       "localizations": {
@@ -2792,6 +3573,22 @@
         }
       }
     },
+    "Jetzt über Mobilfunk laden": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jetzt über Mobilfunk laden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download over cellular now"
+          }
+        }
+      }
+    },
     "Kann angefragt werden": {
       "extractionState": "manual",
       "localizations": {
@@ -2839,6 +3636,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "No network"
+          }
+        }
+      }
+    },
+    "Kein WLAN": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein WLAN"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Wi-Fi"
           }
         }
       }
@@ -3030,6 +3843,23 @@
         }
       }
     },
+    "Lauf": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lauf"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pace"
+          }
+        }
+      }
+    },
     "Leertaste": {
       "extractionState": "manual",
       "localizations": {
@@ -3081,6 +3911,38 @@
         }
       }
     },
+    "Lädt gerade": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lädt gerade"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading"
+          }
+        }
+      }
+    },
+    "Lädt, anhalten": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lädt, anhalten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading — pause"
+          }
+        }
+      }
+    },
     "Lädt…": {
       "extractionState": "manual",
       "localizations": {
@@ -3099,6 +3961,7 @@
       }
     },
     "Läuft ab in %lld:%@": {
+      "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
@@ -3112,8 +3975,7 @@
             "value": "Expires in %1$lld:%2$@"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Läuft im kleinen Fenster": {
       "extractionState": "manual",
@@ -3179,6 +4041,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "MKV index"
+          }
+        }
+      }
+    },
+    "Matroska": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matroska"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matroska"
           }
         }
       }
@@ -3931,6 +4810,39 @@
         }
       }
     },
+    "Schild anzeigen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schild anzeigen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show overlay"
+          }
+        }
+      }
+    },
+    "Schirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schirm"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display"
+          }
+        }
+      }
+    },
     "Schlafzeit": {
       "extractionState": "manual",
       "localizations": {
@@ -4084,6 +4996,22 @@
         }
       }
     },
+    "Sitzung aktiv": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sitzung aktiv"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session active"
+          }
+        }
+      }
+    },
     "Sitzung ließ sich nicht sichern — du müsstest dich neu anmelden.": {
       "extractionState": "manual",
       "localizations": {
@@ -4220,6 +5148,22 @@
         }
       }
     },
+    "Sortierung, %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sortierung, %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sorting, %@"
+          }
+        }
+      }
+    },
     "Speicher": {
       "extractionState": "manual",
       "localizations": {
@@ -4288,6 +5232,23 @@
         }
       }
     },
+    "Sprünge": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprünge"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discontinuities"
+          }
+        }
+      }
+    },
     "Staffel": {
       "extractionState": "manual",
       "localizations": {
@@ -4301,6 +5262,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Season"
+          }
+        }
+      }
+    },
+    "Staffel %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffel %lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Season %lld"
           }
         }
       }
@@ -4322,6 +5299,22 @@
         }
       }
     },
+    "Staffel wählen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffel wählen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a season"
+          }
+        }
+      }
+    },
     "Staffel wählen, %@": {
       "extractionState": "manual",
       "localizations": {
@@ -4339,6 +5332,22 @@
         }
       }
     },
+    "Staffeln wählen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffeln wählen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose seasons"
+          }
+        }
+      }
+    },
     "Start": {
       "extractionState": "manual",
       "localizations": {
@@ -4352,6 +5361,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Home"
+          }
+        }
+      }
+    },
+    "Stelle": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stelle"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "At"
           }
         }
       }
@@ -4424,6 +5450,89 @@
         }
       }
     },
+    "Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly downloads the original file — the same quality as streaming, because nothing is ever re-encoded."
+          }
+        }
+      }
+    },
+    "Takt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Takt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cadence"
+          }
+        }
+      }
+    },
+    "Technik": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technik"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technical"
+          }
+        }
+      }
+    },
+    "Technikschild": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technikschild"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technical overlay"
+          }
+        }
+      }
+    },
+    "Technikschild im Player": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technikschild im Player"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Technical overlay in the player"
+          }
+        }
+      }
+    },
     "Teilweise vorhanden": {
       "extractionState": "manual",
       "localizations": {
@@ -4454,6 +5563,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Speed"
+          }
+        }
+      }
+    },
+    "Tippen, um zu wechseln": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tippen, um zu wechseln"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to switch"
           }
         }
       }
@@ -4594,6 +5719,22 @@
         }
       }
     },
+    "Ton weg": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton weg"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "audio lost"
+          }
+        }
+      }
+    },
     "Trailer": {
       "extractionState": "manual",
       "localizations": {
@@ -4607,6 +5748,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Trailer"
+          }
+        }
+      }
+    },
+    "Transkodiert": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkodiert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcoded"
           }
         }
       }
@@ -4764,6 +5922,22 @@
         }
       }
     },
+    "Verbinden…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinden…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting…"
+          }
+        }
+      }
+    },
     "Verbinde…": {
       "extractionState": "manual",
       "localizations": {
@@ -4883,6 +6057,22 @@
         }
       }
     },
+    "Verstanden": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verstanden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Got it"
+          }
+        }
+      }
+    },
     "Versuch es mit einem anderen Wort.": {
       "extractionState": "manual",
       "localizations": {
@@ -4968,6 +6158,23 @@
         }
       }
     },
+    "Vorrat": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorrat"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buffer"
+          }
+        }
+      }
+    },
     "Vorspulen": {
       "extractionState": "manual",
       "localizations": {
@@ -5019,6 +6226,22 @@
         }
       }
     },
+    "Wartet": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wartet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting"
+          }
+        }
+      }
+    },
     "Wartet auf Freigabe": {
       "extractionState": "manual",
       "localizations": {
@@ -5032,6 +6255,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Waiting for approval"
+          }
+        }
+      }
+    },
+    "Wartet auf Netz": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wartet auf Netz"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for a network"
+          }
+        }
+      }
+    },
+    "Weiterblättern": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiterblättern"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next page"
           }
         }
       }
@@ -5240,6 +6495,57 @@
         }
       }
     },
+    "Zeigt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Showing"
+          }
+        }
+      }
+    },
+    "Zeigt Bildrate, Vorrat und verworfene Bilder über dem Film.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt Bildrate, Vorrat und verworfene Bilder über dem Film."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows frame rate, buffer and dropped frames over the video."
+          }
+        }
+      }
+    },
+    "Zeigt Ø": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt Ø"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Showing Ø"
+          }
+        }
+      }
+    },
     "Zu %@ wechseln": {
       "extractionState": "manual",
       "localizations": {
@@ -5393,6 +6699,22 @@
         }
       }
     },
+    "Zurückblättern": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zurückblättern"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous page"
+          }
+        }
+      }
+    },
     "Zurückspulen": {
       "extractionState": "manual",
       "localizations": {
@@ -5423,6 +6745,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Counter"
+          }
+        }
+      }
+    },
+    "angefordert %@ Hz": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "angefordert %@ Hz"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "requested %@ Hz"
           }
         }
       }
@@ -5529,6 +6868,23 @@
         }
       }
     },
+    "fps · in Swiftly aus": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · in Swiftly aus"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · off in Swiftly"
+          }
+        }
+      }
+    },
     "fps · laut Server": {
       "extractionState": "manual",
       "localizations": {
@@ -5563,6 +6919,22 @@
         }
       }
     },
+    "fps → %@ Hz": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps → %@ Hz"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps → %@ Hz"
+          }
+        }
+      }
+    },
     "frei": {
       "extractionState": "manual",
       "localizations": {
@@ -5593,6 +6965,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "watched"
+          }
+        }
+      }
+    },
+    "in Swiftly aus": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "in Swiftly aus"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "off in Swiftly"
           }
         }
       }
@@ -5699,6 +7088,23 @@
         }
       }
     },
+    "ohne Wechsel": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ohne Wechsel"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no switch"
+          }
+        }
+      }
+    },
     "seerr.example.de": {
       "extractionState": "manual",
       "localizations": {
@@ -5767,6 +7173,22 @@
         }
       }
     },
+    "unterwegs": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unterwegs"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "on the way"
+          }
+        }
+      }
+    },
     "vertraut": {
       "extractionState": "manual",
       "localizations": {
@@ -5797,6 +7219,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "of"
+          }
+        }
+      }
+    },
+    "vorhanden": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "vorhanden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "available"
           }
         }
       }
@@ -5835,6 +7273,22 @@
         }
       }
     },
+    "zu spät": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "zu spät"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "late"
+          }
+        }
+      }
+    },
     "·": {
       "extractionState": "manual",
       "localizations": {
@@ -5848,6 +7302,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "·"
+          }
+        }
+      }
+    },
+    "· %lld Folgen": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· %lld Folgen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· %lld episodes"
           }
         }
       }
@@ -5899,6 +7369,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Similar"
+          }
+        }
+      }
+    },
+    "Ändern": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ändern"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change"
           }
         }
       }

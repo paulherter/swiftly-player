@@ -76,3 +76,4 @@
 "Unter dieser Adresse ist kein Server erreichbar." = "Unter dieser Adresse ist kein Server erreichbar.";
 "Der Server hat mit %lld geantwortet." = "Der Server hat mit %lld geantwortet.";
 "Die Antwort des Servers war unverständlich. (%@)" = "Die Antwort des Servers war unverständlich. (%@)";
+"unbekannt" = "unbekannt";

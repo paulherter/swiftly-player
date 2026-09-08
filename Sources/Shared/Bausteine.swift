@@ -93,11 +93,31 @@ struct Profilzeichen: View {
     var groesse: CGFloat = 34
     var hervorgehoben = false
 
-    /// Derselbe Grund wie bei `Bild`: ein abgebrochener Abruf bleibt sonst
-    /// im Fehlerzustand stehen. Im Kontenstreifen faellt das besonders auf —
-    /// dort ist das Profilbild der ganze Inhalt der Kachel, und nach einem
-    /// Wechsel staende statt der Bilder eine Reihe Buchstaben.
-    @State private var anlauf = 0
+    /// **Was schon geholt wurde, steht im ersten Durchgang da.**
+    ///
+    /// Hier lag ein `AsyncImage`, und das faengt in jeder neuen Ansicht von
+    /// vorn an — auch wenn dasselbe Bild seit dem Start im Speicher liegt.
+    /// Waehrend es laeuft, steht nur der gruene Verlauf; das ist das, was am
+    /// 07.09.2026 gemeldet wurde: „klicke ich auf mein Profilbild, ist es auf
+    /// der Seite kurz nicht da, stattdessen ein gruener Hintergrund." Beim
+    /// ersten Wechsel auf Filme oder Serien dasselbe, aus demselben Grund.
+    ///
+    /// Zwei Anlaeufe hatten den **Buchstaben** aus dem Weg geraeumt, ohne die
+    /// Ursache anzufassen: dass die Ansicht das Bild neu holt, obwohl es
+    /// dasteht. `Bildspeicher` beantwortet genau diese Frage, und er
+    /// antwortet **synchron** — deshalb wird hier im `init` nachgesehen und
+    /// nicht in `task`. Ein nachgereichter Wert kommt einen Durchgang zu
+    /// spaet, und der eine Durchgang ist das Aufblitzen.
+    @State private var geladen: Image?
+
+    init(name: String, bild: URL? = nil, groesse: CGFloat = 34,
+         hervorgehoben: Bool = false) {
+        self.name = name
+        self.bild = bild
+        self.groesse = groesse
+        self.hervorgehoben = hervorgehoben
+        _geladen = State(initialValue: bild.flatMap { Bildspeicher.geteilt.bild($0) })
+    }
 
     var body: some View {
         ZStack {
@@ -124,26 +144,24 @@ struct Profilzeichen: View {
             // Waehrend des Abrufs steht deshalb nur der Verlauf. Dieselbe
             // Unterscheidung wie in `Bild`, dieselbe Ursache, dieselbe
             // Behebung.
-            AsyncImage(url: bild,
-                       transaction: Transaction(animation: Stil.einblenden)) { stand in
-                switch stand {
-                case let .success(b):
-                    b.resizable().aspectRatio(contentMode: .fill)
-                        .transition(.opacity)
-                case .empty where bild != nil:
-                    Color.clear
-                default:
-                    buchstabe.onAppear {
-                        guard case let .failure(f) = stand,
-                              (f as NSError).code == NSURLErrorCancelled,
-                              anlauf < 2 else { return }
-                        anlauf += 1
-                    }
-                }
+            if let geladen {
+                geladen.resizable().aspectRatio(contentMode: .fill)
+                    .transition(.opacity)
+            } else if bild == nil {
+                // **Der Buchstabe ist Rueckfall, nicht Untergrund.** Er
+                // gehoert in den Zweig, in dem es gar kein Bild gibt — lag er
+                // darunter, schien er waehrend der Aufblende hindurch.
+                buchstabe
             }
-            .id(anlauf)
         }
-        .onChange(of: bild) { _, _ in anlauf = 0 }
+        .animation(Stil.einblenden, value: geladen == nil)
+        // Eine neue Adresse heisst ein neuer Anlauf; was schon dalag, bleibt
+        // solange stehen, statt gegen den Verlauf zu tauschen.
+        .task(id: bild) {
+            guard let bild else { geladen = nil; return }
+            if let da = Bildspeicher.geteilt.bild(bild) { geladen = da; return }
+            geladen = await Bildspeicher.geteilt.laden(bild)
+        }
         .frame(width: groesse, height: groesse)
         .clipShape(Circle())
         .overlay {

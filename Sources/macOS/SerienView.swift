@@ -33,6 +33,13 @@ struct SerienView: View {
     @State private var staffelOffen = false
     @State private var staffeltafelOffen = false
     @State private var ladeposten: [Downloadposten] = []
+    /// Was in der Tafel oben steht — „Staffel 5" oder der Name einer Folge.
+    /// Er stand fest auf der Staffel, auch wenn nur eine Folge geladen wurde.
+    @State private var ladetitel = ""
+    /// Wo die Tafel aufgeht. Bei der Staffel unter dem Chip, bei einer Folge
+    /// unter **dieser** Folge — sonst klappt sie irgendwo auf und man sucht,
+    /// worauf sie sich bezieht.
+    @State private var tafelOben: CGFloat?
 
     // MARK: Downloads
 
@@ -75,10 +82,30 @@ struct SerienView: View {
 
     /// **Die ganze Staffel, der Reihe nach.** H4 laesst immer nur einen
     /// laufen; was schon da ist, kommt nicht noch einmal in die Schlange.
+    /// **Eine einzelne Folge laden** — wie auf dem iPhone seit `beb6a79`.
+    ///
+    /// Die Tafel sitzt an derselben Stelle wie bei einer Staffel: sie
+    /// beantwortet dieselbe Frage, und ein zweiter Ort dafuer waere ein
+    /// zweiter Ort zum Suchen.
+    private func folgeGeklickt(_ folge: Item, unter kante: CGFloat) {
+        ringGeklickt(model.downloads.posten(fuer: folge.id), model.downloads) {
+            guard let p = posten(folge) else { return }
+            ladeposten = [p]
+            // **Der Titel ist die Folge, nicht die Staffel.** Er stand fest
+            // auf `gewaehlt?.name` — in der Tafel las man dann „Staffel 5
+            // laden", waehrend eine einzige Folge in der Schlange stand.
+            ladetitel = folge.name
+            tafelOben = kante
+            withAnimation(Stil.zeitSprung) { staffeltafelOffen = true }
+        }
+    }
+
     private func staffelLaden() {
         let offene = folgen.filter { model.downloads.posten(fuer: $0.id) == nil }
         ladeposten = offene.compactMap { posten($0) }
         guard !ladeposten.isEmpty else { return }
+        ladetitel = gewaehlt?.name ?? serie.name
+        tafelOben = nil
         withAnimation(Stil.zeitSprung) { staffeltafelOffen.toggle() }
     }
     @State private var laedt = true
@@ -155,6 +182,41 @@ struct SerienView: View {
                     .padding(.top, 20)
             }
             .padding(.bottom, 40)
+            // **Die Ladetafel liegt im Inhalt, nicht auf der Seite.**
+            //
+            // Sie hing als Auflage ueber der ganzen Seite. Zwei Sachen waren
+            // daran falsch: der Fang darunter deckte die Scrollflaeche zu,
+            // also liess sich bei offener Tafel nicht mehr scrollen — und die
+            // Tafel stand fest im Fenster, waehrend die Folge, zu der sie
+            // gehoert, darunter wegwanderte.
+            //
+            // Im Inhalt loest sich beides von selbst: das Rad trifft die
+            // Scrollflaeche, weil der Fang in ihr liegt, und die Tafel geht
+            // mit der Zeile mit, weil sie an derselben Stelle des Inhalts
+            // haengt. Ihr Platz ist dann ein Wert im Inhalt und keiner im
+            // Fenster — deshalb sitzt der benannte Raum hier und nicht
+            // aussen.
+            .coordinateSpace(.named("serienseite"))
+            .overlay(alignment: .topTrailing) {
+                if staffeltafelOffen, !ladeposten.isEmpty {
+                    ZStack(alignment: .topTrailing) {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(Stil.zeitSprung) { staffeltafelOffen = false }
+                            }
+                        Ladetafel(model: model, posten: ladeposten,
+                                  titel: ladetitel,
+                                  bilder: ladebilder,
+                                  offen: $staffeltafelOffen)
+                            // Unter dem Chip — oder unter der Folge, von der
+                            // aus sie geoeffnet wurde.
+                            .padding(.trailing, Stil.randAbstand)
+                            .padding(.top, tafelOben ?? (Stil.heldHoehe + 92))
+                    }
+                    .transition(.opacity)
+                }
+            }
         }
         .scrollIndicators(.never)
         // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
@@ -179,30 +241,6 @@ struct SerienView: View {
         .background(Stil.grund)
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
             kopfstand.versatz = neu
-        }
-        // **Die Ladetafel haengt an der Seite, nicht am Chip.**
-        //
-        // Am Chip lag nichts hinter ihr, was einen Klick daneben haette
-        // auffangen koennen Hier liegt der Fang ueber der ganzen Seite und die
-        // Tafel darauf; ein Klick daneben trifft den Fang.
-        .overlay {
-            if staffeltafelOffen, !ladeposten.isEmpty {
-                ZStack(alignment: .topTrailing) {
-                    Color.black.opacity(0.001)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(Stil.zeitSprung) { staffeltafelOffen = false }
-                        }
-                    Ladetafel(model: model, posten: ladeposten,
-                              titel: gewaehlt?.name ?? serie.name,
-                              bilder: ladebilder,
-                              offen: $staffeltafelOffen)
-                        // Unter dem Chip, der sie geoeffnet hat.
-                        .padding(.trailing, Stil.randAbstand)
-                        .padding(.top, Stil.heldHoehe + 92)
-                }
-                .transition(.opacity)
-            }
         }
         .overlay(alignment: .top) {
             Detailkopf(titel: serie.name, stand: kopfstand, zurueck: zurueck)
@@ -316,7 +354,9 @@ struct SerienView: View {
                     // trägt deshalb die Zeile selbst, siehe `Folgenzeile`.
                     VStack(spacing: 0) {
                         ForEach(folgen, id: \.id) { folge in
-                            Folgenzeile(model: model, folge: folge)
+                            Folgenzeile(model: model, folge: folge) { kante in
+                                folgeGeklickt(folge, unter: kante)
+                            }
                             if folge.id != folgen.last?.id {
                                 Rectangle().fill(Stil.linie).frame(height: 1)
                             }
@@ -521,9 +561,14 @@ struct Staffelzeile: View {
 struct Folgenzeile: View {
     let model: AppModel
     let folge: Item
+    /// Was ein Klick auf den Ring tut — mit der Unterkante der Zeile, damit
+    /// die Tafel darunter aufgeht und nicht irgendwo.
+    var ringtipp: ((CGFloat) -> Void)?
 
     @State private var schwebt = false
     @State private var gesehen = false
+    /// Wo die Zeile endet, im Raum der Seite — die Tafel geht darunter auf.
+    @State private var unterkante: CGFloat = 0
     @Environment(Abspielsteuerung.self) private var steuerung
 
     /// 16 : 9 — dasselbe Verhältnis wie die 116 × 65 des iPhones.
@@ -541,9 +586,29 @@ struct Folgenzeile: View {
                 // es für jede Zeile **dasselbe** Bild. Die iPhone-Fassung
                 // nimmt hier `imageURL(for: folge, maxHeight: 220)`, also das
                 // eigene Vorschaubild der Folge.
+                // **Das Vorschaubild traegt den Sehstand** — wie auf dem
+                // iPhone seit `beb6a79`. Es zeigte schon den
+                // Fortschrittsbalken, also „wie weit bin ich"; der Haken ist
+                // dessen Ende. Damit steht der Sehstand an einer Stelle statt
+                // an zweien, und die Spalte rechts gehoert dem Download.
                 Bildflaeche(bild: model.imageURL(for: folge, maxHeight: 220),
                             breite: bildBreite, hoehe: bildHoehe,
-                            fortschritt: fortschritt, zeichen: "tv")
+                            // Ein voller Balken **und** ein Haken waeren
+                            // dieselbe Auskunft zweimal.
+                            fortschritt: gesehen ? nil : fortschritt,
+                            zeichen: "tv")
+                    .opacity(gesehen ? 0.45 : 1)
+                    .overlay(alignment: .topTrailing) {
+                        if gesehen {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(Stil.schrift)
+                                .frame(width: 20, height: 20)
+                                .background(Stil.grund.opacity(0.72), in: Circle())
+                                .padding(6)
+                        }
+                    }
+                    .animation(Stil.einblenden, value: gesehen)
                 if schwebt {
                     Circle()
                         .fill(.black.opacity(0.45))
@@ -560,7 +625,8 @@ struct Folgenzeile: View {
                 HStack(spacing: 8) {
                     Text(verbatim: kopfzeile)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Stil.schrift)
+                        // Gesehenes tritt zurueck, es verschwindet nicht.
+                        .foregroundStyle(gesehen ? Stil.schriftLeise : Stil.schrift)
                         .lineLimit(2)
                     Spacer(minLength: 0)
                     if let sekunden = folge.runtimeSeconds {
@@ -583,20 +649,26 @@ struct Folgenzeile: View {
             // damit war beim Überfliegen der Liste nicht zu erkennen, wie
             // weit man ist. Zum *Ändern* braucht es den Zeiger, zum *Sehen*
             // nicht.
-            ZStack {
+            // **Rechts steht der Zustand des Downloads, nicht der des
+            // Sehens.** Der Haken als *Auskunft* ist auf das Bild gezogen;
+            // was hier bleibt, ist der Haken als *Handlung* — und der
+            // erscheint wie eh nur unter dem Zeiger. Das ist der eine
+            // erlaubte Unterschied zum iPhone: dort ist die Handlung ein
+            // Wisch, hier das Schweben (VERHALTEN F, Eingabeart).
+            HStack(spacing: 6) {
                 if schwebt {
                     Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
                                  titel: "Gesehen", an: gesehen) {
                         gesehen.toggle()
                         Task { _ = await model.setzeGesehen(folge, an: gesehen) }
                     }
-                } else if gesehen {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Stil.schriftSehrLeise)
+                }
+                if let ringtipp, model.downloadsAn {
+                    Downloadring(posten: model.downloads.posten(fuer: folge.id),
+                                 mass: 24) { ringtipp(unterkante) }
                 }
             }
-            .frame(width: Stil.knopfRund, alignment: .trailing)
+            .frame(width: breiteRechts, alignment: .trailing)
 
         }
         .padding(.vertical, 12)
@@ -613,6 +685,9 @@ struct Folgenzeile: View {
         .frame(height: bildHoehe + 24)
         .background(schwebt ? Stil.schrift.opacity(0.04) : .clear)
         .contentShape(Rectangle())
+        .onGeometryChange(for: CGFloat.self) {
+            $0.frame(in: .named("serienseite")).maxY
+        } action: { unterkante = $0 }
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
         // Eine Folge startet an ihrer eigenen Position — nicht an der der
@@ -631,4 +706,11 @@ struct Folgenzeile: View {
 
     /// Aus `Item.gesehenerAnteil` — siehe die Begründung in `HomeView`.
     private var fortschritt: Double? { folge.gesehenerAnteil }
+
+    /// Platz fuer beide Zeichen, wenn es beide gibt — sonst bleibt die Zeile
+    /// beim Ueberfahren nicht ruhig, sondern rueckt.
+    private var breiteRechts: CGFloat {
+        (ringtipp != nil && model.downloadsAn) ? Stil.knopfRund * 2 + 6
+                                               : Stil.knopfRund
+    }
 }

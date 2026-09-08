@@ -108,12 +108,23 @@ struct WiedergabeEinstellungenView: View {
         }
     }
 
+    @AppStorage("technikschild") private var technikschild = false
+
     private var verhalten: some View {
         Einstellungsgruppe(titel: "Verhalten") {
             Schalterzeile(symbol: "forward.end.fill",
                           titel: Text("Nächste Folge automatisch"),
                           an: Binding(get: { model.naechsteAutomatisch },
                                       set: { model.naechsteAutomatisch = $0 }))
+            Trennstrich().padding(.leading, 48)
+            // **Der Schalter fuer das Technikschild.**
+            //
+            // Er steht hier bei „Verhalten" und nicht bei den Bildregeln: er
+            // aendert nichts an der Wiedergabe, er zeigt nur, was sie tut.
+            // Aus, bis ihn jemand sucht — wie bei Downloads und Seerr.
+            Schalterzeile(symbol: "waveform.badge.magnifyingglass",
+                          titel: Text("Technikschild im Player"),
+                          an: $technikschild)
             Trennstrich().padding(.leading, 48)
             Wertezeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                        wert: "\(model.zurueckSekunden) s", pfeil: true,

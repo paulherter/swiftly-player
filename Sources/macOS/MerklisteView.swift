@@ -18,8 +18,18 @@ struct MerklisteView: View {
     /// Wird von der Kopfzeile gerufen; hier gibt es keinen eigenen Pfeil —
     /// den zeichnet `HauptView` über jeder aufgeschobenen Seite.
 
-    @State private var stand = Merklistenmodell()
-    @State private var gattung: Merkgattung = .alle
+    @State private var stand: Merklistenmodell
+
+    init(model: AppModel) {
+        self.model = model
+        let frisch = Merklistenmodell()
+        _stand = State(initialValue: frisch)
+        _gattung = State(initialValue: Merkgattung.zu(art: frisch.gattung))
+    }
+    /// Die Pille der Ansicht und die Gattung im Modell muessen beim Start
+    /// dasselbe sagen — das Modell holt sie aus der Ablage, die Ansicht
+    /// liest sie von dort ab.
+    @State private var gattung: Merkgattung
 
     private var spalten: [GridItem] {
         [GridItem(.adaptive(minimum: Stil.kachelBreite, maximum: Stil.kachelBreite),

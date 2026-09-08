@@ -86,20 +86,35 @@ final class Startseitenmodell {
         let wechsel = diesesKonto != fuerKonto
         fuerKonto = diesesKonto
 
-        if let a { weiterschauen = a } else if wechsel { weiterschauen = [] }
-        if let b { naechsteFolge = b } else if wechsel { naechsteFolge = [] }
+        // **Jede Reihe geht entdoppelt hinein.**
+        //
+        // `ForEach` ordnet seine Zeilen ueber die Kennung zu; bei zwei
+        // gleichen greift ein Tipp daneben. Am 07.09.2026 gemeldet: auf
+        // „Zuletzt hinzugefuegt" oeffnete ein Druck auf eine Serie die
+        // uebernaechste. Bibliothek und Merkliste hatten die Regel je fuer
+        // sich, weil dort geblaettert wird — hier fehlte sie, weil eine Reihe
+        // aus einem einzigen Abruf kommt und ein Abruf nichts doppelt
+        // liefern sollte. Ein Server mit durcheinandergeratener Bibliothek
+        // tut es doch. Die Regel steht jetzt einmal im Paket.
+        if let a { weiterschauen = Listenregeln.ohneDoppelte(a) }
+        else if wechsel { weiterschauen = [] }
+        if let b { naechsteFolge = Listenregeln.ohneDoppelte(b) }
+        else if wechsel { naechsteFolge = [] }
         // **Die nicht gewaehlte Form wird geleert, nicht bloss nicht
         // geholt.** Sonst bliebe die Reihe von vorhin stehen: wer umschaltet,
         // saehe „Zuletzt hinzugefuegt" **und** die beiden neuen. Genau das
         // ist beim ersten Versuch passiert.
         if getrennt {
             zuletzt = []
-            if let d { neueFilme = d } else if wechsel { neueFilme = [] }
-            if let e { neueSerien = e } else if wechsel { neueSerien = [] }
+            if let d { neueFilme = Listenregeln.ohneDoppelte(d) }
+            else if wechsel { neueFilme = [] }
+            if let e { neueSerien = Listenregeln.ohneDoppelte(e) }
+            else if wechsel { neueSerien = [] }
         } else {
             neueFilme = []
             neueSerien = []
-            if let c { zuletzt = c } else if wechsel { zuletzt = [] }
+            if let c { zuletzt = Listenregeln.ohneDoppelte(c) }
+            else if wechsel { zuletzt = [] }
         }
 
         // Ein Abbruch ist kein Ausfall — dieselbe Unterscheidung wie in

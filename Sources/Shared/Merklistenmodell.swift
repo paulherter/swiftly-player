@@ -22,11 +22,29 @@ final class Merklistenmodell {
     private var laedtNach = false
 
     /// `nil` heisst Filme **und** Serien.
-    var gattung: String?
+    var gattung: String? { didSet { sichern() } }
     /// Zuletzt gemerkt zuerst — das ist die Reihenfolge, in der man eine
     /// Merkliste liest. A–Z wäre die Ordnung eines Regals, nicht die einer
     /// Absicht.
-    var sortierung: Sortierung = .neueste
+    ///
+    /// **Und was man einmal waehlt, steht beim naechsten Mal wieder da.**
+    /// Dieselbe Regel wie in `Bibliotheksmodell`, dieselbe Begruendung: eine
+    /// Sortierung ist eine Einstellung, keine Handlung.
+    var sortierung: Sortierung = .neueste { didSet { sichern() } }
+
+    init() {
+        let ablage = UserDefaults.standard
+        if let roh = ablage.string(forKey: "sortierung.merkliste"),
+           let wert = Sortierung(rawValue: roh) { sortierung = wert }
+        gattung = ablage.string(forKey: "gattung.merkliste")
+    }
+
+    private func sichern() {
+        let ablage = UserDefaults.standard
+        ablage.set(sortierung.rawValue, forKey: "sortierung.merkliste")
+        if let gattung { ablage.set(gattung, forKey: "gattung.merkliste") }
+        else { ablage.removeObject(forKey: "gattung.merkliste") }
+    }
 
     var kennung: String { "\(gattung ?? "-")|\(sortierung.rawValue)" }
     var nochMehrDa: Bool { items.count < gesamt }
@@ -39,7 +57,8 @@ final class Merklistenmodell {
     func laden(_ model: AppModel) async {
         laedt = items.isEmpty
         if let seite = await model.gemerkte(art: gattung, sortierung: sortierung, ab: 0) {
-            items = seite.titel
+            // Dieselbe Regel wie auf der Startseite — siehe `Listenregeln`.
+            items = Listenregeln.ohneDoppelte(seite.titel)
             gesamt = seite.gesamt
         }
         laedt = false
@@ -84,5 +103,12 @@ enum Merkgattung: String, CaseIterable, Identifiable {
         case .filme:  "movies"
         case .serien: "tvshows"
         }
+    }
+
+    /// Aus der gemerkten Gattung wieder eine Pille machen — die Ansicht
+    /// haelt ihren Chip getrennt vom Modell, und beim Start muessen beide
+    /// dasselbe sagen.
+    static func zu(art: String?) -> Merkgattung {
+        allCases.first { $0.art == art } ?? .alle
     }
 }

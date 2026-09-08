@@ -57,6 +57,10 @@ enum Stil {
     /// Wie lange eine Seite hereinschiebt — `Stil.zeitSeitenschub` vom Mac,
     /// `easeInOut` über 0,45 s.
     static let zeitSeitenschub = 0.45
+    /// Wie lange ein Bereichswechsel ueberblendet. Dieselbe Dauer, die
+    /// `GtkStack` fuer seine Kreuzblende nimmt (200 ms) — sonst saehen die
+    /// beiden Wege in denselben Bereich verschieden aus.
+    static let zeitBlende = 0.2
     /// Wie weit die Seite **darunter** mitgeht. Ein knappes Drittel — so hält
     /// es die Systemnavigation, und daher kommt der Eindruck von Ebenen statt
     /// von einem Rechteck, das vorbeischiebt.
@@ -493,8 +497,13 @@ enum Stil {
             background-image: linear-gradient(to bottom,
                 rgba(11,11,13,0.70) 0%, rgba(11,11,13,0) 100%);
         }
+        /* **Deckend, nicht durchscheinend.** Auf Apple ist die Leiste beim
+           Scrollen `Stil.grund` mit voller Deckung; hier standen 0,86, und
+           darunter liefen die Plakate sichtbar durch. Der Grund dort steht
+           ausdruecklich dabei: eine Flaeche kann nicht aufblitzen und ist
+           genau so dunkel wie die Seite. */
         .swiftly-kopfleiste {
-            background-color: rgba(11,11,13,0.86);
+            background-color: \(grund);
             border-bottom: 1px solid \(linie);
         }
 
@@ -853,6 +862,25 @@ enum Stil {
         }
 
         /* Die Spurtafel über dem Bild: 320 breit, erhoeht, Ecke 10. */
+        /* **Das Technikschild.** Feste Zeichenbreite, damit die Zahlen
+           untereinander stehen und nicht bei jedem Takt springen — dieselbe
+           Begruendung wie auf den Apple-Fassungen. Deckend genug, um ueber
+           bewegtem Bild lesbar zu bleiben. */
+        /* Ein Chip ohne Wort: quadratisch statt breit, Kapsel bleibt. */
+        .swiftly-chip.swiftly-nursymbol {
+            padding-left: 0;
+            padding-right: 0;
+            min-width: 34px;
+        }
+        .swiftly-technikschild {
+            font-family: monospace;
+            font-size: 12px;
+            color: rgba(255,255,255,0.92);
+            background-color: rgba(11,11,13,0.82);
+            border: 1px solid \(rand);
+            border-radius: \(eckeFeld)px;
+            padding: 10px 14px;
+        }
         .swiftly-tafel {
             background-color: \(erhoeht);
             border: 1px solid \(rand);

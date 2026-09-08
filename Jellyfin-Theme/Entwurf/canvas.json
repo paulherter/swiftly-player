@@ -1,0 +1,127 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Seiten"
+    },
+    {
+      "id": "page-2",
+      "name": "Bausteine"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Anmeldung.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Main.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 1000,
+      "title": "Startseite"
+    },
+    {
+      "file": "Bibliothek.dc.html",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "DetailFilm.dc.html",
+      "x": 0,
+      "y": 1180,
+      "w": 1440,
+      "h": 1000
+    },
+    {
+      "file": "DetailSerie.dc.html",
+      "x": 1560,
+      "y": 1180,
+      "w": 1440,
+      "h": 1080
+    },
+    {
+      "file": "Suche.dc.html",
+      "x": 3120,
+      "y": 1180,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Profil.dc.html",
+      "x": 0,
+      "y": 2440,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Einstellungen.dc.html",
+      "x": 1560,
+      "y": 2440,
+      "w": 1440,
+      "h": 1000
+    },
+    {
+      "file": "Player.dc.html",
+      "x": 3120,
+      "y": 2440,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Dashboard.dc.html",
+      "x": 1560,
+      "y": 3620,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Bausteine.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1620,
+      "page": "page-2"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "hinweis-kopfleiste",
+      "x": 0,
+      "y": -190,
+      "w": 470,
+      "text": "Keine Seitenleiste — und das ist kein Versäumnis.\nJellyfins Schublade ist ein Überlagerungs-Bauteil mit Auf/Zu-Zustand; mit CSS wird daraus keine stehende Leiste. Eine eigene zu bauen braucht ein Skript, und das kommt nur über einen Eintrag in Jellyfins index.html hinein — auf Pauls Server nicht schreibbar.\nAlso trägt Jellyfins eigene Kopfleiste unsere Sprache: deckend in grund, Haarlinie, Ziele in 15 medium, das aktive im Akzent. Das Logo wird durch die Abspielform der Marke ersetzt."
+    },
+    {
+      "id": "hinweis-kulisse",
+      "x": 0,
+      "y": 1030,
+      "w": 460,
+      "text": "Die Kulisse liegt rechts und wird von zwei Masken ausgeblendet, nicht von einem Anstrich übermalt.\nDie Kurven stehen unverändert in Kulissenblende. Ein Anstrich endet in undurchsichtigem grund und setzt voraus, dass der Hintergrund genau das ist."
+    },
+    {
+      "id": "hinweis-kein-plakat",
+      "x": 1560,
+      "y": 1030,
+      "w": 460,
+      "text": "Kein Plakat auf der Detailseite, kein Logo.\nBeides ist mit CSS erreichbar: display:none auf .detailImageContainer und .detailLogo, und :has() lässt das Plakat dort stehen, wo das Bild die Sache selbst ist — Person, Album, Buch.\nDie Knopfreihe wandert über flex-direction:column unter den Titel."
+    },
+    {
+      "id": "hinweis-grenze",
+      "x": 3120,
+      "y": 1030,
+      "w": 470,
+      "text": "Was ein Stilblatt nicht kann — und was hier deshalb Jellyfins Aufbau bleibt:\n• keine eigene Seitenleiste, keine eigenen Zeilen darin\n• keine Reihe ergänzen, die es nicht gibt (z. B. „Nächste Folge“ als Plakate)\n• die Vorschlagsliste der Suche kommt, wie Jellyfin sie baut\n• Federn bleiben Kurven\nAlles andere auf diesen Tafeln ist mit CSS erreichbar."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}
