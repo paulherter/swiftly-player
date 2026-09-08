@@ -795,27 +795,10 @@ extension SeriesDetailView {
 
 extension SeriesDetailView {
 
-    /// Erst der Trailer vom Server, dann der verlinkte.
-    ///
-    /// Liegt er als Datei vor, läuft er im eigenen Player — mit Direct Play
-    /// wie alles andere. Sonst bleibt nur die verlinkte Adresse, und die führt
-    /// bei Jellyfin fast immer zu YouTube; die kann nur der Browser öffnen.
     func trailerStarten() {
-        Task {
-            if let film = await model.trailer(zu: serie),
-               let plan = await model.plan(for: film.id) {
-                abspielen = Abspielwunsch(item: film, plan: plan, startAt: 0)
-                return
-            }
-            #if os(iOS)
-            if let adresse = serie.remoteTrailers?.compactMap(\.url).first,
-               let ziel = URL(string: adresse) {
-                await UIApplication.shared.open(ziel)
-                return
-            }
-            #endif
-            meldung = String(localized: "Für diesen Titel liegt kein Trailer vor.")
-        }
+        Trailerstart.starten(serie, model: model,
+                             abspielen: { abspielen = $0 },
+                             melden: { meldung = $0 })
     }
 
     /// Woran das Blatt arbeitet: die angefangene Folge, sonst die Serie.

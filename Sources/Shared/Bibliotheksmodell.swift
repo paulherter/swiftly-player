@@ -78,13 +78,12 @@ final class Bibliotheksmodell {
     var kennung: String { "\(sortierung.rawValue)|\(filter.rawValue)" }
 
     /// Ob es hinter dem, was schon dasteht, noch etwas gibt.
-    var nochMehrDa: Bool { items.count < gesamt }
+    var nochMehrDa: Bool { Listenregeln.nochMehrDa(geladen: items.count, gesamt: gesamt) }
 
     /// Ab welchem Eintrag nachgeladen wird — die drittletzte Reihe, damit der
     /// Nachschub steht, bevor man unten ankommt.
     func nachladenAb(spalten: Int) -> String? {
-        guard !items.isEmpty else { return nil }
-        return items[max(0, items.count - 3 * spalten)].id
+        Listenregeln.nachladenAb(items, spalten: spalten)
     }
 
     /// Welche Bibliothek gemeint ist — genannt oder über die Gattung gesucht.

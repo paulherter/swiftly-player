@@ -33,4 +33,34 @@ struct ListenregelnTests {
         let neu = [item("b"), item("c"), item("c")]
         #expect(Listenregeln.anhaengen(neu, an: da).map(\.id) == ["a", "b", "c"])
     }
+
+    // MARK: Nachladen
+
+    @Test("Der Ausloeser sitzt in der drittletzten Reihe")
+    func ausloeserDrittletzteReihe() {
+        // 30 Eintraege, 5 Spalten — drei Reihen sind 15, also Nummer 15.
+        let liste = (0..<30).map { item("i\($0)") }
+        #expect(Listenregeln.nachladenAb(liste, spalten: 5) == "i15")
+    }
+
+    @Test("Sind es weniger als drei Reihen, ist es der erste")
+    func kuerzerAlsDreiReihen() {
+        // Sonst rechnete `count - 3 * spalten` ins Negative.
+        let liste = (0..<7).map { item("i\($0)") }
+        #expect(Listenregeln.nachladenAb(liste, spalten: 5) == "i0")
+    }
+
+    @Test("Eine leere Liste hat keinen Ausloeser")
+    func leereListe() {
+        #expect(Listenregeln.nachladenAb([], spalten: 5) == nil)
+    }
+
+    @Test("Nachschub gibt es, solange nicht alles dasteht")
+    func nochMehrDa() {
+        #expect(Listenregeln.nochMehrDa(geladen: 40, gesamt: 120))
+        #expect(!Listenregeln.nochMehrDa(geladen: 120, gesamt: 120))
+        // Mehr geladen als gemeldet: der Server hat die Gesamtzahl gesenkt,
+        // waehrend geblaettert wurde. Nachladen waere dann falsch.
+        #expect(!Listenregeln.nochMehrDa(geladen: 121, gesamt: 120))
+    }
 }

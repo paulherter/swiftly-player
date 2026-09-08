@@ -34,7 +34,6 @@ struct HauptView: View {
     @State private var imProfil = false
 
     @Environment(\.breit) private var breit
-    @Environment(\.fensterknoepfe) private var fensterknoepfe
 
     /// Liegt nichts auf dem Stapel dieses Bereichs? Nur noch dafür da, den
     /// Profilzweig zu schliessen — die Bereichsleiste hängt seit dem Umzug in
@@ -116,6 +115,11 @@ struct HauptView: View {
         // Zurückkommen einfach wieder da sein, so wie der Inhalt dahinter
         // auch. Eingeblendet wirkte sie wie ein eigenes Blatt.
         .task { await model.fernsteuerungStarten() }
+        // **Einmal beim Aufmachen, nicht laufend.** Eine Anfrage je Start
+        // reicht: sie sagt, was gesehen ist (H6) und was der Server nicht
+        // mehr hat (H9). Beides aendert sich nicht im Minutentakt, und
+        // unterwegs schlaegt sie ohnehin fehl — dann bleibt alles stehen.
+        .task { await model.downloadsNachziehen() }
         // Sonst bleibt der Socket offen, wenn die Ansicht weicht — etwa beim
         // Abmelden, wo `RootView` auf den Anmeldebildschirm wechselt.
         .onDisappear { Task { await model.fernsteuerungBeenden() } }
@@ -288,7 +292,6 @@ struct BibliothekView: View {
     @State private var bibliothekslisteOffen = false
 
     @Environment(\.breit) private var breit
-    @Environment(\.fensterknoepfe) private var fensterknoepfe
     /// Ist dieser Bereich vorn? Nur dann gilt, was die Scrollflaeche meldet.
     @Environment(\.bereichAktiv) private var bereichAktiv
 
