@@ -290,7 +290,14 @@ public actor JellyfinClient {
         /// und rekursiv. Auf Servern ohne diese Ordner aendert es nichts —
         /// am Pruefserver nachgemessen, dieselben Titel in derselben
         /// Reihenfolge.
-        includeItemTypes: [String] = []
+        includeItemTypes: [String] = [],
+        /// Genau diese Kennungen, sonst nichts.
+        ///
+        /// **Die Antwort sagt zweierlei.** Was zurueckkommt, traegt den
+        /// Fortschritt (`UserData.Played`); was *nicht* zurueckkommt, gibt
+        /// es auf dem Server nicht mehr. Beides braucht der Abgleich der
+        /// Downloads — H6 und H9 haengen daran.
+        ids: [String] = []
     ) async throws -> ItemsResponse {
         let s = try requireSession()
         var query: [URLQueryItem] = [
@@ -315,6 +322,9 @@ public actor JellyfinClient {
         }
         if !filters.isEmpty {
             query.append(.init(name: "Filters", value: filters.joined(separator: ",")))
+        }
+        if !ids.isEmpty {
+            query.append(.init(name: "Ids", value: ids.joined(separator: ",")))
         }
         if let istGesehen {
             query.append(.init(name: "IsPlayed", value: istGesehen ? "true" : "false"))

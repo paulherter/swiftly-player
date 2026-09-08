@@ -31,4 +31,30 @@ public enum Listenregeln {
         var gesehen = Set(bestehende.map(\.id))
         return bestehende + neue.filter { gesehen.insert($0.id).inserted }
     }
+
+    // MARK: Nachladen
+
+    /// Ob es hinter dem, was schon dasteht, noch etwas gibt.
+    public static func nochMehrDa(geladen: Int, gesamt: Int) -> Bool {
+        geladen < gesamt
+    }
+
+    /// **Ab welchem Eintrag nachgeladen wird: der drittletzten Reihe.**
+    ///
+    /// Der Nachschub soll stehen, bevor jemand unten ankommt. Zwei Reihen
+    /// waeren beim schnellen Ziehen zu spaet, vier laedt zu frueh und holt
+    /// Seiten, die niemand ansieht.
+    ///
+    /// `nil` heisst: es gibt nichts, woran der Ausloeser haengen koennte.
+    ///
+    /// **Warum das hier steht und nicht in der Ansicht.** Die Regel stand
+    /// wortgleich in `Bibliotheksmodell` und in `Merklistenmodell` — von
+    /// `doppelte-finden.sh` mit 100 Prozent gemeldet. Zwei Fassungen
+    /// derselben Zahl laufen auseinander, sobald jemand eine davon anfasst,
+    /// und der Unterschied waere nur einem aufgefallen, der beide Listen
+    /// nebeneinander benutzt.
+    public static func nachladenAb(_ items: [Item], spalten: Int) -> String? {
+        guard !items.isEmpty else { return nil }
+        return items[max(0, items.count - 3 * spalten)].id
+    }
 }

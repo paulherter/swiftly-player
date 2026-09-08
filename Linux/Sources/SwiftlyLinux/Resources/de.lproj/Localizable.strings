@@ -230,3 +230,8 @@
 "Zuklappen" = "Zuklappen";
 "frei" = "frei";
 "Ähnliche Titel" = "Ähnliche Titel";
+
+/* Seerr-Zugang */
+"Aktiv" = "Aktiv";
+"Sitzung abgelaufen" = "Sitzung abgelaufen";
+"Wird geprüft …" = "Wird geprüft …";

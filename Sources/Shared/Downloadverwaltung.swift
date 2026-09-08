@@ -534,9 +534,14 @@ final class Downloadverwaltung {
     // MARK: H9 — der Titel ist vom Server verschwunden
 
     /// Setzt den Hinweis, ohne die Datei anzufassen.
-    func nichtMehrAufDemServer(_ id: String) {
-        guard let i = posten.firstIndex(where: { $0.id == id }) else { return }
-        posten[i].nochAufDemServer = false
+    ///
+    /// **Zweiseitig, seit der Abgleich existiert.** Vorher gab es nur den
+    /// Weg nach unten; ein Titel, den ein Servernachlauf wieder eingesammelt
+    /// hat, haette den Hinweis fuer immer behalten.
+    func aufDemServer(_ id: String, _ an: Bool) {
+        guard let i = posten.firstIndex(where: { $0.id == id }),
+              posten[i].nochAufDemServer != an else { return }
+        posten[i].nochAufDemServer = an
         sichern()
     }
 
@@ -547,6 +552,26 @@ final class Downloadverwaltung {
         else { return }
         posten[i].gesehen = an
         sichern()
+    }
+
+    /// **Was der Server sagt, in einem Zug nachziehen — H6 und H9.**
+    ///
+    /// Die beiden Setzer darueber standen bis 09.09.2026 da, ohne dass sie
+    /// jemand rief. Das war nicht folgenlos, nur unsichtbar:
+    /// `Downloadregeln.entbehrlich` filtert auf `gesehen` und gab deshalb
+    /// **immer** eine leere Liste zurueck — der Ausweg, den H6 bei
+    /// Platzmangel anbietet, erschien nie. Und `nochAufDemServer` blieb
+    /// wahr, obwohl beide Downloadseiten den Hinweis dazu schon zeichnen.
+    ///
+    /// Was hier hereinkommt, ist ausdruecklich **beantwortet**, nicht
+    /// abgefragt: wer offline ist, bekommt keine Antwort, und dann waere
+    /// „nicht mehr auf dem Server" fuer jeden Titel die falsche Auskunft.
+    /// Der Aufrufer haelt das auseinander.
+    func nachziehen(vorhanden: Set<String>, gesehen: Set<String>) {
+        for id in posten.map(\.id) {
+            self.gesehen(id, gesehen.contains(id))
+            aufDemServer(id, vorhanden.contains(id))
+        }
     }
 }
 

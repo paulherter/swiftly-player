@@ -47,11 +47,10 @@ final class Merklistenmodell {
     }
 
     var kennung: String { "\(gattung ?? "-")|\(sortierung.rawValue)" }
-    var nochMehrDa: Bool { items.count < gesamt }
+    var nochMehrDa: Bool { Listenregeln.nochMehrDa(geladen: items.count, gesamt: gesamt) }
 
     func nachladenAb(spalten: Int) -> String? {
-        guard !items.isEmpty else { return nil }
-        return items[max(0, items.count - 3 * spalten)].id
+        Listenregeln.nachladenAb(items, spalten: spalten)
     }
 
     func laden(_ model: AppModel) async {
