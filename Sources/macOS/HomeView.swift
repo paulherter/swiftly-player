@@ -199,12 +199,12 @@ struct HomeView: View {
     /// Holt neu, ohne die Reihen vorher zu leeren — der alte Stand bleibt
     /// stehen, bis der neue da ist.
     private func auffrischen() async {
+        // Das Vorholen der Serien stand hier und steht seit `9b0d58e` in
+        // `Startseitenmodell.laden` — dort, wo die Reihen entstehen, also
+        // bekommt es jede Plattform, statt dass drei es einzeln haben
+        // müssen. `zuletzt` ist dabei; ohne die Zeile fiel der Normalfall
+        // durch, weil `neueSerien` nur bei getrennten Reihen gefüllt ist.
         await stand.laden(model)
-        // Die Serien zu den Folgen im Hintergrund nachziehen: alle drei
-        // Reihen bestehen bei Serien aus Folgen, und ein Klick darauf führt
-        // auf die Serienseite (A8) — bis dahin fuhr sonst eine leere Seite
-        // herein.
-        Serienspeicher.geteilt.vorholen(weiter + naechste + neu, mit: model)
     }
 
 }

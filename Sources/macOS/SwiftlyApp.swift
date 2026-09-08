@@ -23,6 +23,14 @@ struct SwiftlyApp: App {
     /// SwiftUI fuehrt das zugegangene Fenster im Menue „Fenster".
     @NSApplicationDelegateAdaptor(Anwendungsdelegat.self) private var delegat
 
+    init() {
+        #if DEBUG
+        // Der Blick auf die eigene Arbeit — siehe `Fensterabzug`. Nur im
+        // Entwicklerbau, und nur ein Takt, der auf eine Datei sieht.
+        Fensterabzug.lauschen()
+        #endif
+    }
+
     var body: some Scene {
         // **`Window`, nicht `WindowGroup`.** Zwei Gruende, und der zweite ist
         // der wichtigere.
