@@ -1198,6 +1198,20 @@ final class VLCPlayerView: Basisansicht {
     var laeuftGemeldet: ((Bool) -> Void)?
 
     func pause()  { player.pause(); refreshPiPState() }
+
+    /// **Wie das Bild in die Flaeche gelegt wird -- ganz oder formatfuellend.**
+    ///
+    /// `Smaller` legt das ganze Bild hinein und laesst Balken stehen, `Larger`
+    /// fuellt die Flaeche und schneidet ab. Beides ohne Verzerren; ein
+    /// dritter Zustand waere nur eine falsche Streckung, deshalb gibt es
+    /// zwei.
+    ///
+    /// Nicht ueber `videoAspectRatio`: das setzt ein Seitenverhaeltnis und
+    /// zieht das Bild darauf, statt es zu beschneiden. Gesichter werden dabei
+    /// breit, und genau das will niemand.
+    func bildfuellend(_ an: Bool) {
+        player.videoFitMode = an ? .larger : .smaller
+    }
     func resume() { player.play();  refreshPiPState() }
     func stop() {
         absichtlichBeendet = true

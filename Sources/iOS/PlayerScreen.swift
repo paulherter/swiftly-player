@@ -25,6 +25,13 @@ struct PlayerScreen: View {
     /// Zaehlt mit, wie oft CoreAnimation uns tatsaechlich ruft -- laeuft
     /// nur, solange das Schild an ist.
     @State private var schirmtakt = Schirmtakt()
+    /// Formatfuellend statt ganzes Bild. Bleibt ueber Folgen hinweg stehen --
+    /// wer einmal die Balken weghaben will, will das meist auch danach.
+    @AppStorage("bildfuellend") private var bildfuellend = false
+    /// Kurzer Hinweis nach dem Umschalten, damit der Griff eine Antwort hat.
+    @State private var zoomhinweis: String?
+    /// Verhindert, dass eine einzige Zieh-Geste mehrfach umschaltet.
+    @State private var zoomSchonGeschaltet = false
 
     @State private var pipAvailable = false
     @State private var stelltWiederHer = false
@@ -249,6 +256,17 @@ struct PlayerScreen: View {
             tippflaechen
                 .allowsHitTesting(!imKleinenFenster)
 
+            if let zoomhinweis {
+                Text(zoomhinweis)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(.black.opacity(0.55)))
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
             if !bildFrei { startschleier }
 
             // Unsichtbar; horcht nur auf das Ende der Drehung.
@@ -440,6 +458,35 @@ struct PlayerScreen: View {
         .onChange(of: querformatFest) { _, fest in
             Orientierung.shared.playerGeoeffnet(querformatFest: fest)
         }
+        // **Zusammen- und Auseinanderziehen wechselt das Bildformat.**
+        //
+        // Zwei Zustaende, wie bei Netflix und Apples eigener Videoapp: das
+        // ganze Bild mit Balken, oder formatfuellend mit Beschnitt. Ein
+        // dritter waere nur eine Streckung, und die will niemand.
+        //
+        // `simultaneousGesture`, damit Tippen auf die Steuerung und das
+        // Spulen unberuehrt bleiben -- die liegen darunter und sollen weiter
+        // treffen.
+        //
+        // Der Riegel `zoomSchonGeschaltet` ist noetig, weil `onChanged`
+        // waehrend einer Geste dutzendfach feuert: ohne ihn haette ein
+        // einziges Auseinanderziehen zwischen beiden Zustaenden geflackert.
+        .simultaneousGesture(
+            MagnifyGesture(minimumScaleDelta: 0.05)
+                .onChanged { wert in
+                    guard !zoomSchonGeschaltet, !imKleinenFenster else { return }
+                    if wert.magnification > 1.15, !bildfuellend {
+                        zoomSchonGeschaltet = true
+                        formatUmschalten(fuellend: true)
+                    } else if wert.magnification < 0.85, bildfuellend {
+                        zoomSchonGeschaltet = true
+                        formatUmschalten(fuellend: false)
+                    }
+                }
+                .onEnded { _ in zoomSchonGeschaltet = false }
+        )
+        // Beim Oeffnen und beim Folgenwechsel den gemerkten Zustand anlegen.
+        .onChange(of: surface == nil) { _, _ in surface?.bildfuellend(bildfuellend) }
         // **Im Hintergrund laeuft weiter.** Das ist eine Entscheidung, keine
         // Unterlassung.
         //
@@ -1214,6 +1261,18 @@ struct PlayerScreen: View {
                         laeuft: laeuft,
                         sprungweite: (model.zurueckSekunden, model.vorSekunden),
                         bildURL: model.sperrbildURL(for: item))
+    }
+
+    /// Umschalten, anlegen und kurz sagen, was jetzt gilt.
+    private func formatUmschalten(fuellend: Bool) {
+        bildfuellend = fuellend
+        surface?.bildfuellend(fuellend)
+        let wort = fuellend ? String(localized: "Formatfüllend") : String(localized: "Ganzes Bild")
+        withAnimation(.easeOut(duration: 0.15)) { zoomhinweis = wort }
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            withAnimation(.easeIn(duration: 0.25)) { zoomhinweis = nil }
+        }
     }
 
     private func meldeFortschritt() {

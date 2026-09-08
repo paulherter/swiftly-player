@@ -2917,6 +2917,23 @@
         }
       }
     },
+    "Formatfüllend": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formatfüllend"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fill screen"
+          }
+        }
+      }
+    },
     "Fortschritt auf Kacheln": {
       "extractionState": "manual",
       "localizations": {
@@ -3098,6 +3115,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "There is no trailer for this title."
+          }
+        }
+      }
+    },
+    "Ganzes Bild": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ganzes Bild"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fit screen"
           }
         }
       }
