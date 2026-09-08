@@ -69,6 +69,16 @@ struct PlayerSettingsSheet: View {
     /// Vorwaerts, verliert genau die Ortsangabe, die die Bewegung geben soll.
     @State private var vorwaerts = true
 
+    /// Wie hoch der Inhalt der aktuellen Ebene ist.
+    ///
+    /// **Damit die Karte sich anlegt, statt sich auszudehnen.** Eine
+    /// `ScrollView` nimmt sich alles, was ihr angeboten wird -- im Querformat
+    /// ist das genau richtig, im Hochkant stand darunter eine halbe
+    /// Bildschirmhoehe leer. Gemessen wird der Inhalt, und die Flaeche wird
+    /// darauf gedeckelt; erst wenn er nicht mehr passt, begrenzt der Rand
+    /// und es wird gescrollt.
+    @State private var inhaltshoehe: CGFloat = 0
+
     /// Auch dieser Kopf sitzt oben links, und auch er liegt im Fenster
     /// unter der Ampel. Er steht im Player und erbt dessen Lage.
     /// Selbst gerechnet und nicht aus der Umgebung gelesen: der Player ist
@@ -130,9 +140,13 @@ struct PlayerSettingsSheet: View {
                     case .schlafzeit: schlafzeitauswahl
                     }
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { hoch in
+                    inhaltshoehe = hoch
+                }
             }
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: inhaltshoehe > 0 ? inhaltshoehe : nil)
             // **Der Wechsel schiebt, er blendet nicht.** Die Richtung ist die
             // Ortsangabe: hinein geht nach links weg und von rechts herein,
             // zurueck andersherum. Ohne `id` haelt SwiftUI die Ansicht fuer
@@ -140,14 +154,18 @@ struct PlayerSettingsSheet: View {
             // war das harte Umspringen.
             .id(ebene)
             .transition(uebergang)
-            // Ohne Beschnitt schoebe der abgehende Inhalt sichtbar ueber den
-            // Rand der Karte hinaus.
-            .clipped()
         }
         .padding(14)
         .frame(width: 356)
-        .frame(maxHeight: .infinity, alignment: .top)
         .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // **Der Beschnitt gehoert an die Karte, nicht an den Inhalt.**
+        //
+        // Erst stand er an der Inhaltsflaeche selbst -- und der schiebende
+        // Uebergang nimmt den Beschnitt dann einfach mit hinaus, weil er die
+        // ganze Ansicht samt ihrem Zuschnitt versetzt. Beschnitten werden
+        // muss die Stelle, die stehenbleibt: die Karte. Vor dem Rahmen, damit
+        // der obendrauf liegt statt selbst halbiert zu werden.
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Stil.rand)
         }
