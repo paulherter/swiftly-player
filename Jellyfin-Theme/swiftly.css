@@ -1783,6 +1783,20 @@ a[data-role=button]:focus {
    wegnehmen. */
 @media (min-width: 760px) {
 
+    /* **Die Huelle, in der die Schublade steckt.**
+       Jellyfin haengt `.mainDrawer` in ein unbenanntes `<div>`, und *das*
+       steht auf `display: none`, bis jemand das Menuezeichen drueckt. Solange
+       ein Vorfahr ausgeblendet ist, ist jede Regel am Kind wirkungslos —
+       die Leiste stand an der richtigen Stelle, in der richtigen Breite,
+       und war nicht da. Am laufenden Client gefunden: berechnete Breite
+       220, Rechteck 0 x 0. Diese Signatur gibt es nur so.
+
+       `:has()` ist der einzige Weg dorthin: die Huelle traegt keine Klasse,
+       und CSS kennt sonst keinen Weg nach oben. */
+    .layout-desktop div:has(> .mainDrawer) {
+        display: block !important;
+    }
+
     .layout-desktop .mainDrawer {
         left: 0 !important;
         right: auto !important;
