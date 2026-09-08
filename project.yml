@@ -95,6 +95,24 @@ targets:
         #
         # Nicht ueber `options.developmentLanguage`: das ist die
         # Ausgangssprache des Projekts und soll deutsch bleiben.
+        # **Ohne diesen Schluessel deckelt iOS die App auf 60 Hz** -- auch
+        # auf einem Geraet, das 120 kann. Apple hat das absichtlich zum
+        # Opt-in gemacht, um Akku zu sparen; fuer eine Videoapp ist es der
+        # Unterschied zwischen glatt und ruckelig.
+        #
+        # Warum es hier steht: 24p auf 60 Hz geht nicht auf. 60 / 23,976 =
+        # 2,503, jedes Bild bleibt also mal zwei, mal drei Bildwiederholungen
+        # stehen -- die klassische 3:2-Kadenz, am staerksten bei Schwenks zu
+        # sehen. Bei 120 Hz sind es 5,005, und das geht praktisch auf.
+        #
+        # Am 08.09.2026 gemessen: VLC lieferte in zwei Laeufen ueber je eine
+        # Minute jedes Bild puenktlich ab -- kein verworfenes, kein
+        # verspaetetes, Hardware-Dekoder, das Protokoll vollstaendig still --
+        # und das Ruckeln war trotzdem da. Es entstand also erst beim
+        # Anzeigen, hinter allem, was VLC ueberhaupt sieht.
+        #
+        # iPad Pro braucht den Schluessel laut Apple nicht.
+        CADisableMinimumFrameDurationOnPhone: true
         CFBundleDevelopmentRegion: en
         CFBundleDisplayName: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
