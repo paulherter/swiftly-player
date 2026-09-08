@@ -26,6 +26,45 @@ struct SeriesDetailView: View {
     /// gleichrangige Stufe.
     var startStaffelNummer: Int? = nil
 
+    /// **Was gemerkt ist, steht sofort da** — sonst gibt es einen leeren
+    /// Durchgang, und der ist das, was man sieht.
+    ///
+    /// Der `Serienspeicher` lag seit `2fc501c` geteilt daneben und wurde von
+    /// iPhone und iPad nicht benutzt: hier wartete die Serienseite bei
+    /// **jedem** Oeffnen auf den Server. Auf dem Mac waren das gemessene 92
+    /// bis 174 ms leere Seite, und das Nachreichen kommt zu spaet.
+    ///
+    /// **Ein Unterschied zur Mac-Fassung, mit Absicht.** Die waehlt aus dem
+    /// Gemerkten immer eine Staffel, notfalls die erste. Kommt man ohne
+    /// Hinweis auf die Seite, kennt `laden()` aber den besseren Weg — die
+    /// Staffel, in der man gerade steht (`stand?.seasonId`). Deshalb wird die
+    /// Wahl hier nur vorgezogen, wenn ein Hinweis mitkam; sonst steht die
+    /// Staffelliste sofort und nur die Auswahl faellt einen Wimpernschlag
+    /// spaeter. Der leere Durchgang ist so oder so weg.
+    @MainActor init(model: AppModel, serie: Item,
+                    startStaffelID: String? = nil, startStaffelNummer: Int? = nil) {
+        self.model = model
+        self.serie = serie
+        self.startStaffelID = startStaffelID
+        self.startStaffelNummer = startStaffelNummer
+
+        let gemerkt = Serienspeicher.geteilt.stand(serie.id, mit: model)
+        let staffeln = gemerkt?.staffeln ?? []
+        _staffeln = State(initialValue: staffeln)
+
+        let hinweis = startStaffelID != nil || startStaffelNummer != nil
+        let staffel = hinweis
+            ? staffeln.first { $0.id == startStaffelID }
+                ?? staffeln.first { $0.indexNumber != nil
+                                    && $0.indexNumber == startStaffelNummer }
+            : nil
+        _gewaehlteStaffel = State(initialValue: staffel)
+
+        let folgen = staffel.flatMap { gemerkt?.folgen[$0.id] } ?? []
+        _folgen = State(initialValue: folgen)
+        _laedt = State(initialValue: folgen.isEmpty)
+    }
+
     @Environment(\.dismiss) private var zurueck
     @Environment(\.breit) private var breit
     @Environment(\.weit) private var weit
@@ -241,6 +280,10 @@ struct SeriesDetailView: View {
             + "stand=\(stand.map { "S\($0.parentIndexNumber ?? -1)E\($0.indexNumber ?? -1) " + ($0.seasonId ?? "-") } ?? "-") "
             + "gewaehlt=\(gewaehlteStaffel?.name ?? "-") "
             + "vorhanden=[\(staffeln.map { "\($0.name)=\($0.id)" }.joined(separator: " "))]")
+        // Fuer den naechsten Weg auf dieselbe Serie — und fuer den Weg von
+        // einer Folge aus, der sonst die Serie jedes Mal nachholt.
+        Serienspeicher.geteilt.merken(serie)
+        Serienspeicher.geteilt.merken(serie.id) { $0.staffeln = staffeln }
         gemerkt = serie.userData?.isFavorite ?? false
         gesehen = serie.userData?.played ?? false
         if let stand { plan = await model.plan(for: stand.id) }
@@ -506,6 +549,9 @@ struct SeriesDetailView: View {
 
     private func folgenLaden() async {
         folgen = await model.folgen(serie: serie.id, staffel: gewaehlteStaffel?.id)
+        if let id = gewaehlteStaffel?.id {
+            Serienspeicher.geteilt.merken(serie.id) { $0.folgen[id] = folgen }
+        }
     }
 
     // MARK: Downloads
