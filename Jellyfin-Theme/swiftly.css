@@ -85,7 +85,12 @@
 
     /* --- Masse --- */
     --sw-rand-abstand:     24px;
+    --sw-kachel-abstand:   12px;
     --sw-zeile:            32px;   /* Ein Zeiger trifft genauer als ein Finger */
+    --sw-hauptknopf:       48px;
+    /* Poster 2 : 3, Querkachel 16 : 9 — dieselben Masse wie auf dem Mac. */
+    --sw-kachel-breite:   150px;
+    --sw-quer-breite:     280px;
 
     /* --- Die Marke · Sources/Shared/Marken.swift ---
        Bewusst eigene Werte und nicht der Akzent: die Marke ist gesetzt,
@@ -1467,4 +1472,278 @@ a[data-role=button]:focus {
 .MuiLinearProgress-root {
     background-color: rgba(255, 255, 255, .16) !important;
     border-radius: 999px !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   O · Aufbau — die Seiten auf die Mac-Fassung bringen
+   ---------------------------------------------------------------------
+   Bis hierher hat das Thema **gefaerbt und geformt**. Das reicht nicht:
+   Jellyfin stellt die Dinge anders hin als Swiftly, und Farbe allein
+   macht aus einem anderen Aufbau keinen gleichen.
+
+   Die Mittel dafuer sind bei ElegantFin und Ultrachromic abgeschaut —
+   `flex-direction` auf vorhandenen Behaeltern, `:has()` fuer „wenn die
+   Seite dieses Stueck enthaelt", und `.layout-desktop` als Schranke.
+   Nichts davon ist geraten; die Selektoren stehen in den ausgelieferten
+   Stilblaettern.
+
+   **Alles hier gilt nur auf `layout-desktop`.** Ein Fenster mit Zeiger
+   ist der Fall, fuer den die Mac-Fassung gebaut ist. Auf dem Telefon
+   bleibt Jellyfins eigener Aufbau stehen — dort waere die Mac-Fassung
+   die falsche Vorlage.
+   --------------------------------------------------------------------- */
+
+
+/* --- Der Seitenrand ---
+   Jellyfin rueckt mit 3,3 Prozent ein, also mit der Fensterbreite. Der
+   Mac hat einen festen Rand von 24, und die Kacheln darunter beginnen
+   auf derselben Linie wie die Ueberschrift darueber. */
+.layout-desktop [dir=ltr] .padded-left {
+    padding-left: var(--sw-rand-abstand) !important;
+}
+
+.layout-desktop [dir=ltr] .padded-right {
+    padding-right: var(--sw-rand-abstand) !important;
+}
+
+.layout-desktop .emby-scroller,
+.layout-desktop .scrollX {
+    padding-left: var(--sw-rand-abstand) !important;
+}
+
+
+/* --- Feste Kachelmasse ---
+   **Der eine Punkt, an dem der Mac wirklich anders rechnet.** Jellyfin
+   teilt die Zeile in Prozente: acht Plakate auf einem breiten Schirm,
+   drei auf einem schmalen — die Kachel waechst also mit dem Fenster.
+
+   Swiftly macht es andersherum: die Kachel ist 150 x 225, und die
+   Spaltenzahl ergibt sich daraus (`BibliothekView`, Kommentar dort).
+   Ein Plakat sieht auf jedem Schirm gleich gross aus.
+
+   Querkachel 280 x 158 — 16 : 9, nur fuer „Weiterschauen". */
+.layout-desktop .portraitCard,
+.layout-desktop .overflowPortraitCard,
+.layout-desktop .squareCard,
+.layout-desktop .overflowSquareCard {
+    width: var(--sw-kachel-breite) !important;
+}
+
+.layout-desktop .backdropCard,
+.layout-desktop .overflowBackdropCard {
+    width: var(--sw-quer-breite) !important;
+}
+
+/* Der Abstand zwischen zwei Kacheln — `Stil.kachelAbstand`. */
+.layout-desktop .itemsContainer > .card > .cardBox {
+    margin-right: var(--sw-kachel-abstand) !important;
+}
+
+
+/* --- Die Detailseite ---
+   Auf dem Mac steht sie so: Titel, Angabenzeile, drei Zeilen
+   Beschreibung, Knopfreihe — **untereinander, alles linksbuendig**, und
+   das Bild liegt rechts dahinter. Jellyfin stellt die Knoepfe neben den
+   Titel und ein Plakat davor.
+
+   `flex-direction: column` auf dem Band ist derselbe Griff, den
+   ElegantFin benutzt. Er baut nichts um, er dreht nur die Achse. */
+.layout-desktop .detailPagePrimaryContainer > .detailRibbon,
+.layout-desktop .detailPagePrimaryContainer.detailRibbon {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+}
+
+/* **Kein Plakat.** Auf dem Apple TV ist es weggefallen, weil es nur den
+   Fortschrittsbalken trug — und der steht jetzt dort, wo er auf jeder
+   anderen Kachel auch steht. Der Mac hat es nie gehabt.
+
+   Ausgenommen sind die Seiten, auf denen das Bild **die Sache selbst**
+   ist: eine Person, ein Album, ein Buch. Dort traegt es keine Auskunft
+   doppelt, dort ist es der Gegenstand. */
+.layout-desktop #itemDetailPage .detailImageContainer:not(:has(.person)):not(:has(.album)):not(:has(.book)) {
+    display: none !important;
+}
+
+/* **Der Titel steht als Schrift da, nicht als Bild.** Jellyfin blendet
+   auf der Detailseite das Logo des Titels ein, wo es eines gibt. Das
+   sieht auf jeder Seite anders aus — mal breit, mal hoch, mal in einer
+   fremden Schrift —, und genau das ist der Grund, warum Swiftly den
+   Namen setzt. Ein Kopf, der auf jeder Seite an derselben Stelle
+   beginnt, ist mehr wert als ein huebsches Logo. */
+.layout-desktop .detailLogo {
+    display: none !important;
+}
+
+.layout-desktop .detailLogo:not(.hide) ~ .detailPageWrapperContainer .nameContainer h1,
+.layout-desktop .nameContainer h1.itemName {
+    display: block !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer > .detailPagePrimaryContent,
+.layout-desktop [dir=ltr] .detailPagePrimaryContainer > .detailRibbon {
+    padding-left: var(--sw-rand-abstand) !important;
+}
+
+/* Die Beschreibung: drei Zeilen, dann Schluss. Auf dem Mac ist die Hoehe
+   fest, damit die Knopfreihe auf **jeder** Seite an derselben Stelle
+   steht — sonst wandert sie von Film zu Film. */
+.layout-desktop #itemDetailPage .overview {
+    max-width: 640px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.layout-desktop .mainDetailButtons {
+    gap: 12px;
+    margin: 26px 0 0 !important;
+}
+
+/* **Der eine gefuellte Knopf der Seite.** Er ist der erste in der Reihe
+   — das ist Abspielen oder Fortsetzen. Weiss, dunkle Schrift, Ecke 10,
+   48 hoch; Zeichen und Beschriftung nebeneinander wie auf dem Mac.
+   Ueber die Stellung angesprochen und nicht ueber einen Namen: die
+   Knopfklassen von 10.11 stehen in keinem Stilblatt, ein Name waere
+   geraten. */
+.layout-desktop .mainDetailButtons > .detailButton:first-child {
+    background: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+    border-radius: var(--sw-ecke) !important;
+    height: var(--sw-hauptknopf);
+    padding: 0 20px !important;
+}
+
+.layout-desktop .mainDetailButtons > .detailButton:first-child:hover {
+    background: rgba(255, 255, 255, .88) !important;
+}
+
+.layout-desktop .mainDetailButtons > .detailButton:first-child .detailButton-content {
+    flex-direction: row !important;
+    gap: 9px;
+}
+
+.layout-desktop .mainDetailButtons > .detailButton:first-child .detailButton-icon,
+.layout-desktop .mainDetailButtons > .detailButton:first-child .material-icons {
+    background: transparent !important;
+    color: inherit !important;
+    width: auto !important;
+    height: auto !important;
+    line-height: 1 !important;
+    font-size: 20px !important;
+    border-radius: 0 !important;
+}
+
+.layout-desktop .mainDetailButtons > .detailButton:first-child .detailButton-text {
+    color: inherit !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    margin-top: 0 !important;
+}
+
+/* Alles daneben ist Nebenknopf: abgerundetes Quadrat, Weiss 14 %,
+   **kein Kreis** — so steht es auf dem Mac (`Nebenknopf`). */
+.layout-desktop .mainDetailButtons > .detailButton:not(:first-child) .detailButton-icon,
+.layout-desktop .mainDetailButtons > .detailButton:not(:first-child) .material-icons {
+    width: 48px !important;
+    height: 48px !important;
+    line-height: 48px !important;
+    border-radius: var(--sw-ecke) !important;
+    background: rgba(255, 255, 255, .14) !important;
+    font-size: 20px !important;
+}
+
+.layout-desktop .mainDetailButtons > .detailButton:not(:first-child):hover .detailButton-icon,
+.layout-desktop .mainDetailButtons > .detailButton:not(:first-child):hover .material-icons {
+    background: rgba(255, 255, 255, .22) !important;
+}
+
+.layout-desktop .mainDetailButtons > .detailButton:not(:first-child) .detailButton-text {
+    display: none !important;
+}
+
+
+/* --- Reiter auf der Detailseite ---
+   **Zwei Rollen, zwei Formen.** In einer Bibliothek waehlt eine
+   Chipreihe einen Filter — dort ist die Kapsel richtig. Auf der
+   Detailseite waehlen „Folgen / Besetzung / Aehnliches" einen Abschnitt
+   derselben Seite; dort steht auf dem Mac Schrift mit einem Strich
+   darunter. Eine Kapsel machte daraus einen Filter, den es nicht gibt. */
+.layout-desktop #itemDetailPage .emby-tab-button {
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    border-bottom: 2px solid transparent !important;
+    height: 40px !important;
+    line-height: 38px !important;
+    padding: 0 !important;
+    margin: 0 32px 0 0 !important;
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.layout-desktop #itemDetailPage .emby-tab-button:hover {
+    color: var(--sw-schrift) !important;
+}
+
+.layout-desktop #itemDetailPage .emby-tab-button-active {
+    background: transparent !important;
+    color: var(--sw-schrift) !important;
+    border-bottom-color: var(--sw-akzent) !important;
+    font-weight: 600 !important;
+}
+
+
+/* --- Die Werkzeugleiste einer Bibliothek ---
+   **Koepfe sind linksbuendig, ueberall** (E9). Jellyfin zentriert die
+   Reihe aus Filter, Sortierung und Ansicht; auf dem Mac stehen die
+   Wertpillen links unter dem Titel. */
+.layout-desktop .viewSettings {
+    text-align: left !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.layout-desktop .alphaPicker {
+    background: transparent !important;
+}
+
+
+/* --- Der Schwebezustand auf einer Kachel ---
+   Auf dem Mac vergroessert sich das Bild, und das ist alles. Im Browser
+   gibt es zusaetzlich die Knoepfe im Bild — die bleiben, weil sie
+   Wege sind, die es sonst nicht gaebe. Aber der schwarze Vorhang
+   darunter wird duenner: er soll das Plakat nicht zudecken. */
+.layout-desktop .cardOverlayContainer {
+    background: linear-gradient(0deg,
+                    rgba(11, 11, 13, .78) 0%,
+                    rgba(11, 11, 13, .10) 55%,
+                    rgba(11, 11, 13, 0)  100%) !important;
+}
+
+.layout-desktop .cardOverlayContainer > .cardOverlayFab-primary {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .45) !important;
+}
+
+
+/* --- Zeilenlisten (Folgen, Besetzung, Einstellungen) ---
+   Flache Zeilen mit Haarlinien, kein Kasten. Das Bild links ist eine
+   Kachel und traegt deshalb die Kachelecke. */
+.layout-desktop .listItem {
+    border-radius: 0 !important;
+    border-bottom: 1px solid var(--sw-linie);
+    min-height: 52px !important;
+}
+
+.layout-desktop .listItem:hover {
+    background-color: rgba(255, 255, 255, .05) !important;
+}
+
+.layout-desktop .listItemImage,
+.layout-desktop .listItemImage-large {
+    border-radius: var(--sw-ecke) !important;
 }
