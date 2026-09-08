@@ -48,7 +48,21 @@ struct Wiedergabeblatt: View {
             case .bild:       "Bild"
             case .tempo:      "Tempo"
             case .schlafzeit: "Schlafzeit"
-            case .technik:    "Technik"
+            case .technik:    "Technikschild"
+            }
+        }
+
+        /// **Mit `return`, obwohl es ohne ginge.** Der Katalogpruefer sucht
+        /// nach `titel: "..."`, und `case .untertitel:` endet genau darauf --
+        /// ohne das Wort dazwischen haelt er den Symbolnamen fuer Text.
+        var symbol: String {
+            switch self {
+            case .untertitel: return "captions.bubble.fill"
+            case .ton:        return "speaker.wave.2.fill"
+            case .bild:       return "aspectratio"
+            case .tempo:      return "speedometer"
+            case .schlafzeit: return "moon.fill"
+            case .technik:    return "chart.bar.fill"
             }
         }
     }
@@ -66,10 +80,19 @@ struct Wiedergabeblatt: View {
             .ignoresSafeArea(edges: .bottom)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text(titel)
-                    .font(Stil.knopf)
-                    .foregroundStyle(Stil.schriftLeise)
-                    .lineLimit(1)
+                // **Der Beleg steht neben dem Titel, nicht unter allem.**
+                //
+                // Er sass unten quer unter beiden Spalten und las sich wie
+                // eine Fusszeile. Was der Server ausliefert, gehoert aber
+                // nach oben zum Titel: es beschreibt, was hier laeuft.
+                HStack(alignment: .firstTextBaseline, spacing: 24) {
+                    Text(titel)
+                        .font(Stil.knopf)
+                        .foregroundStyle(Stil.schriftLeise)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    beleg
+                }
 
                 // **Links die Leiste, rechts die Werte.**
                 //
@@ -81,24 +104,23 @@ struct Wiedergabeblatt: View {
                 // rechts steht, was darin zur Wahl steht.
                 //
                 // So macht es auch Apples eigener Abspieler.
-                HStack(alignment: .top, spacing: 44) {
-                    VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 48) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        spaltenmarke("Einstellungen")
                         ForEach(Kategorie.allCases) { k in
-                            Button(k.name) { kategorie = k }
-                                .buttonStyle(ChipStil(an: kategorie == k))
-                                .focused($amChip, equals: k)
+                            leistenzeile(k)
                         }
                     }
-                    .frame(width: 340, alignment: .leading)
+                    .frame(width: 460, alignment: .leading)
                     .focusSection()
 
-                    VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        spaltenmarke(kategorie.name)
                         karten
-                        beleg
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.top, 24)
+                .padding(.top, 28)
             }
             .padding(.horizontal, Stil.randSeite)
             .padding(.bottom, Stil.randOben)
@@ -123,6 +145,54 @@ struct Wiedergabeblatt: View {
             }
         }
         .onExitCommand { offen = false }
+    }
+
+    /// **Die Zeile traegt den Namen und den Stand.**
+    ///
+    /// Das war der Punkt des ganzen Umbaus: ein Blick sagt, was eingestellt
+    /// ist. Als Chip stand dort nur der Name, und den Stand fand man erst,
+    /// wenn man die Kategorie geoeffnet hatte.
+    private func leistenzeile(_ k: Kategorie) -> some View {
+        Button { kategorie = k } label: {
+            HStack(spacing: 18) {
+                Image(systemName: k.symbol)
+                    .font(.system(size: 24))
+                    .frame(width: 30)
+                Text(k.name)
+                    .font(.system(size: 27, weight: kategorie == k ? .semibold : .regular))
+                Spacer(minLength: 12)
+                Text(wert(k))
+                    .font(.system(size: 25))
+                    .opacity(0.55)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 22)
+            .frame(height: 62)
+        }
+        .buttonStyle(LeistenStil(an: kategorie == k))
+        .focused($amChip, equals: k)
+    }
+
+    private func spaltenmarke(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(.system(size: 19, weight: .medium))
+            .textCase(.uppercase)
+            .tracking(1.6)
+            .foregroundStyle(Stil.schriftSehrLeise)
+            .padding(.horizontal, 22)
+            .padding(.bottom, 8)
+    }
+
+    /// Was gerade gilt -- neben dem Namen in der Leiste.
+    private func wert(_ k: Kategorie) -> String {
+        switch k {
+        case .untertitel: untertitelJetzt ?? String(localized: "Aus")
+        case .ton:        tonJetzt ?? String(localized: "Keine")
+        case .bild:       String(localized: bildfuellend ? "Formatfüllend" : "Ganzes Bild")
+        case .tempo:      Tempostufen.beschriftung(tempo)
+        case .schlafzeit: schlafminuten.map { "\($0)" } ?? String(localized: "Aus")
+        case .technik:    String(localized: technikschild ? "An" : "Aus")
+        }
     }
 
     // MARK: Karten
@@ -492,7 +562,7 @@ struct Wahlkarte: View {
                         .foregroundStyle(Stil.akzent)
                 }
             }
-            .frame(width: 380, height: 130, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
             .padding(.horizontal, 26)
         }
         .buttonStyle(KartenStil())
