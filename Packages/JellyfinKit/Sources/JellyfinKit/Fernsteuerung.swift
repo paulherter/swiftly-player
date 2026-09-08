@@ -147,8 +147,21 @@ public actor Fernsteuerung {
         }
     }
 
+    /// **Die `async`-Form, nicht die mit Rueckrufblock.**
+    ///
+    /// `send(_:completionHandler:)` gibt es in swift-corelibs-foundation erst
+    /// ab einer neueren Fassung; unter Swift 6.0 auf Linux bricht die
+    /// Uebersetzung mit „extra trailing closure passed in call". Auf dem
+    /// Entwicklungsrechner faellt das nicht auf, weil dort 6.3 laeuft — der
+    /// Bau-Durchgang hat es beim ersten Lauf gefunden.
+    ///
+    /// `send(_:) async throws` gibt es auf beiden Seiten und auf Apple
+    /// ebenfalls. Das Ergebnis wird verworfen wie zuvor: ein
+    /// Lebenszeichen, das nicht ankommt, wird nicht nachgereicht — die
+    /// Gegenstelle merkt den Abriss an der ausbleibenden Antwort.
     private func senden(_ text: String) {
-        aufgabe?.send(.string(text)) { _ in }
+        guard let aufgabe else { return }
+        Task { try? await aufgabe.send(.string(text)) }
     }
 
     private func verarbeiten(_ text: String) {
