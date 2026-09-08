@@ -1716,19 +1716,26 @@ a[data-role=button]:focus {
 
 
 /* --- Der Schwebezustand auf einer Kachel ---
-   Auf dem Mac vergroessert sich das Bild, und das ist alles. Im Browser
-   gibt es zusaetzlich die Knoepfe im Bild — die bleiben, weil sie
-   Wege sind, die es sonst nicht gaebe. Aber der schwarze Vorhang
-   darunter wird duenner: er soll das Plakat nicht zudecken. */
-.layout-desktop .cardOverlayContainer {
-    background: linear-gradient(0deg,
-                    rgba(11, 11, 13, .78) 0%,
-                    rgba(11, 11, 13, .10) 55%,
-                    rgba(11, 11, 13, 0)  100%) !important;
-}
+   **Auf dem Mac wird das Bild groesser, und das ist alles.** Kein Vorhang,
+   kein Abspielkreis, keine drei Knoepfe im Plakat. Paul, an seinem eigenen
+   Bild: „sonst wird's ja einfach nur groesser. Da kommen gar keine Elemente
+   oben drauf."
 
-.layout-desktop .cardOverlayContainer > .cardOverlayFab-primary {
-    box-shadow: 0 6px 20px rgba(0, 0, 0, .45) !important;
+   **Und die Wege gehen dabei nicht verloren.** Am laufenden Client
+   nachgesehen: ein Rechtsklick auf eine Kachel oeffnet Jellyfins volles
+   Menue — Auswaehlen, Wiedergabeliste, Metadaten. Genau der Weg, den die
+   Mac-Fassung nimmt (`kontextmenue` in Macbausteine.swift, A6). Ohne diese
+   Pruefung waere das Wegnehmen des Vorhangs ein Verlust gewesen.
+
+   Nur dort, wo es einen Zeiger gibt. Auf einem Schirm zum Anfassen ist der
+   Kreis der einzige Weg in die Wiedergabe, und ein Rechtsklick existiert
+   nicht. */
+@media (hover: hover) and (pointer: fine) {
+    .layout-desktop .cardOverlayContainer,
+    .layout-desktop .cardOverlayButton,
+    .layout-desktop .cardOverlayFab-primary {
+        display: none !important;
+    }
 }
 
 
@@ -1768,7 +1775,13 @@ a[data-role=button]:focus {
    wie sie ist — dort ist der Daumen die Grenze, nicht die Fensterhöhe.
    --------------------------------------------------------------------- */
 
-@media (min-width: 1000px) {
+/* **760, nicht 1000.** Die erste Zahl war geraten und lag auf Pauls Kante:
+   sein Fenster ist auf einem Retina-Schirm rund tausend CSS-Punkte breit, und
+   die Leiste blieb deshalb aus. Ob ueberhaupt eine Leiste passt, entscheidet
+   ohnehin `.layout-desktop` — Jellyfin setzt das nach Eingabeart. Die Zahl
+   hier ist nur noch der Boden, unter dem 220 Punkt Leiste vom Inhalt zu viel
+   wegnehmen. */
+@media (min-width: 760px) {
 
     .layout-desktop .mainDrawer {
         left: 0 !important;
