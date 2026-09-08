@@ -9,6 +9,14 @@
         "imageUrl": null,
         "versions": [
             {
+                "version": "1.0.3.0",
+                "changelog": "",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/paulherter/swiftly-player/raw/main/Jellyfin-Theme/Pakete/swiftly_1.0.3.0.zip",
+                "checksum": "1aa6e72ba61389e8e37068f3518766ab",
+                "timestamp": "2026-09-08T14:13:00Z"
+            },
+            {
                 "version": "1.0.2.0",
                 "changelog": "",
                 "targetAbi": "12.0.0.0",

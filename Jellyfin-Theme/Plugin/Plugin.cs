@@ -260,8 +260,18 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         return css.Length;
     }
 
+    /// <summary>
+    /// Die Kennung in der Adresse des Stilblatts.
+    ///
+    /// **Die Fassung des Plugins gehört mit hinein.** Sie hing zuerst nur an
+    /// den Einstellungen — und damit blieb die Adresse gleich, wenn sich das
+    /// Stilblatt änderte. Der Browser behielt die alte Datei, und von aussen
+    /// sah es aus, als habe die neue Fassung nichts getan. Genau der Fehler,
+    /// den Paul zweimal als „hat sich nichts geändert" gemeldet hat.
+    /// </summary>
     private int Stand() =>
-        Configuration.Akzent.GetHashCode(StringComparison.Ordinal)
+        (GetType().Assembly.GetName().Version?.GetHashCode() ?? 0)
+        ^ Configuration.Akzent.GetHashCode(StringComparison.Ordinal)
         ^ Configuration.Kachelbreite
         ^ (Configuration.Seitenleiste ? 2 : 0)
         ^ (Configuration.MeineMedienAusblenden ? 4 : 0);
