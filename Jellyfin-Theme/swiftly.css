@@ -181,9 +181,39 @@ body {
     color: var(--sw-schrift) !important;
 }
 
-/* Die Kulisse hinter der ganzen Seite bleibt eine Ahnung, keine Tapete. */
+/* **Die Kulisse wird von einer Maske ausgeblendet, nicht von Deckkraft.**
+   Hier stand `opacity: .38` — „eine Ahnung, keine Tapete". Der Gedanke war
+   richtig, das Mittel falsch: ueber fast schwarzem Grund bleibt bei 38
+   Prozent nichts uebrig, und Paul hat es sofort gesehen („die bilder sind
+   ja ohne theme da"). Es war meine Regel, nicht Jellyfins Einstellung.
+
+   Dasselbe steht in `Kulisse.swift` und war die ganze Zeit die Antwort:
+   ein Anstrich endet in undurchsichtigem `grund` und setzt voraus, dass
+   der Hintergrund genau das ist — eine Maske endet in Durchsichtigkeit. */
 .backgroundContainer.withBackdrop {
-    opacity: .38 !important;
+    opacity: 1 !important;
+}
+
+/* Und die Maske liegt auf dem Element, das das Bild wirklich traegt.
+   Am laufenden Client gemessen: `.backdropImage` haelt die Adresse im
+   `style`-Attribut; `.itemBackdrop` ist leer und war nie der Traeger. */
+.backdropImage {
+    -webkit-mask-image:
+        linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,.05) 15%, rgba(0,0,0,.22) 29%,
+            rgba(0,0,0,.50) 45%, rgba(0,0,0,.75) 57%, rgba(0,0,0,.90) 70%,
+            rgba(0,0,0,.98) 85%, rgba(0,0,0,1) 100%),
+        linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,.72) 60%,
+            rgba(0,0,0,.42) 72%, rgba(0,0,0,.18) 84%, rgba(0,0,0,.04) 93%,
+            rgba(0,0,0,0) 100%);
+    mask-image:
+        linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,.05) 15%, rgba(0,0,0,.22) 29%,
+            rgba(0,0,0,.50) 45%, rgba(0,0,0,.75) 57%, rgba(0,0,0,.90) 70%,
+            rgba(0,0,0,.98) 85%, rgba(0,0,0,1) 100%),
+        linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,.72) 60%,
+            rgba(0,0,0,.42) 72%, rgba(0,0,0,.18) 84%, rgba(0,0,0,.04) 93%,
+            rgba(0,0,0,0) 100%);
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
 }
 
 /* Auswahl und Markierung tragen den Akzent — er zeigt Auswahl. */
@@ -1615,8 +1645,12 @@ a[data-role=button]:focus {
     overflow: hidden;
 }
 
+.layout-desktop .mainDetailButtons > .detailButton {
+    margin: 0 !important;
+}
+
 .layout-desktop .mainDetailButtons {
-    gap: 12px;
+    gap: var(--sw-kachel-abstand) !important;
     margin: 26px 0 0 !important;
 }
 
@@ -1641,7 +1675,6 @@ a[data-role=button]:focus {
     border-radius: var(--sw-ecke) !important;
     height: var(--sw-hauptknopf) !important;
     padding: 0 22px 0 18px !important;
-    margin-right: var(--sw-kachel-abstand) !important;
     flex-direction: row !important;
     align-items: center !important;
     gap: 9px;
@@ -1694,6 +1727,22 @@ a[data-role=button]:focus {
 .layout-desktop .mainDetailButtons .ratingbutton-icon-withrating {
     color: var(--sw-akzent) !important;
 }
+
+
+/* --- Die Reihenfolge unter der Knopfreihe ---
+   Im Entwurf steht die Beschreibung direkt unter den Angaben. Jellyfin
+   legt sie in einen **anderen** Kasten als Titel und Knoepfe, also laesst
+   sie sich nicht dorthin heben — wohl aber vor die Spurwahl ziehen.
+   Aus „Knoepfe, VIDEO/AUDIO, Beschreibung" wird damit „Knoepfe,
+   Beschreibung, VIDEO/AUDIO": naeher am Entwurf, und erreichbar. */
+.layout-desktop .detailPagePrimaryContent .detailSection {
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.layout-desktop .detailPagePrimaryContent .detailSectionContent { order: 1 !important; }
+.layout-desktop .detailPagePrimaryContent .trackSelections    { order: 2 !important; }
+.layout-desktop .detailPagePrimaryContent .itemDetailsGroup   { order: 3 !important; }
 
 
 /* --- Reiter auf der Detailseite ---
