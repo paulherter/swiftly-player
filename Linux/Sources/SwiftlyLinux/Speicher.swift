@@ -124,6 +124,34 @@ enum Speicher {
         var servername: String?
     }
 
+    // MARK: - Downloads
+
+    /// **Die Liste, nicht die Dateien.** Was geladen wurde, liegt als Film
+    /// oder Folge im Downloadordner; hier steht nur, was es ist und wie weit
+    /// es ist. Beides zusammenzuwerfen waere der Fehler, den ein
+    /// abgebrochener Download sofort sichtbar macht: die Datei ist halb da,
+    /// die Liste weiss es, und nur mit beidem laesst sich fortsetzen.
+    private static var downloaddatei: URL { ordner.appendingPathComponent("downloads.json") }
+
+    /// Wo die geladenen Dateien liegen — neben der Liste, nicht darin.
+    static var downloadordner: URL { ordner.appendingPathComponent("Downloads") }
+
+    static func downloadsLesen() -> [Downloadposten] {
+        guard let daten = try? Data(contentsOf: downloaddatei) else { return [] }
+        return (try? JSONDecoder().decode([Downloadposten].self, from: daten)) ?? []
+    }
+
+    static func downloadsSchreiben(_ posten: [Downloadposten]) {
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                    attributes: nurIch)
+            try JSONEncoder().encode(posten).write(to: downloaddatei, options: [.atomic])
+        } catch {
+            FileHandle.standardError.write(
+                Data("Downloadliste ließ sich nicht sichern: \(error.localizedDescription)\n".utf8))
+        }
+    }
+
     private static var kontendatei: URL { ordner.appendingPathComponent("konten.json") }
 
     /// Liest den Bund — und nimmt eine einzelne Sitzung aus der Zeit davor an.

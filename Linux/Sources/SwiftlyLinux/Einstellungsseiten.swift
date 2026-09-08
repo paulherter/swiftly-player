@@ -401,6 +401,50 @@ extension App {
         })
         anhaengen(block, d.aussen)
 
+        // **H1 — aus im Auslieferungszustand**, und dann steht hier genau
+        // eine Zeile. Die Rubrik heisst „Offline" und nicht „Downloads":
+        // gemeint ist, was ohne Netz geht, nicht der Ladevorgang.
+        //
+        // „Nur ueber WLAN" faellt hier weg. H5 ist eine Regel gegen
+        // Mobilfunkkosten; ein Schreibtischrechner hat kein Mobilfunknetz,
+        // und was ein angestecktes Modem kostet, weiss die App nicht. Ein
+        // Schalter, der nichts unterscheidet, ist kein Schalter.
+        let o = einstellungsgruppe(uebersetzt("Offline"))
+        anhaengen(o.raum, schalterzeile(symbol: "folder-download-symbolic",
+                                        titel: uebersetzt("Downloads"),
+                                        unter: uebersetzt("Titel auf diesen Rechner laden und ohne Netz sehen"),
+                                        an: wahlen.downloadsAn) { [weak self] an in
+            guard let self else { return }
+            if an || self.downloads.posten.isEmpty {
+                self.wahlen.downloadsAn = an
+                self.wahlen.sichern()
+                self.meinsFuellen()
+            } else {
+                // **H10 — Ausschalten loescht nichts ungefragt.** Die Frage
+                // steht dort, wo geschaltet wurde; einen Systemdialog wie auf
+                // dem Mac gibt es in dieser Oberflaeche nicht.
+                self.abschaltfrageZeigen()
+            }
+        })
+        // Die Nachfrage: verborgen, bis jemand ausschalten will.
+        downloadabschaltfrage = stapel(GTK_ORIENTATION_VERTICAL, abstand: 10)
+        gtk_widget_set_margin_start(downloadabschaltfrage, 14)
+        gtk_widget_set_margin_end(downloadabschaltfrage, 14)
+        gtk_widget_set_margin_bottom(downloadabschaltfrage, 12)
+        gtk_widget_set_visible(downloadabschaltfrage, 0)
+        anhaengen(o.raum, downloadabschaltfrage)
+
+        if wahlen.downloadsAn {
+            anhaengen(o.raum, zeilenstrich())
+            let b = Downloadregeln.belegung(downloads.posten)
+            anhaengen(o.raum, wertezeile(symbol: "drive-harddisk-symbolic",
+                                         titel: uebersetzt("Speicher"),
+                                         unter: String(format: uebersetzt("%d Titel auf diesem Rechner"),
+                                                       downloads.posten.count),
+                                         wert: Downloadregeln.groesse(b.bytes)))
+        }
+        anhaengen(block, o.aussen)
+
         let s = einstellungsgruppe(uebersetzt("Server"))
         anhaengen(s.raum, wertezeile(symbol: "network-server-symbolic",
                                      titel: servername.isEmpty ? uebersetzt("Server") : servername,
@@ -726,4 +770,72 @@ extension App {
         return reihe
     }
 
+}
+
+// MARK: - H10: Ausschalten loescht nichts ungefragt
+
+extension App {
+
+    /// **Die Frage steht dort, wo geschaltet wurde.**
+    ///
+    /// Auf dem Mac ist sie ein Systemdialog — „die Frage gehoert zum Fenster,
+    /// nicht zu einer Zeile darin". Diese Oberflaeche benutzt keine
+    /// Systemdialoge; einen dafuer einzufuehren waere ein Fremdkoerper (E4).
+    /// Die Antwortmoeglichkeiten sind dieselben drei: behalten, alles
+    /// entfernen, abbrechen.
+    func abschaltfrageZeigen() {
+        guard downloadabschaltfrage != nil else { return }
+        leeren(downloadabschaltfrage)
+
+        let b = Downloadregeln.belegung(downloads.posten)
+        let text = String(format: uebersetzt("%d Titel liegen auf diesem Rechner (%@). Was soll damit geschehen?"),
+                          b.anzahl, Downloadregeln.groesse(b.bytes))
+        let l = beschriftung(text, stil: "swiftly-zweitzeile", umbruch: true)
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        anhaengen(downloadabschaltfrage, l)
+
+        let knoepfe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+
+        let behalten = chip(uebersetzt("Behalten"), aktiv: true)
+        beiSignal(behalten, "clicked") { [weak self] in
+            guard let self else { return }
+            self.wahlen.downloadsAn = false
+            self.wahlen.sichern()
+            self.downloads.allesAnhalten()
+            self.meinsFuellen()
+            self.abschaltfrageWeg()
+            self.unterseiteOeffnen(.einstellungen)
+        }
+        anhaengen(knoepfe, behalten)
+
+        let weg = chip(uebersetzt("Alles entfernen"), symbol: "user-trash-symbolic")
+        beiSignal(weg, "clicked") { [weak self] in
+            guard let self else { return }
+            self.downloads.allesEntfernen()
+            self.wahlen.downloadsAn = false
+            self.wahlen.sichern()
+            self.meinsFuellen()
+            self.abschaltfrageWeg()
+            self.unterseiteOeffnen(.einstellungen)
+        }
+        anhaengen(knoepfe, weg)
+
+        let ab = chip(uebersetzt("Abbrechen"))
+        beiSignal(ab, "clicked") { [weak self] in
+            // Der Schalter ist beim Tippen schon umgesprungen; wer abbricht,
+            // will ihn zurueck.
+            self?.abschaltfrageWeg()
+            self?.unterseiteOeffnen(.einstellungen)
+        }
+        anhaengen(knoepfe, ab)
+
+        anhaengen(downloadabschaltfrage, knoepfe)
+        gtk_widget_set_visible(downloadabschaltfrage, 1)
+    }
+
+    func abschaltfrageWeg() {
+        guard downloadabschaltfrage != nil else { return }
+        leeren(downloadabschaltfrage)
+        gtk_widget_set_visible(downloadabschaltfrage, 0)
+    }
 }

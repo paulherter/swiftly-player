@@ -24,8 +24,15 @@ extension App {
     /// Das ist die eine Abweichung, die sich nicht wegräumen lässt, ohne die
     /// Fensterknöpfe zu verlieren; sie steht in derselben Reihe wie die
     /// schmale Kopfzeile über der Seitenleiste (VERHALTEN.md F).
-    func spielerOeffnen(_ item: Item, ab: Double) {
-        guard let client else { return }
+    /// **`ausDatei` ist der Weg ohne Server.**
+    ///
+    /// Ein Download soll auch dann laufen, wenn der Server aus ist — das ist
+    /// der ganze Zweck. Der Plan aus `/PlaybackInfo` faellt dann weg, und mit
+    /// ihm die Meldungen an den Server: es gibt niemanden, dem man melden
+    /// koennte. Alles Uebrige — Steuerung, Sprungzeichen, Technikschild — ist
+    /// derselbe Weg.
+    func spielerOeffnen(_ item: Item, ab: Double, ausDatei datei: URL? = nil) {
+        guard client != nil || datei != nil else { return }
         spielerSchliessen(melden: true)
 
         laufenderTitel = item
@@ -56,6 +63,19 @@ extension App {
         // **Erst den Plan holen, dann öffnen.** Die Adresse steht nicht in
         // `Item`; sie kommt aus `/PlaybackInfo`, und dort entscheidet sich
         // zugleich, ob der Server transkodiert. Ohne Plan kein Bild.
+        // **Aus der Datei geht es sofort los.** Kein Plan, keine Abschnitte,
+        // keine Meldung — es gibt keinen Server, der davon wuesste.
+        if let datei {
+            laufenderPlan = nil
+            abspieler.oeffnen(datei, ab: ab)
+            abspieler.bildfuellend(wahlen.bildfuellend)
+            technikschildSetzen(wahlen.technikschild)
+            spielstand.position = ab
+            taktStarten()
+            return
+        }
+        guard let client else { return }
+
         // **Die Grenze vor dem Faden ablesen.** `wahlen` gehört dem
         // Hauptfaden; im abgesetzten Auftrag darf sie nicht angefasst werden.
         let grenze = wahlen.profilBitrate

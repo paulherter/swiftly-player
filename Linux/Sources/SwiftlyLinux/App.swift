@@ -807,6 +807,13 @@ final class App: @unchecked Sendable {
                                deviceName: Geraet.name)
         adressen = Bildadresse(basis: serverURL, token: token)
         self.benutzerID = benutzerID
+        // **Die Downloads gehoeren dem Konto** (H11). Zwei Konten auf einem
+        // Server tragen dieselben Kennungen; ohne das Konto kaeme der
+        // Fortschritt des einen an den Titel des anderen.
+        downloads.beiAenderung = { [weak self] in
+            guard let self, self.bereich == .downloads else { return }
+            self.downloadseiteFuellen()
+        }
         sitzungAnzeigen(benutzername: benutzername, servername: servername)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
 
@@ -816,6 +823,7 @@ final class App: @unchecked Sendable {
             await c.setSession(sitzung)
             aufHauptfaden {
                 self.client = c
+                self.downloads.anmelden(client: c, konto: benutzerID)
                 self.geladen = [.start]
                 self.startseiteLaden()
                 self.bibliothekenLaden()
@@ -852,7 +860,15 @@ final class App: @unchecked Sendable {
     /// Die zuletzt gemeldete Grösse der Bühne.
     var buehnenBreite: Int32 = -1
     var buehnenHoehe: Int32 = -1
-    private var bereichsknoepfe: [Widget?] = []
+    /// **Nach Bereich, nicht nach Platz in der Liste.** Vorher lag hier ein
+    /// Feld parallel zu `Bereich.allCases`; sobald die Leiste in zwei Gruppen
+    /// zerfaellt und eine davon nur manchmal da ist, stimmt der Platz nicht
+    /// mehr mit der Aufzaehlung ueberein — und dann faerbt sich die falsche
+    /// Zeile ein. Derselbe Umbau wie bei den Rasterseiten.
+    private var bereichsknoepfe: [Bereich: Widget] = [:]
+    /// Die Rubrik „Meins" und ihre Zeilen — sie wird neu gefuellt, wenn der
+    /// Downloadschalter umgelegt wird.
+    private var meinsliste: Widget!
     private var bibliotheksrubrik: Widget!
     private var bibliotheksliste: Widget!
     private var profilbild: Widget!
@@ -903,6 +919,30 @@ final class App: @unchecked Sendable {
     var offeneUnterseite: Unterseite?
     var offeneListe: Werteauswahl?
     var wahlen = Wahlen.lesen()
+
+    /// **H1.** Kurzform fuer `wahlen.downloadsAn` — die Leiste und die
+    /// Detailseite fragen oft danach.
+    var downloadsAn: Bool { wahlen.downloadsAn }
+
+    /// Was auf dieser Maschine liegt. Die Regeln stehen im Paket, der
+    /// Ladevorgang in `Downloadverwaltung`; hier haengt nur die Oberflaeche
+    /// daran.
+    let downloads = Downloadverwaltung()
+
+    // MARK: Downloadseite — Widgets und Zustand
+    var downloadliste: Widget!
+    var downloadbelegung: Widget!
+    var downloadentfernen: Widget!
+    var downloadbearbeitenknopf: Widget!
+    var downloadleer: Widget!
+    var downloadbearbeiten = false
+    var downloadgewaehlt: Set<String> = []
+    /// Fortschrittsbalken und Standzeilen je Posten — damit ein Fortschritt
+    /// die Liste nicht neu bauen muss.
+    var downloadbalken: [String: Widget] = [:]
+    var downloadstandzeilen: [String: Widget] = [:]
+    /// H10: die Nachfrage vor dem Abschalten, in den Einstellungen.
+    var downloadabschaltfrage: Widget!
     var benutzername = ""
     var servername = ""
     var serverfassung = ""
@@ -1045,6 +1085,7 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.filme), "filme")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.serien), "serien")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.merkliste), "merkliste")
+        gtk_stack_add_named(OpaquePointer(inhalt), downloadseiteBauen(), "downloads")
         gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
 
         // **Die Detailseite legt sich auf, sie tritt nicht daneben.**
@@ -1246,15 +1287,24 @@ final class App: @unchecked Sendable {
         let bereiche = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
         gtk_widget_set_margin_start(bereiche, 12)
         gtk_widget_set_margin_end(bereiche, 12)
-        for fall in Bereich.allCases {
-            let zeile = seitenleistenzeile(symbol: fall.symbol,
-                                           text: fall.beschriftung,
-                                           aktiv: fall == bereich)
-            beiSignal(zeile, "clicked") { [weak self] in self?.zeige(fall) }
-            bereichsknoepfe.append(zeile)
-            anhaengen(bereiche, zeile)
-        }
+        for fall in Bereich.obenGruppe { anhaengen(bereiche, bereichszeile(fall)) }
         anhaengen(leiste, bereiche)
+
+        // **Darunter, was mir gehoert.** Die Begruendung steht bei
+        // `Bereich.meinsGruppe`; die Masse sind die der Bibliotheksrubrik,
+        // weil es dieselbe Sorte Zwischenueberschrift ist.
+        let meinsrubrik = rubrik(uebersetzt("Meins"))
+        gtk_widget_set_margin_top(meinsrubrik, 26)
+        gtk_widget_set_margin_bottom(meinsrubrik, 8)
+        gtk_widget_set_margin_start(meinsrubrik, 12)
+        gtk_widget_set_margin_end(meinsrubrik, 12)
+        anhaengen(leiste, meinsrubrik)
+
+        meinsliste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+        gtk_widget_set_margin_start(meinsliste, 12)
+        gtk_widget_set_margin_end(meinsliste, 12)
+        anhaengen(leiste, meinsliste)
+        meinsFuellen()
 
         bibliotheksrubrik = rubrik(uebersetzt("Bibliotheken"))
         gtk_widget_set_margin_top(bibliotheksrubrik, 26)
@@ -1282,6 +1332,32 @@ final class App: @unchecked Sendable {
         anhaengen(leiste, trennlinie())
         anhaengen(leiste, profilzeileBauen())
         return leiste
+    }
+
+    /// Eine Zeile in der Leiste, gemerkt unter ihrem Bereich.
+    private func bereichszeile(_ fall: Bereich) -> Widget! {
+        let zeile = seitenleistenzeile(symbol: fall.symbol,
+                                       text: fall.beschriftung,
+                                       aktiv: fall == bereich)
+        beiSignal(zeile, "clicked") { [weak self] in self?.zeige(fall) }
+        bereichsknoepfe[fall] = zeile
+        return zeile
+    }
+
+    /// **Die Rubrik „Meins" wird neu gebaut, wenn der Schalter umgeht.**
+    /// H1: ohne Downloads gibt es die Zeile nicht — und wer sie ausschaltet,
+    /// waehrend er darauf steht, soll nicht auf einer Seite stehenbleiben,
+    /// die es nicht mehr gibt.
+    func meinsFuellen() {
+        guard meinsliste != nil else { return }
+        leeren(meinsliste)
+        for fall in Bereich.meinsGruppe(downloads: downloadsAn) {
+            anhaengen(meinsliste, bereichszeile(fall))
+        }
+        if !downloadsAn {
+            bereichsknoepfe[.downloads] = nil
+            if bereich == .downloads { zeige(.start) }
+        }
     }
 
     /// Wer angemeldet ist, und wo. Unten in der Leiste — 40 hoch, Bild 26,
@@ -1525,8 +1601,7 @@ final class App: @unchecked Sendable {
     /// Schaltet den Bereich um und färbt die Zeilen nach.
     func zeige(_ neu: Bereich) {
         bereich = neu
-        for (i, fall) in Bereich.allCases.enumerated() {
-            guard let knopf = bereichsknoepfe[i] else { continue }
+        for (fall, knopf) in bereichsknoepfe {
             if fall == neu { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
             else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
         }
@@ -1550,6 +1625,9 @@ final class App: @unchecked Sendable {
         case .filme:  rasterLaden(.filme)
         case .serien: rasterLaden(.serien)
         case .merkliste: rasterLaden(.merkliste)
+        // Die Downloadliste steht auf der Platte; sie wird nicht geholt,
+        // sondern gezeigt.
+        case .downloads: downloadseiteFuellen()
         case .suche:  break
         }
     }

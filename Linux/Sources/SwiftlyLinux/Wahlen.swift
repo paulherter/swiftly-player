@@ -48,6 +48,54 @@ struct Wahlen: Codable {
     /// steht es auf den Apple-Fassungen.
     var technikschild = false
 
+    /// **H1 — aus, bis man es einschaltet.**
+    ///
+    /// Ohne diesen Schalter gibt es weder die Zeile in der Leiste noch den
+    /// Knopf auf der Detailseite. Wie bei Seerr: wer es nicht will, sieht
+    /// ausser der einen Zeile in den Einstellungen nichts davon. Wortgleich
+    /// von `AppModel.downloadsAn`.
+    var downloadsAn = false
+
+    // MARK: Lesen, das eine aeltere Datei ueberlebt
+
+    /// **Ein fehlender Schluessel darf nicht alles zuruecksetzen.**
+    ///
+    /// Am 08.09.2026 nachgemessen: die Datei auf der Platte stammte von einer
+    /// Fassung vor `bildfuellend` und `technikschild`. Swifts erzeugter
+    /// Decoder verlangt jeden Schluessel; einer fehlte, `decode` warf, und
+    /// `lesen()` gab kommentarlos frische Vorgaben zurueck — **alle**
+    /// Einstellungen weg, nicht nur die neue. Qualitaet, Sprachen,
+    /// Sprungweiten, Startseitenaufteilung: alles stand wieder auf Anfang,
+    /// und niemand hat es gemerkt, weil eine App mit Vorgabewerten
+    /// vollkommen normal aussieht.
+    ///
+    /// Der Fall tritt bei **jeder** neuen Einstellung wieder ein. Also wird
+    /// jeder Wert einzeln gelesen und behaelt seine Vorgabe, wenn er fehlt.
+    /// Das ist der Grund, warum hier von Hand steht, was Swift sonst selbst
+    /// erzeugt.
+    init(from decoder: Decoder) throws {
+        let k = try decoder.container(keyedBy: CodingKeys.self)
+        func w<T: Decodable>(_ s: CodingKeys, _ vorgabe: T) -> T {
+            (try? k.decodeIfPresent(T.self, forKey: s)) .flatMap { $0 } ?? vorgabe
+        }
+        immerDirectPlay        = w(.immerDirectPlay, true)
+        bitratenGrenze         = w(.bitratenGrenze, 0)
+        tonSprache             = w(.tonSprache, "")
+        untertitelSprache      = w(.untertitelSprache, "")
+        untertitelAutomatisch  = w(.untertitelAutomatisch, false)
+        neuzugaengeGetrennt    = w(.neuzugaengeGetrennt, false)
+        naechsteAutomatisch    = w(.naechsteAutomatisch, true)
+        zurueckSekunden        = w(.zurueckSekunden, 10)
+        vorSekunden            = w(.vorSekunden, 30)
+        fortschrittAufKacheln  = w(.fortschrittAufKacheln, true)
+        bildfuellend           = w(.bildfuellend, false)
+        technikschild          = w(.technikschild, false)
+        downloadsAn            = w(.downloadsAn, false)
+    }
+
+    /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.
+    init() {}
+
     private static var datei: URL {
         URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent(".config/swiftly/wahlen.json")

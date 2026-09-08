@@ -590,6 +590,20 @@ extension App {
         }
         anhaengen(reihe, merk)
 
+        // **H1: der Ladeknopf gibt es nur mit dem Schalter.** Wer Downloads
+        // nicht eingeschaltet hat, sieht hier nichts davon — dieselbe Regel
+        // wie bei Seerr.
+        if downloadsAn, titel.type != "Series" {
+            let stand = downloads.posten(fuer: titel.id)
+            let symbol = ladeknopfsymbol(stand)
+            let laden = nebenknopf(symbol, name: uebersetzt("Laden"),
+                                   aktiv: stand?.stand == .fertig)
+            beiSignal(laden, "clicked") { [weak self] in
+                self?.ladetafelZeigen(titel, an: laden)
+            }
+            anhaengen(reihe, laden)
+        }
+
         // **Vier Ziele, nicht fünf.** „Gesehen" und „Trailer" sind in die
         // Mehr-Liste gewandert; fünf beschriftete Knöpfe waren zu viel für
         // eine Reihe. So steht es auf dem Apple TV und auf dem Mac.
@@ -750,4 +764,165 @@ extension App {
 /// nicht sehen, nur wir.
 final class Spielziel: @unchecked Sendable {
     var titel: Item?
+}
+
+// MARK: - Herunterladen
+
+/// **Die Nachfrage ist eine Tafel am Knopf** — dieselbe Regel wie bei der
+/// Mehr-Liste und wortgleich die Entscheidung des Macs: „Auf dem Schreibtisch
+/// gibt es einen Zeiger; was zu einem Knopf gehoert, erscheint bei ihm."
+///
+/// Sie sagt zuerst, was der Titel kostet und was frei ist, und erst dann gibt
+/// es den Knopf. Ein Download, der nach zwanzig Minuten an einer vollen
+/// Platte scheitert, ist die schlechtere Auskunft.
+extension App {
+
+    func ladeknopfsymbol(_ p: Downloadposten?) -> String {
+        switch p?.stand {
+        case nil:          return "folder-download-symbolic"
+        case .wartet:      return "media-playback-pause-symbolic"
+        case .laedt:       return "media-playback-pause-symbolic"
+        case .angehalten:  return "media-playback-start-symbolic"
+        case .fehler:      return "dialog-warning-symbolic"
+        case .fertig:      return "object-select-symbolic"
+        }
+    }
+
+    func ladetafelZeigen(_ titel: Item, an knopf: Widget!) {
+        let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_set_size_request(liste, 280, -1)
+
+        if let alt = offeneTafel { gtk_widget_unparent(alt); offeneTafel = nil }
+        let tafel = tafelAn(knopf)
+        gtk_popover_set_child(alsTafel(tafel), liste)
+        offeneTafel = tafel
+
+        // Steht er schon in der Liste, geht es nicht ums Anfangen.
+        if let vorhanden = downloads.posten(fuer: titel.id) {
+            anhaengen(liste, ladeangabe(uebersetzt("Auf diesem Rechner"),
+                                        Downloadregeln.groesse(vorhanden.geladen)))
+            switch vorhanden.stand {
+            case .laedt, .wartet:
+                anhaengen(liste, handlungszeile("media-playback-pause-symbolic",
+                                                uebersetzt("Anhalten")) { [weak self] in
+                    gtk_popover_popdown(alsTafel(tafel))
+                    self?.downloads.anhalten(titel.id)
+                })
+            case .angehalten, .fehler:
+                anhaengen(liste, handlungszeile("media-playback-start-symbolic",
+                                                uebersetzt("Fortsetzen")) { [weak self] in
+                    gtk_popover_popdown(alsTafel(tafel))
+                    self?.downloads.fortsetzen(titel.id)
+                })
+            case .fertig:
+                anhaengen(liste, handlungszeile("media-playback-start-symbolic",
+                                                uebersetzt("Ohne Netz abspielen")) { [weak self] in
+                    gtk_popover_popdown(alsTafel(tafel))
+                    guard let self, let p = self.downloads.posten(fuer: titel.id) else { return }
+                    self.downloadSpielen(p)
+                })
+            }
+            anhaengen(liste, handlungszeile("user-trash-symbolic",
+                                            uebersetzt("Vom Rechner entfernen")) { [weak self] in
+                gtk_popover_popdown(alsTafel(tafel))
+                self?.downloads.entfernen(titel.id)
+            })
+            gtk_popover_popup(alsTafel(tafel))
+            return
+        }
+
+        // **Die Groesse kommt aus der Quelle, die auch der Player naehme.**
+        // Steht dort keine, wird trotzdem geladen — dann gibt es eben keinen
+        // Balken, sondern nur die wachsende Zahl. `Downloadposten.anteil`
+        // liefert dafuer `nil`, und die Zeile weiss damit umzugehen.
+        let quelle = titel.mediaSources?.first
+        let bytes = quelle?.size ?? 0
+        let auskunft = downloads.auskunft(fuer: bytes)
+
+        anhaengen(liste, ladeangabe(uebersetzt("Diese Datei"),
+                                    bytes > 0 ? Downloadregeln.groesse(bytes)
+                                              : uebersetzt("Unbekannt")))
+        if !auskunft.reicht {
+            anhaengen(liste, ladeangabe(uebersetzt("Frei auf diesem Rechner"),
+                                        Downloadregeln.groesse(max(0, auskunft.freiDanach
+                                                                   + bytes
+                                                                   + Downloadregeln.luft)),
+                                        warnend: true))
+            if auskunft.reichtNachAufraeumen, !auskunft.entbehrlich.isEmpty {
+                let text = String(format: uebersetzt("%d gesehene Titel könnten weichen (%@)."),
+                                  auskunft.entbehrlich.count,
+                                  Downloadregeln.groesse(auskunft.entbehrlichBytes))
+                anhaengen(liste, ladehinweis(text))
+            } else {
+                anhaengen(liste, ladehinweis(uebersetzt("Nicht genug Platz")))
+                gtk_popover_popup(alsTafel(tafel))
+                return
+            }
+        }
+
+        anhaengen(liste, handlungszeile("folder-download-symbolic",
+                                        uebersetzt("Laden")) { [weak self] in
+            gtk_popover_popdown(alsTafel(tafel))
+            self?.ladenAnstossen(titel, quelle: quelle, bytes: bytes)
+        })
+        gtk_popover_popup(alsTafel(tafel))
+    }
+
+    private func ladeangabe(_ was: String, _ wert: String, warnend: Bool = false) -> Widget! {
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        gtk_widget_set_margin_start(zeile, 14)
+        gtk_widget_set_margin_end(zeile, 14)
+        gtk_widget_set_margin_top(zeile, 9)
+        gtk_widget_set_margin_bottom(zeile, 9)
+        let l = beschriftung(was, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        gtk_widget_set_hexpand(l, 1)
+        if warnend { gtk_widget_add_css_class(l, "swiftly-warnung") }
+        anhaengen(zeile, l)
+        let w = beschriftung(wert, stil: "swiftly-koerper")
+        anhaengen(zeile, w)
+        return zeile
+    }
+
+    private func ladehinweis(_ text: String) -> Widget! {
+        let l = beschriftung(text, stil: "swiftly-zweitzeile", umbruch: true)
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        gtk_widget_set_margin_start(l, 14)
+        gtk_widget_set_margin_end(l, 14)
+        gtk_widget_set_margin_bottom(l, 10)
+        return l
+    }
+
+    /// Aus dem Eintrag wird ein Posten. Was hier hineinkommt, muss reichen,
+    /// um den Titel **ohne Server** zu zeigen und abzuspielen — deshalb
+    /// Laufzeit, Container und die Serienangaben.
+    private func ladenAnstossen(_ titel: Item, quelle: MediaSource?, bytes: Int64) {
+        // H11: ohne Konto kein Posten. Leer heisst hier „nicht angemeldet",
+        // und ein Download ohne Konto liefe unter derselben Datei wie der
+        // eines zweiten Nutzers.
+        guard !benutzerID.isEmpty else { return }
+        let posten = Downloadposten(
+            id: titel.id,
+            konto: benutzerID,
+            art: titel.type == "Episode" ? .folge : .film,
+            titel: titel.name ?? "",
+            serie: titel.seriesName,
+            serienId: titel.seriesId,
+            staffel: titel.parentIndexNumber,
+            folge: titel.indexNumber,
+            laufzeitTicks: titel.runTimeTicks,
+            container: quelle?.container,
+            quelle: quelle?.id,
+            bytes: bytes,
+            gesehen: titel.istGesehen)
+
+        var bilder: [String: URL] = [:]
+        if let adressen {
+            if let (url, _) = Bildwahl.quer(titel, adressen: adressen, breite: 400) {
+                bilder[titel.id] = url
+            }
+        }
+        downloads.anstossen(posten, bilder: bilder)
+        melden(uebersetzt("Wird geladen."))
+    }
 }
