@@ -248,15 +248,19 @@ body,
     position: absolute;
     inset: 0;
     pointer-events: none;
+    /* **Mit `!important`.** Ohne es kam der Verlauf nicht durch — Pauls
+       Rot-Probe hat es gezeigt: eine `background-color` an derselben
+       Stelle malte, ein `background-image` nicht. Die Ebene stimmte also
+       die ganze Zeit, nur die Auszeichnungsstaerke nicht. */
     background-image:
         linear-gradient(to right,
-            rgb(11,11,13) 0%, rgba(11,11,13,.95) 15%, rgba(11,11,13,.78) 29%,
-            rgba(11,11,13,.50) 45%, rgba(11,11,13,.25) 57%, rgba(11,11,13,.10) 70%,
-            rgba(11,11,13,.02) 85%, rgba(11,11,13,0) 100%),
+            rgb(11,11,13) 0%, rgba(11,11,13,.98) 12%, rgba(11,11,13,.88) 26%,
+            rgba(11,11,13,.62) 42%, rgba(11,11,13,.34) 56%, rgba(11,11,13,.14) 70%,
+            rgba(11,11,13,.04) 85%, rgba(11,11,13,0) 100%),
         linear-gradient(to bottom,
-            rgba(11,11,13,0) 0%, rgba(11,11,13,0) 45%, rgba(11,11,13,.28) 60%,
-            rgba(11,11,13,.58) 72%, rgba(11,11,13,.82) 84%, rgba(11,11,13,.96) 93%,
-            rgb(11,11,13) 100%);
+            rgba(11,11,13,0) 0%, rgba(11,11,13,0) 40%, rgba(11,11,13,.30) 56%,
+            rgba(11,11,13,.62) 70%, rgba(11,11,13,.86) 83%, rgba(11,11,13,.97) 93%,
+            rgb(11,11,13) 100%) !important;
 }
 
 /* **Rechts, nicht mittig.** Auf dem Mac liegt die Kulisse rechts und
