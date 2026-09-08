@@ -1580,6 +1580,23 @@
         }
       }
     },
+    "Beschädigt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corrupt"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beschädigt"
+          }
+        }
+      }
+    },
     "Besetzung": {
       "extractionState": "manual",
       "localizations": {
@@ -3145,7 +3162,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Displayed"
+            "value": "Shown"
           }
         }
       }
@@ -3837,6 +3854,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "MKV index"
+          }
+        }
+      }
+    },
+    "Matroska": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matroska"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matroska"
           }
         }
       }
@@ -4994,6 +5028,23 @@
         }
       }
     },
+    "Sprünge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discontinuities"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprünge"
+          }
+        }
+      }
+    },
     "Staffel": {
       "extractionState": "manual",
       "localizations": {
@@ -5106,6 +5157,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Home"
+          }
+        }
+      }
+    },
+    "Stelle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "At"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stelle"
           }
         }
       }

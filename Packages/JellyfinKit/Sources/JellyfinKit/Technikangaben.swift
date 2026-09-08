@@ -62,6 +62,23 @@ public enum Technikangaben {
         }
     }
 
+    /// Die Sprache einer Spur, wie ein Mensch sie liest.
+    ///
+    /// Der Server gibt den ISO-Code heraus, und `und` ist darin nicht die
+    /// Konjunktion, sondern „undetermined" — der Wert, den eine Datei traegt,
+    /// wenn niemand eine Sprache eingetragen hat. Auf dem Schild stand
+    /// dadurch woertlich „Ton AAC · 5.1 · und", und das liest sich wie ein
+    /// abgeschnittener Satz.
+    public static func sprache(_ roh: String?) -> String? {
+        guard let roh, !roh.isEmpty else { return nil }
+        let code = roh.lowercased()
+        // `mis` heisst „miscellaneous", `zxx` „kein sprachlicher Inhalt".
+        if ["und", "unknown", "unbekannt", "mis", "zxx"].contains(code) {
+            return uebersetzt("unbekannt")
+        }
+        return Locale.current.localizedString(forLanguageCode: code) ?? roh
+    }
+
     // MARK: Zahlen
 
     /// Bit pro Sekunde als Text. Ab einem Megabit in Mbit/s, darunter in

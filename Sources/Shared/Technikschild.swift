@@ -26,6 +26,9 @@ struct Technikschild: View {
     let plan: PlaybackPlan
     /// Was VLC beim Laufen zählt. `nil`, solange nichts gemessen ist.
     let werte: Spielwerte?
+    /// Die Abspielflaeche — fuer Laufzeit, Stelle und den Matroska-Kniff.
+    /// Alles, was nur der Player weiss und der Server nicht.
+    var flaeche: VLCPlayerView?
     /// Wie gross das Schild insgesamt ausfällt. Der Fernseher wird aus drei
     /// Metern gelesen, das iPhone aus dreissig Zentimetern.
     var fern = false
@@ -64,6 +67,10 @@ struct Technikschild: View {
             if let u = untertitelzeile { zeile(u) }
             if let d = dateizeile { zeile(d) }
 
+            if let b = bedarfzeile { zeile(b) }
+            if let m = matroskazeile { zeile(m) }
+            if let z = zeitzeile { zeile(z) }
+
             if let werte {
                 // **Eine Haarlinie, kein Abstand.** Was darüber steht,
                 // beschreibt die Datei und ändert sich nie; was darunter
@@ -75,11 +82,21 @@ struct Technikschild: View {
 
                 zeile("\(String(localized: "Eingang")) \(werte.eingang)")
                 zeile("\(String(localized: "Demuxer")) \(werte.demuxer)")
+                zeile("\(String(localized: "Gezeigt")) \(werte.gezeigt)")
                 verlustzeile(werte)
+                stromzeile(werte)
             }
         }
         .font(.system(size: grad, weight: .medium, design: .monospaced))
         .foregroundStyle(Stil.schrift)
+        // **Eine feste Breite, sonst laeuft die laengste Zeile hinaus.**
+        //
+        // Ein `VStack` in einer Auflage bekommt so viel Platz, wie er will —
+        // und die Zeile mit den drei Zaehlern ist die laengste. Sie stand auf
+        // dem Fernseher halb ausserhalb des Schildes. Mit einer Breite bricht
+        // sie um, statt zu fliehen.
+        .frame(width: fern ? 420 : 260, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, fern ? 20 : 12)
         .padding(.vertical, fern ? 16 : 10)
         .background {
@@ -122,24 +139,27 @@ struct Technikschild: View {
         guard let name = Technikangaben.codecname(ton?.codec) else { return nil }
         var text = "\(String(localized: "Ton")) \(name)"
         if let k = Technikangaben.kanalwort(ton?.channels) { text += " · \(k)" }
-        if let sprache = ton?.language, !sprache.isEmpty { text += " · \(sprache)" }
+        if let sprache = Technikangaben.sprache(ton?.language) { text += " · \(sprache)" }
         return text
     }
 
     private var untertitelzeile: String? {
         guard let name = Technikangaben.codecname(untertitel?.codec) else { return nil }
         var text = "\(String(localized: "Untertitel")) \(name)"
-        if let sprache = untertitel?.language, !sprache.isEmpty { text += " · \(sprache)" }
+        if let sprache = Technikangaben.sprache(untertitel?.language) { text += " · \(sprache)" }
         return text
     }
 
     /// Container und Grösse — was auf der Platte liegt.
+    ///
+    /// **`Dateiangaben.container` bringt die Groesse schon mit.** Hier stand
+    /// zusaetzlich `groesse(quelle)`, und weil auch die mit ihrem eigenen
+    /// Trennzeichen kommt, las man auf dem Schild „Datei MP4 · 0,3 GB ·  ·
+    /// 0,3 GB". Zwei Bausteine, die beide mehr tun, als ihr Name sagt — und
+    /// ich habe sie addiert, statt einen zu lesen.
     private var dateizeile: String? {
-        guard let quelle else { return nil }
-        var teile: [String] = []
-        if let c = Dateiangaben.container(quelle) { teile.append(c.uppercased()) }
-        teile.append(Dateiangaben.groesse(quelle))
-        return teile.isEmpty ? nil : "\(String(localized: "Datei")) \(teile.joined(separator: " · "))"
+        guard let quelle, let c = Dateiangaben.container(quelle) else { return nil }
+        return "\(String(localized: "Datei")) \(c.uppercased())"
     }
 
     /// **Die Zeile, wegen der es das Schild gibt.**
@@ -154,6 +174,67 @@ struct Technikschild: View {
         return Text(verbatim: "\(String(localized: "Verworfen")) \(w.verworfen)"
                     + " · \(String(localized: "zu spät")) \(w.zuSpaet)"
                     + " · \(String(localized: "Ton weg")) \(w.tonVerloren)")
+            .foregroundStyle(schlecht ? Stil.warnung : Stil.schriftLeise)
+    }
+
+    /// **Was die Datei im Mittel braucht** — Groesse geteilt durch Laufzeit.
+    ///
+    /// Die Zahl daneben zu haben ist der ganze Punkt: steht unter „Eingang"
+    /// weniger, als hier steht, kommt der Strom nicht nach, und der Rest —
+    /// Ruckeln, wandernder Ton — folgt daraus. Spitzen liegen ueber dem
+    /// Mittel; wer knapp darueber liegt, hat trotzdem ein Problem.
+    private var bedarfzeile: String? {
+        guard let bytes = quelle?.size, bytes > 0,
+              let dauer = flaeche?.durationSeconds, dauer > 1,
+              let text = Technikangaben.bitrate(Double(bytes) * 8 / dauer)
+        else { return nil }
+        return "\(String(localized: "Datei braucht")) \(text) Ø"
+    }
+
+    /// **Hat der Matroska-Kniff gegriffen?**
+    ///
+    /// `:demux=mkv_trusted` ist der Unterschied zwischen einem Sprung von
+    /// einer Sekunde und einem von zwanzig — und ob er gilt, entscheidet die
+    /// **Endung der ausgelieferten Adresse**, nicht der Container der Datei.
+    /// Genau daran ist es schon einmal auseinandergegangen, deshalb steht
+    /// beides hier.
+    private var matroskazeile: String? {
+        let namen = ["mkv", "matroska", "webm", "mka", "mks"]
+        let behaelter = (quelle?.container ?? "").lowercased()
+        guard namen.contains(where: { behaelter.contains($0) }) else { return nil }
+        let endung = plan.url.pathExtension.lowercased()
+        let adresse = endung.isEmpty ? String(localized: "ohne Endung") : "." + endung
+        let kniff = (flaeche?.matroskaVertraut ?? false)
+            ? String(localized: "vertraut") : String(localized: "MISSTRAUT")
+        return "\(String(localized: "Matroska")) \(kniff) · \(adresse)"
+    }
+
+    /// Wo im Film wir stehen. **Damit ein Bildschirmfoto eine Stelle nennt**
+    /// und nicht nur einen Zustand: „bei 41:12" ist nachstellbar, „irgendwo
+    /// in der Mitte" nicht.
+    private var zeitzeile: String? {
+        guard let flaeche, flaeche.durationSeconds > 1 else { return nil }
+        return "\(String(localized: "Stelle")) \(uhr(flaeche.positionSeconds))"
+            + " / \(uhr(flaeche.durationSeconds))"
+    }
+
+    private func uhr(_ sekunden: Double) -> String {
+        let ganz = Int(max(0, sekunden))
+        let s = ganz % 60, m = (ganz / 60) % 60, h = ganz / 3600
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s)
+                     : String(format: "%d:%02d", m, s)
+    }
+
+    /// **Was am Strom selbst kaputt war.**
+    ///
+    /// Beschaedigte Bloecke sind die Zahl hinter „da waren Bildfehler",
+    /// Spruenge die hinter „der Ton wandert weg". Beide sagen etwas, das die
+    /// verworfenen Bilder nicht sagen: dort ist der Dekoder ueberfordert,
+    /// hier kam schon kaputt an, was er dekodieren sollte.
+    private func stromzeile(_ w: Spielwerte) -> some View {
+        let schlecht = w.beschaedigt > 0 || w.spruenge > 0
+        return Text(verbatim: "\(String(localized: "Beschädigt")) \(w.beschaedigt)"
+                    + " · \(String(localized: "Sprünge")) \(w.spruenge)")
             .foregroundStyle(schlecht ? Stil.warnung : Stil.schriftLeise)
     }
 

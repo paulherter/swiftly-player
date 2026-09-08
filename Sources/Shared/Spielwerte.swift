@@ -29,12 +29,36 @@ struct Spielwerte {
     let tonVerloren: UInt64
     let videoBloecke: UInt64
     let tonBloecke: UInt64
+    let tonGespielt: UInt64
+    /// **Bloecke, die der Demuxer als kaputt erkannt hat.** Das ist die Zahl
+    /// hinter „da waren Bildfehler": kommt sie hoch, ist der Strom
+    /// beschaedigt angekommen — am Netz, am Server oder in der Datei selbst.
+    let beschaedigt: UInt64
+    /// **Sprungstellen im Strom.** Zeitstempel, die nicht fortlaufen. Genau
+    /// das sieht man als Ton, der wegwandert.
+    let spruenge: UInt64
     /// Bitraten kommen als Byte pro Sekunde in `Float` — hier gleich als
     /// Text, damit die Umrechnung an einer Stelle steht.
     let eingang: String
     let demuxer: String
+    /// Die rohen Summen — nur, um beim naechsten Mal die Rate daraus zu
+    /// rechnen. Siehe `init`.
+    let gelesen: UInt64
+    let entpackt: UInt64
 
-    init?(_ roh: VLCMedia.Stats?) {
+    /// **Die Rate wird selbst gerechnet, nicht abgelesen.**
+    ///
+    /// `inputBitrate` und `demuxBitrate` sind Fliesskommafelder, die VLC
+    /// selbst fuehrt — und auf dem Apple TV standen sie bei laufendem Film
+    /// beide auf **0**, am Geraet nachgesehen. Was verlaesslich steigt, sind
+    /// die Summen `readBytes` und `demuxReadBytes`. Aus zwei Messungen und
+    /// der Zeit dazwischen wird daraus eine Rate, die stimmt, weil sie auf
+    /// nichts angewiesen ist als auf zwei Zahlen, die nur wachsen koennen.
+    ///
+    /// Beim ersten Mal gibt es kein Vorher — dann steht ein Strich, keine
+    /// Null. Eine Null waere eine Aussage, und wir haben noch keine.
+    init?(_ roh: VLCMedia.Stats?, vorher: Spielwerte? = nil,
+          sekunden: Double = 0) {
         guard let roh else { return nil }
         // **Hat VLC die Struktur gar nicht gefuellt, kommt Speicherschrott.**
         //
@@ -45,7 +69,9 @@ struct Spielwerte {
         let grenze: UInt64 = 1_000_000_000
         guard roh.displayedPictures < grenze, roh.lostPictures < grenze,
               roh.latePictures < grenze, roh.decodedVideo < grenze,
-              roh.decodedAudio < grenze, roh.lostAudioBuffers < grenze
+              roh.decodedAudio < grenze, roh.lostAudioBuffers < grenze,
+              roh.demuxCorrupted < grenze, roh.demuxDiscontinuity < grenze,
+              roh.playedAudioBuffers < grenze
         else { return nil }
         verworfen    = roh.lostPictures
         zuSpaet      = roh.latePictures
@@ -53,14 +79,24 @@ struct Spielwerte {
         tonVerloren  = roh.lostAudioBuffers
         videoBloecke = roh.decodedVideo
         tonBloecke   = roh.decodedAudio
-        eingang      = Spielwerte.rate(roh.inputBitrate)
-        demuxer      = Spielwerte.rate(roh.demuxBitrate)
+        tonGespielt  = roh.playedAudioBuffers
+        beschaedigt  = roh.demuxCorrupted
+        spruenge     = roh.demuxDiscontinuity
+        gelesen      = roh.readBytes
+        entpackt     = roh.demuxReadBytes
+        eingang      = Spielwerte.rate(roh.readBytes, vorher?.gelesen, sekunden)
+        demuxer      = Spielwerte.rate(roh.demuxReadBytes, vorher?.entpackt, sekunden)
     }
 
-    /// VLC misst in Byte je Sekunde. Mal acht sind Bit, und ab einem Mbit
-    /// schreibt sich das lesbarer in Mbit/s.
-    private static func rate(_ bytesProSekunde: Float) -> String {
-        let bit = Double(bytesProSekunde) * 8
+    /// Aus zwei Summen und der Zeit dazwischen eine Rate.
+    ///
+    /// Ohne Vorher gibt es keine Rate — dann steht ein Strich. Und wenn die
+    /// Summe kleiner geworden ist, hat VLC das Medium neu aufgesetzt (Sprung,
+    /// Folgenwechsel); auch dann ist die Differenz keine Messung.
+    private static func rate(_ jetzt: UInt64, _ vorher: UInt64?,
+                             _ sekunden: Double) -> String {
+        guard let vorher, sekunden > 0, jetzt >= vorher else { return "—" }
+        let bit = Double(jetzt - vorher) * 8 / sekunden
         if bit <= 0 { return "—" }
         if bit >= 1_000_000 {
             return String(format: "%.1f Mbit/s", bit / 1_000_000)

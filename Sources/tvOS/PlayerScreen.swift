@@ -291,7 +291,7 @@ struct PlayerScreen: View {
         // tut. Angeschaltet wird es im Wiedergabeblatt.
         .overlay(alignment: .topLeading) {
             if technikschild {
-                Technikschild(plan: plan, werte: spielwerte, fern: true)
+                Technikschild(plan: plan, werte: spielwerte, flaeche: flaeche, fern: true)
                     .padding(.leading, Stil.randSeite)
                     .padding(.top, Stil.randOben)
                     .allowsHitTesting(false)
@@ -303,7 +303,10 @@ struct PlayerScreen: View {
         .task(id: technikschild) {
             guard technikschild else { return }
             while !Task.isCancelled {
-                spielwerte = Spielwerte(flaeche?.statistik)
+                // Die Rate entsteht aus der Differenz zum letzten Mal —
+                // siehe `Spielwerte`.
+                spielwerte = Spielwerte(flaeche?.statistik, vorher: spielwerte,
+                                        sekunden: 2)
                 try? await Task.sleep(for: .seconds(2))
             }
         }
