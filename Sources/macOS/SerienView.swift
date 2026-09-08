@@ -253,6 +253,18 @@ struct SerienView: View {
         .task { await staffelnLaden() }
         .task(id: gewaehlt?.id) {
             guard staffelnDa else { return }
+            // **Und nicht, solange keine Staffel gewählt ist.** Seit A10
+            // wählt der `init` ohne Hinweis keine mehr — kamen die Staffeln
+            // dann aus dem Speicher, stand `staffelnDa` sofort auf wahr und
+            // dieser Lauf holte mit `staffel: nil` **alle** Folgen der Serie.
+            // Kurz darauf kam die Wahl, der Lauf wiederholte sich, und die
+            // Liste wurde ein zweites Mal mit anderem Inhalt gebaut — mitten
+            // im Hereinfahren. Genau das, wogegen `staffelnDa` einmal
+            // eingeführt wurde; die Lücke habe ich mit A10 wieder aufgemacht.
+            //
+            // Hat die Serie gar keine Staffeln, ruft `staffelnLaden` das
+            // Laden selbst — dann ist hier nichts zu tun.
+            guard gewaehlt != nil else { return }
             await folgenLaden()
         }
     }
