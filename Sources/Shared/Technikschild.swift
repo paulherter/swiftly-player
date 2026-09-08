@@ -70,6 +70,9 @@ struct Technikschild: View {
             if let b = bedarfzeile { zeile(b) }
             if let m = matroskazeile { zeile(m) }
             if let z = zeitzeile { zeile(z) }
+            #if os(tvOS)
+            taktzeile
+            #endif
 
             if let werte {
                 // **Eine Haarlinie, kein Abstand.** Was darüber steht,
@@ -82,7 +85,7 @@ struct Technikschild: View {
 
                 zeile("\(String(localized: "Eingang")) \(werte.eingang)")
                 zeile("\(String(localized: "Demuxer")) \(werte.demuxer)")
-                zeile("\(String(localized: "Gezeigt")) \(werte.gezeigt)")
+                zeigtzeile(werte)
                 verlustzeile(werte)
                 stromzeile(werte)
             }
@@ -225,6 +228,28 @@ struct Technikschild: View {
                      : String(format: "%d:%02d", m, s)
     }
 
+    /// **Die Zahl, die den Player entlastet oder ueberfuehrt.**
+    ///
+    /// Was tatsaechlich je Sekunde auf dem Schirm landet, neben dem, was die
+    /// Datei vorgibt. Stehen beide gleich, kommt jedes Bild puenktlich an —
+    /// dann entsteht das, was man sieht, danach: am Takt des Schirms oder in
+    /// der Datei selbst. Steht die erste darunter, ohne dass „verworfen"
+    /// steigt, haengt der Dekoder.
+    private func zeigtzeile(_ w: Spielwerte) -> some View {
+        let soll = video?.bildrate
+        var text = "\(String(localized: "Zeigt")) "
+        if let ist = w.zeigtProSekunde {
+            text += String(format: "%.1f", ist).replacingOccurrences(of: ".", with: ",")
+        } else {
+            text += "—"
+        }
+        text += " fps · \(String(localized: "Gezeigt")) \(w.gezeigt)"
+        // Mehr als ein halbes Bild daneben ist kein Messrauschen mehr.
+        let hinkt = if let ist = w.zeigtProSekunde, let soll { ist < soll - 0.5 } else { false }
+        return Text(verbatim: text)
+            .foregroundStyle(hinkt ? Stil.warnung : Stil.schriftLeise)
+    }
+
     /// **Was am Strom selbst kaputt war.**
     ///
     /// Beschaedigte Bloecke sind die Zahl hinter „da waren Bildfehler",
@@ -237,6 +262,57 @@ struct Technikschild: View {
                     + " · \(String(localized: "Sprünge")) \(w.spruenge)")
             .foregroundStyle(schlecht ? Stil.warnung : Stil.schriftLeise)
     }
+
+    #if os(tvOS)
+    /// **Die Zeile, die Ruckeln ohne Verlust erklaert.**
+    ///
+    /// Am 08.09.2026 gemessen, an zwei Bildschirmfotos 22 Sekunden
+    /// auseinander: 539 gezeigte Bilder in 22 Sekunden — genau die Rate der
+    /// Datei —, dabei kein verworfenes, kein zu spaetes, nichts
+    /// Beschaedigtes, kein neuer Sprung. Und es ruckelte trotzdem sichtbar.
+    ///
+    /// Wenn jedes Bild ankommt und puenktlich gezeigt wird und es trotzdem
+    /// stockt, liegt es nicht mehr an der Wiedergabe, sondern am **Takt des
+    /// Schirms**: 23,976 gehen in 60 Hz nicht auf, also wird jedes zweite
+    /// Bild dreimal und jedes andere zweimal gezeigt. Die Bewegung laeuft
+    /// abwechselnd zu schnell und zu langsam, und **kein Zaehler meldet
+    /// etwas**, weil kein Bild verlorengeht. Genau dafuer gibt es
+    /// `Bildtakt` — und ohne diese Zeile war nicht zu sehen, ob er greift.
+    private var taktzeile: some View {
+        let gemessen = flaeche.flatMap { Bildtakt.rate(von: $0.player) }
+        let behauptet = video?.bildrate
+        let rate = Technikangaben.bildrate(gemessen ?? behauptet)
+        let takt = Bildtakt.schirmtakt
+
+        let wort: String
+        let passt: Bool
+        if let ziel = Bildtakt.angefordert {
+            wort = String(localized: "angefordert \(String(format: "%.0f", ziel)) Hz")
+            passt = true
+        } else {
+            switch Bildtakt.stand {
+            case .bereit:
+                wort = String(localized: "ohne Wechsel")
+                // Ohne Wechsel geht es nur auf, wenn der Schirm ohnehin passt.
+                passt = (gemessen ?? behauptet).map {
+                    abs(($0 * 2).rounded() - $0 * 2) < 0.5
+                        && Int(($0 * 2).rounded()) % 2 == 0
+                        ? Int($0.rounded()) != 0 && takt % Int($0.rounded()) == 0
+                        : takt % 24 == 0
+                } ?? false
+            case .abgeschaltet:
+                wort = String(localized: "Anpassung aus")
+                passt = false
+            case .unerreichbar:
+                wort = String(localized: "Anzeige stumm")
+                passt = false
+            }
+        }
+        return Text(verbatim: "\(String(localized: "Takt")) \(rate ?? "?") fps"
+                    + " · \(wort) · \(String(localized: "Schirm")) \(takt) Hz")
+            .foregroundStyle(passt ? Stil.schriftLeise : Stil.warnung)
+    }
+    #endif
 
     private func zeile(_ text: String, farbe: Color = Stil.schriftLeise) -> some View {
         Text(verbatim: text).foregroundStyle(farbe)

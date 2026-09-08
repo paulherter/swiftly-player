@@ -45,6 +45,17 @@ struct Spielwerte {
     /// rechnen. Siehe `init`.
     let gelesen: UInt64
     let entpackt: UInt64
+    /// **Wie viele Bilder je Sekunde tatsaechlich auf dem Schirm landen.**
+    ///
+    /// Aus der Differenz der gezeigten Bilder zwischen zwei Messungen. Das
+    /// ist die Zahl, die den Player entlastet oder ueberfuehrt: liegt sie auf
+    /// der Rate der Datei, kommt jedes Bild puenktlich an, und was man sieht,
+    /// entsteht danach — am Takt des Schirms oder in der Datei selbst. Liegt
+    /// sie darunter, ohne dass „verworfen" steigt, haengt der Dekoder.
+    ///
+    /// Am 08.09.2026 zwei Bildschirmfotos 22 Sekunden auseinander verglichen,
+    /// um genau das zu wissen. Das soll niemand mehr von Hand rechnen.
+    let zeigtProSekunde: Double?
 
     /// **Die Rate wird selbst gerechnet, nicht abgelesen.**
     ///
@@ -84,6 +95,11 @@ struct Spielwerte {
         spruenge     = roh.demuxDiscontinuity
         gelesen      = roh.readBytes
         entpackt     = roh.demuxReadBytes
+        if let vorher, sekunden > 0, roh.displayedPictures >= vorher.gezeigt {
+            zeigtProSekunde = Double(roh.displayedPictures - vorher.gezeigt) / sekunden
+        } else {
+            zeigtProSekunde = nil
+        }
         eingang      = Spielwerte.rate(roh.readBytes, vorher?.gelesen, sekunden)
         demuxer      = Spielwerte.rate(roh.demuxReadBytes, vorher?.entpackt, sekunden)
     }

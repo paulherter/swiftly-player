@@ -1209,6 +1209,40 @@
         }
       }
     },
+    "Anpassung aus": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "matching off"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anpassung aus"
+          }
+        }
+      }
+    },
+    "Anzeige stumm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "display not reporting"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anzeige stumm"
+          }
+        }
+      }
+    },
     "Anzeigen": {
       "extractionState": "manual",
       "localizations": {
@@ -4639,6 +4673,23 @@
         }
       }
     },
+    "Schirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schirm"
+          }
+        }
+      }
+    },
     "Schlafzeit": {
       "extractionState": "manual",
       "localizations": {
@@ -5258,6 +5309,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Swiftly downloads the original file — the same quality as streaming, because nothing is ever re-encoded."
+          }
+        }
+      }
+    },
+    "Takt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cadence"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Takt"
           }
         }
       }
@@ -6256,6 +6324,23 @@
         }
       }
     },
+    "Zeigt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Showing"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt"
+          }
+        }
+      }
+    },
     "Zu %@ wechseln": {
       "extractionState": "manual",
       "localizations": {
@@ -6743,6 +6828,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "no extension"
+          }
+        }
+      }
+    },
+    "ohne Wechsel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no switch"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ohne Wechsel"
           }
         }
       }
