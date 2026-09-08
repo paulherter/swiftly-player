@@ -33,15 +33,19 @@ struct Wiedergabeblatt: View {
     /// Die Zaehler, im selben Takt nachgefuehrt wie der Player selbst.
     @State private var zaehler: Spielwerte?
     @AppStorage("technikschild") private var technikschild = false
+    /// Derselbe Schluessel wie auf dem iPhone -- was dort die Geste setzt,
+    /// setzt hier die Karte.
+    @AppStorage("bildfuellend") private var bildfuellend = false
 
 
     enum Kategorie: String, CaseIterable, Identifiable {
-        case untertitel, ton, tempo, schlafzeit, technik
+        case untertitel, ton, bild, tempo, schlafzeit, technik
         var id: String { rawValue }
         var name: LocalizedStringKey {
             switch self {
             case .untertitel: "Untertitel"
             case .ton:        "Ton"
+            case .bild:       "Bild"
             case .tempo:      "Tempo"
             case .schlafzeit: "Schlafzeit"
             case .technik:    "Technik"
@@ -172,6 +176,25 @@ struct Wiedergabeblatt: View {
                 // es gerade rund" sieht man nicht einmal nach, man sieht ihm
                 // zu. Ein Blatt verdeckt dabei genau das Bild, um das es
                 // geht, und geht wieder zu. Die Zahlen stehen jetzt als
+                // **Dasselbe wie das Zusammenziehen auf dem iPhone.**
+                //
+                // Zwei Zustaende: das ganze Bild mit Balken, oder
+                // formatfuellend mit Beschnitt. Ein dritter waere nur eine
+                // Streckung. Am Fernseher gibt es keine Finger, also steht
+                // hier, was dort die Geste macht -- derselbe gemerkte Wert,
+                // damit beide Plattformen dasselbe meinen.
+                case .bild:
+                    Wahlkarte(name: String(localized: "Ganzes Bild"),
+                              marke: nil, an: !bildfuellend) {
+                        bildfuellend = false
+                        flaeche.bildfuellend(false)
+                    }
+                    Wahlkarte(name: String(localized: "Formatfüllend"),
+                              marke: nil, an: bildfuellend) {
+                        bildfuellend = true
+                        flaeche.bildfuellend(true)
+                    }
+
                 // `Technikschild` oben links ueber dem laufenden Film; hier
                 // bleibt nur, es an- und auszuschalten.
                 case .technik:

@@ -203,6 +203,10 @@ struct PlayerScreen: View {
             VideoFlaeche(url: startPlan.url, startAt: startAt,
                          container: startPlan.container) { neu in
                 flaeche = neu
+                // Was im Blatt unter „Bild" gewaehlt wurde, gilt auch fuer
+                // die naechste Folge -- derselbe Schluessel wie die Geste
+                // auf dem iPhone.
+                neu.bildfuellend(UserDefaults.standard.bool(forKey: "bildfuellend"))
                 neu.onWiederherstellung = { stelltWiederHer = $0 }
                 // **Der Knopf haengt an VLCs Meldung, nicht am Druck.**
                 //

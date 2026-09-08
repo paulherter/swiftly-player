@@ -120,6 +120,12 @@ struct PlayerScreen: View {
         _stand = State(initialValue: .init(position: wunsch.startAt))
     }
 
+    /// Formatfuellend statt ganzes Bild -- dieselbe Wahl wie die Geste auf
+    /// dem iPhone und die Karte am Fernseher, unter demselben Schluessel.
+    @AppStorage("bildfuellend") private var bildfuellend = false
+    /// Verhindert, dass ein einziges Zusammenziehen mehrfach umschaltet.
+    @State private var zoomSchonGeschaltet = false
+
     var body: some View {
         ZStack {
             Color.black
@@ -131,6 +137,10 @@ struct PlayerScreen: View {
                 // Der Knopf hängt an VLCs eigener Meldung, nicht am Takt und
                 // nicht am Klick — siehe `laeuftAnzeige`.
                 neu.laeuftGemeldet = { laeuft in laeuftAnzeige = laeuft }
+                // Was einmal gewaehlt wurde, gilt auch fuer die naechste
+                // Folge -- derselbe Schluessel wie die Geste auf dem iPhone
+                // und die Karte am Fernseher.
+                neu.bildfuellend(bildfuellend)
             }
             .ignoresSafeArea()
             // Ohne das nimmt die Animation der Steuerung die Videofläche mit
@@ -138,6 +148,32 @@ struct PlayerScreen: View {
             // Eine Narbe der iPhone-Fassung, die mit Bild-im-Bild nichts zu
             // tun hat und uns genauso trifft.
             .transaction { $0.animation = nil }
+            // **Zusammenziehen am Trackpad wechselt das Bildformat.**
+            //
+            // Dasselbe wie die Geste auf dem iPhone, nur mit zwei Fingern auf
+            // dem Trackpad; am Fernseher steht dafuer eine Karte im Blatt.
+            // Zwei Zustaende -- ganzes Bild mit Balken, oder formatfuellend
+            // mit Beschnitt. Ein dritter waere nur eine Streckung.
+            //
+            // Der Riegel ist noetig, weil `onChanged` waehrend einer Geste
+            // dutzendfach feuert: ohne ihn haette ein einziges Auseinander-
+            // ziehen zwischen beiden Zustaenden geflackert.
+            .simultaneousGesture(
+                MagnifyGesture(minimumScaleDelta: 0.05)
+                    .onChanged { wert in
+                        guard !zoomSchonGeschaltet else { return }
+                        if wert.magnification > 1.15, !bildfuellend {
+                            zoomSchonGeschaltet = true
+                            bildfuellend = true
+                            flaeche?.bildfuellend(true)
+                        } else if wert.magnification < 0.85, bildfuellend {
+                            zoomSchonGeschaltet = true
+                            bildfuellend = false
+                            flaeche?.bildfuellend(false)
+                        }
+                    }
+                    .onEnded { _ in zoomSchonGeschaltet = false }
+            )
 
             // **Deckend**, nicht nur ein Rädchen. Vorher stand hier ein
             // durchsichtiger `Lader()`, und das Video lief die ganze Zeit
