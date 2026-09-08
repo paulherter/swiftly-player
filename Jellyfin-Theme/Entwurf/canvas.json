@@ -92,32 +92,32 @@
   ],
   "annotations": [
     {
-      "id": "hinweis-leiste",
+      "id": "hinweis-kopfleiste",
       "x": 0,
-      "y": -150,
-      "w": 460,
-      "text": "Die Seitenleiste ist der ehrgeizigste Griff.\nJellyfin stellt seine Wege auf dem Rechner in eine Leiste oben; der Mac hat sie links. Mit CSS geht das — die Kopfleiste wird auf 220 Punkt festgestellt und aufrecht gedreht, der Inhalt rückt ein. Nur auf layout-desktop.\nDas ist der eine Punkt, den wir am Gerät prüfen, bevor er bleibt."
+      "y": -190,
+      "w": 470,
+      "text": "Keine Seitenleiste — und das ist kein Versäumnis.\nJellyfins Schublade ist ein Überlagerungs-Bauteil mit Auf/Zu-Zustand; mit CSS wird daraus keine stehende Leiste. Eine eigene zu bauen braucht ein Skript, und das kommt nur über einen Eintrag in Jellyfins index.html hinein — auf Pauls Server nicht schreibbar.\nAlso trägt Jellyfins eigene Kopfleiste unsere Sprache: deckend in grund, Haarlinie, Ziele in 15 medium, das aktive im Akzent. Das Logo wird durch die Abspielform der Marke ersetzt."
     },
     {
       "id": "hinweis-kulisse",
       "x": 0,
-      "y": 930,
+      "y": 1030,
       "w": 460,
       "text": "Die Kulisse liegt rechts und wird von zwei Masken ausgeblendet, nicht von einem Anstrich übermalt.\nDie Kurven stehen unverändert in Kulissenblende. Ein Anstrich endet in undurchsichtigem grund und setzt voraus, dass der Hintergrund genau das ist."
     },
     {
       "id": "hinweis-kein-plakat",
       "x": 1560,
-      "y": 930,
+      "y": 1030,
       "w": 460,
-      "text": "Kein Plakat auf der Detailseite, kein Logo.\nAuf dem Apple TV ist das Plakat weggefallen, weil es nur den Fortschrittsbalken trug; der Mac hat es nie gehabt. Und der Titel steht als Schrift da, damit jede Seite an derselben Stelle beginnt."
+      "text": "Kein Plakat auf der Detailseite, kein Logo.\nBeides ist mit CSS erreichbar: display:none auf .detailImageContainer und .detailLogo, und :has() lässt das Plakat dort stehen, wo das Bild die Sache selbst ist — Person, Album, Buch.\nDie Knopfreihe wandert über flex-direction:column unter den Titel."
     },
     {
       "id": "hinweis-grenze",
       "x": 3120,
-      "y": 930,
-      "w": 460,
-      "text": "Was ein Thema nicht kann:\n• den Aufbau der Suchseite erfinden — die Vorschlagsliste kommt so, wie Jellyfin sie baut\n• Reihen ergänzen, die es dort nicht gibt\n• Federn statt Kurven bewegen\nDiese Tafel zeigt das Ziel, nicht die Garantie."
+      "y": 1030,
+      "w": 470,
+      "text": "Was ein Stilblatt nicht kann — und was hier deshalb Jellyfins Aufbau bleibt:\n• keine eigene Seitenleiste, keine eigenen Zeilen darin\n• keine Reihe ergänzen, die es nicht gibt (z. B. „Nächste Folge“ als Plakate)\n• die Vorschlagsliste der Suche kommt, wie Jellyfin sie baut\n• Federn bleiben Kurven\nAlles andere auf diesen Tafeln ist mit CSS erreichbar."
     }
   ],
   "launch": {

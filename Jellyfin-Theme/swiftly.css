@@ -1860,3 +1860,38 @@ a[data-role=button]:focus {
 .layout-desktop .verticalSection {
     margin-bottom: var(--sw-reihen-abstand, 28px) !important;
 }
+
+
+/* ---------------------------------------------------------------------
+   R · Die Marke in der Kopfleiste
+   ---------------------------------------------------------------------
+   Jellyfin setzt links im Kopf sein eigenes Banner — `banner-light.png`,
+   als Hintergrundbild auf `h3.pageTitleWithDefaultLogo`. Am laufenden
+   Client nachgesehen, nicht geraten.
+
+   An seine Stelle kommt die **Abspielform der Marke**, ohne das
+   abgerundete Quadrat: woertlich `Marke.signetForm` aus
+   `Sources/Shared/Marken.swift`, mit dem Rahmen auf die Form selbst
+   zugeschnitten.
+
+   **Als Datenadresse, nicht als Datei.** Ein Stilblatt, das ein Bild
+   nachlaedt, haengt an einer zweiten Adresse — und wenn die eines Tages
+   nicht antwortet, steht die Leiste ohne Zeichen da. So traegt es sich
+   selbst.
+
+   Und die Farbe ist `#2FDBC0`, nicht `--sw-akzent`: die Marke traegt
+   ihre eigene, so steht es in Marken.swift. „Die Marke ist gesetzt, das
+   Erscheinungsbild der App darf sich davon unabhaengig bewegen."
+
+   **Hoehe statt Breite gesetzt.** Das Element traegt je nach Seite auch
+   den Servernamen als Schrift; eine feste Breite schnitte den ab.
+   --------------------------------------------------------------------- */
+
+.pageTitleWithDefaultLogo,
+.pageTitleWithLogo {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='288 257 500 500'%3E%3Cpath fill='%232FDBC0' d='M440.1,280l285,163.2c38,21.7,51.2,70,29.6,108-7,12.3-17.2,22.5-29.6,29.6l-285,163.2c-37.9,21.8-86.3,8.6-108.1-29.3-6.9-12-10.5-25.6-10.5-39.4v-326.6c0-43.7,35.5-79.2,79.2-79.2,13.8,0,27.4,3.6,39.4,10.5Z'/%3E%3C/svg%3E") !important;
+    background-size: auto 26px !important;
+    background-position: left center !important;
+    background-repeat: no-repeat !important;
+    min-width: 26px !important;
+}

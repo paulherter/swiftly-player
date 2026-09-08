@@ -128,6 +128,70 @@ def huelle(inhalt, breite=RAHMEN_B, hoehe=RAHMEN_H, extra_css=""):
 '''
 
 
+# --- Die Marke ------------------------------------------------------------
+# Woertlich `Marke.signetForm` aus Sources/Shared/Marken.swift. Der Rahmen ist
+# auf die Form selbst zugeschnitten (die Vorlage misst 1024 und traegt das
+# abgerundete Quadrat mit) — hier steht die Abspielform allein.
+SIGNET_PFAD = ("M440.1,280l285,163.2c38,21.7,51.2,70,29.6,108-7,12.3-17.2,22.5-29.6,29.6"
+               "l-285,163.2c-37.9,21.8-86.3,8.6-108.1-29.3-6.9-12-10.5-25.6-10.5-39.4"
+               "v-326.6c0-43.7,35.5-79.2,79.2-79.2,13.8,0,27.4,3.6,39.4,10.5Z")
+
+# Die Marke traegt ihre eigene Farbe, nicht `Stil.akzent` — so steht es in
+# Marken.swift: „die Marke ist gesetzt, das Erscheinungsbild der App darf sich
+# davon unabhaengig bewegen."
+MARKE_AKZENT = "#2FDBC0"
+
+
+def signet(groesse=22, farbe=MARKE_AKZENT):
+    return (f'<svg width="{groesse}" height="{groesse}" viewBox="288 257 500 500" '
+            f'fill="{farbe}" style="flex:none;display:block">'
+            f'<path d="{SIGNET_PFAD}"/></svg>')
+
+
+# --- Die Kopfleiste -------------------------------------------------------
+#
+# **Keine Seitenleiste.** Jellyfins Schublade ist ein Ueberlagerungs-Bauteil
+# mit Auf/Zu-Zustand; mit CSS laesst sie sich nicht in eine stehende Leiste
+# verwandeln, und eine eigene zu bauen braucht ein Skript, das auf diesem
+# Server nicht in die `index.html` kommt. Also traegt Jellyfins eigene
+# Kopfleiste unsere Sprache — deckend in `grund`, Haarlinie darunter,
+# Ziele in 15 medium, das aktive im Akzent.
+
+KOPF_HOEHE = 56
+ZIELE = [("herz", "Favoriten"), ("film", "Filme"), ("tv", "Serien")]
+
+
+def kopfleiste(aktiv=None):
+    def ziel(sym, text):
+        farbe = AKZENT if text == aktiv else LEISE
+        return (f'<div style="display:flex;align-items:center;gap:7px;color:{farbe};'
+                f'font-size:15px;font-weight:500">{zeichen(sym, 18, "currentColor", 1.6)}'
+                f'{text}</div>')
+
+    def knopf(sym):
+        return (f'<div style="width:34px;height:34px;display:flex;align-items:center;'
+                f'justify-content:center;color:{LEISE}">{zeichen(sym, 19, "currentColor", 1.6)}</div>')
+
+    return f'''
+<header style="position:absolute;left:0;right:0;top:0;height:{KOPF_HOEHE}px;
+  background:{GRUND};border-bottom:1px solid {LINIE};display:flex;align-items:center;
+  gap:26px;padding:0 {RAND_ABSTAND}px;z-index:5">
+  <div style="display:flex;align-items:center;gap:9px">
+    {signet(22)}
+    <span style="font-size:17px;font-weight:600;letter-spacing:-.2px">Pauls Kiste</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:22px">
+    {"".join(ziel(s, t) for s, t in ZIELE)}
+  </div>
+  <div style="flex-grow:1"></div>
+  <div style="display:flex;align-items:center;gap:2px">
+    {knopf("monitor")}{knopf("lupe")}
+    <div style="width:28px;height:28px;border-radius:50%;margin-left:8px;
+      background:linear-gradient(135deg,#3B4A5A,#26313D);border:1.5px solid {AKZENT}"></div>
+  </div>
+</header>'''
+
+
 # --- Die Seitenleiste ------------------------------------------------------
 
 BEREICHE_OBEN = [("haus", "Start"), ("film", "Filme"), ("tv", "Serien"), ("lupe", "Suche")]
@@ -188,8 +252,9 @@ def seitenleiste(aktiv="Start", schwebt=None):
 </aside>'''
 
 
-def inhalt(kinder, oben=INHALT_OBEN):
-    return (f'<main style="position:absolute;left:{SEITENLEISTE}px;right:0;top:0;bottom:0;'
+def inhalt(kinder, oben=28):
+    """Der Inhaltsbereich — volle Breite, unter der Kopfleiste."""
+    return (f'<main style="position:absolute;left:0;right:0;top:{KOPF_HOEHE}px;bottom:0;'
             f'padding:{oben}px {RAND_ABSTAND}px 0;overflow:hidden">{kinder}</main>')
 
 

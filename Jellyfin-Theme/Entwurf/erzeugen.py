@@ -49,7 +49,7 @@ def startseite():
         ]))
 
     koerper = f'''
-{seitenleiste("Start")}
+{kopfleiste()}
 {inhalt(f"""
   <div style="display:flex;flex-direction:column;gap:{REIHEN_ABSTAND}px">
     <section>
@@ -65,7 +65,7 @@ def startseite():
       <div style="display:flex;gap:{KACHEL_ABSTAND}px">{zuletzt}</div>
     </section>
   </div>
-""", oben=INHALT_OBEN + 2)}'''
+""", oben=30)}'''
     return schreiben("Main.dc.html", koerper, hoehe=1000)
 
 
@@ -131,7 +131,7 @@ def bibliothek():
         for i, (t, j, m) in enumerate(zip(titel, jahre, marken)))
 
     koerper = f'''
-{seitenleiste("Filme")}
+{kopfleiste("Filme")}
 {inhalt(f"""
   <div style="display:flex;align-items:flex-start;justify-content:space-between">
     <div style="display:flex;flex-direction:column;gap:3px">
@@ -196,13 +196,14 @@ def detailkopf(titel_sichtbar=False):
 
 
 def heldkopf(titel, angaben, beschreibung, direct_play=True, knoepfe=None):
+    """Der Kopf der Detailseite. **Kein Zurueckpfeil mehr** — Jellyfin setzt
+    ihn selbst in die Kopfleiste, und zwei waeren einer zu viel."""
     beleg_farbe = AKZENT if direct_play else WARNUNG
     beleg_text = "Direct Play" if direct_play else "Transkodiert"
     beleg_zeichen = zeichen("haken", 12, beleg_farbe, 2.6) if direct_play else ""
     knoepfe = knoepfe or (hauptknopf("Abspielen") + nebenknopf("merken") + nebenknopf("punkte"))
     return f'''<div style="position:relative;height:380px">
   {kulisse()}
-  {detailkopf()}
   <div style="position:absolute;left:{RAND_ABSTAND}px;top:150px;width:640px;height:230px">
     <div style="position:absolute;top:0;height:42px;width:640px;display:flex;align-items:center">
       <span style="font-size:34px;font-weight:700;letter-spacing:-.8px">{titel}</span>
@@ -247,8 +248,8 @@ def detail_film():
                                     ("Adults", "2025"), ("FROM", "2022")]))
 
     koerper = f'''
-{seitenleiste("Filme")}
-<main style="position:absolute;left:{SEITENLEISTE}px;right:0;top:0;bottom:0;overflow:hidden">
+{kopfleiste("Filme")}
+<main style="position:absolute;left:0;right:0;top:0;bottom:0;overflow:hidden">
   {heldkopf("The Mentalist", "2008 · Krimi, Drama · 41 Min.",
             "Der Job des charismatischen Ex-TV-Show-Stars Patrick Jane innerhalb des "
             "California Bureau of Investigation ist es, die Ermittlungen einer Spezialeinheit "
@@ -319,8 +320,8 @@ def detail_serie():
     )
 
     koerper = f'''
-{seitenleiste("Serien")}
-<main style="position:absolute;left:{SEITENLEISTE}px;right:0;top:0;bottom:0;overflow:hidden">
+{kopfleiste("Serien")}
+<main style="position:absolute;left:0;right:0;top:0;bottom:0;overflow:hidden">
   {heldkopf("The Mentalist", "2008 · Krimi, Drama · 7 Staffeln",
             "Der Job des charismatischen Ex-TV-Show-Stars Patrick Jane innerhalb des "
             "California Bureau of Investigation ist es, die Ermittlungen einer Spezialeinheit "
@@ -363,7 +364,7 @@ def suche():
                                     ("Andor", "Serie · 2022")]))
 
     koerper = f'''
-{seitenleiste("Suche")}
+{kopfleiste()}
 {inhalt(f"""
   <span style="font-size:28px;font-weight:700;letter-spacing:-.6px">Suche</span>
   <div style="margin-top:14px">{eingabefeld("Titel, Serie, Person", "lupe", 420, fokus=True)}</div>
@@ -416,7 +417,7 @@ def einstellungen():
     ])
 
     koerper = f'''
-{seitenleiste("Start")}
+{kopfleiste()}
 {inhalt(f"""
   <div style="max-width:700px">
     <span style="font-size:28px;font-weight:700;letter-spacing:-.6px">Wiedergabe</span>
@@ -453,7 +454,7 @@ def profil():
     ])
 
     koerper = f'''
-{seitenleiste("Start")}
+{kopfleiste()}
 {inhalt(f"""
   <div style="max-width:700px;margin:0 auto;display:flex;flex-direction:column;align-items:center">
     <div style="display:flex;align-items:center;position:relative;height:108px">
@@ -558,7 +559,7 @@ def dashboard():
     ])
 
     koerper = f'''
-{seitenleiste("Start")}
+{kopfleiste()}
 {inhalt(f"""
   <div style="max-width:820px">
     <span style="font-size:28px;font-weight:700;letter-spacing:-.6px">Übersicht</span>
@@ -703,6 +704,21 @@ def bausteine_tafel():
   <div>{feld_titel("I · Ein gefüllter Knopf je Seite, alles daneben ist Zeichen")}
     {knoepfe}</div>
   <div>{feld_titel("I · Steuern")}{steuern}</div>
+  <div>{feld_titel("Die Marke — ersetzt Jellyfins Logo in der Kopfleiste")}
+    <div style="display:flex;align-items:center;gap:26px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:9px;padding:10px 14px;
+        background:{GRUND};border:1px solid {LINIE};border-radius:{ECKE}px">
+        {signet(22)}<span style="font-size:17px;font-weight:600;letter-spacing:-.2px">
+        Pauls Kiste</span></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        {signet(16)}{signet(22)}{signet(34)}{signet(52)}
+      </div>
+      <span style="font-size:12px;color:{LEISE};max-width:360px">
+        Die Abspielform aus <span style="color:{SCHRIFT}">Marke.signetForm</span>, ohne das
+        abgerundete Quadrat. Sie traegt ihre eigene Farbe
+        <span style="color:{MARKE_AKZENT}">{MARKE_AKZENT}</span> — nicht den Akzent der
+        Oberflaeche; so steht es in Marken.swift.</span>
+    </div></div>
   <div>{feld_titel("H · Zustände — drei Zustände, drei Zeichen")}{zustaende}</div>
 </div>'''
     return schreiben("Bausteine.dc.html", koerper, breite=1440, hoehe=1620)
@@ -744,29 +760,33 @@ def main():
                      "page": "page-2"}]
 
     notizen = [
-        {"id": "hinweis-leiste", "x": spalte(0), "y": -150, "w": 460,
-         "text": "Die Seitenleiste ist der ehrgeizigste Griff.\n"
-                 "Jellyfin stellt seine Wege auf dem Rechner in eine Leiste oben; der Mac hat "
-                 "sie links. Mit CSS geht das — die Kopfleiste wird auf 220 Punkt festgestellt "
-                 "und aufrecht gedreht, der Inhalt rückt ein. Nur auf layout-desktop.\n"
-                 "Das ist der eine Punkt, den wir am Gerät prüfen, bevor er bleibt."},
-        {"id": "hinweis-kulisse", "x": spalte(0), "y": 900 + R - 150, "w": 460,
+        {"id": "hinweis-kopfleiste", "x": spalte(0), "y": -190, "w": 470,
+         "text": "Keine Seitenleiste — und das ist kein Versäumnis.\n"
+                 "Jellyfins Schublade ist ein Überlagerungs-Bauteil mit Auf/Zu-Zustand; "
+                 "mit CSS wird daraus keine stehende Leiste. Eine eigene zu bauen braucht "
+                 "ein Skript, und das kommt nur über einen Eintrag in Jellyfins index.html "
+                 "hinein — auf Pauls Server nicht schreibbar.\n"
+                 "Also trägt Jellyfins eigene Kopfleiste unsere Sprache: deckend in grund, "
+                 "Haarlinie, Ziele in 15 medium, das aktive im Akzent. Das Logo wird durch "
+                 "die Abspielform der Marke ersetzt."},
+        {"id": "hinweis-kulisse", "x": spalte(0), "y": 1000 + R - 150, "w": 460,
          "text": "Die Kulisse liegt rechts und wird von zwei Masken ausgeblendet, nicht von "
                  "einem Anstrich übermalt.\nDie Kurven stehen unverändert in Kulissenblende. "
                  "Ein Anstrich endet in undurchsichtigem grund und setzt voraus, dass der "
                  "Hintergrund genau das ist."},
-        {"id": "hinweis-kein-plakat", "x": spalte(1), "y": 900 + R - 150, "w": 460,
+        {"id": "hinweis-kein-plakat", "x": spalte(1), "y": 1000 + R - 150, "w": 460,
          "text": "Kein Plakat auf der Detailseite, kein Logo.\n"
-                 "Auf dem Apple TV ist das Plakat weggefallen, weil es nur den "
-                 "Fortschrittsbalken trug; der Mac hat es nie gehabt. Und der Titel steht als "
-                 "Schrift da, damit jede Seite an derselben Stelle beginnt."},
-        {"id": "hinweis-grenze", "x": spalte(2), "y": 900 + R - 150, "w": 460,
-         "text": "Was ein Thema nicht kann:\n"
-                 "• den Aufbau der Suchseite erfinden — die Vorschlagsliste kommt so, wie "
-                 "Jellyfin sie baut\n"
-                 "• Reihen ergänzen, die es dort nicht gibt\n"
-                 "• Federn statt Kurven bewegen\n"
-                 "Diese Tafel zeigt das Ziel, nicht die Garantie."},
+                 "Beides ist mit CSS erreichbar: display:none auf .detailImageContainer und "
+                 ".detailLogo, und :has() lässt das Plakat dort stehen, wo das Bild die Sache "
+                 "selbst ist — Person, Album, Buch.\n"
+                 "Die Knopfreihe wandert über flex-direction:column unter den Titel."},
+        {"id": "hinweis-grenze", "x": spalte(2), "y": 1000 + R - 150, "w": 470,
+         "text": "Was ein Stilblatt nicht kann — und was hier deshalb Jellyfins Aufbau bleibt:\n"
+                 "• keine eigene Seitenleiste, keine eigenen Zeilen darin\n"
+                 "• keine Reihe ergänzen, die es nicht gibt (z. B. „Nächste Folge“ als Plakate)\n"
+                 "• die Vorschlagsliste der Suche kommt, wie Jellyfin sie baut\n"
+                 "• Federn bleiben Kurven\n"
+                 "Alles andere auf diesen Tafeln ist mit CSS erreichbar."},
     ]
 
     canvas = {
