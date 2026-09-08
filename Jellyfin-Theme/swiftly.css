@@ -1603,66 +1603,79 @@ a[data-role=button]:focus {
     margin: 26px 0 0 !important;
 }
 
-/* **Der eine gefuellte Knopf der Seite.** Er ist der erste in der Reihe
-   — das ist Abspielen oder Fortsetzen. Weiss, dunkle Schrift, Ecke 10,
-   48 hoch; Zeichen und Beschriftung nebeneinander wie auf dem Mac.
-   Ueber die Stellung angesprochen und nicht ueber einen Namen: die
-   Knopfklassen von 10.11 stehen in keinem Stilblatt, ein Name waere
-   geraten. */
-.layout-desktop .mainDetailButtons > .detailButton:first-child {
+/* **Der eine gefuellte Knopf der Seite** — Abspielen oder Fortsetzen.
+   Weiss, dunkle Schrift, Ecke 10, 48 hoch, Zeichen und Beschriftung
+   nebeneinander. Genau `Hauptknopf` aus Macbausteine.swift.
+
+   **Und die Beschriftung kommt aus Jellyfins eigenem Attribut.** Die
+   Knoepfe tragen nur ein Zeichen; der Name steht im `title`, weil ihn
+   sonst niemand vorlesen koennte. `content: attr(title)` holt ihn
+   heraus — kein Skript noetig, und er ist automatisch uebersetzt, weil
+   Jellyfin ihn uebersetzt.
+
+   **Ueber die Klasse angesprochen, nicht ueber die Stellung.** Hier stand
+   `:first-child`, weil ich die Klassennamen von 10.11 nicht kannte. Am
+   laufenden Client nachgesehen heisst der Knopf `.btnPlay` — und in der
+   Reihe stehen zwoelf Knoepfe, von denen acht `hide` tragen. Eine
+   Positionsangabe waere frueher oder spaeter auf den falschen gefallen. */
+.layout-desktop .mainDetailButtons > .btnPlay {
     background: var(--sw-schrift) !important;
     color: var(--sw-grund) !important;
     border-radius: var(--sw-ecke) !important;
-    height: var(--sw-hauptknopf);
-    padding: 0 20px !important;
-}
-
-.layout-desktop .mainDetailButtons > .detailButton:first-child:hover {
-    background: rgba(255, 255, 255, .88) !important;
-}
-
-.layout-desktop .mainDetailButtons > .detailButton:first-child .detailButton-content {
+    height: var(--sw-hauptknopf) !important;
+    padding: 0 22px 0 18px !important;
+    margin-right: var(--sw-kachel-abstand) !important;
     flex-direction: row !important;
+    align-items: center !important;
     gap: 9px;
 }
 
-.layout-desktop .mainDetailButtons > .detailButton:first-child .detailButton-icon,
-.layout-desktop .mainDetailButtons > .detailButton:first-child .material-icons {
+.layout-desktop .mainDetailButtons > .btnPlay:hover {
+    background: rgba(255, 255, 255, .88) !important;
+}
+
+.layout-desktop .mainDetailButtons > .btnPlay::after {
+    content: attr(title);
+    font-size: 16px;
+    font-weight: 600;
+    color: inherit;
+    white-space: nowrap;
+}
+
+.layout-desktop .mainDetailButtons > .btnPlay .detailButton-icon,
+.layout-desktop .mainDetailButtons > .btnPlay .material-icons {
     background: transparent !important;
     color: inherit !important;
     width: auto !important;
     height: auto !important;
     line-height: 1 !important;
-    font-size: 20px !important;
+    font-size: 22px !important;
     border-radius: 0 !important;
-}
-
-.layout-desktop .mainDetailButtons > .detailButton:first-child .detailButton-text {
-    color: inherit !important;
-    font-size: 16px !important;
-    font-weight: 600 !important;
-    margin-top: 0 !important;
 }
 
 /* Alles daneben ist Nebenknopf: abgerundetes Quadrat, Weiss 14 %,
    **kein Kreis** — so steht es auf dem Mac (`Nebenknopf`). */
-.layout-desktop .mainDetailButtons > .detailButton:not(:first-child) .detailButton-icon,
-.layout-desktop .mainDetailButtons > .detailButton:not(:first-child) .material-icons {
-    width: 48px !important;
-    height: 48px !important;
-    line-height: 48px !important;
+.layout-desktop .mainDetailButtons > .detailButton:not(.btnPlay) .detailButton-icon,
+.layout-desktop .mainDetailButtons > .detailButton:not(.btnPlay) .material-icons {
+    width: var(--sw-hauptknopf) !important;
+    height: var(--sw-hauptknopf) !important;
+    line-height: var(--sw-hauptknopf) !important;
     border-radius: var(--sw-ecke) !important;
     background: rgba(255, 255, 255, .14) !important;
     font-size: 20px !important;
+    color: var(--sw-schrift) !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
 }
 
-.layout-desktop .mainDetailButtons > .detailButton:not(:first-child):hover .detailButton-icon,
-.layout-desktop .mainDetailButtons > .detailButton:not(:first-child):hover .material-icons {
+.layout-desktop .mainDetailButtons > .detailButton:not(.btnPlay):hover .detailButton-icon,
+.layout-desktop .mainDetailButtons > .detailButton:not(.btnPlay):hover .material-icons {
     background: rgba(255, 255, 255, .22) !important;
 }
 
-.layout-desktop .mainDetailButtons > .detailButton:not(:first-child) .detailButton-text {
-    display: none !important;
+/* Ein aktiver Knopf faerbt sein **Zeichen**, nicht seine Flaeche (E2). */
+.layout-desktop .mainDetailButtons .playstatebutton-icon-played,
+.layout-desktop .mainDetailButtons .ratingbutton-icon-withrating {
+    color: var(--sw-akzent) !important;
 }
 
 
