@@ -21,6 +21,13 @@ für alle am Server). Dort hinein, ganz nach oben:
 
 Speichern, Seite neu laden. Fertig.
 
+> **Vorher das alte Thema herausnehmen.** Steht in demselben Feld schon
+> ein `@import` — auf `tv.paulherter.de` war es am 08.09.2026
+> **ElegantFin**, server-weit unter Dashboard → Allgemein —, dann muss
+> diese Zeile weg. Zwei Themen uebereinander kaempfen um jede Farbe, und
+> wer gewinnt, haengt an der Reihenfolge der Regeln. Eine Zeile ersetzen,
+> nicht eine dazuschreiben.
+
 **Warum jsDelivr und nicht `raw.githubusercontent.com`.** GitHub liefert
 Rohdateien als `text/plain` aus, und ein `@import` mit falschem Inhaltstyp
 wird vom Browser stillschweigend verworfen — die Zeile steht dann da und
@@ -76,6 +83,7 @@ App — die Quelle ist im Stilblatt an der jeweiligen Stelle vermerkt.
 | **Detailseite** | Titel 34 fett, Sperrung −0,8; Aktionsknöpfe als Kreis 44 mit Beschriftung darunter in 11 auf 75 % |
 | **Die Kulisse** | Das Hintergrundbild bekommt die Doppelmaske aus `Kulissenblende` — rechts stehend, nach links und unten auslaufend, wie auf dem Mac und dem Fernseher |
 | **Der Schalter** | Kapsel 38 × 22 mit Knopf 16, Akzent wenn an, Knopf dann dunkel — Jellyfins Häkchen wird zum Swiftly-Schalter |
+| **Die React-Seiten** | Anmeldung und Teile des Dashboards baut 10.11 mit MUI. Sie ziehen ihre Farben aus derselben Palette; die Formen, die MUI selbst mitbringt, sind auf die Eckenskala gebracht |
 
 ---
 

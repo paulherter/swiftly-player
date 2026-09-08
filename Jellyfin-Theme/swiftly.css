@@ -826,6 +826,9 @@ a[data-role=button]:focus {
    Kein Systemhaken: Kapsel 38 x 22, Knopf 16, Akzent wenn an, und der
    Knopf wird dann dunkel. `Schalter` in Sources/macOS/Einstellungszeilen.swift. */
 .checkboxOutline {
+    /* Luft zur Beschriftung. Jellyfin stellt den Haken dicht daneben, weil
+       er dort quadratisch und schmal war; als Kapsel von 38 klebt er. */
+    margin-left: 12px !important;
     width: 38px !important;
     height: 22px !important;
     min-width: 38px !important;
@@ -1349,4 +1352,119 @@ a[data-role=button]:focus {
 #pdfPlayer,
 #dialogToc {
     background-color: var(--sw-grund) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   N · Die React-Seiten (MUI)
+   ---------------------------------------------------------------------
+   Jellyfin 10.11 baut einen wachsenden Teil der Oberflaeche mit MUI —
+   Anmeldung, Teile des Dashboards. Diese Seiten tragen keine
+   `emby-`-Klassen; sie ziehen ihre Farben aus der Palette oben und ihre
+   Formen aus MUIs eigenen Vorgaben.
+
+   Die Palette ist damit schon erledigt. Hier stehen nur die **Formen**,
+   die MUI selbst mitbringt und die nicht zur Eckenskala passen.
+   --------------------------------------------------------------------- */
+
+/* MUI legt im Dunkelmodus je Erhebung einen hellen Schleier ueber das
+   Papier. Genau die Schicht, die aus unserem Grund einen grauen Block
+   macht — GESTALTUNG D, „Kein Glas". */
+.MuiPaper-root {
+    background-image: none !important;
+}
+
+.MuiPaper-rounded {
+    border-radius: var(--sw-ecke-flaeche) !important;
+}
+
+.MuiAppBar-root {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    border-bottom: 1px solid var(--sw-linie) !important;
+}
+
+/* Beschriftungen bleiben, wie sie geschrieben sind. Versalien tragen bei
+   uns nur Gruppentitel in 11 — ein Knopf ist keiner. */
+.MuiButton-root {
+    border-radius: var(--sw-ecke) !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+}
+
+.MuiButton-contained,
+.MuiButton-containedPrimary {
+    background-color: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+    box-shadow: none !important;
+}
+
+.MuiButton-contained:hover,
+.MuiButton-containedPrimary:hover {
+    background-color: rgba(255, 255, 255, .88) !important;
+    box-shadow: none !important;
+}
+
+.MuiButton-outlined {
+    border-color: var(--sw-rand) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.MuiOutlinedInput-root,
+.MuiFilledInput-root,
+.MuiInputBase-root {
+    border-radius: var(--sw-ecke-feld) !important;
+    background-color: var(--sw-flaeche) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.MuiOutlinedInput-notchedOutline {
+    border-color: var(--sw-rand) !important;
+    border-width: 1px !important;
+}
+
+.Mui-focused .MuiOutlinedInput-notchedOutline {
+    border-color: rgba(var(--sw-akzent-kanal), .5) !important;
+    border-width: 1px !important;
+}
+
+.MuiChip-root {
+    border-radius: 999px !important;
+    background-color: transparent !important;
+    border: 1px solid var(--sw-rand) !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.MuiCard-root,
+.MuiDialog-paper,
+.MuiMenu-paper,
+.MuiPopover-paper {
+    background-color: var(--sw-erhoeht) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-flaeche) !important;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .55) !important;
+}
+
+.MuiMenuItem-root:hover,
+.MuiListItemButton-root:hover {
+    background-color: var(--sw-schweben) !important;
+}
+
+.MuiDivider-root {
+    border-color: var(--sw-linie) !important;
+}
+
+/* Der Fortschrittsbalken und der Ring tragen den Akzent — Zustand. */
+.MuiLinearProgress-bar,
+.MuiCircularProgress-circle {
+    background-color: var(--sw-akzent) !important;
+    color: var(--sw-akzent) !important;
+    stroke: var(--sw-akzent) !important;
+}
+
+.MuiLinearProgress-root {
+    background-color: rgba(255, 255, 255, .16) !important;
+    border-radius: 999px !important;
 }
