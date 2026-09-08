@@ -68,8 +68,19 @@ struct Spielwerte {
     ///
     /// Beim ersten Mal gibt es kein Vorher — dann steht ein Strich, keine
     /// Null. Eine Null waere eine Aussage, und wir haben noch keine.
-    init?(_ roh: VLCMedia.Stats?, vorher: Spielwerte? = nil,
-          sekunden: Double = 0) {
+    /// Wann diese Messung entstanden ist — die naechste rechnet daraus die
+    /// Dauer. **Gemessen, nicht angenommen:** `Task.sleep` haelt
+    /// *mindestens* die gewuenschte Zeit ein, nicht genau sie. Mit einer
+    /// angenommenen Dauer las man am 08.09.2026 „Zeigt 30,0 fps" bei einer
+    /// Datei mit 23,976 — der Abstand war in Wahrheit zweieinhalb Sekunden.
+    /// Eine Auskunft, die falsche Zahlen mit zwei Nachkommastellen ausgibt,
+    /// ist schlimmer als keine.
+    let gemessenAm: Date
+
+    init?(_ roh: VLCMedia.Stats?, vorher: Spielwerte? = nil) {
+        let jetzt = Date()
+        let sekunden = vorher.map { jetzt.timeIntervalSince($0.gemessenAm) } ?? 0
+        gemessenAm = jetzt
         guard let roh else { return nil }
         // **Hat VLC die Struktur gar nicht gefuellt, kommt Speicherschrott.**
         //

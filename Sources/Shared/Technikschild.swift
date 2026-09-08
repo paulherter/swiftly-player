@@ -287,7 +287,12 @@ struct Technikschild: View {
         let wort: String
         let passt: Bool
         if let ziel = Bildtakt.angefordert {
-            wort = String(localized: "angefordert \(String(format: "%.0f", ziel)) Hz")
+            // **Auf die Stelle genau, nicht gerundet.** Hier stand `%.0f`,
+            // und aus 23,976 wurde „24 Hz" — genau die Verwechslung, um die
+            // es bei dieser Zeile geht. Angefordert wird der echte Wert;
+            // dass der Schirm ihn als 24 meldet, ist seine Rundung, nicht
+            // unsere.
+            wort = String(localized: "angefordert \(Technikangaben.bildrate(ziel) ?? "?") Hz")
             passt = true
         } else {
             switch Bildtakt.stand {
