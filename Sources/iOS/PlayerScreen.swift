@@ -454,8 +454,30 @@ struct PlayerScreen: View {
         // den Hintergrund -- Wegwischen, Sperren, App schliessen. Genau die
         // drei Faelle, in denen angehalten werden soll. Systemflaechen, die
         // sich bloss darueberlegen, loesen sie nicht aus.
+        // **Erst aufschreiben, was iOS ueberhaupt meldet.** Bei diesem
+        // Fehler ist zweimal auf die falsche Quelle getippt worden -- erst
+        // die Tonunterbrechung, dann `scenePhase`. Solange nicht dasteht,
+        // welche Meldungen die Mitteilungszentrale ausloest und in welchem
+        // Zustand die App dabei ist, ist jede weitere Regel geraten.
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.willResignActiveNotification)) { _ in
+            Protokoll.schreib("[Lebenslage] willResignActive · Zustand \(Lagewort.jetzt)")
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.didBecomeActiveNotification)) { _ in
+            Protokoll.schreib("[Lebenslage] didBecomeActive · Zustand \(Lagewort.jetzt)")
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.willEnterForegroundNotification)) { _ in
+            Protokoll.schreib("[Lebenslage] willEnterForeground · Zustand \(Lagewort.jetzt)")
+        }
+        .onChange(of: lebenslage) { alt, neu in
+            Protokoll.schreib("[Lebenslage] scenePhase \(alt) → \(neu) · Zustand \(Lagewort.jetzt)")
+        }
         .onReceive(NotificationCenter.default.publisher(
             for: UIApplication.didEnterBackgroundNotification)) { _ in
+            Protokoll.schreib("[Lebenslage] didEnterBackground · Zustand \(Lagewort.jetzt)"
+                + " · PiP \(imKleinenFenster) · laeuft \(laeuft)")
             // **Im Hintergrund anhalten — ausser es laeuft anderswo weiter.**
             //
             // Die App erklaert `UIBackgroundModes: audio`; ohne sie gaebe es
