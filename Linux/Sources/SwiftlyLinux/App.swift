@@ -1075,6 +1075,9 @@ final class App: @unchecked Sendable {
     /// Seerr — Zugang und Client, `nil` solange nichts eingerichtet ist.
     var seerrzugang: Seerrzugang?
     var seerrclient: SeerrClient?
+    /// Ob die gespeicherte Seerr-Sitzung noch traegt. `nil` heisst „noch
+    /// nicht nachgesehen"; zurueckgesetzt beim Trennen und beim Verbinden.
+    var seerrGilt: Bool?
     /// Die Seerr-Treffer der Suche — Ueberschrift und Raster darunter.
     var seerrUeberschrift: Widget!
     var seerrRaster: Widget!
