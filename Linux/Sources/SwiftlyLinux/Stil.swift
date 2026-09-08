@@ -57,6 +57,10 @@ enum Stil {
     /// Wie lange eine Seite hereinschiebt — `Stil.zeitSeitenschub` vom Mac,
     /// `easeInOut` über 0,45 s.
     static let zeitSeitenschub = 0.45
+    /// Wie lange ein Bereichswechsel ueberblendet. Dieselbe Dauer, die
+    /// `GtkStack` fuer seine Kreuzblende nimmt (200 ms) — sonst saehen die
+    /// beiden Wege in denselben Bereich verschieden aus.
+    static let zeitBlende = 0.2
     /// Wie weit die Seite **darunter** mitgeht. Ein knappes Drittel — so hält
     /// es die Systemnavigation, und daher kommt der Eindruck von Ebenen statt
     /// von einem Rechteck, das vorbeischiebt.

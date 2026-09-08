@@ -1579,7 +1579,15 @@ final class App: @unchecked Sendable {
     /// mit der Regel „tiefer gehen schiebt von rechts, zurück schiebt nach
     /// rechts hinaus". Ein Bereichswechsel dagegen blendet über („Fade
     /// Through"), weil er nicht tiefer führt, sondern daneben.
-    enum Schub { case tiefer, zurueck, ohne }
+    /// **`blende` ist der Bereichswechsel**, `tiefer`/`zurueck` das Blaettern
+    /// in Titeln, `ohne` der Neubau an Ort und Stelle.
+    ///
+    /// Sie ist dazugekommen, weil derselbe Klick zwei Verhalten hatte: wer
+    /// auf einen Bereich ohne gemerkte Detailseite ging, sah die Kreuzblende
+    /// des Stapels; wer auf einen mit gemerkter Seite ging, bekam
+    /// `schieben(.ohne)` — also gar nichts. Filme und Serien schalteten
+    /// deshalb hart um und die Merkliste blendete ein.
+    enum Schub { case tiefer, zurueck, ohne, blende }
 
     /// Legt eine Ebene obenauf und schiebt sie dabei herein.
     ///
@@ -1599,6 +1607,25 @@ final class App: @unchecked Sendable {
 
         let fest = alsFest(buehne)
         let breite = Double(gtk_widget_get_width(buehne))
+
+        // Ueberblenden statt schieben: die neue Ebene liegt gleich an ihrem
+        // Platz und wird nur sichtbar. Dieselbe Dauer wie die Kreuzblende des
+        // Stapels, damit beide Wege gleich aussehen.
+        if richtung == .blende {
+            gtk_fixed_move(fest, ziel, 0, 0)
+            gtk_widget_insert_before(ziel, buehne, nil)
+            gtk_widget_set_opacity(ziel, 0)
+            laufen(auf: buehne, dauer: Stil.zeitBlende) { e in
+                gtk_widget_set_opacity(ziel, e)
+                gtk_widget_set_opacity(alt, 1 - e)
+            } fertig: {
+                gtk_widget_set_opacity(ziel, 1)
+                gtk_widget_set_opacity(alt, 1)
+                gtk_widget_set_visible(alt, 0)
+            }
+            return
+        }
+
         guard richtung != .ohne, breite > 1 else {
             gtk_fixed_move(fest, ziel, 0, 0)
             gtk_widget_set_visible(alt, 0)
@@ -1661,10 +1688,12 @@ final class App: @unchecked Sendable {
         }
         // **Der Stapel entscheidet, was zu sehen ist.** Liegt auf diesem
         // Bereich eine Detailseite, kommt sie zurück — nicht die Liste.
+        // **Ein Bereichswechsel blendet — beide Wege.** Vorher blendete nur
+        // der eine, weil der andere ueber `schieben(.ohne)` lief.
         if let oben = seitenstapel[neu]?.last {
-            detailZeigen(oben, schub: .ohne)
+            detailZeigen(oben, schub: .blende)
         } else {
-            bereichZeigen(neu.kennung, schub: .ohne)
+            bereichZeigen(neu.kennung, schub: .blende)
         }
         // **Wer auf „Suche" geht, will tippen.** Der Mac setzt den Fokus beim
         // Erscheinen der Seite; hier ging es nur über Strg+F.
