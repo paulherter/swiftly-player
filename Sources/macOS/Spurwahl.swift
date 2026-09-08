@@ -25,6 +25,13 @@ struct Spurwahl: View {
 
     /// Wie hoch der Inhalt tatsaechlich waere.
     @State private var inhaltshoehe: CGFloat = 0
+    /// **Beide Spalten zaehlen, nicht nur die rechte.**
+    ///
+    /// Gemessen wurde erst nur der Inhalt rechts. Bei einer einzigen Tonspur
+    /// sind das rund 260 Punkte -- die Leiste links braucht aber ueber 310,
+    /// lief also ueber und wurde oben und unten beschnitten. Die Tafel ist so
+    /// hoch wie die hoehere der beiden.
+    @State private var leistenhoehe: CGFloat = 0
     @AppStorage("technikschild") private var technikschild = false
     @AppStorage("bildfuellend") private var bildfuellend = false
     let bildfuellendSetzen: (Bool) -> Void
@@ -86,7 +93,7 @@ struct Spurwahl: View {
         // senkrecht alles, was sie kriegen kann; mit `maxHeight` allein
         // stuende die Tafel bei zwei Spuren mit einer handbreit Leere
         // darunter. Dieselbe Falle wie bei der Staffelwahl.
-        .frame(height: min(max(inhaltshoehe + 36, 260), 460))
+        .frame(height: min(max(max(inhaltshoehe + 36, leistenhoehe), 200), 460))
         .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
         .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld))
         .overlay(RoundedRectangle(cornerRadius: Stil.eckeFeld)
@@ -143,10 +150,10 @@ struct Spurwahl: View {
             }
             .buttonStyle(.plain)
 
-            Spacer(minLength: 0)
         }
         .padding(10)
         .frame(width: 260)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { leistenhoehe = $0 }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Stil.grund.opacity(0.5))
     }

@@ -399,8 +399,8 @@ struct PlayerScreen: View {
             // (`Fensterhalter.setzeKlein`) bleibt stehen, sie ist nur nicht
             // mehr erreichbar.
             Spacer(minLength: 0)
-            Chip(beschriftung: String(localized: "Ton und Untertitel"),
-                 symbol: "slider.horizontal.3", aktiv: spurwahlOffen) {
+            Chip(beschriftung: String(localized: "Wiedergabe"),
+                 symbol: "slider.horizontal.3", nurSymbol: true, aktiv: spurwahlOffen) {
                 withAnimation(Stil.zeitSprung) { spurwahlOffen.toggle() }
             }
             .padding(.leading, 12)
@@ -425,7 +425,7 @@ struct PlayerScreen: View {
             // aufsteigt und wieder dorthin verschwindet. Das Zeichen
             // beschreibt eine Bewegung, die es hier wirklich gibt.
             Chip(beschriftung: String(localized: "Schließen"),
-                 symbol: "chevron.down", aktiv: false) { beenden() }
+                 symbol: "chevron.down", nurSymbol: true, aktiv: false) { beenden() }
                 .padding(.leading, 12)
         }
         .padding(.trailing, 22)
