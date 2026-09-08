@@ -28,8 +28,14 @@
 # es die Bibliotheksseite gar nicht, ein Klick schaltete nur den Filme-Bereich
 # um — und niemand hat gefragt, warum die Spalte leer ist.
 #
-# `-` heisst „gibt es dort nicht, und das ist geprueft" (Absicht, mit Grund in
-# der Zeile). `?` heisst „gibt es dort nicht" — und das wird gemeldet.
+# `?` heisst „gibt es dort nicht" — und das wird unten gemeldet.
+# `-` heisst „gibt es dort nicht, geprueft". Steht hinter dem Bindestrich noch
+# Text, ist das der Grund; er erscheint unter der Tabelle statt in der Spalte.
+#
+# Auf `App.swift` zu zeigen waere hier falsch gewesen, obwohl die Merkliste
+# dort liegt: die Datei ist auf Linux 2900 Zeilen und staendig in Bewegung,
+# der Stern staende immer dort. Ein Satz, der einmal dasteht, ist besser als
+# eine Zeile, die jeden Tag etwas anderes behauptet.
 #
 # Ein `~` vor dem Namen heisst **grob**: die Zeile stellt Dateien
 # gegenueber, die nicht dasselbe zuschneiden. `App.swift` auf Linux traegt
@@ -63,7 +69,7 @@ ZUORDNUNG=(
   "Einstellungen:Sources/Shared/EinstellungenView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/EinstellungenView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift"
   "Wiedergabe:Sources/Shared/WiedergabeEinstellungenView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/WiedergabeEinstellungenView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift"
   "Suche:Sources/Shared/SucheView.swift:Sources/tvOS/SucheView.swift:Sources/macOS/SucheView.swift:Linux/Sources/SwiftlyLinux/App.swift"
-  "Merkliste:Sources/Shared/MerklisteView.swift:Sources/tvOS/MerklisteView.swift:Sources/macOS/MerklisteView.swift:?"
+  "Merkliste:Sources/Shared/MerklisteView.swift:Sources/tvOS/MerklisteView.swift:Sources/macOS/MerklisteView.swift:-kein eigenes Gegenstueck, liegt als Bereich-Fall in App.swift (E21)"
   "Downloads:Sources/Shared/DownloadsView.swift:-:Sources/macOS/Macdownloads.swift:Linux/Sources/SwiftlyLinux/Downloadseite.swift"
   "Downloadverwaltung:Sources/Shared/Downloadverwaltung.swift:-:Sources/Shared/Downloadverwaltung.swift:Linux/Sources/SwiftlyLinux/Downloadverwaltung.swift"
   "Seerr-Seite:Sources/Shared/SeerrDetailView.swift:Sources/tvOS/SeerrView.swift:Sources/macOS/SeerrKachelUndSeite.swift:Linux/Sources/SwiftlyLinux/Seerrseite.swift"
@@ -87,14 +93,14 @@ PLATTFORMEN=("iOS/iPad" "tvOS" "macOS" "Linux/Win")
 
 zeitstempel() {
   local pfad="$1"
-  case "$pfad" in -|\?) echo 0; return;; esac
+  case "$pfad" in -*|\?) echo 0; return;; esac
   [ ! -f "$pfad" ] && { echo 0; return; }
   git log -1 --format=%ct -- "$pfad" 2>/dev/null || echo 0
 }
 
 text() {
   local pfad="$1"
-  [ "$pfad" = "-" ] && { echo "keine (geprueft)"; return; }
+  case "$pfad" in -*) echo "keine (geprueft)"; return;; esac
   [ "$pfad" = "?" ] && { echo "KEINE"; return; }
   [ ! -f "$pfad" ] && { echo "PFAD FEHLT"; return; }
   local kurz alter
@@ -109,6 +115,7 @@ printf '%-19s%-21s%-21s%-21s%-21s\n' "Ansicht" "iOS/iPad" "tvOS" "macOS" "Linux/
 printf '%s\n' "------------------------------------------------------------------------------------------------"
 
 ohne=()
+geprueft=()
 kaputt=0
 for zeile in "${ZUORDNUNG[@]}"; do
   IFS=':' read -r name ios tv mac linux <<< "$zeile"
@@ -127,7 +134,11 @@ for zeile in "${ZUORDNUNG[@]}"; do
     p="${pfade[$i]}"
     t=$(zeitstempel "$p")
     [ "$p" = "?" ] && ohne+=("$name — ${PLATTFORMEN[$i]}")
-    case "$p" in -|\?) : ;; *) [ ! -f "$p" ] && kaputt=1;; esac
+    case "$p" in
+      -?*) geprueft+=("$name — ${PLATTFORMEN[$i]}: ${p#-}") ;;
+      -|\?) : ;;
+      *) [ ! -f "$p" ] && kaputt=1 ;;
+    esac
     marke=" "
     # Der Stern nur, wo der Vergleich etwas bedeutet: eine grobe Zeile
     # vergleicht Dateien mit verschiedenem Zuschnitt.
@@ -149,6 +160,11 @@ if [ ${#ohne[@]} -gt 0 ]; then
   printf '%s\n' "  auf Linux gab es keine Bibliotheksseite, ein Klick schaltete nur den"
   printf '%s\n' "  Filme-Bereich um. Ist es geprueft und Absicht, Bindestrich statt"
   printf '%s\n' "  Fragezeichen in die Zuordnung eintragen."
+fi
+
+if [ ${#geprueft[@]} -gt 0 ]; then
+  printf '\n%s\n' "Ohne eigene Datei, aber geprueft:"
+  for e in "${geprueft[@]}"; do printf '  %s\n' "$e"; done
 fi
 
 if [ "$kaputt" = 1 ]; then
