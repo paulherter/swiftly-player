@@ -1787,6 +1787,12 @@ a[data-role=button]:focus {
         left: 0 !important;
         right: auto !important;
         width: var(--sw-seitenleiste, 220px) !important;
+        /* **Gegen das Zusammendrücken.** Die Schublade ist ein Flex-Kasten;
+           ohne festen Mindestwert kann sie auf null schrumpfen, und dann
+           steht sie zwar an der richtigen Stelle, ist aber nicht da. */
+        min-width: var(--sw-seitenleiste, 220px) !important;
+        max-width: var(--sw-seitenleiste, 220px) !important;
+        flex: none !important;
         transform: none !important;
         transition: none !important;
         background-color: var(--sw-flaeche) !important;
@@ -1811,18 +1817,27 @@ a[data-role=button]:focus {
         display: none !important;
     }
 
-    /* Alles rückt um die Breite der Leiste ein — Kopf und Inhalt gemeinsam,
-       sonst steht das eine über dem anderen. */
+    /* **`left` wirkt nur auf positionierten Elementen.** Der Kopf und die
+       Kulisse liegen `fixed`, die tragen es. Der Seitenrumpf und der
+       Seitenstapel stehen `static` — dort tut `left` gar nichts.
+
+       Genau daran hing es: die Breitenregel griff, `left` nicht. Der Inhalt
+       wurde schmaler gemacht und blieb links kleben, und rechts stand die
+       Lücke, die eigentlich links gehört. An Pauls Browser gemessen:
+       `.mainAnimatedPages` — `pos: static`, `x: 0`, `w: 1331` bei 1551
+       Fensterbreite. Die 1331 sind 1551 minus 220; die Verschiebung fehlte.
+
+       Ein Aussenabstand wirkt auf beiden Sorten. */
     .layout-desktop .skinHeader,
-    .layout-desktop .mainAnimatedPages,
-    .layout-desktop .skinBody,
     .layout-desktop .backgroundContainer {
         left: var(--sw-seitenleiste, 220px) !important;
     }
 
     .layout-desktop .mainAnimatedPages,
     .layout-desktop .skinBody {
-        width: calc(100% - var(--sw-seitenleiste, 220px)) !important;
+        margin-left: var(--sw-seitenleiste, 220px) !important;
+        width: auto !important;
+        left: auto !important;
     }
 
     /* Platz für die Fensterampel des Browsers gibt es hier nicht — aber die
