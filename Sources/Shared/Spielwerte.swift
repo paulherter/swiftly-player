@@ -53,9 +53,22 @@ struct Spielwerte {
     /// entsteht danach — am Takt des Schirms oder in der Datei selbst. Liegt
     /// sie darunter, ohne dass „verworfen" steigt, haengt der Dekoder.
     ///
-    /// Am 08.09.2026 zwei Bildschirmfotos 22 Sekunden auseinander verglichen,
-    /// um genau das zu wissen. Das soll niemand mehr von Hand rechnen.
+    /// **Ueber ein langes Fenster, nicht ueber zwei Sekunden.**
+    ///
+    /// Ueber zwei Sekunden schwankte diese Zahl zwischen 22,8 und 29,4,
+    /// waehrend der Schnitt ueber achtundzwanzig Sekunden bei 24,36 lag —
+    /// also genau auf der Rate der Datei. VLC fuehrt seinen Zaehler nicht Bild
+    /// fuer Bild, sondern schreibt ihn in Schueben fort; ein kurzes Fenster
+    /// faengt mal zwei Schuebe und mal keinen. Die Zahl war damit kein
+    /// Messwert, sondern ein Zufallsgenerator mit einer Nachkommastelle —
+    /// und man glaubt ihr, weil sie so genau aussieht.
+    ///
+    /// Zwanzig Sekunden sind rund fuenfhundert Bilder. Ein Schub mehr oder
+    /// weniger faellt darin nicht mehr auf.
     let zeigtProSekunde: Double?
+    /// Der Bezugspunkt des langen Fensters — Zaehlerstand und Zeitpunkt.
+    let basisGezeigt: UInt64
+    let basisZeit: Date
 
     /// **Die Rate wird selbst gerechnet, nicht abgelesen.**
     ///
@@ -106,8 +119,24 @@ struct Spielwerte {
         spruenge     = roh.demuxDiscontinuity
         gelesen      = roh.readBytes
         entpackt     = roh.demuxReadBytes
-        if let vorher, sekunden > 0, roh.displayedPictures >= vorher.gezeigt {
-            zeigtProSekunde = Double(roh.displayedPictures - vorher.gezeigt) / sekunden
+        // Der Bezugspunkt bleibt zwanzig Sekunden stehen und wird dann
+        // nachgezogen. Springt der Zaehler zurueck — Sprung, Folgenwechsel —,
+        // faengt das Fenster von vorn an.
+        let fenster: TimeInterval = 20
+        if let vorher, roh.displayedPictures >= vorher.basisGezeigt,
+           jetzt.timeIntervalSince(vorher.basisZeit) < fenster {
+            basisGezeigt = vorher.basisGezeigt
+            basisZeit = vorher.basisZeit
+        } else if let vorher, roh.displayedPictures >= vorher.gezeigt {
+            basisGezeigt = vorher.gezeigt
+            basisZeit = vorher.gemessenAm
+        } else {
+            basisGezeigt = roh.displayedPictures
+            basisZeit = jetzt
+        }
+        let spanne = jetzt.timeIntervalSince(basisZeit)
+        if spanne >= 4, roh.displayedPictures >= basisGezeigt {
+            zeigtProSekunde = Double(roh.displayedPictures - basisGezeigt) / spanne
         } else {
             zeigtProSekunde = nil
         }

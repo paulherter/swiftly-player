@@ -237,7 +237,9 @@ struct Technikschild: View {
     /// steigt, haengt der Dekoder.
     private func zeigtzeile(_ w: Spielwerte) -> some View {
         let soll = video?.bildrate
-        var text = "\(String(localized: "Zeigt")) "
+        // Der Zusatz sagt, worueber gemittelt wird — sonst haelt man die
+        // Zahl fuer einen Momentanwert und liest jede Schwankung als Ereignis.
+        var text = "\(String(localized: "Zeigt Ø")) "
         if let ist = w.zeigtProSekunde {
             text += String(format: "%.1f", ist).replacingOccurrences(of: ".", with: ",")
         } else {

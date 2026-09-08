@@ -6358,6 +6358,23 @@
         }
       }
     },
+    "Zeigt Ø": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Showing Ø"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt Ø"
+          }
+        }
+      }
+    },
     "Zu %@ wechseln": {
       "extractionState": "manual",
       "localizations": {
