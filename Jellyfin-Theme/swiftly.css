@@ -1808,20 +1808,97 @@ a[data-role=button]:focus {
 }
 
 
-/* --- Die Reihenfolge unter der Knopfreihe ---
-   Im Entwurf steht die Beschreibung direkt unter den Angaben. Jellyfin
-   legt sie in einen **anderen** Kasten als Titel und Knoepfe, also laesst
-   sie sich nicht dorthin heben — wohl aber vor die Spurwahl ziehen.
-   Aus „Knoepfe, VIDEO/AUDIO, Beschreibung" wird damit „Knoepfe,
-   Beschreibung, VIDEO/AUDIO": naeher am Entwurf, und erreichbar. */
-.layout-desktop .detailPagePrimaryContent .detailSection {
+/* --- Die Reihenfolge auf der Detailseite ---
+   Im Entwurf steht: Titel, Angaben, **Beschreibung**, Knopfreihe. Jellyfin
+   stellt: Titel, Angaben, Knopfreihe | Spurwahl, Beschreibung — und zwar
+   in **vier ineinander liegenden Kaesten**:
+
+       .detailPagePrimaryContainer
+         .detailRibbon              Titel, Angaben, Knoepfe
+         .detailPagePrimaryContent
+           .detailSection           Spurwahl, Inhalt, Gruppen, Reihen
+             .detailSectionContent  Genres, Beschreibung, Marken, Verweise
+
+   CSS kann nichts von einem Kasten in den anderen schieben. Der eine
+   Griff, der hilft, ist `display: contents`: er loest einen Kasten auf,
+   sodass seine Kinder zu Geschwistern der uebrigen werden. Alle vier
+   aufgeloest, wird der aeussere Behaelter zur einen Spalte, und die
+   Reihenfolge laesst sich frei setzen.
+
+   **Jedes Stueck braucht eine Nummer.** Wer keine bekommt, hat 0 und
+   rutscht vor alles. Beim ersten Versuch stand deshalb der Titel unter
+   der Beschreibung und die Besetzung war verschwunden. Deswegen die
+   Auffangnummer 30 auf allen Kindern der aufgeloesten Kaesten.
+
+   **Und die Polster wandern mit.** `.detailRibbon` trug `0 24px 26px`
+   und einen Aussenabstand von -107 nach oben, `.detailPagePrimaryContent`
+   trug `18.6px 24px 0`. Beide Kaesten gibt es nicht mehr; ihre Werte
+   stehen jetzt an den Stuecken selbst. */
+
+.layout-desktop .detailPagePrimaryContainer {
     display: flex !important;
     flex-direction: column !important;
 }
 
-.layout-desktop .detailPagePrimaryContent .detailSectionContent { order: 1 !important; }
-.layout-desktop .detailPagePrimaryContent .trackSelections    { order: 2 !important; }
-.layout-desktop .detailPagePrimaryContent .itemDetailsGroup   { order: 3 !important; }
+.layout-desktop .detailPagePrimaryContainer > .detailRibbon,
+.layout-desktop .detailPagePrimaryContainer > .detailPagePrimaryContent,
+.layout-desktop .detailPagePrimaryContainer .detailSection,
+.layout-desktop .detailPagePrimaryContainer .detailSectionContent {
+    display: contents !important;
+}
+
+/* Die Auffangnummer — alles Ungenannte kommt hinten. */
+.layout-desktop .detailPagePrimaryContainer .detailRibbon > *,
+.layout-desktop .detailPagePrimaryContainer .detailSection > *,
+.layout-desktop .detailPagePrimaryContainer .detailSectionContent > * {
+    order: 30 !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer .infoWrapper {
+    order: 1 !important;
+    margin-top: -107px !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+    position: relative;
+}
+
+.layout-desktop .detailPagePrimaryContainer .overview {
+    order: 2 !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+    margin: 0 !important;
+    max-width: 640px;
+}
+
+.layout-desktop .detailPagePrimaryContainer .overview-controls {
+    order: 3 !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer .mainDetailButtons {
+    order: 4 !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+    margin: 26px 0 0 !important;
+    position: relative;
+}
+
+.layout-desktop .detailPagePrimaryContainer .trackSelections {
+    order: 5 !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+    margin-top: 26px !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer .itemGenres,
+.layout-desktop .detailPagePrimaryContainer .itemTags,
+.layout-desktop .detailPagePrimaryContainer .itemExternalLinks,
+.layout-desktop .detailPagePrimaryContainer .itemDetailsGroup {
+    order: 6 !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer .verticalSection,
+.layout-desktop .detailPagePrimaryContainer .nextUpSection {
+    order: 7 !important;
+    margin-top: 26px;
+}
 
 
 /* --- Reiter auf der Detailseite ---
