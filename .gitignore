@@ -28,7 +28,11 @@ GESTALTUNG.md
 # sie erklaeren, wie wir arbeiten, und nennen dabei Messungen, Fehlgriffe
 # und Namen.
 ABLAUF.md
-Fallen/
+# **Ohne Schraegstrich**, wie die Zeilen darueber. Am 09.09.2026 wurde
+# `Fallen` vom echten Ordner zum Symlink ins Notizen-Repo — und `Fallen/`
+# griff ab da nicht mehr. Die Sammlung waere beim naechsten Push
+# oeffentlich geworden; sie nennt Messungen, Fehlgriffe und Namen.
+Fallen
 
 # **Riegel, kein Aufraeumen.** Diese Pfade liegen in ../Swiftly-Notizen und
 # sind hier nicht vorhanden. Der Eintrag verhindert, dass sie es je wieder
