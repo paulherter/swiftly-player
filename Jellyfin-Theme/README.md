@@ -9,77 +9,54 @@ iPad und dem Fernseher.
 
 ---
 
-## Einbauen
-
-Zwei Wege. **Der erste ist der bessere.**
-
-### Als Plugin — ein Klick
-
-1. Dashboard → **Plugins → Repositories → +**, und diese Adresse eintragen:
-
-```bash
-https://raw.githubusercontent.com/paulherter/swiftly-player/main/Jellyfin-Theme/manifest.json
-```
-
-2. Dashboard → **Plugins → Katalog → Swiftly → Installieren**, Server neu starten.
-3. Unter **Plugins → Swiftly** stehen vier Einstellungen: Akzentfarbe,
-   Plakatbreite, stehende Seitenleiste, „Meine Medien" ausblenden.
-
-Das Plugin legt **eine Zeile** in die `index.html` der Weboberfläche, die
-ein Skript nachlädt; das Skript hängt das Stilblatt ein. Beim Entfernen
-nimmt es die Zeile wieder heraus — zwischen den Marken steht nichts
-anderes, damit ein Rückbau vollständig ist.
-
-> **Was das kostet:** `index.html` gehört Jellyfin, nicht uns. Ein
-> Serverwechsel überschreibt sie, und das Plugin legt die Zeile beim
-> nächsten Start wieder hinein. Ohne Schreibrecht auf das Web-Verzeichnis
-> bleibt das Thema aus — im Protokoll steht dann, warum. Der Server selbst
-> läuft in jedem Fall weiter.
-
-### Ohne Plugin — eine Zeile
+## Einbauen — eine Zeile
 
 **Einstellungen → Anzeige → Benutzerdefiniertes CSS** (nur für dich) oder
-**Dashboard → Allgemein → Branding → Benutzerdefiniertes CSS** (für alle):
+**Dashboard → Allgemein → Branding → Benutzerdefiniertes CSS** (für alle
+am Server):
 
-```bash
+```css
 @import url("https://cdn.jsdelivr.net/gh/paulherter/swiftly-player@main/Jellyfin-Theme/swiftly.css");
 ```
 
-Gleiches Aussehen, keine Einstellungen, und die drei Stellen, an denen das
-Skript hilft, bleiben aus.
+Speichern, Seite **hart** neu laden (⌘⇧R). Ein normales Neuladen reicht
+nicht: Jellyfin registriert einen Service-Worker, und weder `/Branding/Css`
+noch das Stilblatt tragen eine Cache-Anweisung.
 
-> **Vorher das alte Thema herausnehmen.** Steht in demselben Feld schon
-> ein `@import` — auf `tv.paulherter.de` war es am 08.09.2026
-> **ElegantFin**, server-weit unter Dashboard → Allgemein —, dann muss
-> diese Zeile weg. Zwei Themen übereinander kämpfen um jede Farbe, und wer
-> gewinnt, hängt an der Reihenfolge der Regeln.
+> **Vorher ein altes Thema herausnehmen.** Steht in demselben Feld schon
+> ein `@import`, muss die Zeile weg. Zwei Themen kämpfen um jede Farbe,
+> und wer gewinnt, hängt an der Reihenfolge der Regeln.
 
 **Warum jsDelivr und nicht `raw.githubusercontent.com`.** GitHub liefert
 Rohdateien als `text/plain` aus, und ein `@import` mit falschem Inhaltstyp
-wird vom Browser stillschweigend verworfen — die Zeile steht dann da und
-tut nichts. jsDelivr liefert `text/css`. (Für das Verzeichnis des Plugins
-ist `raw` richtig: das liest Jellyfin selbst, nicht der Browser.)
+wird still verworfen — die Zeile steht dann da und tut nichts.
 
 ### Wieder loswerden
 
-Plugin deinstallieren, oder die `@import`-Zeile löschen. Es wird nichts am
-Server verändert, was bliebe.
+Die Zeile löschen. Es wird nichts am Server verändert, was bliebe.
 
 ---
 
-## Selbst bauen
+## Warum kein Plugin
 
-```bash
-Jellyfin-Theme/Werkzeuge/packen.sh
-```
+Im Ordner `Plugin/` liegt eines, es baut und läuft — aber es ist **nicht
+der empfohlene Weg**, und hier steht warum.
 
-Baut das Plugin, legt `Pakete/swiftly_<Fassung>.zip` an und trägt es mit
-Prüfsumme in `manifest.json` ein. Braucht das .NET-SDK 10.
+Jellyfin sieht keine Erweiterung der Weboberfläche vor. Jedes Plugin, das
+am Aussehen etwas ändert, tut dasselbe: es schmuggelt ein `<script>` in
+Jellyfins `index.html`. Nur darüber käme man an den **Aufbau** — eigene
+Seitenleiste, eigene Zeilen, Kopfleiste weg.
 
-**Das Stilblatt liegt nur einmal.** `Plugin/…csproj` bindet
-`../swiftly.css` als eingebettete Ressource ein, statt es zu kopieren —
-sonst gäbe es zwei Fassungen, und die, an der gerade niemand arbeitet,
-läuft weg. Dieselbe Regel wie „Eine kopierte Funktion ist ein Fehler".
+Auf `tv.paulherter.de` geht genau das nicht: das Plugin bekommt beim
+Schreiben von `/usr/share/jellyfin/web/index.html` eine
+`UnauthorizedAccessException` — als root, im Container, auf einer Datei
+mit `rw` für root und einem schreibbaren Dateisystem. Ein `touch` von Hand
+funktioniert an derselben Stelle. Warum .NET dort scheitert, ist ungeklärt.
+
+Ohne Skript bringt das Plugin nur eines mit, was die eine Zeile nicht
+kann: Einstellungen im Dashboard. Das ist den zusätzlichen Teil nicht
+wert, der schiefgehen kann. **Ein Thema, das hält, ist mehr wert als ein
+Plugin, das an einer Datei hängt.**
 
 ---
 
