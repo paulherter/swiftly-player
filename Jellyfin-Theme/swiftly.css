@@ -1,0 +1,1352 @@
+/* =====================================================================
+   Swiftly — ein Thema fuer die Jellyfin-Weboberflaeche
+   ---------------------------------------------------------------------
+   Bringt die Weboberflaeche auf das Erscheinungsbild der Swiftly-App,
+   und zwar auf das der **macOS-Fassung**: gleiche Maus, gleiches Fenster,
+   gleicher Schwebezustand.
+
+   Die Werte stammen nicht aus dem Augenmass, sondern aus:
+     GESTALTUNG.md             das Handbuch zur Oberflaeche
+     Sources/Shared/Farben.swift    die Farbmarken
+     Sources/macOS/Stil.swift       Ecken, Grade, Zeiten
+     Sources/macOS/Macbausteine.swift  die Bausteine selbst
+
+   Geprueft gegen Jellyfin 10.11 (jellyfin-web 10.11, MUI-Palette `--jf-*`).
+
+   Aufbau wie GESTALTUNG.md:
+     0  Grundlage — Marken und die MUI-Palette
+     A  Farbe
+     B  Form
+     C  Schrift
+     D  Leisten und Koepfe
+     E  Bewegung
+     F  Blaetter
+     G  Laden
+     H  Zustaende zeigen
+     I  Steuern
+     J  Der Kopf einer Wurzelseite
+     K  Detailseite
+     L  Formulare und Einstellungen
+     M  Der Player
+   ===================================================================== */
+
+
+/* ---------------------------------------------------------------------
+   0 · Grundlage
+   --------------------------------------------------------------------- */
+
+:root {
+
+    /* --- A · Farbe · woertlich aus Sources/Shared/Farben.swift --- */
+
+    /* Fast schwarz, aber nicht ganz — reines Schwarz wirkt auf OLED hart,
+       wo Flaechen aneinanderstossen. */
+    --sw-grund:            #0B0B0D;
+    --sw-flaeche:          #161619;
+    --sw-erhoeht:          #1E1E22;
+
+    --sw-schrift:          #FFFFFF;
+    --sw-schrift-leise:    rgba(255, 255, 255, .62);
+    --sw-schrift-sehr-leise: rgba(255, 255, 255, .38);
+    --sw-linie:            rgba(255, 255, 255, .07);
+    --sw-rand:             rgba(255, 255, 255, .12);
+
+    /* Traegt nur Fortschritt, Auswahl und den Direct-Play-Beleg — nie
+       Flaechen oder Knoepfe. Bewusst weder Plex-Orange noch Netflix-Rot. */
+    --sw-akzent:           #5CD1C2;
+    --sw-akzent-dunkel:    #45B3A5;
+    --sw-akzent-kanal:     92 209 194;
+
+    /* Erscheint ausschliesslich, wenn der Server transkodiert. */
+    --sw-warnung:          #E8833A;
+
+    /* Schwebezustaende — es gibt sie nur mit Zeiger, also nur hier und
+       auf dem Mac. */
+    --sw-schweben:         rgba(255, 255, 255, .06);
+    --sw-schweben-stark:   rgba(255, 255, 255, .16);
+
+    /* --- B · Die Eckenskala · Sources/macOS/Stil.swift ---
+       Je groesser die Flaeche, desto runder. Knopf und Kachel teilen sich
+       die kleinste Stufe: beides sind kleine Gegenstaende. */
+    --sw-ecke:             10px;   /* Knoepfe, Plakate, Kacheln           */
+    --sw-ecke-feld:        12px;   /* Such- und Eingabefelder             */
+    --sw-ecke-flaeche:     16px;   /* Blaetter, Tafeln, Auskunftskaesten  */
+    --sw-ecke-marke:        9px;   /* Kachelmarke — folgt ihrem Untergrund*/
+    --sw-ecke-plakette:     8px;   /* Freigabe, Technikangabe             */
+
+    /* --- E · Bewegung --- */
+    --sw-zeit-umschalten:  .10s;
+    --sw-zeit-schweben:    .12s;
+    --sw-zeit-seite:       .18s;
+    --sw-einblenden:       .28s;   /* Nichts erscheint hart (E18)         */
+    --sw-blaettern:        .28s;
+    --sw-kurve-aus:        cubic-bezier(.25, .46, .45, .94);  /* easeOut  */
+    --sw-kurve-einaus:     cubic-bezier(.42, 0, .58, 1);      /* easeInOut*/
+
+    /* --- Masse --- */
+    --sw-rand-abstand:     24px;
+    --sw-zeile:            32px;   /* Ein Zeiger trifft genauer als ein Finger */
+
+    /* --- Die Marke · Sources/Shared/Marken.swift ---
+       Bewusst eigene Werte und nicht der Akzent: die Marke ist gesetzt,
+       das Erscheinungsbild der App darf sich davon unabhaengig bewegen. */
+    --sw-marke-akzent:     #2FDBC0;
+    --sw-marke-flaeche:    #17181B;
+
+
+    /* --- Jellyfins MUI-Palette auf Swiftly umgestellt ---
+       Jellyfin 10.11 zieht fast jede Farbe aus diesen Variablen. Wer sie
+       hier setzt, faerbt alles mit, was das Thema selbst nicht anfasst —
+       inklusive der React-Seiten, die keine eigenen Klassen tragen. */
+    --jf-palette-background-default:        #0B0B0D !important;
+    --jf-palette-background-defaultImage:   none    !important;
+    --jf-palette-background-paper:          #161619 !important;
+    --jf-palette-background-paperChannel:   22 22 25 !important;
+
+    --jf-palette-primary-main:              #5CD1C2 !important;
+    --jf-palette-primary-dark:              #45B3A5 !important;
+    --jf-palette-primary-contrastText:      #0B0B0D !important;
+    --jf-palette-primary-mainChannel:       92 209 194 !important;
+    --jf-palette-secondary-main:            #5CD1C2 !important;
+    --jf-palette-secondary-contrastText:    #0B0B0D !important;
+
+    --jf-palette-text-primary:              #FFFFFF !important;
+    --jf-palette-text-secondary:            rgba(255,255,255,.62) !important;
+    --jf-palette-divider:                   rgba(255,255,255,.12) !important;
+
+    --jf-palette-action-hover:              rgba(255,255,255,.06) !important;
+    --jf-palette-action-focus:              rgba(255,255,255,.10) !important;
+    --jf-palette-action-selectedOpacity:    .14 !important;
+
+    /* D · Kein Glas. Alle Leisten sind deckend, in `grund`. */
+    --jf-palette-AppBar-defaultBg:          #0B0B0D !important;
+    --jf-palette-AppBar-transparentBg:      transparent !important;
+    --jf-palette-AppBar-gradient:           none !important;
+
+    --jf-palette-Button-inheritContainedBg:      rgba(255,255,255,.14) !important;
+    --jf-palette-Button-inheritContainedHoverBg: rgba(255,255,255,.22) !important;
+
+    --jf-palette-FilledInput-bg:            #161619 !important;
+    --jf-palette-FilledInput-borderColor:   rgba(255,255,255,.12) !important;
+
+    --jf-palette-SnackbarContent-bg:        #1E1E22 !important;
+    --jf-palette-SnackbarContent-color:     #FFFFFF !important;
+
+    --jf-palette-Alert-infoFilledBg:        #161619 !important;
+    --jf-palette-Alert-infoFilledColor:     #FFFFFF !important;
+
+    /* B · Knopf und Kachel teilen sich die kleinste Stufe. */
+    --jf-card-borderRadius:                 10px !important;
+}
+
+
+/* --- C · Schrift ---
+   SF Pro, wo es sie gibt — dann ist die Weboberflaeche auf Mac, iPhone und
+   iPad zeichengleich mit der App. Sonst die naechstbeste Systemschrift. */
+html,
+body,
+button,
+input,
+select,
+textarea,
+.emby-button,
+.emby-input,
+.emby-textarea,
+.emby-select,
+.dialog {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+                 "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui,
+                 "Helvetica Neue", Arial, sans-serif !important;
+}
+
+html,
+body,
+.backgroundContainer,
+.mainAnimatedPages,
+.ui-corner-all,
+.ui-shadow,
+.wizardStartForm,
+.nowPlayingPlaylist {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+}
+
+body {
+    color: var(--sw-schrift) !important;
+}
+
+/* Die Kulisse hinter der ganzen Seite bleibt eine Ahnung, keine Tapete. */
+.backgroundContainer.withBackdrop {
+    opacity: .38 !important;
+}
+
+/* Auswahl und Markierung tragen den Akzent — er zeigt Auswahl. */
+::selection {
+    background: rgba(var(--sw-akzent-kanal), .30);
+    color: var(--sw-schrift);
+}
+
+/* Rollbalken wie unter macOS: schmal, weiss, ohne Bahn.
+   Die App blendet sie ganz aus; im Browser bleibt ein Rest sichtbar,
+   weil eine Maus ohne Rad sonst nichts zum Greifen haette. */
+* {
+    scrollbar-color: rgba(255,255,255,.18) transparent !important;
+    scrollbar-width: thin !important;
+}
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-track-piece {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb:horizontal,
+::-webkit-scrollbar-thumb:vertical {
+    background: rgba(255,255,255,.18) !important;
+    border-radius: 999px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,.30) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   D · Leisten und Koepfe
+   ---------------------------------------------------------------------
+   **Kein Glas.** (E19.) Alle Leisten sind deckend, in `grund`. Eine Leiste
+   ist keine eigene Flaeche, sondern der Grund, auf dem die Seite endet.
+   Die Haarlinie ist alles, was sie braucht.
+   --------------------------------------------------------------------- */
+
+.skinHeader {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    color: var(--sw-schrift-leise) !important;
+    box-shadow: none !important;
+    border-bottom: 1px solid var(--sw-linie) !important;
+    transition: background-color var(--sw-zeit-seite) var(--sw-kurve-aus),
+                border-color var(--sw-zeit-seite) var(--sw-kurve-aus) !important;
+}
+
+.skinHeader-withBackground {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+}
+
+/* Ein Kopf ueber einem Bild bringt den **schwachen** Verlauf mit (0,7 -> 0)
+   — woertlich `Detailkopf` aus Sources/macOS/Macbausteine.swift. Der Pfeil
+   soll auf hellem Bild lesbar bleiben, ohne dass ein Balken entsteht. */
+.skinHeader.semiTransparent {
+    background-color: transparent !important;
+    background-image: linear-gradient(180deg,
+                        rgba(11, 11, 13, .70) 0%,
+                        rgba(11, 11, 13, 0)  100%) !important;
+    border-bottom-color: transparent !important;
+}
+
+.detailRibbon {
+    background: transparent !important;
+}
+
+.headerTop {
+    padding: .55em .8em !important;
+}
+
+/* Der Titel in der Leiste ist der Rang „Blattrubrik / Detailleiste": 17
+   halbfett. Nicht der Seitentitel — der waere 28. */
+.pageTitle {
+    font-size: 17px !important;
+    font-weight: 600 !important;
+    color: var(--sw-schrift) !important;
+    letter-spacing: -.1px;
+    margin: 0 0 0 .4em !important;
+}
+
+.headerButton,
+.headerRight .paper-icon-button-light,
+.headerLeft .paper-icon-button-light {
+    color: var(--sw-schrift) !important;
+}
+
+
+/* --- Die Seitenleiste ---
+   Sie tritt an die Stelle der Leiste unten: dort war der Daumen die
+   Grenze, hier die Fensterhoehe. */
+
+.mainDrawer,
+.drawer-open {
+    background-color: var(--sw-flaeche) !important;
+    border-right: 1px solid var(--sw-linie) !important;
+    box-shadow: none !important;
+}
+
+.navMenuOption {
+    border-radius: var(--sw-ecke) !important;
+    margin: 2px 12px !important;
+    padding: 0 10px !important;
+    min-height: 40px !important;
+    display: flex !important;
+    align-items: center !important;
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift-leise) !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus),
+                color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+/* Ein Zeiger trifft genauer als ein Finger — 32, wie `Stil.zeileHoehe`. */
+.layout-desktop .navMenuOption {
+    min-height: var(--sw-zeile) !important;
+}
+
+/* Der Schwebezustand bekommt bewusst nur Weiss: er zeigt „hier steht der
+   Zeiger", keine Wahl. */
+.navMenuOption:hover {
+    background: var(--sw-schweben) !important;
+    color: var(--sw-schrift) !important;
+}
+
+/* Der Akzent traegt Auswahl — hier faerbt er Schrift und Zeichen, und
+   legt nur einen Hauch Flaeche darunter. Nie eine volle Flaeche. */
+.navMenuOption-selected {
+    background: rgba(var(--sw-akzent-kanal), .10) !important;
+    color: var(--sw-akzent) !important;
+}
+
+.navMenuOptionIcon {
+    color: inherit !important;
+    font-size: 20px !important;
+    margin: 0 10px 0 0 !important;
+    width: 20px !important;
+}
+
+.navMenuOptionText {
+    font-size: 15px !important;
+    font-weight: 500 !important;
+}
+
+/* Rubrik ueber einer Gruppe: 11 halbfett, Versalien, Sperrung 0,7. */
+.sidebarHeader,
+.navMenuDividerText {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: .7px !important;
+    text-transform: uppercase !important;
+    color: var(--sw-schrift-sehr-leise) !important;
+    padding: 0 22px !important;
+    margin: 26px 0 8px !important;
+}
+
+.navMenuDivider {
+    border-top: 1px solid var(--sw-linie) !important;
+    margin: 12px 12px !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   B · Form — die Eckenskala, ueberall gemeinsam verschoben
+   --------------------------------------------------------------------- */
+
+.blurhash-canvas,
+.cardBox:not(.visualCardBox) .cardPadder,
+.cardContent,
+.cardImageContainer,
+.cardOverlayContainer,
+.cardScalable,
+.itemDetailImage,
+.visualCardBox {
+    border-radius: var(--sw-ecke) !important;
+}
+
+.paperList,
+.visualCardBox,
+.collapseContent {
+    background-color: var(--sw-flaeche) !important;
+    border-radius: var(--sw-ecke-flaeche) !important;
+}
+
+.cardBox:not(.visualCardBox) .cardPadder,
+.cardImageContainer,
+.cardPadder {
+    background-color: var(--sw-flaeche) !important;
+}
+
+.cardPadder .cardImageIcon,
+.cardImageContainer .cardImageIcon {
+    color: var(--sw-schrift-sehr-leise) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   Kacheln
+   ---------------------------------------------------------------------
+   Beim Schweben vergroessert sich das Bild leicht — **keine
+   Akzentumrandung:** der Akzent traegt Fortschritt, Auswahl und den
+   Direct-Play-Beleg (E2), und „hier steht der Zeiger" ist keine Auswahl.
+   --------------------------------------------------------------------- */
+
+/* `contain: paint` schneidet die vergroesserte Kachel an ihrer eigenen
+   Kante ab. Ohne diese Zeile waere der Schwebezustand unsichtbar. */
+.card,
+.card:not(.show-animation) {
+    contain: layout style !important;
+}
+
+.card .cardScalable {
+    transition: transform var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.card:hover .cardScalable,
+.card:focus-visible .cardScalable {
+    transform: scale(1.04);
+}
+
+/* Der Auswahlrahmen des Fernsehmodus traegt den Akzent — der Ring zeigt
+   eine Auswahl, das ist dieselbe Regel, nicht ihre Aufweichung. */
+.card:focus .cardBox.visualCardBox,
+.card:focus .cardBox:not(.visualCardBox) .cardScalable {
+    border-color: var(--sw-akzent) !important;
+    border-radius: var(--sw-ecke) !important;
+}
+
+/* Titel unter dem Plakat: 14 medium weiss, darunter 12 regular leise —
+   `Posterkachel` in Sources/macOS/Macbausteine.swift. */
+.cardText {
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift) !important;
+    line-height: 1.35 !important;
+    padding: 0 1px !important;
+}
+
+.cardText-secondary,
+.cardText.cardText-secondary,
+.secondaryText,
+.listItem .secondary,
+.nowPlayingBarSecondaryText,
+.programSecondaryTitle,
+.guide-programNameCaret,
+.fieldDescription {
+    font-size: 12px !important;
+    font-weight: 400 !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.cardFooter {
+    padding: 8px 0 0 !important;
+}
+
+.innerCardFooter {
+    background: linear-gradient(0deg, rgba(11,11,13,.86), rgba(11,11,13,0)) !important;
+    border-radius: 0 0 var(--sw-ecke) var(--sw-ecke) !important;
+}
+
+/* Der Abstand zwischen zwei Kacheln — `Stil.kachelAbstand`. */
+.itemsContainer > .card > .cardBox {
+    margin-right: 12px !important;
+    margin-bottom: 8px !important;
+}
+
+/* Ein Klick auf die Flaeche spielt; das Ueberdecken bleibt zurueckhaltend,
+   und der eine gefuellte Knopf darin ist weiss — die Hauptsache. */
+.cardOverlayContainer {
+    background: rgba(11, 11, 13, .45) !important;
+    transition: opacity var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.cardOverlayContainer > .cardOverlayFab-primary {
+    background-color: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+    box-shadow: none !important;
+}
+
+.cardOverlayContainer > .cardOverlayFab-primary:hover {
+    background-color: rgba(255, 255, 255, .88) !important;
+    transform: scale(1.08) !important;
+    transition: transform var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.cardOverlayButtonIcon {
+    background-color: rgba(11, 11, 13, .72) !important;
+    border: 1px solid var(--sw-rand);
+}
+
+
+/* ---------------------------------------------------------------------
+   H · Zustaende zeigen
+   ---------------------------------------------------------------------
+   Drei Zustaende, drei Zeichen auf einer Kachel (E16): Balken unten =
+   angefangen, Haken oben rechts = gesehen, Zahl oben rechts = offen.
+   **In Weiss auf Dunkel, nicht in Akzent** — eine Plakette ist eine
+   Angabe, keine Auswahl.
+   --------------------------------------------------------------------- */
+
+.playedIndicator,
+.countIndicator,
+.fullSyncIndicator,
+.mediaSourceIndicator {
+    background: rgba(11, 11, 13, .78) !important;
+    color: var(--sw-schrift) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-marke) !important;
+    box-shadow: none !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    min-width: 20px;
+    height: 20px !important;
+    padding: 0 6px !important;
+}
+
+.playedIndicator .material-icons,
+.countIndicator .material-icons {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+}
+
+/* Der Fortschritt liegt **in** der Maske, nicht als Auflage darueber —
+   sonst stehen seine eckigen Enden ueber die runden Ecken hinaus. */
+.itemProgressBar {
+    background: rgba(255, 255, 255, .16) !important;
+    height: 3px !important;
+    border-radius: 0 !important;
+}
+
+.itemProgressBarForeground {
+    background-color: var(--sw-akzent) !important;
+}
+
+.itemProgressBarForeground-recording {
+    background-color: var(--sw-warnung) !important;
+}
+
+/* Ein aktiver Aktionsknopf faerbt sein **Zeichen**, nicht seine Scheibe. */
+.playstatebutton-icon-played,
+.ratingbutton-icon-withrating,
+.buttonActive {
+    color: var(--sw-akzent) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   C · Schrift — die Stufen aus GESTALTUNG.md, Abschnitt C
+   ---------------------------------------------------------------------
+   28 bold Seitentitel · 20 semibold Reihenueberschrift · 17 semibold
+   Blattrubrik · 15 semibold Listenzeile · 15 regular Fliesstext ·
+   14 medium Kacheltitel · 12 regular Zweitzeile · 11 semibold Gruppentitel
+   · 10 semibold Plakette.
+
+   **Koepfe sind linksbuendig, ueberall.** (E9.)
+   --------------------------------------------------------------------- */
+
+.sectionTitle,
+.sectionTitle-cards {
+    font-size: 20px !important;
+    font-weight: 600 !important;
+    color: var(--sw-schrift) !important;
+    letter-spacing: -.2px !important;
+    text-align: left !important;
+}
+
+.verticalSection > .sectionTitleContainer,
+.sectionTitleContainer {
+    margin-bottom: 11px !important;
+}
+
+/* Wie viele Titel hier liegen — eine Angabe, keine Handlung: leise
+   Schrift, kein Kasten. (E27.) */
+.sectionTitleContainer .listPaging,
+.itemCount,
+.libraryPageNumbers {
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift-sehr-leise) !important;
+    font-variant-numeric: tabular-nums;
+}
+
+h1, h2, h3,
+.dialogContentInner h1,
+.formDialogHeaderTitle {
+    color: var(--sw-schrift) !important;
+    text-align: left !important;
+}
+
+.checkboxListLabel,
+.inputLabel,
+.inputLabelUnfocused,
+.paperListLabel,
+.selectLabel,
+.textareaLabelUnfocused {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: 1.2px !important;
+    text-transform: uppercase !important;
+    color: var(--sw-schrift-sehr-leise) !important;
+}
+
+.inputLabelFocused,
+.selectLabelFocused,
+.textareaLabelFocused {
+    color: var(--sw-akzent) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   I · Steuern — Knoepfe, Chips, Reiter
+   ---------------------------------------------------------------------
+   **Eine Seite hat hoechstens eine gefuellte Flaeche, und die ist die
+   Hauptsache.** Alles andere ist Schrift, Zeichen und Haarlinie.
+   --------------------------------------------------------------------- */
+
+.emby-button {
+    border-radius: var(--sw-ecke) !important;
+    font-weight: 600 !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus),
+                color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+/* Der eine Hauptknopf je Seite: weiss, dunkle Schrift, 48 hoch.
+   `Hauptknopf` in Sources/macOS/Macbausteine.swift. */
+.button-submit,
+.emby-button.button-submit {
+    background: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+    border-radius: var(--sw-ecke) !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    min-height: 48px !important;
+    padding: 0 30px !important;
+}
+
+.button-submit:hover {
+    background: rgba(255, 255, 255, .88) !important;
+    color: var(--sw-grund) !important;
+}
+
+.button-submit:focus {
+    background: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+}
+
+/* Nebenknopf: keine zweite gefuellte Flaeche, sondern Weiss 14 Prozent —
+   `Nebenknopf` in Sources/macOS/Kulisse.swift. */
+.raised,
+.fab,
+a[data-role=button],
+.emby-scrollbuttons {
+    background: rgba(255, 255, 255, .14) !important;
+    color: var(--sw-schrift) !important;
+    border-radius: var(--sw-ecke) !important;
+    box-shadow: none !important;
+    font-weight: 600 !important;
+}
+
+.raised:hover,
+.fab:hover,
+a[data-role=button]:hover {
+    background: rgba(255, 255, 255, .22) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.raised:focus,
+.fab:focus,
+a[data-role=button]:focus {
+    background: rgba(255, 255, 255, .22) !important;
+    color: var(--sw-schrift) !important;
+}
+
+/* Loeschen ist warnend, nicht rot gefuellt — dieselbe Rolle wie
+   `Handlungszeile(warnend:)`. */
+.button-delete {
+    background: rgba(232, 131, 58, .14) !important;
+    color: var(--sw-warnung) !important;
+}
+
+.button-delete:hover {
+    background: rgba(232, 131, 58, .24) !important;
+    color: var(--sw-warnung) !important;
+}
+
+.button-flat,
+.button-link {
+    color: var(--sw-schrift-leise) !important;
+    border-radius: var(--sw-ecke) !important;
+}
+
+.button-flat:hover,
+.button-link:hover {
+    color: var(--sw-schrift) !important;
+    background: var(--sw-schweben) !important;
+}
+
+/* Ein nacktes Zeichen. Schweben legt Weiss darunter — nicht den Akzent:
+   „hier steht der Zeiger" ist keine Auswahl. */
+.paper-icon-button-light {
+    color: var(--sw-schrift) !important;
+    border-radius: 50% !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus),
+                color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.paper-icon-button-light:hover:not(:disabled),
+.paper-icon-button-light:active:not(:disabled) {
+    background-color: rgba(255, 255, 255, .08) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.paper-icon-button-light.show-focus:focus {
+    color: var(--sw-akzent) !important;
+}
+
+.emby-button.show-focus:focus {
+    background: rgba(var(--sw-akzent-kanal), .16) !important;
+    color: var(--sw-akzent) !important;
+    transform: none !important;
+}
+
+/* --- Chips: Filter und Sortierung ---
+   Aktiv ist er weiss mit dunkler Schrift — dieselbe Form wie der
+   Hauptknopf, eine Nummer kleiner. Sonst nur eine Kapsel aus Haarlinie. */
+.emby-tab-button {
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: 999px !important;
+    height: 28px !important;
+    line-height: 26px !important;
+    padding: 0 12px !important;
+    margin: 0 8px 0 0 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    color: var(--sw-schrift-leise) !important;
+    background: transparent !important;
+    transition: background-color var(--sw-zeit-umschalten) var(--sw-kurve-aus),
+                color var(--sw-zeit-umschalten) var(--sw-kurve-aus),
+                border-color var(--sw-zeit-umschalten) var(--sw-kurve-aus) !important;
+}
+
+.emby-tab-button:hover {
+    background: var(--sw-schweben) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.emby-tab-button-active,
+.emby-tab-button.emby-tab-button-active {
+    background: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+    border-color: transparent !important;
+    font-weight: 600 !important;
+}
+
+.emby-tab-button.show-focus:focus {
+    transform: none !important;
+    background: var(--sw-schweben) !important;
+}
+
+.emby-tabs-slider {
+    padding: 4px 0 !important;
+}
+
+/* Blaetterpfeile an einer waagerechten Reihe — 34er Kreis auf dunklem
+   Grund mit Haarlinienrand, wie `Blaetterreihe`. */
+.emby-scrollbuttons {
+    background: transparent !important;
+}
+
+.emby-scrollbuttons .paper-icon-button-light,
+.emby-scrollbuttons-button {
+    width: 34px !important;
+    height: 34px !important;
+    background: rgba(11, 11, 13, .72) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: 50% !important;
+    color: var(--sw-schrift) !important;
+    margin: 0 3px !important;
+}
+
+.alphaPickerButton {
+    color: var(--sw-schrift-sehr-leise) !important;
+    border-radius: var(--sw-ecke) !important;
+}
+
+.alphaPickerButton-selected {
+    color: var(--sw-akzent) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   L · Formulare und Einstellungen
+   ---------------------------------------------------------------------
+   Flache Zeilen mit Haarlinien, Gruppen nur durch Leerraum und einen
+   kleinen gesperrten Titel getrennt. Keine Karten.
+   --------------------------------------------------------------------- */
+
+.emby-input,
+.emby-textarea,
+.emby-select,
+.emby-select-withcolor {
+    background: var(--sw-flaeche) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-feld) !important;
+    color: var(--sw-schrift) !important;
+    font-size: 15px !important;
+    min-height: 38px !important;
+    padding: 0 12px !important;
+    box-shadow: none !important;
+    transition: border-color .15s var(--sw-kurve-einaus) !important;
+}
+
+.emby-textarea {
+    padding: 10px 12px !important;
+    line-height: 1.5 !important;
+}
+
+.emby-input:focus,
+.emby-textarea:focus,
+.emby-select:focus,
+.emby-select-withcolor:focus {
+    border-color: rgba(var(--sw-akzent-kanal), .5) !important;
+    outline: none !important;
+}
+
+.emby-select-withcolor > option,
+.emby-select > option {
+    background: var(--sw-erhoeht) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.emby-input::placeholder,
+.emby-textarea::placeholder {
+    color: var(--sw-schrift-sehr-leise) !important;
+}
+
+/* --- Der Schalter ---
+   Kein Systemhaken: Kapsel 38 x 22, Knopf 16, Akzent wenn an, und der
+   Knopf wird dann dunkel. `Schalter` in Sources/macOS/Einstellungszeilen.swift. */
+.checkboxOutline {
+    width: 38px !important;
+    height: 22px !important;
+    min-width: 38px !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: rgba(255, 255, 255, .14) !important;
+    position: relative !important;
+    transition: background-color var(--sw-zeit-umschalten) var(--sw-kurve-aus) !important;
+}
+
+.checkboxOutline > .material-icons,
+.checkboxOutline > span {
+    display: none !important;
+}
+
+.checkboxOutline::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--sw-schrift);
+    transition: transform var(--sw-zeit-umschalten) var(--sw-kurve-aus),
+                background-color var(--sw-zeit-umschalten) var(--sw-kurve-aus);
+}
+
+.emby-checkbox:checked + span + .checkboxOutline {
+    background: var(--sw-akzent) !important;
+    border-color: transparent !important;
+}
+
+.emby-checkbox:checked + span + .checkboxOutline::after {
+    transform: translateX(16px);
+    background: var(--sw-grund);
+}
+
+.emby-checkbox:focus + span + .checkboxOutline,
+.emby-checkbox:focus:not(:checked) + span + .checkboxOutline {
+    border-color: transparent !important;
+    box-shadow: 0 0 0 2px rgba(var(--sw-akzent-kanal), .35);
+}
+
+.checkboxLabel {
+    font-size: 15px !important;
+    color: var(--sw-schrift) !important;
+}
+
+/* Listenzeilen: 15 halbfett, Haarlinie darunter, beim Schweben Weiss 5 %. */
+.listItem {
+    border-radius: var(--sw-ecke) !important;
+    min-height: 44px !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.listItem:hover {
+    background-color: rgba(255, 255, 255, .05) !important;
+}
+
+.listItem:focus {
+    background-color: var(--sw-schweben) !important;
+    border-radius: var(--sw-ecke) !important;
+}
+
+.listItem-border {
+    border-color: var(--sw-linie) !important;
+}
+
+.listItemBodyText {
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift) !important;
+}
+
+.listItemBodyText.secondary {
+    font-size: 12px !important;
+    font-weight: 400 !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.listItemImage,
+.listItemIcon {
+    border-radius: var(--sw-ecke) !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.emby-collapsible-button {
+    border-color: var(--sw-linie) !important;
+}
+
+.infoBanner {
+    background: var(--sw-flaeche) !important;
+    color: var(--sw-schrift) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-flaeche) !important;
+}
+
+.itemSelectionPanel {
+    border-color: var(--sw-akzent) !important;
+}
+
+.selectionCommandsPanel {
+    background: var(--sw-erhoeht) !important;
+    color: var(--sw-schrift) !important;
+    border-bottom: 1px solid var(--sw-linie);
+}
+
+.selectionCommandsPanel .paper-icon-button-light:not(:disabled) {
+    color: var(--sw-schrift) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   F · Blaetter — Dialoge, Aktionslisten, Meldungen
+   ---------------------------------------------------------------------
+   Obere Ecken 16, Schleier 0,55. Bewegung: Feder 0,35 / 0,86 — im Browser
+   die naechstliegende Kurve dazu.
+   --------------------------------------------------------------------- */
+
+.dialog,
+.formDialog {
+    background-color: var(--sw-flaeche) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-flaeche) !important;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .55) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.formDialogHeader:not(.formDialogHeader-clear) {
+    background-color: transparent !important;
+    border-bottom: 1px solid var(--sw-linie) !important;
+}
+
+.formDialogFooter:not(.formDialogFooter-clear) {
+    background-color: transparent !important;
+    border-top: 1px solid var(--sw-linie) !important;
+}
+
+/* Der Schleier eines Blattes: 0,55 — GESTALTUNG, Abschnitt F. */
+.dialogBackdrop {
+    background-color: rgba(0, 0, 0, .55) !important;
+}
+
+.dialogBackdropOpened {
+    opacity: 1 !important;
+}
+
+/* Die Handlungsliste klappt an Ort und Stelle auf — `erhoeht`, Ecke 12,
+   Haarlinienrand, Schatten. `Handlungsliste` in Macbausteine.swift. */
+.actionSheet,
+.actionSheetContent {
+    background: var(--sw-erhoeht) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-feld) !important;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, .40) !important;
+}
+
+.actionSheetMenuItem,
+.actionsheetMenuItem {
+    border-radius: 0 !important;
+    min-height: var(--sw-zeile) !important;
+    font-size: 15px !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.actionSheetMenuItem:hover,
+.actionsheetMenuItem:hover {
+    background: var(--sw-schweben) !important;
+}
+
+.actionsheetDivider {
+    background: var(--sw-linie) !important;
+}
+
+/* Eine kurze Meldung, die sich von selbst zurueckzieht — Kapsel,
+   `erhoeht`, Haarlinienrand. `Hinweisstreifen`. */
+.toast {
+    background: var(--sw-erhoeht) !important;
+    color: var(--sw-schrift) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: 999px !important;
+    font-size: 12px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45) !important;
+}
+
+.appfooter,
+.playlistSectionButton {
+    background: var(--sw-flaeche) !important;
+    color: var(--sw-schrift-leise) !important;
+    border-top: 1px solid var(--sw-linie) !important;
+}
+
+.upNextDialog-countdownText {
+    color: var(--sw-akzent) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   K · Die Detailseite
+   ---------------------------------------------------------------------
+   Film und Serie tragen denselben Kopf. Titel 34 fett mit Sperrung -0,8,
+   darunter eine Zeile Angaben, dann drei Zeilen Beschreibung, dann die
+   Knopfreihe.
+   --------------------------------------------------------------------- */
+
+.itemName,
+.itemName.infoText {
+    font-size: 34px !important;
+    font-weight: 700 !important;
+    letter-spacing: -.8px !important;
+    color: var(--sw-schrift) !important;
+}
+
+.parentName {
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift-leise) !important;
+    letter-spacing: 0 !important;
+}
+
+.itemMiscInfo,
+.mediaInfoItem {
+    font-size: 14px !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+/* Freigabe und Technikangabe: Plakette, 10 halbfett, Ecke 8 —
+   eine Marke folgt ihrem Untergrund. */
+.mediaInfoText,
+.mediaInfoOfficialRating,
+.mediaInfoCriticRating {
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-plakette) !important;
+    padding: 1px 6px !important;
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.overview,
+.detailSectionContent,
+.detailPageContent p {
+    font-size: 15px !important;
+    line-height: 1.55 !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+/* Die Aktionsreihe: Kreis 44, Zeichen 18, gefuellt mit Weiss 9 %, beim
+   Schweben 16 %; darunter der Name in 11 auf 75 %. `Detailaktion`. */
+.detailButton {
+    padding: 0 !important;
+    margin: 0 12px 0 0 !important;
+    background: transparent !important;
+    border-radius: var(--sw-ecke) !important;
+}
+
+.detailButton-content {
+    gap: 7px;
+}
+
+.detailButton-icon,
+.detailButton .material-icons {
+    width: 44px !important;
+    height: 44px !important;
+    line-height: 44px !important;
+    font-size: 18px !important;
+    border-radius: 50% !important;
+    background: rgba(255, 255, 255, .09) !important;
+    color: var(--sw-schrift) !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.detailButton:hover .detailButton-icon,
+.detailButton:hover .material-icons {
+    background: var(--sw-schweben-stark) !important;
+}
+
+.detailButton-text {
+    font-size: 11px !important;
+    font-weight: 400 !important;
+    margin-top: 0 !important;
+    color: rgba(255, 255, 255, .75) !important;
+}
+
+.itemDetailImage {
+    border-radius: var(--sw-ecke) !important;
+}
+
+/* --- Die Kulisse ---
+   Rechts, nicht ueber die volle Breite, und mit einer **Maske** statt
+   eines Anstrichs ausgeblendet: ein Anstrich endet in undurchsichtigem
+   `grund` und setzt damit voraus, dass der Hintergrund genau das ist.
+   Die Kurven stammen unveraendert aus `Kulissenblende`. */
+.itemBackdrop {
+    animation: none !important;
+    background-attachment: scroll !important;
+    height: 46vh !important;
+    -webkit-mask-image:
+        linear-gradient(to right,
+            rgba(0,0,0,.00) 0%,   rgba(0,0,0,.05) 15%,  rgba(0,0,0,.22) 29%,
+            rgba(0,0,0,.50) 45%,  rgba(0,0,0,.75) 57%,  rgba(0,0,0,.90) 70%,
+            rgba(0,0,0,.98) 85%,  rgba(0,0,0,1)  100%),
+        linear-gradient(to bottom,
+            rgba(0,0,0,1.00) 0%,  rgba(0,0,0,1.00) 50%, rgba(0,0,0,.88) 60%,
+            rgba(0,0,0,.62) 70%,  rgba(0,0,0,.34) 80%,  rgba(0,0,0,.14) 89%,
+            rgba(0,0,0,.04) 95%,  rgba(0,0,0,0)  100%);
+    mask-image:
+        linear-gradient(to right,
+            rgba(0,0,0,.00) 0%,   rgba(0,0,0,.05) 15%,  rgba(0,0,0,.22) 29%,
+            rgba(0,0,0,.50) 45%,  rgba(0,0,0,.75) 57%,  rgba(0,0,0,.90) 70%,
+            rgba(0,0,0,.98) 85%,  rgba(0,0,0,1)  100%),
+        linear-gradient(to bottom,
+            rgba(0,0,0,1.00) 0%,  rgba(0,0,0,1.00) 50%, rgba(0,0,0,.88) 60%,
+            rgba(0,0,0,.62) 70%,  rgba(0,0,0,.34) 80%,  rgba(0,0,0,.14) 89%,
+            rgba(0,0,0,.04) 95%,  rgba(0,0,0,0)  100%);
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
+}
+
+/* Jellyfins eigener Verlauf darueber faellt weg — zwei Verlaeufe
+   uebereinander ergeben den Knick, den man als Linie sieht. */
+.layout-mobile .itemBackdrop:before {
+    display: none !important;
+}
+
+.noBackdropTransparency .detailPageWrapperContainer {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+}
+
+.trackSelections .selectContainer {
+    max-width: 420px;
+}
+
+
+/* ---------------------------------------------------------------------
+   E · Bewegung
+   ---------------------------------------------------------------------
+   **Nichts erscheint hart.** (E18.) Bilder blenden ein, Inhalt loest
+   Platzhalter ab. Der Wert ist derselbe wie in `Stil.einblenden`.
+   --------------------------------------------------------------------- */
+
+.lazy-image-fadein {
+    animation: sw-einblenden var(--sw-einblenden) var(--sw-kurve-einaus) !important;
+}
+
+.lazy-image-fadein-fast {
+    animation: sw-einblenden .12s var(--sw-kurve-einaus) !important;
+}
+
+@keyframes sw-einblenden {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* Wer Bewegung abbestellt hat, bekommt keine. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+    }
+}
+
+
+/* ---------------------------------------------------------------------
+   G · Laden
+   ---------------------------------------------------------------------
+   **Der Ladering kommt in der Oberflaeche nicht vor — nur im Player.**
+   (E17.) Ein drehender Ring sagt „warte" und sonst nichts: nicht was
+   kommt, nicht wie viel. An seiner Stelle steht ein Ladefeld in der Form
+   des kommenden Inhalts.
+
+   Das Pulsieren laeuft ueber `opacity` — das uebernimmt der
+   Kompositor und rechnet ohne Zutun weiter.
+
+   Wer den Ring behalten will, kommentiert den Block `.docspinner` aus.
+   --------------------------------------------------------------------- */
+
+.docspinner {
+    display: none !important;
+}
+
+@keyframes sw-puls {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .5; }
+}
+
+/* Solange das Plakat noch nicht da ist, steht seine Flaeche da — die
+   Seite ist dann leer, nicht am Warten.
+
+   **Nur, was wirklich noch laedt.** `.lazy` traegt ein Bild, das der
+   Nachlader noch vor sich hat; sobald es da ist, kommt `lazy-image-fadein`
+   dazu. Ohne die zweite Bedingung pulsierte jede Kachel weiter, auch die
+   fertige — dreissig Uhren auf einer Seite, die niemand sieht. */
+.cardImageContainer.lazy:not(.lazy-image-fadein):not(.lazy-image-fadein-fast) {
+    animation: sw-puls 1.8s var(--sw-kurve-einaus) infinite;
+}
+
+.cardImageContainer.lazy-image-fadein,
+.cardImageContainer.lazy-image-fadein-fast {
+    animation: sw-einblenden var(--sw-einblenden) var(--sw-kurve-einaus) !important;
+}
+
+/* Der Ring, den es noch gibt, traegt den Akzent: er zeigt einen Zustand. */
+.mdl-spinner__layer-1,
+.mdl-spinner__layer-2,
+.mdl-spinner__layer-3,
+.mdl-spinner__layer-4,
+.progressring-spiner {
+    border-color: var(--sw-akzent) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   M · Der Player
+   ---------------------------------------------------------------------
+   Hier — und nur hier — darf ein Ring stehen. Die Steuerung liegt auf
+   einem Verlauf in `grund`, nicht auf Glas.
+   --------------------------------------------------------------------- */
+
+.videoOsdBottom {
+    background: linear-gradient(0deg,
+                    rgba(11, 11, 13, .88) 0%,
+                    rgba(11, 11, 13, 0)  100%) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.osdTitle {
+    font-size: 17px !important;
+    font-weight: 600 !important;
+    color: var(--sw-schrift) !important;
+}
+
+.osdMediaInfo,
+.osdTimeText {
+    font-size: 13px !important;
+    color: var(--sw-schrift-leise) !important;
+    font-variant-numeric: tabular-nums;
+}
+
+.osdPoster img {
+    border-radius: var(--sw-ecke) !important;
+}
+
+.videoOsdBottom .paper-icon-button-light {
+    color: var(--sw-schrift) !important;
+}
+
+/* Der Regler: Akzent fuer das Gespielte, Weiss 16 % fuer den Rest. */
+.mdl-slider::-webkit-slider-thumb {
+    background: var(--sw-schrift) !important;
+    border: 0 !important;
+}
+
+.mdl-slider::-moz-range-thumb {
+    background: var(--sw-schrift) !important;
+    border: 0 !important;
+}
+
+.mdl-slider-background-lower {
+    background-color: var(--sw-akzent) !important;
+}
+
+.mdl-slider-background-upper {
+    background-color: rgba(255, 255, 255, .16) !important;
+}
+
+.sliderBubble {
+    background: var(--sw-erhoeht) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-plakette) !important;
+    color: var(--sw-schrift) !important;
+    font-size: 12px !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   Kleinkram, der sonst herausfaellt
+   --------------------------------------------------------------------- */
+
+/* Jellyfins bunte Ersatzflaechen fuer Titel ohne Bild — bei uns ist ein
+   fehlendes Bild eine leere Flaeche, kein Farbklecks. */
+.defaultCardBackground1,
+.defaultCardBackground2,
+.defaultCardBackground3,
+.defaultCardBackground4,
+.defaultCardBackground5 {
+    background-color: var(--sw-flaeche) !important;
+}
+
+.metadataSidebarIcon {
+    color: var(--sw-akzent) !important;
+}
+
+.searchfields-icon {
+    color: var(--sw-schrift-sehr-leise) !important;
+}
+
+/* Der Fernsehmodus faerbt beim Fokus ganze Flaechen im Akzent. Auf einem
+   Bildschirm mit Zeiger ist das zu laut — dort zeigt der Rand die Wahl. */
+.guide-channelHeaderCell:focus,
+.programCell:focus {
+    background-color: rgba(var(--sw-akzent-kanal), .16) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.channelPrograms,
+.guide-channelHeaderCell,
+.programCell {
+    border-color: var(--sw-linie) !important;
+}
+
+.programCell-active {
+    background: var(--sw-flaeche) !important;
+}
+
+#bookPlayer,
+#comicsPlayer,
+#pdfPlayer,
+#dialogToc {
+    background-color: var(--sw-grund) !important;
+}
