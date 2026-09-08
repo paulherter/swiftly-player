@@ -9,47 +9,83 @@ iPad und dem Fernseher.
 
 ---
 
-## Einbauen — eine Zeile
+## Einbauen
 
-**Einstellungen → Anzeige → Benutzerdefiniertes CSS** (gilt nur für dich)
-oder **Dashboard → Allgemein → Branding → Benutzerdefiniertes CSS** (gilt
-für alle am Server). Dort hinein, ganz nach oben:
+Zwei Wege. **Der erste ist der bessere.**
 
-```css
+### Als Plugin — ein Klick
+
+1. Dashboard → **Plugins → Repositories → +**, und diese Adresse eintragen:
+
+```bash
+https://raw.githubusercontent.com/paulherter/swiftly-player/main/Jellyfin-Theme/manifest.json
+```
+
+2. Dashboard → **Plugins → Katalog → Swiftly → Installieren**, Server neu starten.
+3. Unter **Plugins → Swiftly** stehen vier Einstellungen: Akzentfarbe,
+   Plakatbreite, stehende Seitenleiste, „Meine Medien" ausblenden.
+
+Das Plugin legt **eine Zeile** in die `index.html` der Weboberfläche, die
+ein Skript nachlädt; das Skript hängt das Stilblatt ein. Beim Entfernen
+nimmt es die Zeile wieder heraus — zwischen den Marken steht nichts
+anderes, damit ein Rückbau vollständig ist.
+
+> **Was das kostet:** `index.html` gehört Jellyfin, nicht uns. Ein
+> Serverwechsel überschreibt sie, und das Plugin legt die Zeile beim
+> nächsten Start wieder hinein. Ohne Schreibrecht auf das Web-Verzeichnis
+> bleibt das Thema aus — im Protokoll steht dann, warum. Der Server selbst
+> läuft in jedem Fall weiter.
+
+### Ohne Plugin — eine Zeile
+
+**Einstellungen → Anzeige → Benutzerdefiniertes CSS** (nur für dich) oder
+**Dashboard → Allgemein → Branding → Benutzerdefiniertes CSS** (für alle):
+
+```bash
 @import url("https://cdn.jsdelivr.net/gh/paulherter/swiftly-player@main/Jellyfin-Theme/swiftly.css");
 ```
 
-Speichern, Seite neu laden. Fertig.
+Gleiches Aussehen, keine Einstellungen, und die drei Stellen, an denen das
+Skript hilft, bleiben aus.
 
 > **Vorher das alte Thema herausnehmen.** Steht in demselben Feld schon
 > ein `@import` — auf `tv.paulherter.de` war es am 08.09.2026
 > **ElegantFin**, server-weit unter Dashboard → Allgemein —, dann muss
-> diese Zeile weg. Zwei Themen uebereinander kaempfen um jede Farbe, und
-> wer gewinnt, haengt an der Reihenfolge der Regeln. Eine Zeile ersetzen,
-> nicht eine dazuschreiben.
+> diese Zeile weg. Zwei Themen übereinander kämpfen um jede Farbe, und wer
+> gewinnt, hängt an der Reihenfolge der Regeln.
 
 **Warum jsDelivr und nicht `raw.githubusercontent.com`.** GitHub liefert
 Rohdateien als `text/plain` aus, und ein `@import` mit falschem Inhaltstyp
 wird vom Browser stillschweigend verworfen — die Zeile steht dann da und
-tut nichts. jsDelivr liefert `text/css`.
-
-**Wer nichts von außen laden will**, fügt stattdessen den Inhalt von
-[`swiftly.css`](swiftly.css) direkt in dasselbe Feld ein. Gleiches
-Ergebnis, keine fremde Adresse, aber kein selbsttätiges Nachziehen.
-
-> jsDelivr hält `@main` rund zwölf Stunden vor. Nach einer Änderung im
-> Repo dauert es also bis zu einem halben Tag, bis sie ankommt.
+tut nichts. jsDelivr liefert `text/css`. (Für das Verzeichnis des Plugins
+ist `raw` richtig: das liest Jellyfin selbst, nicht der Browser.)
 
 ### Wieder loswerden
 
-Die Zeile löschen und speichern. Es wird nichts am Server verändert —
-das Thema ist nur ein Stilblatt.
+Plugin deinstallieren, oder die `@import`-Zeile löschen. Es wird nichts am
+Server verändert, was bliebe.
+
+---
+
+## Selbst bauen
+
+```bash
+Jellyfin-Theme/Werkzeuge/packen.sh
+```
+
+Baut das Plugin, legt `Pakete/swiftly_<Fassung>.zip` an und trägt es mit
+Prüfsumme in `manifest.json` ein. Braucht das .NET-SDK 10.
+
+**Das Stilblatt liegt nur einmal.** `Plugin/…csproj` bindet
+`../swiftly.css` als eingebettete Ressource ein, statt es zu kopieren —
+sonst gäbe es zwei Fassungen, und die, an der gerade niemand arbeitet,
+läuft weg. Dieselbe Regel wie „Eine kopierte Funktion ist ein Fehler".
 
 ---
 
 ## Wogegen es geprüft ist
 
-Jellyfin **10.11** (`jellyfin-web` 10.11). Die Klassennamen sind nicht
+Jellyfin **12.0** (`jellyfin-web` 12.0). Die Klassennamen sind nicht
 geraten: sie stammen aus den ausgelieferten Stilblättern des Servers,
 alle 143 Stücke heruntergeladen und durchsucht. Ältere Fassungen sollten
 weitgehend passen — 10.11 hat mit der MUI-Palette (`--jf-palette-*`)
