@@ -89,6 +89,7 @@
     --sw-reihen-abstand:   28px;
     --sw-zeile:            32px;   /* Ein Zeiger trifft genauer als ein Finger */
     --sw-hauptknopf:       48px;
+    --sw-hauptknopf-breite: 200px;
     /* Poster 2 : 3, Querkachel 16 : 9 — dieselben Masse wie auf dem Mac. */
     --sw-kachel-breite:   150px;
     --sw-quer-breite:     280px;
@@ -1729,8 +1730,8 @@ a[data-role=button]:focus {
 }
 
 .layout-desktop .mainDetailButtons {
-    gap: var(--sw-kachel-abstand) !important;
-    margin: 26px 0 0 !important;
+    gap: 8px !important;
+    margin: 18px 0 0 !important;
 }
 
 /* **Der eine gefuellte Knopf der Seite** — Abspielen oder Fortsetzen.
@@ -1753,7 +1754,12 @@ a[data-role=button]:focus {
     color: var(--sw-grund) !important;
     border-radius: var(--sw-ecke) !important;
     height: var(--sw-hauptknopf) !important;
-    padding: 0 22px 0 18px !important;
+    /* **Feste Breite, 200.** `Stil.hauptknopfBreite` auf dem Mac. Sonst
+       richtet sich der Rest der Reihe nach der Laenge der Beschriftung,
+       und „Fortsetzen" steht anders als „Abspielen". */
+    min-width: var(--sw-hauptknopf-breite) !important;
+    justify-content: center !important;
+    padding: 0 22px !important;
     flex-direction: row !important;
     align-items: center !important;
     gap: 9px;
@@ -1868,15 +1874,23 @@ a[data-role=button]:focus {
     max-width: 640px;
 }
 
+/* **„Mehr anzeigen" faellt weg.** Auf dem Mac steht die Beschreibung in
+   drei Zeilen und hoert dann auf — `Heldkopf` gibt ihr eine feste Hoehe
+   von 66, damit die Knopfreihe auf **jeder** Seite an derselben Stelle
+   steht. Ein Aufklapper waere das Gegenteil davon: er verschiebt alles
+   darunter. Er zog hier ausserdem einen grossen Abstand nach unten. */
 .layout-desktop .detailPagePrimaryContainer .overview-controls {
-    order: 3 !important;
-    padding: 0 var(--sw-rand-abstand) !important;
+    display: none !important;
 }
 
 .layout-desktop .detailPagePrimaryContainer .mainDetailButtons {
     order: 4 !important;
     padding: 0 var(--sw-rand-abstand) !important;
-    margin: 26px 0 0 !important;
+    /* **So gross wie der Abstand darueber, nicht groesser.** Im
+       `Heldkopf` sitzt die Knopfreihe 24 Punkt unter dem Ende der
+       Beschreibung — derselbe Betrag, der zwischen Titel und Angaben
+       steht. Vorher zog der Aufklapper ihn auf ueber hundert. */
+    margin: 18px 0 0 !important;
     position: relative;
 }
 
