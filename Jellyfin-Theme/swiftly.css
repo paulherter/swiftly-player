@@ -87,7 +87,6 @@
     --sw-rand-abstand:     24px;
     --sw-kachel-abstand:   12px;
     --sw-reihen-abstand:   28px;
-    --sw-seitenleiste:    220px;
     --sw-zeile:            32px;   /* Ein Zeiger trifft genauer als ein Finger */
     --sw-hauptknopf:       48px;
     /* Poster 2 : 3, Querkachel 16 : 9 — dieselben Masse wie auf dem Mac. */
@@ -1759,118 +1758,60 @@ a[data-role=button]:focus {
 
 
 /* ---------------------------------------------------------------------
-   P · Die Seitenleiste
+   P · Die Kopfleiste
    ---------------------------------------------------------------------
-   **Sie ist schon da.** Jellyfin baut auf dem Rechner weiterhin seine
-   Schublade — `.mainDrawer`, `position: fixed`, 320 breit — und parkt sie
-   auf `left: -320px`, bis jemand auf das Menüzeichen drückt. Nachgemessen
-   am laufenden Client, nicht vermutet.
+   **Hier stand ein Versuch, Jellyfins Schublade zur Mac-Seitenleiste zu
+   machen. Er ist raus.**
 
-   Damit ist die Mac-Leiste kein Umbau, sondern eine Verschiebung: die
-   Schublade bleibt stehen, wird auf 220 gebracht, und der Rest der Seite
-   rückt um dieselbe Strecke ein. Das Menüzeichen fällt weg, weil es
-   nichts mehr zu öffnen gibt.
+   Der Grund steht im Entwurf und war trotzdem falsch gedacht: die
+   Schublade ist kein Behaelter, sondern ein Ueberlagerungs-Bauteil mit
+   Auf/Zu-Zustand, Vorhang und eigenem Skript. Mit CSS dagegen anzuhalten
+   ergibt genau das, was Paul dreimal gemeldet hat — mal daneben, mal
+   darueber, und die Kopfleiste steht zusaetzlich da. Zwei Navigationen
+   fuer dieselben Ziele kennt der Entwurf nicht.
 
-   Nur auf `layout-desktop`: auf dem Telefon ist die Schublade richtig,
-   wie sie ist — dort ist der Daumen die Grenze, nicht die Fensterhöhe.
+   Eine echte Seitenleiste braucht ein Skript, das die Zeilen selbst baut.
+   Das Skript braucht einen Eintrag in Jellyfins `index.html`, und die ist
+   auf diesem Server nicht zu beschreiben. Also: **kein Skript, keine
+   Seitenleiste** — stattdessen Jellyfins Kopfleiste in unserer Sprache.
+
+   Das ist die ehrliche Obergrenze eines Stilblatts, und sie ist hoeher,
+   als sie klingt: Farbe, Form, Schrift, Bewegung, Zustaende und der
+   Aufbau der Detailseite bleiben vollstaendig erreichbar.
    --------------------------------------------------------------------- */
 
-/* **760, nicht 1000.** Die erste Zahl war geraten und lag auf Pauls Kante:
-   sein Fenster ist auf einem Retina-Schirm rund tausend CSS-Punkte breit, und
-   die Leiste blieb deshalb aus. Ob ueberhaupt eine Leiste passt, entscheidet
-   ohnehin `.layout-desktop` — Jellyfin setzt das nach Eingabeart. Die Zahl
-   hier ist nur noch der Boden, unter dem 220 Punkt Leiste vom Inhalt zu viel
-   wegnehmen. */
-@media (min-width: 760px) {
+/* Die Schublade bleibt, was sie ist: ein Weg, den man oeffnet. Sie traegt
+   aber unsere Farben — siehe Abschnitt D. */
 
-    /* **Die Huelle, in der die Schublade steckt.**
-       Jellyfin haengt `.mainDrawer` in ein unbenanntes `<div>`, und *das*
-       steht auf `display: none`, bis jemand das Menuezeichen drueckt. Solange
-       ein Vorfahr ausgeblendet ist, ist jede Regel am Kind wirkungslos —
-       die Leiste stand an der richtigen Stelle, in der richtigen Breite,
-       und war nicht da. Am laufenden Client gefunden: berechnete Breite
-       220, Rechteck 0 x 0. Diese Signatur gibt es nur so.
-
-       `:has()` ist der einzige Weg dorthin: die Huelle traegt keine Klasse,
-       und CSS kennt sonst keinen Weg nach oben. */
-    .layout-desktop div:has(> .mainDrawer) {
-        display: block !important;
-    }
-
-    .layout-desktop .mainDrawer {
-        left: 0 !important;
-        right: auto !important;
-        width: var(--sw-seitenleiste, 220px) !important;
-        /* **Gegen das Zusammendrücken.** Die Schublade ist ein Flex-Kasten;
-           ohne festen Mindestwert kann sie auf null schrumpfen, und dann
-           steht sie zwar an der richtigen Stelle, ist aber nicht da. */
-        min-width: var(--sw-seitenleiste, 220px) !important;
-        max-width: var(--sw-seitenleiste, 220px) !important;
-        flex: none !important;
-        transform: none !important;
-        transition: none !important;
-        background-color: var(--sw-flaeche) !important;
-        border-right: 1px solid var(--sw-linie) !important;
-        box-shadow: none !important;
-        z-index: 1000 !important;
-    }
-
-    /* Der Vorhang gehört zu einer Schublade, die auf- und zugeht. Eine
-       Leiste, die steht, braucht keinen. */
-    .layout-desktop .mainDrawerHandle,
-    .layout-desktop .drawer-backdrop,
-    .layout-desktop .backdrop-drawer {
-        display: none !important;
-    }
-
-    /* Das Menüzeichen öffnet nichts mehr — und ein Knopf, der nichts tut,
-       ist schlimmer als keiner. Der Haus-Knopf ebenso: die Startseite steht
-       als erste Zeile in der Leiste. */
-    .layout-desktop .mainDrawerButton,
-    .layout-desktop .headerHomeButton {
-        display: none !important;
-    }
-
-    /* **`left` wirkt nur auf positionierten Elementen.** Der Kopf und die
-       Kulisse liegen `fixed`, die tragen es. Der Seitenrumpf und der
-       Seitenstapel stehen `static` — dort tut `left` gar nichts.
-
-       Genau daran hing es: die Breitenregel griff, `left` nicht. Der Inhalt
-       wurde schmaler gemacht und blieb links kleben, und rechts stand die
-       Lücke, die eigentlich links gehört. An Pauls Browser gemessen:
-       `.mainAnimatedPages` — `pos: static`, `x: 0`, `w: 1331` bei 1551
-       Fensterbreite. Die 1331 sind 1551 minus 220; die Verschiebung fehlte.
-
-       Ein Aussenabstand wirkt auf beiden Sorten. */
-    .layout-desktop .skinHeader,
-    .layout-desktop .backgroundContainer {
-        left: var(--sw-seitenleiste, 220px) !important;
-    }
-
-    .layout-desktop .mainAnimatedPages,
-    .layout-desktop .skinBody {
-        margin-left: var(--sw-seitenleiste, 220px) !important;
-        width: auto !important;
-        left: auto !important;
-    }
-
-    /* Platz für die Fensterampel des Browsers gibt es hier nicht — aber die
-       Wortmarke oben in der Leiste steht auf dem Mac auf derselben Höhe wie
-       der Zurückpfeil im Inhalt. */
-    .layout-desktop .mainDrawer-scrollContainer {
-        padding-top: 14px !important;
-        padding-bottom: 0 !important;
-    }
-
-    /* Der Kontobereich sitzt unten, wie auf dem Mac. */
-    .layout-desktop .mainDrawer .userMenuOptions,
-    .layout-desktop .mainDrawer .adminMenuOptions {
-        margin-top: auto;
-    }
+/* Der Kopf ist deckend in `grund`, mit einer Haarlinie darunter, und die
+   Ziele darin stehen in unseren Schriftstufen. */
+.layout-desktop .headerTop {
+    padding: 0 var(--sw-rand-abstand) !important;
+    height: 56px !important;
 }
 
-/* Die Rubriken der Leiste — „Medien", „Administration". 11 halbfett,
-   Versalien, Sperrung 0,7, in sehr leiser Schrift. */
+/* Die Ziele in der Leiste — „Favoriten", „Filme", „Serien".
+   **15 medium, leise, und der aktive traegt den Akzent** — dieselbe Regel
+   wie eine Zeile in der Mac-Seitenleiste: der Akzent zeigt Auswahl. */
+.layout-desktop .headerLeft .headerButton,
+.layout-desktop .headerRight .headerButton {
+    color: var(--sw-schrift-leise) !important;
+}
+
+.layout-desktop .headerLeft .headerButton:hover,
+.layout-desktop .headerRight .headerButton:hover {
+    color: var(--sw-schrift) !important;
+}
+
+/* Der Name des Servers steht links und ist die Ueberschrift der Leiste. */
+.layout-desktop .pageTitle {
+    font-size: 17px !important;
+    font-weight: 600 !important;
+    letter-spacing: -.2px !important;
+    color: var(--sw-schrift) !important;
+}
+
+/* Die Rubriken der Schublade, falls jemand sie oeffnet. */
 .sidebarHeader {
     font-size: 11px !important;
     font-weight: 600 !important;
@@ -1879,6 +1820,13 @@ a[data-role=button]:focus {
     color: var(--sw-schrift-sehr-leise) !important;
     padding: 0 22px !important;
     margin: 26px 0 8px !important;
+}
+
+.mainDrawer,
+.drawer-open {
+    background-color: var(--sw-flaeche) !important;
+    box-shadow: none !important;
+    border-right: 1px solid var(--sw-linie) !important;
 }
 
 
@@ -1895,9 +1843,12 @@ a[data-role=button]:focus {
    auch aus den anderen Fassungen weg).
    --------------------------------------------------------------------- */
 
-.layout-desktop #indexPage .verticalSection.section0 {
-    display: none !important;
-}
+/* **Und „Meine Medien" bleibt stehen.**
+   Solange es keine Seitenleiste gibt, ist diese Reihe der sichtbare Weg in
+   die Bibliotheken. Sie zu verstecken war richtig, als daneben eine Leiste
+   stand — jetzt waere es nur eine Luecke. Wer sie trotzdem weghaben will,
+   schaltet sie unter Einstellungen → Startseite ab; dann ist sie auch in
+   den anderen Fassungen weg, und das ist der ehrlichere Ort dafuer. */
 
 /* Der obere Rand der Seite — `Stil.inhaltOben`. */
 .layout-desktop .homePage .verticalSection:first-child,
