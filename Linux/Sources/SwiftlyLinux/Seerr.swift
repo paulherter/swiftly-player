@@ -165,3 +165,163 @@ extension App {
         return stapelchen
     }
 }
+
+// MARK: - Suche und Anfrage
+
+extension App {
+
+    /// Die Treffer aus Seerr unter die eigenen legen — oder beides verbergen.
+    /// **Was schon auf dem Server liegt, wird hier nicht noch einmal
+    /// gezeigt.** Ein Titel im Stand `da` steht bereits in den eigenen
+    /// Treffern darueber — die Zeile „Anfragen ueber Seerr" darunter waere
+    /// dieselbe Kachel ein zweites Mal, und beim Antippen kaeme eine
+    /// Nachfrage fuer etwas, das niemand anfragen muss. Die Apple-Fassungen
+    /// loesen das ueber zwei Bloecke; hier gibt es nur einen, also faellt
+    /// der Stand ganz heraus.
+    func seerrTrefferZeigen(_ treffer: [Seerrtreffer]) {
+        guard seerrRaster != nil else { return }
+        let fremde = treffer.filter { $0.stand != .da }
+        let sichtbar = !fremde.isEmpty
+        gtk_widget_set_visible(seerrUeberschrift, sichtbar ? 1 : 0)
+        gtk_widget_set_visible(seerrRaster, sichtbar ? 1 : 0)
+        leeren(seerrRaster)
+        for t in fremde {
+            gtk_flow_box_insert(OpaquePointer(seerrRaster), seerrKachel(t), -1)
+        }
+    }
+
+    /// **Eine Kachel wie jede andere, plus die Marke.**
+    ///
+    /// Die Marke sagt, was mit dem Titel schon passiert ist: wartet,
+    /// angefragt, teilweise. Ohne sie fragt man dreimal dasselbe an und
+    /// wundert sich, dass nichts geschieht — genau dafuer gibt es
+    /// `Seerrstand` im Paket.
+    private func seerrKachel(_ t: Seerrtreffer) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-kachel")
+        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+
+        let (huelle, bild) = gerahmtesBild(breite: Stil.kachelBreite,
+                                           hoehe: Stil.kachelHoehe, stil: "swiftly-plakat")
+        if let url = t.plakat() {
+            bildLaden(bild, url: url, schluessel: "seerr-\(t.art)-\(t.id)", sofort: true)
+        }
+        if let wort = seerrMarkenwort(t.stand) {
+            let marke = beschriftung(wort, stil: "swiftly-plakette")
+            gtk_widget_add_css_class(marke, "swiftly-marke")
+            gtk_widget_set_halign(marke, GTK_ALIGN_END)
+            gtk_widget_set_valign(marke, GTK_ALIGN_START)
+            gtk_widget_set_margin_top(marke, 6)
+            gtk_widget_set_margin_end(marke, 6)
+            gtk_overlay_add_overlay(OpaquePointer(huelle), marke)
+        }
+        anhaengen(block, huelle)
+
+        let titel = beschriftung(t.titel, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(titel), 0)
+        gtk_label_set_ellipsize(OpaquePointer(titel), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(titel), 1)
+        anhaengen(block, titel)
+
+        let unten = beschriftung(t.jahr.map { String($0) } ?? "", stil: "swiftly-zweitzeile")
+        gtk_label_set_xalign(OpaquePointer(unten), 0)
+        anhaengen(block, unten)
+
+        gtk_button_set_child(alsKnopf(knopf), block)
+        beiSignal(knopf, "clicked") { [weak self] in self?.seerrAnfrageZeigen(t) }
+        return knopf
+    }
+
+    /// Dieselbe Tabelle wie `Seerrstand.kurzwort` auf den Apple-Fassungen —
+    /// **Wort fuer Wort, auch wo es sich falsch anfuehlt.**
+    ///
+    /// `laedt` heisst „angefragt", nicht „laedt". Der Stand bedeutet bei
+    /// Seerr, dass die Anfrage durch ist und beim Beschaffer liegt; ob dort
+    /// gerade etwas ueber die Leitung geht, weiss niemand. Seerrs eigene
+    /// Oberflaeche nennt ihn ebenfalls „Requested". Auf dem Mac stand das
+    /// schon einmal falsch und ist dort behoben; hier neu zu erfinden hiesse,
+    /// denselben Fehler ein zweites Mal einzubauen.
+    private func seerrMarkenwort(_ stand: Seerrstand) -> String? {
+        switch stand {
+        case .offen, .geloescht:    return nil
+        case .wartetAufFreigabe:    return uebersetzt("wartet")
+        case .laedt:                return uebersetzt("angefragt")
+        case .teilweiseDa:          return uebersetzt("teilweise")
+        case .da:                   return nil
+        }
+    }
+
+    /// **Gefragt wird, bevor angefordert wird.**
+    ///
+    /// Eine Anfrage ist folgenreich: sie legt beim Server jemandes Arbeit an.
+    /// Ein Klick, der das ohne Rueckfrage ausloest, ist derselbe Fehler wie
+    /// ein Loeschknopf ohne Nachfrage.
+    ///
+    /// **Die Rueckfrage steht dort, wo geklickt wurde**, statt in einem
+    /// Dialog. Einen Nachfragedialog gibt es in dieser Fassung nicht, und
+    /// einen nebenbei einzufuehren waere ein Standardsteuerelement mitten in
+    /// einer Oberflaeche, die bewusst keine benutzt (E4). Die Zeile
+    /// erscheint unter der Ueberschrift, nennt den Titel und hat zwei
+    /// Knoepfe — sie ist nicht zu uebersehen und nicht aus Versehen zu
+    /// treffen.
+    private func seerrAnfrageZeigen(_ t: Seerrtreffer) {
+        guard t.stand.anfragbar, seerrRueckfrage != nil else { return }
+        leeren(seerrRueckfrage)
+
+        let text = t.istSerie
+            ? String(format: uebersetzt("%@ mit allen Staffeln anfragen?"), t.titel)
+            : String(format: uebersetzt("%@ anfragen?"), t.titel)
+        let l = beschriftung(text, stil: "swiftly-koerper", umbruch: true)
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        gtk_widget_set_hexpand(l, 1)
+        anhaengen(seerrRueckfrage, l)
+
+        let ja = chip(uebersetzt("Anfragen"), symbol: "object-select-symbolic", aktiv: true)
+        beiSignal(ja, "clicked") { [weak self] in
+            guard let self else { return }
+            self.seerrAnfragen(t)
+        }
+        anhaengen(seerrRueckfrage, ja)
+
+        let nein = chip(uebersetzt("Abbrechen"))
+        beiSignal(nein, "clicked") { [weak self] in self?.seerrRueckfrageWeg() }
+        anhaengen(seerrRueckfrage, nein)
+
+        gtk_widget_set_visible(seerrRueckfrage, 1)
+    }
+
+    func seerrRueckfrageWeg() {
+        guard seerrRueckfrage != nil else { return }
+        leeren(seerrRueckfrage)
+        gtk_widget_set_visible(seerrRueckfrage, 0)
+    }
+
+    /// Statt einer Kurzmeldung, die es hier nicht gibt: dieselbe Zeile sagt,
+    /// was aus der Anfrage geworden ist, und bleibt stehen, bis der Naechste
+    /// angetippt wird.
+    private func seerrSagen(_ text: String) {
+        guard seerrRueckfrage != nil else { return }
+        leeren(seerrRueckfrage)
+        let l = beschriftung(text, stil: "swiftly-koerper", umbruch: true)
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        gtk_widget_set_hexpand(l, 1)
+        anhaengen(seerrRueckfrage, l)
+        gtk_widget_set_visible(seerrRueckfrage, 1)
+    }
+
+    private func seerrAnfragen(_ t: Seerrtreffer) {
+        guard let client = seerrclient else { return }
+        seerrSagen(uebersetzt("Wird angefragt …"))
+        Task.detached {
+            do {
+                // `nil` heisst bei einer Serie „alle Staffeln"; der Client
+                // setzt das um, die Regel steht dort.
+                try await client.anfragen(art: t.art, id: t.id, staffeln: nil)
+                aufHauptfaden { self.seerrSagen(uebersetzt("Angefragt")) }
+            } catch {
+                let meldung = error.localizedDescription
+                aufHauptfaden { self.seerrSagen(meldung) }
+            }
+        }
+    }
+}

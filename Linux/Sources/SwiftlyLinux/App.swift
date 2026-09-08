@@ -989,6 +989,11 @@ final class App: @unchecked Sendable {
     /// Seerr — Zugang und Client, `nil` solange nichts eingerichtet ist.
     var seerrzugang: Seerrzugang?
     var seerrclient: SeerrClient?
+    /// Die Seerr-Treffer der Suche — Ueberschrift und Raster darunter.
+    var seerrUeberschrift: Widget!
+    var seerrRaster: Widget!
+    /// Die Rueckfrage vor einer Anfrage — sie steht dort, wo geklickt wurde.
+    var seerrRueckfrage: Widget!
     var schlafminuten: Int?
     var schlaftakt = 0
 
@@ -1728,7 +1733,34 @@ final class App: @unchecked Sendable {
                                uebersetzt("Andere Schreibweise? Die Suche findet Filme und Serien."))
         gtk_widget_set_visible(suchleer, 0)
         anhaengen(block, suchleer)
-        beiSignal(suchfeld, "activate") { [weak self] in self?.suchen() }
+
+        // **Was der Server nicht hat, steht darunter — nicht dazwischen.**
+        //
+        // Woertlich die Anordnung der Apple-Fassung: erst die eigene
+        // Bibliothek, dann eine eigene Ueberschrift und darunter, was Seerr
+        // kennt. Vermischt waere nicht zu sehen, was man ansehen kann und was
+        // man erst anfordern muss.
+        seerrUeberschrift = beschriftung(uebersetzt("Anfragen über Seerr"), stil: "swiftly-reihe")
+        gtk_label_set_xalign(OpaquePointer(seerrUeberschrift), 0)
+        gtk_widget_set_margin_top(seerrUeberschrift, 12)
+        gtk_widget_set_visible(seerrUeberschrift, 0)
+        anhaengen(block, seerrUeberschrift)
+
+        seerrRueckfrage = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        gtk_widget_set_visible(seerrRueckfrage, 0)
+        gtk_widget_set_margin_top(seerrRueckfrage, 4)
+        anhaengen(block, seerrRueckfrage)
+
+        seerrRaster = rasterBauen()
+        gtk_widget_set_visible(seerrRaster, 0)
+        anhaengen(block, seerrRaster)
+        // Die Eingabetaste sucht sofort — und wird dabei selbst zur juengsten
+        // Suche, sonst verwirft sie der Takt der noch laufenden Wartezeit.
+        beiSignal(suchfeld, "activate") { [weak self] in
+            guard let self else { return }
+            self.suchtakt += 1
+            self.suchen(self.suchtakt)
+        }
         beiSignal(suchfeld, "changed") { [weak self] in self?.sucheAngestossen() }
         return seitenrahmen(block)
     }
@@ -2229,26 +2261,52 @@ final class App: @unchecked Sendable {
         guard begriff.count > 1 else {
             rasterFuellen(suchraster, [])
             gtk_widget_set_visible(suchleer, 0)
+            seerrRueckfrageWeg()
+            seerrTrefferZeigen([])
             return
         }
         Task.detached { [self] in
             try? await Task.sleep(nanoseconds: 280_000_000)
             aufHauptfaden {
                 guard self.suchtakt == meins else { return }
-                self.suchen()
+                self.suchen(meins)
             }
         }
     }
 
-    private func suchen() {
+    /// **Der eigene Server zuerst, Seerr danach — in zwei Schritten.**
+    ///
+    /// Beides in einem Zug abzuwarten hiesse, die eigene Bibliothek so lange
+    /// leer zu lassen, wie ein fremder Dienst braucht. Seerr steht auf einem
+    /// anderen Rechner und kann Sekunden brauchen oder gar nicht antworten;
+    /// die eigenen Treffer sind in Millisekunden da und werden sofort
+    /// gezeigt. Die Zeile darunter kommt nach, wenn sie kommt.
+    ///
+    /// **Der Takt wird auch nach dem Warten geprueft**, nicht nur davor. Beim
+    /// eigenen Server war das lange folgenlos, weil er schneller antwortet,
+    /// als jemand tippt. Seerr ist es nicht: ohne die Pruefung malt die
+    /// Antwort auf „Herr" die Treffer unter „Herr der Ringe".
+    private func suchen(_ meins: Int) {
         guard let client else { return }
         let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !begriff.isEmpty else { rasterFuellen(suchraster, []); return }
+        let seerr = seerrclient
         Task.detached { [self] in
             let treffer = (try? await client.suche(begriff)) ?? []
             aufHauptfaden {
+                guard self.suchtakt == meins else { return }
                 self.rasterFuellen(self.suchraster, treffer)
                 gtk_widget_set_visible(self.suchleer, treffer.isEmpty ? 1 : 0)
+                self.seerrRueckfrageWeg()
+                self.seerrTrefferZeigen([])
+            }
+            guard let seerr else { return }
+            let fremde = await seerr.suchen(begriff)
+            aufHauptfaden {
+                guard self.suchtakt == meins else { return }
+                self.seerrTrefferZeigen(fremde)
+                // Gefunden ist gefunden, auch wenn es woanders liegt.
+                if !fremde.isEmpty { gtk_widget_set_visible(self.suchleer, 0) }
             }
         }
     }

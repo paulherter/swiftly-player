@@ -163,3 +163,15 @@
 "Getrennt" = "Getrennt";
 "Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen." = "Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen.";
 "Keine Verbindung" = "Keine Verbindung";
+
+/* Seerr */
+"%@ anfragen?" = "%@ anfragen?";
+"%@ mit allen Staffeln anfragen?" = "%@ mit allen Staffeln anfragen?";
+"Abbrechen" = "Abbrechen";
+"Anfragen" = "Anfragen";
+"Anfragen über Seerr" = "Anfragen über Seerr";
+"Angefragt" = "Angefragt";
+"Wird angefragt …" = "Wird angefragt …";
+"wartet" = "wartet";
+"angefragt" = "angefragt";
+"teilweise" = "teilweise";

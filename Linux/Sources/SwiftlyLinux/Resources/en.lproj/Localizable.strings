@@ -160,3 +160,15 @@
 "Getrennt" = "Disconnected";
 "Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen." = "Jellyseerr or Overseerr. Search also finds what is not on your server yet — and lets you request it.";
 "Keine Verbindung" = "No connection";
+
+/* Seerr */
+"%@ anfragen?" = "Request %@?";
+"%@ mit allen Staffeln anfragen?" = "Request %@ with all seasons?";
+"Abbrechen" = "Cancel";
+"Anfragen" = "Request";
+"Anfragen über Seerr" = "Request via Seerr";
+"Angefragt" = "Requested";
+"Wird angefragt …" = "Requesting …";
+"wartet" = "waiting";
+"angefragt" = "requested";
+"teilweise" = "partly";
