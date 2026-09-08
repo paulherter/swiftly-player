@@ -93,6 +93,10 @@ struct PlayerSettingsSheet: View {
     /// keine der beiden Spalten breit genug.
     private var breit: Bool { breite >= 900 }
 
+    /// Womit die Tafel aufmacht: schmal mit der Uebersicht, breit mit dem
+    /// ersten Bereich -- dort ist die Uebersicht die linke Spalte.
+    private var anfangsebene: Ebene { breit ? .ton : .wurzel }
+
     private var imFenster: Bool {
         Fensterknoepfe.imFenster(fensterbreite: breite)
     }
@@ -123,7 +127,17 @@ struct PlayerSettingsSheet: View {
         }
         // Beim Schliessen zurueck auf die Wurzel: wer sie neu oeffnet, will
         // die Uebersicht, nicht die Liste von vorhin.
-        .onChange(of: offen) { _, jetzt in if !jetzt { ebene = .wurzel } }
+        .onChange(of: offen) { _, jetzt in if !jetzt { ebene = anfangsebene } }
+        // **Zweispaltig muss etwas gewaehlt sein.**
+        //
+        // `.wurzel` heisst „die Uebersicht" -- schmal ist das die Liste, aus
+        // der man eine Zeile antippt. Zweispaltig gibt es diese Ebene nicht:
+        // links steht die Liste ohnehin dauerhaft, rechts muss also etwas
+        // stehen. Mit `.wurzel` stand dort der Ton, waehrend keine Zeile
+        // markiert war und als Titel „Wiedergabe" -- der Name der ganzen
+        // Tafel, nicht der Spalte.
+        .onAppear { if ebene == .wurzel { ebene = anfangsebene } }
+        .onChange(of: breit) { _, _ in ebene = anfangsebene }
     }
 
     /// **Eine schwebende Karte am Rand, keine Platte ueber dem Schirm.**
@@ -160,9 +174,13 @@ struct PlayerSettingsSheet: View {
             Stil.linie.frame(width: 1)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text(ebene.titel)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(Stil.schrift)
+                HStack(spacing: 8) {
+                    Text(ebene.titel)
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(Stil.schrift)
+                    Spacer(minLength: 0)
+                    schliessknopf
+                }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) { auswahlinhalt }
                         .padding(.bottom, 14)
@@ -192,6 +210,8 @@ struct PlayerSettingsSheet: View {
     /// Was rechts steht -- oder schmal, eine Ebene tiefer.
     @ViewBuilder private var auswahlinhalt: some View {
         switch ebene {
+        // `.wurzel` kann zweispaltig nicht mehr vorkommen; der Fall bleibt,
+        // damit ein Wechsel der Breite mitten im Zeichnen nichts leert.
         case .wurzel, .ton: tonauswahl
         case .untertitel:   untertitelauswahl
         case .bildformat:   bildformatauswahl
@@ -288,7 +308,12 @@ struct PlayerSettingsSheet: View {
                         .foregroundStyle(Stil.schriftLeise)
                 }
                 Spacer(minLength: 0)
-                schliessknopf
+                // **Zweispaltig sitzt er ganz rechts, nicht hier.**
+                //
+                // Er gehoert dorthin, wo der Knopf war, der die Tafel
+                // geoeffnet hat -- oben rechts. In der linken Spalte steht er
+                // mitten in der Karte, und man sucht ihn am Rand.
+                if !breit { schliessknopf }
             } else {
                 Button { zurueck() } label: {
                     HStack(spacing: 4) {
