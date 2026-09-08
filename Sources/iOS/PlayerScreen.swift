@@ -25,9 +25,6 @@ struct PlayerScreen: View {
     /// Zaehlt mit, wie oft CoreAnimation uns tatsaechlich ruft -- laeuft
     /// nur, solange das Schild an ist.
     @State private var schirmtakt = Schirmtakt()
-    /// Laeuft, solange die App im Hintergrund ist und noch nicht angehalten
-    /// wurde -- siehe `Hintergrundregel.gnadenfrist`.
-    @State private var hintergrundfrist: Task<Void, Never>?
 
     @State private var pipAvailable = false
     @State private var stelltWiederHer = false
@@ -443,79 +440,37 @@ struct PlayerScreen: View {
         .onChange(of: querformatFest) { _, fest in
             Orientierung.shared.playerGeoeffnet(querformatFest: fest)
         }
-        // **Nicht `scenePhase`, sondern die Benachrichtigung.**
+        // **Im Hintergrund laeuft weiter.** Das ist eine Entscheidung, keine
+        // Unterlassung.
         //
-        // Am 08.09.2026 am Geraet gemessen: die Mitteilungszentrale
-        // herunterzuziehen liess SwiftUIs `scenePhase` auf `background`
-        // springen, obwohl die App gar nicht verlassen wurde -- im Protokoll
-        // stand daraufhin „Hintergrund ohne PiP/AirPlay → anhalten", und der
-        // Film blieb stehen. Beim Schliessen kam er auch nicht von selbst
-        // wieder, weil das Fortsetzen an einer Tonunterbrechung haengt, die
-        // es hier nie gegeben hat.
+        // Hier stand eine Regel, die beim Wechsel in den Hintergrund anhielt
+        // -- gegen den Fall, dass eine weggewischte Folge unbemerkt
+        // durchlaeuft und danach als gesehen dasteht (jellyfin/Swiftfin#871,
+        // Rueckfall #2175). Sie hat einen echten Fehler erzeugt: iOS schickt
+        // die App auch dann in den Hintergrund, wenn nur die
+        // Mitteilungszentrale heruntergezogen wird, und zwar durch **genau
+        // dieselbe** Folge von Meldungen wie bei einem Wisch auf den
+        // Homescreen (am 08.09.2026 mitgeschrieben: willResignActive →
+        // scenePhase inactive → didEnterBackground). Kein Signal trennt die
+        // beiden Faelle. Jeder Blick auf eine Mitteilung hielt den Film an,
+        // und er lief auch nicht von selbst wieder los.
         //
-        // `didEnterBackgroundNotification` feuert nur beim echten Wechsel in
-        // den Hintergrund -- Wegwischen, Sperren, App schliessen. Genau die
-        // drei Faelle, in denen angehalten werden soll. Systemflaechen, die
-        // sich bloss darueberlegen, loesen sie nicht aus.
-        // **Erst aufschreiben, was iOS ueberhaupt meldet.** Bei diesem
-        // Fehler ist zweimal auf die falsche Quelle getippt worden -- erst
-        // die Tonunterbrechung, dann `scenePhase`. Solange nicht dasteht,
-        // welche Meldungen die Mitteilungszentrale ausloest und in welchem
-        // Zustand die App dabei ist, ist jede weitere Regel geraten.
+        // Andere Clients erlauben schlicht die Hintergrundwiedergabe, und die
+        // App erklaert `UIBackgroundModes: audio` ohnehin -- ohne sie gaebe
+        // es kein Bild-im-Bild und keinen Sperrbildschirm. Also laeuft es
+        // weiter, und der Fortschritt wird wie sonst im Takt gemeldet.
+        //
+        // Die Lebenslage wird weiter mitgeschrieben: das kostet in der
+        // ausgelieferten Fassung nichts (`Protokoll.schreib` faellt dort
+        // heraus) und hat genau diesen Fehler gefunden.
         .onReceive(NotificationCenter.default.publisher(
-            for: UIApplication.willResignActiveNotification)) { _ in
-            Protokoll.schreib("[Lebenslage] willResignActive · Zustand \(Lagewort.jetzt)")
-        }
-        .onReceive(NotificationCenter.default.publisher(
-            for: UIApplication.didBecomeActiveNotification)) { _ in
-            Protokoll.schreib("[Lebenslage] didBecomeActive · Zustand \(Lagewort.jetzt)")
+            for: UIApplication.didEnterBackgroundNotification)) { _ in
+            Protokoll.schreib("[Lebenslage] didEnterBackground · Zustand \(Lagewort.jetzt)"
+                + " · PiP \(imKleinenFenster) · laeuft \(laeuft) → weiterlaufen lassen")
         }
         .onReceive(NotificationCenter.default.publisher(
             for: UIApplication.willEnterForegroundNotification)) { _ in
             Protokoll.schreib("[Lebenslage] willEnterForeground · Zustand \(Lagewort.jetzt)")
-            // Zurueck, bevor die Frist um war: dann war es kein Verlassen.
-            if hintergrundfrist != nil {
-                hintergrundfrist?.cancel()
-                hintergrundfrist = nil
-                Protokoll.schreib("[Lebenslage] rechtzeitig zurueck → nicht anhalten")
-            }
-        }
-        .onChange(of: lebenslage) { alt, neu in
-            Protokoll.schreib("[Lebenslage] scenePhase \(alt) → \(neu) · Zustand \(Lagewort.jetzt)")
-        }
-        .onReceive(NotificationCenter.default.publisher(
-            for: UIApplication.didEnterBackgroundNotification)) { _ in
-            Protokoll.schreib("[Lebenslage] didEnterBackground · Zustand \(Lagewort.jetzt)"
-                + " · PiP \(imKleinenFenster) · laeuft \(laeuft)")
-            // **Im Hintergrund anhalten — ausser es laeuft anderswo weiter.**
-            //
-            // Die App erklaert `UIBackgroundModes: audio`; ohne sie gaebe es
-            // kein Bild-im-Bild und keinen Sperrbildschirm. Der Preis ist,
-            // dass ein weggewischtes Video unbemerkt weiterlaeuft: der
-            // Fortschritt zieht davon, und beim Zurueckkommen steht die Folge
-            // womoeglich als gesehen da. Swiftfin hatte das zweimal
-            // (#871, spaeter als Rueckfall #2175).
-            //
-            // Die Regel steht in `Hintergrundregel` im Paket, mit Tests und
-            // mit den beiden Ausnahmen, um die es dabei geht.
-            guard Hintergrundregel.anhalten(imKleinenFenster: imKleinenFenster,
-                                            aufAnderemGeraet: airplayPlan != nil,
-                                            laeuft: laeuft) else { return }
-            // **Nicht sofort.** Am Geraet gemessen: die Mitteilungszentrale
-            // herunterzuziehen schickt iOS durch genau dieselbe Folge von
-            // Meldungen wie ein Wisch auf den Homescreen -- es gibt kein
-            // Signal, das die beiden trennt. Was sie trennt, ist die Dauer.
-            // Die Begruendung samt Messung steht bei `gnadenfrist`.
-            hintergrundfrist?.cancel()
-            hintergrundfrist = Task {
-                try? await Task.sleep(for: .seconds(Hintergrundregel.gnadenfrist))
-                guard !Task.isCancelled else { return }
-                Protokoll.schreib("[Lebenslage] Frist um, immer noch weg → anhalten")
-                surface?.pause()
-                laeuft = false
-                meldeFortschritt()
-                hintergrundfrist = nil
-            }
         }
         .task { await beobachten() }
         .task {
