@@ -12,7 +12,7 @@
 #define Name "Swiftly"
 #define Fassung "1.0.0"
 #define Herausgeber "Paul Herter"
-#define Netz "https://github.com/paulherter/swiftly-for-jellyfin"
+#define Netz "https://github.com/paulherter/swiftly-player"
 #define Programm "Swiftly.exe"
 
 [Setup]
