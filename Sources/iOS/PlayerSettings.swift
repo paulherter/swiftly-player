@@ -78,6 +78,11 @@ struct PlayerSettingsSheet: View {
     /// darauf gedeckelt; erst wenn er nicht mehr passt, begrenzt der Rand
     /// und es wird gescrollt.
     @State private var inhaltshoehe: CGFloat = 0
+    /// Wie hoch die Flaeche ist, in der der Inhalt steht.
+    @State private var sichthoehe: CGFloat = 0
+
+    /// Passt der Inhalt nicht, wird gescrollt -- und das muss man sehen.
+    private var scrollt: Bool { inhaltshoehe > sichthoehe + 1 }
 
     /// Auch dieser Kopf sitzt oben links, und auch er liegt im Fenster
     /// unter der Ampel. Er steht im Player und erbt dessen Lage.
@@ -147,6 +152,33 @@ struct PlayerSettingsSheet: View {
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: inhaltshoehe > 0 ? inhaltshoehe : nil)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { hoch in
+                sichthoehe = hoch
+            }
+            // **Eine harte Kante liest sich als Fehler, eine weiche als
+            // „da geht es weiter".**
+            //
+            // Im Querformat passen sieben Zeilen zu je 44 Punkt -- Apples
+            // Mindestmass fuer ein Tippziel -- plus Kopf nicht in die rund
+            // 330 Punkte, die nach dem Home-Anzeiger bleiben. Es muss also
+            // gescrollt werden. Abgeschnitten sah es aus wie ein
+            // Zeichenfehler; ausgeblendet sagt dieselbe Stelle, dass unten
+            // noch etwas liegt.
+            //
+            // Nur wenn es wirklich scrollt: sonst waeren die erste und die
+            // letzte Zeile grundlos blass.
+            .mask {
+                if scrollt {
+                    LinearGradient(stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black, location: 0.035),
+                        .init(color: .black, location: 0.93),
+                        .init(color: .clear, location: 1),
+                    ], startPoint: .top, endPoint: .bottom)
+                } else {
+                    Rectangle()
+                }
+            }
             // **Der Wechsel schiebt, er blendet nicht.** Die Richtung ist die
             // Ortsangabe: hinein geht nach links weg und von rechts herein,
             // zurueck andersherum. Ohne `id` haelt SwiftUI die Ansicht fuer
