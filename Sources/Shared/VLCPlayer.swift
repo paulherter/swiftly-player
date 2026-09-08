@@ -1408,7 +1408,21 @@ final class Zeichenflaeche: Basisansicht {
 /// beantwortet, wo die Wartezeit herkommt: Zugriffsschicht, Demuxer, Puffer,
 /// Decoder — dazu alles, was VLC selbst als Fehler oder Warnung einstuft.
 final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
-    var level: VLCLogLevel = .debug
+    /// **Die Stufe ist selbst eine Last, kein blosser Filter.**
+    ///
+    /// Auf `debug` meldet VLC waehrend der Wiedergabe hunderte Zeilen je
+    /// Sekunde, und jede laeuft hier durch `print`, eine Sperre und einen
+    /// Dateischreibvorgang. Wer damit misst, wie gleichmaessig Bilder auf
+    /// den Schirm kommen, misst zu einem guten Teil sich selbst — am
+    /// 08.09.2026 sind so vier Messungen am Apple TV entstanden, deren
+    /// Ruckeln womoeglich vom Protokollieren stammte.
+    ///
+    /// `warning` laesst genau das durch, was zur Ausgabe etwas sagt: VLC
+    /// stuft verspaetete Bilder und Uhrabweichungen als Warnung ein. Fuer
+    /// die Demuxer-Suche, die `debug` braucht, reicht ein gesetzter
+    /// Schluessel — dann darf es auch langsam sein.
+    var level: VLCLogLevel = UserDefaults.standard.bool(forKey: "vlcAusfuehrlich")
+        ? .debug : .warning
 
     /// **Nach Inhalt sieben, nicht nach Modul.**
     ///

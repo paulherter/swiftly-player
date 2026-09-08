@@ -13,6 +13,23 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
+# **Release ist der ehrliche Vergleich.** Im Debug-Bau schreibt VLCs eigenes
+# Protokoll waehrend der Wiedergabe mit — hunderte Zeilen je Sekunde, jede
+# durch `print`, eine Sperre und einen Dateischreibvorgang. Wer damit misst,
+# wie gleichmaessig Bilder ankommen, misst zum Teil das Messen. Swiftfin und
+# unsere TestFlight-Fassung laufen beide als Release.
+KONFIG=Debug
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --release) KONFIG=Release ;;
+    --debug)   KONFIG=Debug ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+echo "Konfiguration: $KONFIG"
+
 TEAM="${1:-}"
 [ -z "$TEAM" ] && TEAM=$(grep -m1 "DEVELOPMENT_TEAM:" project.yml | awk '{print $2}')
 [ -z "$TEAM" ] && { echo "Kein Team gefunden. In Xcode > Einstellungen > Accounts anmelden."; exit 1; }
@@ -37,9 +54,10 @@ echo "Geraet: ${NAME:-Apple TV} ($UDID)"
 
 xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-tvOS \
   -destination "id=$UDID" -derivedDataPath build/DD-tv \
+  -configuration "$KONFIG" \
   DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic build
 
-APP=$(find build/DD-tv/Build/Products/Debug-appletvos -name "Swiftly-tvOS.app" -maxdepth 1 | head -1)
+APP=$(find "build/DD-tv/Build/Products/$KONFIG-appletvos" -name "Swiftly-tvOS.app" -maxdepth 1 | head -1)
 echo "Installiere $APP"
 xcrun devicectl device install app --device "$KENNUNG" "$APP"
 
@@ -48,5 +66,5 @@ xcrun devicectl device install app --device "$KENNUNG" "$APP"
 # aus `-showBuildSettings` genommen habe, ohne vorher zu bauen. Ein Zeitstempel
 # beweist, dass uebersetzt wurde — nicht womit.
 echo
-echo "Gebaut: $(stat -f '%Sm' "$APP/Swiftly-tvOS")"
+echo "Gebaut: $(stat -f '%Sm' "$APP/Swiftly-tvOS") ($KONFIG)"
 echo "Fertig. App auf dem Apple TV starten."
