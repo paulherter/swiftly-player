@@ -32,6 +32,8 @@ struct Technikschild: View {
     /// Wie gross das Schild insgesamt ausfällt. Der Fernseher wird aus drei
     /// Metern gelesen, das iPhone aus dreissig Zentimetern.
     var fern = false
+    /// Gemessene Bildwiederholrate des Schirms, nur auf iOS gefuellt.
+    var schirmHertz: Double?
 
     private var quelle: MediaSource? { plan.quelle }
     private var video: MediaStream? { quelle.flatMap(Dateiangaben.videospur) }
@@ -87,6 +89,7 @@ struct Technikschild: View {
                 zeile("\(String(localized: "Demuxer")) \(werte.demuxer)")
                 zeigtzeile(werte)
                 laufzeile(werte)
+                schirmzeile()
                 dekodierzeile(werte)
                 vorratzeile(werte)
                 verlustzeile(werte)
@@ -286,6 +289,21 @@ struct Technikschild: View {
         let haengt = (w.laufAnteil ?? 1) < 0.97
         return Text(verbatim: text)
             .foregroundStyle(haengt ? Stil.warnung : Stil.schriftLeise)
+    }
+
+    /// **Mit wie viel Hertz der Schirm diese App bedient -- gemessen.**
+    ///
+    /// Die Zahl entscheidet, ob eine Datei ueberhaupt glatt laufen *kann*:
+    /// 23,976 gehen in 60 Hz nicht auf (2,503), in 120 Hz nahezu (5,005).
+    /// Steht hier 60 auf einem Geraet, das 120 koennte, ruckelt jeder
+    /// Schwenk, ohne dass ein einziges Bild verlorengeht -- und genau dann
+    /// zeigt jede andere Zahl auf diesem Schild sauber an.
+    @ViewBuilder private func schirmzeile() -> some View {
+        if let hz = schirmHertz {
+            let knapp = hz < 70
+            Text(verbatim: "\(String(localized: "Schirm")) \(Int(hz.rounded())) Hz")
+                .foregroundStyle(knapp ? Stil.warnung : Stil.schriftLeise)
+        }
     }
 
     /// **Die Zeile, die Dekoder und Ausgabe trennt.**

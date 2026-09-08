@@ -22,6 +22,9 @@ struct PlayerScreen: View {
     /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
     @AppStorage("technikschild") private var technikschild = false
     @State private var spielwerte: Spielwerte?
+    /// Zaehlt mit, wie oft CoreAnimation uns tatsaechlich ruft -- laeuft
+    /// nur, solange das Schild an ist.
+    @State private var schirmtakt = Schirmtakt()
 
     @State private var pipAvailable = false
     @State private var stelltWiederHer = false
@@ -370,7 +373,8 @@ struct PlayerScreen: View {
         // Wiedergabe-Einstellungen; wer es nicht sucht, sieht es nie.
         .overlay(alignment: .topLeading) {
             if technikschild {
-                Technikschild(plan: plan, werte: spielwerte, flaeche: surface)
+                Technikschild(plan: plan, werte: spielwerte, flaeche: surface,
+                              schirmHertz: schirmtakt.hertz)
                     .padding(.leading, Stil.randAbstand)
                     .padding(.top, 12)
                     .allowsHitTesting(false)
@@ -381,7 +385,12 @@ struct PlayerScreen: View {
         // Zwei Sekunden sind schnell genug, um einem Ruckler zuzusehen, und
         // langsam genug, dass die Zahlen lesbar stehenbleiben.
         .task(id: technikschild) {
-            guard technikschild else { return }
+            guard technikschild else { schirmtakt.anhalten(); return }
+            // Nur mitzaehlen, solange jemand hinsieht: ein vergessener
+            // Zaehler auf dem Hauptlauf waere selbst die Last, die er messen
+            // soll.
+            schirmtakt.starten()
+            defer { schirmtakt.anhalten() }
             while !Task.isCancelled {
                 // Die Rate entsteht aus der Differenz zum letzten Mal —
                 // siehe `Spielwerte`.
@@ -431,7 +440,22 @@ struct PlayerScreen: View {
         .onChange(of: querformatFest) { _, fest in
             Orientierung.shared.playerGeoeffnet(querformatFest: fest)
         }
-        .onChange(of: lebenslage) { _, neu in
+        // **Nicht `scenePhase`, sondern die Benachrichtigung.**
+        //
+        // Am 08.09.2026 am Geraet gemessen: die Mitteilungszentrale
+        // herunterzuziehen liess SwiftUIs `scenePhase` auf `background`
+        // springen, obwohl die App gar nicht verlassen wurde -- im Protokoll
+        // stand daraufhin „Hintergrund ohne PiP/AirPlay → anhalten", und der
+        // Film blieb stehen. Beim Schliessen kam er auch nicht von selbst
+        // wieder, weil das Fortsetzen an einer Tonunterbrechung haengt, die
+        // es hier nie gegeben hat.
+        //
+        // `didEnterBackgroundNotification` feuert nur beim echten Wechsel in
+        // den Hintergrund -- Wegwischen, Sperren, App schliessen. Genau die
+        // drei Faelle, in denen angehalten werden soll. Systemflaechen, die
+        // sich bloss darueberlegen, loesen sie nicht aus.
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.didEnterBackgroundNotification)) { _ in
             // **Im Hintergrund anhalten — ausser es laeuft anderswo weiter.**
             //
             // Die App erklaert `UIBackgroundModes: audio`; ohne sie gaebe es
@@ -443,8 +467,7 @@ struct PlayerScreen: View {
             //
             // Die Regel steht in `Hintergrundregel` im Paket, mit Tests und
             // mit den beiden Ausnahmen, um die es dabei geht.
-            if neu == .background,
-               Hintergrundregel.anhalten(imKleinenFenster: imKleinenFenster,
+            if Hintergrundregel.anhalten(imKleinenFenster: imKleinenFenster,
                                          aufAnderemGeraet: airplayPlan != nil,
                                          laeuft: laeuft) {
                 Protokoll.schreib("[Lebenslage] Hintergrund ohne PiP/AirPlay → anhalten")
