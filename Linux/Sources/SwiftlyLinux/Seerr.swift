@@ -36,6 +36,16 @@ extension App {
         gtk_widget_set_margin_bottom(hinweis, 18)
         anhaengen(block, hinweis)
 
+        // **Verbunden oder Formular, nicht beides.** Auf dem Mac steht an
+        // dieser Stelle `if seerr.verbunden { verbunden } else { formular }`.
+        // Hier stand immer das Formular — und damit gab es keinen Weg, eine
+        // Verbindung wieder zu loesen: wer sich einmal angemeldet hatte,
+        // konnte den Zugang nur noch ueberschreiben.
+        if seerrDa, let zugang = seerrzugang {
+            anhaengen(block, seerrVerbundenGruppe(zugang))
+            return
+        }
+
         let adresse: Widget! = gtk_entry_new()
         gtk_entry_set_placeholder_text(alsFeld(adresse), "seerr.example.com")
         if let z = seerrzugang { gtk_editable_set_text(OpaquePointer(adresse), z.adresse.absoluteString) }
@@ -101,6 +111,7 @@ extension App {
                         aufHauptfaden {
                             self.seerrzugang = neu
                             self.seerrclient = SeerrClient(zugang: neu)
+                            self.seerrGilt = true
                             Speicher.seerrSchreiben(neu)
                             // Das Passwortfeld wird geleert, sobald es nicht
                             // mehr gebraucht wird.
@@ -152,6 +163,60 @@ extension App {
     private func seerrStandZeigen(_ kiste: Zeigerkiste, _ text: String) {
         gtk_label_set_text(OpaquePointer(kiste.widget), text)
         gtk_widget_set_visible(kiste.widget, 1)
+    }
+
+    /// **Was steht, wenn es steht.** Adresse, Zustand der Sitzung, und der
+    /// Weg hinaus.
+    ///
+    /// „Verbindung trennen", nicht „Abmelden" — wortgleich vom Mac, samt
+    /// Begruendung: bei Seerr selbst bleibt alles, wie es ist; es geht nur um
+    /// diesen einen Zugang hier.
+    private func seerrVerbundenGruppe(_ zugang: Seerrzugang) -> Widget! {
+        let g = einstellungsgruppe(uebersetzt("Verbunden"))
+        let wort: String
+        switch seerrGilt {
+        case .some(true):  wort = uebersetzt("Aktiv")
+        case .some(false): wort = uebersetzt("Sitzung abgelaufen")
+        case nil:          wort = uebersetzt("Wird geprüft …")
+        }
+        anhaengen(g.raum, wertezeile(symbol: "network-transmit-receive-symbolic",
+                                     titel: zugang.adresse.absoluteString,
+                                     wert: wort))
+        anhaengen(g.raum, zeilenstrich())
+        anhaengen(g.raum, wertezeile(symbol: "window-close-symbolic",
+                                     titel: uebersetzt("Verbindung trennen")) { [weak self] in
+            guard let self else { return }
+            self.seerrzugang = nil
+            self.seerrclient = nil
+            self.seerrGilt = nil
+            Speicher.seerrSchreiben(nil)
+            // Die Suche zeigt sonst weiter die fremden Treffer der letzten
+            // Abfrage — die kommen von einem Dienst, der nicht mehr
+            // angebunden ist.
+            self.seerrRueckfrageWeg()
+            self.seerrTrefferZeigen([])
+            self.unterseiteOeffnen(.seerr)
+        })
+
+        // **Ob die Sitzung noch traegt, weiss nur der Dienst.** Der Keks
+        // laeuft ab, und ein Zugang, der dasteht und nicht mehr gilt, ist
+        // schlimmer als keiner: die Suche bliebe still leer.
+        //
+        // Geprueft wird einmal je Besuch, und das Ergebnis baut die Seite an
+        // Ort und Stelle neu — denselben Weg nehmen hier alle Auswahllisten.
+        // Ein Zeiger auf die Wertbeschriftung ueber eine Fadengrenze waere
+        // die andere Moeglichkeit und die schlechtere.
+        if let client = seerrclient, seerrGilt == nil {
+            Task.detached { [self] in
+                let gilt = await client.gilt()
+                aufHauptfaden {
+                    guard self.offeneUnterseite == .seerr else { return }
+                    self.seerrGilt = gilt
+                    self.unterseiteOeffnen(.seerr)
+                }
+            }
+        }
+        return g.aussen
     }
 
     /// Beschriftung ueber dem Feld — die Form der uebrigen Einstellungen.

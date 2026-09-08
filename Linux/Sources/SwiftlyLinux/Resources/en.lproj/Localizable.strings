@@ -227,3 +227,8 @@
 "Zuklappen" = "Collapse";
 "frei" = "free";
 "Ähnliche Titel" = "Similar titles";
+
+/* Seerr-Zugang */
+"Aktiv" = "Active";
+"Sitzung abgelaufen" = "Session expired";
+"Wird geprüft …" = "Checking …";
