@@ -1,0 +1,189 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body {
+      margin: 0;
+      width: 1440px;
+      height: 1000px;
+      overflow: hidden;
+      background: #0B0B0D;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: #5CD1C2; text-decoration: none; }
+    a:hover { color: #7FDDD0; }
+    * { box-sizing: border-box; }
+
+  </style>
+</helmet>
+
+
+<aside style="position:absolute;left:0;top:0;bottom:0;width:220px;
+  background:#161619;border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column">
+  <div style="height:40px"></div>
+  <div style="display:flex;align-items:center;gap:9px;padding:0 20px 18px">
+    <div style="width:24px;height:24px;border-radius:6px;background:#1E1E22;
+      border:1px solid rgba(255,255,255,.12);flex:none"></div>
+    <span style="font-size:17px;font-weight:600;letter-spacing:-.2px">Pauls Kiste</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:2px;padding:0 12px"><div style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:10px;background:transparent;color:rgba(255,255,255,.62)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5"/></svg><span style="font-size:15px;font-weight:500;letter-spacing:-.1px">Start</span></div><div style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:10px;background:rgba(92,209,194,.10);color:#5CD1C2"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM8 5.5v13M16 5.5v13M3.5 12h17"/></svg><span style="font-size:15px;font-weight:500;letter-spacing:-.1px">Filme</span></div><div style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:10px;background:transparent;color:rgba(255,255,255,.62)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3 5.5h18v11H3zM8.5 20.5h7"/></svg><span style="font-size:15px;font-weight:500;letter-spacing:-.1px">Serien</span></div><div style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:10px;background:transparent;color:rgba(255,255,255,.62)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM16.2 16.2 21 21"/></svg><span style="font-size:15px;font-weight:500;letter-spacing:-.1px">Suche</span></div></div>
+  <div style="padding:0 12px"><div style="font-size:11px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:rgba(255,255,255,.38);padding:0 10px;margin:26px 0 8px">Meins</div></div>
+  <div style="display:flex;flex-direction:column;gap:2px;padding:0 12px"><div style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:10px;background:transparent;color:rgba(255,255,255,.62)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg><span style="font-size:15px;font-weight:500;letter-spacing:-.1px">Merkliste</span></div><div style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:10px;background:transparent;color:rgba(255,255,255,.62)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 4v13M6.5 11.5 12 17l5.5-5.5"/></svg><span style="font-size:15px;font-weight:500;letter-spacing:-.1px">Downloads</span></div></div>
+  <div style="padding:0 12px"><div style="font-size:11px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:rgba(255,255,255,.38);padding:0 10px;margin:26px 0 8px">Bibliotheken</div></div>
+  <div style="display:flex;flex-direction:column;gap:2px;padding:0 12px"><div style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:10px;background:transparent;color:rgba(255,255,255,.62)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM8 5.5v13M16 5.5v13M3.5 12h17"/></svg><span style="font-size:15px;font-weight:500;letter-spacing:-.1px">Filmabend</span></div><div style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:10px;background:transparent;color:rgba(255,255,255,.62)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3 5.5h18v11H3zM8.5 20.5h7"/></svg><span style="font-size:15px;font-weight:500;letter-spacing:-.1px">Lieblingsfolgen</span></div></div>
+  <div style="flex-grow:1"></div>
+  <div style="height:1px;background:rgba(255,255,255,.07);margin:0 0 12px"></div>
+  <div style="display:flex;align-items:center;gap:10px;padding:0 22px 12px">
+    <div style="width:26px;height:26px;border-radius:50%;
+      background:linear-gradient(135deg,#3B4A5A,#26313D);border:1.5px solid #5CD1C2;flex:none"></div>
+    <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+      <span style="font-size:14px;font-weight:500">paul</span>
+      <span style="font-size:11px;color:rgba(255,255,255,.38)">Pauls Kiste</span>
+    </div>
+  </div>
+</aside>
+<main style="position:absolute;left:220px;right:0;top:0;bottom:0;overflow:hidden">
+  <div style="position:relative;height:380px">
+  <div style="position:absolute;top:0;right:0;width:62%;height:616px;
+  background:
+    radial-gradient(120% 90% at 72% 22%, rgba(214,196,168,.55), rgba(0,0,0,0) 62%),
+    radial-gradient(80% 70% at 38% 66%, rgba(74,96,120,.55), rgba(0,0,0,0) 70%),
+    linear-gradient(150deg, #3A4553, #1A2028 70%);
+  pointer-events:none;
+    -webkit-mask-image:
+      linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,.05) 15%, rgba(0,0,0,.22) 29%,
+        rgba(0,0,0,.50) 45%, rgba(0,0,0,.75) 57%, rgba(0,0,0,.90) 70%, rgba(0,0,0,.98) 85%,
+        rgba(0,0,0,1) 100%),
+      linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 50%, rgba(0,0,0,.88) 60%,
+        rgba(0,0,0,.62) 70%, rgba(0,0,0,.34) 80%, rgba(0,0,0,.14) 89%, rgba(0,0,0,.04) 95%,
+        rgba(0,0,0,0) 100%);
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
+"></div>
+  <div style="position:absolute;left:0;right:0;top:0;height:86px;
+  display:flex;align-items:flex-end;gap:4px;padding:0 24px 10px
+  16px;z-index:3">
+  <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M15 4.5 7.5 12 15 19.5"/></svg></div>
+  
+</div>
+  <div style="position:absolute;left:24px;top:150px;width:640px;height:230px">
+    <div style="position:absolute;top:0;height:42px;width:640px;display:flex;align-items:center">
+      <span style="font-size:34px;font-weight:700;letter-spacing:-.8px">The Mentalist</span>
+    </div>
+    <div style="position:absolute;top:54px;height:20px;width:640px;display:flex;
+      align-items:center;gap:14px;font-size:14px;color:rgba(255,255,255,.62)">
+      <span>2008 · Krimi, Drama · 41 Min.</span>
+      <span style="display:flex;align-items:center;gap:5px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="rgba(255,255,255,.62)" style="flex:none;display:block"><path d="M12 3.5l2.6 5.6 6 .8-4.4 4.2 1.1 6L12 17.2 6.7 20.1l1.1-6L3.4 9.9l6-.8z"/></svg>
+        <span style="font-size:13px;font-weight:500">8.4</span></span>
+      <span style="display:inline-flex;align-items:center;height:18px;padding:0 6px;border:1px solid rgba(255,255,255,.12);border-radius:8px;font-size:10px;font-weight:600;color:rgba(255,255,255,.62)">FSK-16</span>
+      <span style="display:flex;align-items:center;gap:6px;color:#5CD1C2;
+        font-size:13px;font-weight:500"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5CD1C2" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M4.5 12.5 9.5 17.5 19.5 6.5"/></svg>Direct Play</span>
+    </div>
+    <div style="position:absolute;top:92px;height:66px;width:640px;overflow:hidden;
+      font-size:15px;line-height:22px;color:rgba(255,255,255,.62)">Der Job des charismatischen Ex-TV-Show-Stars Patrick Jane innerhalb des California Bureau of Investigation ist es, die Ermittlungen einer Spezialeinheit zu unterstützen. Jane, der seine Karriere als „Mentalist“ mit vermeintlich übersinnlichen Fähigkeiten nach einer familiären Tragödie aufgab, arbeitet …</div>
+    <div style="position:absolute;top:182px;height:48px;display:flex;gap:12px"><div style="width:200px;height:48px;border-radius:10px;background:#ffffff;color:#0B0B0D;display:flex;align-items:center;justify-content:center;gap:9px"><svg width="16" height="16" viewBox="0 0 24 24" fill="#0B0B0D" style="flex:none;display:block"><path d="M7 4.5 19.5 12 7 19.5z"/></svg><span style="font-size:16px;font-weight:600">Abspielen</span></div><div style="width:48px;height:48px;border-radius:10px;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg></div><div style="width:48px;height:48px;border-radius:10px;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 6.6v.02M12 12v.02M12 17.4v.02"/></svg></div></div>
+  </div>
+</div>
+  <div style="padding:26px 24px 0;display:flex;flex-direction:column;gap:26px">
+    <section>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px"><span style="font-size:20px;font-weight:600;letter-spacing:-.2px">Besetzung</span></div>
+      <div style="display:flex;gap:12px"><div style="width:96px;display:flex;flex-direction:column;gap:8px;align-items:center">
+  <div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(160deg,#2A3440,#171D24);
+    display:flex;align-items:center;justify-content:center">
+    <div style="opacity:.20"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5c0-3.6 3.4-5.5 7.5-5.5s7.5 1.9 7.5 5.5"/></svg></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;align-items:center;text-align:center">
+    <span style="font-size:14px;font-weight:500">Simon Baker</span>
+    <span style="font-size:12px;color:rgba(255,255,255,.62)">Patrick Jane</span></div>
+</div><div style="width:96px;display:flex;flex-direction:column;gap:8px;align-items:center">
+  <div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(160deg,#3A3340,#1D1A22);
+    display:flex;align-items:center;justify-content:center">
+    <div style="opacity:.20"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5c0-3.6 3.4-5.5 7.5-5.5s7.5 1.9 7.5 5.5"/></svg></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;align-items:center;text-align:center">
+    <span style="font-size:14px;font-weight:500">Robin Tunney</span>
+    <span style="font-size:12px;color:rgba(255,255,255,.62)">Teresa Lisbon</span></div>
+</div><div style="width:96px;display:flex;flex-direction:column;gap:8px;align-items:center">
+  <div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(160deg,#24363A,#151F22);
+    display:flex;align-items:center;justify-content:center">
+    <div style="opacity:.20"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5c0-3.6 3.4-5.5 7.5-5.5s7.5 1.9 7.5 5.5"/></svg></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;align-items:center;text-align:center">
+    <span style="font-size:14px;font-weight:500">Tim Kang</span>
+    <span style="font-size:12px;color:rgba(255,255,255,.62)">Kimball Cho</span></div>
+</div><div style="width:96px;display:flex;flex-direction:column;gap:8px;align-items:center">
+  <div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(160deg,#3A3128,#201B16);
+    display:flex;align-items:center;justify-content:center">
+    <div style="opacity:.20"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5c0-3.6 3.4-5.5 7.5-5.5s7.5 1.9 7.5 5.5"/></svg></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;align-items:center;text-align:center">
+    <span style="font-size:14px;font-weight:500">Owain Yeoman</span>
+    <span style="font-size:12px;color:rgba(255,255,255,.62)">Wayne Rigsby</span></div>
+</div><div style="width:96px;display:flex;flex-direction:column;gap:8px;align-items:center">
+  <div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(160deg,#2C3348,#181B26);
+    display:flex;align-items:center;justify-content:center">
+    <div style="opacity:.20"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5c0-3.6 3.4-5.5 7.5-5.5s7.5 1.9 7.5 5.5"/></svg></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;align-items:center;text-align:center">
+    <span style="font-size:14px;font-weight:500">Amanda Righetti</span>
+    <span style="font-size:12px;color:rgba(255,255,255,.62)">Grace Van Pelt</span></div>
+</div><div style="width:96px;display:flex;flex-direction:column;gap:8px;align-items:center">
+  <div style="width:96px;height:96px;border-radius:50%;background:linear-gradient(160deg,#333A2E,#1B1E19);
+    display:flex;align-items:center;justify-content:center">
+    <div style="opacity:.20"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5c0-3.6 3.4-5.5 7.5-5.5s7.5 1.9 7.5 5.5"/></svg></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;align-items:center;text-align:center">
+    <span style="font-size:14px;font-weight:500">Rockmond Dunbar</span>
+    <span style="font-size:12px;color:rgba(255,255,255,.62)">Dennis Abbott</span></div>
+</div></div>
+    </section>
+    <section>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px"><span style="font-size:20px;font-weight:600;letter-spacing:-.2px">Ähnliches</span></div>
+      <div style="display:flex;gap:12px"><div style="width:150px;display:flex;flex-direction:column;gap:8px">
+  <div style="transform-origin:center"><div style="position:relative;width:150px;height:225px;border-radius:10px;background:linear-gradient(160deg,#333A2E,#1B1E19);overflow:hidden;display:flex;align-items:center;justify-content:center"><div style="opacity:.20"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM8 5.5v13M16 5.5v13M3.5 12h17"/></svg></div></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+    <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis">Old</span><span style="font-size:12px;color:rgba(255,255,255,.62);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">2021</span>
+  </div>
+</div><div style="width:150px;display:flex;flex-direction:column;gap:8px">
+  <div style="transform-origin:center"><div style="position:relative;width:150px;height:225px;border-radius:10px;background:linear-gradient(160deg,#402D34,#221A1E);overflow:hidden;display:flex;align-items:center;justify-content:center"><div style="opacity:.20"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM8 5.5v13M16 5.5v13M3.5 12h17"/></svg></div></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+    <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis">Obsession</span><span style="font-size:12px;color:rgba(255,255,255,.62);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">2026</span>
+  </div>
+</div><div style="width:150px;display:flex;flex-direction:column;gap:8px">
+  <div style="transform-origin:center"><div style="position:relative;width:150px;height:225px;border-radius:10px;background:linear-gradient(160deg,#25303B,#161C21);overflow:hidden;display:flex;align-items:center;justify-content:center"><div style="opacity:.20"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM8 5.5v13M16 5.5v13M3.5 12h17"/></svg></div></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+    <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis">Exit 8</span><span style="font-size:12px;color:rgba(255,255,255,.62);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">2025</span>
+  </div>
+</div><div style="width:150px;display:flex;flex-direction:column;gap:8px">
+  <div style="transform-origin:center"><div style="position:relative;width:150px;height:225px;border-radius:10px;background:linear-gradient(160deg,#2A3440,#171D24);overflow:hidden;display:flex;align-items:center;justify-content:center"><div style="opacity:.20"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM8 5.5v13M16 5.5v13M3.5 12h17"/></svg></div></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+    <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis">Furious</span><span style="font-size:12px;color:rgba(255,255,255,.62);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">2026</span>
+  </div>
+</div><div style="width:150px;display:flex;flex-direction:column;gap:8px">
+  <div style="transform-origin:center"><div style="position:relative;width:150px;height:225px;border-radius:10px;background:linear-gradient(160deg,#3A3340,#1D1A22);overflow:hidden;display:flex;align-items:center;justify-content:center"><div style="opacity:.20"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM8 5.5v13M16 5.5v13M3.5 12h17"/></svg></div></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+    <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis">Adults</span><span style="font-size:12px;color:rgba(255,255,255,.62);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">2025</span>
+  </div>
+</div><div style="width:150px;display:flex;flex-direction:column;gap:8px">
+  <div style="transform-origin:center"><div style="position:relative;width:150px;height:225px;border-radius:10px;background:linear-gradient(160deg,#24363A,#151F22);overflow:hidden;display:flex;align-items:center;justify-content:center"><div style="opacity:.20"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM8 5.5v13M16 5.5v13M3.5 12h17"/></svg></div></div></div>
+  <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+    <span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis">FROM</span><span style="font-size:12px;color:rgba(255,255,255,.62);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">2022</span>
+  </div>
+</div></div>
+    </section>
+  </div>
+</main>
+</x-dc>
+</body>
+</html>
