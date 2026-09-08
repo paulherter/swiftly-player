@@ -18,6 +18,22 @@ import Foundation
 /// | `magnifyingglass` | `system-search-symbolic` |
 enum Bereich: CaseIterable {
     case start, filme, serien, merkliste, downloads, suche
+    /// **Eine Bibliothek als eigene Seite — und deshalb kein Eintrag in der
+    /// Leiste.**
+    ///
+    /// Sie steht in dieser Aufzaehlung, weil sie dieselbe Rasterseite
+    /// benutzt: Kopf, Filter, Sortierung, Nachladen am unteren Rand liegen
+    /// in Woerterbuechern ueber `Bereich`, und eine zweite Fassung davon
+    /// waere genau die kopierte Funktion, gegen die die Regel steht. In
+    /// `obenGruppe` und `meinsGruppe` taucht sie nicht auf, also erscheint
+    /// sie nie als Zeile.
+    ///
+    /// **Warum ueberhaupt eine eigene Seite:** vorher fuehrte ein Klick auf
+    /// eine Sammlung in den Filme-Bereich und waehlte sich dort aus — ueber
+    /// „Filmabend" stand dann die Ueberschrift „Filme", und eine Sammlung,
+    /// die weder `movies` noch `tvshows` ist, tat gar nichts. Auf dem Mac ist
+    /// genau das behoben (`Seitenziel.bibliothek`); hier stand es noch.
+    case bibliothek
 
     /// **Oben, was der Server hat.** Vier Zeilen, wie eh und je.
     static let obenGruppe: [Bereich] = [.start, .filme, .serien, .suche]
@@ -48,6 +64,8 @@ enum Bereich: CaseIterable {
         case .merkliste: uebersetzt("Merkliste")
         case .downloads: uebersetzt("Downloads")
         case .suche:  uebersetzt("Suche")
+        // Der Titel kommt vom geoeffneten Eintrag, nicht von hier.
+        case .bibliothek: ""
         }
     }
 
@@ -60,6 +78,7 @@ enum Bereich: CaseIterable {
         case .merkliste: "merkliste"
         case .downloads: "downloads"
         case .suche:  "suche"
+        case .bibliothek: "bibliothek"
         }
     }
 
@@ -77,6 +96,7 @@ enum Bereich: CaseIterable {
         // fuer dasselbe benutzt.
         case .downloads: "folder-download-symbolic"
         case .suche:  "system-search-symbolic"
+        case .bibliothek: "folder-symbolic"
         }
     }
 }

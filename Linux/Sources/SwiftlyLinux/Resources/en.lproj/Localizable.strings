@@ -209,3 +209,21 @@
 "Wartet" = "Waiting";
 "Was du hier ablegst, läuft auch ohne Netz." = "What you put here plays without a connection.";
 "Wird geladen." = "Downloading.";
+
+/* Seerr-Seite und Downloads */
+"%d Min." = "%d min";
+"%d Staffeln anfragen" = "Request %d seasons";
+"Abwählen" = "Deselect";
+"Anfragen, was noch nicht da ist" = "Request what isn’t there yet";
+"Auf deinem Server" = "On your server";
+"Aufklappen" = "Expand";
+"Auswählen" = "Select";
+"Integration" = "Integration";
+"Nicht auf deinem Server" = "Not on your server";
+"Staffel %d" = "Season %d";
+"Teilweise vorhanden" = "Partly available";
+"Wartet auf Freigabe" = "Waiting for approval";
+"Welche Staffeln?" = "Which seasons?";
+"Zuklappen" = "Collapse";
+"frei" = "free";
+"Ähnliche Titel" = "Similar titles";

@@ -871,6 +871,15 @@ final class App: @unchecked Sendable {
     private var meinsliste: Widget!
     private var bibliotheksrubrik: Widget!
     private var bibliotheksliste: Widget!
+    /// **Welche Bibliothek gerade als eigene Seite offen ist** — `nil`, wenn
+    /// ein Bereich gezeigt wird. Wortgleich `offeneBibliothek` auf dem Mac.
+    var offeneBibliothek: Item?
+    /// Die Leistenzeilen der Bibliotheken, damit die richtige hervorgehoben
+    /// wird und die anderen es nicht bleiben.
+    private var bibliotheksknoepfe: [String: Widget] = [:]
+    /// Der Titel der Bibliotheksseite. Er wechselt mit jeder Sammlung; die
+    /// Bereichsseiten tragen ihren Titel fest.
+    private var bibliothekstitel: Widget!
     private var profilbild: Widget!
     private var profilname: Widget!
     private var profilserver: Widget!
@@ -937,6 +946,17 @@ final class App: @unchecked Sendable {
     var downloadleer: Widget!
     var downloadbearbeiten = false
     var downloadgewaehlt: Set<String> = []
+    /// Welche Serien in der Downloadliste aufgeklappt sind (H12).
+    var downloadOffeneSerien: Set<String> = []
+
+    // MARK: Seerr-Titelseite
+    var seerrBlock: Widget!
+    var seerrAngaben: Widget!
+    var seerrHandlung: Widget!
+    var seerrKnopfreihe: Widget!
+    /// Welche Staffeln angefragt werden sollen. Leer heisst: noch keine
+    /// gewaehlt — und dann fragt der Knopf auch keine an.
+    var seerrGewaehlteStaffeln: Set<Int> = []
     /// Fortschrittsbalken und Standzeilen je Posten — damit ein Fortschritt
     /// die Liste nicht neu bauen muss.
     var downloadbalken: [String: Widget] = [:]
@@ -1085,6 +1105,7 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.filme), "filme")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.serien), "serien")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.merkliste), "merkliste")
+        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.bibliothek), "bibliothek")
         gtk_stack_add_named(OpaquePointer(inhalt), downloadseiteBauen(), "downloads")
         gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
 
@@ -1600,6 +1621,13 @@ final class App: @unchecked Sendable {
 
     /// Schaltet den Bereich um und färbt die Zeilen nach.
     func zeige(_ neu: Bereich) {
+        // **Ein Bereich schliesst die offene Bibliothek.** Sonst bliebe ihre
+        // Zeile hervorgehoben, waehrend rechts etwas anderes steht — auf dem
+        // Mac macht das `bibliothekSchliessen()` an derselben Stelle.
+        if neu != .bibliothek, offeneBibliothek != nil {
+            offeneBibliothek = nil
+            bibliothekszeilenMalen()
+        }
         bereich = neu
         for (fall, knopf) in bereichsknoepfe {
             if fall == neu { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
@@ -1628,6 +1656,7 @@ final class App: @unchecked Sendable {
         // Die Downloadliste steht auf der Platte; sie wird nicht geholt,
         // sondern gezeigt.
         case .downloads: downloadseiteFuellen()
+        case .bibliothek: rasterLaden(.bibliothek)
         case .suche:  break
         }
     }
@@ -1647,9 +1676,11 @@ final class App: @unchecked Sendable {
     }
 
     /// Eine Seitenüberschrift mit der Zahl rechts — „Filme … 7".
-    private func seitenkopf(_ titel: String, zahl: inout Widget!) -> Widget! {
+    private func seitenkopf(_ titel: String, zahl: inout Widget!,
+                            titelfeld: inout Widget!) -> Widget! {
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
         let t = beschriftung(titel, stil: "swiftly-titel-gross")
+        titelfeld = t
         gtk_label_set_xalign(OpaquePointer(t), 0)
         gtk_widget_set_hexpand(t, 1)
         anhaengen(reihe, t)
@@ -1686,7 +1717,10 @@ final class App: @unchecked Sendable {
     private func rasterseiteBauen(_ was: Bereich) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 20)
         var zahl: Widget!
-        anhaengen(block, seitenkopf(was.beschriftung, zahl: &zahl))
+        var titel: Widget!
+        anhaengen(block, seitenkopf(was.beschriftung, zahl: &zahl, titelfeld: &titel))
+        // Nur diese eine Seite wechselt ihren Titel.
+        if was == .bibliothek { bibliothekstitel = titel }
 
         let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
         chipzeilen[was] = zeile
@@ -1793,7 +1827,9 @@ final class App: @unchecked Sendable {
     private func sucheBauen() -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 20)
         var unbenutzt: Widget!
-        anhaengen(block, seitenkopf(uebersetzt("Suche"), zahl: &unbenutzt))
+        var unbenutztertitel: Widget!
+        anhaengen(block, seitenkopf(uebersetzt("Suche"), zahl: &unbenutzt,
+                                    titelfeld: &unbenutztertitel))
 
         suchfeld = eingabezeile(symbol: "system-search-symbolic", platzhalter: uebersetzt("Suchen"))
         // Auf der Suchseite geht das Feld über die Inhaltsbreite, nicht über
@@ -2169,6 +2205,7 @@ final class App: @unchecked Sendable {
     private func bibliothekenZeigen(_ sichten: [Item]) {
         self.sichten = sichten
         leeren(bibliotheksliste)
+        bibliotheksknoepfe = [:]
         gtk_widget_set_visible(bibliotheksrubrik, sichten.isEmpty ? 0 : 1)
         for sicht in sichten {
             // Der Sammlungstyp bestimmt das Zeichen, wie auf dem Mac.
@@ -2179,18 +2216,53 @@ final class App: @unchecked Sendable {
             case "music":   symbol = "folder-music-symbolic"
             default:        symbol = "folder-symbolic"
             }
-            let zeile = seitenleistenzeile(symbol: symbol, text: sicht.name, aktiv: false)
-            // Eine Bibliothek führt in ihren Bereich und wählt sich dort aus.
-            let ziel: Bereich? = sicht.collectionType == "tvshows" ? .serien
-                               : sicht.collectionType == "movies" ? .filme : nil
+            let zeile = seitenleistenzeile(symbol: symbol, text: sicht.name,
+                                           aktiv: offeneBibliothek?.id == sicht.id)
+            // **Eine eigene Seite, kein Umschalter** — woertlich die
+            // Entscheidung des Macs. Vorher fuehrte das hier in den
+            // Filme-Bereich und waehlte sich dort aus; ueber „Filmabend"
+            // stand dann die Ueberschrift „Filme". Und eine Sammlung, die
+            // weder `movies` noch `tvshows` ist, tat gar nichts, weil es
+            // fuer sie keinen Bereich gab.
             beiSignal(zeile, "clicked") { [weak self] in
-                guard let self, let ziel else { return }
-                self.gewaehlteBibliothek[ziel] = sicht.id
-                self.geladen.remove(ziel)
-                self.zeige(ziel)
-                self.chipsFuellen(ziel)
+                self?.bibliothekOeffnen(sicht)
             }
+            bibliotheksknoepfe[sicht.id] = zeile
             anhaengen(bibliotheksliste, zeile)
+        }
+    }
+
+    /// **Eine Bibliothek als eigene Seite oeffnen.**
+    ///
+    /// Sie bekommt ihren eigenen Titel, ihren eigenen Filter und ihre eigene
+    /// Sortierung — nichts davon greift in den Filme- oder Serienbereich
+    /// hinein. Genau das war der Fehler: die Sammlung schaltete den Bereich
+    /// um, und ueber „Filmabend" stand „Filme".
+    func bibliothekOeffnen(_ sicht: Item) {
+        offeneBibliothek = sicht
+        bibliothekszeilenMalen()
+        if bibliothekstitel != nil {
+            gtk_label_set_text(OpaquePointer(bibliothekstitel), sicht.name)
+        }
+        // **Neu laden, nicht das Alte zeigen.** `geladen` merkt sich je
+        // Bereich, dass schon einmal geholt wurde; ohne diese Zeile stuenden
+        // unter der zweiten Sammlung die Titel der ersten. Genau die
+        // Beschwerde: „die falschen werden angezeigt".
+        geladen.remove(.bibliothek)
+        seitenstapel[.bibliothek] = []
+        filter[.bibliothek] = .alle
+        sortierung[.bibliothek] = .name
+        chipsFuellen(.bibliothek)
+        zeige(.bibliothek)
+    }
+
+    private func bibliothekszeilenMalen() {
+        for (kennung, knopf) in bibliotheksknoepfe {
+            if kennung == offeneBibliothek?.id {
+                gtk_widget_add_css_class(knopf, "swiftly-aktiv")
+            } else {
+                gtk_widget_remove_css_class(knopf, "swiftly-aktiv")
+            }
         }
     }
 
@@ -2283,13 +2355,26 @@ final class App: @unchecked Sendable {
         switch was {
         case .filme:  gattungen = ["Movie"]
         case .serien: gattungen = ["Series"]
+        // **Die Sammlung sagt selbst, was in ihr liegt.** Eine Sammlung ohne
+        // erkennbaren Typ — gemischte Ordner gibt es — bekommt beides,
+        // statt leer zu bleiben.
+        case .bibliothek:
+            switch offeneBibliothek?.collectionType {
+            case "movies":  gattungen = ["Movie"]
+            case "tvshows": gattungen = ["Series"]
+            default:        gattungen = ["Movie", "Series"]
+            }
         default:      gattungen = ["Movie", "Series"]
         }
         let f = filter[was] ?? .alle
         let sort = sortierung[was] ?? .name
         // Die Merkliste hat keine Bibliothek — sie geht ueber alles.
-        let eltern: String? = was == .merkliste
-            ? nil : (gewaehlteBibliothek[was] ?? bibliotheken(fuer: was).first?.id)
+        let eltern: String?
+        switch was {
+        case .merkliste:  eltern = nil
+        case .bibliothek: eltern = offeneBibliothek?.id
+        default:          eltern = gewaehlteBibliothek[was] ?? bibliotheken(fuer: was).first?.id
+        }
         let stand = kontowechsel
         Task.detached { [self] in
             let antwort = try? await client.items(parentID: eltern,
@@ -2424,9 +2509,24 @@ final class App: @unchecked Sendable {
     func reiheBauen(titel: String, art: Reihenart, items: [Item],
                     rand: Int = Stil.randAbstand) -> Widget! {
         let quer = art == .weiterschauen
-        let bildHoehe = quer ? Stil.querHoehe : Stil.kachelHoehe
-        let stueck = (quer ? Stil.querBreite : Stil.kachelBreite) + Stil.kachelAbstand
+        return reiheBauen(titel: titel,
+                          bildHoehe: quer ? Stil.querHoehe : Stil.kachelHoehe,
+                          stueck: (quer ? Stil.querBreite : Stil.kachelBreite)
+                                  + Stil.kachelAbstand,
+                          rand: rand,
+                          kacheln: items.map { kachelBauen($0, art: art) })
+    }
 
+    /// **Dieselbe Reihe, nur nicht aus `Item`.**
+    ///
+    /// Ueberschrift, waagerechtes Blaettern, die beiden Pfeile beim
+    /// Schweben, das sanfte Springen um drei Kacheln — das haengt an nichts,
+    /// was ein Serverobjekt waere. Herausgezogen, als die Seerr-Seite
+    /// Besetzung und Aehnliches zeigen sollte: eine zweite Fassung davon
+    /// waere die kopierte Funktion, gegen die die Regel steht, und sie waere
+    /// prompt auseinandergelaufen.
+    func reiheBauen(titel: String, bildHoehe: Int, stueck: Int,
+                    rand: Int = Stil.randAbstand, kacheln: [Widget?]) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 10)
 
         let ueberschrift = beschriftung(titel, stil: "swiftly-reihe")
@@ -2448,7 +2548,7 @@ final class App: @unchecked Sendable {
         // wird — dieselben vier wie auf dem Mac.
         gtk_widget_set_margin_top(reihe, 4)
         gtk_widget_set_margin_bottom(reihe, 4)
-        for item in items { anhaengen(reihe, kachelBauen(item, art: art)) }
+        for k in kacheln { anhaengen(reihe, k) }
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
 
         let ueber: Widget! = gtk_overlay_new()

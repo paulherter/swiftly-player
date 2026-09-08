@@ -74,7 +74,7 @@ extension App {
     }
 
     /// Zurück aus einer Unterseite: erst zum Profil, von dort in den Bereich.
-    private func unterseiteZurueck() {
+    func unterseiteZurueck() {
         if offeneUnterseite == .profil {
             offeneUnterseite = nil
             bereichZeigen(bereich.kennung, schub: .ohne)
@@ -136,17 +136,6 @@ extension App {
                                       unter: uebersetzt("Sprache, Untertitel, Tempo"),
                                       pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.wiedergabe)
-        })
-        anhaengen(g2.raum, zeilenstrich())
-        // **Seerr steht bei der Wiedergabe, nicht bei den Einstellungen.**
-        // Es ist keine Vorliebe, sondern ein zweiter Dienst — auf den
-        // Apple-Fassungen steht die Zeile an derselben Stelle.
-        anhaengen(g2.raum, wertezeile(symbol: "folder-download-symbolic",
-                                      titel: uebersetzt("Seerr"),
-                                      unter: seerrDa ? uebersetzt("Verbunden")
-                                                     : uebersetzt("Nicht verbunden"),
-                                      pfeil: true) { [weak self] in
-            self?.unterseiteOeffnen(.seerr)
         })
         anhaengen(g2.raum, zeilenstrich())
         anhaengen(g2.raum, wertezeile(symbol: "emblem-system-symbolic",
@@ -444,6 +433,25 @@ extension App {
                                          wert: Downloadregeln.groesse(b.bytes)))
         }
         anhaengen(block, o.aussen)
+
+        // **Steht zwischen Offline und Server, und das ist kein Zufall.**
+        // Es ist ein zweiter Dienst, kein zweiter Server — und eine Zugabe:
+        // wer nichts anbindet, sieht ausser dieser einen Zeile nirgends
+        // etwas davon. Wortgleich die Begruendung des Macs.
+        //
+        // Sie stand hier eine Fassung lang auf der **Profilseite** neben der
+        // Wiedergabe, mit dem Zeichen der Downloads daneben, und im
+        // Kommentar daneben stand, der Mac mache es genauso. Er macht es
+        // nicht; nachgesehen in `EinstellungenView.integration`.
+        let i = einstellungsgruppe(uebersetzt("Integration"))
+        anhaengen(i.raum, wertezeile(symbol: "edit-find-symbolic",
+                                     titel: uebersetzt("Seerr"),
+                                     unter: uebersetzt("Anfragen, was noch nicht da ist"),
+                                     wert: seerrDa ? uebersetzt("Verbunden") : nil,
+                                     pfeil: true) { [weak self] in
+            self?.unterseiteOeffnen(.seerr)
+        })
+        anhaengen(block, i.aussen)
 
         let s = einstellungsgruppe(uebersetzt("Server"))
         anhaengen(s.raum, wertezeile(symbol: "network-server-symbolic",

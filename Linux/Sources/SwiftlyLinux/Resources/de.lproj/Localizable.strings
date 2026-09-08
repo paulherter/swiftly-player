@@ -212,3 +212,21 @@
 "Wartet" = "Wartet";
 "Was du hier ablegst, läuft auch ohne Netz." = "Was du hier ablegst, läuft auch ohne Netz.";
 "Wird geladen." = "Wird geladen.";
+
+/* Seerr-Seite und Downloads */
+"%d Min." = "%d Min.";
+"%d Staffeln anfragen" = "%d Staffeln anfragen";
+"Abwählen" = "Abwählen";
+"Anfragen, was noch nicht da ist" = "Anfragen, was noch nicht da ist";
+"Auf deinem Server" = "Auf deinem Server";
+"Aufklappen" = "Aufklappen";
+"Auswählen" = "Auswählen";
+"Integration" = "Integration";
+"Nicht auf deinem Server" = "Nicht auf deinem Server";
+"Staffel %d" = "Staffel %d";
+"Teilweise vorhanden" = "Teilweise vorhanden";
+"Wartet auf Freigabe" = "Wartet auf Freigabe";
+"Welche Staffeln?" = "Welche Staffeln?";
+"Zuklappen" = "Zuklappen";
+"frei" = "frei";
+"Ähnliche Titel" = "Ähnliche Titel";

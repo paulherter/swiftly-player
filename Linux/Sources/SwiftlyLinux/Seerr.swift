@@ -196,7 +196,7 @@ extension App {
     /// angefragt, teilweise. Ohne sie fragt man dreimal dasselbe an und
     /// wundert sich, dass nichts geschieht — genau dafuer gibt es
     /// `Seerrstand` im Paket.
-    private func seerrKachel(_ t: Seerrtreffer) -> Widget! {
+    func seerrKachel(_ t: Seerrtreffer) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-kachel")
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
@@ -228,7 +228,10 @@ extension App {
         anhaengen(block, unten)
 
         gtk_button_set_child(alsKnopf(knopf), block)
-        beiSignal(knopf, "clicked") { [weak self] in self?.seerrAnfrageZeigen(t) }
+        // **Erst die Seite, dann die Anfrage.** Vorher loeste ein Tipp
+        // sofort die Rueckfrage aus — ohne dass man wusste, worum es geht,
+        // wie lang es ist oder welche Staffeln es gibt.
+        beiSignal(knopf, "clicked") { [weak self] in self?.seerrSeiteOeffnen(t) }
         return knopf
     }
 

@@ -124,8 +124,8 @@ extension App {
                 switch g {
                 case let .einzeln(p):
                     anhaengen(downloadliste, downloadzeile(p))
-                case let .serie(_, titel, folgen):
-                    anhaengen(downloadliste, downloadseriezeile(titel, folgen))
+                case let .serie(sid, titel, folgen):
+                    anhaengen(downloadliste, downloadseriezeile(sid, titel, folgen))
                 }
                 if i < fertige.count - 1 { anhaengen(downloadliste, zeilenstrich()) }
             }
@@ -147,119 +147,169 @@ extension App {
             return uebersetzt("Nichts auf diesem Rechner")
         }
         let anzahl = String(format: uebersetzt("%d Titel"), b.anzahl)
+        // **Und was noch frei ist.** Der Mac nennt es in derselben Zeile;
+        // ohne die Zahl steht dort eine Belegung ohne Bezugsgroesse.
         return anzahl + " · " + Downloadregeln.groesse(b.bytes)
+            + " · " + Downloadregeln.groesse(downloads.freierPlatz)
+            + " " + uebersetzt("frei")
     }
 
     // MARK: Eine Zeile
 
+    /// **Die Masse kommen vom Mac, nicht aus dem Gefuehl.** Eine Folge liegt
+    /// quer (142 x 80), ein Film und eine Serienzeile hochkant (76 x 114) —
+    /// `MacDownloadzeile.quer`. Hier stand vorher 96 x 54 fuer alles.
     private func downloadzeile(_ p: Downloadposten) -> Widget! {
-        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
-        gtk_widget_set_margin_top(zeile, 8)
-        gtk_widget_set_margin_bottom(zeile, 8)
-
-        if downloadbearbeiten { anhaengen(zeile, downloadhaken([p.id])) }
-
-        // Bild wie auf der Kachel, nur quer und klein.
-        let (huelle, bild) = gerahmtesBild(breite: 96, hoehe: 54, stil: "swiftly-plakat")
-        if let url = downloadbild(p) {
-            bildLaden(bild, url: url, schluessel: "dl-\(p.id)", sofort: true)
-        } else {
-            zeichenLegen(huelle, serie: p.art == .folge)
-        }
-        anhaengen(zeile, huelle)
-
-        let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 3)
-        gtk_widget_set_hexpand(text, 1)
-        gtk_widget_set_valign(text, GTK_ALIGN_CENTER)
-        let titel = beschriftung(p.titel, stil: "swiftly-koerper")
-        gtk_label_set_xalign(OpaquePointer(titel), 0)
-        gtk_label_set_ellipsize(OpaquePointer(titel), PANGO_ELLIPSIZE_END)
-        anhaengen(text, titel)
-
-        let stand = beschriftung(downloadstandwort(p), stil: "swiftly-zweitzeile")
-        gtk_label_set_xalign(OpaquePointer(stand), 0)
-        gtk_label_set_ellipsize(OpaquePointer(stand), PANGO_ELLIPSIZE_END)
-        if p.stand == .fehler { gtk_widget_add_css_class(stand, "swiftly-warnung") }
-        anhaengen(text, stand)
-        downloadstandzeilen[p.id] = stand
-
-        // **Der Balken nur, solange etwas laeuft.** Ein Balken auf 100 % bei
-        // etwas Fertigem sagt nichts und sieht aus wie ein haengender
-        // Vorgang.
-        if p.stand != .fertig, let anteil = p.anteil {
-            let spur: Widget! = gtk_progress_bar_new()
-            gtk_progress_bar_set_fraction(OpaquePointer(spur), anteil)
-            gtk_widget_add_css_class(spur, "swiftly-fortschritt")
-            anhaengen(text, spur)
-            downloadbalken[p.id] = spur
-        }
-        anhaengen(zeile, text)
-
-        anhaengen(zeile, downloadknopf(p))
-        return zeile
+        let quer = p.art == .folge
+        return downloadgrundzeile(
+            titel: p.titel,
+            unten: downloadstandwort(p),
+            warnend: p.stand == .fehler,
+            quer: quer,
+            bild: downloadbild(p),
+            serie: quer,
+            ids: [p.id],
+            // **Der Balken nur, solange etwas laeuft oder angehalten ist.**
+            // Bei „wartet" gibt es nichts zu zeigen, und auf einem Fehler
+            // sieht ein halb gefuellter Balken aus wie Fortschritt.
+            anteil: (p.stand == .laedt || p.stand == .angehalten) ? p.anteil : nil,
+            kennung: p.id,
+            rechts: downloadknopf(p),
+            // **Ein Klick auf die Zeile spielt ab** — auf dem Mac stand
+            // dazu: „Das fehlte ganz." Abspielen und nicht die Detailseite,
+            // denn die braucht den Server, und wer hier steht, hat
+            // womoeglich keinen (H8).
+            geklickt: { [weak self] in
+                guard let self else { return }
+                if self.downloadbearbeiten { self.downloadhakenUmlegen([p.id]) }
+                else if p.stand == .fertig { self.downloadSpielen(p) }
+            })
     }
 
-    /// H12: eine Serie ist **eine** Zeile — mit der Zahl ihrer Folgen.
-    private func downloadseriezeile(_ titel: String, _ folgen: [Downloadposten]) -> Widget! {
-        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
-        gtk_widget_set_margin_top(zeile, 8)
-        gtk_widget_set_margin_bottom(zeile, 8)
-
-        if downloadbearbeiten { anhaengen(zeile, downloadhaken(folgen.map(\.id))) }
-
-        let (huelle, bild) = gerahmtesBild(breite: 96, hoehe: 54, stil: "swiftly-plakat")
-        if let erste = folgen.first, let url = downloadbild(erste, alsGruppe: true) {
-            bildLaden(bild, url: url, schluessel: "dl-serie-\(erste.serienId ?? erste.id)",
-                      sofort: true)
-        } else {
-            zeichenLegen(huelle, serie: true)
-        }
-        anhaengen(zeile, huelle)
-
-        let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 3)
-        gtk_widget_set_hexpand(text, 1)
-        gtk_widget_set_valign(text, GTK_ALIGN_CENTER)
-        let name = beschriftung(titel, stil: "swiftly-koerper")
-        gtk_label_set_xalign(OpaquePointer(name), 0)
-        gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
-        anhaengen(text, name)
-
+    /// H12: eine Serie ist **eine** Zeile — und sie klappt auf, wie auf dem
+    /// Mac. Vorher lag hier ein Abspielknopf, der stillschweigend die erste
+    /// Folge nahm; an die uebrigen kam man gar nicht heran.
+    private func downloadseriezeile(_ sid: String, _ titel: String,
+                                    _ folgen: [Downloadposten]) -> Widget! {
+        let offen = downloadOffeneSerien.contains(sid)
         let bytes = folgen.reduce(Int64(0)) { $0 + $1.bytes }
         let unten = String(format: uebersetzt("%d Folgen"), folgen.count)
             + " · " + Downloadregeln.groesse(bytes)
-        let zweit = beschriftung(unten, stil: "swiftly-zweitzeile")
-        gtk_label_set_xalign(OpaquePointer(zweit), 0)
-        anhaengen(text, zweit)
-        anhaengen(zeile, text)
 
-        let spielen = nebenknopf("media-playback-start-symbolic", name: uebersetzt("Abspielen"))
-        if let erste = folgen.first {
-            beiSignal(spielen, "clicked") { [weak self] in self?.downloadSpielen(erste) }
+        let winkel = nebenknopf(offen ? "pan-down-symbolic" : "pan-end-symbolic",
+                                name: offen ? uebersetzt("Zuklappen") : uebersetzt("Aufklappen"))
+        gtk_widget_set_valign(winkel, GTK_ALIGN_CENTER)
+
+        let kopf = downloadgrundzeile(
+            titel: titel, unten: unten, warnend: false, quer: false,
+            bild: folgen.first.flatMap { downloadbild($0, alsGruppe: true) },
+            serie: true,
+            ids: folgen.map(\.id),
+            anteil: nil, kennung: nil, rechts: winkel,
+            geklickt: { [weak self] in
+                guard let self else { return }
+                if self.downloadbearbeiten { self.downloadhakenUmlegen(folgen.map(\.id)) }
+                else { self.downloadSerieUmlegen(sid) }
+            })
+
+        guard offen else { return kopf }
+
+        // Aufgeklappt: die Folgen darunter, eingerueckt.
+        let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        anhaengen(block, kopf)
+        for f in folgen {
+            let z = downloadzeile(f)
+            gtk_widget_set_margin_start(z, 34)
+            anhaengen(block, z)
         }
-        gtk_widget_set_valign(spielen, GTK_ALIGN_CENTER)
-        anhaengen(zeile, spielen)
-        return zeile
+        return block
     }
 
-    private func downloadhaken(_ ids: [String]) -> Widget! {
-        let haken: Widget! = gtk_check_button_new()
-        gtk_widget_set_valign(haken, GTK_ALIGN_CENTER)
-        let an = !ids.isEmpty && ids.allSatisfy { downloadgewaehlt.contains($0) }
-        gtk_check_button_set_active(alsHaken(haken), an ? 1 : 0)
-        // **`haken` wird stark gefasst, und das ist hier richtig.** Ein
-        // Widget ist ein Zeiger, keine Klasse — `weak` gibt es dafuer nicht.
-        // GTK haelt es, solange es in der Liste haengt, und der Rueckruf
-        // stirbt mit ihm.
-        beiSignal(haken, "toggled") { [weak self] in
-            guard let self else { return }
-            if gtk_check_button_get_active(alsHaken(haken)) != 0 {
-                self.downloadgewaehlt.formUnion(ids)
-            } else {
-                self.downloadgewaehlt.subtract(ids)
-            }
-            gtk_widget_set_visible(self.downloadentfernen,
-                                   self.downloadgewaehlt.isEmpty ? 0 : 1)
+    private func downloadSerieUmlegen(_ sid: String) {
+        if downloadOffeneSerien.contains(sid) { downloadOffeneSerien.remove(sid) }
+        else { downloadOffeneSerien.insert(sid) }
+        downloadseiteFuellen()
+    }
+
+    private func downloadhakenUmlegen(_ ids: [String]) {
+        if ids.allSatisfy({ downloadgewaehlt.contains($0) }) {
+            downloadgewaehlt.subtract(ids)
+        } else {
+            downloadgewaehlt.formUnion(ids)
         }
+        downloadseiteFuellen()
+    }
+
+    /// Der gemeinsame Rumpf beider Zeilen — Haken, Bild, Text, Balken,
+    /// rechter Knopf. Eine Zeile, nicht zwei fast gleiche.
+    private func downloadgrundzeile(titel: String, unten: String, warnend: Bool,
+                                    quer: Bool, bild: URL?, serie: Bool,
+                                    ids: [String], anteil: Double?,
+                                    kennung: String?, rechts: Widget!,
+                                    geklickt: @escaping () -> Void) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-zeile")
+        beiSignal(knopf, "clicked") { geklickt() }
+
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 16)
+        gtk_widget_set_margin_top(zeile, 12)
+        gtk_widget_set_margin_bottom(zeile, 12)
+        gtk_widget_set_margin_start(zeile, 10)
+        gtk_widget_set_margin_end(zeile, 10)
+
+        if downloadbearbeiten { anhaengen(zeile, downloadhaken(ids)) }
+
+        let (huelle, feld) = gerahmtesBild(breite: quer ? 142 : 76,
+                                           hoehe: quer ? 80 : 114, stil: "swiftly-plakat")
+        if let bild {
+            bildLaden(feld, url: bild, schluessel: "dl-\(ids.first ?? titel)", sofort: true)
+        } else {
+            zeichenLegen(huelle, serie: serie)
+        }
+        anhaengen(zeile, huelle)
+
+        let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 4)
+        gtk_widget_set_hexpand(text, 1)
+        gtk_widget_set_valign(text, GTK_ALIGN_CENTER)
+        let t = beschriftung(titel, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(t), 0)
+        gtk_label_set_ellipsize(OpaquePointer(t), PANGO_ELLIPSIZE_END)
+        anhaengen(text, t)
+
+        let u = beschriftung(unten, stil: "swiftly-zweitzeile")
+        gtk_label_set_xalign(OpaquePointer(u), 0)
+        gtk_label_set_ellipsize(OpaquePointer(u), PANGO_ELLIPSIZE_END)
+        if warnend { gtk_widget_add_css_class(u, "swiftly-warnung") }
+        anhaengen(text, u)
+        if let kennung { downloadstandzeilen[kennung] = u }
+
+        if let anteil {
+            let spur: Widget! = gtk_progress_bar_new()
+            gtk_progress_bar_set_fraction(OpaquePointer(spur), anteil)
+            gtk_widget_add_css_class(spur, "swiftly-fortschritt")
+            gtk_widget_set_margin_top(spur, 4)
+            anhaengen(text, spur)
+            if let kennung { downloadbalken[kennung] = spur }
+        }
+        anhaengen(zeile, text)
+        anhaengen(zeile, rechts)
+
+        gtk_button_set_child(alsKnopf(knopf), zeile)
+        return knopf
+    }
+
+    /// **Kein `GtkCheckButton`.** Diese Oberflaeche benutzt keine
+    /// Standardsteuerelemente (E4) — sie zeichnet ihre Schalter selbst, und
+    /// ueberall sonst steht dafuer `object-select-symbolic` in einer eigenen
+    /// Kapsel. Hier stand eine Runde lang das GTK-Kaestchen, und das ist
+    /// derselbe Fehler wie ein Systemdialog mitten in der App.
+    private func downloadhaken(_ ids: [String]) -> Widget! {
+        let an = !ids.isEmpty && ids.allSatisfy { downloadgewaehlt.contains($0) }
+        let haken = nebenknopf("object-select-symbolic",
+                               name: an ? uebersetzt("Abwählen") : uebersetzt("Auswählen"),
+                               aktiv: an)
+        gtk_widget_set_valign(haken, GTK_ALIGN_CENTER)
+        beiSignal(haken, "clicked") { [weak self] in self?.downloadhakenUmlegen(ids) }
         return haken
     }
 
@@ -324,7 +374,12 @@ extension App {
     /// Seite in genau dem Fall leer, fuer den es sie gibt. Fehlt es, bleibt
     /// das Zeichen stehen.
     private func downloadbild(_ p: Downloadposten, alsGruppe: Bool = false) -> URL? {
-        downloads.bild(fuer: p, alsGruppe: alsGruppe)
+        if let da = downloads.bild(fuer: p, alsGruppe: alsGruppe) { return da }
+        // **Und sonst vom Server** — solange einer da ist. Der Mac faellt an
+        // derselben Stelle auf `plakatURL` zurueck; ohne das bliebe die
+        // Flaeche leer, obwohl das Bild eine Leitung weit weg liegt.
+        return adressen?.bauen(itemID: alsGruppe ? (p.serienId ?? p.id) : p.id,
+                               mass: .hoechstensHoch(300))
     }
 
     // MARK: Abspielen

@@ -140,7 +140,7 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     /// auf Apple, deshalb der schlichtere Schluessel. Antwortet niemand,
     /// gilt der Platz als unbekannt und nicht als „null": eine Null hier
     /// hiesse, dass gar nichts mehr geladen werden darf.
-    private var freierPlatz: Int64 {
+    var freierPlatz: Int64 {
         let werte = try? Speicher.downloadordner
             .resourceValues(forKeys: [.volumeAvailableCapacityKey])
         if let frei = werte?.volumeAvailableCapacity { return Int64(frei) }
