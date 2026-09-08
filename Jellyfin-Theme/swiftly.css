@@ -86,6 +86,8 @@
     /* --- Masse --- */
     --sw-rand-abstand:     24px;
     --sw-kachel-abstand:   12px;
+    --sw-reihen-abstand:   28px;
+    --sw-seitenleiste:    220px;
     --sw-zeile:            32px;   /* Ein Zeiger trifft genauer als ein Finger */
     --sw-hauptknopf:       48px;
     /* Poster 2 : 3, Querkachel 16 : 9 — dieselben Masse wie auf dem Mac. */
@@ -1746,4 +1748,122 @@ a[data-role=button]:focus {
 .layout-desktop .listItemImage,
 .layout-desktop .listItemImage-large {
     border-radius: var(--sw-ecke) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   P · Die Seitenleiste
+   ---------------------------------------------------------------------
+   **Sie ist schon da.** Jellyfin baut auf dem Rechner weiterhin seine
+   Schublade — `.mainDrawer`, `position: fixed`, 320 breit — und parkt sie
+   auf `left: -320px`, bis jemand auf das Menüzeichen drückt. Nachgemessen
+   am laufenden Client, nicht vermutet.
+
+   Damit ist die Mac-Leiste kein Umbau, sondern eine Verschiebung: die
+   Schublade bleibt stehen, wird auf 220 gebracht, und der Rest der Seite
+   rückt um dieselbe Strecke ein. Das Menüzeichen fällt weg, weil es
+   nichts mehr zu öffnen gibt.
+
+   Nur auf `layout-desktop`: auf dem Telefon ist die Schublade richtig,
+   wie sie ist — dort ist der Daumen die Grenze, nicht die Fensterhöhe.
+   --------------------------------------------------------------------- */
+
+@media (min-width: 1000px) {
+
+    .layout-desktop .mainDrawer {
+        left: 0 !important;
+        right: auto !important;
+        width: var(--sw-seitenleiste, 220px) !important;
+        transform: none !important;
+        transition: none !important;
+        background-color: var(--sw-flaeche) !important;
+        border-right: 1px solid var(--sw-linie) !important;
+        box-shadow: none !important;
+        z-index: 1000 !important;
+    }
+
+    /* Der Vorhang gehört zu einer Schublade, die auf- und zugeht. Eine
+       Leiste, die steht, braucht keinen. */
+    .layout-desktop .mainDrawerHandle,
+    .layout-desktop .drawer-backdrop,
+    .layout-desktop .backdrop-drawer {
+        display: none !important;
+    }
+
+    /* Das Menüzeichen öffnet nichts mehr — und ein Knopf, der nichts tut,
+       ist schlimmer als keiner. Der Haus-Knopf ebenso: die Startseite steht
+       als erste Zeile in der Leiste. */
+    .layout-desktop .mainDrawerButton,
+    .layout-desktop .headerHomeButton {
+        display: none !important;
+    }
+
+    /* Alles rückt um die Breite der Leiste ein — Kopf und Inhalt gemeinsam,
+       sonst steht das eine über dem anderen. */
+    .layout-desktop .skinHeader,
+    .layout-desktop .mainAnimatedPages,
+    .layout-desktop .skinBody,
+    .layout-desktop .backgroundContainer {
+        left: var(--sw-seitenleiste, 220px) !important;
+    }
+
+    .layout-desktop .mainAnimatedPages,
+    .layout-desktop .skinBody {
+        width: calc(100% - var(--sw-seitenleiste, 220px)) !important;
+    }
+
+    /* Platz für die Fensterampel des Browsers gibt es hier nicht — aber die
+       Wortmarke oben in der Leiste steht auf dem Mac auf derselben Höhe wie
+       der Zurückpfeil im Inhalt. */
+    .layout-desktop .mainDrawer-scrollContainer {
+        padding-top: 14px !important;
+        padding-bottom: 0 !important;
+    }
+
+    /* Der Kontobereich sitzt unten, wie auf dem Mac. */
+    .layout-desktop .mainDrawer .userMenuOptions,
+    .layout-desktop .mainDrawer .adminMenuOptions {
+        margin-top: auto;
+    }
+}
+
+/* Die Rubriken der Leiste — „Medien", „Administration". 11 halbfett,
+   Versalien, Sperrung 0,7, in sehr leiser Schrift. */
+.sidebarHeader {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: .7px !important;
+    text-transform: uppercase !important;
+    color: var(--sw-schrift-sehr-leise) !important;
+    padding: 0 22px !important;
+    margin: 26px 0 8px !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   Q · Die Startseite
+   ---------------------------------------------------------------------
+   „Meine Medien" ist die Reihe mit den Bibliotheken als Querkacheln. Auf
+   dem Mac gibt es sie nicht — die Bibliotheken stehen links in der
+   Leiste, und zweimal derselbe Weg auf einer Seite ist einer zu viel.
+
+   `section0` ist die Nummer, die Jellyfin dieser Reihe gibt; am laufenden
+   Client nachgesehen. Wer sie behalten will, nimmt diesen Block heraus
+   (oder schaltet sie unter Einstellungen → Startseite ab, dann ist sie
+   auch aus den anderen Fassungen weg).
+   --------------------------------------------------------------------- */
+
+.layout-desktop #indexPage .verticalSection.section0 {
+    display: none !important;
+}
+
+/* Der obere Rand der Seite — `Stil.inhaltOben`. */
+.layout-desktop .homePage .verticalSection:first-child,
+.layout-desktop .libraryPage > .verticalSection:first-child {
+    margin-top: 0;
+}
+
+/* Zwischen zwei Reihen — `Stil.reihenAbstand`. */
+.layout-desktop .verticalSection {
+    margin-bottom: var(--sw-reihen-abstand, 28px) !important;
 }
