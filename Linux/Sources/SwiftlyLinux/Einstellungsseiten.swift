@@ -14,7 +14,7 @@ import JellyfinKit
 /// Wiedergabe getrennt, der Fernseher hat eine Seite. Linux folgt dem Mac.
 extension App {
 
-    enum Unterseite { case profil, quickConnect, wiedergabe, einstellungen, kontoHinzufuegen }
+    enum Unterseite { case profil, quickConnect, wiedergabe, seerr, einstellungen, kontoHinzufuegen }
 
     /// **Einstellungen blenden über, sie schieben nicht.**
     ///
@@ -44,6 +44,7 @@ extension App {
         case .profil:         profilbauen(block)
         case .quickConnect:   quickConnectBauen(block)
         case .wiedergabe:     wiedergabeBauen(block)
+        case .seerr:          seerrSeiteBauen(block)
         case .einstellungen:  einstellungenBauen(block)
         case .kontoHinzufuegen: kontoHinzufuegenBauen(block)
         }
@@ -135,6 +136,17 @@ extension App {
                                       unter: uebersetzt("Sprache, Untertitel, Tempo"),
                                       pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.wiedergabe)
+        })
+        anhaengen(g2.raum, zeilenstrich())
+        // **Seerr steht bei der Wiedergabe, nicht bei den Einstellungen.**
+        // Es ist keine Vorliebe, sondern ein zweiter Dienst — auf den
+        // Apple-Fassungen steht die Zeile an derselben Stelle.
+        anhaengen(g2.raum, wertezeile(symbol: "folder-download-symbolic",
+                                      titel: uebersetzt("Seerr"),
+                                      unter: seerrDa ? uebersetzt("Verbunden")
+                                                     : uebersetzt("Nicht verbunden"),
+                                      pfeil: true) { [weak self] in
+            self?.unterseiteOeffnen(.seerr)
         })
         anhaengen(g2.raum, zeilenstrich())
         anhaengen(g2.raum, wertezeile(symbol: "emblem-system-symbolic",

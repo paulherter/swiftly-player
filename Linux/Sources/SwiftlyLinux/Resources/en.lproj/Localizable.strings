@@ -147,3 +147,16 @@
 
 /* Merkliste als eigene Seite (08.09.2026) */
 "Merkliste" = "Watchlist";
+
+/* Seerr (08.09.2026) */
+"Adresse" = "Address";
+"Verbunden" = "Connected";
+"Nicht verbunden" = "Not connected";
+"Verbindung trennen" = "Disconnect";
+"Diese Adresse ergibt keine." = "That is not a usable address.";
+"Seerr" = "Seerr";
+"Benutzername und Passwort fehlen" = "Username and password are missing";
+"Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt." = "Your password is not saved — only the session Seerr issues for it.";
+"Getrennt" = "Disconnected";
+"Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen." = "Jellyseerr or Overseerr. Search also finds what is not on your server yet — and lets you request it.";
+"Keine Verbindung" = "No connection";

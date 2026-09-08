@@ -68,6 +68,43 @@ enum Speicher {
         }
     }
 
+    // MARK: Seerr
+
+    /// **Der Seerr-Zugang liegt neben der Sitzung, nicht im Schluesselbund.**
+    ///
+    /// Auf den Apple-Fassungen geht er in die Keychain, mit der Begruendung:
+    /// „Der Keks ist ein Zugang zu einem Dienst, der Titel anfordern kann."
+    /// Ein Gegenstueck dazu gibt es hier nicht ohne neue Abhaengigkeit
+    /// (libsecret) — also dieselbe Ablage wie die Sitzung, mit denselben
+    /// Rechten: Ordner 0700, Datei 0600. Das ist schwaecher als ein
+    /// Schluesselbund und wird hier ausdruecklich so benannt, statt es als
+    /// gleichwertig auszugeben.
+    private static var seerrdatei: URL { ordner.appendingPathComponent("seerr.json") }
+
+    static func seerrLesen() -> Seerrzugang? {
+        guard let daten = try? Data(contentsOf: seerrdatei) else { return nil }
+        return try? JSONDecoder().decode(Seerrzugang.self, from: daten)
+    }
+
+    static func seerrSchreiben(_ zugang: Seerrzugang?) {
+        guard let zugang else {
+            try? FileManager.default.removeItem(at: seerrdatei)
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                    attributes: nurIch)
+            try JSONEncoder().encode(zugang).write(to: seerrdatei, options: [.atomic])
+            #if !os(Windows)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: seerrdatei.path)
+            #endif
+        } catch {
+            FileHandle.standardError.write(
+                Data("Seerr-Zugang ließ sich nicht sichern: \(error.localizedDescription)\n".utf8))
+        }
+    }
+
     static func loeschen() {
         try? FileManager.default.removeItem(at: datei)
         try? FileManager.default.removeItem(at: kontendatei)

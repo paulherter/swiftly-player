@@ -87,6 +87,9 @@ final class App: @unchecked Sendable {
         // Binärdatei nimmt, das zweite vom Fenstertitel. Der Anwendungsname
         // heisst jetzt so wie die App, und der Titel trägt den Zusatz.
         Zeichenwerk.einrichten()
+        // Der Seerr-Zugang steht vor der ersten Ansicht: die Profilseite
+        // zeigt daneben „Verbunden" oder „Nicht verbunden".
+        seerrLaden()
         g_set_application_name("Swiftly")
         g_set_prgname("swiftly")
         gtk_window_set_title(alsFenster(fenster), "for Jellyfin")
@@ -983,6 +986,9 @@ final class App: @unchecked Sendable {
     var technikschild: Widget!
     /// Der letzte Stand der Zaehler; die naechste Messung rechnet daraus.
     var technikzaehler: Zaehlwerk?
+    /// Seerr — Zugang und Client, `nil` solange nichts eingerichtet ist.
+    var seerrzugang: Seerrzugang?
+    var seerrclient: SeerrClient?
     var schlafminuten: Int?
     var schlaftakt = 0
 
