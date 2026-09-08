@@ -145,6 +145,9 @@ struct PlayerSettingsSheet: View {
                     case .schlafzeit: schlafzeitauswahl
                     }
                 }
+                // Damit die letzte Zeile ueber den Weichzeichner hinaus
+                // gescrollt werden kann und nicht dauerhaft darunter liegt.
+                .padding(.bottom, 14)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { hoch in
                     inhaltshoehe = hoch
                 }
@@ -155,28 +158,31 @@ struct PlayerSettingsSheet: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { hoch in
                 sichthoehe = hoch
             }
-            // **Eine harte Kante liest sich als Fehler, eine weiche als
-            // „da geht es weiter".**
+            // **Ein schmaler Weichzeichner an der Unterkante, sonst nichts.**
             //
             // Im Querformat passen sieben Zeilen zu je 44 Punkt -- Apples
             // Mindestmass fuer ein Tippziel -- plus Kopf nicht in die rund
-            // 330 Punkte, die nach dem Home-Anzeiger bleiben. Es muss also
-            // gescrollt werden. Abgeschnitten sah es aus wie ein
-            // Zeichenfehler; ausgeblendet sagt dieselbe Stelle, dass unten
-            // noch etwas liegt.
+            // 330 Punkte, die nach dem Home-Anzeiger bleiben. Es wird also
+            // gescrollt, und das darf man sehen.
             //
-            // Nur wenn es wirklich scrollt: sonst waeren die erste und die
-            // letzte Zeile grundlos blass.
-            .mask {
+            // Hier stand zuerst eine Blende, die den Inhalt an beiden Enden
+            // durchsichtig zog. Das nimmt der Karte ihre Kante: sie hoert
+            // dann nirgends auf, sie verlaeuft. Jetzt laeuft der Inhalt bis
+            // an den Rand der Box und wird dort hart beschnitten -- davor
+            // liegt nur ein schmaler Streifen, der das Letzte unscharf
+            // zieht, damit die Kante nicht wie ein Zeichenfehler aussieht.
+            //
+            // Nur wenn es wirklich scrollt.
+            .overlay(alignment: .bottom) {
                 if scrollt {
-                    LinearGradient(stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .black, location: 0.035),
-                        .init(color: .black, location: 0.93),
-                        .init(color: .clear, location: 1),
-                    ], startPoint: .top, endPoint: .bottom)
-                } else {
                     Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .frame(height: 22)
+                        .mask {
+                            LinearGradient(colors: [.clear, .black],
+                                           startPoint: .top, endPoint: .bottom)
+                        }
+                        .allowsHitTesting(false)
                 }
             }
             // **Der Wechsel schiebt, er blendet nicht.** Die Richtung ist die
@@ -187,7 +193,12 @@ struct PlayerSettingsSheet: View {
             .id(ebene)
             .transition(uebergang)
         }
-        .padding(14)
+        // Unten kein Innenabstand: die Liste soll bis an den Rand der Box
+        // laufen und dort beschnitten werden, statt vorher aufzuhoeren. Den
+        // Platz, den die letzte Zeile zum Vollstaendig-Werden braucht, gibt
+        // der Inhalt sich selbst (siehe unten).
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
         .frame(width: 356)
         .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         // **Der Beschnitt gehoert an die Karte, nicht an den Inhalt.**
