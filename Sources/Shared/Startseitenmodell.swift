@@ -138,8 +138,17 @@ final class Startseitenmodell {
         // dadurch, dass sie dieses Modell benutzt, und keine kann sie
         // vergessen. Doppelt aufgerufen kostet es nichts — `vorholen` haelt
         // fest, was schon bekannt ist und was gerade laeuft.
-        Serienspeicher.geteilt.vorholen(weiterschauen + naechsteFolge + neueSerien,
-                                        mit: model)
+        //
+        // **`zuletzt` gehoert dazu, und das war beim ersten Anlauf nicht so.**
+        // Die Reihe „Zuletzt hinzugefuegt“ traegt bei einer
+        // Serienbibliothek **Folgen** — daran, dass `zuletztHinzugefuegt`
+        // ueber `seriesId ?? id` entdoppelt, sieht man es. Und sie ist der
+        // Normalfall: `neueSerien` fuellt sich nur bei eingeschaltetem
+        // `neuzugangGetrennt`, und das steht in der Vorgabe aus. Wer nur die
+        // getrennten Reihen vorholt, deckt also genau die Einstellung nicht
+        // ab, die fast jeder hat. Von der Mac-Sitzung gemessen und gemeldet.
+        Serienspeicher.geteilt.vorholen(
+            weiterschauen + naechsteFolge + zuletzt + neueSerien, mit: model)
     }
 
     /// Muss beim Zurückkommen in den Vordergrund neu geholt werden?

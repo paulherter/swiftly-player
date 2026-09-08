@@ -193,8 +193,11 @@ than "have a look around".
 > sudo sed -i 's|swiftly-for-jellyfin|swiftly-player|' /etc/pacman.conf                       # pacman
 > ```
 >
-> The old address keeps answering, so nothing breaks if you do not — but new
-> versions appear only under the new one.
+> The old address still answers, but it is no longer this project — it is a
+> separate repository that lives on. Nothing will fail, and that is the
+> awkward part: your package manager keeps getting valid replies, just from
+> somewhere else, and you stop receiving updates without ever seeing an
+> error.
 
 One command. It works out which distribution you are on, adds the Swiftly
 package source, and installs from it — so **updates arrive with your normal

@@ -12,7 +12,14 @@ pkgver=1.0.0
 pkgrel=1
 pkgdesc="Jellyfin-Client, der niemals transkodiert"
 arch=('x86_64' 'aarch64')
-url="https://github.com/paulherter/swiftly-for-jellyfin"
+# **Der heutige Name, und das ist kein Schoenheitsfehler.** Unter
+# `swiftly-for-jellyfin` liegt ein **eigenes, weiterlebendes** Repository —
+# GitHub leitet nicht um: `git ls-remote` gibt dort `main` auf einem anderen
+# Stand und kennt `windows` gar nicht. `source=` haette also einen fremden
+# Baum geholt und `makepkg -si` daraus gebaut. Der alte Ort traegt nur noch
+# die `gh-pages` mit der alten Paketquelle am Leben; wie man umzieht, steht
+# in der README.
+url="https://github.com/paulherter/swiftly-player"
 license=('MPL-2.0')
 depends=('gtk4' 'vlc' 'glibc' 'gcc-libs')
 makedepends=('git' 'gcc' 'pkgconf' 'swift-bin')
@@ -27,15 +34,15 @@ build() {
     # und eine mitgelieferte .so waere genau die Sorte Abhaengigkeit, die auf
     # fremden Rechnern nicht gefunden wird.
     export SWIFTLY_RLOTTIE_ZIEL="$srcdir/rlottie-praefix"
-    bash "$srcdir/swiftly-for-jellyfin/Werkzeuge/rlottie-bauen.sh" "$srcdir/rlottie"
+    bash "$srcdir/swiftly-player/Werkzeuge/rlottie-bauen.sh" "$srcdir/rlottie"
 
     export PKG_CONFIG_PATH="$SWIFTLY_RLOTTIE_ZIEL/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
-    cd "$srcdir/swiftly-for-jellyfin/Linux"
+    cd "$srcdir/swiftly-player/Linux"
     "$(_swift)" build -c release -Xswiftc -static-stdlib
 }
 
 package() {
-    local q="$srcdir/swiftly-for-jellyfin"
+    local q="$srcdir/swiftly-player"
     local b="$q/Linux/.build/release"
 
     # Programm und Ressourcenbuendel bleiben beisammen: Swift findet
