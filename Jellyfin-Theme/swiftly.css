@@ -247,8 +247,19 @@ body,
 .backdropImage {
     left: auto !important;
     right: 0 !important;
-    width: 62% !important;
-    background-position: center center !important;
+    /* **72 statt 62 Prozent, und das hat einen Grund.**
+       Die harte Kante links war die Kante des Bildes selbst. Ein Anstrich
+       kann sie nur zudecken, nicht weichzeichnen — also muss sie unter den
+       Teil des Verlaufs, der voll deckt. Bei 72 Prozent beginnt das Bild
+       bei 28, der Verlauf deckt bis 34 voll: die Kante liegt darunter.
+
+       Und das Feld wird flacher. Bei `cover` in einem 962 x 900 grossen
+       Feld passt ein 16:9-Bild nur, indem es seitlich beschnitten wird —
+       deshalb war nur ein schmaler Streifen zu sehen. 72 Prozent Breite
+       auf 84 Prozent Hoehe kommt dem Verhaeltnis des Bildes nahe. */
+    width: 72% !important;
+    height: 84% !important;
+    background-position: center top !important;
 }
 
 .backdropContainer::after {
@@ -261,13 +272,13 @@ body,
        der Inhaltsbehaelter. */
     background-image:
         linear-gradient(to right,
-            rgb(11,11,13) 0%, rgb(11,11,13) 36%, rgba(11,11,13,.92) 44%,
-            rgba(11,11,13,.70) 54%, rgba(11,11,13,.42) 66%, rgba(11,11,13,.20) 78%,
-            rgba(11,11,13,.06) 90%, rgba(11,11,13,0) 100%),
+            rgb(11,11,13) 0%, rgb(11,11,13) 34%, rgba(11,11,13,.90) 44%,
+            rgba(11,11,13,.66) 56%, rgba(11,11,13,.38) 68%, rgba(11,11,13,.16) 80%,
+            rgba(11,11,13,.04) 91%, rgba(11,11,13,0) 100%),
         linear-gradient(to bottom,
-            rgba(11,11,13,0) 0%, rgba(11,11,13,0) 22%, rgba(11,11,13,.18) 30%,
-            rgba(11,11,13,.48) 36%, rgba(11,11,13,.78) 41%, rgb(11,11,13) 45%,
-            rgb(11,11,13) 100%) !important;
+            rgba(11,11,13,0) 0%, rgba(11,11,13,0) 40%, rgba(11,11,13,.16) 52%,
+            rgba(11,11,13,.42) 62%, rgba(11,11,13,.70) 71%, rgba(11,11,13,.90) 78%,
+            rgb(11,11,13) 84%, rgb(11,11,13) 100%) !important;
 }
 
 /* Auswahl und Markierung tragen den Akzent — er zeigt Auswahl. */
@@ -1224,9 +1235,19 @@ a[data-role=button]:focus {
     display: none !important;
 }
 
+/* **Der Inhaltsbehaelter war die harte Kante unten.**
+   Er ist deckend und beginnt direkt unter dem Heldbild — gemessen ab
+   y 408. Damit war das Bild dort abgeschnitten, egal wie hoch ich es
+   mache; im Entwurf reicht die Kulisse bis unter die Knopfreihe.
+
+   Durchsichtig gestellt, uebernimmt der Verlauf das Ausblenden: wo er
+   bei `grund` angekommen ist, sieht die Seite genauso aus wie vorher —
+   nur ohne Kante. Das ist derselbe Gedanke wie auf dem Mac, wo die
+   Kulisse ueber die Kopfzone hinausragt und ihre eigene Blende sie
+   beendet. */
 .detailPageWrapperContainer,
 .noBackdropTransparency .detailPageWrapperContainer {
-    background-color: var(--sw-grund) !important;
+    background-color: transparent !important;
     background-image: none !important;
 }
 
