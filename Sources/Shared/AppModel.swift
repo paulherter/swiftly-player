@@ -572,6 +572,36 @@ final class AppModel {
         catch { return lesbar(error) }
     }
 
+    /// **H6 und H9 holen sich hier ihre Angabe.**
+    ///
+    /// Beide Regeln haengen an etwas, das nur der Server weiss: ob ein Titel
+    /// gesehen ist, und ob es ihn ueberhaupt noch gibt. Was daraus folgt,
+    /// steht bei ``Downloadverwaltung/nachziehen(vorhanden:gesehen:)``.
+    ///
+    /// **Ohne Antwort passiert nichts, und das ist der Normalfall.**
+    /// Downloads sind fuer unterwegs gebaut; unterwegs antwortet kein
+    /// Server. Wuerde ein Fehlschlag als Antwort gelten, stuende an jedem
+    /// Titel „nicht mehr auf dem Server" — genau dort, wo die Funktion
+    /// gebraucht wird. Bricht ein Teilstueck ab, bleibt alles, wie es war.
+    func downloadsNachziehen() async {
+        guard let client, !downloads.posten.isEmpty else { return }
+        let ids = downloads.posten.map(\.id)
+        var vorhanden: Set<String> = []
+        var gesehen: Set<String> = []
+        // Hundert Kennungen je Anfrage — dasselbe Mass, mit dem auch die
+        // Bibliotheksseiten blaettern. Bei zehn Downloads ist es eine.
+        for ab in stride(from: 0, to: ids.count, by: 100) {
+            let stueck = Array(ids[ab ..< min(ab + 100, ids.count)])
+            guard let antwort = try? await client.items(limit: stueck.count,
+                                                        ids: stueck) else { return }
+            for titel in antwort.items {
+                vorhanden.insert(titel.id)
+                if titel.istGesehen { gesehen.insert(titel.id) }
+            }
+        }
+        downloads.nachziehen(vorhanden: vorhanden, gesehen: gesehen)
+    }
+
     @discardableResult
     func setzeGesehen(_ item: Item, an: Bool) async -> String? {
         guard let client else { return String(localized: "Nicht angemeldet.") }
@@ -637,11 +667,6 @@ final class AppModel {
     /// aus. Gefragt war „eine Art Cover".
     func querbildURL(for item: Item, breite: Int = 600) -> URL? {
         querbild(for: item, breite: breite)?.url
-    }
-
-    /// Woher das Querbild kam — nur fuer das Protokoll.
-    func querbildQuelle(for item: Item) -> String {
-        querbild(for: item, breite: 600)?.quelle ?? "nichts"
     }
 
     /// **Die Kette liegt jetzt im Paket** — `JellyfinKit.Bildwahl.quer`.

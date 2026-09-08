@@ -615,11 +615,6 @@ struct Abschnitt<Inhalt: View>: View {
     }
 }
 
-/// Trennpunkt zwischen Metadaten — steht nur zwischen vorhandenen Angaben.
-struct Trennpunkt: View {
-    var body: some View { Text("·").opacity(0.45) }
-}
-
 extension ItemDetailView {
 
     func trailerStarten() {

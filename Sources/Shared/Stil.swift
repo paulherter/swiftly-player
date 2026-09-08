@@ -2279,48 +2279,6 @@ struct Heldbild: View {
     }
 }
 
-/// Reihe, die bei Platzmangel umbricht.
-///
-/// `HStack` bricht nie um, und `LazyVGrid` braucht feste Spalten — für Chips
-/// unterschiedlicher Breite passt beides nicht.
-struct FlussReihe: Layout {
-    var waagerecht: CGFloat = 7
-    var senkrecht: CGFloat = 7
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews,
-                      cache: inout ()) -> CGSize {
-        let breite = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, zeilenhoehe: CGFloat = 0
-        for teil in subviews {
-            let mass = teil.sizeThatFits(.unspecified)
-            if x > 0, x + mass.width > breite {
-                x = 0
-                y += zeilenhoehe + senkrecht
-                zeilenhoehe = 0
-            }
-            x += mass.width + waagerecht
-            zeilenhoehe = max(zeilenhoehe, mass.height)
-        }
-        return CGSize(width: proposal.width ?? x, height: y + zeilenhoehe)
-    }
-
-    func placeSubviews(in rahmen: CGRect, proposal: ProposedViewSize,
-                       subviews: Subviews, cache: inout ()) {
-        var x = rahmen.minX, y = rahmen.minY, zeilenhoehe: CGFloat = 0
-        for teil in subviews {
-            let mass = teil.sizeThatFits(.unspecified)
-            if x > rahmen.minX, x + mass.width > rahmen.maxX {
-                x = rahmen.minX
-                y += zeilenhoehe + senkrecht
-                zeilenhoehe = 0
-            }
-            teil.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(mass))
-            x += mass.width + waagerecht
-            zeilenhoehe = max(zeilenhoehe, mass.height)
-        }
-    }
-}
-
 /// **Eine Pille, die ihren Wert zeigt und ein Blatt öffnet.**
 ///
 /// Der Unterschied zu `Wahlchip` ist die Frage, die sie beantwortet: der Chip
