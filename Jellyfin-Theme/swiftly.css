@@ -196,24 +196,40 @@ body {
 
 /* Und die Maske liegt auf dem Element, das das Bild wirklich traegt.
    Am laufenden Client gemessen: `.backdropImage` haelt die Adresse im
-   `style`-Attribut; `.itemBackdrop` ist leer und war nie der Traeger. */
+   `style`-Attribut; `.itemBackdrop` ist leer und war nie der Traeger.
+
+   **Zwei Masken auf zwei Elementen, nicht zwei Ebenen auf einem.**
+   `mask-composite: intersect` verrechnet zwei Maskenebenen miteinander —
+   in Chromium. Safari kennt nur `-webkit-mask-composite` mit anderen
+   Schluesselwoertern, und bei zwei Ebenen kommt dort **nichts** heraus:
+   das Bild war geladen, die Deckkraft stand auf 1, und die Maske loeschte
+   es weg. Paul hat es gesehen, ich nicht — ich pruefe in einem
+   Chromium-Fenster.
+
+   Ein Element traegt jetzt die waagerechte Blende, sein Behaelter die
+   senkrechte. Zwei Masken, je eine Ebene, kein Verrechnen — das tun alle
+   Browser gleich. Die Stuetzstellen sind unveraendert die aus
+   `Kulissenblende`. */
+.backgroundContainer.withBackdrop {
+    -webkit-mask-image: linear-gradient(to bottom,
+        rgba(0,0,0,1) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,.72) 60%,
+        rgba(0,0,0,.42) 72%, rgba(0,0,0,.18) 84%, rgba(0,0,0,.04) 93%,
+        rgba(0,0,0,0) 100%);
+    mask-image: linear-gradient(to bottom,
+        rgba(0,0,0,1) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,.72) 60%,
+        rgba(0,0,0,.42) 72%, rgba(0,0,0,.18) 84%, rgba(0,0,0,.04) 93%,
+        rgba(0,0,0,0) 100%);
+}
+
 .backdropImage {
-    -webkit-mask-image:
-        linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,.05) 15%, rgba(0,0,0,.22) 29%,
-            rgba(0,0,0,.50) 45%, rgba(0,0,0,.75) 57%, rgba(0,0,0,.90) 70%,
-            rgba(0,0,0,.98) 85%, rgba(0,0,0,1) 100%),
-        linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,.72) 60%,
-            rgba(0,0,0,.42) 72%, rgba(0,0,0,.18) 84%, rgba(0,0,0,.04) 93%,
-            rgba(0,0,0,0) 100%);
-    mask-image:
-        linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(0,0,0,.05) 15%, rgba(0,0,0,.22) 29%,
-            rgba(0,0,0,.50) 45%, rgba(0,0,0,.75) 57%, rgba(0,0,0,.90) 70%,
-            rgba(0,0,0,.98) 85%, rgba(0,0,0,1) 100%),
-        linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,.72) 60%,
-            rgba(0,0,0,.42) 72%, rgba(0,0,0,.18) 84%, rgba(0,0,0,.04) 93%,
-            rgba(0,0,0,0) 100%);
-    -webkit-mask-composite: source-in;
-    mask-composite: intersect;
+    -webkit-mask-image: linear-gradient(to right,
+        rgba(0,0,0,0) 0%, rgba(0,0,0,.05) 15%, rgba(0,0,0,.22) 29%,
+        rgba(0,0,0,.50) 45%, rgba(0,0,0,.75) 57%, rgba(0,0,0,.90) 70%,
+        rgba(0,0,0,.98) 85%, rgba(0,0,0,1) 100%);
+    mask-image: linear-gradient(to right,
+        rgba(0,0,0,0) 0%, rgba(0,0,0,.05) 15%, rgba(0,0,0,.22) 29%,
+        rgba(0,0,0,.50) 45%, rgba(0,0,0,.75) 57%, rgba(0,0,0,.90) 70%,
+        rgba(0,0,0,.98) 85%, rgba(0,0,0,1) 100%);
 }
 
 /* Auswahl und Markierung tragen den Akzent — er zeigt Auswahl. */
@@ -1162,27 +1178,6 @@ a[data-role=button]:focus {
 .itemBackdrop {
     animation: none !important;
     background-attachment: scroll !important;
-    height: 46vh !important;
-    -webkit-mask-image:
-        linear-gradient(to right,
-            rgba(0,0,0,.00) 0%,   rgba(0,0,0,.05) 15%,  rgba(0,0,0,.22) 29%,
-            rgba(0,0,0,.50) 45%,  rgba(0,0,0,.75) 57%,  rgba(0,0,0,.90) 70%,
-            rgba(0,0,0,.98) 85%,  rgba(0,0,0,1)  100%),
-        linear-gradient(to bottom,
-            rgba(0,0,0,1.00) 0%,  rgba(0,0,0,1.00) 50%, rgba(0,0,0,.88) 60%,
-            rgba(0,0,0,.62) 70%,  rgba(0,0,0,.34) 80%,  rgba(0,0,0,.14) 89%,
-            rgba(0,0,0,.04) 95%,  rgba(0,0,0,0)  100%);
-    mask-image:
-        linear-gradient(to right,
-            rgba(0,0,0,.00) 0%,   rgba(0,0,0,.05) 15%,  rgba(0,0,0,.22) 29%,
-            rgba(0,0,0,.50) 45%,  rgba(0,0,0,.75) 57%,  rgba(0,0,0,.90) 70%,
-            rgba(0,0,0,.98) 85%,  rgba(0,0,0,1)  100%),
-        linear-gradient(to bottom,
-            rgba(0,0,0,1.00) 0%,  rgba(0,0,0,1.00) 50%, rgba(0,0,0,.88) 60%,
-            rgba(0,0,0,.62) 70%,  rgba(0,0,0,.34) 80%,  rgba(0,0,0,.14) 89%,
-            rgba(0,0,0,.04) 95%,  rgba(0,0,0,0)  100%);
-    -webkit-mask-composite: source-in;
-    mask-composite: intersect;
 }
 
 /* Jellyfins eigener Verlauf darueber faellt weg — zwei Verlaeufe
@@ -1646,7 +1641,12 @@ a[data-role=button]:focus {
 }
 
 .layout-desktop .mainDetailButtons > .detailButton {
+    /* **Der Knopf traegt selbst `padding: 0 .85em`.** Zusammen mit dem
+       Abstand der Reihe sind das sichtbar 36 statt 12 — Paul: „button
+       abstaende immernoch zu hoch". Meine Messung stimmte und war
+       trotzdem falsch: ich habe die Kaesten gemessen, nicht das Bild. */
     margin: 0 !important;
+    padding: 0 !important;
 }
 
 .layout-desktop .mainDetailButtons {
