@@ -87,6 +87,7 @@ struct Technikschild: View {
                 zeile("\(String(localized: "Demuxer")) \(werte.demuxer)")
                 zeigtzeile(werte)
                 laufzeile(werte)
+                dekodierzeile(werte)
                 vorratzeile(werte)
                 verlustzeile(werte)
                 stromzeile(werte)
@@ -285,6 +286,29 @@ struct Technikschild: View {
         let haengt = (w.laufAnteil ?? 1) < 0.97
         return Text(verbatim: text)
             .foregroundStyle(haengt ? Stil.warnung : Stil.schriftLeise)
+    }
+
+    /// **Die Zeile, die Dekoder und Ausgabe trennt.**
+    ///
+    /// Wenn der Vorrat voll ist und die Stelle trotzdem zurueckbleibt, liegt
+    /// der Engpass hinter dem Demuxer -- und dafuer gibt es genau zwei
+    /// Stellen. Steht hier die Bildrate der Datei, rechnet der Dekoder
+    /// schnell genug und die Ausgabe haelt nicht Schritt. Steht hier
+    /// weniger, ist der Dekoder selbst zu langsam.
+    private func dekodierzeile(_ w: Spielwerte) -> some View {
+        let soll = video?.bildrate
+        var text = "\(String(localized: "Dekodiert Ø")) "
+        if let ist = w.dekodiertProSekunde {
+            text += String(format: "%.1f", ist).replacingOccurrences(of: ".", with: ",")
+        } else {
+            text += "—"
+        }
+        text += " fps"
+        // Zwei Bilder Abstand, wie bei der Zeigt-Zeile: darunter ist es die
+        // Kante des Fensters und kein Ereignis.
+        let hinkt = if let ist = w.dekodiertProSekunde, let soll { ist < soll - 2 } else { false }
+        return Text(verbatim: text)
+            .foregroundStyle(hinkt ? Stil.warnung : Stil.schriftLeise)
     }
 
     /// **Wie viel Vorrat vor der Nadel liegt.**

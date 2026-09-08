@@ -973,29 +973,19 @@ final class VLCPlayerView: Basisansicht {
         // Bereichs-Scan der Matroska unerreichbar. Zurueck auf 16 MiB.
         medium.addOption(":prefetch-buffer-size=16384")
 
-        // **Eine Sekunde Vorrat reicht nicht, und eine Sekunde ist die
-        // Voreinstellung.**
+        // **Am Vorrat lag es nicht -- nachgemessen, nicht vermutet.**
         //
-        // `network-caching` steht in VLCs eigenem Quelltext auf 1000 ms
-        // (`libvlc-module.c`, Bereich 0-60000) und galt hier, weil wir es nie
-        // gesetzt haben. Was das heisst, war am 08.09.2026 auf zwei Geraeten
-        // dasselbe Bild: das Intro stand, waehrend jeder Zaehler sauber blieb
-        // -- nichts verworfen, nichts zu spaet, nichts beschaedigt. Es war
-        // auch nichts kaputt. Es war nur nichts da. Bleibt der Nachschub
-        // eine Sekunde aus, ist der Vorrat leer, und VLC zeichnet solange
-        // dasselbe stehende Bild neu (weshalb `gezeigt` beim Haengen sogar
-        // schneller laeuft als die Bildrate).
+        // Hier stand kurz `:network-caching=10000`, weil VLCs Voreinstellung
+        // von 1000 ms duenn aussah und ein anderer Client elf Sekunden Vorrat
+        // anzeigt. Die Messung am Geraet hat das erledigt: gelesen minus
+        // entpackt ergab **211 Sekunden**. Der `prefetch`-Filter oben haelt
+        // 16 MiB, und das sind bei dieser Bitrate dreieinhalb Minuten Inhalt.
+        // Der Zeitvorlauf haette daran nichts geaendert, aber jeden Sprung
+        // teurer gemacht.
         //
-        // Zehn Sekunden sind die Groessenordnung, mit der ein anderer Client
-        // dieselbe Datei am selben Server glatt abspielt. Bei den Bitraten
-        // hier sind das gut ein Megabyte -- im Heimnetz keine spuerbare
-        // Wartezeit beim Start, aber genug, um eine Delle zu ueberbruecken.
-        //
-        // Nur fuer das Netz. Eine Datei vom Geraet hat keinen Nachschub, der
-        // ausbleiben koennte, und braucht den Vorlauf beim Sprung nicht.
-        if url.isFileURL == false {
-            medium.addOption(":network-caching=10000")
-        }
+        // Was „Eingang 0 kbit/s" beim stehenden Bild wirklich hiess: nicht
+        // „es kommt nichts", sondern „es muss gerade nichts kommen". Der
+        // Engpass liegt hinter dem Demuxer, nicht davor.
 
 
         // **Die Entscheidung muss ablesbar sein.**

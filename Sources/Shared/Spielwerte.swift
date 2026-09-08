@@ -89,6 +89,18 @@ struct Spielwerte {
     let stelle: Double
     let basisStelle: Double
 
+    /// **Dekodierte Bilder je Sekunde, ueber dasselbe lange Fenster.**
+    ///
+    /// Die Zahl, die Dekoder und Ausgabe trennt. Der Vorrat kann randvoll
+    /// sein und die Stelle trotzdem zurueckbleiben -- dann liegt der Engpass
+    /// hinter dem Demuxer, und es gibt genau zwei Stellen dafuer. Steht hier
+    /// die Bildrate der Datei, kommt der Dekoder mit, und es klemmt bei der
+    /// Ausgabe. Steht hier weniger, ist der Dekoder zu langsam; bei HEVC auf
+    /// diesen Geraeten heisst das fast immer, dass nicht VideoToolbox
+    /// rechnet, sondern die CPU.
+    let dekodiertProSekunde: Double?
+    let basisDekodiert: UInt64
+
     /// **Die Rate wird selbst gerechnet, nicht abgelesen.**
     ///
     /// `inputBitrate` und `demuxBitrate` sind Fliesskommafelder, die VLC
@@ -109,7 +121,7 @@ struct Spielwerte {
     /// ist schlimmer als keine.
     let gemessenAm: Date
 
-    init?(_ roh: VLCMedia.Stats?, stelle: Double, vorher: Spielwerte? = nil) {
+    init?(_ roh: VLCMedia.Stats?, stelle: Double, laeuft: Bool, vorher: Spielwerte? = nil) {
         let jetzt = Date()
         self.stelle = stelle
         let sekunden = vorher.map { jetzt.timeIntervalSince($0.gemessenAm) } ?? 0
@@ -148,22 +160,35 @@ struct Spielwerte {
         // `laufAnteil` nach jedem Vorspulen minutenlang Unsinn. Plausibel
         // ist eine Stelle, die vorwaerts geht und dabei hoechstens doppelt
         // so schnell wie die Uhr.
-        let stelleLaeuftFort = vorher.map {
+        //
+        // **Und der Anlauf gehoert nicht dazu.** Das Fenster begann bisher
+        // bei der ersten Messung, und die liegt vor dem ersten Bild: die
+        // Zeit, in der VLC seinen Vorrat fuellt, floss als Stillstand in die
+        // Rechnung ein. Mit zehn Sekunden Vorlauf stand `Lauf` dadurch das
+        // ganze Intro lang bei 70 Prozent, ohne dass irgendetwas stockte.
+        // Solange nicht laeuft -- Anlauf, Pause, Sprung --, faengt das
+        // Fenster deshalb immer wieder von vorn an. Ein Stocken *waehrend*
+        // der Wiedergabe bleibt sichtbar: dort steht `laeuft` auf wahr und
+        // die Stelle bleibt trotzdem zurueck, und genau das ist die Frage.
+        let stelleLaeuftFort = laeuft && (vorher.map {
             stelle >= $0.stelle && stelle - $0.stelle <= sekunden * 2 + 1
-        } ?? false
+        } ?? false)
         if let vorher, stelleLaeuftFort, roh.displayedPictures >= vorher.basisGezeigt,
            jetzt.timeIntervalSince(vorher.basisZeit) < fenster {
             basisGezeigt = vorher.basisGezeigt
             basisZeit = vorher.basisZeit
             basisStelle = vorher.basisStelle
+            basisDekodiert = vorher.basisDekodiert
         } else if let vorher, stelleLaeuftFort, roh.displayedPictures >= vorher.gezeigt {
             basisGezeigt = vorher.gezeigt
             basisZeit = vorher.gemessenAm
             basisStelle = vorher.stelle
+            basisDekodiert = vorher.videoBloecke
         } else {
             basisGezeigt = roh.displayedPictures
             basisZeit = jetzt
             basisStelle = stelle
+            basisDekodiert = roh.decodedVideo
         }
         let spanne = jetzt.timeIntervalSince(basisZeit)
         if spanne >= 4, roh.displayedPictures >= basisGezeigt {
@@ -175,6 +200,11 @@ struct Spielwerte {
             laufAnteil = (stelle - basisStelle) / spanne
         } else {
             laufAnteil = nil
+        }
+        if spanne >= 4, roh.decodedVideo >= basisDekodiert {
+            dekodiertProSekunde = Double(roh.decodedVideo - basisDekodiert) / spanne
+        } else {
+            dekodiertProSekunde = nil
         }
         eingang      = Spielwerte.rate(roh.readBytes, vorher?.gelesen, sekunden)
         demuxer      = Spielwerte.rate(roh.demuxReadBytes, vorher?.entpackt, sekunden)

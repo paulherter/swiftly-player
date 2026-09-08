@@ -194,7 +194,8 @@ struct PlayerScreen: View {
             while !Task.isCancelled {
                 // Die Rate entsteht aus der Differenz zum letzten Mal —
                 // siehe `Spielwerte`.
-                spielwerte = Spielwerte(flaeche?.statistik, stelle: flaeche?.positionSeconds ?? 0, vorher: spielwerte)
+                spielwerte = Spielwerte(flaeche?.statistik, stelle: flaeche?.positionSeconds ?? 0,
+                                        laeuft: flaeche?.isPlaying ?? false, vorher: spielwerte)
                 try? await Task.sleep(for: .seconds(2))
             }
         }

@@ -1987,6 +1987,23 @@
         }
       }
     },
+    "Dekodiert Ø": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dekodiert Ø"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decoded avg"
+          }
+        }
+      }
+    },
     "Demuxer": {
       "extractionState": "manual",
       "localizations": {
