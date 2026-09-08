@@ -318,6 +318,7 @@ struct Wiedergabeblatt: View {
         case .bereit:       return text + " " + String(localized: "fps · ohne Wechsel") + grund
         case .abgeschaltet: return text + " " + String(localized: "fps · Anpassung aus") + grund
         case .unerreichbar: return text + " " + String(localized: "fps · Anzeige stumm") + grund
+        case .inSwiftlyAus: return text + " " + String(localized: "fps · in Swiftly aus") + grund
         }
     }
 

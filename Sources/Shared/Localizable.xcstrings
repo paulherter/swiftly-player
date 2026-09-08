@@ -1767,6 +1767,23 @@
         }
       }
     },
+    "Bildrate an den Film anpassen": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match frame rate to the film"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bildrate an den Film anpassen"
+          }
+        }
+      }
+    },
     "Code eintippen — hier gehts dann von allein weiter": {
       "extractionState": "manual",
       "localizations": {
@@ -6646,6 +6663,23 @@
         }
       }
     },
+    "fps · in Swiftly aus": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · off in Swiftly"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fps · in Swiftly aus"
+          }
+        }
+      }
+    },
     "fps · laut Server": {
       "extractionState": "manual",
       "localizations": {
@@ -6726,6 +6760,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "watched"
+          }
+        }
+      }
+    },
+    "in Swiftly aus": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "off in Swiftly"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "in Swiftly aus"
           }
         }
       }

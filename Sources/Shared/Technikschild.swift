@@ -244,8 +244,14 @@ struct Technikschild: View {
             text += "—"
         }
         text += " fps · \(String(localized: "Gezeigt")) \(w.gezeigt)"
-        // Mehr als ein halbes Bild daneben ist kein Messrauschen mehr.
-        let hinkt = if let ist = w.zeigtProSekunde, let soll { ist < soll - 0.5 } else { false }
+        // **Ein kurzes Fenster rauscht.**
+        //
+        // Zwei Sekunden sind rund achtundvierzig Bilder; ein Bild mehr oder
+        // weniger an der Fensterkante sind schon 0,5 fps. Bei einem halben
+        // Bild Toleranz stand die Zeile deshalb orange, obwohl der Schnitt
+        // ueber acht Sekunden genau auf der Rate der Datei lag. Erst zwei
+        // Bilder Abstand sind mehr als die Kante.
+        let hinkt = if let ist = w.zeigtProSekunde, let soll { ist < soll - 2 } else { false }
         return Text(verbatim: text)
             .foregroundStyle(hinkt ? Stil.warnung : Stil.schriftLeise)
     }
@@ -308,6 +314,10 @@ struct Technikschild: View {
             case .abgeschaltet:
                 wort = String(localized: "Anpassung aus")
                 passt = false
+            case .inSwiftlyAus:
+                // Kein Mangel, sondern eine Wahl — deshalb nicht orange.
+                wort = String(localized: "in Swiftly aus")
+                passt = true
             case .unerreichbar:
                 wort = String(localized: "Anzeige stumm")
                 passt = false
