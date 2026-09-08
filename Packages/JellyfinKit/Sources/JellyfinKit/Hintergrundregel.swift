@@ -30,6 +30,29 @@ import Foundation
 /// ueberrascht mehr als einer, der wartet.
 public enum Hintergrundregel {
 
+    /// **Wie lange gewartet wird, bevor angehalten wird.**
+    ///
+    /// Am 08.09.2026 am Geraet nachgemessen, weil zweimal auf die falsche
+    /// Quelle getippt worden war: die Mitteilungszentrale herunterzuziehen
+    /// schickt iOS durch **genau dieselbe** Folge von Meldungen wie ein Wisch
+    /// auf den Homescreen --
+    ///
+    ///     willResignActive        · aktiv
+    ///     scenePhase → inactive
+    ///     didEnterBackground      · hintergrund
+    ///
+    /// Es gibt kein Signal, das die beiden Faelle trennt. Was sie trennt, ist
+    /// die Dauer: der gemessene Blick in die Mitteilungszentrale dauerte
+    /// **2,5 Sekunden**, und wer die App wirklich verlaesst, kommt nicht in
+    /// fuenf zurueck.
+    ///
+    /// Der Preis ist ehrlich zu benennen: nach einem Wisch laeuft der Ton
+    /// noch bis zu fuenf Sekunden weiter. Das ist der Tausch gegen eine
+    /// Wiedergabe, die bei jedem Blick auf eine Mitteilung stehenbleibt --
+    /// und weit von dem entfernt, wovor die Regel schuetzt (eine Folge, die
+    /// im Hintergrund durchlaeuft und als gesehen endet).
+    public static let gnadenfrist: TimeInterval = 5
+
     /// - Parameters:
     ///   - imKleinenFenster: Bild-im-Bild laeuft.
     ///   - aufAnderemGeraet: Die Ausgabe geht ueber AirPlay o. ae. woanders hin.

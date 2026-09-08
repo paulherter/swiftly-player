@@ -25,6 +25,9 @@ struct PlayerScreen: View {
     /// Zaehlt mit, wie oft CoreAnimation uns tatsaechlich ruft -- laeuft
     /// nur, solange das Schild an ist.
     @State private var schirmtakt = Schirmtakt()
+    /// Laeuft, solange die App im Hintergrund ist und noch nicht angehalten
+    /// wurde -- siehe `Hintergrundregel.gnadenfrist`.
+    @State private var hintergrundfrist: Task<Void, Never>?
 
     @State private var pipAvailable = false
     @State private var stelltWiederHer = false
@@ -470,6 +473,12 @@ struct PlayerScreen: View {
         .onReceive(NotificationCenter.default.publisher(
             for: UIApplication.willEnterForegroundNotification)) { _ in
             Protokoll.schreib("[Lebenslage] willEnterForeground · Zustand \(Lagewort.jetzt)")
+            // Zurueck, bevor die Frist um war: dann war es kein Verlassen.
+            if hintergrundfrist != nil {
+                hintergrundfrist?.cancel()
+                hintergrundfrist = nil
+                Protokoll.schreib("[Lebenslage] rechtzeitig zurueck → nicht anhalten")
+            }
         }
         .onChange(of: lebenslage) { alt, neu in
             Protokoll.schreib("[Lebenslage] scenePhase \(alt) → \(neu) · Zustand \(Lagewort.jetzt)")
@@ -489,13 +498,23 @@ struct PlayerScreen: View {
             //
             // Die Regel steht in `Hintergrundregel` im Paket, mit Tests und
             // mit den beiden Ausnahmen, um die es dabei geht.
-            if Hintergrundregel.anhalten(imKleinenFenster: imKleinenFenster,
-                                         aufAnderemGeraet: airplayPlan != nil,
-                                         laeuft: laeuft) {
-                Protokoll.schreib("[Lebenslage] Hintergrund ohne PiP/AirPlay → anhalten")
+            guard Hintergrundregel.anhalten(imKleinenFenster: imKleinenFenster,
+                                            aufAnderemGeraet: airplayPlan != nil,
+                                            laeuft: laeuft) else { return }
+            // **Nicht sofort.** Am Geraet gemessen: die Mitteilungszentrale
+            // herunterzuziehen schickt iOS durch genau dieselbe Folge von
+            // Meldungen wie ein Wisch auf den Homescreen -- es gibt kein
+            // Signal, das die beiden trennt. Was sie trennt, ist die Dauer.
+            // Die Begruendung samt Messung steht bei `gnadenfrist`.
+            hintergrundfrist?.cancel()
+            hintergrundfrist = Task {
+                try? await Task.sleep(for: .seconds(Hintergrundregel.gnadenfrist))
+                guard !Task.isCancelled else { return }
+                Protokoll.schreib("[Lebenslage] Frist um, immer noch weg → anhalten")
                 surface?.pause()
                 laeuft = false
                 meldeFortschritt()
+                hintergrundfrist = nil
             }
         }
         .task { await beobachten() }

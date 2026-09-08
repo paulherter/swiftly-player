@@ -34,3 +34,19 @@ struct HintergrundregelTests {
                                            aufAnderemGeraet: true, laeuft: true))
     }
 }
+
+// MARK: - Gnadenfrist
+
+@Test("Die Frist ist lang genug fuer einen Blick in die Mitteilungszentrale")
+func fristDecktMitteilungszentrale() {
+    // Am Geraet gemessen: 1788864150.458 in den Hintergrund,
+    // 1788864152.946 wieder heraus. Zweieinhalb Sekunden.
+    #expect(Hintergrundregel.gnadenfrist > 2.5)
+}
+
+@Test("Die Frist bleibt kurz genug, dass nichts durchlaeuft")
+func fristBleibtKurz() {
+    // Wovor die Regel schuetzt, ist eine Folge, die im Hintergrund zu Ende
+    // laeuft. Ein paar Sekunden Ton nach dem Wischen sind das nicht.
+    #expect(Hintergrundregel.gnadenfrist <= 10)
+}
