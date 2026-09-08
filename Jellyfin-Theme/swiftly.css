@@ -165,20 +165,52 @@ textarea,
                  "Helvetica Neue", Arial, sans-serif !important;
 }
 
-html,
+/* **Nur die Wurzel traegt den Grund — und sonst nichts.**
+
+   Jellyfin legt die Kulisse einer Detailseite in `.backdropContainer` mit
+   `z-index: -1`, also **hinter** alles. Wer `body` oder
+   `.backgroundContainer` deckend einfaerbt, malt sie damit zu. Genau das
+   habe ich getan, und Jellyfins eigenes Stilblatt setzt `body` nicht
+   umsonst ausdruecklich auf `transparent`.
+
+   Am laufenden Client gemessen, als Paul meldete, das Bild fehle auch in
+   Chrome — es lag nie an der Maske und nie am Browser:
+
+       .backdropImage        z-index -1, im .backdropContainer
+       body.libraryDocument  background-color rgb(11,11,13)  <- meins
+       .backgroundContainer  background-color rgb(11,11,13)  <- meins
+
+   Die Lehre, zum vierten Mal heute: `bild: true` heisst, dass ein Element
+   eine Bildadresse traegt. Nicht, dass man es sieht. */
+html {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+}
+
 body,
-.backgroundContainer,
-.mainAnimatedPages,
+.mainAnimatedPages {
+    background-color: transparent !important;
+    background-image: none !important;
+    color: var(--sw-schrift) !important;
+}
+
+/* Ohne Kulisse traegt der Behaelter den Grund, mit Kulisse laesst er sie
+   durch. */
+.backgroundContainer {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+}
+
+.backgroundContainer.withBackdrop {
+    background-color: transparent !important;
+}
+
 .ui-corner-all,
 .ui-shadow,
 .wizardStartForm,
 .nowPlayingPlaylist {
     background-color: var(--sw-grund) !important;
     background-image: none !important;
-}
-
-body {
-    color: var(--sw-schrift) !important;
 }
 
 /* **Die Kulisse wird von einer Maske ausgeblendet, nicht von Deckkraft.**
