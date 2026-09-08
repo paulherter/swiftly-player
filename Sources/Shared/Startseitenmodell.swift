@@ -124,6 +124,22 @@ final class Startseitenmodell {
         gestoert = !Task.isCancelled && a == nil && b == nil && !neuesDa
         if !gestoert { zuletztGeladen = Date() }
         geladen = true
+
+        // **Die Serien zu den Folgen im Hintergrund nachziehen.**
+        //
+        // „Weiterschauen" und „Naechste Folge" sind Folgen, keine Serien; ein
+        // Druck darauf fuehrt ueber `StaffelZiel` auf die Serienseite, und die
+        // braucht erst einmal die Serie selbst (A8). Bis sie da war, fuhr eine
+        // leere Seite herein — auf dem Mac gemessene 92 bis 174 ms.
+        //
+        // **Hier statt in jeder Startseite.** Der Mac hatte die Zeile in
+        // seiner `HomeView`, der Fernseher und das iPhone nicht. Sie gehoert
+        // dorthin, wo die Reihen entstehen: dann bekommt jede Plattform sie
+        // dadurch, dass sie dieses Modell benutzt, und keine kann sie
+        // vergessen. Doppelt aufgerufen kostet es nichts — `vorholen` haelt
+        // fest, was schon bekannt ist und was gerade laeuft.
+        Serienspeicher.geteilt.vorholen(weiterschauen + naechsteFolge + neueSerien,
+                                        mit: model)
     }
 
     /// Muss beim Zurückkommen in den Vordergrund neu geholt werden?

@@ -687,6 +687,19 @@ struct StaffelZiel: View {
     let folge: Item
 
     @State private var serie: Item?
+
+    /// **Was vorgeholt ist, steht sofort** — dann gibt es die leere Seite gar
+    /// nicht erst.
+    ///
+    /// Nachgereicht kaeme der Wert zu spaet: der leere Durchgang hat dann
+    /// schon stattgefunden, und der ist genau das, was man sieht. Dieselbe
+    /// Ueberlegung wie bei `Kulisse` auf dem Fernseher, und woertlich der Weg,
+    /// den die Mac-Fassung seit `2fc501c` geht.
+    @MainActor init(model: AppModel, folge: Item) {
+        self.model = model
+        self.folge = folge
+        _serie = State(initialValue: Serienspeicher.geteilt.serie(fuer: folge, mit: model))
+    }
     /// **Die Staffel frisch holen, nicht die der Kachel glauben.**
     ///
     /// Der Listeneintrag traegt die Staffel, die er beim Laden der Startseite
@@ -722,7 +735,13 @@ struct StaffelZiel: View {
         .task {
             guard let id = folge.seriesId else { return }
             async let frisch = model.item(id: folge.id)
-            if serie == nil { serie = await model.item(id: id) }
+            if serie == nil {
+                let geholt = await model.item(id: id)
+                // Damit der naechste Weg auf dieselbe Serie ihn nicht wieder
+                // geht — Suche, „Aehnliches", ein zweiter Anlauf.
+                if let geholt { Serienspeicher.geteilt.merken(geholt) }
+                serie = geholt
+            }
             frischeStaffelID = await frisch?.seasonId
         }
     }
