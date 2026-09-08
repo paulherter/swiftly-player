@@ -91,6 +91,28 @@ final class Abspieler {
         // so macht es die iOS-Fassung (`:start-time`), und der Grund steht
         // dort: ein Sprung nach dem Start baut den Strom ein zweites Mal auf.
         if ab > 1 { libvlc_media_add_option(medium, ":start-time=\(Int(ab))") }
+
+        // **Zwei Optionen vom Netzweg, wortgleich von der Apple-Fassung.**
+        //
+        // `prefetch-buffer-size` haelt 16 MiB voraus — bei den Bitraten hier
+        // gut drei Minuten Inhalt. Auf dem iPhone ist daran nachgemessen
+        // worden, dass es am Vorrat *nicht* lag (211 Sekunden gefuellt);
+        // die Zahl steht trotzdem beidseits gleich, damit die Fassungen
+        // dasselbe tun und nicht eine still knapper puffert als die andere.
+        //
+        // `http-reconnect` faengt den Abriss nach einer laengeren Pause auf.
+        // Am 08.09.2026 zweimal mitgeschrieben: 25 Sekunden pausiert, und
+        // beim Fortsetzen raeumt der Server den untaetigen Strom ab; ohne
+        // die Option behandelt VLC das als Stromende und baut alles neu auf.
+        // Solange die Verbindung haelt, aendert sie nichts.
+        //
+        // Beide sind in dem libVLC 3 vorhanden, das hier laeuft — in
+        // `libprefetch_plugin.so` und `libhttp_plugin.so` nachgesehen, nicht
+        // aus der Dokumentation der Fassung 4 uebernommen.
+        if !url.isFileURL {
+            libvlc_media_add_option(medium, ":prefetch-buffer-size=16384")
+            libvlc_media_add_option(medium, ":http-reconnect")
+        }
         spieler = libvlc_media_player_new_from_media(medium)
         libvlc_media_release(medium)
         guard let spieler else { return }

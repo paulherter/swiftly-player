@@ -24,8 +24,12 @@ rm -rf "$lieferung"; mkdir -p "$lieferung"
 cp "$(dirname "${BASH_SOURCE[0]}")/hol.ps1" "$lieferung/hol.ps1"
 
 pkill -f "http.server ${port}" 2>/dev/null || true
+# **Alle drei Kanaele abklemmen, nicht nur zwei.** Ohne `< /dev/null` haelt
+# der Server die Standardeingabe offen; wird `bruecke.sh` ueber ssh
+# gestartet, wartet die Fernsitzung dann bis zum Zeitablauf, obwohl die
+# Auslieferung laengst durch ist. Beim ersten Lauf genau so passiert.
 ( cd "$lieferung" && nohup python3 -m http.server "$port" --bind 0.0.0.0 \
-      > /tmp/bruecke.log 2>&1 & )
+      < /dev/null > /tmp/bruecke.log 2>&1 & )
 sleep 1
 
 "$(dirname "${BASH_SOURCE[0]}")/vm-befehl.sh" \
