@@ -1,0 +1,2146 @@
+/* =====================================================================
+   Swiftly — ein Thema fuer die Jellyfin-Weboberflaeche
+   ---------------------------------------------------------------------
+   Bringt die Weboberflaeche auf das Erscheinungsbild der Swiftly-App,
+   und zwar auf das der **macOS-Fassung**: gleiche Maus, gleiches Fenster,
+   gleicher Schwebezustand.
+
+   Die Werte stammen nicht aus dem Augenmass, sondern aus:
+     GESTALTUNG.md             das Handbuch zur Oberflaeche
+     Sources/Shared/Farben.swift    die Farbmarken
+     Sources/macOS/Stil.swift       Ecken, Grade, Zeiten
+     Sources/macOS/Macbausteine.swift  die Bausteine selbst
+
+   Geprueft gegen Jellyfin 10.11 (jellyfin-web 10.11, MUI-Palette `--jf-*`).
+
+   Aufbau wie GESTALTUNG.md:
+     0  Grundlage — Marken und die MUI-Palette
+     A  Farbe
+     B  Form
+     C  Schrift
+     D  Leisten und Koepfe
+     E  Bewegung
+     F  Blaetter
+     G  Laden
+     H  Zustaende zeigen
+     I  Steuern
+     J  Der Kopf einer Wurzelseite
+     K  Detailseite
+     L  Formulare und Einstellungen
+     M  Der Player
+   ===================================================================== */
+
+
+/* ---------------------------------------------------------------------
+   0 · Grundlage
+   --------------------------------------------------------------------- */
+
+:root {
+
+    /* --- A · Farbe · woertlich aus Sources/Shared/Farben.swift --- */
+
+    /* Fast schwarz, aber nicht ganz — reines Schwarz wirkt auf OLED hart,
+       wo Flaechen aneinanderstossen. */
+    --sw-grund:            #0B0B0D;
+    --sw-flaeche:          #161619;
+    --sw-erhoeht:          #1E1E22;
+
+    --sw-schrift:          #FFFFFF;
+    --sw-schrift-leise:    rgba(255, 255, 255, .62);
+    --sw-schrift-sehr-leise: rgba(255, 255, 255, .38);
+    --sw-linie:            rgba(255, 255, 255, .07);
+    --sw-rand:             rgba(255, 255, 255, .12);
+
+    /* Traegt nur Fortschritt, Auswahl und den Direct-Play-Beleg — nie
+       Flaechen oder Knoepfe. Bewusst weder Plex-Orange noch Netflix-Rot. */
+    --sw-akzent:           #5CD1C2;
+    --sw-akzent-dunkel:    #45B3A5;
+    --sw-akzent-kanal:     92 209 194;
+
+    /* Erscheint ausschliesslich, wenn der Server transkodiert. */
+    --sw-warnung:          #E8833A;
+
+    /* Schwebezustaende — es gibt sie nur mit Zeiger, also nur hier und
+       auf dem Mac. */
+    --sw-schweben:         rgba(255, 255, 255, .06);
+    --sw-schweben-stark:   rgba(255, 255, 255, .16);
+
+    /* --- B · Die Eckenskala · Sources/macOS/Stil.swift ---
+       Je groesser die Flaeche, desto runder. Knopf und Kachel teilen sich
+       die kleinste Stufe: beides sind kleine Gegenstaende. */
+    --sw-ecke:             10px;   /* Knoepfe, Plakate, Kacheln           */
+    --sw-ecke-feld:        12px;   /* Such- und Eingabefelder             */
+    --sw-ecke-flaeche:     16px;   /* Blaetter, Tafeln, Auskunftskaesten  */
+    --sw-ecke-marke:        9px;   /* Kachelmarke — folgt ihrem Untergrund*/
+    --sw-ecke-plakette:     8px;   /* Freigabe, Technikangabe             */
+
+    /* --- E · Bewegung --- */
+    --sw-zeit-umschalten:  .10s;
+    --sw-zeit-schweben:    .12s;
+    --sw-zeit-seite:       .18s;
+    --sw-einblenden:       .28s;   /* Nichts erscheint hart (E18)         */
+    --sw-blaettern:        .28s;
+    --sw-kurve-aus:        cubic-bezier(.25, .46, .45, .94);  /* easeOut  */
+    --sw-kurve-einaus:     cubic-bezier(.42, 0, .58, 1);      /* easeInOut*/
+
+    /* --- Masse --- */
+    --sw-rand-abstand:     24px;
+    --sw-kachel-abstand:   12px;
+    --sw-reihen-abstand:   28px;
+    --sw-zeile:            32px;   /* Ein Zeiger trifft genauer als ein Finger */
+    --sw-hauptknopf:       48px;
+    --sw-hauptknopf-breite: 200px;
+    /* Poster 2 : 3, Querkachel 16 : 9 — dieselben Masse wie auf dem Mac. */
+    --sw-kachel-breite:   150px;
+    --sw-quer-breite:     280px;
+
+    /* --- Die Marke · Sources/Shared/Marken.swift ---
+       Bewusst eigene Werte und nicht der Akzent: die Marke ist gesetzt,
+       das Erscheinungsbild der App darf sich davon unabhaengig bewegen. */
+    --sw-marke-akzent:     #2FDBC0;
+    --sw-marke-flaeche:    #17181B;
+
+
+    /* --- Jellyfins MUI-Palette auf Swiftly umgestellt ---
+       Jellyfin 10.11 zieht fast jede Farbe aus diesen Variablen. Wer sie
+       hier setzt, faerbt alles mit, was das Thema selbst nicht anfasst —
+       inklusive der React-Seiten, die keine eigenen Klassen tragen. */
+    --jf-palette-background-default:        #0B0B0D !important;
+    --jf-palette-background-defaultImage:   none    !important;
+    --jf-palette-background-paper:          #161619 !important;
+    --jf-palette-background-paperChannel:   22 22 25 !important;
+
+    --jf-palette-primary-main:              #5CD1C2 !important;
+    --jf-palette-primary-dark:              #45B3A5 !important;
+    --jf-palette-primary-contrastText:      #0B0B0D !important;
+    --jf-palette-primary-mainChannel:       92 209 194 !important;
+    --jf-palette-secondary-main:            #5CD1C2 !important;
+    --jf-palette-secondary-contrastText:    #0B0B0D !important;
+
+    --jf-palette-text-primary:              #FFFFFF !important;
+    --jf-palette-text-secondary:            rgba(255,255,255,.62) !important;
+    --jf-palette-divider:                   rgba(255,255,255,.12) !important;
+
+    --jf-palette-action-hover:              rgba(255,255,255,.06) !important;
+    --jf-palette-action-focus:              rgba(255,255,255,.10) !important;
+    --jf-palette-action-selectedOpacity:    .14 !important;
+
+    /* D · Kein Glas. Alle Leisten sind deckend, in `grund`. */
+    --jf-palette-AppBar-defaultBg:          #0B0B0D !important;
+    --jf-palette-AppBar-transparentBg:      transparent !important;
+    --jf-palette-AppBar-gradient:           none !important;
+
+    --jf-palette-Button-inheritContainedBg:      rgba(255,255,255,.14) !important;
+    --jf-palette-Button-inheritContainedHoverBg: rgba(255,255,255,.22) !important;
+
+    --jf-palette-FilledInput-bg:            #161619 !important;
+    --jf-palette-FilledInput-borderColor:   rgba(255,255,255,.12) !important;
+
+    --jf-palette-SnackbarContent-bg:        #1E1E22 !important;
+    --jf-palette-SnackbarContent-color:     #FFFFFF !important;
+
+    --jf-palette-Alert-infoFilledBg:        #161619 !important;
+    --jf-palette-Alert-infoFilledColor:     #FFFFFF !important;
+
+    /* B · Knopf und Kachel teilen sich die kleinste Stufe. */
+    --jf-card-borderRadius:                 10px !important;
+}
+
+
+/* --- C · Schrift ---
+   SF Pro, wo es sie gibt — dann ist die Weboberflaeche auf Mac, iPhone und
+   iPad zeichengleich mit der App. Sonst die naechstbeste Systemschrift. */
+html,
+body,
+button,
+input,
+select,
+textarea,
+.emby-button,
+.emby-input,
+.emby-textarea,
+.emby-select,
+.dialog {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+                 "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui,
+                 "Helvetica Neue", Arial, sans-serif !important;
+}
+
+/* **Nur die Wurzel traegt den Grund — und sonst nichts.**
+
+   Jellyfin legt die Kulisse einer Detailseite in `.backdropContainer` mit
+   `z-index: -1`, also **hinter** alles. Wer `body` oder
+   `.backgroundContainer` deckend einfaerbt, malt sie damit zu. Genau das
+   habe ich getan, und Jellyfins eigenes Stilblatt setzt `body` nicht
+   umsonst ausdruecklich auf `transparent`.
+
+   Am laufenden Client gemessen, als Paul meldete, das Bild fehle auch in
+   Chrome — es lag nie an der Maske und nie am Browser:
+
+       .backdropImage        z-index -1, im .backdropContainer
+       body.libraryDocument  background-color rgb(11,11,13)  <- meins
+       .backgroundContainer  background-color rgb(11,11,13)  <- meins
+
+   Die Lehre, zum vierten Mal heute: `bild: true` heisst, dass ein Element
+   eine Bildadresse traegt. Nicht, dass man es sieht. */
+html {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+}
+
+body,
+.mainAnimatedPages {
+    background-color: transparent !important;
+    background-image: none !important;
+    color: var(--sw-schrift) !important;
+}
+
+/* Ohne Kulisse traegt der Behaelter den Grund, mit Kulisse laesst er sie
+   durch. */
+.backgroundContainer {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+}
+
+.backgroundContainer.withBackdrop {
+    background-color: transparent !important;
+}
+
+.ui-corner-all,
+.ui-shadow,
+.wizardStartForm,
+.nowPlayingPlaylist {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+}
+
+/* **Die Kulisse wird von einer Maske ausgeblendet, nicht von Deckkraft.**
+   Hier stand `opacity: .38` — „eine Ahnung, keine Tapete". Der Gedanke war
+   richtig, das Mittel falsch: ueber fast schwarzem Grund bleibt bei 38
+   Prozent nichts uebrig, und Paul hat es sofort gesehen („die bilder sind
+   ja ohne theme da"). Es war meine Regel, nicht Jellyfins Einstellung.
+
+   Dasselbe steht in `Kulisse.swift` und war die ganze Zeit die Antwort:
+   ein Anstrich endet in undurchsichtigem `grund` und setzt voraus, dass
+   der Hintergrund genau das ist — eine Maske endet in Durchsichtigkeit. */
+.backgroundContainer.withBackdrop {
+    opacity: 1 !important;
+}
+
+/* --- Die Kulissenblende ---
+   **Safari zeichnet keine Maske auf einem Element mit `z-index: -1`.**
+   Bewiesen: mit `mask-image: none` erscheint das Bild sofort. Also der
+   Weg, vor dem `Kulisse.swift` warnt — ein Anstrich statt einer Maske.
+   Die Warnung dort gilt, weil sich der Hintergrund der App einfaerbt;
+   hier liegt hinter der Kulisse nur `html`, und das traegt `grund`.
+
+   **Die Kulisse ist 62 Prozent breit und sitzt rechts** — wie auf dem
+   Mac (`Kulisse.swift`: `raum.size.width * 0.62`, rechts ausgerichtet).
+   Jellyfin spannt sie ueber die volle Breite; `background-position:
+   right` half nicht, weil bei `background-size: cover` waagerecht nichts
+   zu verschieben ist. Es war nie die Position, es war die Breite.
+
+   **Und der Verlauf muss frueher fertig sein, als ich dachte.** Unter dem
+   Heldbild beginnt `.detailPageWrapperContainer`, und der ist deckend —
+   gemessen ab y 408 bei 900 Punkt Fensterhoehe, also bei 45 Prozent. Mein
+   Verlauf war dort erst auf halber Strecke und lief in eine harte Kante.
+   Jetzt ist er bei 45 Prozent bei `grund` angekommen. */
+/* **Die Kulisse gehoert zur Seite, nicht zum Fenster.**
+   Jellyfin haengt sie auf `position: fixed` — dann bleibt sie beim
+   Scrollen stehen, waehrend der Inhalt darueber wegwandert. Auf dem Mac
+   ist sie Teil des Kopfes und geht mit nach oben (`Heldenkopf`, wo sie
+   sogar am Zug mitzieht). `absolute` mit `top: 0` haengt sie an den
+   Seitenanfang statt an den Fensterrand. */
+.backdropContainer {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 100vh !important;
+}
+
+.backdropImage {
+    left: auto !important;
+    right: 0 !important;
+    /* **72 statt 62 Prozent, und das hat einen Grund.**
+       Die harte Kante links war die Kante des Bildes selbst. Ein Anstrich
+       kann sie nur zudecken, nicht weichzeichnen — also muss sie unter den
+       Teil des Verlaufs, der voll deckt. Bei 72 Prozent beginnt das Bild
+       bei 28, der Verlauf deckt bis 34 voll: die Kante liegt darunter.
+
+       Und das Feld wird flacher. Bei `cover` in einem 962 x 900 grossen
+       Feld passt ein 16:9-Bild nur, indem es seitlich beschnitten wird —
+       deshalb war nur ein schmaler Streifen zu sehen. 72 Prozent Breite
+       auf 84 Prozent Hoehe kommt dem Verhaeltnis des Bildes nahe. */
+    width: 72% !important;
+    height: 92% !important;
+    background-position: center top !important;
+}
+
+.backdropContainer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    /* Waagerecht: bis zur linken Kante der Kulisse voll gedeckt, dann
+       auslaufend. Senkrecht: bei 45 Prozent bei `grund`, dort uebernimmt
+       der Inhaltsbehaelter. */
+    background-image:
+        linear-gradient(to right,
+            rgb(11,11,13) 0%, rgb(11,11,13) 30%, rgba(11,11,13,.94) 40%,
+            rgba(11,11,13,.78) 50%, rgba(11,11,13,.56) 60%, rgba(11,11,13,.34) 70%,
+            rgba(11,11,13,.18) 80%, rgba(11,11,13,.07) 90%, rgba(11,11,13,0) 100%),
+        linear-gradient(to bottom,
+            /* **Fertig, bevor das Bild endet.** Das Bild ist 92 Prozent
+               hoch; stand der Verlauf dort erst bei 97, war er noch
+               durchsichtig genug, dass man die Bildkante sah. Bei 88
+               Prozent bei `grund` angekommen liegt die Kante darunter. */
+            rgba(11,11,13,0) 0%, rgba(11,11,13,0) 32%, rgba(11,11,13,.10) 44%,
+            rgba(11,11,13,.28) 54%, rgba(11,11,13,.52) 64%, rgba(11,11,13,.76) 73%,
+            rgba(11,11,13,.92) 81%, rgb(11,11,13) 88%,
+            rgb(11,11,13) 100%) !important;
+}
+
+/* Auswahl und Markierung tragen den Akzent — er zeigt Auswahl. */
+::selection {
+    background: rgba(var(--sw-akzent-kanal), .30);
+    color: var(--sw-schrift);
+}
+
+/* Rollbalken wie unter macOS: schmal, weiss, ohne Bahn.
+   Die App blendet sie ganz aus; im Browser bleibt ein Rest sichtbar,
+   weil eine Maus ohne Rad sonst nichts zum Greifen haette. */
+* {
+    scrollbar-color: rgba(255,255,255,.18) transparent !important;
+    scrollbar-width: thin !important;
+}
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-track-piece {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb:horizontal,
+::-webkit-scrollbar-thumb:vertical {
+    background: rgba(255,255,255,.18) !important;
+    border-radius: 999px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,.30) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   D · Leisten und Koepfe
+   ---------------------------------------------------------------------
+   **Kein Glas.** (E19.) Alle Leisten sind deckend, in `grund`. Eine Leiste
+   ist keine eigene Flaeche, sondern der Grund, auf dem die Seite endet.
+   Die Haarlinie ist alles, was sie braucht.
+   --------------------------------------------------------------------- */
+
+.skinHeader {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    color: var(--sw-schrift-leise) !important;
+    box-shadow: none !important;
+    border-bottom: 1px solid var(--sw-linie) !important;
+    transition: background-color var(--sw-zeit-seite) var(--sw-kurve-aus),
+                border-color var(--sw-zeit-seite) var(--sw-kurve-aus) !important;
+}
+
+.skinHeader-withBackground {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+}
+
+/* Ein Kopf ueber einem Bild bringt den **schwachen** Verlauf mit (0,7 -> 0)
+   — woertlich `Detailkopf` aus Sources/macOS/Macbausteine.swift. Der Pfeil
+   soll auf hellem Bild lesbar bleiben, ohne dass ein Balken entsteht. */
+.skinHeader.semiTransparent {
+    background-color: transparent !important;
+    background-image: linear-gradient(180deg,
+                        rgba(11, 11, 13, .70) 0%,
+                        rgba(11, 11, 13, 0)  100%) !important;
+    border-bottom-color: transparent !important;
+}
+
+.detailRibbon {
+    background: transparent !important;
+}
+
+.headerTop {
+    padding: .55em .8em !important;
+}
+
+/* Der Titel in der Leiste ist der Rang „Blattrubrik / Detailleiste": 17
+   halbfett. Nicht der Seitentitel — der waere 28. */
+.pageTitle {
+    font-size: 17px !important;
+    font-weight: 600 !important;
+    color: var(--sw-schrift) !important;
+    letter-spacing: -.1px;
+    margin: 0 0 0 .4em !important;
+}
+
+.headerButton,
+.headerRight .paper-icon-button-light,
+.headerLeft .paper-icon-button-light {
+    color: var(--sw-schrift) !important;
+}
+
+
+/* --- Die Seitenleiste ---
+   Sie tritt an die Stelle der Leiste unten: dort war der Daumen die
+   Grenze, hier die Fensterhoehe. */
+
+.mainDrawer,
+.drawer-open {
+    background-color: var(--sw-flaeche) !important;
+    border-right: 1px solid var(--sw-linie) !important;
+    box-shadow: none !important;
+}
+
+.navMenuOption {
+    border-radius: var(--sw-ecke) !important;
+    margin: 2px 12px !important;
+    padding: 0 10px !important;
+    min-height: 40px !important;
+    display: flex !important;
+    align-items: center !important;
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift-leise) !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus),
+                color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+/* Ein Zeiger trifft genauer als ein Finger — 32, wie `Stil.zeileHoehe`. */
+.layout-desktop .navMenuOption {
+    min-height: var(--sw-zeile) !important;
+}
+
+/* Der Schwebezustand bekommt bewusst nur Weiss: er zeigt „hier steht der
+   Zeiger", keine Wahl. */
+.navMenuOption:hover {
+    background: var(--sw-schweben) !important;
+    color: var(--sw-schrift) !important;
+}
+
+/* Der Akzent traegt Auswahl — hier faerbt er Schrift und Zeichen, und
+   legt nur einen Hauch Flaeche darunter. Nie eine volle Flaeche. */
+.navMenuOption-selected {
+    background: rgba(var(--sw-akzent-kanal), .10) !important;
+    color: var(--sw-akzent) !important;
+}
+
+.navMenuOptionIcon {
+    color: inherit !important;
+    font-size: 20px !important;
+    margin: 0 10px 0 0 !important;
+    width: 20px !important;
+}
+
+.navMenuOptionText {
+    font-size: 15px !important;
+    font-weight: 500 !important;
+}
+
+/* Rubrik ueber einer Gruppe: 11 halbfett, Versalien, Sperrung 0,7. */
+.sidebarHeader,
+.navMenuDividerText {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: .7px !important;
+    text-transform: uppercase !important;
+    color: var(--sw-schrift-sehr-leise) !important;
+    padding: 0 22px !important;
+    margin: 26px 0 8px !important;
+}
+
+.navMenuDivider {
+    border-top: 1px solid var(--sw-linie) !important;
+    margin: 12px 12px !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   B · Form — die Eckenskala, ueberall gemeinsam verschoben
+   --------------------------------------------------------------------- */
+
+.blurhash-canvas,
+.cardBox:not(.visualCardBox) .cardPadder,
+.cardContent,
+.cardImageContainer,
+.cardOverlayContainer,
+.cardScalable,
+.itemDetailImage,
+.visualCardBox {
+    border-radius: var(--sw-ecke) !important;
+}
+
+.paperList,
+.visualCardBox,
+.collapseContent {
+    background-color: var(--sw-flaeche) !important;
+    border-radius: var(--sw-ecke-flaeche) !important;
+}
+
+.cardBox:not(.visualCardBox) .cardPadder,
+.cardImageContainer,
+.cardPadder {
+    background-color: var(--sw-flaeche) !important;
+}
+
+.cardPadder .cardImageIcon,
+.cardImageContainer .cardImageIcon {
+    color: var(--sw-schrift-sehr-leise) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   Kacheln
+   ---------------------------------------------------------------------
+   Beim Schweben vergroessert sich das Bild leicht — **keine
+   Akzentumrandung:** der Akzent traegt Fortschritt, Auswahl und den
+   Direct-Play-Beleg (E2), und „hier steht der Zeiger" ist keine Auswahl.
+   --------------------------------------------------------------------- */
+
+/* `contain: paint` schneidet die vergroesserte Kachel an ihrer eigenen
+   Kante ab. Ohne diese Zeile waere der Schwebezustand unsichtbar. */
+.card,
+.card:not(.show-animation) {
+    contain: layout style !important;
+}
+
+.card .cardScalable {
+    transition: transform var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.card:hover .cardScalable,
+.card:focus-visible .cardScalable {
+    transform: scale(1.04);
+}
+
+/* Der Auswahlrahmen des Fernsehmodus traegt den Akzent — der Ring zeigt
+   eine Auswahl, das ist dieselbe Regel, nicht ihre Aufweichung. */
+.card:focus .cardBox.visualCardBox,
+.card:focus .cardBox:not(.visualCardBox) .cardScalable {
+    border-color: var(--sw-akzent) !important;
+    border-radius: var(--sw-ecke) !important;
+}
+
+/* Titel unter dem Plakat: 14 medium weiss, darunter 12 regular leise —
+   `Posterkachel` in Sources/macOS/Macbausteine.swift. */
+.cardText {
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift) !important;
+    line-height: 1.35 !important;
+    padding: 0 1px !important;
+}
+
+.cardText-secondary,
+.cardText.cardText-secondary,
+.secondaryText,
+.listItem .secondary,
+.nowPlayingBarSecondaryText,
+.programSecondaryTitle,
+.guide-programNameCaret,
+.fieldDescription {
+    font-size: 12px !important;
+    font-weight: 400 !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.cardFooter {
+    padding: 8px 0 0 !important;
+}
+
+.innerCardFooter {
+    background: linear-gradient(0deg, rgba(11,11,13,.86), rgba(11,11,13,0)) !important;
+    border-radius: 0 0 var(--sw-ecke) var(--sw-ecke) !important;
+}
+
+/* Der Abstand zwischen zwei Kacheln — `Stil.kachelAbstand`. */
+.itemsContainer > .card > .cardBox {
+    margin-right: 12px !important;
+    margin-bottom: 8px !important;
+}
+
+/* Ein Klick auf die Flaeche spielt; das Ueberdecken bleibt zurueckhaltend,
+   und der eine gefuellte Knopf darin ist weiss — die Hauptsache. */
+.cardOverlayContainer {
+    background: rgba(11, 11, 13, .45) !important;
+    transition: opacity var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.cardOverlayContainer > .cardOverlayFab-primary {
+    background-color: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+    box-shadow: none !important;
+}
+
+.cardOverlayContainer > .cardOverlayFab-primary:hover {
+    background-color: rgba(255, 255, 255, .88) !important;
+    transform: scale(1.08) !important;
+    transition: transform var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.cardOverlayButtonIcon {
+    background-color: rgba(11, 11, 13, .72) !important;
+    border: 1px solid var(--sw-rand);
+}
+
+
+/* ---------------------------------------------------------------------
+   H · Zustaende zeigen
+   ---------------------------------------------------------------------
+   Drei Zustaende, drei Zeichen auf einer Kachel (E16): Balken unten =
+   angefangen, Haken oben rechts = gesehen, Zahl oben rechts = offen.
+   **In Weiss auf Dunkel, nicht in Akzent** — eine Plakette ist eine
+   Angabe, keine Auswahl.
+   --------------------------------------------------------------------- */
+
+.playedIndicator,
+.countIndicator,
+.fullSyncIndicator,
+.mediaSourceIndicator {
+    background: rgba(11, 11, 13, .78) !important;
+    color: var(--sw-schrift) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-marke) !important;
+    box-shadow: none !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    min-width: 20px;
+    height: 20px !important;
+    padding: 0 6px !important;
+}
+
+.playedIndicator .material-icons,
+.countIndicator .material-icons {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+}
+
+/* Der Fortschritt liegt **in** der Maske, nicht als Auflage darueber —
+   sonst stehen seine eckigen Enden ueber die runden Ecken hinaus. */
+.itemProgressBar {
+    background: rgba(255, 255, 255, .16) !important;
+    height: 3px !important;
+    border-radius: 0 !important;
+}
+
+.itemProgressBarForeground {
+    background-color: var(--sw-akzent) !important;
+}
+
+.itemProgressBarForeground-recording {
+    background-color: var(--sw-warnung) !important;
+}
+
+/* Ein aktiver Aktionsknopf faerbt sein **Zeichen**, nicht seine Scheibe. */
+.playstatebutton-icon-played,
+.ratingbutton-icon-withrating,
+.buttonActive {
+    color: var(--sw-akzent) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   C · Schrift — die Stufen aus GESTALTUNG.md, Abschnitt C
+   ---------------------------------------------------------------------
+   28 bold Seitentitel · 20 semibold Reihenueberschrift · 17 semibold
+   Blattrubrik · 15 semibold Listenzeile · 15 regular Fliesstext ·
+   14 medium Kacheltitel · 12 regular Zweitzeile · 11 semibold Gruppentitel
+   · 10 semibold Plakette.
+
+   **Koepfe sind linksbuendig, ueberall.** (E9.)
+   --------------------------------------------------------------------- */
+
+.sectionTitle,
+.sectionTitle-cards {
+    font-size: 20px !important;
+    font-weight: 600 !important;
+    color: var(--sw-schrift) !important;
+    letter-spacing: -.2px !important;
+    text-align: left !important;
+}
+
+.verticalSection > .sectionTitleContainer,
+.sectionTitleContainer {
+    margin-bottom: 11px !important;
+}
+
+/* Wie viele Titel hier liegen — eine Angabe, keine Handlung: leise
+   Schrift, kein Kasten. (E27.) */
+.sectionTitleContainer .listPaging,
+.itemCount,
+.libraryPageNumbers {
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift-sehr-leise) !important;
+    font-variant-numeric: tabular-nums;
+}
+
+h1, h2, h3,
+.dialogContentInner h1,
+.formDialogHeaderTitle {
+    color: var(--sw-schrift) !important;
+    text-align: left !important;
+}
+
+.checkboxListLabel,
+.inputLabel,
+.inputLabelUnfocused,
+.paperListLabel,
+.selectLabel,
+.textareaLabelUnfocused {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: 1.2px !important;
+    text-transform: uppercase !important;
+    color: var(--sw-schrift-sehr-leise) !important;
+}
+
+.inputLabelFocused,
+.selectLabelFocused,
+.textareaLabelFocused {
+    color: var(--sw-akzent) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   I · Steuern — Knoepfe, Chips, Reiter
+   ---------------------------------------------------------------------
+   **Eine Seite hat hoechstens eine gefuellte Flaeche, und die ist die
+   Hauptsache.** Alles andere ist Schrift, Zeichen und Haarlinie.
+   --------------------------------------------------------------------- */
+
+.emby-button {
+    border-radius: var(--sw-ecke) !important;
+    font-weight: 600 !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus),
+                color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+/* Der eine Hauptknopf je Seite: weiss, dunkle Schrift, 48 hoch.
+   `Hauptknopf` in Sources/macOS/Macbausteine.swift. */
+.button-submit,
+.emby-button.button-submit {
+    background: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+    border-radius: var(--sw-ecke) !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    min-height: 48px !important;
+    padding: 0 30px !important;
+}
+
+.button-submit:hover {
+    background: rgba(255, 255, 255, .88) !important;
+    color: var(--sw-grund) !important;
+}
+
+.button-submit:focus {
+    background: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+}
+
+/* Nebenknopf: keine zweite gefuellte Flaeche, sondern Weiss 14 Prozent —
+   `Nebenknopf` in Sources/macOS/Kulisse.swift. */
+.raised,
+.fab,
+a[data-role=button],
+.emby-scrollbuttons {
+    background: rgba(255, 255, 255, .14) !important;
+    color: var(--sw-schrift) !important;
+    border-radius: var(--sw-ecke) !important;
+    box-shadow: none !important;
+    font-weight: 600 !important;
+}
+
+.raised:hover,
+.fab:hover,
+a[data-role=button]:hover {
+    background: rgba(255, 255, 255, .22) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.raised:focus,
+.fab:focus,
+a[data-role=button]:focus {
+    background: rgba(255, 255, 255, .22) !important;
+    color: var(--sw-schrift) !important;
+}
+
+/* Loeschen ist warnend, nicht rot gefuellt — dieselbe Rolle wie
+   `Handlungszeile(warnend:)`. */
+.button-delete {
+    background: rgba(232, 131, 58, .14) !important;
+    color: var(--sw-warnung) !important;
+}
+
+.button-delete:hover {
+    background: rgba(232, 131, 58, .24) !important;
+    color: var(--sw-warnung) !important;
+}
+
+.button-flat,
+.button-link {
+    color: var(--sw-schrift-leise) !important;
+    border-radius: var(--sw-ecke) !important;
+}
+
+.button-flat:hover,
+.button-link:hover {
+    color: var(--sw-schrift) !important;
+    background: var(--sw-schweben) !important;
+}
+
+/* Ein nacktes Zeichen. Schweben legt Weiss darunter — nicht den Akzent:
+   „hier steht der Zeiger" ist keine Auswahl. */
+.paper-icon-button-light {
+    color: var(--sw-schrift) !important;
+    border-radius: 50% !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus),
+                color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.paper-icon-button-light:hover:not(:disabled),
+.paper-icon-button-light:active:not(:disabled) {
+    background-color: rgba(255, 255, 255, .08) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.paper-icon-button-light.show-focus:focus {
+    color: var(--sw-akzent) !important;
+}
+
+.emby-button.show-focus:focus {
+    background: rgba(var(--sw-akzent-kanal), .16) !important;
+    color: var(--sw-akzent) !important;
+    transform: none !important;
+}
+
+/* --- Chips: Filter und Sortierung ---
+   Aktiv ist er weiss mit dunkler Schrift — dieselbe Form wie der
+   Hauptknopf, eine Nummer kleiner. Sonst nur eine Kapsel aus Haarlinie. */
+.emby-tab-button {
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: 999px !important;
+    height: 28px !important;
+    line-height: 26px !important;
+    padding: 0 12px !important;
+    margin: 0 8px 0 0 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    color: var(--sw-schrift-leise) !important;
+    background: transparent !important;
+    transition: background-color var(--sw-zeit-umschalten) var(--sw-kurve-aus),
+                color var(--sw-zeit-umschalten) var(--sw-kurve-aus),
+                border-color var(--sw-zeit-umschalten) var(--sw-kurve-aus) !important;
+}
+
+.emby-tab-button:hover {
+    background: var(--sw-schweben) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.emby-tab-button-active,
+.emby-tab-button.emby-tab-button-active {
+    background: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+    border-color: transparent !important;
+    font-weight: 600 !important;
+}
+
+.emby-tab-button.show-focus:focus {
+    transform: none !important;
+    background: var(--sw-schweben) !important;
+}
+
+.emby-tabs-slider {
+    padding: 4px 0 !important;
+}
+
+/* Blaetterpfeile an einer waagerechten Reihe — 34er Kreis auf dunklem
+   Grund mit Haarlinienrand, wie `Blaetterreihe`. */
+.emby-scrollbuttons {
+    background: transparent !important;
+}
+
+.emby-scrollbuttons .paper-icon-button-light,
+.emby-scrollbuttons-button {
+    width: 34px !important;
+    height: 34px !important;
+    background: rgba(11, 11, 13, .72) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: 50% !important;
+    color: var(--sw-schrift) !important;
+    margin: 0 3px !important;
+}
+
+.alphaPickerButton {
+    color: var(--sw-schrift-sehr-leise) !important;
+    border-radius: var(--sw-ecke) !important;
+}
+
+.alphaPickerButton-selected {
+    color: var(--sw-akzent) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   L · Formulare und Einstellungen
+   ---------------------------------------------------------------------
+   Flache Zeilen mit Haarlinien, Gruppen nur durch Leerraum und einen
+   kleinen gesperrten Titel getrennt. Keine Karten.
+   --------------------------------------------------------------------- */
+
+.emby-input,
+.emby-textarea,
+.emby-select,
+.emby-select-withcolor {
+    background: var(--sw-flaeche) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-feld) !important;
+    color: var(--sw-schrift) !important;
+    font-size: 15px !important;
+    min-height: 38px !important;
+    padding: 0 12px !important;
+    box-shadow: none !important;
+    transition: border-color .15s var(--sw-kurve-einaus) !important;
+}
+
+.emby-textarea {
+    padding: 10px 12px !important;
+    line-height: 1.5 !important;
+}
+
+.emby-input:focus,
+.emby-textarea:focus,
+.emby-select:focus,
+.emby-select-withcolor:focus {
+    border-color: rgba(var(--sw-akzent-kanal), .5) !important;
+    outline: none !important;
+}
+
+.emby-select-withcolor > option,
+.emby-select > option {
+    background: var(--sw-erhoeht) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.emby-input::placeholder,
+.emby-textarea::placeholder {
+    color: var(--sw-schrift-sehr-leise) !important;
+}
+
+/* --- Der Schalter ---
+   Kein Systemhaken: Kapsel 38 x 22, Knopf 16, Akzent wenn an, und der
+   Knopf wird dann dunkel. `Schalter` in Sources/macOS/Einstellungszeilen.swift. */
+.checkboxOutline {
+    /* Luft zur Beschriftung. Jellyfin stellt den Haken dicht daneben, weil
+       er dort quadratisch und schmal war; als Kapsel von 38 klebt er. */
+    margin-left: 12px !important;
+    width: 38px !important;
+    height: 22px !important;
+    min-width: 38px !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: rgba(255, 255, 255, .14) !important;
+    position: relative !important;
+    transition: background-color var(--sw-zeit-umschalten) var(--sw-kurve-aus) !important;
+}
+
+.checkboxOutline > .material-icons,
+.checkboxOutline > span {
+    display: none !important;
+}
+
+.checkboxOutline::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--sw-schrift);
+    transition: transform var(--sw-zeit-umschalten) var(--sw-kurve-aus),
+                background-color var(--sw-zeit-umschalten) var(--sw-kurve-aus);
+}
+
+.emby-checkbox:checked + span + .checkboxOutline {
+    background: var(--sw-akzent) !important;
+    border-color: transparent !important;
+}
+
+.emby-checkbox:checked + span + .checkboxOutline::after {
+    transform: translateX(16px);
+    background: var(--sw-grund);
+}
+
+.emby-checkbox:focus + span + .checkboxOutline,
+.emby-checkbox:focus:not(:checked) + span + .checkboxOutline {
+    border-color: transparent !important;
+    box-shadow: 0 0 0 2px rgba(var(--sw-akzent-kanal), .35);
+}
+
+.checkboxLabel {
+    font-size: 15px !important;
+    color: var(--sw-schrift) !important;
+}
+
+/* Listenzeilen: 15 halbfett, Haarlinie darunter, beim Schweben Weiss 5 %. */
+.listItem {
+    border-radius: var(--sw-ecke) !important;
+    min-height: 44px !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.listItem:hover {
+    background-color: rgba(255, 255, 255, .05) !important;
+}
+
+.listItem:focus {
+    background-color: var(--sw-schweben) !important;
+    border-radius: var(--sw-ecke) !important;
+}
+
+.listItem-border {
+    border-color: var(--sw-linie) !important;
+}
+
+.listItemBodyText {
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift) !important;
+}
+
+.listItemBodyText.secondary {
+    font-size: 12px !important;
+    font-weight: 400 !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.listItemImage,
+.listItemIcon {
+    border-radius: var(--sw-ecke) !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.emby-collapsible-button {
+    border-color: var(--sw-linie) !important;
+}
+
+.infoBanner {
+    background: var(--sw-flaeche) !important;
+    color: var(--sw-schrift) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-flaeche) !important;
+}
+
+.itemSelectionPanel {
+    border-color: var(--sw-akzent) !important;
+}
+
+.selectionCommandsPanel {
+    background: var(--sw-erhoeht) !important;
+    color: var(--sw-schrift) !important;
+    border-bottom: 1px solid var(--sw-linie);
+}
+
+.selectionCommandsPanel .paper-icon-button-light:not(:disabled) {
+    color: var(--sw-schrift) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   F · Blaetter — Dialoge, Aktionslisten, Meldungen
+   ---------------------------------------------------------------------
+   Obere Ecken 16, Schleier 0,55. Bewegung: Feder 0,35 / 0,86 — im Browser
+   die naechstliegende Kurve dazu.
+   --------------------------------------------------------------------- */
+
+.dialog,
+.formDialog {
+    background-color: var(--sw-flaeche) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-flaeche) !important;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .55) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.formDialogHeader:not(.formDialogHeader-clear) {
+    background-color: transparent !important;
+    border-bottom: 1px solid var(--sw-linie) !important;
+}
+
+.formDialogFooter:not(.formDialogFooter-clear) {
+    background-color: transparent !important;
+    border-top: 1px solid var(--sw-linie) !important;
+}
+
+/* Der Schleier eines Blattes: 0,55 — GESTALTUNG, Abschnitt F. */
+.dialogBackdrop {
+    background-color: rgba(0, 0, 0, .55) !important;
+}
+
+.dialogBackdropOpened {
+    opacity: 1 !important;
+}
+
+/* Die Handlungsliste klappt an Ort und Stelle auf — `erhoeht`, Ecke 12,
+   Haarlinienrand, Schatten. `Handlungsliste` in Macbausteine.swift. */
+.actionSheet,
+.actionSheetContent {
+    background: var(--sw-erhoeht) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-feld) !important;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, .40) !important;
+}
+
+.actionSheetMenuItem,
+.actionsheetMenuItem {
+    border-radius: 0 !important;
+    min-height: var(--sw-zeile) !important;
+    font-size: 15px !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.actionSheetMenuItem:hover,
+.actionsheetMenuItem:hover {
+    background: var(--sw-schweben) !important;
+}
+
+.actionsheetDivider {
+    background: var(--sw-linie) !important;
+}
+
+/* Eine kurze Meldung, die sich von selbst zurueckzieht — Kapsel,
+   `erhoeht`, Haarlinienrand. `Hinweisstreifen`. */
+.toast {
+    background: var(--sw-erhoeht) !important;
+    color: var(--sw-schrift) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: 999px !important;
+    font-size: 12px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45) !important;
+}
+
+.appfooter,
+.playlistSectionButton {
+    background: var(--sw-flaeche) !important;
+    color: var(--sw-schrift-leise) !important;
+    border-top: 1px solid var(--sw-linie) !important;
+}
+
+.upNextDialog-countdownText {
+    color: var(--sw-akzent) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   K · Die Detailseite
+   ---------------------------------------------------------------------
+   Film und Serie tragen denselben Kopf. Titel 34 fett mit Sperrung -0,8,
+   darunter eine Zeile Angaben, dann drei Zeilen Beschreibung, dann die
+   Knopfreihe.
+   --------------------------------------------------------------------- */
+
+.itemName,
+.itemName.infoText {
+    font-size: 34px !important;
+    font-weight: 700 !important;
+    letter-spacing: -.8px !important;
+    color: var(--sw-schrift) !important;
+}
+
+.parentName {
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift-leise) !important;
+    letter-spacing: 0 !important;
+}
+
+.itemMiscInfo,
+.mediaInfoItem {
+    font-size: 14px !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+/* Freigabe und Technikangabe: Plakette, 10 halbfett, Ecke 8 —
+   eine Marke folgt ihrem Untergrund. */
+.mediaInfoText,
+.mediaInfoOfficialRating,
+.mediaInfoCriticRating {
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-plakette) !important;
+    padding: 1px 6px !important;
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.overview,
+.detailSectionContent,
+.detailPageContent p {
+    font-size: 15px !important;
+    line-height: 1.55 !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+/* Die Aktionsreihe: Kreis 44, Zeichen 18, gefuellt mit Weiss 9 %, beim
+   Schweben 16 %; darunter der Name in 11 auf 75 %. `Detailaktion`. */
+.detailButton {
+    padding: 0 !important;
+    margin: 0 12px 0 0 !important;
+    background: transparent !important;
+    border-radius: var(--sw-ecke) !important;
+}
+
+.detailButton-content {
+    gap: 7px;
+}
+
+.detailButton-icon,
+.detailButton .material-icons {
+    width: 44px !important;
+    height: 44px !important;
+    line-height: 44px !important;
+    font-size: 18px !important;
+    border-radius: 50% !important;
+    background: rgba(255, 255, 255, .09) !important;
+    color: var(--sw-schrift) !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.detailButton:hover .detailButton-icon,
+.detailButton:hover .material-icons {
+    background: var(--sw-schweben-stark) !important;
+}
+
+.detailButton-text {
+    font-size: 11px !important;
+    font-weight: 400 !important;
+    margin-top: 0 !important;
+    color: rgba(255, 255, 255, .75) !important;
+}
+
+.itemDetailImage {
+    border-radius: var(--sw-ecke) !important;
+}
+
+/* --- Die Kulisse ---
+   Rechts, nicht ueber die volle Breite, und mit einer **Maske** statt
+   eines Anstrichs ausgeblendet: ein Anstrich endet in undurchsichtigem
+   `grund` und setzt damit voraus, dass der Hintergrund genau das ist.
+   Die Kurven stammen unveraendert aus `Kulissenblende`. */
+.itemBackdrop {
+    animation: none !important;
+    background-attachment: scroll !important;
+}
+
+/* Jellyfins eigener Verlauf darueber faellt weg — zwei Verlaeufe
+   uebereinander ergeben den Knick, den man als Linie sieht. */
+.layout-mobile .itemBackdrop:before {
+    display: none !important;
+}
+
+/* **Der Inhaltsbehaelter war die harte Kante unten.**
+   Er ist deckend und beginnt direkt unter dem Heldbild — gemessen ab
+   y 408. Damit war das Bild dort abgeschnitten, egal wie hoch ich es
+   mache; im Entwurf reicht die Kulisse bis unter die Knopfreihe.
+
+   Durchsichtig gestellt, uebernimmt der Verlauf das Ausblenden: wo er
+   bei `grund` angekommen ist, sieht die Seite genauso aus wie vorher —
+   nur ohne Kante. Das ist derselbe Gedanke wie auf dem Mac, wo die
+   Kulisse ueber die Kopfzone hinausragt und ihre eigene Blende sie
+   beendet. */
+.detailPageWrapperContainer,
+.noBackdropTransparency .detailPageWrapperContainer {
+    background-color: transparent !important;
+    background-image: none !important;
+}
+
+.trackSelections .selectContainer {
+    max-width: 420px;
+}
+
+
+/* ---------------------------------------------------------------------
+   E · Bewegung
+   ---------------------------------------------------------------------
+   **Nichts erscheint hart.** (E18.) Bilder blenden ein, Inhalt loest
+   Platzhalter ab. Der Wert ist derselbe wie in `Stil.einblenden`.
+   --------------------------------------------------------------------- */
+
+.lazy-image-fadein {
+    animation: sw-einblenden var(--sw-einblenden) var(--sw-kurve-einaus) !important;
+}
+
+.lazy-image-fadein-fast {
+    animation: sw-einblenden .12s var(--sw-kurve-einaus) !important;
+}
+
+@keyframes sw-einblenden {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* Wer Bewegung abbestellt hat, bekommt keine. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+    }
+}
+
+
+/* ---------------------------------------------------------------------
+   G · Laden
+   ---------------------------------------------------------------------
+   **Der Ladering kommt in der Oberflaeche nicht vor — nur im Player.**
+   (E17.) Ein drehender Ring sagt „warte" und sonst nichts: nicht was
+   kommt, nicht wie viel. An seiner Stelle steht ein Ladefeld in der Form
+   des kommenden Inhalts.
+
+   Das Pulsieren laeuft ueber `opacity` — das uebernimmt der
+   Kompositor und rechnet ohne Zutun weiter.
+
+   Wer den Ring behalten will, kommentiert den Block `.docspinner` aus.
+   --------------------------------------------------------------------- */
+
+.docspinner {
+    display: none !important;
+}
+
+@keyframes sw-puls {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .5; }
+}
+
+/* Solange das Plakat noch nicht da ist, steht seine Flaeche da — die
+   Seite ist dann leer, nicht am Warten.
+
+   **Nur, was wirklich noch laedt.** `.lazy` traegt ein Bild, das der
+   Nachlader noch vor sich hat; sobald es da ist, kommt `lazy-image-fadein`
+   dazu. Ohne die zweite Bedingung pulsierte jede Kachel weiter, auch die
+   fertige — dreissig Uhren auf einer Seite, die niemand sieht. */
+.cardImageContainer.lazy:not(.lazy-image-fadein):not(.lazy-image-fadein-fast) {
+    animation: sw-puls 1.8s var(--sw-kurve-einaus) infinite;
+}
+
+.cardImageContainer.lazy-image-fadein,
+.cardImageContainer.lazy-image-fadein-fast {
+    animation: sw-einblenden var(--sw-einblenden) var(--sw-kurve-einaus) !important;
+}
+
+/* Der Ring, den es noch gibt, traegt den Akzent: er zeigt einen Zustand. */
+.mdl-spinner__layer-1,
+.mdl-spinner__layer-2,
+.mdl-spinner__layer-3,
+.mdl-spinner__layer-4,
+.progressring-spiner {
+    border-color: var(--sw-akzent) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   M · Der Player
+   ---------------------------------------------------------------------
+   Hier — und nur hier — darf ein Ring stehen. Die Steuerung liegt auf
+   einem Verlauf in `grund`, nicht auf Glas.
+   --------------------------------------------------------------------- */
+
+.videoOsdBottom {
+    background: linear-gradient(0deg,
+                    rgba(11, 11, 13, .88) 0%,
+                    rgba(11, 11, 13, 0)  100%) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.osdTitle {
+    font-size: 17px !important;
+    font-weight: 600 !important;
+    color: var(--sw-schrift) !important;
+}
+
+.osdMediaInfo,
+.osdTimeText {
+    font-size: 13px !important;
+    color: var(--sw-schrift-leise) !important;
+    font-variant-numeric: tabular-nums;
+}
+
+.osdPoster img {
+    border-radius: var(--sw-ecke) !important;
+}
+
+.videoOsdBottom .paper-icon-button-light {
+    color: var(--sw-schrift) !important;
+}
+
+/* Der Regler: Akzent fuer das Gespielte, Weiss 16 % fuer den Rest. */
+.mdl-slider::-webkit-slider-thumb {
+    background: var(--sw-schrift) !important;
+    border: 0 !important;
+}
+
+.mdl-slider::-moz-range-thumb {
+    background: var(--sw-schrift) !important;
+    border: 0 !important;
+}
+
+.mdl-slider-background-lower {
+    background-color: var(--sw-akzent) !important;
+}
+
+.mdl-slider-background-upper {
+    background-color: rgba(255, 255, 255, .16) !important;
+}
+
+.sliderBubble {
+    background: var(--sw-erhoeht) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-plakette) !important;
+    color: var(--sw-schrift) !important;
+    font-size: 12px !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   Kleinkram, der sonst herausfaellt
+   --------------------------------------------------------------------- */
+
+/* Jellyfins bunte Ersatzflaechen fuer Titel ohne Bild — bei uns ist ein
+   fehlendes Bild eine leere Flaeche, kein Farbklecks. */
+.defaultCardBackground1,
+.defaultCardBackground2,
+.defaultCardBackground3,
+.defaultCardBackground4,
+.defaultCardBackground5 {
+    background-color: var(--sw-flaeche) !important;
+}
+
+.metadataSidebarIcon {
+    color: var(--sw-akzent) !important;
+}
+
+.searchfields-icon {
+    color: var(--sw-schrift-sehr-leise) !important;
+}
+
+/* Der Fernsehmodus faerbt beim Fokus ganze Flaechen im Akzent. Auf einem
+   Bildschirm mit Zeiger ist das zu laut — dort zeigt der Rand die Wahl. */
+.guide-channelHeaderCell:focus,
+.programCell:focus {
+    background-color: rgba(var(--sw-akzent-kanal), .16) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.channelPrograms,
+.guide-channelHeaderCell,
+.programCell {
+    border-color: var(--sw-linie) !important;
+}
+
+.programCell-active {
+    background: var(--sw-flaeche) !important;
+}
+
+#bookPlayer,
+#comicsPlayer,
+#pdfPlayer,
+#dialogToc {
+    background-color: var(--sw-grund) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   N · Die React-Seiten (MUI)
+   ---------------------------------------------------------------------
+   Jellyfin 10.11 baut einen wachsenden Teil der Oberflaeche mit MUI —
+   Anmeldung, Teile des Dashboards. Diese Seiten tragen keine
+   `emby-`-Klassen; sie ziehen ihre Farben aus der Palette oben und ihre
+   Formen aus MUIs eigenen Vorgaben.
+
+   Die Palette ist damit schon erledigt. Hier stehen nur die **Formen**,
+   die MUI selbst mitbringt und die nicht zur Eckenskala passen.
+   --------------------------------------------------------------------- */
+
+/* MUI legt im Dunkelmodus je Erhebung einen hellen Schleier ueber das
+   Papier. Genau die Schicht, die aus unserem Grund einen grauen Block
+   macht — GESTALTUNG D, „Kein Glas". */
+.MuiPaper-root {
+    background-image: none !important;
+}
+
+.MuiPaper-rounded {
+    border-radius: var(--sw-ecke-flaeche) !important;
+}
+
+.MuiAppBar-root {
+    background-color: var(--sw-grund) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    border-bottom: 1px solid var(--sw-linie) !important;
+}
+
+/* Beschriftungen bleiben, wie sie geschrieben sind. Versalien tragen bei
+   uns nur Gruppentitel in 11 — ein Knopf ist keiner. */
+.MuiButton-root {
+    border-radius: var(--sw-ecke) !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+}
+
+.MuiButton-contained,
+.MuiButton-containedPrimary {
+    background-color: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+    box-shadow: none !important;
+}
+
+.MuiButton-contained:hover,
+.MuiButton-containedPrimary:hover {
+    background-color: rgba(255, 255, 255, .88) !important;
+    box-shadow: none !important;
+}
+
+.MuiButton-outlined {
+    border-color: var(--sw-rand) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.MuiOutlinedInput-root,
+.MuiFilledInput-root,
+.MuiInputBase-root {
+    border-radius: var(--sw-ecke-feld) !important;
+    background-color: var(--sw-flaeche) !important;
+    color: var(--sw-schrift) !important;
+}
+
+.MuiOutlinedInput-notchedOutline {
+    border-color: var(--sw-rand) !important;
+    border-width: 1px !important;
+}
+
+.Mui-focused .MuiOutlinedInput-notchedOutline {
+    border-color: rgba(var(--sw-akzent-kanal), .5) !important;
+    border-width: 1px !important;
+}
+
+.MuiChip-root {
+    border-radius: 999px !important;
+    background-color: transparent !important;
+    border: 1px solid var(--sw-rand) !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.MuiCard-root,
+.MuiDialog-paper,
+.MuiMenu-paper,
+.MuiPopover-paper {
+    background-color: var(--sw-erhoeht) !important;
+    border: 1px solid var(--sw-rand) !important;
+    border-radius: var(--sw-ecke-flaeche) !important;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .55) !important;
+}
+
+.MuiMenuItem-root:hover,
+.MuiListItemButton-root:hover {
+    background-color: var(--sw-schweben) !important;
+}
+
+.MuiDivider-root {
+    border-color: var(--sw-linie) !important;
+}
+
+/* Der Fortschrittsbalken und der Ring tragen den Akzent — Zustand. */
+.MuiLinearProgress-bar,
+.MuiCircularProgress-circle {
+    background-color: var(--sw-akzent) !important;
+    color: var(--sw-akzent) !important;
+    stroke: var(--sw-akzent) !important;
+}
+
+.MuiLinearProgress-root {
+    background-color: rgba(255, 255, 255, .16) !important;
+    border-radius: 999px !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   O · Aufbau — die Seiten auf die Mac-Fassung bringen
+   ---------------------------------------------------------------------
+   Bis hierher hat das Thema **gefaerbt und geformt**. Das reicht nicht:
+   Jellyfin stellt die Dinge anders hin als Swiftly, und Farbe allein
+   macht aus einem anderen Aufbau keinen gleichen.
+
+   Die Mittel dafuer sind bei ElegantFin und Ultrachromic abgeschaut —
+   `flex-direction` auf vorhandenen Behaeltern, `:has()` fuer „wenn die
+   Seite dieses Stueck enthaelt", und `.layout-desktop` als Schranke.
+   Nichts davon ist geraten; die Selektoren stehen in den ausgelieferten
+   Stilblaettern.
+
+   **Alles hier gilt nur auf `layout-desktop`.** Ein Fenster mit Zeiger
+   ist der Fall, fuer den die Mac-Fassung gebaut ist. Auf dem Telefon
+   bleibt Jellyfins eigener Aufbau stehen — dort waere die Mac-Fassung
+   die falsche Vorlage.
+   --------------------------------------------------------------------- */
+
+
+/* --- Der Seitenrand ---
+   Jellyfin rueckt mit 3,3 Prozent ein, also mit der Fensterbreite. Der
+   Mac hat einen festen Rand von 24, und die Kacheln darunter beginnen
+   auf derselben Linie wie die Ueberschrift darueber. */
+.layout-desktop [dir=ltr] .padded-left {
+    padding-left: var(--sw-rand-abstand) !important;
+}
+
+.layout-desktop [dir=ltr] .padded-right {
+    padding-right: var(--sw-rand-abstand) !important;
+}
+
+.layout-desktop .emby-scroller,
+.layout-desktop .scrollX {
+    padding-left: var(--sw-rand-abstand) !important;
+}
+
+
+/* --- Feste Kachelmasse ---
+   **Der eine Punkt, an dem der Mac wirklich anders rechnet.** Jellyfin
+   teilt die Zeile in Prozente: acht Plakate auf einem breiten Schirm,
+   drei auf einem schmalen — die Kachel waechst also mit dem Fenster.
+
+   Swiftly macht es andersherum: die Kachel ist 150 x 225, und die
+   Spaltenzahl ergibt sich daraus (`BibliothekView`, Kommentar dort).
+   Ein Plakat sieht auf jedem Schirm gleich gross aus.
+
+   Querkachel 280 x 158 — 16 : 9, nur fuer „Weiterschauen". */
+.layout-desktop .portraitCard,
+.layout-desktop .overflowPortraitCard,
+.layout-desktop .squareCard,
+.layout-desktop .overflowSquareCard {
+    width: var(--sw-kachel-breite) !important;
+}
+
+.layout-desktop .backdropCard,
+.layout-desktop .overflowBackdropCard {
+    width: var(--sw-quer-breite) !important;
+}
+
+/* Der Abstand zwischen zwei Kacheln — `Stil.kachelAbstand`. */
+.layout-desktop .itemsContainer > .card > .cardBox {
+    margin-right: var(--sw-kachel-abstand) !important;
+}
+
+
+/* --- Die Detailseite ---
+   Auf dem Mac steht sie so: Titel, Angabenzeile, drei Zeilen
+   Beschreibung, Knopfreihe — **untereinander, alles linksbuendig**, und
+   das Bild liegt rechts dahinter. Jellyfin stellt die Knoepfe neben den
+   Titel und ein Plakat davor.
+
+   `flex-direction: column` auf dem Band ist derselbe Griff, den
+   ElegantFin benutzt. Er baut nichts um, er dreht nur die Achse. */
+.layout-desktop .detailPagePrimaryContainer > .detailRibbon,
+.layout-desktop .detailPagePrimaryContainer.detailRibbon {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    /* **Und das Band muss mitwachsen.**
+       Jellyfin gibt ihm eine feste Hoehe — dort ist es eine *Zeile*, und
+       eine Zeile ist so hoch wie ihr hoechstes Stueck. Auf `column`
+       gedreht wird der Inhalt hoeher, die Box nicht: die Knopfreihe lief
+       aus dem Kasten heraus, und alles darunter zeichnete darueber.
+
+       Gemessen an einer Folge: Box 107 hoch, Inhalt bis 558, und
+       `.detailPagePrimaryContent` begann bei 425. Mit `height: auto`
+       endet das Band bei 584 und der Inhalt beginnt dort — 26 Punkt
+       Luft statt 133 Punkt Ueberlappung.
+
+       **Warum ich das nicht gesehen habe:** ich hatte berechnete Werte
+       abgefragt (`flexDirection`, `fontSize`) und daraus geschlossen, es
+       sitze. Ob sich zwei Kaesten ueberlagern, sagt nur ihre Geometrie. */
+    height: auto !important;
+    min-height: 0 !important;
+    padding-bottom: 26px !important;
+}
+
+/* **Kein Plakat.** Auf dem Apple TV ist es weggefallen, weil es nur den
+   Fortschrittsbalken trug — und der steht jetzt dort, wo er auf jeder
+   anderen Kachel auch steht. Der Mac hat es nie gehabt.
+
+   Ausgenommen sind die Seiten, auf denen das Bild **die Sache selbst**
+   ist: eine Person, ein Album, ein Buch. Dort traegt es keine Auskunft
+   doppelt, dort ist es der Gegenstand. */
+.layout-desktop #itemDetailPage .detailImageContainer:not(:has(.person)):not(:has(.album)):not(:has(.book)) {
+    display: none !important;
+}
+
+/* **Der Titel steht als Schrift da, nicht als Bild.** Jellyfin blendet
+   auf der Detailseite das Logo des Titels ein, wo es eines gibt. Das
+   sieht auf jeder Seite anders aus — mal breit, mal hoch, mal in einer
+   fremden Schrift —, und genau das ist der Grund, warum Swiftly den
+   Namen setzt. Ein Kopf, der auf jeder Seite an derselben Stelle
+   beginnt, ist mehr wert als ein huebsches Logo. */
+.layout-desktop .detailLogo {
+    display: none !important;
+}
+
+.layout-desktop .detailLogo:not(.hide) ~ .detailPageWrapperContainer .nameContainer h1,
+.layout-desktop .nameContainer h1.itemName {
+    display: block !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer > .detailPagePrimaryContent,
+.layout-desktop [dir=ltr] .detailPagePrimaryContainer > .detailRibbon {
+    padding-left: var(--sw-rand-abstand) !important;
+}
+
+/* Die Beschreibung: drei Zeilen, dann Schluss. Auf dem Mac ist die Hoehe
+   fest, damit die Knopfreihe auf **jeder** Seite an derselben Stelle
+   steht — sonst wandert sie von Film zu Film. */
+.layout-desktop #itemDetailPage .overview {
+    max-width: 640px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.layout-desktop .mainDetailButtons > .detailButton {
+    /* **Der Knopf traegt selbst `padding: 0 .85em`.** Zusammen mit dem
+       Abstand der Reihe sind das sichtbar 36 statt 12 — Paul: „button
+       abstaende immernoch zu hoch". Meine Messung stimmte und war
+       trotzdem falsch: ich habe die Kaesten gemessen, nicht das Bild. */
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.layout-desktop .mainDetailButtons {
+    gap: 8px !important;
+    margin: 18px 0 0 !important;
+}
+
+/* **Der eine gefuellte Knopf der Seite** — Abspielen oder Fortsetzen.
+   Weiss, dunkle Schrift, Ecke 10, 48 hoch, Zeichen und Beschriftung
+   nebeneinander. Genau `Hauptknopf` aus Macbausteine.swift.
+
+   **Und die Beschriftung kommt aus Jellyfins eigenem Attribut.** Die
+   Knoepfe tragen nur ein Zeichen; der Name steht im `title`, weil ihn
+   sonst niemand vorlesen koennte. `content: attr(title)` holt ihn
+   heraus — kein Skript noetig, und er ist automatisch uebersetzt, weil
+   Jellyfin ihn uebersetzt.
+
+   **Ueber die Klasse angesprochen, nicht ueber die Stellung.** Hier stand
+   `:first-child`, weil ich die Klassennamen von 10.11 nicht kannte. Am
+   laufenden Client nachgesehen heisst der Knopf `.btnPlay` — und in der
+   Reihe stehen zwoelf Knoepfe, von denen acht `hide` tragen. Eine
+   Positionsangabe waere frueher oder spaeter auf den falschen gefallen. */
+.layout-desktop .mainDetailButtons > .btnPlay {
+    background: var(--sw-schrift) !important;
+    color: var(--sw-grund) !important;
+    border-radius: var(--sw-ecke) !important;
+    height: var(--sw-hauptknopf) !important;
+    /* **Feste Breite, 200.** `Stil.hauptknopfBreite` auf dem Mac. Sonst
+       richtet sich der Rest der Reihe nach der Laenge der Beschriftung,
+       und „Fortsetzen" steht anders als „Abspielen". */
+    min-width: var(--sw-hauptknopf-breite) !important;
+    justify-content: center !important;
+    padding: 0 22px !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 9px;
+}
+
+.layout-desktop .mainDetailButtons > .btnPlay:hover {
+    background: rgba(255, 255, 255, .88) !important;
+}
+
+.layout-desktop .mainDetailButtons > .btnPlay::after {
+    content: attr(title);
+    font-size: 16px;
+    font-weight: 600;
+    color: inherit;
+    white-space: nowrap;
+}
+
+.layout-desktop .mainDetailButtons > .btnPlay .detailButton-icon,
+.layout-desktop .mainDetailButtons > .btnPlay .material-icons {
+    background: transparent !important;
+    color: inherit !important;
+    width: auto !important;
+    height: auto !important;
+    line-height: 1 !important;
+    font-size: 22px !important;
+    border-radius: 0 !important;
+}
+
+/* Alles daneben ist Nebenknopf: abgerundetes Quadrat, Weiss 14 %,
+   **kein Kreis** — so steht es auf dem Mac (`Nebenknopf`). */
+.layout-desktop .mainDetailButtons > .detailButton:not(.btnPlay) .detailButton-icon,
+.layout-desktop .mainDetailButtons > .detailButton:not(.btnPlay) .material-icons {
+    width: var(--sw-hauptknopf) !important;
+    height: var(--sw-hauptknopf) !important;
+    line-height: var(--sw-hauptknopf) !important;
+    border-radius: var(--sw-ecke) !important;
+    background: rgba(255, 255, 255, .14) !important;
+    font-size: 20px !important;
+    color: var(--sw-schrift) !important;
+    transition: background-color var(--sw-zeit-schweben) var(--sw-kurve-aus) !important;
+}
+
+.layout-desktop .mainDetailButtons > .detailButton:not(.btnPlay):hover .detailButton-icon,
+.layout-desktop .mainDetailButtons > .detailButton:not(.btnPlay):hover .material-icons {
+    background: rgba(255, 255, 255, .22) !important;
+}
+
+/* Ein aktiver Knopf faerbt sein **Zeichen**, nicht seine Flaeche (E2). */
+.layout-desktop .mainDetailButtons .playstatebutton-icon-played,
+.layout-desktop .mainDetailButtons .ratingbutton-icon-withrating {
+    color: var(--sw-akzent) !important;
+}
+
+
+/* --- Die Reihenfolge auf der Detailseite ---
+   Im Entwurf steht: Titel, Angaben, **Beschreibung**, Knopfreihe. Jellyfin
+   stellt: Titel, Angaben, Knopfreihe | Spurwahl, Beschreibung — und zwar
+   in **vier ineinander liegenden Kaesten**:
+
+       .detailPagePrimaryContainer
+         .detailRibbon              Titel, Angaben, Knoepfe
+         .detailPagePrimaryContent
+           .detailSection           Spurwahl, Inhalt, Gruppen, Reihen
+             .detailSectionContent  Genres, Beschreibung, Marken, Verweise
+
+   CSS kann nichts von einem Kasten in den anderen schieben. Der eine
+   Griff, der hilft, ist `display: contents`: er loest einen Kasten auf,
+   sodass seine Kinder zu Geschwistern der uebrigen werden. Alle vier
+   aufgeloest, wird der aeussere Behaelter zur einen Spalte, und die
+   Reihenfolge laesst sich frei setzen.
+
+   **Jedes Stueck braucht eine Nummer.** Wer keine bekommt, hat 0 und
+   rutscht vor alles. Beim ersten Versuch stand deshalb der Titel unter
+   der Beschreibung und die Besetzung war verschwunden. Deswegen die
+   Auffangnummer 30 auf allen Kindern der aufgeloesten Kaesten.
+
+   **Und die Polster wandern mit.** `.detailRibbon` trug `0 24px 26px`
+   und einen Aussenabstand von -107 nach oben, `.detailPagePrimaryContent`
+   trug `18.6px 24px 0`. Beide Kaesten gibt es nicht mehr; ihre Werte
+   stehen jetzt an den Stuecken selbst. */
+
+.layout-desktop .detailPagePrimaryContainer {
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer > .detailRibbon,
+.layout-desktop .detailPagePrimaryContainer > .detailPagePrimaryContent,
+.layout-desktop .detailPagePrimaryContainer .detailSection,
+.layout-desktop .detailPagePrimaryContainer .detailSectionContent {
+    display: contents !important;
+}
+
+/* Die Auffangnummer — alles Ungenannte kommt hinten. */
+.layout-desktop .detailPagePrimaryContainer .detailRibbon > *,
+.layout-desktop .detailPagePrimaryContainer .detailSection > *,
+.layout-desktop .detailPagePrimaryContainer .detailSectionContent > * {
+    order: 30 !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer .infoWrapper {
+    order: 1 !important;
+    margin-top: -107px !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+    position: relative;
+}
+
+.layout-desktop .detailPagePrimaryContainer .overview {
+    order: 2 !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+    margin: 0 !important;
+    max-width: 640px;
+}
+
+/* **„Mehr anzeigen" faellt weg.** Auf dem Mac steht die Beschreibung in
+   drei Zeilen und hoert dann auf — `Heldkopf` gibt ihr eine feste Hoehe
+   von 66, damit die Knopfreihe auf **jeder** Seite an derselben Stelle
+   steht. Ein Aufklapper waere das Gegenteil davon: er verschiebt alles
+   darunter. Er zog hier ausserdem einen grossen Abstand nach unten. */
+.layout-desktop .detailPagePrimaryContainer .overview-controls {
+    display: none !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer .mainDetailButtons {
+    order: 4 !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+    /* **So gross wie der Abstand darueber, nicht groesser.** Im
+       `Heldkopf` sitzt die Knopfreihe 24 Punkt unter dem Ende der
+       Beschreibung — derselbe Betrag, der zwischen Titel und Angaben
+       steht. Vorher zog der Aufklapper ihn auf ueber hundert. */
+    margin: 18px 0 0 !important;
+    position: relative;
+}
+
+.layout-desktop .detailPagePrimaryContainer .trackSelections {
+    order: 5 !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+    margin-top: 26px !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer .itemGenres,
+.layout-desktop .detailPagePrimaryContainer .itemTags,
+.layout-desktop .detailPagePrimaryContainer .itemExternalLinks,
+.layout-desktop .detailPagePrimaryContainer .itemDetailsGroup {
+    order: 6 !important;
+    padding: 0 var(--sw-rand-abstand) !important;
+}
+
+.layout-desktop .detailPagePrimaryContainer .verticalSection,
+.layout-desktop .detailPagePrimaryContainer .nextUpSection {
+    order: 7 !important;
+    margin-top: 26px;
+}
+
+
+/* --- Reiter auf der Detailseite ---
+   **Zwei Rollen, zwei Formen.** In einer Bibliothek waehlt eine
+   Chipreihe einen Filter — dort ist die Kapsel richtig. Auf der
+   Detailseite waehlen „Folgen / Besetzung / Aehnliches" einen Abschnitt
+   derselben Seite; dort steht auf dem Mac Schrift mit einem Strich
+   darunter. Eine Kapsel machte daraus einen Filter, den es nicht gibt. */
+.layout-desktop #itemDetailPage .emby-tab-button {
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    border-bottom: 2px solid transparent !important;
+    height: 40px !important;
+    line-height: 38px !important;
+    padding: 0 !important;
+    margin: 0 32px 0 0 !important;
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: var(--sw-schrift-leise) !important;
+}
+
+.layout-desktop #itemDetailPage .emby-tab-button:hover {
+    color: var(--sw-schrift) !important;
+}
+
+.layout-desktop #itemDetailPage .emby-tab-button-active {
+    background: transparent !important;
+    color: var(--sw-schrift) !important;
+    border-bottom-color: var(--sw-akzent) !important;
+    font-weight: 600 !important;
+}
+
+
+/* --- Die Werkzeugleiste einer Bibliothek ---
+   **Koepfe sind linksbuendig, ueberall** (E9). Jellyfin zentriert die
+   Reihe aus Filter, Sortierung und Ansicht; auf dem Mac stehen die
+   Wertpillen links unter dem Titel. */
+.layout-desktop .viewSettings {
+    text-align: left !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.layout-desktop .alphaPicker {
+    background: transparent !important;
+}
+
+
+/* --- Der Schwebezustand auf einer Kachel ---
+   **Auf dem Mac wird das Bild groesser, und das ist alles.** Kein Vorhang,
+   kein Abspielkreis, keine drei Knoepfe im Plakat. Paul, an seinem eigenen
+   Bild: „sonst wird's ja einfach nur groesser. Da kommen gar keine Elemente
+   oben drauf."
+
+   **Und die Wege gehen dabei nicht verloren.** Am laufenden Client
+   nachgesehen: ein Rechtsklick auf eine Kachel oeffnet Jellyfins volles
+   Menue — Auswaehlen, Wiedergabeliste, Metadaten. Genau der Weg, den die
+   Mac-Fassung nimmt (`kontextmenue` in Macbausteine.swift, A6). Ohne diese
+   Pruefung waere das Wegnehmen des Vorhangs ein Verlust gewesen.
+
+   Nur dort, wo es einen Zeiger gibt. Auf einem Schirm zum Anfassen ist der
+   Kreis der einzige Weg in die Wiedergabe, und ein Rechtsklick existiert
+   nicht. */
+@media (hover: hover) and (pointer: fine) {
+    .layout-desktop .cardOverlayContainer,
+    .layout-desktop .cardOverlayButton,
+    .layout-desktop .cardOverlayFab-primary {
+        display: none !important;
+    }
+}
+
+
+/* --- Zeilenlisten (Folgen, Besetzung, Einstellungen) ---
+   Flache Zeilen mit Haarlinien, kein Kasten. Das Bild links ist eine
+   Kachel und traegt deshalb die Kachelecke. */
+.layout-desktop .listItem {
+    border-radius: 0 !important;
+    border-bottom: 1px solid var(--sw-linie);
+    min-height: 52px !important;
+}
+
+.layout-desktop .listItem:hover {
+    background-color: rgba(255, 255, 255, .05) !important;
+}
+
+.layout-desktop .listItemImage,
+.layout-desktop .listItemImage-large {
+    border-radius: var(--sw-ecke) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   P · Die Kopfleiste
+   ---------------------------------------------------------------------
+   **Hier stand ein Versuch, Jellyfins Schublade zur Mac-Seitenleiste zu
+   machen. Er ist raus.**
+
+   Der Grund steht im Entwurf und war trotzdem falsch gedacht: die
+   Schublade ist kein Behaelter, sondern ein Ueberlagerungs-Bauteil mit
+   Auf/Zu-Zustand, Vorhang und eigenem Skript. Mit CSS dagegen anzuhalten
+   ergibt genau das, was Paul dreimal gemeldet hat — mal daneben, mal
+   darueber, und die Kopfleiste steht zusaetzlich da. Zwei Navigationen
+   fuer dieselben Ziele kennt der Entwurf nicht.
+
+   Eine echte Seitenleiste braucht ein Skript, das die Zeilen selbst baut.
+   Das Skript braucht einen Eintrag in Jellyfins `index.html`, und die ist
+   auf diesem Server nicht zu beschreiben. Also: **kein Skript, keine
+   Seitenleiste** — stattdessen Jellyfins Kopfleiste in unserer Sprache.
+
+   Das ist die ehrliche Obergrenze eines Stilblatts, und sie ist hoeher,
+   als sie klingt: Farbe, Form, Schrift, Bewegung, Zustaende und der
+   Aufbau der Detailseite bleiben vollstaendig erreichbar.
+   --------------------------------------------------------------------- */
+
+/* Die Schublade bleibt, was sie ist: ein Weg, den man oeffnet. Sie traegt
+   aber unsere Farben — siehe Abschnitt D. */
+
+/* Der Kopf ist deckend in `grund`, mit einer Haarlinie darunter, und die
+   Ziele darin stehen in unseren Schriftstufen. */
+.layout-desktop .headerTop {
+    padding: 0 var(--sw-rand-abstand) !important;
+    height: 56px !important;
+}
+
+/* Die Ziele in der Leiste — „Favoriten", „Filme", „Serien".
+   **15 medium, leise, und der aktive traegt den Akzent** — dieselbe Regel
+   wie eine Zeile in der Mac-Seitenleiste: der Akzent zeigt Auswahl. */
+.layout-desktop .headerLeft .headerButton,
+.layout-desktop .headerRight .headerButton {
+    color: var(--sw-schrift-leise) !important;
+}
+
+.layout-desktop .headerLeft .headerButton:hover,
+.layout-desktop .headerRight .headerButton:hover {
+    color: var(--sw-schrift) !important;
+}
+
+/* Der Name des Servers steht links und ist die Ueberschrift der Leiste. */
+.layout-desktop .pageTitle {
+    font-size: 17px !important;
+    font-weight: 600 !important;
+    letter-spacing: -.2px !important;
+    color: var(--sw-schrift) !important;
+}
+
+/* Die Rubriken der Schublade, falls jemand sie oeffnet. */
+.sidebarHeader {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: .7px !important;
+    text-transform: uppercase !important;
+    color: var(--sw-schrift-sehr-leise) !important;
+    padding: 0 22px !important;
+    margin: 26px 0 8px !important;
+}
+
+.mainDrawer,
+.drawer-open {
+    background-color: var(--sw-flaeche) !important;
+    box-shadow: none !important;
+    border-right: 1px solid var(--sw-linie) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   Q · Die Startseite
+   ---------------------------------------------------------------------
+   „Meine Medien" ist die Reihe mit den Bibliotheken als Querkacheln. Auf
+   dem Mac gibt es sie nicht — die Bibliotheken stehen links in der
+   Leiste, und zweimal derselbe Weg auf einer Seite ist einer zu viel.
+
+   `section0` ist die Nummer, die Jellyfin dieser Reihe gibt; am laufenden
+   Client nachgesehen. Wer sie behalten will, nimmt diesen Block heraus
+   (oder schaltet sie unter Einstellungen → Startseite ab, dann ist sie
+   auch aus den anderen Fassungen weg).
+   --------------------------------------------------------------------- */
+
+/* **Und „Meine Medien" bleibt stehen.**
+   Solange es keine Seitenleiste gibt, ist diese Reihe der sichtbare Weg in
+   die Bibliotheken. Sie zu verstecken war richtig, als daneben eine Leiste
+   stand — jetzt waere es nur eine Luecke. Wer sie trotzdem weghaben will,
+   schaltet sie unter Einstellungen → Startseite ab; dann ist sie auch in
+   den anderen Fassungen weg, und das ist der ehrlichere Ort dafuer. */
+
+/* Der obere Rand der Seite — `Stil.inhaltOben`. */
+.layout-desktop .homePage .verticalSection:first-child,
+.layout-desktop .libraryPage > .verticalSection:first-child {
+    margin-top: 0;
+}
+
+/* Zwischen zwei Reihen — `Stil.reihenAbstand`. */
+.layout-desktop .verticalSection {
+    margin-bottom: var(--sw-reihen-abstand, 28px) !important;
+}
+
+
+/* ---------------------------------------------------------------------
+   R · Die Marke in der Kopfleiste
+   ---------------------------------------------------------------------
+   Jellyfin setzt links im Kopf sein eigenes Banner — `banner-light.png`,
+   als Hintergrundbild auf `h3.pageTitleWithDefaultLogo`. Am laufenden
+   Client nachgesehen, nicht geraten.
+
+   An seine Stelle kommt die **Abspielform der Marke**, ohne das
+   abgerundete Quadrat: woertlich `Marke.signetForm` aus
+   `Sources/Shared/Marken.swift`, mit dem Rahmen auf die Form selbst
+   zugeschnitten.
+
+   **Als Datenadresse, nicht als Datei.** Ein Stilblatt, das ein Bild
+   nachlaedt, haengt an einer zweiten Adresse — und wenn die eines Tages
+   nicht antwortet, steht die Leiste ohne Zeichen da. So traegt es sich
+   selbst.
+
+   Und die Farbe ist `#2FDBC0`, nicht `--sw-akzent`: die Marke traegt
+   ihre eigene, so steht es in Marken.swift. „Die Marke ist gesetzt, das
+   Erscheinungsbild der App darf sich davon unabhaengig bewegen."
+
+   **Hoehe statt Breite gesetzt.** Das Element traegt je nach Seite auch
+   den Servernamen als Schrift; eine feste Breite schnitte den ab.
+   --------------------------------------------------------------------- */
+
+.pageTitleWithDefaultLogo,
+.pageTitleWithLogo {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='288 257 500 500'%3E%3Cpath fill='%232FDBC0' d='M440.1,280l285,163.2c38,21.7,51.2,70,29.6,108-7,12.3-17.2,22.5-29.6,29.6l-285,163.2c-37.9,21.8-86.3,8.6-108.1-29.3-6.9-12-10.5-25.6-10.5-39.4v-326.6c0-43.7,35.5-79.2,79.2-79.2,13.8,0,27.4,3.6,39.4,10.5Z'/%3E%3C/svg%3E") !important;
+    background-size: auto 26px !important;
+    background-position: left center !important;
+    background-repeat: no-repeat !important;
+    min-width: 26px !important;
+}

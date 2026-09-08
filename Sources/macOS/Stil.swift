@@ -61,9 +61,18 @@ extension Stil {
 
     // MARK: Maße
 
-    static let ecke: CGFloat = 6
-    static let eckeKachel: CGFloat = 8
-    static let eckeFeld: CGFloat = 10
+    /// **Die Eckenskala.** Dieselbe Regel wie auf dem iPhone (GESTALTUNG,
+    /// Abschnitt B): je grösser die Fläche, desto runder — und Knopf und
+    /// Kachel teilen sich die kleinste Stufe, weil beides kleine Gegenstände
+    /// sind. Am 07.09.2026 gemeinsam um vier Punkte angehoben; vorher waren
+    /// Knopf 6 und Plakat 8, und zwei Punkte Unterschied zwischen zwei
+    /// Dingen, die nebeneinander stehen, liest man nicht als Rangfolge,
+    /// sondern als Versehen.
+    static let ecke: CGFloat = 10
+    static let eckeKachel: CGFloat = 10
+    static let eckeFeld: CGFloat = 12
+    /// Was eine eigene Fläche ist: Blätter, Tafeln, Auskunftskästen.
+    static let eckeFlaeche: CGFloat = 16
     static let randAbstand: CGFloat = 24
     static let kachelAbstand: CGFloat = 12
     static let reihenAbstand: CGFloat = 28
@@ -147,6 +156,11 @@ extension Stil {
     /// Sprung, auch wenn nichts ruckelt.
     static let zeitEinblenden = Animation.easeOut(duration: 0.25)
 
+    /// Wie Inhalt erscheint, wenn er angekommen ist — dieselbe Kurve wie auf
+    /// dem iPhone. **Nichts erscheint hart** (E18): Bilder blenden ein,
+    /// Inhalt loest Platzhalter ab.
+    static let einblenden = Animation.easeInOut(duration: 0.28)
+
     // MARK: Der Wechsel in der Leiste — „Fade Through"
     //
     // **Nachgelesen, nicht ausgedacht.** Der Übergang hat einen Namen und eine
@@ -164,8 +178,9 @@ extension Stil {
     //
     // Zur Einordnung: eine macOS-Seitenleiste schaltet sonst ohne Blende um
     // (Finder, Mail, Systemeinstellungen). Das hier ist eine bewusste
-    // Abweichung, Solange jeder Wechsel neu geladen hat, hätte eine Blende die
-    // Wartezeit nur verlängert.
+    // Abweichung, eine bewusste Entscheidung — und sie trägt erst, seit die Stände der
+    // Bereiche liegen bleiben. Solange jeder Wechsel neu geladen hat, hätte
+    // eine Blende die Wartezeit nur verlängert.
 
     /// Das Alte geht. Nur blenden, nicht schrumpfen.
     ///

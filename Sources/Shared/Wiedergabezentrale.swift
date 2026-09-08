@@ -255,7 +255,8 @@ final class Wiedergabezentrale {
     /// Ohne sie glaubte tvOS durchgehend, es liefe, und schickte jedesmal
     /// `pauseCommand`. Deshalb hielt der erste Druck an und jeder weitere tat
     /// nichts: es kam nie `play`, nie `togglePlayPause`, immer nur „anhalten".
-    /// Gefunden hat es
+    /// Gefunden hat es der Blick auf die eingebaute Spur — dort stand
+    /// `anhalten · zentrale`, zweimal hintereinander.
     private func zustandMelden(_ laeuft: Bool) {
         MPNowPlayingInfoCenter.default().playbackState = laeuft ? .playing : .paused
     }
@@ -466,15 +467,30 @@ final class Wiedergabezentrale {
             // gereicht wäre es ein Datenwettlauf.
             let roh = nachricht.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             let hinweis = nachricht.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
-            MainActor.assumeIsolated { self?.unterbrechung(art: roh, hinweis: hinweis) }
+            // **Den Grund mitschreiben, nicht erraten.** Seit iOS 14.5 sagt
+            // iOS dazu, *warum* unterbrochen wurde. Ohne diese Zahl liesse
+            // sich nicht unterscheiden, ob die Mitteilungszentrale als
+            // Systemhinweis gilt (dann greift die Vorliebe, die beim
+            // Aktivieren gesetzt wird) oder als etwas anderes -- und danach
+            // richtet sich, ob hier ueberhaupt angehalten werden darf.
+            //
+            // Den Schluessel gibt es auf tvOS nicht -- dort faellt die Zahl
+            // weg, und der Rest bleibt gleich.
+            #if os(iOS)
+            let grund = nachricht.userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt
+            #else
+            let grund: UInt? = nil
+            #endif
+            MainActor.assumeIsolated { self?.unterbrechung(art: roh, hinweis: hinweis, grund: grund) }
         }
     }
 
-    private func unterbrechung(art roh: UInt?, hinweis: UInt?) {
+    private func unterbrechung(art roh: UInt?, hinweis: UInt?, grund: UInt?) {
         guard let roh, let art = AVAudioSession.InterruptionType(rawValue: roh) else { return }
 
         switch art {
         case .began:
+            Protokoll.schreib("[Ton] Unterbrechung beginnt · Grund \(grund.map(String.init) ?? "—")")
             liefVorher = (MPNowPlayingInfoCenter.default()
                 .nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0) > 0
             griffe?.anhalten()

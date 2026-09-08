@@ -124,3 +124,114 @@
 "dem Server" = "dem Server";
 "Ähnliches" = "Ähnliches";
 "Übersicht öffnen" = "Übersicht öffnen";
+
+/* Wiedergabemenue: Bildformat (08.09.2026) */
+"Bildformat" = "Bildformat";
+"Formatfüllend" = "Formatfüllend";
+"Ganzes Bild" = "Ganzes Bild";
+"Keine" = "Keine";
+
+/* Technikschild (08.09.2026) */
+"Anzeigen" = "Anzeigen";
+"Beschädigt" = "Beschädigt";
+"Bild" = "Bild";
+"Dekodiert Ø" = "Dekodiert Ø";
+"Demuxer" = "Demuxer";
+"Eingang" = "Eingang";
+"Gezeigt" = "Gezeigt";
+"Lauf" = "Lauf";
+"Sprünge" = "Sprünge";
+"Stelle" = "Stelle";
+"Technikschild" = "Technikschild";
+"Ton weg" = "Ton weg";
+"Verworfen" = "Verworfen";
+"Vorrat" = "Vorrat";
+"Zeigt Ø" = "Zeigt Ø";
+
+/* Merkliste als eigene Seite (08.09.2026) */
+"Merkliste" = "Merkliste";
+
+/* Seerr (08.09.2026) */
+"Adresse" = "Adresse";
+"Verbunden" = "Verbunden";
+"Nicht verbunden" = "Nicht verbunden";
+"Verbindung trennen" = "Verbindung trennen";
+"Diese Adresse ergibt keine." = "Diese Adresse ergibt keine.";
+"Seerr" = "Seerr";
+"Benutzername und Passwort fehlen" = "Benutzername und Passwort fehlen";
+"Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt." = "Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt.";
+"Getrennt" = "Getrennt";
+"Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen." = "Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen.";
+"Keine Verbindung" = "Keine Verbindung";
+
+/* Seerr */
+"%@ anfragen?" = "%@ anfragen?";
+"%@ mit allen Staffeln anfragen?" = "%@ mit allen Staffeln anfragen?";
+"Abbrechen" = "Abbrechen";
+"Anfragen" = "Anfragen";
+"Anfragen über Seerr" = "Anfragen über Seerr";
+"Angefragt" = "Angefragt";
+"Wird angefragt …" = "Wird angefragt …";
+"wartet" = "wartet";
+"angefragt" = "angefragt";
+"teilweise" = "teilweise";
+
+/* Downloads */
+"%d Folgen" = "%d Folgen";
+"%d Titel" = "%d Titel";
+"%d Titel auf diesem Rechner" = "%d Titel auf diesem Rechner";
+"%d Titel liegen auf diesem Rechner (%@). Was soll damit geschehen?" = "%d Titel liegen auf diesem Rechner (%@). Was soll damit geschehen?";
+"%d gesehene Titel könnten weichen (%@)." = "%d gesehene Titel könnten weichen (%@).";
+"Alles entfernen" = "Alles entfernen";
+"Angehalten" = "Angehalten";
+"Anhalten" = "Anhalten";
+"Auf diesem Rechner" = "Auf diesem Rechner";
+"Bearbeiten" = "Bearbeiten";
+"Behalten" = "Behalten";
+"Nicht genug Platz" = "Nicht genug Platz";
+"Der Server antwortete mit %d." = "Der Server antwortete mit %d.";
+"Die Datei ließ sich nicht anlegen." = "Die Datei ließ sich nicht anlegen.";
+"Diese Datei" = "Diese Datei";
+"Downloads" = "Downloads";
+"Entfernen" = "Entfernen";
+"Fehler" = "Fehler";
+"Frei auf diesem Rechner" = "Frei auf diesem Rechner";
+"Laden" = "Laden";
+"Keine Adresse vom Server." = "Keine Adresse vom Server.";
+"Lädt gerade" = "Lädt gerade";
+"Meins" = "Meins";
+"Nichts auf diesem Rechner" = "Nichts auf diesem Rechner";
+"Noch nichts geladen" = "Noch nichts geladen";
+"Nochmal versuchen" = "Nochmal versuchen";
+"Offline" = "Offline";
+"Ohne Netz abspielen" = "Ohne Netz abspielen";
+"Speicher" = "Speicher";
+"Titel auf diesen Rechner laden und ohne Netz sehen" = "Titel auf diesen Rechner laden und ohne Netz sehen";
+"Unbekannt" = "Unbekannt";
+"Vom Rechner entfernen" = "Vom Rechner entfernen";
+"Wartet" = "Wartet";
+"Was du hier ablegst, läuft auch ohne Netz." = "Was du hier ablegst, läuft auch ohne Netz.";
+"Wird geladen." = "Wird geladen.";
+
+/* Seerr-Seite und Downloads */
+"%d Min." = "%d Min.";
+"%d Staffeln anfragen" = "%d Staffeln anfragen";
+"Abwählen" = "Abwählen";
+"Anfragen, was noch nicht da ist" = "Anfragen, was noch nicht da ist";
+"Auf deinem Server" = "Auf deinem Server";
+"Aufklappen" = "Aufklappen";
+"Auswählen" = "Auswählen";
+"Integration" = "Integration";
+"Nicht auf deinem Server" = "Nicht auf deinem Server";
+"Staffel %d" = "Staffel %d";
+"Teilweise vorhanden" = "Teilweise vorhanden";
+"Wartet auf Freigabe" = "Wartet auf Freigabe";
+"Welche Staffeln?" = "Welche Staffeln?";
+"Zuklappen" = "Zuklappen";
+"frei" = "frei";
+"Ähnliche Titel" = "Ähnliche Titel";
+
+/* Seerr-Zugang */
+"Aktiv" = "Aktiv";
+"Sitzung abgelaufen" = "Sitzung abgelaufen";
+"Wird geprüft …" = "Wird geprüft …";

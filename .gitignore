@@ -19,6 +19,20 @@ Vendor
 CLAUDE.md
 VERHALTEN.md
 Erfahrungen.md
+# Am 06.09.2026 nachgetragen: es entstand in der Nacht davor und stand
+# als einziges der Handbuecher nicht im Riegel. Es liegt wie die anderen
+# in ../Swiftly-Notizen — der Eintrag ist die Sperre, nicht das Aufraeumen.
+GESTALTUNG.md
+# Arbeitsunterlagen wie die drei darueber: der Ablauf und die Fallen.
+# Sie gehoeren ins Arbeitsverzeichnis, nicht in die oeffentliche Ablage —
+# sie erklaeren, wie wir arbeiten, und nennen dabei Messungen, Fehlgriffe
+# und Namen.
+ABLAUF.md
+# **Ohne Schraegstrich**, wie die Zeilen darueber. Am 09.09.2026 wurde
+# `Fallen` vom echten Ordner zum Symlink ins Notizen-Repo — und `Fallen/`
+# griff ab da nicht mehr. Die Sammlung waere beim naechsten Push
+# oeffentlich geworden; sie nennt Messungen, Fehlgriffe und Namen.
+Fallen
 
 # **Riegel, kein Aufraeumen.** Diese Pfade liegen in ../Swiftly-Notizen und
 # sind hier nicht vorhanden. Der Eintrag verhindert, dass sie es je wieder

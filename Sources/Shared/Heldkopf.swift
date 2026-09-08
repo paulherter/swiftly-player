@@ -100,9 +100,16 @@ struct Heldkopf<Inhalt: View>: View {
             // `aspectRatio(nil, contentMode: .fit)` auf einem `Color.clear` —
             // das hat keine eigene Größe. Das Bild rutschte nach links und
             // brach hart ab, im schmalen Fenster verschwand es ganz.
-            AsyncImage(url: bild) { stand in
+            // Die `transaction` blendet den Wechsel der Lagen weich; ohne
+            // sie schaltet `AsyncImage` hart um, und das Heldbild ist die
+            // groesste Flaeche der Seite. **Nichts erscheint hart** —
+            // GESTALTUNG, Abschnitt E. Als letzte Stelle nachgezogen, die
+            // es noch ohne machte.
+            AsyncImage(url: bild,
+                       transaction: Transaction(animation: Stil.einblenden)) { stand in
                 if case let .success(b) = stand {
                     b.resizable().aspectRatio(contentMode: .fill)
+                        .transition(.opacity)
                 }
             }
             // Von links, damit die Schrift steht.
@@ -244,14 +251,17 @@ struct Handlungstafel: View {
             }
         }
         .background {
-            RoundedRectangle(cornerRadius: 12).fill(Stil.flaeche)
+            RoundedRectangle(cornerRadius: Stil.eckeFlaeche).fill(Stil.flaeche)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 12).strokeBorder(Stil.rand)
+            RoundedRectangle(cornerRadius: Stil.eckeFlaeche).strokeBorder(Stil.rand)
         }
     }
 
     private func schliessen() {
-        withAnimation(.snappy(duration: 0.22)) { offen = false }
+        // Dieselbe Feder wie die Blätter. Sie stand als `Stil.blattbewegung`
+        // schon da, mit dem Kommentar „sonst hätten vier Blätter vier
+        // Kurven" — und genau das war eingetreten.
+        withAnimation(Stil.blattbewegung) { offen = false }
     }
 }

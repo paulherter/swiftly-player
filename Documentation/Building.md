@@ -1,8 +1,8 @@
 # 🛠️ Building
 
 ```bash
-git clone https://github.com/paulherter/swiftly-for-jellyfin.git
-cd swiftly-for-jellyfin
+git clone https://github.com/paulherter/swiftly-player.git
+cd swiftly-player
 
 # VLCKit is 2.7 GB and not in this repository.
 # NOTE: this fetches VideoLAN's official build, which has a known bug —

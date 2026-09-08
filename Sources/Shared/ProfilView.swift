@@ -102,7 +102,7 @@ struct ProfilView: View {
     private var bildblock: some View {
         VStack(spacing: 10) {
             Profilzeichen(name: model.session?.userName ?? "?",
-                          bild: model.benutzerbildURL(groesse: 200),
+                          bild: model.benutzerbildURL(),
                           groesse: 84)
             VStack(spacing: 3) {
                 Text(model.session?.userName ?? "Angemeldet")
@@ -342,7 +342,7 @@ private struct Kontenstreifen: View {
                 // Feste Höhe, damit die Reihe beim Wachsen nicht springt.
                 ZStack {
                     Profilzeichen(name: konto.userName,
-                                  bild: model.benutzerbildURL(fuer: konto, groesse: 240),
+                                  bild: model.benutzerbildURL(fuer: konto),
                                   groesse: mass,
                                   hervorgehoben: verbunden)
                 }

@@ -85,29 +85,6 @@ struct Lader: View {
     }
 }
 
-/// Was unten auf der Profilseite steht: „Swiftly for Jellyfin 1.0.0 (Build 10)".
-///
-/// **Aus dem Bündel gelesen, nicht getippt.** Auf dem iPhone stand hier
-/// einmal „Swiftly 1.0" — eine Zahl, die niemand mitgezogen hat und die seit
-/// der ersten Abgabe falsch war. Eine Fassungsangabe, die man von Hand
-/// pflegen muss, ist schlimmer als keine: sie sieht verlässlich aus.
-///
-/// Die Baunummer gehört dazu, weil sie in einem Fehlerbericht die eigentliche
-/// Auskunft ist — „1.0.0" haben inzwischen zehn Builds getragen.
-///
-/// **Warum hier und nicht in `ProfilView`.** Sie stand als `static` in
-/// `Sources/Shared/ProfilView.swift`, und die Datei gehört dem iPhone; der
-/// Mac hat seine eigene Profilseite und kam nicht heran. Genau so entstehen
-/// die Kopien, die dieser Datei ihren Namen gegeben haben — deshalb steht die
-/// Rechnung dort, wo alle sie sehen, und die Ansichten setzen nur den Text.
-enum Fassung {
-    static var zeile: String {
-        let b = Bundle.main.infoDictionary
-        let fassung = b?["CFBundleShortVersionString"] as? String ?? "?"
-        let bau = b?["CFBundleVersion"] as? String ?? "?"
-        return "Swiftly for Jellyfin \(fassung) (Build \(bau))"
-    }
-}
 
 /// Rundes Profilzeichen mit dem Anfangsbuchstaben.
 struct Profilzeichen: View {
@@ -116,11 +93,31 @@ struct Profilzeichen: View {
     var groesse: CGFloat = 34
     var hervorgehoben = false
 
-    /// Derselbe Grund wie bei `Bild`: ein abgebrochener Abruf bleibt sonst
-    /// im Fehlerzustand stehen. Im Kontenstreifen faellt das besonders auf —
-    /// dort ist das Profilbild der ganze Inhalt der Kachel, und nach einem
-    /// Wechsel staende statt der Bilder eine Reihe Buchstaben.
-    @State private var anlauf = 0
+    /// **Was schon geholt wurde, steht im ersten Durchgang da.**
+    ///
+    /// Hier lag ein `AsyncImage`, und das faengt in jeder neuen Ansicht von
+    /// vorn an — auch wenn dasselbe Bild seit dem Start im Speicher liegt.
+    /// Waehrend es laeuft, steht nur der gruene Verlauf; das ist das, was am
+    /// 07.09.2026 gemeldet wurde: „klicke ich auf mein Profilbild, ist es auf
+    /// der Seite kurz nicht da, stattdessen ein gruener Hintergrund." Beim
+    /// ersten Wechsel auf Filme oder Serien dasselbe, aus demselben Grund.
+    ///
+    /// Zwei Anlaeufe hatten den **Buchstaben** aus dem Weg geraeumt, ohne die
+    /// Ursache anzufassen: dass die Ansicht das Bild neu holt, obwohl es
+    /// dasteht. `Bildspeicher` beantwortet genau diese Frage, und er
+    /// antwortet **synchron** — deshalb wird hier im `init` nachgesehen und
+    /// nicht in `task`. Ein nachgereichter Wert kommt einen Durchgang zu
+    /// spaet, und der eine Durchgang ist das Aufblitzen.
+    @State private var geladen: Image?
+
+    init(name: String, bild: URL? = nil, groesse: CGFloat = 34,
+         hervorgehoben: Bool = false) {
+        self.name = name
+        self.bild = bild
+        self.groesse = groesse
+        self.hervorgehoben = hervorgehoben
+        _geladen = State(initialValue: bild.flatMap { Bildspeicher.geteilt.bild($0) })
+    }
 
     var body: some View {
         ZStack {
@@ -132,22 +129,39 @@ struct Profilzeichen: View {
             // er immer darunter und das Bild darueber — waehrend dessen
             // Aufblende schien er hindurch, und wer ein Profilbild hatte, sah
             // fuer einen Moment ein grosses „P" darin. Er gehoert deshalb in
-            // den Zweig, in dem kein Bild ankommt.
-            AsyncImage(url: bild) { stand in
-                if case let .success(b) = stand {
-                    b.resizable().aspectRatio(contentMode: .fill)
-                } else {
-                    buchstabe.onAppear {
-                        guard case let .failure(f) = stand,
-                              (f as NSError).code == NSURLErrorCancelled,
-                              anlauf < 2 else { return }
-                        anlauf += 1
-                    }
-                }
+            // den Zweig, in dem kein Bild ankommt. **Und `.empty` heisst
+            // „laeuft noch", nicht „kein Bild".**
+            //
+            // Der Absatz darueber hat den Buchstaben aus dem Untergrund in den
+            // Rueckfallzweig geholt — aber der Zweig fing weiterhin *jede*
+            // Lage ausser Erfolg ab, auch die des laufenden Abrufs. Deshalb
+            // blitzte er weiter: nicht mehr unter dem Bild, sondern davor. Am
+            // staerksten beim **ersten** Wechsel von der Startseite auf Filme
+            // oder Serien, weil dort eine neue Ansicht entsteht und deren
+            // `AsyncImage` von vorn anfaengt, obwohl das Bild laengst im
+            // Speicher liegt. Danach war es weg, und genau so hat
+            //
+            // Waehrend des Abrufs steht deshalb nur der Verlauf. Dieselbe
+            // Unterscheidung wie in `Bild`, dieselbe Ursache, dieselbe
+            // Behebung.
+            if let geladen {
+                geladen.resizable().aspectRatio(contentMode: .fill)
+                    .transition(.opacity)
+            } else if bild == nil {
+                // **Der Buchstabe ist Rueckfall, nicht Untergrund.** Er
+                // gehoert in den Zweig, in dem es gar kein Bild gibt — lag er
+                // darunter, schien er waehrend der Aufblende hindurch.
+                buchstabe
             }
-            .id(anlauf)
         }
-        .onChange(of: bild) { _, _ in anlauf = 0 }
+        .animation(Stil.einblenden, value: geladen == nil)
+        // Eine neue Adresse heisst ein neuer Anlauf; was schon dalag, bleibt
+        // solange stehen, statt gegen den Verlauf zu tauschen.
+        .task(id: bild) {
+            guard let bild else { geladen = nil; return }
+            if let da = Bildspeicher.geteilt.bild(bild) { geladen = da; return }
+            geladen = await Bildspeicher.geteilt.laden(bild)
+        }
         .frame(width: groesse, height: groesse)
         .clipShape(Circle())
         .overlay {

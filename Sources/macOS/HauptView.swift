@@ -4,23 +4,53 @@ import SwiftUI
 /// Welchen Bereich die Seitenleiste zeigt. Dieselben vier wie in der Leiste
 /// unten auf dem iPhone.
 enum Bereich: String, Hashable, CaseIterable {
-    case start, filme, serien, suche
+    case start, filme, serien, merkliste, downloads, suche
+
+    /// Was in der Seitenleiste steht. **H1:** ohne den Schalter gibt es die
+    /// Downloadzeile nicht.
+    ///
+    /// Downloads steht **oben bei den Bereichen**, nicht unten bei den
+    /// Sammlungen — anders als die Merkliste. Die ist eine Bibliothek, deren
+    /// Grenze der Haken ist; Downloads ist keine Auswahl aus dem Server,
+    /// sondern das, was auf dieser Maschine liegt. Auf dem iPhone ist es aus
+    /// demselben Grund ein Reiter und kein Ziel im Kopf.
+    /// **Oben, was der Server hat.** Vier Zeilen, wie eh und je.
+    static let obenGruppe: [Bereich] = [.start, .filme, .serien, .suche]
+
+    /// **Und darunter, was mir gehoert.**
+    ///
+    /// Sechs gleichrangige Zeilen untereinander lasen sich als eine Liste, in
+    /// der nichts mehr zusammengehoert Merkliste und Downloads sind aber nicht
+    /// dieselbe Sorte Ort wie Filme und Serien: die beiden sind **Sammlungen
+    /// des Servers**, diese zwei sind **meine** — was ich mir gemerkt und was
+    /// ich auf diese Maschine geholt habe. Die Trennung stand also schon da,
+    /// sie war nur nicht zu sehen.
+    ///
+    /// Leer, solange Downloads aus ist und nichts gemerkt wurde — dann gibt es
+    /// die Rubrik gar nicht.
+    static func meinsGruppe(downloads: Bool) -> [Bereich] {
+        downloads ? [.merkliste, .downloads] : [.merkliste]
+    }
 
     var symbol: String {
         switch self {
-        case .start:  "house"
-        case .filme:  "film"
-        case .serien: "tv"
-        case .suche:  "magnifyingglass"
+        case .start:     "house"
+        case .filme:     "film"
+        case .serien:    "tv"
+        case .suche:     "magnifyingglass"
+        case .downloads: "arrow.down.circle"
+        case .merkliste: "bookmark.fill"
         }
     }
 
     var beschriftung: LocalizedStringKey {
         switch self {
-        case .start:  "Start"
-        case .filme:  "Filme"
-        case .serien: "Serien"
-        case .suche:  "Suche"
+        case .start:     "Start"
+        case .filme:     "Filme"
+        case .serien:    "Serien"
+        case .suche:     "Suche"
+        case .downloads: "Downloads"
+        case .merkliste: "Merkliste"
         }
     }
 }
@@ -48,12 +78,19 @@ struct HauptView: View {
     @State private var uebernahme = Uebernahmemodell()
     /// Bei mehr als einem Gerät wird gefragt statt geraten.
     @State private var auswahlOffen = false
-    @State private var filmregal = Bibliotheksmodell()
-    @State private var serienregal = Bibliotheksmodell()
+    @State private var filmregal = Bibliotheksmodell(merkname: "movies")
+    @State private var serienregal = Bibliotheksmodell(merkname: "tvshows")
     /// Welche Bibliothek der jeweiligen Gattung gezeigt wird — ein Server
     /// kann mehrere haben. Liegt aus demselben Grund hier wie die Regale.
     @State private var filmbibliothek: Item?
     @State private var serienbibliothek: Item?
+    /// **Eine der uebrigen Bibliotheken, als Wurzel.**
+    ///
+    /// Nicht als Seite auf dem Stapel: eine Seite faehrt von rechts herein und
+    /// traegt einen Zurueckpfeil, und Filme und Serien sind Wurzeln — also ist
+    /// das hier eine. Gesetzt heisst: sie steht statt der Wurzel des Bereichs;
+    /// jeder Klick auf einen Bereich setzt sie zurueck.
+    @State private var offeneBibliothek: Item?
 
     init(model: AppModel) {
         self.model = model
@@ -68,9 +105,11 @@ struct HauptView: View {
                          bibliothekWaehlen: { bibliothekAusLeiste($0) },
                          gewaehlteBibliothek: { art in
                              art == "movies" ? filmbibliothek : serienbibliothek
-                         }) {
-                navigator.oeffne(.profil, in: bereich)
-            }
+                         },
+                         bibliothekOeffnen: { offeneBibliothek = $0 },
+                         offeneKennung: offeneBibliothek?.id,
+                         schliesseBibliothek: { offeneBibliothek = nil },
+                         zumProfil: { navigator.oeffne(.profil, in: bereich) })
             // **Der Sicherheitsrand der Titelleiste gilt links genauso wenig
             // wie rechts.** Vorher hielt nur der Inhaltsbereich ihn nicht
             // ein; die Leiste stand deshalb rund dreissig Punkt tiefer als
@@ -90,11 +129,39 @@ struct HauptView: View {
                 .frame(width: 1)
                 .frame(maxHeight: .infinity)
                 .ignoresSafeArea(.container, edges: .vertical)
+            // **Die Leiste liegt oben — sichtbar und fuer Klicks.**
+            //
+            // In einem `HStack` zeichnet das spaetere Kind ueber dem
+            // frueheren, und die Leiste steht als erste da. Das war so lange
+            // egal, wie der Inhalt in seiner Spalte blieb. Bleibt er aber
+            // nicht: `wurzel` bekommt beim Oeffnen einer Seite `mitgang`, also
+            // **minus dreissig Prozent der Inhaltsbreite**, und ragte damit
+            // unter die Leiste — dort oben auf, weil spaeter deklariert. Ein
+            // Klick auf „Lieblingsfolgen" landete auf dem Poster, das
+            // zufaellig darunter lag; Und wer auf „Serien" klickte, schaltete
+            // nichts um, weil die Leiste den Klick nie bekam — daher „die
+            // gesamte Leiste reagiert auf nichts mehr".
+            .zIndex(1)
 
             ZStack {
                 Stil.grund
                 inhalt
             }
+            // **Und der Inhalt bleibt in seiner Spalte — auch fuer Klicks.**
+            //
+            // Hier stand zuerst `clipped()`. Das schneidet nur das **Bild**:
+            // die Wurzel war danach sauber an der Haarlinie abgeschnitten,
+            // und der Klick auf „Filme" landete trotzdem weiter im Raster
+            // dahinter. Am laufenden Fenster nachgesehen — der Baum zeigte
+            // die Chips der Wurzel bei **x = −117**, also unter der Leiste,
+            // und ein Klick auf die Leistenzeile wurde an die Scrollflaeche
+            // zugestellt.
+            //
+            // `clipShape` beschneidet **auch die Trefferflaeche**; das sagt
+            // Apples Beschreibung ausdruecklich, `clipped()` sagt es nicht.
+            // Der Versatz selbst bleibt — er ist die Bewegung, die den
+            // Eindruck von Ebenen macht.
+            .clipShape(Rectangle())
             // **Der Leistenwechsel wird nicht überblendet.**
             //
             // Hier stand `.animation(Stil.zeitSeite, value: bereich)`. Eine
@@ -227,6 +294,10 @@ struct HauptView: View {
     /// Wie viele Seiten im **aktuellen** Bereich gezeigt werden.
     private var tiefe: Int { gezeigteTiefe[bereich] ?? 0 }
 
+    /// Was gerade die Wurzel ist — ein Bereich oder eine der uebrigen
+    /// Bibliotheken. Aendert sie sich, wird die Wurzel neu gebaut.
+    private var wurzelkennung: String { offeneBibliothek?.id ?? bereich.rawValue }
+
     private var inhalt: some View {
         GeometryReader { raum in
             let breite = raum.size.width
@@ -251,11 +322,53 @@ struct HauptView: View {
                 // Unter der Kennung gehören sie zur jeweiligen Wurzel. Die
                 // ausscheidende behält ihren Stand und blendet einfach aus.
                 wurzel
+                    // **Der Wechsel blendet ueber — und zwar nur die Wurzel.**
+                    //
+                    // Hier stand nichts, und die uebrigen Bibliotheken
+                    // erschienen deshalb hart, waehrend alles andere weich
+                    // kommt.
+                    //
+                    // **Die Reihenfolge ist der Punkt.** Die Anweisung steht
+                    // unmittelbar an der Wurzel, also vor dem Versatz und dem
+                    // Schleier darum. Frueher hing am Elternteil ein
+                    // `.animation(value: bereich)` — das galt fuer *alles*,
+                    // was sich im selben Durchgang aenderte, also auch fuer
+                    // `tiefe`: die ausscheidende Wurzel fuhr ihren Mitgang
+                    // zurueck und der Schleier blendete aus. Genau das ist
+                    // "die komische Einblendung mit dem dunklen Verlauf"
+                    // gewesen, und genau deshalb steht sie hier innen.
+                    .transition(.opacity)
+                    .animation(Stil.einblenden, value: wurzelkennung)
                     .offset(x: tiefe > 0 ? mitgang : 0)
                     .overlay {
                         Color.black.opacity(tiefe > 0 ? 0.28 : 0)
                             .allowsHitTesting(false)
                     }
+                    // **Was unter einer Seite liegt, nimmt keine Klicks.**
+                    //
+                    // Das ist die eigentliche Regel — der Schleier darueber
+                    // sagt sie ja schon: die Wurzel ist verdeckt, also ist sie
+                    // nicht bedienbar. Ohne diese Zeile blieb sie es, und weil
+                    // `mitgang` sie um dreissig Prozent nach links schiebt,
+                    // lagen ihre Chips und Poster **unter der Seitenleiste**.
+                    // Am laufenden Fenster nachgesehen: der Filterchip
+                    // „Serien" stand bei x = 4, die Leistenzeile „Filme" bei x
+                    // = 12 — und der Klick ging an den Chip. Das war das
+                    // „ich druecke links und es oeffnet sich Attack on Titan"
+                    // und ebenso das „die Leiste reagiert auf nichts mehr":
+                    // sie bekam den Klick nie.
+                    //
+                    // `clipped()` half nicht und `clipShape` auch nicht —
+                    // beide beschneiden das Bild, die Trefferflaeche der
+                    // Kinder bleibt, wo sie ist.
+                    .allowsHitTesting(tiefe == 0)
+                    // **Und aus dem Bedienungshilfen-Baum ebenso.** Eine
+                    // verdeckte Seite gehoert dort nicht hin — VoiceOver
+                    // liefe sonst durch Knoepfe, die niemand sieht. Es ist
+                    // dieselbe Aussage wie `allowsHitTesting`, nur fuer den
+                    // zweiten Weg hinein; ohne sie stand die Wurzel weiter im
+                    // Baum, mit Chips bei x = 4 unter der Leiste.
+                    .accessibilityHidden(tiefe > 0)
                     .id(bereich)
                     // **Die Wurzel liegt ausdrücklich unten.** Ohne feste
                     // Ebenen fuhr die Seite unter den Kacheln der Startseite
@@ -305,6 +418,12 @@ struct HauptView: View {
                                 .offset(x: -28)
                                 .allowsHitTesting(false)
                         }
+                        // Dieselbe Regel eine Ebene hoeher: von den Seiten
+                        // des Stapels nimmt nur die oberste Klicks. Die
+                        // darunter tragen denselben Schleier wie die Wurzel,
+                        // und was rechts draussen wartet, ist gar nicht da.
+                        .allowsHitTesting(obenauf)
+                        .accessibilityHidden(!obenauf)
                         .zIndex(Double(platz + 1))
                         // **Losfahren, sobald die Seite wirklich steht.**
                         //
@@ -354,9 +473,22 @@ struct HauptView: View {
             //
             // Vorher trugen Wurzel und Seitenstapel je eine eigene. Dann
             // verschwindet ein offener Seitenstapel schlagartig, während die
-            // Wurzel darunter noch blendet. Ein Bereich ist ein Stück — was
-            // in ihm offen war, geht mit ihm.
-            .id(bereich)
+            // Wurzel darunter noch blendet. Ein Bereich ist ein Stück — was in
+            // ihm offen war, geht mit ihm. **Die offene Bibliothek gehoert in
+            // diese Kennung.**
+            //
+            // Hier stand `bereich` allein. Ein Wechsel zwischen den uebrigen
+            // Bibliotheken aendert den Bereich aber nicht — die Kennung blieb
+            // also gleich, das Stueck wurde nicht getauscht, und die
+            // Fade-Through-Blende lief nie.
+            //
+            // Ich hatte es zuerst an der Wurzel selbst versucht, eine Ebene
+            // tiefer. Das kann nicht wirken: beim Wechsel wird die Wurzel samt
+            // ihren Modifikatoren weggeworfen und neu gebaut, ein `.animation`
+            // an ihr kennt ihr eigenes Erscheinen also gar nicht. Anweisungen
+            // fuer Ein- und Austritt gehoeren an das, was bleibt — und das ist
+            // dieses Stueck hier.
+            .id(wurzelkennung)
             // „Fade Through": das Alte blendet in 100 ms aus, danach kommt
             // das Neue in 200 ms und wächst dabei von 92 % auf 100 %. Die
             // Zahlen und das Warum stehen bei `Stil.zeitBereichHerein`.
@@ -369,7 +501,7 @@ struct HauptView: View {
             // steht sie an dem Stück, das getauscht wird; darin gibt es
             // nichts zu bewegen, weil das alte seinen Stand behält und das
             // neue frisch gezeichnet wird.
-            .animation(.default, value: bereich)
+            .animation(.default, value: wurzelkennung)
         }
         .onChange(of: navigator.seiten(bereich).count, initial: true) { alt, neu in
             guard neu != tiefe else { return }
@@ -385,6 +517,15 @@ struct HauptView: View {
 
     @ViewBuilder
     private var wurzel: some View {
+        if let bib = offeneBibliothek {
+            Bibliotheksseite(model: model, bibliothek: bib)
+        } else {
+            bereichswurzel
+        }
+    }
+
+    @ViewBuilder
+    private var bereichswurzel: some View {
         switch bereich {
         case .start:  HomeView(model: model, stand: startseite)
         case .filme:  BibliothekView(model: model, art: "movies", titel: "Filme",
@@ -392,6 +533,8 @@ struct HauptView: View {
         case .serien: BibliothekView(model: model, art: "tvshows", titel: "Serien",
                                      regal: serienregal, gewaehlt: $serienbibliothek)
         case .suche:  SucheView(model: model)
+        case .downloads: DownloadsView(model: model)
+        case .merkliste: MerklisteView(model: model)
         }
     }
 
@@ -399,7 +542,16 @@ struct HauptView: View {
     private func seite(_ ziel: Seitenziel) -> some View {
         switch ziel {
         case let .titel(item):  DetailView(model: model, item: item) { zurueck() }
+        case .seerr:            SeerrEinstellungenView(model: model, seerr: model.seerr) { zurueck() }
+        case let .seerrTitel(t): SeerrDetailView(model: model, treffer: t) { zurueck() }
+        // Nicht mehr erreichbar — eine Bibliothek ist eine Wurzel. Der Fall
+        // steht hier, damit ein wiederhergestellter alter Stapel nicht bricht.
+        case .bibliothek: Color.clear.onAppear { zurueck() }
         case .profil:           ProfilView(model: model) { zurueck() }
+        // Nicht mehr erreichbar — die Merkliste ist ein Bereich. Der Fall
+        // steht hier, damit ein wiederhergestellter alter Stapel nicht
+        // bricht; er schliesst sich einfach.
+        case .merkliste:        Color.clear.onAppear { zurueck() }
         case .einstellungen:    EinstellungenView(model: model) { zurueck() }
         case .wiedergabe:       WiedergabeEinstellungenView(model: model) { zurueck() }
         case .quickConnect:     QuickConnectView(model: model) { zurueck() }
@@ -469,6 +621,12 @@ struct Seitenleiste: View {
     /// Abfrage und nicht als Wert: die Stände liegen in `HauptView`, und die
     /// Leiste soll sie nicht doppelt führen.
     let gewaehlteBibliothek: (String) -> Item?
+    let bibliothekOeffnen: (Item) -> Void
+    /// Welche der uebrigen Bibliotheken gerade offen ist, wenn eine.
+    let offeneKennung: String?
+    private var bibliothekOffen: Bool { offeneKennung != nil }
+    private func bibliothekSchliessen() { schliesseBibliothek() }
+    let schliesseBibliothek: () -> Void
     let zumProfil: () -> Void
 
     var body: some View {
@@ -481,10 +639,30 @@ struct Seitenleiste: View {
                 .padding(.bottom, 18)
 
             VStack(spacing: 2) {
-                ForEach(Bereich.allCases, id: \.self) { fall in
+                ForEach(Bereich.obenGruppe, id: \.self) { fall in
                     Seitenleistenzeile(symbol: fall.symbol,
                                        beschriftung: fall.beschriftung,
-                                       aktiv: bereich == fall) { bereich = fall }
+                                       aktiv: bereich == fall && !bibliothekOffen) {
+                        bereich = fall
+                        bibliothekSchliessen()
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+
+            Seitenleistenrubrik(text: "Meins")
+                .padding(.horizontal, 12)
+                .padding(.top, 26)
+                .padding(.bottom, 8)
+
+            VStack(spacing: 2) {
+                ForEach(Bereich.meinsGruppe(downloads: model.downloadsAn), id: \.self) { fall in
+                    Seitenleistenzeile(symbol: fall.symbol,
+                                       beschriftung: fall.beschriftung,
+                                       aktiv: bereich == fall && !bibliothekOffen) {
+                        bereich = fall
+                        bibliothekSchliessen()
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -503,14 +681,29 @@ struct Seitenleiste: View {
 
                 VStack(spacing: 2) {
                     ForEach(sammlungen, id: \.id) { bib in
+                        // **Eine eigene Seite, kein Umschalter.** Vorher rief
+                        // das hier `bibliothekWaehlen` — der Filme-Bereich
+                        // sprang auf diese Sammlung um, und ueber "Filmabend"
+                        // stand dann die Ueberschrift "Filme".
                         Seitenleistenzeile(symbol: bib.collectionType == "movies" ? "film" : "tv",
                                            name: bib.name,
-                                           aktiv: istAktiv(bib)) {
-                            bibliothekWaehlen(bib)
+                                           aktiv: offeneKennung == bib.id) {
+                            bibliothekOeffnen(bib)
                         }
                     }
                 }
                 .padding(.horizontal, 12)
+
+                // **Die Merkliste stand hier und steht jetzt oben bei den
+                // Bereichen.** Sie war eine Seite, die von rechts hereinfuhr —
+                // mit Zurueckpfeil, ohne Hervorhebung in der Leiste (`aktiv:
+                // false` stand fest verdrahtet da), und auf einem Stapel, auf
+                // den danach auch das Profil kam.
+                //
+                // Er hat recht, und die alte Begruendung war schief: dass ihre
+                // Grenze der Haken ist, macht sie zu einer Bibliothek — und
+                // Bibliotheken fahren hier auch nicht herein. Ein Ort in der
+                // Leiste ist ein Ort, kein Weg.
             }
 
             Spacer(minLength: 0)
@@ -546,8 +739,27 @@ struct Seitenleiste: View {
         .task { if model.views.isEmpty { await model.loadViews() } }
     }
 
+    /// **Die Rubrik zeigt die uebrigen Bibliotheken.**
+    ///
+    /// Oben stehen Filme und Serien; die beiden Sammlungen, die diese Bereiche
+    /// zeigen, gehoeren nicht noch einmal hierher.
+    ///
+    /// **Gefragt wird das Modell, nicht die Ansicht.**
+    /// `model.gewaehlteBibliothek(art:)` liest die gemerkte Wahl aus den
+    /// Einstellungen und faellt still auf die erste zurueck. Vorher stand hier
+    /// `filmbibliothek`, also der Zustand der *Ansicht* — und der ist beim
+    /// ersten Aufbau noch `nil`. Die Liste zeigte deshalb erst „Filme", und
+    /// sobald die Bibliotheksseite ihre Wahl gesetzt hatte, sprang sie auf
+    /// „Filmabend".
+    ///
+    /// Bleibt nichts uebrig, faellt die Rubrik ganz weg: dann *sind* Filme und
+    /// Serien die Bibliotheken, und sie stehen schon oben.
     private var sammlungen: [Item] {
-        model.views.filter { $0.collectionType == "movies" || $0.collectionType == "tvshows" }
+        let offen = Set([model.gewaehlteBibliothek(art: "movies")?.id,
+                         model.gewaehlteBibliothek(art: "tvshows")?.id].compactMap { $0 })
+        return model.views
+            .filter { $0.collectionType == "movies" || $0.collectionType == "tvshows" }
+            .filter { !offen.contains($0.id) }
     }
 
     /// Hervorgehoben wird eine Sammlung nur, wenn ihr Bereich auch offen ist
@@ -604,7 +816,7 @@ struct Profilzeile: View {
         let weitere = model.konten.first { $0.userID != model.session?.userID }
         HStack(spacing: -9) {
             Profilzeichen(name: model.session?.userName ?? "?",
-                          bild: model.benutzerbildURL(groesse: 60), groesse: 26,
+                          bild: model.benutzerbildURL(), groesse: 26,
                           hervorgehoben: weitere != nil)
                 // **Das verbundene Konto liegt oben.** Ein `HStack` mit
                 // negativem Abstand zeichnet in der Reihenfolge der Auslage,
@@ -618,7 +830,7 @@ struct Profilzeile: View {
                 .background { Circle().fill(Stil.flaeche).padding(-2) }
             if let weitere {
                 Profilzeichen(name: weitere.userName,
-                              bild: model.benutzerbildURL(fuer: weitere, groesse: 60),
+                              bild: model.benutzerbildURL(fuer: weitere),
                               groesse: 26)
                     .opacity(0.55)
             }

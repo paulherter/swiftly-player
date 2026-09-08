@@ -24,10 +24,33 @@ struct EinstellungenView: View {
                 .scrollIndicators(.hidden)
             Seitenpfeil { zurueck() }
         }
+        .overlay(alignment: .topTrailing) {
+            // **H10 — Ausschalten löscht nichts ungefragt.** Stilles Löschen
+            // von vierzig Gigabyte, die jemand über eine Woche geladen hat,
+            // wäre die schlechteste Variante. Behaltene Dateien tauchen
+            // wieder auf, sobald der Schalter erneut umgelegt wird.
+            Handlungsblatt(offen: $abschaltblatt, titel: abschalttitel, handlungen: [
+                Titelhandlung(symbol: "tray.and.arrow.down", text: "Behalten") {
+                    model.downloadsAn = false
+                },
+                Titelhandlung(symbol: "trash", text: "Alles entfernen", warnend: true) {
+                    model.downloads.allesEntfernen()
+                    model.downloadsAn = false
+                },
+            ])
+        }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
+    }
+
+    @State private var abschaltblatt = false
+
+    private var abschalttitel: String {
+        let b = Downloadregeln.belegung(model.downloads.posten)
+        return String(localized: "\(b.anzahl) Titel bleiben auf dem Gerät")
+            + " · " + Downloadregeln.groesse(b.bytes)
     }
 
     private var inhalt: some View {
@@ -49,15 +72,21 @@ struct EinstellungenView: View {
             // auf dem iPad kostet nichts.
             if breit {
                 HStack(alignment: .top, spacing: 56) {
-                    darstellung.frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 0) { darstellung; offline; integration }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     server.frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
                 darstellung
+                offline
+                integration
                 server
             }
 
-            Text("Swiftly 1.0 · VLCKit 4.0.0-a23")
+            // **Nicht getippt.** Hier stand „Swiftly 1.0" — eine Zahl, die
+            // seit 1.0.1 falsch war und die niemand mitzieht. Der Mac las
+            // sie schon aus dem Bündel; das hier war die letzte Kopie.
+            Text(verbatim: Fassung.mitUnterbau)
                 .font(.system(size: 12))
                 .foregroundStyle(Color.white.opacity(0.3))
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -95,6 +124,66 @@ struct EinstellungenView: View {
                         unter: Text("Neue Filme und neue Serien in eigenen Reihen"),
                         an: Binding(get: { model.neuzugangGetrennt },
                                     set: { model.neuzugangGetrennt = $0 }))
+        }
+    }
+
+    /// **Eine eigene Gruppe, und die steht vor der Integration.**
+    ///
+    /// Nicht unter *Darstellung*: Downloads sind keine Geschmacksfrage,
+    /// sondern eine Funktion, die Platz auf dem Gerät belegt. Nicht unter
+    /// *Integration*: das ist für fremde Dienste. Und vor *Server*, weil es
+    /// um dieses Gerät geht, nicht um jenes.
+    ///
+    /// **H1** — aus im Auslieferungszustand, und dann steht hier genau eine
+    /// Zeile.
+    private var offline: some View {
+        Einstellungsgruppe(titel: "Offline") {
+            Wahlzeile(symbol: "arrow.down.circle",
+                      titel: Text("Downloads"),
+                      unter: Text("Titel aufs Gerät laden und ohne Netz sehen"),
+                      an: Binding(get: { model.downloadsAn },
+                                  set: { an in
+                                      if an { model.downloadsAn = true }
+                                      // H10: Ausschalten löscht nichts
+                                      // ungefragt. Liegt nichts da, gibt es
+                                      // auch nichts zu fragen.
+                                      else if model.downloads.posten.isEmpty { model.downloadsAn = false }
+                                      else { abschaltblatt = true }
+                                  }))
+            if model.downloadsAn {
+                Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+                Wahlzeile(symbol: "wifi",
+                          titel: Text("Nur über WLAN"),
+                          unter: Text("Über Mobilfunk warten Downloads"),
+                          an: Binding(get: { model.nurUeberWLAN },
+                                      set: { model.nurUeberWLAN = $0 }))
+                Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+                // **Die Zahl steht in der Zeile, nicht erst dahinter.** Wer
+                // wissen will, wie viel belegt ist, soll dafür nicht tippen
+                // müssen — es ist die einzige Auskunft, um die es hier geht.
+                Wertzeile(symbol: "internaldrive",
+                          titel: Text("Speicher"),
+                          unter: Text("\(model.downloads.posten.count) Titel auf diesem Gerät"),
+                          wert: Downloadregeln.groesse(
+                              Downloadregeln.belegung(model.downloads.posten).bytes))
+            }
+        }
+    }
+
+    /// **Steht zwischen Offline und Server, und das ist kein Zufall.**
+    /// Es ist ein zweiter Dienst, kein zweiter Server — und es ist eine
+    /// Zugabe: wer nichts anbindet, sieht ausser dieser einen Zeile nirgends
+    /// etwas davon.
+    private var integration: some View {
+        Einstellungsgruppe(titel: "Integration") {
+            NavigationLink {
+                SeerrEinstellungenView(model: model, seerr: model.seerr)
+            } label: {
+                Wertzeile(symbol: "sparkle.magnifyingglass", titel: Text("Seerr"),
+                          unter: Text("Anfragen, was noch nicht da ist"),
+                          wert: model.seerr.verbunden ? String(localized: "Verbunden") : nil)
+            }
+            .buttonStyle(.plain)
         }
     }
 

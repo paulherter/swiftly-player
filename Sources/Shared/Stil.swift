@@ -1,3 +1,4 @@
+import JellyfinKit
 import SwiftUI
 
 /// Maße, Schriftgrößen und Bausteine für das iPhone. Die Farben stehen in
@@ -8,7 +9,32 @@ import SwiftUI
 /// undurchsichtig, damit das Bildmaterial die einzige Farbe im Raum ist.
 extension Stil {
 
-    /// Wie ein Blatt von unten hereinfährt.
+    /// Wie ein Bereich wechselt: der Inhalt kommt aus einer Spur zu klein
+/// heran und blendet dabei ein.
+///
+/// **Sehr wenig, mit Absicht.** 0,97 und 0,22 Sekunden — man sieht es nicht,
+/// man merkt es. Genau so macht es iOS beim Wechsel zwischen Reitern, und
+/// genau deshalb fühlt sich ein Wechsel dort weich an statt wie ein Schnitt.
+static let bereichswechsel: Animation = .easeOut(duration: 0.20)
+/// Wie stark der eintretende Bereich zusammengezogen anfängt.
+///
+/// **0,995, und dreimal nach unten korrigiert.** Mit 0,97 wanderte die
+/// Oberkante einer 844 Punkt hohen Seite zwölf Punkt nach innen, mit 0,99 noch
+/// vier — beides war als Kante zu sehen. Zwei Punkte sind die Grenze, an der
+/// die Bewegung noch trägt und nichts mehr auffällt.
+static let bereichsmass: CGFloat = 0.995
+
+/// Wie Inhalt erscheint, wenn er vom Server angekommen ist.
+///
+/// **Der Ladering ist aus der Oberfläche verschwunden.** Er stand auf jeder
+/// Seite, die etwas holt, und ein drehender Ring sagt nur „warte" — er zeigt
+/// weder, was kommt, noch wie viel. An seiner Stelle stehen jetzt Platzhalter
+/// in der Form des kommenden Inhalts, und wenn er da ist, wird überblendet.
+static let einblenden: Animation = .easeInOut(duration: 0.28)
+
+/// Wie ein Blatt von unten hereinfährt.
+
+/// Wie ein Blatt von unten hereinfährt.
     ///
     /// **Auf Apples Blatt gelegt, nicht geraten.** Schnell heran, kein
     /// Nachschwingen — dieselbe Kennlinie, die `.sheet` zeigt. Sie steht
@@ -20,10 +46,31 @@ extension Stil {
 
     // MARK: Maße — iPhone
 
-    static let ecke: CGFloat = 6
-    /// Kacheln sind eine Spur runder als der Rest. Ausdrücklich nur eine
-    /// Spur — „wirklich minimal" war die Vorgabe.
-    static let eckeKachel: CGFloat = 8
+    /// **Die Eckenskala — vier Zahlen, und je größer die Fläche, desto
+    /// runder.** Sie stand nicht als Regel da, sondern als vier Zahlen an
+    /// vierzig Stellen; prompt hat der Auskunftskasten auf der Seerr-Seite das
+    /// Feldmaß genommen, obwohl er eine Fläche ist. Wer etwas Neues baut,
+    /// nimmt die Zahl, die zur Art des Dings passt — nicht die, die gerade in
+    /// der Nähe stand.
+    ///
+    /// | Was | Ecke | |---|---| | Knopf, Plakat, Kachel | 10 | | Feld, Eingabe
+    /// | 12 | | Fläche, Blatt, Tafel | 16 | | Chip, Hinweis | Kapsel |
+    ///
+    /// **Am 06.09.2026 einmal aufgerundet, um vier Punkte.** Vorher stand
+    /// 6/8/10/12, und Zwei Punkte Unterschied zwischen zwei Dingen, die
+    /// nebeneinander stehen, liest man nicht als Rangfolge, sondern als
+    /// Versehen.
+    ///
+    /// Knopf und Kachel tragen deshalb **dieselbe** Ecke — beides sind kleine
+    /// Gegenstände, und die Rangfolge fängt erst darüber an. „Nicht so extrem
+    /// viel, aber einfach ein bisschen mehr."
+    static let ecke: CGFloat = 10
+    /// Plakate und Kacheln — dieselbe Ecke wie ein Knopf.
+    static let eckeKachel: CGFloat = 10
+    /// Such- und Eingabefelder.
+    static let eckeFeld: CGFloat = 12
+    /// Was eine eigene Fläche ist: Blätter, die Tafel, Auskunftskästen.
+    static let eckeFlaeche: CGFloat = 16
     static let randAbstand: CGFloat = 18
     static let kachelAbstand: CGFloat = 12
     static let reihenAbstand: CGFloat = 28
@@ -295,6 +342,16 @@ struct HauptknopfStil: ButtonStyle {
                         in: RoundedRectangle(cornerRadius: Stil.ecke))
     }
 
+    /// **Weiss, und zwar überall.**
+    ///
+    /// Hier liess sich einmal eine andere Fläche setzen — für den
+    /// Anfragen-Knopf bei Seerr, in Akzent. Das ist wieder heraus: auf einer
+    /// Seerr-Seite trägt der Stand schon Akzent, und ein Knopf in derselben
+    /// Farbe daneben macht aus einem Zeichen für *Zustand* eine Grundfarbe.
+    ///
+    /// **E2 sagt genau das:** der Akzent trägt Fortschritt, Auswahl und den
+    /// Direct-Play-Beleg — nie die Grundfarbe eines Knopfes. Die Regel stand
+    /// da, bevor der Parameter kam.
     private func flaeche(gedrueckt: Bool) -> Color {
         guard freigegeben else { return Stil.flaeche }
         return Color.white.opacity(gedrueckt ? 0.75 : 1)
@@ -302,6 +359,12 @@ struct HauptknopfStil: ButtonStyle {
 }
 
 /// Zweitrangig: gedämpfte Fläche, weiße Schrift.
+///
+/// **Dieselbe Höhe wie der Hauptknopf.** Er war zwei Punkte niedriger, und
+/// auf der Filmseite wie auf der Anmeldeseite stehen beide direkt
+/// übereinander — dort sah man den Versatz. Ein Grund stand nirgends; den
+/// Unterschied tragen Fläche und Schriftgrad, die Höhe muss ihn nicht
+/// mittragen.
 struct NebenknopfStil: ButtonStyle {
     var dehnt = true
 
@@ -310,7 +373,7 @@ struct NebenknopfStil: ButtonStyle {
             .font(.system(size: 15, weight: .medium))
             .foregroundStyle(Stil.schrift)
             .padding(.horizontal, dehnt ? 0 : 22)
-            .frame(maxWidth: dehnt ? .infinity : nil, minHeight: 46)
+            .frame(maxWidth: dehnt ? .infinity : nil, minHeight: 48)
             .background(Color.white.opacity(configuration.isPressed ? 0.16 : 0.10),
                         in: RoundedRectangle(cornerRadius: Stil.ecke))
     }
@@ -414,10 +477,30 @@ struct Bild<Platzhalter: View>: View {
     var body: some View {
         rahmen
             .overlay {
-                AsyncImage(url: url) { phase in
-                    if case let .success(bild) = phase {
+                // **Waehrend des Ladens steht kein Zeichen da.**
+                //
+                // Hier hiess jede Lage ausser `.success` „Platzhalter", und
+                // der Platzhalter der Aufrufer ist das Filmsymbol — die
+                // Auskunft „zu diesem Titel gibt es kein Bild". Waehrend des
+                // Abrufs ist das schlicht falsch, und man sah es: bei jedem
+                // Wechsel blitzte einen Lidschlag lang das Ersatzbild auf und
+                // wurde dann vom echten ueberdeckt.
+                //
+                // `.empty` heisst „laeuft noch" — dort steht die pulsierende
+                // Flaeche. Nur wenn gar keine Adresse da ist, ist `.empty`
+                // endgueltig, und dann tritt das Zeichen ein.
+                //
+                // Die `transaction` blendet den Wechsel der Lagen weich; ohne
+                // sie schaltet `AsyncImage` hart um.
+                AsyncImage(url: url,
+                           transaction: Transaction(animation: Stil.einblenden)) { phase in
+                    switch phase {
+                    case let .success(bild):
                         bild.resizable().aspectRatio(contentMode: .fill)
-                    } else {
+                            .transition(.opacity)
+                    case .empty where url != nil:
+                        Ladefeld(ecke: 0)
+                    default:
                         platzhalter().onAppear {
                             guard case let .failure(f) = phase,
                                   (f as NSError).code == NSURLErrorCancelled,
@@ -491,16 +574,6 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     @Binding var offen: Bool
     /// Wie hoch die Einträge zusammen sind — gemessen, nicht angenommen.
     @State private var inhaltshoehe: CGFloat = 0
-    /// Wie hoch die ganze Karte ist — bestimmt, wie weit sie hinausfährt.
-    @State private var kartenhoehe: CGFloat = 500
-    /// Wie weit über dem unteren Rand das Blatt endet.
-    ///
-    /// **Die Seite reicht hinter die Leiste.** In den Bibliotheken liegt
-    /// unten die Bereichsleiste über dem Inhalt; ohne diesen Abstand
-    /// verschwindet „Abbrechen" darunter. In den Einstellungen gibt es keine
-    /// Leiste, dort ist er null — deshalb sagt es der Aufrufer und nicht
-    /// dieser Baustein, der seine Umgebung nicht kennt.
-    var unterrand: CGFloat = 0
     let titel: LocalizedStringKey
     let eintraege: [Eintrag]
     let beschriftung: (Eintrag) -> String
@@ -508,34 +581,17 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
     let waehlen: (Eintrag) -> Void
 
     var body: some View {
-        // **Der Stapel bleibt, die Kinder wechseln.**
-        //
-        // Wird das ganze Blatt eingefügt, animiert SwiftUI nur dieses
-        // Einfügen — die Übergänge der Kinder kommen gar nicht zum Zug, und
-        // heraus kommt ein Aufblenden. Erst wenn Schleier und Karte einzeln
-        // erscheinen, kann der eine blenden und die andere fahren.
-        ZStack(alignment: .bottom) {
-            // Abdunkeln; Tippen daneben schließt.
-            Rectangle()
-                .fill(.black.opacity(offen ? 0.55 : 0))
-                .ignoresSafeArea()
-                .onTapGesture { schliessen() }
-
-            VStack(spacing: 0) {
-                Text(titel)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Stil.schriftLeise)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Stil.randAbstand)
-                    .padding(.top, 18)
-                    .padding(.bottom, 12)
+        Color.clear
+            .allowsHitTesting(false)
+            .blatt(offen: $offen) {
+                Blattrubrik(text: Text(titel))
 
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(eintraege) { eintrag in
                             Button {
                                 waehlen(eintrag)
-                                schliessen()
+                                offen = false
                             } label: {
                                 HStack {
                                     Text(beschriftung(eintrag))
@@ -554,8 +610,7 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
                             }
                             .buttonStyle(.plain)
 
-                            Rectangle().fill(Stil.linie).frame(height: 1)
-                                .padding(.leading, Stil.randAbstand)
+                            Trennlinie()
                         }
                     }
                     // Gemessen, nicht angenommen — siehe unten.
@@ -566,62 +621,13 @@ struct Auswahlblatt<Eintrag: Identifiable>: View {
                 //
                 // `.frame(maxHeight:)` allein reicht nicht: eine `ScrollView`
                 // ist senkrecht gierig und nimmt sich die 340 auch dann, wenn
-                // vier Zeilen nur 204 brauchen. Übrig blieb ein Hohlraum
-                // unter der letzten Zeile, der nichts tut.
+                // vier Zeilen nur 204 brauchen. Übrig blieb ein Hohlraum unter
+                // der letzten Zeile, der nichts tut.
                 .frame(height: min(inhaltshoehe, 340))
                 .scrollIndicators(.hidden)
 
-                Button { schliessen() } label: {
-                    Text("Abbrechen")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Stil.schriftLeise)
-                        .frame(maxWidth: .infinity, minHeight: 54)
-                }
-                .buttonStyle(.plain)
+                Blattabbruch { offen = false }
             }
-            .padding(.bottom, unterrand)
-            .background {
-                // **Die Fläche reicht weiter nach unten, als die Karte je
-                // fährt.**
-                //
-                // Die Feder schießt beim Öffnen über — die Karte hebt kurz von
-                // der Leiste ab. Endet die Fläche an ihrer Unterkante, blitzt
-                // in dem Moment der Inhalt darunter durch. Der negative Rand
-                // zieht sie 300 Punkt tiefer; sichtbar wird davon nichts, weil
-                // dort der Bildrand ist.
-                //
-                // Den Bounce dafür wegzunehmen wäre der falsche Tausch
-                UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
-                    .fill(Stil.flaeche)
-                    .padding(.bottom, -300)
-                    .ignoresSafeArea(edges: .bottom)
-            }
-            // **Verschieben statt Ein- und Aushängen.**
-            //
-            // Ein Übergang bewegt einen Rahmen — was darüber hinaus gezeichnet
-            // wird, Hintergrund in der Sicherheitszone etwa, bleibt stehen und
-            // verschwindet erst, wenn die Ansicht abgeräumt wird. Genau das
-            // war zu sehen: unten blieb ein Stück und ging nach einer halben
-            // Sekunde ruckartig weg.
-            //
-            // Die Karte bleibt deshalb hängen und wird nur verschoben — um
-            // ihre **gemessene** Höhe plus reichlich Zugabe. Damit ist sie
-            // draußen, wenn sie draußen sein soll, und es gibt nichts
-            // abzuräumen und keinen Zeitgeber, der es täte.
-            .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                action: { kartenhoehe = $0 }
-            .offset(y: offen ? 0 : kartenhoehe + 400)
-        }
-        // Der Stapel muss den Schirm füllen; sonst bemisst sich die Auflage
-        // am Inhalt und die Karte sitzt oben.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(offen)
-    }
-
-    private func schliessen() {
-        // Dieselbe Feder wie beim Öffnen — sonst kommt es anders zurück,
-        // als es gegangen ist.
-        withAnimation(Stil.blattbewegung) { offen = false }
     }
 }
 
@@ -657,6 +663,13 @@ struct Schalter: View {
 }
 
 /// Rubrik über einer Gruppe von Zeilen.
+///
+/// **Es gab sie zweimal.** Hier mit Sperrung 0,7 und `schriftSehrLeise`, in
+/// `Einstellungsgruppe` mit Sperrung 1,2 und einem eigenen „weiß 40 %" —
+/// dieselbe Rolle, zwei Fassungen, und auf Profilseite und Einstellungen
+/// eine Seite nebeneinander zu sehen. Jetzt eine: die weitere Sperrung, weil
+/// sich Versalien bei 11 Punkt sonst zusammendrängen, und die **Marke**
+/// statt der eigenen Zahl.
 struct Gruppentitel: View {
     let text: LocalizedStringKey
     var body: some View {
@@ -665,7 +678,7 @@ struct Gruppentitel: View {
         Text(text)
             .textCase(.uppercase)
             .font(.system(size: 11, weight: .semibold))
-            .tracking(0.7)
+            .tracking(1.2)
             .foregroundStyle(Stil.schriftSehrLeise)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Stil.randAbstand)
@@ -694,17 +707,12 @@ struct Einstellungsgruppe<Inhalt: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Kein `uppercased()`: aus einem Schlüssel lässt sich keine
-            // Zeichenkette machen, ohne die Übersetzung zu verlieren.
-            // `textCase` macht dasselbe, nur eine Ebene später.
-            Text(titel)
-                .textCase(.uppercase)
-                .font(.system(size: 11, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(Color.white.opacity(0.4))
-                .padding(.horizontal, Stil.rand(breit: breit))
+            // **Nicht noch einmal selbst gesetzt.** Genau daran sind die
+            // beiden Rubriken auseinandergelaufen; `Gruppentitel` bringt
+            // Grad, Schnitt, Sperrung, Farbe und den unteren Abstand mit.
+            Gruppentitel(text: titel)
+                .padding(.horizontal, Stil.rand(breit: breit) - Stil.randAbstand)
                 .padding(.top, 26)
-                .padding(.bottom, 8)
             VStack(spacing: 0) { inhalt() }
                 .background(alignment: .top) { Trennlinie() }
                 .background(alignment: .bottom) { Trennlinie() }
@@ -726,19 +734,31 @@ struct Unterseitenkopf<Rechts: View>: View {
     /// Trägt den Namen einer Bibliothek — der kommt vom Server und wird
     /// deshalb nicht übersetzt.
     let titel: String
-    let zurueck: () -> Void
+    /// `nil` heisst: **diese Seite ist eine Wurzel, kein Weg.**
+    ///
+    /// Die Merkliste ist auf dem iPad ein Bereich in der Leiste und auf dem
+    /// iPhone eine Seite, die von rechts hereinfaehrt. Derselbe Kopf, zwei
+    /// Rollen — und ein Zurueckpfeil auf einer Wurzel zeigt nirgendwohin.
+    var zurueck: (() -> Void)?
     @ViewBuilder var rechts: () -> Rechts
 
     var body: some View {
         HStack(spacing: 4) {
-            Button(action: zurueck) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Stil.schrift)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            if let zurueck {
+                Button(action: zurueck) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Stil.schrift)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                // Ohne Pfeil beginnt der Titel dort, wo er sonst auch steht —
+                // sonst ruckte er auf der Wurzel um 44 Punkt nach links, und
+                // die Seite saehe anders aus als ihre Nachbarn.
+                Color.clear.frame(width: 12, height: 44)
             }
-            .buttonStyle(.plain)
 
             Text(titel)
                 .font(.system(size: 22, weight: .semibold))
@@ -761,27 +781,43 @@ extension Unterseitenkopf where Rechts == EmptyView {
 }
 
 /// Runder Knopf mit Beschriftung darunter — die Aktionsreihe auf Detailseiten.
+/// Eine Nebenhandlung auf einer Detailseite — Merkliste, Trailer, Gesehen,
+/// Mehr.
+///
+/// **Vier Felder, keine Kreise.** Es waren vier gefüllte Scheiben mit einer
+/// Beschriftung darunter — und damit die einzigen Kreise der ganzen App: sonst
+/// gibt es nur Rechtecke mit unserer Ecke und Kapseln. Von zwölf nachgesehenen
+/// Streaming-Apps setzt genau eine Kreise, und die stellt sie **neben** den
+/// Abspielknopf statt darunter.
+///
+/// Die Wahl fiel auf die Form von Paramount+: vier gleich breite Felder, nur
+/// Zeichen, keine Wörter. Der Preis ist bekannt und angenommen — vier Zeichen
+/// ohne Beschriftung muss man kennen. Für die Sprachausgabe bleibt die
+/// Beschriftung erhalten, sie steht nur nicht mehr im Bild.
+///
+/// **Was an ist, trägt Akzent — das Zeichen, nicht die Fläche.** Eine gefüllte
+/// Akzentscheibe wäre der Akzent als Grundfarbe, und das verbietet E2.
 struct Aktionsknopf: View {
     let symbol: String
+    /// Steht nicht mehr im Bild, aber in der Sprachausgabe.
     let titel: LocalizedStringKey
     var aktiv: Bool = false
+    /// Über die volle Breite, oder nur so breit wie nötig.
+    ///
+    /// Schmal teilen sich vier Felder die Zeile. Breit steht die Reihe neben
+    /// dem Abspielknopf und darf ihn nicht wegdrücken.
+    var dehnt = true
     let aktion: () -> Void
 
     var body: some View {
         Button(action: aktion) {
-            VStack(spacing: 7) {
-                Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(aktiv ? Stil.grund : Stil.schrift)
-                    .frame(width: 44, height: 44)
-                    .background(aktiv ? Stil.akzent : Color.white.opacity(0.09), in: Circle())
-                Text(titel)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Stil.schrift.opacity(0.75))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-            }
-            .frame(width: 68)
+            Image(systemName: symbol)
+                .font(.system(size: 19, weight: .medium))
+                .foregroundStyle(aktiv ? Stil.akzent : Stil.schrift)
+                .frame(maxWidth: dehnt ? .infinity : nil)
+                .frame(width: dehnt ? nil : 56, height: 44)
+                .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(titel))
@@ -890,20 +926,32 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
         Button {
             if eintraege.count > 1 { offen.toggle() }
         } label: {
-            HStack(spacing: 8) {
+            // **Eine Überschrift mit Winkel, keine Pille.**
+            //
+            // Sie war ein gefüllter Kasten — der einzige der ganzen Seite,
+            // und er stand direkt unter einer Reiterreihe, die ohne Flächen
+            // auskommt. Zwei Steuerarten übereinander, und die untere wirkte
+            // lauter als die obere, obwohl sie weniger tut.
+            //
+            // Sie **ist** eine Überschrift: sie sagt, was darunter kommt.
+            // Deshalb derselbe Grad wie unsere Reihenüberschriften, und der
+            // Winkel verrät, dass man sie wechseln kann. Sieben von acht
+            // nachgesehenen Streaming-Apps machen es genauso.
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text(beschriftung)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(Stil.reihe)
+                    .tracking(-0.3)
                     .foregroundStyle(Stil.schrift)
                 if eintraege.count > 1 {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Stil.schriftLeise)
                         .rotationEffect(.degrees(offen ? 180 : 0))
                 }
             }
-            .padding(.horizontal, 14)
+            // Die Trefferfläche bleibt, auch ohne Fläche darunter.
             .frame(height: 36)
-            .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: 5))
+            .contentShape(Rectangle())
         }
         .accessibilityLabel(beschriftung)
         .accessibilityHint(eintraege.count > 1 ? "Öffnet die Auswahl" : "")
@@ -935,8 +983,13 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
                     }
                 }
                 .frame(width: 200, alignment: .leading)
-                .background(Color(red: 0.09, green: 0.09, blue: 0.102),
-                            in: RoundedRectangle(cornerRadius: 8))
+                // **Die Marke, nicht eine von Hand getippte Farbe.** Hier
+                // stand 0,090/0,090/0,102 — `Stil.flaeche` ist
+                // 0,086/0,086/0,098. Der Unterschied war nicht zu sehen und
+                // genau deshalb gefährlich: eine Farbe, die der Marke folgen
+                // soll, es aber nicht tut.
+                .background(Stil.flaeche,
+                            in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
                 .shadow(color: .black.opacity(0.6), radius: 16, y: 8)
                 .offset(y: 44)
                 .zIndex(10)
@@ -1044,24 +1097,60 @@ struct Zeitregler: View {
 /// Die vier Bereiche unten. Ersetzt die Knöpfe „Filme" und „Serien", die
 /// vorher als Kacheln auf der Startseite standen.
 enum Bereich: Int, CaseIterable, Identifiable {
-    case start, filme, serien, suche
+    // **`downloads` steht hinten, obwohl es vorn angezeigt wird.**
+    //
+    // Die Rohwerte sind Feldindizes: `HauptView` haelt seine Seitenstapel als
+    // `pfade[bereich.rawValue]`. Wuerde `downloads` zwischen `serien` und
+    // `suche` eingefuegt, ruecke `suche` von 3 auf 4 — und jeder Stapel
+    // laege danach unter einem fremden Bereich. Wo es in der Leiste steht,
+    // sagt ``sichtbare(downloads:)``, nicht die Reihenfolge hier.
+    case start, filme, serien, suche, downloads, merkliste
     var id: Int { rawValue }
+
+    /// Die Leiste, in ihrer Reihenfolge. **H1:** ohne den Schalter gibt es
+    /// den Downloadplatz gar nicht.
+    ///
+    /// Downloads steht links neben der Suche, und die Suche bleibt ganz
+    /// rechts — sie ist die einzige, die man mit dem Daumen im Halbschlaf
+    /// trifft, und sie stand dort seit der ersten Fassung.
+    ///
+    /// **Die Merkliste gibt es nur breit.** Schmal haengt sie am Zeichen
+    /// oben rechts, neben dem Profil — unten waeren es sechs Reiter, und der
+    /// Platz gehoert dort den vier Orten, zwischen denen man staendig
+    /// wechselt. Breit gibt es die Zeichengruppe nicht, die wohnt in der
+    /// Leiste; dort ist die Merkliste eine Zeile wie Filme und Serien.
+    /// Vorher stand sie dort als `NavigationLink` unten bei den Zielen — und
+    /// tat **nichts**, weil die Seitenleiste ausserhalb des
+    /// `NavigationStack` liegt und ein Link ohne Stapel ins Leere zeigt.
+    static func sichtbare(downloads: Bool, breit: Bool = false) -> [Bereich] {
+        var liste: [Bereich] = [.start, .filme, .serien]
+        if breit { liste.append(.merkliste) }
+        if downloads { liste.append(.downloads) }
+        liste.append(.suche)
+        return liste
+    }
 
     var name: LocalizedStringKey {
         switch self {
-        case .start:  "Start"
-        case .filme:  "Filme"
-        case .serien: "Serien"
-        case .suche:  "Suche"
+        case .start:     "Start"
+        case .filme:     "Filme"
+        case .serien:    "Serien"
+        case .suche:     "Suche"
+        case .downloads: "Downloads"
+        case .merkliste: "Merkliste"
         }
     }
 
     var symbol: String {
         switch self {
-        case .start:  "house"
-        case .filme:  "film"
-        case .serien: "tv"
-        case .suche:  "magnifyingglass"
+        case .start:     "house"
+        case .filme:     "film"
+        case .serien:    "tv"
+        case .suche:     "magnifyingglass"
+        // **Der Kreis gehoert dazu.** Ein nackter Pfeil zwischen Haus, Film,
+        // Fernseher und Lupe liest sich als Richtungszeichen, nicht als Ort.
+        case .downloads: "arrow.down.circle"
+        case .merkliste: "bookmark.fill"
         }
     }
 }
@@ -1083,6 +1172,12 @@ private struct Bereichsknopf: View {
     /// Feste Zeilenhöhe. Die Leiste unten gibt keine vor — dort teilen sich
     /// die vier die Höhe der Leiste selbst.
     var hoehe: CGFloat?
+    /// Wie viele Downloads gerade laufen. `0` heisst: keine Marke.
+    ///
+    /// **Die Zahl der laufenden, nicht die der fertigen.** Ein Abzeichen, das
+    /// dauerhaft „12" sagt, ist nach zwei Tagen unsichtbar; eines, das
+    /// erscheint und wieder verschwindet, sagt etwas.
+    var laufen: Int = 0
     let waehlen: () -> Void
 
     var body: some View {
@@ -1096,6 +1191,22 @@ private struct Bereichsknopf: View {
         let kern = VStack(spacing: 4) {
             Image(systemName: bereich.symbol)
                 .font(.system(size: 20, weight: aktiv ? .semibold : .regular))
+                .overlay(alignment: .topTrailing) {
+                    if laufen > 0 {
+                        Text(verbatim: laufen.formatted())
+                            .font(.system(size: 9, weight: .bold))
+                            .monospacedDigit()
+                            .foregroundStyle(Stil.grund)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Stil.akzent, in: Capsule())
+                            // Nach aussen versetzt: auf dem Zeichen selbst
+                            // deckt sie den Pfeil zu, und dann sieht man
+                            // nicht mehr, welcher Reiter es ist.
+                            .offset(x: 11, y: -7)
+                            .accessibilityLabel(Text("\(laufen) laden gerade"))
+                    }
+                }
             Text(bereich.name)
                 .font(.system(size: 10, weight: aktiv ? .semibold : .medium))
         }
@@ -1121,11 +1232,15 @@ private struct Bereichsknopf: View {
 /// Haarlinie oben, 22-pt-Symbole.
 struct Navileiste: View {
     @Binding var gewaehlt: Bereich
+    /// H1 — ohne den Schalter gibt es den fuenften Platz nicht.
+    var mitDownloads = false
+    var laufen = 0
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(Bereich.allCases) { bereich in
-                Bereichsknopf(bereich: bereich, aktiv: bereich == gewaehlt) {
+            ForEach(Bereich.sichtbare(downloads: mitDownloads)) { bereich in
+                Bereichsknopf(bereich: bereich, aktiv: bereich == gewaehlt,
+                              laufen: bereich == .downloads ? laufen : 0) {
                     gewaehlt = bereich
                 }
             }
@@ -1136,17 +1251,228 @@ struct Navileiste: View {
         // sicheren Bereich — sonst blitzt unter der Leiste weiter Inhalt
         // durch, im Bereich des Home-Indikators.
         .background {
-            // Fast deckend. Der weiche Blur gehört an den oberen Rand, wo man
-            // Titel über durchlaufendem Bild lesen muss — hier unten stehen
-            // nur vier Beschriftungen, die einfach stehen sollen.
-            ZStack {
-                Unschaerfe()
-                Stil.grund.opacity(0.86)
-            }
-            .ignoresSafeArea(edges: .bottom)
+            // **Deckend, kein Glas.** „Fast deckend" hiess: 14 Prozent des
+            // Inhalts scheinen durch, und im Bereichswechsel sah man genau
+            // das — Kacheln, die sich sichtbar durch die Leiste schoben.
+            // Dasselbe Material hat schon den Bibliothekskopf heller gemacht
+            // als die Seite; hier unten stehen vier Beschriftungen, die
+            // einfach stehen sollen, und dafuer ist Glas kein Gewinn.
+            //
+            // `Stil.grund` und nicht `flaeche`: die Leiste soll keine eigene
+            // Flaeche sein, sondern der Grund, auf dem die Seite endet. Die
+            // Haarlinie darueber ist alles, was sie braucht — genau so wie
+            // der Kopf oben seit gestern.
+            Stil.grund.ignoresSafeArea(edges: .bottom)
         }
         .overlay(alignment: .top) {
             Rectangle().fill(Stil.linie).frame(height: 1)
+        }
+    }
+}
+
+/// Die Ziele oben rechts — auf **jeder** Wurzelseite dieselben, in derselben
+/// Reihenfolge, mit denselben Abständen.
+///
+/// **Sie gehören zusammen, also stehen sie zusammen.** Merkliste und Profil
+/// standen auf der Startseite nebeneinander und auf Filme und Serien allein;
+/// dieselbe Ecke des Bildschirms hielt auf zwei Seiten Verschiedenes bereit.
+///
+/// `vorn` ist der Platz für das, was nur eine Seite hat — auf der Startseite
+/// das Angebot „hier weiterschauen". Es steht links vom Rest, weil es kommt
+/// und geht: dazwischen würde es die dauerhaften Ziele hin und her schieben.
+struct Kopfziele<Vorn: View>: View {
+    let name: String
+    let bild: URL?
+    @ViewBuilder var vorn: () -> Vorn
+
+    var body: some View {
+        HStack(spacing: 0) {
+            vorn()
+
+            NavigationLink(value: MerklisteRoute()) {
+                // **Gefüllt, nicht als Umriss.** Ein hohles Lesezeichen bei
+                // 20 Punkt ist fast nur Kontur. In der Knopfreihe auf den
+                // Detailseiten heisst gefüllt „gemerkt"; hier ist es kein
+                // Zustand, sondern ein Ziel, und dort steht es allein.
+                Image(systemName: "bookmark.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Stil.schrift)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Merkliste"))
+
+            Profilziel(name: name, bild: bild)
+        }
+    }
+}
+
+extension Kopfziele where Vorn == EmptyView {
+    init(name: String, bild: URL?) {
+        self.init(name: name, bild: bild) { EmptyView() }
+    }
+}
+
+/// Das Profilbild oben rechts — auf **jeder** Wurzelseite an derselben Stelle.
+
+/// Das Profilbild oben rechts — auf **jeder** Wurzelseite an derselben Stelle.
+///
+/// **Es stand zweimal da und ist prompt verrutscht.** Auf der Startseite kam
+/// mit der Merkliste eine Trefferfläche von 44 Punkt dazu, auf Filme und
+/// Serien blieb es beim nackten Kreis von 30 — und damit saß dasselbe Bild auf
+/// zwei Seiten an zwei Stellen.
+///
+/// Die 44 sind richtig (E12), aber sie ragen 7 Punkt über den Kreis hinaus;
+/// ohne den Ausgleich stünde der Kreis 7 Punkt weiter innen als der Rand der
+/// Seite. Diese Rechnung gehört an **eine** Stelle.
+struct Profilziel: View {
+    let name: String
+    let bild: URL?
+
+    var body: some View {
+        NavigationLink(value: ProfilRoute()) {
+            Profilzeichen(name: name, bild: bild)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, -7)
+    }
+}
+
+/// Wohin ein Antippen der Bereichsleiste geht — oder `nil`, wo es keine gibt.
+///
+/// Über die Umgebung und nicht als Argument: sonst müsste jede Wurzelansicht
+/// die Bindung durchreichen, und die nächste, die dazukommt, vergisst es.
+private struct Bereichswahlschluessel: EnvironmentKey {
+    static let defaultValue: Binding<Bereich>? = nil
+}
+
+/// Ist dieser Bereich der vorderste? Steuert das Heranziehen beim Wechsel.
+private struct BereichAktivSchluessel: EnvironmentKey {
+    static let defaultValue = true
+}
+
+/// Ob es den Downloadreiter gibt und wie viele gerade laufen.
+///
+/// **Aus demselben Grund über die Umgebung wie ``bereichswahl``:** die Leiste
+/// wird von drei Wurzelansichten angelegt, und die vierte, die dazukommt,
+/// vergisst sonst das Durchreichen. Beides zusammen in einem Wert, weil beides
+/// dieselbe Leiste betrifft und immer gemeinsam gesetzt wird.
+struct Downloadleiste: Equatable {
+    var an = false
+    var laufen = 0
+}
+
+private struct DownloadleisteSchluessel: EnvironmentKey {
+    static let defaultValue = Downloadleiste()
+}
+
+extension EnvironmentValues {
+    var bereichswahl: Binding<Bereich>? {
+        get { self[Bereichswahlschluessel.self] }
+        set { self[Bereichswahlschluessel.self] = newValue }
+    }
+
+    var bereichAktiv: Bool {
+        get { self[BereichAktivSchluessel.self] }
+        set { self[BereichAktivSchluessel.self] = newValue }
+    }
+
+    var downloadleiste: Downloadleiste {
+        get { self[DownloadleisteSchluessel.self] }
+        set { self[DownloadleisteSchluessel.self] = newValue }
+    }
+}
+
+extension View {
+    /// Legt die Bereichsleiste unten an diese Ansicht.
+    ///
+    /// **Sie gehört in die Wurzelansicht, nicht über den Seitenstapel.** Dort
+    /// hing sie, und daraus folgten zwei Fehler, die wie zwei aussahen und
+    /// einer waren:
+    ///
+    /// **Beim Blättern auf eine Unterseite verschwand sie schlagartig.** Sie
+    /// hing an „ist der Pfad leer" und wurde ausgehängt, während die neue
+    /// Seite noch von rechts hereinfuhr. Liegt sie in der Wurzel, schiebt der
+    /// Stapel die neue Seite von selbst darüber — es gibt nichts auszuhängen.
+    /// - **Ein Blatt lag darunter.** Ein Blatt hängt in der Seite, die Leiste
+    /// lag eine Ebene höher. Der Umweg über einen Unterrand versteckte es nur;
+    /// der Versuch, den Seitenstapel darüber zu heben, deckte die Leiste mit
+    /// undurchsichtigem Grund zu — sie war weg statt gedämpft.
+    ///
+    /// In der Wurzel stimmt die Reihenfolge von selbst: Inhalt, Leiste, Blatt.
+    /// Deshalb steht dieser Aufruf **vor** den Blättern einer Seite.
+    func bereichsleiste() -> some View {
+        modifier(Bereichsleiste())
+    }
+
+    /// Zieht diesen Inhalt beim Bereichswechsel eine Spur heran.
+    ///
+    /// **Gehört an die Scrollfläche, nicht an die Seite.** Es sass am ganzen
+    /// Seitenkörper, und der trägt oben die Kopfzeile: auf Filme und Serien
+    /// wanderten Titel und Profilbild mit, auf der Startseite nicht — dort
+    /// lag es zufällig schon an der richtigen Stelle. Zwei Seiten, zwei
+    /// Verhalten, und das obendrein.
+    ///
+    /// Die Kopfzeile ist eine Leiste wie die untere: sie liegt fest, und der
+    /// Inhalt bewegt sich darunter.
+    func bereichsinhalt() -> some View {
+        modifier(Bereichsinhalt())
+    }
+}
+
+private struct Bereichsinhalt: ViewModifier {
+    @Environment(\.bereichAktiv) private var aktiv
+
+    func body(content: Content) -> some View {
+        content
+            // **Unten verankert, nicht mittig.**
+            //
+            // Mittig bewegen sich beide Kanten, und die untere ist die einzige
+            // sichtbare: der Inhalt wird an ihr abgeschnitten, also ruecken
+            // beim Heranziehen ein paar Punkt Grund darunter — ein dunkler
+            // Strich, der am Ende der Bewegung verschwindet.
+            //
+            // Am unteren Rand verankert steht diese Kante still; die obere
+            // wandert dafuer doppelt so weit, und dort liegt ohnehin nur der
+            // freie Rand unter der Kopfzeile.
+            .scaleEffect(aktiv ? 1 : Stil.bereichsmass, anchor: .bottom)
+            // **Ein fester Grund hinter dem bewegten Inhalt.**
+            //
+            // Zieht er sich heran, gibt er an allen Rändern etwas frei — und
+            // was dort zum Vorschein kommt, gehört nicht mehr ihm. Dieser
+            // Grund ist derselbe Ton und bewegt sich nicht mit; damit gibt es
+            // dort nichts freizugeben.
+            .background(Stil.grund.ignoresSafeArea())
+            .animation(Stil.bereichswechsel, value: aktiv)
+    }
+}
+
+private struct Bereichsleiste: ViewModifier {
+    @Environment(\.breit) private var breit
+    @Environment(\.bereichswahl) private var wahl
+    @Environment(\.downloadleiste) private var downloads
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .bottom) {
+            if !breit, let wahl {
+                Navileiste(gewaehlt: wahl, mitDownloads: downloads.an,
+                           laufen: downloads.laufen)
+                    // **Der volle Rahmen davor ist nicht schmückend.** Die
+                    // Auflage misst sich an ihrem Gastgeber, und der ist bei
+                    // offener Tastatur bereits geschrumpft — die Leiste stand
+                    // dann mitten im Bild, über der Tastatur. Erst der volle
+                    // Rahmen plus das Ignorieren des Tastaturbereichs hängt
+                    // sie wieder an den **echten** unteren Rand.
+                    //
+                    // Auf der Suchseite ist genau das gewollt: die Tastatur
+                    // legt sich darüber, die Leiste bleibt darunter stehen
+                    // und ist wieder da, sobald das Feld schliesst.
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
+            }
         }
     }
 }
@@ -1172,6 +1498,7 @@ struct Navileiste: View {
 /// mehr als ein senkrechter.
 struct Seitenleiste: View {
     @Environment(\.fensterknoepfe) private var fensterknoepfe
+    @Environment(\.downloadleiste) private var downloads
     @Binding var gewaehlt: Bereich
     /// Die Profilseite ist offen — dann trägt keiner der vier Bereiche die
     /// Auswahl, sondern das Zeichen unten.
@@ -1186,15 +1513,23 @@ struct Seitenleiste: View {
                 .padding(.top, Stil.kopfOben + (fensterknoepfe ? Fensterknoepfe.hoehe : 0))
                 .padding(.bottom, 30)
 
-            ForEach(Bereich.allCases) { bereich in
+            ForEach(Bereich.sichtbare(downloads: downloads.an, breit: true)) { bereich in
                 Bereichsknopf(bereich: bereich,
                               aktiv: bereich == gewaehlt && !imProfil,
-                              hoehe: 64) {
+                              hoehe: 64,
+                              laufen: bereich == .downloads ? downloads.laufen : 0) {
                     gewaehlt = bereich
                 }
             }
 
             Spacer(minLength: 0)
+
+            // **Die Merkliste stand hier und steht jetzt oben bei den
+            // Bereichen.** Als `NavigationLink` tat sie hier nichts: die
+            // Seitenleiste liegt ausserhalb des `NavigationStack`, und ein
+            // Link ohne Stapel zeigt ins Leere. Unten blieb also nur das
+            // Profil — was auch stimmiger ist, denn das Profil ist kein Ort
+            // in der App, sondern wer man ist.
 
             Button(action: aufsProfil) {
                 Profilzeichen(name: name, bild: bild, hervorgehoben: imProfil)
@@ -1206,11 +1541,9 @@ struct Seitenleiste: View {
         // Wie unten: der Grund muss bis an beide Kanten laufen, nicht nur bis
         // zum sicheren Bereich.
         .background {
-            ZStack {
-                Unschaerfe()
-                Stil.grund.opacity(0.86)
-            }
-            .ignoresSafeArea()
+            // Deckend wie die Leiste unten auf dem iPhone und wie beide
+            // Koepfe — dieselbe Begruendung, dieselbe Farbe.
+            Stil.grund.ignoresSafeArea()
         }
         .overlay(alignment: .trailing) {
             Rectangle().fill(Stil.linie).frame(width: 1).ignoresSafeArea()
@@ -1301,6 +1634,22 @@ struct Unschaerfe: UIViewRepresentable {
 /// anfing zu verschwinden und die Kanten der Buchstaben dahinter wieder
 /// scharf wurden. Apples Leisten sind über ihre ganze Höhe gleich und setzen
 /// unten eine Haarlinie — das liest sich als Fläche, nicht als Schleier.
+/// **Zurzeit benutzt das niemand — und das ist Absicht.**
+///
+/// Am 06.09.2026 sind alle drei Glasleisten der iPhone-Fassung auf eine
+/// deckende Fläche umgestellt worden: die Bereichsleiste unten, der
+/// Bibliothekskopf und der Kopf der Detailseiten. Der Grund steht bei jeder
+/// einzeln, er ist überall derselbe — **Apples Materialien tragen alle eine
+/// helle Schicht**, auch das dünnste. Über unserem Grund (#0B0B0D) und
+/// bunten Plakaten wird daraus ein grauer Block, und beim Federn blitzt er
+/// auf, weil `Unschaerfe` ihre Stärke über eine Maske regelt, die je Bild
+/// neu gerechnet wird.
+///
+/// Der Baustein bleibt stehen, weil in ihm eine Messung steckt, die man
+/// sonst zweimal macht (siehe `Unschaerfe`: `.dark` ist seit iOS 13
+/// abgekündigt und zeichnet mit einer Ebenenmaske gar nicht mehr). **Wer ihn
+/// wieder einsetzt, prüft vorher am Gerät, ob die Leiste heller ist als die
+/// Seite.**
 struct Leistenglas: View {
     var staerke: Double = 1
     /// Wie viel Grundton mit hineinspielt.
@@ -1322,7 +1671,19 @@ struct Leistenglas: View {
 struct Unschaerfekopf<Inhalt: View>: View {
     @Environment(\.breit) private var breit
     @Environment(\.fensterknoepfe) private var fensterknoepfe
+    /// Wie weit die Seite gescrollt ist. **Nur wer ihn angibt, bekommt die
+    /// Haarlinie** — auf der Startseite laufen Kacheln durch und dort ist
+    /// eine Kante falsch. In der Bibliothek läuft Schrift durch, und ohne
+    /// Kante sieht der Übergang aus wie Brei statt wie eine Trennung.
+    var versatz: CGFloat?
     @ViewBuilder var inhalt: () -> Inhalt
+
+    /// Dieselbe Mechanik wie in `Detailkopf`: über dreissig Punkt Weg steht
+    /// die Linie voll.
+    private var kante: Double {
+        guard let versatz else { return 0 }
+        return Double(min(max(versatz / 30, 0), 1))
+    }
 
     var body: some View {
         inhalt()
@@ -1330,14 +1691,47 @@ struct Unschaerfekopf<Inhalt: View>: View {
             .padding(.top, (breit ? Stil.kopfOben : 0)
                      + (fensterknoepfe ? Fensterknoepfe.hoehe : 0))
             .padding(.bottom, 12)
+            .background(alignment: .bottom) {
+                Rectangle().fill(Stil.linie).frame(height: 1).opacity(kante)
+            }
             .background {
-                // Nur ein Verlauf, keine Unschärfe.
+                // **Ohne Versatz nur ein Verlauf, mit Versatz eine Leiste.**
                 //
                 // Auf der Startseite laufen Kacheln durch, keine Schrift —
                 // dort muss nichts lesbar gehalten werden, es soll nur nicht
                 // hart abschneiden. Ein Verlauf tut das ruhiger als Glas und
                 // braucht keine Haarlinie.
-                Kopfverlauf()
+                //
+                // In der Bibliothek läuft Schrift durch, und dort war eine
+                // Haarlinie allein sinnlos: darüber blieb alles durchsichtig,
+                // die Linie trennte nichts. Fest — und zwar genau so, wie
+                // `Detailkopf` es seit jeher macht: offen im Ruhezustand,
+                // geschlossen beim Scrollen. Das ist die Grammatik, die die
+                // App schon hat. 0,86 ist derselbe Wert wie in der
+                // `Navileiste` unten — die beiden Leisten der App sollen
+                // gleich deckend sein.
+                ZStack {
+                    Kopfverlauf().opacity(1 - kante)
+                    // **Deckend, nicht Glas.** Erst stand hier `Leistenglas`,
+                    // und das war sichtbar **heller als die Seite**: Apples
+                    // Material traegt eine helle Schicht, und 0,86 Grundton
+                    // darueber gleicht sie nicht aus. Ueber schwarzem Grund
+                    // und bunten Plakaten wurde daraus ein grauer Block Beim
+                    // Federn nach dem Loslassen war es am staerksten zu sehen,
+                    // weil die Maske der Unschaerfe je Bild neu gerechnet
+                    // wird.
+                    //
+                    // Eine Flaeche kann nicht aufblitzen und ist genau so
+                    // dunkel wie die Seite. Der Bibliothekskopf traegt
+                    // ausserdem Schrift, keine Kacheln — dort ist Glas kein
+                    // Gewinn, sondern nur Unruhe. **Bis unter die
+                    // Statusleiste.** `Kopfverlauf` bringt sein eigenes
+                    // `ignoresSafeArea` mit, eine blosse Flaeche nicht — sie
+                    // endete an der Oberkante des Kopfes, und darueber liefen
+                    // die Plakate ungebremst bis nach ganz oben. Genau das war
+                    // zu sehen.
+                    Stil.grund.opacity(kante).ignoresSafeArea(edges: .top)
+                }
             }
     }
 }
@@ -1363,16 +1757,34 @@ struct Kopfverlauf: View {
     ///
     /// Wer hier erhöht, muss die Zahl gegen `contentMargins(.top:)` der
     /// Startseite prüfen — die ist die knappste im Projekt.
-    var zugabe: CGFloat = 14
+    ///
+    /// **Von 14 auf 17.** „Wirklich absolut minimal tiefer." Der Ausklang
+    /// reicht damit knapp an die erste Reihe der Startseite heran; sichtbar
+    /// wird davon nichts, weil er dort schon unter acht Prozent liegt.
+    var zugabe: CGFloat = 17
 
+    /// **Kräftiger, aber ohne Knick** (06.09.2026).
+    ///
+    /// Der erste Versuch hat die alten Werte einfach mit 1,2 multipliziert und
+    /// oben bei 0,98 gekappt. Genau das erzeugt den Knick, vor dem der Absatz
+    /// oben warnt: die Kappung macht den Anfang flach, und was an Abfall
+    /// wegfällt, muss die nächste Strecke mittragen — aus −0,8 je Einheit
+    /// wurden −2,4.
+    ///
+    /// **Nicht der Wert zählt, sondern das Gefälle.** Neun Stützpunkte, deren
+    /// Steigung erst zunimmt und am Ende wieder abnimmt — nirgends mehr als
+    /// −2,2 je Einheit, und das ist weniger als im alten Verlauf. Kräftiger
+    /// ist er trotzdem: bei halber Höhe deckt er 0,84 statt 0,80.
     var body: some View {
         LinearGradient(stops: [
-            .init(color: Stil.grund.opacity(0.92), location: 0),
-            .init(color: Stil.grund.opacity(0.90), location: 0.40),
-            .init(color: Stil.grund.opacity(0.74), location: 0.60),
-            .init(color: Stil.grund.opacity(0.46), location: 0.74),
-            .init(color: Stil.grund.opacity(0.22), location: 0.86),
-            .init(color: Stil.grund.opacity(0.07), location: 0.94),
+            .init(color: Stil.grund.opacity(0.98), location: 0),
+            .init(color: Stil.grund.opacity(0.94), location: 0.30),
+            .init(color: Stil.grund.opacity(0.85), location: 0.48),
+            .init(color: Stil.grund.opacity(0.70), location: 0.62),
+            .init(color: Stil.grund.opacity(0.52), location: 0.73),
+            .init(color: Stil.grund.opacity(0.34), location: 0.82),
+            .init(color: Stil.grund.opacity(0.19), location: 0.89),
+            .init(color: Stil.grund.opacity(0.09), location: 0.95),
             .init(color: Stil.grund.opacity(0),    location: 1),
         ], startPoint: .top, endPoint: .bottom)
         .padding(.bottom, -zugabe)
@@ -1408,20 +1820,31 @@ struct Suchfeld: View {
 
             if !text.isEmpty {
                 Button { text = "" } label: {
+                    // **Kein Kreis mehr.** Mit den vier Aktionskreisen ist
+                    // die Kreisform aus der App verschwunden — dieser hier
+                    // war der letzte Kreis, der ein Knopf ist. Runde
+                    // Porträts und das Profilbild bleiben: das sind Bilder.
                     Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(Stil.grund)
-                        .frame(width: 18, height: 18)
-                        .background(Color.white.opacity(0.16), in: Circle())
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Stil.schriftLeise)
+                        // **Der Kreis bleibt 18, das Ziel wird 44.** Es war
+                        // die kleinste Trefferfläche der App — weniger als
+                        // die Hälfte von Apples Mindestmaß. Sichtbar ändert
+                        // sich nichts; der Rand ragt in den rechten
+                        // Innenabstand des Feldes, wo ohnehin nichts liegt.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Eingabe löschen")
+                // Sonst schöbe das 44er Ziel das Feld auseinander.
+                .padding(.trailing, -13)
             }
         }
         .padding(.horizontal, 14)
         .frame(height: 44)
-        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 10))
-        .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(Stil.rand) }
+        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
+        .overlay { RoundedRectangle(cornerRadius: Stil.eckeFeld).strokeBorder(Stil.rand) }
     }
 }
 
@@ -1468,17 +1891,25 @@ struct Klapptext: View {
 
 /// Weicher Auslauf am unteren Rand des Heldenbilds.
 ///
-/// Vorher stiess das Bild hart auf die dunkle Fläche darunter. Der Verlauf
-/// läuft über die letzten 130 Punkt in den Grundton aus — bewusst flach, ein
-/// starker Verlauf frisst das Bild auf.
+/// Vorher stiess das Bild hart auf die dunkle Fläche darunter.
+///
+/// **Von 130 auf 190 Punkt** (06.09.2026). Titel und Nebenzeile stehen rund 70
+/// Punkt über der Unterkante; bei 130 lag dort erst gut die Hälfte an Deckung,
+/// und auf hellen Plakaten stand der Titel damit fast blank auf dem Bild.
+///
+/// Höher **und** flacher: der Anfang bleibt weit unter dem alten Wert, damit
+/// der Verlauf nicht das halbe Bild auffrisst — er beginnt nur früher und
+/// erreicht die Textzeile mit mehr Deckung.
 struct Heldauslauf: View {
     var body: some View {
         LinearGradient(stops: [
             .init(color: Stil.grund.opacity(0),    location: 0),
-            .init(color: Stil.grund.opacity(0.55), location: 0.45),
+            .init(color: Stil.grund.opacity(0.28), location: 0.32),
+            .init(color: Stil.grund.opacity(0.58), location: 0.56),
+            .init(color: Stil.grund.opacity(0.85), location: 0.78),
             .init(color: Stil.grund,               location: 1),
         ], startPoint: .top, endPoint: .bottom)
-        .frame(height: 130)
+        .frame(height: 190)
         .allowsHitTesting(false)
     }
 }
@@ -1489,14 +1920,30 @@ struct Heldauslauf: View {
 /// in zwei Zeilen — das war überladen. Jahr und Laufzeit sitzen jetzt im
 /// Heldenbild, hier bleibt nur, was die Wiedergabe betrifft.
 struct Belegzeile: View {
-    var direktplay: Bool
+    var direktplay: Bool = false
     var hinweis: String?
     var bewertung: Double?
     var freigabe: String?
+    /// **Ein freier Beleg statt des Wiedergabeplans.**
+    ///
+    /// Über einen Titel, den der eigene Server gar nicht hat, weiss niemand,
+    /// wie er läuft — auf der Seerr-Seite steht an dieser Stelle stattdessen
+    /// der Stand. Vorher stand dafür dort dieselbe Zeile ein zweites Mal, mit
+    /// denselben Zahlen: Symbol 11 heavy, Wort 13 medium, Abstände 6 und 14.
+    /// Ändert jemand einen Grad, laufen zwei Zeilen auseinander, die
+    /// nebeneinander gleich aussehen sollen.
+    var eigen: (symbol: String, wort: String, farbe: Color)?
 
     var body: some View {
         HStack(spacing: 14) {
-            if direktplay {
+            if let eigen {
+                HStack(spacing: 6) {
+                    Image(systemName: eigen.symbol)
+                        .font(.system(size: 11, weight: .heavy))
+                    Text(verbatim: eigen.wort).font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(eigen.farbe)
+            } else if direktplay {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .heavy))
@@ -1521,7 +1968,12 @@ struct Belegzeile: View {
                 .foregroundStyle(Color.white.opacity(0.8))
             }
 
-            if let freigabe { Plakette(text: freigabe) }
+            // **Ecke 8, nicht der Standardwert 3.** Die Skala ist seit
+            // heute 10/10/12/16, und eine Marke mit 3 sitzt direkt neben
+            // Dingen mit 10 — sie war das eckigste Element der Seite. Hier
+            // und nicht am Baustein: `Plakette` steht auch im Mac- und
+            // Fernseherziel, und die haben ihre eigene Skala.
+            if let freigabe { Plakette(text: freigabe, rundung: 8) }
 
             Spacer(minLength: 0)
         }
@@ -1548,11 +2000,16 @@ struct Detailkopf: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // **44, nicht 40.** Denselben Pfeil gab es mit zwei
+            // Trefferflächen — `Unterseitenkopf` mit 44, hier und im
+            // `Seitenpfeil` mit 40. Man sieht den Unterschied nicht, man
+            // trifft ihn: 40 liegt unter Apples Mindestmaß. Das Symbol
+            // bleibt bei 20, sichtbar ändert sich nichts.
             Button(action: zurueck) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(Stil.schrift)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1581,7 +2038,12 @@ struct Detailkopf: View {
                 LinearGradient(colors: [Stil.grund.opacity(0.7), Stil.grund.opacity(0)],
                                startPoint: .top, endPoint: .bottom)
                     .opacity(1 - staerke)
-                Leistenglas(staerke: staerke)
+                // **Dieselbe Leiste wie unten.** Hier stand `Leistenglas`, und
+                // damit war der Kopf einer Detailseite aus einem anderen Stoff
+                // als die Bereichsleiste und der Bibliothekskopf, die beide
+                // deckend sind. Apples Material traegt ausserdem eine helle
+                // Schicht — ueber einem Heldbild fiel das am staerksten auf.
+                Stil.grund.opacity(staerke)
             }
             .ignoresSafeArea(edges: .top)
         }
@@ -1708,7 +2170,8 @@ struct Seitenpfeil: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(Stil.schrift)
-                        .frame(width: 40, height: 40)
+                        // 44 wie überall — siehe `Detailkopf`.
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1858,24 +2321,90 @@ struct FlussReihe: Layout {
     }
 }
 
+/// **Eine Pille, die ihren Wert zeigt und ein Blatt öffnet.**
+///
+/// Der Unterschied zu `Wahlchip` ist die Frage, die sie beantwortet: der Chip
+/// ist *eine Möglichkeit unter mehreren offenen* und leuchtet, wenn er gilt;
+/// die Pille ist *der geltende Wert selbst*. Eine Reihe Chips liest sich als
+/// aufgeklapptes Menü, das jemand offen gelassen hat — eine Reihe Pillen als
+/// Werkzeugleiste. Genau daran hing der unfertige Eindruck.
+///
+/// Sie stand als Aufbau schon einmal da, mitten in der Bibliotheksseite, nur
+/// für die Sortierung. Beim zweiten Bedarf wäre sie zweimal dagestanden.
+struct Wertpille: View {
+    let symbol: String
+    let text: String
+    let tun: () -> Void
+
+    var body: some View {
+        Button(action: tun) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Stil.schriftLeise)
+                Text(verbatim: text)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Stil.schrift)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 30)
+            .background(Stil.erhoeht, in: Capsule())
+            .overlay { Capsule().strokeBorder(Stil.rand) }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Wie viele Titel in dieser Bibliothek liegen.
+///
+/// **Eine Angabe, keine Handlung** — also leise Schrift und kein Kasten. Plex
+/// setzt sie als gefüllte Kapsel; dort ist sie ein Knopf. Sie beantwortet
+/// „bin ich hier durch?", und ohne sie scrollt man ins Ungewisse.
+struct Zaehlmarke: View {
+    let anzahl: Int
+
+    var body: some View {
+        Text(verbatim: anzahl.formatted())
+            .font(.system(size: 13, weight: .medium))
+            .monospacedDigit()
+            .foregroundStyle(Stil.schriftSehrLeise)
+            .accessibilityLabel(Text("\(anzahl) Titel"))
+    }
+}
+
 /// Auswahlchip: eine Möglichkeit aus wenigen, ohne Liste.
 ///
 /// Für Filter und kurze Wertebereiche. Eine Liste wäre hier mehr Aufwand als
 /// Nutzen — man sieht ohnehin alles auf einmal.
 struct Wahlchip: View {
     let text: String
+    /// Ein Zeichen vor dem Wort — der Trichter am gewaehlten Sortierwert,
+    /// wie auf dem Mac. `nil` heisst: nur das Wort.
+    var symbol: String?
     let an: Bool
     let aktion: () -> Void
 
     var body: some View {
         Button(action: aktion) {
-            Text(text)
-                .font(.system(size: 13, weight: an ? .semibold : .regular))
+            // **Gewaehlt ist weiss, nicht Akzent.**
+            //
+            // Hier war es der Akzent, und damit sah dieselbe Chipreihe auf
+            // dem iPad anders aus als auf dem Mac, wo sie weiss ist. Es passt
+            // auch besser zur Regel: der Akzent traegt Zustand, und "dieser
+            // Filter gilt gerade" ist eine Auswahl. Auf dem Fernseher ist es
+            // aus demselben Grund geaendert worden.
+            HStack(spacing: 6) {
+                if let symbol {
+                    Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                }
+                Text(text)
+                    .font(.system(size: 13, weight: an ? .semibold : .regular))
+            }
                 .foregroundStyle(an ? Stil.grund : Stil.schrift)
                 .padding(.horizontal, 13)
                 .frame(height: 30)
-                .background(an ? Stil.akzent : Stil.erhoeht, in: Capsule())
-                .overlay { Capsule().strokeBorder(an ? Stil.akzent : Stil.rand) }
+                .background(an ? Stil.schrift : Stil.erhoeht, in: Capsule())
+                .overlay { Capsule().strokeBorder(an ? Stil.schrift : Stil.rand) }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(text)
@@ -1883,10 +2412,323 @@ struct Wahlchip: View {
     }
 }
 
+/// Ein Chip, der etwas **tut**, statt etwas zu **wählen**.
+///
+/// Dieselbe Höhe, dieselbe Kapsel, derselbe Rand wie ``Wahlchip`` — er steht
+/// oft direkt daneben, und zwei Chips in einer Zeile, die sich in der Form
+/// unterscheiden, sähen aus wie zwei Sorten Frage. Verschieden ist nur, dass
+/// er keinen An-Zustand hat: eine Handlung ist nicht gewählt, sie geschieht.
+struct Chipknopf<Inhalt: View>: View {
+    @ViewBuilder var inhalt: () -> Inhalt
+    let aktion: () -> Void
+
+    var body: some View {
+        Button(action: aktion) {
+            inhalt()
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Stil.schrift)
+                .padding(.horizontal, 13)
+                .frame(height: 30)
+                .background(Stil.erhoeht, in: Capsule())
+                .overlay { Capsule().strokeBorder(Stil.rand) }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// **Ein Blatt von unten — unseres, mit Apples Physik nachgerechnet.**
+///
+/// Drei Anläufe, und der dritte ist der, der bleibt. Der Reihe nach, weil
+/// jeder Anlauf etwas beigetragen hat:
+///
+/// 1. **Selbst gebaut, ohne Auffahren.** `.transition(.move)` liess beim
+/// Schliessen den Hintergrund in der Sicherheitszone stehen — unter dem Blatt
+/// blieb ein Streifen. 2. **Selbst gebaut, mit gemessener Karte.** Der
+/// Streifen war weg, das Auffahren da. Aber "* Zu Recht: es fehlte alles, was
+/// eine Bewegung geschmeidig macht — Gummikante, Wurfgeschwindigkeit, eine
+/// Feder, die den Schwung des Fingers uebernimmt. 3. **Apples `sheet`.**
+/// Loeste das, brachte aber **iOS 26** mit: dort schwebt ein Blatt mit
+/// Teilhoehe, mit Rand links und rechts und Abstand nach unten; an den Rand
+/// geht es nur noch bei voller Hoehe. Nachgelesen, nicht geraten — **eine API
+/// dagegen gibt es nicht.**
+///
+/// Also wieder unseres — aber diesmal mit dem, was in Anlauf 2 gefehlt hat,
+/// und das ist nachrechenbar und kein Gefuehl:
+///
+/// - **Gummikante nach oben.** Nach oben gibt es nichts zu sehen, also darf es
+/// sich kaum bewegen — aber es muss sich *etwas* bewegen, sonst fuehlt sich
+/// der Finger an, als sei er auf Beton. Dieselbe Formel wie `UIScrollView`. -
+/// **Der Schwung geht in die Feder.** `DragGesture` liefert seit iOS 17
+/// `velocity`; die Geschwindigkeit beim Loslassen wird auf die Restentfernung
+/// umgerechnet und als `initialVelocity` uebergeben. Das ist der ganze
+/// Unterschied zwischen „springt zurueck" und „gleitet zurueck". - **Ein
+/// schneller Wisch schliesst, auch wenn er kurz ist.** Ueber 700 Punkt je
+/// Sekunde reicht ein Zentimeter. - **Die Schwelle haengt an der Blatthoehe**,
+/// nicht an einer festen Zahl: ein Blatt mit drei Zeilen darf nicht dieselbe
+/// Strecke verlangen wie eins mit zwoelf.
+struct Blattmodifikator<Blattinhalt: View>: ViewModifier {
+    @Binding var offen: Bool
+    @ViewBuilder var blattinhalt: () -> Blattinhalt
+
+    /// Wie hoch die Karte ist — bestimmt, wie weit sie hinausfaehrt, wie
+    /// stark die Gummikante nachgibt und ab wann ein Zug zum Schliessen
+    /// reicht. **Gemessen, nicht angenommen.**
+    @State private var kartenhoehe: CGFloat = 400
+    /// Wie weit der Finger sie gerade verschoben hat.
+    @State private var zug: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content.overlay { blatt }
+    }
+
+    private var blatt: some View {
+        ZStack(alignment: .bottom) {
+            Rectangle()
+                // Der Schleier geht mit dem Zug auf: zieht man das Blatt
+                // hinunter, wird die Seite dahinter schon heller.
+                .fill(.black.opacity(offen ? 0.55 * (1 - anteil) : 0))
+                .ignoresSafeArea()
+                // **Dieselbe Kurve wie die Karte.** Sie hing nur an der Karte,
+                // nicht am Schleier — und der wurde deshalb hart gesetzt: beim
+                // Oeffnen war er sofort da, waehrend die Karte noch heraufkam.
+                // Beim Schliessen fiel es nicht auf, weil `schliessen(mit:)`
+                // den Wechsel ohnehin in eine Animation packt und der Schleier
+                // sie mitnimmt.
+                //
+                // Am Zug haengt sie nicht: `value: offen` heisst, dass nur das
+                // Auf und Zu laeuft. Waehrend der Finger zieht, folgt der
+                // Schleier ihm eins zu eins.
+                .animation(Stil.blattbewegung, value: offen)
+                .onTapGesture { schliessen(mit: 0) }
+
+            VStack(spacing: 0) {
+                Capsule()
+                    .fill(Color.white.opacity(0.25))
+                    .frame(width: 36, height: 5)
+                    .padding(.top, 8)
+                    // Zu schmal zum Treffen, und das macht nichts — gezogen
+                    // wird am ganzen Blatt. Fuer VoiceOver ist er nichts.
+                    .accessibilityHidden(true)
+
+                blattinhalt()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                // **Die Flaeche reicht weiter nach unten, als die Karte je
+                // faehrt.** Die Feder schiesst beim Oeffnen ueber — die Karte
+                // hebt kurz ab. Endet die Flaeche an ihrer Unterkante, blitzt
+                // in dem Moment der Inhalt darunter durch. „Der Bounce beim
+                // Oeffnen ist toll."
+                UnevenRoundedRectangle(topLeadingRadius: Stil.eckeFlaeche,
+                                       topTrailingRadius: Stil.eckeFlaeche)
+                    .fill(Stil.flaeche)
+                    .padding(.bottom, -400)
+                    .ignoresSafeArea(edges: .bottom)
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                action: { kartenhoehe = $0 }
+            .offset(y: offen ? zug : kartenhoehe + 400)
+            // **Das Auffahren gehört hierher, nicht an die Aufrufstellen.**
+            //
+            // Es hing an einem `withAnimation` bei jedem Öffner — fünf
+            // Stellen, und beim Umbau auf Apples `sheet` fielen alle fünf weg,
+            // weil ein Systemblatt sich selbst animiert. Danach war das Blatt
+            // beim Öffnen „einfach zack da" und fuhr nur noch hinaus.
+            //
+            // **In beide Richtungen.** Beim Schliessen stand hier `nil`, damit
+            // die Feder aus `schliessen(mit:)` samt Fingerschwung gilt. Das
+            // ging nur beim Ziehen auf: wer „Abbrechen" drückt, daneben tippt
+            // oder etwas auswaehlt, setzt `offen` ohne jede Animation — und
+            // dann war das Blatt schlagartig weg.
+            //
+            // Der Preis ist klein und die Sicherheit gross: der Fingerschwung
+            // wirkt weiter dort, wo man ihn spuert — beim Zurueckfedern, das
+            // ueber `zug` laeuft und diese Animation gar nicht beruehrt.
+            .animation(Stil.blattbewegung, value: offen)
+            .gesture(ziehen)
+        }
+        // Der Stapel muss den Schirm fuellen; sonst bemisst sich die Auflage
+        // am Inhalt und die Karte sitzt oben.
+        //
+        // **Ohne `ignoresSafeArea` am Stapel**, und das ist der Unterschied
+        // zwischen einem Knopf ueber dem Home-Indikator und einem darunter:
+        // der Inhalt endet am sicheren Bereich, nur die Flaeche laeuft
+        // darueber hinaus.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(offen)
+    }
+
+    /// Wie weit das Blatt auf dem Weg nach draussen ist, 0 bis 1 — daran
+    /// haengt der Schleier.
+    private var anteil: Double {
+        Double(min(max(zug, 0) / max(kartenhoehe, 1), 1))
+    }
+
+    private var ziehen: some Gesture {
+        DragGesture()
+            .onChanged { wert in
+                let weg = wert.translation.height
+                // Nach unten eins zu eins, nach oben mit Widerstand.
+                zug = weg >= 0 ? weg : -gummi(-weg)
+            }
+            .onEnded { wert in
+                let schnell = wert.velocity.height
+                // Ein Viertel der Blatthoehe, oder ein schneller Wisch.
+                if wert.translation.height > kartenhoehe * 0.25 || schnell > 700 {
+                    schliessen(mit: schnell)
+                } else {
+                    withAnimation(feder(nach: 0, mit: schnell)) { zug = 0 }
+                }
+            }
+    }
+
+    /// Die Gummikante von `UIScrollView`: je weiter man zieht, desto weniger
+    /// gibt es nach. `c = 0.55` ist Apples Beiwert.
+    private func gummi(_ weg: CGFloat) -> CGFloat {
+        let d = max(kartenhoehe, 1)
+        return (1 - (1 / (weg * 0.55 / d + 1))) * d
+    }
+
+    /// Eine Feder, die den Schwung des Fingers uebernimmt.
+    ///
+    /// `initialVelocity` zaehlt in **Einheiten der Wertaenderung je Sekunde**,
+    /// nicht in Punkten — deshalb durch die Restentfernung teilen. Ohne diese
+    /// Umrechnung ist die Zahl entweder wirkungslos oder schleudert.
+    private func feder(nach ziel: CGFloat, mit schwung: CGFloat) -> Animation {
+        let strecke = max(abs(ziel - zug), 1)
+        let anfang = min(max(Double(schwung / strecke), -25), 25)
+        return .interpolatingSpring(mass: 1, stiffness: 280, damping: 32,
+                                    initialVelocity: anfang)
+    }
+
+    private func schliessen(mit schwung: CGFloat) {
+        withAnimation(feder(nach: kartenhoehe + 400, mit: schwung)) {
+            offen = false
+            zug = 0
+        }
+    }
+}
+
+extension View {
+    /// Ein Blatt von unten. Siehe ``Blattmodifikator``.
+    ///
+    /// **Immer anhaengen, nie in ein `if offen`.** In einem `if` steht `offen`
+    /// beim Einhaengen schon auf wahr, die Karte sitzt sofort an ihrem Platz,
+    /// und das Auffahren faellt aus.
+    func blatt<Inhalt: View>(offen: Binding<Bool>,
+                             @ViewBuilder inhalt: @escaping () -> Inhalt) -> some View {
+        modifier(Blattmodifikator(offen: offen, blattinhalt: inhalt))
+    }
+}
+
+/// Die Rubrik über dem Inhalt eines Blatts.
+///
+/// Nimmt `Text` und keinen Schlüssel: mal steht dort ein fester Titel
+/// („Sortieren"), mal ein Filmtitel vom Server, der nicht übersetzt werden
+/// darf.
+///
+/// **13 Punkt grau war zu leise.** Der Grad war für ein Blatt mit vier Zeilen
+/// gebaut; ein Filterblatt nimmt den halben Schirm ein, und dort las sich
+/// derselbe Titel wie eine Fußnote über der Hauptsache. Jetzt 17 halbfett in
+/// Weiß, mit einer Kante darunter — Plex' Blätter machen es genauso, nur
+/// zentriert. **Das Zentrieren übernehmen wir nicht:** unsere Köpfe sind
+/// linksbündig, überall, und E9 sagt das auch für Köpfe.
+struct Blattrubrik: View {
+    let text: Text
+
+    var body: some View {
+        VStack(spacing: 0) {
+            text
+                .font(.system(size: 17, weight: .semibold))
+                .tracking(-0.2)
+                .foregroundStyle(Stil.schrift)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Stil.randAbstand)
+                // 8 für den Griff, 5 für seine Höhe, 5 hier — zusammen
+                // dieselben 18 wie früher, als über dem Titel nichts stand.
+                .padding(.top, 5)
+                .padding(.bottom, 14)
+            Blattlinie()
+        }
+    }
+}
+
+/// Die Plakette oben rechts auf einer Kachel.
+///
+/// **In Weiß auf Dunkel, nicht in Akzent.** Der Akzent trägt Fortschritt und
+/// Auswahl; eine Plakette ist eine Angabe. Plex färbt seine gelb
+///
+/// Welche Auskunft draufsteht, entscheidet `Anzeigeregeln.kachelmarke` im
+/// Paket; hier steht nur der Wortlaut und wie sie aussieht.
+struct Kachelplakette: View {
+    let marke: Kachelmarke
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if marke == .gesehen {
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+            }
+            if let text = wortlaut {
+                Text(verbatim: text).font(.system(size: 10, weight: .semibold))
+            }
+        }
+        .foregroundStyle(Stil.schrift)
+        .padding(.horizontal, wortlaut == nil ? 5 : 6)
+        .padding(.vertical, 3)
+        .background {
+            // 9, nicht 6: die Kachel darunter hat 10, und eine Marke, die
+            // eckiger ist als ihr Untergrund, fällt auf.
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Stil.grund.opacity(0.78))
+                .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(Stil.rand) }
+        }
+        .padding(6)
+    }
+
+    private var wortlaut: String? {
+        switch marke {
+        case .gesehen: nil
+        case .offen(let n): String(localized: "\(n) offen")
+        case .staffeln(let n): n == 1 ? String(localized: "1 Staffel")
+                                      : String(localized: "\(n) Staffeln")
+        }
+    }
+}
+
+/// Die Linie über dem Fuss eines Blatts — **über die volle Breite.**
+///
+/// `Trennlinie` rückt 18 Punkt ein, weil sie zwischen Zeilen mit Symbol steht.
+/// Über einem Knopf, der die ganze Breite einnimmt, sieht dieselbe Linie aus
+/// wie ein Fehler;
+struct Blattlinie: View {
+    var body: some View {
+        Rectangle().fill(Stil.linie).frame(height: 1)
+    }
+}
+
+/// Die Abbrechen-Zeile am Fuss eines Blatts.
+struct Blattabbruch: View {
+    let tun: () -> Void
+
+    var body: some View {
+        Button(action: tun) {
+            Text("Abbrechen")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Stil.schriftLeise)
+                .frame(maxWidth: .infinity, minHeight: 54)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 /// Liste von Handlungen, die von unten aufgeht.
 ///
 /// Anders als `Auswahlblatt`: dort wählt man einen Wert und sieht, welcher
-/// gilt. Hier löst jede Zeile etwas aus und das Blatt schließt sich.
+/// gilt. Hier löst jede Zeile etwas aus und das Blatt schliesst sich.
+///
+/// Hängt an einer leeren Fläche, weil ein Blatt ein Modifikator ist und
+/// keine Ansicht im Stapel — so bleiben die Aufrufstellen, wie sie waren.
 struct Handlungsblatt: View {
     @Binding var offen: Bool
     /// Woran das Blatt arbeitet — nicht das Wort „Mehr". Das stand schon auf
@@ -1898,33 +2740,18 @@ struct Handlungsblatt: View {
     let handlungen: [Titelhandlung]
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Rectangle()
-                .fill(.black.opacity(0.55))
-                .ignoresSafeArea()
-                .onTapGesture { schliessen() }
-
-            // Genau die Werte des Auswahlblatts: obere Ecken 12, Titel 13
-            // halbfett in schriftLeise, Zeilen 50, unten Abbrechen mit 54.
-            // Vorher sprach dieses Blatt eine eigene Sprache — Versalien,
-            // Ecke 14, kein Abbrechen — und stach damit heraus.
-            VStack(spacing: 0) {
-                Text(titel)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Stil.schriftLeise)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Stil.randAbstand)
-                    .padding(.top, 18)
-                    .padding(.bottom, 12)
+        Color.clear
+            .allowsHitTesting(false)
+            .blatt(offen: $offen) {
+                Blattrubrik(text: Text(verbatim: titel))
 
                 ForEach(Array(handlungen.enumerated()), id: \.element.id) { paar in
                     if paar.offset > 0 {
-                        Rectangle().fill(Stil.linie).frame(height: 1)
-                            .padding(.leading, 52)
+                        Trennlinie()
+                            .padding(.leading, Stil.trennEinzug(breit: false) - Stil.randAbstand)
                     }
                     Button {
-                        schliessen()
+                        offen = false
                         paar.element.tun()
                     } label: {
                         HStack(spacing: 14) {
@@ -1943,36 +2770,9 @@ struct Handlungsblatt: View {
                     .buttonStyle(.plain)
                 }
 
-                Rectangle().fill(Stil.linie).frame(height: 1)
-                    .padding(.leading, Stil.randAbstand)
-
-                Button { schliessen() } label: {
-                    Text("Abbrechen")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Stil.schriftLeise)
-                        .frame(maxWidth: .infinity, minHeight: 54)
-                }
-                .buttonStyle(.plain)
+                Blattlinie()
+                Blattabbruch { offen = false }
             }
-            // Die Fläche muss selbst in den unteren Sicherheitsbereich
-            // reichen, nicht der Inhalt.
-            //
-            // `clipShape` plus `ignoresSafeArea` auf dem Inhalt sieht richtig
-            // aus, ist es aber nicht: der Stapel richtet den Inhalt unten
-            // innerhalb des sicheren Bereichs aus, er wächst nicht von selbst
-            // nach unten. Unter dem Blatt blieb dadurch ein Streifen in Höhe
-            // des Home-Indikators, durch den die Seite dahinter schien.
-            .background {
-                UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
-                    .fill(Stil.flaeche)
-                    .ignoresSafeArea(edges: .bottom)
-            }
-            .transition(.move(edge: .bottom))
-        }
-    }
-
-    private func schliessen() {
-        withAnimation(.snappy(duration: 0.22)) { offen = false }
     }
 }
 
@@ -2036,13 +2836,16 @@ struct Leerzustand: View {
                     .fill(Stil.flaeche)
                     .overlay { Circle().strokeBorder(Color.white.opacity(0.10)) }
                     .frame(width: 78, height: 78)
-                if laedt {
-                    Lader()
-                } else {
-                    Image(systemName: symbol)
-                        .font(.system(size: 30, weight: .light))
-                        .foregroundStyle(Stil.schriftLeise)
-                }
+                // Kein Ring, auch hier nicht: das Zeichen selbst atmet,
+                // solange es laeuft. Ein Ring haette gesagt „warte", das
+                // Zeichen sagt weiter, worum es geht.
+                Image(systemName: symbol)
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(Stil.schriftLeise)
+                    .opacity(laedt ? 0.45 : 1)
+                    .animation(laedt ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                                     : Stil.einblenden,
+                               value: laedt)
             }
 
             Text(kopfzeile)
@@ -2139,9 +2942,9 @@ struct Eingabefeld: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 48)
-        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 10))
+        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
         .overlay {
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Stil.eckeFeld)
                 .strokeBorder(amTippen ? Stil.akzent.opacity(0.55) : Stil.rand)
         }
         .animation(.easeOut(duration: 0.15), value: amTippen)
@@ -2149,5 +2952,102 @@ struct Eingabefeld: View {
 
     private var platz: Text {
         Text(platzhalter).foregroundColor(Color.white.opacity(0.38))
+    }
+}
+
+
+// MARK: - Platzhalter statt Ladering
+
+/// Eine Fläche in der Form dessen, was gleich kommt.
+///
+/// Heisst `Ladefeld` und nicht `Platzhalter`, weil `Bild` seinen Gattungsnamen
+/// schon so nennt — zwei gleiche Namen in einer Datei liest niemand mehr
+/// auseinander, und der Übersetzer erst recht nicht.
+///
+/// **Warum kein drehender Ring.** Ein Ring sagt „warte"; ein Platzhalter
+/// sagt, *was* kommt und wie viel — die Seite steht schon, sie ist nur noch
+/// leer. Das ist der Unterschied zwischen „die App hängt" und „gleich da",
+/// und er kostet nichts.
+///
+/// Das Pulsieren läuft über `.opacity` mit `repeatForever`: das übernimmt
+/// Core Animation und rechnet auf dem Renderserver weiter, ohne dass SwiftUI
+/// je Bild etwas neu bauen muss. Ein `TimelineView` je Kachel wäre bei
+/// dreissig Platzhaltern dreissig Uhren.
+struct Ladefeld: View {
+    var ecke: CGFloat = Stil.eckeKachel
+    @State private var hell = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: ecke)
+            .fill(Stil.flaeche)
+            .opacity(hell ? 1 : 0.5)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    hell = true
+                }
+            }
+            // Für die Sprachausgabe ist ein Platzhalter nichts — sie soll
+            // „Lädt" hören, und das sagt der Rahmen darum.
+            .accessibilityHidden(true)
+    }
+}
+
+/// Ein Plakat mit zwei Textzeilen darunter, alles als Platzhalter.
+struct Kachelplatzhalter: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Ladefeld()
+                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+            VStack(alignment: .leading, spacing: 5) {
+                Ladefeld(ecke: 3).frame(height: 11)
+                Ladefeld(ecke: 3).frame(width: 42, height: 9)
+            }
+        }
+    }
+}
+
+/// Ein Raster aus Plakat-Platzhaltern, so breit wie das echte.
+struct Rasterplatzhalter: View {
+    let spalten: Int
+    /// Wie viele Reihen. Zwei genügen: mehr sieht niemand, bevor die Antwort
+    /// da ist, und jede weitere ist Arbeit für nichts.
+    var reihen: Int = 3
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Stil.kachelAbstand),
+                                 count: spalten),
+                  alignment: .leading, spacing: 20) {
+            ForEach(0 ..< (spalten * reihen), id: \.self) { _ in
+                Kachelplatzhalter()
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lädt")
+    }
+}
+
+/// Eine Reihe aus Plakat-Platzhaltern, für die Startseite.
+struct Reihenplatzhalter: View {
+    @Environment(\.breit) private var breit
+    var quer = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Ladefeld(ecke: 4)
+                .frame(width: 148, height: 18)
+                .padding(.horizontal, Stil.rand(breit: breit))
+            HStack(spacing: Stil.kachelAbstand) {
+                ForEach(0 ..< 4, id: \.self) { _ in
+                    Ladefeld()
+                        .frame(width: quer ? Stil.reihenQuerBreite(breit: breit)
+                                           : Stil.reihenBreite(breit: breit),
+                               height: quer ? Stil.reihenQuerHoehe(breit: breit)
+                                            : Stil.reihenHoehe(breit: breit))
+                }
+            }
+            .padding(.horizontal, Stil.rand(breit: breit))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lädt")
     }
 }

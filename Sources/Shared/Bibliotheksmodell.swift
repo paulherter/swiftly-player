@@ -39,8 +39,40 @@ final class Bibliotheksmodell {
     /// steht hier die Frage und nicht der Auslöser.
     func veraltet(_ model: AppModel) -> Bool { fuerKonto != model.kontowechsel }
 
-    var sortierung: Sortierung = .name
-    var filter: Bibliotheksfilter = .alle
+    /// **Sortierung und Filter ueberleben den Neustart.**
+    ///
+    /// Ein Nutzer am 07.09.2026: „ich sortiere nach zuletzt, weil es
+    /// praktisch ist. Verlasse ich die App und komme wieder, bin ich zurueck
+    /// beim Standard." Er hat recht, und es ist keine Kleinigkeit: eine
+    /// Sortierung ist keine Handlung, sondern eine Einstellung — man trifft
+    /// sie einmal und erwartet sie danach vorzufinden.
+    ///
+    /// Gemerkt wird **je Ort**, nicht global: Filme nach Jahr und Serien
+    /// nach zuletzt hinzugefuegt ist eine sinnvolle Kombination, und ein
+    /// gemeinsamer Wert wuerde sie gegeneinander ausspielen. `merkname`
+    /// unterscheidet sie; ohne Namen wird nichts gemerkt.
+    var sortierung: Sortierung = .name { didSet { sichern() } }
+    var filter: Bibliotheksfilter = .alle { didSet { sichern() } }
+
+    /// Unter welchem Namen die beiden liegenbleiben — `nil` heisst: gar nicht.
+    private let merkname: String?
+
+    init(merkname: String? = nil) {
+        self.merkname = merkname
+        guard let merkname else { return }
+        let ablage = UserDefaults.standard
+        if let roh = ablage.string(forKey: "sortierung.\(merkname)"),
+           let wert = Sortierung(rawValue: roh) { sortierung = wert }
+        if let roh = ablage.string(forKey: "filter.\(merkname)"),
+           let wert = Bibliotheksfilter(rawValue: roh) { filter = wert }
+    }
+
+    private func sichern() {
+        guard let merkname else { return }
+        let ablage = UserDefaults.standard
+        ablage.set(sortierung.rawValue, forKey: "sortierung.\(merkname)")
+        ablage.set(filter.rawValue, forKey: "filter.\(merkname)")
+    }
 
     /// Wechselt eines davon, wird neu geladen.
     var kennung: String { "\(sortierung.rawValue)|\(filter.rawValue)" }

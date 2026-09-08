@@ -34,6 +34,9 @@ struct PlayerScreen: View {
     @State private var plan: PlaybackPlan
 
     @State private var flaeche: VLCPlayerView?
+    /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
+    @AppStorage("technikschild") private var technikschild = false
+    @State private var spielwerte: Spielwerte?
     @State private var position: Double
     /// Wann der Player geöffnet wurde — `Zeitannahme` braucht es, um
     /// Aufbauzucken von echter Bewegung zu unterscheiden.
@@ -200,6 +203,10 @@ struct PlayerScreen: View {
             VideoFlaeche(url: startPlan.url, startAt: startAt,
                          container: startPlan.container) { neu in
                 flaeche = neu
+                // Was im Blatt unter „Bild" gewaehlt wurde, gilt auch fuer
+                // die naechste Folge -- derselbe Schluessel wie die Geste
+                // auf dem iPhone.
+                neu.bildfuellend(UserDefaults.standard.bool(forKey: "bildfuellend"))
                 neu.onWiederherstellung = { stelltWiederHer = $0 }
                 // **Der Knopf haengt an VLCs Meldung, nicht am Druck.**
                 //
@@ -217,7 +224,7 @@ struct PlayerScreen: View {
 
             // **Deckend, nicht nur ein Ring.**
             //
-            // Vorher stand hier `Lader` allein — ein schwebender Ring ueber
+            // Vorher stand hier `Lader()` allein — ein schwebender Ring ueber
             // dem laufenden Bild. VLC steuert die Fortsetzstelle erst nach dem
             // ersten Bild an, und in dieser Zeit war der Anfang des Films zu
             // sehen. Der Ladeschirm hat ihn nicht verdeckt, weil er nichts
@@ -227,7 +234,7 @@ struct PlayerScreen: View {
             // der geteilten Taktlogik gelesen — unter anderem, um `laeuft`
             // gegen VLC gleichzurichten. Wer ihn zum Anzeigeschalter umwidmet,
             // haelt bei einem haengenden Wechsel auch den Gleichrichter an.
-            // Genau daran kann
+            // Genau daran kann der verdrehte Pausezustand gelegen haben.
             if !erstesBildDa || Bildtakt.schaltetUm {
                 ZStack {
                     Color.black
@@ -245,11 +252,11 @@ struct PlayerScreen: View {
             if erstesBildDa {
                 // **Dieselbe Stelle, dieselbe Groesse wie das Pausezeichen.**
                 //
-                // Der richtige Weg: man koennte es genau dahin machen, wo der
-                // Pauseknopf ist, sodass es so aussieht wie, als wuerde es an
-                // exakt derselben Stelle laden." Zwei Zustandsauskuenfte ueber
-                // dieselbe Sache gehoeren an denselben Platz — sonst sucht das
-                // Auge zweimal.
+                // Der richtige Weg: man koennte es genau
+                // dahin machen, wo der Pauseknopf ist, sodass es so aussieht
+                // wie, als wuerde es an exakt derselben Stelle laden." Zwei
+                // Zustandsauskuenfte ueber dieselbe Sache gehoeren an
+                // denselben Platz — sonst sucht das Auge zweimal.
                 if stockt {
                     // **Ohne Teller.** Der Ring bringt seine Form selbst mit;
                     // ein Kreis um einen Kreis sieht aus wie ein Versehen. Das
@@ -282,6 +289,31 @@ struct PlayerScreen: View {
                 .transition(.opacity)
             }
         }
+        // **Das Technikschild.** Es liegt ueber allem, nimmt aber weder Fokus
+        // noch Eingaben — auf dem Fernseher waere ein fokussierbares Schild
+        // ein Ziel, das die Fernbedienung anfahren kann und das dann nichts
+        // tut. Angeschaltet wird es im Wiedergabeblatt.
+        .overlay(alignment: .topLeading) {
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte, flaeche: flaeche, fern: true)
+                    .padding(.leading, Stil.randSeite)
+                    .padding(.top, Stil.randOben)
+                    .allowsHitTesting(false)
+                    .focusable(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Stil.einblenden, value: technikschild)
+        .task(id: technikschild) {
+            guard technikschild else { return }
+            while !Task.isCancelled {
+                // Die Rate entsteht aus der Differenz zum letzten Mal —
+                // siehe `Spielwerte`.
+                spielwerte = Spielwerte(flaeche?.statistik, stelle: flaeche?.positionSeconds ?? 0,
+                                        laeuft: flaeche?.isPlaying ?? false, vorher: spielwerte)
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .ignoresSafeArea()
         // **Der Fokus kommt nicht von selbst.**
         //
@@ -306,6 +338,12 @@ struct PlayerScreen: View {
             fokus = da ? .leiste : .ruhe
         }
         // **Nach dem Anhalten den Fokus zurueckholen.**
+        //
+        // kein Klick, keine Richtung, nichts. Das ist kein Play/Pause-Fehler,
+        // sondern ein Fokusverlust: ohne fokussiertes Element nimmt tvOS
+        // ueberhaupt keine Eingabe mehr an, und der Player steht als Standbild
+        // da. Dieselbe Lehre wie heute Morgen — der Fokus kommt nicht von
+        // selbst, er muss gelegt werden.
         .onChange(of: laeuft) { _, _ in
             guard !blattOffen, !folgenOffen else { return }
             fokus = .leiste
@@ -1069,7 +1107,18 @@ struct PlayerScreen: View {
                                zeigtBild: flaeche.zeigtBild,
                                stelltEin: flaeche.stelltEin,
                                laeuft: flaeche.isPlaying,
-                               hatTonspuren: !flaeche.tonspuren.isEmpty),
+                               // **Die Spurliste nur lesen, solange sie
+                               // gebraucht wird.** `Wiedergabetakt` fragt
+                               // `hatTonspuren` allein, bis die Spuren gesetzt
+                               // sind; danach ist der Wert unbenutzt. Gelesen
+                               // wurde er trotzdem -- zweimal je Sekunde, den
+                               // ganzen Film lang. `player.audioTracks` baut die
+                               // Liste jedes Mal neu auf, unter der Sperre des
+                               // laufenden Players. Genau der Dauergriff, vor
+                               // dem der Kommentar an `Bildtakt.nochNachzumessen`
+                               // ein paar Zeilen weiter oben warnt; das `||`
+                               // kuerzt ihn weg, sobald er nichts mehr traegt.
+                               hatTonspuren: spurenGesetzt || !flaeche.tonspuren.isEmpty),
                 stelltWiederHer: stelltWiederHer,
                 sprungLaeuft: sprungBis.map { Date() < $0 } ?? false,
                 // Am Fernseher liegt kein Finger am Regler.
@@ -1107,10 +1156,12 @@ struct PlayerScreen: View {
 
             // **Im Stehen den Fokus halten.**
             //
-            // Genau das bewirkt Einmalig beim Umschalten reichte das nicht;
-            // SwiftUI raeumt den Fokus danach noch auf. Solange angehalten ist
-            // und kein Blatt offen steht, wird er deshalb in jedem Takt neu
-            // gesetzt.
+            // Genau das bewirkt der Umweg ueber die Einstellungen: das Blatt
+            // geht zu, und dabei legt `steuerungWecken` den Fokus zurueck auf
+            // die Leiste — danach laesst sich wieder abspielen. Einmalig beim
+            // Umschalten reichte das nicht; SwiftUI raeumt den Fokus danach
+            // noch auf. Solange angehalten ist und kein Blatt offen steht,
+            // wird er deshalb in jedem Takt neu gesetzt.
             //
             // Nur im Stehen: waehrend der Wiedergabe soll der Fokus auf die
             // Knoepfe oben wandern duerfen. Und nur, wenn er **nirgends**

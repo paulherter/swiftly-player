@@ -83,7 +83,8 @@ struct StaffelZiel: View {
                            startStaffelNummer: folge.parentIndexNumber,
                            zurueck: zurueck)
             } else {
-                Lader()
+                // Kein Ring: die Seite kommt gleich von selbst.
+                Color.clear
             }
         }
         .task {
@@ -207,6 +208,12 @@ struct Titelreihe: View {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
                                          bild: model.imageURL(for: eintrag, hochkant: true),
+                                         fortschritt: eintrag.userData?.playedPercentage.map { $0 / 100 },
+                                         marke: Anzeigeregeln.kachelmarke(
+                                         art: eintrag.type,
+                                         staffeln: eintrag.childCount,
+                                         gesehen: eintrag.userData?.played,
+                                         offeneFolgen: eintrag.userData?.unplayedItemCount),
                                          zeichen: eintrag.type == "Series" ? "tv" : "film")
                         }
                         .buttonStyle(.plain)
@@ -250,8 +257,44 @@ struct Heldenkopf: View {
     @State private var merkliste = false
     @State private var gesehen = false
     @State private var mehrOffen = false
+    @State private var ladetafelOffen = false
     @State private var meldung: String?
     @Environment(Abspielsteuerung.self) private var steuerung
+
+    // MARK: Downloads
+
+    /// Was von diesem Titel schon auf der Platte liegt — `nil` heisst nichts.
+    private var geladen: Downloadposten? { model.downloads.posten(fuer: titel.id) }
+
+    /// Gefuellt heisst geladen, und es bleibt ein Pfeil: der Haken gehoert
+    /// der Frage „hab ich das gesehen".
+    private var ladezeichen: String {
+        switch geladen?.stand {
+        case nil:          "arrow.down"
+        case .fertig:      "arrow.down.circle.fill"
+        case .fehler:      "exclamationmark.circle"
+        default:           "arrow.down.circle"
+        }
+    }
+
+    /// Der Eintrag, den ein Download bekaeme. Die Groesse kommt aus derselben
+    /// Quelle, die der Player naehme — **H2**, es ist dieselbe Datei.
+    private var alsPosten: Downloadposten? {
+        guard let konto = model.session?.userID else { return nil }
+        let quelle = plan?.quelle ?? titel.mediaSources?.first
+        return Downloadposten(
+            id: titel.id, konto: konto, art: .film, titel: titel.name,
+            laufzeitTicks: titel.runTimeTicks, container: quelle?.container,
+            quelle: quelle?.id, bytes: quelle?.size ?? 0,
+            gesehen: titel.userData?.played ?? false)
+    }
+
+    private var ladebilder: [String: URL] {
+        guard let plakat = model.plakatURL(itemID: titel.id,
+                                           marke: titel.imageTags?["Primary"])
+        else { return [:] }
+        return [titel.id: plakat]
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -434,6 +477,42 @@ struct Heldenkopf: View {
                     if let grund = await model.setzeMerkliste(titel, an: merkliste) {
                         merkliste.toggle()
                         melde(grund)
+                    }
+                }
+            }
+
+            // **Der Ladeknopf, und nur wenn die Funktion an ist.**
+            //
+            // Auf dem iPhone ist es das fünfte Feld einer Reihe; hier stehen
+            // beschriftete Nebenknöpfe nebeneinander, also ist es einer mehr.
+            // Er steht **nach** der Merkliste — die beiden sind das Paar
+            // „für später" und gehören zusammen.
+            if model.downloadsAn, titel.type != "Series" {
+                Nebenknopf(symbol: ladezeichen, titel: "Laden",
+                           aktiv: geladen != nil) {
+                    ringGeklickt(geladen, model.downloads) {
+                        withAnimation(Stil.zeitSprung) { ladetafelOffen.toggle() }
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if ladetafelOffen, let p = alsPosten {
+                        Ladetafel(model: model, posten: [p], titel: titel.name,
+                                  bilder: ladebilder, offen: $ladetafelOffen)
+                            .offset(y: Stil.hauptknopfHoehe + 8)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .zIndex(30)
+                    }
+                }
+                // Ein Klick daneben schliesst — dieselbe Erwartung wie beim
+                // Mehr-Menue. Der Fang liegt unter der Tafel, nicht darueber.
+                .background {
+                    if ladetafelOffen {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .frame(width: 4000, height: 4000)
+                            .onTapGesture {
+                                withAnimation(Stil.zeitSprung) { ladetafelOffen = false }
+                            }
                     }
                 }
             }

@@ -255,4 +255,30 @@ struct KontenbundAblageTests {
         """.utf8)
         #expect(Kontenbund.ausAblage(bund: nil, einzelne: fremd) == nil)
     }
+    /// Wörtlich, wie die GTK-Fassung sie geschrieben hat — nicht über eine
+    /// frische Kodierung. Genau daran hing es: hier passen drei von vier
+    /// Namen nicht zu `Session`.
+    @Test("Die alte GTK-Ablage wird übersetzt, nicht durchgereicht")
+    func alteGtkAblage() throws {
+        let alt = Data("""
+        {"serverURL":"https://tv.paulherter.de","token":"t-1",
+         "benutzerID":"1","benutzername":"paul","servername":"Testkiste"}
+        """.utf8)
+        let s = try #require(Kontenbund.ausAlterGtkAblage(alt))
+        #expect(s.accessToken == "t-1")
+        #expect(s.userID == "1")
+        #expect(s.userName == "paul")
+        #expect(s.serverURL.absoluteString == "https://tv.paulherter.de")
+    }
+
+    /// Und der Weg, der ohne Übersetzung genommen wurde: er liefert nichts.
+    /// Der Test hält fest, **warum** es die Übersetzung braucht.
+    @Test("Ohne Übersetzung liefert die alte GTK-Ablage nichts")
+    func gtkAblageOhneUebersetzung() {
+        let alt = Data("""
+        {"serverURL":"https://tv.paulherter.de","token":"t-1",
+         "benutzerID":"1","benutzername":"paul"}
+        """.utf8)
+        #expect(Kontenbund.ausAblage(bund: nil, einzelne: alt) == nil)
+    }
 }

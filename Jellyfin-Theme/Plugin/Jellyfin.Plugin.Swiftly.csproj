@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- **Gemessen, nicht aus der Dokumentation.** `/System/Info/Public` auf
+         Pauls Kiste sagt 12.0.0; CLAUDE.md und die Profilseite der App sagen
+         beide noch 10.11.11 und sind überholt. Jellyfin 12 läuft auf .NET 10,
+         und die Zahl folgt dem Server. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Jellyfin.Plugin.Swiftly</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.Swiftly</RootNamespace>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Genau die Fassung von Pauls Kiste. Ein Plugin gegen eine andere
+         Schnittstelle laedt der Server gar nicht erst. -->
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- **Das Stilblatt liegt eine Ebene hoeher und wird nicht kopiert.**
+         Sonst gaebe es zwei Fassungen davon, und die eine, an der gerade
+         niemand arbeitet, laeuft weg. Dieselbe Regel wie „Eine kopierte
+         Funktion ist ein Fehler" in CLAUDE.md. -->
+    <EmbeddedResource Include="..\swiftly.css" LogicalName="Jellyfin.Plugin.Swiftly.Web.swiftly.css" />
+    <EmbeddedResource Include="Web\swiftly.js" LogicalName="Jellyfin.Plugin.Swiftly.Web.swiftly.js" />
+    <EmbeddedResource Include="Configuration\configPage.html" />
+  </ItemGroup>
+
+</Project>

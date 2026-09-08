@@ -52,6 +52,38 @@ final class AppModel {
     var zurueckSekunden: Int { didSet { merken(zurueckSekunden, "zurueckSek") } }
     var vorSekunden: Int { didSet { merken(vorSekunden, "vorSek") } }
 
+    /// **H1 — aus, bis man es einschaltet.**
+    ///
+    /// Ohne diesen Schalter gibt es weder den Reiter unten noch das Feld auf
+    /// der Detailseite noch die Ringe in der Folgenliste. Wie bei Seerr: wer
+    /// es nicht will, sieht ausser der einen Zeile in den Einstellungen
+    /// nichts davon.
+    var downloadsAn: Bool {
+        didSet {
+            merken(downloadsAn, "downloadsAn")
+            // Ein ausgeschalteter Download laedt nicht weiter. Was auf der
+            // Platte liegt, bleibt liegen — H10 fragt beim Ausschalten, was
+            // damit geschehen soll, und diese Zeile haelt nur an.
+            if downloadsAn {
+                downloads.netzBeobachten()
+            } else {
+                downloads.allesAnhalten()
+                // Der Pfadbeobachter kostet nichts Nennenswertes, laeuft aber
+                // auch fuer nichts, solange die Funktion aus ist.
+                downloads.netzNichtMehrBeobachten()
+            }
+        }
+    }
+    /// **H5.** An bei der ersten Aktivierung — bei Originaldateien ist alles
+    /// andere unfreundlich.
+    var nurUeberWLAN: Bool {
+        didSet {
+            merken(nurUeberWLAN, "nurUeberWLAN")
+            downloads.nurUeberWLAN = nurUeberWLAN
+        if downloadsAn { downloads.netzBeobachten() }
+        }
+    }
+
 
     private func merken(_ wert: Any, _ name: String) {
         UserDefaults.standard.set(wert, forKey: name)
@@ -105,11 +137,32 @@ final class AppModel {
     var serverVersion: String?
     var isWorking = false
 
-    private(set) var client: JellyfinClient?
+    /// **Ein Haken, und zwar hier.**
+    ///
+    /// `client` wird an fuenf Stellen gesetzt — beim Verbinden, beim
+    /// Anmelden, beim Kontowechsel, beim Wiederherstellen und beim
+    /// Abmelden —, und die Downloads muessen an allen fuenfen mitgehen.
+    /// Fuenf Aufrufe an fuenf Stellen sind vier Gelegenheiten, einen zu
+    /// vergessen; genau so ist die Fernsteuerung beim Kontowechsel
+    /// haengengeblieben. `session` steht dabei schon richtig: `bund` wird
+    /// auf jedem der fuenf Wege vor `client` gesetzt.
+    private(set) var client: JellyfinClient? {
+        didSet { downloads.anmelden(client: client, konto: session?.userID) }
+    }
     private(set) var session: Session?
 
     /// Alle Konten auf diesem Server, in der Reihenfolge des Streifens über
     /// der Profilseite. Leer, solange niemand angemeldet ist.
+    /// Die Anbindung an Seerr. **Liegt hier, weil sie eine Sitzung hält** —
+    /// eine Ansicht, die sie besitzt, verliert sie beim Schliessen, und ein
+    /// zweites Modell daneben hätte einen zweiten Zugang.
+    let seerr = Seerrmodell()
+
+    /// Was auf dem Geraet liegt. **Liegt hier aus demselben Grund wie
+    /// `seerr`:** sie haelt eine Hintergrundsitzung, und eine Ansicht, die
+    /// sie besaesse, verloere sie beim Schliessen — mitten im Download.
+    let downloads = Downloadverwaltung()
+
     private(set) var konten: [Session] = []
 
     /// Zählt jeden Kontowechsel. Ansichten hängen sich daran, um neu zu laden.
@@ -175,6 +228,13 @@ final class AppModel {
         neuzugangGetrennt = ablage.object(forKey: "neuGetrennt") as? Bool ?? false
         zurueckSekunden = ablage.object(forKey: "zurueckSek") as? Int ?? 10
         vorSekunden = ablage.object(forKey: "vorSek") as? Int ?? 30
+        downloadsAn = ablage.object(forKey: "downloadsAn") as? Bool ?? false
+        nurUeberWLAN = ablage.object(forKey: "nurUeberWLAN") as? Bool ?? true
+
+        // `didSet` laeuft waehrend `init` nicht — der Schalter muss einmal
+        // von Hand durchgereicht werden, sonst laedt die Verwaltung beim
+        // ersten Start ueber Mobilfunk, obwohl die Vorgabe das verbietet.
+        downloads.nurUeberWLAN = nurUeberWLAN
 
         Self.keychainSelbsttest()
         restoreSession()
@@ -187,6 +247,11 @@ final class AppModel {
             let info = try await client.publicSystemInfo()
             serverName = info.serverName ?? serverName
             serverVersion = info.version ?? serverVersion
+            // **Hier und nicht in einem eigenen Takt.** Das ist der eine
+            // Punkt, an dem nachgewiesen ist, dass der Server antwortet —
+            // und die Prüfung läuft ohnehin nach jedem Verbinden, Anmelden
+            // und Kontowechsel. Ein zweiter Wecker daneben würde raten.
+            await nachmeldungenAbschicken()
             return String(localized: "Erreichbar — Jellyfin \(info.version ?? "?")")
         } catch {
             return error.localizedDescription
@@ -486,6 +551,15 @@ final class AppModel {
         return Bildadresse(basis: session.serverURL, token: session.accessToken)
     }
 
+    /// Das Plakat eines Titels. **Ohne Marke**, weil der Aufrufer sie nicht
+    /// immer hat — Jellyfin gibt das Bild auch so heraus; die Marke ist nur
+    /// fuer den Zwischenspeicher gut.
+    /// 300 Punkt hoch: die Zeile zeigt 96, und ein Plakat, das mitgeladen
+    /// wird, soll auch auf dem iPad taugen.
+    func plakatURL(itemID: String, marke: String? = nil) -> URL? {
+        bilder?.bauen(itemID: itemID, marke: marke, mass: .hoechstensHoch(300))
+    }
+
     /// Porträt eines Mitwirkenden.
     func personBild(_ person: Person, maxHeight: Int = 220) -> URL? {
         bilder?.bauen(itemID: person.id, marke: person.primaryImageTag,
@@ -530,15 +604,30 @@ final class AppModel {
 
     /// Das Profilbild aus Jellyfin. Fehlt es, antwortet der Server mit 404
     /// und die Ansicht faellt auf den Anfangsbuchstaben zurueck.
-    func benutzerbildURL(groesse: Int = 120) -> URL? {
+    /// **Immer dieselbe Kante, egal wie gross es gezeigt wird.**
+    ///
+    /// Hier stand eine Groesse als Argument, und die Aufrufer nutzten sie:
+    /// 120 in der Kopfzeile, 200 auf der Profilseite, 240 im Kontenstreifen.
+    /// Drei Groessen sind **drei Adressen** — und damit drei Eintraege im
+    /// `Bildspeicher`, von denen jeder einzeln geholt werden will. Deshalb
+    /// blendete das Profilbild beim Oeffnen der Profilseite jedes Mal neu
+    /// ein, obwohl dasselbe Gesicht oben in der Leiste schon stand.
+    ///
+    /// 480 ist die groesste Stelle (240 Punkt im Kontenstreifen, doppelt fuer
+    /// Retina). Ein Avatar in dieser Kante ist ein paar Kilobyte; einmal
+    /// geholt traegt er jede Stelle, und `Bildspeicher` entschluesselt ihn
+    /// ohnehin auf sein eigenes Mass herunter.
+    static let benutzerbildKante = 480
+
+    func benutzerbildURL() -> URL? {
         guard let session else { return nil }
-        return bilder?.benutzer(session.userID, kante: groesse * 2)
+        return bilder?.benutzer(session.userID, kante: Self.benutzerbildKante)
     }
 
     /// Dasselbe für ein bestimmtes Konto — für den Streifen, in dem mehrere
     /// nebeneinander stehen und nur eines das aktive ist.
-    func benutzerbildURL(fuer konto: Session, groesse: Int = 120) -> URL? {
-        bilder?.benutzer(konto.userID, kante: groesse * 2)
+    func benutzerbildURL(fuer konto: Session) -> URL? {
+        bilder?.benutzer(konto.userID, kante: Self.benutzerbildKante)
     }
 
     /// Waagerechtes Bild für die Reihe „Weiterschauen".
@@ -677,6 +766,38 @@ final class AppModel {
         }
     }
 
+    /// Alles Gemerkte — **quer über alle Bibliotheken**.
+    ///
+    /// Deshalb ohne `parentID`: die Merkliste ist keine Bibliothek, ihre
+    /// Grenze ist der Haken und nicht ein Ordner auf der Platte. Und deshalb
+    /// **rekursiv**: ohne das liefert Jellyfin nur, was ganz oben liegt, und
+    /// das ist bei einem Server mit virtuellen Ordnern so gut wie nichts.
+    ///
+    /// `art` ist hier der Gattungsfilter der Seite: `nil` heisst Filme **und**
+    /// Serien. Ohne die Aufzaehlung kaemen auch Staffeln, Folgen und
+    /// Sammlungen mit — alles, woran je ein Haken hing.
+    func gemerkte(art: String? = nil,
+                  sortierung: Sortierung = .neueste,
+                  ab startIndex: Int = 0,
+                  anzahl: Int = AppModel.seitengroesse) async -> (titel: [Item], gesamt: Int)? {
+        guard let client else { return nil }
+        let gattungen = art.map { Bibliotheksgattung.typen(zu: $0) } ?? ["Movie", "Series"]
+        do {
+            let antwort = try await client.items(parentID: nil,
+                                                 limit: anzahl,
+                                                 startIndex: startIndex,
+                                                 sortBy: sortierung.feld,
+                                                 sortOrder: sortierung.richtung,
+                                                 filters: ["IsFavorite"],
+                                                 recursive: true,
+                                                 includeItemTypes: gattungen)
+            return (antwort.items, antwort.totalRecordCount)
+        } catch {
+            errorMessage = lesbar(error)
+            return nil
+        }
+    }
+
     /// Groß genug, dass man beim ersten Wischen nicht ans Ende kommt, klein
     /// genug, dass die erste Seite schnell steht.
     static let seitengroesse = 60
@@ -690,6 +811,19 @@ final class AppModel {
     /// Fragt den Server, wie er diesen Titel ausliefern würde.
     ///
     func plan(for itemID: String) async -> PlaybackPlan? {
+        // **H8 — liegt die Datei hier, braucht es den Server nicht.**
+        //
+        // Und zwar vor dem `guard`: ohne Netz ist `client` zwar da, aber
+        // `playbackPlan` liefe in seine Frist und käme mit nichts zurück.
+        // Genau dafür ist heruntergeladen worden; ein Ladeschirm, der zwanzig
+        // Sekunden auf einen Server wartet, den es im Flugzeug nicht gibt,
+        // wäre die Funktion, die sich selbst aufhebt.
+        //
+        // Der Nutzer merkt davon nichts — kein zweiter Knopf, keine Wahl.
+        if let datei = downloads.datei(fuer: itemID) {
+            let p = downloads.posten(fuer: itemID)
+            return .vonDerPlatte(datei, container: p?.container, mediaSourceID: p?.quelle)
+        }
         guard let client else { return nil }
         do {
             let plan = try await client.playbackPlan(for: itemID,
@@ -759,14 +893,72 @@ final class AppModel {
     }
 
     func reportStopped(item: Item, plan: PlaybackPlan, seconds: Double) async {
-        guard let client else { return }
+        let ticks = JellyfinClient.ticks(fromSeconds: seconds)
+        guard let client else { nachmelden(item.id, ticks); return }
         do {
-            try await client.reportStopped(itemID: item.id, plan: plan,
-                                           positionTicks: JellyfinClient.ticks(fromSeconds: seconds))
+            try await client.reportStopped(itemID: item.id, plan: plan, positionTicks: ticks)
             Self.log.info("Wiedergabe gemeldet: Ende bei \(Int(seconds)) s")
         } catch {
-            Self.log.error("Ende-Meldung fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+            // **Hier entsteht die Angabe, für die es Downloads gibt.**
+            //
+            // Wer einen Titel im Flugzeug sieht, erzeugt genau eine Auskunft,
+            // die niemand sonst hat: wo er aufgehört hat. Ginge sie hier
+            // verloren, hätte der Server den Stand vom Start des Flugs, und
+            // zu Hause liefe die Folge von vorn los. H8, zweite Hälfte.
+            Self.log.error("Ende-Meldung fehlgeschlagen, wird nachgemeldet: \(error.localizedDescription, privacy: .public)")
+            nachmelden(item.id, ticks)
         }
+    }
+
+    // MARK: H8 — was der Server noch nicht weiss
+
+    private static let nachmeldeschluessel = "nachmeldungen"
+
+    private var nachmeldungen: [Nachmeldung] {
+        get {
+            guard let roh = UserDefaults.standard.data(forKey: Self.nachmeldeschluessel)
+            else { return [] }
+            return (try? JSONDecoder().decode([Nachmeldung].self, from: roh)) ?? []
+        }
+        set {
+            guard let roh = try? JSONEncoder().encode(newValue) else { return }
+            UserDefaults.standard.set(roh, forKey: Self.nachmeldeschluessel)
+        }
+    }
+
+    private func nachmelden(_ itemID: String, _ ticks: Int64) {
+        guard let konto = session?.userID else { return }
+        nachmeldungen = Nachmelderegeln.aufnehmen(
+            Nachmeldung(itemID: itemID, konto: konto, ticks: ticks),
+            in: nachmeldungen)
+    }
+
+    /// Alles Liegengebliebene abschicken. Läuft nach jeder erfolgreichen
+    /// Verbindungsprüfung — also genau dann, wenn der Server nachweislich
+    /// wieder da ist, statt in einem eigenen Takt zu raten.
+    func nachmeldungenAbschicken() async {
+        guard let client, let konto = session?.userID else { return }
+        let offen = Nachmelderegeln.faellig(nachmeldungen, konto: konto)
+        guard !offen.isEmpty else { return }
+        var geschafft: [String] = []
+        for m in offen {
+            // Ein Plan von der Platte reicht: `reportStopped` braucht daraus
+            // nur die Kennungen, und die Sitzung gab es offline ohnehin nicht.
+            let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: "/"), container: nil)
+            do {
+                try await client.reportStopped(itemID: m.itemID, plan: plan,
+                                               positionTicks: m.ticks)
+                geschafft.append(m.id)
+            } catch {
+                // **Abbrechen, nicht weiterprobieren.** Scheitert eine, ist
+                // der Server wieder weg; die übrigen scheiterten auch und
+                // stünden danach als verloren da.
+                break
+            }
+        }
+        guard !geschafft.isEmpty else { return }
+        nachmeldungen = Nachmelderegeln.erledigt(geschafft, in: nachmeldungen)
+        Self.log.info("\(geschafft.count) Stellen nachgemeldet")
     }
 
     /// Auf ein anderes Konto desselben Servers umschalten.

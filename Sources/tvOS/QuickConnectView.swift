@@ -46,7 +46,10 @@ struct QuickConnectView: View {
                         .frame(width: 1100)
                         .padding(.top, 56)
                 } else {
-                    Lader.fern.padding(.top, 72)
+                    // Der Code kommt gleich; solange steht seine Form da.
+                    Ladefeld(ecke: Stil.ecke)
+                        .frame(width: 560, height: 120)
+                        .padding(.top, 72)
                 }
 
                 anleitung.padding(.top, 56)
@@ -98,7 +101,7 @@ struct QuickConnectView: View {
 
     private var wartezeile: some View {
         HStack(spacing: 14) {
-            Lader(groesse: 30, staerke: 3)
+            // Kein Ring: die Zeile daneben zaehlt schon herunter.
             Text("Läuft ab in \(stand.restsekunden / 60):\(String(format: "%02d", stand.restsekunden % 60))")
                 .font(Stil.klein)
                 .foregroundStyle(Stil.schriftSehrLeise)

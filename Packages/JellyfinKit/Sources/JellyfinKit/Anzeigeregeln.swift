@@ -43,4 +43,38 @@ public enum Anzeigeregeln {
     public static func suchbegriffTaugt(_ begriff: String) -> Bool {
         begriff.trimmingCharacters(in: .whitespacesAndNewlines).count > 1
     }
+
+    /// Was oben rechts auf einer Kachel steht.
+    ///
+    /// **Drei Zustaende, drei Zeichen.** Bis hierher gab es genau eines — den
+    /// Fortschrittsbalken —, und bei einer Serie sagt der gar nichts: er zeigt
+    /// den Stand der angefangenen *Folge*, nicht den der Serie. Wer ein Raster
+    /// ueberfliegt, sucht aber genau diese Auskunft.
+    ///
+    /// Die Rangfolge ist nicht beliebig:
+    ///
+    /// 1. **Gesehen schlaegt alles.** Wer eine Serie durchhat, will nicht
+    ///    lesen, wie viele Staffeln sie hatte.
+    /// 2. **Offene Folgen schlagen die Staffelzahl.** Sobald jemand angefangen
+    ///    hat, ist „noch 12" die nuetzlichere Zahl als „7 Staffeln".
+    /// 3. **Sonst die Staffelzahl** — und die nur bei Serien.
+    ///
+    /// Ein Film bekommt nur den Haken. „1 Staffel" auf einem Film waere
+    /// Unsinn, und eine Zahl, die immer eins ist, ist keine Auskunft.
+    public static func kachelmarke(art: String?, staffeln: Int?,
+                                   gesehen: Bool?, offeneFolgen: Int?) -> Kachelmarke? {
+        if gesehen == true { return .gesehen }
+        guard art == "Series" else { return nil }
+        if let offen = offeneFolgen, offen > 0 { return .offen(offen) }
+        if let n = staffeln, n > 0 { return .staffeln(n) }
+        return nil
+    }
+}
+
+/// Was auf der Plakette einer Kachel steht. Den **Wortlaut** setzt die
+/// Ansicht — er haengt am Katalog; hier steht nur, welche Auskunft es ist.
+public enum Kachelmarke: Equatable, Sendable {
+    case gesehen
+    case offen(Int)
+    case staffeln(Int)
 }

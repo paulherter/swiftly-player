@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body {
+      margin: 0;
+      width: 1440px;
+      height: 1000px;
+      overflow: hidden;
+      background: #0B0B0D;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: #5CD1C2; text-decoration: none; }
+    a:hover { color: #7FDDD0; }
+    * { box-sizing: border-box; }
+
+  </style>
+</helmet>
+
+
+<header style="position:absolute;left:0;right:0;top:0;height:56px;
+  background:#0B0B0D;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;
+  gap:26px;padding:0 24px;z-index:5">
+  <div style="display:flex;align-items:center;gap:9px">
+    <svg width="22" height="22" viewBox="288 257 500 500" fill="#2FDBC0" style="flex:none;display:block"><path d="M440.1,280l285,163.2c38,21.7,51.2,70,29.6,108-7,12.3-17.2,22.5-29.6,29.6l-285,163.2c-37.9,21.8-86.3,8.6-108.1-29.3-6.9-12-10.5-25.6-10.5-39.4v-326.6c0-43.7,35.5-79.2,79.2-79.2,13.8,0,27.4,3.6,39.4,10.5Z"/></svg>
+    <span style="font-size:17px;font-weight:600;letter-spacing:-.2px">Pauls Kiste</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:22px">
+    <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.62);font-size:15px;font-weight:500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 20s-7.5-4.6-7.5-9.4A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>Favoriten</div><div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.62);font-size:15px;font-weight:500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM8 5.5v13M16 5.5v13M3.5 12h17"/></svg>Filme</div><div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.62);font-size:15px;font-weight:500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3 5.5h18v11H3zM8.5 20.5h7"/></svg>Serien</div>
+  </div>
+  <div style="flex-grow:1"></div>
+  <div style="display:flex;align-items:center;gap:2px">
+    <div style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.62)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5h17v11h-17zM8.5 20h7M12 16v4"/></svg></div><div style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.62)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM16.2 16.2 21 21"/></svg></div>
+    <div style="width:28px;height:28px;border-radius:50%;margin-left:8px;
+      background:linear-gradient(135deg,#3B4A5A,#26313D);border:1.5px solid #5CD1C2"></div>
+  </div>
+</header>
+<main style="position:absolute;left:0;right:0;top:56px;bottom:0;padding:28px 24px 0;overflow:hidden">
+  <div style="max-width:700px">
+    <span style="font-size:28px;font-weight:700;letter-spacing:-.6px">Wiedergabe</span>
+    <div style="font-size:15px;color:rgba(255,255,255,.62);margin-top:6px">Gilt für alles, was neu startet.
+      Im Player lässt sich jederzeit abweichen.</div>
+    <div style="font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:rgba(255,255,255,.4);margin:26px 0 8px">Qualität</div><div style="border-top:1px solid rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.07)"><div style="display:flex;align-items:center;gap:14px;min-height:44px;padding:8px 12px">
+  <div style="width:22px;display:flex;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.62)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M7 4.5 19.5 12 7 19.5z"/></svg></div>
+  <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0">
+    <span style="font-size:15px;color:#ffffff">Immer Direct Play</span><span style="font-size:12px;color:rgba(255,255,255,.45)">Nie umwandeln lassen — der Grund für diese App</span>
+  </div>
+  <div style="position:relative;width:38px;height:22px;border-radius:999px;background:#5CD1C2;flex:none"><div style="position:absolute;top:3px;left:19px;width:16px;height:16px;border-radius:50%;background:#0B0B0D"></div></div>
+</div><div style="height:1px;background:rgba(255,255,255,.07)"></div><div style="display:flex;align-items:center;gap:14px;min-height:44px;padding:8px 12px">
+  <div style="width:22px;display:flex;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.62)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M5 15.5v4M10 10.5v9M15 6.5v13M20 12.5v7"/></svg></div>
+  <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0">
+    <span style="font-size:15px;color:#ffffff">Höchste Bitrate</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px;color:rgba(255,255,255,.62)">Unbegrenzt</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.38)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M9 4.5 16.5 12 9 19.5"/></svg></div>
+</div></div>
+    <div style="font-size:12px;color:rgba(255,255,255,.38);margin-top:10px;line-height:17px">
+      Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie
+      wirkungslos und stünde trotzdem da.</div>
+    <div style="font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:rgba(255,255,255,.4);margin:26px 0 8px">Sprache</div><div style="border-top:1px solid rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.07)"><div style="display:flex;align-items:center;gap:14px;min-height:44px;padding:8px 12px">
+  <div style="width:22px;display:flex;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.62)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M4.5 9.5h3.5L12.5 6v12L8 14.5H4.5zM16 9.5a4 4 0 0 1 0 5M18.5 7a7.5 7.5 0 0 1 0 10"/></svg></div>
+  <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0">
+    <span style="font-size:15px;color:#ffffff">Ton</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.38)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M9 4.5 16.5 12 9 19.5"/></svg></div>
+</div><div style="height:1px;background:rgba(255,255,255,.07)"></div><div style="display:flex;align-items:center;gap:14px;min-height:44px;padding:8px 12px">
+  <div style="width:22px;display:flex;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.62)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM7 11h4M13 11h4M7 14.5h10"/></svg></div>
+  <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0">
+    <span style="font-size:15px;color:#ffffff">Untertitel</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.38)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M9 4.5 16.5 12 9 19.5"/></svg></div>
+</div><div style="height:1px;background:rgba(255,255,255,.07)"></div><div style="display:flex;align-items:center;gap:14px;min-height:44px;padding:8px 12px">
+  <div style="width:22px;display:flex;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.62)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M3.5 5.5h17v13h-17zM7 11h4M13 11h4M7 14.5h10"/></svg></div>
+  <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0">
+    <span style="font-size:15px;color:#ffffff">Untertitel automatisch</span><span style="font-size:12px;color:rgba(255,255,255,.45)">Nur wenn der Ton nicht in der gewählten Sprache läuft</span>
+  </div>
+  <div style="position:relative;width:38px;height:22px;border-radius:999px;background:rgba(255,255,255,.14);flex:none"><div style="position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#ffffff"></div></div>
+</div></div>
+    <div style="font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:rgba(255,255,255,.4);margin:26px 0 8px">Verhalten</div><div style="border-top:1px solid rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.07)"><div style="display:flex;align-items:center;gap:14px;min-height:44px;padding:8px 12px">
+  <div style="width:22px;display:flex;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.62)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M4.5 5.5 13 12l-8.5 6.5zM17.5 5.5v13"/></svg></div>
+  <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0">
+    <span style="font-size:15px;color:#ffffff">Nächste Folge automatisch</span>
+  </div>
+  <div style="position:relative;width:38px;height:22px;border-radius:999px;background:#5CD1C2;flex:none"><div style="position:absolute;top:3px;left:19px;width:16px;height:16px;border-radius:50%;background:#0B0B0D"></div></div>
+</div><div style="height:1px;background:rgba(255,255,255,.07)"></div><div style="display:flex;align-items:center;gap:14px;min-height:44px;padding:8px 12px">
+  <div style="width:22px;display:flex;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.62)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M5 15.5v4M10 10.5v9M15 6.5v13M20 12.5v7"/></svg></div>
+  <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0">
+    <span style="font-size:15px;color:#ffffff">Technikschild im Player</span>
+  </div>
+  <div style="position:relative;width:38px;height:22px;border-radius:999px;background:rgba(255,255,255,.14);flex:none"><div style="position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#ffffff"></div></div>
+</div><div style="height:1px;background:rgba(255,255,255,.07)"></div><div style="display:flex;align-items:center;gap:14px;min-height:44px;padding:8px 12px">
+  <div style="width:22px;display:flex;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.62)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 7v5l3.2 2M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z"/></svg></div>
+  <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0">
+    <span style="font-size:15px;color:#ffffff">Zurückspulen</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px;color:rgba(255,255,255,.62)">10 s</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.38)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M9 4.5 16.5 12 9 19.5"/></svg></div>
+</div><div style="height:1px;background:rgba(255,255,255,.07)"></div><div style="display:flex;align-items:center;gap:14px;min-height:44px;padding:8px 12px">
+  <div style="width:22px;display:flex;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.62)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M12 7v5l3.2 2M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z"/></svg></div>
+  <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0">
+    <span style="font-size:15px;color:#ffffff">Vorspulen</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px;color:rgba(255,255,255,.62)">30 s</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.38)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;display:block"><path d="M9 4.5 16.5 12 9 19.5"/></svg></div>
+</div></div>
+  </div>
+</main>
+</x-dc>
+</body>
+</html>

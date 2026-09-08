@@ -87,6 +87,9 @@ final class App: @unchecked Sendable {
         // Binärdatei nimmt, das zweite vom Fenstertitel. Der Anwendungsname
         // heisst jetzt so wie die App, und der Titel trägt den Zusatz.
         Zeichenwerk.einrichten()
+        // Der Seerr-Zugang steht vor der ersten Ansicht: die Profilseite
+        // zeigt daneben „Verbunden" oder „Nicht verbunden".
+        seerrLaden()
         g_set_application_name("Swiftly")
         g_set_prgname("swiftly")
         gtk_window_set_title(alsFenster(fenster), "for Jellyfin")
@@ -804,6 +807,13 @@ final class App: @unchecked Sendable {
                                deviceName: Geraet.name)
         adressen = Bildadresse(basis: serverURL, token: token)
         self.benutzerID = benutzerID
+        // **Die Downloads gehoeren dem Konto** (H11). Zwei Konten auf einem
+        // Server tragen dieselben Kennungen; ohne das Konto kaeme der
+        // Fortschritt des einen an den Titel des anderen.
+        downloads.beiAenderung = { [weak self] in
+            guard let self, self.bereich == .downloads else { return }
+            self.downloadseiteFuellen()
+        }
         sitzungAnzeigen(benutzername: benutzername, servername: servername)
         gtk_stack_set_visible_child_name(OpaquePointer(seiten), "start")
 
@@ -813,6 +823,7 @@ final class App: @unchecked Sendable {
             await c.setSession(sitzung)
             aufHauptfaden {
                 self.client = c
+                self.downloads.anmelden(client: c, konto: benutzerID)
                 self.geladen = [.start]
                 self.startseiteLaden()
                 self.bibliothekenLaden()
@@ -849,19 +860,40 @@ final class App: @unchecked Sendable {
     /// Die zuletzt gemeldete Grösse der Bühne.
     var buehnenBreite: Int32 = -1
     var buehnenHoehe: Int32 = -1
-    private var bereichsknoepfe: [Widget?] = []
+    /// **Nach Bereich, nicht nach Platz in der Liste.** Vorher lag hier ein
+    /// Feld parallel zu `Bereich.allCases`; sobald die Leiste in zwei Gruppen
+    /// zerfaellt und eine davon nur manchmal da ist, stimmt der Platz nicht
+    /// mehr mit der Aufzaehlung ueberein — und dann faerbt sich die falsche
+    /// Zeile ein. Derselbe Umbau wie bei den Rasterseiten.
+    private var bereichsknoepfe: [Bereich: Widget] = [:]
+    /// Die Rubrik „Meins" und ihre Zeilen — sie wird neu gefuellt, wenn der
+    /// Downloadschalter umgelegt wird.
+    private var meinsliste: Widget!
     private var bibliotheksrubrik: Widget!
     private var bibliotheksliste: Widget!
+    /// **Welche Bibliothek gerade als eigene Seite offen ist** — `nil`, wenn
+    /// ein Bereich gezeigt wird. Wortgleich `offeneBibliothek` auf dem Mac.
+    var offeneBibliothek: Item?
+    /// Die Leistenzeilen der Bibliotheken, damit die richtige hervorgehoben
+    /// wird und die anderen es nicht bleiben.
+    private var bibliotheksknoepfe: [String: Widget] = [:]
+    /// Der Titel der Bibliotheksseite. Er wechselt mit jeder Sammlung; die
+    /// Bereichsseiten tragen ihren Titel fest.
+    private var bibliothekstitel: Widget!
     private var profilbild: Widget!
     private var profilname: Widget!
     private var profilserver: Widget!
-    private var filmeraster: Widget!
-    private var serienraster: Widget!
+    /// **Die Rasterseiten liegen in Woerterbuechern, nicht in Paaren.**
+    ///
+    /// Vorher stand ueberall `was == .filme ? filme… : serien…` — an acht
+    /// Stellen. Mit einem dritten Bereich (Merkliste) waere daraus ueberall
+    /// eine Dreierkette geworden, und jede vergessene Stelle haette still
+    /// die falsche Seite gefuellt. Ein Woerterbuch kennt keinen Sonderfall.
+    private var rasterFeld: [Bereich: Widget] = [:]
+    private var zahlFeld: [Bereich: Widget] = [:]
     private var suchfeld: Widget!
     private var suchraster: Widget!
     private var suchleer: Widget!
-    private var filmezahl: Widget!
-    private var serienzahl: Widget!
     var geladen: Set<Bereich> = []
     /// Filter und Sortierung, je Bereich getrennt. Auf dem Mac merkt sich
     /// jeder Bereich seinen Stand — wer zwischen Filmen und Serien wechselt,
@@ -896,18 +928,50 @@ final class App: @unchecked Sendable {
     var offeneUnterseite: Unterseite?
     var offeneListe: Werteauswahl?
     var wahlen = Wahlen.lesen()
+
+    /// **H1.** Kurzform fuer `wahlen.downloadsAn` — die Leiste und die
+    /// Detailseite fragen oft danach.
+    var downloadsAn: Bool { wahlen.downloadsAn }
+
+    /// Was auf dieser Maschine liegt. Die Regeln stehen im Paket, der
+    /// Ladevorgang in `Downloadverwaltung`; hier haengt nur die Oberflaeche
+    /// daran.
+    let downloads = Downloadverwaltung()
+
+    // MARK: Downloadseite — Widgets und Zustand
+    var downloadliste: Widget!
+    var downloadbelegung: Widget!
+    var downloadentfernen: Widget!
+    var downloadbearbeitenknopf: Widget!
+    var downloadleer: Widget!
+    var downloadbearbeiten = false
+    var downloadgewaehlt: Set<String> = []
+    /// Welche Serien in der Downloadliste aufgeklappt sind (H12).
+    var downloadOffeneSerien: Set<String> = []
+
+    // MARK: Seerr-Titelseite
+    var seerrBlock: Widget!
+    var seerrAngaben: Widget!
+    var seerrHandlung: Widget!
+    var seerrKnopfreihe: Widget!
+    /// Welche Staffeln angefragt werden sollen. Leer heisst: noch keine
+    /// gewaehlt — und dann fragt der Knopf auch keine an.
+    var seerrGewaehlteStaffeln: Set<Int> = []
+    /// Fortschrittsbalken und Standzeilen je Posten — damit ein Fortschritt
+    /// die Liste nicht neu bauen muss.
+    var downloadbalken: [String: Widget] = [:]
+    var downloadstandzeilen: [String: Widget] = [:]
+    /// H10: die Nachfrage vor dem Abschalten, in den Einstellungen.
+    var downloadabschaltfrage: Widget!
     var benutzername = ""
     var servername = ""
     var serverfassung = ""
     /// Was im Raster schon steht, und wie viel der Server insgesamt hat —
     /// für das Nachladen beim Blättern.
-    var filmeItems: [Item] = []
-    var serienItems: [Item] = []
-    var filmeGesamt = 0
-    var serienGesamt = 0
+    var rasterItems: [Bereich: [Item]] = [:]
+    var rasterGesamt: [Bereich: Int] = [:]
     var rasterLaedt: Set<Bereich> = []
-    var filmeLader: Widget!
-    var serienLader: Widget!
+    var laderFeld: [Bereich: Widget] = [:]
     /// Die Fernsteuerung über Jellyfins Socket. Ohne sie meldet der Server
     /// `SupportsRemoteControl: false` und blendet im Dashboard die Knöpfe aus.
     var fernsteuerung: Fernsteuerung?
@@ -925,6 +989,32 @@ final class App: @unchecked Sendable {
     /// Die zuletzt aufgeklappte Tafel des Mehr-Knopfs. Sie wird beim nächsten
     /// Klick gelöst — sonst hängen sie sich am Knopf auf.
     var offeneTafel: Widget?
+
+    /// **Eine Tafel oeffnen und sie richtig merken.**
+    ///
+    /// Die vorige kommt weg — sonst hinge nach dem dritten Klick die dritte
+    /// Tafel am Knopf und die beiden davor daneben. Und die neue vergisst
+    /// sich selbst, sobald GTK sie abraeumt: `tafelAn` haengt sie beim
+    /// Zerstoeren des Ankers ab, und ein Feld, das dann noch auf sie zeigt,
+    /// ist ein Zeiger auf freigegebenen Speicher. Der naechste Klick auf
+    /// „Mehr" war damit ein Absturz — im Kern nachgelesen, nicht vermutet.
+    ///
+    /// Dieselbe Klasse Fehler wie bei den Zeichenflaechen, die sich selbst
+    /// halten muessen: wer ein GTK-Objekt in einem Swift-Feld merkt, muss
+    /// auf sein Ende hoeren.
+    func tafelOeffnen(an knopf: Widget!, stil: String = "swiftly-mehr") -> Widget! {
+        tafelSchliessen()
+        let tafel = tafelAn(knopf, stil: stil)
+        offeneTafel = tafel
+        beiSignal(tafel, "destroy") { [weak self] in self?.offeneTafel = nil }
+        return tafel
+    }
+
+    func tafelSchliessen() {
+        guard let alt = offeneTafel else { return }
+        offeneTafel = nil
+        gtk_widget_unparent(alt)
+    }
     var detailBeruehrt = false
     /// Was zuletzt bei „Verbindung prüfen" herauskam.
     var pruefergebnis = ""
@@ -976,6 +1066,23 @@ final class App: @unchecked Sendable {
     var sprungtakt = 0
     var spielerRahmen: Widget!
     var spurtafel: Widget!
+    /// Welcher Bereich im Wiedergabemenue gerade links gewaehlt ist.
+    var spurbereich: Spurbereich = .ton
+    /// Das Technikschild ueber dem Film — `nil`, wenn es aus ist.
+    var technikschild: Widget!
+    /// Der letzte Stand der Zaehler; die naechste Messung rechnet daraus.
+    var technikzaehler: Zaehlwerk?
+    /// Seerr — Zugang und Client, `nil` solange nichts eingerichtet ist.
+    var seerrzugang: Seerrzugang?
+    var seerrclient: SeerrClient?
+    /// Ob die gespeicherte Seerr-Sitzung noch traegt. `nil` heisst „noch
+    /// nicht nachgesehen"; zurueckgesetzt beim Trennen und beim Verbinden.
+    var seerrGilt: Bool?
+    /// Die Seerr-Treffer der Suche — Ueberschrift und Raster darunter.
+    var seerrUeberschrift: Widget!
+    var seerrRaster: Widget!
+    /// Die Rueckfrage vor einer Anfrage — sie steht dort, wo geklickt wurde.
+    var seerrRueckfrage: Widget!
     var schlafminuten: Int?
     var schlaftakt = 0
 
@@ -1026,6 +1133,9 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(inhalt), startbereichBauen(), "start")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.filme), "filme")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.serien), "serien")
+        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.merkliste), "merkliste")
+        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.bibliothek), "bibliothek")
+        gtk_stack_add_named(OpaquePointer(inhalt), downloadseiteBauen(), "downloads")
         gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
 
         // **Die Detailseite legt sich auf, sie tritt nicht daneben.**
@@ -1227,15 +1337,24 @@ final class App: @unchecked Sendable {
         let bereiche = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
         gtk_widget_set_margin_start(bereiche, 12)
         gtk_widget_set_margin_end(bereiche, 12)
-        for fall in Bereich.allCases {
-            let zeile = seitenleistenzeile(symbol: fall.symbol,
-                                           text: fall.beschriftung,
-                                           aktiv: fall == bereich)
-            beiSignal(zeile, "clicked") { [weak self] in self?.zeige(fall) }
-            bereichsknoepfe.append(zeile)
-            anhaengen(bereiche, zeile)
-        }
+        for fall in Bereich.obenGruppe { anhaengen(bereiche, bereichszeile(fall)) }
         anhaengen(leiste, bereiche)
+
+        // **Darunter, was mir gehoert.** Die Begruendung steht bei
+        // `Bereich.meinsGruppe`; die Masse sind die der Bibliotheksrubrik,
+        // weil es dieselbe Sorte Zwischenueberschrift ist.
+        let meinsrubrik = rubrik(uebersetzt("Meins"))
+        gtk_widget_set_margin_top(meinsrubrik, 26)
+        gtk_widget_set_margin_bottom(meinsrubrik, 8)
+        gtk_widget_set_margin_start(meinsrubrik, 12)
+        gtk_widget_set_margin_end(meinsrubrik, 12)
+        anhaengen(leiste, meinsrubrik)
+
+        meinsliste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+        gtk_widget_set_margin_start(meinsliste, 12)
+        gtk_widget_set_margin_end(meinsliste, 12)
+        anhaengen(leiste, meinsliste)
+        meinsFuellen()
 
         bibliotheksrubrik = rubrik(uebersetzt("Bibliotheken"))
         gtk_widget_set_margin_top(bibliotheksrubrik, 26)
@@ -1263,6 +1382,32 @@ final class App: @unchecked Sendable {
         anhaengen(leiste, trennlinie())
         anhaengen(leiste, profilzeileBauen())
         return leiste
+    }
+
+    /// Eine Zeile in der Leiste, gemerkt unter ihrem Bereich.
+    private func bereichszeile(_ fall: Bereich) -> Widget! {
+        let zeile = seitenleistenzeile(symbol: fall.symbol,
+                                       text: fall.beschriftung,
+                                       aktiv: fall == bereich)
+        beiSignal(zeile, "clicked") { [weak self] in self?.zeige(fall) }
+        bereichsknoepfe[fall] = zeile
+        return zeile
+    }
+
+    /// **Die Rubrik „Meins" wird neu gebaut, wenn der Schalter umgeht.**
+    /// H1: ohne Downloads gibt es die Zeile nicht — und wer sie ausschaltet,
+    /// waehrend er darauf steht, soll nicht auf einer Seite stehenbleiben,
+    /// die es nicht mehr gibt.
+    func meinsFuellen() {
+        guard meinsliste != nil else { return }
+        leeren(meinsliste)
+        for fall in Bereich.meinsGruppe(downloads: downloadsAn) {
+            anhaengen(meinsliste, bereichszeile(fall))
+        }
+        if !downloadsAn {
+            bereichsknoepfe[.downloads] = nil
+            if bereich == .downloads { zeige(.start) }
+        }
     }
 
     /// Wer angemeldet ist, und wo. Unten in der Leiste — 40 hoch, Bild 26,
@@ -1437,7 +1582,15 @@ final class App: @unchecked Sendable {
     /// mit der Regel „tiefer gehen schiebt von rechts, zurück schiebt nach
     /// rechts hinaus". Ein Bereichswechsel dagegen blendet über („Fade
     /// Through"), weil er nicht tiefer führt, sondern daneben.
-    enum Schub { case tiefer, zurueck, ohne }
+    /// **`blende` ist der Bereichswechsel**, `tiefer`/`zurueck` das Blaettern
+    /// in Titeln, `ohne` der Neubau an Ort und Stelle.
+    ///
+    /// Sie ist dazugekommen, weil derselbe Klick zwei Verhalten hatte: wer
+    /// auf einen Bereich ohne gemerkte Detailseite ging, sah die Kreuzblende
+    /// des Stapels; wer auf einen mit gemerkter Seite ging, bekam
+    /// `schieben(.ohne)` — also gar nichts. Filme und Serien schalteten
+    /// deshalb hart um und die Merkliste blendete ein.
+    enum Schub { case tiefer, zurueck, ohne, blende }
 
     /// Legt eine Ebene obenauf und schiebt sie dabei herein.
     ///
@@ -1457,6 +1610,25 @@ final class App: @unchecked Sendable {
 
         let fest = alsFest(buehne)
         let breite = Double(gtk_widget_get_width(buehne))
+
+        // Ueberblenden statt schieben: die neue Ebene liegt gleich an ihrem
+        // Platz und wird nur sichtbar. Dieselbe Dauer wie die Kreuzblende des
+        // Stapels, damit beide Wege gleich aussehen.
+        if richtung == .blende {
+            gtk_fixed_move(fest, ziel, 0, 0)
+            gtk_widget_insert_before(ziel, buehne, nil)
+            gtk_widget_set_opacity(ziel, 0)
+            laufen(auf: buehne, dauer: Stil.zeitBlende) { e in
+                gtk_widget_set_opacity(ziel, e)
+                gtk_widget_set_opacity(alt, 1 - e)
+            } fertig: {
+                gtk_widget_set_opacity(ziel, 1)
+                gtk_widget_set_opacity(alt, 1)
+                gtk_widget_set_visible(alt, 0)
+            }
+            return
+        }
+
         guard richtung != .ohne, breite > 1 else {
             gtk_fixed_move(fest, ziel, 0, 0)
             gtk_widget_set_visible(alt, 0)
@@ -1505,18 +1677,26 @@ final class App: @unchecked Sendable {
 
     /// Schaltet den Bereich um und färbt die Zeilen nach.
     func zeige(_ neu: Bereich) {
+        // **Ein Bereich schliesst die offene Bibliothek.** Sonst bliebe ihre
+        // Zeile hervorgehoben, waehrend rechts etwas anderes steht — auf dem
+        // Mac macht das `bibliothekSchliessen()` an derselben Stelle.
+        if neu != .bibliothek, offeneBibliothek != nil {
+            offeneBibliothek = nil
+            bibliothekszeilenMalen()
+        }
         bereich = neu
-        for (i, fall) in Bereich.allCases.enumerated() {
-            guard let knopf = bereichsknoepfe[i] else { continue }
+        for (fall, knopf) in bereichsknoepfe {
             if fall == neu { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
             else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
         }
         // **Der Stapel entscheidet, was zu sehen ist.** Liegt auf diesem
         // Bereich eine Detailseite, kommt sie zurück — nicht die Liste.
+        // **Ein Bereichswechsel blendet — beide Wege.** Vorher blendete nur
+        // der eine, weil der andere ueber `schieben(.ohne)` lief.
         if let oben = seitenstapel[neu]?.last {
-            detailZeigen(oben, schub: .ohne)
+            detailZeigen(oben, schub: .blende)
         } else {
-            bereichZeigen(neu.kennung, schub: .ohne)
+            bereichZeigen(neu.kennung, schub: .blende)
         }
         // **Wer auf „Suche" geht, will tippen.** Der Mac setzt den Fokus beim
         // Erscheinen der Seite; hier ging es nur über Strg+F.
@@ -1530,6 +1710,11 @@ final class App: @unchecked Sendable {
         case .start:  startseiteLaden()
         case .filme:  rasterLaden(.filme)
         case .serien: rasterLaden(.serien)
+        case .merkliste: rasterLaden(.merkliste)
+        // Die Downloadliste steht auf der Platte; sie wird nicht geholt,
+        // sondern gezeigt.
+        case .downloads: downloadseiteFuellen()
+        case .bibliothek: rasterLaden(.bibliothek)
         case .suche:  break
         }
     }
@@ -1549,9 +1734,11 @@ final class App: @unchecked Sendable {
     }
 
     /// Eine Seitenüberschrift mit der Zahl rechts — „Filme … 7".
-    private func seitenkopf(_ titel: String, zahl: inout Widget!) -> Widget! {
+    private func seitenkopf(_ titel: String, zahl: inout Widget!,
+                            titelfeld: inout Widget!) -> Widget! {
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
         let t = beschriftung(titel, stil: "swiftly-titel-gross")
+        titelfeld = t
         gtk_label_set_xalign(OpaquePointer(t), 0)
         gtk_widget_set_hexpand(t, 1)
         anhaengen(reihe, t)
@@ -1588,7 +1775,10 @@ final class App: @unchecked Sendable {
     private func rasterseiteBauen(_ was: Bereich) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 20)
         var zahl: Widget!
-        anhaengen(block, seitenkopf(was.beschriftung, zahl: &zahl))
+        var titel: Widget!
+        anhaengen(block, seitenkopf(was.beschriftung, zahl: &zahl, titelfeld: &titel))
+        // Nur diese eine Seite wechselt ihren Titel.
+        if was == .bibliothek { bibliothekstitel = titel }
 
         let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
         chipzeilen[was] = zeile
@@ -1603,8 +1793,9 @@ final class App: @unchecked Sendable {
         gtk_widget_set_margin_top(lader, 40)
         gtk_widget_set_visible(lader, 0)
         anhaengen(block, lader)
-        if was == .filme { filmeraster = raster; filmezahl = zahl; filmeLader = lader }
-        else { serienraster = raster; serienzahl = zahl; serienLader = lader }
+        rasterFeld[was] = raster
+        zahlFeld[was] = zahl
+        laderFeld[was] = lader
 
         let rahmen = seitenrahmen(block)
         // **Am unteren Rand wird nachgeladen** (`edge-reached` — das Signal
@@ -1621,8 +1812,14 @@ final class App: @unchecked Sendable {
     /// `Filters=IsUnplayed` — das arbeitet bei Serien auf Folgenebene.
     /// Die Bibliotheken einer Gattung.
     func bibliotheken(fuer was: Bereich) -> [Item] {
-        let art = was == .filme ? "movies" : "tvshows"
-        return sichten.filter { $0.collectionType == art }
+        // **Die Merkliste hat keine.** Sie geht ueber alle Bibliotheken und
+        // siebt beim Server auf `IsFavorite`; eine Bibliothekswahl waere dort
+        // eine Einschraenkung, die es auf dem Mac auch nicht gibt.
+        switch was {
+        case .filme:  return sichten.filter { $0.collectionType == "movies" }
+        case .serien: return sichten.filter { $0.collectionType == "tvshows" }
+        default:      return []
+        }
     }
 
     func chipsFuellen(_ was: Bereich) {
@@ -1656,7 +1853,10 @@ final class App: @unchecked Sendable {
             anhaengen(zeile, strich)
         }
 
-        for fall in Bibliotheksfilter.allCases {
+        // **Auf der Merkliste gibt es keine Filter.** Der Server siebt dort
+        // auf `IsFavorite`; ein zweiter Filter daneben stuende da und taete
+        // nichts. Auf dem Mac steht dort dieselbe Reihe nicht.
+        for fall in was == .merkliste ? [] : Bibliotheksfilter.allCases {
             let c = chip(fall.beschriftung, aktiv: fall == jetztFilter)
             beiSignal(c, "clicked") { [weak self] in
                 guard let self else { return }
@@ -1685,7 +1885,9 @@ final class App: @unchecked Sendable {
     private func sucheBauen() -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 20)
         var unbenutzt: Widget!
-        anhaengen(block, seitenkopf(uebersetzt("Suche"), zahl: &unbenutzt))
+        var unbenutztertitel: Widget!
+        anhaengen(block, seitenkopf(uebersetzt("Suche"), zahl: &unbenutzt,
+                                    titelfeld: &unbenutztertitel))
 
         suchfeld = eingabezeile(symbol: "system-search-symbolic", platzhalter: uebersetzt("Suchen"))
         // Auf der Suchseite geht das Feld über die Inhaltsbreite, nicht über
@@ -1703,7 +1905,34 @@ final class App: @unchecked Sendable {
                                uebersetzt("Andere Schreibweise? Die Suche findet Filme und Serien."))
         gtk_widget_set_visible(suchleer, 0)
         anhaengen(block, suchleer)
-        beiSignal(suchfeld, "activate") { [weak self] in self?.suchen() }
+
+        // **Was der Server nicht hat, steht darunter — nicht dazwischen.**
+        //
+        // Woertlich die Anordnung der Apple-Fassung: erst die eigene
+        // Bibliothek, dann eine eigene Ueberschrift und darunter, was Seerr
+        // kennt. Vermischt waere nicht zu sehen, was man ansehen kann und was
+        // man erst anfordern muss.
+        seerrUeberschrift = beschriftung(uebersetzt("Anfragen über Seerr"), stil: "swiftly-reihe")
+        gtk_label_set_xalign(OpaquePointer(seerrUeberschrift), 0)
+        gtk_widget_set_margin_top(seerrUeberschrift, 12)
+        gtk_widget_set_visible(seerrUeberschrift, 0)
+        anhaengen(block, seerrUeberschrift)
+
+        seerrRueckfrage = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        gtk_widget_set_visible(seerrRueckfrage, 0)
+        gtk_widget_set_margin_top(seerrRueckfrage, 4)
+        anhaengen(block, seerrRueckfrage)
+
+        seerrRaster = rasterBauen()
+        gtk_widget_set_visible(seerrRaster, 0)
+        anhaengen(block, seerrRaster)
+        // Die Eingabetaste sucht sofort — und wird dabei selbst zur juengsten
+        // Suche, sonst verwirft sie der Takt der noch laufenden Wartezeit.
+        beiSignal(suchfeld, "activate") { [weak self] in
+            guard let self else { return }
+            self.suchtakt += 1
+            self.suchen(self.suchtakt)
+        }
         beiSignal(suchfeld, "changed") { [weak self] in self?.sucheAngestossen() }
         return seitenrahmen(block)
     }
@@ -1732,8 +1961,7 @@ final class App: @unchecked Sendable {
     /// Raster still da, bis das neue eintraf — es sah aus, als hätte der
     /// Klick nichts getan.
     func rasterLaderZeigen(_ was: Bereich, _ an: Bool) {
-        let lader = was == .filme ? filmeLader : serienLader
-        guard let lader else { return }
+        guard let lader = laderFeld[was] else { return }
         gtk_widget_set_visible(lader, an ? 1 : 0)
     }
 
@@ -2032,11 +2260,34 @@ final class App: @unchecked Sendable {
         }
     }
 
+    /// **Die Rubrik zeigt die *uebrigen* Bibliotheken.**
+    ///
+    /// Oben stehen Filme und Serien; die beiden Sammlungen, die genau diese
+    /// Bereiche zeigen, gehoeren nicht noch einmal hierher. Bleibt nichts
+    /// uebrig, faellt die Rubrik ganz weg — dann *sind* Filme und Serien die
+    /// Bibliotheken, und sie stehen schon oben.
+    ///
+    /// Hier stand bisher jede Sammlung, auch die beiden. Auf einem Server mit
+    /// genau einer Filmbibliothek und einer Serienbibliothek — dem Normalfall —
+    /// stand damit alles doppelt da. Die Regel steht seit jeher in
+    /// `HauptView.sammlungen` auf dem Mac.
+    private var uebrigeSammlungen: [Item] {
+        let schonOben = Set([
+            gewaehlteBibliothek[.filme] ?? bibliotheken(fuer: .filme).first?.id,
+            gewaehlteBibliothek[.serien] ?? bibliotheken(fuer: .serien).first?.id,
+        ].compactMap { $0 })
+        return sichten
+            .filter { $0.collectionType == "movies" || $0.collectionType == "tvshows" }
+            .filter { !schonOben.contains($0.id) }
+    }
+
     private func bibliothekenZeigen(_ sichten: [Item]) {
         self.sichten = sichten
         leeren(bibliotheksliste)
-        gtk_widget_set_visible(bibliotheksrubrik, sichten.isEmpty ? 0 : 1)
-        for sicht in sichten {
+        bibliotheksknoepfe = [:]
+        let uebrige = uebrigeSammlungen
+        gtk_widget_set_visible(bibliotheksrubrik, uebrige.isEmpty ? 0 : 1)
+        for sicht in uebrige {
             // Der Sammlungstyp bestimmt das Zeichen, wie auf dem Mac.
             let symbol: String
             switch sicht.collectionType {
@@ -2045,18 +2296,53 @@ final class App: @unchecked Sendable {
             case "music":   symbol = "folder-music-symbolic"
             default:        symbol = "folder-symbolic"
             }
-            let zeile = seitenleistenzeile(symbol: symbol, text: sicht.name, aktiv: false)
-            // Eine Bibliothek führt in ihren Bereich und wählt sich dort aus.
-            let ziel: Bereich? = sicht.collectionType == "tvshows" ? .serien
-                               : sicht.collectionType == "movies" ? .filme : nil
+            let zeile = seitenleistenzeile(symbol: symbol, text: sicht.name,
+                                           aktiv: offeneBibliothek?.id == sicht.id)
+            // **Eine eigene Seite, kein Umschalter** — woertlich die
+            // Entscheidung des Macs. Vorher fuehrte das hier in den
+            // Filme-Bereich und waehlte sich dort aus; ueber „Filmabend"
+            // stand dann die Ueberschrift „Filme". Und eine Sammlung, die
+            // weder `movies` noch `tvshows` ist, tat gar nichts, weil es
+            // fuer sie keinen Bereich gab.
             beiSignal(zeile, "clicked") { [weak self] in
-                guard let self, let ziel else { return }
-                self.gewaehlteBibliothek[ziel] = sicht.id
-                self.geladen.remove(ziel)
-                self.zeige(ziel)
-                self.chipsFuellen(ziel)
+                self?.bibliothekOeffnen(sicht)
             }
+            bibliotheksknoepfe[sicht.id] = zeile
             anhaengen(bibliotheksliste, zeile)
+        }
+    }
+
+    /// **Eine Bibliothek als eigene Seite oeffnen.**
+    ///
+    /// Sie bekommt ihren eigenen Titel, ihren eigenen Filter und ihre eigene
+    /// Sortierung — nichts davon greift in den Filme- oder Serienbereich
+    /// hinein. Genau das war der Fehler: die Sammlung schaltete den Bereich
+    /// um, und ueber „Filmabend" stand „Filme".
+    func bibliothekOeffnen(_ sicht: Item) {
+        offeneBibliothek = sicht
+        bibliothekszeilenMalen()
+        if bibliothekstitel != nil {
+            gtk_label_set_text(OpaquePointer(bibliothekstitel), sicht.name)
+        }
+        // **Neu laden, nicht das Alte zeigen.** `geladen` merkt sich je
+        // Bereich, dass schon einmal geholt wurde; ohne diese Zeile stuenden
+        // unter der zweiten Sammlung die Titel der ersten. Genau die
+        // Beschwerde: „die falschen werden angezeigt".
+        geladen.remove(.bibliothek)
+        seitenstapel[.bibliothek] = []
+        filter[.bibliothek] = .alle
+        sortierung[.bibliothek] = .name
+        chipsFuellen(.bibliothek)
+        zeige(.bibliothek)
+    }
+
+    private func bibliothekszeilenMalen() {
+        for (kennung, knopf) in bibliotheksknoepfe {
+            if kennung == offeneBibliothek?.id {
+                gtk_widget_add_css_class(knopf, "swiftly-aktiv")
+            } else {
+                gtk_widget_remove_css_class(knopf, "swiftly-aktiv")
+            }
         }
     }
 
@@ -2130,8 +2416,8 @@ final class App: @unchecked Sendable {
     /// ohnehin gibt.
     private func rasterNachladen(_ was: Bereich) {
         guard !rasterLaedt.contains(was) else { return }
-        let schon = (was == .filme ? filmeItems : serienItems).count
-        guard schon > 0, schon < (was == .filme ? filmeGesamt : serienGesamt) else { return }
+        let schon = (rasterItems[was] ?? []).count
+        guard schon > 0, schon < (rasterGesamt[was] ?? 0) else { return }
         rasterLaden(was, ab: schon)
     }
 
@@ -2139,14 +2425,36 @@ final class App: @unchecked Sendable {
         guard let client else { return }
         rasterLaedt.insert(was)
         if ab == 0 {
-            if was == .filme { filmeItems = [] } else { serienItems = [] }
+            rasterItems[was] = []
             rasterLaderZeigen(was, true)
         }
-        let gattung = was == .filme ? "Movie" : "Series"
+        // **Die Merkliste ist keine Bibliothek, sondern ein Filter.** Sie
+        // fragt beide Gattungen ab und laesst den Server auf `IsFavorite`
+        // sieben — woertlich `AppModel.gemerkte(art:sortierung:ab:)` vom Mac.
+        let gattungen: [String]
+        switch was {
+        case .filme:  gattungen = ["Movie"]
+        case .serien: gattungen = ["Series"]
+        // **Die Sammlung sagt selbst, was in ihr liegt.** Eine Sammlung ohne
+        // erkennbaren Typ — gemischte Ordner gibt es — bekommt beides,
+        // statt leer zu bleiben.
+        case .bibliothek:
+            switch offeneBibliothek?.collectionType {
+            case "movies":  gattungen = ["Movie"]
+            case "tvshows": gattungen = ["Series"]
+            default:        gattungen = ["Movie", "Series"]
+            }
+        default:      gattungen = ["Movie", "Series"]
+        }
         let f = filter[was] ?? .alle
         let sort = sortierung[was] ?? .name
-        let meine = bibliotheken(fuer: was)
-        let eltern = gewaehlteBibliothek[was] ?? meine.first?.id
+        // Die Merkliste hat keine Bibliothek — sie geht ueber alles.
+        let eltern: String?
+        switch was {
+        case .merkliste:  eltern = nil
+        case .bibliothek: eltern = offeneBibliothek?.id
+        default:          eltern = gewaehlteBibliothek[was] ?? bibliotheken(fuer: was).first?.id
+        }
         let stand = kontowechsel
         Task.detached { [self] in
             let antwort = try? await client.items(parentID: eltern,
@@ -2154,10 +2462,12 @@ final class App: @unchecked Sendable {
                                                   startIndex: ab,
                                                   sortBy: sort.feld,
                                                   sortOrder: sort.richtung,
-                                                  filters: f.jellyfinFilter,
-                                                  istGesehen: f.istGesehen,
+                                                  filters: was == .merkliste
+                                                      ? ["IsFavorite"] : f.jellyfinFilter,
+                                                  istGesehen: was == .merkliste
+                                                      ? nil : f.istGesehen,
                                                   recursive: true,
-                                                  includeItemTypes: [gattung])
+                                                  includeItemTypes: gattungen)
             let items = antwort?.items ?? []
             let gesamt = antwort?.totalRecordCount ?? items.count
             aufHauptfaden {
@@ -2166,17 +2476,11 @@ final class App: @unchecked Sendable {
                 guard self.kontowechsel == stand else { return }
                 self.rasterLaedt.remove(was)
                 self.rasterLaderZeigen(was, false)
-                let raster = was == .filme ? self.filmeraster : self.serienraster
-                let zahl = was == .filme ? self.filmezahl : self.serienzahl
-                if was == .filme {
-                    self.filmeItems += items
-                    self.filmeGesamt = gesamt
-                    self.rasterFuellen(raster, self.filmeItems)
-                } else {
-                    self.serienItems += items
-                    self.serienGesamt = gesamt
-                    self.rasterFuellen(raster, self.serienItems)
-                }
+                guard let raster = self.rasterFeld[was], let zahl = self.zahlFeld[was]
+                else { return }
+                self.rasterItems[was, default: []] += items
+                self.rasterGesamt[was] = gesamt
+                self.rasterFuellen(raster, self.rasterItems[was] ?? [])
                 gtk_label_set_text(OpaquePointer(zahl), String(gesamt))
             }
         }
@@ -2200,26 +2504,52 @@ final class App: @unchecked Sendable {
         guard begriff.count > 1 else {
             rasterFuellen(suchraster, [])
             gtk_widget_set_visible(suchleer, 0)
+            seerrRueckfrageWeg()
+            seerrTrefferZeigen([])
             return
         }
         Task.detached { [self] in
             try? await Task.sleep(nanoseconds: 280_000_000)
             aufHauptfaden {
                 guard self.suchtakt == meins else { return }
-                self.suchen()
+                self.suchen(meins)
             }
         }
     }
 
-    private func suchen() {
+    /// **Der eigene Server zuerst, Seerr danach — in zwei Schritten.**
+    ///
+    /// Beides in einem Zug abzuwarten hiesse, die eigene Bibliothek so lange
+    /// leer zu lassen, wie ein fremder Dienst braucht. Seerr steht auf einem
+    /// anderen Rechner und kann Sekunden brauchen oder gar nicht antworten;
+    /// die eigenen Treffer sind in Millisekunden da und werden sofort
+    /// gezeigt. Die Zeile darunter kommt nach, wenn sie kommt.
+    ///
+    /// **Der Takt wird auch nach dem Warten geprueft**, nicht nur davor. Beim
+    /// eigenen Server war das lange folgenlos, weil er schneller antwortet,
+    /// als jemand tippt. Seerr ist es nicht: ohne die Pruefung malt die
+    /// Antwort auf „Herr" die Treffer unter „Herr der Ringe".
+    private func suchen(_ meins: Int) {
         guard let client else { return }
         let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !begriff.isEmpty else { rasterFuellen(suchraster, []); return }
+        let seerr = seerrclient
         Task.detached { [self] in
             let treffer = (try? await client.suche(begriff)) ?? []
             aufHauptfaden {
+                guard self.suchtakt == meins else { return }
                 self.rasterFuellen(self.suchraster, treffer)
                 gtk_widget_set_visible(self.suchleer, treffer.isEmpty ? 1 : 0)
+                self.seerrRueckfrageWeg()
+                self.seerrTrefferZeigen([])
+            }
+            guard let seerr else { return }
+            let fremde = await seerr.suchen(begriff)
+            aufHauptfaden {
+                guard self.suchtakt == meins else { return }
+                self.seerrTrefferZeigen(fremde)
+                // Gefunden ist gefunden, auch wenn es woanders liegt.
+                if !fremde.isEmpty { gtk_widget_set_visible(self.suchleer, 0) }
             }
         }
     }
@@ -2259,9 +2589,24 @@ final class App: @unchecked Sendable {
     func reiheBauen(titel: String, art: Reihenart, items: [Item],
                     rand: Int = Stil.randAbstand) -> Widget! {
         let quer = art == .weiterschauen
-        let bildHoehe = quer ? Stil.querHoehe : Stil.kachelHoehe
-        let stueck = (quer ? Stil.querBreite : Stil.kachelBreite) + Stil.kachelAbstand
+        return reiheBauen(titel: titel,
+                          bildHoehe: quer ? Stil.querHoehe : Stil.kachelHoehe,
+                          stueck: (quer ? Stil.querBreite : Stil.kachelBreite)
+                                  + Stil.kachelAbstand,
+                          rand: rand,
+                          kacheln: items.map { kachelBauen($0, art: art) })
+    }
 
+    /// **Dieselbe Reihe, nur nicht aus `Item`.**
+    ///
+    /// Ueberschrift, waagerechtes Blaettern, die beiden Pfeile beim
+    /// Schweben, das sanfte Springen um drei Kacheln — das haengt an nichts,
+    /// was ein Serverobjekt waere. Herausgezogen, als die Seerr-Seite
+    /// Besetzung und Aehnliches zeigen sollte: eine zweite Fassung davon
+    /// waere die kopierte Funktion, gegen die die Regel steht, und sie waere
+    /// prompt auseinandergelaufen.
+    func reiheBauen(titel: String, bildHoehe: Int, stueck: Int,
+                    rand: Int = Stil.randAbstand, kacheln: [Widget?]) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 10)
 
         let ueberschrift = beschriftung(titel, stil: "swiftly-reihe")
@@ -2283,7 +2628,7 @@ final class App: @unchecked Sendable {
         // wird — dieselben vier wie auf dem Mac.
         gtk_widget_set_margin_top(reihe, 4)
         gtk_widget_set_margin_bottom(reihe, 4)
-        for item in items { anhaengen(reihe, kachelBauen(item, art: art)) }
+        for k in kacheln { anhaengen(reihe, k) }
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
 
         let ueber: Widget! = gtk_overlay_new()

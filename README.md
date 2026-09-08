@@ -1,6 +1,11 @@
 <div align="center">
 
-<img src=".github/bilder/wortmarke.svg" alt="Swiftly" width="300">
+<img src=".github/bilder/wortmarke.svg" alt="Swiftly Player" width="300">
+
+# Swiftly Player
+
+**A native Jellyfin client for iPhone, iPad, Apple TV, Mac, Linux and Windows.**
+It never transcodes — every file plays as Direct Play or Direct Stream.
 
 <br>
 
@@ -26,17 +31,22 @@
 
 <br>
 
-**Swiftly for Jellyfin is a client for your own Jellyfin server. It is meant to
+**Swiftly Player is a client for your own Jellyfin server. It is meant to
 be plain, and to just work.**
 
-There is no long feature list here, and that is deliberate. It opens, it finds
-your library, it plays. Resume where you stopped, subtitles, Picture in
-Picture — the ordinary things, done properly, instead of a hundred switches
-nobody ever touches.
+It opens, it finds your library, it plays. Most of it is the ordinary things
+done properly, instead of a hundred switches nobody ever touches — and
+underneath, it works hard **never to make your server transcode**, so the
+picture stays untouched and your CPU stays cool.
 
-Underneath, it works hard not to make your server transcode, so the picture
-stays untouched and your CPU stays cool. You should never have to think about
-that, which is rather the point.
+If you came here looking for a **Jellyfin app for iPhone or iPad**, a
+**Jellyfin client for Apple TV**, a **native Jellyfin player for macOS**, or a
+**Jellyfin desktop client for Linux or Windows** — that is all one app, and
+this is it. Picture in Picture, Direct Play without transcoding, several
+accounts on one server, and handing a running film from one device to the
+next.
+
+But three things it does that no other Jellyfin client does at all.
 
 <br>
 
@@ -59,22 +69,88 @@ that, which is rather the point.
 
 <br>
 
-## 🌟 Features
+## ✨ Three things you will not find elsewhere
 
-- 🎯 **Never transcode**: the device profile declares containers, codecs and
-  every subtitle format, so the server has no reason to re-encode. Undeclared
-  subtitles are the most common cause of a needless transcode, and they are
-  all declared here.
-- 🪟 **Picture in Picture** on iPhone and iPad — the one thing that sent me
-  looking for another client in the first place.
-- ⏯️ **Resume** exactly where you stopped, with the next episode following on
-  its own.
-- 🔑 **Quick Connect**, so you never type a password on a television remote.
-- 🎧 **Audio and subtitle tracks** switch while the film keeps running.
-- 📚 **Several libraries** of the same kind, and the app remembers which one
-  you were in.
-- 🚫 **No account, no subscription, no ads, no tracking.** Nothing leaves your
+### 📲 Continue on this device
+
+You are watching on the Apple TV. You get up, take your phone — and there is a
+badge next to your profile picture. **Tap it, and the film carries on here,
+from the same second.** The television stops on its own; you do not pause
+anything, you do not scroll to find where you were.
+
+It works in every direction: TV to phone, phone to Mac, Mac to TV. If two of
+your devices are playing, Swiftly asks which one you meant. Only your own
+account is offered, and only devices that are actually reachable.
+
+I have not seen this in another Jellyfin client, and it is the thing people
+notice on day one and then cannot do without.
+
+### 👥 Several Jellyfin accounts on one server
+
+Your household has one server and several accounts on it — yours, your
+partner's, the children's. Swiftly holds **all of them at once**.
+
+Above "Sign out" there is "Add another account". After that, a strip at the
+top of your profile switches between them: press a picture, and you are in
+that account. **No password, no signing out, no waiting** — both logins stay
+in the keychain, and Continue Watching, Next Up and everything else changes
+with them.
+
+Signing out affects only the account you are on. The others stay.
+
+### 📺 Every Apple TV profile keeps its own login
+
+The Apple TV already knows who is watching — it has profiles at the top of the
+screen. Swiftly follows them.
+
+**Switch the tvOS profile, and Swiftly is in that person's Jellyfin account.**
+Their Continue Watching, their watched marks, their Top Shelf on the home
+screen. Nobody has to sign anything in or out; the television already asked
+the question, and the app simply respects the answer.
+
+<br>
+
+## 🌟 Everything else
+
+### 🎬 Watching
+
+- **Never transcode.** The device profile declares containers, codecs and
+  *every* subtitle format, so the server has no reason to re-encode.
+  Undeclared subtitles are the most common cause of a needless transcode, and
+  they are all declared here.
+- **Resume** exactly where you stopped, with the next episode following on its
+  own.
+- **Skip intro and recap** where your server knows about them — the button
+  changes what it says, instead of appearing out of nowhere.
+- **Audio and subtitle tracks** switch while the film keeps running.
+- **Playback speed**, and the position is reported back to the server as you
+  watch.
+
+### 📚 Finding things
+
+- **Several libraries** of the same kind, and the app remembers which one you
+  were in.
+- **Search** across your libraries, with the season and episode you meant.
+- **Top Shelf**<sup>1</sup>: what you were watching sits above the app icon on
+  the Apple TV home screen, before you even open it.
+
+### 📱 On your devices
+
+- **Picture in Picture**<sup>2</sup> — the one thing that sent me looking for
+  another client in the first place.
+- **Lock screen and Control Centre**<sup>2</sup> show the artwork and the
+  controls.
+- **Media keys**<sup>3</sup> work, and a small window stays on top while you
+  do something else.
+- **Quick Connect**, so you never type a password on a television remote.
+
+### 🔒 Yours
+
+- **No account, no subscription, no ads, no tracking.** Nothing leaves your
   device except the requests to the server you enter yourself.
+- **Free and open source**, MPL-2.0.
+
+<sub>1 Apple TV · 2 iPhone, iPad · 3 Linux, Windows, Mac</sub>
 
 <br>
 
@@ -86,12 +162,12 @@ and only where distance, input or window size demand it.
 
 | Platform | State |
 |---|---|
-| 📱 iPhone | **1.0.0 (9)** · beta on TestFlight |
-| 📲 iPad | **1.0.0 (9)** · ships with the iPhone app |
-| 📺 Apple TV | **1.0.0 (9)** · beta on TestFlight |
-| 💻 Mac | **1.0.0 (9)** · beta on TestFlight |
-| 🐧 Linux | **1.0.0** · GTK4, native, same shared logic · [install](#-linux) |
-| 🪟 Windows | **1.0.0** · GTK4 like Linux, **the same source** · [download](#-windows) |
+| 📱 iPhone | **1.0.1 (1)** · beta on TestFlight |
+| 📲 iPad | **1.0.1 (1)** · ships with the iPhone app |
+| 📺 Apple TV | **1.0.1 (1)** · beta on TestFlight |
+| 💻 Mac | **1.0.1 (1)** · beta on TestFlight |
+| 🐧 Linux | **1.0.0** · being rebuilt under the new name · [install](#-linux) |
+| 🪟 Windows | **1.0.0** · being rebuilt under the new name · [download](#-windows) |
 
 **The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
 — one link for iPhone, iPad, Apple TV and Mac. What each build wants tested is
@@ -102,12 +178,30 @@ than "have a look around".
 
 ## 🐧 Linux
 
+> **The Linux build still says Swiftly for Jellyfin.** The app was renamed to
+> **Swiftly Player** in September 2026; the Apple builds carry the new name
+> already, the desktop packages are being rebuilt. What is offered here still
+> works — it is the shipped 1.0.0.
+>
+> **If you added the package source before the rename**, the address moved.
+> Point it at the new one — it is one line, and updates keep arriving with your
+> normal system update:
+>
+> ```sh
+> sudo sed -i 's|swiftly-for-jellyfin|swiftly-player|' /etc/apt/sources.list.d/swiftly.list   # apt
+> sudo sed -i 's|swiftly-for-jellyfin|swiftly-player|' /etc/yum.repos.d/swiftly.repo          # dnf
+> sudo sed -i 's|swiftly-for-jellyfin|swiftly-player|' /etc/pacman.conf                       # pacman
+> ```
+>
+> The old address keeps answering, so nothing breaks if you do not — but new
+> versions appear only under the new one.
+
 One command. It works out which distribution you are on, adds the Swiftly
 package source, and installs from it — so **updates arrive with your normal
 system update**, like any other program.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-for-jellyfin/main/Linux/Installieren/swiftly-installieren.sh | bash
+curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-player/main/Linux/Installieren/swiftly-installieren.sh | bash
 ```
 
 <details>
@@ -117,8 +211,8 @@ curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-for-jellyfin/mai
 
 ```sh
 sudo install -d -m755 /etc/apt/keyrings
-curl -fsSL https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg | sudo tee /etc/apt/keyrings/swiftly.asc >/dev/null
-echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/swiftly.asc] https://paulherter.github.io/swiftly-for-jellyfin/deb ./" | sudo tee /etc/apt/sources.list.d/swiftly.list
+curl -fsSL https://paulherter.github.io/swiftly-player/swiftly.gpg | sudo tee /etc/apt/keyrings/swiftly.asc >/dev/null
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/swiftly.asc] https://paulherter.github.io/swiftly-player/deb ./" | sudo tee /etc/apt/sources.list.d/swiftly.list
 sudo apt update && sudo apt install swiftly-jellyfin
 ```
 
@@ -127,11 +221,11 @@ sudo apt update && sudo apt install swiftly-jellyfin
 ```sh
 sudo tee /etc/yum.repos.d/swiftly.repo <<'EOF'
 [swiftly]
-name=Swiftly for Jellyfin
-baseurl=https://paulherter.github.io/swiftly-for-jellyfin/rpm
+name=Swiftly Player
+baseurl=https://paulherter.github.io/swiftly-player/rpm
 enabled=1
 gpgcheck=1
-gpgkey=https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg
+gpgkey=https://paulherter.github.io/swiftly-player/swiftly.gpg
 EOF
 sudo dnf install swiftly-jellyfin
 ```
@@ -139,13 +233,13 @@ sudo dnf install swiftly-jellyfin
 **Arch, CachyOS, Manjaro, EndeavourOS, Garuda**
 
 ```sh
-curl -fsSL https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg | sudo pacman-key --add -
+curl -fsSL https://paulherter.github.io/swiftly-player/swiftly.gpg | sudo pacman-key --add -
 sudo pacman-key --lsign-key 705D676A71BF0121804A90BAC8589885A042FB8B
 sudo tee -a /etc/pacman.conf <<'EOF'
 
 [swiftly]
 SigLevel = Required DatabaseOptional
-Server = https://paulherter.github.io/swiftly-for-jellyfin/arch
+Server = https://paulherter.github.io/swiftly-player/arch
 EOF
 sudo pacman -Sy swiftly-jellyfin
 ```
@@ -153,8 +247,8 @@ sudo pacman -Sy swiftly-jellyfin
 **openSUSE Tumbleweed**
 
 ```sh
-sudo rpm --import https://paulherter.github.io/swiftly-for-jellyfin/swiftly.gpg
-sudo zypper addrepo -f https://paulherter.github.io/swiftly-for-jellyfin/rpm swiftly
+sudo rpm --import https://paulherter.github.io/swiftly-player/swiftly.gpg
+sudo zypper addrepo -f https://paulherter.github.io/swiftly-player/rpm swiftly
 sudo zypper install swiftly-jellyfin
 ```
 
@@ -181,7 +275,10 @@ transcodes" rests on.
 
 ## 🪟 Windows
 
-**[Download Swiftly-1.0.0-Setup.exe](https://github.com/paulherter/swiftly-for-jellyfin/releases/download/v1.0.0/Swiftly-1.0.0-Setup.exe)** — 80 MB, Windows 10 and 11, 64-bit.
+> **The Windows build still says Swiftly for Jellyfin** and is being rebuilt
+> under the new name. The installer below is the shipped 1.0.0 and works.
+
+**[Download Swiftly-1.0.0-Setup.exe](https://github.com/paulherter/swiftly-player/releases/download/v1.0.0/Swiftly-1.0.0-Setup.exe)** — 80 MB, Windows 10 and 11, 64-bit.
 
 The installer puts Swiftly where it belongs: Program Files (or your own folder
 if you run it without admin rights — you choose in the dialog), a Start menu
@@ -219,7 +316,7 @@ installer, so there is nothing else to install.
 
 ## ✅ Requirements
 
-- Your own Jellyfin server, **10.10 or newer**. Swiftly for Jellyfin hosts
+- Your own Jellyfin server, **10.10 or newer**. Swiftly Player hosts
   nothing and has no account of its own — you sign in with the credentials you
   already have.
 - iOS 18, tvOS 18 or macOS 15 — or a Linux desktop with GTK 4 and libVLC,
@@ -245,7 +342,7 @@ audio codec and subtitle format of that file.
 
 ## 🤖 Built with Claude
 
-Swiftly for Jellyfin was written together with Anthropic's Claude, and the
+Swiftly Player was written together with Anthropic's Claude, and the
 commit history says so — every commit carries a `Co-Authored-By` line. The
 decisions, the testing and the responsibility are mine; a good deal of the
 typing was not. It seemed more honest to say that here than to let someone

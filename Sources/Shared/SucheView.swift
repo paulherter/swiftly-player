@@ -17,6 +17,12 @@ struct SucheView: View {
     @State private var treffer: [Item] = []
     @State private var sucht = false
     @State private var aufgabe: Task<Void, Never>?
+    /// Was Seerr kennt und der eigene Server nicht hat.
+    ///
+    /// **Eigener Zustand, eigene Aufgabe.** Die beiden Abrufe laufen
+    /// nebeneinander; kommt von Seerr nichts oder kommt es spät, steht
+    /// trotzdem sofort da, was der eigene Server hat.
+    @State private var seerrtreffer: [Seerrtreffer] = []
     @FocusState private var imFeld: Bool
 
     @Environment(\.breit) private var breit
@@ -61,9 +67,27 @@ struct SucheView: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if begriff.isEmpty {
                             leerhinweis
-                        } else if sucht {
-                            Lader().frame(maxWidth: .infinity).padding(.top, 40)
-                        } else if treffer.isEmpty {
+                        } else if sucht, treffer.isEmpty, seerrtreffer.isEmpty {
+                            // **Kein Ring.** Solange noch nichts da ist,
+                            // steht das Raster in seiner Form; sind schon
+                            // Treffer da, bleiben die stehen, statt einem
+                            // Ring zu weichen.
+                            Rasterplatzhalter(
+                                spalten: Stil.spalten(
+                                    nutzbar: rahmen.size.width - 2 * Stil.rand(breit: breit),
+                                    breit: breit),
+                                reihen: 2)
+                                .padding(.horizontal, Stil.rand(breit: breit))
+                                .padding(.top, 12)
+                                .transition(.opacity)
+                        } else if treffer.isEmpty, seerrtreffer.isEmpty {
+                            // **Beide leer, nicht nur die Bibliothek.** Hier
+                            // stand `treffer.isEmpty`, und damit gewann dieser
+                            // Zweig, sobald der eigene Server nichts hatte —
+                            // der Seerr-Block darunter wurde nie erreicht.
+                            // Genau der Fall, für den die ganze Anbindung
+                            // gebaut ist: „Blade Runner" gibt es hier nicht,
+                            // und *deshalb* will man ihn anfragen. Von
                             Text("Keine Treffer für \u{201E}\(begriff)\u{201C}")
                                 .font(Stil.koerper)
                                 .foregroundStyle(Stil.schriftLeise)
@@ -73,6 +97,15 @@ struct SucheView: View {
                             // Nach Art gruppiert, wie bei Plex: in der Liste
                             // liest man Titel und Art auf einen Blick.
                             let nutzbar = rahmen.size.width - 2 * Stil.rand(breit: breit)
+                            // **Ohne Seerr keine Überschrift.** Wer nichts
+                            // angebunden hat, soll nicht „Auf deinem Server"
+                            // lesen und sich fragen, wo der andere Block ist.
+                            // Die Überschrift trägt nur, wenn darunter
+                            // wirklich etwas steht — sonst kündigt sie einen
+                            // leeren Block an.
+                            if !seerrtreffer.isEmpty, !treffer.isEmpty {
+                                blockTitel("Auf deinem Server", treffer.count)
+                            }
                             gruppe("Serien", treffer.filter { $0.type == "Series" },
                                    nutzbar: nutzbar)
                             gruppe("Filme", treffer.filter { $0.type == "Movie" },
@@ -82,6 +115,10 @@ struct SucheView: View {
                             gruppe("Weiteres", treffer.filter {
                                 !["Series", "Movie", "Episode"].contains($0.type ?? "")
                             }, nutzbar: nutzbar)
+                            if !seerrtreffer.isEmpty {
+                                blockTitel("Kann angefragt werden", seerrtreffer.count).padding(.top, 8)
+                                seerrRaster(nutzbar: nutzbar)
+                            }
                         }
                     }
                 }
@@ -91,8 +128,14 @@ struct SucheView: View {
                 // Tippen ins Leere schliesst die Tastatur — sonst kommt man
                 // aus dem Feld gar nicht mehr heraus.
                 .simultaneousGesture(TapGesture().onEnded { imFeld = false })
+                // Nur die Trefferflaeche zieht sich heran, nicht das Suchfeld
+                // darueber — siehe `bereichsinhalt()`.
+                .bereichsinhalt()
             }
             }
+            // Ueber dem Inhalt, unter allem, was die Seite sonst noch
+            // auflegt — siehe `bereichsleiste()`.
+            .bereichsleiste()
         }
         // Erst die Tastatur, dann der Weg zurück — wie überall in iOS.
         //
@@ -148,13 +191,69 @@ struct SucheView: View {
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.bottom, 10)
             } else {
-                ForEach(eintraege) { item in
-                    Trefferzeile(model: model, item: item)
+                // **Auch schmal ein Raster, nicht mehr eine Zeilenliste.**
+                // Mit Seerr stehen zwei Blöcke untereinander, und ein Plakat
+                // sagt auf einen Blick, ob ein Titel da ist — eine Zeile mit
+                // 52er Vorschaubild kann das nicht.
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(),
+                                                             spacing: Stil.kachelAbstand),
+                                         count: Stil.spalten(nutzbar: nutzbar, breit: breit)),
+                          alignment: .leading, spacing: 16) {
+                    ForEach(eintraege) { item in
+                        NavigationLink(value: item) {
+                            PosterTile(model: model, item: item, breite: nil,
+                                       auskunft: item.trefferauskunft)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal, Stil.rand(breit: breit))
+                .padding(.bottom, 10)
             }
         }
     }
 
+    /// **Die Rubrik sagt jetzt auch, wie viel.**
+    ///
+    /// Bibliothek und Merkliste tragen rechts eine Zählmarke; sie beantwortet
+    /// „bin ich hier durch?". In der Suche fehlte sie — dabei ist gerade dort
+    /// interessant, wie viel überhaupt kam, und beim zweiten Block nebenbei,
+    /// wie viel Seerr anzubieten hat.
+    private func blockTitel(_ text: LocalizedStringKey, _ anzahl: Int) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(text)
+                .font(.system(size: 13, weight: .semibold))
+                .tracking(0.5)
+                .textCase(.uppercase)
+                .foregroundStyle(Stil.schriftSehrLeise)
+            Spacer(minLength: 8)
+            if anzahl > 0 { Zaehlmarke(anzahl: anzahl) }
+        }
+        .padding(.horizontal, Stil.rand(breit: breit))
+        .padding(.top, 16)
+        .padding(.bottom, 4)
+    }
+
+    private func seerrRaster(nutzbar: CGFloat) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(),
+                                                     spacing: Stil.kachelAbstand),
+                                 count: Stil.spalten(nutzbar: nutzbar, breit: breit)),
+                  alignment: .leading, spacing: 16) {
+            ForEach(seerrtreffer) { t in
+                NavigationLink(value: t) { Seerrkachel(treffer: t) }
+                    .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Stil.rand(breit: breit))
+        .padding(.bottom, 10)
+    }
+
+    /// **Breit steht er unter dem Feld, nicht in der Mitte.**
+    ///
+    /// Schmal fuellt das Suchfeld die Zeile, und ein mittiger Hinweis steht
+    /// unter seiner Mitte. Breit ist das Feld nur `lesebreite` lang und sitzt
+    /// links — der Hinweis stand dann in der Mitte des Fensters, also neben
+    /// dem, worauf er sich bezieht.
     private var leerhinweis: some View {
         VStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
@@ -164,7 +263,16 @@ struct SucheView: View {
                 .font(Stil.koerper)
                 .foregroundStyle(Stil.schriftLeise)
         }
-        .frame(maxWidth: .infinity)
+        // **Mittig unter dem Feld, nicht mittig im Fenster.**
+        //
+        // Er stand in der Mitte der ganzen Breite, das Feld darueber aber
+        // links in seiner Lesebreite — der Hinweis schwebte also neben dem,
+        // worauf er sich bezieht. Linksbuendig war es dann das andere Extrem:
+        // Zeichen und Satz klebten an der Kante eines leeren Fensters. Jetzt
+        // bekommt er dieselbe Spalte wie das Feld und steht in deren Mitte.
+        .frame(maxWidth: breit ? Stil.lesebreite : .infinity)
+        .frame(maxWidth: .infinity, alignment: breit ? .leading : .center)
+        .padding(.horizontal, breit ? Stil.rand(breit: true) : 0)
         .padding(.top, 70)
     }
 
@@ -177,6 +285,7 @@ struct SucheView: View {
         // dieselbe ist — sie stand bisher überall einzeln getippt.
         guard Anzeigeregeln.suchbegriffTaugt(sauber) else {
             treffer = []
+            seerrtreffer = []
             sucht = false
             return
         }
@@ -184,10 +293,21 @@ struct SucheView: View {
         aufgabe = Task {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
+            // **Nebeneinander, nicht nacheinander.** Der eigene Server ist
+            // der Grund, warum jemand die App benutzt; er darf nicht auf
+            // eine Zugabe warten. Deshalb wird zuerst gezeigt, was er hat.
+            async let fremd = model.seerr.suchen(sauber)
             let ergebnis = await model.suche(sauber)
             guard !Task.isCancelled else { return }
-            treffer = ergebnis
+            // Doppelte Kennungen lassen einen Tipp danebengreifen.
+            treffer = Listenregeln.ohneDoppelte(ergebnis)
             sucht = false
+
+            let dazu = await fremd
+            guard !Task.isCancelled else { return }
+            // Was der eigene Server schon hat, gehört nicht in den unteren
+            // Block — sonst stünde derselbe Titel zweimal auf der Seite.
+            seerrtreffer = dazu.filter { !$0.stand.schonDa }
         }
     }
 }

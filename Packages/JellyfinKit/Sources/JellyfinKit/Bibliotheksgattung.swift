@@ -9,7 +9,9 @@ import Foundation
 /// „Lieblingsserien", „Lieblingsepisoden", „Genres". Die haben keine Plakate.
 ///
 /// Genau so ist es einem Nutzer am 03.09.2026 aufgefallen — sieben leere
-/// Kacheln mit diesen Namen statt seiner Serien. Auf
+/// Kacheln mit diesen Namen statt seiner Serien. Auf dem Testserver und auf dem
+/// Prüfserver trat es nicht auf, deshalb war es aus dem Bildschirmfoto
+/// erkennbar und aus keiner Messung.
 ///
 /// Jellyfins eigene Weboberfläche nennt die Gattung immer mit und fragt
 /// rekursiv. Auf Servern ohne diese Ordner ändert das nichts — am Prüfserver

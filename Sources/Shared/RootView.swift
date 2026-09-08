@@ -100,13 +100,15 @@ struct ConnectView: View {
                     .padding(.top, 9)
                     .padding(.leading, 2)
 
-                if model.phase == .connecting {
-                    Lader().frame(height: 48).padding(.top, 22)
-                } else {
-                    Button("Verbinden", action: verbinden)
+                // **Der Knopf bleibt stehen und sagt, was laeuft.** Hier
+                // wechselte er gegen einen Ring — die Seite sprang, und
+                // wohin man gedrueckt hatte, war weg.
+                do {
+                    Button(model.phase == .connecting ? "Verbinden…" : "Verbinden",
+                           action: verbinden)
                         .buttonStyle(HauptknopfStil())
                         .padding(.top, 22)
-                        .disabled(adresse.isEmpty)
+                        .disabled(adresse.isEmpty || model.phase == .connecting)
                         .opacity(adresse.isEmpty ? 0.4 : 1)
                 }
 
@@ -294,12 +296,12 @@ struct LoginView: View {
                         platzhalter: "Passwort", geheim: true,
                         abschluss: anmelden)
 
-            if model.isWorking {
-                Lader().frame(height: 48).padding(.top, 10)
-            } else {
-                Button("Anmelden", action: anmelden)
+            // Derselbe Grund wie oben: der Knopf bleibt stehen.
+            do {
+                Button(model.isWorking ? "Anmelden…" : "Anmelden", action: anmelden)
                     .buttonStyle(HauptknopfStil())
                     .padding(.top, 10)
+                    .disabled(model.isWorking)
                     .disabled(benutzer.isEmpty)
                     .opacity(benutzer.isEmpty ? 0.4 : 1)
             }

@@ -12,6 +12,7 @@ import SwiftUI
 /// (Profil, Einstellungen, Wiedergabe), hier nebeneinander, weil Breite da
 /// ist und jeder gesparte Sprung auf der Fernbedienung zählt.
 struct ProfilView: View {
+    @AppStorage("bildrateAnpassen") private var bildrateAnpassen = true
     let model: AppModel
 
     @State private var bereich: Bereichswahl = .wiedergabe
@@ -20,15 +21,19 @@ struct ProfilView: View {
     @State private var pruefung: String?
     /// Zeigt Quick Connect, um ein weiteres Konto aufzunehmen.
     @State private var kontoAufnehmen = false
+    /// Seerr anbinden — als eigene Seite ueber allem: drei Felder und eine
+    /// Bildschirmtastatur brauchen den Platz, den eine Zeile nicht hat.
+    @State private var seerrOffen = false
 
     enum Bereichswahl: String, CaseIterable, Identifiable {
-        case wiedergabe, sprachen, darstellung, server, konto
+        case wiedergabe, sprachen, darstellung, integration, server, konto
         var id: String { rawValue }
         var name: LocalizedStringKey {
             switch self {
             case .wiedergabe:  "Wiedergabe"
             case .sprachen:    "Sprachen"
             case .darstellung: "Darstellung"
+            case .integration: "Integration"
             case .server:      "Server"
             case .konto:       "Konto"
             }
@@ -123,6 +128,9 @@ struct ProfilView: View {
         .fullScreenCover(isPresented: $kontoAufnehmen) {
             QuickConnectView(model: model) { kontoAufnehmen = false }
         }
+        .fullScreenCover(isPresented: $seerrOffen) {
+            SeerrAnbindenView(model: model, seerr: model.seerr) { seerrOffen = false }
+        }
     }
 
     // MARK: Kopf
@@ -137,7 +145,7 @@ struct ProfilView: View {
                 Kontenstreifen(model: model)
             } else {
                 Profilzeichen(name: model.session?.userName ?? "?",
-                              bild: model.benutzerbildURL(groesse: 240),
+                              bild: model.benutzerbildURL(),
                               groesse: 60)
                     .scaleEffect(1.66)
                     .frame(width: 100, height: 100)
@@ -178,6 +186,25 @@ struct ProfilView: View {
                 model.untertitelAutomatisch.toggle()
             }
             Trennlinie()
+            Trennlinie()
+            // **Der Schalter fuer die Bildratenanpassung.**
+            //
+            // Am 08.09.2026 an einem Geraet gemessen: dieselbe Folge laeuft
+            // in Swiftfin fluessig, und Swiftfin schaltet die Bildrate nicht
+            // um. Bei uns stockte es sichtbar, waehrend jeder Zaehler auf
+            // null stand — kein verworfenes Bild, keines zu spaet, nichts
+            // beschaedigt. Der einzige greifbare Unterschied war dieser
+            // Wechsel.
+            //
+            // 24 Hz nativ ist auf dem Papier das Richtige: jedes Bild steht
+            // gleich lang. Auf einem Fernseher, dessen Bewegungsverarbeitung
+            // bei 60 Hz glaettet, kann es trotzdem schlechter aussehen. Das
+            // haengt am Geraet, nicht an der Datei — also entscheidet es der
+            // Zuschauer. An bleibt die Vorgabe.
+            Schalterzeile(titel: "Bildrate an den Film anpassen",
+                          an: bildrateAnpassen) {
+                bildrateAnpassen.toggle()
+            }
             Schalterzeile(titel: "Nächste Folge automatisch", an: model.naechsteAutomatisch) {
                 model.naechsteAutomatisch.toggle()
             }
@@ -213,10 +240,28 @@ struct ProfilView: View {
                 model.fortschrittAufKacheln.toggle()
             }
 
+        case .integration:
+            // **Ein zweiter Dienst, kein zweiter Server** — deshalb eine
+            // eigene Rubrik und nicht unter „Server". Und eine Zugabe: wer
+            // nichts anbindet, sieht ausser dieser Zeile nirgends etwas
+            // davon.
+            Anzeigezeile(titel: "Seerr",
+                         wert: model.seerr.verbunden ? String(localized: "Verbunden")
+                                                     : String(localized: "Nicht verbunden"))
+            Trennlinie()
+            Handlungszeile(titel: model.seerr.verbunden ? "Ändern" : "Anbinden") {
+                seerrOffen = true
+            }
+
         case .server:
             Anzeigezeile(titel: "Adresse", wert: model.serverName ?? "—")
             Trennlinie()
             Anzeigezeile(titel: "Fassung", wert: model.serverVersion.map { "Jellyfin \($0)" } ?? "—")
+            // **Ohne diese Zeile kann niemand sagen, was er benutzt.** Ein
+            // Tester wurde am 05.09.2026 nach seiner Baunummer gefragt und
+            // fand nur die Jellyfin-Fassung — die Angabe, an der ein
+            // Fehlerbericht haengt, gab es auf dem Fernseher gar nicht.
+            Anzeigezeile(titel: "Swiftly", wert: Fassung.zeile)
             Trennlinie()
             Handlungszeile(titel: "Verbindung prüfen") {
                 Task { pruefung = await model.verbindungPruefen() }
@@ -435,7 +480,7 @@ private struct Kontenstreifen: View {
                 } label: {
                     VStack(spacing: 12) {
                         Profilzeichen(name: konto.userName,
-                                      bild: model.benutzerbildURL(fuer: konto, groesse: 240),
+                                      bild: model.benutzerbildURL(fuer: konto),
                                       groesse: 60,
                                       hervorgehoben: aktiv)
                             .scaleEffect(1.66)

@@ -29,10 +29,25 @@ settings:
     SWIFT_EMIT_LOC_STRINGS: "YES"
     # Muss mit der Version in App Store Connect uebereinstimmen,
     # sonst laesst sich der Build dort nicht anhaengen.
-    MARKETING_VERSION: "1.0.0"
+    # 1.0.1 seit dem 06.09.2026: das Gestaltungsupdate. Zwanzig Befunde aus
+    # zwei Durchgaengen, ein gemeinsames Blatt, kein Ladering mehr in der
+    # Oberflaeche, Kachelmarken, die Merkliste — und die Uebernahme auf
+    # iPad, Mac und Fernseher. Steht so auch in App Store Connect.
+    MARKETING_VERSION: "1.0.1"
     # Muss bei JEDEM Upload hochgezaehlt werden — Apple nimmt dieselbe
     # Buildnummer je Version kein zweites Mal an (Fehler 90189).
-    CURRENT_PROJECT_VERSION: "10"
+    #
+    # **Je Fassung, und deshalb faengt 1.0.1 wieder bei 1 an.** Die 12 stand
+    # hier, weil 1.0.0 bis Bau 11 gelaufen ist und ich weitergezaehlt habe.
+    # Noetig ist das nicht: die Bedingung gilt innerhalb einer Fassung, und
+    # fuer 1.0.1 liegt bei Apple noch gar nichts. Am 06.09.2026 live in App
+    # Store Connect nachgesehen — hoechster Stand dort ist auf allen drei
+    # Plattformen **1.0.0 (11)**, kein 1.0.1. Es ist der erste Bau von
+    # 1.0.1, also Bau 1.
+    #
+    # Vor einem Zuruecksetzen immer erst nachsehen:
+    #   cd Swiftly-Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
+    CURRENT_PROJECT_VERSION: "3"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
     # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
@@ -80,6 +95,24 @@ targets:
         #
         # Nicht ueber `options.developmentLanguage`: das ist die
         # Ausgangssprache des Projekts und soll deutsch bleiben.
+        # **Ohne diesen Schluessel deckelt iOS die App auf 60 Hz** -- auch
+        # auf einem Geraet, das 120 kann. Apple hat das absichtlich zum
+        # Opt-in gemacht, um Akku zu sparen; fuer eine Videoapp ist es der
+        # Unterschied zwischen glatt und ruckelig.
+        #
+        # Warum es hier steht: 24p auf 60 Hz geht nicht auf. 60 / 23,976 =
+        # 2,503, jedes Bild bleibt also mal zwei, mal drei Bildwiederholungen
+        # stehen -- die klassische 3:2-Kadenz, am staerksten bei Schwenks zu
+        # sehen. Bei 120 Hz sind es 5,005, und das geht praktisch auf.
+        #
+        # Am 08.09.2026 gemessen: VLC lieferte in zwei Laeufen ueber je eine
+        # Minute jedes Bild puenktlich ab -- kein verworfenes, kein
+        # verspaetetes, Hardware-Dekoder, das Protokoll vollstaendig still --
+        # und das Ruckeln war trotzdem da. Es entstand also erst beim
+        # Anzeigen, hinter allem, was VLC ueberhaupt sieht.
+        #
+        # iPad Pro braucht den Schluessel laut Apple nicht.
+        CADisableMinimumFrameDurationOnPhone: true
         CFBundleDevelopmentRegion: en
         CFBundleDisplayName: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -191,6 +224,12 @@ targets:
       - path: Sources/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
+      # **Nur die Verwaltung, nicht die Ansichten.** Downloads gibt es
+      # laut VERHALTEN F nur auf iPhone und iPad; `AppModel` haelt sie
+      # aber, und `AppModel` gehoert allen. Die Klasse ruht hier:
+      # `downloadsAn` ist aus, also faengt weder Netzwache noch
+      # Hintergrundsitzung je an.
+      - path: Sources/Shared/Downloadverwaltung.swift
       - path: Sources/Shared/Anmeldemodell.swift
       - path: Sources/Shared/Abspielwunsch.swift
       - path: Sources/Shared/Farben.swift
@@ -205,10 +244,33 @@ targets:
       # Plattformmaße. Lagen dreimal da; die Maße gibt jetzt das Ziel als
       # Parameter mit, siehe `Plakette.fern` und `Lader.fern` in Stil.swift.
       - path: Sources/Shared/Bausteine.swift
+      # **Der Bildspeicher, an dem `Profilzeichen` haengt.** Er merkt sich,
+      # was schon geholt wurde, und antwortet synchron — nur deshalb steht
+      # ein bekanntes Profilbild im ersten Durchgang da statt nach einem
+      # Aufblitzen des Verlaufs. Der Fernseher hat daneben weiter seinen
+      # eigenen `Bild`-Baustein fuer die Kacheln.
+      - path: Sources/Shared/Netzbild.swift
+      # VLCs Zaehlwerk und das Technikschild darueber — beide teilen sich
+      # alle vier Plattformen, seit es das Schild ueberall gibt.
+      - path: Sources/Shared/Spielwerte.swift
+      - path: Sources/Shared/Technikschild.swift
       - path: Sources/Shared/QuickConnectModell.swift
       - path: Sources/Shared/Wiedergabezentrale.swift
       - path: Sources/Shared/Startseitenmodell.swift
+      # Seerr — die Anbindung selbst; die Ansichten bleiben plattformeigen.
+      - path: Sources/Shared/Seerrmodell.swift
+      - path: Sources/Shared/Seerrmarke.swift
+      # Die Fassungsangabe fuer die Profilseite — eine Rechnung, drei Ansichten.
+      - path: Sources/Shared/Fassung.swift
       - path: Sources/Shared/Bibliotheksmodell.swift
+      - path: Sources/Shared/Merklistenmodell.swift
+      # **Den Serienspeicher gab es hier noch ein zweites Mal.** Die
+      # geteilte Datei ist aus genau dieser Fassung herausgeloest worden,
+      # der Fernseher behielt aber seine Kopie — und der fehlte, was beim
+      # Herausloesen dazukam: die Frage, zu welchem Konto der Inhalt
+      # gehoert. Nach einem Kontowechsel standen dort fremde Haken und
+      # fremde Fortschrittsbalken.
+      - path: Sources/Shared/Serienspeicher.swift
       - path: Sources/Shared/SVGPfad.swift
       # Die Abspiel-Maschinerie teilen sich beide Plattformen: derselbe
       # `mkv_trusted`-Kniff, dieselbe Stillstandserkennung. Bild-im-Bild
@@ -235,17 +297,18 @@ targets:
       - package: Lottie
       # Der Top Shelf ist ein eigenes Ziel und wird mit eingebettet.
       - target: Swiftly-TopShelf
-      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im XCFramework
-      # nachgesehen). Bild-im-Bild gibt es hier nicht, der Abspieler schon —
-      # und mit ihm der `mkv_trusted`-Kniff. **VERSUCH: selbst gebaute Fassung
-      # mit einem Patch am mkv-Sucher.**
+      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im
+      # XCFramework nachgesehen). Bild-im-Bild gibt es hier nicht, der
+      # Abspieler schon — und mit ihm der `mkv_trusted`-Kniff.
+      # **VERSUCH: selbst gebaute Fassung mit einem Patch am mkv-Sucher.**
       #
-      # VLC 4 koppelt `index_range` an `b_fastseekable`, und das ist über HTTP
-      # nie wahr. Damit hat eine Matroska, deren Cues sich nicht auswerten
-      # lassen, gar keinen Weg mehr, nach vorn zu springen: jeder Sprung landet
-      # am Dateianfang und der Demuxer liest sich vorwärts durch — bei VLC 3
-      # ruft dieselbe Zeile ohne diesen Vorbehalt, und genau deshalb springt
-      # Swiftfin in derselben Datei sofort.
+      # VLC 4 koppelt `index_range()` an `b_fastseekable`, und das ist über
+      # HTTP nie wahr. Damit hat eine Matroska, deren Cues sich nicht
+      # auswerten lassen, gar keinen Weg mehr, nach vorn zu springen: jeder
+      # Sprung landet am Dateianfang und der Demuxer liest sich vorwärts
+      # durch — bei der Testfolge 30 bis 90 Sekunden. VLC 3 ruft dieselbe
+      # Zeile ohne diesen Vorbehalt, und genau deshalb springt Swiftfin in
+      # derselben Datei sofort.
       #
       # Gebaut aus VLCKit 4.0.0-a23, also unserer Fassung, plus dem einen
       # Patch. Quelle und Bauskript liegen unter /Users/paul/VLC-Bau.
@@ -414,6 +477,12 @@ targets:
       - path: Sources/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
+      # **Nur die Verwaltung, nicht die Ansichten.** Downloads gibt es
+      # laut VERHALTEN F nur auf iPhone und iPad; `AppModel` haelt sie
+      # aber, und `AppModel` gehoert allen. Die Klasse ruht hier:
+      # `downloadsAn` ist aus, also faengt weder Netzwache noch
+      # Hintergrundsitzung je an.
+      - path: Sources/Shared/Downloadverwaltung.swift
       - path: Sources/Shared/Anmeldemodell.swift
       - path: Sources/Shared/Abspielwunsch.swift
       # Die Startseite laedt fuer alle Plattformen gleich — und sie muss es,
@@ -421,13 +490,21 @@ targets:
       # dabei `naechsteFolge(ohne:)` verloren, sodass angefangene Titel
       # zweimal auf der Seite standen.
       - path: Sources/Shared/Startseitenmodell.swift
+      # Seerr — die Anbindung selbst; die Ansichten bleiben plattformeigen.
+      - path: Sources/Shared/Seerrmodell.swift
+      - path: Sources/Shared/Seerrmarke.swift
+      # Die Fassungsangabe fuer die Profilseite — eine Rechnung, drei Ansichten.
+      - path: Sources/Shared/Fassung.swift
       # Serien, Staffeln und Folgen im Speicher — seit `2fc501c` einmal
       # geteilt statt zweimal gebaut, und mit eigener Kontopruefung.
       - path: Sources/Shared/Serienspeicher.swift
       # Bildlader mit eigenem Speicher — entschluesselt abseits des
       # Hauptlaufs. Lag bis 05.09.2026 in Sources/macOS.
+      - path: Sources/Shared/Spielwerte.swift
+      - path: Sources/Shared/Technikschild.swift
       - path: Sources/Shared/Netzbild.swift
       - path: Sources/Shared/Bibliotheksmodell.swift
+      - path: Sources/Shared/Merklistenmodell.swift
       - path: Sources/Shared/Farben.swift
       # Bausteine ohne Plattformmaße — Reihentitel, Plakette, Lader,
       # Profilzeichen. Lagen dreimal da.

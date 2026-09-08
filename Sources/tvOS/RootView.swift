@@ -178,14 +178,16 @@ struct ServerView: View {
                 .frame(width: 760, alignment: .leading)
                 .padding(.top, 12)
 
-            Button("Verbinden", action: verbinden)
+            Button(model.phase == .connecting ? "Verbinden…" : "Verbinden",
+                   action: verbinden)
                 .buttonStyle(KnopfStil())
                 .disabled(adresse.isEmpty || model.phase == .connecting)
                 .padding(.top, 36)
 
-            if model.phase == .connecting {
-                Lader.fern.padding(.top, 40)
-            } else if let fehler = model.errorMessage {
+            // **Kein Ring, der den Knopf ersetzt.** Er behaelt seinen Platz
+            // und sagt es in der Beschriftung — sonst springt die Seite, und
+            // wohin man gedrueckt hatte, ist weg. GESTALTUNG, Abschnitt G.
+            if let fehler = model.errorMessage, model.phase != .connecting {
                 Text(fehler)
                     .font(Stil.koerper)
                     .foregroundStyle(Stil.warnung)
@@ -241,14 +243,12 @@ struct AnmeldeView: View {
             .frame(width: 760)
             .padding(.top, 44)
 
-            Button("Anmelden", action: anmelden)
+            Button(model.isWorking ? "Anmelden…" : "Anmelden", action: anmelden)
                 .buttonStyle(KnopfStil())
                 .disabled(benutzer.isEmpty || model.isWorking)
                 .padding(.top, 36)
 
-            if model.isWorking {
-                Lader.fern.padding(.top, 40)
-            } else if let fehler = model.errorMessage {
+            if let fehler = model.errorMessage, !model.isWorking {
                 Text(fehler)
                     .font(Stil.koerper)
                     .foregroundStyle(Stil.warnung)

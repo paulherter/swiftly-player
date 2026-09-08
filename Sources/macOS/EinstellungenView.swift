@@ -11,6 +11,8 @@ struct EinstellungenView: View {
     let model: AppModel
     let zurueck: () -> Void
 
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
     @State private var pruefung: String?
     @State private var pruefe = false
 
@@ -20,9 +22,11 @@ struct EinstellungenView: View {
                 Unterseitenkopf(titel: "Einstellungen", zurueck: zurueck)
 
                 darstellung
+                offline
+                integration
                 server
 
-                Text(verbatim: "Swiftly 1.0 · VLCKit 4.0.0-a23")
+                Text(verbatim: Fassung.mitUnterbau)
                     .font(.system(size: 12))
                     .foregroundStyle(Stil.schrift.opacity(0.3))
                     .padding(.top, 26)
@@ -54,6 +58,75 @@ struct EinstellungenView: View {
                           titel: Text("Fortschritt auf Kacheln"),
                           an: Binding(get: { model.fortschrittAufKacheln },
                                       set: { model.fortschrittAufKacheln = $0 }))
+        }
+    }
+
+    /// **Eine eigene Gruppe, vor der Integration.**
+    ///
+    /// Nicht unter *Darstellung*: Downloads sind keine Geschmacksfrage,
+    /// sondern eine Funktion, die Platz belegt. Nicht unter *Integration*:
+    /// das ist für fremde Dienste. **H1** — aus im Auslieferungszustand,
+    /// und dann steht hier genau eine Zeile.
+    private var offline: some View {
+        Einstellungsgruppe(titel: "Offline") {
+            Schalterzeile(symbol: "arrow.down.circle",
+                          titel: Text("Downloads"),
+                          unter: Text("Titel auf diesen Mac laden und ohne Netz sehen"),
+                          an: Binding(get: { model.downloadsAn },
+                                      set: { an in
+                                          if an || model.downloads.posten.isEmpty {
+                                              model.downloadsAn = an
+                                          } else {
+                                              abschaltfrage = true
+                                          }
+                                      }))
+            if model.downloadsAn {
+                Schalterzeile(symbol: "wifi",
+                              titel: Text("Nur über WLAN"),
+                              unter: Text("Über Mobilfunk warten Downloads"),
+                              an: Binding(get: { model.nurUeberWLAN },
+                                          set: { model.nurUeberWLAN = $0 }))
+                Wertezeile(symbol: "internaldrive",
+                           titel: Text("Speicher"),
+                           unter: Text("\(model.downloads.posten.count) Titel auf diesem Mac"),
+                           wert: Downloadregeln.groesse(
+                               Downloadregeln.belegung(model.downloads.posten).bytes))
+            }
+        }
+        // **H10 — Ausschalten löscht nichts ungefragt.** Auf dem Mac ist die
+        // Nachfrage ein Systemdialog statt eines Blattes: die Frage gehört
+        // zum Fenster, nicht zu einer Zeile darin.
+        .confirmationDialog(Text("Downloads ausschalten?"),
+                            isPresented: $abschaltfrage) {
+            Button("Behalten") { model.downloadsAn = false }
+            Button("Alles entfernen", role: .destructive) {
+                model.downloads.allesEntfernen()
+                model.downloadsAn = false
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text(verbatim: abschalttext)
+        }
+    }
+
+    @State private var abschaltfrage = false
+
+    private var abschalttext: String {
+        let b = Downloadregeln.belegung(model.downloads.posten)
+        return String(localized: "\(b.anzahl) Titel bleiben auf diesem Mac")
+            + " · " + Downloadregeln.groesse(b.bytes)
+    }
+
+    /// **Steht zwischen Offline und Server, und das ist kein Zufall.**
+    /// Es ist ein zweiter Dienst, kein zweiter Server — und es ist eine
+    /// Zugabe: wer nichts anbindet, sieht ausser dieser einen Zeile nirgends
+    /// etwas davon.
+    private var integration: some View {
+        Einstellungsgruppe(titel: "Integration") {
+            Wertezeile(symbol: "sparkle.magnifyingglass", titel: Text("Seerr"),
+                       unter: Text("Anfragen, was noch nicht da ist"),
+                       wert: model.seerr.verbunden ? String(localized: "Verbunden") : nil,
+                       aktion: { navigator.oeffne(.seerr, in: bereich) })
         }
     }
 

@@ -111,7 +111,7 @@ struct ProfilView: View {
                 Kontenstreifen(model: model)
             } else {
                 Profilzeichen(name: model.session?.userName ?? "?",
-                              bild: model.benutzerbildURL(groesse: 200), groesse: 84)
+                              bild: model.benutzerbildURL(), groesse: 84)
             }
             VStack(spacing: 3) {
                 Text(verbatim: model.session?.userName ?? String(localized: "Angemeldet"))
@@ -163,8 +163,7 @@ private struct Kontenstreifen: View {
             ForEach(model.konten, id: \.userID) { konto in
                 let aktiv = konto.userID == model.session?.userID
                 Kontokreis(name: konto.userName,
-                           bild: model.benutzerbildURL(fuer: konto,
-                                                       groesse: aktiv ? 200 : 150),
+                           bild: model.benutzerbildURL(fuer: konto),
                            groesse: aktiv ? aktivGross : danebenGross,
                            hoehe: aktivGross,
                            aktiv: aktiv) {
@@ -452,7 +451,6 @@ struct KontoHinzufuegenView: View {
                 .padding(.top, 14)
 
             HStack(spacing: 10) {
-                Lader(groesse: 14, staerke: 2)
                 Text("Läuft ab in \(stand.restsekunden / 60):\(String(format: "%02d", stand.restsekunden % 60))")
                     .font(Stil.zweitzeile)
                     .foregroundStyle(Stil.schriftSehrLeise)
@@ -464,7 +462,10 @@ struct KontoHinzufuegenView: View {
                 .foregroundStyle(Stil.warnung)
                 .padding(.top, 26)
         } else {
-            Lader().padding(.top, 26)
+            // Der Code kommt gleich; solange steht seine Form da.
+            Ladefeld(ecke: Stil.eckeFeld)
+                .frame(width: 240, height: 64)
+                .padding(.top, 26)
         }
 
         fehlerzeile

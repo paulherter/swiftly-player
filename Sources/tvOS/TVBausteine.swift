@@ -190,17 +190,58 @@ struct ChipStil: ButtonStyle {
                 .frame(height: Stil.chipHoehe)
                 .background(flaeche, in: Capsule())
                 .overlay {
-                    Capsule().strokeBorder(an ? Stil.akzent : Stil.rand, lineWidth: 2)
+                    Capsule().strokeBorder(an ? Stil.schrift : Stil.rand, lineWidth: 2)
                 }
                 .scaleEffect(fokus ? 1.06 : 1)
                 .animation(Stil.fokusAnimation, value: fokus)
         }
 
-        /// Auswahl ist Akzent, Fokus ist die ruhige Fläche — und beides
-        /// zusammen bleibt Akzent, weil die Auswahl die stärkere Aussage ist.
+        /// **Auswahl ist Weiss, nicht Akzent** — wie auf Mac und iPad.
+        ///
+        /// Hier war sie der Akzent, und damit sah dieselbe Chipreihe auf dem
+        /// Fernseher anders aus als ueberall sonst.
+        ///
+        /// Es passt auch besser zur Regel: der Akzent traegt Zustand, und
+        /// „dieser Filter gilt gerade" ist eine Auswahl, keine Auszeichnung.
+        /// Fokus bleibt die ruhige Flaeche, und beides zusammen bleibt Weiss,
+        /// weil die Auswahl die staerkere Aussage ist.
         private var flaeche: Color {
-            if an { return Stil.akzent }
+            if an { return Stil.schrift }
             return fokus ? Stil.fokusflaeche : Stil.erhoeht
+        }
+    }
+}
+
+/// **Eine Zeile in der Einstellungsleiste des Players.**
+///
+/// Wie `ChipStil`, nur ueber die volle Breite und mit eckigen Ecken statt
+/// einer Kapsel: die Leiste ist eine Liste, keine Reihe von Marken. Auswahl
+/// ist wieder Weiss, Fokus die ruhige Flaeche -- dieselbe Regel wie ueberall,
+/// damit die Leiste sich nicht wie ein Fremdkoerper liest.
+struct LeistenStil: ButtonStyle {
+    let an: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        Inhalt(configuration: configuration, an: an)
+    }
+
+    private struct Inhalt: View {
+        let configuration: ButtonStyleConfiguration
+        let an: Bool
+        @Environment(\.isFocused) private var fokus
+
+        var body: some View {
+            configuration.label
+                .accessibilityAddTraits(an ? [.isButton, .isSelected] : .isButton)
+                .foregroundStyle(an ? Stil.grund : Stil.schrift)
+                .background(flaeche, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .scaleEffect(fokus ? 1.03 : 1)
+                .animation(Stil.fokusAnimation, value: fokus)
+        }
+
+        private var flaeche: Color {
+            if an { return Stil.schrift }
+            return fokus ? Stil.fokusflaeche : .clear
         }
     }
 }
@@ -255,6 +296,12 @@ struct Kachelinhalt: View {
     /// Im Gitter trägt die Kachel nur ihren Titel; die Nebenzeile wäre dort
     /// eine Zeile Rauschen mal vierzehn.
     var mitUnterzeile = true
+    /// Was oben rechts steht: gesehen, offene Folgen, Staffelzahl.
+    ///
+    /// **Drei Zustaende, drei Zeichen** (GESTALTUNG, Abschnitt H). Bis
+    /// hierher gab es nur den Balken — und bei einer Serie sagt der gar
+    /// nichts, weil er den Stand der angefangenen *Folge* zeigt.
+    var marke: Kachelmarke?
 
     private var breite: CGFloat { quer ? Stil.querBreite : Stil.posterBreite }
     private var hoehe: CGFloat { quer ? Stil.querHoehe : Stil.posterHoehe }
@@ -262,6 +309,9 @@ struct Kachelinhalt: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Bild(url: bild, breite: breite, hoehe: hoehe, fortschritt: fortschritt)
+                .overlay(alignment: .topTrailing) {
+                    if let marke { Kachelplakette(marke: marke) }
+                }
 
             Text(titel)
                 .font(Stil.kachel)
@@ -290,8 +340,19 @@ struct Kachelinhalt: View {
     }
 
     private var beschriftung: String {
-        guard mitUnterzeile, let unterzeile else { return titel }
-        return "\(titel), \(unterzeile)"
+        var teile = [titel]
+        if mitUnterzeile, let unterzeile { teile.append(unterzeile) }
+        // Die Marke ist eine Zeichnung im Bild und fiele fuer die
+        // Sprachausgabe sonst heraus — dieselbe Ueberlegung wie beim Balken.
+        if let marke {
+            switch marke {
+            case .gesehen: teile.append(String(localized: "gesehen"))
+            case .offen(let n): teile.append(String(localized: "\(n) offen"))
+            case .staffeln(let n): teile.append(n == 1 ? String(localized: "1 Staffel")
+                                                       : String(localized: "\(n) Staffeln"))
+            }
+        }
+        return teile.joined(separator: ", ")
     }
 
     /// Der Balken in Worten. Erst ab einem Prozent — darunter hat noch
@@ -307,15 +368,16 @@ struct Kachelinhalt: View {
 /// Die vier Bereiche — oben, nicht unten. Auf tvOS führt die Navigation oben,
 /// und eine Leiste am unteren Rand wäre unerreichbar weit vom Blick weg.
 enum Bereich: Int, CaseIterable, Identifiable {
-    case start, filme, serien, suche
+    case start, filme, serien, merkliste, suche
     var id: Int { rawValue }
 
     var name: LocalizedStringKey {
         switch self {
-        case .start:  "Start"
-        case .filme:  "Filme"
-        case .serien: "Serien"
-        case .suche:  "Suche"
+        case .start:     "Start"
+        case .filme:     "Filme"
+        case .serien:    "Serien"
+        case .merkliste: "Merkliste"
+        case .suche:     "Suche"
         }
     }
 }
@@ -383,7 +445,7 @@ struct Kopfleiste: View {
 
                 Button(action: aufsProfil) {
                     Profilzeichen(name: model.session?.userName ?? "?",
-                                  bild: model.benutzerbildURL(groesse: 180),
+                                  bild: model.benutzerbildURL(),
                                   groesse: 60)
                 }
                 .buttonStyle(ProfilStil())
@@ -884,6 +946,9 @@ struct Kulissenblende: ViewModifier {
         content
             // **Die urspruengliche Kurve, nur als Maske statt als Anstrich.**
             //
+            // Stimmt — und das Gute daran war nie die Technik, sondern die
+            // Kurve. Sie ist hier unveraendert uebernommen.
+            //
             // Uebersetzt: die alte Fassung malte `Stil.grund` mit der
             // Deckkraft `o` **ueber** das Bild. Sichtbar blieb also `1 − o`.
             // Genau diese Werte stehen jetzt als Maske da:
@@ -1112,5 +1177,136 @@ struct TVUebernahmeauswahl: View {
         }
         // Menü schließt, wie überall auf dem Fernseher.
         .onExitCommand(perform: abbrechen)
+    }
+}
+
+
+// MARK: - Platzhalter statt Ladering
+
+/// Eine Flaeche in der Form dessen, was gleich kommt.
+///
+/// **Warum kein drehender Ring.** Ein Ring sagt „warte"; ein Platzhalter
+/// sagt, *was* kommt und wie viel — die Seite steht schon, sie ist nur noch
+/// leer. Auf drei Meter Entfernung zaehlt das doppelt: ein Ring ist dort ein
+/// Punkt, ein Raster ist eine Ankuendigung. GESTALTUNG, Abschnitt G.
+struct Ladefeld: View {
+    var ecke: CGFloat = Stil.eckeKachel
+    @State private var hell = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: ecke)
+            .fill(Stil.flaeche)
+            .opacity(hell ? 1 : 0.5)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    hell = true
+                }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Ein Plakat mit zwei Textzeilen darunter, alles als Platzhalter.
+struct Kachelplatzhalter: View {
+    var quer = false
+
+    private var breite: CGFloat { quer ? Stil.querBreite : Stil.posterBreite }
+    private var hoehe: CGFloat { quer ? Stil.querHoehe : Stil.posterHoehe }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Ladefeld().frame(width: breite, height: hoehe)
+            Ladefeld(ecke: 4).frame(width: breite * 0.8, height: 20).padding(.top, 14)
+            Ladefeld(ecke: 4).frame(width: breite * 0.4, height: 16).padding(.top, 6)
+        }
+        .frame(width: breite, alignment: .leading)
+    }
+}
+
+/// Ein Raster aus Plakat-Platzhaltern, so breit wie das echte.
+struct Rasterplatzhalter: View {
+    var spalten: Int = Stil.gitterSpalten
+    var reihen: Int = 2
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Stil.kachelAbstand),
+                                 count: max(spalten, 1)),
+                  alignment: .leading, spacing: Stil.reihenAbstand) {
+            ForEach(0 ..< (max(spalten, 1) * reihen), id: \.self) { _ in
+                Kachelplatzhalter()
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Laedt")
+    }
+}
+
+/// Eine Reihe aus Plakat-Platzhaltern, fuer die Startseite.
+struct Reihenplatzhalter: View {
+    var quer = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Ladefeld(ecke: 6).frame(width: 300, height: 30)
+            HStack(spacing: Stil.kachelAbstand) {
+                ForEach(0 ..< 5, id: \.self) { _ in Kachelplatzhalter(quer: quer) }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Laedt")
+    }
+}
+
+/// Wie viele Titel in dieser Bibliothek liegen.
+///
+/// **Eine Angabe, keine Handlung** — leise Schrift, kein Kasten.
+struct Zaehlmarke: View {
+    let anzahl: Int
+
+    var body: some View {
+        Text(verbatim: anzahl.formatted())
+            .font(Stil.klein)
+            .monospacedDigit()
+            .foregroundStyle(Stil.schriftSehrLeise)
+            .accessibilityLabel(Text("\(anzahl) Titel"))
+    }
+}
+
+/// Die Plakette oben rechts auf einer Kachel.
+///
+/// **In Weiss auf Dunkel, nicht in Akzent** — auf dem Fernseher traegt der
+/// Akzent zusaetzlich den Fokusring, und eine zweite Akzentflaeche daneben
+/// nimmt ihm seine Aussage. Welche Auskunft draufsteht, entscheidet
+/// `Anzeigeregeln.kachelmarke` im Paket.
+struct Kachelplakette: View {
+    let marke: Kachelmarke
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if marke == .gesehen {
+                Image(systemName: "checkmark").font(.system(size: 15, weight: .bold))
+            }
+            if let text = wortlaut {
+                Text(verbatim: text).font(.system(size: 17, weight: .semibold))
+            }
+        }
+        .foregroundStyle(Stil.schrift)
+        .padding(.horizontal, wortlaut == nil ? 9 : 11)
+        .padding(.vertical, 5)
+        .background {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Stil.grund.opacity(0.78))
+                .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(Stil.rand) }
+        }
+        .padding(10)
+    }
+
+    private var wortlaut: String? {
+        switch marke {
+        case .gesehen: nil
+        case .offen(let n): String(localized: "\(n) offen")
+        case .staffeln(let n): n == 1 ? String(localized: "1 Staffel")
+                                      : String(localized: "\(n) Staffeln")
+        }
     }
 }

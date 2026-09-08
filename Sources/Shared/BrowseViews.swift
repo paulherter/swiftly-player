@@ -39,9 +39,7 @@ struct ItemListView: View {
                 .scrollIndicators(.hidden)
             }
 
-            if laedt {
-                Lader()
-            } else if items.isEmpty {
+            if !laedt, items.isEmpty {
                 ContentUnavailableView("Nichts gefunden", systemImage: "tray")
             }
         }
@@ -88,6 +86,15 @@ struct PosterTile: View {
         return item.productionYear.map(String.init)
     }
 
+    /// **Plakat und Text blenden zusammen ein.**
+    ///
+    /// Das Bild blendet seit dem Umbau von selbst ein, der Titel darunter
+    /// stand sofort da — beim Wechsel der Bibliothek sah man erst die
+    /// Beschriftungen und dann die Plakate hineinlaufen. Die Kachel blendet
+    /// deshalb als Ganzes ein, und das Bild darin bringt seinen eigenen
+    /// weichen Wechsel mit.
+    @State private var da = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             // Feste Breite: feste Höhe. Füllt die Kachel ihre Spalte, folgt
@@ -100,6 +107,20 @@ struct PosterTile: View {
                  fortschritt: item.userData?.playedPercentage.map { $0 / 100 }) {
                 Stil.flaeche.overlay {
                     Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
+                }
+            }
+            // **Drei Zustaende, drei Zeichen.** Balken heisst angefangen,
+            // Haken heisst gesehen, eine Zahl heisst: so viel liegt hier.
+            // Bis hierher gab es nur den Balken — und bei einer Serie sagt
+            // der gar nichts, weil er den Stand der angefangenen Folge zeigt
+            // und nicht den der Serie.
+            .overlay(alignment: .topTrailing) {
+                if let marke = Anzeigeregeln.kachelmarke(
+                    art: item.type,
+                    staffeln: item.childCount,
+                    gesehen: item.userData?.played,
+                    offeneFolgen: item.userData?.unplayedItemCount) {
+                    Kachelplakette(marke: marke)
                 }
             }
 
@@ -124,6 +145,11 @@ struct PosterTile: View {
         // zweizeiligen Titeln rutschten die kürzeren Kacheln dadurch nach
         // unten und die Poster lagen nicht mehr auf einer Linie.
         .frame(maxHeight: .infinity, alignment: .top)
+        .opacity(da ? 1 : 0)
+        .onAppear {
+            guard !da else { return }
+            withAnimation(Stil.einblenden) { da = true }
+        }
         // Eine Aussage je Kachel statt zweier Bruchstücke, und der
         // Fortschritt kommt mit — er ist eine Zeichnung im Bild und fiel für
         // VoiceOver bisher heraus.
@@ -150,6 +176,7 @@ struct ItemDetailView: View {
     @State private var versatz: CGFloat = 0
 
     @State private var plan: PlaybackPlan?
+    @State private var ladeblatt = false
     @State private var pruefe = true
     @State private var abspielen: Abspielwunsch?
     @State private var mehrOffen = false
@@ -161,6 +188,21 @@ struct ItemDetailView: View {
     @State private var gesehen = false
 
     private var aktuell: Item { frisch ?? item }
+
+    /// Was von diesem Titel schon auf dem Gerät liegt — `nil` heisst nichts.
+    private var geladen: Downloadposten? { model.downloads.posten(fuer: aktuell.id) }
+
+    /// Der Eintrag, den ein Download bekäme. Die Größe kommt aus derselben
+    /// Quelle, die der Player nähme — **H2**, es ist dieselbe Datei.
+    private var alsPosten: Downloadposten? {
+        guard let konto = model.session?.userID else { return nil }
+        let quelle = plan?.quelle ?? aktuell.mediaSources?.first
+        return Downloadposten(
+            id: aktuell.id, konto: konto, art: .film, titel: aktuell.name,
+            laufzeitTicks: aktuell.runTimeTicks, container: quelle?.container,
+            quelle: quelle?.id, bytes: quelle?.size ?? 0,
+            gesehen: aktuell.userData?.played ?? false)
+    }
 
     private var fortsetzenAb: Double? { aktuell.fortsetzenAb }
 
@@ -238,9 +280,19 @@ struct ItemDetailView: View {
                 versatz = neu
             }
 
-            if mehrOffen, !breit {
+            // Das Blatt haengt an einer leeren Flaeche; ohne `if` gaebe es
+            // auf breiten Fenstern zwei Wege zu denselben Handlungen.
+            if !breit {
                 Handlungsblatt(offen: $mehrOffen, titel: aktuell.name,
                                handlungen: mehrHandlungen)
+                    .zIndex(20)
+            }
+            if let posten = alsPosten {
+                Ladeblatt(offen: $ladeblatt, model: model, posten: [posten],
+                          titel: aktuell.name,
+                          bilder: [aktuell.id: model.plakatURL(
+                              itemID: aktuell.id,
+                              marke: aktuell.imageTags?["Primary"])].compactMapValues { $0 })
                     .zIndex(20)
             }
             if let meldung {
@@ -367,11 +419,11 @@ struct ItemDetailView: View {
     }
 
     private var aktionsreihe: some View {
-        // Schmal verteilen die Spacer die vier Knöpfe über die Zeile; breit
+        // Schmal verteilen die Spacer die Knöpfe über die Zeile; breit
         // stehen sie neben dem Abspielknopf und sollen zusammenbleiben.
-        HStack(spacing: weit ? 4 : 0) {
+        HStack(spacing: 8) {
             Aktionsknopf(symbol: gemerkt ? "bookmark.fill" : "bookmark",
-                         titel: "Merkliste", aktiv: gemerkt) {
+                         titel: "Merkliste", aktiv: gemerkt, dehnt: !weit) {
                 gemerkt.toggle()
                 // Sofort umschalten, damit der Knopf antwortet — aber
                 // zurückdrehen, wenn der Server nein sagt. Vorher blieb die
@@ -383,11 +435,25 @@ struct ItemDetailView: View {
                     }
                 }
             }
-            if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "film", titel: "Trailer") { trailerStarten() }
-            if !weit { Spacer(minLength: 0) }
+            // **Das fünfte Feld, und nur wenn die Funktion an ist.**
+            //
+            // An zweiter Stelle, nicht am Ende: Merkliste und Download sind
+            // das Paar „für später" und gehören nebeneinander. Fünf Felder
+            // auf 354 Punkt ergeben 62 je Feld — über den 44, die eine
+            // Trefferfläche braucht.
+            //
+            // Wer die Funktion nie einschaltet, sieht die Reihe unverändert
+            // mit ihren vier Feldern; deshalb wächst sie hier statt eine
+            // fünfte Stelle immer freizuhalten.
+            if model.downloadsAn, aktuell.type != "Series" {
+                Downloadfeld(posten: geladen, dehnt: !weit) {
+                    ringGetippt(geladen, model.downloads) { ladeblatt = true }
+                }
+            }
+
+            Aktionsknopf(symbol: "film", titel: "Trailer", dehnt: !weit) { trailerStarten() }
             Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
-                         titel: "Gesehen", aktiv: gesehen) {
+                         titel: "Gesehen", aktiv: gesehen, dehnt: !weit) {
                 gesehen.toggle()
                 Task {
                     if let grund = await model.setzeGesehen(aktuell, an: gesehen) {
@@ -396,11 +462,11 @@ struct ItemDetailView: View {
                     }
                 }
             }
-            if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "ellipsis", titel: "Mehr") { withAnimation(.snappy(duration: 0.22)) { mehrOffen = true } }
+            Aktionsknopf(symbol: "ellipsis", titel: "Mehr", dehnt: !weit) { mehrOffen = true }
                 .alsHandlungsanker()
         }
-        .padding(.horizontal, weit ? 0 : 6)
+        // Kein eigener Rand mehr: die vier Felder teilen sich die Zeile und
+        // enden dort, wo der Knopf darüber endet.
     }
 
     @ViewBuilder
@@ -530,7 +596,11 @@ struct Abschnitt<Inhalt: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 5) {
-                Text(titel).font(Stil.reihe).foregroundStyle(Stil.schrift)
+                // **Nicht selbst gesetzt.** Der Grad war derselbe, die
+                // Sperrung fehlte — „Weiterschauen" auf der Startseite steht
+                // auf −0,3, „Besetzung" hier stand auf null. Auf der
+                // Seerr-Seite treffen inzwischen beide Formen aufeinander.
+                Reihentitel(text: titel)
                 if pfeil {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))

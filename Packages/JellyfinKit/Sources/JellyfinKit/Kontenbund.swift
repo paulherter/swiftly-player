@@ -52,6 +52,36 @@ public struct Kontenbund: Codable, Sendable, Equatable {
                                                                    : erstes.userID
     }
 
+    /// Die alte Ablage der GTK-Fassung — andere Feldnamen, dieselbe Bedeutung.
+    ///
+    /// **Warum das im Paket steht, obwohl es nach Plattform klingt.** Es
+    /// kennt keine Pfade und keine Ablage, nur Feldnamen; das ist eine
+    /// Aussage über unsere eigenen Daten von früher, und die ist ohne
+    /// Simulator prüfbar. Die GTK-Schicht hat kein Testziel — dort wäre
+    /// genau diese Umsetzung ungeprüft geblieben.
+    ///
+    /// **Und sie war es**: am 05.09.2026 wurde die alte Datei roh an
+    /// ``ausAblage(bund:einzelne:)`` gereicht, die sie als ``Session`` lesen
+    /// will. Drei von vier Schlüsseln passen nicht, `try?` verschluckt den
+    /// Fehlschlag, und **jeder bestehende Nutzer stand nach dem
+    /// Aktualisieren vor dem Anmeldeschirm.** Auf einem Rechner, der die
+    /// neue Ablage schon hat, ist davon nichts zu sehen; aufgefallen ist es
+    /// nur, weil eine Prüfmaschine den alten Stand trug.
+    ///
+    /// `servername` fällt weg — er steht in der neuen Ablage nicht und wird
+    /// beim ersten Verbinden ohnehin frisch geholt.
+    public static func ausAlterGtkAblage(_ daten: Data) -> Session? {
+        struct Abgelegt: Decodable {
+            let serverURL: URL
+            let token: String
+            let benutzerID: String
+            let benutzername: String
+        }
+        guard let a = try? JSONDecoder().decode(Abgelegt.self, from: daten) else { return nil }
+        return Session(accessToken: a.token, userID: a.benutzerID,
+                       userName: a.benutzername, serverURL: a.serverURL)
+    }
+
     /// Ein Konto aufnehmen — und dabei sagen, ob es ein **Wechsel** war.
     ///
     /// **Warum das hier steht und nicht bei den Aufrufern.** Beide Fassungen

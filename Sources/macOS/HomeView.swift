@@ -127,7 +127,20 @@ struct HomeView: View {
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
         .ohneKanteneffekt()
-        .overlay { if !geladen { Lader() } }
+        // Zwei Reihen in ihrer Form statt eines Rings — siehe GESTALTUNG G.
+        .overlay(alignment: .topLeading) {
+            if !geladen {
+                VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
+                    Reihenplatzhalter(quer: true)
+                    Reihenplatzhalter()
+                }
+                .padding(.horizontal, Stil.randAbstand)
+                .padding(.top, Stil.inhaltOben + Stil.reihenkopfAusgleich)
+                .transition(.opacity)
+                .allowsHitTesting(false)
+            }
+        }
+        .animation(Stil.einblenden, value: geladen)
         .task { await laden() }
         // **Der Kontowechsel hängt nicht an `phase`.**
         //

@@ -52,8 +52,21 @@ struct HauptView: View {
 
     @State private var bereich: Bereich = .start
     @State private var besucht: Set<Bereich> = [.start]
-    @State private var pfade = [NavigationPath(), NavigationPath(),
-                                NavigationPath(), NavigationPath()]
+    /// **Einer je Bereich — abgeleitet, nicht abgezaehlt.**
+    ///
+    /// Hier standen vier feste Eintraege. Seit die Merkliste dazugekommen
+    /// ist, gibt es fuenf Bereiche, und `suche` traegt den Rohwert 4: jeder
+    /// Zugriff auf `pfade[bereich.rawValue]` lief ins Leere. Die App stuerzte
+    /// beim Klick auf „Suche" ab — `Array._checkSubscript`, sauber im Bericht.
+    ///
+    /// Auf dem iPhone steht daneben der Kommentar, `allCases.count` sei
+    /// verlockend, aber gefaehrlich: es wachse still mit, ohne dass jemand
+    /// die Stelle ansieht. Das stimmt — und wiegt trotzdem leichter als ein
+    /// Absturz. Still mitwachsen heisst hier: es funktioniert. Nicht
+    /// mitwachsen heisst: es bricht, und zwar erst beim Antippen des
+    /// letzten Reiters.
+    @State private var pfade = Array(repeating: NavigationPath(),
+                                     count: Bereich.allCases.count)
 
     /// **Der Player gehoert hierher, nicht in die Seite.**
     ///
@@ -72,6 +85,13 @@ struct HauptView: View {
     /// `nil` heisst: Menue nicht anfassen, durchfallen lassen — auf Start,
     /// auf Unterseiten und im Player.
     private var zurueckAufStart: (() -> Void)? {
+        // **Ist eine Tafel offen, gehoert Menue ihr.**
+        //
+        // Zurueck heisst erst „diese Auswahl geht zu" und dann erst „ich gehe
+        // weg" Die Tafel hat ihr eigenes `onExitCommand`; sie bekommt es aber
+        // nur, wenn diese Behandlung hier den Befehl nicht vorher abfaengt.
+        // `nil` laesst ihn durch.
+        guard !tafelOffen else { return nil }
         guard bereich != .start, pfade[bereich.rawValue].isEmpty,
               abspielen == nil else { return nil }
         return { bereich = .start }
@@ -172,6 +192,21 @@ struct HauptView: View {
         #endif
         .onDisappear { Task { await model.fernsteuerungBeenden() } }
         .onChange(of: bereich) { _, neu in besucht.insert(neu) }
+        // **VERHALTEN G4: der Seitenstapel wird beim Kontowechsel geleert.**
+        //
+        // Er stand hier nicht. iPhone und iPad leeren ihre `pfade`, der Mac
+        // ruft `navigator.alleLeeren()` — nur der Fernseher behielt, was
+        // offen war. Ein Stapel gehoert aber zu einem Konto: eine
+        // Detailseite haengt an `.task(id: titel.id)`, eine Serienseite an
+        // der Staffel, und **keine** dieser Kennungen aendert sich beim
+        // Wechsel. Ohne das Leeren staenden dort Haken und
+        // Fortschrittsbalken des vorigen Kontos, und ein Druck auf
+        // Abspielen setzte an dessen Stelle an und meldete sie dem neuen.
+        .onChange(of: model.kontowechsel) { _, _ in
+            for i in pfade.indices where !pfade[i].isEmpty {
+                pfade[i] = NavigationPath()
+            }
+        }
         .onOpenURL { adresse in
             guard adresse.scheme == "swiftly", adresse.host == "titel" else { return }
             let kennung = adresse.lastPathComponent
@@ -388,6 +423,8 @@ struct HauptView: View {
                 case .serien:
                     BibliothekView(model: model, art: "tvshows",
                                    filter: [.alle, .angefangen, .merkliste])
+                case .merkliste:
+                    MerklisteView(model: model)
                 case .suche:
                     SucheView(model: model, aktiv: bereich == .suche)
                 }
@@ -406,6 +443,9 @@ extension View {
         self
             .navigationDestination(for: LibraryRoute.self) { route in
                 BibliothekView(model: model, bibliothek: route.item)
+            }
+            .navigationDestination(for: Seerrtreffer.self) { treffer in
+                SeerrDetailView(model: model, treffer: treffer)
             }
             // Dieselbe Weiche wie auf dem iPhone: eine Serie führt auf die
             // Serienseite, eine einzelne Folge auf die Staffel, in der sie
@@ -463,11 +503,15 @@ struct StaffelZiel: View {
         self.model = model
         self.folge = folge
         _serie = State(initialValue:
-            folge.seriesId.flatMap { Serienspeicher.geteilt.stand($0)?.serie }
+            folge.seriesId.flatMap { Serienspeicher.geteilt.stand($0, mit: model)?.serie }
             ?? StaffelZiel.vorlaeufig(zu: folge))
     }
 
     /// **Eine vorlaeufige Serie aus dem, was die Folge ohnehin traegt.**
+    ///
+    /// Nicht das Bild — die **Serie**. Ein Listeneintrag einer Folge traegt
+    /// nur `seriesId` und `seriesName`, und `SerienView` braucht ein `Item`.
+    /// Dafuer lief ein Abruf beim Server, und der war die Wartezeit.
     ///
     /// Gebraucht wird davon beim Aufmachen fast nichts: `id` fuer alle
     /// weiteren Abrufe, `name` fuer die Ueberschrift, `type` fuer die Weichen.
@@ -507,7 +551,9 @@ struct StaffelZiel: View {
                 // Folge steht schon bereit, also steht er auch hier, und der
                 // Uebergang auf die Serienseite ist damit nur noch der
                 // Inhalt, nicht der ganze Schirm.
-                Lader.fern
+                // Kein Ring: der gefaerbte Grund steht schon, die Seite
+                // kommt gleich von selbst.
+                Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .bildgrund(url: model.querbildURL(for: folge, breite: 1600)
                                     ?? model.backdropURL(for: folge))

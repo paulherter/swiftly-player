@@ -8,8 +8,9 @@ import VLCKit
 /// **Sagt dem Fernseher, mit welcher Bildrate der Film läuft.**
 ///
 /// Das war die Ursache dafür, dass sich die Wiedergabe stockend anfühlte,
-/// obwohl nichts fehlte. Es wurde also nichts verworfen und nichts verpasst —
-/// die Bilder kamen nur ungleichmäßig auf den Schirm.
+/// obwohl nichts fehlte. die Messung: 4 zu späte Bilder auf 4888, und die
+/// vier stammten vom Spulen. Es wurde also nichts verworfen und nichts
+/// verpasst — die Bilder kamen nur ungleichmäßig auf den Schirm.
 ///
 /// **Warum.** Ein Film liegt in 23,976 oder 24 Bildern je Sekunde vor, der
 /// Apple TV gibt aber 60 Hz aus. 24 geht in 60 nicht auf, also wird jedes
@@ -65,9 +66,14 @@ enum Bildtakt {
         /// Kein Anzeigeverwalter erreichbar — dann liegt es an uns, nicht am
         /// Gerät.
         case unerreichbar
+        /// In Swiftly abgeschaltet — Einstellungen → Wiedergabe.
+        case inSwiftlyAus
     }
 
     static var stand: Stand {
+        // Der eigene Schalter zuerst: er ist der, den der Zuschauer gerade
+        // umgelegt hat, und seine Auskunft soll er auch zuerst sehen.
+        guard vomNutzerErlaubt else { return .inSwiftlyAus }
         guard let verwalter else { return .unerreichbar }
         return verwalter.isDisplayCriteriaMatchingEnabled ? .bereit : .abgeschaltet
     }
@@ -183,9 +189,34 @@ enum Bildtakt {
                       umfang: .unbekannt)
     }
 
+    /// **Ob wir ueberhaupt umschalten duerfen.**
+    ///
+    /// Am 08.09.2026 an einem Geraet gemessen: dieselbe Folge laeuft in
+    /// Swiftfin fluessig — und Swiftfin schaltet die Bildrate **nicht** um.
+    /// Bei uns dagegen sah man ein Stocken, waehrend jeder Zaehler auf null
+    /// stand: kein verworfenes Bild, keines zu spaet, nichts beschaedigt.
+    /// Der einzige greifbare Unterschied zwischen beiden Playern war dieser
+    /// Wechsel.
+    ///
+    /// **Also entscheidet es der Zuschauer, nicht wir.** 24 Hz nativ ist auf
+    /// dem Papier das Richtige — jedes Bild steht gleich lang. Auf einem
+    /// Fernseher, dessen Bewegungsverarbeitung bei 60 Hz glaettet, kann es
+    /// trotzdem schlechter aussehen. Das haengt am Geraet und nicht an der
+    /// Datei, und deshalb ist es eine Einstellung und keine Regel.
+    ///
+    /// An bleibt die Vorgabe: fuer die meisten Fernseher ist es richtig.
+    private static var vomNutzerErlaubt: Bool {
+        UserDefaults.standard.object(forKey: "bildrateAnpassen") as? Bool ?? true
+    }
+
     private static func setzen(rate: Double, breite: Int32, hoehe: Int32,
                                codec: CMVideoCodecType,
                                umfang: Farbumfang) -> Double? {
+        guard vomNutzerErlaubt else {
+            log.info("Bildratenanpassung ist in Swiftly abgeschaltet — \(rate, privacy: .public) fps bleibt ungenutzt")
+            return nil
+        }
+
         // **Nicht umschalten, wenn es nichts bringt.**
         //
         // Jeder Wechsel kostet ein paar Sekunden Schwarzbild — der Grund, aus

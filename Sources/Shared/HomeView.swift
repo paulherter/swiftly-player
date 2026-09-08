@@ -26,11 +26,16 @@ struct HomeView: View {
             Stil.grund.ignoresSafeArea()
 
             inhalt
+                // Der Wechsel zieht die Scrollflaeche heran — die Kopfzeile
+                // darueber liegt fest, siehe `bereichsinhalt()`.
+                .bereichsinhalt()
+                // Unter dem Kopf und unter der Uebernahmeauswahl, ueber dem
+                // Inhalt — siehe `bereichsleiste()`.
+                .bereichsleiste()
             kopf
 
-            if !stand.geladen || bereitet {
-                Lader()
-            } else if stand.weiterschauen.isEmpty, stand.naechsteFolge.isEmpty, stand.zuletzt.isEmpty {
+            if stand.geladen, stand.weiterschauen.isEmpty,
+               stand.naechsteFolge.isEmpty, stand.zuletzt.isEmpty {
                 nichtsDa
             }
 
@@ -113,33 +118,38 @@ struct HomeView: View {
 
     private var kopfzeile: some View {
         Unschaerfekopf {
-            HStack(alignment: .bottom) {
+            HStack(alignment: .center, spacing: 0) {
                 Wortmarke(hoehe: 30)
                 Spacer(minLength: 0)
-                // **Links vom Profilbild, dicht daneben.** Dasselbe wie auf
-                // dem Fernseher; nur ohne Text, weil oben auf dem Telefon
-                // kein Platz für eine Zeile ist. Der Titel steht im Blatt,
-                // das sich beim Antippen öffnet.
-                if let angebot = uebernahme.angebot {
-                    Button { abzeichenGedrueckt() } label: {
-                        Image(systemName: angebot.geraetezeichen)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Stil.akzent)
-                            .frame(width: 34, height: 34)
-                            .background(Stil.akzent.opacity(0.14), in: Circle())
-                            .overlay(Circle().strokeBorder(Stil.akzent.opacity(0.28)))
+
+                // **Drei Zeichen, eine Sprache.**
+                //
+                // Das Angebot war ein Kreis mit Flaeche und Rand — richtig,
+                // solange es allein neben dem Profilbild stand: es ist ein
+                // Angebot, keine dauerhafte Schaltflaeche, und sollte
+                // auffallen. Sobald die Merkliste dazukam, las sich derselbe
+                // Kreis neben einem nackten Zeichen wie zwei verschiedene
+                // Arten von Knopf.
+                //
+                // Was es heraushebt, ist jetzt nicht die **Form**, sondern
+                // die **Farbe** — und das ist ohnehin unsere Regel: der
+                // Akzent traegt Zustand, keine Flaechen.
+                Kopfziele(name: model.session?.userName ?? "?",
+                          bild: model.benutzerbildURL()) {
+                    if let angebot = uebernahme.angebot {
+                        Button { abzeichenGedrueckt() } label: {
+                            Image(systemName: angebot.geraetezeichen)
+                                .font(.system(size: 20))
+                                .foregroundStyle(Stil.akzent)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Hier weiterschauen"))
+                        .accessibilityValue(Text(angebot.titelzeile))
+                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text("Hier weiterschauen"))
-                    .accessibilityValue(Text(angebot.titelzeile))
-                    .padding(.trailing, 10)
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
-                NavigationLink(value: ProfilRoute()) {
-                    Profilzeichen(name: model.session?.userName ?? "?",
-                                  bild: model.benutzerbildURL())
-                }
-                .buttonStyle(.plain)
             }
             .foregroundStyle(Stil.schrift)
             .animation(.easeInOut(duration: 0.22), value: uebernahme.angebot?.id)
@@ -198,6 +208,14 @@ struct HomeView: View {
     private var inhalt: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: Stil.reihenAbstand) {
+                // **Die Reihen stehen schon, bevor sie Inhalt haben.** Statt
+                // eines Rings mitten auf der Seite: zwei Reihen in ihrer
+                // Form, die überblenden, sobald die Titel da sind. Man sieht
+                // sofort, was für eine Seite das wird.
+                if !stand.geladen {
+                    Reihenplatzhalter(quer: true)
+                    Reihenplatzhalter()
+                }
                 if !stand.weiterschauen.isEmpty {
                     Reihe(model: model, titel: "Weiterschauen",
                           items: stand.weiterschauen, quer: true, direkt: starte,
@@ -232,6 +250,7 @@ struct HomeView: View {
             }
             .padding(.top, 8)
         }
+        .animation(Stil.einblenden, value: stand.geladen)
         .scrollIndicators(.hidden)
         // Oben unter dem unscharfen Kopf durch, unten über der Leiste enden.
         //

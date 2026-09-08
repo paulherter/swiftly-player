@@ -33,6 +33,68 @@ struct Wahlen: Codable {
     var zurueckSekunden = 10
     var vorSekunden = 30
     var fortschrittAufKacheln = true
+    /// **Bild formatfuellend statt vollstaendig.**
+    ///
+    /// Dieselbe Wahl wie die Zusammenziehgeste auf iPhone und iPad und die
+    /// Zeile im Wiedergabemenue auf Mac und Fernseher — zwei Zustaende, kein
+    /// dritter, weil der nur eine Streckung waere. Auf den Apple-Fassungen
+    /// steht sie in `@AppStorage("bildfuellend")`; hier liegt sie in
+    /// derselben Datei wie die uebrigen Wahlen.
+    var bildfuellend = false
+    /// **Das Technikschild — die Auskunft, die stehenbleibt.**
+    ///
+    /// Wer ein Ruckeln sieht, sieht es *waehrend* er zusieht. Der Schalter
+    /// gehoert deshalb in den Player, nicht in die Einstellungen; genau so
+    /// steht es auf den Apple-Fassungen.
+    var technikschild = false
+
+    /// **H1 — aus, bis man es einschaltet.**
+    ///
+    /// Ohne diesen Schalter gibt es weder die Zeile in der Leiste noch den
+    /// Knopf auf der Detailseite. Wie bei Seerr: wer es nicht will, sieht
+    /// ausser der einen Zeile in den Einstellungen nichts davon. Wortgleich
+    /// von `AppModel.downloadsAn`.
+    var downloadsAn = false
+
+    // MARK: Lesen, das eine aeltere Datei ueberlebt
+
+    /// **Ein fehlender Schluessel darf nicht alles zuruecksetzen.**
+    ///
+    /// Am 08.09.2026 nachgemessen: die Datei auf der Platte stammte von einer
+    /// Fassung vor `bildfuellend` und `technikschild`. Swifts erzeugter
+    /// Decoder verlangt jeden Schluessel; einer fehlte, `decode` warf, und
+    /// `lesen()` gab kommentarlos frische Vorgaben zurueck — **alle**
+    /// Einstellungen weg, nicht nur die neue. Qualitaet, Sprachen,
+    /// Sprungweiten, Startseitenaufteilung: alles stand wieder auf Anfang,
+    /// und niemand hat es gemerkt, weil eine App mit Vorgabewerten
+    /// vollkommen normal aussieht.
+    ///
+    /// Der Fall tritt bei **jeder** neuen Einstellung wieder ein. Also wird
+    /// jeder Wert einzeln gelesen und behaelt seine Vorgabe, wenn er fehlt.
+    /// Das ist der Grund, warum hier von Hand steht, was Swift sonst selbst
+    /// erzeugt.
+    init(from decoder: Decoder) throws {
+        let k = try decoder.container(keyedBy: CodingKeys.self)
+        func w<T: Decodable>(_ s: CodingKeys, _ vorgabe: T) -> T {
+            (try? k.decodeIfPresent(T.self, forKey: s)) .flatMap { $0 } ?? vorgabe
+        }
+        immerDirectPlay        = w(.immerDirectPlay, true)
+        bitratenGrenze         = w(.bitratenGrenze, 0)
+        tonSprache             = w(.tonSprache, "")
+        untertitelSprache      = w(.untertitelSprache, "")
+        untertitelAutomatisch  = w(.untertitelAutomatisch, false)
+        neuzugaengeGetrennt    = w(.neuzugaengeGetrennt, false)
+        naechsteAutomatisch    = w(.naechsteAutomatisch, true)
+        zurueckSekunden        = w(.zurueckSekunden, 10)
+        vorSekunden            = w(.vorSekunden, 30)
+        fortschrittAufKacheln  = w(.fortschrittAufKacheln, true)
+        bildfuellend           = w(.bildfuellend, false)
+        technikschild          = w(.technikschild, false)
+        downloadsAn            = w(.downloadsAn, false)
+    }
+
+    /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.
+    init() {}
 
     private static var datei: URL {
         URL(fileURLWithPath: NSHomeDirectory())
@@ -56,6 +118,39 @@ struct Wahlen: Codable {
 
 /// Welche Werteliste gerade aufgeklappt ist.
 enum Werteauswahl { case bitrate, ton, untertitel, zurueck, vor }
+
+/// **Welcher Bereich im Wiedergabemenue links gewaehlt ist.**
+///
+/// Die Reihenfolge ist die der Mac-Fassung: erst die Spuren, dann Bild und
+/// Tempo, zuletzt die Schlafzeit. `Technikschild` fehlt hier noch — es gibt
+/// das Schild auf Linux und Windows bisher nicht.
+enum Spurbereich: CaseIterable {
+    case ton, untertitel, bildformat, tempo, schlafzeit, technik
+
+    var titel: String {
+        switch self {
+        case .ton:        return uebersetzt("Ton")
+        case .untertitel: return uebersetzt("Untertitel")
+        case .bildformat: return uebersetzt("Bildformat")
+        case .tempo:      return uebersetzt("Tempo")
+        case .schlafzeit: return uebersetzt("Schlafzeit")
+        case .technik:    return uebersetzt("Technikschild")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .ton:        return "audio-volume-high-symbolic"
+        case .untertitel: return "media-view-subtitles-symbolic"
+        case .bildformat: return "view-fullscreen-symbolic"
+        // Nicht mehr `preferences-system` — das traegt jetzt der Knopf,
+        // der die Tafel oeffnet, und ein Zeichen soll eine Sache meinen.
+        case .tempo:      return "media-seek-forward-symbolic"
+        case .schlafzeit: return "weather-clear-night-symbolic"
+        case .technik:    return "utilities-system-monitor-symbolic"
+        }
+    }
+}
 
 /// Die Fassung von libVLC, für die Fußzeile der Einstellungen.
 ///

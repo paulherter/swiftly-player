@@ -42,7 +42,12 @@ struct QuickConnectAnmeldung: View {
                             .frame(maxWidth: .infinity)
                             .padding(.top, 40)
                     } else {
-                        Lader().frame(maxWidth: .infinity).padding(.top, 40)
+                        // Der Code kommt gleich; solange steht seine Form da.
+                        Ladefeld(ecke: Stil.eckeFeld)
+                            .frame(height: 60)
+                            .frame(maxWidth: 260)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 40)
                     }
 
                     anleitung
@@ -85,8 +90,8 @@ struct QuickConnectAnmeldung: View {
                     .monospacedDigit()
                     .foregroundStyle(Stil.schrift)
                     .frame(width: 46, height: 60)
-                    .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Stil.rand) }
+                    .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
+                    .overlay { RoundedRectangle(cornerRadius: Stil.eckeFeld).strokeBorder(Stil.rand) }
             }
         }
         .frame(maxWidth: .infinity)

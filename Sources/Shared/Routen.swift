@@ -27,6 +27,10 @@ struct StaffelRoute: Hashable {
 /// Stapel läuft wie alles andere — und damit der Wisch zurück greift.
 struct ProfilRoute: Hashable {}
 
+/// Die Merkliste. Kein eigener Bereich — der vierte Platz unten gehört den
+/// Downloads —, sondern ein Sprungziel aus dem Kopf der Startseite.
+struct MerklisteRoute: Hashable {}
+
 /// Eigenes Sprungziel: die Zeile trägt einen Pfeil nach rechts, also muss
 /// auch eine Seite von rechts kommen — kein Blatt in fremder Gestalt.
 struct QuickConnectRoute: Hashable {}
