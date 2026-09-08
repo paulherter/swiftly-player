@@ -136,11 +136,15 @@ struct SerienView: View {
         _staffeln = State(initialValue: staffeln)
         _staffelnDa = State(initialValue: !staffeln.isEmpty)
 
-        // Dieselbe Staffel, die auch `staffelnLaden()` wählen würde —
-        // einschliesslich des Weges über die Nummer.
+        // **Nur, was mitgekommen ist** (A10). Kommt ein Hinweis, gilt er
+        // sofort — dann steht die richtige Staffel schon im ersten Bild.
+        // Kommt keiner, bleibt die Wahl offen: `staffelnLaden` fragt dann,
+        // in welcher Staffel man steckt, und die gilt. Hier `staffeln.first`
+        // zu nehmen hiesse, Staffel 1 zu zeigen und sie einen Wimpernschlag
+        // später gegen die laufende zu tauschen — genau das Zucken, das die
+        // Regel vermeiden soll.
         let staffel = staffeln.first { $0.id == startStaffelID }
             ?? staffeln.first { $0.indexNumber != nil && $0.indexNumber == startStaffelNummer }
-            ?? staffeln.first
         _gewaehlt = State(initialValue: staffel)
 
         let folgen = staffel.flatMap { gemerkt?.folgen[$0.id] } ?? []
@@ -398,22 +402,58 @@ struct SerienView: View {
     // MARK: Laden
 
     private func staffelnLaden() async {
-        guard staffeln.isEmpty, !staffelnDa else { return }
+        // **Auch wenn die Staffeln schon dastehen.** Sie koennen aus dem
+        // Speicher kommen, die Wahl aber offen sein — ohne Hinweis trifft der
+        // `init` keine mehr (A10). Dann wird hier nur noch gewaehlt.
+        if staffelnDa, !staffeln.isEmpty {
+            if gewaehlt == nil { gewaehlt = await gewaehlteStaffel(aus: staffeln) }
+            return
+        }
+        guard staffeln.isEmpty else { return }
+
+        // **Nebeneinander, weil sie einander nicht brauchen.** Die Liste
+        // braucht die Staffeln, die Wahl den Stand — und den nur, wenn kein
+        // Hinweis mitkam. Hintereinander lägen die zwei Fristen aufeinander;
+        // dieselbe Rechnung wie beim Folgenwechsel im Player.
+        async let stand: Item? = ohneHinweis ? await model.standInSerie(serie) : nil
         let neue = await model.staffeln(serie)
         // Erst die Wahl, dann die Liste, dann das Zeichen — alles in einem
         // Zug, damit `.task(id:)` nur einen Wechsel sieht.
         //
-        // Die Wahl selbst kommt aus `main`: erst über die Kennung, dann über
-        // die **Nummer**. Am Gerät gemessen liefert der Server an einer Folge
-        // nicht immer eine `SeasonId`; dann greift der Kennungsvergleich ins
-        // Leere und es stünde die erste Staffel vorn.
-        gewaehlt = neue.first { $0.id == startStaffelID }
-            ?? neue.first { $0.indexNumber != nil && $0.indexNumber == startStaffelNummer }
-            ?? neue.first
+        gewaehlt = waehle(aus: neue, stand: await stand)
         staffeln = neue
         staffelnDa = true
         Serienspeicher.geteilt.merken(serie.id) { $0.staffeln = neue }
         if neue.isEmpty { await folgenLaden() }
+    }
+
+    /// Welche Staffel dasteht — **A10**, und die Kette ist wörtlich die der
+    /// geteilten Fassung.
+    ///
+    /// Erst der Hinweis, mit dem man gekommen ist: Kennung, dann **Nummer**.
+    /// Die Nummer ist kein Gurt zu viel — am Gerät gemessen liefert der
+    /// Server an einer Folge nicht immer eine `SeasonId`, und dann greift der
+    /// Kennungsvergleich ins Leere.
+    ///
+    /// Kam kein Hinweis — aus der Bibliothek, aus der Suche —, gilt die
+    /// **laufende** Staffel, nicht Staffel 1. Dafür muss gefragt werden, wo
+    /// man in der Serie steht; deshalb wird der Stand nur dann geholt.
+    private var ohneHinweis: Bool { startStaffelID == nil && startStaffelNummer == nil }
+
+    /// Reine Rechnung, ohne Abruf — damit der Aufrufer entscheidet, wann er
+    /// den Stand holt, und ihn nebenher holen kann.
+    private func waehle(aus liste: [Item], stand: Item?) -> Item? {
+        liste.first { $0.id == startStaffelID }
+            ?? liste.first { $0.indexNumber != nil && $0.indexNumber == startStaffelNummer }
+            ?? liste.first { $0.id == stand?.seasonId }
+            ?? liste.first { $0.indexNumber != nil && $0.indexNumber == stand?.parentIndexNumber }
+            ?? liste.first
+    }
+
+    /// Für den Fall, dass die Staffeln schon aus dem Speicher kamen: dann
+    /// gibt es nichts zu parallelisieren, es fehlt nur noch die Wahl.
+    private func gewaehlteStaffel(aus liste: [Item]) async -> Item? {
+        waehle(aus: liste, stand: ohneHinweis ? await model.standInSerie(serie) : nil)
     }
 
     private func folgenLaden() async {
