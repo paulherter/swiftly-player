@@ -226,42 +226,45 @@ body,
     opacity: 1 !important;
 }
 
-/* Und die Maske liegt auf dem Element, das das Bild wirklich traegt.
-   Am laufenden Client gemessen: `.backdropImage` haelt die Adresse im
-   `style`-Attribut; `.itemBackdrop` ist leer und war nie der Traeger.
+/* --- Die Kulissenblende, ohne Maske ---
+   **Safari zeichnet keine Maske auf einem Element mit `z-index: -1`.**
+   Bewiesen, nicht vermutet: mit `mask-image: none` erscheint das Bild
+   sofort — in Safari wie in Chromium. Zwei Maskenebenen waren nicht das
+   Problem, eine war es auch.
 
-   **Zwei Masken auf zwei Elementen, nicht zwei Ebenen auf einem.**
-   `mask-composite: intersect` verrechnet zwei Maskenebenen miteinander —
-   in Chromium. Safari kennt nur `-webkit-mask-composite` mit anderen
-   Schluesselwoertern, und bei zwei Ebenen kommt dort **nichts** heraus:
-   das Bild war geladen, die Deckkraft stand auf 1, und die Maske loeschte
-   es weg. Paul hat es gesehen, ich nicht — ich pruefe in einem
-   Chromium-Fenster.
+   Also der Weg, vor dem `Kulisse.swift` warnt: ein **Anstrich** statt
+   einer Maske. Dort ist die Warnung richtig, weil sich der Hintergrund
+   der App einfaerbt. Hier stimmt die Voraussetzung: hinter der Kulisse
+   liegt nur noch `html`, und das traegt `grund` — sonst nichts.
 
-   Ein Element traegt jetzt die waagerechte Blende, sein Behaelter die
-   senkrechte. Zwei Masken, je eine Ebene, kein Verrechnen — das tun alle
-   Browser gleich. Die Stuetzstellen sind unveraendert die aus
-   `Kulissenblende`. */
-.backgroundContainer.withBackdrop {
-    -webkit-mask-image: linear-gradient(to bottom,
-        rgba(0,0,0,1) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,.72) 60%,
-        rgba(0,0,0,.42) 72%, rgba(0,0,0,.18) 84%, rgba(0,0,0,.04) 93%,
-        rgba(0,0,0,0) 100%);
-    mask-image: linear-gradient(to bottom,
-        rgba(0,0,0,1) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,.72) 60%,
-        rgba(0,0,0,.42) 72%, rgba(0,0,0,.18) 84%, rgba(0,0,0,.04) 93%,
-        rgba(0,0,0,0) 100%);
+   Der Verlauf liegt auf einer eigenen Ebene **im** Kulissenbehaelter,
+   also weiterhin hinter allem. Zwei Verlaeufe in einer Eigenschaft, keine
+   Verrechnung — das koennen alle Browser.
+
+   Die Stuetzstellen sind die aus `Kulissenblende`, umgedreht: wo die
+   Maske durchlaesst, ist der Anstrich durchsichtig. */
+.backdropContainer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(to right,
+            rgb(11,11,13) 0%, rgba(11,11,13,.95) 15%, rgba(11,11,13,.78) 29%,
+            rgba(11,11,13,.50) 45%, rgba(11,11,13,.25) 57%, rgba(11,11,13,.10) 70%,
+            rgba(11,11,13,.02) 85%, rgba(11,11,13,0) 100%),
+        linear-gradient(to bottom,
+            rgba(11,11,13,0) 0%, rgba(11,11,13,0) 45%, rgba(11,11,13,.28) 60%,
+            rgba(11,11,13,.58) 72%, rgba(11,11,13,.82) 84%, rgba(11,11,13,.96) 93%,
+            rgb(11,11,13) 100%);
 }
 
+/* **Rechts, nicht mittig.** Auf dem Mac liegt die Kulisse rechts und
+   laeuft nach links aus; Jellyfin zentriert sie. Mit dem Anstrich links
+   waere ein zentriertes Bild genau an der Stelle abgeschnitten, die
+   etwas zeigt. */
 .backdropImage {
-    -webkit-mask-image: linear-gradient(to right,
-        rgba(0,0,0,0) 0%, rgba(0,0,0,.05) 15%, rgba(0,0,0,.22) 29%,
-        rgba(0,0,0,.50) 45%, rgba(0,0,0,.75) 57%, rgba(0,0,0,.90) 70%,
-        rgba(0,0,0,.98) 85%, rgba(0,0,0,1) 100%);
-    mask-image: linear-gradient(to right,
-        rgba(0,0,0,0) 0%, rgba(0,0,0,.05) 15%, rgba(0,0,0,.22) 29%,
-        rgba(0,0,0,.50) 45%, rgba(0,0,0,.75) 57%, rgba(0,0,0,.90) 70%,
-        rgba(0,0,0,.98) 85%, rgba(0,0,0,1) 100%);
+    background-position: right center !important;
 }
 
 /* Auswahl und Markierung tragen den Akzent — er zeigt Auswahl. */
