@@ -113,3 +113,38 @@ abstellen, nicht durch etwas im Skript.
   Transport Controls* und damit WinRT — eigener Vorgang.
 - **Keine automatischen Updates.** Linux bekommt sie über die Paketquelle;
   für Windows gibt es bisher nur den Installer.
+
+## Wenn Windows in einer VM läuft
+
+Auf dem Entwicklungsrechner ist Windows eine libvirt-VM auf dem Linux-Host
+(`swiftly-win`). Sie hat **keinen geteilten Ordner** — nur CD-ROMs, und die
+gehen nur in eine Richtung. Übrig bleibt QEMUs Nutzernetz: der Wirt ist im
+Gast unter `10.0.2.2` erreichbar.
+
+```bash
+Windows/Werkzeuge/bruecke.sh ~/swiftly    # packen, ausliefern, bauen lassen
+```
+
+Der Wirt stellt die Quellen hin, tippt **eine** Zeile in ein frisches
+PowerShell-Fenster, und die VM holt sich den Rest selbst. Das Ergebnis kommt
+über `virsh screenshot` zurück.
+
+**Warum ein frisches Fenster.** `virsh send-key` tippt dorthin, wo die
+Tastatur gerade hinzeigt, und das sieht man von außen nicht. Zweimal ist ein
+Befehl in irgendeinem vorderen Fenster gelandet und dort stillschweigend
+verschwunden; aufgefallen ist es erst, als ein `Test-Path` zeigte, dass nie
+etwas angekommen war. `Win+R` führt immer zu demselben bekannten Zustand.
+
+**Zwei Regeln für jede `.ps1`, die dorthin geht** — beide haben je einen
+Fehlversuch gekostet:
+
+- **Nur ASCII.** PowerShell 5.1 liest eine UTF-8-Datei ohne BOM als ANSI.
+  Ein Gedankenstrich wird zu drei Zeichen und zerlegt den String, in dem er
+  steht — der Parser meldet den Fehler dann an einer Stelle, an der nichts
+  falsch ist. Dieselbe Falle trifft `Select-String`: ein Muster mit Umlaut
+  findet eine Zeile nicht, die dasteht. Das sah einmal wie ein fehlendes
+  Übersetzungsbündel aus und war keines. Wer Dateiinhalte prüft, gibt
+  `-Encoding UTF8` mit.
+- **Nichts nach `C:\` schreiben.** Ohne Administrator ist die Wurzel nicht
+  beschreibbar; `-OutFile C:\x` bricht mit „Access to the path is denied"
+  ab. Alles unter `$env:USERPROFILE`.
