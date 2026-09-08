@@ -251,13 +251,18 @@ extension App {
         // links ist frei. Er ist der bessere: der Zurückweg gehört nach links
         // (E9), und rechts wird es sonst eng, weil hier ein Knopf mehr steht
         // als auf dem Mac.
-        let zu = chip(uebersetzt("Schließen"), symbol: "pan-down-symbolic")
+        let zu = chip(uebersetzt("Schließen"), symbol: "pan-down-symbolic", nurSymbol: true)
         beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
         anhaengen(oben, zu)
 
         anhaengen(oben, luftQuer())
 
-        let spuren = chip(uebersetzt("Ton und Untertitel"), symbol: "media-view-subtitles-symbolic")
+        // **Die Tafel traegt mehr als Ton und Untertitel** — seit sie die Form
+        // der Mac-Fassung hat, stehen dort auch Bildformat, Tempo,
+        // Schlafzeit und das Technikschild. Sie heisst deshalb wie dort:
+        // Wiedergabe.
+        let spuren = chip(uebersetzt("Wiedergabe"), symbol: "preferences-system-symbolic",
+                          nurSymbol: true)
         spielerSpurknopf = spuren
         beiSignal(spuren, "clicked") { [weak self] in self?.spurwahlZeigen() }
         anhaengen(oben, spuren)

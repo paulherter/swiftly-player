@@ -95,7 +95,9 @@ enum Spurbereich: CaseIterable {
         case .ton:        return "audio-volume-high-symbolic"
         case .untertitel: return "media-view-subtitles-symbolic"
         case .bildformat: return "view-fullscreen-symbolic"
-        case .tempo:      return "preferences-system-symbolic"
+        // Nicht mehr `preferences-system` — das traegt jetzt der Knopf,
+        // der die Tafel oeffnet, und ein Zeichen soll eine Sache meinen.
+        case .tempo:      return "media-seek-forward-symbolic"
         case .schlafzeit: return "weather-clear-night-symbolic"
         case .technik:    return "utilities-system-monitor-symbolic"
         }

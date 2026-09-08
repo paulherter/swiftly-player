@@ -857,6 +857,12 @@ enum Stil {
            untereinander stehen und nicht bei jedem Takt springen — dieselbe
            Begruendung wie auf den Apple-Fassungen. Deckend genug, um ueber
            bewegtem Bild lesbar zu bleiben. */
+        /* Ein Chip ohne Wort: quadratisch statt breit, Kapsel bleibt. */
+        .swiftly-chip.swiftly-nursymbol {
+            padding-left: 0;
+            padding-right: 0;
+            min-width: 34px;
+        }
         .swiftly-technikschild {
             font-family: monospace;
             font-size: 12px;

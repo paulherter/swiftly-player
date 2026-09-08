@@ -855,13 +855,17 @@ final class App: @unchecked Sendable {
     private var profilbild: Widget!
     private var profilname: Widget!
     private var profilserver: Widget!
-    private var filmeraster: Widget!
-    private var serienraster: Widget!
+    /// **Die Rasterseiten liegen in Woerterbuechern, nicht in Paaren.**
+    ///
+    /// Vorher stand ueberall `was == .filme ? filme… : serien…` — an acht
+    /// Stellen. Mit einem dritten Bereich (Merkliste) waere daraus ueberall
+    /// eine Dreierkette geworden, und jede vergessene Stelle haette still
+    /// die falsche Seite gefuellt. Ein Woerterbuch kennt keinen Sonderfall.
+    private var rasterFeld: [Bereich: Widget] = [:]
+    private var zahlFeld: [Bereich: Widget] = [:]
     private var suchfeld: Widget!
     private var suchraster: Widget!
     private var suchleer: Widget!
-    private var filmezahl: Widget!
-    private var serienzahl: Widget!
     var geladen: Set<Bereich> = []
     /// Filter und Sortierung, je Bereich getrennt. Auf dem Mac merkt sich
     /// jeder Bereich seinen Stand — wer zwischen Filmen und Serien wechselt,
@@ -901,13 +905,10 @@ final class App: @unchecked Sendable {
     var serverfassung = ""
     /// Was im Raster schon steht, und wie viel der Server insgesamt hat —
     /// für das Nachladen beim Blättern.
-    var filmeItems: [Item] = []
-    var serienItems: [Item] = []
-    var filmeGesamt = 0
-    var serienGesamt = 0
+    var rasterItems: [Bereich: [Item]] = [:]
+    var rasterGesamt: [Bereich: Int] = [:]
     var rasterLaedt: Set<Bereich> = []
-    var filmeLader: Widget!
-    var serienLader: Widget!
+    var laderFeld: [Bereich: Widget] = [:]
     /// Die Fernsteuerung über Jellyfins Socket. Ohne sie meldet der Server
     /// `SupportsRemoteControl: false` und blendet im Dashboard die Knöpfe aus.
     var fernsteuerung: Fernsteuerung?
@@ -1032,6 +1033,7 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(inhalt), startbereichBauen(), "start")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.filme), "filme")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.serien), "serien")
+        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.merkliste), "merkliste")
         gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
 
         // **Die Detailseite legt sich auf, sie tritt nicht daneben.**
@@ -1536,6 +1538,7 @@ final class App: @unchecked Sendable {
         case .start:  startseiteLaden()
         case .filme:  rasterLaden(.filme)
         case .serien: rasterLaden(.serien)
+        case .merkliste: rasterLaden(.merkliste)
         case .suche:  break
         }
     }
@@ -1609,8 +1612,9 @@ final class App: @unchecked Sendable {
         gtk_widget_set_margin_top(lader, 40)
         gtk_widget_set_visible(lader, 0)
         anhaengen(block, lader)
-        if was == .filme { filmeraster = raster; filmezahl = zahl; filmeLader = lader }
-        else { serienraster = raster; serienzahl = zahl; serienLader = lader }
+        rasterFeld[was] = raster
+        zahlFeld[was] = zahl
+        laderFeld[was] = lader
 
         let rahmen = seitenrahmen(block)
         // **Am unteren Rand wird nachgeladen** (`edge-reached` — das Signal
@@ -1627,8 +1631,14 @@ final class App: @unchecked Sendable {
     /// `Filters=IsUnplayed` — das arbeitet bei Serien auf Folgenebene.
     /// Die Bibliotheken einer Gattung.
     func bibliotheken(fuer was: Bereich) -> [Item] {
-        let art = was == .filme ? "movies" : "tvshows"
-        return sichten.filter { $0.collectionType == art }
+        // **Die Merkliste hat keine.** Sie geht ueber alle Bibliotheken und
+        // siebt beim Server auf `IsFavorite`; eine Bibliothekswahl waere dort
+        // eine Einschraenkung, die es auf dem Mac auch nicht gibt.
+        switch was {
+        case .filme:  return sichten.filter { $0.collectionType == "movies" }
+        case .serien: return sichten.filter { $0.collectionType == "tvshows" }
+        default:      return []
+        }
     }
 
     func chipsFuellen(_ was: Bereich) {
@@ -1662,7 +1672,10 @@ final class App: @unchecked Sendable {
             anhaengen(zeile, strich)
         }
 
-        for fall in Bibliotheksfilter.allCases {
+        // **Auf der Merkliste gibt es keine Filter.** Der Server siebt dort
+        // auf `IsFavorite`; ein zweiter Filter daneben stuende da und taete
+        // nichts. Auf dem Mac steht dort dieselbe Reihe nicht.
+        for fall in was == .merkliste ? [] : Bibliotheksfilter.allCases {
             let c = chip(fall.beschriftung, aktiv: fall == jetztFilter)
             beiSignal(c, "clicked") { [weak self] in
                 guard let self else { return }
@@ -1738,8 +1751,7 @@ final class App: @unchecked Sendable {
     /// Raster still da, bis das neue eintraf — es sah aus, als hätte der
     /// Klick nichts getan.
     func rasterLaderZeigen(_ was: Bereich, _ an: Bool) {
-        let lader = was == .filme ? filmeLader : serienLader
-        guard let lader else { return }
+        guard let lader = laderFeld[was] else { return }
         gtk_widget_set_visible(lader, an ? 1 : 0)
     }
 
@@ -2136,8 +2148,8 @@ final class App: @unchecked Sendable {
     /// ohnehin gibt.
     private func rasterNachladen(_ was: Bereich) {
         guard !rasterLaedt.contains(was) else { return }
-        let schon = (was == .filme ? filmeItems : serienItems).count
-        guard schon > 0, schon < (was == .filme ? filmeGesamt : serienGesamt) else { return }
+        let schon = (rasterItems[was] ?? []).count
+        guard schon > 0, schon < (rasterGesamt[was] ?? 0) else { return }
         rasterLaden(was, ab: schon)
     }
 
@@ -2145,14 +2157,23 @@ final class App: @unchecked Sendable {
         guard let client else { return }
         rasterLaedt.insert(was)
         if ab == 0 {
-            if was == .filme { filmeItems = [] } else { serienItems = [] }
+            rasterItems[was] = []
             rasterLaderZeigen(was, true)
         }
-        let gattung = was == .filme ? "Movie" : "Series"
+        // **Die Merkliste ist keine Bibliothek, sondern ein Filter.** Sie
+        // fragt beide Gattungen ab und laesst den Server auf `IsFavorite`
+        // sieben — woertlich `AppModel.gemerkte(art:sortierung:ab:)` vom Mac.
+        let gattungen: [String]
+        switch was {
+        case .filme:  gattungen = ["Movie"]
+        case .serien: gattungen = ["Series"]
+        default:      gattungen = ["Movie", "Series"]
+        }
         let f = filter[was] ?? .alle
         let sort = sortierung[was] ?? .name
-        let meine = bibliotheken(fuer: was)
-        let eltern = gewaehlteBibliothek[was] ?? meine.first?.id
+        // Die Merkliste hat keine Bibliothek — sie geht ueber alles.
+        let eltern: String? = was == .merkliste
+            ? nil : (gewaehlteBibliothek[was] ?? bibliotheken(fuer: was).first?.id)
         let stand = kontowechsel
         Task.detached { [self] in
             let antwort = try? await client.items(parentID: eltern,
@@ -2160,10 +2181,12 @@ final class App: @unchecked Sendable {
                                                   startIndex: ab,
                                                   sortBy: sort.feld,
                                                   sortOrder: sort.richtung,
-                                                  filters: f.jellyfinFilter,
-                                                  istGesehen: f.istGesehen,
+                                                  filters: was == .merkliste
+                                                      ? ["IsFavorite"] : f.jellyfinFilter,
+                                                  istGesehen: was == .merkliste
+                                                      ? nil : f.istGesehen,
                                                   recursive: true,
-                                                  includeItemTypes: [gattung])
+                                                  includeItemTypes: gattungen)
             let items = antwort?.items ?? []
             let gesamt = antwort?.totalRecordCount ?? items.count
             aufHauptfaden {
@@ -2172,17 +2195,11 @@ final class App: @unchecked Sendable {
                 guard self.kontowechsel == stand else { return }
                 self.rasterLaedt.remove(was)
                 self.rasterLaderZeigen(was, false)
-                let raster = was == .filme ? self.filmeraster : self.serienraster
-                let zahl = was == .filme ? self.filmezahl : self.serienzahl
-                if was == .filme {
-                    self.filmeItems += items
-                    self.filmeGesamt = gesamt
-                    self.rasterFuellen(raster, self.filmeItems)
-                } else {
-                    self.serienItems += items
-                    self.serienGesamt = gesamt
-                    self.rasterFuellen(raster, self.serienItems)
-                }
+                guard let raster = self.rasterFeld[was], let zahl = self.zahlFeld[was]
+                else { return }
+                self.rasterItems[was, default: []] += items
+                self.rasterGesamt[was] = gesamt
+                self.rasterFuellen(raster, self.rasterItems[was] ?? [])
                 gtk_label_set_text(OpaquePointer(zahl), String(gesamt))
             }
         }

@@ -144,3 +144,6 @@
 "Verworfen" = "Dropped";
 "Vorrat" = "Buffer";
 "Zeigt Ø" = "Showing Ø";
+
+/* Merkliste als eigene Seite (08.09.2026) */
+"Merkliste" = "Watchlist";

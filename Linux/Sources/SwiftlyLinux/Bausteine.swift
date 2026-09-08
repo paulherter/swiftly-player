@@ -295,7 +295,8 @@ func fach(_ kind: Widget!, breite: Int, hoehe: Int,
 /// Die halbfette Schrift im aktiven Zustand steht so auf dem Mac und ist
 /// kein Zufall: der Chip wird dadurch minimal breiter, und das ist die
 /// einzige Stelle, an der man die Wahl auch ohne Farbe sieht.
-func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false) -> Widget! {
+func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false,
+          nurSymbol: Bool = false) -> Widget! {
     let knopf: Widget! = gtk_button_new()
     gtk_widget_add_css_class(knopf, "swiftly-chip")
     if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
@@ -307,7 +308,23 @@ func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false) -> Widget!
         gtk_image_set_pixel_size(OpaquePointer(bild), 12)
         anhaengen(reihe, bild)
     }
-    anhaengen(reihe, beschriftung(text))
+    // **Nur das Zeichen, aber weiter in seiner Kapsel.**
+    //
+    // In der Werkzeugleiste des Players sagt das Zeichen genug; eine
+    // Beschriftung daneben macht die Leiste breiter, ohne etwas zu erklaeren.
+    // Der Rahmen bleibt — ein nacktes Zeichen ueber bewegtem Bild sieht aus,
+    // als schwebe es dort zufaellig. Woertlich die Aenderung, die die
+    // Mac-Fassung am 08.09.2026 bekommen hat.
+    //
+    // Verloren geht die Beschriftung nicht: sie wird zum Kurzhinweis unter
+    // dem Zeiger und zu dem, was eine Vorlesehilfe ansagt (E8).
+    if nurSymbol {
+        gtk_widget_add_css_class(knopf, "swiftly-nursymbol")
+        gtk_widget_set_tooltip_text(knopf, text)
+        beschriften(knopf, text)
+    } else {
+        anhaengen(reihe, beschriftung(text))
+    }
     gtk_button_set_child(alsKnopf(knopf), reihe)
     return knopf
 }
