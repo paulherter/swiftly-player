@@ -112,6 +112,13 @@ public actor JellyfinClient {
         return "MediaBrowser " + parts.joined(separator: ", ")
     }
 
+    /// Derselbe Ausweis fuer den Steuerkanal.
+    ///
+    /// **Nicht nachgebaut, sondern derselbe.** Ein Kanal, der sich anders
+    /// nennt als die uebrigen Aufrufe, landet auf einer zweiten Sitzung — und
+    /// dann hat die eine die Bedienknoepfe und die andere die Laufzeit.
+    internal var ausweisFuerKanal: String { authorizationHeader }
+
     private func request(
         _ path: String,
         method: String = "GET",

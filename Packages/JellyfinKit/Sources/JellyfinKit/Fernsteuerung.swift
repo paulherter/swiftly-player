@@ -47,11 +47,16 @@ public actor Fernsteuerung {
     /// Wartezeit vor dem nächsten Versuch und wird bei Erfolg zurückgesetzt.
     private var abrisse = 0
 
-    public init(basis: URL, token: String, geraeteID: String,
+    /// Der vollstaendige `Authorization`-Wert, wortgleich mit dem, den alle
+    /// uebrigen Aufrufe tragen. Warum das noetig ist, steht bei ``starten``.
+    private let ausweis: String
+
+    public init(basis: URL, token: String, geraeteID: String, ausweis: String,
                 sitzung: URLSession = .shared) {
         self.basis = basis
         self.token = token
         self.geraeteID = geraeteID
+        self.ausweis = ausweis
         self.sitzung = sitzung
     }
 
@@ -79,8 +84,26 @@ public actor Fernsteuerung {
             return
         }
 
+        // **Der Kanal muss sich genauso ausweisen wie alle anderen Aufrufe.**
+        //
+        // Er trug bisher nur Merkmal und Geraetekennung in der Adresse, ohne
+        // Clientnamen. Jellyfin schluesselt eine Sitzung aber nach **Name und
+        // Geraet** zusammen — ohne Namen landet der Kanal irgendwo, nur nicht
+        // zwingend an der Sitzung, die gerade spielt.
+        //
+        // Am 10.09.2026 am Geraet zu sehen: die Bedienknoepfe erschienen und
+        // verschwanden im Sekundentakt, und sobald sie da waren, stand eine
+        // voellig andere Laufzeit daneben. Es waren **zwei** Sitzungen
+        // desselben Geraets — an der einen hing der Kanal, an der anderen die
+        // Fortschrittsmeldungen. Sichtbar wurde es erst durch die Umbenennung
+        // von „Swiftly" auf „Swiftly Player"; angelegt war die Falle vorher.
+        //
+        // Die Abfragewerte bleiben zusaetzlich stehen: aeltere Server lesen
+        // die Anmeldung des Kanals von dort, neuere aus der Kopfzeile.
         Spur.sag("[Fernsteuerung] verbinde …")
-        let neu = sitzung.webSocketTask(with: url)
+        var anfrage = URLRequest(url: url)
+        anfrage.setValue(ausweis, forHTTPHeaderField: "Authorization")
+        let neu = sitzung.webSocketTask(with: anfrage)
         neu.resume()
         aufgabe = neu
         lauschen()
@@ -283,6 +306,7 @@ extension JellyfinClient {
     /// Eine Fernsteuerung für die laufende Anmeldung.
     public func fernsteuerung() throws -> Fernsteuerung {
         let s = try requireSessionForReporting()
-        return Fernsteuerung(basis: s.serverURL, token: s.accessToken, geraeteID: geraeteKennung)
+        return Fernsteuerung(basis: s.serverURL, token: s.accessToken,
+                             geraeteID: geraeteKennung, ausweis: ausweisFuerKanal)
     }
 }
