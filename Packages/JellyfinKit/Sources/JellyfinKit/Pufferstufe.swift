@@ -19,7 +19,16 @@ import Foundation
 /// grosszuegigste Stufe — am 08.09.2026 wurde `network-caching=10000`
 /// eingebaut und wieder entfernt, weil am Vorrat gar nichts fehlte: gemessen
 /// lagen 211 Sekunden im Puffer, der Engpass sass hinter dem Demuxer.
-public enum Pufferstufe: String, CaseIterable, Sendable, Codable {
+public enum Pufferstufe: String, CaseIterable, Sendable, Codable, Identifiable {
+
+    /// **Der Ausweis fuer Auswahllisten.**
+    ///
+    /// Nachgetragen, weil er gefehlt hat: Fernseher und Mac haben am
+    /// 10.09.2026 unabhaengig voneinander dieselbe Huelle gebaut, nur um eine
+    /// Kennung anzuhaengen — `Pufferwahl` dort, `Stufenwahl` hier. Zwei
+    /// gleiche Umwege an zwei Stellen sind ein Hinweis, dass der Weg fehlt.
+    public var id: String { rawValue }
+
 
     /// Wie bisher. Schnelle Spruenge, Vorrat aus dem Prefetch-Filter.
     case normal
