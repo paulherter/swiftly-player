@@ -36,7 +36,14 @@ final class Bildspeicher {
     static let geteilt = Bildspeicher()
 
     /// Bild und was es im Speicher kostet — Breite mal Hoehe mal vier Byte.
-    private struct Eintrag { let bild: Image; let byte: Int }
+    private struct Eintrag {
+        let bild: Image
+        let byte: Int
+        /// Wie lange das Holen und das Wandeln gedauert haben — nur fuer die
+        /// Messung, sonst unbenutzt.
+        var holen: Double = 0
+        var wandeln: Double = 0
+    }
 
     private var bekannt: [URL: Eintrag] = [:]
     private var reihenfolge: [URL] = []
@@ -44,6 +51,10 @@ final class Bildspeicher {
     /// Läufe, die schon unterwegs sind. Ohne das holt ein Raster dasselbe
     /// Bild mehrfach, wenn es in zwei Reihen vorkommt.
     private var laufend: [URL: Task<Eintrag?, Never>] = [:]
+    /// Einmal zerlegte Adressen. `schluessel(_:)` baut eine `URLComponents`
+    /// auf, filtert und setzt wieder zusammen — billig fuer sich, aber es
+    /// laeuft je Kachel und je Durchgang, auf dem Hauptlauf.
+    private var schluesselspeicher: [URL: URL] = [:]
 
     /// **Eine Speichergrenze in Byte, keine Anzahl.**
     ///
@@ -109,6 +120,17 @@ final class Bildspeicher {
     /// hatte — mit dem Unterschied, dass hier nichts zu verwerfen ist: ein
     /// Bild trägt keinen Sehstand.
     private func schluessel(_ url: URL) -> URL {
+        if let da = schluesselspeicher[url] { return da }
+        let neu = gerechnet(url)
+        // Mitwachsen darf er nicht: nach zwei Kontowechseln liegen dieselben
+        // Bilder unter drei Adressen. Dieselbe Grenze wie die Bilder selbst,
+        // nur in Eintraegen — ein Adresspaar kostet nichts Nennenswertes.
+        if schluesselspeicher.count > 2_000 { schluesselspeicher.removeAll() }
+        schluesselspeicher[url] = neu
+        return neu
+    }
+
+    private func gerechnet(_ url: URL) -> URL {
         guard var teile = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let werte = teile.queryItems, werte.contains(where: { $0.name == "api_key" })
         else { return url }
@@ -126,7 +148,9 @@ final class Bildspeicher {
         // die Isolationsgrenze, den Swift 6 zu Recht nicht durchlässt.
         let kante = Self.kantenlaenge
         let lauf = Task<Eintrag?, Never> {
+            let begonnen = Date()
             guard let (daten, _) = try? await URLSession.shared.data(from: url) else { return nil }
+            let geholt = Date()
             let kiste = await Task.detached(priority: .userInitiated) { () -> Bildkiste? in
                 guard let quelle = CGImageSourceCreateWithData(daten as CFData, nil) else { return nil }
                 let regeln: [CFString: Any] = [
@@ -147,12 +171,25 @@ final class Bildspeicher {
             // Speicher, unabhaengig davon, wie klein die Datei war — genau
             // deshalb sagt die Dateigroesse hier nichts.
             let byte = kiste.bild.width * kiste.bild.height * 4
-            return Eintrag(bild: Image(decorative: kiste.bild, scale: 1), byte: byte)
+            return Eintrag(bild: Image(decorative: kiste.bild, scale: 1), byte: byte,
+                           holen: geholt.timeIntervalSince(begonnen),
+                           wandeln: Date().timeIntervalSince(geholt))
         }
 
         laufend[merkmal] = lauf
         let ergebnis = await lauf.value
         laufend[merkmal] = nil
+        #if DEBUG
+        // **Vorlaeufig, zum Nachmessen einer gemeldeten Verschlechterung.**
+        // `Protokoll.schreib` schreibt nur im Entwicklerbau; in der
+        // ausgelieferten Fassung steht die Zeile da und tut nichts.
+        if let ergebnis {
+            Protokoll.schreib(String(format: "Bild %.0f ms holen, %.0f ms wandeln, %d KB · %@",
+                                     (ergebnis.holen) * 1000, (ergebnis.wandeln) * 1000,
+                                     ergebnis.byte / 1024,
+                                     merkmal.lastPathComponent))
+        }
+        #endif
         if let ergebnis { merken(ergebnis, fuer: merkmal) }
         return ergebnis?.bild
     }

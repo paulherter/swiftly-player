@@ -588,19 +588,43 @@ struct Bild<Platzhalter: View>: View {
     /// waehrenddessen, sonst blitzt es vor jeder Kachel kurz auf.
     @State private var ohneBild = false
 
+    /// **Bekanntes einmal beim Anlegen nachschlagen, nicht bei jedem Zeichnen.**
+    ///
+    /// Hier stand der Griff in den Speicher im `body`. Das sah harmlos aus
+    /// und war es nicht: `Bildspeicher.bild(_:)` zerlegt zuerst die Adresse,
+    /// um das Zugangsmerkmal herauszunehmen — `URLComponents`, filtern,
+    /// wieder zusammensetzen. Im `body` heisst das: bei **jedem** Durchgang,
+    /// fuer **jede** Kachel, auf dem Hauptlauf. Eine Detailseite zeichnet
+    /// viele Bilder und laeuft dabei durch mehrere Durchgaenge; das war
+    /// Arbeit, die dem Laden die Bahn wegnahm, ohne je etwas beizutragen.
+    ///
+    /// Deshalb hier, wie es `Netzbild` von Anfang an macht: einmal fragen,
+    /// bevor gezeichnet wird. Ein nachgereichter Wert kaeme einen Durchgang
+    /// zu spaet, und der eine Durchgang ist das Aufblitzen.
+    @MainActor
+    init(url: URL?, breite: CGFloat? = nil, hoehe: CGFloat? = nil,
+         verhaeltnis: CGFloat? = nil, ecke: CGFloat = Stil.ecke,
+         fortschritt: Double? = nil,
+         @ViewBuilder platzhalter: @escaping () -> Platzhalter) {
+        self.url = url
+        self.breite = breite
+        self.hoehe = hoehe
+        self.verhaeltnis = verhaeltnis
+        self.ecke = ecke
+        self.fortschritt = fortschritt
+        self.platzhalter = platzhalter
+        let sofort = url.flatMap { Bildspeicher.geteilt.bild($0) }
+        _geladen = State(initialValue: sofort)
+        _sichtbar = State(initialValue: sofort != nil)
+        _ohneBild = State(initialValue: url == nil)
+    }
+
     var body: some View {
         rahmen
             .overlay {
                 if let geladen {
                     geladen.resizable().aspectRatio(contentMode: .fill)
                         .opacity(sichtbar ? 1 : 0)
-                } else if let bekannt = url.flatMap({ Bildspeicher.geteilt.bild($0) }) {
-                    // **Was schon im Speicher liegt, steht im ersten
-                    // Durchgang da.** `task` laeuft erst nach dem Zeichnen;
-                    // ueber ihn allein gaebe es vor jedem bekannten Bild einen
-                    // leeren Durchgang, und genau der ist das Aufblitzen.
-                    // Ohne Einblenden — was schon da war, kommt nicht an.
-                    bekannt.resizable().aspectRatio(contentMode: .fill)
                 } else if url != nil, !ohneBild {
                     // **Waehrend des Ladens steht kein Zeichen da.** Der
                     // Platzhalter der Aufrufer ist das Filmsymbol und heisst
