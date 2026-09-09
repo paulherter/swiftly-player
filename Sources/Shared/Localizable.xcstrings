@@ -5266,6 +5266,23 @@
         }
       }
     },
+    "Sprache, Untertitel, Tempo, Puffer": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprache, Untertitel, Tempo, Puffer"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language, subtitles, speed, buffer"
+          }
+        }
+      }
+    },
     "Sprachen": {
       "extractionState": "manual",
       "localizations": {
