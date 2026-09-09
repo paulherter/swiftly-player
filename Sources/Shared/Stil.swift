@@ -1,5 +1,10 @@
 import JellyfinKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 /// Maße, Schriftgrößen und Bausteine für das iPhone. Die Farben stehen in
 /// `Farben.swift`, weil sie sich beide Plattformen teilen.
@@ -15,14 +20,17 @@ extension Stil {
 /// **Sehr wenig, mit Absicht.** 0,97 und 0,22 Sekunden — man sieht es nicht,
 /// man merkt es. Genau so macht es iOS beim Wechsel zwischen Reitern, und
 /// genau deshalb fühlt sich ein Wechsel dort weich an statt wie ein Schnitt.
-static let bereichswechsel: Animation = .easeOut(duration: 0.20)
+static var bereichswechsel: Animation {
+    bewegungReduziert ? .linear(duration: 0.14)
+                      : .snappy(duration: 0.20, extraBounce: 0)
+}
 /// Wie stark der eintretende Bereich zusammengezogen anfängt.
 ///
 /// **0,995, und dreimal nach unten korrigiert.** Mit 0,97 wanderte die
 /// Oberkante einer 844 Punkt hohen Seite zwölf Punkt nach innen, mit 0,99 noch
 /// vier — beides war als Kante zu sehen. Zwei Punkte sind die Grenze, an der
 /// die Bewegung noch trägt und nichts mehr auffällt.
-static let bereichsmass: CGFloat = 0.995
+static var bereichsmass: CGFloat { bewegungReduziert ? 1 : 0.995 }
 
 /// Wie Inhalt erscheint, wenn er vom Server angekommen ist.
 ///
@@ -30,7 +38,9 @@ static let bereichsmass: CGFloat = 0.995
 /// Seite, die etwas holt, und ein drehender Ring sagt nur „warte" — er zeigt
 /// weder, was kommt, noch wie viel. An seiner Stelle stehen jetzt Platzhalter
 /// in der Form des kommenden Inhalts, und wenn er da ist, wird überblendet.
-static let einblenden: Animation = .easeInOut(duration: 0.28)
+static var einblenden: Animation {
+    bewegungReduziert ? .linear(duration: 0.14) : .smooth(duration: 0.28)
+}
 
 /// Wie ein Blatt von unten hereinfährt.
 
@@ -40,8 +50,31 @@ static let einblenden: Animation = .easeInOut(duration: 0.28)
     /// Nachschwingen — dieselbe Kennlinie, die `.sheet` zeigt. Sie steht
     /// hier und nicht an den Aufrufstellen, weil sonst vier Blätter vier
     /// Kurven hätten.
-    static let blattbewegung: Animation = .spring(response: 0.35,
-                                                  dampingFraction: 0.86)
+    static var blattbewegung: Animation {
+        bewegungReduziert ? .linear(duration: 0.14)
+                          : .spring(response: 0.35, dampingFraction: 0.86)
+    }
+
+    /// **Hat der Nutzer „Bewegung reduzieren" eingeschaltet?**
+    ///
+    /// Apple ersetzt Bewegung dann durch eine Ueberblendung, nicht durch
+    /// Stillstand — ein harter Schnitt waere schlechter als eine sanfte
+    /// Bewegung. Deshalb geben die Kurven oben in diesem Fall eine kurze
+    /// lineare Blende zurueck und `bereichsmass` faellt auf 1, sodass gar
+    /// nichts mehr skaliert.
+    ///
+    /// **Hier zentral und nicht an 31 Aufrufstellen.** `einblenden` steht
+    /// allein 31-mal im Code; jede Stelle einzeln fragen zu lassen waere
+    /// genau die Sorte Doppelung, die spaeter auseinanderlaeuft.
+    static var bewegungReduziert: Bool {
+        #if canImport(UIKit)
+        return UIAccessibility.isReduceMotionEnabled
+        #elseif canImport(AppKit)
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #else
+        return false
+        #endif
+    }
 
 
     // MARK: Maße — iPhone
