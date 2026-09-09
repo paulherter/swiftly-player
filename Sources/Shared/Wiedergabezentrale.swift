@@ -23,6 +23,44 @@ import MediaPlayer
 /// 2. **Unterbrechungen.** Kommt ein Anruf, entzieht iOS die Tonsitzung. Ohne
 ///    Zuhören bleibt danach alles stehen, und die Oberfläche behauptet weiter,
 ///    es liefe.
+/// **Der letzte Stand, den ein Player gemeldet hat — Stelle und ob es laeuft.**
+///
+/// Jede Plattform ruft ``Wiedergabezentrale/melden(item:position:dauer:tempo:laeuft:sprungweite:bildURL:)``
+/// bei jeder Zustandsaenderung mit frischen Werten auf, damit der
+/// Sperrbildschirm stimmt. Damit liegt hier bereits, was an einer ganz
+/// anderen Stelle gefehlt hat, und zwar bei allen Fassungen zugleich.
+///
+/// **Wofuer.** Kommt ein Fernbefehl vom Server — jemand drueckt in Jellyfin
+/// auf Pause —, gehorcht die App sofort, meldete es dem Server aber erst
+/// beim naechsten regulaeren Takt. In der Uebersicht lief die Zeit dann noch
+/// fuenf, sechs Sekunden weiter, bevor das Pausezeichen erschien. Um sofort
+/// zu melden, braucht man die **jetzige** Stelle, und die kennt nur der
+/// Player. Ueber diesen Ablagepunkt kennt sie auch der Zustandshalter.
+///
+/// Der Weg ueber eine gemeinsame Ablage statt ueber einen Rueckruf je
+/// Plattform ist Absicht: sonst muesste jede Fassung eine Zeile setzen, und
+/// die eine, die es vergisst, faellt niemandem auf.
+@MainActor
+enum Spielstand {
+    private(set) static var stelle: Double = 0
+    private(set) static var laeuft = false
+    /// Wann das zuletzt geschrieben wurde — damit niemand einen Stand
+    /// verwendet, der aus einer abgeraeumten Wiedergabe stammt.
+    private(set) static var stempel = Date.distantPast
+
+    static func setzen(stelle: Double, laeuft: Bool) {
+        Self.stelle = stelle
+        Self.laeuft = laeuft
+        Self.stempel = Date()
+    }
+
+    /// `nil`, wenn seit dem letzten Eintrag zu viel Zeit vergangen ist.
+    static var frisch: (stelle: Double, laeuft: Bool)? {
+        guard Date().timeIntervalSince(stempel) < 30 else { return nil }
+        return (stelle, laeuft)
+    }
+}
+
 @MainActor
 final class Wiedergabezentrale {
 
@@ -120,6 +158,10 @@ final class Wiedergabezentrale {
                 // Kommt eine vierte Plattform dazu, soll der Uebersetzer
                 // meckern, nicht der Nutzer.
                 bildURL: URL?) {
+        // Der Weg fuer den Sperrbildschirm ist derselbe wie der fuer die
+        // Sofortmeldung an den Server — hier steht der frischeste Stand, den
+        // es in der App gibt.
+        Spielstand.setzen(stelle: position, laeuft: laeuft)
         var eintrag: [String: Any] = [
             MPMediaItemPropertyTitle: item.name,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: position,

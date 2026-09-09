@@ -496,7 +496,10 @@ final class AppModel {
         guard let steuerung = try? await client.fernsteuerung() else { return }
         fern = steuerung
         await steuerung.starten { [weak self] befehl in
-            Task { @MainActor in self?.fernbefehl?(befehl) }
+            Task { @MainActor in
+                self?.fernbefehl?(befehl)
+                await self?.sofortMelden(nach: befehl)
+            }
         }
     }
 
@@ -947,7 +950,12 @@ final class AppModel {
         }
     }
 
+    /// Was gerade laeuft — gemerkt, damit ein Fernbefehl sofort gemeldet
+    /// werden kann, ohne den Player danach zu fragen.
+    @ObservationIgnored private var laufenderTitel: (item: Item, plan: PlaybackPlan)?
+
     func reportProgress(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) async {
+        laufenderTitel = (item, plan)
         guard let client else { return }
         do {
             try await client.reportProgress(itemID: item.id, plan: plan,
@@ -957,6 +965,34 @@ final class AppModel {
         } catch {
             Self.log.error("Fortschritt-Meldung fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// **Nach einem Fernbefehl sofort melden, statt auf den Takt zu warten.**
+    ///
+    /// Am Geraet gemeldet: wer in Jellyfin auf Pause drueckt, sieht die App
+    /// sofort anhalten — in der Uebersicht lief die Zeit aber noch fuenf,
+    /// sechs Sekunden weiter, bevor das Pausezeichen erschien. Die App
+    /// gehorchte also prompt und **sagte es nur niemandem**; die naechste
+    /// Meldung kam erst mit dem regulaeren Takt.
+    ///
+    /// Wer drueckt, sieht seinen eigenen Druck nicht ankommen und drueckt
+    /// noch einmal. Genau dafuer ist eine Rueckmeldung da.
+    ///
+    /// **Die kurze Wartezeit ist kein Ratespiel, sondern die Reihenfolge.**
+    /// Der Player bekommt den Befehl im selben Zug; er haelt an, und erst
+    /// dann steht der neue Stand in ``Spielstand``. Wer sofort meldete,
+    /// meldete den Zustand von davor — also genau das, was hier behoben
+    /// werden soll. 400 ms sind lang genug fuer den Weg durch VLC und kurz
+    /// genug, dass niemand es als Verzoegerung liest.
+    ///
+    /// Bei `stopp` passiert nichts: das Ende meldet der Player selbst, mit
+    /// seiner eigenen Endmeldung, und die traegt mehr als diese hier.
+    private func sofortMelden(nach befehl: Fernbefehl) async {
+        guard befehl != .stopp, let laufenderTitel else { return }
+        try? await Task.sleep(for: .milliseconds(400))
+        guard let stand = Spielstand.frisch else { return }
+        await reportProgress(item: laufenderTitel.item, plan: laufenderTitel.plan,
+                             seconds: stand.stelle, paused: !stand.laeuft)
     }
 
     func reportStopped(item: Item, plan: PlaybackPlan, seconds: Double) async {
