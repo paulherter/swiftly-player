@@ -115,28 +115,35 @@ struct Heldkopf<Inhalt: View>: View {
     private var hintergrund: some View {
         ZStack {
             Stil.grund
-            // Bewusst nicht `Bild`: das ist ein Kachelbild — es misst sich an
-            // einer Breite, rundet Ecken und schneidet zu. Das Heldbild soll
-            // die Fläche randlos füllen und hat kein Seitenverhältnis, an das
-            // es sich halten könnte.
+            // **Weiterhin nicht `Bild`, aber jetzt `Netzbild`.**
             //
-            // Mit `Bild` sah man es: seit dort ein Seitenverhältnis eingebaut
-            // ist, steht bei `verhaeltnis == nil` ein
-            // `aspectRatio(nil, contentMode: .fit)` auf einem `Color.clear` —
-            // das hat keine eigene Größe. Das Bild rutschte nach links und
-            // brach hart ab, im schmalen Fenster verschwand es ganz.
-            // Die `transaction` blendet den Wechsel der Lagen weich; ohne
-            // sie schaltet `AsyncImage` hart um, und das Heldbild ist die
-            // groesste Flaeche der Seite. **Nichts erscheint hart** —
-            // GESTALTUNG, Abschnitt E. Als letzte Stelle nachgezogen, die
-            // es noch ohne machte.
-            AsyncImage(url: bild,
-                       transaction: Transaction(animation: Stil.einblenden)) { stand in
-                if case let .success(b) = stand {
-                    b.resizable().aspectRatio(contentMode: .fill)
-                        .transition(.opacity)
-                }
-            }
+            // `Bild` ist ein Kachelbild: es misst sich an einer Breite,
+            // rundet Ecken und schneidet zu. Das Heldbild soll die Flaeche
+            // randlos fuellen und hat kein Seitenverhaeltnis, an das es sich
+            // halten koennte — mit `Bild` rutschte es nach links und brach
+            // hart ab, im schmalen Fenster verschwand es ganz. `Netzbild`
+            // zeichnet genau das hier Gebrauchte: ein fuellendes Bild ohne
+            // Rahmen, ohne Ecken, ohne Zuschnitt.
+            //
+            // **Hier stand bis zuletzt `AsyncImage`, als einzige Stelle der
+            // App.** Am 10.09.2026 am Geraet gemeldet: die Banner oben laden
+            // spuerbar langsam. Drei Gruende, alle drei mit derselben
+            // Aenderung erledigt: es entschluesselte auf dem Hauptlauf — und
+            // das ist hier die groesste Flaeche der Seite, also das teuerste
+            // Bild —, es merkte sich nichts, also lief bei jeder Rueckkehr
+            // alles noch einmal, und es tauchte in keiner Messung auf, weil
+            // die Messung im eigenen Lader sitzt.
+            //
+            // `vorrang` laesst die Schleuse aus. Der Banner fuellt den halben
+            // Schirm; solange er fehlt, sieht die Seite unfertig aus,
+            // gleichgueltig wie viele Plakate darunter schon stehen. Ihn
+            // hinter zwanzig Kacheln anzustellen waere die Schleuse gegen
+            // ihren eigenen Zweck gedreht.
+            //
+            // Das weiche Einblenden bleibt: `Netzbild` bringt es selbst mit,
+            // mit derselben Dauer. **Nichts erscheint hart** — GESTALTUNG,
+            // Abschnitt E.
+            Netzbild(url: bild, vorrang: true)
             // Von links, damit die Schrift steht.
             LinearGradient(stops: [
                 .init(color: Stil.grund.opacity(0.96), location: 0),

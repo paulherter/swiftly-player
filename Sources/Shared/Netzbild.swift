@@ -187,7 +187,17 @@ final class Bildspeicher {
         return teile.url ?? url
     }
 
-    func laden(_ url: URL) async -> Image? {
+    /// `vorrang` laesst die Schleuse aus.
+    ///
+    /// **Fuer das eine Bild, auf das jemand wirklich wartet.** Auf einer
+    /// Detailseite ist das der Banner oben: er fuellt den halben Schirm, und
+    /// solange er fehlt, sieht die Seite unfertig aus — gleichgueltig, wie
+    /// viele Plakate darunter schon stehen. Er hinter zwanzig Kacheln
+    /// anzustellen waere die Schleuse gegen ihren eigenen Zweck gedreht.
+    ///
+    /// Es ist genau **eines** je Seite. Waeren es mehr, waere es keine
+    /// Vorfahrt mehr, sondern die Aufhebung der Schleuse.
+    func laden(_ url: URL, vorrang: Bool = false) async -> Image? {
         let merkmal = schluessel(url)
         if let da = bekannt[merkmal] { return da.bild }
         if let lauf = laufend[merkmal] { return await lauf.value?.bild }
@@ -197,17 +207,17 @@ final class Bildspeicher {
         // die Isolationsgrenze, den Swift 6 zu Recht nicht durchlässt.
         let kante = Self.kantenlaenge
         let lauf = Task<Eintrag?, Never> { [self] in
-            await einlass()
+            if !vorrang { await einlass() }
             let begonnen = Date()
             guard let (daten, _) = try? await URLSession.shared.data(from: url) else {
-                einlassZurueck()
+                if !vorrang { einlassZurueck() }
                 return nil
             }
             let geholt = Date()
             // **Vor dem Wandeln zurueckgeben, nicht danach.** Die Schleuse
             // soll die Leitung ordnen, nicht den Rechner; das Wandeln laeuft
             // ohnehin abseits und kostet acht Millisekunden.
-            einlassZurueck()
+            if !vorrang { einlassZurueck() }
             let kiste = await Task.detached(priority: .userInitiated) { () -> Bildkiste? in
                 guard let quelle = CGImageSourceCreateWithData(daten as CFData, nil) else { return nil }
                 let regeln: [CFString: Any] = [
@@ -282,6 +292,8 @@ struct Netzbild: View {
     /// Server hat keins. Steht seit je in der iPhone-Fassung; der Mac hatte
     /// es nie.
     var zeichen: String?
+    /// Laesst die Schleuse aus — fuer das eine grosse Bild einer Seite.
+    var vorrang = false
 
     @State private var bild: Image?
     @State private var sichtbar = false
@@ -293,10 +305,12 @@ struct Netzbild: View {
     /// **Was bekannt ist, steht sofort** — nicht erst im nächsten Durchgang.
     /// Ein nachgereichter Wert kommt zu spät, der leere Durchgang hat dann
     /// schon stattgefunden, und genau der ist das Aufblitzen.
-    @MainActor init(url: URL?, art: ContentMode = .fill, zeichen: String? = nil) {
+    @MainActor init(url: URL?, art: ContentMode = .fill, zeichen: String? = nil,
+                    vorrang: Bool = false) {
         self.url = url
         self.art = art
         self.zeichen = zeichen
+        self.vorrang = vorrang
         let sofort = url.flatMap { Bildspeicher.geteilt.bild($0) }
         _bild = State(initialValue: sofort)
         _sichtbar = State(initialValue: sofort != nil)
@@ -318,7 +332,7 @@ struct Netzbild: View {
             guard let url else { ohneBild = true; return }
             guard bild == nil else { return }
             ohneBild = false
-            guard let geladen = await Bildspeicher.geteilt.laden(url) else {
+            guard let geladen = await Bildspeicher.geteilt.laden(url, vorrang: vorrang) else {
                 ohneBild = true
                 return
             }
