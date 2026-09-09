@@ -152,22 +152,14 @@ struct WiedergabeEinstellungenView: View {
                        wert: model.pufferstufe.name, pfeil: true,
                        aktion: { umschalten(.puffer) })
             if offeneListe == .puffer {
-                Werteliste(eintraege: Pufferstufe.allCases.map(Stufenwahl.init),
-                           beschriftung: { $0.stufe.name },
-                           istGewaehlt: { $0.stufe == model.pufferstufe },
-                           waehlen: { model.pufferstufe = $0.stufe; schliessen() })
+                Werteliste(eintraege: Pufferstufe.allCases,
+                           beschriftung: { $0.name },
+                           istGewaehlt: { $0 == model.pufferstufe },
+                           waehlen: { model.pufferstufe = $0; schliessen() })
             }
         }
     }
 
-    /// **Nur eine Kennung, keine zweite Wahrheit.** `Werteliste` verlangt
-    /// `Identifiable`; `Pufferstufe` liegt im Paket und bekommt das nicht von
-    /// hier aus angehängt. Die Stufen, ihre Namen und ihre Zahlen bleiben
-    /// dort, wo sie stehen — hier steht nur, woran die Liste sie unterscheidet.
-    private struct Stufenwahl: Identifiable {
-        let stufe: Pufferstufe
-        var id: String { stufe.rawValue }
-    }
 
     private func umschalten(_ liste: Liste) {
         withAnimation(Stil.zeitSprung) {
