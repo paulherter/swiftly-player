@@ -179,11 +179,20 @@ final class Bildspeicher {
         return neu
     }
 
+    /// **Beide Schreibweisen.** Jellyfin 12 hat `api_key` abgeschafft und
+    /// nimmt `ApiKey`; alte Server nehmen beides. Wer hier nur die neue
+    /// pruefte, liesse in einem Speicher, der einen Kontowechsel ueberlebt,
+    /// die alten Adressen mit Merkmal stehen — und dieselben Bilder laegen
+    /// zweimal drin, einmal je Konto.
+    private static func merkmal(_ name: String) -> Bool {
+        name == "ApiKey" || name == "api_key"
+    }
+
     private func gerechnet(_ url: URL) -> URL {
         guard var teile = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let werte = teile.queryItems, werte.contains(where: { $0.name == "api_key" })
+              let werte = teile.queryItems, werte.contains(where: { Self.merkmal($0.name) })
         else { return url }
-        teile.queryItems = werte.filter { $0.name != "api_key" }
+        teile.queryItems = werte.filter { !Self.merkmal($0.name) }
         return teile.url ?? url
     }
 

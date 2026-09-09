@@ -240,6 +240,15 @@ final class AppModel {
         // ersten Start ueber Mobilfunk, obwohl die Vorgabe das verbietet.
         downloads.nurUeberWLAN = nurUeberWLAN
 
+        // **Das Paket bekommt einen Faden nach draussen.**
+        //
+        // `Protokoll` liegt hier in der App, weil es in eine Datei im
+        // App-Behaelter schreibt; das Paket kennt es nicht. Die stillsten
+        // Stellen der ganzen App stecken aber genau dort — eine
+        // Steckverbindung, die nicht zustande kommt, eine Antwort, die
+        // niemand ansieht. Am 10.09.2026 hat das eine halbe Nacht gekostet.
+        Spur.schreiben = { Protokoll.schreib($0) }
+
         Self.keychainSelbsttest()
         restoreSession()
     }

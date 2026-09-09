@@ -63,12 +63,23 @@ public actor Fernsteuerung {
         var teile = URLComponents(url: basis.appendingPathComponent("socket"),
                                   resolvingAgainstBaseURL: false)
         teile?.scheme = basis.scheme == "http" ? "ws" : "wss"
+        // **`ApiKey`, nicht `api_key`.**
+        //
+        // Jellyfin 12 liefert mit `EnableLegacyAuthorization=false` aus und
+        // hat die alte Schreibweise damit abgeschafft — zusammen mit
+        // `X-Emby-Token`, `X-MediaBrowser-Token` und `X-Emby-Authorization`.
+        // `ApiKey` gibt es seit 10.8 und in 12, es traegt also **beide**
+        // Serverstaende und ist kein Bruch fuer aeltere Anlagen.
         teile?.queryItems = [
-            URLQueryItem(name: "api_key", value: token),
+            URLQueryItem(name: "ApiKey", value: token),
             URLQueryItem(name: "deviceId", value: geraeteID),
         ]
-        guard let url = teile?.url else { return }
+        guard let url = teile?.url else {
+            Spur.sag("[Fernsteuerung] Adresse liess sich nicht bauen")
+            return
+        }
 
+        Spur.sag("[Fernsteuerung] verbinde …")
         let neu = sitzung.webSocketTask(with: url)
         neu.resume()
         aufgabe = neu
@@ -93,7 +104,18 @@ public actor Fernsteuerung {
         starten(bei: weitergabe)
     }
 
+    /// Sagt einmal je Verbindung, dass wirklich etwas ankommt. Ein
+    /// aufgebauter Socket beweist noch nichts — der Server kann ihn
+    /// annehmen und danach schweigen.
+    private var stehtSchon = false
+    private func ersteAntwortMelden() {
+        guard !stehtSchon else { return }
+        stehtSchon = true
+        Spur.sag("[Fernsteuerung] Leitung steht, erste Nachricht da")
+    }
+
     public func beenden() {
+        stehtSchon = false
         weitergabe = nil          // sperrt den Wiederaufbau
         abrisse = 0
         lauscher?.cancel(); lauscher = nil
@@ -113,9 +135,16 @@ public actor Fernsteuerung {
                     }
                     // Es kam etwas an, die Leitung steht: die Zählung der
                     // Abrisse beginnt beim nächsten Mal wieder bei null.
+                    await self.ersteAntwortMelden()
                     await self.zaehlungZuruecksetzen()
                 } catch {
                     guard !Task.isCancelled else { return }
+                    // **Der stillste Punkt der ganzen App, bis heute.** Hier
+                    // endete jeder Fehlschlag ohne eine Zeile: falsche
+                    // Anmeldung, Server weg, Gegenstelle lehnt ab — von
+                    // aussen alles dasselbe, naemlich „die Uebernahme geht
+                    // halt nicht".
+                    Spur.sag("[Fernsteuerung] Leitung verloren: \(error)")
                     await self.leitungVerloren()
                     return
                 }
