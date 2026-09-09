@@ -202,6 +202,16 @@ struct HauptView: View {
         // Knoepfe grau. Es fiel nicht auf, weil die App fuer sich einwandfrei
         // lief.
         .task { await model.fernsteuerungStarten() }
+        // **Was die Downloads vom Server nicht wissen** (H6 und H9). Ein
+        // heruntergeladener Titel erfährt sonst nie, dass er inzwischen
+        // gesehen wurde oder dass es ihn dort gar nicht mehr gibt — und ohne
+        // das blieb der Ausweg bei Platzmangel leer und der Hinweis
+        // ungezeigt, obwohl beide gezeichnet werden.
+        //
+        // Eine Anfrage je Programmstart. Schlägt sie fehl, passiert nichts:
+        // offline ist bei Downloads der Normalfall, und „nicht mehr auf dem
+        // Server" wäre dann an jedem Titel die falsche Auskunft.
+        .task { await model.downloadsNachziehen() }
         .onDisappear { Task { await model.fernsteuerungBeenden() } }
         // **Nur solange kein Player läuft** — im Player ist die Leiste weg,
         // und der Server hätte alle zehn Sekunden eine Anfrage mehr.

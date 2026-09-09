@@ -530,7 +530,11 @@ struct SeriesDetailView: View {
         }
     }
 
-    private func leerhinweis(_ text: String) -> some View {
+    /// **`LocalizedStringKey`, nicht `String`.** `Text(einString)` ist
+    /// woertlich: Xcode zieht den Text nie in den Katalog, und er bleibt in
+    /// jeder Sprache deutsch stehen. Genau so stand auf einem englischen
+    /// Geraet „Keine Besetzung hinterlegt." mitten in einer englischen Seite.
+    private func leerhinweis(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(Stil.koerper)
             .foregroundStyle(Stil.schriftSehrLeise)
@@ -639,6 +643,9 @@ struct SeriesDetailView: View {
 
     private func starte(_ folge: Item) {
         guard !bereitet else { return }
+        // Beim Druck, nicht nach dem Abruf: ein Ruck, der eine halbe
+        // Sekunde spaeter kommt, gehoert gefuehlt zu nichts mehr.
+        Stil.ruck(.mittel)
         bereitet = true
         Task {
             defer { bereitet = false }
@@ -803,6 +810,9 @@ struct SeasonView: View {
 
     private func starte(_ folge: Item) {
         guard !bereitet else { return }
+        // Beim Druck, nicht nach dem Abruf: ein Ruck, der eine halbe
+        // Sekunde spaeter kommt, gehoert gefuehlt zu nichts mehr.
+        Stil.ruck(.mittel)
         bereitet = true
         Task {
             defer { bereitet = false }

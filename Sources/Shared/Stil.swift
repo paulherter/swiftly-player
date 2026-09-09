@@ -1,5 +1,10 @@
 import JellyfinKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 /// Maße, Schriftgrößen und Bausteine für das iPhone. Die Farben stehen in
 /// `Farben.swift`, weil sie sich beide Plattformen teilen.
@@ -15,14 +20,17 @@ extension Stil {
 /// **Sehr wenig, mit Absicht.** 0,97 und 0,22 Sekunden — man sieht es nicht,
 /// man merkt es. Genau so macht es iOS beim Wechsel zwischen Reitern, und
 /// genau deshalb fühlt sich ein Wechsel dort weich an statt wie ein Schnitt.
-static let bereichswechsel: Animation = .easeOut(duration: 0.20)
+static var bereichswechsel: Animation {
+    bewegungReduziert ? .linear(duration: 0.14)
+                      : .snappy(duration: 0.20, extraBounce: 0)
+}
 /// Wie stark der eintretende Bereich zusammengezogen anfängt.
 ///
 /// **0,995, und dreimal nach unten korrigiert.** Mit 0,97 wanderte die
 /// Oberkante einer 844 Punkt hohen Seite zwölf Punkt nach innen, mit 0,99 noch
 /// vier — beides war als Kante zu sehen. Zwei Punkte sind die Grenze, an der
 /// die Bewegung noch trägt und nichts mehr auffällt.
-static let bereichsmass: CGFloat = 0.995
+static var bereichsmass: CGFloat { bewegungReduziert ? 1 : 0.995 }
 
 /// Wie Inhalt erscheint, wenn er vom Server angekommen ist.
 ///
@@ -30,7 +38,9 @@ static let bereichsmass: CGFloat = 0.995
 /// Seite, die etwas holt, und ein drehender Ring sagt nur „warte" — er zeigt
 /// weder, was kommt, noch wie viel. An seiner Stelle stehen jetzt Platzhalter
 /// in der Form des kommenden Inhalts, und wenn er da ist, wird überblendet.
-static let einblenden: Animation = .easeInOut(duration: 0.28)
+static var einblenden: Animation {
+    bewegungReduziert ? .linear(duration: 0.14) : .smooth(duration: 0.28)
+}
 
 /// Wie ein Blatt von unten hereinfährt.
 
@@ -40,8 +50,104 @@ static let einblenden: Animation = .easeInOut(duration: 0.28)
     /// Nachschwingen — dieselbe Kennlinie, die `.sheet` zeigt. Sie steht
     /// hier und nicht an den Aufrufstellen, weil sonst vier Blätter vier
     /// Kurven hätten.
-    static let blattbewegung: Animation = .spring(response: 0.35,
-                                                  dampingFraction: 0.86)
+    static var blattbewegung: Animation {
+        bewegungReduziert ? .linear(duration: 0.14)
+                          : .spring(response: 0.35, dampingFraction: 0.86)
+    }
+
+    /// **Eine Zeile, die auf den Druck antwortet — nicht erst auf das Loslassen.**
+    ///
+    /// `onTapGesture` kennt keinen Druckzustand: zwischen Auflegen und
+    /// Loslassen passiert nichts, und genau in dieser Zehntelsekunde
+    /// entscheidet sich, ob eine Oberflaeche wach wirkt. Apple legt die
+    /// Rueckmeldung deshalb auf den Druck; `apple-design` nennt das den
+    /// Punkt, an dem das Gefuehl von Unmittelbarkeit „von der Klippe faellt".
+    ///
+    /// **Zeilen dunkeln ab, Knoepfe schrumpfen.** Eine bildschirmbreite
+    /// Zeile, die sich zusammenzieht, sieht aus wie ein Fehler; ein kleiner
+    /// Knopf, der nur die Farbe wechselt, wirkt matt. Deshalb zwei Stile
+    /// und nicht einer.
+    /// **Der Druck kommt sofort, das Loslassen darf nachklingen.**
+    ///
+    /// Beides gleich schnell zu machen war mein erster Griff und ist falsch:
+    /// eine Rueckmeldung auf den Finger darf keine Dauer haben — jede
+    /// Millisekunde dort ist die, an der Unmittelbarkeit verlorengeht. Das
+    /// Zurueckgehen dagegen ist eine Systemantwort und darf weich sein.
+    /// `nil` heisst hier ausdruecklich „ohne Animation", nicht „Vorgabe".
+    private static func druckkurve(_ gedrueckt: Bool) -> Animation? {
+        gedrueckt ? nil : .linear(duration: 0.12)
+    }
+
+    struct Druckzeile: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .background(Stil.schrift.opacity(configuration.isPressed ? 0.06 : 0))
+                .animation(Stil.druckkurve(configuration.isPressed),
+                           value: configuration.isPressed)
+        }
+    }
+
+    struct Druckknopf: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed && !bewegungReduziert ? 0.97 : 1)
+                .opacity(configuration.isPressed ? 0.85 : 1)
+                .animation(Stil.druckkurve(configuration.isPressed),
+                           value: configuration.isPressed)
+        }
+    }
+
+    /// **Ein kurzer Ruck zur Bestaetigung.**
+    ///
+    /// Apples „Designing Fluid Interfaces" behandelt Haptik nicht als
+    /// Zierrat, sondern als zweiten Kanal derselben Rueckmeldung: Bewegung
+    /// sagt *was* passiert, der Ruck sagt *dass* es passiert ist. Ohne ihn
+    /// wirkt ein Knopf, der eine Netzanfrage anstoesst, unentschlossen.
+    ///
+    /// **Nur auf dem Telefon.** Ein Fernseher hat nichts, was rucken
+    /// koennte, und auf dem Mac gibt es das nur unter dem Trackpad — dort
+    /// waere es an einem Knopf eher irritierend.
+    ///
+    /// Ausgeloest wird beim **Druck**, nicht nach der Antwort des Servers:
+    /// ein Ruck, der eine halbe Sekunde spaeter kommt, gehoert gefuehlt zu
+    /// nichts mehr.
+    enum Ruckart { case leicht, mittel, erfolg }
+
+    @MainActor
+    static func ruck(_ art: Ruckart) {
+        #if os(iOS)
+        guard !bewegungReduziert else { return }
+        switch art {
+        case .leicht:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        case .mittel:
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        case .erfolg:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+        #endif
+    }
+
+    /// **Hat der Nutzer „Bewegung reduzieren" eingeschaltet?**
+    ///
+    /// Apple ersetzt Bewegung dann durch eine Ueberblendung, nicht durch
+    /// Stillstand — ein harter Schnitt waere schlechter als eine sanfte
+    /// Bewegung. Deshalb geben die Kurven oben in diesem Fall eine kurze
+    /// lineare Blende zurueck und `bereichsmass` faellt auf 1, sodass gar
+    /// nichts mehr skaliert.
+    ///
+    /// **Hier zentral und nicht an 31 Aufrufstellen.** `einblenden` steht
+    /// allein 31-mal im Code; jede Stelle einzeln fragen zu lassen waere
+    /// genau die Sorte Doppelung, die spaeter auseinanderlaeuft.
+    static var bewegungReduziert: Bool {
+        #if canImport(UIKit)
+        return UIAccessibility.isReduceMotionEnabled
+        #elseif canImport(AppKit)
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #else
+        return false
+        #endif
+    }
 
 
     // MARK: Maße — iPhone
@@ -924,7 +1030,7 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
 
     var body: some View {
         Button {
-            if eintraege.count > 1 { offen.toggle() }
+            if eintraege.count > 1 { withAnimation(Stil.sprung) { offen.toggle() } }
         } label: {
             // **Eine Überschrift mit Winkel, keine Pille.**
             //
@@ -962,7 +1068,7 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
                     ForEach(eintraege) { eintrag in
                         Button {
                             waehlen(eintrag)
-                            offen = false
+                            withAnimation(Stil.sprung) { offen = false }
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "checkmark")
@@ -979,7 +1085,10 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
                             .padding(.vertical, 12)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        // Zeilen in einer Auswahl sind Knoepfe und
+                        // muessen auf den Druck antworten, nicht erst
+                        // auf die Wahl.
+                        .buttonStyle(Stil.Druckzeile())
                     }
                 }
                 .frame(width: 200, alignment: .leading)
@@ -993,6 +1102,15 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
                 .shadow(color: .black.opacity(0.6), radius: 16, y: 8)
                 .offset(y: 44)
                 .zIndex(10)
+                // **Sie waechst aus ihrem Ausloeser.** Vorher stand sie
+                // schlagartig da — kein Uebergang, kein Ursprung. Eine Liste
+                // aus dem Nichts laesst offen, wozu sie gehoert; eine, die
+                // aus dem Knopf herauswaechst, beantwortet das ohne ein Wort.
+                // Der Anker liegt oben links, weil sie dort auch haengt, und
+                // 0,94 statt 0 — nichts in der Wirklichkeit entsteht aus
+                // nichts.
+                .transition(.scale(scale: 0.94, anchor: .topLeading)
+                    .combined(with: .opacity))
             }
         }
     }
@@ -1711,7 +1829,20 @@ struct Unschaerfekopf<Inhalt: View>: View {
                 // `Navileiste` unten — die beiden Leisten der App sollen
                 // gleich deckend sein.
                 ZStack {
-                    Kopfverlauf().opacity(1 - kante)
+                    // **Wer einen Versatz mitgibt, bekommt die Leiste sofort.**
+                    //
+                    // Sie wurde ueber die ersten dreissig Scrollpunkte
+                    // eingeblendet — im Ruhezustand also durchsichtig, und
+                    // beim Anscrollen schob sich das Schwarz sichtbar
+                    // darueber. Am Geraet faellt genau das auf: es sieht
+                    // aus, als komme die Leiste zu spaet. Auf einer Seite,
+                    // deren Schrift unter dem Kopf durchlaeuft, gibt es
+                    // auch keinen Grund fuer den Zwischenzustand.
+                    //
+                    // Die Startseite bleibt, wie sie war: dort steht kein
+                    // Versatz, dort laufen Kacheln durch, und ein Verlauf
+                    // ist ruhiger als eine Kante.
+                    if versatz == nil { Kopfverlauf() }
                     // **Deckend, nicht Glas.** Erst stand hier `Leistenglas`,
                     // und das war sichtbar **heller als die Seite**: Apples
                     // Material traegt eine helle Schicht, und 0,86 Grundton
@@ -1730,7 +1861,9 @@ struct Unschaerfekopf<Inhalt: View>: View {
                     // endete an der Oberkante des Kopfes, und darueber liefen
                     // die Plakate ungebremst bis nach ganz oben. Genau das war
                     // zu sehen.
-                    Stil.grund.opacity(kante).ignoresSafeArea(edges: .top)
+                    if versatz != nil {
+                        Stil.grund.ignoresSafeArea(edges: .top)
+                    }
                 }
             }
     }
@@ -2103,13 +2236,19 @@ struct Wischzeile<Inhalt: View>: View {
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 0) {
-                inhalt()
-                    .containerRelativeFrame(.horizontal)
-                    // Deckend, damit die Handlungsfarbe darunter nicht
-                    // durchscheint, solange die Zeile zu ist.
-                    .background(Stil.grund)
-                    .contentShape(Rectangle())
-                    .onTapGesture { tippen() }
+                // **Ein Knopf, keine Tippgeste.** Nur so gibt es einen
+                // Druckzustand; die Wischflaeche bleibt davon unberuehrt,
+                // weil SwiftUI einen Knopf in einer Scrollflaeche beim
+                // Ziehen von selbst wieder freigibt.
+                Button { tippen() } label: {
+                    inhalt()
+                        .containerRelativeFrame(.horizontal)
+                        // Deckend, damit die Handlungsfarbe darunter nicht
+                        // durchscheint, solange die Zeile zu ist.
+                        .background(Stil.grund)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(Stil.Druckzeile())
                     #if os(iOS)
                     // Muss **im** Inhalt liegen, nicht als Hintergrund der
                     // Scrollfläche: von dort aus findet die Hilfsansicht sie
@@ -2838,6 +2977,18 @@ struct Leerzustand: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 34)
+        // **Der Eintritt gehoert ins Bauteil, nicht an die Aufrufer.**
+        //
+        // Ein Leerzustand ist selten und emotional: der Server antwortet
+        // nicht, oder die Bibliothek ist leer. Genau dort liegt das bisschen
+        // Budget fuer Bewegung — und bis hierher sprang er hart ins Bild.
+        // Steht die Kurve hier, bekommen sie alle Aufrufstellen, und keine
+        // kann sich eine eigene ausdenken.
+        //
+        // Der *Zeitpunkt* bleibt beim Aufrufer: eine `.transition` wirkt nur,
+        // wenn das Einfuegen selbst animiert ist. Das ist die Teilung, die
+        // SwiftUI vorgibt — hier das Wie, dort das Wann.
+        .transition(.opacity.combined(with: .scale(scale: 0.97)))
     }
 }
 

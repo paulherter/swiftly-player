@@ -221,6 +221,7 @@ struct PlayerScreen: View {
             Color.black.ignoresSafeArea()
 
             VideoSurfaceHost(url: plan.url, startAt: startAt, container: plan.container,
+                             puffer: model.pufferstufe,
                              pipAvailable: $pipAvailable) {
                 surface = $0
                 $0.onWiederherstellung = { stelltWiederHer = $0 }
@@ -277,8 +278,8 @@ struct PlayerScreen: View {
             // `schleierDa`. Dieselben Kurven wie die Steuerung.
             schleier
                 .opacity(schleierDa ? 1 : 0)
-                .animation(schleierDa ? .easeOut(duration: 0.18)
-                                      : .easeInOut(duration: 0.34),
+                .animation(schleierDa ? .snappy(duration: 0.18, extraBounce: 0)
+                                      : .smooth(duration: 0.34),
                            value: schleierDa)
 
             Group {
@@ -312,8 +313,12 @@ struct PlayerScreen: View {
             // darf sich Zeit lassen.
             .opacity(steuerungDa ? 1 : 0)
             .allowsHitTesting(steuerungDa)
-            .animation(steuerungDa ? .easeOut(duration: 0.18)
-                                   : .easeInOut(duration: 0.34),
+            // **Federn, damit ein zweiter Tipp nicht warten muss.** Die
+            // Asymmetrie bleibt — schnell auf, gemaechlich zu —, aber eine
+            // feste Dauer laesst sich nicht umlenken: wer zweimal kurz
+            // hintereinander tippt, sah die Blende von vorn beginnen.
+            .animation(steuerungDa ? .snappy(duration: 0.18, extraBounce: 0)
+                                   : .smooth(duration: 0.34),
                        value: steuerungDa)
 
             if let sprungAnzeige { sprungRueckmeldung(sprungAnzeige) }
@@ -973,6 +978,7 @@ struct PlayerScreen: View {
             erstesBildDa = false
             spurenGesetzt = false
             titelwechsel += 1
+            surface?.puffer = model.pufferstufe
             surface?.play(url: neuerPlan.url, abSekunden: 0, container: neuerPlan.container)
             // Hier gemeldet, nicht von der Schleife: Titel und Plan sind in
             // diesem Augenblick bekannt, die Stelle ist null. Der Stand muss
@@ -1306,12 +1312,18 @@ struct VideoSurfaceHost: UIViewRepresentable {
     let url: URL
     let startAt: Double
     let container: String?
+    /// Wird durchgereicht statt hier geholt: diese Ansicht kennt das Modell
+    /// nicht, und sie soll es auch nicht kennen.
+    let puffer: Pufferstufe
     @Binding var pipAvailable: Bool
     let onCreate: (VLCPlayerView) -> Void
 
     func makeUIView(context: Context) -> VLCPlayerView {
         let view = VLCPlayerView()
         view.onPiPAvailable = { pipAvailable = $0 }
+        // Vor dem Start setzen, nicht danach: die Optionen haengen am Medium,
+        // und das entsteht in `play`.
+        view.puffer = puffer
         view.play(url: url, abSekunden: startAt, container: container)
         DispatchQueue.main.async { onCreate(view) }
         return view

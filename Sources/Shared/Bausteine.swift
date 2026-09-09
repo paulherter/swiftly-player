@@ -75,7 +75,12 @@ struct Lader: View {
             .stroke(Stil.akzent, style: StrokeStyle(lineWidth: staerke, lineCap: .round))
             .frame(width: groesse, height: groesse)
             .rotationEffect(.degrees(dreht ? 360 : 0))
-            .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: dreht)
+            // **Schneller dreht sich schneller an.** Bei gleicher Ladezeit
+            // wirkt ein flotter Ring kuerzer als ein gemaechlicher — das ist
+            // gefuehlte Leistung, nicht gemessene. 0,9 s je Umdrehung war
+            // traege; 0,7 s traegt dieselbe Aussage zuegiger. Linear bleibt
+            // es, eine Kurve wuerde bei einer Dauerdrehung stocken.
+            .animation(.linear(duration: 0.7).repeatForever(autoreverses: false), value: dreht)
             .background {
                 Circle()
                     .stroke(Stil.akzent.opacity(0.18), lineWidth: staerke)

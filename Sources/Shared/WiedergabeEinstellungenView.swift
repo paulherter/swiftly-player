@@ -26,7 +26,7 @@ struct WiedergabeEinstellungenView: View {
     @State private var gezeigteListe: Liste? = .ton
 
     private enum Liste: String, Identifiable {
-        case bitrate, ton, untertitel, zurueck, vor
+        case bitrate, ton, untertitel, zurueck, vor, puffer
         var id: String { rawValue }
     }
 
@@ -141,6 +141,13 @@ struct WiedergabeEinstellungenView: View {
             Wertzeile(symbol: "goforward", titel: Text("Vorspulen"),
                       wert: "\(model.vorSekunden) s",
                       aktion: { oeffne(.vor) })
+            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            // **Steht bei „Verhalten", nicht bei der Qualitaet.** Sie aendert
+            // nichts am Bild — nur, wie viel Vorrat der Player haelt, bevor
+            // eine wackelige Leitung durchschlaegt.
+            Wertzeile(symbol: "wifi.exclamationmark", titel: Text("Puffer"),
+                      wert: model.pufferstufe.name,
+                      aktion: { oeffne(.puffer) })
         }
     }
 
@@ -211,6 +218,7 @@ struct WiedergabeEinstellungenView: View {
         case .untertitel: "Untertitel"
         case .zurueck:    "Zurückspulen"
         case .vor:        "Vorspulen"
+        case .puffer:     "Puffer"
         case nil:         ""
         }
     }
@@ -222,6 +230,13 @@ struct WiedergabeEinstellungenView: View {
                 Auswahleintrag(id: "b\(stufe.wert)", text: Bitrate.text(stufe.wert),
                                gewaehlt: stufe.wert == model.bitratenGrenze) {
                     model.bitratenGrenze = stufe.wert
+                }
+            }
+        case .puffer:
+            Pufferstufe.allCases.map { stufe in
+                Auswahleintrag(id: stufe.rawValue, text: stufe.name,
+                               gewaehlt: stufe == model.pufferstufe) {
+                    model.pufferstufe = stufe
                 }
             }
         case .ton:
@@ -364,3 +379,4 @@ struct Zeilenaufbau<Rechts: View>: View {
         .contentShape(Rectangle())
     }
 }
+

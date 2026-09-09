@@ -425,6 +425,7 @@ struct ItemDetailView: View {
             Aktionsknopf(symbol: gemerkt ? "bookmark.fill" : "bookmark",
                          titel: "Merkliste", aktiv: gemerkt, dehnt: !weit) {
                 gemerkt.toggle()
+                Stil.ruck(.leicht)
                 // Sofort umschalten, damit der Knopf antwortet — aber
                 // zurückdrehen, wenn der Server nein sagt. Vorher blieb die
                 // Anzeige stehen und log.
@@ -581,6 +582,7 @@ struct ItemDetailView: View {
 
     private func starte(ab: Double) {
         guard let plan else { return }
+        Stil.ruck(.mittel)
         abspielen = Abspielwunsch(item: aktuell, plan: plan, startAt: ab)
     }
 

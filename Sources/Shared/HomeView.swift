@@ -36,7 +36,10 @@ struct HomeView: View {
 
             if stand.geladen, stand.weiterschauen.isEmpty,
                stand.naechsteFolge.isEmpty, stand.zuletzt.isEmpty {
+                // Das Wann zum Wie aus `Leerzustand`: ohne animiertes
+                // Einfuegen bleibt die `.transition` dort wirkungslos.
                 nichtsDa
+                    .animation(Stil.einblenden, value: stand.geladen)
             }
 
             // **Eigenes Blatt statt `confirmationDialog`.**

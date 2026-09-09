@@ -334,7 +334,10 @@ private struct Auswahltipp: ViewModifier {
 
     func body(content: Content) -> some View {
         if an {
-            content.onTapGesture(perform: tun)
+            // **Knopf statt Tippgeste**, damit die Zeile beim Druck antwortet
+            // und nicht erst beim Loslassen.
+            Button(action: tun) { content }
+                .buttonStyle(Stil.Druckzeile())
         } else {
             content
         }
@@ -437,6 +440,8 @@ struct DownloadsView: View {
                 Leerzustand(symbol: "arrow.down.circle",
                             kopfzeile: "Noch nichts geladen",
                             text: "Auf jeder Film- und Serienseite gibt es ein Feld zum Laden. Geladene Titel laufen auch ohne Netz — in voller Qualität, weil Swiftly nie umrechnet.")
+                    // Das Wann zum Wie aus `Leerzustand`.
+                    .animation(Stil.einblenden, value: verwaltung.posten.isEmpty)
             }
         }
         .safeAreaInset(edge: .bottom) { if bearbeiten { loeschleiste } }
