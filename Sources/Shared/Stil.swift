@@ -55,6 +55,35 @@ static var einblenden: Animation {
                           : .spring(response: 0.35, dampingFraction: 0.86)
     }
 
+    /// **Eine Zeile, die auf den Druck antwortet — nicht erst auf das Loslassen.**
+    ///
+    /// `onTapGesture` kennt keinen Druckzustand: zwischen Auflegen und
+    /// Loslassen passiert nichts, und genau in dieser Zehntelsekunde
+    /// entscheidet sich, ob eine Oberflaeche wach wirkt. Apple legt die
+    /// Rueckmeldung deshalb auf den Druck; `apple-design` nennt das den
+    /// Punkt, an dem das Gefuehl von Unmittelbarkeit „von der Klippe faellt".
+    ///
+    /// **Zeilen dunkeln ab, Knoepfe schrumpfen.** Eine bildschirmbreite
+    /// Zeile, die sich zusammenzieht, sieht aus wie ein Fehler; ein kleiner
+    /// Knopf, der nur die Farbe wechselt, wirkt matt. Deshalb zwei Stile
+    /// und nicht einer.
+    struct Druckzeile: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .background(Stil.schrift.opacity(configuration.isPressed ? 0.06 : 0))
+                .animation(.linear(duration: 0.08), value: configuration.isPressed)
+        }
+    }
+
+    struct Druckknopf: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed && !bewegungReduziert ? 0.97 : 1)
+                .opacity(configuration.isPressed ? 0.85 : 1)
+                .animation(.linear(duration: 0.08), value: configuration.isPressed)
+        }
+    }
+
     /// **Ein kurzer Ruck zur Bestaetigung.**
     ///
     /// Apples „Designing Fluid Interfaces" behandelt Haptik nicht als
@@ -2167,13 +2196,19 @@ struct Wischzeile<Inhalt: View>: View {
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 0) {
-                inhalt()
-                    .containerRelativeFrame(.horizontal)
-                    // Deckend, damit die Handlungsfarbe darunter nicht
-                    // durchscheint, solange die Zeile zu ist.
-                    .background(Stil.grund)
-                    .contentShape(Rectangle())
-                    .onTapGesture { tippen() }
+                // **Ein Knopf, keine Tippgeste.** Nur so gibt es einen
+                // Druckzustand; die Wischflaeche bleibt davon unberuehrt,
+                // weil SwiftUI einen Knopf in einer Scrollflaeche beim
+                // Ziehen von selbst wieder freigibt.
+                Button { tippen() } label: {
+                    inhalt()
+                        .containerRelativeFrame(.horizontal)
+                        // Deckend, damit die Handlungsfarbe darunter nicht
+                        // durchscheint, solange die Zeile zu ist.
+                        .background(Stil.grund)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(Stil.Druckzeile())
                     #if os(iOS)
                     // Muss **im** Inhalt liegen, nicht als Hintergrund der
                     // Scrollfläche: von dort aus findet die Hilfsansicht sie

@@ -334,7 +334,10 @@ private struct Auswahltipp: ViewModifier {
 
     func body(content: Content) -> some View {
         if an {
-            content.onTapGesture(perform: tun)
+            // **Knopf statt Tippgeste**, damit die Zeile beim Druck antwortet
+            // und nicht erst beim Loslassen.
+            Button(action: tun) { content }
+                .buttonStyle(Stil.Druckzeile())
         } else {
             content
         }
