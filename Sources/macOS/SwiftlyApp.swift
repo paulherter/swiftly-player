@@ -87,6 +87,18 @@ struct Menueleiste: Commands {
         // hinstellen.
         CommandGroup(after: .singleWindowList) { Fensteroeffner() }
 
+        // **Befehl-Komma. Jede Mac-App hat es, unsere hatte es nicht.**
+        //
+        // Wer die Einstellungen sucht, sucht sie zuerst im Programmmenü, und
+        // zwar unter diesem Kürzel — es ist auf dem Mac so selbstverständlich
+        // wie Befehl-W zum Schließen. Bei uns war der einzige Weg dorthin die
+        // Profilseite unten in der Seitenleiste. `.appSettings` ist die
+        // Stelle, an der AppKit den Eintrag erwartet; er steht dann dort, wo
+        // ihn jeder sucht, und nicht irgendwo im Menü.
+        CommandGroup(replacing: .appSettings) {
+            Kommandoknopf("Einstellungen…", .einstellungen, ",")
+        }
+
         CommandMenu(Text("Gehe zu")) {
             Kommandoknopf("Start",  .start,  "1")
             Kommandoknopf("Filme",  .filme,  "2")
@@ -102,7 +114,7 @@ struct Menueleiste: Commands {
 /// Was die Menüleiste auslösen kann. Absichtlich klein: jeder Fall hat eine
 /// sichtbare Entsprechung in der Oberfläche.
 enum Kommando: String {
-    case start, filme, serien, suche, zurueck
+    case start, filme, serien, suche, zurueck, einstellungen
 }
 
 /// Ein Menüeintrag, der sein Kommando als Nachricht schickt.
