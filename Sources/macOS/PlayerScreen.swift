@@ -132,7 +132,8 @@ struct PlayerScreen: View {
 
             Videoflaeche(url: anfang.plan.url, startAt: anfang.startAt,
                          container: anfang.plan.container,
-                         verdeckt: !schirmWeg || flaecheAus) { neu in
+                         verdeckt: !schirmWeg || flaecheAus,
+                         puffer: model.pufferstufe) { neu in
                 flaeche = neu
                 // Der Knopf hängt an VLCs eigener Meldung, nicht am Takt und
                 // nicht am Klick — siehe `laeuftAnzeige`.
@@ -758,6 +759,10 @@ struct PlayerScreen: View {
             }
             titel = folge
             plan = neuerPlan
+            // **Auch hier vor `play`.** Ohne das behielte die nächste Folge
+            // die Stufe vom Öffnen — wer zwischen zwei Folgen umstellt, weil
+            // die Leitung einbricht, merkte davon nichts.
+            flaeche?.puffer = model.pufferstufe
             flaeche?.play(url: neuerPlan.url, abSekunden: 0, container: neuerPlan.container)
             await model.reportStart(item: folge, plan: neuerPlan, seconds: 0)
             // **Muss sein.** Sonst bliebe `startGemeldet` auf `true` hängen und
@@ -934,11 +939,15 @@ struct Videoflaeche: NSViewRepresentable {
     /// `isHidden` wirkt dagegen auf AppKit-Ebene und damit sicher. VLC
     /// dekodiert weiter, nur gezeigt wird nichts.
     let verdeckt: Bool
+    /// **Vor `play`, nicht danach.** Der Vorrat wird als Option an das Medium
+    /// gehängt; wer ihn nachträgt, hat schon mit der alten Stufe geöffnet.
+    let puffer: Pufferstufe
     let beimAnlegen: (VLCPlayerView) -> Void
 
     func makeNSView(context: Context) -> VLCPlayerView {
         let ansicht = VLCPlayerView()
         ansicht.isHidden = verdeckt
+        ansicht.puffer = puffer
         ansicht.play(url: url, abSekunden: startAt, container: container)
         DispatchQueue.main.async { beimAnlegen(ansicht) }
         return ansicht
