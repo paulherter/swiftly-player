@@ -1829,7 +1829,20 @@ struct Unschaerfekopf<Inhalt: View>: View {
                 // `Navileiste` unten — die beiden Leisten der App sollen
                 // gleich deckend sein.
                 ZStack {
-                    Kopfverlauf().opacity(1 - kante)
+                    // **Wer einen Versatz mitgibt, bekommt die Leiste sofort.**
+                    //
+                    // Sie wurde ueber die ersten dreissig Scrollpunkte
+                    // eingeblendet — im Ruhezustand also durchsichtig, und
+                    // beim Anscrollen schob sich das Schwarz sichtbar
+                    // darueber. Am Geraet faellt genau das auf: es sieht
+                    // aus, als komme die Leiste zu spaet. Auf einer Seite,
+                    // deren Schrift unter dem Kopf durchlaeuft, gibt es
+                    // auch keinen Grund fuer den Zwischenzustand.
+                    //
+                    // Die Startseite bleibt, wie sie war: dort steht kein
+                    // Versatz, dort laufen Kacheln durch, und ein Verlauf
+                    // ist ruhiger als eine Kante.
+                    if versatz == nil { Kopfverlauf() }
                     // **Deckend, nicht Glas.** Erst stand hier `Leistenglas`,
                     // und das war sichtbar **heller als die Seite**: Apples
                     // Material traegt eine helle Schicht, und 0,86 Grundton
@@ -1848,7 +1861,9 @@ struct Unschaerfekopf<Inhalt: View>: View {
                     // endete an der Oberkante des Kopfes, und darueber liefen
                     // die Plakate ungebremst bis nach ganz oben. Genau das war
                     // zu sehen.
-                    Stil.grund.opacity(kante).ignoresSafeArea(edges: .top)
+                    if versatz != nil {
+                        Stil.grund.ignoresSafeArea(edges: .top)
+                    }
                 }
             }
     }
