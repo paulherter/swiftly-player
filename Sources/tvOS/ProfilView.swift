@@ -191,9 +191,9 @@ struct ProfilView: View {
             // dieselben drei Woerter in zwei Katalogen und liefen
             // auseinander.
             wertzeile("Puffer", wert: model.pufferstufe.name,
-                      eintraege: Pufferwahl.alle, beschriftung: { $0.stufe.name },
-                      an: { $0.stufe == model.pufferstufe },
-                      waehlen: { model.pufferstufe = $0.stufe })
+                      eintraege: Pufferstufe.allCases, beschriftung: \.name,
+                      an: { $0 == model.pufferstufe },
+                      waehlen: { model.pufferstufe = $0 })
             Trennlinie()
             Schalterzeile(titel: "Untertitel automatisch", an: model.untertitelAutomatisch) {
                 model.untertitelAutomatisch.toggle()
@@ -543,18 +543,4 @@ private struct KontostreifenStil: ButtonStyle {
                 .animation(Stil.fokusAnimation, value: fokus)
         }
     }
-}
-
-/// **Nur ein Ausweis fuer die Liste.** `wertzeile` braucht `Identifiable`,
-/// `Pufferstufe` ist es nicht — und die Aufzaehlung liegt im Paket, das
-/// `main` fuehrt. Statt dort hineinzuschreiben traegt dieser Wrapper die
-/// Kennung; er hat keine eigene Logik und faellt weg, sobald die
-/// Aufzaehlung selbst `Identifiable` ist.
-///
-/// Dasselbe Muster wie bei `Bitrate.stufen`, nur dass jenes im Paket steht.
-private struct Pufferwahl: Identifiable {
-    let stufe: Pufferstufe
-    var id: String { stufe.rawValue }
-
-    static let alle = Pufferstufe.allCases.map(Pufferwahl.init)
 }
