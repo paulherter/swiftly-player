@@ -16,7 +16,7 @@ struct WiedergabeEinstellungenView: View {
 
     @State private var offeneListe: Liste?
 
-    enum Liste { case bitrate, ton, untertitel, zurueck, vor }
+    enum Liste { case bitrate, ton, untertitel, zurueck, vor, puffer }
 
     var body: some View {
         ScrollView {
@@ -143,7 +143,30 @@ struct WiedergabeEinstellungenView: View {
                            istGewaehlt: { $0.wert == model.vorSekunden },
                            waehlen: { model.vorSekunden = $0.wert; schliessen() })
             }
+            Trennstrich().padding(.leading, 48)
+            // **Steht bei „Verhalten", nicht bei der Qualität.** Sie ändert
+            // nichts am Bild — nur, wie viel Vorrat der Player hält, bevor
+            // eine wackelige Leitung durchschlägt. Dieselbe Stelle wie auf
+            // dem iPhone.
+            Wertezeile(symbol: "wifi.exclamationmark", titel: Text("Puffer"),
+                       wert: model.pufferstufe.name, pfeil: true,
+                       aktion: { umschalten(.puffer) })
+            if offeneListe == .puffer {
+                Werteliste(eintraege: Pufferstufe.allCases.map(Stufenwahl.init),
+                           beschriftung: { $0.stufe.name },
+                           istGewaehlt: { $0.stufe == model.pufferstufe },
+                           waehlen: { model.pufferstufe = $0.stufe; schliessen() })
+            }
         }
+    }
+
+    /// **Nur eine Kennung, keine zweite Wahrheit.** `Werteliste` verlangt
+    /// `Identifiable`; `Pufferstufe` liegt im Paket und bekommt das nicht von
+    /// hier aus angehängt. Die Stufen, ihre Namen und ihre Zahlen bleiben
+    /// dort, wo sie stehen — hier steht nur, woran die Liste sie unterscheidet.
+    private struct Stufenwahl: Identifiable {
+        let stufe: Pufferstufe
+        var id: String { stufe.rawValue }
     }
 
     private func umschalten(_ liste: Liste) {

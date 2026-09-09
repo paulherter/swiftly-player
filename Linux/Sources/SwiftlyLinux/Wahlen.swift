@@ -1,4 +1,5 @@
 import Foundation
+import JellyfinKit
 
 /// Die Einstellungen des Nutzers, wie sie auf den Apple-Fassungen in
 /// `AppModel` liegen — dort in `@AppStorage`, hier als JSON neben der
@@ -56,6 +57,21 @@ struct Wahlen: Codable {
     /// von `AppModel.downloadsAn`.
     var downloadsAn = false
 
+    /// **Wie viel Vorrat der Player haelt** — die Stufe aus dem Paket.
+    ///
+    /// Von einem Nutzer angestossen, der ohne feste Leitung zusieht. Die
+    /// Rechnung dahinter liegt in `JellyfinKit.Pufferstufe`; hier steht nur,
+    /// welche Stufe gewaehlt ist — als `rawValue`, damit eine Datei von der
+    /// Platte nichts von der Gattung wissen muss.
+    ///
+    /// **Und einmal weiter unten im Decoder.** Der steht hier von Hand, weil
+    /// ein fehlender Schluessel sonst *alle* Einstellungen zuruecksetzt; wer
+    /// hier ein Feld ergaenzt und es dort vergisst, bekommt eine Wahl, die
+    /// sich nach jedem Neustart selbst vergisst.
+    var pufferstufe = Pufferstufe.normal.rawValue
+
+    var puffer: Pufferstufe { Pufferstufe(rawValue: pufferstufe) ?? .normal }
+
     // MARK: Lesen, das eine aeltere Datei ueberlebt
 
     /// **Ein fehlender Schluessel darf nicht alles zuruecksetzen.**
@@ -91,6 +107,7 @@ struct Wahlen: Codable {
         bildfuellend           = w(.bildfuellend, false)
         technikschild          = w(.technikschild, false)
         downloadsAn            = w(.downloadsAn, false)
+        pufferstufe            = w(.pufferstufe, Pufferstufe.normal.rawValue)
     }
 
     /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.
@@ -117,7 +134,7 @@ struct Wahlen: Codable {
 }
 
 /// Welche Werteliste gerade aufgeklappt ist.
-enum Werteauswahl { case bitrate, ton, untertitel, zurueck, vor }
+enum Werteauswahl { case bitrate, puffer, ton, untertitel, zurueck, vor }
 
 /// **Welcher Bereich im Wiedergabemenue links gewaehlt ist.**
 ///

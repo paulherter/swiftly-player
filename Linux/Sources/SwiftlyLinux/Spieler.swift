@@ -67,7 +67,7 @@ extension App {
         // keine Meldung — es gibt keinen Server, der davon wuesste.
         if let datei {
             laufenderPlan = nil
-            abspieler.oeffnen(datei, ab: ab)
+            abspieler.oeffnen(datei, ab: ab, puffer: wahlen.puffer)
             abspieler.bildfuellend(wahlen.bildfuellend)
             technikschildSetzen(wahlen.technikschild)
             spielstand.position = ab
@@ -102,7 +102,7 @@ extension App {
                 }
                 self.laufenderPlan = plan
                 self.warnungZeigen(plan)
-                self.abspieler.oeffnen(plan.url, ab: ab)
+                self.abspieler.oeffnen(plan.url, ab: ab, puffer: self.wahlen.puffer)
                 // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
                 self.abspieler.bildfuellend(self.wahlen.bildfuellend)
                 self.technikschildSetzen(self.wahlen.technikschild)
@@ -696,7 +696,7 @@ extension App {
                 // stehen, deshalb stellt sich die Frage dort nicht.
                 let tempo = self.abspieler.tempo
                 // Die nächste Folge startet **von vorn** (B5).
-                self.abspieler.oeffnen(plan.url, ab: 0)
+                self.abspieler.oeffnen(plan.url, ab: 0, puffer: self.wahlen.puffer)
                 // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
                 self.abspieler.bildfuellend(self.wahlen.bildfuellend)
                 self.technikschildSetzen(self.wahlen.technikschild)

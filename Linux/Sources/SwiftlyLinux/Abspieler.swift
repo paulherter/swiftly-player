@@ -83,7 +83,13 @@ final class Abspieler {
 
     // MARK: Steuern
 
-    func oeffnen(_ url: URL, ab: Double) {
+    /// **Der Puffer als Pflichtangabe, nicht als Vorgabewert.**
+    ///
+    /// Auf dem Fernseher ist genau diese Falle einmal aufgegangen: die Stufe
+    /// wurde beim Oeffnen gesetzt und beim Folgenwechsel vergessen, und die
+    /// naechste Folge lief still mit der alten. Ohne Standardwert kann keine
+    /// der drei Aufrufstellen sie auslassen — der Uebersetzer fragt nach.
+    func oeffnen(_ url: URL, ab: Double, puffer: Pufferstufe) {
         beenden(nurMedium: true)
         guard let kern, let bruecke else { return }
         guard let medium = libvlc_media_new_location(kern, url.absoluteString) else { return }
@@ -94,11 +100,13 @@ final class Abspieler {
 
         // **Zwei Optionen vom Netzweg, wortgleich von der Apple-Fassung.**
         //
-        // `prefetch-buffer-size` haelt 16 MiB voraus — bei den Bitraten hier
-        // gut drei Minuten Inhalt. Auf dem iPhone ist daran nachgemessen
-        // worden, dass es am Vorrat *nicht* lag (211 Sekunden gefuellt);
-        // die Zahl steht trotzdem beidseits gleich, damit die Fassungen
-        // dasselbe tun und nicht eine still knapper puffert als die andere.
+        // `prefetch-buffer-size` haelt in der Vorgabe 16 MiB voraus — bei den
+        // Bitraten hier gut drei Minuten Inhalt. Auf dem iPhone ist daran
+        // nachgemessen worden, dass es am Vorrat *nicht* lag (211 Sekunden
+        // gefuellt). Seit dem 10.09.2026 ist es waehlbar: fuer eine Leitung,
+        // die *schwankt*, fehlte am Vorrat nichts — fuer eine, die auch mal
+        // *ganz weg* ist, schon. Die Stufen stehen im Paket, damit hier und
+        // auf den Apple-Fassungen dieselben drei Zahlen gelten.
         //
         // `http-reconnect` faengt den Abriss nach einer laengeren Pause auf.
         // Am 08.09.2026 zweimal mitgeschrieben: 25 Sekunden pausiert, und
@@ -110,8 +118,14 @@ final class Abspieler {
         // `libprefetch_plugin.so` und `libhttp_plugin.so` nachgesehen, nicht
         // aus der Dokumentation der Fassung 4 uebernommen.
         if !url.isFileURL {
-            libvlc_media_add_option(medium, ":prefetch-buffer-size=16384")
+            libvlc_media_add_option(medium, ":prefetch-buffer-size=\(puffer.prefetchKiB)")
             libvlc_media_add_option(medium, ":http-reconnect")
+            // **Nur ab der zweiten Stufe.** Bei `normal` bliebe hier VLCs
+            // eigener Standardwert stehen; ihn ausdruecklich noch einmal zu
+            // setzen sieht nach Absicht aus und aendert nichts.
+            if let vorlauf = puffer.netzvorlaufMillisekunden {
+                libvlc_media_add_option(medium, ":network-caching=\(vorlauf)")
+            }
         }
         spieler = libvlc_media_player_new_from_media(medium)
         libvlc_media_release(medium)

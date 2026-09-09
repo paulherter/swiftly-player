@@ -275,6 +275,26 @@ extension App {
                 self?.listeSchliessen(.wiedergabe)
             })
         }
+        anhaengen(q.raum, zeilenstrich())
+        // **Der Puffer — drei Faelle, keine Sekundenzahl.**
+        //
+        // Der Vorrat wird in Bytes gehalten: dieselben 16 MiB sind bei einer
+        // 5-Mbit-Serie rund fuenfundzwanzig Sekunden und bei einem 80-Mbit-
+        // Film knapp zwei. Eine Sekundenangabe waere deshalb bei jedem Titel
+        // etwas anderes. Die Stufen sagen den Fall.
+        anhaengen(q.raum, wertezeile(symbol: "network-wireless-signal-weak-symbolic",
+                                     titel: uebersetzt("Puffer"),
+                                     wert: wahlen.puffer.name, pfeil: true) {
+            [weak self] in self?.listeUmschalten(.puffer)
+        })
+        if offeneListe == .puffer {
+            anhaengen(q.raum, werteliste(Pufferstufe.allCases.map { ($0.name, $0) },
+                                         gewaehlt: wahlen.puffer) { [weak self] stufe in
+                self?.wahlen.pufferstufe = stufe.rawValue
+                self?.wahlen.sichern()
+                self?.listeSchliessen(.wiedergabe)
+            })
+        }
         anhaengen(block, q.aussen)
 
         let hinweis = beschriftung(uebersetzt("Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da."),

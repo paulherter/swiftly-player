@@ -432,7 +432,19 @@ struct SeriesDetailView: View {
     private var folgenliste: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !staffeln.isEmpty {
-                Aufklappliste(beschriftung: gewaehlteStaffel?.name ?? "Staffel",
+                // **Der Rückfall muss übersetzt werden, der Name nicht.**
+                //
+                // `beschriftung` ist ein `String`, weil links davon der
+                // Staffelname vom Server steht — der wird nicht übersetzt.
+                // Rechts vom `??` stand aber unser eigenes Wort, und ein
+                // deutsches Wort in einem `String` landet nie im Katalog:
+                // `Text(einString)` ist wörtlich. Eine Staffel ohne Namen
+                // hieß damit auch auf Englisch „Staffel".
+                //
+                // Der Schlüssel gibt es längst („Staffel" → „Season"), er
+                // wurde hier nur nicht nachgeschlagen.
+                Aufklappliste(beschriftung: gewaehlteStaffel?.name
+                                  ?? String(localized: "Staffel"),
                               eintraege: staffeln,
                               text: { $0.name },
                               istGewaehlt: { $0.id == gewaehlteStaffel?.id },
