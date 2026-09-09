@@ -40,4 +40,14 @@ struct PufferstufeTests {
         let s = Pufferstufe.sehrSchlecht.ungefaehrSekunden(bitsJeSekunde: 40_000_000)
         #expect(s != nil && s! >= 30)
     }
+    /// **Die Benennung lag zuerst in der iPhone-Ansicht.** Dort haette der
+    /// Fernseher sie nicht gesehen und nachgebaut — deshalb steht sie im
+    /// Paket, und deshalb prueft das hier jemand.
+    @Test("Jede Stufe hat einen eigenen Namen")
+    func namenSindDaUndVerschieden() {
+        let namen = Pufferstufe.allCases.map(\.name)
+        #expect(namen.allSatisfy { !$0.isEmpty })
+        #expect(Set(namen).count == Pufferstufe.allCases.count)
+    }
+
 }

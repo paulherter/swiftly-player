@@ -4521,23 +4521,6 @@
         }
       }
     },
-    "Normal": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Normal"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Normal"
-          }
-        }
-      }
-    },
     "Nur wenn der Ton nicht in der gewählten Sprache läuft": {
       "extractionState": "manual",
       "localizations": {
@@ -4945,23 +4928,6 @@
         }
       }
     },
-    "Schlechte Verbindung": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Schlechte Verbindung"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Poor connection"
-          }
-        }
-      }
-    },
     "Schließen": {
       "extractionState": "manual",
       "localizations": {
@@ -4992,23 +4958,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Seerr"
-          }
-        }
-      }
-    },
-    "Sehr schlechte Verbindung": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sehr schlechte Verbindung"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Very poor connection"
           }
         }
       }

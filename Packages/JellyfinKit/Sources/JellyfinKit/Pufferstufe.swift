@@ -67,4 +67,24 @@ public enum Pufferstufe: String, CaseIterable, Sendable, Codable {
         let bytes = Double(prefetchKiB) * 1024
         return Int((bytes * 8 / Double(bitsJeSekunde)).rounded())
     }
+
+    /// Wie die Stufe in den Einstellungen heisst.
+    ///
+    /// **Steht hier und nicht in der Ansicht.** Beim Bau lag die Benennung
+    /// zuerst als `Pufferwahl` in `WiedergabeEinstellungenView` — also in
+    /// einer Datei, die nur das iPhone uebersetzt. Der Fernseher haette
+    /// dieselben drei Saetze ein zweites Mal gebraucht, der Mac ein drittes;
+    /// genau die Sorte Abschrift, an der die Fassungen auseinanderlaufen. Bei
+    /// ``Bitrate`` und ``Sprachwahl`` ist derselbe Weg schon einmal gegangen
+    /// worden, aus demselben Grund.
+    ///
+    /// Die Namen sagen den Fall, nicht den Wert: „64 MiB" beantwortet keine
+    /// Frage, die sich jemand stellt, „Schlechte Verbindung" schon.
+    public var name: String {
+        switch self {
+        case .normal:       uebersetzt("Normal")
+        case .schlecht:     uebersetzt("Schlechte Verbindung")
+        case .sehrSchlecht: uebersetzt("Sehr schlechte Verbindung")
+        }
+    }
 }

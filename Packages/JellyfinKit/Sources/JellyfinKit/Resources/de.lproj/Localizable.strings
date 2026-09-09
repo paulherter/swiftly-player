@@ -77,3 +77,6 @@
 "Der Server hat mit %lld geantwortet." = "Der Server hat mit %lld geantwortet.";
 "Die Antwort des Servers war unverständlich. (%@)" = "Die Antwort des Servers war unverständlich. (%@)";
 "unbekannt" = "unbekannt";
+"Normal" = "Normal";
+"Schlechte Verbindung" = "Schlechte Verbindung";
+"Sehr schlechte Verbindung" = "Sehr schlechte Verbindung";
