@@ -35,26 +35,64 @@ private struct Bildkiste: @unchecked Sendable { let bild: CGImage }
 final class Bildspeicher {
     static let geteilt = Bildspeicher()
 
-    private var bekannt: [URL: Image] = [:]
+    /// Bild und was es im Speicher kostet — Breite mal Hoehe mal vier Byte.
+    private struct Eintrag { let bild: Image; let byte: Int }
+
+    private var bekannt: [URL: Eintrag] = [:]
     private var reihenfolge: [URL] = []
+    private var belegt = 0
     /// Läufe, die schon unterwegs sind. Ohne das holt ein Raster dasselbe
     /// Bild mehrfach, wenn es in zwei Reihen vorkommt.
-    private var laufend: [URL: Task<Image?, Never>] = [:]
+    private var laufend: [URL: Task<Eintrag?, Never>] = [:]
 
-    /// **Zwei Zahlen, die die Plattform setzt, keine Festwerte.**
+    /// **Eine Speichergrenze in Byte, keine Anzahl.**
     ///
-    /// Sie waren auf dem Mac eingetragen, und dort waren sie richtig. Auf dem
-    /// Apple TV sind die Kacheln größer, der Arbeitsspeicher aber deutlich
-    /// kleiner — wer die Mac-Zahlen dorthin mitnimmt, rät zweimal. Also
-    /// stehen sie da, wo jemand sie beantworten kann.
+    /// Hier standen „240 Bilder" und „1600 Punkt lange Kante", mit dem
+    /// Kommentar, das seien Zahlen, die jede Plattform selbst setzen muesse.
+    /// Am 10.09.2026 nachgesehen: **keine Plattform setzt sie.** Der Regler
+    /// war da, niemand drehte daran, und ueberall galten die Mac-Werte —
+    /// genau der Fall, vor dem der Kommentar warnte.
     ///
-    /// `hoechstzahl` ist die Zahl der Bilder im Speicher; auf dem Mac reicht
-    /// sie für zwei volle Raster. `kantenlaenge` ist die längste Kante beim
-    /// Entschlüsseln — größer heißt schärfer und teurer.
-    static var hoechstzahl = 240
-    static var kantenlaenge = 1600
+    /// Aufgefallen ist es erst, als der iPhone-Aufbau von `AsyncImage` auf
+    /// diesen Speicher umgestellt wurde. Vorher lief kaum etwas hier durch,
+    /// und die Zahl war folgenlos.
+    ///
+    /// **Eine Anzahl ist ohnehin die falsche Groesse.** 240 Plakate sind
+    /// etwas voellig anderes als 240 Querbilder; wer in Bildern rechnet,
+    /// rechnet nicht in dem, was knapp wird. Gemessen wird jetzt, was ein
+    /// entschluesseltes Bild wirklich belegt — Breite mal Hoehe mal vier
+    /// Byte —, und die Grenze ist ein Speicherbetrag. Das ist eine Frage,
+    /// die sich je Plattform beantworten laesst, und die Anzahl ergibt sich.
+    ///
+    /// Die Betraege sind **hergeleitet, nicht gemessen**: sie liegen so weit
+    /// unter dem, was die Plattform einer Vordergrund-App zugesteht, dass
+    /// Bilder nie der Grund sein koennen, aus dem sie abgeraeumt wird. Was
+    /// sie wirklich vertraegt, sagt nur ein Lauf mit dem Speicherwerkzeug am
+    /// Geraet.
+    static var speichergrenze: Int = {
+        #if os(macOS)
+        256 * 1024 * 1024   // Ein Fenster kann viele Raster gleichzeitig zeigen.
+        #elseif os(tvOS)
+        64 * 1024 * 1024    // Grosse Kacheln, knapper Speicher — die engste Lage.
+        #else
+        96 * 1024 * 1024    // iPhone und iPad.
+        #endif
+    }()
 
-    func bild(_ url: URL) -> Image? { bekannt[schluessel(url)] }
+    /// Die laengste Kante beim Entschluesseln — groesser heisst schaerfer und
+    /// teurer. Kein Hochrechnen: was der Server kleiner liefert, bleibt
+    /// kleiner.
+    static var kantenlaenge: Int = {
+        #if os(macOS)
+        1600
+        #elseif os(tvOS)
+        1200            // Die Kacheln sind gross, der Schirm steht weit weg.
+        #else
+        1200            // Traegt auch das Querbild oben auf einer iPad-Seite.
+        #endif
+    }()
+
+    func bild(_ url: URL) -> Image? { bekannt[schluessel(url)]?.bild }
 
     /// **Der Zugang gehört nicht zum Bild.** Jede Bildadresse trägt
     /// `api_key` — nach einem Kontowechsel hiesse dasselbe Plakat plötzlich
@@ -80,14 +118,14 @@ final class Bildspeicher {
 
     func laden(_ url: URL) async -> Image? {
         let merkmal = schluessel(url)
-        if let da = bekannt[merkmal] { return da }
-        if let lauf = laufend[merkmal] { return await lauf.value }
+        if let da = bekannt[merkmal] { return da.bild }
+        if let lauf = laufend[merkmal] { return await lauf.value?.bild }
 
         // **Vor dem Abzweig gelesen.** `kantenlaenge` gehört dem Hauptlauf;
         // von der abgetrennten Aufgabe aus wäre der Zugriff ein Sprung über
         // die Isolationsgrenze, den Swift 6 zu Recht nicht durchlässt.
         let kante = Self.kantenlaenge
-        let lauf = Task<Image?, Never> {
+        let lauf = Task<Eintrag?, Never> {
             guard let (daten, _) = try? await URLSession.shared.data(from: url) else { return nil }
             let kiste = await Task.detached(priority: .userInitiated) { () -> Bildkiste? in
                 guard let quelle = CGImageSourceCreateWithData(daten as CFData, nil) else { return nil }
@@ -105,21 +143,36 @@ final class Bildspeicher {
                 return Bildkiste(bild: roh)
             }.value
             guard let kiste else { return nil }
-            return Image(decorative: kiste.bild, scale: 1)
+            // Vier Byte je Bildpunkt. Das entschluesselte Bild liegt so im
+            // Speicher, unabhaengig davon, wie klein die Datei war — genau
+            // deshalb sagt die Dateigroesse hier nichts.
+            let byte = kiste.bild.width * kiste.bild.height * 4
+            return Eintrag(bild: Image(decorative: kiste.bild, scale: 1), byte: byte)
         }
 
         laufend[merkmal] = lauf
         let ergebnis = await lauf.value
         laufend[merkmal] = nil
         if let ergebnis { merken(ergebnis, fuer: merkmal) }
-        return ergebnis
+        return ergebnis?.bild
     }
 
-    private func merken(_ bild: Image, fuer url: URL) {
-        if bekannt[url] == nil { reihenfolge.append(url) }
-        bekannt[url] = bild
-        while reihenfolge.count > Self.hoechstzahl {
-            bekannt[reihenfolge.removeFirst()] = nil
+    private func merken(_ eintrag: Eintrag, fuer url: URL) {
+        if let alt = bekannt[url] {
+            belegt -= alt.byte
+        } else {
+            reihenfolge.append(url)
+        }
+        bekannt[url] = eintrag
+        belegt += eintrag.byte
+
+        // **Aeltestes zuerst, bis der Betrag wieder passt.** `removeFirst`
+        // verschiebt das Feld, ist hier aber ein Verschieben von Zeigern
+        // gegen ein entschluesseltes JPEG — bewusst so gelassen und nicht
+        // gegen einen Ring getauscht, der mehr Bau als Nutzen waere.
+        while belegt > Self.speichergrenze, !reihenfolge.isEmpty {
+            let raus = reihenfolge.removeFirst()
+            belegt -= bekannt.removeValue(forKey: raus)?.byte ?? 0
         }
     }
 }

@@ -51,18 +51,43 @@ struct Heldkopf<Inhalt: View>: View {
                     Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
                 }
             }
+            // **Das Plakat sagt nichts, was nicht daneben steht.**
+            //
+            // Es blieb bisher ohne Behandlung — fuer VoiceOver eine leere
+            // Flaeche mitten auf jeder Detailseite. Zwei Wege waeren moeglich
+            // gewesen; dies ist der richtige: der Titel steht direkt daneben,
+            // das Plakat wiederholte ihn nur als Bild. Was es zusaetzlich
+            // traegt, ist der Fortschrittsbalken — und der ist eine Zeichnung
+            // *im* Bild und fiel deshalb ganz heraus. Er wandert unten an den
+            // Titel, wo er gelesen wird.
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text(titel)
-                    .font(.system(size: 40, weight: .bold))
-                    .tracking(-1)
-                    .foregroundStyle(Stil.schrift)
-                    .lineLimit(2)
-                Text(nebenzeile)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Stil.schriftLeise)
-                    .lineLimit(1)
-                    .padding(.top, 8)
+                // **Titel und Nebenzeile als eine Aussage, die Knoepfe nicht.**
+                //
+                // Genau das Muster aus `HomeView.Kachel`, das der tvOS-Chat
+                // dort gefunden hat — hier war es nie uebernommen worden.
+                // `inhalt()` bleibt bewusst draussen: das sind Knoepfe, und
+                // die muss man einzeln erreichen koennen.
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(titel)
+                        .font(.system(size: 40, weight: .bold))
+                        .tracking(-1)
+                        .foregroundStyle(Stil.schrift)
+                        .lineLimit(2)
+                    Text(nebenzeile)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Stil.schriftLeise)
+                        .lineLimit(1)
+                        .padding(.top, 8)
+                }
+                .accessibilityElement(children: .combine)
+                // Erst ab einem Prozent — „null Prozent gesehen" ist keine
+                // Auskunft, sondern Laerm vor jedem Titel.
+                .accessibilityValue(fortschritt.map {
+                    Text("\(Int($0 * 100)) Prozent gesehen")
+                } ?? Text(""))
+
                 inhalt()
                     .padding(.top, 12)
             }
