@@ -49,6 +49,8 @@ final class AppModel {
     /// gibt für einen unbekannten Schlüssel ohnehin `false`, aber das hier
     /// steht als Absicht da, nicht als Zufall.
     var neuzugangGetrennt: Bool { didSet { merken(neuzugangGetrennt, "neuGetrennt") } }
+    /// Wie viel Vorrat der Player haelt. Siehe ``Pufferstufe`` im Paket.
+    var pufferstufe: Pufferstufe { didSet { merken(pufferstufe.rawValue, "pufferstufe") } }
     var zurueckSekunden: Int { didSet { merken(zurueckSekunden, "zurueckSek") } }
     var vorSekunden: Int { didSet { merken(vorSekunden, "vorSek") } }
 
@@ -226,6 +228,8 @@ final class AppModel {
         untertitelAutomatisch = ablage.object(forKey: "utAuto") as? Bool ?? false
         naechsteAutomatisch = ablage.object(forKey: "naechsteAuto") as? Bool ?? true
         neuzugangGetrennt = ablage.object(forKey: "neuGetrennt") as? Bool ?? false
+        pufferstufe = (ablage.string(forKey: "pufferstufe")
+                       .flatMap(Pufferstufe.init(rawValue:))) ?? .normal
         zurueckSekunden = ablage.object(forKey: "zurueckSek") as? Int ?? 10
         vorSekunden = ablage.object(forKey: "vorSek") as? Int ?? 30
         downloadsAn = ablage.object(forKey: "downloadsAn") as? Bool ?? false

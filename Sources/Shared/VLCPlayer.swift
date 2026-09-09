@@ -841,6 +841,10 @@ final class VLCPlayerView: Basisansicht {
     /// HTTPS dauert ein Sprung länger als die Wartezeit, die Position las sich
     /// noch als alt, es wurde erneut gesprungen — und der Demuxer kam nie zur
     /// Ruhe. Von vorn gestartete Titel liefen deshalb, fortgesetzte nicht.
+    /// Wieviel Vorrat der naechste Start haelt. Vor `play(url:)` setzen —
+    /// die Optionen haengen am Medium, und das entsteht erst dort.
+    var puffer: Pufferstufe = .normal
+
     func play(url: URL, abSekunden: Double = 0, container: String? = nil) {
         // Die Sitzung wird beim App-Start eingerichtet. Hier nur prüfen und
         // notfalls nachziehen — mit sichtbarem Fehler statt stillem try?.
@@ -987,7 +991,15 @@ final class VLCPlayerView: Basisansicht {
         // Groesse null laedt er trotzdem, nur eben ohne Puffer — schlechter
         // als vorher. `STREAM_CAN_FASTSEEK` bleibt aus, und damit bleibt der
         // Bereichs-Scan der Matroska unerreichbar. Zurueck auf 16 MiB.
-        medium.addOption(":prefetch-buffer-size=16384")
+        // **Die Stufe kommt aus den Einstellungen, die Zahlen aus dem Paket.**
+        // 16 MiB bleibt die Vorgabe; wer eine wackelige Leitung hat, stellt
+        // hoeher und bezahlt es mit laengerem Anlaufen nach jedem Sprung.
+        medium.addOption(":prefetch-buffer-size=\(puffer.prefetchKiB)")
+        if let vorlauf = puffer.netzvorlaufMillisekunden, url.isFileURL == false {
+            // Nur bei erhoehter Stufe gesetzt — siehe die Messung weiter unten,
+            // warum das im Normalfall nichts bringt und Spruenge verteuert.
+            medium.addOption(":network-caching=\(vorlauf)")
+        }
 
         // **Nach einer laengeren Pause ist die Verbindung weg.**
         //

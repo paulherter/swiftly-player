@@ -221,6 +221,7 @@ struct PlayerScreen: View {
             Color.black.ignoresSafeArea()
 
             VideoSurfaceHost(url: plan.url, startAt: startAt, container: plan.container,
+                             puffer: model.pufferstufe,
                              pipAvailable: $pipAvailable) {
                 surface = $0
                 $0.onWiederherstellung = { stelltWiederHer = $0 }
@@ -977,6 +978,7 @@ struct PlayerScreen: View {
             erstesBildDa = false
             spurenGesetzt = false
             titelwechsel += 1
+            surface?.puffer = model.pufferstufe
             surface?.play(url: neuerPlan.url, abSekunden: 0, container: neuerPlan.container)
             // Hier gemeldet, nicht von der Schleife: Titel und Plan sind in
             // diesem Augenblick bekannt, die Stelle ist null. Der Stand muss
@@ -1310,12 +1312,18 @@ struct VideoSurfaceHost: UIViewRepresentable {
     let url: URL
     let startAt: Double
     let container: String?
+    /// Wird durchgereicht statt hier geholt: diese Ansicht kennt das Modell
+    /// nicht, und sie soll es auch nicht kennen.
+    let puffer: Pufferstufe
     @Binding var pipAvailable: Bool
     let onCreate: (VLCPlayerView) -> Void
 
     func makeUIView(context: Context) -> VLCPlayerView {
         let view = VLCPlayerView()
         view.onPiPAvailable = { pipAvailable = $0 }
+        // Vor dem Start setzen, nicht danach: die Optionen haengen am Medium,
+        // und das entsteht in `play`.
+        view.puffer = puffer
         view.play(url: url, abSekunden: startAt, container: container)
         DispatchQueue.main.async { onCreate(view) }
         return view
