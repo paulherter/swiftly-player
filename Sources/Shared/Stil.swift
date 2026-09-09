@@ -2937,6 +2937,18 @@ struct Leerzustand: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 34)
+        // **Der Eintritt gehoert ins Bauteil, nicht an die Aufrufer.**
+        //
+        // Ein Leerzustand ist selten und emotional: der Server antwortet
+        // nicht, oder die Bibliothek ist leer. Genau dort liegt das bisschen
+        // Budget fuer Bewegung — und bis hierher sprang er hart ins Bild.
+        // Steht die Kurve hier, bekommen sie alle Aufrufstellen, und keine
+        // kann sich eine eigene ausdenken.
+        //
+        // Der *Zeitpunkt* bleibt beim Aufrufer: eine `.transition` wirkt nur,
+        // wenn das Einfuegen selbst animiert ist. Das ist die Teilung, die
+        // SwiftUI vorgibt — hier das Wie, dort das Wann.
+        .transition(.opacity.combined(with: .scale(scale: 0.97)))
     }
 }
 

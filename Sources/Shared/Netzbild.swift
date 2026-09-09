@@ -178,7 +178,14 @@ struct Netzbild: View {
             bild = geladen
             // 220 ms, dieselbe Zeit wie ein Sprung im Player — lang genug,
             // dass fünfzig Kacheln wie eine Bewegung wirken statt wie fünfzig.
-            withAnimation(.easeOut(duration: 0.22)) { sichtbar = true }
+            // **Feder statt Kurve, und bewusst ohne `Stil`.** Eine feste
+            // Dauer ist nicht unterbrechbar; beim Scrollen durch ein Raster
+            // ist das die am haeufigsten laufende Bewegung der ganzen App.
+            // `Stil.einblenden` waere die richtige Adresse — nur liegt
+            // `Stil.swift` allein im iOS-Ziel, `Netzbild` dagegen in allen
+            // dreien. Ein Verweis dorthin braeche tvOS und macOS. Deshalb
+            // hier dieselbe Federfamilie mit derselben Dauer.
+            withAnimation(.smooth(duration: 0.22)) { sichtbar = true }
         }
     }
 }
