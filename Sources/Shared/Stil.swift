@@ -1030,7 +1030,7 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
 
     var body: some View {
         Button {
-            if eintraege.count > 1 { offen.toggle() }
+            if eintraege.count > 1 { withAnimation(Stil.sprung) { offen.toggle() } }
         } label: {
             // **Eine Überschrift mit Winkel, keine Pille.**
             //
@@ -1068,7 +1068,7 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
                     ForEach(eintraege) { eintrag in
                         Button {
                             waehlen(eintrag)
-                            offen = false
+                            withAnimation(Stil.sprung) { offen = false }
                         } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "checkmark")
@@ -1085,7 +1085,10 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
                             .padding(.vertical, 12)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        // Zeilen in einer Auswahl sind Knoepfe und
+                        // muessen auf den Druck antworten, nicht erst
+                        // auf die Wahl.
+                        .buttonStyle(Stil.Druckzeile())
                     }
                 }
                 .frame(width: 200, alignment: .leading)
@@ -1099,6 +1102,15 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
                 .shadow(color: .black.opacity(0.6), radius: 16, y: 8)
                 .offset(y: 44)
                 .zIndex(10)
+                // **Sie waechst aus ihrem Ausloeser.** Vorher stand sie
+                // schlagartig da — kein Uebergang, kein Ursprung. Eine Liste
+                // aus dem Nichts laesst offen, wozu sie gehoert; eine, die
+                // aus dem Knopf herauswaechst, beantwortet das ohne ein Wort.
+                // Der Anker liegt oben links, weil sie dort auch haengt, und
+                // 0,94 statt 0 — nichts in der Wirklichkeit entsteht aus
+                // nichts.
+                .transition(.scale(scale: 0.94, anchor: .topLeading)
+                    .combined(with: .opacity))
             }
         }
     }
