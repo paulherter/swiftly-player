@@ -213,9 +213,27 @@ extension JellyfinClient {
             let SupportsMediaControl: Bool
             let SupportsPersistentIdentifier: Bool
         }
+        // **Jeder Name hier muss `GeneralCommandType` des Servers treffen —
+        // ein einziger Tippfehler wirft die ganze Meldung weg.**
+        //
+        // Hier stand `Playstate`. Der Server kennt `PlayState`, mit grossem
+        // S. Ein ungueltiger Wert in der Liste laesst den Koerper nicht mehr
+        // lesen, der Aufruf scheitert, und **keine** Faehigkeit wird
+        // eingetragen — nicht etwa nur die eine.
+        //
+        // Was das anrichtet, sieht man der Stelle nicht an: die Sitzung
+        // erscheint in Jellyfin weiter, nur ohne Knoepfe zum Pausieren und
+        // Stoppen. Und `Sessions?controllableByUserId=…` liefert sie nicht
+        // mehr, also sieht kein anderes Geraet sie — die Uebernahme fiel
+        // damit ganz aus, in beide Richtungen zugleich.
+        //
+        // Am 10.09.2026 gegen `/api-docs/openapi.json` des eigenen Servers
+        // geprueft, Wert fuer Wert. Das ist die Quelle, wenn hier etwas
+        // dazukommt — nicht das Gedaechtnis und nicht ein Beispiel aus dem
+        // Netz. `PlayableMediaTypes` traegt `MediaType`, ebenso geprueft.
         let koerper = Faehigkeiten(
             PlayableMediaTypes: ["Video", "Audio"],
-            SupportedCommands: ["Play", "Playstate", "PlayNext", "PlayMediaSource",
+            SupportedCommands: ["Play", "PlayState", "PlayNext", "PlayMediaSource",
                                 "DisplayMessage", "SetAudioStreamIndex",
                                 "SetSubtitleStreamIndex", "Mute", "Unmute",
                                 "ToggleMute", "SetVolume"],
