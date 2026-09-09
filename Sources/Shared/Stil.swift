@@ -55,6 +55,37 @@ static var einblenden: Animation {
                           : .spring(response: 0.35, dampingFraction: 0.86)
     }
 
+    /// **Ein kurzer Ruck zur Bestaetigung.**
+    ///
+    /// Apples „Designing Fluid Interfaces" behandelt Haptik nicht als
+    /// Zierrat, sondern als zweiten Kanal derselben Rueckmeldung: Bewegung
+    /// sagt *was* passiert, der Ruck sagt *dass* es passiert ist. Ohne ihn
+    /// wirkt ein Knopf, der eine Netzanfrage anstoesst, unentschlossen.
+    ///
+    /// **Nur auf dem Telefon.** Ein Fernseher hat nichts, was rucken
+    /// koennte, und auf dem Mac gibt es das nur unter dem Trackpad — dort
+    /// waere es an einem Knopf eher irritierend.
+    ///
+    /// Ausgeloest wird beim **Druck**, nicht nach der Antwort des Servers:
+    /// ein Ruck, der eine halbe Sekunde spaeter kommt, gehoert gefuehlt zu
+    /// nichts mehr.
+    enum Ruckart { case leicht, mittel, erfolg }
+
+    @MainActor
+    static func ruck(_ art: Ruckart) {
+        #if os(iOS)
+        guard !bewegungReduziert else { return }
+        switch art {
+        case .leicht:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        case .mittel:
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        case .erfolg:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+        #endif
+    }
+
     /// **Hat der Nutzer „Bewegung reduzieren" eingeschaltet?**
     ///
     /// Apple ersetzt Bewegung dann durch eine Ueberblendung, nicht durch

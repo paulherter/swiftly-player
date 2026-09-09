@@ -639,6 +639,9 @@ struct SeriesDetailView: View {
 
     private func starte(_ folge: Item) {
         guard !bereitet else { return }
+        // Beim Druck, nicht nach dem Abruf: ein Ruck, der eine halbe
+        // Sekunde spaeter kommt, gehoert gefuehlt zu nichts mehr.
+        Stil.ruck(.mittel)
         bereitet = true
         Task {
             defer { bereitet = false }
@@ -803,6 +806,9 @@ struct SeasonView: View {
 
     private func starte(_ folge: Item) {
         guard !bereitet else { return }
+        // Beim Druck, nicht nach dem Abruf: ein Ruck, der eine halbe
+        // Sekunde spaeter kommt, gehoert gefuehlt zu nichts mehr.
+        Stil.ruck(.mittel)
         bereitet = true
         Task {
             defer { bereitet = false }
