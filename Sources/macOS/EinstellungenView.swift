@@ -21,6 +21,7 @@ struct EinstellungenView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Unterseitenkopf(titel: "Einstellungen", zurueck: zurueck)
 
+                wiedergabe
                 darstellung
                 offline
                 integration
@@ -46,6 +47,28 @@ struct EinstellungenView: View {
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
         .ohneKanteneffekt()
+    }
+
+    /// **Befehl-Komma verspricht alle Einstellungen, also stehen hier alle.**
+    ///
+    /// Auf dem Telefon tippt man sich durch eine Liste, und „Wiedergabe" darf
+    /// neben „Einstellungen" hängen — dort hat niemand etwas zugesagt. Auf
+    /// dem Mac sagt das **System** mit Befehl-Komma: hier sind die
+    /// Einstellungen. Wer dann Darstellung, Offline, Integration und Server
+    /// findet, hat die Hälfte gefunden und weiß es nicht — schlechter als gar
+    /// kein Kürzel.
+    ///
+    /// Die Abweichung von den anderen Plattformen steht in `VERHALTEN.md`,
+    /// Abschnitt F: der Grund ist die Eingabeart, das Kürzel gibt es nur hier.
+    private var wiedergabe: some View {
+        Einstellungsgruppe(titel: "Wiedergabe") {
+            Button { navigator.oeffne(.wiedergabe, in: bereich) } label: {
+                Wertezeile(symbol: "play.fill", titel: Text("Wiedergabe"),
+                           unter: Text("Sprache, Untertitel, Tempo, Puffer"),
+                           pfeil: true, schwebbar: true)
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private var darstellung: some View {

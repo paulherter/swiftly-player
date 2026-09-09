@@ -31,14 +31,11 @@ struct ProfilView: View {
 
                 Color.clear.frame(height: 26)
 
+                // **Das Profil bleibt beim Konto.** „Wiedergabe" hing hier
+                // neben „Einstellungen" — ein Erbstück der iPhone-Aufteilung
+                // und keine Entscheidung. Sie steht jetzt *in* den
+                // Einstellungen, weil Befehl-Komma alle verspricht.
                 Zeilengruppe {
-                    Button { navigator.oeffne(.wiedergabe, in: bereich) } label: {
-                        Wertezeile(symbol: "play.fill", titel: Text("Wiedergabe"),
-                                   unter: Text("Sprache, Untertitel, Tempo"),
-                                   pfeil: true, schwebbar: true)
-                    }
-                    .buttonStyle(.plain)
-                    Trennstrich().padding(.leading, 48)
                     Button { navigator.oeffne(.einstellungen, in: bereich) } label: {
                         Wertezeile(symbol: "gearshape", titel: Text("Einstellungen"),
                                    pfeil: true, schwebbar: true)
