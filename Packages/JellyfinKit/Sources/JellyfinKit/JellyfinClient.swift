@@ -616,17 +616,29 @@ public actor JellyfinClient {
     ///
     /// **Ein Fehlschlag ist kein Fehler**, wie bei den Abschnitten: dann gibt
     /// es kein Angebot. Ein Abzeichen ist Zubehoer, keine Zusage.
-    public func fremdsitzungen() async -> [Fremdsitzung] {
-        do {
-            let s = try requireSession()
-            let req = try request("Sessions", query: [
-                .init(name: "controllableByUserId", value: s.userID),
-                .init(name: "activeWithinSeconds", value: "120"),
-            ])
-            return try await send(req, as: [Fremdsitzung].self)
-        } catch {
-            return []
-        }
+    /// **Wirft, statt einen Fehlschlag als „nichts da" auszugeben.**
+    ///
+    /// Hier stand `catch { return [] }`. Damit sah ein abgelaufenes Merkmal,
+    /// ein nicht erreichbarer Server und eine Antwort, die sich nicht lesen
+    /// laesst, von aussen **genauso aus wie „auf keinem anderen Geraet laeuft
+    /// etwas"** — und das ist der Normalfall, den niemand hinterfragt.
+    ///
+    /// Am 10.09.2026 gemeldet: die Uebernahme gehe nicht mehr. Im Protokoll
+    /// stand zehnmal „0 Sitzungen, kein Angebot", und aus dieser Zeile liess
+    /// sich nicht ablesen, ob der Server nichts hatte oder die Frage gar
+    /// nicht ankam. Eine Meldung, die beide Faelle gleich beschreibt,
+    /// beantwortet keine Frage.
+    ///
+    /// Die Ansicht darf weiterhin schweigen, wenn nichts geht — sie fragt
+    /// alle zehn Sekunden, da gehoert keine Fehlermeldung hin. Aber sie soll
+    /// **wissen**, was los war, statt es zu raten.
+    public func fremdsitzungen() async throws -> [Fremdsitzung] {
+        let s = try requireSession()
+        let req = try request("Sessions", query: [
+            .init(name: "controllableByUserId", value: s.userID),
+            .init(name: "activeWithinSeconds", value: "120"),
+        ])
+        return try await send(req, as: [Fremdsitzung].self)
     }
 
     /// Einen Wiedergabebefehl an eine fremde Sitzung schicken.

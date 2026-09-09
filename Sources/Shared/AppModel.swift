@@ -481,6 +481,7 @@ final class AppModel {
         do {
             try await client.faehigkeitenMelden()
         } catch {
+            Protokoll.schreib("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
             Self.log.warning("Fähigkeiten nicht gemeldet: \(error.localizedDescription)")
         }
         guard let steuerung = try? await client.fernsteuerung() else { return }
@@ -900,6 +901,34 @@ final class AppModel {
 
     func reportStart(item: Item, plan: PlaybackPlan, seconds: Double) async {
         guard let client else { return }
+        // **Die Faehigkeiten vor jeder Wiedergabe erneut melden.**
+        //
+        // Sie wurden bisher **einmal** gemeldet, beim Erscheinen der
+        // Hauptansicht. Das reicht nicht, und am 10.09.2026 ist es
+        // aufgeschlagen: die Uebernahme ging auf beiden Geraeten
+        // gleichzeitig nicht mehr, in beide Richtungen.
+        //
+        // Der Grund liegt darin, wie der Server sucht. `Sessions` wird mit
+        // `controllableByUserId` gefragt — es kommen also nur Sitzungen
+        // zurueck, die **Befehle annehmen**, und das weiss der Server nur
+        // durch `Sessions/Capabilities/Full`. Eine Sitzung lebt dort aber
+        // nicht ewig: Serverneustart, Zeitablauf, laengerer Hintergrund, und
+        // sie ist weg. Die naechste Wiedergabe legt dann eine **neue** an —
+        // und die hat die Faehigkeiten nie bekommen, weil das nur beim
+        // Programmstart geschah. Beide Geraete sind dann fuereinander
+        // unsichtbar, bis jemand die App neu startet. Das erklaert auch,
+        // warum es „auf einmal" nicht mehr ging und nicht schleichend.
+        //
+        // Der Aufruf ist billig, geht an dieselbe Gegenstelle, an die gleich
+        // die Startmeldung geht, und ist beliebig oft wiederholbar. Hier und
+        // nicht anderswo, weil genau das der Zeitpunkt ist, an dem das andere
+        // Geraet uns sehen koennen muss.
+        do {
+            try await client.faehigkeitenMelden()
+        } catch {
+            Protokoll.schreib("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
+            Self.log.warning("Fähigkeiten nicht gemeldet: \(error.localizedDescription)")
+        }
         do {
             try await client.reportStart(itemID: item.id, plan: plan,
                                          ticks: JellyfinClient.ticks(fromSeconds: seconds))
