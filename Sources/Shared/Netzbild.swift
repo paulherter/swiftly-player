@@ -56,6 +56,55 @@ final class Bildspeicher {
     /// laeuft je Kachel und je Durchgang, auf dem Hauptlauf.
     private var schluesselspeicher: [URL: URL] = [:]
 
+    // MARK: Die Schleuse
+
+    /// **Wie viele Bilder gleichzeitig geholt werden duerfen.**
+    ///
+    /// Am 10.09.2026 am Geraet gemessen, 134 Bilder: das Wandeln kostet im
+    /// Mittel 8 ms und macht **2 %** der Zeit aus. Alles andere ist Holen —
+    /// und zur Spitze waren **25 Abrufe gleichzeitig unterwegs**.
+    ///
+    /// Das ist der Grund, aus dem eine Seite sich langsam anfuehlt, obwohl
+    /// unterm Strich nichts fehlt: fuenfundzwanzig Abrufe teilen sich
+    /// dieselbe Leitung, kommen deshalb alle **gleich spaet** an, und bis
+    /// dahin steht die Seite leer. Gemessen kam eine Reihe von elf Bildern
+    /// innerhalb von zwanzig Millisekunden an — nach jeweils einer Sekunde.
+    ///
+    /// Mit einer Schleuse aendert sich die Gesamtzeit kaum; es aendert sich,
+    /// **wann das erste Bild dasteht**. Vier Abrufe teilen die Leitung durch
+    /// vier statt durch fuenfundzwanzig, die ersten vier sind also rund
+    /// sechsmal schneller da, und danach fuellt sich die Seite fortlaufend
+    /// statt auf einen Schlag.
+    ///
+    /// Vier und nicht eins: eine einzelne Verbindung laesst die Leitung
+    /// zwischen den Anfragen brachliegen. Vier und nicht zwoelf: dann waere
+    /// der Unterschied wieder keiner.
+    private static let gleichzeitig = 4
+    private var imLauf = 0
+    private var wartend: [CheckedContinuation<Void, Never>] = []
+
+    /// Reihum und der Reihe nach — wer zuerst gefragt hat, kommt zuerst
+    /// dran. Die Kacheln fragen von oben nach unten, also laedt auch von
+    /// oben nach unten.
+    private func einlass() async {
+        if imLauf < Self.gleichzeitig {
+            imLauf += 1
+            return
+        }
+        await withCheckedContinuation { (fortsetzung: CheckedContinuation<Void, Never>) in
+            wartend.append(fortsetzung)
+        }
+        // Der Platz wurde beim Freigeben auf uns umgebucht, `imLauf` bleibt.
+    }
+
+    private func einlassZurueck() {
+        if wartend.isEmpty {
+            imLauf -= 1
+        } else {
+            wartend.removeFirst().resume()
+        }
+    }
+
     /// **Eine Speichergrenze in Byte, keine Anzahl.**
     ///
     /// Hier standen „240 Bilder" und „1600 Punkt lange Kante", mit dem
@@ -147,10 +196,18 @@ final class Bildspeicher {
         // von der abgetrennten Aufgabe aus wäre der Zugriff ein Sprung über
         // die Isolationsgrenze, den Swift 6 zu Recht nicht durchlässt.
         let kante = Self.kantenlaenge
-        let lauf = Task<Eintrag?, Never> {
+        let lauf = Task<Eintrag?, Never> { [self] in
+            await einlass()
             let begonnen = Date()
-            guard let (daten, _) = try? await URLSession.shared.data(from: url) else { return nil }
+            guard let (daten, _) = try? await URLSession.shared.data(from: url) else {
+                einlassZurueck()
+                return nil
+            }
             let geholt = Date()
+            // **Vor dem Wandeln zurueckgeben, nicht danach.** Die Schleuse
+            // soll die Leitung ordnen, nicht den Rechner; das Wandeln laeuft
+            // ohnehin abseits und kostet acht Millisekunden.
+            einlassZurueck()
             let kiste = await Task.detached(priority: .userInitiated) { () -> Bildkiste? in
                 guard let quelle = CGImageSourceCreateWithData(daten as CFData, nil) else { return nil }
                 let regeln: [CFString: Any] = [
