@@ -22,7 +22,27 @@ enum Stil {
 
     static let schrift          = Color.white
     static let schriftLeise     = Color.white.opacity(0.62)
-    static let schriftSehrLeise = Color.white.opacity(0.38)
+
+    /// **0,48 und nicht 0,38 — bei 0,38 war es zu blass, um es zu lesen.**
+    ///
+    /// Ausgerechnet, nicht geschaetzt. Weiss mit 0,38 Deckkraft ergibt gegen
+    /// die drei Untergruende dieser App Kontraste von 3,52 (`grund`), 3,58
+    /// (`flaeche`) und 3,54 (`erhoeht`). Gefordert sind fuer Text unter 18 pt
+    /// **4,5** — und dieser Ton traegt genau solchen Text: Nebenzeilen,
+    /// Hinweise, Leerzustaende, quer durch alle sechs Fassungen bei 12 bis
+    /// 13 pt.
+    ///
+    /// 0,46 haette gereicht (4,67 / 4,65 / 4,54), liegt aber auf `erhoeht`
+    /// nur vier Hundertstel ueber der Schwelle — eine Nachkommastelle
+    /// Rundung, und wir waeren wieder darunter. 0,48 traegt mit 4,99 / 4,96 /
+    /// 4,82 und bleibt trotzdem deutlich hinter `schriftLeise` (7,73)
+    /// zurueck: die Abstufung, um die es hier geht, bleibt sichtbar.
+    ///
+    /// Der Ton traegt auch Zeichen und Kreise, die keine 4,5 braeuchten. Die
+    /// werden dadurch eine Spur heller — kein Verlust, und es waere die
+    /// falsche Reihenfolge, achtundachtzig Aufrufstellen einzeln zu sortieren,
+    /// um einem Zeichen sein Grau zu erhalten.
+    static let schriftSehrLeise = Color.white.opacity(0.48)
     static let linie            = Color.white.opacity(0.07)
     static let rand             = Color.white.opacity(0.12)
 

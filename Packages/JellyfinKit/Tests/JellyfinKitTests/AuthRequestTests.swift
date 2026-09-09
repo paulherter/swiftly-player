@@ -73,8 +73,17 @@ struct AuthRequestTests {
         _ = try await spyClient().authenticate(username: "paul", password: "x")
         let header = try #require(Spy.captured?.value(forHTTPHeaderField: "Authorization"))
         #expect(header.hasPrefix("MediaBrowser "))
-        #expect(header.contains(#"Client="Swiftly""#))
+        // **„Swiftly Player", der Name aus dem Store.** Der Nutzer sieht ihn
+        // in Jellyfins Geraeteliste, nicht auf dem Homebildschirm — dort
+        // heisst die App weiter „Swiftly". Am 10.09.2026 geaendert, nachdem
+        // in der Sitzungsuebersicht „Swiftly 0.1.0" stand: falscher Name und
+        // eine Fassung, die es nie gab.
+        #expect(header.contains(#"Client="Swiftly Player""#))
         #expect(header.contains(#"DeviceId="dev-42""#))
+        // Die Fassung kommt aus dem Buendel. Im Test gibt es keins, also
+        // steht dort „unbekannt" — geprueft wird, dass die alte feste
+        // „0.1.0" nirgends mehr auftaucht.
+        #expect(!header.contains("0.1.0"), "Die feste Fassungsnummer ist zurueck")
         #expect(!header.contains("Token="), "Beim Login darf noch kein Token mitgehen")
     }
 

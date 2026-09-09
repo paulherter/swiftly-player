@@ -521,7 +521,9 @@ final class App: @unchecked Sendable {
         serverstandZeigen(String(format: uebersetzt("Frage %@ …"), url.absoluteString))
 
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
+                                   deviceName: Geraet.name,
+                                   clientVersion: Geraet.fassung)
             do {
                 let info = try await c.publicSystemInfo()
                 let name = info.serverName ?? url.host() ?? uebersetzt("Server")
@@ -573,7 +575,9 @@ final class App: @unchecked Sendable {
         let servername = gtk_label_get_text(OpaquePointer(serverzeile)).map { String(cString: $0) }
 
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
+                                   deviceName: Geraet.name,
+                                   clientVersion: Geraet.fassung)
             do {
                 let sitzung = try await c.authenticate(username: benutzer, password: passwort)
                 aufHauptfaden {
@@ -725,7 +729,9 @@ final class App: @unchecked Sendable {
 
         let servername = self.servername.isEmpty ? nil : self.servername
         Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
+                                   deviceName: Geraet.name,
+                                   clientVersion: Geraet.fassung)
             do {
                 let sitzung = try await c.authenticate(username: name, password: passwort)
                 aufHauptfaden {
@@ -752,7 +758,9 @@ final class App: @unchecked Sendable {
         guard let url = bund?.serverURL else { return }
         let servername = self.servername.isEmpty ? nil : self.servername
         kontoCodelauf = Task.detached { [self] in
-            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung, deviceName: Geraet.name)
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
+                                   deviceName: Geraet.name,
+                                   clientVersion: Geraet.fassung)
             guard let vorgang = try? await c.quickConnectStarten() else {
                 aufHauptfaden { self.kontoFehlerZeigen(uebersetzt("Der Server hat keinen Code gegeben.")) }
                 return
@@ -2892,6 +2900,19 @@ nonisolated(unsafe) private let tasteGedrueckt: @convention(c) (
 /// Die Kennung muss über Neustarts gleich bleiben — Jellyfin führt darüber
 /// die Geräteliste und die Übernahme der Wiedergabe von einem anderen Gerät.
 enum Geraet {
+    /// **Die Fassung, mit der sich diese App beim Server meldet.**
+    ///
+    /// Auf den Apple-Fassungen liest `JellyfinKit.Fassungsnummer` sie aus dem
+    /// Buendel. Hier gibt es keins — Foundation liefert dann „unbekannt", und
+    /// das stuende in Jellyfins Geraeteliste und in jedem Fehlerbericht, den
+    /// jemand von dort abschreibt. Also steht sie hier, an **einer** Stelle,
+    /// und wird beim Anlegen des Clients mitgegeben.
+    ///
+    /// Sie muss zum Paket passen: `Linux/Installieren/PKGBUILD` und
+    /// `Windows/Installieren/Swiftly.iss` tragen dieselbe Zahl. Wer eine
+    /// davon anhebt, hebt alle drei.
+    static let fassung = "1.0.0"
+
     static let name: String = {
         let rechner = ProcessInfo.processInfo.hostName
         return String(format: uebersetzt("Swiftly auf %@"), rechner)

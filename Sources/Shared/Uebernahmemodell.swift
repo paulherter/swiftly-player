@@ -62,7 +62,19 @@ final class Uebernahmemodell {
         // Aktor, die Sitzung liegt hier ohnehin schon auf dem Hauptakteur.
         guard let client = model.client,
               let benutzer = model.session?.userID else { angebote = []; return }
-        let sitzungen = await client.fremdsitzungen()
+        let sitzungen: [Fremdsitzung]
+        do {
+            sitzungen = try await client.fremdsitzungen()
+        } catch {
+            // **Still nach aussen, laut im Protokoll.** Gefragt wird alle
+            // zehn Sekunden; eine Fehlermeldung auf der Startseite waere
+            // Laerm. Aber der Unterschied zwischen „nichts laeuft" und „die
+            // Frage kam nicht an" muss irgendwo stehen, sonst sucht ihn beim
+            // naechsten Mal wieder jemand von vorn.
+            Protokoll.schreib("[Uebernahme] Abfrage fehlgeschlagen: \(error)")
+            angebote = []
+            return
+        }
         angebote = Uebernahme.angebote(aus: sitzungen,
                                        eigeneGeraeteID: AppModel.deviceID,
                                        eigeneBenutzerID: benutzer)

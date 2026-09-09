@@ -592,6 +592,13 @@ struct HauptView: View {
         case .suche:  bereich = .suche
         case .zurueck:
             zurueck()
+        case .einstellungen:
+            // **Nicht zweimal auf den Stapel.** Die Seiten werden über ihre
+            // Kennung unterschieden, und zwei gleiche in einem `ForEach` sind
+            // ein Fehler, kein Schönheitsproblem. Liegt die Seite schon
+            // irgendwo, bleibt es dabei — sie ist ja offen.
+            guard !navigator.seiten(bereich).contains(.einstellungen) else { return }
+            navigator.oeffne(.einstellungen, in: bereich)
         }
     }
 }
