@@ -201,7 +201,8 @@ struct PlayerScreen: View {
                 .onTapGesture { steuerungWecken() }
 
             VideoFlaeche(url: startPlan.url, startAt: startAt,
-                         container: startPlan.container) { neu in
+                         container: startPlan.container,
+                         puffer: model.pufferstufe) { neu in
                 flaeche = neu
                 // Was im Blatt unter „Bild" gewaehlt wurde, gilt auch fuer
                 // die naechste Folge -- derselbe Schluessel wie die Geste
@@ -1004,6 +1005,10 @@ struct PlayerScreen: View {
             // drei auf fuenf.
             seitStart = Date()
 
+            // **Auch hier, sonst behaelt die naechste Folge die Stufe vom
+            // Oeffnen.** Wer waehrend einer Folge umstellt, meint die
+            // naechste mit — und `play` liest den Wert beim Aufsetzen.
+            flaeche?.puffer = model.pufferstufe
             flaeche?.play(url: neuerPlan.url, abSekunden: 0, container: neuerPlan.container)
             await model.reportStart(item: folge, plan: neuerPlan, seconds: 0)
 
@@ -1329,11 +1334,15 @@ struct VideoFlaeche: UIViewRepresentable {
     let url: URL
     let startAt: Double
     let container: String?
+    /// **Vor `play`, nicht danach.** Die Stufe geht als Startoption an
+    /// libvlc; nachtraeglich gesetzt gilt sie erst beim naechsten Oeffnen.
+    let puffer: Pufferstufe
     /// Wo im Titel der gelieferte Strom beginnt — siehe `PlaybackPlan`.
     let angelegt: (VLCPlayerView) -> Void
 
     func makeUIView(context: Context) -> VLCPlayerView {
         let view = VLCPlayerView()
+        view.puffer = puffer
         view.play(url: url, abSekunden: startAt, container: container)
         DispatchQueue.main.async { angelegt(view) }
         return view
