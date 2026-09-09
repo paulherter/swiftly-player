@@ -49,8 +49,24 @@ enum Regal {
     }
 
     static func schreiben(_ vorschau: Regalvorschau) {
-        guard let datei, let daten = try? JSONEncoder().encode(vorschau) else { return }
+        guard var datei, let daten = try? JSONEncoder().encode(vorschau) else { return }
         try? daten.write(to: datei, options: .atomic)
+        // **Nicht in die Sicherung.**
+        //
+        // Die Bildadressen hier drin tragen Jellyfins `api_key` — das steht
+        // oben ausdruecklich so da, weil die Erweiterung ohne ihn nicht an
+        // die Bilder kaeme. Damit liegt in dieser Datei ein vollwertiger
+        // Serverzugang ohne Ablauf, und zwar unverschluesselt: der
+        // Schluesselbund haelt ihn richtig, diese Datei nicht.
+        //
+        // Der Schluesselbundeintrag selbst traegt `ThisDeviceOnly` und bleibt
+        // aus fremden Sicherungen heraus. Ohne diese Zeile haette die Abschrift
+        // daneben genau den Schutz nicht, den das Original hat — eine
+        // Sicherung waehrend einer laufenden Sitzung naehme sie mit. Dieselbe
+        // Zeile steht aus demselben Grund auf dem Downloadordner.
+        var werte = URLResourceValues()
+        werte.isExcludedFromBackup = true
+        try? datei.setResourceValues(werte)
     }
 
     /// **Beim Abmelden zu leeren ist Pflicht, nicht Kosmetik.**

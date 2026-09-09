@@ -66,7 +66,6 @@ enum Keychain {
     /// Start, dass nichts gespeichert wurde.
     static func save(_ data: Data, key: String) throws {
         let query = abfrage(key)
-        SecItemDelete(query as CFDictionary)
 
         var add = query
         add[kSecValueData as String] = data
@@ -79,13 +78,29 @@ enum Keychain {
         // heraus: ein Serverzugang gehört nicht auf ein anderes Gerät.
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
+        // **Anlegen, und bei einem vorhandenen Eintrag ueberschreiben — nie
+        // vorher loeschen.**
+        //
+        // Hier stand ein `SecItemDelete` davor. Zwischen Loeschen und Anlegen
+        // liegt ein Fenster von wenigen Mikrosekunden, und wer in genau diesem
+        // Fenster beendet wird — Speicherdruck, Absturz, Abschuss durch iOS —,
+        // hat danach keinen veralteten Eintrag, sondern **gar keinen**. Der
+        // Nutzer sieht die Anmeldemaske und weiss nicht, warum. Das ist der
+        // teuerste denkbare Ausgang fuer den billigsten denkbaren Anlass.
+        //
+        // Die Loeschung hatte trotzdem einen Zweck, und der geht nicht
+        // verloren: sie sorgte dafuer, dass ein alter Eintrag die heutige
+        // Schutzstufe bekommt. `SecItemUpdate` aendert nur, was man ihm
+        // nennt — deshalb steht `kSecAttrAccessible` hier ausdruecklich mit
+        // dabei. Ohne das behielte ein Eintrag aus einer aelteren Fassung
+        // still seine alte Stufe.
         var status = SecItemAdd(add as CFDictionary, nil)
-        // **Ein vorhandener Eintrag ist kein Fehlschlag.** Lässt sich der alte
-        // nicht löschen — genau der Fall nach einer Umbenennung —, wird er
-        // überschrieben statt neu angelegt.
         if status == errSecDuplicateItem {
-            status = SecItemUpdate(query as CFDictionary,
-                                   [kSecValueData as String: data] as CFDictionary)
+            let neu: [String: Any] = [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            ]
+            status = SecItemUpdate(query as CFDictionary, neu as CFDictionary)
         }
         guard status == errSecSuccess else { throw Fehler.schreiben(status) }
     }
