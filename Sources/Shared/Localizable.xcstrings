@@ -3690,6 +3690,23 @@
         }
       }
     },
+    "Keine Besetzung hinterlegt.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Besetzung hinterlegt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No cast listed."
+          }
+        }
+      }
+    },
     "Keine Folgen": {
       "extractionState": "manual",
       "localizations": {
@@ -4381,6 +4398,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nothing similar found"
+          }
+        }
+      }
+    },
+    "Nichts Ähnliches gefunden.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts Ähnliches gefunden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing similar found."
           }
         }
       }
