@@ -277,8 +277,8 @@ struct PlayerScreen: View {
             // `schleierDa`. Dieselben Kurven wie die Steuerung.
             schleier
                 .opacity(schleierDa ? 1 : 0)
-                .animation(schleierDa ? .easeOut(duration: 0.18)
-                                      : .easeInOut(duration: 0.34),
+                .animation(schleierDa ? .snappy(duration: 0.18, extraBounce: 0)
+                                      : .smooth(duration: 0.34),
                            value: schleierDa)
 
             Group {
@@ -312,8 +312,12 @@ struct PlayerScreen: View {
             // darf sich Zeit lassen.
             .opacity(steuerungDa ? 1 : 0)
             .allowsHitTesting(steuerungDa)
-            .animation(steuerungDa ? .easeOut(duration: 0.18)
-                                   : .easeInOut(duration: 0.34),
+            // **Federn, damit ein zweiter Tipp nicht warten muss.** Die
+            // Asymmetrie bleibt — schnell auf, gemaechlich zu —, aber eine
+            // feste Dauer laesst sich nicht umlenken: wer zweimal kurz
+            // hintereinander tippt, sah die Blende von vorn beginnen.
+            .animation(steuerungDa ? .snappy(duration: 0.18, extraBounce: 0)
+                                   : .smooth(duration: 0.34),
                        value: steuerungDa)
 
             if let sprungAnzeige { sprungRueckmeldung(sprungAnzeige) }

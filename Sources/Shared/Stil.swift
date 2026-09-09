@@ -67,11 +67,23 @@ static var einblenden: Animation {
     /// Zeile, die sich zusammenzieht, sieht aus wie ein Fehler; ein kleiner
     /// Knopf, der nur die Farbe wechselt, wirkt matt. Deshalb zwei Stile
     /// und nicht einer.
+    /// **Der Druck kommt sofort, das Loslassen darf nachklingen.**
+    ///
+    /// Beides gleich schnell zu machen war mein erster Griff und ist falsch:
+    /// eine Rueckmeldung auf den Finger darf keine Dauer haben — jede
+    /// Millisekunde dort ist die, an der Unmittelbarkeit verlorengeht. Das
+    /// Zurueckgehen dagegen ist eine Systemantwort und darf weich sein.
+    /// `nil` heisst hier ausdruecklich „ohne Animation", nicht „Vorgabe".
+    private static func druckkurve(_ gedrueckt: Bool) -> Animation? {
+        gedrueckt ? nil : .linear(duration: 0.12)
+    }
+
     struct Druckzeile: ButtonStyle {
         func makeBody(configuration: Configuration) -> some View {
             configuration.label
                 .background(Stil.schrift.opacity(configuration.isPressed ? 0.06 : 0))
-                .animation(.linear(duration: 0.08), value: configuration.isPressed)
+                .animation(Stil.druckkurve(configuration.isPressed),
+                           value: configuration.isPressed)
         }
     }
 
@@ -80,7 +92,8 @@ static var einblenden: Animation {
             configuration.label
                 .scaleEffect(configuration.isPressed && !bewegungReduziert ? 0.97 : 1)
                 .opacity(configuration.isPressed ? 0.85 : 1)
-                .animation(.linear(duration: 0.08), value: configuration.isPressed)
+                .animation(Stil.druckkurve(configuration.isPressed),
+                           value: configuration.isPressed)
         }
     }
 
