@@ -52,21 +52,102 @@ import Darwin
 /// Ausgangspunkt, nicht die Vermutung, es koenne schon irgendwie gehen.
 /// **Auf Windows liegt der Draht als benannte Roehre, nicht als Steckdose.**
 ///
-/// `\\.\pipe\discord-ipc-0`, sonst dasselbe Protokoll. Der Weg dorthin
-/// braucht `WinSDK` und `CreateFileW`; solange das nicht dasteht, tut die
-/// Bruecke dort **nichts** — ausdruecklich und mit einer Zeile im Protokoll,
-/// nicht stillschweigend. Ein Schalter, der auf einer Plattform nie etwas
-/// tun kann, gehoert dort weg oder erklaert; was er nicht darf, ist so
-/// aussehen, als taete er etwas.
+/// `\\.\pipe\discord-ipc-0`, sonst **dasselbe Protokoll** — derselbe
+/// Rahmen aus Griff und Laenge, derselbe Handschlag, dieselben Rahmen. Nur
+/// `CreateFileW` und `WriteFile` treten an die Stelle von `socket` und
+/// `write`.
+///
+/// Und ein Unterschied, der die Sache hier einfacher macht: es gibt nur
+/// **einen** Ort. Roehren haengen an keinem Ordner, den eine Verpackung
+/// verschieben koennte — die Suche nach Flatpak- und Snap-Ablagen entfaellt.
+///
+/// **Auf diesem Rechner nicht gebaut**: hier gibt es kein Windows. Der Bau
+/// laeuft in der VM.
 #if os(Windows)
+import WinSDK
 
 public actor Discordbruecke {
-    public init(anwendung: String) {}
-    public func zeigen(_ anzeige: Discordanzeige?) {
-        Spur.sag("[Discord] auf Windows noch nicht angeschlossen (benannte Roehre fehlt)")
+
+    private let anwendung: String
+    private var roehre: HANDLE?
+
+    public init(anwendung: String) {
+        self.anwendung = anwendung
     }
-    public func schliessen() {}
+
+    private func verbinden() -> Bool {
+        if roehre != nil { return true }
+        for n in 0...9 {
+            let weg = #"\\.\pipe\discord-ipc-"# + String(n)
+            let griff = weg.withCString(encodedAs: UTF16.self) { zeiger in
+                CreateFileW(zeiger,
+                            GENERIC_READ | GENERIC_WRITE,
+                            0, nil, DWORD(OPEN_EXISTING), 0, nil)
+            }
+            guard let griff, griff != INVALID_HANDLE_VALUE else { continue }
+            roehre = griff
+            if senden(0, ["v": 1, "client_id": anwendung]) {
+                Spur.sag("[Discord] verbunden ueber \(weg)")
+                return true
+            }
+            CloseHandle(griff)
+            roehre = nil
+        }
+        return false
+    }
+
+    /// Derselbe Rahmen wie unter Unix: Griff und Laenge als je vier Byte
+    /// little-endian, dann der Koerper.
+    private func senden(_ griff: UInt32, _ inhalt: [String: Any]) -> Bool {
+        guard let roehre,
+              let daten = try? JSONSerialization.data(withJSONObject: inhalt) else { return false }
+        var kopf = Data()
+        var g = griff.littleEndian
+        var l = UInt32(daten.count).littleEndian
+        withUnsafeBytes(of: &g) { kopf.append(contentsOf: $0) }
+        withUnsafeBytes(of: &l) { kopf.append(contentsOf: $0) }
+        let alles = kopf + daten
+        return alles.withUnsafeBytes { roh -> Bool in
+            var ab = 0
+            while ab < roh.count {
+                var geschrieben: DWORD = 0
+                let ok = WriteFile(roehre,
+                                   roh.baseAddress!.advanced(by: ab),
+                                   DWORD(roh.count - ab), &geschrieben, nil)
+                if !ok || geschrieben == 0 { return false }
+                ab += Int(geschrieben)
+            }
+            return true
+        }
+    }
+
+    private func trennen() {
+        if let roehre { CloseHandle(roehre) }
+        roehre = nil
+    }
+
+    public func zeigen(_ anzeige: Discordanzeige?) {
+        guard verbinden() else { return }
+        var arg: [String: Any] = ["pid": Int(ProcessInfo.processInfo.processIdentifier)]
+        if let anzeige { arg["activity"] = anzeige.alsWoerterbuch }
+        let rahmen: [String: Any] = [
+            "cmd": "SET_ACTIVITY",
+            "args": arg,
+            "nonce": UUID().uuidString,
+        ]
+        if !senden(1, rahmen) {
+            Spur.sag("[Discord] Roehre weg, wird beim naechsten Mal neu aufgebaut")
+            trennen()
+        }
+    }
+
+    public func schliessen() {
+        guard roehre != nil else { return }
+        _ = senden(2, [:])
+        trennen()
+    }
 }
+
 
 #else
 
