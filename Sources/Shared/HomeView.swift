@@ -32,6 +32,14 @@ struct HomeView: View {
                 // Unter dem Kopf und unter der Uebernahmeauswahl, ueber dem
                 // Inhalt — siehe `bereichsleiste()`.
                 .bereichsleiste()
+
+            // **Ein Versuch, und er steht bewusst allein.** Siehe
+            // ``Farbschein``: eine Struktur, ein Aufruf, eine Zeile weniger,
+            // wenn er wieder rausgeht. Er steht **über** dem Inhalt, weil
+            // `bereichsinhalt()` einen deckenden Grund hinter die
+            // Scrollflaeche legt — darunter waere er unsichtbar.
+            if !breit { Farbschein() }
+
             kopf
 
             if stand.geladen, stand.weiterschauen.isEmpty,
@@ -137,13 +145,19 @@ struct HomeView: View {
                 // Was es heraushebt, ist jetzt nicht die **Form**, sondern
                 // die **Farbe** — und das ist ohnehin unsere Regel: der
                 // Akzent traegt Zustand, keine Flaechen.
+                //
+                // **Und zwar `kuehl`, nicht `akzent`.** Der Akzent sagt „hier
+                // laeuft was" — er steht als Fortschrittsbalken zwei Zeilen
+                // tiefer auf jeder angefangenen Kachel. Dieses Zeichen sagt
+                // „woanders laeuft was". Zwei Aussagen, also zwei Farben;
+                // im selben Ton war der Unterschied nicht zu sehen.
                 Kopfziele(name: model.session?.userName ?? "?",
                           bild: model.benutzerbildURL()) {
                     if let angebot = uebernahme.angebot {
                         Button { abzeichenGedrueckt() } label: {
                             Image(systemName: angebot.geraetezeichen)
                                 .font(.system(size: 20))
-                                .foregroundStyle(Stil.akzent)
+                                .foregroundStyle(Stil.kuehl)
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
@@ -462,5 +476,64 @@ private struct Kachel: View {
     private var fortschritt: Double? {
         guard let prozent = item.userData?.playedPercentage, prozent > 0 else { return nil }
         return prozent / 100
+    }
+}
+
+/// **Der Farbschein über der Kopfzeile — ein Versuch auf Widerruf.**
+///
+/// Er kommt von der Webseite, wo hinter der Schlagzeile ein türkiser und
+/// ein blauer Schein stehen. Dort ist das eine ausdrücklich notierte
+/// Abweichung von `GESTALTUNG.md` („Flächen sind flach"), und eine
+/// Abweichung wandert normalerweise nicht dorthin zurück, wovon sie
+/// abweicht. Er steht hier, weil er am Gerät beurteilt werden soll und
+/// nicht am Entwurf.
+///
+/// **Wenn er wieder rausgeht**, ist es diese Struktur und die eine Zeile
+/// `if !breit { Farbschein() }` in ``HomeView`` — sonst nichts.
+///
+/// Vier Sachen, an denen er hängt:
+///
+/// - **Er liegt über dem Inhalt, nicht darunter.** `bereichsinhalt()` legt
+///   einen deckenden Grund hinter die Scrollfläche, damit beim Heranziehen
+///   an den Rändern nichts freikommt. Darunter war der Schein schlicht
+///   nicht zu sehen — im ersten Anlauf genau so gebaut und am Simulator
+///   aufgefallen.
+/// - **`plusLighter`, kein Schleier.** Über dem Grund gibt er Licht dazu;
+///   über einem hellen Plakat fällt eine Zugabe von vierzehn Prozent nicht
+///   auf. Mit normaler Deckkraft läge er als Nebel über den Postern.
+/// - **Die Maske blendet ihn weg, bevor die erste Reihe anfängt.** Sonst
+///   endet er an einer Kante, und eine Kante ist genau das, was ein Schein
+///   nicht haben darf.
+/// - **Er nimmt keine Eingaben.** Über ihm liegt die Kopfzeile mit drei
+///   Zielen.
+private struct Farbschein: View {
+    var body: some View {
+        // Die Kreise sind größer als der Ausschnitt und sitzen zur Hälfte
+        // außerhalb: ein Kreis, dessen Rand im Bild liegt, liest sich als
+        // Fleck. Der weiche Rand muss aus dem Bild heraus.
+        ZStack(alignment: .top) {
+            Circle()
+                .fill(Stil.akzent)
+                .frame(width: 300, height: 300)
+                .opacity(0.50)
+                .offset(x: -110, y: -70)
+            Circle()
+                .fill(Stil.kuehl)
+                .frame(width: 320, height: 320)
+                .opacity(0.44)
+                .offset(x: 130, y: -90)
+        }
+        .blur(radius: 64)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .frame(height: 300, alignment: .top)
+        .mask(alignment: .top) {
+            LinearGradient(colors: [.white, .white.opacity(0)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 300)
+        }
+        .blendMode(.plusLighter)
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

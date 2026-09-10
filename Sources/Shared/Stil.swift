@@ -2103,26 +2103,14 @@ struct Belegzeile: View {
     var body: some View {
         HStack(spacing: 14) {
             if let eigen {
-                HStack(spacing: 6) {
-                    Image(systemName: eigen.symbol)
-                        .font(.system(size: 11, weight: .heavy))
-                    Text(verbatim: eigen.wort).font(.system(size: 13, weight: .medium))
-                }
-                .foregroundStyle(eigen.farbe)
+                marke(eigen.symbol, Text(verbatim: eigen.wort),
+                      farbe: eigen.farbe, gewicht: .heavy)
             } else if direktplay {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .heavy))
-                    Text("Direct Play").font(.system(size: 13, weight: .medium))
-                }
-                .foregroundStyle(Stil.akzent)
+                marke("checkmark", Text("Direct Play"),
+                      farbe: Stil.akzent, gewicht: .heavy)
             } else if let hinweis {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
-                    Text(hinweis).font(.system(size: 13, weight: .medium))
-                }
-                .foregroundStyle(Stil.warnung)
+                marke("exclamationmark.triangle.fill", Text(hinweis),
+                      farbe: Stil.warnung, gewicht: .regular)
             }
 
             if let bewertung {
@@ -2143,6 +2131,37 @@ struct Belegzeile: View {
 
             Spacer(minLength: 0)
         }
+    }
+
+    /// Die Hülle, in der alle drei Belege stecken.
+    ///
+    /// **Warum eine Marke und kein loser Text.** Vorher standen Zeichen und
+    /// Wort nackt auf dem Grund, und direkt daneben lag die Freigabe als
+    /// umrandete Plakette — zwei verschiedene Formen für zwei Angaben, die
+    /// gleich viel wiegen. Jetzt tragen beide dieselbe Ecke und lesen sich
+    /// als Paar; welche Auskunft es ist, sagt die Farbe.
+    ///
+    /// **Fünfzehn Prozent, keine Füllung.** Der weiße Abspielknopf bleibt
+    /// der einzige gefüllte Gegenstand der Seite. Bei dieser Deckkraft liest
+    /// die Marke als Angabe; ab etwa einem Drittel wird daraus ein zweiter
+    /// Knopf, und der nimmt dem ersten seine Aussage.
+    ///
+    /// **Eine Hülle, nicht drei.** Genau daran ist diese Zeile schon einmal
+    /// auseinandergelaufen: dieselben Zahlen zweimal getippt, und beim
+    /// nächsten Anfassen stimmte nur noch eine Hälfte.
+    private func marke(_ symbol: String, _ wort: Text,
+                       farbe: Color, gewicht: Font.Weight) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 11, weight: gewicht))
+            wort.font(.system(size: 13, weight: .medium))
+        }
+        .foregroundStyle(farbe)
+        // Links enger als rechts: das Zeichen ist schmaler als seine
+        // Zeichenzelle, sonst sitzt das Wort sichtbar aus der Mitte.
+        .padding(.leading, 8)
+        .padding(.trailing, 10)
+        .padding(.vertical, 4)
+        .background(farbe.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

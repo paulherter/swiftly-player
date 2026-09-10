@@ -53,6 +53,19 @@ enum Stil {
     /// nicht ihre Aufweichung: der Ring zeigt eine Auswahl.
     static let akzent  = Color(red: 0.361, green: 0.820, blue: 0.761)   // #5CD1C2
 
+    /// Trägt, was auf einem **anderen** Gerät passiert: das Angebot
+    /// „hier weiterschauen", die Fernsteuerung. Türkis heißt „hier",
+    /// dieser Ton heißt „woanders".
+    ///
+    /// Vorher trug beides den Akzent. Damit stand das Angebot im Kopf der
+    /// Startseite im selben Ton wie die Fortschrittsbalken zwei Zeilen
+    /// darunter — zwei verschiedene Aussagen in einer Farbe, und keine
+    /// davon war dadurch noch eindeutig.
+    ///
+    /// Der Wert kommt von der Webseite (`Website/DESIGN.md`, `--kuehl`),
+    /// wo er dasselbe trägt: „Resume on this Device".
+    static let kuehl   = Color(red: 0.494, green: 0.608, blue: 1.000)   // #7E9BFF
+
     /// Erscheint ausschließlich, wenn der Server transkodiert.
     static let warnung = Color(red: 0.910, green: 0.514, blue: 0.227)   // #E8833A
 }
