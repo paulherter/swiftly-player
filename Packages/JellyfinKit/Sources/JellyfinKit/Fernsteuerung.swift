@@ -73,7 +73,10 @@ public actor Fernsteuerung {
         let k = URLSessionConfiguration.default
         k.timeoutIntervalForRequest = 86_400
         k.timeoutIntervalForResource = 86_400
-        k.waitsForConnectivity = true
+        // `waitsForConnectivity` gibt es auf swift-corelibs-foundation nur
+        // lesend — der Bau auf cachy hat es gefunden. Es war ohnehin
+        // Beiwerk: der Wiederaufbau nach einem Abriss steht schon in
+        // `neuVerbinden`.
         return URLSession(configuration: k)
     }()
 
