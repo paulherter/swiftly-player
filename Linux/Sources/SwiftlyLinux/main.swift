@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import JellyfinKit
 
 /// Einstiegspunkt. Alles Weitere steht in ``App``.
 ///
@@ -20,6 +21,13 @@ import Foundation
 #if os(Windows)
 _ = g_setenv("PANGOCAIRO_BACKEND", "fc", 0)
 #endif
+
+// **Das Paket bekommt seinen Faden nach draussen**, wie auf den
+// Apple-Fassungen. Der Steuerkanal und die Sitzungsabfrage im Paket
+// scheitern sonst lautlos — genau daran ist am 10.09.2026 eine halbe Nacht
+// vergangen. Hier reicht `print`: das Startskript leitet die Ausgabe
+// ohnehin in `swiftly-linux.log`.
+Spur.schreiben = { print("[Paket] \($0)") }
 
 nonisolated(unsafe) let app = App()
 

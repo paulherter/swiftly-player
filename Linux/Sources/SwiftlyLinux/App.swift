@@ -1494,7 +1494,19 @@ final class App: @unchecked Sendable {
 
     private func uebernahmeFragen() async {
         guard let client, !benutzerID.isEmpty else { return }
-        let sitzungen = await client.fremdsitzungen()
+        // **Still nach aussen, laut im Protokoll.** Gefragt wird im Takt;
+        // eine Meldung auf der Startseite waere Laerm. Der Unterschied
+        // zwischen „nichts laeuft" und „die Frage kam nicht an" muss aber
+        // irgendwo stehen — genau daran ist die Uebernahme am 10.09.2026
+        // stundenlang vorbeigesucht worden, weil `fremdsitzungen()` jeden
+        // Fehlschlag als leere Liste zurueckgab.
+        let sitzungen: [Fremdsitzung]
+        do {
+            sitzungen = try await client.fremdsitzungen()
+        } catch {
+            Spur.sag("[Uebernahme] Abfrage fehlgeschlagen: \(error)")
+            return
+        }
         let angebote = Uebernahme.angebote(aus: sitzungen,
                                            eigeneGeraeteID: Geraet.kennung,
                                            eigeneBenutzerID: benutzerID)
@@ -2905,13 +2917,15 @@ enum Geraet {
     /// Auf den Apple-Fassungen liest `JellyfinKit.Fassungsnummer` sie aus dem
     /// Buendel. Hier gibt es keins — Foundation liefert dann „unbekannt", und
     /// das stuende in Jellyfins Geraeteliste und in jedem Fehlerbericht, den
-    /// jemand von dort abschreibt. Also steht sie hier, an **einer** Stelle,
-    /// und wird beim Anlegen des Clients mitgegeben.
+    /// jemand von dort abschreibt.
     ///
-    /// Sie muss zum Paket passen: `Linux/Installieren/PKGBUILD` und
-    /// `Windows/Installieren/Swiftly.iss` tragen dieselbe Zahl. Wer eine
-    /// davon anhebt, hebt alle drei.
-    static let fassung = "1.0.0"
+    /// **Nicht neu getippt, sondern aus ``Fassung``.** Ich hatte die Zahl
+    /// hier ein zweites Mal hingeschrieben und es beim Bauen gemerkt — es
+    /// gibt sie laengst, mit demselben Kommentar darueber, dass sie an genau
+    /// zwei Orten stehen darf. Ein dritter waere der Anfang des
+    /// Auseinanderlaufens gewesen, und zwar an der Stelle, die das gerade
+    /// verhindern sollte.
+    static var fassung: String { "\(Fassung.nummer) (\(Fassung.bau))" }
 
     static let name: String = {
         let rechner = ProcessInfo.processInfo.hostName
