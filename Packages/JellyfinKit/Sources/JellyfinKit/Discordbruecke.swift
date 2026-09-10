@@ -266,13 +266,31 @@ public actor Discordbruecke {
             draht = fd
             if senden(.handschlag, ["v": 1, "client_id": anwendung]) {
                 verbunden = true
+                schonGeklagt = false
                 Spur.sag("[Discord] verbunden ueber \(weg)")
                 return true
             }
             close(fd); draht = -1
         }
+        // **Auch der Fehlschlag sagt etwas.** Hier stand nichts, und damit
+        // war „Discord laeuft nicht" von „wir werden gar nicht gefragt" nicht
+        // zu unterscheiden — genau die Ununterscheidbarkeit, an der am
+        // 10.09.2026 schon die Uebernahme stundenlang haengengeblieben ist,
+        // diesmal in meinem eigenen neuen Code.
+        //
+        // Einmal je Anlauf, nicht bei jedem Takt: sonst fuellt es das
+        // Protokoll, sobald jemand Discord nicht offen hat.
+        if !schonGeklagt {
+            schonGeklagt = true
+            let wege = stellen()
+            Spur.sag("[Discord] keine Steckdose gefunden — \(wege.count) Stellen "
+                     + "abgesucht, zuerst \(wege.first ?? "—")")
+        }
         return false
     }
+
+    /// Damit die Klage einmal kommt und nicht bei jedem Takt.
+    private var schonGeklagt = false
 
     private func trennen() {
         if draht >= 0 { close(draht) }
@@ -292,6 +310,7 @@ public actor Discordbruecke {
             "args": arg,
             "nonce": UUID().uuidString,
         ]
+        Spur.sag("[Discord] sende: \(anzeige.map(\.kurzfassung) ?? "nichts")")
         if !senden(.rahmen, rahmen) {
             // Discord beendet, Leitung tot. Beim naechsten Mal neu aufbauen —
             // nicht hier in einer Schleife, das waere ein Zaehler ohne Zweck.
@@ -355,6 +374,14 @@ public struct Discordanzeige: Sendable {
     /// Sie zeigt in das oeffentliche Repository. Wird es umbenannt, bleibt
     /// das Bild leer; der Rest der Anzeige steht weiter.
     static let zeichen = "https://raw.githubusercontent.com/paulherter/swiftly-player/main/Linux/Ressourcen/icons/hicolor/512x512/apps/de.paulherter.swiftly.png"
+
+    /// Fuer das Protokoll — was hinausgeht, in einer Zeile.
+    var kurzfassung: String {
+        let spanne = (von != nil && bis != nil)
+            ? "Balken \(Int(bis!.timeIntervalSince(von!))) s"
+            : "ohne Balken"
+        return "\(titel) · \(unterzeile ?? "—") · \(spanne)"
+    }
 
     var alsWoerterbuch: [String: Any] {
         var d: [String: Any] = [

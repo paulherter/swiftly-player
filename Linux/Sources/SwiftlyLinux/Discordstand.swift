@@ -39,12 +39,35 @@ enum Discordstand {
 
         // Pausiert heisst: kein Balken, aber weiter sichtbar. Ein Balken, der
         // laeuft, waehrend das Bild steht, behauptet etwas Falsches.
+        // **Ohne Laufzeit gar nichts senden.**
+        //
+        // Am 10.09.2026 gemeldet: die Zahl faengt immer bei null an und
+        // laeuft weiter, auch pausiert. Der Grund liegt hier: solange VLC die
+        // Laufzeit noch nicht kennt, ist `dauer` null — dann gingen Anfang
+        // und Ende als `nil` hinaus, und Discord zeigt in diesem Fall seinen
+        // **eigenen** Zaehler. Der beginnt beim Erscheinen der Anzeige bei
+        // null und laeuft einfach weiter; er sieht aus wie unsere Zahl, ist
+        // aber seine und weiss von der Folge nichts.
+        //
+        // Also erst melden, wenn die Laufzeit steht. Ein paar Takte spaeter
+        // ist besser als sofort und falsch.
+        guard dauer > 0 else { return }
+
+        // **Pausiert: kein Balken, dafuer die Stelle im Text.**
+        //
+        // Discord kennt kein „angehalten". Laesst man Anfang und Ende weg,
+        // erscheint sein eigener Zaehler und laeuft munter weiter — genau
+        // das, was gemeldet wurde. Es bleibt also nur, den Balken
+        // wegzulassen **und** zu sagen, wo es steht; dann behauptet nichts
+        // etwas Falsches.
         let jetzt = Date()
+        let zusatz = laeuft ? nil : "\(Spielzeit.text(stelle)) / \(Spielzeit.text(dauer))"
+        let zeile = [unterzeile, zusatz].compactMap { $0 }.joined(separator: " · ")
         let anzeige = Discordanzeige(
             titel: titel,
-            unterzeile: unterzeile,
-            von: laeuft && dauer > 0 ? jetzt.addingTimeInterval(-stelle) : nil,
-            bis: laeuft && dauer > 0 ? jetzt.addingTimeInterval(dauer - stelle) : nil)
+            unterzeile: zeile.isEmpty ? nil : zeile,
+            von: laeuft ? jetzt.addingTimeInterval(-stelle) : nil,
+            bis: laeuft ? jetzt.addingTimeInterval(dauer - stelle) : nil)
 
         // Nur bei einer echten Aenderung senden — der Takt laeuft mehrmals je
         // Sekunde. `Discordanzeige` vergleicht die Zeitpunkte auf die
