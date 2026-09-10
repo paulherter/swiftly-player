@@ -428,8 +428,26 @@ struct Heldenkopf: View {
                 }
                 .foregroundStyle(Stil.schriftLeise)
             }
-            if let freigabe = titel.officialRating { Plakette(text: freigabe) }
+            // **Ecke 8, nicht der Standardwert 3.** Dieselbe Rechnung wie auf
+            // dem iPhone: die Skala steht bei 10/12/16, und eine Marke mit 3
+            // sitzt hier neben Dingen mit 10 — sie war das eckigste Element
+            // der Seite.
+            if let freigabe = titel.officialRating {
+                Plakette(text: freigabe, rundung: 8)
+            }
             if let plan {
+                // **Der Beleg ist eine Marke, kein loser Text.**
+                //
+                // Er stand als Zeichen und Wort nackt auf dem Grund, direkt
+                // neben der umrandeten Freigabe-Plakette: zwei verschiedene
+                // Formen fuer zwei Angaben, die gleich viel wiegen. Jetzt
+                // tragen beide dieselbe Ecke und lesen sich als Paar; welche
+                // Auskunft es ist, sagt die Farbe.
+                //
+                // Fuenfzehn Prozent Toenung, keine Fuellung — der weisse
+                // Abspielknopf bleibt der einzige gefuellte Gegenstand der
+                // Seite. Ab etwa einem Drittel wird daraus ein zweiter Knopf.
+                let farbe = plan.isLossless ? Stil.akzent : Stil.warnung
                 HStack(spacing: 6) {
                     Image(systemName: plan.isLossless
                           ? "checkmark" : "exclamationmark.triangle.fill")
@@ -438,7 +456,14 @@ struct Heldenkopf: View {
                          ? String(localized: "Direct Play") : plan.method.rawValue)
                         .font(.system(size: 13, weight: .medium))
                 }
-                .foregroundStyle(plan.isLossless ? Stil.akzent : Stil.warnung)
+                .foregroundStyle(farbe)
+                // Links enger als rechts: das Zeichen ist schmaler als seine
+                // Zeichenzelle, sonst sitzt das Wort sichtbar aus der Mitte.
+                .padding(.leading, 8)
+                .padding(.trailing, 10)
+                .padding(.vertical, 4)
+                .background(farbe.opacity(0.15),
+                            in: RoundedRectangle(cornerRadius: 8))
             }
             Spacer(minLength: 0)
         }

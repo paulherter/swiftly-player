@@ -972,9 +972,13 @@ struct Uebernahmezeile: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            // **`kuehl`, nicht `akzent`.** Der Akzent sagt „hier laeuft was"
+            // und steht als Balken auf jeder angefangenen Kachel; diese Zeile
+            // sagt „woanders laeuft was". Zwei Aussagen, also zwei Farben —
+            // im selben Ton war der Unterschied nicht zu sehen.
             Image(systemName: sitzung.geraetezeichen)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Stil.akzent)
+                .foregroundStyle(Stil.kuehl)
                 .frame(width: 26)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Hier weiterschauen")
@@ -990,10 +994,10 @@ struct Uebernahmezeile: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 40)
-        .background(schwebt ? Stil.akzent.opacity(0.12) : Stil.akzent.opacity(0.06),
+        .background(schwebt ? Stil.kuehl.opacity(0.12) : Stil.kuehl.opacity(0.06),
                     in: RoundedRectangle(cornerRadius: Stil.ecke))
         .overlay(RoundedRectangle(cornerRadius: Stil.ecke)
-            .strokeBorder(Stil.akzent.opacity(schwebt ? 0.35 : 0.18)))
+            .strokeBorder(Stil.kuehl.opacity(schwebt ? 0.35 : 0.18)))
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
     }

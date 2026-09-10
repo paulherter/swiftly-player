@@ -452,20 +452,40 @@ struct Belegzeile: View {
     @ViewBuilder
     private var beleg: some View {
         if direktplay {
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 24, weight: .heavy))
-                Text("Direct Play").font(.system(size: 27, weight: .medium))
-            }
-            .foregroundStyle(Stil.akzent)
+            marke("checkmark", Text("Direct Play"), farbe: Stil.akzent, gewicht: .heavy)
         } else if let hinweis {
-            HStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 24))
-                Text(hinweis).font(.system(size: 27, weight: .medium))
-            }
-            .foregroundStyle(Stil.warnung)
+            marke("exclamationmark.triangle.fill", Text(hinweis),
+                  farbe: Stil.warnung, gewicht: .regular)
         }
+    }
+
+    /// Die Huelle, in der beide Belege stecken.
+    ///
+    /// **Warum eine Marke und kein loser Text.** Zeichen und Wort standen
+    /// nackt auf dem Grund, und daneben liegt die Freigabe als umrandete
+    /// Plakette — zwei verschiedene Formen fuer zwei Angaben, die gleich viel
+    /// wiegen. Jetzt tragen beide dieselbe Ecke und lesen sich als Paar;
+    /// welche Auskunft es ist, sagt die Farbe.
+    ///
+    /// **Rundung 6, dieselbe wie `Plakette.fern`** — nicht `Stil.ecke`. Es
+    /// geht hier nicht um die Groesse der Flaeche, sondern darum, dass die
+    /// beiden Nachbarn gleich aussehen.
+    ///
+    /// Fuenfzehn Prozent Toenung, keine Fuellung: der weisse Fokus bleibt
+    /// die einzige gefuellte Flaeche des Bildschirms.
+    private func marke(_ symbol: String, _ wort: Text,
+                       farbe: Color, gewicht: Font.Weight) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 24, weight: gewicht))
+            wort.font(.system(size: 27, weight: .medium))
+        }
+        .foregroundStyle(farbe)
+        // Links enger als rechts: das Zeichen ist schmaler als seine
+        // Zeichenzelle, sonst sitzt das Wort sichtbar aus der Mitte.
+        .padding(.leading, 16)
+        .padding(.trailing, 20)
+        .padding(.vertical, 8)
+        .background(farbe.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
     }
 }
 
