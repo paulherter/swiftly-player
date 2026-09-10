@@ -303,6 +303,14 @@ func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false,
     gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
     // Zeichen und Wort im Abstand 6 — die Masse des Macs (`Chip`).
     let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
+    // **Sonst klebt der Inhalt am linken Rand.**
+    //
+    // Ein Knopf streckt sein Kind auf die volle Breite; die Reihe wird also
+    // so breit wie der Knopf, und das Bild darin sitzt am Anfang, nicht in
+    // der Mitte. Bei einem Knopf mit Wort faellt das nicht auf, weil der
+    // Inhalt die Breite ohnehin ausfuellt — bei einem Zeichen allein schon:
+    // es stand sichtbar links statt mittig. Am Geraet gemeldet.
+    gtk_widget_set_halign(reihe, GTK_ALIGN_CENTER)
     if let symbol {
         let bild: Widget! = gtk_image_new_from_icon_name(symbol)
         gtk_image_set_pixel_size(OpaquePointer(bild), 12)

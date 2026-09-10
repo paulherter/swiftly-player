@@ -768,7 +768,11 @@ enum Stil {
         button.swiftly-spieltaste:hover label { color: \(schriftLeise); }
         /* Der Vollbildknopf: so gross wie ein Chip hoch ist, rund, leise. */
         button.swiftly-vollknopf {
-            border-radius: 14px;
+            /* Wie bei den Zeichenkapseln daneben: der Radius steht ueber der
+               halben Kante, damit die Form rund bleibt und nicht an einem
+               spaeteren Mass haengt. Mit dem Rand von einem Punkt war die
+               feste 14 ohnehin schon eine Spur zu klein. */
+            border-radius: 999px;
             padding: 0;
             min-width: 28px;
             min-height: 28px;
@@ -867,10 +871,21 @@ enum Stil {
            Begruendung wie auf den Apple-Fassungen. Deckend genug, um ueber
            bewegtem Bild lesbar zu bleiben. */
         /* Ein Chip ohne Wort: quadratisch statt breit, Kapsel bleibt. */
+        /* **Ein Kreis ist so breit wie hoch — hier war er es nicht.**
+           Es standen 34 breit gegen 28 hoch, bei einem Radius von 14. Damit
+           war die Form kein Kreis, sondern eine Kapsel: oben und unten voll
+           gerundet, an den Seiten drei Punkt zu lang. Am Geraet gemeldet,
+           und man sieht es, sobald man einmal darauf achtet.
+
+           Der Radius steht jetzt weit ueber der halben Kante. GTK deckelt
+           ihn auf das Moegliche, und damit bleibt die Form auch dann rund,
+           wenn jemand spaeter an der Groesse dreht — eine feste 14 waere
+           beim naechsten Mass wieder falsch, ohne dass es auffaellt. */
         .swiftly-chip.swiftly-nursymbol {
-            padding-left: 0;
-            padding-right: 0;
-            min-width: 34px;
+            padding: 0;
+            min-width: 28px;
+            min-height: 28px;
+            border-radius: 999px;
         }
         .swiftly-technikschild {
             font-family: monospace;
