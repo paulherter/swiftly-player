@@ -1,17 +1,17 @@
 Package: swiftly-jellyfin
-Version: 1.0.0
+Version: 1.0.2
 Architecture: amd64
 Maintainer: Paul Herter <accounts@paulherter.de>
-Installed-Size: 59104
+Installed-Size: 59680
 Depends: libgtk-4-1 (>= 4.14), libvlc5 | libvlc-bin, vlc-plugin-base, libc6 (>= 2.39)
-Filename: ./swiftly-jellyfin_1.0.0_amd64.deb
-Size: 17832032
-MD5sum: f7e26928c3df558255bfa84e88019bdd
-SHA1: 9480a612b0fe55c5b7a863c40aefcf161973a3b0
-SHA256: d9365146bb3e6c74dd6ae9309f0f9631d92fb816f6d1bb41a4233a174419c0ae
+Filename: ./swiftly-jellyfin_1.0.2_amd64.deb
+Size: 17984484
+MD5sum: 7ff6ee480303ec05c0bd5e520983ddfb
+SHA1: 606a21c3b7fe0ae1c575a0ce29862fc6fda96a48
+SHA256: 5e1ec13bbd64aedcb93ab635e0aa3b48a3302d0f18b2a16cddc4279048d42da5
 Section: video
 Priority: optional
-Homepage: https://github.com/paulherter/swiftly-for-jellyfin
+Homepage: https://github.com/paulherter/swiftly-player
 Description: Jellyfin client that never transcodes
  Swiftly plays everything on your Jellyfin server as Direct Play or Direct
  Stream. The server never re-encodes, so the picture stays untouched and the
