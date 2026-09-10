@@ -27,7 +27,16 @@ _ = g_setenv("PANGOCAIRO_BACKEND", "fc", 0)
 // scheitern sonst lautlos — genau daran ist am 10.09.2026 eine halbe Nacht
 // vergangen. Hier reicht `print`: das Startskript leitet die Ausgabe
 // ohnehin in `swiftly-linux.log`.
-Spur.schreiben = { print("[Paket] \($0)") }
+Spur.schreiben = { text in
+    // **Mit Uhrzeit.** Ohne sie steht im Protokoll zwar, *was* passiert ist,
+    // aber nicht *wann* — und bei einer Leitung, die auf- und abgeht, ist
+    // genau der Abstand die Auskunft. Am 10.09.2026 stand dort zwanzigmal
+    // „Leitung verloren" untereinander, und es war nicht zu sagen, ob das
+    // ueber eine Minute ging oder ueber eine Stunde.
+    let u = DateFormatter()
+    u.dateFormat = "HH:mm:ss"
+    print("\(u.string(from: Date())) [Paket] \(text)")
+}
 
 nonisolated(unsafe) let app = App()
 
