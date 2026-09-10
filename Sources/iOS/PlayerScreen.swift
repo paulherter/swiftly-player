@@ -590,20 +590,7 @@ struct PlayerScreen: View {
 
     // MARK: - Schleier
 
-    /// Abdunkeln plus Verlauf oben und unten. Ohne das sind weiße Symbole
-    /// über hellen Szenen nicht zu erkennen.
-    private var schleier: some View {
-        ZStack {
-            Color.black.opacity(0.28)
-            LinearGradient(colors: [.black.opacity(0.6), .clear],
-                           startPoint: .top, endPoint: .center)
-            LinearGradient(colors: [.clear, .black.opacity(0.7)],
-                           startPoint: .center, endPoint: .bottom)
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .transition(.opacity)
-    }
+    private var schleier: some View { Playerschleier() }
 
     // MARK: - Tippflächen
 
@@ -725,51 +712,25 @@ struct PlayerScreen: View {
 
                 Spacer(minLength: 0)
 
-                if angebot.sichtbar {
-                    Button(action: angebotAusfuehren) {
-                        // Serverdaten sind hier nicht im Spiel, aber die
-                        // Beschriftung entsteht als `String` im Paket —
-                        // deshalb `Text(verbatim:)` statt `Label(_:)`, sonst
-                        // würde sie ein zweites Mal nachgeschlagen.
-                        HStack(spacing: 6) {
-                            Image(systemName: angebot.zeichen)
-                            Text(verbatim: angebot.beschriftung)
-                        }
-                        .font(.system(size: 14, weight: .semibold))
-                        .padding(.horizontal, 15)
-                        .frame(height: 34)
-                        .background(.white.opacity(0.16), in: Capsule())
-                        .overlay(Capsule().strokeBorder(.white.opacity(0.24)))
-                    }
-                    .foregroundStyle(.white)
-                    .fixedSize()
-                    .transition(.opacity)
-                }
+                Angebotsknopf(angebot: angebot, aktion: angebotAusfuehren)
             }
             .foregroundStyle(.white)
 
-            HStack(spacing: 12) {
-                Text(zeit(position))
-                Zeitregler(wert: $position, bis: max(dauer, 1)) { schiebt in
-                    if schiebt {
-                        amSchieben = true
-                        zuletztGeschoben = Date()
-                        ausblendMarke += 1
-                    } else {
-                        // Ausdrücklich zurücksetzen: sonst bliebe amSchieben
-                        // stehen und die Zeitanzeige würde nie mehr
-                        // nachgeführt.
-                        amSchieben = false
-                        surface?.seek(toSeconds: position)
-                        sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
-                        meldeFortschritt()
-                        ausblendenVerschieben()
-                    }
+            Zeitzeile(position: $position, dauer: dauer) { schiebt in
+                if schiebt {
+                    amSchieben = true
+                    zuletztGeschoben = Date()
+                    ausblendMarke += 1
+                } else {
+                    // Ausdrücklich zurücksetzen: sonst bliebe amSchieben
+                    // stehen und die Zeitanzeige würde nie mehr nachgeführt.
+                    amSchieben = false
+                    surface?.seek(toSeconds: position)
+                    sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+                    meldeFortschritt()
+                    ausblendenVerschieben()
                 }
-                Text("−" + zeit(max(dauer - position, 0)))
             }
-            .font(.system(size: 13).monospacedDigit())
-            .foregroundStyle(.white.opacity(0.9))
 
             if let hinweis {
                 Text(hinweis)
@@ -1337,5 +1298,98 @@ struct VideoSurfaceHost: UIViewRepresentable {
     /// die 'surface' zeigt, nicht zwingend jede, die SwiftUI angelegt hat.
     static func dismantleUIView(_ view: VLCPlayerView, coordinator: ()) {
         MainActor.assumeIsolated { view.stop() }
+    }
+}
+
+
+/// **Abdunkeln plus Verlauf oben und unten — ohne eine einzige Eingabe.**
+///
+/// Ohne den Schleier sind weisse Symbole ueber hellen Szenen nicht zu
+/// erkennen.
+///
+/// Als berechnete Eigenschaft stand er im `body` von `PlayerScreen` und wurde
+/// damit bei **jedem** Takt neu gerechnet — zweimal je Sekunde, mitsamt drei
+/// Verlaeufen, waehrend VLC Bilder liefert. Als eigener Typ **ohne
+/// gespeicherte Werte** vergleicht SwiftUI die Eingaben, findet keine, die
+/// sich geaendert haetten, und laesst `body` aus.
+private struct Playerschleier: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.28)
+            LinearGradient(colors: [.black.opacity(0.6), .clear],
+                           startPoint: .top, endPoint: .center)
+            LinearGradient(colors: [.clear, .black.opacity(0.7)],
+                           startPoint: .center, endPoint: .bottom)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .transition(.opacity)
+    }
+}
+
+/// **Zeitanzeige, Regler und Restzeit — der einzige Teil, den der Takt angeht.**
+///
+/// `Wiedergabetakt.taktlaenge` ist 500 ms, und jeder Takt schreibt `position`.
+/// Stand das hier im `body` von `PlayerScreen`, zog jeder Takt den ganzen Baum
+/// hindurch: Kopf, Mittelsteuerung, Tippflaechen, Gesten. Als eigener Typ ist
+/// die Zeit auf diese drei Zeilen begrenzt.
+private struct Zeitzeile: View {
+    @Binding var position: Double
+    let dauer: Double
+    /// `true` beim Anfassen, `false` beim Loslassen.
+    let schiebt: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(Spielzeit.text(position))
+            Zeitregler(wert: $position, bis: max(dauer, 1), beimSchieben: schiebt)
+            Text("−" + Spielzeit.text(max(dauer - position, 0)))
+        }
+        .font(.system(size: 13).monospacedDigit())
+        .foregroundStyle(.white.opacity(0.9))
+    }
+}
+
+/// **„Vorspann ueberspringen" / „Naechste Folge" — derselbe Knopf.**
+///
+/// Eigener Typ, weil `angebot` aus `position` und `dauer` gerechnet wird und
+/// sich damit bei jedem Takt neu ergibt.
+///
+/// **Uebersprungen wird er dadurch nicht.** `Knopfangebot` ist zwar
+/// `Equatable`, der Abschluss `aktion` aber nicht — und SwiftUI vergleicht
+/// die Ansicht Feld fuer Feld. Ein Funktionsfeld laesst sich nicht
+/// vergleichen, also wird neu gezeichnet. Der Gewinn hier ist, dass die
+/// Arbeit auf diesen Knopf begrenzt bleibt statt im `body` des Players zu
+/// stehen; wer sie wirklich sparen will, muesste `aktion` durch etwas
+/// Vergleichbares ersetzen. Dasselbe gilt fuer `Zeitzeile` — die soll bei
+/// jedem Takt neu, das ist ihre Aufgabe.
+///
+/// **Der Einzige, der wirklich uebersprungen wird, ist `Playerschleier`:**
+/// er hat gar keine gespeicherten Werte.
+private struct Angebotsknopf: View {
+    let angebot: Knopfangebot
+    let aktion: () -> Void
+
+    var body: some View {
+        if angebot.sichtbar {
+            Button(action: aktion) {
+                // Serverdaten sind hier nicht im Spiel, aber die Beschriftung
+                // entsteht als `String` im Paket — deshalb `Text(verbatim:)`
+                // statt `Label(_:)`, sonst wuerde sie ein zweites Mal
+                // nachgeschlagen.
+                HStack(spacing: 6) {
+                    Image(systemName: angebot.zeichen)
+                    Text(verbatim: angebot.beschriftung)
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .padding(.horizontal, 15)
+                .frame(height: 34)
+                .background(.white.opacity(0.16), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.24)))
+            }
+            .foregroundStyle(.white)
+            .fixedSize()
+            .transition(.opacity)
+        }
     }
 }

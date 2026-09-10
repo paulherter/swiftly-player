@@ -151,11 +151,32 @@ struct AirPlayFlaeche: UIViewControllerRepresentable {
             // `status` sagt, dass es scheiterte. `error` sagt grob warum.
             // `errorLog()` nennt die Adresse und den HTTP-Status des Segments
             // — und das ist die Angabe, aus der sich etwas ableiten laesst.
+            // **Hier keine Zusicherung, sondern ein Wechsel.**
+            //
+            // Jeder Nachbar in dieser Datei bekommt seine Warteschlange
+            // genannt: `addPeriodicTimeObserver(queue: .main)`, und beide
+            // `NotificationCenter`-Beobachter mit `queue: .main`. KVO hat
+            // keine solche Angabe — AVFoundation sagt **nirgends** zu, auf
+            // welchem Faden `observe` zustellt.
+            //
+            // `MainActor.assumeIsolated` ist eine Behauptung, keine Pruefung.
+            // Trifft sie einmal nicht zu, ist das kein stiller Fehler,
+            // sondern ein Absturz. Der Preis fuer `Task { @MainActor }` ist
+            // ein Durchgang Verzoegerung bei einer Meldung, die ohnehin nur
+            // einen Hinweis setzt oder den Wachhund abbestellt.
+            //
+            // Die `assumeIsolated` in `dismantleUIView` (PlayerScreen) bleibt:
+            // dort leitet der Uebersetzer `@MainActor` aus der
+            // `UIViewRepresentable`-Konformitaet her, die Zusage haelt also.
             zustand = stueck.observe(\.status, options: [.new]) { [weak self] stueck, _ in
-                MainActor.assumeIsolated {
-                    if stueck.status == .readyToPlay { self?.wache?.cancel(); return }
-                    guard stueck.status == .failed else { return }
-                    self?.melden("Status .failed", stueck.error)
+                let fertig = stueck.status == .readyToPlay
+                let gescheitert = stueck.status == .failed
+                let grund = stueck.error
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if fertig { self.wache?.cancel(); return }
+                    guard gescheitert else { return }
+                    self.melden("Status .failed", grund)
                 }
             }
 
