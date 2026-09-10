@@ -584,6 +584,28 @@ targets:
         # erst beim ersten Mac-Upload auf, so wie das fehlende `arm64` am
         # Top Shelf erst beim ersten tvOS-Upload.
         LSApplicationCategoryType: public.app-category.entertainment
+        # **Der Mac zaehlt seine Bauten fuer sich, und zwar streng
+        # aufsteigend ueber alle Fassungen hinweg.**
+        #
+        # Am 10.09.2026 beim Hochladen von 1.0.2 (1) aufgeschlagen: iOS und
+        # tvOS nahmen die 1 anstandslos — die Bedingung gilt dort je Fassung,
+        # und fuer 1.0.2 lag noch nichts vor. Der Mac wies ab:
+        #
+        #     CFBundleVersion [1] must contain a higher version than that of
+        #     the previously uploaded version [2]                     (90061)
+        #
+        # Dort zaehlt nicht die Fassung, sondern der App-Eintrag. Hochgeladen
+        # war 1.0.1 (2), also muss der naechste Mac-Bau ueber 2 liegen.
+        # Deshalb traegt er hier seine eigene Nummer, und nur er.
+        #
+        # Wer sie das naechste Mal anhebt: es muss die hoechste je fuer den
+        # Mac hochgeladene sein, **nicht** die des iPhones.
+        #
+        # Sie steht als **Bau-Einstellung** weiter unten, nicht hier. Hier
+        # stand sie zuerst, und das ist wirkungslos: dieser Block wird zum
+        # Info.plist, dort waere sie ein Schluessel, den niemand liest —
+        # `CFBundleVersion` haette weiter den Projektwert eingesetzt. Der
+        # Upload wies denselben Fehler ein zweites Mal ab, mit derselben 1.
         CFBundleDisplayName: Swiftly
         # **Der Name des Buendels heisst „Swiftly", nicht „Swiftly-macOS".**
         #
@@ -652,6 +674,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
+        CURRENT_PROJECT_VERSION: "3"
         # Damit auch die Datei selbst „Swiftly.app" heisst und nicht nach dem
         # Bauziel — siehe die Begruendung bei `CFBundleName`.
         PRODUCT_NAME: Swiftly
