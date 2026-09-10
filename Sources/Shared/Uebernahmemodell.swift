@@ -33,13 +33,30 @@ final class Uebernahmemodell {
 
     private var takt: Task<Void, Never>?
 
-    /// **Zehn Sekunden.**
+    /// **Fuenf Sekunden.**
     ///
-    /// Der Fortschrittsbericht der anderen Seite kommt in demselben Takt, ein
-    /// schnelleres Fragen erfährt also nichts Neues. Und es ist eine Abfrage,
-    /// die läuft, solange jemand auf der Startseite steht — sie darf den
-    /// Server nicht beschäftigen.
-    static let taktsekunden: Double = 10
+    /// Hier standen zehn, mit der Begruendung, der Fortschrittsbericht der
+    /// anderen Seite komme im selben Takt — schnelleres Fragen erfahre also
+    /// nichts Neues. **Das stimmt fuer die Stelle, es stimmt aber nicht fuer
+    /// den Fall, auf den es ankommt.**
+    ///
+    /// Wonach hier gesucht wird, ist nicht ein neuer Sekundenstand, sondern
+    /// eine Sitzung, die es vorher **gar nicht gab**. Und die meldet sich
+    /// beim Server sofort, wenn drueben jemand auf Abspielen drueckt — nicht
+    /// im Zehnsekundentakt. Die ganze Wartezeit entstand also allein hier.
+    /// Am 10.09.2026 als zu traege gemeldet, und zu Recht.
+    ///
+    /// Es bleibt eine Abfrage, die laeuft, solange jemand auf der Startseite
+    /// steht; deshalb fuenf und nicht eine. Zwei Anfragen je zehn Sekunden
+    /// sind fuer einen Heimserver nichts, zehn waeren eine Sorte Fleiss, die
+    /// niemandem nuetzt.
+    ///
+    /// **Der richtige Weg waere gar kein Takt.** Jellyfin schickt
+    /// Sitzungsaenderungen von sich aus ueber den Steuerkanal, wenn man sie
+    /// mit `SessionsStart` bestellt — dann stuende das Angebot sofort da und
+    /// es gaebe keine Abfrage mehr. Das ist ein eigener Umbau und gehoert
+    /// nicht in dieselbe Nacht wie vier Behebungen an derselben Funktion.
+    static let taktsekunden: Double = 5
 
     func starten(_ model: AppModel) {
         guard takt == nil else { return }
