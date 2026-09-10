@@ -251,7 +251,23 @@ public actor Fernsteuerung {
     private func schlagen() {
         herzschlag = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
+                // **Vorlaeufig 45 statt 30 — ein Versuch, der zwei Ursachen
+                // trennt.**
+                //
+                // Der Abriss faellt auf Linux jedes Mal auf das **vierte**
+                // Lebenszeichen, also nach 120 Sekunden. Vier mal dreissig
+                // sind aber genau 120: „nach zwei Minuten" und „nach vier
+                // Nachrichten" sehen in diesen Zahlen gleich aus, und keine
+                // Messung von heute trennt sie.
+                //
+                // Mit 45 Sekunden tun sie es: bleibt es bei 120 s (dann beim
+                // dritten Lebenszeichen), ist es die **Zeit**. Rutscht es auf
+                // 180 s (wieder das vierte), ist es die **Anzahl**.
+                //
+                // Eine eigene Sitzung ohne Zeitgrenze hat es nicht behoben —
+                // meine erste Vermutung war also falsch, und deshalb wird die
+                // zweite gemessen statt geglaubt.
+                try? await Task.sleep(for: .seconds(45))
                 // `try?` verschluckt den Abbruch; ohne diese Zeile ginge nach
                 // dem Beenden noch ein Lebenszeichen hinaus.
                 guard !Task.isCancelled, let self else { return }
