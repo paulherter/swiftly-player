@@ -6597,6 +6597,23 @@
         }
       }
     },
+    "Zeigt im Profil, was gerade läuft": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt im Profil, was gerade läuft"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows in your profile what is playing"
+          }
+        }
+      }
+    },
     "Zeigt Ø": {
       "extractionState": "manual",
       "localizations": {
