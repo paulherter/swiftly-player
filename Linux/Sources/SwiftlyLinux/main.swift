@@ -36,6 +36,19 @@ Spur.schreiben = { text in
     let u = DateFormatter()
     u.dateFormat = "HH:mm:ss"
     print("\(u.string(from: Date())) [Paket] \(text)")
+    // **Und sofort hinausschreiben.**
+    //
+    // `print` in eine **umgeleitete** Datei ist blockweise gepuffert, nicht
+    // zeilenweise — am Bildschirm faellt das nie auf, in einer Protokolldatei
+    // sofort. Am 10.09.2026 hat das eine Dreiviertelstunde gekostet: solange
+    // eine Diagnose im Sekundentakt lief, war der Puffer schnell voll und
+    // alles stand da; sobald sie leise wurde, kam **gar nichts** mehr an, und
+    // es sah aus, als liefe die Funktion nicht. Sie lief die ganze Zeit.
+    //
+    // Dazu die halb geschriebenen Zeilen, die uns vorher irritiert haben —
+    // `[Paket] [Dis` mitten im Satz: das war ein Puffer, der zwischen zwei
+    // Schreibern geleert wurde.
+    fflush(stdout)
 }
 
 nonisolated(unsafe) let app = App()
