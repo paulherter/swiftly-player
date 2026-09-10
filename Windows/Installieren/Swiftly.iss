@@ -10,7 +10,7 @@
 ; gekauften Zertifikat abstellen, nicht durch etwas im Skript.
 
 #define Name "Swiftly"
-#define Fassung "1.0.0"
+#define Fassung "1.0.2"
 #define Herausgeber "Paul Herter"
 #define Netz "https://github.com/paulherter/swiftly-player"
 #define Programm "Swiftly.exe"

@@ -15,8 +15,8 @@ import Foundation
 /// `Linux/Installieren/PKGBUILD` (`pkgver`), das der Bau ohnehin anfasst.
 /// Wer eine ändert, ändert die andere mit.
 enum Fassung {
-    static let nummer = "1.0.0"
-    static let bau = "10"
+    static let nummer = "1.0.2"
+    static let bau = "1"
 
     /// „Swiftly Player 1.0.0 (Build 10)" — der volle Name, wie ihn die
     /// anderen Plattformen im Profil zeigen.
