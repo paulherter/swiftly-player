@@ -25,10 +25,10 @@ import JellyfinKit
 /// zweiten, der hier hereinkaeme.
 enum Discordstand {
 
-    /// Dieselbe Anwendung, unter der auch der Meldungs-Bot laeuft. Rich
+    /// Eine **eigene** Anwendung, nicht die des Meldungs-Bots. Rich
     /// Presence braucht keine eigene, und eine zweite haette denselben Namen
     /// zweimal in der Liste.
-    private static let bruecke = Discordbruecke(anwendung: "1544344805885214761")
+    private static let bruecke = Discordbruecke(anwendung: "1547651294335078534")
     nonisolated(unsafe) private static var zuletzt: Discordanzeige?
     nonisolated(unsafe) private static var lief = false
 

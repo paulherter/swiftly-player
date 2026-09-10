@@ -336,13 +336,33 @@ public struct Discordanzeige: Sendable {
         self.bis = bis
     }
 
+    /// **Das Zeichen als Adresse, nicht als hinterlegter Name.**
+    ///
+    /// Der uebliche Weg ist, ein Bild im Entwicklerportal zu hinterlegen und
+    /// hier seinen Namen zu nennen. Am 10.09.2026 hat sich das als der
+    /// schlechtere erwiesen: das Portal zeigt heute nur noch Hintergrund,
+    /// Titelbild und Vorschauvideo — alles falsche Formate —, und die
+    /// klassischen Bilder waren dort nicht mehr zu finden. Gegengemessen:
+    /// `oauth2/applications/<id>/assets` gab **null** Eintraege zurueck, und
+    /// Discord verwarf `large_image` stillschweigend.
+    ///
+    /// Discord nimmt aber eine **Adresse** und holt sie sich selbst; in der
+    /// Antwort steht sie dann als `mp:external/…` zurueck. Damit braucht
+    /// niemand ein Portal anzufassen, und das Zeichen ist dasselbe, das auch
+    /// die Linux-Fassung als Programmzeichen benutzt — eine Datei, nicht
+    /// zwei, die auseinanderlaufen koennen.
+    ///
+    /// Sie zeigt in das oeffentliche Repository. Wird es umbenannt, bleibt
+    /// das Bild leer; der Rest der Anzeige steht weiter.
+    static let zeichen = "https://raw.githubusercontent.com/paulherter/swiftly-player/main/Linux/Ressourcen/icons/hicolor/512x512/apps/de.paulherter.swiftly.png"
+
     var alsWoerterbuch: [String: Any] {
         var d: [String: Any] = [
             // 3 heisst „schaut". Discord kennt spielen, streamen, hoeren,
             // schauen und mitmachen; fuer einen Videoabspieler ist es diese.
             "type": 3,
             "details": titel,
-            "assets": ["large_image": "logo", "large_text": "Swiftly Player"],
+            "assets": ["large_image": Self.zeichen, "large_text": "Swiftly Player"],
         ]
         if let unterzeile, !unterzeile.isEmpty { d["state"] = unterzeile }
         if let von, let bis {

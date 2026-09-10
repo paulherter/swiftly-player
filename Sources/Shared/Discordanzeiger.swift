@@ -20,10 +20,13 @@ final class Discordanzeiger {
 
     static let geteilt = Discordanzeiger()
 
-    /// Die Anwendung, unter der Discord die Anzeige fuehrt. Es ist dieselbe,
-    /// unter der auch der Meldungs-Bot laeuft — Rich Presence braucht keine
-    /// eigene, und eine zweite haette denselben Namen zweimal in der Liste.
-    private static let anwendung = "1544344805885214761"
+    /// **Eine eigene Anwendung, nicht die des Meldungs-Bots.**
+    ///
+    /// Technisch traegt ein Behaelter beides. Der Name der Anwendung ist aber
+    /// genau das, was Discord als Ueberschrift der Anzeige zeigt — haengen
+    /// Bot und Anzeige am selben, aendert wer eins aendert das andere mit.
+    /// Zwei Dinge ohne Bezug an einer Schraube.
+    private static let anwendung = "1547651294335078534"
 
     private let bruecke = Discordbruecke(anwendung: anwendung)
     /// Was zuletzt hinausging. Discord will nicht bei jedem Takt dasselbe
