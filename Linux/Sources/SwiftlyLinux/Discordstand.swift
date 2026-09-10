@@ -29,12 +29,29 @@ enum Discordstand {
     /// Presence braucht keine eigene, und eine zweite haette denselben Namen
     /// zweimal in der Liste.
     private static let bruecke = Discordbruecke(anwendung: "1547651294335078534")
+    nonisolated(unsafe) private static var letzterKlang = 0
     nonisolated(unsafe) private static var zuletzt: Discordanzeige?
     nonisolated(unsafe) private static var lief = false
 
     /// Ruft der Takt des Spielers auf, bei jeder Zustandsaenderung.
     static func melden(titel: String, unterzeile: String?, stelle: Double,
                        dauer: Double, laeuft: Bool, erlaubt: Bool) {
+        // **Vorlaeufig: einmal je Sekunde sagen, womit wir hier stehen.**
+        //
+        // Am 10.09.2026 kam in Discord nichts an, und im Protokoll stand
+        // nichts — **beide** Ausstiege aus dieser Funktion waren stumm.
+        // Damit war „der Schalter ist aus", „die Laufzeit steht noch nicht"
+        // und „es hat sich nichts geaendert" nicht zu unterscheiden. Genau
+        // die Ununterscheidbarkeit, an der heute schon die Uebernahme
+        // haengengeblieben ist — wieder selbst gebaut.
+        //
+        // Kommt raus, sobald es laeuft.
+        let takt = Int(Date().timeIntervalSince1970)
+        if takt != Self.letzterKlang {
+            Self.letzterKlang = takt
+            Spur.sag("[Discord] Stand: erlaubt=\(erlaubt) dauer=\(Int(dauer)) "
+                     + "stelle=\(Int(stelle)) laeuft=\(laeuft) titel=\(titel)")
+        }
         guard erlaubt else { abraeumen(); return }
 
         // Pausiert heisst: kein Balken, aber weiter sichtbar. Ein Balken, der
