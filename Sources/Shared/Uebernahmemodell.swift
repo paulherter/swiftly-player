@@ -51,11 +51,23 @@ final class Uebernahmemodell {
     /// sind fuer einen Heimserver nichts, zehn waeren eine Sorte Fleiss, die
     /// niemandem nuetzt.
     ///
-    /// **Der richtige Weg waere gar kein Takt.** Jellyfin schickt
-    /// Sitzungsaenderungen von sich aus ueber den Steuerkanal, wenn man sie
-    /// mit `SessionsStart` bestellt — dann stuende das Angebot sofort da und
-    /// es gaebe keine Abfrage mehr. Das ist ein eigener Umbau und gehoert
-    /// nicht in dieselbe Nacht wie vier Behebungen an derselben Funktion.
+    /// **Der richtige Weg ist ein zweiter Weg, nicht der Ersatz dieses
+    /// einen.** Jellyfin schickt Sitzungsaenderungen von sich aus ueber den
+    /// Steuerkanal, wenn man sie mit `SessionsStart` bestellt — dann stuende
+    /// das Angebot sofort da. Hier stand zuerst, der Takt koenne dann
+    /// entfallen; die Mac-Sitzung hat das noch in derselben Nacht
+    /// zurechtgerueckt, und sie hat recht: **er wird zum Rueckfall.** Steht
+    /// die Leitung, gilt, was sie meldet; steht sie nicht, fragt der Takt
+    /// weiter.
+    ///
+    /// Sonst taeuscht man eine traege Anzeige gegen eine, die bei einem
+    /// Abriss einfach stehenbleibt — und **das faellt niemandem auf, weil
+    /// nichts fehlschlaegt.** Genau diese Sorte Fehler hat den 10.09. eine
+    /// halbe Nacht gekostet.
+    ///
+    /// Ein Umbau darauf ist erst seit heute ueberhaupt pruefbar: vorher war
+    /// der Steuerkanal stumm, und eine ausbleibende Meldung liess sich nicht
+    /// von „nichts Neues" unterscheiden.
     static let taktsekunden: Double = 5
 
     func starten(_ model: AppModel) {
