@@ -1,18 +1,12 @@
 import Foundation
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Darwin)
-import Darwin
-#endif
 
 /// **Der Draht zu Discord — was gerade laeuft, im eigenen Profil.**
 ///
-/// Discord nimmt so etwas nicht ueber das Netz entgegen, sondern ueber eine
-/// oertliche Steckverbindung, die sein Programm auf demselben Rechner
-/// bereitstellt. Kein Merkmal, kein Konto, keine Anmeldung: wer Discord offen
-/// hat, hat den Draht; wer nicht, hat ihn nicht. Das ist auch der Grund,
-/// warum hier nichts schiefgehen kann, was jemandem schadet — es gibt keinen
-/// Server, an den etwas ginge.
+/// Discord nimmt so etwas ueber eine Verbindung zum eigenen Rechner
+/// entgegen — `127.0.0.1`, kein fremder Server. Kein Merkmal, kein Konto,
+/// keine Anmeldung: wer Discord offen hat, hat den Draht; wer nicht, hat ihn
+/// nicht. Das ist auch der Grund, warum hier nichts schiefgehen kann, was
+/// jemandem schadet: es gibt keine Gegenstelle ausserhalb dieses Rechners.
 ///
 /// **Was ausdruecklich nicht gesendet wird.** Die Bildadressen dieses Servers
 /// tragen `ApiKey` im Klartext (siehe ``Adressgeheimnis``). Ein Plakat an
@@ -29,8 +23,8 @@ public actor Discordbruecke {
     /// Die Anwendung, unter der Discord die Anzeige fuehrt. Ihr Name steht
     /// beim Nutzer als „schaut …", ihr Zeichen ist das grosse Bild.
     private let anwendung: String
-    private var draht: Int32 = -1
-    private var verbunden = false
+    private var leitung: URLSessionWebSocketTask?
+    private var steht = false
 
     public init(anwendung: String) {
         self.anwendung = anwendung
@@ -38,116 +32,75 @@ public actor Discordbruecke {
 
     // MARK: Verbinden
 
-    /// **Zehn moegliche Stellen, und das ist kein Uebermass.**
+    /// **Ueber das Netz zu 127.0.0.1, nicht ueber eine Steckdose im
+    /// Dateisystem — und das ist der Unterschied zwischen „geht" und „geht
+    /// nicht".**
     ///
-    /// Discord nummeriert seine Steckdosen durch (`discord-ipc-0` bis `-9`);
-    /// laeuft schon eine Instanz, nimmt die naechste die 1. Und je nachdem,
-    /// wie Discord installiert ist, liegen sie woanders: unter Flatpak in
-    /// dessen eigenem Laufzeitordner, unter Snap in dessen. Wer nur an einer
-    /// Stelle nachsieht, hat es bei sich zum Laufen gebracht und bei der
-    /// Haelfte der Nutzer nicht.
-    private func stellen() -> [String] {
-        let umg = ProcessInfo.processInfo.environment
-        var wurzeln: [String] = []
-        #if os(macOS)
-        // Auf dem Mac liegt sie im temporaeren Ordner der Sitzung.
-        wurzeln.append(umg["TMPDIR"] ?? NSTemporaryDirectory())
-        #else
-        if let x = umg["XDG_RUNTIME_DIR"] { wurzeln.append(x) }
-        wurzeln.append(contentsOf: [umg["TMPDIR"], umg["TMP"], umg["TEMP"], "/tmp"].compactMap { $0 })
-        if let x = umg["XDG_RUNTIME_DIR"] {
-            wurzeln.append("\(x)/app/com.discordapp.Discord")   // Flatpak
-            wurzeln.append("\(x)/snap.discord")                 // Snap
-        }
-        #endif
-        var wege: [String] = []
-        for w in wurzeln {
-            let sauber = w.hasSuffix("/") ? String(w.dropLast()) : w
-            for n in 0...9 { wege.append("\(sauber)/discord-ipc-\(n)") }
-        }
-        return wege
-    }
-
-    private func oeffnen(_ weg: String) -> Int32 {
-        // Ein Unix-Pfad in `sockaddr_un` ist auf 104 Zeichen begrenzt. Laenger
-        // heisst nicht „geht nicht", sondern „schneidet still ab" — und dann
-        // verbindet man sich mit etwas anderem oder mit nichts.
-        guard weg.utf8.count < 104 else { return -1 }
-        // **`SOCK_STREAM` ist nicht auf beiden Systemen dasselbe.** Auf
-        // Linux ist es eine Aufzaehlung mit `rawValue`, auf Darwin schon ein
-        // `Int32`. Hier steht deshalb beides.
-        #if canImport(Glibc)
-        let art = Int32(SOCK_STREAM.rawValue)
-        #else
-        let art = SOCK_STREAM
-        #endif
-        let fd = socket(AF_UNIX, art, 0)
-        guard fd >= 0 else { return -1 }
-        var adresse = sockaddr_un()
-        adresse.sun_family = sa_family_t(AF_UNIX)
-        withUnsafeMutableBytes(of: &adresse.sun_path) { ziel in
-            weg.utf8.enumerated().forEach { ziel[$0.offset] = $0.element }
-        }
-        let groesse = socklen_t(MemoryLayout<sockaddr_un>.size)
-        let ok = withUnsafePointer(to: &adresse) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, groesse) }
-        }
-        if ok != 0 { close(fd); return -1 }
-        return fd
-    }
-
-    // MARK: Rahmen
-
-    private enum Griff: UInt32 { case handschlag = 0, rahmen = 1, schluss = 2 }
-
-    private func senden(_ griff: Griff, _ inhalt: [String: Any]) -> Bool {
-        guard draht >= 0,
-              let daten = try? JSONSerialization.data(withJSONObject: inhalt) else { return false }
-        var kopf = Data()
-        var g = griff.rawValue.littleEndian
-        var l = UInt32(daten.count).littleEndian
-        withUnsafeBytes(of: &g) { kopf.append(contentsOf: $0) }
-        withUnsafeBytes(of: &l) { kopf.append(contentsOf: $0) }
-        let alles = kopf + daten
-        return alles.withUnsafeBytes { roh -> Bool in
-            var ab = 0
-            while ab < roh.count {
-                let n = write(draht, roh.baseAddress!.advanced(by: ab), roh.count - ab)
-                if n <= 0 { return false }
-                ab += n
-            }
-            return true
-        }
-    }
-
-    /// Verbindet, falls noetig. Gibt zurueck, ob danach eine Leitung steht.
-    private func sicherstellen() -> Bool {
-        if verbunden, draht >= 0 { return true }
-        for weg in stellen() {
-            let fd = oeffnen(weg)
-            guard fd >= 0 else { continue }
-            draht = fd
-            if senden(.handschlag, ["v": 1, "client_id": anwendung]) {
-                verbunden = true
-                Spur.sag("[Discord] verbunden ueber \(weg)")
+    /// Discord bietet beides an: eine Unix-Steckdose in `$TMPDIR` und
+    /// denselben Dienst als WebSocket auf 6463 bis 6472. Der erste Bau nahm
+    /// die Steckdose, wie es die meisten Anleitungen zeigen. **Auf dem Mac
+    /// kann das nicht funktionieren**, und zwar aus zwei Gruenden
+    /// nacheinander: eine App im Sandkasten bekommt als `TMPDIR` ihren
+    /// **eigenen** Ordner im Behaelter, nicht den der Sitzung, in dem
+    /// Discords Steckdose liegt — sie sucht also an der falschen Stelle. Und
+    /// selbst mit dem richtigen Pfad laesst der Sandkasten die Verbindung
+    /// nicht zu; der Pfad ist ausserdem `/var/folders/<zufaellig>/T/`, also
+    /// gar nicht benennbar.
+    ///
+    /// Am 10.09.2026 am Geraet nachgesehen: im Protokoll stand keine einzige
+    /// Zeile, und der Behaelter-Temp enthielt erwartungsgemaess keine
+    /// Steckdose.
+    ///
+    /// Eine Netzverbindung nach `127.0.0.1` darf die App dagegen —
+    /// `com.apple.security.network.client` steht ohnehin da, sonst gaebe es
+    /// keinen Server. Und der Weg traegt **alle drei** Fassungen mit
+    /// derselben Zeile, statt Unix-Steckdose hier und benannte Roehre auf
+    /// Windows.
+    private func verbinden() async -> Bool {
+        if steht, leitung != nil { return true }
+        for port in 6463...6472 {
+            var teile = URLComponents()
+            teile.scheme = "ws"
+            teile.host = "127.0.0.1"
+            teile.port = port
+            teile.path = "/"
+            teile.queryItems = [.init(name: "v", value: "1"),
+                                .init(name: "client_id", value: anwendung)]
+            guard let url = teile.url else { continue }
+            var anfrage = URLRequest(url: url)
+            // **Discord verlangt eine Herkunft.** Ohne sie weist es den
+            // Handschlag ab; es unterscheidet damit einen Aufruf aus einer
+            // Webseite von einem beliebigen Programm auf dem Rechner.
+            anfrage.setValue("https://discord.com", forHTTPHeaderField: "Origin")
+            let aufgabe = URLSession.shared.webSocketTask(with: anfrage)
+            aufgabe.resume()
+            // Discord meldet sich mit `DISPATCH`/`READY`, sobald es die
+            // Verbindung annimmt. Kommt nichts, ist der Port ein anderer
+            // Dienst oder eine tote Instanz.
+            do {
+                _ = try await aufgabe.receive()
+                leitung = aufgabe
+                steht = true
+                Spur.sag("[Discord] verbunden auf Port \(port)")
                 return true
+            } catch {
+                aufgabe.cancel(with: .goingAway, reason: nil)
             }
-            close(fd); draht = -1
         }
         return false
     }
 
     private func trennen() {
-        if draht >= 0 { close(draht) }
-        draht = -1
-        verbunden = false
+        leitung?.cancel(with: .goingAway, reason: nil)
+        leitung = nil
+        steht = false
     }
 
     // MARK: Anzeigen
 
     /// Setzt, was im Profil steht. `nil` raeumt die Anzeige ab.
-    public func zeigen(_ anzeige: Discordanzeige?) {
-        guard sicherstellen() else { return }
+    public func zeigen(_ anzeige: Discordanzeige?) async {
+        guard await verbinden(), let leitung else { return }
         var arg: [String: Any] = ["pid": Int(ProcessInfo.processInfo.processIdentifier)]
         if let anzeige { arg["activity"] = anzeige.alsWoerterbuch }
         let rahmen: [String: Any] = [
@@ -155,17 +108,19 @@ public actor Discordbruecke {
             "args": arg,
             "nonce": UUID().uuidString,
         ]
-        if !senden(.rahmen, rahmen) {
+        guard let daten = try? JSONSerialization.data(withJSONObject: rahmen),
+              let text = String(data: daten, encoding: .utf8) else { return }
+        do {
+            try await leitung.send(.string(text))
+        } catch {
             // Discord beendet, Leitung tot. Beim naechsten Mal neu aufbauen —
             // nicht hier in einer Schleife, das waere ein Zaehler ohne Zweck.
-            Spur.sag("[Discord] Leitung weg, wird beim naechsten Mal neu aufgebaut")
+            Spur.sag("[Discord] Leitung weg: \(error)")
             trennen()
         }
     }
 
     public func schliessen() {
-        guard verbunden else { return }
-        _ = senden(.schluss, [:])
         trennen()
     }
 }
