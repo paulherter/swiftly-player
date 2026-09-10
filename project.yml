@@ -263,6 +263,7 @@ targets:
       - path: Sources/Shared/Technikschild.swift
       - path: Sources/Shared/QuickConnectModell.swift
       - path: Sources/Shared/Wiedergabezentrale.swift
+      - path: Sources/Shared/Discordanzeiger.swift
       - path: Sources/Shared/Startseitenmodell.swift
       # Seerr — die Anbindung selbst; die Ansichten bleiben plattformeigen.
       - path: Sources/Shared/Seerrmodell.swift
@@ -531,6 +532,7 @@ targets:
       # AVAudioSession-Teil darin steht unter `#if !os(macOS)` — den Ton
       # mischt und leitet macOS selbst.
       - path: Sources/Shared/Wiedergabezentrale.swift
+      - path: Sources/Shared/Discordanzeiger.swift
       # Der Namensgeber für UIView beziehungsweise NSView. Ohne ihn stünde
       # der Player zweimal da.
       - path: Sources/Shared/Basisansicht.swift

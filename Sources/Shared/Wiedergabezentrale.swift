@@ -162,6 +162,17 @@ final class Wiedergabezentrale {
         // Sofortmeldung an den Server — hier steht der frischeste Stand, den
         // es in der App gibt.
         Spielstand.setzen(stelle: position, laeuft: laeuft)
+        // **Und derselbe Weg traegt die Discord-Anzeige.**
+        //
+        // Aus demselben Grund wie `Spielstand`: hier stehen bei jeder
+        // Zustandsaenderung die frischen Werte, und zwar aus jeder Fassung.
+        // Ob ueberhaupt etwas hinausgeht, entscheidet `Discordanzeiger` —
+        // der Schalter ist aus, bis jemand ihn anlegt.
+        Discordanzeiger.geteilt.melden(
+            titel: item.seriesName ?? item.name,
+            unterzeile: item.seriesName == nil ? nil
+                        : [item.folgenkuerzel, item.name].compactMap { $0 }.joined(separator: " · "),
+            stelle: position, dauer: dauer, laeuft: laeuft)
         var eintrag: [String: Any] = [
             MPMediaItemPropertyTitle: item.name,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: position,

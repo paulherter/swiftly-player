@@ -51,6 +51,19 @@ final class AppModel {
     var neuzugangGetrennt: Bool { didSet { merken(neuzugangGetrennt, "neuGetrennt") } }
     /// Wie viel Vorrat der Player haelt. Siehe ``Pufferstufe`` im Paket.
     var pufferstufe: Pufferstufe { didSet { merken(pufferstufe.rawValue, "pufferstufe") } }
+    /// **Zeigt Discord, was gerade laeuft — und ist aus, bis man es
+    /// einschaltet.**
+    ///
+    /// Es ist die einzige Einstellung dieser App, die etwas nach **draussen**
+    /// gibt: wer sie anlegt, sagt jedem in seinen Discord-Servern, welchen
+    /// Film er gerade sieht. Eine Vorgabe „an" waere hier kein Komfort,
+    /// sondern eine Veroeffentlichung, um die niemand gebeten hat — genau
+    /// dieselbe Ueberlegung wie bei H1 und bei Seerr, nur mit mehr Gewicht.
+    var discordAnzeigen: Bool { didSet {
+        merken(discordAnzeigen, "discordAnzeigen")
+        // Wer ausschaltet, will sofort weg sein, nicht beim naechsten Wechsel.
+        if !discordAnzeigen { Discordanzeiger.geteilt.abraeumen() }
+    } }
     var zurueckSekunden: Int { didSet { merken(zurueckSekunden, "zurueckSek") } }
     var vorSekunden: Int { didSet { merken(vorSekunden, "vorSek") } }
 
@@ -230,6 +243,7 @@ final class AppModel {
         neuzugangGetrennt = ablage.object(forKey: "neuGetrennt") as? Bool ?? false
         pufferstufe = (ablage.string(forKey: "pufferstufe")
                        .flatMap(Pufferstufe.init(rawValue:))) ?? .normal
+        discordAnzeigen = ablage.object(forKey: "discordAnzeigen") as? Bool ?? false
         zurueckSekunden = ablage.object(forKey: "zurueckSek") as? Int ?? 10
         vorSekunden = ablage.object(forKey: "vorSek") as? Int ?? 30
         downloadsAn = ablage.object(forKey: "downloadsAn") as? Bool ?? false
