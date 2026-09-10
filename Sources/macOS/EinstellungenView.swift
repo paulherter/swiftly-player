@@ -150,6 +150,18 @@ struct EinstellungenView: View {
                        unter: Text("Anfragen, was noch nicht da ist"),
                        wert: model.seerr.verbunden ? String(localized: "Verbunden") : nil,
                        aktion: { navigator.oeffne(.seerr, in: bereich) })
+            Trennstrich().padding(.leading, 48)
+            // **Hier und nicht bei „Wiedergabe".** Die Zeilen dort sagen,
+            // *wie* etwas abläuft. Diese gibt als einzige der ganzen App
+            // etwas **nach draußen**: wer sie anlegt, sagt jedem in seinen
+            // Discord-Servern, was er gerade sieht. Das ist ein zweiter
+            // Dienst, wie Seerr — und wie dort gilt: aus, bis jemand sie
+            // sucht.
+            Schalterzeile(symbol: "bubble.left.and.text.bubble.right",
+                          titel: Text(verbatim: "Discord"),
+                          unter: Text("Zeigt im Profil, was gerade läuft"),
+                          an: Binding(get: { model.discordAnzeigen },
+                                      set: { model.discordAnzeigen = $0 }))
         }
     }
 
