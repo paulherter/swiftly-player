@@ -29,7 +29,7 @@ enum Discordstand {
     /// Presence braucht keine eigene, und eine zweite haette denselben Namen
     /// zweimal in der Liste.
     private static let bruecke = Discordbruecke(anwendung: "1547651294335078534")
-    nonisolated(unsafe) private static var letzterKlang = 0
+    nonisolated(unsafe) private static var letzterStand = ""
     nonisolated(unsafe) private static var zuletzt: Discordanzeige?
     nonisolated(unsafe) private static var lief = false
 
@@ -46,11 +46,17 @@ enum Discordstand {
         // haengengeblieben ist — wieder selbst gebaut.
         //
         // Kommt raus, sobald es laeuft.
-        let takt = Int(Date().timeIntervalSince1970)
-        if takt != Self.letzterKlang {
-            Self.letzterKlang = takt
-            Spur.sag("[Discord] Stand: erlaubt=\(erlaubt) dauer=\(Int(dauer)) "
-                     + "stelle=\(Int(stelle)) laeuft=\(laeuft) titel=\(titel)")
+        // **Nur wenn sich etwas aendert, nicht jede Sekunde.**
+        //
+        // Zuerst ging die Zeile im Sekundentakt hinaus; bei einem pausierten
+        // Film stand dann fuenfzigmal dasselbe untereinander und hat alles
+        // andere aus dem Protokoll gedraengt — auch die Abrisse der
+        // Fernsteuerung, denen ich gerade nachgehe. Ein Werkzeug, das die
+        // Sicht verstellt, die es schaffen soll, ist keins.
+        let stand = "erlaubt=\(erlaubt) dauer=\(Int(dauer)) laeuft=\(laeuft) titel=\(titel)"
+        if stand != Self.letzterStand {
+            Self.letzterStand = stand
+            Spur.sag("[Discord] Stand: \(stand) stelle=\(Int(stelle))")
         }
         guard erlaubt else { abraeumen(); return }
 
