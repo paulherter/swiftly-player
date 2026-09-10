@@ -84,6 +84,14 @@ enum Fensterabzug {
     ///
     /// Deshalb steht der Zustand jetzt in der Protokollzeile. Ein Werkzeug,
     /// das schweigend Altes zeigt, ist schlimmer als keines.
+    ///
+    /// **Und der zweite Grund für ein falsches Bild: zwei Instanzen.** Der
+    /// Anstoß liegt im Container, und den teilen sich alle Kopien derselben
+    /// App. Läuft eine zweite — aus `DerivedData`, aus einem älteren Bau —,
+    /// nimmt sie den Auftrag womöglich zuerst, und im Bild steht dann ihr
+    /// Fenster. Am 10.09.2026 liefen zwei, und die Zeile, die gesucht wurde,
+    /// gab es nur in einer davon. Vor dem Abzug also nachsehen:
+    /// `pgrep -f "Contents/MacOS/Swiftly" | wc -l` muss **1** sein.
     static func machen() {
         guard let fenster = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }),
               let inhalt = fenster.contentView else {
