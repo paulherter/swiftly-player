@@ -150,7 +150,52 @@ struct EinstellungenView: View {
                        unter: Text("Anfragen, was noch nicht da ist"),
                        wert: model.seerr.verbunden ? String(localized: "Verbunden") : nil,
                        aktion: { navigator.oeffne(.seerr, in: bereich) })
+            // **Hier und nicht bei „Wiedergabe".** Die Zeilen dort sagen,
+            // *wie* etwas abläuft. Diese gibt als einzige der ganzen App
+            // etwas **nach draußen**: wer sie anlegt, sagt jedem in seinen
+            // Discord-Servern, was er gerade sieht. Das ist ein zweiter
+            // Dienst, wie Seerr — und wie dort gilt: aus, bis jemand sie
+            // sucht.
+            //
+            // **Im Sandkasten steht sie gar nicht da**, und das ist kein
+            // Verstecken, sondern das Gegenteil einer halben Zusage. Am
+            // 10.09.2026 am Gerät durchgemessen, alle drei Wege zu Discord:
+            //
+            // - Die Steckdose liegt unter `/var/folders/…/T/discord-ipc-0`.
+            //   Der Sandkasten gibt der App ihren **eigenen** `TMPDIR`;
+            //   darin liegt keine. Der Pfad trägt einen zufälligen Teil und
+            //   ist nicht einmal als Ausnahme benennbar.
+            // - WebSocket auf 6463, **ohne** Origin-Kopfzeile — das gilt im
+            //   Netz als Ausweg: `101 Switching Protocols`, dann sofort ein
+            //   Schließrahmen „Invalid Origin". Eine RPC-Herkunft lässt sich
+            //   seit der Abkündigung im Portal nicht mehr eintragen.
+            // - HTTP-Transport: hier greift die Herkunftsprüfung wirklich
+            //   nicht, die Antwort kommt mit 200 — und lautet
+            //   `command not available from "http" transport` (4002).
+            //
+            // Ein grauer Schalter wirft die Frage jedes Mal neu auf; einer,
+            // der nicht da ist, wirft sie einmal auf. Und es ist umkehrbar:
+            // kommt je ein Bau ohne Sandkasten, kommt die Zeile mit ihm
+            // zurück, ohne dass jemand daran denken muss.
+            if !imSandkasten {
+                Trennstrich().padding(.leading, 48)
+                Schalterzeile(symbol: "bubble.left.and.text.bubble.right",
+                              titel: Text(verbatim: "Discord"),
+                              unter: Text("Zeigt im Profil, was gerade läuft"),
+                              an: Binding(get: { model.discordAnzeigen },
+                                          set: { model.discordAnzeigen = $0 }))
+            }
         }
+    }
+
+    /// Läuft die App im Sandkasten? Im Store ist er Pflicht.
+    ///
+    /// Am Heimatverzeichnis abgelesen, nicht an einer Umgebungsvariablen:
+    /// eine Anwendung im Sandkasten bekommt ihren Behälter als Zuhause, und
+    /// genau daran hängt auch, dass sie Discords Steckdose nicht sieht. Die
+    /// Prüfung misst also dieselbe Sache, die das Hindernis ist.
+    private var imSandkasten: Bool {
+        NSHomeDirectory().contains("/Library/Containers/")
     }
 
     private var server: some View {

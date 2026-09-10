@@ -68,6 +68,30 @@ enum Fensterabzug {
     }
 
     /// Zeichnet das vorderste sichtbare Fenster ab.
+    ///
+    /// **Ein verdecktes Fenster zeichnet nicht.** macOS stellt das Zeichnen
+    /// ein, sobald ein Fenster vollständig hinter anderen liegt; SwiftUI
+    /// aktualisiert es dann auch nicht mehr. `cacheDisplay` liefert in dem
+    /// Fall das **zuletzt gezeichnete** Bild — und das sieht aus wie „nichts
+    /// hat sich geändert".
+    ///
+    /// Am 10.09.2026 hat mich genau das eine falsche Meldung gekostet: vier
+    /// Befehle abgesetzt, viermal dasselbe Bild bekommen, daraus geschlossen,
+    /// die Menüsteuerung sei tot — und Paul gebeten, das zu prüfen. Gemessen
+    /// war das Fenster verdeckt (`occlusionState` ohne `visible`, kein
+    /// Schlüsselfenster, Programm nicht aktiv), weil auf demselben Rechner
+    /// Simulatoren liefen.
+    ///
+    /// Deshalb steht der Zustand jetzt in der Protokollzeile. Ein Werkzeug,
+    /// das schweigend Altes zeigt, ist schlimmer als keines.
+    ///
+    /// **Und der zweite Grund für ein falsches Bild: zwei Instanzen.** Der
+    /// Anstoß liegt im Container, und den teilen sich alle Kopien derselben
+    /// App. Läuft eine zweite — aus `DerivedData`, aus einem älteren Bau —,
+    /// nimmt sie den Auftrag womöglich zuerst, und im Bild steht dann ihr
+    /// Fenster. Am 10.09.2026 liefen zwei, und die Zeile, die gesucht wurde,
+    /// gab es nur in einer davon. Vor dem Abzug also nachsehen:
+    /// `pgrep -f "Contents/MacOS/Swiftly" | wc -l` muss **1** sein.
     static func machen() {
         guard let fenster = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }),
               let inhalt = fenster.contentView else {
@@ -87,8 +111,11 @@ enum Fensterabzug {
         }
         do {
             try daten.write(to: bild)
+            let sichtbar = fenster.occlusionState.contains(.visible)
             Protokoll.schreib("[Abzug] \(Int(flaeche.width))x\(Int(flaeche.height)) Punkte, "
-                + "\(ablage.pixelsWide)x\(ablage.pixelsHigh) Bildpunkte, \(daten.count) B")
+                + "\(ablage.pixelsWide)x\(ablage.pixelsHigh) Bildpunkte, \(daten.count) B"
+                + (sichtbar ? "" : " — ACHTUNG: Fenster verdeckt, das Bild ist der "
+                                 + "letzte gezeichnete Stand und kann alt sein"))
         } catch {
             Protokoll.schreib("[Abzug] \(error)")
         }
