@@ -226,6 +226,7 @@ public actor Fernsteuerung {
                 // `try?` verschluckt den Abbruch; ohne diese Zeile ginge nach
                 // dem Beenden noch ein Lebenszeichen hinaus.
                 guard !Task.isCancelled, let self else { return }
+                Spur.sag("[Fernsteuerung] Lebenszeichen")
                 await self.senden(#"{"MessageType":"KeepAlive"}"#)
             }
         }
@@ -244,8 +245,27 @@ public actor Fernsteuerung {
     /// Lebenszeichen, das nicht ankommt, wird nicht nachgereicht — die
     /// Gegenstelle merkt den Abriss an der ausbleibenden Antwort.
     private func senden(_ text: String) {
-        guard let aufgabe else { return }
-        Task { try? await aufgabe.send(.string(text)) }
+        guard let aufgabe else {
+            Spur.sag("[Fernsteuerung] nichts zu senden — keine Leitung")
+            return
+        }
+        // **`try?` hat hier den Fehler verschluckt.**
+        //
+        // Am 10.09.2026 riss die Leitung auf Linux nach **exakt zwei
+        // Minuten** ab, mit Schliesscode 1002. Zwei Minuten sind das Doppelte
+        // von Jellyfins Lebenszeichen-Grenze — der Server wirft weg, wer sich
+        // nicht meldet. Unser Lebenszeichen geht alle 30 Sekunden hinaus und
+        // haette reichen muessen; ob es je ankam, war aber nicht zu sehen,
+        // weil der Fehlschlag hier lautlos endete.
+        //
+        // Fuenfte stumme Stelle an einem Tag. Sie sagt jetzt Bescheid.
+        Task {
+            do {
+                try await aufgabe.send(.string(text))
+            } catch {
+                Spur.sag("[Fernsteuerung] senden fehlgeschlagen: \(error)")
+            }
+        }
     }
 
     private func verarbeiten(_ text: String) {

@@ -29,9 +29,34 @@ enum Discordstand {
     /// Presence braucht keine eigene, und eine zweite haette denselben Namen
     /// zweimal in der Liste.
     private static let bruecke = Discordbruecke(anwendung: "1547651294335078534")
-    nonisolated(unsafe) private static var letzterKlang = 0
+    nonisolated(unsafe) private static var letzterStand = ""
     nonisolated(unsafe) private static var zuletzt: Discordanzeige?
     nonisolated(unsafe) private static var lief = false
+
+    /// **Eine Kette, damit die Reihenfolge steht.**
+    ///
+    /// Am 10.09.2026 am Geraet gefunden, mit einer sehr genauen Beobachtung:
+    /// eine Folge, die mittendrin anfaengt, zeigte **nichts** — ein Sprung
+    /// innerhalb derselben Folge dagegen schon.
+    ///
+    /// Der Grund: beim Verlassen des Spielers wird abgeraeumt, beim Starten
+    /// gemeldet, und beides lief als **eigene, unstrukturierte Aufgabe**. Die
+    /// haben keine Reihenfolge untereinander. Kam das Abraeumen als zweites
+    /// an, loeschte es die gerade gesetzte Anzeige wieder. Beim Sprung wird
+    /// nichts abgeraeumt — deshalb war dort nichts zu sehen.
+    ///
+    /// Kein Wettlauf, den man „selten" nennen kann: Verlassen und Starten
+    /// liegen im selben Zug, wenn jemand aus dem Player heraus die naechste
+    /// Folge waehlt.
+    nonisolated(unsafe) private static var kette: Task<Void, Never>?
+
+    private static func einreihen(_ arbeit: @escaping @Sendable () async -> Void) {
+        let vorher = kette
+        kette = Task {
+            await vorher?.value
+            await arbeit()
+        }
+    }
 
     /// Ruft der Takt des Spielers auf, bei jeder Zustandsaenderung.
     static func melden(titel: String, unterzeile: String?, stelle: Double,
@@ -46,11 +71,17 @@ enum Discordstand {
         // haengengeblieben ist — wieder selbst gebaut.
         //
         // Kommt raus, sobald es laeuft.
-        let takt = Int(Date().timeIntervalSince1970)
-        if takt != Self.letzterKlang {
-            Self.letzterKlang = takt
-            Spur.sag("[Discord] Stand: erlaubt=\(erlaubt) dauer=\(Int(dauer)) "
-                     + "stelle=\(Int(stelle)) laeuft=\(laeuft) titel=\(titel)")
+        // **Nur wenn sich etwas aendert, nicht jede Sekunde.**
+        //
+        // Zuerst ging die Zeile im Sekundentakt hinaus; bei einem pausierten
+        // Film stand dann fuenfzigmal dasselbe untereinander und hat alles
+        // andere aus dem Protokoll gedraengt — auch die Abrisse der
+        // Fernsteuerung, denen ich gerade nachgehe. Ein Werkzeug, das die
+        // Sicht verstellt, die es schaffen soll, ist keins.
+        let stand = "erlaubt=\(erlaubt) dauer=\(Int(dauer)) laeuft=\(laeuft) titel=\(titel)"
+        if stand != Self.letzterStand {
+            Self.letzterStand = stand
+            Spur.sag("[Discord] Stand: \(stand) stelle=\(Int(stelle))")
         }
         guard erlaubt else { abraeumen(); return }
 
@@ -92,7 +123,7 @@ enum Discordstand {
         guard anzeige != zuletzt else { return }
         zuletzt = anzeige
         lief = true
-        Task { await bruecke.zeigen(anzeige) }
+        einreihen { await bruecke.zeigen(anzeige) }
     }
 
     /// Nichts mehr anzeigen — beim Ausschalten, beim Verlassen des Spielers.
@@ -100,6 +131,6 @@ enum Discordstand {
         guard lief else { return }
         lief = false
         zuletzt = nil
-        Task { await bruecke.zeigen(nil) }
+        einreihen { await bruecke.zeigen(nil) }
     }
 }

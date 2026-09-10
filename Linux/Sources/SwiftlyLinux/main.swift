@@ -27,7 +27,34 @@ _ = g_setenv("PANGOCAIRO_BACKEND", "fc", 0)
 // scheitern sonst lautlos — genau daran ist am 10.09.2026 eine halbe Nacht
 // vergangen. Hier reicht `print`: das Startskript leitet die Ausgabe
 // ohnehin in `swiftly-linux.log`.
-Spur.schreiben = { print("[Paket] \($0)") }
+Spur.schreiben = { text in
+    // **Mit Uhrzeit.** Ohne sie steht im Protokoll zwar, *was* passiert ist,
+    // aber nicht *wann* — und bei einer Leitung, die auf- und abgeht, ist
+    // genau der Abstand die Auskunft. Am 10.09.2026 stand dort zwanzigmal
+    // „Leitung verloren" untereinander, und es war nicht zu sagen, ob das
+    // ueber eine Minute ging oder ueber eine Stunde.
+    let u = DateFormatter()
+    u.dateFormat = "HH:mm:ss"
+    print("\(u.string(from: Date())) [Paket] \(text)")
+    // **Und sofort hinausschreiben.**
+    //
+    // `print` in eine **umgeleitete** Datei ist blockweise gepuffert, nicht
+    // zeilenweise — am Bildschirm faellt das nie auf, in einer Protokolldatei
+    // sofort. Am 10.09.2026 hat das eine Dreiviertelstunde gekostet: solange
+    // eine Diagnose im Sekundentakt lief, war der Puffer schnell voll und
+    // alles stand da; sobald sie leise wurde, kam **gar nichts** mehr an, und
+    // es sah aus, als liefe die Funktion nicht. Sie lief die ganze Zeit.
+    //
+    // Dazu die halb geschriebenen Zeilen, die uns vorher irritiert haben —
+    // `[Paket] [Dis` mitten im Satz: das war ein Puffer, der zwischen zwei
+    // Schreibern geleert wurde.
+    // `fflush(nil)` und nicht `fflush(stdout)`: `stdout` ist eine
+    // veraenderliche globale Variable, und Swift 6 laesst sie aus einem
+    // nebenlaeufigen Zusammenhang nicht zu — „not concurrency-safe because it
+    // involves shared mutable state". Mit `nil` werden alle offenen Stroeme
+    // geleert, und der Name faellt weg.
+    fflush(nil)
+}
 
 nonisolated(unsafe) let app = App()
 

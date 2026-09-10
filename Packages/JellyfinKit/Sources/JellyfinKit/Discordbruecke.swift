@@ -94,7 +94,28 @@ public actor Discordbruecke {
                             GENERIC_READ | DWORD(bitPattern: GENERIC_WRITE),
                             0, nil, DWORD(OPEN_EXISTING), 0, nil)
             }
-            guard let griff, griff != INVALID_HANDLE_VALUE else { continue }
+            guard let griff, griff != INVALID_HANDLE_VALUE else {
+                // **Der erste Fehlversuch sagt, ob der Aufruf ueberhaupt
+                // richtig gebaut ist.**
+                //
+                // Von der Windows-Sitzung vorgeschlagen, und der Vorschlag
+                // ist gut: ohne diese Zeile laesst sich nicht einmal
+                // belegen, dass `CreateFileW` versucht wurde. Mit ihr trennt
+                // ein einziger Wert die beiden Faelle, die sonst gleich
+                // aussehen — **2** (`ERROR_FILE_NOT_FOUND`) heisst „die
+                // Roehre ist nicht da, der Aufruf ist in Ordnung", alles
+                // andere heisst „der Aufruf ist falsch gebaut".
+                //
+                // Damit ist die Windows-Bahn auch ohne Discord messbar, und
+                // genau darum ging es: nicht Discord zu installieren, um
+                // etwas zu pruefen, das sich anders pruefen laesst.
+                if n == 0 {
+                    Spur.sag("[Discord] Roehre 0 nicht zu oeffnen, "
+                             + "GetLastError=\(GetLastError()) "
+                             + "(2 = nicht da, alles andere = Aufruf falsch)")
+                }
+                continue
+            }
             roehre = griff
             if senden(0, ["v": 1, "client_id": anwendung]) {
                 Spur.sag("[Discord] verbunden ueber \(weg)")
@@ -103,6 +124,7 @@ public actor Discordbruecke {
             CloseHandle(griff)
             roehre = nil
         }
+        Spur.sag("[Discord] keine Roehre gefunden — zehn Nummern abgesucht")
         return false
     }
 
