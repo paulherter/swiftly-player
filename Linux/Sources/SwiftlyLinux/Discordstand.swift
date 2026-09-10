@@ -12,15 +12,25 @@ import JellyfinKit
 /// **Auf dem Mac kann das nicht funktionieren**, weil der Sandkasten die
 /// Steckdose nicht hergibt; hier gibt es keinen Sandkasten. Die Begruendung
 /// steht ausfuehrlich an ``Discordbruecke``.
-@MainActor
+/// **`nonisolated(unsafe)` statt `@MainActor` — wie der Rest dieser Fassung.**
+///
+/// Auf den Apple-Fassungen ist alles, was die Oberflaeche beruehrt, an den
+/// Hauptakteur gebunden. Hier nicht: GTKs Rueckrufe kommen aus C und tragen
+/// keine Isolation mit, und `App` selbst steht aus demselben Grund als
+/// `nonisolated(unsafe)` in `main.swift`. Ein `@MainActor` hier hat den Bau
+/// an drei Stellen gebrochen, und zwar zu Recht.
+///
+/// Es ist trotzdem kein Freibrief: alle drei Aufrufer sitzen im Takt des
+/// Spielers oder in einem Schalter, also im GTK-Faden. Es gibt keinen
+/// zweiten, der hier hereinkaeme.
 enum Discordstand {
 
     /// Dieselbe Anwendung, unter der auch der Meldungs-Bot laeuft. Rich
     /// Presence braucht keine eigene, und eine zweite haette denselben Namen
     /// zweimal in der Liste.
     private static let bruecke = Discordbruecke(anwendung: "1544344805885214761")
-    private static var zuletzt: Discordanzeige?
-    private static var lief = false
+    nonisolated(unsafe) private static var zuletzt: Discordanzeige?
+    nonisolated(unsafe) private static var lief = false
 
     /// Ruft der Takt des Spielers auf, bei jeder Zustandsaenderung.
     static func melden(titel: String, unterzeile: String?, stelle: Double,
