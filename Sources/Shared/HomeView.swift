@@ -20,6 +20,9 @@ struct HomeView: View {
     @State private var uebernahme = Uebernahmemodell()
     /// Bei mehr als einem Gerät wird gefragt statt geraten.
     @State private var auswahlOffen = false
+    /// Wie weit die Seite gescrollt ist — **nur für den Farbschein und den
+    /// Kopfverlauf.** Siehe ``Farbschein``.
+    @State private var versatz: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -28,17 +31,12 @@ struct HomeView: View {
             inhalt
                 // Der Wechsel zieht die Scrollflaeche heran — die Kopfzeile
                 // darueber liegt fest, siehe `bereichsinhalt()`.
-                .bereichsinhalt()
+                // **Der Farbschein reist als Unterlage mit**, hinter dem
+                // Inhalt und vor dem Grund. Siehe ``Farbschein``.
+                .bereichsinhalt { if !breit { Farbschein(versatz: versatz, fenster: .hinterDemInhalt) } }
                 // Unter dem Kopf und unter der Uebernahmeauswahl, ueber dem
                 // Inhalt — siehe `bereichsleiste()`.
                 .bereichsleiste()
-
-            // **Ein Versuch, und er steht bewusst allein.** Siehe
-            // ``Farbschein``: eine Struktur, ein Aufruf, eine Zeile weniger,
-            // wenn er wieder rausgeht. Er steht **über** dem Inhalt, weil
-            // `bereichsinhalt()` einen deckenden Grund hinter die
-            // Scrollflaeche legt — darunter waere er unsichtbar.
-            if !breit { Farbschein() }
 
             kopf
 
@@ -128,7 +126,15 @@ struct HomeView: View {
     }
 
     private var kopfzeile: some View {
-        Unschaerfekopf {
+        // **Der Farbschein haengt am Kopf, nicht an der Seite.** Siehe
+        // ``Farbschein``: nur dort liegt er ueber `Kopfverlauf` statt
+        // darunter. `kopfzeile` gibt es ohnehin nur schmal.
+        // **Der Verlauf zieht erst beim Scrollen auf.** Im Ruhezustand liegt
+        // unter dem Kopf noch kein Inhalt — dort deckt er nichts ab und nimmt
+        // dem Farbschein nur die obere Kante weg, die seine kraeftigste ist.
+        Unschaerfekopf(verlaufStaerke: min(Double(versatz) / 40, 1),
+                       lage: AnyView(Farbschein(versatz: versatz,
+                                                fenster: .ueberDemVerlauf))) {
             HStack(alignment: .center, spacing: 0) {
                 Wortmarke(hoehe: 30)
                 Spacer(minLength: 0)
@@ -278,6 +284,13 @@ struct HomeView: View {
                         for: .scrollContent)
         .contentMargins(.bottom, breit ? 24 : Stil.leisteHoehe + 12,
                         for: .scrollContent)
+        // Null im Ruhezustand: `contentOffset` startet bei minus dem oberen
+        // Einzug, und was hier gebraucht wird, ist der zurueckgelegte Weg.
+        .onScrollGeometryChange(for: CGFloat.self) {
+            $0.contentOffset.y + $0.contentInsets.top
+        } action: { _, neu in
+            versatz = max(neu, 0)
+        }
         .refreshable { await laden() }
     }
 
@@ -483,57 +496,127 @@ private struct Kachel: View {
 ///
 /// Er kommt von der Webseite, wo hinter der Schlagzeile ein türkiser und
 /// ein blauer Schein stehen. Dort ist das eine ausdrücklich notierte
-/// Abweichung von `GESTALTUNG.md` („Flächen sind flach"), und eine
-/// Abweichung wandert normalerweise nicht dorthin zurück, wovon sie
-/// abweicht. Er steht hier, weil er am Gerät beurteilt werden soll und
-/// nicht am Entwurf.
+/// Abweichung von `GESTALTUNG.md` („Flächen sind flach").
 ///
-/// **Wenn er wieder rausgeht**, ist es diese Struktur und die eine Zeile
-/// `if !breit { Farbschein() }` in ``HomeView`` — sonst nichts.
+/// **Wenn er wieder rausgeht**, sind es vier Stellen: diese Struktur, das
+/// `{ … Farbschein … }` am `bereichsinhalt()`, das `verlaufStaerke:` am
+/// `Unschaerfekopf` und `versatz` samt seinem `onScrollGeometryChange`.
+/// Die Überladungen in `Stil.swift` können stehen bleiben oder mitgehen —
+/// ohne Aufrufer verhalten sie sich wie vorher.
 ///
-/// Vier Sachen, an denen er hängt:
+/// **Vier Anläufe, alle an derselben Frage: welche Lage.** Der Reihe nach,
+/// damit es niemand noch einmal durchprobiert:
 ///
-/// - **Er liegt über dem Inhalt, nicht darunter.** `bereichsinhalt()` legt
-///   einen deckenden Grund hinter die Scrollfläche, damit beim Heranziehen
-///   an den Rändern nichts freikommt. Darunter war der Schein schlicht
-///   nicht zu sehen — im ersten Anlauf genau so gebaut und am Simulator
-///   aufgefallen.
-/// - **`plusLighter`, kein Schleier.** Über dem Grund gibt er Licht dazu;
-///   über einem hellen Plakat fällt eine Zugabe von vierzehn Prozent nicht
-///   auf. Mit normaler Deckkraft läge er als Nebel über den Postern.
-/// - **Die Maske blendet ihn weg, bevor die erste Reihe anfängt.** Sonst
-///   endet er an einer Kante, und eine Kante ist genau das, was ein Schein
-///   nicht haben darf.
-/// - **Er nimmt keine Eingaben.** Über ihm liegt die Kopfzeile mit drei
-///   Zielen.
+/// 1. *Über dem Inhalt.* Dann liegt er über Schrift und Plakaten, und beim
+///    Scrollen wandert das Bild unter einem farbigen Fleck durch.
+/// 2. *Hinter der Scrollfläche.* Sauber gegenüber dem Inhalt — aber
+///    `Kopfverlauf` deckt oben mit 0,98, also war die obere Kante schwarz,
+///    an der der Schein am kräftigsten sein müsste.
+/// 3. *Über dem Verlauf, unter dem Kopfinhalt.* Obere Kante endlich farbig,
+///    dafür liegt er wieder über allem, was beim Scrollen unter dem Kopf
+///    durchläuft — die Reihenüberschrift bekam beim Hochwischen einen
+///    Farbstich.
+/// 4. **Hinter der Scrollfläche, und der Verlauf zieht erst beim Scrollen
+///    auf.** Das ist es.
+///
+/// Der vierte Anlauf ist keine Abwägung, sondern eine Beobachtung: **im
+/// Ruhezustand liegt unter dem Kopf gar kein Inhalt.** Die Scrollfläche
+/// beginnt bei 117 Punkt, der Kopf endet bei 101. Der Verlauf deckt dort
+/// nichts ab — er ist erst nötig, wenn wirklich etwas darunter durchläuft.
+/// Also zieht er mit dem Scrollen auf, und der Schein geht im selben Zug.
+///
+/// **Und er wird in zwei Fenstern gezeichnet, nicht in einem.** Das ist der
+/// fuenfte Anlauf und der Grund, warum er ueberhaupt noch einen brauchte:
+/// hinter dem Inhalt allein zog der Kopfverlauf beim Scrollen darueber auf
+/// und fraß ihn genau dort auf, wo er noch stand — von aussen sieht das aus
+/// wie Ausblenden, obwohl er faehrt.
+///
+/// Also oben, ueber dem Verlauf, die ersten 118 Punkt des **Schirms**; und
+/// darunter, hinter dem Inhalt, der Rest. Beide zeichnen dasselbe an
+/// derselben Stelle, deshalb ist die Naht nicht zu sehen. Die Fenster stehen
+/// fest, die Farbe faehrt darunter durch: eins zu eins mit dem Inhalt, ohne
+/// Ausblenden, nach 165 Punkten oben hinaus.
 private struct Farbschein: View {
+    /// Welcher Ausschnitt des Schirms gezeichnet wird. Siehe oben.
+    enum Fenster { case ueberDemVerlauf, hinterDemInhalt }
+
+    /// Der zurückgelegte Scrollweg, 0 im Ruhezustand.
+    let versatz: CGFloat
+    let fenster: Fenster
+
+    /// So weit reicht `Kopfverlauf` (Kopf 101 + Zugabe 17). **Dieselbe Zahl
+    /// wie dort** — geht sie dort hoch, gehört sie hier mit.
+    private let kopfhoehe: CGFloat = 118
+
+    /// Reicht bis unter die erste Reihenüberschrift.
+    private let hoehe: CGFloat = 165
+
     var body: some View {
-        // Die Kreise sind größer als der Ausschnitt und sitzen zur Hälfte
-        // außerhalb: ein Kreis, dessen Rand im Bild liegt, liest sich als
-        // Fleck. Der weiche Rand muss aus dem Bild heraus.
+        // **Das Fenster steht fest auf dem Schirm, die Farbe fährt darunter
+        // durch.** Nur so bleiben beide Hälften aneinander: teilte sich der
+        // Schein an einer mitwandernden Kante, schoebe sich die untere
+        // Haelfte unter den Verlauf und wuerde von unten aufgefressen.
+        switch fenster {
+        case .ueberDemVerlauf:
+            gemalt
+                .frame(height: kopfhoehe, alignment: .top)
+                .clipped()
+                .drumherum()
+        case .hinterDemInhalt:
+            gemalt
+                .frame(maxHeight: .infinity, alignment: .top)
+                .mask(alignment: .top) {
+                    VStack(spacing: 0) {
+                        Color.clear.frame(height: kopfhoehe)
+                        Color.white
+                    }
+                }
+                .drumherum()
+        }
+    }
+
+    /// Zwei weichgezeichnete Kreise mit Ausklang nach unten — beide Fenster
+    /// zeichnen **dasselbe**, an derselben Stelle. Deshalb ist die Naht
+    /// zwischen ihnen nicht zu sehen.
+    private var gemalt: some View {
         ZStack(alignment: .top) {
+            // Die Mitten liegen auf der Oberkante des Schirms: dort ist der
+            // Schein am kräftigsten, und nach unten läuft er von selbst aus.
             Circle()
                 .fill(Stil.akzent)
-                .frame(width: 300, height: 300)
-                .opacity(0.50)
-                .offset(x: -110, y: -70)
+                .frame(width: 320, height: 320)
+                .opacity(0.28)
+                .offset(x: -110, y: -160)
             Circle()
                 .fill(Stil.kuehl)
-                .frame(width: 320, height: 320)
-                .opacity(0.44)
-                .offset(x: 130, y: -90)
+                .frame(width: 340, height: 340)
+                .opacity(0.24)
+                .offset(x: 130, y: -180)
         }
-        .blur(radius: 64)
+        .blur(radius: 60)
         .frame(maxWidth: .infinity, alignment: .top)
-        .frame(height: 300, alignment: .top)
+        .frame(height: hoehe, alignment: .top)
         .mask(alignment: .top) {
-            LinearGradient(colors: [.white, .white.opacity(0)],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: 300)
+            LinearGradient(stops: [
+                .init(color: .white, location: 0),
+                .init(color: .white.opacity(0.94), location: 0.34),
+                .init(color: .white.opacity(0.72), location: 0.58),
+                .init(color: .white.opacity(0.34), location: 0.80),
+                .init(color: .white.opacity(0), location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+            .frame(height: hoehe)
         }
-        .blendMode(.plusLighter)
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        // **Er fährt mit, und sonst nichts.** Eins zu eins mit dem Inhalt,
+        // ohne Ausblenden: er verhält sich wie das oberste Stück der Seite.
+        .offset(y: -versatz)
+    }
+}
+
+private extension View {
+    /// Was beide Fenster gleich brauchen.
+    func drumherum() -> some View {
+        ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }

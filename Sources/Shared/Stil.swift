@@ -1570,12 +1570,24 @@ extension View {
     /// Die Kopfzeile ist eine Leiste wie die untere: sie liegt fest, und der
     /// Inhalt bewegt sich darunter.
     func bereichsinhalt() -> some View {
-        modifier(Bereichsinhalt())
+        modifier(Bereichsinhalt(unterlage: nil))
+    }
+
+    /// Wie ``bereichsinhalt()``, nur mit einer eigenen Lage **zwischen Grund
+    /// und Inhalt**.
+    ///
+    /// Der Grund hinter der Scrollflaeche deckt. Wer dahinter etwas zeigen
+    /// will, kommt sonst nicht hin und legt es am Ende darueber — und dann
+    /// liegt es auch ueber Schrift und Plakaten. Die Lage gehoert zum Grund:
+    /// der Inhalt scrollt darueber weg.
+    func bereichsinhalt<U: View>(@ViewBuilder unterlage: () -> U) -> some View {
+        modifier(Bereichsinhalt(unterlage: AnyView(unterlage())))
     }
 }
 
 private struct Bereichsinhalt: ViewModifier {
     @Environment(\.bereichAktiv) private var aktiv
+    let unterlage: AnyView?
 
     func body(content: Content) -> some View {
         content
@@ -1596,7 +1608,12 @@ private struct Bereichsinhalt: ViewModifier {
             // was dort zum Vorschein kommt, gehört nicht mehr ihm. Dieser
             // Grund ist derselbe Ton und bewegt sich nicht mit; damit gibt es
             // dort nichts freizugeben.
-            .background(Stil.grund.ignoresSafeArea())
+            .background {
+                ZStack(alignment: .top) {
+                    Stil.grund.ignoresSafeArea()
+                    if let unterlage { unterlage }
+                }
+            }
             .animation(Stil.bereichswechsel, value: aktiv)
     }
 }
@@ -1827,6 +1844,19 @@ struct Unschaerfekopf<Inhalt: View>: View {
     /// eine Kante falsch. In der Bibliothek läuft Schrift durch, und ohne
     /// Kante sieht der Übergang aus wie Brei statt wie eine Trennung.
     var versatz: CGFloat?
+    /// Wie stark der Verlauf steht — **nur für den Fall ohne Versatz.**
+    ///
+    /// Im Ruhezustand liegt unter dem Kopf noch gar kein Inhalt: die
+    /// Scrollflaeche faengt darunter an. Der Verlauf deckt dort also nichts
+    /// ab, er ist reine Zierde — und Zierde hat diese Gestaltung nicht. Wer
+    /// hier eine Zahl mitgibt, laesst ihn erst aufziehen, wenn wirklich
+    /// etwas darunter durchlaeuft.
+    var verlaufStaerke: Double = 1
+    /// Eine Lage **über** `Kopfverlauf` und **unter** dem Kopfinhalt.
+    ///
+    /// Die Reihenfolge ist der ganze Zweck: was hier hineingegeben wird,
+    /// deckt der Verlauf nicht mit ab.
+    var lage: AnyView?
     @ViewBuilder var inhalt: () -> Inhalt
 
     /// Dieselbe Mechanik wie in `Detailkopf`: über dreissig Punkt Weg steht
@@ -1875,7 +1905,7 @@ struct Unschaerfekopf<Inhalt: View>: View {
                     // Die Startseite bleibt, wie sie war: dort steht kein
                     // Versatz, dort laufen Kacheln durch, und ein Verlauf
                     // ist ruhiger als eine Kante.
-                    if versatz == nil { Kopfverlauf() }
+                    if versatz == nil { Kopfverlauf().opacity(verlaufStaerke) }
                     // **Deckend, nicht Glas.** Erst stand hier `Leistenglas`,
                     // und das war sichtbar **heller als die Seite**: Apples
                     // Material traegt eine helle Schicht, und 0,86 Grundton
@@ -1897,6 +1927,7 @@ struct Unschaerfekopf<Inhalt: View>: View {
                     if versatz != nil {
                         Stil.grund.ignoresSafeArea(edges: .top)
                     }
+                    if let lage { lage }
                 }
             }
     }
