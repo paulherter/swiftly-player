@@ -51,8 +51,34 @@ public actor Fernsteuerung {
     /// uebrigen Aufrufe tragen. Warum das noetig ist, steht bei ``starten``.
     private let ausweis: String
 
+    /// **Eine eigene Sitzung ohne Zeitgrenze — nicht `URLSession.shared`.**
+    ///
+    /// Am 10.09.2026 an zwei Rechnern gemessen: auf Linux riss der Kanal nach
+    /// **exakt 120 Sekunden** ab, auf dem Mac stand er nach 349 Sekunden
+    /// unveraendert. Derselbe Wortlaut, derselbe Takt, derselbe Server — nur
+    /// eine andere Foundation.
+    ///
+    /// 120 ist das Doppelte der Vorgabe von `timeoutIntervalForRequest`.
+    /// Eine Dauerverbindung ist keine Anfrage mit Antwort; Apples Foundation
+    /// nimmt die Grenze fuer einen WebSocket deshalb nicht ernst,
+    /// swift-corelibs-foundation offenbar schon. Und weil der Abriss **auf**
+    /// das vierte Lebenszeichen fiel und nicht dazwischen, ist es eine
+    /// Grenze, die beim Senden zuschlaegt — nicht eine, die im Leerlauf
+    /// ablaeuft.
+    ///
+    /// Also eine eigene Sitzung, deren Grenzen so weit stehen, dass sie
+    /// nichts mehr bedeuten. Wer hier `.shared` einsetzt, holt den Fehler
+    /// zurueck, und zwar nur auf einer Plattform.
+    public static let dauersitzung: URLSession = {
+        let k = URLSessionConfiguration.default
+        k.timeoutIntervalForRequest = 86_400
+        k.timeoutIntervalForResource = 86_400
+        k.waitsForConnectivity = true
+        return URLSession(configuration: k)
+    }()
+
     public init(basis: URL, token: String, geraeteID: String, ausweis: String,
-                sitzung: URLSession = .shared) {
+                sitzung: URLSession = Fernsteuerung.dauersitzung) {
         self.basis = basis
         self.token = token
         self.geraeteID = geraeteID
