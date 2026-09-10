@@ -80,8 +80,18 @@ public actor Discordbruecke {
         for n in 0...9 {
             let weg = #"\\.\pipe\discord-ipc-"# + String(n)
             let griff = weg.withCString(encodedAs: UTF16.self) { zeiger in
+                // **`GENERIC_READ` ist `UInt32`, `GENERIC_WRITE` ist
+                // `Int32`.** Swifts WinSDK-Abbildung typisiert die beiden
+                // verschieden; das Oder nimmt den Typ des linken Werts, und
+                // der rechte passt dann nicht. In der VM nachgemessen, nicht
+                // aus dem Fehler geraten.
+                //
+                // Und die naheliegende Abkuerzung traegt nicht:
+                // `DWORD(bitPattern: GENERIC_READ | GENERIC_WRITE)` ist schon
+                // `UInt32`, und `DWORD(bitPattern:)` will `Int32`. Die
+                // Umwandlung gehoert um den **rechten** Wert.
                 CreateFileW(zeiger,
-                            GENERIC_READ | GENERIC_WRITE,
+                            GENERIC_READ | DWORD(bitPattern: GENERIC_WRITE),
                             0, nil, DWORD(OPEN_EXISTING), 0, nil)
             }
             guard let griff, griff != INVALID_HANDLE_VALUE else { continue }
