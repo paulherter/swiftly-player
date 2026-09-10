@@ -127,6 +127,38 @@ public actor Fernsteuerung {
         starten(bei: weitergabe)
     }
 
+    /// **Warum die Leitung wegging, nicht nur dass sie wegging.**
+    ///
+    /// Der blosse Fehler reicht nicht. Ein abgelehnter Handschlag kommt hier
+    /// als derselbe unscheinbare Netzfehler an wie ein Server, den es nicht
+    /// mehr gibt — und genau diese Ununterscheidbarkeit hat am 10.09.2026
+    /// Stunden gekostet. Zwei Angaben trennen die Faelle sofort:
+    ///
+    /// * Der **HTTP-Status** der Antwort auf den Upgrade. 401 heisst
+    ///   „Anmeldung abgelehnt" und nichts anderes; genau das waere bei der
+    ///   Umstellung von `api_key` auf `ApiKey` dagestanden.
+    /// * Der **Schliesscode** samt Grund, wenn die Gegenstelle die Leitung
+    ///   ordentlich beendet hat statt sie fallen zu lassen.
+    ///
+    /// Steht beides nicht zur Verfuegung, bleibt der Fehler — dann ist es
+    /// wirklich das Netz.
+    private func abrissMelden(_ fehler: Error) {
+        var teile = ["[Fernsteuerung] Leitung verloren"]
+        if let http = aufgabe?.response as? HTTPURLResponse {
+            teile.append("HTTP \(http.statusCode)")
+        }
+        if let code = aufgabe?.closeCode, code != .invalid {
+            var satz = "Schliesscode \(code.rawValue)"
+            if let grund = aufgabe?.closeReason,
+               let text = String(data: grund, encoding: .utf8), !text.isEmpty {
+                satz += " (\(text))"
+            }
+            teile.append(satz)
+        }
+        teile.append("\(fehler)")
+        Spur.sag(teile.joined(separator: " · "))
+    }
+
     /// Sagt einmal je Verbindung, dass wirklich etwas ankommt. Ein
     /// aufgebauter Socket beweist noch nichts — der Server kann ihn
     /// annehmen und danach schweigen.
@@ -167,7 +199,7 @@ public actor Fernsteuerung {
                     // Anmeldung, Server weg, Gegenstelle lehnt ab — von
                     // aussen alles dasselbe, naemlich „die Uebernahme geht
                     // halt nicht".
-                    Spur.sag("[Fernsteuerung] Leitung verloren: \(error)")
+                    await self.abrissMelden(error)
                     await self.leitungVerloren()
                     return
                 }
