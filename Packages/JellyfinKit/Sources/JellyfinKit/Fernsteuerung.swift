@@ -251,23 +251,19 @@ public actor Fernsteuerung {
     private func schlagen() {
         herzschlag = Task { [weak self] in
             while !Task.isCancelled {
-                // **Vorlaeufig 45 statt 30 — ein Versuch, der zwei Ursachen
-                // trennt.**
+                // **Dreissig Sekunden, und sie helfen auf Linux nichts.**
                 //
-                // Der Abriss faellt auf Linux jedes Mal auf das **vierte**
-                // Lebenszeichen, also nach 120 Sekunden. Vier mal dreissig
-                // sind aber genau 120: „nach zwei Minuten" und „nach vier
-                // Nachrichten" sehen in diesen Zahlen gleich aus, und keine
-                // Messung von heute trennt sie.
+                // Am 10.09.2026 mit einem Versuch getrennt, weil die Zahlen
+                // es nicht hergaben: der Abriss fiel dort jedes Mal auf das
+                // vierte Lebenszeichen, und vier mal dreissig sind genau die
+                // 120 Sekunden, nach denen er kam. „Nach zwei Minuten" und
+                // „nach vier Nachrichten" waren nicht zu unterscheiden.
                 //
-                // Mit 45 Sekunden tun sie es: bleibt es bei 120 s (dann beim
-                // dritten Lebenszeichen), ist es die **Zeit**. Rutscht es auf
-                // 180 s (wieder das vierte), ist es die **Anzahl**.
-                //
-                // Eine eigene Sitzung ohne Zeitgrenze hat es nicht behoben —
-                // meine erste Vermutung war also falsch, und deshalb wird die
-                // zweite gemessen statt geglaubt.
-                try? await Task.sleep(for: .seconds(45))
+                // Mit 45 Sekunden waren sie es: die Leitung fiel weiter nach
+                // **exakt 120 Sekunden**, nun schon nach zwei Lebenszeichen.
+                // Es ist also die Zeit. Der Takt geht deshalb zurueck auf
+                // dreissig — er war nie die Ursache.
+                try? await Task.sleep(for: .seconds(30))
                 // `try?` verschluckt den Abbruch; ohne diese Zeile ginge nach
                 // dem Beenden noch ein Lebenszeichen hinaus.
                 guard !Task.isCancelled, let self else { return }
