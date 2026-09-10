@@ -560,65 +560,98 @@ struct Bild<Platzhalter: View>: View {
     var fortschritt: Double? = nil
     @ViewBuilder var platzhalter: () -> Platzhalter
 
-    /// **Ein abgebrochener Abruf ist kein Fehlschlag — er ist einen zweiten
-    /// Versuch wert.**
+    /// **Laedt ueber ``Bildspeicher``, nicht ueber `AsyncImage`.**
     ///
-    /// `AsyncImage` bricht ab, sobald seine Kachel vom Schirm geht, und bleibt
-    /// danach im Fehlerzustand stehen: kommt dieselbe Kachel zurueck, versucht
-    /// es von sich aus nichts mehr. Beim Kontowechsel geht die halbe Seite
-    /// kurz durch die Haende des Layouts, und dann trifft es viele Kacheln auf
-    /// einmal. Auf tvOS am Geraet gemessen, zwanzigmal in Folge:
+    /// Hier stand `AsyncImage`, und daneben lag seit dem 05.09.2026 in
+    /// `Netzbild.swift` ein Lader, der genau dessen drei Fehler nicht hat: er
+    /// entschluesselt abseits des Hauptlaufs, merkt sich das Ergebnis und
+    /// rechnet auf die noetige Kantenlaenge herunter. Am 10.09.2026
+    /// nachgesehen, wer ihn benutzt: der Mac, die Downloadseite und das
+    /// Profilzeichen. **Die Startseite und die Bibliothek nicht** — also
+    /// ausgerechnet die beiden Flaechen, ueber die gescrollt wird und auf
+    /// denen fuenfzig Plakate gleichzeitig entschluesseln.
     ///
-    ///     NSURLErrorDomain -999
+    /// Gebaut und nicht angeschlossen, dieselbe Klasse wie die beiden
+    /// Downloadregeln. Kein Test sieht so etwas: beide Lader funktionieren.
     ///
-    /// Das heisst „abgebrochen" — nicht abgelehnt, nicht verfehlt. Derselbe
-    /// Aufruf von aussen kam mit HTTP 200 und 158 KB zurueck. Deshalb hier ein
-    /// neuer Anlauf statt einer grauen Flaeche; hoechstens zwei, damit ein
-    /// echter Ausfall nicht in eine Schleife laeuft.
+    /// **Der Anlaufzaehler faellt damit weg**, und das ist kein Verlust. Er
+    /// zaehlte `NSURLErrorCancelled` mit — den Abbruch, den `AsyncImage` von
+    /// sich aus ausloest, sobald seine Kachel den Schirm verlaesst, um danach
+    /// im Fehlerzustand stehenzubleiben. Ein Verband um eine fremde
+    /// Eigenschaft. `Bildspeicher` holt mit einer eigenen Aufgabe, die an der
+    /// Kachel nicht haengt; es gibt nichts abzubrechen und nichts zu
+    /// wiederholen.
+    @State private var geladen: Image?
+    @State private var sichtbar = false
+    /// Kein Bild zu erwarten: keine Adresse, oder der Abruf kam ohne eines
+    /// zurueck. Erst dann tritt das Zeichen des Aufrufers ein — nicht schon
+    /// waehrenddessen, sonst blitzt es vor jeder Kachel kurz auf.
+    @State private var ohneBild = false
+
+    /// **Bekanntes einmal beim Anlegen nachschlagen, nicht bei jedem Zeichnen.**
     ///
-    /// Uebernommen aus `Sources/tvOS/Stil.swift`, wo es gemessen wurde — nicht
-    /// nachgebaut, sondern dieselbe Regel an derselben Stelle.
-    @State private var anlauf = 0
+    /// Hier stand der Griff in den Speicher im `body`. Das sah harmlos aus
+    /// und war es nicht: `Bildspeicher.bild(_:)` zerlegt zuerst die Adresse,
+    /// um das Zugangsmerkmal herauszunehmen — `URLComponents`, filtern,
+    /// wieder zusammensetzen. Im `body` heisst das: bei **jedem** Durchgang,
+    /// fuer **jede** Kachel, auf dem Hauptlauf. Eine Detailseite zeichnet
+    /// viele Bilder und laeuft dabei durch mehrere Durchgaenge; das war
+    /// Arbeit, die dem Laden die Bahn wegnahm, ohne je etwas beizutragen.
+    ///
+    /// Deshalb hier, wie es `Netzbild` von Anfang an macht: einmal fragen,
+    /// bevor gezeichnet wird. Ein nachgereichter Wert kaeme einen Durchgang
+    /// zu spaet, und der eine Durchgang ist das Aufblitzen.
+    @MainActor
+    init(url: URL?, breite: CGFloat? = nil, hoehe: CGFloat? = nil,
+         verhaeltnis: CGFloat? = nil, ecke: CGFloat = Stil.ecke,
+         fortschritt: Double? = nil,
+         @ViewBuilder platzhalter: @escaping () -> Platzhalter) {
+        self.url = url
+        self.breite = breite
+        self.hoehe = hoehe
+        self.verhaeltnis = verhaeltnis
+        self.ecke = ecke
+        self.fortschritt = fortschritt
+        self.platzhalter = platzhalter
+        let sofort = url.flatMap { Bildspeicher.geteilt.bild($0) }
+        _geladen = State(initialValue: sofort)
+        _sichtbar = State(initialValue: sofort != nil)
+        _ohneBild = State(initialValue: url == nil)
+    }
 
     var body: some View {
         rahmen
             .overlay {
-                // **Waehrend des Ladens steht kein Zeichen da.**
-                //
-                // Hier hiess jede Lage ausser `.success` „Platzhalter", und
-                // der Platzhalter der Aufrufer ist das Filmsymbol — die
-                // Auskunft „zu diesem Titel gibt es kein Bild". Waehrend des
-                // Abrufs ist das schlicht falsch, und man sah es: bei jedem
-                // Wechsel blitzte einen Lidschlag lang das Ersatzbild auf und
-                // wurde dann vom echten ueberdeckt.
-                //
-                // `.empty` heisst „laeuft noch" — dort steht die pulsierende
-                // Flaeche. Nur wenn gar keine Adresse da ist, ist `.empty`
-                // endgueltig, und dann tritt das Zeichen ein.
-                //
-                // Die `transaction` blendet den Wechsel der Lagen weich; ohne
-                // sie schaltet `AsyncImage` hart um.
-                AsyncImage(url: url,
-                           transaction: Transaction(animation: Stil.einblenden)) { phase in
-                    switch phase {
-                    case let .success(bild):
-                        bild.resizable().aspectRatio(contentMode: .fill)
-                            .transition(.opacity)
-                    case .empty where url != nil:
-                        Ladefeld(ecke: 0)
-                    default:
-                        platzhalter().onAppear {
-                            guard case let .failure(f) = phase,
-                                  (f as NSError).code == NSURLErrorCancelled,
-                                  anlauf < 2 else { return }
-                            anlauf += 1
-                        }
-                    }
+                if let geladen {
+                    geladen.resizable().aspectRatio(contentMode: .fill)
+                        .opacity(sichtbar ? 1 : 0)
+                } else if url != nil, !ohneBild {
+                    // **Waehrend des Ladens steht kein Zeichen da.** Der
+                    // Platzhalter der Aufrufer ist das Filmsymbol und heisst
+                    // „zu diesem Titel gibt es kein Bild". Waehrend des Abrufs
+                    // ist das schlicht falsch, und man sah es.
+                    Ladefeld(ecke: 0)
+                } else {
+                    platzhalter()
                 }
-                .id(anlauf)
             }
-            // Eine neue Adresse heisst ein frischer Anlauf.
-            .onChange(of: url) { _, _ in anlauf = 0 }
+            .task(id: url) {
+                guard let url else { geladen = nil; ohneBild = true; return }
+                ohneBild = false
+                if let da = Bildspeicher.geteilt.bild(url) {
+                    geladen = da
+                    sichtbar = true
+                    return
+                }
+                geladen = nil
+                sichtbar = false
+                guard let neu = await Bildspeicher.geteilt.laden(url) else {
+                    ohneBild = true
+                    return
+                }
+                geladen = neu
+                withAnimation(Stil.einblenden) { sichtbar = true }
+            }
             .overlay(alignment: .bottom) {
                 if let fortschritt {
                     Kachelfortschritt(anteil: fortschritt)

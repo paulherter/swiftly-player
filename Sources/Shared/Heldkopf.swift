@@ -51,18 +51,43 @@ struct Heldkopf<Inhalt: View>: View {
                     Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
                 }
             }
+            // **Das Plakat sagt nichts, was nicht daneben steht.**
+            //
+            // Es blieb bisher ohne Behandlung — fuer VoiceOver eine leere
+            // Flaeche mitten auf jeder Detailseite. Zwei Wege waeren moeglich
+            // gewesen; dies ist der richtige: der Titel steht direkt daneben,
+            // das Plakat wiederholte ihn nur als Bild. Was es zusaetzlich
+            // traegt, ist der Fortschrittsbalken — und der ist eine Zeichnung
+            // *im* Bild und fiel deshalb ganz heraus. Er wandert unten an den
+            // Titel, wo er gelesen wird.
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text(titel)
-                    .font(.system(size: 40, weight: .bold))
-                    .tracking(-1)
-                    .foregroundStyle(Stil.schrift)
-                    .lineLimit(2)
-                Text(nebenzeile)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Stil.schriftLeise)
-                    .lineLimit(1)
-                    .padding(.top, 8)
+                // **Titel und Nebenzeile als eine Aussage, die Knoepfe nicht.**
+                //
+                // Genau das Muster aus `HomeView.Kachel`, das der tvOS-Chat
+                // dort gefunden hat — hier war es nie uebernommen worden.
+                // `inhalt()` bleibt bewusst draussen: das sind Knoepfe, und
+                // die muss man einzeln erreichen koennen.
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(titel)
+                        .font(.system(size: 40, weight: .bold))
+                        .tracking(-1)
+                        .foregroundStyle(Stil.schrift)
+                        .lineLimit(2)
+                    Text(nebenzeile)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Stil.schriftLeise)
+                        .lineLimit(1)
+                        .padding(.top, 8)
+                }
+                .accessibilityElement(children: .combine)
+                // Erst ab einem Prozent — „null Prozent gesehen" ist keine
+                // Auskunft, sondern Laerm vor jedem Titel.
+                .accessibilityValue(fortschritt.map {
+                    Text("\(Int($0 * 100)) Prozent gesehen")
+                } ?? Text(""))
+
                 inhalt()
                     .padding(.top, 12)
             }
@@ -90,28 +115,35 @@ struct Heldkopf<Inhalt: View>: View {
     private var hintergrund: some View {
         ZStack {
             Stil.grund
-            // Bewusst nicht `Bild`: das ist ein Kachelbild — es misst sich an
-            // einer Breite, rundet Ecken und schneidet zu. Das Heldbild soll
-            // die Fläche randlos füllen und hat kein Seitenverhältnis, an das
-            // es sich halten könnte.
+            // **Weiterhin nicht `Bild`, aber jetzt `Netzbild`.**
             //
-            // Mit `Bild` sah man es: seit dort ein Seitenverhältnis eingebaut
-            // ist, steht bei `verhaeltnis == nil` ein
-            // `aspectRatio(nil, contentMode: .fit)` auf einem `Color.clear` —
-            // das hat keine eigene Größe. Das Bild rutschte nach links und
-            // brach hart ab, im schmalen Fenster verschwand es ganz.
-            // Die `transaction` blendet den Wechsel der Lagen weich; ohne
-            // sie schaltet `AsyncImage` hart um, und das Heldbild ist die
-            // groesste Flaeche der Seite. **Nichts erscheint hart** —
-            // GESTALTUNG, Abschnitt E. Als letzte Stelle nachgezogen, die
-            // es noch ohne machte.
-            AsyncImage(url: bild,
-                       transaction: Transaction(animation: Stil.einblenden)) { stand in
-                if case let .success(b) = stand {
-                    b.resizable().aspectRatio(contentMode: .fill)
-                        .transition(.opacity)
-                }
-            }
+            // `Bild` ist ein Kachelbild: es misst sich an einer Breite,
+            // rundet Ecken und schneidet zu. Das Heldbild soll die Flaeche
+            // randlos fuellen und hat kein Seitenverhaeltnis, an das es sich
+            // halten koennte — mit `Bild` rutschte es nach links und brach
+            // hart ab, im schmalen Fenster verschwand es ganz. `Netzbild`
+            // zeichnet genau das hier Gebrauchte: ein fuellendes Bild ohne
+            // Rahmen, ohne Ecken, ohne Zuschnitt.
+            //
+            // **Hier stand bis zuletzt `AsyncImage`, als einzige Stelle der
+            // App.** Am 10.09.2026 am Geraet gemeldet: die Banner oben laden
+            // spuerbar langsam. Drei Gruende, alle drei mit derselben
+            // Aenderung erledigt: es entschluesselte auf dem Hauptlauf — und
+            // das ist hier die groesste Flaeche der Seite, also das teuerste
+            // Bild —, es merkte sich nichts, also lief bei jeder Rueckkehr
+            // alles noch einmal, und es tauchte in keiner Messung auf, weil
+            // die Messung im eigenen Lader sitzt.
+            //
+            // `vorrang` laesst die Schleuse aus. Der Banner fuellt den halben
+            // Schirm; solange er fehlt, sieht die Seite unfertig aus,
+            // gleichgueltig wie viele Plakate darunter schon stehen. Ihn
+            // hinter zwanzig Kacheln anzustellen waere die Schleuse gegen
+            // ihren eigenen Zweck gedreht.
+            //
+            // Das weiche Einblenden bleibt: `Netzbild` bringt es selbst mit,
+            // mit derselben Dauer. **Nichts erscheint hart** — GESTALTUNG,
+            // Abschnitt E.
+            Netzbild(url: bild, vorrang: true)
             // Von links, damit die Schrift steht.
             LinearGradient(stops: [
                 .init(color: Stil.grund.opacity(0.96), location: 0),

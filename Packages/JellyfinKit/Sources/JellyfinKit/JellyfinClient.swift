@@ -73,7 +73,7 @@ public actor JellyfinClient {
         baseURL: URL,
         deviceID: String,
         deviceName: String,
-        clientVersion: String = "0.1.0",
+        clientVersion: String = Fassungsnummer.ausDemBuendel,
         session: Session? = nil,
         urlSession: URLSession = .ortsnetzfaehig
     ) {
@@ -95,7 +95,13 @@ public actor JellyfinClient {
 
     private var authorizationHeader: String {
         var parts = [
-            "Client=\"Swiftly\"",
+            // **Der Name, unter dem der Server uns fuehrt.**
+            //
+            // Hier stand „Swiftly". Im Store heisst die App seit der Absage
+            // vom 07.09.2026 „Swiftly Player", und das ist der Name, den ein
+            // Nutzer in seiner Geraeteliste wiedererkennen soll — er sieht
+            // ihn in Jellyfin, nicht auf dem Homebildschirm.
+            "Client=\"Swiftly Player\"",
             "Device=\"\(deviceName)\"",
             "DeviceId=\"\(deviceID)\"",
             "Version=\"\(clientVersion)\"",
@@ -105,6 +111,13 @@ public actor JellyfinClient {
         }
         return "MediaBrowser " + parts.joined(separator: ", ")
     }
+
+    /// Derselbe Ausweis fuer den Steuerkanal.
+    ///
+    /// **Nicht nachgebaut, sondern derselbe.** Ein Kanal, der sich anders
+    /// nennt als die uebrigen Aufrufe, landet auf einer zweiten Sitzung — und
+    /// dann hat die eine die Bedienknoepfe und die andere die Laufzeit.
+    internal var ausweisFuerKanal: String { authorizationHeader }
 
     private func request(
         _ path: String,
@@ -616,17 +629,29 @@ public actor JellyfinClient {
     ///
     /// **Ein Fehlschlag ist kein Fehler**, wie bei den Abschnitten: dann gibt
     /// es kein Angebot. Ein Abzeichen ist Zubehoer, keine Zusage.
-    public func fremdsitzungen() async -> [Fremdsitzung] {
-        do {
-            let s = try requireSession()
-            let req = try request("Sessions", query: [
-                .init(name: "controllableByUserId", value: s.userID),
-                .init(name: "activeWithinSeconds", value: "120"),
-            ])
-            return try await send(req, as: [Fremdsitzung].self)
-        } catch {
-            return []
-        }
+    /// **Wirft, statt einen Fehlschlag als „nichts da" auszugeben.**
+    ///
+    /// Hier stand `catch { return [] }`. Damit sah ein abgelaufenes Merkmal,
+    /// ein nicht erreichbarer Server und eine Antwort, die sich nicht lesen
+    /// laesst, von aussen **genauso aus wie „auf keinem anderen Geraet laeuft
+    /// etwas"** — und das ist der Normalfall, den niemand hinterfragt.
+    ///
+    /// Am 10.09.2026 gemeldet: die Uebernahme gehe nicht mehr. Im Protokoll
+    /// stand zehnmal „0 Sitzungen, kein Angebot", und aus dieser Zeile liess
+    /// sich nicht ablesen, ob der Server nichts hatte oder die Frage gar
+    /// nicht ankam. Eine Meldung, die beide Faelle gleich beschreibt,
+    /// beantwortet keine Frage.
+    ///
+    /// Die Ansicht darf weiterhin schweigen, wenn nichts geht — sie fragt
+    /// alle zehn Sekunden, da gehoert keine Fehlermeldung hin. Aber sie soll
+    /// **wissen**, was los war, statt es zu raten.
+    public func fremdsitzungen() async throws -> [Fremdsitzung] {
+        let s = try requireSession()
+        let req = try request("Sessions", query: [
+            .init(name: "controllableByUserId", value: s.userID),
+            .init(name: "activeWithinSeconds", value: "120"),
+        ])
+        return try await send(req, as: [Fremdsitzung].self)
     }
 
     /// Einen Wiedergabebefehl an eine fremde Sitzung schicken.
@@ -737,7 +762,7 @@ public actor JellyfinClient {
 
         var query: [URLQueryItem] = [
             .init(name: "static", value: "true"),
-            .init(name: "api_key", value: s.accessToken),
+            .init(name: "ApiKey", value: s.accessToken),
         ]
         if let mediaSourceID { query.append(.init(name: "mediaSourceId", value: mediaSourceID)) }
         if let playSessionID { query.append(.init(name: "playSessionId", value: playSessionID)) }
@@ -778,7 +803,7 @@ public actor JellyfinClient {
             .init(name: "tag", value: tag),
             .init(name: "maxWidth", value: String(maxWidth)),
             .init(name: "quality", value: "85"),
-            .init(name: "api_key", value: token),
+            .init(name: "ApiKey", value: token),
         ]
         return comps?.url
     }
@@ -794,7 +819,7 @@ public actor JellyfinClient {
             .init(name: "tag", value: tag),
             .init(name: "maxHeight", value: String(maxHeight)),
             .init(name: "quality", value: "90"),
-            .init(name: "api_key", value: token),
+            .init(name: "ApiKey", value: token),
         ]
         return comps?.url
     }

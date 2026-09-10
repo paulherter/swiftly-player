@@ -240,6 +240,15 @@ final class AppModel {
         // ersten Start ueber Mobilfunk, obwohl die Vorgabe das verbietet.
         downloads.nurUeberWLAN = nurUeberWLAN
 
+        // **Das Paket bekommt einen Faden nach draussen.**
+        //
+        // `Protokoll` liegt hier in der App, weil es in eine Datei im
+        // App-Behaelter schreibt; das Paket kennt es nicht. Die stillsten
+        // Stellen der ganzen App stecken aber genau dort — eine
+        // Steckverbindung, die nicht zustande kommt, eine Antwort, die
+        // niemand ansieht. Am 10.09.2026 hat das eine halbe Nacht gekostet.
+        Spur.schreiben = { Protokoll.schreib($0) }
+
         Self.keychainSelbsttest()
         restoreSession()
     }
@@ -481,12 +490,16 @@ final class AppModel {
         do {
             try await client.faehigkeitenMelden()
         } catch {
+            Protokoll.schreib("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
             Self.log.warning("Fähigkeiten nicht gemeldet: \(error.localizedDescription)")
         }
         guard let steuerung = try? await client.fernsteuerung() else { return }
         fern = steuerung
         await steuerung.starten { [weak self] befehl in
-            Task { @MainActor in self?.fernbefehl?(befehl) }
+            Task { @MainActor in
+                self?.fernbefehl?(befehl)
+                await self?.sofortMelden(nach: befehl)
+            }
         }
     }
 
@@ -900,6 +913,34 @@ final class AppModel {
 
     func reportStart(item: Item, plan: PlaybackPlan, seconds: Double) async {
         guard let client else { return }
+        // **Die Faehigkeiten vor jeder Wiedergabe erneut melden.**
+        //
+        // Sie wurden bisher **einmal** gemeldet, beim Erscheinen der
+        // Hauptansicht. Das reicht nicht, und am 10.09.2026 ist es
+        // aufgeschlagen: die Uebernahme ging auf beiden Geraeten
+        // gleichzeitig nicht mehr, in beide Richtungen.
+        //
+        // Der Grund liegt darin, wie der Server sucht. `Sessions` wird mit
+        // `controllableByUserId` gefragt — es kommen also nur Sitzungen
+        // zurueck, die **Befehle annehmen**, und das weiss der Server nur
+        // durch `Sessions/Capabilities/Full`. Eine Sitzung lebt dort aber
+        // nicht ewig: Serverneustart, Zeitablauf, laengerer Hintergrund, und
+        // sie ist weg. Die naechste Wiedergabe legt dann eine **neue** an —
+        // und die hat die Faehigkeiten nie bekommen, weil das nur beim
+        // Programmstart geschah. Beide Geraete sind dann fuereinander
+        // unsichtbar, bis jemand die App neu startet. Das erklaert auch,
+        // warum es „auf einmal" nicht mehr ging und nicht schleichend.
+        //
+        // Der Aufruf ist billig, geht an dieselbe Gegenstelle, an die gleich
+        // die Startmeldung geht, und ist beliebig oft wiederholbar. Hier und
+        // nicht anderswo, weil genau das der Zeitpunkt ist, an dem das andere
+        // Geraet uns sehen koennen muss.
+        do {
+            try await client.faehigkeitenMelden()
+        } catch {
+            Protokoll.schreib("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
+            Self.log.warning("Fähigkeiten nicht gemeldet: \(error.localizedDescription)")
+        }
         do {
             try await client.reportStart(itemID: item.id, plan: plan,
                                          ticks: JellyfinClient.ticks(fromSeconds: seconds))
@@ -909,7 +950,12 @@ final class AppModel {
         }
     }
 
+    /// Was gerade laeuft — gemerkt, damit ein Fernbefehl sofort gemeldet
+    /// werden kann, ohne den Player danach zu fragen.
+    @ObservationIgnored private var laufenderTitel: (item: Item, plan: PlaybackPlan)?
+
     func reportProgress(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) async {
+        laufenderTitel = (item, plan)
         guard let client else { return }
         do {
             try await client.reportProgress(itemID: item.id, plan: plan,
@@ -919,6 +965,34 @@ final class AppModel {
         } catch {
             Self.log.error("Fortschritt-Meldung fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// **Nach einem Fernbefehl sofort melden, statt auf den Takt zu warten.**
+    ///
+    /// Am Geraet gemeldet: wer in Jellyfin auf Pause drueckt, sieht die App
+    /// sofort anhalten — in der Uebersicht lief die Zeit aber noch fuenf,
+    /// sechs Sekunden weiter, bevor das Pausezeichen erschien. Die App
+    /// gehorchte also prompt und **sagte es nur niemandem**; die naechste
+    /// Meldung kam erst mit dem regulaeren Takt.
+    ///
+    /// Wer drueckt, sieht seinen eigenen Druck nicht ankommen und drueckt
+    /// noch einmal. Genau dafuer ist eine Rueckmeldung da.
+    ///
+    /// **Die kurze Wartezeit ist kein Ratespiel, sondern die Reihenfolge.**
+    /// Der Player bekommt den Befehl im selben Zug; er haelt an, und erst
+    /// dann steht der neue Stand in ``Spielstand``. Wer sofort meldete,
+    /// meldete den Zustand von davor — also genau das, was hier behoben
+    /// werden soll. 400 ms sind lang genug fuer den Weg durch VLC und kurz
+    /// genug, dass niemand es als Verzoegerung liest.
+    ///
+    /// Bei `stopp` passiert nichts: das Ende meldet der Player selbst, mit
+    /// seiner eigenen Endmeldung, und die traegt mehr als diese hier.
+    private func sofortMelden(nach befehl: Fernbefehl) async {
+        guard befehl != .stopp, let laufenderTitel else { return }
+        try? await Task.sleep(for: .milliseconds(400))
+        guard let stand = Spielstand.frisch else { return }
+        await reportProgress(item: laufenderTitel.item, plan: laufenderTitel.plan,
+                             seconds: stand.stelle, paused: !stand.laeuft)
     }
 
     func reportStopped(item: Item, plan: PlaybackPlan, seconds: Double) async {
