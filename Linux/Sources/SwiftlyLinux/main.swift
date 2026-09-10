@@ -48,7 +48,12 @@ Spur.schreiben = { text in
     // Dazu die halb geschriebenen Zeilen, die uns vorher irritiert haben —
     // `[Paket] [Dis` mitten im Satz: das war ein Puffer, der zwischen zwei
     // Schreibern geleert wurde.
-    fflush(stdout)
+    // `fflush(nil)` und nicht `fflush(stdout)`: `stdout` ist eine
+    // veraenderliche globale Variable, und Swift 6 laesst sie aus einem
+    // nebenlaeufigen Zusammenhang nicht zu — „not concurrency-safe because it
+    // involves shared mutable state". Mit `nil` werden alle offenen Stroeme
+    // geleert, und der Name faellt weg.
+    fflush(nil)
 }
 
 nonisolated(unsafe) let app = App()
