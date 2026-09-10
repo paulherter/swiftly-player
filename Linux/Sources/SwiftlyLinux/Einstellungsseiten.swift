@@ -471,6 +471,19 @@ extension App {
                                      pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.seerr)
         })
+        // **Hier und nicht bei „Wiedergabe".** Die Zeilen dort sagen, *wie*
+        // etwas ablaeuft; diese gibt als einzige der App etwas nach draussen.
+        // Sie gehoert neben den anderen fremden Dienst.
+        anhaengen(i.raum, zeilenstrich())
+        anhaengen(i.raum, schalterzeile(symbol: "user-available-symbolic",
+                                        titel: uebersetzt("Discord"),
+                                        unter: uebersetzt("Zeigt im Profil, was gerade läuft"),
+                                        an: wahlen.discordAnzeigen) { [weak self] an in
+            guard let self else { return }
+            self.wahlen.discordAnzeigen = an
+            self.wahlen.sichern()
+            if !an { Discordstand.abraeumen() }
+        })
         anhaengen(block, i.aussen)
 
         let s = einstellungsgruppe(uebersetzt("Server"))

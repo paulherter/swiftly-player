@@ -68,6 +68,14 @@ struct Wahlen: Codable {
     /// ein fehlender Schluessel sonst *alle* Einstellungen zuruecksetzt; wer
     /// hier ein Feld ergaenzt und es dort vergisst, bekommt eine Wahl, die
     /// sich nach jedem Neustart selbst vergisst.
+    /// **Zeigt Discord, was gerade laeuft — aus, bis man es einschaltet.**
+    ///
+    /// Die einzige Einstellung dieser App, die etwas nach **draussen** gibt:
+    /// wer sie anlegt, sagt jedem in seinen Discord-Servern, welchen Film er
+    /// sieht. Eine Vorgabe „an" waere keine Bequemlichkeit, sondern eine
+    /// Veroeffentlichung, um die niemand gebeten hat.
+    var discordAnzeigen = false
+
     var pufferstufe = Pufferstufe.normal.rawValue
 
     var puffer: Pufferstufe { Pufferstufe(rawValue: pufferstufe) ?? .normal }
@@ -108,6 +116,7 @@ struct Wahlen: Codable {
         technikschild          = w(.technikschild, false)
         downloadsAn            = w(.downloadsAn, false)
         pufferstufe            = w(.pufferstufe, Pufferstufe.normal.rawValue)
+        discordAnzeigen        = w(.discordAnzeigen, false)
     }
 
     /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.

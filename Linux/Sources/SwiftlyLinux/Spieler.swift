@@ -134,6 +134,7 @@ extension App {
         // versteckt, hängt daran; solange er steht, kann ein später
         // eintreffendes Ereignis die Aufräumarbeit wieder umstossen.
         laufenderTitel = nil
+        Discordstand.abraeumen()
         spielerSteuerung = nil
         zeigerZeigen(true)
         abschnitte = []
@@ -552,6 +553,23 @@ extension App {
         if auftrag.spurenAnwenden { spurenVorwaehlen() }
         if auftrag.startMelden { melden(.start); medienstandMelden() }
         if auftrag.fortschrittMelden { melden(.fortschritt) }
+
+        // **Und derselbe Takt traegt die Discord-Anzeige.**
+        //
+        // Auf den Apple-Fassungen haengt sie an der Wiedergabezentrale, weil
+        // dort ohnehin bei jeder Zustandsaenderung die frischen Werte stehen.
+        // Die gibt es hier nicht — hier ist es dieser Takt, und er kennt
+        // dieselben drei Zahlen. Ob ueberhaupt etwas hinausgeht, entscheidet
+        // `Discordstand`; der Schalter ist aus, bis jemand ihn anlegt.
+        if let titel = laufenderTitel {
+            Discordstand.melden(
+                titel: titel.seriesName ?? titel.name,
+                unterzeile: titel.seriesName == nil ? nil
+                            : [titel.folgenkuerzel, titel.name]
+                                .compactMap { $0 }.joined(separator: " · "),
+                stelle: spielstand.position, dauer: spielstand.dauer,
+                laeuft: spielstand.laeuft, erlaubt: wahlen.discordAnzeigen)
+        }
 
         // B5: der Knopf. B6: das selbsttätige Weiterschalten — deutlich enger
         // gefasst, und frühestens `anlaufruhe` Sekunden nach dem Öffnen.

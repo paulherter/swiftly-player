@@ -50,6 +50,26 @@ import Darwin
 ///
 /// Wer das spaeter noch einmal angeht: die zwei Messungen oben sind der
 /// Ausgangspunkt, nicht die Vermutung, es koenne schon irgendwie gehen.
+/// **Auf Windows liegt der Draht als benannte Roehre, nicht als Steckdose.**
+///
+/// `\\.\pipe\discord-ipc-0`, sonst dasselbe Protokoll. Der Weg dorthin
+/// braucht `WinSDK` und `CreateFileW`; solange das nicht dasteht, tut die
+/// Bruecke dort **nichts** — ausdruecklich und mit einer Zeile im Protokoll,
+/// nicht stillschweigend. Ein Schalter, der auf einer Plattform nie etwas
+/// tun kann, gehoert dort weg oder erklaert; was er nicht darf, ist so
+/// aussehen, als taete er etwas.
+#if os(Windows)
+
+public actor Discordbruecke {
+    public init(anwendung: String) {}
+    public func zeigen(_ anzeige: Discordanzeige?) {
+        Spur.sag("[Discord] auf Windows noch nicht angeschlossen (benannte Roehre fehlt)")
+    }
+    public func schliessen() {}
+}
+
+#else
+
 public actor Discordbruecke {
 
     /// Die Anwendung, unter der Discord die Anzeige fuehrt. Ihr Name steht
@@ -195,6 +215,8 @@ public actor Discordbruecke {
         trennen()
     }
 }
+
+#endif
 
 /// **Was im Profil steht.**
 ///
