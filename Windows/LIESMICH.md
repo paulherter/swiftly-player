@@ -71,6 +71,27 @@ vierten Start traf: `rlottie::Animation::renderSync` auf freigegebenem
 Speicher. Sieben Vermutungen davor waren alle falsch — die PDB hat es in
 einem Durchgang beantwortet.
 
+## Ungeprüfte Bahnen
+
+Was hier baut, ist damit noch nicht gelaufen. Der Unterschied gehört
+aufgeschrieben, sonst hält die nächste Sitzung „übersetzt" für „geprüft".
+
+- **Discord Rich Presence** (`Discordbruecke`, Windows-Zweig). Baut durch,
+  **zur Laufzeit nie gelaufen**: in der VM ist Discord nicht installiert, und
+  es liegt keine `\\.\pipe\discord-ipc-*` an. Ohne Discord tut die Brücke
+  schlicht nichts — kein Fehler, keine Meldung, also sagt ein stiller Lauf
+  hier gar nichts. Belegt ist der Rahmen nur über die Unix-Steckdose auf dem
+  Mac (Handschlag und `SET_ACTIVITY` angenommen); offen ist allein
+  `CreateFileW`/`WriteFile` gegen `socket`/`write`. Absichtlich nicht
+  installiert: es ist Pauls Rechner, und er hat nicht darum gebeten.
+- **Die Sprachweiche** (`Textkatalog.systemsprachen()`,
+  `GetUserPreferredUILanguages`). Baut und läuft, aber der entscheidende Fall
+  fehlt: dieses Windows steht selbst auf Englisch (`CurrentUICulture=en-US`),
+  also beweist „es zeigt Englisch" nichts. Erst ein deutsch eingestelltes
+  Windows trennt die Fälle.
+- **Der Kontowechsel.** Gebaut, aber nie gewechselt — dafür braucht es ein
+  zweites Jellyfin-Konto und einmal dessen Passwort.
+
 ## Die Pakettests laufen hier
 
 ```powershell
