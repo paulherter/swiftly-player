@@ -54,6 +54,20 @@ enum Spielstand {
         Self.stempel = Date()
     }
 
+    /// **Steht hier gerade ein Player im Bild?**
+    ///
+    /// Die Wiedergabe schreibt diesen Stand im Sekundentakt, aus jeder
+    /// Fassung. Wer wissen will, ob zugesehen wird, braucht dafuer also
+    /// keinen eigenen Schalter, den jede Ansicht setzen und zuruecknehmen
+    /// muesste — und genau so einer waere derjenige, den irgendwann jemand
+    /// zu setzen vergisst.
+    ///
+    /// Fuenf Sekunden, nicht dreissig wie bei ``frisch``: dort geht es um
+    /// einen brauchbaren Zahlenwert, hier um „jetzt gerade".
+    static var spielerLaeuft: Bool {
+        Date().timeIntervalSince(stempel) < 5
+    }
+
     /// `nil`, wenn seit dem letzten Eintrag zu viel Zeit vergangen ist.
     static var frisch: (stelle: Double, laeuft: Bool)? {
         guard Date().timeIntervalSince(stempel) < 30 else { return nil }

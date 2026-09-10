@@ -33,7 +33,30 @@ struct HauptView: View {
     /// zurückgenommen, sobald der Stapel wieder leer ist.
     @State private var imProfil = false
 
+    /// **Laeuft auf einem anderen Geraet etwas?** Siehe ``Uebernahmemodell``.
+    ///
+    /// Steht hier und nicht in der Startseite, weil das Abzeichen seit dem
+    /// 10.09.2026 in ``Kopfziele`` sitzt und damit auf jeder Wurzelseite —
+    /// **ein** Halter, der im Takt fragt, nicht fuenf. Der Player haengt aus
+    /// demselben Grund hier: ein Tipp auf das Abzeichen startet ihn, und das
+    /// muss aus jedem Bereich gehen.
+    @State private var uebernahme = Uebernahmemodell()
+    /// Bei mehr als einem Geraet wird gefragt statt geraten.
+    @State private var auswahlOffen = false
+    /// Was die Uebernahme starten soll. Eigener Stand neben den Playern der
+    /// einzelnen Seiten — die starten aus ihrer Liste, dieser aus dem Kopf.
+    @State private var uebernahmeWunsch: Abspielwunsch?
+
     @Environment(\.breit) private var breit
+
+    /// Drueben beenden, hier an derselben Stelle weitermachen.
+    ///
+    /// Erst der Befehl, dann der Plan, dann der Start — geht das Beenden
+    /// schief, passiert gar nichts. Sonst liefen zwei Tonspuren im Raum.
+    private func hierWeiterschauen(_ sitzung: Fremdsitzung) {
+        auswahlOffen = false
+        Task { uebernahmeWunsch = await uebernahme.wunsch(fuer: sitzung, model: model) }
+    }
 
     /// Liegt nichts auf dem Stapel dieses Bereichs? Nur noch dafür da, den
     /// Profilzweig zu schliessen — die Bereichsleiste hängt seit dem Umzug in
@@ -110,6 +133,33 @@ struct HauptView: View {
                                             .filter { $0.stand == .laedt || $0.stand == .wartet }
                                             .count))
 
+
+            // **Eigenes Blatt statt `confirmationDialog`.** Der Systemdialog
+            // legt seinen eigenen, sehr hellen Schleier auf; ueber einer
+            // dunklen Seite voller Plakate hebt er sich kaum ab.
+            if auswahlOffen {
+                Uebernahmeauswahl(sitzungen: uebernahme.angebote,
+                                  waehlen: { hierWeiterschauen($0) },
+                                  abbrechen: { auswahlOffen = false })
+                    .transition(.opacity)
+                    .zIndex(5)
+            }
+        }
+        .environment(uebernahme)
+        .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
+        // Ein Schalter statt einer Schliessung durch die Umgebung — siehe
+        // `Uebernahmemodell.angetippt`.
+        .onChange(of: uebernahme.angetippt) { _, an in
+            guard an else { return }
+            uebernahme.angetippt = false
+            if uebernahme.mehrereDa { auswahlOffen = true }
+            else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
+        }
+        .task { uebernahme.starten(model) }
+        .onDisappear { uebernahme.beenden() }
+        .fullScreenCover(item: $uebernahmeWunsch) { wunsch in
+            PlayerScreen(model: model, item: wunsch.item,
+                         plan: wunsch.plan, startAt: wunsch.startAt)
         }
         // Bewusst ohne Übergang: die Leiste soll fest liegen und beim
         // Zurückkommen einfach wieder da sein, so wie der Inhalt dahinter

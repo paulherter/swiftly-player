@@ -1436,8 +1436,42 @@ struct Kopfziele<Vorn: View>: View {
     let bild: URL?
     @ViewBuilder var vorn: () -> Vorn
 
+    /// **Das Angebot gehoert zur Gruppe, nicht zur Startseite.**
+    ///
+    /// Es stand bis zum 10.09.2026 nur dort, mit der Begruendung, ein Tipp
+    /// darauf starte die Wiedergabe und der Player haenge an der Startseite.
+    /// Das war ein Grund aus dem Bau, keiner aus der Bedienung: wer auf
+    /// „Filme" steht, waehrend im Wohnzimmer etwas laeuft, will es genauso
+    /// uebernehmen koennen — und ein Zeichen, das nur auf einer von fuenf
+    /// Seiten auftaucht, sieht nach Versehen aus. Der Player ist deshalb
+    /// eine Ebene hoeher gewandert, in ``HauptView``.
+    ///
+    /// Optional, damit der Baustein ohne die Umgebung auskommt: `nil` heisst
+    /// schlicht „kein Angebot".
+    @Environment(Uebernahmemodell.self) private var uebernahme: Uebernahmemodell?
+
     var body: some View {
         HStack(spacing: 0) {
+            // **Links von den dauerhaften Zielen** (GESTALTUNG J): es kommt
+            // und geht und wuerde dazwischen Merkliste und Profil
+            // verschieben.
+            if let uebernahme, let angebot = uebernahme.angebot {
+                Button { uebernahme.angetippt = true } label: {
+                    // **`kuehl`, nicht `akzent`.** Der Akzent sagt „hier
+                    // laeuft was" und steht als Balken auf den Kacheln;
+                    // dieses Zeichen sagt „woanders laeuft was".
+                    Image(systemName: angebot.geraetezeichen)
+                        .font(.system(size: 20))
+                        .foregroundStyle(Stil.kuehl)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Hier weiterschauen"))
+                .accessibilityValue(Text(angebot.titelzeile))
+                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
+
             vorn()
 
             NavigationLink(value: MerklisteRoute()) {
@@ -1456,6 +1490,7 @@ struct Kopfziele<Vorn: View>: View {
 
             Profilziel(name: name, bild: bild)
         }
+        .animation(.easeInOut(duration: 0.22), value: uebernahme?.angebot?.id)
     }
 }
 

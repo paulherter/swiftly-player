@@ -27,6 +27,16 @@ final class Uebernahmemodell {
     /// Was schiefging — für eine Meldung in der Ansicht.
     var fehler: String?
 
+    /// **Jemand hat auf das Abzeichen getippt.**
+    ///
+    /// Das Abzeichen steht seit dem 10.09.2026 in ``Kopfziele`` und damit auf
+    /// jeder Wurzelseite — die Wiedergabe haengt aber an **einer** Stelle,
+    /// in ``HauptView``. Ein Schalter hier ist der kurze Weg dazwischen:
+    /// die Ansicht legt ihn um, wer den Player haelt, raeumt ihn ab. Eine
+    /// Schliessung durch die Umgebung zu reichen waere derselbe Weg mit mehr
+    /// Teilen.
+    var angetippt = false
+
     /// Läuft die Übernahme gerade? Sperrt den Knopf, damit ein zweiter Druck
     /// nicht zwei Wiedergaben startet.
     private(set) var uebernimmt = false
@@ -87,6 +97,13 @@ final class Uebernahmemodell {
     }
 
     private func einmalFragen(_ model: AppModel) async {
+        // **Wer zusieht, fragt nicht.**
+        //
+        // Im Player kommt es aufs Bild an, und der Server haette alle fuenf
+        // Sekunden eine Anfrage mehr zu beantworten. Vorher hing das an der
+        // Startseite (`.task(id: abspielen == nil)`) und galt damit nur fuer
+        // Wiedergaben, die dort begonnen haben. Hier gilt es fuer jede.
+        guard !Spielstand.spielerLaeuft else { return }
         // `model.session` statt `client.currentSession()`: der Client ist ein
         // Aktor, die Sitzung liegt hier ohnehin schon auf dem Hauptakteur.
         guard let client = model.client,
