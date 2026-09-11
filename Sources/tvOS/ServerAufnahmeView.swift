@@ -104,9 +104,12 @@ struct ServerAufnahmeView: View {
     @ViewBuilder
     private func anmeldung(_ server: (name: String, fassung: String)) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            // **Kein Akzent.** Name und Fassung des Servers sind Auskunft,
+            // keine Auswahl — der Ton traegt Fortschritt, Auswahl und den
+            // Direct-Play-Beleg (GESTALTUNG A).
             Text(verbatim: "\(server.name) · Jellyfin \(server.fassung)")
                 .font(Stil.klein)
-                .foregroundStyle(Stil.akzent)
+                .foregroundStyle(Stil.schriftLeise)
 
             if perCode { codeteil } else { formular }
         }

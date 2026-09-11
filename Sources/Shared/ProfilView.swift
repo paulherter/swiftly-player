@@ -67,13 +67,13 @@ struct ProfilView: View {
                     Color.clear.frame(height: 18)
 
                     gruppe {
-                        // **Die Form steht, der Unterbau nicht.** Ein
-                        // Kontenbund gehoert im Paket zu genau einem Server;
-                        // ein zweiter beruehrt Schluesselbund, Downloads,
-                        // Seerr und die Fernsteuerung. Die Zeile ist
-                        // entworfen und angeschlossen, damit sie nicht ein
-                        // zweites Mal entworfen wird — sie sagt bis dahin,
-                        // woran es liegt.
+                        // **Jetzt mit Unterbau.** Hier stand, die Form sei
+                        // entworfen und der Unterbau fehle — das galt bis zum
+                        // 11.09.2026, und der Satz blieb stehen, nachdem er
+                        // nicht mehr stimmte. Genau daraus leitet jemand beim
+                        // Uebernehmen ab, hier sei nichts angeschlossen: der
+                        // Kontenbund haelt mehrere Server, und diese Zeile
+                        // fuehrt auf die Aufnahme.
                         Profilzeile(symbol: "externaldrive.connected.to.line.below",
                                     titel: "Server hinzufügen",
                                     unter: "Ein zweiter Jellyfin, eigene Konten") {

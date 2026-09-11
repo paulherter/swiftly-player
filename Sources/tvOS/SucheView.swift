@@ -285,7 +285,11 @@ struct SucheView: View {
 
     private func suchen() async {
         let wort = begriff.trimmingCharacters(in: .whitespaces)
-        guard !wort.isEmpty else { return }
+        // **Dieselbe Schwelle wie ueberall.** Hier stand `!wort.isEmpty` —
+        // ein einzelner Buchstabe loeste also eine Abfrage ueber die halbe
+        // Bibliothek aus, waehrend die Zeile darueber „Ab zwei Zeichen wird
+        // gesucht" behauptete. Die Regel steht in `Anzeigeregeln`.
+        guard Anzeigeregeln.suchbegriffTaugt(wort) else { return }
         laeuft = treffer.isEmpty
         // **Nebeneinander, nicht nacheinander.** Seerr ist eine Zugabe;
         // kommt von dort nichts oder kommt es spaet, steht trotzdem sofort

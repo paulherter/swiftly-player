@@ -54,7 +54,7 @@ settings:
     #
     # Vor einem Zuruecksetzen immer erst nachsehen:
     #   cd Swiftly-Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
-    CURRENT_PROJECT_VERSION: "2"
+    CURRENT_PROJECT_VERSION: "4"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
     # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
@@ -676,7 +676,11 @@ targets:
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
-        CURRENT_PROJECT_VERSION: "3"
+        # **Die eigene Nummer ist weg.** Der Mac lag eine Weile vorn — 1.0.2 (3),
+        # waehrend iOS und tvOS noch auf (1) standen — und trug deshalb hier
+        # seine eigene. Seit dem 12.09.2026 gehen alle drei zusammen hoch, und
+        # zwei Stellen fuer dieselbe Zahl sind eine zu viel: die globale steht
+        # auf 4, also hoeher als jede bisher hochgeladene.
         # Damit auch die Datei selbst „Swiftly.app" heisst und nicht nach dem
         # Bauziel — siehe die Begruendung bei `CFBundleName`.
         PRODUCT_NAME: Swiftly
