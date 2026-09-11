@@ -9,11 +9,20 @@ import SwiftUI
 /// Feldern, damit man sich beim Abtippen nicht verzählt.
 struct QuickConnectAnmeldung: View {
     let model: AppModel
+    /// Am Server, der gerade hinzugefügt wird. Dann meldet `fertig`, dass
+    /// die Anmeldung dort geklappt hat.
+    var neuerServer = false
+    var fertig: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
 
     /// Der Ablauf steht in `QuickConnectModell` — geteilt mit der
     /// tvOS-Fassung.
     @State private var stand = QuickConnectModell()
+
+    /// **Die einzige Seite der Fassung, die das nicht gelesen hat.**
+    /// Fester Innenabstand von 28 und volle Breite — auf dem iPad stand der
+    /// Erklaertext damit ueber 1036 Punkt, also 140 Zeichen je Zeile.
+    @Environment(\.breit) private var breit
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -21,10 +30,9 @@ struct QuickConnectAnmeldung: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Quick Connect")
-                        .font(Stil.titel)
-                        .foregroundStyle(Stil.schrift)
-                        .padding(.top, 24)
+                    // Titel neben dem Pfeil, wie auf den anderen Menues.
+                    Unterseitenkopf(titel: String(localized: "Quick Connect")) { dismiss() }
+                        .padding(.horizontal, -Stil.rand(breit: breit))
 
                     Text("Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.")
                         .font(Stil.koerper)
@@ -33,7 +41,10 @@ struct QuickConnectAnmeldung: View {
                         .padding(.top, 10)
 
                     if let vorgang = stand.vorgang {
+                        // Ein Tipp legt den Code in die Zwischenablage —
+                        // meist wird er gleich daneben eingefügt.
                         codefelder(vorgang.code)
+                            .kopierbar(vorgang.code)
                         wartezeile
                     } else if let fehler = stand.fehler {
                         Text(fehler)
@@ -52,27 +63,39 @@ struct QuickConnectAnmeldung: View {
 
                     anleitung
                 }
-                .padding(.horizontal, 28)
+                .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.bottom, 40)
+                // Dasselbe Mass wie Anmeldung und Server.
+                .frame(maxWidth: Stil.formularbreite)
+                .frame(maxWidth: .infinity)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .contentMargins(.top, 96, for: .scrollContent)
-
-            Seitenpfeil { dismiss() }
+            .contentMargins(.top, 8, for: .scrollContent)
         }
         .safeAreaInset(edge: .bottom) {
             Button("Neuen Code holen") { Task { await neuStarten() } }
                 .buttonStyle(NebenknopfStil())
-                .padding(.horizontal, 28)
+                .padding(.horizontal, Stil.rand(breit: breit))
+                .frame(maxWidth: Stil.formularbreite)
+                .frame(maxWidth: .infinity)
                 .padding(.bottom, 24)
         }
         .preferredColorScheme(.dark)
-        .task { await neuStarten() }
+        .task {
+            stand.neuerServer = neuerServer
+            await neuStarten()
+        }
         .onDisappear { stand.anhalten() }
         .onChange(of: stand.freigegeben) { _, neu in
             guard let neu else { return }
             dismiss()
-            Task { await model.anmeldenMitQuickConnect(neu) }
+            Task {
+                if neuerServer {
+                    if await model.anmeldenMitQuickConnectAmNeuenServer(neu) { fertig() }
+                } else {
+                    await model.anmeldenMitQuickConnect(neu)
+                }
+            }
         }
     }
 

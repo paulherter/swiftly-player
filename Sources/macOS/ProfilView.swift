@@ -17,7 +17,26 @@ struct ProfilView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                bildblock
+                // **Ein Seitentitel wie auf jeder anderen Unterseite.**
+                // Hier stand nur der Pfeil, mit der Begruendung, der
+                // Bildblock sei der Titel. Als Karte ist er ein Gegenstand
+                // auf der Seite, kein Kopf.
+                // **Buendig mit den Karten, nicht davor.** Der Kopf war um
+                // einen Seitenrand nach links gezogen und stiess damit an
+                // die Seitenleiste; auf jeder anderen Unterseite sitzt der
+                // Pfeil ueber der Kante des Inhalts.
+                Unterseitenkopf(titel: "Profil", zurueck: zurueck)
+                    .padding(.bottom, 10)
+
+                Kontokarte(model: model,
+                           hinzufuegenAuf: { server in
+                               navigator.oeffne(.serverHinzufuegen(server), in: bereich)
+                           },
+                           hinzufuegen: {
+                               navigator.oeffne(.kontoHinzufuegen, in: bereich)
+                           })
+
+                Color.clear.frame(height: 20)
 
                 Zeilengruppe {
                     Button { navigator.oeffne(.quickConnect, in: bereich) } label: {
@@ -29,13 +48,32 @@ struct ProfilView: View {
                     .buttonStyle(.plain)
                 }
 
-                Color.clear.frame(height: 26)
+                Color.clear.frame(height: 18)
 
-                // **Das Profil bleibt beim Konto.** „Wiedergabe" hing hier
-                // neben „Einstellungen" — ein Erbstück der iPhone-Aufteilung
-                // und keine Entscheidung. Sie steht jetzt *in* den
-                // Einstellungen, weil Befehl-Komma alle verspricht.
+                // **Die Kategorien stehen hier, wie auf iPhone und iPad.**
+                //
+                // Sie waren kurz in die Einstellungen gewandert, mit dem
+                // Argument, Befehl-Komma verspreche dort alles. Das Argument
+                // stimmt, der Preis war zu hoch: das Profil bestand dann aus
+                // einer einzigen Zeile, und wer „Darstellung" suchte, musste
+                // erst wissen, dass sie zwei Ebenen tiefer liegt als auf
+                // jedem anderen Geraet. Befehl-Komma fuehrt weiterhin auf die
+                // Einstellungen; was dort steht, betrifft das Geraet.
                 Zeilengruppe {
+                    Button { navigator.oeffne(.wiedergabe, in: bereich) } label: {
+                        Wertezeile(symbol: "play.fill", titel: Text("Wiedergabe"),
+                                   unter: Text("Sprache, Untertitel, Tempo"),
+                                   pfeil: true, schwebbar: true)
+                    }
+                    .buttonStyle(.plain)
+                    Trennstrich().padding(.leading, 48)
+                    Button { navigator.oeffne(.darstellung, in: bereich) } label: {
+                        Wertezeile(symbol: "square.grid.2x2", titel: Text("Darstellung"),
+                                   unter: Text("Startseite, Reihen, Genres"),
+                                   pfeil: true, schwebbar: true)
+                    }
+                    .buttonStyle(.plain)
+                    Trennstrich().padding(.leading, 48)
                     Button { navigator.oeffne(.einstellungen, in: bereich) } label: {
                         Wertezeile(symbol: "gearshape", titel: Text("Einstellungen"),
                                    pfeil: true, schwebbar: true)
@@ -43,17 +81,22 @@ struct ProfilView: View {
                     .buttonStyle(.plain)
                 }
 
-                Color.clear.frame(height: 26)
+                Color.clear.frame(height: 18)
 
                 Zeilengruppe {
-                    // **Ohne Anstrich, und immer da.** Wer nur ein Konto hat,
-                    // soll nicht das Gefühl haben, ihm fehle eines — deshalb
-                    // steht die Zeile schlicht über „Abmelden" statt als
-                    // Angebot mit Akzentfarbe.
-                    Button { navigator.oeffne(.kontoHinzufuegen, in: bereich) } label: {
-                        Wertezeile(symbol: "person.badge.plus",
-                                   titel: Text("Weiteres Konto hinzufügen"),
-                                   unter: Text("Auf demselben Server"),
+                    // **Jetzt mit Unterbau.** Hier stand ein Hinweis, dass
+                    // mehrere Server spaeter kommen — der Kontenbund hielt
+                    // genau einen. Seit dem 12.09.2026 haelt er mehrere, und
+                    // die Zeile fuehrt auf die Aufnahme: Adresse, dann
+                    // anmelden, wahlweise mit Quick Connect.
+                    //
+                    // „Weiteres Konto hinzufuegen" stand hier und ist weg:
+                    // das Plus in der Kontokarte tut dasselbe, und zwar dort,
+                    // wo die Konten stehen.
+                    Button { navigator.oeffne(.serverHinzufuegen(nil), in: bereich) } label: {
+                        Wertezeile(symbol: "externaldrive.connected.to.line.below",
+                                   titel: Text("Server hinzufügen"),
+                                   unter: Text("Ein zweiter Jellyfin, eigene Konten"),
                                    pfeil: true, schwebbar: true)
                     }
                     .buttonStyle(.plain)
@@ -75,8 +118,13 @@ struct ProfilView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 26)
             }
-            .frame(maxWidth: 560)
-            .frame(maxWidth: .infinity)
+            // **Linksbuendig, nicht in der Fenstermitte — wie auf dem iPad.**
+            // Die Seite hing als schmale Saeule zwischen Seitenleiste und
+            // rechtem Rand, an keiner Kante, die es sonst gibt. Die Breite
+            // bleibt begrenzt; nur der Platz, der uebrig ist, liegt jetzt
+            // rechts statt zu beiden Seiten.
+            .frame(maxWidth: Stil.lesebreite, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Stil.randAbstand)
             .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
@@ -90,153 +138,14 @@ struct ProfilView: View {
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
         .ohneKanteneffekt()
-        .overlay(alignment: .topLeading) {
-            // Nur der Pfeil, kein Titel — der Bildblock ist der Titel.
-            Aktionsknopf(symbol: "chevron.left", titel: "Zurück", auswahl: zurueck)
-                .padding(.leading, Stil.randAbstand - 8)
-                .padding(.top, 12)
-        }
-    }
-
-    private var bildblock: some View {
-        VStack(spacing: 10) {
-            // **Ein Kreis, solange es einer ist.** Erst mit dem zweiten Konto
-            // wird daraus ein Streifen. Vorher gäbe es nichts zu wählen, und
-            // ein Bild, das sich anklicken lässt, ohne dass etwas geschieht,
-            // ist eine Falle.
-            if model.konten.count > 1 {
-                Kontenstreifen(model: model)
-            } else {
-                Profilzeichen(name: model.session?.userName ?? "?",
-                              bild: model.benutzerbildURL(), groesse: 84)
-            }
-            VStack(spacing: 3) {
-                Text(verbatim: model.session?.userName ?? String(localized: "Angemeldet"))
-                    .font(.system(size: 22, weight: .semibold))
-                    .tracking(-0.3)
-                    .foregroundStyle(Stil.schrift)
-                Text(verbatim: untertitel)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Stil.schrift.opacity(0.45))
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 42)
-        .padding(.bottom, 30)
-    }
-
-    private var untertitel: String {
-        var teile: [String] = []
-        if let name = model.serverName { teile.append(name) }
-        if let fassung = model.serverVersion { teile.append("Jellyfin \(fassung)") }
-        return teile.joined(separator: " · ")
     }
 }
 
-// MARK: - Kontenstreifen
-
-/// Die Konten dieses Servers nebeneinander. Antippen schaltet um.
-///
-/// **Zwei Dinge, die man nicht verwechseln darf.** Auf dem Fernseher ist
-/// groß, was im Fokus steht, und das ändert sich beim Blättern — es bedeutet
-/// nichts. **Verbunden** ist, was Akzentring und Punkt trägt, und das ändert
-/// sich erst beim Drücken. Am Zeiger gibt es keinen Fokus, der wandert:
-/// hier fällt beides zusammen, das aktive Konto steht groß in der Mitte des
-/// Inhaltsbereichs. Die Trennung bleibt trotzdem sichtbar — Ring und Punkt
-/// hängen am aktiven Konto, nicht an der Größe.
-///
-/// Maße aus dem abgenommenen Schreibtischentwurf: 96 aktiv, 72 daneben,
-/// Abstand 26. Auf dem Telefon sind es 84/64 — dort ist weniger Platz und
-/// das Auge näher dran.
-private struct Kontenstreifen: View {
-    let model: AppModel
-
-    private let aktivGross: CGFloat = 96
-    private let danebenGross: CGFloat = 72
-    private let abstand: CGFloat = 26
-
-    var body: some View {
-        HStack(spacing: abstand) {
-            ForEach(model.konten, id: \.userID) { konto in
-                let aktiv = konto.userID == model.session?.userID
-                Kontokreis(name: konto.userName,
-                           bild: model.benutzerbildURL(fuer: konto),
-                           groesse: aktiv ? aktivGross : danebenGross,
-                           hoehe: aktivGross,
-                           aktiv: aktiv) {
-                    model.kontoWechseln(zu: konto.userID)
-                }
-            }
-        }
-        // **Das aktive Konto steht in der Mitte, nicht der Streifen.** Der
-        // Entwurf setzt den aktiven Kreis auf die Mitte des Inhaltsbereichs
-        // und die übrigen daneben. Bei zwei Konten heißt das: das aktive
-        // mittig, das andere rechts davon — und nach dem Umschalten
-        // andersherum.
-        .offset(x: mittenversatz)
-        .animation(Stil.zeitSeitenschub, value: model.session?.userID)
-    }
-
-    /// Wie weit der Streifen liegen muss, damit der aktive Kreis mittig steht.
-    /// Reine Rechnung aus den Maßen — kein Messen der Auslage nötig.
-    private var mittenversatz: CGFloat {
-        let konten = model.konten
-        guard konten.count > 1,
-              let stelle = konten.firstIndex(where: { $0.userID == model.session?.userID })
-        else { return 0 }
-        let breiten = konten.map { $0.userID == model.session?.userID ? aktivGross : danebenGross }
-        let gesamt = breiten.reduce(0, +) + abstand * CGFloat(konten.count - 1)
-        let davor = breiten[..<stelle].reduce(0, +) + abstand * CGFloat(stelle)
-        return gesamt / 2 - (davor + breiten[stelle] / 2)
-    }
-}
-
-/// Ein Konto im Streifen: Bild, darunter der Punkt.
-///
-/// Der Ring ist kein neues Bauteil — `Profilzeichen(hervorgehoben:)` kann das
-/// seit dem Kontenbund. Der Punkt sagt dasselbe noch einmal, für alle, die
-/// den Farbring nicht auseinanderhalten.
-private struct Kontokreis: View {
-    let name: String
-    let bild: URL?
-    let groesse: CGFloat
-    /// Gemeinsame Mittellinie: die kleineren Kreise sitzen mittig zum großen,
-    /// nicht auf dessen Oberkante.
-    let hoehe: CGFloat
-    let aktiv: Bool
-    let waehlen: () -> Void
-
-    @State private var schwebt = false
-
-    var body: some View {
-        Button(action: waehlen) {
-            VStack(spacing: 9) {
-                Profilzeichen(name: name, bild: bild, groesse: groesse,
-                              hervorgehoben: aktiv)
-                    .frame(height: hoehe)
-                Circle()
-                    .fill(aktiv ? Stil.akzent : Color.clear)
-                    .frame(width: 5, height: 5)
-            }
-            // Das aktive Konto steht voll da, die anderen zurückgenommen —
-            // beim Überfahren treten sie hervor. Am Zeiger ist das die
-            // Rückmeldung, die auf dem Fernseher der Fokus gibt.
-            .opacity(aktiv ? 1 : (schwebt ? 0.85 : 0.55))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        // **Nicht `disabled`.** Naheliegend wäre gewesen, das aktive Konto zu
-        // sperren — es gibt dort nichts umzuschalten. SwiftUI legt über einen
-        // gesperrten Knopf aber seinen eigenen Schleier, und der lag damit
-        // über genau dem Bild, das am hellsten dastehen soll. Der Klick läuft
-        // stattdessen ins Leere: `kontoWechseln` lehnt die eigene Kennung
-        // ohnehin ab.
-        .onHover { schwebt = $0 && !aktiv }
-        .animation(Stil.zeitSchweben, value: schwebt)
-        .accessibilityLabel(aktiv ? Text("\(name), angemeldet")
-                                  : Text("Zu \(name) wechseln"))
-    }
-}
+/// **Hier standen `bildblock`, `Kontenstreifen` und `Kontokreis`** — ein
+/// mittiger Bildblock mit einem Streifen wanderender Kreise. Sie riefen
+/// einander, aber niemand rief sie: der Rumpf zeigt seit dem Umbau auf Karten
+/// die `Kontokarte`. Hundertzehn Zeilen, die niemand sah und die trotzdem bei
+/// jeder Änderung mitgelesen wurden.
 
 // MARK: - Quick Connect
 
@@ -291,8 +200,10 @@ struct QuickConnectView: View {
 
             Spacer(minLength: 0)
         }
+        // Schmal wie ein Formular, aber am linken Rand wie jede Unterseite:
+        // mittig stand der Pfeil mitten im Fenster, an keiner Kante.
         .frame(maxWidth: 460, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Stil.randAbstand)
         .padding(.top, Stil.inhaltOben)
         // Kein Warten auf eine Tastaturanimation wie auf dem iPhone — im
@@ -363,8 +274,10 @@ struct KontoHinzufuegenView: View {
 
             Spacer(minLength: 0)
         }
+        // Schmal wie ein Formular, aber am linken Rand wie jede Unterseite:
+        // mittig stand der Pfeil mitten im Fenster, an keiner Kante.
         .frame(maxWidth: 460, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Stil.randAbstand)
         .padding(.top, Stil.inhaltOben)
         .onAppear { feld = .benutzer }
@@ -445,6 +358,9 @@ struct KontoHinzufuegenView: View {
                 .padding(.vertical, 18)
                 .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
                 .overlay { RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand) }
+                // Ein Klick legt den Code in die Zwischenablage — meist wird
+                // er gleich daneben in einem Browserfenster eingefügt.
+                .kopierbar(vorgang.code)
                 .padding(.top, 14)
 
             HStack(spacing: 10) {
@@ -522,7 +438,11 @@ struct KontoHinzufuegenView: View {
 ///
 /// Steht hier und nicht in `Macbausteine`, solange es genau eine Stelle gibt,
 /// die ihn braucht. Kommt eine zweite dazu, gehört er dorthin.
-private struct Umrissknopf: View {
+/// Umrandeter Knopf — der zweite Weg neben dem Hauptknopf.
+///
+/// **Nicht mehr privat:** die Serveraufnahme stellt denselben Knopf unter
+/// ihr Formular, und zwei gleiche wären die kopierte Funktion aus CLAUDE.md.
+struct Umrissknopf: View {
     let beschriftung: LocalizedStringKey
     let symbol: String
     let auswahl: () -> Void
@@ -546,5 +466,158 @@ private struct Umrissknopf: View {
         .buttonStyle(.plain)
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
+    }
+}
+
+/// **Die Kontokarte — A4 aus dem Entwurf vom 11.09.2026, wörtlich wie auf
+/// iPhone und iPad.**
+///
+/// Zwei Achsen, zwei Gesten, und sie sagen zwei verschiedene Sachen: ein
+/// Konto in der Reihe **anklicken** wechselt den Benutzer auf demselben
+/// Server; die Karte **weiterblättern** wechselt den Server. Ein zweites
+/// **Die Konten, nach Servern sortiert.**
+///
+/// Konto ist der Mitbewohner — gleiche Bibliothek, andere Fortschritte. Ein
+/// zweiter Server ist ein anderer Ort.
+///
+/// **Untereinander, nicht zum Wischen.** Auf dem iPhone liegt je Server eine
+/// Karte in einem Blätterband mit Punkten darunter — dort ist die Seite
+/// schmal, und zwei Karten übereinander wären zwei Bildschirmhöhen. Im
+/// Fenster ist Platz nach unten, und Wischen ist eine Geste des Fingers: hier
+/// stehen die Server einfach untereinander, der verbundene zuerst. Das ist
+/// die Abweichung, die `VERHALTEN.md` zulässt — Eingabeart und Fenstergröße,
+/// nicht Geschmack.
+private struct Kontokarte: View {
+    let model: AppModel
+    /// Ein Konto auf einem **anderen** Server als dem verbundenen.
+    var hinzufuegenAuf: (URL) -> Void = { _ in }
+    /// Ein Konto auf **diesem** Server — die gewohnte Anmeldung.
+    let hinzufuegen: () -> Void
+
+    /// Der verbundene Server zuerst, die übrigen in ihrer Reihenfolge.
+    private var server: [URL] {
+        model.server.sorted { a, b in istAktiv(a) && !istAktiv(b) }
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            if server.isEmpty {
+                karte(model.session?.serverURL)
+            } else {
+                ForEach(server, id: \.absoluteString) { url in karte(url) }
+            }
+        }
+    }
+
+    private func istAktiv(_ server: URL?) -> Bool {
+        server?.absoluteString.lowercased() == model.session?.serverURL.absoluteString.lowercased()
+    }
+
+    @ViewBuilder
+    private func karte(_ server: URL?) -> some View {
+        let alle = server.map { model.konten(auf: $0) } ?? model.konten
+        let aktiv = istAktiv(server)
+        // Auf dem verbundenen Server steht vorn, wer angemeldet ist; auf einem
+        // anderen das erste Konto dort — ein Klick wechselt dorthin.
+        let vorn = aktiv ? model.session : alle.first
+        let andere = alle.filter { $0.kontoschluessel != vorn?.kontoschluessel }
+        Karte {
+            kopfzeile(vorn, aktiv: aktiv, server: server)
+            Trennstrich()
+            reihe(andere, aktiv: aktiv, server: server)
+        }
+        // Der verbundene Server trägt den Akzentrand; die anderen stehen als
+        // gewöhnliche Karten da. Bei einem einzigen gäbe es nichts zu
+        // unterscheiden — dann bleibt er weg.
+        .overlay {
+            if aktiv, model.server.count > 1 {
+                RoundedRectangle(cornerRadius: Stil.eckeFlaeche)
+                    .strokeBorder(Stil.akzent.opacity(0.55), lineWidth: 1.5)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func kopfzeile(_ konto: Session?, aktiv: Bool, server: URL?) -> some View {
+        let inhalt = HStack(spacing: 14) {
+            Profilzeichen(name: konto?.userName ?? "?",
+                          bild: konto.flatMap { model.benutzerbildURL(fuer: $0) },
+                          groesse: 56,
+                          hervorgehoben: aktiv && model.server.count > 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: konto?.userName ?? String(localized: "Angemeldet"))
+                    .font(.system(size: 19, weight: .semibold))
+                    .tracking(-0.2)
+                    .foregroundStyle(Stil.schrift)
+                // Name und Fassung kennen wir nur vom Server, mit dem wir
+                // gerade verbunden sind; bei den anderen steht die Adresse.
+                Text(verbatim: aktiv ? (model.serverName ?? server?.host() ?? "")
+                                     : (server?.host() ?? ""))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Stil.schrift.opacity(0.45))
+                    .lineLimit(1)
+                if aktiv, let fassung = model.serverVersion {
+                    Text(verbatim: "Jellyfin \(fassung)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Stil.schrift.opacity(0.45))
+                        .lineLimit(1)
+                } else if !aktiv {
+                    Text("Klicken zum Wechseln")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Stil.schrift.opacity(0.45))
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .contentShape(Rectangle())
+        if !aktiv, let konto {
+            Button { model.kontoWechseln(zu: konto.kontoschluessel) } label: { inhalt }
+                .buttonStyle(.plain)
+        } else {
+            inhalt
+        }
+    }
+
+    /// Die übrigen Konten dieses Servers, dahinter das Plus.
+    private func reihe(_ andere: [Session], aktiv: Bool, server: URL?) -> some View {
+        HStack(spacing: 14) {
+            ForEach(andere, id: \.kontoschluessel) { konto in
+                Button { model.kontoWechseln(zu: konto.kontoschluessel) } label: {
+                    Profilzeichen(name: konto.userName,
+                                  bild: model.benutzerbildURL(fuer: konto),
+                                  groesse: 40)
+                }
+                .buttonStyle(.plain)
+                .help(Text(verbatim: konto.userName))
+            }
+
+            // **Das Plus steht auf jeder Karte** und legt ein Konto auf
+            // *diesem* Server an. Auf dem verbundenen die gewohnte Anmeldung,
+            // auf einem anderen dieselbe wie beim Hinzufügen eines Servers —
+            // nur mit schon eingetragener Adresse. Es stand vorher nur auf der
+            // Karte des verbundenen Servers; wer ein Konto anderswo anlegen
+            // wollte, musste erst dorthin wechseln.
+            Button {
+                if aktiv { hinzufuegen() } else if let server { hinzufuegenAuf(server) }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Stil.schrift.opacity(0.45))
+                    .frame(width: 40, height: 40)
+                    .overlay {
+                        Circle().strokeBorder(Stil.rand,
+                                              style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    }
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help(Text("Weiteres Konto hinzufügen"))
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }

@@ -21,12 +21,23 @@ import JellyfinKit
 //  darum der Aufrufer, nicht der Baustein.
 
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Überschrift über einer Reihe.
 struct Reihentitel: View {
-    let text: LocalizedStringKey
+    var text: LocalizedStringKey = ""
+    /// **Wenn die Überschrift vom Server kommt** — ein Genre heißt, wie es
+    /// heißt, und darf nicht durch die Übersetzungstabelle laufen.
+    var name: String? = nil
     var body: some View {
-        Text(text)
+        Group {
+            if let name { Text(verbatim: name) } else { Text(text) }
+        }
             .font(Stil.reihe)
             .tracking(-0.3)
             .foregroundStyle(Stil.schrift)
@@ -114,6 +125,9 @@ struct Profilzeichen: View {
     /// nicht in `task`. Ein nachgereichter Wert kommt einen Durchgang zu
     /// spaet, und der eine Durchgang ist das Aufblitzen.
     @State private var geladen: Image?
+    /// Der Abruf ist gescheitert — meist, weil das Konto gar kein Bild hat.
+    /// Dann gehört der Buchstabe hin, nicht der leere Verlauf.
+    @State private var ohneBild = false
 
     init(name: String, bild: URL? = nil, groesse: CGFloat = 34,
          hervorgehoben: Bool = false) {
@@ -152,7 +166,9 @@ struct Profilzeichen: View {
             if let geladen {
                 geladen.resizable().aspectRatio(contentMode: .fill)
                     .transition(.opacity)
-            } else if bild == nil {
+            } else if bild == nil || ohneBild {
+                // Auch, wenn der Abruf scheitert: die Adresse steht für jedes
+                // Konto da, ob es ein Bild hat oder nicht.
                 // **Der Buchstabe ist Rueckfall, nicht Untergrund.** Er
                 // gehoert in den Zweig, in dem es gar kein Bild gibt — lag er
                 // darunter, schien er waehrend der Aufblende hindurch.
@@ -163,9 +179,11 @@ struct Profilzeichen: View {
         // Eine neue Adresse heisst ein neuer Anlauf; was schon dalag, bleibt
         // solange stehen, statt gegen den Verlauf zu tauschen.
         .task(id: bild) {
+            ohneBild = false
             guard let bild else { geladen = nil; return }
             if let da = Bildspeicher.geteilt.bild(bild) { geladen = da; return }
-            geladen = await Bildspeicher.geteilt.laden(bild)
+            geladen = await Bildspeicher.geteilt.laden(bild, aufGeraet: true)
+            ohneBild = geladen == nil
         }
         .frame(width: groesse, height: groesse)
         .clipShape(Circle())
@@ -269,6 +287,97 @@ struct Uebernahmeauswahl: View {
             .frame(maxWidth: 420)
             .padding(.horizontal, 24)
             .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
+        }
+    }
+}
+
+// MARK: - Zwischenablage
+
+/// **Ein Klick, und der Code liegt in der Zwischenablage.**
+///
+/// Wer Quick Connect öffnet, hat den Code gleich danach woanders einzugeben —
+/// meist in einem Browserfenster auf demselben Gerät. Ihn abzuschreiben,
+/// während er daneben steht, ist die Art von Arbeit, die eine App abnehmen
+/// soll.
+///
+/// **Auf dem Fernseher gibt es keine.** tvOS hat keine Zwischenablage, und
+/// der Code steht dort ohnehin, um an einem *anderen* Gerät eingegeben zu
+/// werden. Dort bleibt die Anzeige, wie sie ist.
+enum Zwischenablage {
+
+    /// Ob dieses Gerät eine hat.
+    static var gibtEs: Bool {
+        #if os(tvOS)
+        false
+        #else
+        true
+        #endif
+    }
+
+    static func kopiere(_ text: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #elseif os(iOS)
+        UIPasteboard.general.string = text
+        #endif
+    }
+}
+
+extension View {
+    /// Macht die Ansicht anklickbar: der Text wandert in die Zwischenablage,
+    /// und darunter steht kurz „Kopiert".
+    func kopierbar(_ text: String) -> some View { modifier(Kopierbar(text: text)) }
+}
+
+private struct Kopierbar: ViewModifier {
+    let text: String
+    @State private var kopiert = false
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if Zwischenablage.gibtEs {
+            Button {
+                Zwischenablage.kopiere(text)
+                withAnimation(.easeOut(duration: 0.15)) { kopiert = true }
+            } label: {
+                content.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            #if os(macOS)
+            .help(Text("Zum Kopieren klicken"))
+            #endif
+            .accessibilityLabel(Text("\(text), zum Kopieren"))
+            // **Die Rückmeldung liegt über der Anzeige, nicht darunter.** Ein
+            // Hinweis, der unter dem Code auftaucht, schiebt alles, was
+            // darunter steht, um seine Höhe nach unten und wieder zurück.
+            .overlay(alignment: .bottom) {
+                if kopiert {
+                    // **Kein Akzent.** Der Ton trägt Fortschritt, Auswahl
+                    // und den Direct-Play-Beleg — eine Rückmeldung, die nach
+                    // anderthalb Sekunden wieder weg ist, gehört nicht dazu
+                    // (GESTALTUNG E2). Eine erhöhte Fläche mit Rand sagt
+                    // dasselbe, ohne den Ton zu verbrauchen.
+                    Text("Kopiert")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Stil.schrift)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Stil.erhoeht, in: Capsule())
+                        .overlay { Capsule().strokeBorder(Stil.rand) }
+                        .offset(y: 16)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
+            .task(id: kopiert) {
+                guard kopiert else { return }
+                try? await Task.sleep(for: .seconds(1.4))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeIn(duration: 0.25)) { kopiert = false }
+            }
+        } else {
+            content
         }
     }
 }

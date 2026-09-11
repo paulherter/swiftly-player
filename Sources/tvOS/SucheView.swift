@@ -19,6 +19,12 @@ struct SucheView: View {
     @State private var seerrtreffer: [Seerrtreffer] = []
     @State private var laeuft = false
     @State private var gesucht = false
+    /// **Was zuletzt gesucht wurde** — dieselbe Liste wie auf dem iPhone, die
+    /// Regel steht in `Suchverlauf`. Mit der Fernbedienung ist jedes getippte
+    /// Wort teuer; eines, das man nicht noch einmal tippen muss, ist hier mehr
+    /// wert als auf dem Telefon.
+    @AppStorage(Suchverlauf.schluessel) private var letzteRoh = ""
+    private var letzte: [String] { Suchverlauf.liste(letzteRoh) }
     @FocusState private var amFeld: Bool
 
     private var spalten: [GridItem] {
@@ -34,6 +40,7 @@ struct SucheView: View {
                 HStack(alignment: .center, spacing: 40) {
                     Eingabefeld(platzhalter: "Titel, Serie, Person", text: $begriff,
                                 aussen: $amFeld) {
+                        letzteRoh = Suchverlauf.merken(begriff, in: letzteRoh)
                         Task { await suchen() }
                     }
                     .frame(width: 1000)
@@ -62,17 +69,21 @@ struct SucheView: View {
                                 hinweis: "Versuch es mit einem anderen Wort.")
                         .frame(height: 460)
                 } else if !gesucht {
-                    // **Ein Satz statt schwarzer Stille.**
-                    //
-                    // Vor der ersten Eingabe stand hier gar nichts — ein
-                    // schwarzer Schirm mit einem leuchtenden Feld. Ein
-                    // Vorschlagsregal waere Platzfuellerei; ein Satz sagt,
-                    // was das Feld annimmt und ab wann es sucht.
-                    Text("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.")
-                        .font(Stil.koerper)
-                        .foregroundStyle(Stil.schriftSehrLeise)
-                        .padding(.horizontal, Stil.randSeite)
-                        .padding(.top, 10)
+                    if letzte.isEmpty {
+                        // **Ein Satz statt schwarzer Stille.**
+                        //
+                        // Vor der ersten Eingabe stand hier gar nichts — ein
+                        // schwarzer Schirm mit einem leuchtenden Feld. Ein
+                        // Vorschlagsregal waere Platzfuellerei; ein Satz sagt,
+                        // was das Feld annimmt und ab wann es sucht.
+                        Text("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.")
+                            .font(Stil.koerper)
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                            .padding(.horizontal, Stil.randSeite)
+                            .padding(.top, 10)
+                    } else {
+                        zuletzt
+                    }
                 } else if !treffer.isEmpty {
                     LazyVGrid(columns: spalten, alignment: .leading,
                               spacing: Stil.gitterZeile) {
@@ -191,7 +202,67 @@ struct SucheView: View {
         }
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
         // damit `randSeite` nicht darauf sitzt und sich verdoppelt.
+        // **Gemerkt wird, wer mit Treffern das Feld verlässt.** Hier wird schon
+        // beim Tippen gesucht; ein Abschicken wie auf dem iPhone kommt oft gar
+        // nicht vor — man tippt, sieht die Treffer und geht hinunter. Genau das
+        // ist der Moment, in dem gesucht *wurde*. „Ga", „Gam" unterwegs zählen
+        // nicht.
+        .onChange(of: amFeld) { _, imFeld in
+            guard !imFeld, !treffer.isEmpty else { return }
+            letzteRoh = Suchverlauf.merken(begriff, in: letzteRoh)
+        }
         .ignoresSafeArea(edges: .horizontal)
+    }
+
+    /// **Wonach zuletzt gesucht wurde** — eine Karte unter dem Feld, eine Zeile
+    /// je Begriff, wie auf dem iPhone.
+    ///
+    /// Ein Druck füllt das Feld; gesucht wird dann von selbst, wie beim Tippen.
+    ///
+    /// **„Verlauf löschen" ist die letzte Zeile, nicht ein Knopf rechts über
+    /// der Karte wie auf dem iPhone.** Dort läge er unmittelbar unter dem
+    /// rechten Ende des Feldes, und der Fokusmotor sucht geometrisch: ein Druck
+    /// nach unten landete zuerst auf „Löschen" statt auf dem ersten Begriff —
+    /// und ein zweiter Druck hätte die Liste geleert.
+    private var zuletzt: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Gruppentitel(text: "Zuletzt gesucht")
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(letzte, id: \.self) { wort in
+                    Button {
+                        letzteRoh = Suchverlauf.merken(wort, in: letzteRoh)
+                        begriff = wort
+                    } label: {
+                        HStack(spacing: 22) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 26, weight: .medium))
+                                .foregroundStyle(Stil.schriftSehrLeise)
+                                .frame(width: 34)
+                            // Getippt, also kein Katalogtext.
+                            Text(verbatim: wort)
+                                .lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(ZeilenStil())
+                    Trennlinie()
+                }
+                Button { letzteRoh = "" } label: {
+                    HStack(spacing: 22) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 26, weight: .medium))
+                            .frame(width: 34)
+                        Text("Verlauf löschen")
+                    }
+                    .foregroundStyle(Stil.schriftSehrLeise)
+                }
+                .buttonStyle(ZeilenStil())
+            }
+            .padding(10)
+            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeKachel))
+        }
+        .frame(width: 1000, alignment: .leading)
+        .padding(.horizontal, Stil.randSeite)
+        .focusSection()
     }
 
     /// „Serie · 2008" — damit ein Film und eine Serie gleichen Namens

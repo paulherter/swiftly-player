@@ -20,8 +20,12 @@ struct SeerrEinstellungenView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Stil.grund.ignoresSafeArea()
-            ScrollView { inhalt }.scrollIndicators(.hidden)
-            Seitenpfeil { zurueck() }
+            VStack(spacing: 0) {
+                // Titel neben dem Pfeil, nicht darunter — siehe
+                // `EinstellungenView`.
+                Unterseitenkopf(titel: String(localized: "Seerr")) { zurueck() }
+                ScrollView { inhalt }.scrollIndicators(.hidden)
+            }
         }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
@@ -35,11 +39,6 @@ struct SeerrEinstellungenView: View {
 
     private var inhalt: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Seerr")
-                .font(Stil.titel).tracking(-0.6).foregroundStyle(Stil.schrift)
-                .padding(.horizontal, Stil.rand(breit: breit))
-                .padding(.top, 52)
-
             Text("Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen.")
                 .font(Stil.koerper)
                 .foregroundStyle(Stil.schriftLeise)
@@ -62,7 +61,7 @@ struct SeerrEinstellungenView: View {
             Wertzeile(symbol: "link", titel: Text(verbatim: seerr.adresse ?? ""),
                       wert: seerr.traegt ? String(localized: "Aktiv")
                                          : String(localized: "Sitzung abgelaufen"))
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             // **Kein „Abmelden", sondern „Trennen".** Bei Seerr selbst bleibt
             // alles, wie es ist — es geht nur um diesen einen Zugang hier.
             Wertzeile(symbol: "xmark.circle", titel: Text("Verbindung trennen"),

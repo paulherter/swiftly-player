@@ -19,15 +19,30 @@ struct ProfilView: View {
     @Environment(\.breit) private var breit
 
     @State private var kontoAufnehmen = false
+    /// Jemand hat auf „Server hinzufuegen" getippt — siehe dort.
+    @State private var zweiterServer = false
+    /// Ein weiteres Konto auf einem Server, mit dem wir gerade nicht verbunden
+    /// sind — aus dem Plus auf dessen Karte.
+    @State private var kontoAufServer: URL?
 
     var body: some View {
         ZStack {
             Stil.grund.ignoresSafeArea()
 
+            VStack(spacing: 0) {
+                // **Ein Seitentitel wie ueberall sonst, neben dem Pfeil.**
+                //
+                // Hier stand keiner, mit der Begruendung, der Bildblock sei
+                // der Titel. Das stimmte, solange er die halbe Seite einnahm
+                // und mittig stand; als Karte ist er ein Gegenstand auf der
+                // Seite und kein Kopf mehr.
+                Unterseitenkopf(titel: String(localized: "Profil")) { zurueck() }
+
             ScrollView {
                 VStack(spacing: 0) {
-                    if model.konten.count > 1 { Kontenstreifen(model: model) }
-                    else { bildblock }
+                    Kontokarte(model: model, hinzufuegenAuf: { kontoAufServer = $0 }) { kontoAufnehmen = true }
+
+                    Color.clear.frame(height: 20)
 
                     gruppe {
                         Profilzeile(symbol: "rectangle.and.text.magnifyingglass",
@@ -36,26 +51,34 @@ struct ProfilView: View {
                                     akzent: true, letzte: true, ziel: QuickConnectRoute())
                     }
 
-                    Color.clear.frame(height: 26)
+                    Color.clear.frame(height: 18)
 
                     gruppe {
                         Profilzeile(symbol: "play.fill", titel: "Wiedergabe",
                                     unter: "Sprache, Untertitel, Tempo",
                                     ziel: WiedergabeRoute())
+                        Profilzeile(symbol: "square.grid.2x2", titel: "Darstellung",
+                                    unter: "Startseite, Reihen, Genres",
+                                    ziel: DarstellungRoute())
                         Profilzeile(symbol: "gearshape", titel: "Einstellungen",
                                     letzte: true, ziel: EinstellungenRoute())
                     }
 
-                    Color.clear.frame(height: 26)
+                    Color.clear.frame(height: 18)
 
                     gruppe {
-                        // Ohne Anstrich, und bewusst immer da: wer nur ein
-                        // Konto hat, soll nicht das Gefuehl haben, ihm fehle
-                        // eines. Fuehrt auf die Anmeldung **ohne Serverfeld**
-                        // — es ist derselbe Server.
-                        Profilzeile(symbol: "person.badge.plus",
-                                    titel: "Weiteres Konto hinzufügen",
-                                    unter: "Auf demselben Server") { kontoAufnehmen = true }
+                        // **Die Form steht, der Unterbau nicht.** Ein
+                        // Kontenbund gehoert im Paket zu genau einem Server;
+                        // ein zweiter beruehrt Schluesselbund, Downloads,
+                        // Seerr und die Fernsteuerung. Die Zeile ist
+                        // entworfen und angeschlossen, damit sie nicht ein
+                        // zweites Mal entworfen wird — sie sagt bis dahin,
+                        // woran es liegt.
+                        Profilzeile(symbol: "externaldrive.connected.to.line.below",
+                                    titel: "Server hinzufügen",
+                                    unter: "Ein zweiter Jellyfin, eigene Konten") {
+                            zweiterServer = true
+                        }
                         // **Trifft nur das aktive Konto.** Sind noch andere
                         // da, schaltet die App auf das naechste um; erst beim
                         // letzten geht es zurueck zur Anmeldung. Steht so im
@@ -73,15 +96,20 @@ struct ProfilView: View {
                 }
                 .padding(.bottom, 40)
                 // Breit ein Maß: über die volle iPad-Breite stünde der Pfeil
-                // einen halben Meter neben seiner Beschriftung. Mittig, weil
-                // der Bildblock darüber es auch ist.
-                .frame(maxWidth: breit ? Stil.lesebreite : .infinity)
-                .frame(maxWidth: .infinity)
+                // einen halben Meter neben seiner Beschriftung.
+                //
+                // **Linksbündig, nicht mittig.** Mittig war richtig, solange
+                // der Bildblock in der Mitte stand; als Karte haengt er wie
+                // alles andere an der linken Kante. Und der Bezug ist die
+                // Seitenleiste: was an ihr haengt, faengt an ihrer Kante an,
+                // sonst steht die Seite neben ihrer eigenen Navigation.
+                .frame(maxWidth: breit ? Stil.lesebreite : .infinity,
+                       alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
+            }
 
-            // Nur der Pfeil, kein Titel — der Bildblock ist der Titel.
-            Seitenpfeil { zurueck() }
         }
         #if os(iOS)
         // Ohne das steht Apples Leiste mit eigenem Zurueckpfeil darueber —
@@ -96,6 +124,15 @@ struct ProfilView: View {
                       serverName: model.serverName ?? "",
                       version: model.serverVersion ?? "",
                       weiteresKonto: true) { kontoAufnehmen = false }
+        }
+        // **Ein zweiter Server** — seit dem 11.09.2026 wirklich. Die laufende
+        // Sitzung bleibt, bis die Anmeldung dort klappt; dann wechselt die App.
+        .fullScreenCover(isPresented: $zweiterServer) {
+            ServerAufnahmeView(model: model) { zweiterServer = false }
+        }
+        .fullScreenCover(isPresented: Binding(get: { kontoAufServer != nil },
+                                              set: { if !$0 { kontoAufServer = nil } })) {
+            ServerAufnahmeView(model: model, voreingestellt: kontoAufServer) { kontoAufServer = nil }
         }
     }
 
@@ -126,12 +163,13 @@ struct ProfilView: View {
         return teile.joined(separator: " · ")
     }
 
-    /// Haarlinie oben und unten, dazwischen die Zeilen. Keine Karte, keine
-    /// Überschrift — getrennt wird nur durch Leerraum.
-    private func gruppe<Inhalt: View>(@ViewBuilder _ inhalt: () -> Inhalt) -> some View {
-        VStack(spacing: 0) { inhalt() }
-            .background(alignment: .top) { Trennlinie() }
-            .background(alignment: .bottom) { Trennlinie() }
+    /// Eine Gruppe ist seit dem 11.09.2026 eine Karte — siehe ``Karte``.
+    ///
+    /// `@escaping`, weil `Karte` die Schliessung fuer sich behaelt statt sie
+    /// sofort auszuwerten.
+    private func gruppe<Inhalt: View>(
+        @ViewBuilder _ inhalt: @escaping () -> Inhalt) -> some View {
+        Karte(inhalt: inhalt)
     }
 }
 
@@ -157,11 +195,10 @@ struct QuickConnectView: View {
             Stil.grund.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("Quick Connect")
-                    .font(.system(size: 27, weight: .bold))
-                    .tracking(-0.6)
-                    .foregroundStyle(Stil.schrift)
-                    .padding(.top, 8)
+                // Titel neben dem Pfeil, wie auf den vier anderen Menues —
+                // siehe `Unterseitenkopf`.
+                Unterseitenkopf(titel: String(localized: "Quick Connect")) { zurueck() }
+                    .padding(.horizontal, -Stil.rand(breit: breit))
 
                 Text("Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an.")
                     .font(Stil.koerper)
@@ -198,13 +235,11 @@ struct QuickConnectView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, Stil.rand(breit: breit))
-            .padding(.top, 96)
+            .padding(.top, 8)
             // Dasselbe Maß wie Anmeldung und Server: ein sechsstelliger Code
             // in einem 1036 Punkt breiten Feld ist absurd.
             .frame(maxWidth: Stil.formularbreite)
             .frame(maxWidth: .infinity)
-
-            Seitenpfeil { zurueck() }
         }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
@@ -384,5 +419,189 @@ private struct Kontenstreifen: View {
         }
         .padding(.top, 14)
         .animation(.easeOut(duration: 0.2), value: zentriert)
+    }
+}
+
+/// **Die Kontokarte — A4 aus dem Entwurf vom 11.09.2026.**
+///
+/// Zwei Achsen, zwei Gesten, und sie sagen zwei verschiedene Sachen: ein
+/// Konto in der Reihe **antippen** wechselt den Benutzer auf demselben
+/// Server; die Karte **weiterwischen** wechselt den Server. Ein zweites
+/// Konto ist der Mitbewohner — gleiche Bibliothek, andere Fortschritte. Ein
+/// zweiter Server ist ein anderer Ort.
+///
+/// **Die zweite Achse ist entworfen, aber nicht gebaut.** Ein Kontenbund
+/// gehört im Paket zu genau einem Server; die Karte ist trotzdem schon so
+/// gebaut, dass sie mehrere tragen kann, damit sie später niemand ein
+/// zweites Mal entwirft. Solange es einen gibt, gibt es keine Punkte und
+/// nichts zu wischen — und damit deutet auch nichts auf etwas hin, das es
+/// nicht gibt.
+///
+/// **Randbündig wie jede andere Karte, kein Anschnitt.** Eine angeschnittene
+/// Nachbarkarte wäre eine Einladung zum Wischen und bei einem Server ein
+/// Anschnitt ohne Nachbarn. Was es mehr gibt, sagen die Punkte.
+private struct Kontokarte: View {
+    let model: AppModel
+    /// Ein Konto auf einem anderen Server als dem verbundenen.
+    var hinzufuegenAuf: (URL) -> Void = { _ in }
+    let hinzufuegen: () -> Void
+
+    @Environment(\.breit) private var breit
+    /// Welcher Server gerade zu sehen ist — zum Blättern, nicht zum Wechseln.
+    @State private var seite = ""
+    /// Gemessene Höhe jeder Karte — die Seitenfläche nimmt die größte.
+    @State private var hoehen: [String: CGFloat] = [:]
+
+    /// **Eine Karte je Server** (Entwurf A3). Innerhalb eines Servers die
+    /// Reihe der Konten, zwischen Servern die Karten: man tippt ein Konto an
+    /// und wischt die Karte weiter, um zu einem anderen Server zu kommen. Mit
+    /// einem Server — dem Normalfall — ist es eine Karte ohne Punkte; nichts
+    /// deutet auf etwas hin, das es nicht gibt.
+    var body: some View {
+        let server = model.server
+        if server.count <= 1 {
+            karte(model.session?.serverURL)
+        } else {
+            VStack(spacing: 10) {
+                TabView(selection: $seite) {
+                    ForEach(server, id: \.absoluteString) { url in
+                        karte(url)
+                            .fixedSize(horizontal: false, vertical: true)
+                            // **Die größte, nicht die zuletzt gemessene.** Sonst
+                            // gewann die niedrigere Karte, und die höhere wurde
+                            // oben und unten abgeschnitten.
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { neu in
+                                if neu > 0 { hoehen[url.absoluteString] = neu }
+                            }
+                            .frame(maxHeight: .infinity, alignment: .top)
+                            .tag(url.absoluteString)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: hoehen.values.max() ?? 170)
+                punkte(server)
+            }
+            .onAppear { seite = model.session?.serverURL.absoluteString ?? "" }
+            .onChange(of: model.session?.serverURL) { _, neu in
+                if let neu { withAnimation(.easeInOut(duration: 0.25)) { seite = neu.absoluteString } }
+            }
+        }
+    }
+
+    /// Die Punkte darunter sind das Einzige, was sagt, dass hier gewischt
+    /// werden kann — und sie erscheinen erst ab dem zweiten Server.
+    private func punkte(_ server: [URL]) -> some View {
+        HStack(spacing: 7) {
+            ForEach(server, id: \.absoluteString) { url in
+                Circle()
+                    .fill(url.absoluteString == seite ? Stil.schrift : Stil.schriftSehrLeise)
+                    .frame(width: 6, height: 6)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityHidden(true)
+    }
+
+    private func istAktiv(_ server: URL?) -> Bool {
+        server?.absoluteString.lowercased() == model.session?.serverURL.absoluteString.lowercased()
+    }
+
+    @ViewBuilder
+    private func karte(_ server: URL?) -> some View {
+        let alle = server.map { model.konten(auf: $0) } ?? model.konten
+        let aktiv = istAktiv(server)
+        // Auf dem aktiven Server steht vorn, wer angemeldet ist; auf einem
+        // anderen das erste Konto dort — ein Tipp wechselt dorthin.
+        let vorn = aktiv ? model.session : alle.first
+        let andere = alle.filter { $0.kontoschluessel != vorn?.kontoschluessel }
+        Karte {
+            kopfzeile(vorn, aktiv: aktiv, server: server)
+            Trennlinie().padding(.leading, 0)
+            reihe(andere, aktiv: aktiv, server: server)
+        }
+    }
+
+    @ViewBuilder
+    private func kopfzeile(_ konto: Session?, aktiv: Bool, server: URL?) -> some View {
+        let inhalt = HStack(spacing: 14) {
+            Profilzeichen(name: konto?.userName ?? "?",
+                          bild: konto.flatMap { model.benutzerbildURL(fuer: $0) },
+                          groesse: 56,
+                          hervorgehoben: aktiv && model.server.count > 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: konto?.userName ?? String(localized: "Angemeldet"))
+                    .font(.system(size: 19, weight: .semibold))
+                    .tracking(-0.2)
+                    .foregroundStyle(Stil.schrift)
+                // Name und Fassung kennen wir nur vom Server, mit dem wir
+                // gerade verbunden sind; bei den anderen steht die Adresse.
+                Text(verbatim: aktiv ? (model.serverName ?? server?.host() ?? "")
+                                     : (server?.host() ?? ""))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .lineLimit(1)
+                if aktiv, let fassung = model.serverVersion {
+                    Text(verbatim: "Jellyfin \(fassung)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Stil.schriftSehrLeise)
+                        .lineLimit(1)
+                } else if !aktiv {
+                    Text("Antippen zum Wechseln")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Stil.schriftSehrLeise)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .contentShape(Rectangle())
+        if !aktiv, let konto {
+            Button { model.kontoWechseln(zu: konto.kontoschluessel) } label: { inhalt }
+                .buttonStyle(.plain)
+        } else {
+            inhalt
+        }
+    }
+
+    private func reihe(_ andere: [Session], aktiv: Bool, server: URL?) -> some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 14) {
+                // Die Reihe hält ihre Höhe auch leer — sonst ist die Karte
+                // eines Servers mit nur einem Konto niedriger als die anderen.
+                Color.clear.frame(width: 0, height: 40)
+                ForEach(andere, id: \.kontoschluessel) { konto in
+                    Button { model.kontoWechseln(zu: konto.kontoschluessel) } label: {
+                        Profilzeichen(name: konto.userName,
+                                      bild: model.benutzerbildURL(fuer: konto),
+                                      groesse: 40)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(verbatim: konto.userName))
+                }
+                // **Das Plus steht auf jeder Karte** und legt ein Konto auf
+                // *diesem* Server an. Auf dem verbundenen die gewohnte Anmeldung
+                // mit „Wer schaut?", auf einem anderen dieselbe wie beim
+                // Hinzufügen eines Servers — nur mit schon eingetragener Adresse.
+                do {
+                    Button {
+                        if aktiv { hinzufuegen() } else if let server { hinzufuegenAuf(server) }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                            .frame(width: 40, height: 40)
+                            .overlay {
+                                Circle().strokeBorder(Stil.rand,
+                                                      style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Weiteres Konto hinzufügen"))
+                }
+            }
+            .padding(16)
+        }
+        .scrollIndicators(.hidden)
     }
 }

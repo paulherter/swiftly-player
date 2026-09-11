@@ -40,62 +40,40 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
+            ZStack(alignment: .top) {
+                // **Der Farbschein, wie auf iPhone und iPad.**
+                //
+                // Er liegt hier **im** Scrollinhalt statt als eigene Lage:
+                // damit faehrt er mit nach oben, ohne dass jemand den
+                // Scrollweg mitzaehlen muss. Auf den anderen Fassungen geht
+                // das nicht, weil dort ein Kopf darueber liegt, den er nicht
+                // einfaerben darf — im Fenster liegt darueber nichts.
+                Farbschein()
+                    .allowsHitTesting(false)
 
-                if !weiter.isEmpty {
-                    Reihe(titel: "Weiterschauen", quer: true) {
-                        ForEach(weiter, id: \.id) { titel in
-                            Querkachel(titel: kopf(titel), zweitzeile: titel.kontextzeile,
-                                       // **Fehlt das waagerechte Bild, tritt
-                                       // das Plakat ein** — beschnitten, aber
-                                       // immer noch das Cover und kein
-                                       // Standbild. Wörtlich wie auf dem
-                                       // iPhone.
-                                       bild: model.querbildURL(for: titel)
-                                           ?? model.imageURL(for: titel, hochkant: true),
-                                       fortschritt: fortschritt(titel),
-                                       zeichen: zeichen(titel),
-                                       auswahl: { steuerung.starte(titel) },
-                                       uebersicht: { navigator.oeffne(.titel(titel), in: bereich) },
-                                       vorholen: { Serienspeicher.geteilt.vorholen(titel, mit: model) })
-                        }
-                    }
+                VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
+
+                // **Genres als Chips, ganz oben** — wenn eingeschaltet. Ein
+                // Einstieg, kein Inhalt: ein Klick öffnet das Genre.
+                if model.genreChips, !model.startGenres.isEmpty { gattungschips }
+
+                // **Die festen Reihen in der eingestellten Reihenfolge**, ohne
+                // die ausgeblendeten — Einstellungen → Darstellung → Startseite.
+                ForEach(model.startReihen.filter {
+                    !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
+                }) { reihe in
+                    feste(reihe)
                 }
 
-                if !naechste.isEmpty {
-                    // **Hochkant, und der Klick führt auf die Seite.**
-                    //
-                    // Hier stand eine Querkachel, die sofort abspielte —
-                    // beides falsch, und beides ohne Grund, der mit Eingabe
-                    // oder Fenstergröße zu tun hätte.
-                    //
-                    // A2 im Register: „Nächste Folge **öffnet die
-                    // Übersicht**, sie startet nicht. Nur ‚Weiterschauen'
-                    // springt direkt in die Wiedergabe." Die iPhone-Fassung
-                    // schreibt denselben Satz an dieselbe Stelle. Waagerecht
-                    // ist ebenfalls allein „Weiterschauen" — iOS sagt es
-                    // wörtlich, tvOS ruft die Reihe mit `quer: false`.
-                    Reihe(titel: "Nächste Folge") {
-                        ForEach(naechste, id: \.id) { folge in
-                            Button { navigator.oeffne(.titel(folge), in: bereich) } label: {
-                                Posterkachel(titel: kopf(folge),
-                                             zweitzeile: folge.folgenkuerzel,
-                                             bild: model.imageURL(for: folge, hochkant: true),
-                                             zeichen: zeichen(folge),
-                                             vorholen: { Serienspeicher.geteilt.vorholen(folge, mit: model) })
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-
-                if !neu.isEmpty {
-                    Reihe(titel: "Zuletzt hinzugefügt") {
-                        ForEach(neu, id: \.id) { titel in
+                // Die gewählten Genres als eigene Reihen, nach den festen.
+                ForEach(stand.gattungsreihen) { gattung in
+                    Reihe(name: gattung.name) {
+                        ForEach(gattung.items, id: \.id) { titel in
                             Button { navigator.oeffne(.titel(titel), in: bereich) } label: {
                                 Posterkachel(titel: titel.name,
-                                             zweitzeile: titel.neuzugangszeile,
+                                             zweitzeile: titel.productionYear.map { "\($0)" },
                                              bild: model.imageURL(for: titel, hochkant: true),
+                                             fortschritt: fortschritt(titel),
                                              zeichen: zeichen(titel),
                                              vorholen: { Serienspeicher.geteilt.vorholen(titel, mit: model) })
                             }
@@ -111,12 +89,13 @@ struct HomeView: View {
                                 text: "Sobald der Server Titel hat, stehen sie hier.")
                         .padding(.top, 120)
                 }
+                }
+                // Nicht `inhaltOben` allein: die Startseite beginnt mit einer
+                // kleineren Schrift als die Bibliotheksseiten und stünde sonst
+                // zwei Punkt zu hoch. Siehe `Stil.reihenkopfAusgleich`.
+                .padding(.top, Stil.inhaltOben + Stil.reihenkopfAusgleich)
+                .padding(.bottom, 40)
             }
-            // Nicht `inhaltOben` allein: die Startseite beginnt mit einer
-            // kleineren Schrift als die Bibliotheksseiten und stünde sonst
-            // zwei Punkt zu hoch. Siehe `Stil.reihenkopfAusgleich`.
-            .padding(.top, Stil.inhaltOben + Stil.reihenkopfAusgleich)
-            .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
         // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
@@ -142,6 +121,14 @@ struct HomeView: View {
         }
         .animation(Stil.einblenden, value: geladen)
         .task { await laden() }
+        // **Die Einstellung greift sofort, nicht beim nächsten Öffnen.**
+        //
+        // Umschalten ändert, welche Reihen es überhaupt gibt — und die stehen
+        // erst nach einer neuen Abfrage fest. Ohne das sah man seine eigene
+        // Einstellung erst beim nächsten Start und hielt sie für wirkungslos.
+        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))") {
+            await auffrischen()
+        }
         // **Der Kontowechsel hängt nicht an `phase`.**
         //
         // Naheliegend wäre gewesen, auf `model.phase` zu horchen. Der steht
@@ -172,6 +159,107 @@ struct HomeView: View {
             for: NSApplication.didBecomeActiveNotification)) { _ in
             guard stand.brauchtAuffrischung else { return }
             Task { await auffrischen() }
+        }
+    }
+
+    /// Eine feste Reihe — derselbe Aufbau wie vorher, nur einzeln abrufbar,
+    /// damit die Reihenfolge aus den Einstellungen gilt.
+    @ViewBuilder
+    private func feste(_ reihe: Startreihe) -> some View {
+        switch reihe {
+        case .weiterschauen:
+            if !weiter.isEmpty {
+                Reihe(titel: "Weiterschauen", quer: true) {
+                    ForEach(weiter, id: \.id) { titel in
+                        Querkachel(titel: kopf(titel), zweitzeile: titel.kontextzeile,
+                                   // **Fehlt das waagerechte Bild, tritt das
+                                   // Plakat ein** — beschnitten, aber immer
+                                   // noch das Cover und kein Standbild.
+                                   // Wörtlich wie auf dem iPhone.
+                                   bild: model.querbildURL(for: titel)
+                                       ?? model.imageURL(for: titel, hochkant: true),
+                                   fortschritt: fortschritt(titel),
+                                   zeichen: zeichen(titel),
+                                   auswahl: { steuerung.starte(titel) },
+                                   uebersicht: { navigator.oeffne(.titel(titel), in: bereich) },
+                                   vorholen: { Serienspeicher.geteilt.vorholen(titel, mit: model) })
+                    }
+                }
+            }
+        case .naechsteFolge:
+            if !naechste.isEmpty {
+                // **Hochkant, und der Klick führt auf die Seite.**
+                //
+                // Hier stand eine Querkachel, die sofort abspielte — beides
+                // falsch, und beides ohne Grund, der mit Eingabe oder
+                // Fenstergröße zu tun hätte.
+                //
+                // A2 im Register: „Nächste Folge **öffnet die Übersicht**,
+                // sie startet nicht. Nur ‚Weiterschauen' springt direkt in
+                // die Wiedergabe." Die iPhone-Fassung schreibt denselben Satz
+                // an dieselbe Stelle. Waagerecht ist ebenfalls allein
+                // „Weiterschauen" — iOS sagt es wörtlich, tvOS ruft die Reihe
+                // mit `quer: false`.
+                Reihe(titel: "Nächste Folge") {
+                    ForEach(naechste, id: \.id) { folge in
+                        Button { navigator.oeffne(.titel(folge), in: bereich) } label: {
+                            Posterkachel(titel: kopf(folge),
+                                         zweitzeile: folge.folgenkuerzel,
+                                         bild: model.imageURL(for: folge, hochkant: true),
+                                         zeichen: zeichen(folge),
+                                         vorholen: { Serienspeicher.geteilt.vorholen(folge, mit: model) })
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        // **Neue Filme und neue Serien einzeln**, damit man sie getrennt
+        // schieben kann — wer Serien oben will und Filme unten, soll das
+        // können. Welche es gibt, entscheidet „Neuzugänge getrennt".
+        case .neueFilme:
+            neuzugangsreihe(titel: "Zuletzt hinzugefügte Filme", stand.neueFilme)
+        case .neueSerien:
+            neuzugangsreihe(titel: "Zuletzt hinzugefügte Serien", stand.neueSerien)
+        case .neuzugaenge:
+            neuzugangsreihe(titel: "Zuletzt hinzugefügt", neu)
+        }
+    }
+
+    @ViewBuilder
+    private func neuzugangsreihe(titel: LocalizedStringKey, _ items: [Item]) -> some View {
+        if !items.isEmpty {
+            Reihe(titel: titel) {
+                ForEach(items, id: \.id) { eintrag in
+                    Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
+                        Posterkachel(titel: eintrag.name,
+                                     zweitzeile: eintrag.neuzugangszeile,
+                                     bild: model.imageURL(for: eintrag, hochkant: true),
+                                     zeichen: zeichen(eintrag),
+                                     vorholen: { Serienspeicher.geteilt.vorholen(eintrag, mit: model) })
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    /// Deine Genres als Chips — dieselben, die sonst als Reihen stünden.
+    /// Ecke wie ein Knopf, nicht rund: rund ist, was ein Bild ist.
+    private var gattungschips: some View {
+        Blätterreihe(breiteJeStueck: 120, bildHoehe: 34) {
+            ForEach(model.startGenres, id: \.self) { name in
+                Button { navigator.oeffne(.gattung(name), in: bereich) } label: {
+                    // Vom Server, also nicht übersetzt.
+                    Text(verbatim: name)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Stil.schrift)
+                        .padding(.horizontal, 14)
+                        .frame(height: 34)
+                        .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
+                        .overlay(RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -211,7 +299,10 @@ struct HomeView: View {
 
 /// Eine waagerechte Reihe mit Überschrift.
 struct Reihe<Inhalt: View>: View {
-    let titel: LocalizedStringKey
+    var titel: LocalizedStringKey = ""
+    /// Statt `titel`, wenn die Überschrift vom Server kommt — ein Genre wird
+    /// nicht übersetzt.
+    var name: String? = nil
     /// Waagerechte Kacheln — nur „Weiterschauen".
     var quer = false
     @ViewBuilder let inhalt: Inhalt
@@ -224,7 +315,7 @@ struct Reihe<Inhalt: View>: View {
             // Der geteilte `Reihentitel` setzt keinen Rand — `randAbstand`
             // gibt es auf tvOS nicht, also gehört er zum Aufrufer. Auch die
             // Breite: ohne sie rutscht der Titel in die Mitte.
-            Reihentitel(text: titel)
+            Reihentitel(text: titel, name: name)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Stil.randAbstand)
             // **Jede Reihe mit ihrem eigenen Maß.** Vorher rechnete auch die
@@ -234,5 +325,45 @@ struct Reihe<Inhalt: View>: View {
                             + Stil.kachelAbstand,
                          bildHoehe: quer ? Stil.querHoehe : Stil.kachelHoehe) { inhalt }
         }
+    }
+}
+
+/// **Der Farbschein am oberen Rand — dieselbe Aussage wie auf iPhone und
+/// iPad, in der Geometrie des Fensters.**
+///
+/// Ein Verlauf von Kante zu Kante, nicht zwei Kreise. Zwei Kreise
+/// funktionieren nur, solange sie breiter sind als die Flaeche: auf dem
+/// iPhone ueberlappen sie sich bei 390 Punkt, in einem Fenster von 900 oder
+/// 1600 nicht mehr — dann steht links Tuerkis, rechts Blau und dazwischen
+/// ein dunkles Loch. Ein Verlauf ist aus einem Stueck und passt sich jeder
+/// Fensterbreite von selbst an.
+///
+/// Er ist leiser als auf dem iPhone. Dieselbe Farbe auf der dreifachen
+/// Flaeche ist nicht dieselbe Menge Farbe.
+private struct Farbschein: View {
+    /// Endet ueber der ersten Reihenueberschrift.
+    private let hoehe: CGFloat = 180
+
+    var body: some View {
+        LinearGradient(stops: [
+            .init(color: Stil.akzent.opacity(0.22), location: 0),
+            .init(color: Stil.akzent.opacity(0.17), location: 0.26),
+            .init(color: Stil.scheinMitte.opacity(0.15), location: 0.52),
+            .init(color: Stil.kuehl.opacity(0.17), location: 0.76),
+            .init(color: Stil.kuehl.opacity(0.20), location: 1),
+        ], startPoint: .topLeading, endPoint: .bottomTrailing)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .frame(height: hoehe, alignment: .top)
+        .mask(alignment: .top) {
+            LinearGradient(stops: [
+                .init(color: .white, location: 0),
+                .init(color: .white.opacity(0.92), location: 0.34),
+                .init(color: .white.opacity(0.66), location: 0.58),
+                .init(color: .white.opacity(0.28), location: 0.80),
+                .init(color: .white.opacity(0), location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+            .frame(height: hoehe)
+        }
+        .accessibilityHidden(true)
     }
 }

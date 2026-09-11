@@ -206,7 +206,9 @@ final class Bildspeicher {
     ///
     /// Es ist genau **eines** je Seite. Waeren es mehr, waere es keine
     /// Vorfahrt mehr, sondern die Aufhebung der Schleuse.
-    func laden(_ url: URL, vorrang: Bool = false) async -> Image? {
+    /// `aufGeraet`: das Bild auch auf dem Gerät ablegen und von dort zeigen
+    /// — siehe `Geraeteablage`. Nur für Profilbilder.
+    func laden(_ url: URL, vorrang: Bool = false, aufGeraet: Bool = false) async -> Image? {
         let merkmal = schluessel(url)
         if let da = bekannt[merkmal] { return da.bild }
         if let lauf = laufend[merkmal] { return await lauf.value?.bild }
@@ -218,9 +220,21 @@ final class Bildspeicher {
         let lauf = Task<Eintrag?, Never> { [self] in
             if !vorrang { await einlass() }
             let begonnen = Date()
-            guard let (daten, _) = try? await URLSession.shared.data(from: url) else {
-                if !vorrang { einlassZurueck() }
-                return nil
+            let daten: Data
+            if aufGeraet, let abgelegt = Geraeteablage.lesen(merkmal) {
+                // Vom Gerät, sofort — und im Hintergrund frisch geholt, damit
+                // ein neues Profilbild beim nächsten Mal da ist.
+                daten = abgelegt
+                Task.detached(priority: .utility) { await Geraeteablage.auffrischen(url, merkmal) }
+            } else {
+                guard let (geholt, antwort) = try? await URLSession.shared.data(from: url) else {
+                    if !vorrang { einlassZurueck() }
+                    return nil
+                }
+                daten = geholt
+                if aufGeraet, (antwort as? HTTPURLResponse)?.statusCode == 200 {
+                    Geraeteablage.schreiben(geholt, merkmal)
+                }
             }
             let geholt = Date()
             // **Vor dem Wandeln zurueckgeben, nicht danach.** Die Schleuse
@@ -357,5 +371,54 @@ struct Netzbild: View {
             // hier dieselbe Federfamilie mit derselben Dauer.
             withAnimation(.smooth(duration: 0.22)) { sichtbar = true }
         }
+    }
+}
+
+/// **Profilbilder auf dem Gerät.**
+///
+/// Seit es mehrere Server gibt, stehen im Profil Konten von Servern, mit
+/// denen die App gerade nicht verbunden ist — und die sollen ihr Bild
+/// behalten, auch nach einem Neustart und auch, wenn der andere Server gerade
+/// nicht antwortet. Einmal geladen, liegt es hier und steht sofort da.
+///
+/// **Nur Profilbilder.** Poster und Hintergründe füllten das Gerät; die holt
+/// `Bildspeicher` weiter nur in den Arbeitsspeicher. Abgelegt wird im
+/// Cache-Ordner — räumt das System dort auf, kommt das Bild beim nächsten
+/// Mal eben wieder vom Server.
+enum Geraeteablage {
+    private static var ordner: URL? {
+        guard let basis = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        else { return nil }
+        let ordner = basis.appendingPathComponent("Profilbilder", isDirectory: true)
+        try? FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
+        return ordner
+    }
+
+    /// Ein stabiler Dateiname aus der Adresse ohne Zugangsschlüssel (FNV-1a,
+    /// 64 Bit). `hashValue` taugt nicht: der wechselt mit jedem Programmstart.
+    private static func datei(_ merkmal: URL) -> URL? {
+        var wert: UInt64 = 0xcbf29ce484222325
+        for byte in merkmal.absoluteString.utf8 {
+            wert ^= UInt64(byte)
+            wert &*= 0x100000001b3
+        }
+        return ordner?.appendingPathComponent(String(wert, radix: 16))
+    }
+
+    static func lesen(_ merkmal: URL) -> Data? {
+        datei(merkmal).flatMap { try? Data(contentsOf: $0) }
+    }
+
+    static func schreiben(_ daten: Data, _ merkmal: URL) {
+        guard let ziel = datei(merkmal) else { return }
+        try? daten.write(to: ziel, options: .atomic)
+    }
+
+    /// Frisch vom Server, nur bei einer echten Antwort — eine Fehlerseite soll
+    /// kein Profilbild überschreiben.
+    static func auffrischen(_ url: URL, _ merkmal: URL) async {
+        guard let (daten, antwort) = try? await URLSession.shared.data(from: url),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return }
+        schreiben(daten, merkmal)
     }
 }

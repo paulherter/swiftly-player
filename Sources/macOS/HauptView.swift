@@ -106,10 +106,18 @@ struct HauptView: View {
                          gewaehlteBibliothek: { art in
                              art == "movies" ? filmbibliothek : serienbibliothek
                          },
-                         bibliothekOeffnen: { offeneBibliothek = $0 },
+                         bibliothekOeffnen: { bib in
+                             // Dieselbe Sammlung noch einmal: zurueck an ihre
+                             // Wurzel. Eine andere: die Wurzel wird getauscht,
+                             // der Zweig geht ohne Bewegung mit.
+                             kontozweigZu(animiert: offeneBibliothek?.id == bib.id)
+                             offeneBibliothek = bib
+                         },
                          offeneKennung: offeneBibliothek?.id,
                          schliesseBibliothek: { offeneBibliothek = nil },
-                         zumProfil: { navigator.oeffne(.profil, in: bereich) })
+                         zumProfil: { zumProfil() },
+                         imKonto: navigator.imKonto(bereich),
+                         bereichWaehlen: { bereichWaehlen($0) })
             // **Der Sicherheitsrand der Titelleiste gilt links genauso wenig
             // wie rechts.** Vorher hielt nur der Inhaltsbereich ihn nicht
             // ein; die Leiste stand deshalb rund dreissig Punkt tiefer als
@@ -523,6 +531,19 @@ struct HauptView: View {
                 withAnimation(Stil.zeitSeitenschub) { gezeigteTiefe[bereich] = neu }
             }
         }
+        // **Wer den Bereich wechselt, laesst das Profil nicht im alten
+        // liegen.** Sonst stand es beim Zurueckkommen wieder obenauf. Ohne
+        // Bewegung, weil der alte Bereich schon weg ist — und die gezeigte
+        // Tiefe geht im selben Zug mit, sonst fuehre die Wurzel beim
+        // naechsten Besuch ihren Mitgang zurueck (siehe `gezeigteTiefe`).
+        //
+        // Hier und nicht in der Leiste: Befehl-1 bis -4 und die Sammlungen
+        // wechseln den Bereich auch.
+        .onChange(of: bereich) { alt, _ in
+            guard navigator.imKonto(alt) else { return }
+            navigator.kontozweigSchliessen(in: alt, animiert: false)
+            gezeigteTiefe[alt] = navigator.seiten(alt).count
+        }
     }
 
     @ViewBuilder
@@ -551,25 +572,80 @@ struct HauptView: View {
     @ViewBuilder
     private func seite(_ ziel: Seitenziel) -> some View {
         switch ziel {
-        case let .titel(item):  DetailView(model: model, item: item) { zurueck() }
-        case .seerr:            SeerrEinstellungenView(model: model, seerr: model.seerr) { zurueck() }
-        case let .seerrTitel(t): SeerrDetailView(model: model, treffer: t) { zurueck() }
+        case let .titel(item):  DetailView(model: model, item: item) { schliessen(ziel) }
+        case .seerr:            SeerrEinstellungenView(model: model, seerr: model.seerr) { schliessen(ziel) }
+        case let .seerrTitel(t): SeerrDetailView(model: model, treffer: t) { schliessen(ziel) }
         // Nicht mehr erreichbar — eine Bibliothek ist eine Wurzel. Der Fall
         // steht hier, damit ein wiederhergestellter alter Stapel nicht bricht.
-        case .bibliothek: Color.clear.onAppear { zurueck() }
-        case .profil:           ProfilView(model: model) { zurueck() }
+        case .bibliothek: Color.clear.onAppear { schliessen(ziel) }
+        case .profil:           ProfilView(model: model) { schliessen(ziel) }
         // Nicht mehr erreichbar — die Merkliste ist ein Bereich. Der Fall
         // steht hier, damit ein wiederhergestellter alter Stapel nicht
         // bricht; er schliesst sich einfach.
-        case .merkliste:        Color.clear.onAppear { zurueck() }
-        case .einstellungen:    EinstellungenView(model: model) { zurueck() }
-        case .wiedergabe:       WiedergabeEinstellungenView(model: model) { zurueck() }
-        case .quickConnect:     QuickConnectView(model: model) { zurueck() }
-        case .kontoHinzufuegen: KontoHinzufuegenView(model: model) { zurueck() }
+        case .merkliste:        Color.clear.onAppear { schliessen(ziel) }
+        case .einstellungen:    EinstellungenView(model: model) { schliessen(ziel) }
+        case .wiedergabe:       WiedergabeEinstellungenView(model: model) { schliessen(ziel) }
+        case .darstellung:      DarstellungView(model: model) { schliessen(ziel) }
+        case .genrewahl:        GenrewahlView(model: model) { schliessen(ziel) }
+        case .quickConnect:     QuickConnectView(model: model) { schliessen(ziel) }
+        case .kontoHinzufuegen: KontoHinzufuegenView(model: model) { schliessen(ziel) }
+        case let .serverHinzufuegen(url):
+            ServerAufnahmeView(model: model, voreingestellt: url) { schliessen(ziel) }
+        case let .person(person, herkunft):
+            PersonView(model: model, person: person, herkunft: herkunft) { schliessen(ziel) }
+        case let .gattung(name):
+            GenreView(model: model, name: name) { schliessen(ziel) }
         }
     }
 
     private func zurueck() { navigator.zurueck(in: bereich) }
+
+    /// **Jede Unterseite schliesst sich selbst, nicht „die oberste".**
+    /// Siehe `Navigator.schliessen(_:in:)` — der Unterschied ist die Ursache
+    /// des Absturzes beim Hinzufuegen eines zweiten Servers gewesen.
+    private func schliessen(_ ziel: Seitenziel) { navigator.schliessen(ziel, in: bereich) }
+
+    // MARK: Kontozweig
+
+    /// Ein Bereich aus Leiste oder Tastatur.
+    ///
+    /// **Ein Klick auf den offenen Bereich schliesst das Profil.** Die
+    /// Profilseite liegt auf dem Stapel des Bereichs, aus dem sie geoeffnet
+    /// wurde — meist „Start". Ein Klick auf „Start" setzte dann den Wert,
+    /// den es schon hatte, und es geschah nichts. Heraus kam man nur ueber
+    /// einen anderen Bereich, und zurueck auf „Start" lag das Profil wieder
+    /// obenauf. Das Zweite erledigt `.onChange(of: bereich)`.
+    private func bereichWaehlen(_ neu: Bereich) {
+        if neu == bereich { kontozweigZu(animiert: offeneBibliothek == nil) }
+        bereich = neu
+    }
+
+    /// Schliesst den Kontozweig im sichtbaren Bereich.
+    ///
+    /// Mit Bewegung, wenn der Bereich stehen bleibt — dann ist es ein
+    /// Zurueck und sieht auch so aus. Ohne, wenn die Wurzel ohnehin
+    /// getauscht wird; dann geht die gezeigte Tiefe im selben Zug mit.
+    private func kontozweigZu(animiert: Bool) {
+        guard navigator.imKonto(bereich) else { return }
+        navigator.kontozweigSchliessen(in: bereich, animiert: animiert)
+        if !animiert { gezeigteTiefe[bereich] = navigator.seiten(bereich).count }
+    }
+
+    /// Das Konto unten in der Leiste.
+    ///
+    /// **Ist das Profil schon offen, geht es dorthin zurueck** statt ein
+    /// zweites Mal hinauf: zwei gleiche Seiten in einem Stapel sind hier ein
+    /// Fehler, kein Schoenheitsproblem (siehe Befehl-Komma in `ausfuehren`).
+    /// Liegen nur die Einstellungen oben — per Befehl-Komma, ohne Profil
+    /// darunter —, treten sie ohne Bewegung ab, und das Profil faehrt herein.
+    private func zumProfil() {
+        if let i = navigator.seiten(bereich).firstIndex(of: .profil) {
+            navigator.zurueck(in: bereich, bis: i + 1)
+            return
+        }
+        kontozweigZu(animiert: false)
+        navigator.oeffne(.profil, in: bereich)
+    }
 
     /// Eine Bibliothek aus der Seitenleiste: sie **wählt** die Sammlung und
     /// wechselt in deren Bereich. Die Wahl wird gemerkt, damit sie beim
@@ -586,10 +662,10 @@ struct HauptView: View {
 
     private func ausfuehren(_ kommando: Kommando) {
         switch kommando {
-        case .start:  bereich = .start
-        case .filme:  bereich = .filme
-        case .serien: bereich = .serien
-        case .suche:  bereich = .suche
+        case .start:  bereichWaehlen(.start)
+        case .filme:  bereichWaehlen(.filme)
+        case .serien: bereichWaehlen(.serien)
+        case .suche:  bereichWaehlen(.suche)
         case .zurueck:
             zurueck()
         case .einstellungen:
@@ -645,6 +721,13 @@ struct Seitenleiste: View {
     private func bibliothekSchliessen() { schliesseBibliothek() }
     let schliesseBibliothek: () -> Void
     let zumProfil: () -> Void
+    /// Profil oder etwas von dort ist offen. Dann traegt keine Zeile oben die
+    /// Auswahl, sondern das Konto unten — dieselbe Regel wie auf dem iPad.
+    /// Vorher blieb „Start" hervorgehoben, waehrend das Profil zu sehen war.
+    var imKonto = false
+    /// Nicht die Bindung selbst: ein Klick auf den schon offenen Bereich
+    /// muss den Kontozweig schliessen, und daran aendert sich ihr Wert nicht.
+    let bereichWaehlen: (Bereich) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -659,8 +742,8 @@ struct Seitenleiste: View {
                 ForEach(Bereich.obenGruppe, id: \.self) { fall in
                     Seitenleistenzeile(symbol: fall.symbol,
                                        beschriftung: fall.beschriftung,
-                                       aktiv: bereich == fall && !bibliothekOffen) {
-                        bereich = fall
+                                       aktiv: bereich == fall && !bibliothekOffen && !imKonto) {
+                        bereichWaehlen(fall)
                         bibliothekSchliessen()
                     }
                 }
@@ -676,8 +759,8 @@ struct Seitenleiste: View {
                 ForEach(Bereich.meinsGruppe(downloads: model.downloadsAn), id: \.self) { fall in
                     Seitenleistenzeile(symbol: fall.symbol,
                                        beschriftung: fall.beschriftung,
-                                       aktiv: bereich == fall && !bibliothekOffen) {
-                        bereich = fall
+                                       aktiv: bereich == fall && !bibliothekOffen && !imKonto) {
+                        bereichWaehlen(fall)
                         bibliothekSchliessen()
                     }
                 }
@@ -704,7 +787,7 @@ struct Seitenleiste: View {
                         // stand dann die Ueberschrift "Filme".
                         Seitenleistenzeile(symbol: bib.collectionType == "movies" ? "film" : "tv",
                                            name: bib.name,
-                                           aktiv: offeneKennung == bib.id) {
+                                           aktiv: offeneKennung == bib.id && !imKonto) {
                             bibliothekOeffnen(bib)
                         }
                     }
@@ -745,7 +828,7 @@ struct Seitenleiste: View {
             // Kein `NavigationLink`: die Seitenleiste liegt **neben** dem
             // Stapel, nicht darin. Sie schiebt das Ziel deshalb selbst auf
             // den Stapel des sichtbaren Bereichs.
-            Button { zumProfil() } label: { Profilzeile(model: model) }
+            Button { zumProfil() } label: { Profilzeile(model: model, aktiv: imKonto) }
                 .buttonStyle(.plain)
                 .padding(12)
         }
@@ -795,6 +878,9 @@ struct Seitenleiste: View {
 /// sitzt dasselbe oben rechts als Profilzeichen.
 struct Profilzeile: View {
     let model: AppModel
+    /// Profil oder etwas von dort ist offen — dann traegt diese Zeile die
+    /// Auswahl, in derselben Form wie eine Zeile der Bereiche.
+    var aktiv = false
     @State private var schwebt = false
 
     var body: some View {
@@ -803,7 +889,7 @@ struct Profilzeile: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: model.session?.userName ?? "—")
                     .font(Stil.kachelTitel)
-                    .foregroundStyle(Stil.schrift)
+                    .foregroundStyle(aktiv ? Stil.akzent : Stil.schrift)
                     .lineLimit(1)
                 Text(verbatim: model.serverName ?? "")
                     .font(.system(size: 11))
@@ -814,8 +900,10 @@ struct Profilzeile: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 40)
-        .background(schwebt ? Stil.schrift.opacity(0.06) : .clear,
+        .background(aktiv ? Stil.akzent.opacity(0.10)
+                          : schwebt ? Stil.schrift.opacity(0.06) : .clear,
                     in: RoundedRectangle(cornerRadius: Stil.ecke))
+        .accessibilityAddTraits(aktiv ? .isSelected : [])
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
     }

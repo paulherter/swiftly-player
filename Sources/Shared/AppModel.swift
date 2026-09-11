@@ -49,6 +49,18 @@ final class AppModel {
     /// gibt für einen unbekannten Schlüssel ohnehin `false`, aber das hier
     /// steht als Absicht da, nicht als Zufall.
     var neuzugangGetrennt: Bool { didSet { merken(neuzugangGetrennt, "neuGetrennt") } }
+
+    // MARK: Startseite nach Wunsch
+
+    /// Reihenfolge der festen Reihen. Wer eine ausblendet, behält ihren Platz.
+    var startReihen: [Startreihe] { didSet { merken(startReihen.map(\.rawValue), "startReihen") } }
+    var startAus: Set<Startreihe> { didSet { merken(startAus.map(\.rawValue), "startAus") } }
+    /// **Genres entweder als Chips oder als Reihen**, nie beides: an heißt
+    /// eine Reihe Chips unter dem Kopf, aus heißt die gewählten Genres als
+    /// eigene Reihen. Von Haus aus aus und ohne Genres — die Startseite
+    /// bleibt, wie sie war, bis jemand etwas will.
+    var genreChips: Bool { didSet { merken(genreChips, "genreChips") } }
+    var startGenres: [String] { didSet { merken(startGenres, "startGenres") } }
     /// Wie viel Vorrat der Player haelt. Siehe ``Pufferstufe`` im Paket.
     var pufferstufe: Pufferstufe { didSet { merken(pufferstufe.rawValue, "pufferstufe") } }
     /// **Zeigt Discord, was gerade laeuft — und ist aus, bis man es
@@ -199,8 +211,15 @@ final class AppModel {
         didSet {
             konten = bund?.konten ?? []
             session = bund?.aktives
+            // Seerr hängt an einem Server — beim Wechsel auf einen anderen
+            // gilt dessen Zugang. Innerhalb eines Servers ändert sich nichts.
+            seerr.serverGewechselt(bund?.aktives.serverURL)
         }
     }
+
+    /// Die Server im Bund, in der Reihenfolge ihres ersten Kontos.
+    var server: [URL] { bund?.server ?? [] }
+    func konten(auf server: URL) -> [Session] { bund?.konten(auf: server) ?? [] }
 
     private static let sessionKey = "session"
     /// Der Schlüssel für den ganzen Bund. Der alte oben bleibt liegen: wer
@@ -240,7 +259,17 @@ final class AppModel {
         untertitelSprache = ablage.string(forKey: "utSprache") ?? ""
         untertitelAutomatisch = ablage.object(forKey: "utAuto") as? Bool ?? false
         naechsteAutomatisch = ablage.object(forKey: "naechsteAuto") as? Bool ?? true
-        neuzugangGetrennt = ablage.object(forKey: "neuGetrennt") as? Bool ?? false
+        // **Getrennt ist die Vorgabe**, seit dem 11.09.2026. Wer es ausdrücklich
+        // ausgeschaltet hat, behält das; wer es nie angefasst hat, bekommt die
+        // beiden Reihen.
+        neuzugangGetrennt = ablage.object(forKey: "neuGetrennt") as? Bool ?? true
+        let gemerkteReihen = (ablage.stringArray(forKey: "startReihen") ?? [])
+            .compactMap(Startreihe.init(rawValue:))
+        // Eine Reihe, die es beim Merken noch nicht gab, kommt hinten dazu.
+        startReihen = gemerkteReihen + Startreihe.allCases.filter { !gemerkteReihen.contains($0) }
+        startAus = Set((ablage.stringArray(forKey: "startAus") ?? []).compactMap(Startreihe.init(rawValue:)))
+        genreChips = ablage.object(forKey: "genreChips") as? Bool ?? false
+        startGenres = ablage.stringArray(forKey: "startGenres") ?? []
         pufferstufe = (ablage.string(forKey: "pufferstufe")
                        .flatMap(Pufferstufe.init(rawValue:))) ?? .normal
         discordAnzeigen = ablage.object(forKey: "discordAnzeigen") as? Bool ?? false
@@ -482,6 +511,100 @@ final class AppModel {
     }
 
     /// Quick Connect: Code freigeben, der auf einem anderen Gerät steht.
+    // MARK: - Weiterer Server
+
+    /// Der Server, der gerade aufgenommen wird. **Die laufende Sitzung bleibt,
+    /// wie sie ist**: `connect(to:)` stellt die ganze App auf den
+    /// Anmeldebildschirm — wer mitten in ihr einen zweiten Server hinzufügt,
+    /// soll dort nicht landen und bei einem Abbruch zurückfinden müssen. Erst
+    /// wenn die Anmeldung klappt, kommt der Server in den Bund.
+    @ObservationIgnored private var aufnahme: JellyfinClient?
+    @ObservationIgnored private var aufnahmeName: String?
+
+    /// Prüft eine Adresse und hält den Server bereit — Name und Fassung, oder
+    /// `nil` mit dem Grund in `errorMessage`.
+    func serverPruefen(_ roh: String) async -> (name: String, fassung: String)? {
+        errorMessage = nil
+        guard let url = Self.normalizeServerURL(roh) else {
+            errorMessage = String(localized: "Die Adresse konnte nicht gelesen werden.")
+            return nil
+        }
+        var kandidaten = [url]
+        if !roh.contains("://"), let anders = AppModelURLNormalizer.andersHerum(url) {
+            kandidaten.append(anders)
+        }
+        for adresse in kandidaten {
+            let c = JellyfinClient(baseURL: adresse, deviceID: Self.deviceID, deviceName: Self.deviceName)
+            if let info = try? await c.publicSystemInfo() {
+                aufnahme = c
+                let name = info.serverName ?? adresse.host() ?? String(localized: "Server")
+                aufnahmeName = name
+                return (name, info.version ?? "?")
+            }
+        }
+        errorMessage = String(localized: "Unter dieser Adresse antwortet kein Jellyfin.")
+        return nil
+    }
+
+    /// Meldet am bereitgehaltenen Server an und nimmt ihn in den Bund. Die App
+    /// wechselt dorthin — wie beim Wechsel auf ein anderes Konto.
+    func anmeldenAmNeuenServer(benutzer: String, passwort: String) async -> Bool {
+        guard let aufnahme else { return false }
+        isWorking = true
+        defer { isWorking = false }
+        errorMessage = nil
+        do {
+            serverAufnehmen(try await aufnahme.authenticate(username: benutzer, password: passwort))
+            return true
+        } catch {
+            errorMessage = lesbar(error)
+            return false
+        }
+    }
+
+    // **Quick Connect am neuen Server** — derselbe Ablauf wie beim ersten
+    // Anmelden (`QuickConnectModell`), nur mit dem bereitgehaltenen Server
+    // statt dem, mit dem die App gerade verbunden ist.
+
+    func quickConnectStartenAmNeuenServer() async throws -> Anmeldecode {
+        guard let aufnahme else { throw JellyfinError.notAuthenticated }
+        return try await aufnahme.quickConnectStarten()
+    }
+
+    func quickConnectFreigegebenAmNeuenServer(_ vorgang: Anmeldecode) async throws -> Bool {
+        guard let aufnahme else { return false }
+        return try await aufnahme.quickConnectFreigegeben(vorgang)
+    }
+
+    func anmeldenMitQuickConnectAmNeuenServer(_ vorgang: Anmeldecode) async -> Bool {
+        guard let aufnahme else { return false }
+        isWorking = true
+        defer { isWorking = false }
+        errorMessage = nil
+        do {
+            serverAufnehmen(try await aufnahme.anmeldenMitQuickConnect(vorgang))
+            return true
+        } catch {
+            errorMessage = lesbar(error)
+            return false
+        }
+    }
+
+    /// Der eine Abschluss für beide Wege: in den Bund, sichern, hinwechseln.
+    private func serverAufnehmen(_ s: Session) {
+        bund = Kontenbund.aufnehmen(s, in: bund).bund
+        bundSichern()
+        aufnahme = nil
+        neuVerbinden()
+        if let aufnahmeName { serverName = aufnahmeName }
+    }
+
+    func serverAufnahmeAbbrechen() {
+        aufnahme = nil
+        aufnahmeName = nil
+        errorMessage = nil
+    }
+
     func quickConnectFreigeben(code: String) async throws {
         guard let client else { throw JellyfinError.notAuthenticated }
         try await client.quickConnectFreigeben(code: code)
@@ -570,6 +693,88 @@ final class AppModel {
     func suche(_ begriff: String) async -> [Item] {
         guard let client, begriff.count >= 2 else { return [] }
         return (try? await client.suche(begriff)) ?? []
+    }
+
+    // MARK: - Personen und Genres
+
+    /// Was es von einer Person auf dem Server gibt — Filme und Serien, die
+    /// neuesten zuerst.
+    func titel(person id: String) async -> [Item] {
+        guard let client else { return [] }
+        let antwort = try? await client.items(limit: 60, sortBy: "ProductionYear,SortName",
+                                              sortOrder: "Descending", recursive: true,
+                                              includeItemTypes: ["Movie", "Series"],
+                                              personIDs: [id])
+        return Listenregeln.ohneDoppelte(antwort?.items ?? [])
+    }
+
+    /// Titel eines Genres, die zuletzt hinzugefügten zuerst. `nil`, wenn der
+    /// Server nicht geantwortet hat — dann bleibt eine Reihe, wie sie war.
+    func titel(gattung: String, limit: Int = 24) async -> [Item]? {
+        guard let client,
+              let antwort = try? await client.items(limit: limit, sortBy: "DateCreated",
+                                                    sortOrder: "Descending", recursive: true,
+                                                    includeItemTypes: ["Movie", "Series"],
+                                                    gattungen: [gattung])
+        else { return nil }
+        return Listenregeln.ohneDoppelte(antwort.items)
+    }
+
+    func gattungen() async -> [String] {
+        guard let client else { return [] }
+        return (try? await client.gattungen()) ?? []
+    }
+
+    // MARK: - Kopfbild
+
+    /// Was der Kopf einer Seite zeigt, wenn es keinen Hintergrund gibt —
+    /// einmal gesucht, dann gemerkt.
+    private(set) var kopfbildErsatz: [String: URL] = [:]
+    @ObservationIgnored private var kopfbildSucht: Set<String> = []
+
+    /// **Für den Kopf einer Seite immer irgendein Bild.**
+    ///
+    /// Zuerst, was wirklich quer liegt (`Bildwahl.kopf`). Fehlt das, wird im
+    /// Hintergrund weitergesucht: bei einer Serie das Standbild der Folge,
+    /// die man als Nächstes schauen würde — sonst die erste, jede andere
+    /// könnte vorwegnehmen, was man noch nicht gesehen hat —, bei allem
+    /// anderen das Plakat. Das sieht quer beschnitten nicht perfekt aus, aber
+    /// es ist etwas da. Vorher stand bei einer Serie ohne Hintergrund ein
+    /// leerer Kopf.
+    ///
+    /// Antwortet sofort mit dem, was schon bekannt ist; kommt der Ersatz
+    /// später, zeichnen die Seiten von selbst neu — das Modell ist
+    /// beobachtbar.
+    func kopfbildURL(for item: Item) -> URL? {
+        guard let bilder else { return nil }
+        if let url = Bildwahl.kopf(item, adressen: bilder, breite: 1200) { return url }
+        if let ersatz = kopfbildErsatz[item.id] { return ersatz }
+        guard !kopfbildSucht.contains(item.id) else { return nil }
+        kopfbildSucht.insert(item.id)
+        Task { [weak self] in
+            guard let self, let url = await self.kopfbildErsatzSuchen(for: item) else { return }
+            self.kopfbildErsatz[item.id] = url
+        }
+        return nil
+    }
+
+    /// Nur, was wirklich quer liegt — ohne die Suche nach Ersatz. Für die
+    /// Personenseite, deren Banner durch die Hintergründe ihrer Titel wechselt:
+    /// ein Plakat quer beschnitten gehört dort nicht in den Wechsel.
+    func querbildEcht(for item: Item) -> URL? {
+        guard let bilder else { return nil }
+        return Bildwahl.kopf(item, adressen: bilder, breite: 1200)
+    }
+
+    private func kopfbildErsatzSuchen(for item: Item) async -> URL? {
+        guard let bilder else { return nil }
+        if item.type == "Series", let client {
+            var folge: Item?
+            if let naechste = try? await client.naechsteFolgeDerSerie(seriesID: item.id) { folge = naechste }
+            if folge == nil { folge = (try? await client.folgen(seriesID: item.id))?.first }
+            if let folge, let url = Bildwahl.quer(folge, adressen: bilder, breite: 1200)?.url { return url }
+        }
+        return Bildwahl.hochkant(item, adressen: bilder, maxHoehe: 1200)
     }
 
     /// Der eine Ort, an dem Bildadressen entstehen.
@@ -687,8 +892,13 @@ final class AppModel {
 
     /// Dasselbe für ein bestimmtes Konto — für den Streifen, in dem mehrere
     /// nebeneinander stehen und nur eines das aktive ist.
+    /// **Beim Server des Kontos, mit dessen Zugang** — nicht mit dem des
+    /// gerade aktiven. Seit es mehrere Server gibt, fragte die App die Bilder
+    /// der anderen beim falschen Server an, und sie verschwanden, bis man zu
+    /// ihnen wechselte.
     func benutzerbildURL(fuer konto: Session) -> URL? {
-        bilder?.benutzer(konto.userID, kante: Self.benutzerbildKante)
+        Bildadresse(basis: konto.serverURL, token: konto.accessToken)
+            .benutzer(konto.userID, kante: Self.benutzerbildKante)
     }
 
     /// Waagerechtes Bild für die Reihe „Weiterschauen".
@@ -1084,8 +1294,10 @@ final class AppModel {
     /// Wechsel tauscht nur, welches gilt. Was danach neu aufgebaut werden
     /// muss, steht in ``neuVerbinden()`` — es ist mehr, als man denkt.
     func kontoWechseln(zu kennung: String) {
-        guard var neu = bund, neu.aktiveKennung != kennung,
-              neu.konten.contains(where: { $0.userID == kennung }) else { return }
+        // Über den Kontoschlüssel — dieselbe Benutzerkennung kann es auf zwei
+        // Servern geben. Eine bloße Kennung von früher geht weiterhin.
+        guard var neu = bund, let ziel = neu.konto(kennung),
+              ziel.kontoschluessel != neu.aktives.kontoschluessel else { return }
         neu.wechseln(zu: kennung)
         bund = neu
         bundSichern()
@@ -1101,6 +1313,12 @@ final class AppModel {
     /// wäre danach die falsche Wiedergabe zum Übernehmen angeboten worden.
     private func neuVerbinden() {
         guard let s = session else { return }
+        // Anderer Server: bis seine Antwort da ist, steht die Adresse statt
+        // des alten Namens da — nicht der Name des Servers von eben.
+        if client?.baseURL.absoluteString.lowercased() != s.serverURL.absoluteString.lowercased() {
+            serverName = s.serverURL.host()
+            serverVersion = nil
+        }
         // **Beim Wechsel wird nicht abgemeldet.** `abmelden()` schickt ein
         // `Sessions/Logout` an den Server und zieht das Merkmal ein — richtig
         // beim Abmelden, verheerend beim Umschalten: das Konto, von dem man
@@ -1251,5 +1469,52 @@ extension AppModel {
 
     static var folgeNichtGeladen: String {
         String(localized: "Die Folge konnte nicht geladen werden.")
+    }
+}
+
+/// Die festen Reihen der Startseite — ein- und ausschaltbar, umsortierbar.
+///
+/// **Neue Filme und neue Serien sind eigene Reihen**, damit man sie einzeln
+/// schieben kann: wer Serien oben will und Filme unten, soll das können.
+/// `neuzugaenge` ist die gemeinsame Reihe, wenn „Neuzugänge getrennt" aus ist.
+enum Startreihe: String, CaseIterable, Identifiable, Sendable {
+    case weiterschauen, naechsteFolge, neueFilme, neueSerien, neuzugaenge
+    var id: String { rawValue }
+
+    /// Welche Reihen es gerade gibt: getrennt die neuen Filme und Serien
+    /// einzeln, sonst die gemeinsame.
+    func passt(getrennt: Bool) -> Bool {
+        switch self {
+        case .neuzugaenge:            !getrennt
+        case .neueFilme, .neueSerien: getrennt
+        default:                      true
+        }
+    }
+}
+
+/// Name und Zeichen einer Reihe — **hier, nicht in einer Ansicht.**
+///
+/// Sie standen in `DarstellungView`, und die gibt es nur auf iOS. Die
+/// Mac-Fassung braucht dieselben Wörter für dieselben Reihen; eine zweite
+/// Liste wäre genau die kopierte Funktion, vor der CLAUDE.md warnt.
+extension Startreihe {
+    var name: LocalizedStringKey {
+        switch self {
+        case .weiterschauen: "Weiterschauen"
+        case .naechsteFolge: "Nächste Folge"
+        case .neueFilme:     "Neue Filme"
+        case .neueSerien:    "Neue Serien"
+        case .neuzugaenge:   "Neu hinzugefügt"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .weiterschauen: "play.circle"
+        case .naechsteFolge: "forward.end"
+        case .neueFilme:     "film"
+        case .neueSerien:    "tv"
+        case .neuzugaenge:   "sparkles"
+        }
     }
 }

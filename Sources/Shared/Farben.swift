@@ -66,6 +66,20 @@ enum Stil {
     /// wo er dasselbe trägt: „Resume on this Device".
     static let kuehl   = Color(red: 0.494, green: 0.608, blue: 1.000)   // #7E9BFF
 
+    /// **Die Mitte des Farbscheins** — zwischen `akzent` und `kuehl`.
+    ///
+    /// Der Schein über der Startseite läuft von Türkis nach Blau. Zwischen
+    /// den beiden gibt es rechnerisch keinen geraden Weg, der gut aussieht:
+    /// linear gemischt kippt er in der Mitte ins Graue. Dieser Ton ist der
+    /// Stützpunkt, der ihn dort hält.
+    ///
+    /// **Er steht hier, weil er sonst zweimal getippt dasteht.** Genau das
+    /// war er: einmal in `Sources/Shared/HomeView.swift`, einmal in
+    /// `Sources/macOS/HomeView.swift` — zwei Zahlenreihen, die niemand mehr
+    /// gemeinsam ändert. Er trägt nichts, was der Akzent trägt; er ist
+    /// Hintergrund, kein Zeichen.
+    static let scheinMitte = Color(red: 0.431, green: 0.706, blue: 0.882)  // #6EB4E1
+
     /// Erscheint ausschließlich, wenn der Server transkodiert.
     static let warnung = Color(red: 0.910, green: 0.514, blue: 0.227)   // #E8833A
 }

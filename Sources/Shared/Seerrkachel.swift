@@ -9,6 +9,11 @@ import SwiftUI
 /// Bestätigung.
 struct Seerrkachel: View {
     let treffer: Seerrtreffer
+    /// **Feste Breite für eine Reihe.** Im Raster gibt die Spalte die Breite
+    /// vor; in einer waagerechten Reihe gibt es keine, und das Plakat mit
+    /// seinem Seitenverhältnis schrumpfte auf Briefmarkengröße — auf der
+    /// Personenseite so gesehen. `nil` heißt: so breit, wie es der Platz sagt.
+    var breite: CGFloat? = nil
     /// Plakat und Text blenden zusammen ein — dieselbe Begründung wie bei
     /// `PosterTile`.
     @State private var da = false
@@ -31,6 +36,7 @@ struct Seerrkachel: View {
                 .foregroundStyle(Stil.schriftSehrLeise)
                 .lineLimit(1)
         }
+        .frame(width: breite)
         .opacity(da ? 1 : 0)
         .onAppear {
             guard !da else { return }

@@ -16,7 +16,28 @@ struct Trennstrich: View {
     var body: some View { Rectangle().fill(Stil.linie).frame(height: 1) }
 }
 
-/// Gruppe mit gesperrtem Titel, Haarlinie oben und unten.
+/// **Eine Gruppe als eigene Flaeche.**
+///
+/// Sie trug ihre Zeilen randbuendig zwischen zwei Haarlinien — die aeltere
+/// Bauart, aus der Zeit vor der Kartenoptik. Entschieden am 11.09.2026
+/// gemeinsam mit iPhone und iPad: die Karte grenzt die Gruppe ohne Leerraum
+/// ab und ist die Form, die man vom Geraet kennt.
+///
+/// **Sie ist die eine Ausnahme von „hoechstens eine gefuellte Flaeche je
+/// Seite".** Eine Einstellungsseite hat keine Hauptsache und keinen weissen
+/// Hauptknopf; die Regel schuetzt dessen Aussage, und wo keiner steht,
+/// schuetzt sie nichts.
+struct Karte<Inhalt: View>: View {
+    @ViewBuilder let inhalt: Inhalt
+
+    var body: some View {
+        VStack(spacing: 0) { inhalt }
+            .background(Stil.flaeche,
+                        in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
+    }
+}
+
+/// Gruppe mit gesperrtem Titel, darunter die Karte.
 struct Einstellungsgruppe<Inhalt: View>: View {
     let titel: LocalizedStringKey
     @ViewBuilder let inhalt: Inhalt
@@ -32,22 +53,16 @@ struct Einstellungsgruppe<Inhalt: View>: View {
                 .foregroundStyle(Stil.schrift.opacity(0.4))
                 .padding(.top, 26)
                 .padding(.bottom, 8)
-            VStack(spacing: 0) { inhalt }
-                .background(alignment: .top) { Trennstrich() }
-                .background(alignment: .bottom) { Trennstrich() }
+            Karte { inhalt }
         }
     }
 }
 
-/// Gruppe ohne Titel — nur Haarlinien, wie auf der Profilseite.
+/// Gruppe ohne Titel — dieselbe Karte, nur ohne Ueberschrift darueber.
 struct Zeilengruppe<Inhalt: View>: View {
     @ViewBuilder let inhalt: Inhalt
 
-    var body: some View {
-        VStack(spacing: 0) { inhalt }
-            .background(alignment: .top) { Trennstrich() }
-            .background(alignment: .bottom) { Trennstrich() }
-    }
+    var body: some View { Karte { inhalt } }
 }
 
 /// Der Rumpf jeder Zeile: Symbol, Titel, Unterzeile, rechts etwas.
@@ -251,13 +266,27 @@ private struct Wertwahlzeile: View {
 /// Inhalt. Im Fenster gibt es keinen Wisch zurück, also muss der Pfeil sichtbar
 /// und treffbar sein; nebeneinander liest es sich als eine Zeile.
 struct Unterseitenkopf: View {
-    let titel: LocalizedStringKey
+    var titel: LocalizedStringKey = ""
+    /// **Wenn die Überschrift vom Server kommt** — ein Genre heißt, wie es
+    /// heißt, und darf nicht durch die Übersetzungstabelle laufen: „Action"
+    /// als Schlüssel träfe dort womöglich etwas ganz anderes.
+    var name: String? = nil
     let zurueck: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
-            Aktionsknopf(symbol: "chevron.left", titel: "Zurück", auswahl: zurueck)
-            Text(titel)
+            // **Ohne Ring — nur der Pfeil, wie auf dem iPad.**
+            //
+            // `Aktionsknopf` umrandet sich, weil er in einer Knopfreihe neben
+            // seinesgleichen steht und dort sonst nicht als Knopf zu erkennen
+            // waere. Oben auf einer Unterseite steht er allein: dort ist der
+            // Ring eine Einfassung ohne Aufgabe. Die Rueckmeldung beim
+            // Ueberfahren bleibt.
+            Aktionsknopf(symbol: "chevron.left", titel: "Zurück",
+                         rand: false, auswahl: zurueck)
+            Group {
+                if let name { Text(verbatim: name) } else { Text(titel) }
+            }
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.6)
                 .foregroundStyle(Stil.schrift)

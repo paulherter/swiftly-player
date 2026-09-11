@@ -1,59 +1,6 @@
 import JellyfinKit
 import SwiftUI
 
-// MARK: - Inhalt einer Bibliothek
-
-struct ItemListView: View {
-    @Environment(\.breit) private var breit
-    let model: AppModel
-    let library: Item
-
-    @State private var items: [Item] = []
-    @State private var laedt = true
-
-    private let spalten = [GridItem(.adaptive(minimum: Stil.kachelBreite,
-                                              maximum: Stil.kachelBreite + 30),
-                                    spacing: Stil.kachelAbstand)]
-
-    @Environment(\.dismiss) private var zurueck
-
-    var body: some View {
-        ZStack {
-            Stil.grund.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                Unterseitenkopf(titel: library.name) { zurueck() }
-
-                ScrollView {
-                    LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {
-                    ForEach(items) { item in
-                        NavigationLink(value: item) {
-                            PosterTile(model: model, item: item)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    }
-                    .padding(.horizontal, Stil.rand(breit: breit))
-                    .padding(.bottom, Stil.randAbstand)
-                }
-                .scrollIndicators(.hidden)
-            }
-
-            if !laedt, items.isEmpty {
-                ContentUnavailableView("Nichts gefunden", systemImage: "tray")
-            }
-        }
-#if os(iOS)
-        .background(WischZurueck())
-        .toolbar(.hidden, for: .navigationBar)
-        #endif
-        .task {
-            items = await model.items(in: library.id)?.titel ?? []
-            laedt = false
-        }
-    }
-}
-
 struct PosterTile: View {
     let model: AppModel
     let item: Item
@@ -176,6 +123,8 @@ struct ItemDetailView: View {
     @State private var versatz: CGFloat = 0
 
     @State private var plan: PlaybackPlan?
+    /// Der Plan ist beantwortet — mit oder ohne Ergebnis. Siehe `belegzeile`.
+    @State private var planDa = false
     @State private var ladeblatt = false
     @State private var pruefe = true
     @State private var abspielen: Abspielwunsch?
@@ -213,7 +162,7 @@ struct ItemDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if breit {
-                        Heldkopf(bild: model.backdropURL(for: aktuell),
+                        Heldkopf(bild: model.kopfbildURL(for: aktuell),
                                  poster: model.imageURL(for: aktuell, maxHeight: 600,
                                                         hochkant: true),
                                  titel: aktuell.name, nebenzeile: nebenzeile,
@@ -271,6 +220,10 @@ struct ItemDetailView: View {
                     // Frage, die man erst später stellt.
                     dateiauszug
                 }
+                // **Nie breiter als der Schirm.** Wird ein Kind breiter, ist es
+                // sonst die ganze Seite — und eine Seite, die breiter ist als
+                // ihre Scrollfläche, lässt sich seitwärts ziehen.
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 30)
             }
             .scrollIndicators(.hidden)
@@ -332,6 +285,7 @@ struct ItemDetailView: View {
             async let extra = model.extras(item)
             frisch = await frischerTitel
             plan = await planung
+            withAnimation(Stil.einblenden) { planDa = true }
             aehnliche = await aehnlich
             extras = await extra
             gemerkt = aktuell.userData?.isFavorite ?? false
@@ -360,7 +314,7 @@ struct ItemDetailView: View {
 
     /// Gleiche Höhe wie auf der Serienseite — vorher waren es 260 gegen 300.
     private var hero: some View {
-        Heldbild(url: model.backdropURL(for: aktuell))
+        Heldbild(url: model.kopfbildURL(for: aktuell))
             .overlay(alignment: .bottom) { Heldauslauf() }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 5) {
@@ -382,11 +336,23 @@ struct ItemDetailView: View {
     /// Zeile darunter.
     private var nebenzeile: String { aktuell.nebenzeile }
 
+    /// **Erst mit dem Plan, dann als Ganzes.** Sterne und FSK sind sofort da,
+    /// die Direct-Play-Marke erst mit dem Wiedergabeplan — und schob sich dann
+    /// links davor und die beiden anderen nach rechts. Jetzt hält die Zeile
+    /// ihren Platz, bleibt aber unsichtbar, bis der Plan da ist, und blendet
+    /// dann auf einmal ein. Kommt kein Plan, blendet sie trotzdem ein — dann
+    /// eben ohne Marke.
     private var belegzeile: some View {
         Belegzeile(direktplay: plan?.isLossless ?? false,
                    hinweis: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
                    bewertung: aktuell.communityRating,
                    freigabe: aktuell.officialRating)
+            // **Feste Höhe, auch leer.** Die Zeile kommt erst mit dem Plan —
+            // und aus der Liste oft ohne Bewertung und Freigabe. Leer hatte sie
+            // keine Höhe, der Knopf darunter saß höher und rutschte nach
+            // unten, sobald sie sich füllte. So hoch wie eine Marke, immer.
+            .frame(minHeight: 26, alignment: .leading)
+            .opacity(planDa ? 1 : 0)
     }
 
     @ViewBuilder
@@ -472,7 +438,7 @@ struct ItemDetailView: View {
 
     @ViewBuilder
     private var beschreibung: some View {
-        if let text = aktuell.overview {
+        if let text = aktuell.beschreibung {
             VStack(alignment: .leading, spacing: 8) {
                 // Einzeilig mit Auslassung, Antippen klappt auf. Der volle
                 // Text war auf dieser Seite zu wuchtig.
@@ -525,11 +491,18 @@ struct ItemDetailView: View {
     private var besetzung: some View {
         let leute = aktuell.darsteller
         if !leute.isEmpty {
-            Abschnitt(titel: "Besetzung", pfeil: true) {
+            // **Jetzt antippbar**, und der Pfeil ist weg: er versprach eine
+            // Gesamtliste, die es nie gab. Ein Tipp öffnet die Person — was es
+            // mit ihr auf dem Server gibt, und mit Seerr, was sich anfragen
+            // lässt. Von einem Tester gemeldet.
+            Abschnitt(titel: "Besetzung") {
                 HStack(spacing: 14) {
                     ForEach(leute.prefix(12)) { person in
-                        Besetzungskachel(bild: model.personBild(person),
-                                         name: person.name, rolle: person.role)
+                        NavigationLink(value: PersonRoute(person: person, herkunft: aktuell.name)) {
+                            Besetzungskachel(bild: model.personBild(person),
+                                             name: person.name, rolle: person.role)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))

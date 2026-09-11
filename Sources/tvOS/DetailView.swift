@@ -48,7 +48,7 @@ struct Detailkopf<Knoepfe: View>: View {
     private var rumpf: some View {
         ZStack(alignment: .topLeading) {
             Kulisse(url: model.querbildURL(for: item, breite: 1600)
-                         ?? model.backdropURL(for: item))
+                         ?? model.kopfbildURL(for: item))
                 .frame(maxWidth: .infinity, alignment: .trailing)
 
             // **Derselbe Kopfschatten wie auf der Startseite.**
@@ -283,7 +283,7 @@ struct DetailView: View {
                     reihenabschnitt {
                         Reihentitel(text: "Besetzung")
                     } inhalt: {
-                        Besetzungsstreifen(model: model, leute: darsteller)
+                        Besetzungsstreifen(model: model, leute: darsteller, herkunft: item.name)
                     }
                     .opacity(eingeblendet ? 1 : 0)
                     .transition(.opacity)
@@ -320,7 +320,7 @@ struct DetailView: View {
         // Unterkante, und quer ueber dem Schirm steht eine Naht. Siehe
         // `Bildgrund`.
         .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
-                        ?? model.backdropURL(for: aktuell))
+                        ?? model.kopfbildURL(for: aktuell))
         // **Solange eine Tafel offen ist, ist der Rest kein Fokusziel.**
         //
         // `focusSection` haelt den Fokus nicht fest, es ordnet ihn nur. Ein

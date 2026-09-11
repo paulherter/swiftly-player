@@ -137,7 +137,7 @@ struct SerienView: View {
                     reihenabschnitt {
                         Reihentitel(text: "Besetzung")
                     } inhalt: {
-                        Besetzungsstreifen(model: model, leute: darsteller)
+                        Besetzungsstreifen(model: model, leute: darsteller, herkunft: aktuell.name)
                     }
                     .opacity(eingeblendet ? 1 : 0)
                     .transition(.opacity)
@@ -172,7 +172,7 @@ struct SerienView: View {
         // Unterkante, und quer ueber dem Schirm steht eine Naht. Siehe
         // `Bildgrund`.
         .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
-                        ?? model.backdropURL(for: aktuell))
+                        ?? model.kopfbildURL(for: aktuell))
         // Die Staffelwahl liegt auf der **Seite**, nicht am Pillenknopf —
         // siehe `Handlungstafel.unterDemReihenkopf`.
         //
@@ -566,7 +566,8 @@ struct Folgenzeile: View {
                             .padding(.top, 4)
                     }
 
-                    if let text = folge.overview, !text.isEmpty {
+                    // Bereinigt — bei Folgen steht im Rohtext oft `<br>`.
+                    if let text = folge.beschreibung, !text.isEmpty {
                         Text(text)
                             .font(Stil.kachel)
                             .lineSpacing(9)

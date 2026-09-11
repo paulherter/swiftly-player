@@ -25,48 +25,168 @@ struct SucheView: View {
     @State private var seerrtreffer: [Seerrtreffer] = []
     @FocusState private var imFeld: Bool
 
+    /// **Die Seite ist im Suchzustand — Kopf weg, Feld oben, Ausweg rechts.**
+    ///
+    /// Getrennt von ``imFeld``, und das ist der Punkt: die Tastatur geht bei
+    /// jedem Tipp ins Leere zu, der Suchzustand nicht. Wer etwas eingegeben
+    /// hat und die Tastatur wegtippt, will seine Treffer ansehen — faehrt die
+    /// Seite dabei wieder auseinander, wandert alles unter dem Daumen weg.
+    /// Zurueck kommt man ueber den Ausweg rechts, sonst nicht.
+    @State private var suchmodus = false
+
+    /// **Was zuletzt gesucht wurde — die letzten acht, juengstes zuerst.**
+    ///
+    /// Gemerkt wird beim Abschicken, nicht beim Tippen: wer „Ga", „Gam",
+    /// „Game" eingibt, hat einmal gesucht und nicht dreimal.
+    @AppStorage(Suchverlauf.schluessel) private var letzteRoh = ""
+
     @Environment(\.breit) private var breit
     @Environment(\.fensterknoepfe) private var fensterknoepfe
+    /// Der zweite Tipp auf den schon offenen Reiter — siehe `HauptView`.
+    @Environment(\.reiterNochmal) private var nochmal
+
+    private var letzte: [String] { Suchverlauf.liste(letzteRoh) }
+
+    /// Die Regel selbst steht in `Suchverlauf` — der Fernseher zeigt dieselbe
+    /// Liste, und eine zweite Fassung davon wäre eine kopierte Funktion.
+    private func merken(_ wort: String) {
+        letzteRoh = Suchverlauf.merken(wort, in: letzteRoh)
+    }
 
     var body: some View {
         ZStack {
             Stil.grund.ignoresSafeArea()
 
             GeometryReader { rahmen in
+            // **Die Animation liegt an der ganzen Spalte, nicht am Feld.**
+            //
+            // Am Feld allein wanderte nur das Feld: die Trefferflaeche
+            // darunter bringt ueber `bereichsinhalt()` einen deckenden Grund
+            // mit, und deren Rahmen sprang beim Wegfallen des Kopfes ohne
+            // Uebergang nach oben. Zu sehen war eine schwarze Kante, die
+            // sofort ein Stueck hochruckt, und ein Feld, das dahinter
+            // hervorwandert. Beide gehoeren in dieselbe Bewegung — es ist
+            // eine Umschichtung der Spalte, nicht die Reise eines Bauteils.
             VStack(spacing: 0) {
-                // **Kein Profilzeichen auf der Suchseite.**
+                // **Doch ein Kopf auf der Suchseite.**
                 //
-                // Hier stand eines, mit der Begründung: es steht im Kopf von
-                // Start, Filme und Serien, drei von vier sei keine Regel
-                // sondern ein vergessener Fall. Das klingt richtig und ist es
-                // nicht
+                // Hier stand keiner, und die Begruendung war das Suchfeld: es
+                // sei das einzige Bedienelement der Seite und wolle von Rand
+                // zu Rand, ein Zeichen daneben mache aus einem Feld eine Zeile
+                // mit Anhaengsel.
                 //
-                // Der Grund ist das Suchfeld. Es ist auf dieser Seite das
-                // einzige Bedienelement und will von Rand zu Rand; ein Zeichen
-                // daneben nimmt ihm die letzten vierzig Punkt und macht aus
-                // einem Feld eine Zeile mit Anhängsel. Die anderen drei Seiten
-                // tragen oben eine Überschrift, neben der noch Platz ist.
+                // Der Fehler daran ist die Annahme, das Zeichen muesse
+                // **neben** das Feld. Es steht jetzt darueber, in derselben
+                // Zeile wie der Seitentitel — genau wie auf Downloads und in
+                // der Bibliothek.
                 //
-                // Gleichförmigkeit gilt für das Verhalten, nicht für jedes
-                // Element auf jeder Seite.
+                // **Und zwar in `Unschaerfekopf`, nicht in einer eigenen
+                // Zeile.** Mit eigenen Abstaenden sass er acht Punkt tiefer
+                // als auf den drei anderen Wurzelseiten; am Geraet sieht man
+                // genau das, wenn man zwischen den Reitern wechselt. Der
+                // Baustein bringt Grad, Sperrung und beide Abstaende mit —
+                // dieselbe Regel wie ueberall: eine Rolle, ein Baustein.
+                //
+                // **Den Titel gibt es breit wie schmal, die Kopfziele nur
+                // schmal.** Er stand zuerst nur schmal — damit war die Suche
+                // auf dem iPad genau das, was sie auf dem iPhone vorher war:
+                // die einzige Wurzelseite ohne Titel, waehrend Filme und
+                // Serien einen tragen. Die Kopfziele dagegen wohnen breit in
+                // der Seitenleiste, dort waeren sie das zweite Mal.
+                if !suchmodus {
+                    Unschaerfekopf {
+                        HStack(alignment: .top, spacing: 0) {
+                            Text("Suchen").font(Stil.titelGross).tracking(-0.6)
+                            Spacer(minLength: 0)
+                            if !breit {
+                                Kopfziele(name: model.session?.userName ?? "?",
+                                          bild: model.benutzerbildURL())
+                            }
+                        }
+                        .foregroundStyle(Stil.schrift)
+                    }
+                    // **Nur ausblenden, nicht wegfahren.**
+                    //
+                    // Mit `.move(edge: .top)` schob sich der Kopf samt seinem
+                    // `Kopfverlauf` nach oben aus dem Bild — und der Verlauf
+                    // steht oben bei 0,98. Was man sah, war eine schwarze
+                    // Flaeche, die kurz aufpoppte und hinter der das Feld
+                    // durchwanderte. Das Feld rueckt ohnehin nach, sobald der
+                    // Kopf keinen Platz mehr braucht; die Bewegung entsteht
+                    // aus dem Layout, sie muss nicht zusaetzlich gefahren
+                    // werden.
+                    .transition(.opacity)
+                }
+
                 HStack(spacing: 12) {
-                    Suchfeld(text: $begriff, amTippen: $imFeld)
+                    Suchfeld(text: $begriff, amTippen: $imFeld,
+                             abschicken: { merken(begriff) })
                         // Breit ein Maß, aber linksbündig: mittig wäre es
                         // gegen das Raster darunter versetzt, über die volle
                         // Breite ein 1036 Punkt langer Kasten für ein Wort.
                         .frame(maxWidth: breit ? Stil.lesebreite : .infinity,
                                alignment: .leading)
+
+                    // **Der Ausweg steht neben dem Feld, nicht darin.**
+                    // Im Feld liegt schon der Loeschknopf, und der loescht
+                    // nur das Wort; dieser hier schliesst die Tastatur. Zwei
+                    // Kreuze nebeneinander waeren zwei Bedeutungen in einem
+                    // Zeichen.
+                    // Breit wie schmal: der Ausweg gehoert zum Suchzustand,
+                    // nicht zur Fenstergroesse. Ohne ihn kaeme man auf dem
+                    // iPad gar nicht mehr aus der Suche heraus — dort gibt es
+                    // die Wischgeste zurueck nicht, die das schmal noch
+                    // auffangen wuerde.
+                    if suchmodus {
+                        Button {
+                            // Der Ausweg raeumt die Seite ab: Wort weg,
+                            // Tastatur zu, Kopf wieder da. Das Kreuz **im**
+                            // Feld loescht nur das Wort — zwei Zeichen, zwei
+                            // Reichweiten.
+                            begriff = ""
+                            imFeld = false
+                            suchmodus = false
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Stil.schriftLeise)
+                                .frame(width: 36, height: 36)
+                                .background(Stil.erhoeht, in: Circle())
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Suche schließen"))
+                        // **Es kommt zuletzt und geht zuerst.**
+                        //
+                        // An derselben Kurve wie der Rest stand es schon da,
+                        // waehrend das Profilbild noch ausblendete — eines
+                        // lag ueber dem anderen, und es sah aus, als poppe es
+                        // auf. Mit Verzoegerung wartet es, bis die Spalte
+                        // umgeschichtet und der Kopf weg ist, und erscheint
+                        // dann in den freien Platz. Beim Schliessen
+                        // umgekehrt: sofort weg, damit es dem Profilbild
+                        // nicht im Weg steht.
+                        .transition(.asymmetric(
+                            insertion: .opacity.animation(Stil.blattbewegung.delay(0.14)),
+                            removal: .opacity.animation(.easeOut(duration: 0.09))))
+                    }
+
                     if breit { Spacer(minLength: 0) }
                 }
+
                 .padding(.horizontal, Stil.rand(breit: breit))
-                .padding(.top, (breit ? Stil.kopfOben : 8)
-                            + (fensterknoepfe ? Fensterknoepfe.hoehe : 0))
+                // Schmal traegt `Unschaerfekopf` darueber den oberen Abstand;
+                // ist er weg, weil getippt wird, uebernimmt ihn das Feld.
+                .padding(.top, breit ? Stil.kopfOben
+                                       + (fensterknoepfe ? Fensterknoepfe.hoehe : 0)
+                                     : (suchmodus ? 8 + (fensterknoepfe ? Fensterknoepfe.hoehe : 0) : 4))
                 .padding(.bottom, 16)
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if begriff.isEmpty {
-                            leerhinweis
+                            if letzte.isEmpty { leerhinweis } else { zuletzt }
                         } else if sucht, treffer.isEmpty, seerrtreffer.isEmpty {
                             // **Kein Ring.** Solange noch nichts da ist,
                             // steht das Raster in seiner Form; sind schon
@@ -132,6 +252,7 @@ struct SucheView: View {
                 // darueber — siehe `bereichsinhalt()`.
                 .bereichsinhalt()
             }
+            .animation(Stil.blattbewegung, value: suchmodus)
             }
             // Ueber dem Inhalt, unter allem, was die Seite sonst noch
             // auflegt — siehe `bereichsleiste()`.
@@ -151,8 +272,27 @@ struct SucheView: View {
                     if imFeld { imFeld = false } else { zurueck?() }
                 }
         )
-        .onChange(of: aktiv) { _, offen in imFeld = offen }
-        .onAppear { if aktiv { imFeld = true } }
+        // **Der Reiter oeffnet die Tastatur nicht mehr.**
+        //
+        // Sie sprang beim Betreten des Bereichs von selbst auf — man landete
+        // also nie auf der Suchseite, sondern immer schon im Tippen, und was
+        // die Seite sonst zu bieten hat, sah man nie. Jede andere App auf dem
+        // Geraet macht es andersherum: ein Tipp bringt einen hin, das Feld
+        // oeffnet man selbst. Beim Verlassen geht die Tastatur weiterhin zu,
+        // sonst bliebe sie ueber dem naechsten Bereich stehen.
+        .onChange(of: imFeld) { _, drin in if drin { suchmodus = true } }
+
+        // **Beim Verlassen geht nur die Tastatur zu, sonst nichts.**
+        //
+        // Der Suchzustand ueberlebt den Bereichswechsel. Wer bei einem
+        // Treffer nachsieht, wo die Folge herkommt, und dann zurueck auf
+        // Suche geht, will seine Suche vorfinden und nicht die leere Seite —
+        // sonst tippt man dasselbe Wort zweimal. Zu ist sie, wenn man das
+        // Kreuz drueckt, und sonst nie.
+        .onChange(of: aktiv) { _, offen in if !offen { imFeld = false } }
+        // **Der zweite Tipp auf den Reiter oeffnet das Feld.** Der erste
+        // bringt einen nur her — siehe `reiterNochmal`.
+        .onChange(of: nochmal) { _, _ in if aktiv { imFeld = true } }
         .onChange(of: begriff) { _, neu in suchen(neu) }
     }
 
@@ -254,6 +394,61 @@ struct SucheView: View {
     /// unter seiner Mitte. Breit ist das Feld nur `lesebreite` lang und sitzt
     /// links — der Hinweis stand dann in der Mitte des Fensters, also neben
     /// dem, worauf er sich bezieht.
+    /// **Wonach zuletzt gesucht wurde.**
+    ///
+    /// Der Platz unter dem Feld stand leer und trug einen Satz, der erklaerte,
+    /// was ein Suchfeld ist. Wer zum zweiten Mal hier steht, sucht meistens
+    /// dasselbe noch einmal — und ein angetipptes Wort ist schneller als
+    /// zehn Tastenanschlaege.
+    ///
+    /// Antippen fuellt das Feld, es sucht dann von selbst. Es oeffnet die
+    /// Tastatur ausdruecklich **nicht**: wer aus der Liste waehlt, will das
+    /// Ergebnis und nicht weitertippen.
+    private var zuletzt: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Gruppentitel(text: "Zuletzt gesucht")
+                Spacer(minLength: 8)
+                Button { letzteRoh = "" } label: {
+                    Text("Löschen")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Stil.schriftSehrLeise)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, Stil.rand(breit: breit))
+            .padding(.top, 18)
+
+            ForEach(Array(letzte.enumerated()), id: \.offset) { stelle, wort in
+                Button {
+                    begriff = wort
+                    imFeld = false
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                            .frame(width: 20)
+                        Text(verbatim: wort)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Stil.schrift)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, Stil.rand(breit: breit))
+                    .frame(height: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if stelle < letzte.count - 1 {
+                    Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+                }
+            }
+        }
+        .frame(maxWidth: breit ? Stil.lesebreite : .infinity, alignment: .leading)
+    }
+
     private var leerhinweis: some View {
         VStack(spacing: 8) {
             Image(systemName: "magnifyingglass")

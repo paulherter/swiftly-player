@@ -21,19 +21,39 @@ struct EinstellungenView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Unterseitenkopf(titel: "Einstellungen", zurueck: zurueck)
 
-                wiedergabe
-                darstellung
-                offline
-                integration
-                server
+                // **Zwei Spalten, linksbuendig — die Anordnung des iPads.**
+                //
+                // Die Seite stand in einer 560 Punkt breiten Spalte in der
+                // Fenstermitte. Links davon lag die Seitenleiste, rechts
+                // nichts, und der Inhalt begann irgendwo dazwischen — an
+                // keiner Kante, die es sonst auf dieser Seite gibt. Jede
+                // andere Seite der App beginnt am linken Rand ihres Bereichs.
+                //
+                // Die Aufteilung ist die der iPad-Fassung: alles, was dieses
+                // Geraet betrifft, in der linken Spalte, der Server allein in
+                // der rechten. Er ist die einzige Gruppe, die nicht von hier
+                // handelt, und er ist kurz — untereinander bliebe neben ihm
+                // zwei Drittel der Seite leer.
+                //
+                // Der Zwischenraum ist doppelter Seitenrand: so stehen die
+                // beiden Karten zueinander wie zum Fensterrand.
+                HStack(alignment: .top, spacing: Stil.randAbstand * 2) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        offline
+                        integration
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    server
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
                 Text(verbatim: Fassung.mitUnterbau)
                     .font(.system(size: 12))
                     .foregroundStyle(Stil.schrift.opacity(0.3))
                     .padding(.top, 26)
             }
-            .frame(maxWidth: 560, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: Stil.einstellungBreite, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Stil.randAbstand)
             .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
@@ -49,40 +69,12 @@ struct EinstellungenView: View {
         .ohneKanteneffekt()
     }
 
-    /// **Befehl-Komma verspricht alle Einstellungen, also stehen hier alle.**
-    ///
-    /// Auf dem Telefon tippt man sich durch eine Liste, und „Wiedergabe" darf
-    /// neben „Einstellungen" hängen — dort hat niemand etwas zugesagt. Auf
-    /// dem Mac sagt das **System** mit Befehl-Komma: hier sind die
-    /// Einstellungen. Wer dann Darstellung, Offline, Integration und Server
-    /// findet, hat die Hälfte gefunden und weiß es nicht — schlechter als gar
-    /// kein Kürzel.
-    ///
-    /// Die Abweichung von den anderen Plattformen steht in `VERHALTEN.md`,
-    /// Abschnitt F: der Grund ist die Eingabeart, das Kürzel gibt es nur hier.
-    private var wiedergabe: some View {
-        Einstellungsgruppe(titel: "Wiedergabe") {
-            Button { navigator.oeffne(.wiedergabe, in: bereich) } label: {
-                Wertezeile(symbol: "play.fill", titel: Text("Wiedergabe"),
-                           unter: Text("Sprache, Untertitel, Tempo, Puffer"),
-                           pfeil: true, schwebbar: true)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private var darstellung: some View {
-        Einstellungsgruppe(titel: "Darstellung") {
-            // „Querformat im Player sperren" gibt es hier **nicht**: ein
-            // Fenster hat keine Ausrichtung, die man sperren könnte. Das ist
-            // kein Weglassen, sondern eine Einstellung ohne Gegenstück
-            // (VERHALTEN.md F).
-            Schalterzeile(symbol: "chart.bar.fill",
-                          titel: Text("Fortschritt auf Kacheln"),
-                          an: Binding(get: { model.fortschrittAufKacheln },
-                                      set: { model.fortschrittAufKacheln = $0 }))
-        }
-    }
+    // **Hier standen `wiedergabe` und `darstellung`.** Sie gehoeren ins
+    // Profil, neben Quick Connect — so wie auf iPhone, iPad und Fernseher.
+    // Der Versuch, mit Befehl-Komma wirklich *alle* Einstellungen an einem
+    // Ort zu versprechen, hat das Profil auf eine Zeile eingedampft und die
+    // Darstellung zwei Ebenen tief vergraben. Was hier bleibt, betrifft das
+    // Geraet: Offline, Integration, Server.
 
     /// **Eine eigene Gruppe, vor der Integration.**
     ///

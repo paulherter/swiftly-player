@@ -20,6 +20,22 @@ extension Stil {
     static let fensterMinBreite: CGFloat = 900
     static let fensterMinHoehe: CGFloat = 560
 
+    /// **So breit wird eine Einstellungsseite hoechstens.**
+    ///
+    /// Die Seiten sind die des iPads: zwei Spalten, linksbuendig am Inhalt,
+    /// nicht in der Mitte des Fensters. Dort zieht die Grenze das Geraet —
+    /// 1366 Punkt im Querformat des groessten. Ein Fenster hat keine solche
+    /// Grenze; ohne sie stuenden auf einem grossen Schirm zwei Karten zu je
+    /// neunhundert Punkt nebeneinander, in denen der Schalter eine
+    /// Handbreit vom Titel entfernt laege.
+    static let einstellungBreite: CGFloat = 1366
+
+    /// **Lesemass fuer eine einspaltige Unterseite.** Derselbe Wert wie in
+    /// der iPhone- und iPad-Fassung (`Stil.lesebreite`): eine Zeile aus
+    /// Symbol, Titel und einem Wert rechts, ueber die halbe Fensterbreite
+    /// gezogen, laesst zwischen beiden Enden nichts als Luft.
+    static let lesebreite: CGFloat = 700
+
     /// Platz für die Fensterampel — **nur in der Seitenleiste.**
     ///
     /// Die drei Punkte sitzen oben links im Fenster, also über der

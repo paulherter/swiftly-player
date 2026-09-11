@@ -44,15 +44,71 @@ final class Navigator {
         guard stapel.contains(where: { !$0.value.isEmpty }) else { return }
         withAnimation(Stil.zeitSeitenschub) {
             for (bereich, seiten) in stapel {
-                stapel[bereich] = seiten.last == .profil ? [.profil] : []
+                // **`contains`, nicht `last`.** Wer vom Profil aus einen
+                // Server hinzufuegt, steht beim Wechsel auf der
+                // Aufnahmeseite — die faellt mit, das Profil darunter bleibt.
+                // Mit `last` fiel es mit ihr, und man landete auf „Start",
+                // ohne den Server zu sehen, den man gerade aufgenommen hat.
+                stapel[bereich] = seiten.contains(.profil) ? [.profil] : []
             }
         }
     }
 
+    /// **Die Pruefung gehoert in die Animation, nicht davor.**
+    ///
+    /// Sie stand davor, und die App stuerzte ab, sobald man einen zweiten
+    /// Server hinzufuegte: die Anmeldung dort zaehlt `kontowechsel` hoch,
+    /// `HauptView` raeumt darauf mit `alleLeeren()` alle Stapel — und
+    /// SwiftUI arbeitet diese Beobachtung innerhalb von `withAnimation` ab.
+    /// Zwischen dem `guard` und dem `removeLast` war der Stapel also leer,
+    /// und `removeLast` auf einem leeren Feld ist kein Fehlschlag, sondern
+    /// ein Abbruch.
     func zurueck(in bereich: Bereich) {
-        guard !(stapel[bereich] ?? []).isEmpty else { return }
         withAnimation(Stil.zeitSeitenschub) {
+            guard !(stapel[bereich] ?? []).isEmpty else { return }
             stapel[bereich]?.removeLast()
+        }
+    }
+
+    /// **Zurueck, aber nur von genau dieser Seite.**
+    ///
+    /// Eine Unterseite, die sich selbst schliesst, weiss nicht, ob sie
+    /// ueberhaupt noch liegt: eine Anmeldung raeumt den Stapel, ein
+    /// Kontowechsel ebenso. Wer dann blind `zurueck` ruft, nimmt die Seite
+    /// darunter mit — beim Server-Hinzufuegen war das die Profilseite, auf
+    /// der man den neuen Server gerade sehen wollte.
+    func schliessen(_ ziel: Seitenziel, in bereich: Bereich) {
+        withAnimation(Stil.zeitSeitenschub) {
+            guard stapel[bereich]?.last == ziel else { return }
+            stapel[bereich]?.removeLast()
+        }
+    }
+
+    /// Zurueck, bis noch `tiefe` Seiten liegen — in **einer** Bewegung.
+    func zurueck(in bereich: Bereich, bis tiefe: Int) {
+        withAnimation(Stil.zeitSeitenschub) {
+            guard let seiten = stapel[bereich], seiten.count > tiefe else { return }
+            stapel[bereich] = Array(seiten.prefix(tiefe))
+        }
+    }
+
+    /// Liegt auf diesem Stapel der Kontozweig — siehe `Seitenziel.imKontozweig`?
+    func imKonto(_ bereich: Bereich) -> Bool {
+        seiten(bereich).contains { $0.imKontozweig }
+    }
+
+    /// Nimmt den Kontozweig vom Stapel; was darunter lag, bleibt liegen.
+    ///
+    /// Mit Bewegung ist das ein gewoehnliches Zurueck. Ohne, wenn der
+    /// Bereich gerade nicht zu sehen ist oder seine Wurzel getauscht wird —
+    /// dann muss `HauptView` die gezeigte Tiefe selbst nachziehen.
+    func kontozweigSchliessen(in bereich: Bereich, animiert: Bool) {
+        let seiten = seiten(bereich)
+        guard let ab = seiten.firstIndex(where: { $0.imKontozweig }) else { return }
+        if animiert {
+            zurueck(in: bereich, bis: ab)
+        } else {
+            stapel[bereich] = Array(seiten.prefix(ab))
         }
     }
 }
@@ -81,11 +137,23 @@ enum Seitenziel: Hashable, Identifiable {
     case seerr
     /// Ein Titel, den der eigene Server nicht hat — aus der Suche.
     case seerrTitel(Seerrtreffer)
+    /// Eine Person aus der Besetzung — was es von ihr gibt.
+    case person(Person, herkunft: String?)
+    /// Alle Titel eines Genres, aus den Chips der Startseite.
+    case gattung(String)
     case profil
     case einstellungen
     case wiedergabe
+    /// Wie die App aussieht und was auf der Startseite steht.
+    case darstellung
+    /// Ein Genre für die Startseite dazunehmen.
+    case genrewahl
     case quickConnect
     case kontoHinzufuegen
+    /// **Ein zweiter Jellyfin.** Mit Adresse, wenn das Konto auf einem
+    /// Server angelegt wird, den es im Bund schon gibt — dann steht die
+    /// Adresse fest und wird nur noch angezeigt.
+    case serverHinzufuegen(URL?)
 
     var id: String {
         switch self {
@@ -94,11 +162,35 @@ enum Seitenziel: Hashable, Identifiable {
         case .merkliste:        "merkliste"
         case .seerr:            "seerr"
         case let .seerrTitel(t): "seerr-\(t.art)-\(t.id)"
+        case let .person(p, _): "person-\(p.id)"
+        case let .gattung(name): "gattung-\(name)"
         case .profil:           "profil"
         case .einstellungen:    "einstellungen"
         case .wiedergabe:       "wiedergabe"
+        case .darstellung:      "darstellung"
+        case .genrewahl:        "genrewahl"
         case .quickConnect:     "quickconnect"
         case .kontoHinzufuegen: "kontohinzufuegen"
+        case let .serverHinzufuegen(url): "serverneu-\(url?.absoluteString ?? "")"
+        }
+    }
+
+    /// **Gehoert die Seite zum Konto statt zum Bereich?**
+    ///
+    /// Das Profil wird aus der Leiste geoeffnet und liegt auf dem Stapel des
+    /// Bereichs, der gerade offen ist — gehoert aber zu keinem. Dasselbe gilt
+    /// fuer alles, was von dort aus aufgeht. Solange so eine Seite liegt,
+    /// traegt unten das Konto die Auswahl, und ein Klick auf einen Bereich
+    /// nimmt sie wieder weg.
+    var imKontozweig: Bool {
+        switch self {
+        case .profil, .einstellungen, .wiedergabe, .seerr, .darstellung,
+             .genrewahl, .quickConnect, .kontoHinzufuegen, .serverHinzufuegen: true
+        // **Die Personenseite gehoert zum Bereich, nicht zum Konto.** Man
+        // kommt aus einem Titel dorthin und will von dort weiter in den
+        // naechsten — sie liegt im selben Zweig wie die Seite, die sie
+        // geoeffnet hat. Dasselbe gilt fuer ein Genre.
+        case .titel, .bibliothek, .merkliste, .seerrTitel, .person, .gattung: false
         }
     }
 

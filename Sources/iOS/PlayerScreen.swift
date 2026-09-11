@@ -111,6 +111,7 @@ struct PlayerScreen: View {
     /// Die Stelle, an der VLC abgegeben hat.
     @State private var airplayAb: Double = 0
     @State private var sprungAnzeige: (richtung: Int, sekunden: Int)?
+
     /// Zaehlen die Ausloesungen je Richtung. Der Knopf dreht sich dadurch
     /// bei jedem Druck ein Stueck weiter, statt nur einmal.
     @State private var taktZurueck = 0
@@ -174,13 +175,42 @@ struct PlayerScreen: View {
     /// Bewusst schwarz: ein Szenenbild darunter war unruhig, weil es kurz
     /// aufblitzt und sofort wieder weg ist.
     private var startschleier: some View {
-        ZStack {
-            Color.black
-            Lader()
+        ZStack(alignment: .top) {
+            ZStack {
+                Color.black
+                Lader()
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
+            // **Schließen geht auch, bevor das Bild da ist.** Die Steuerung
+            // erscheint erst mit dem ersten Bild; bis dahin lag hier nur der
+            // Schleier, und wer es sich anders überlegte, musste warten, bis
+            // der Strom stand. Von einem Tester gemeldet.
+            //
+            // Derselbe Knopf an derselben Stelle wie im Kopf der Steuerung —
+            // gleicher Rand, gleicher Abstand oben, waagerecht im sicheren
+            // Bereich. Sobald sie erscheint, liegt ihrer genau darüber.
+            // **Erst, wenn die Lage steht.** Die Drehung ins Querformat läuft
+            // beim Öffnen noch; davor lag der Knopf oben links im
+            // Hochformat — bei der Uhr — und sprang dann an seinen Platz.
+            // Jetzt blendet er dort ein, wo er bleibt.
+            if !drehungErwartet || drehungFertig {
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        knopf("chevron.down", beschriftung: "Player schließen") { dismiss() }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 18 + (imFenster ? Fensterknoepfe.hoehe : 0))
+                    Spacer(minLength: 0)
+                }
+                .ignoresSafeArea(edges: .vertical)
+                .transition(.opacity)
+            }
         }
-        .ignoresSafeArea()
+        .animation(.easeOut(duration: 0.2), value: drehungFertig)
         .transition(.opacity)
-        .allowsHitTesting(false)
     }
 
     /// Was im großen Bild steht, während nebenan im kleinen Fenster läuft.

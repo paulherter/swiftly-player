@@ -56,7 +56,9 @@ public struct Session: Codable, Sendable, Equatable {
 
 public actor JellyfinClient {
 
-    public let baseURL: URL
+    /// Unveränderlich nach dem Anlegen, also ohne Umweg über den Actor lesbar —
+    /// `AppModel` erkennt daran, ob ein Wechsel auf einen anderen Server geht.
+    public nonisolated let baseURL: URL
     private let deviceID: String
     private let deviceName: String
     private let clientVersion: String
@@ -310,7 +312,9 @@ public actor JellyfinClient {
         /// Fortschritt (`UserData.Played`); was *nicht* zurueckkommt, gibt
         /// es auf dem Server nicht mehr. Beides braucht der Abgleich der
         /// Downloads — H6 und H9 haengen daran.
-        ids: [String] = []
+        ids: [String] = [],
+        personIDs: [String] = [],
+        gattungen: [String] = []
     ) async throws -> ItemsResponse {
         let s = try requireSession()
         var query: [URLQueryItem] = [
@@ -338,6 +342,15 @@ public actor JellyfinClient {
         }
         if !ids.isEmpty {
             query.append(.init(name: "Ids", value: ids.joined(separator: ",")))
+        }
+        if !personIDs.isEmpty {
+            query.append(.init(name: "PersonIds", value: personIDs.joined(separator: ",")))
+        }
+        // **Mit senkrechtem Strich, nicht mit Komma.** Genres dürfen selbst
+        // ein Komma enthalten („Action, Adventure" gibt es), deshalb trennt
+        // Jellyfin diese Liste anders als alle übrigen.
+        if !gattungen.isEmpty {
+            query.append(.init(name: "Genres", value: gattungen.joined(separator: "|")))
         }
         if let istGesehen {
             query.append(.init(name: "IsPlayed", value: istGesehen ? "true" : "false"))
@@ -410,6 +423,22 @@ public actor JellyfinClient {
             .init(name: "userId", value: s.userID),
         ])
         return try await send(req, as: Item.self)
+    }
+
+    /// **Die Genres des Servers**, über Filme und Serien, nach Namen.
+    ///
+    /// Nur Genres, zu denen es wirklich Titel gibt — der Server zählt beim
+    /// Einlesen jede Kennung aus den Metadaten mit, auch solche, die an keinem
+    /// Film mehr hängen.
+    public func gattungen() async throws -> [String] {
+        let s = try requireSession()
+        let req = try request("Genres", query: [
+            .init(name: "userId", value: s.userID),
+            .init(name: "IncludeItemTypes", value: "Movie,Series"),
+            .init(name: "Recursive", value: "true"),
+            .init(name: "SortBy", value: "SortName"),
+        ])
+        return try await send(req, as: ItemsResponse.self).items.map(\.name)
     }
 
     /// Ähnliche Titel.

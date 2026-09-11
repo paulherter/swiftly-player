@@ -249,7 +249,7 @@ struct SerienView: View {
         .overlay(alignment: .top) {
             Detailkopf(titel: serie.name, stand: kopfstand, zurueck: zurueck)
         }
-        .task { await farbe.laden(model.backdropURL(for: serie)) }
+        .task { await farbe.laden(model.kopfbildURL(for: serie)) }
         .task { await staffelnLaden() }
         .task(id: gewaehlt?.id) {
             guard staffelnDa else { return }
@@ -384,7 +384,8 @@ struct SerienView: View {
             }
 
         case .besetzung:
-            Besetzungsreihe(model: model, leute: serie.darsteller)
+            Besetzungsreihe(model: model, leute: serie.darsteller,
+                            herkunft: serie.name)
 
         case .aehnliches:
             if aehnliche.isEmpty {
@@ -687,7 +688,8 @@ struct Folgenzeile: View {
                             .foregroundStyle(Stil.schriftSehrLeise)
                     }
                 }
-                if let text = folge.overview, !text.isEmpty {
+                // Bereinigt — bei Folgen steht im Rohtext oft `<br>`.
+                if let text = folge.beschreibung, !text.isEmpty {
                     Text(verbatim: text)
                         .font(Stil.zweitzeile)
                         .foregroundStyle(Stil.schriftLeise)

@@ -30,19 +30,33 @@ struct WiedergabeEinstellungenView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 14)
 
-                qualitaet
+                // **Zwei Spalten, linksbuendig — die Anordnung des iPads.**
+                // Links, was den Ton angeht: Qualitaet und Sprache. Rechts
+                // allein das Verhalten. Zwischenraum ist doppelter
+                // Seitenrand, damit die Karten zueinander stehen wie zum
+                // Fensterrand.
+                HStack(alignment: .top, spacing: Stil.randAbstand * 2) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        qualitaet
+                        sprache
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    verhalten
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
+                // **Steht unter beiden Spalten, nicht zwischen zwei Karten.**
+                // Die Fussnote gehoert zur Bitrate, aber in einer Spalte
+                // zwischen Qualitaet und Sprache haette sie die linke Karte
+                // auseinandergerissen und die rechte um ihre Hoehe versetzt.
                 Text("Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da.")
                     .font(.system(size: 12))
                     .foregroundStyle(Stil.schrift.opacity(0.4))
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 10)
-
-                sprache
-                verhalten
+                    .padding(.top, 14)
             }
-            .frame(maxWidth: 560, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: Stil.einstellungBreite, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Stil.randAbstand)
             .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)

@@ -142,6 +142,12 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     /// ist. Bei Serien häufig gepflegt, bei Folgen selten.
     public let parentThumbImageTag: String?
     public let parentThumbItemId: String?
+    /// Bei einer Person der Geburtstag, sonst die Erstausstrahlung.
+    public let premiereDate: String?
+    /// Bei einer Person der Geburtsort.
+    public let productionLocations: [String]?
+    /// `Tmdb`, `Imdb` … — über die TMDB-Kennung findet Seerr eine Person.
+    public let providerIds: [String: String]?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -175,6 +181,9 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         case parentBackdropItemId = "ParentBackdropItemId"
         case parentThumbImageTag = "ParentThumbImageTag"
         case parentThumbItemId = "ParentThumbItemId"
+        case premiereDate = "PremiereDate"
+        case productionLocations = "ProductionLocations"
+        case providerIds = "ProviderIds"
     }
 
     /// Namen der Regie, für die Zeile unter der Beschreibung.
@@ -301,7 +310,10 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
                 parentBackdropImageTags: [String]? = nil,
                 parentBackdropItemId: String? = nil,
                 parentThumbImageTag: String? = nil,
-                parentThumbItemId: String? = nil) {
+                parentThumbItemId: String? = nil,
+                premiereDate: String? = nil,
+                productionLocations: [String]? = nil,
+                providerIds: [String: String]? = nil) {
         self.id = id; self.name = name; self.type = type
         self.collectionType = collectionType; self.productionYear = productionYear
         self.overview = overview; self.runTimeTicks = runTimeTicks
@@ -320,6 +332,9 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         self.parentBackdropItemId = parentBackdropItemId
         self.parentThumbImageTag = parentThumbImageTag
         self.parentThumbItemId = parentThumbItemId
+        self.premiereDate = premiereDate
+        self.productionLocations = productionLocations
+        self.providerIds = providerIds
     }
 
 }

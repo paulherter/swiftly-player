@@ -17,6 +17,51 @@ struct SucheView: View {
     @State private var gesucht = false
     @FocusState private var imFeld: Bool
 
+    /// **Was zuletzt gesucht wurde.** Auf dem Gerät, nicht am Server: die
+    /// Liste ist eine Bequemlichkeit, kein Teil des Kontos.
+    ///
+    /// Gemerkt wird beim Abschicken, nicht beim Tippen — wer „Ga", „Gam",
+    /// „Game" eingibt, hat einmal gesucht und nicht dreimal. Die Regel steht
+    /// in `Suchverlauf`; der Fernseher und das iPhone zeigen dieselbe Liste.
+    @AppStorage(Suchverlauf.schluessel) private var letzteRoh = ""
+
+    private var letzte: [String] { Suchverlauf.liste(letzteRoh) }
+
+    /// „Zuletzt gesucht" — dieselbe Liste wie auf iPhone und Fernseher, hier
+    /// als Zeilen in einer Karte.
+    private var zuletzt: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Zuletzt gesucht")
+                    .textCase(.uppercase)
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(1.2)
+                    .foregroundStyle(Stil.schrift.opacity(0.4))
+                Spacer(minLength: 8)
+                Button { letzteRoh = "" } label: {
+                    Text("Löschen")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Stil.schriftSehrLeise)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 26)
+            .padding(.bottom, 8)
+
+            Karte {
+                ForEach(Array(letzte.enumerated()), id: \.offset) { stelle, wort in
+                    if stelle > 0 { Trennstrich().padding(.leading, 48) }
+                    Button { begriff = wort } label: {
+                        Wertezeile(symbol: "clock.arrow.circlepath",
+                                   titel: Text(verbatim: wort), schwebbar: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(maxWidth: Stil.lesebreite, alignment: .leading)
+    }
+
     private var spalten: [GridItem] {
         [GridItem(.adaptive(minimum: Stil.kachelBreite, maximum: Stil.kachelBreite),
                   spacing: Stil.kachelAbstand, alignment: .topLeading)]
@@ -31,10 +76,15 @@ struct SucheView: View {
                     .foregroundStyle(Stil.schrift)
 
                 Eingabezeile(text: $begriff, symbol: "magnifyingglass",
-                             platzhalter: String(localized: "Titel, Serie, Person"))
+                             platzhalter: String(localized: "Titel, Serie, Person"),
+                             abschluss: { letzteRoh = Suchverlauf.merken(begriff, in: letzteRoh) })
                     .frame(maxWidth: 420)
                     .padding(.top, 14)
                     .focused($imFeld)
+
+                // Ohne Wort im Feld: woran man zuletzt war. Ein Klick sucht
+                // es noch einmal.
+                if begriff.isEmpty, !letzte.isEmpty { zuletzt }
 
                 if !treffer.isEmpty {
                     LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {

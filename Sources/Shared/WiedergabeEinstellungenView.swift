@@ -33,9 +33,13 @@ struct WiedergabeEinstellungenView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Stil.grund.ignoresSafeArea()
-            ScrollView { inhalt }
-                .scrollIndicators(.hidden)
-            Seitenpfeil { zurueck() }
+            VStack(spacing: 0) {
+                // Titel neben dem Pfeil, nicht darunter — siehe
+                // `EinstellungenView`.
+                Unterseitenkopf(titel: String(localized: "Wiedergabe")) { zurueck() }
+                ScrollView { inhalt }
+                    .scrollIndicators(.hidden)
+            }
             blatt
         }
         #if os(iOS)
@@ -46,13 +50,6 @@ struct WiedergabeEinstellungenView: View {
 
     private var inhalt: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Wiedergabe")
-                .font(Stil.titel)
-                .tracking(-0.6)
-                .foregroundStyle(Stil.schrift)
-                .padding(.horizontal, Stil.randAbstand)
-                .padding(.top, 52)
-
             Text("Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen.")
                 .font(Stil.koerper)
                 .lineSpacing(3)
@@ -61,7 +58,11 @@ struct WiedergabeEinstellungenView: View {
                 .padding(.top, 8)
 
             if breit {
-                HStack(alignment: .top, spacing: 56) {
+                // **Null, seit die Gruppen Karten sind.** Jede Karte traegt links
+                // und rechts schon `Stil.rand` — bei 56 dazwischen standen
+                // 112 Punkt zwischen zwei Karten, und dafuer sind sie zu
+                // schmal. Den Abstand tragen jetzt die Karten selbst.
+                HStack(alignment: .top, spacing: 0) {
                     VStack(alignment: .leading, spacing: 0) {
                         qualitaet
                         sprache
@@ -93,7 +94,7 @@ struct WiedergabeEinstellungenView: View {
                       unter: Text("Nie umwandeln lassen — der Grund für diese App"),
                       an: Binding(get: { model.immerDirectPlay },
                                   set: { model.immerDirectPlay = $0 }))
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "chart.bar", titel: Text("Höchste Bitrate"),
                       wert: Bitrate.text(model.bitratenGrenze),
                       gedimmt: model.immerDirectPlay, aktion: waehlen)
@@ -105,11 +106,11 @@ struct WiedergabeEinstellungenView: View {
             Wertzeile(symbol: "speaker.wave.2", titel: Text("Ton"),
                       wert: model.tonSprache.isEmpty ? String(localized: "Wie die Datei") : model.tonSprache,
                       aktion: { oeffne(.ton) })
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "captions.bubble", titel: Text("Untertitel"),
                       wert: model.untertitelSprache.isEmpty ? String(localized: "Aus") : model.untertitelSprache,
                       aktion: { oeffne(.untertitel) })
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wahlzeile(symbol: "text.alignleft", titel: Text("Untertitel automatisch"),
                       unter: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
                       an: Binding(get: { model.untertitelAutomatisch },
@@ -124,7 +125,7 @@ struct WiedergabeEinstellungenView: View {
             Wahlzeile(symbol: "forward.end.fill", titel: Text("Nächste Folge automatisch"),
                       an: Binding(get: { model.naechsteAutomatisch },
                                   set: { model.naechsteAutomatisch = $0 }))
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             // **Der Schalter fuer das Technikschild.**
             //
             // Er steht hier bei „Verhalten" und nicht bei den Bildregeln: er
@@ -133,15 +134,15 @@ struct WiedergabeEinstellungenView: View {
             Wahlzeile(symbol: "waveform.badge.magnifyingglass",
                       titel: Text("Technikschild im Player"),
                       an: $technikschild)
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                       wert: "\(model.zurueckSekunden) s",
                       aktion: { oeffne(.zurueck) })
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "goforward", titel: Text("Vorspulen"),
                       wert: "\(model.vorSekunden) s",
                       aktion: { oeffne(.vor) })
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             // **Steht bei „Verhalten", nicht bei der Qualitaet.** Sie aendert
             // nichts am Bild — nur, wie viel Vorrat der Player haelt, bevor
             // eine wackelige Leitung durchschlaegt.

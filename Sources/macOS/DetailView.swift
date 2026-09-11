@@ -128,7 +128,8 @@ struct FilmView: View {
                 VStack(alignment: .leading, spacing: 26) {
                     // Die Beschreibung steht im Kopf, wie auf dem Apple TV —
                     // hier stünde sie ein zweites Mal.
-                    Besetzungsreihe(model: model, leute: film.darsteller)
+                    Besetzungsreihe(model: model, leute: film.darsteller,
+                                    herkunft: film.name)
                     // Extras und Ähnliches fehlten auf meiner Filmseite ganz.
                     // Reihenfolge wie auf iOS (A9).
                     Titelreihe(titel: "Extras", eintraege: extras, model: model)
@@ -178,7 +179,7 @@ struct FilmView: View {
         .overlay(alignment: .top) {
             Detailkopf(titel: film.name, stand: kopfstand, zurueck: zurueck)
         }
-        .task { await farbe.laden(model.backdropURL(for: film)) }
+        .task { await farbe.laden(model.kopfbildURL(for: film)) }
         .task {
             async let a = model.extras(film)
             async let b = model.aehnliche(film)
@@ -301,8 +302,12 @@ struct Heldenkopf: View {
             // **Rechts, nicht über die volle Breite** — wie auf dem Apple TV.
             // Das Bild ragt nach unten über die Kopfzone hinaus; seine eigene
             // Maske beendet es, deshalb wird nicht beschnitten.
+            // **Zuletzt irgendein Bild, nie gar keins.** `kopfbildURL`
+            // sucht bei einer Serie ohne Hintergrund das Standbild der
+            // nächsten Folge und bei allem anderen das Plakat — quer
+            // beschnitten ist besser als ein leerer Kopf.
             Kulisse(url: model.querbildURL(for: titel, breite: 1600)
-                         ?? model.backdropURL(for: titel),
+                         ?? model.kopfbildURL(for: titel),
                     hoehe: Stil.heldHoehe * 1.62)
                 // **An der Unterkante festhalten, nicht an der oberen.**
                 //
@@ -396,7 +401,10 @@ struct Heldenkopf: View {
                 .clipped()
                 .offset(y: 54)
 
-            Text(verbatim: titel.overview ?? "")
+            // **Der bereinigte Text, nicht der rohe.** Jellyfin gibt
+            // Beschreibungen aus, wie sie beim Anbieter standen — mit
+            // `<br>`, `<p>` und `&amp;`. Im Kopf stand das wörtlich da.
+            Text(verbatim: titel.beschreibung ?? "")
                 .font(Stil.koerper)
                 .lineSpacing(3)
                 .foregroundStyle(Stil.schrift.opacity(0.62))
@@ -634,22 +642,17 @@ struct Heldenkopf: View {
 
 // MARK: - Bausteine der Detailseiten
 
-struct Beschreibung: View {
-    let text: String?
-    var body: some View {
-        if let text, !text.isEmpty {
-            Text(verbatim: text)
-                .font(Stil.koerper)
-                .lineSpacing(3)
-                .foregroundStyle(Stil.schrift.opacity(0.86))
-                .frame(maxWidth: 900, alignment: .leading)
-        }
-    }
-}
+// **Hier stand `Beschreibung`** — ein Textblock, den niemand rief. Die
+// Beschreibung steht seit dem Umbau im Kopf, wie auf dem Apple TV; der
+// Baustein blieb stehen und wurde bei jeder Aenderung mitgelesen.
 
 struct Besetzungsreihe: View {
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
     let model: AppModel
     let leute: [Person]
+    /// Woher man kommt — steht auf der Personenseite über der Rolle.
+    var herkunft: String? = nil
 
     var body: some View {
         if !leute.isEmpty {
@@ -659,8 +662,15 @@ struct Besetzungsreihe: View {
                     .foregroundStyle(Stil.schrift)
                 Blätterreihe(rand: 0, breiteJeStueck: 84 + 18, bildHoehe: 84) {
                     ForEach(leute, id: \.id) { person in
-                        Kopfbild(name: person.name, rolle: person.role,
-                                 bild: model.personBild(person))
+                        // **Ein Kopf ist jetzt ein Weg.** Ein Tester tippte
+                        // die Besetzung an und landete nirgends.
+                        Button {
+                            navigator.oeffne(.person(person, herkunft: herkunft), in: bereich)
+                        } label: {
+                            Kopfbild(name: person.name, rolle: person.role,
+                                     bild: model.personBild(person))
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }

@@ -167,11 +167,15 @@ func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
 struct Besetzungsstreifen: View {
     let model: AppModel
     let leute: [Person]
+    /// Woher man kommt — steht auf der Personenseite über der Rolle.
+    var herkunft: String? = nil
 
     var body: some View {
         streifen {
             ForEach(leute) { person in
-                Button {} label: {
+                // **Hier stand ein Knopf mit leerer Aktion.** Er sah aus wie
+                // ein Weg und war keiner — gebaut, aber nicht angeschlossen.
+                NavigationLink(value: PersonRoute(person: person, herkunft: herkunft)) {
                     Besetzungskachel(bild: model.personBild(person, maxHeight: 440),
                                      name: person.name, rolle: person.role)
                 }

@@ -260,6 +260,13 @@ static var einblenden: Animation {
     /// dem iPad — am Simulator nachgemessen: Text bei 167, Linie bei 184.
     static func trennEinzug(breit: Bool) -> CGFloat { rand(breit: breit) + 34 }
 
+    /// Derselbe Einzug **innerhalb einer Karte**.
+    ///
+    /// Die Karte ist schon um `rand` eingerueckt; wer dort den vollen Einzug
+    /// nimmt, schiebt die Haarlinie um genau diesen Rand zu weit nach rechts.
+    /// `Trennlinie` bringt ihre eigenen 18 mit — deshalb 34 und nicht 52.
+    static func trennEinzugKarte(breit: Bool) -> CGFloat { 34 }
+
     /// Wie tief unter dem sicheren Bereich eine Seitenkopfzeile beginnt.
     ///
     /// Derselbe Wert, mit dem die Wortmarke in der Seitenleiste sitzt — sonst
@@ -809,6 +816,30 @@ struct Schalter: View {
 /// eine Seite nebeneinander zu sehen. Jetzt eine: die weitere Sperrung, weil
 /// sich Versalien bei 11 Punkt sonst zusammendrängen, und die **Marke**
 /// statt der eigenen Zahl.
+/// **Eine Gruppe als eigene Flaeche.**
+///
+/// Die Einstellungsseiten trugen ihre Zeilen randbuendig zwischen zwei
+/// Haarlinien. Das ist die aeltere Bauart der App und stand neben Start und
+/// Detail sichtbar aelter da; entschieden am 11.09.2026 fuer die Karte, weil
+/// sie die Gruppe ohne Leerraum abgrenzt und weil sie die Form ist, die man
+/// vom Geraet kennt.
+///
+/// **Sie ist die eine Ausnahme von „hoechstens eine gefuellte Flaeche je
+/// Seite".** Eine Einstellungsseite hat keine Hauptsache, der eine gefuellte
+/// Knopf fehlt hier also nicht — es gibt ihn gar nicht. Die Regel schuetzt
+/// die Aussage des Hauptknopfs, und wo keiner steht, schuetzt sie nichts.
+struct Karte<Inhalt: View>: View {
+    @Environment(\.breit) private var breit
+    @ViewBuilder var inhalt: () -> Inhalt
+
+    var body: some View {
+        VStack(spacing: 0) { inhalt() }
+            .background(Stil.flaeche,
+                        in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
+            .padding(.horizontal, Stil.rand(breit: breit))
+    }
+}
+
 struct Gruppentitel: View {
     let text: LocalizedStringKey
     var body: some View {
@@ -852,9 +883,8 @@ struct Einstellungsgruppe<Inhalt: View>: View {
             Gruppentitel(text: titel)
                 .padding(.horizontal, Stil.rand(breit: breit) - Stil.randAbstand)
                 .padding(.top, 26)
-            VStack(spacing: 0) { inhalt() }
-                .background(alignment: .top) { Trennlinie() }
-                .background(alignment: .bottom) { Trennlinie() }
+                .padding(.bottom, 2)
+            Karte { inhalt() }
         }
     }
 }
@@ -908,7 +938,17 @@ struct Unterseitenkopf<Rechts: View>: View {
             Spacer(minLength: 0)
             rechts()
         }
-        .padding(.horizontal, 12)
+        // **Acht, nicht zwölf, und ohne `Unschaerfekopf` darum.** Dieselbe
+        // Zahl wie in `Seitenpfeil`: mit 8 sitzt das Zeichen 30 Punkt von
+        // der Kante, genau dort, wo es auf jeder anderen Unterseite steht.
+        //
+        // Wer diesen Kopf in `Unschaerfekopf` haengt, bekommt dessen 18
+        // Punkt Rand obendrauf — 48 statt 30, und beim Wechseln zwischen
+        // zwei Seiten springt der Pfeil sichtbar. Diese Huelle braucht er
+        // nicht: er steht ueber der Scrollflaeche, nicht darin, es laeuft
+        // also nichts unter ihm durch.
+        .padding(.leading, 8)
+        .padding(.trailing, 12)
         .padding(.bottom, 18)
     }
 }
@@ -1555,6 +1595,19 @@ private struct DownloadleisteSchluessel: EnvironmentKey {
     static let defaultValue = Downloadleiste()
 }
 
+/// **Wie oft der schon offene Reiter noch einmal getippt wurde.**
+///
+/// Ein Zaehler und kein Schalter: die Seite soll jedes Mal reagieren, nicht
+/// nur beim ersten Mal, und ein Schalter muesste jemand zuruecksetzen.
+///
+/// Der Weg fuehrt ueber ``bereichswahl``: die Leiste schreibt dorthin auch
+/// dann, wenn sich nichts aendert, und ``HauptView`` erkennt daran den
+/// zweiten Tipp. Jede andere App macht es so — der erste Tipp bringt einen
+/// hin, der zweite tut etwas.
+private struct ReiterNochmalSchluessel: EnvironmentKey {
+    static let defaultValue = 0
+}
+
 extension EnvironmentValues {
     var bereichswahl: Binding<Bereich>? {
         get { self[Bereichswahlschluessel.self] }
@@ -1569,6 +1622,11 @@ extension EnvironmentValues {
     var downloadleiste: Downloadleiste {
         get { self[DownloadleisteSchluessel.self] }
         set { self[DownloadleisteSchluessel.self] = newValue }
+    }
+
+    var reiterNochmal: Int {
+        get { self[ReiterNochmalSchluessel.self] }
+        set { self[ReiterNochmalSchluessel.self] = newValue }
     }
 }
 
@@ -1701,6 +1759,9 @@ private struct Bereichsleiste: ViewModifier {
 /// mehr als ein senkrechter.
 struct Seitenleiste: View {
     @Environment(\.fensterknoepfe) private var fensterknoepfe
+    /// Optional, wie in `Kopfziele`: ohne das Modell in der Umgebung gibt es
+    /// schlicht kein Angebot.
+    @Environment(Uebernahmemodell.self) private var uebernahme: Uebernahmemodell?
     @Environment(\.downloadleiste) private var downloads
     @Binding var gewaehlt: Bereich
     /// Die Profilseite ist offen — dann trägt keiner der vier Bereiche die
@@ -1734,12 +1795,37 @@ struct Seitenleiste: View {
             // Profil — was auch stimmiger ist, denn das Profil ist kein Ort
             // in der App, sondern wer man ist.
 
+            // **„Hier weiterschauen" über dem Profil.** Auf dem iPhone steht
+            // es in `Kopfziele`, links vom Profilbild. Die gibt es breit nicht
+            // — Profil und Merkliste wohnen dort in dieser Leiste —, und als
+            // das Angebot am 10.09.2026 in die Kopfziele zog, fiel es auf dem
+            // iPad deshalb ganz weg. Hier steht es wieder bei dem, zu dem es
+            // gehört: dieselbe Form wie auf dem iPhone, dieselbe Stelle wie
+            // auf dem Mac, über dem Konto.
+            if let uebernahme, let angebot = uebernahme.angebot {
+                Button { uebernahme.angetippt = true } label: {
+                    // `kuehl`, nicht `akzent`: dieses Zeichen sagt „woanders
+                    // läuft etwas", nicht „hier".
+                    Image(systemName: angebot.geraetezeichen)
+                        .font(.system(size: 20))
+                        .foregroundStyle(Stil.kuehl)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Hier weiterschauen"))
+                .accessibilityValue(Text(angebot.titelzeile))
+                .padding(.bottom, 12)
+                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
+
             Button(action: aufsProfil) {
                 Profilzeichen(name: name, bild: bild, hervorgehoben: imProfil)
             }
             .buttonStyle(.plain)
             .padding(.bottom, 24)
         }
+        .animation(.easeInOut(duration: 0.22), value: uebernahme?.angebot?.id)
         .frame(width: Stil.seitenleisteBreite)
         // Wie unten: der Grund muss bis an beide Kanten laufen, nicht nur bis
         // zum sicheren Bereich.
@@ -2034,6 +2120,8 @@ struct Suchfeld: View {
     /// Von aussen gesteuert, damit ein Abbrechen-Knopf die Tastatur schliessen
     /// kann.
     @FocusState.Binding var amTippen: Bool
+    /// Was die Suchtaste der Tastatur ausloest.
+    var abschicken: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -2049,6 +2137,7 @@ struct Suchfeld: View {
                 .autocorrectionDisabled()
                 .submitLabel(.search)
                 .focused($amTippen)
+                .onSubmit { abschicken?() }
 
             if !text.isEmpty {
                 Button { text = "" } label: {
@@ -2103,7 +2192,12 @@ struct Klapptext: View {
                     // richtete sich danach, und beim Aufklappen sprang die
                     // ganze Seite um ein, zwei Punkte in der Breite.
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // **`minWidth: 0` — nie breiter als der Platz.** Ohne
+                    // Untergrenze nimmt ein Rahmen die Breite seines Inhalts
+                    // an, wenn der breiter ist; ein langer Absatz, der sich
+                    // nicht umbrechen ließ, zog so beim Aufklappen die ganze
+                    // Seite mit.
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 12, weight: .semibold))
@@ -2496,7 +2590,9 @@ struct Profilzeile<Ziel: Hashable>: View {
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.vertical, 15)
 
-            if !letzte { Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit)) }
+            if !letzte {
+                Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            }
         }
         .contentShape(Rectangle())
     }

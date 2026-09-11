@@ -166,17 +166,19 @@ struct KontenbundAblageTests {
         #expect(bund.aktives.userID == "2")
     }
 
-    /// Ein Bund gehört zu genau einem Server. Wer den Server wechselt, fängt
-    /// neu an — und das ist kein Kontowechsel, sondern ein Neuanfang.
-    @Test("Ein anderer Server fängt neu an, statt zu wechseln")
+    /// Seit dem 11.09.2026 fängt ein anderer Server nicht mehr neu an — er
+    /// kommt dazu, wie ein weiteres Konto.
+    @Test("Ein anderer Server kommt dazu, statt neu anzufangen")
     func andererServer() {
         let erst = Kontenbund(konto("paul", "1"))
         let fremd = Session(accessToken: "t", userID: "9", userName: "x",
                             serverURL: URL(string: "https://anders.example")!)
         let (bund, wechsel) = Kontenbund.aufnehmen(fremd, in: erst)
-        #expect(!wechsel)
-        #expect(bund.konten.count == 1)
+        #expect(wechsel)
+        #expect(bund.konten.count == 2)
         #expect(bund.aktives.userID == "9")
+        #expect(bund.server.count == 2)
+        #expect(bund.serverURL == URL(string: "https://anders.example")!)
     }
 
     @Test("Dieselbe Anmeldung noch einmal gilt als Wechsel, nicht als Neuanfang")
@@ -280,5 +282,57 @@ struct KontenbundAblageTests {
          "benutzerID":"1","benutzername":"paul"}
         """.utf8)
         #expect(Kontenbund.ausAblage(bund: nil, einzelne: alt) == nil)
+    }
+}
+
+@Suite("Mehrere Server")
+struct KontenbundServerTests {
+
+    private let heim = URL(string: "https://tv.paulherter.de")!
+    private let zweit = URL(string: "https://tv2.paulherter.de")!
+    private func konto(_ name: String, _ kennung: String, _ server: URL) -> Session {
+        Session(accessToken: "t-\(kennung)", userID: kennung, userName: name, serverURL: server)
+    }
+
+    @Test("Dieselbe Benutzerkennung auf zwei Servern sind zwei Konten")
+    func gleicheKennung() {
+        var bund = Kontenbund(konto("paul", "1", heim))
+        bund.aufnehmen(konto("paul", "1", zweit))
+        #expect(bund.konten.count == 2)
+        #expect(bund.aktives.serverURL == zweit)
+    }
+
+    @Test("Wechseln über den Schlüssel trifft den richtigen Server")
+    func wechselnServer() {
+        var bund = Kontenbund(konto("paul", "1", heim))
+        bund.aufnehmen(konto("paul", "1", zweit))
+        bund.wechseln(zu: konto("paul", "1", heim).kontoschluessel)
+        #expect(bund.aktives.serverURL == heim)
+    }
+
+    @Test("Die Konten eines Servers, in ihrer Reihenfolge")
+    func kontenJeServer() {
+        var bund = Kontenbund(konto("paul", "1", heim))
+        bund.aufnehmen(konto("gast", "5", zweit))
+        bund.aufnehmen(konto("eltern", "2", heim))
+        #expect(bund.server == [heim, zweit])
+        #expect(bund.konten(auf: heim).map(\.userName) == ["paul", "eltern"])
+        #expect(bund.konten(auf: zweit).map(\.userName) == ["gast"])
+    }
+
+    @Test("Abmelden auf einem Server lässt den anderen stehen")
+    func abmeldenEinServer() {
+        var bund = Kontenbund(konto("paul", "1", heim))
+        bund.aufnehmen(konto("gast", "5", zweit))
+        let rest = bund.entfernt(konto("gast", "5", zweit).kontoschluessel)
+        #expect(rest?.konten.count == 1)
+        #expect(rest?.aktives.serverURL == heim)
+    }
+
+    @Test("Ein gemerkter Bund mit bloßer Benutzerkennung liest sich weiter")
+    func alteKennung() throws {
+        let json = #"{"konten":[{"accessToken":"t","userID":"1","userName":"paul","serverURL":"https://tv.paulherter.de"},{"accessToken":"u","userID":"2","userName":"eltern","serverURL":"https://tv.paulherter.de"}],"aktiveKennung":"2"}"#
+        let bund = try JSONDecoder().decode(Kontenbund.self, from: Data(json.utf8))
+        #expect(bund.aktives.userName == "eltern")
     }
 }

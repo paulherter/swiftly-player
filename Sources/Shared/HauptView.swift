@@ -25,13 +25,22 @@ struct HauptView: View {
     /// erst beim letzten Reiter.
     @State private var pfade = Array(repeating: NavigationPath(),
                                      count: Bereich.allCases.count)
-    /// Der Profilzweig ist offen. Nur für die Seitenleiste: dort trägt dann
-    /// das Profilzeichen die Auswahl statt eines der vier Bereiche.
+    /// **Wo der Profilzweig beginnt** — in welchem Stapel, auf welcher Tiefe.
+    /// `nil` heisst: zu. Nur für die Seitenleiste: solange er offen ist,
+    /// trägt das Profilzeichen die Auswahl statt eines der Bereiche.
     ///
     /// Eigener Stand, weil sich ein `NavigationPath` nicht befragen lässt —
-    /// man kann ihm nicht ansehen, was obenauf liegt. Gesetzt beim Tippen,
-    /// zurückgenommen, sobald der Stapel wieder leer ist.
-    @State private var imProfil = false
+    /// man kann ihm nicht ansehen, was obenauf liegt. **Die Tiefe gehört
+    /// dazu.** Vorher stand hier nur ein Schalter, und damit liess sich der
+    /// Zweig nicht wieder abnehmen: ein Tipp auf „Start" bei offenem Profil
+    /// setzte den Bereich, der es schon war, und nichts geschah. Wer über
+    /// „Filme" auswich, fand das Profil beim Zurückkommen wieder obenauf.
+    @State private var profilzweig: Profilzweig?
+    private struct Profilzweig { let bereich: Bereich; let tiefe: Int }
+    private var imProfil: Bool { profilzweig != nil }
+    /// **Der zweite Tipp auf den schon offenen Reiter.** Siehe
+    /// `reiterNochmal` in der Umgebung.
+    @State private var nochmal = 0
 
     /// **Laeuft auf einem anderen Geraet etwas?** Siehe ``Uebernahmemodell``.
     ///
@@ -58,10 +67,30 @@ struct HauptView: View {
         Task { uebernahmeWunsch = await uebernahme.wunsch(fuer: sitzung, model: model) }
     }
 
-    /// Liegt nichts auf dem Stapel dieses Bereichs? Nur noch dafür da, den
-    /// Profilzweig zu schliessen — die Bereichsleiste hängt seit dem Umzug in
-    /// die Wurzelansichten nicht mehr daran.
-    private var anDerWurzel: Bool { pfade[bereich.rawValue].isEmpty }
+    /// Das Profilzeichen in der Seitenleiste.
+    ///
+    /// **Ist der Zweig schon offen, geht es zurück aufs Profil** statt ein
+    /// zweites Mal hinauf — vorher lag nach zwei Tipps Profil auf Profil.
+    private func zumProfil() {
+        let i = bereich.rawValue
+        if let zweig = profilzweig, zweig.bereich == bereich {
+            let darueber = pfade[i].count - (zweig.tiefe + 1)
+            if darueber > 0 { pfade[i].removeLast(darueber) }
+            return
+        }
+        profilzweigSchliessen()
+        profilzweig = Profilzweig(bereich: bereich, tiefe: pfade[i].count)
+        pfade[i].append(ProfilRoute())
+    }
+
+    /// Nimmt den Profilzweig ab; was darunter lag, bleibt liegen.
+    private func profilzweigSchliessen() {
+        guard let zweig = profilzweig else { return }
+        let i = zweig.bereich.rawValue
+        let darueber = pfade[i].count - zweig.tiefe
+        if darueber > 0 { pfade[i].removeLast(darueber) }
+        profilzweig = nil
+    }
 
 
     var body: some View {
@@ -76,12 +105,18 @@ struct HauptView: View {
             // beide.
             HStack(spacing: 0) {
                 if breit {
-                    Seitenleiste(gewaehlt: $bereich, imProfil: imProfil,
+                    // **Nicht `$bereich`.** Ein Tipp auf den schon offenen
+                    // Bereich schreibt denselben Wert — nur eine eigene
+                    // Bindung sieht ihn und kann das Profil schliessen.
+                    Seitenleiste(gewaehlt: Binding(
+                                     get: { bereich },
+                                     set: { neu in
+                                         if neu == bereich { profilzweigSchliessen() }
+                                         bereich = neu
+                                     }),
+                                 imProfil: imProfil,
                                  name: model.session?.userName ?? "?",
-                                 bild: model.benutzerbildURL()) {
-                        imProfil = true
-                        pfade[bereich.rawValue].append(ProfilRoute())
-                    }
+                                 bild: model.benutzerbildURL()) { zumProfil() }
                     // Die Leiste steht fest; nur der Inhalt daneben weicht der
                     // Tastatur.
                     .ignoresSafeArea(.keyboard)
@@ -113,7 +148,17 @@ struct HauptView: View {
                 // Wurzelansichten legen sich die Leiste selbst an — siehe
                 // `bereichsleiste()`. Hier steht nur, wohin ein Tippen darauf
                 // geht.
-                .environment(\.bereichswahl, $bereich)
+                // **Nicht `$bereich`, sondern eine eigene Bindung.** Die
+                // Leiste schreibt beim Tippen auch dann, wenn derselbe
+                // Bereich schon offen ist — daran, und nur daran, laesst
+                // sich der zweite Tipp erkennen. Mit `$bereich` faellt er
+                // durch, weil sich der Wert nicht aendert.
+                .environment(\.bereichswahl, Binding(
+                    get: { bereich },
+                    set: { neu in
+                        if neu == bereich { nochmal += 1 } else { bereich = neu }
+                    }))
+                .environment(\.reiterNochmal, nochmal)
                 // **Wer den Schalter umlegt, waehrend er auf der Seite
                 // steht, darf nicht dort stehenbleiben.** Der Reiter
                 // verschwindet, die Seite bliebe sonst ohne Weg zurueck.
@@ -176,11 +221,19 @@ struct HauptView: View {
         .onChange(of: bereich) { alt, neu in
             besucht.insert(neu)
             if alt != .suche { vorigerBereich = alt }
-            imProfil = false
+            // **Das Profil bleibt nicht im alten Bereich liegen**, sonst
+            // stand es beim Zurückkommen wieder obenauf. Der alte Stapel ist
+            // jetzt ausgeblendet; was dort zurückfährt, sieht niemand.
+            profilzweigSchliessen()
         }
-        // Zurück an der Wurzel heißt: der Profilzweig ist zu.
-        .onChange(of: anDerWurzel) { _, wurzel in
-            if wurzel { imProfil = false }
+        // **Zurück bis unter das Profil heisst: der Zweig ist zu.** Vorher
+        // hiess es „der Stapel ist leer" — lag unter dem Profil noch eine
+        // Detailseite, blieb das Zeichen hervorgehoben, obwohl das Profil
+        // längst weg war.
+        .onChange(of: pfade.map(\.count)) { _, zahlen in
+            if let zweig = profilzweig, zahlen[zweig.bereich.rawValue] <= zweig.tiefe {
+                profilzweig = nil
+            }
         }
         // **VERHALTEN G4: der Seitenstapel wird beim Kontowechsel geleert.**
         //
@@ -198,7 +251,7 @@ struct HauptView: View {
             for i in pfade.indices where !pfade[i].isEmpty {
                 pfade[i] = NavigationPath()
             }
-            imProfil = false
+            profilzweig = nil
         }
         .preferredColorScheme(.dark)
     }
@@ -243,9 +296,14 @@ extension View {
     /// sonst muss jeder Bereich sie einzeln kennen.
     func zielorte(model: AppModel) -> some View {
         self
-            .navigationDestination(for: LibraryRoute.self) { route in
-                ItemListView(model: model, library: route.item)
-            }
+            // **`LibraryRoute` hat hier kein Ziel mehr.**
+            //
+            // `ItemListView` hing daran und war toter Code: kein Aufrufer
+            // erzeugte die Route je, und die Seite benutzte obendrein Apples
+            // `ContentUnavailableView` statt unseres Leerzustands — sie waere
+            // also auch inhaltlich aus der Reihe gefallen, haette sie jemand
+            // geoeffnet. Der Typ selbst bleibt: Mac und Fernseher benutzen
+            // ihn, dort fuehrt er auf eine eigene Bibliotheksseite.
             .navigationDestination(for: Seerrtreffer.self) { treffer in
                 SeerrDetailView(model: model, treffer: treffer)
             }
@@ -276,11 +334,23 @@ extension View {
             .navigationDestination(for: EinstellungenRoute.self) { _ in
                 EinstellungenView(model: model)
             }
+            .navigationDestination(for: SeerrRoute.self) { _ in
+                SeerrEinstellungenView(model: model, seerr: model.seerr)
+            }
             .navigationDestination(for: WiedergabeRoute.self) { _ in
                 WiedergabeEinstellungenView(model: model)
             }
             .navigationDestination(for: StaffelRoute.self) { route in
                 SeasonView(model: model, serie: route.serie, staffel: route.staffel)
+            }
+            .navigationDestination(for: PersonRoute.self) { route in
+                PersonView(model: model, route: route)
+            }
+            .navigationDestination(for: GenreRoute.self) { route in
+                GenreView(model: model, name: route.name)
+            }
+            .navigationDestination(for: DarstellungRoute.self) { _ in
+                DarstellungView(model: model)
             }
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)

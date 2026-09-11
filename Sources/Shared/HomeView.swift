@@ -29,7 +29,13 @@ struct HomeView: View {
                 // darueber liegt fest, siehe `bereichsinhalt()`.
                 // **Der Farbschein reist als Unterlage mit**, hinter dem
                 // Inhalt und vor dem Grund. Siehe ``Farbschein``.
-                .bereichsinhalt { if !breit { Farbschein(versatz: versatz, fenster: .hinterDemInhalt) } }
+                .bereichsinhalt {
+                    if breit {
+                        FarbscheinBreit(versatz: versatz)
+                    } else {
+                        Farbschein(versatz: versatz, fenster: .hinterDemInhalt)
+                    }
+                }
                 // Unter dem Kopf und unter der Uebernahmeauswahl, ueber dem
                 // Inhalt — siehe `bereichsleiste()`.
                 .bereichsleiste()
@@ -55,7 +61,9 @@ struct HomeView: View {
         // stehen erst nach einer neuen Abfrage fest. Ohne das sah man seine
         // eigene Einstellung erst, wenn man die Seite von Hand nachlud, und
         // hielt sie fuer wirkungslos.
-        .task(id: model.neuzugangGetrennt) { await laden() }
+        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))") {
+            await laden()
+        }
         // **Nicht an `phase` haengen.** Die steht beim Kontowechsel schon auf
         // `.ready` und aendert sich nicht — die Startseite lud nie neu und
         // zeigte die Titel des vorigen Kontos. Auf tvOS ist genau das bei
@@ -164,33 +172,19 @@ struct HomeView: View {
                     Reihenplatzhalter(quer: true)
                     Reihenplatzhalter()
                 }
-                if !stand.weiterschauen.isEmpty {
-                    Reihe(model: model, titel: "Weiterschauen",
-                          items: stand.weiterschauen, quer: true, direkt: starte,
-                          nachGesehen: { await laden() })
+                // **Genres als Chips, ganz oben** — wenn eingeschaltet. Ein
+                // Einstieg, kein Inhalt: ein Tipp öffnet das Genre.
+                if model.genreChips, !model.startGenres.isEmpty { gattungschips }
+                // **Die festen Reihen in der eingestellten Reihenfolge**, ohne
+                // die ausgeblendeten — Einstellungen → Darstellung → Startseite.
+                ForEach(model.startReihen.filter {
+                    !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
+                }) { reihe in
+                    feste(reihe)
                 }
-                if !stand.naechsteFolge.isEmpty {
-                    // Ohne 'direkt': eine noch nicht angefangene Folge will
-                    // man erst ansehen, nicht sofort starten. Nur
-                    // 'Weiterschauen' springt direkt in die Wiedergabe.
-                    Reihe(model: model, titel: "Nächste Folge", items: stand.naechsteFolge,
-                          nachGesehen: { await laden() })
-                }
-                // Hier führt der Tipp auf die Seite: was man noch nicht
-                // angefangen hat, will man erst ansehen.
-                if !stand.neueFilme.isEmpty {
-                    Reihe(model: model, titel: "Zuletzt hinzugefügte Filme",
-                          items: stand.neueFilme, neuzugang: true,
-                          nachGesehen: { await laden() })
-                }
-                if !stand.neueSerien.isEmpty {
-                    Reihe(model: model, titel: "Zuletzt hinzugefügte Serien",
-                          items: stand.neueSerien, neuzugang: true,
-                          nachGesehen: { await laden() })
-                }
-                if !stand.zuletzt.isEmpty {
-                    Reihe(model: model, titel: "Zuletzt hinzugefügt",
-                          items: stand.zuletzt, neuzugang: true,
+                // Die gewählten Genres als eigene Reihen, nach den festen.
+                ForEach(stand.gattungsreihen) { r in
+                    Reihe(model: model, titel: "", name: r.name, items: r.items,
                           nachGesehen: { await laden() })
                 }
                 // Die Reihe „Bibliotheken" ist entfallen — Filme und Serien
@@ -233,6 +227,71 @@ struct HomeView: View {
         }
     }
 
+    /// Eine feste Reihe — derselbe Aufbau wie vorher, nur einzeln abrufbar,
+    /// damit die Reihenfolge aus den Einstellungen gilt.
+    @ViewBuilder
+    private func feste(_ reihe: Startreihe) -> some View {
+        switch reihe {
+        case .weiterschauen:
+            if !stand.weiterschauen.isEmpty {
+                Reihe(model: model, titel: "Weiterschauen",
+                      items: stand.weiterschauen, quer: true, direkt: starte,
+                      nachGesehen: { await laden() })
+            }
+        case .naechsteFolge:
+            if !stand.naechsteFolge.isEmpty {
+                // Ohne 'direkt': eine noch nicht angefangene Folge will
+                // man erst ansehen, nicht sofort starten. Nur
+                // 'Weiterschauen' springt direkt in die Wiedergabe.
+                Reihe(model: model, titel: "Nächste Folge", items: stand.naechsteFolge,
+                      nachGesehen: { await laden() })
+            }
+        // Hier führt der Tipp auf die Seite: was man noch nicht
+        // angefangen hat, will man erst ansehen.
+        case .neueFilme:
+            if !stand.neueFilme.isEmpty {
+                Reihe(model: model, titel: "Zuletzt hinzugefügte Filme",
+                      items: stand.neueFilme, neuzugang: true,
+                      nachGesehen: { await laden() })
+            }
+        case .neueSerien:
+            if !stand.neueSerien.isEmpty {
+                Reihe(model: model, titel: "Zuletzt hinzugefügte Serien",
+                      items: stand.neueSerien, neuzugang: true,
+                      nachGesehen: { await laden() })
+            }
+        case .neuzugaenge:
+            if !stand.zuletzt.isEmpty {
+                Reihe(model: model, titel: "Zuletzt hinzugefügt",
+                      items: stand.zuletzt, neuzugang: true,
+                      nachGesehen: { await laden() })
+            }
+        }
+    }
+
+    /// Deine Genres als Chips — dieselben, die sonst als Reihen stünden.
+    /// Ecke wie ein Knopf, nicht rund: rund ist, was ein Bild ist.
+    private var gattungschips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(model.startGenres, id: \.self) { name in
+                    NavigationLink(value: GenreRoute(name: name)) {
+                        // Vom Server, also nicht übersetzt.
+                        Text(verbatim: name)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Stil.schrift)
+                            .padding(.horizontal, 14)
+                            .frame(height: 34)
+                            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
+                            .overlay(RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, Stil.rand(breit: breit))
+        }
+    }
+
     private func laden() async { await stand.laden(model) }
 }
 
@@ -241,6 +300,9 @@ private struct Reihe: View {
     @Environment(\.breit) private var breit
     let model: AppModel
     let titel: LocalizedStringKey
+    /// Statt `titel`, wenn die Überschrift vom Server kommt — ein Genre wird
+    /// nicht übersetzt.
+    var name: String? = nil
     let items: [Item]
     /// Waagerechte Kacheln statt hochkant — nur für „Weiterschauen".
     var quer = false
@@ -273,8 +335,17 @@ private struct Reihe: View {
             // seit dem Herausloesen keinen eigenen mehr — auf tvOS gibt es
             // `randAbstand` nicht. Er muss hier `rand(breit:)` lesen, sonst
             // steht die Ueberschrift auf dem iPad schmaler als ihre Reihe.
-            Reihentitel(text: titel)
-                .padding(.horizontal, Stil.rand(breit: breit))
+            Group {
+                if let name {
+                    Text(verbatim: name)
+                        .font(Stil.reihe)
+                        .tracking(-0.3)
+                        .foregroundStyle(Stil.schrift)
+                } else {
+                    Reihentitel(text: titel)
+                }
+            }
+            .padding(.horizontal, Stil.rand(breit: breit))
 
             ScrollView(.horizontal, showsIndicators: false) {
                 // Oben ausrichten: ohne das zentriert der Stapel, und eine
@@ -543,5 +614,67 @@ private extension View {
         ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+/// **Der Farbschein auf iPad und Mac — eine Lage, kein Fenster.**
+///
+/// Auf dem iPhone wird er in zwei Fenstern gezeichnet, weil `Kopfverlauf`
+/// oben mit 0,98 deckt und ihn sonst verschluckt. Breit gibt es diesen
+/// Verlauf nicht: dort steht kein Kopf über dem Inhalt.
+///
+/// **Und genau daran ist der erste Versuch gescheitert.** Die schmale
+/// Fassung lässt die oberen 118 Punkt frei — dort zeichnet das andere
+/// Fenster. Breit gibt es dieses andere Fenster nicht, also fehlte der
+/// Streifen: der Schein begann erst unter dem freien Rand, und zwischen
+/// Oberkante und Farbe stand eine Lücke.
+///
+/// **Kein Kreispaar, sondern ein Verlauf über die ganze Breite.** Auf dem
+/// iPhone sind es zwei Kreise, und die überlappen sich dort, weil 390 Punkt
+/// schmaler sind als die Kreise selbst. Auf über 900 Punkt tun sie das nicht
+/// mehr: dann steht links Türkis, rechts Blau und dazwischen ein dunkles
+/// Loch. Zwei Anläufe sind genau daran gescheitert — erst zu klein und in
+/// der Mitte, dann an den Kanten und in der Mitte hohl.
+///
+/// Ein Verlauf von Kante zu Kante hat dieses Problem nicht: er ist
+/// durchgehend, weil er aus einem Stück ist, und er passt sich jeder
+/// Fensterbreite von selbst an. Schräg statt waagerecht, damit er nicht wie
+/// ein Balken liest.
+///
+/// Er ist leiser als auf dem iPhone — 0,20 gegen 0,28. Dieselbe Farbe auf
+/// der zweieinhalbfachen Fläche ist nicht dieselbe Menge Farbe.
+private struct FarbscheinBreit: View {
+    let versatz: CGFloat
+
+    /// Endet über der ersten Reihenüberschrift. Die Scrollfläche beginnt
+    /// breit bei `Stil.kopfOben + 20`, also bei 46.
+    private let hoehe: CGFloat = 170
+
+    var body: some View {
+        LinearGradient(stops: [
+            .init(color: Stil.akzent.opacity(0.22), location: 0),
+            .init(color: Stil.akzent.opacity(0.17), location: 0.26),
+            // Die Mitte ist die Stelle, an der die beiden Kreise ein Loch
+            // liessen — hier traegt sie die Mischung aus beiden.
+            .init(color: Stil.scheinMitte.opacity(0.15), location: 0.52),
+            .init(color: Stil.kuehl.opacity(0.17), location: 0.76),
+            .init(color: Stil.kuehl.opacity(0.20), location: 1),
+        ], startPoint: .topLeading, endPoint: .bottomTrailing)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .frame(height: hoehe, alignment: .top)
+        .mask(alignment: .top) {
+            LinearGradient(stops: [
+                .init(color: .white, location: 0),
+                .init(color: .white.opacity(0.92), location: 0.34),
+                .init(color: .white.opacity(0.66), location: 0.58),
+                .init(color: .white.opacity(0.28), location: 0.80),
+                .init(color: .white.opacity(0), location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+            .frame(height: hoehe)
+        }
+        .ignoresSafeArea(edges: .top)
+        .offset(y: -versatz)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

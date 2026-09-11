@@ -959,6 +959,74 @@
         }
       }
     },
+    "Als Chips": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als Chips"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As chips"
+          }
+        }
+      }
+    },
+    "Als Chips über den Reihen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als Chips über den Reihen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As chips above the rows"
+          }
+        }
+      }
+    },
+    "Als Reihen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als Reihen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As rows"
+          }
+        }
+      }
+    },
+    "Als eigene Reihen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als eigene Reihen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As their own rows"
+          }
+        }
+      }
+    },
     "Als gesehen markieren": {
       "extractionState": "manual",
       "localizations": {
@@ -1239,6 +1307,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "matching off"
+          }
+        }
+      }
+    },
+    "Antippen zum Wechseln": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antippen zum Wechseln"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to switch"
           }
         }
       }
@@ -2579,6 +2664,23 @@
         }
       }
     },
+    "Ein zweiter Jellyfin, eigene Konten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein zweiter Jellyfin, eigene Konten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A second Jellyfin, with its own accounts"
+          }
+        }
+      }
+    },
     "Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen.": {
       "extractionState": "manual",
       "localizations": {
@@ -3237,6 +3339,23 @@
         }
       }
     },
+    "Genres": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genres"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genres"
+          }
+        }
+      }
+    },
     "Gerät": {
       "extractionState": "manual",
       "localizations": {
@@ -3775,6 +3894,23 @@
         }
       }
     },
+    "Keins offen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keins offen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None left"
+          }
+        }
+      }
+    },
     "Kennwort": {
       "extractionState": "manual",
       "localizations": {
@@ -3809,6 +3945,40 @@
         }
       }
     },
+    "Klicken zum Wechseln": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klicken zum Wechseln"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click to switch"
+          }
+        }
+      }
+    },
+    "Kommt später": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kommt später"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coming later"
+          }
+        }
+      }
+    },
     "Konto": {
       "extractionState": "manual",
       "localizations": {
@@ -3822,6 +3992,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Account"
+          }
+        }
+      }
+    },
+    "Kopiert": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopiert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied"
           }
         }
       }
@@ -4028,6 +4215,23 @@
         }
       }
     },
+    "Löschen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Löschen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear"
+          }
+        }
+      }
+    },
     "MISSTRAUT": {
       "extractionState": "manual",
       "localizations": {
@@ -4194,6 +4398,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "One moment…"
+          }
+        }
+      }
+    },
+    "Nach oben": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach oben"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move up"
+          }
+        }
+      }
+    },
+    "Nach unten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach unten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move down"
           }
         }
       }
@@ -4708,6 +4946,23 @@
         }
       }
     },
+    "Profil": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profil"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile"
+          }
+        }
+      }
+    },
     "Profil und Einstellungen": {
       "extractionState": "manual",
       "localizations": {
@@ -5009,6 +5264,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Server"
+          }
+        }
+      }
+    },
+    "Server hinzufügen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server hinzufügen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add server"
           }
         }
       }
@@ -5433,6 +5705,40 @@
         }
       }
     },
+    "Startseite": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Startseite"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home screen"
+          }
+        }
+      }
+    },
+    "Startseite, Reihen, Genres": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Startseite, Reihen, Genres"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home screen, rows, genres"
+          }
+        }
+      }
+    },
     "Stelle": {
       "extractionState": "manual",
       "localizations": {
@@ -5463,6 +5769,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Search"
+          }
+        }
+      }
+    },
+    "Suche schließen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suche schließen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close search"
           }
         }
       }
@@ -5905,6 +6228,23 @@
         }
       }
     },
+    "Unter dieser Adresse antwortet kein Jellyfin.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unter dieser Adresse antwortet kein Jellyfin."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Jellyfin server answers at this address."
+          }
+        }
+      }
+    },
     "Unter dieser Adresse ist kein Server erreichbar.": {
       "extractionState": "manual",
       "localizations": {
@@ -6121,6 +6461,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Behavior"
+          }
+        }
+      }
+    },
+    "Verlauf löschen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verlauf löschen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear history"
           }
         }
       }
@@ -6682,6 +7039,23 @@
         }
       }
     },
+    "Zuletzt gesucht": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zuletzt gesucht"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent searches"
+          }
+        }
+      }
+    },
     "Zuletzt hinzugefügt": {
       "extractionState": "manual",
       "localizations": {
@@ -6746,6 +7120,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recently connected"
+          }
+        }
+      }
+    },
+    "Zum Kopieren klicken": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Kopieren klicken"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click to copy"
           }
         }
       }

@@ -34,8 +34,11 @@ struct SeerrEinstellungenView: View {
 
                 if seerr.verbunden { verbunden } else { formular }
             }
+            // Linksbuendig wie Einstellungen und Wiedergabe, von denen man
+            // hierher kommt — sonst springt der Pfeil beim Oeffnen in die
+            // Fenstermitte.
             .frame(maxWidth: 560, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Stil.randAbstand)
             .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)

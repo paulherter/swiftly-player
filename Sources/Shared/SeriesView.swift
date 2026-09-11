@@ -73,6 +73,14 @@ struct SeriesDetailView: View {
     @State private var versatz: CGFloat = 0
 
     @State private var stand: Item?
+    /// **Ob die nächste Folge schon geklärt ist** — auch dann, wenn es keine
+    /// gibt. Der Zwischenspeicher bringt Staffeln und Folgen mit, aber nicht
+    /// den Stand; mit gemerkten Folgen stand `laedt` deshalb schon am Anfang
+    /// auf fertig, und der Knopf sagte eine Sekunde lang „Keine Folgen", bis
+    /// der Stand kam. Bis hierhin heißt es jetzt „Lädt…".
+    @State private var standGeklaert = false
+    /// Der Plan ist beantwortet — mit oder ohne Ergebnis. Siehe `belegzeile`.
+    @State private var planDa = false
     @State private var staffeln: [Item] = []
     @State private var gewaehlteStaffel: Item?
     @State private var folgen: [Item] = []
@@ -89,6 +97,9 @@ struct SeriesDetailView: View {
     @State private var gesehen = false
     @State private var plan: PlaybackPlan?
     @State private var reiter = 0
+    /// Breite des Rasters unter „Ähnliches" — daraus die Spaltenzahl, wie in
+    /// Bibliothek, Suche und Merkliste.
+    @State private var rasterbreite: CGFloat = 0
     @State private var staffellisteOffen = false
     /// Hat der Nutzer selbst eine Staffel gewaehlt? Dann redet ihm nichts
     /// mehr hinein.
@@ -103,7 +114,7 @@ struct SeriesDetailView: View {
                     // Derselbe Kopf wie auf der Filmseite — er steht als
                     // eigener Baustein, damit er nicht zweimal dasteht.
                     if breit {
-                        Heldkopf(bild: model.backdropURL(for: serie),
+                        Heldkopf(bild: model.kopfbildURL(for: serie),
                                  poster: model.imageURL(for: serie, maxHeight: 600,
                                                         hochkant: true),
                                  titel: serie.name, nebenzeile: nebenzeile,
@@ -157,6 +168,10 @@ struct SeriesDetailView: View {
                     default: aehnlichesbereich
                     }
                 }
+                // **Nie breiter als der Schirm.** Wird ein Kind breiter, ist es
+                // sonst die ganze Seite — und eine Seite, die breiter ist als
+                // ihre Scrollfläche, lässt sich seitwärts ziehen.
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 30)
             }
             .scrollIndicators(.hidden)
@@ -266,6 +281,7 @@ struct SeriesDetailView: View {
         async let b = model.staffeln(serie)
         async let c = model.aehnliche(serie)
         (stand, staffeln, aehnliche) = await (a, b, c)
+        standGeklaert = true
         // Kommt man von einer Folge, deren Staffel — sonst die, in der man
         // zuletzt war. Beim Auffrischen bleibt die getroffene Wahl stehen.
         if gewaehlteStaffel == nil {
@@ -287,6 +303,7 @@ struct SeriesDetailView: View {
         gemerkt = serie.userData?.isFavorite ?? false
         gesehen = serie.userData?.played ?? false
         if let stand { plan = await model.plan(for: stand.id) }
+        withAnimation(Stil.einblenden) { planDa = true }
         await folgenLaden()
         laedt = false
     }
@@ -296,7 +313,7 @@ struct SeriesDetailView: View {
     // MARK: Teile
 
     private var hero: some View {
-        Heldbild(url: model.backdropURL(for: serie))
+        Heldbild(url: model.kopfbildURL(for: serie))
             .overlay(alignment: .bottom) { Heldauslauf() }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 5) {
@@ -334,11 +351,23 @@ struct SeriesDetailView: View {
         return teile.joined(separator: " · ")
     }
 
+    /// **Erst mit dem Plan, dann als Ganzes.** Sterne und FSK sind sofort da,
+    /// die Direct-Play-Marke erst mit dem Wiedergabeplan — und schob sich dann
+    /// links davor und die beiden anderen nach rechts. Jetzt hält die Zeile
+    /// ihren Platz, bleibt aber unsichtbar, bis der Plan da ist, und blendet
+    /// dann auf einmal ein. Kommt kein Plan, blendet sie trotzdem ein — dann
+    /// eben ohne Marke.
     private var belegzeile: some View {
         Belegzeile(direktplay: plan?.isLossless ?? false,
                    hinweis: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
                    bewertung: serie.communityRating,
                    freigabe: serie.officialRating)
+            // **Feste Höhe, auch leer.** Die Zeile kommt erst mit dem Plan —
+            // und aus der Liste oft ohne Bewertung und Freigabe. Leer hatte sie
+            // keine Höhe, der Knopf darunter saß höher und rutschte nach
+            // unten, sobald sie sich füllte. So hoch wie eine Marke, immer.
+            .frame(minHeight: 26, alignment: .leading)
+            .opacity(planDa ? 1 : 0)
     }
 
     private var hauptknopf: some View {
@@ -346,13 +375,25 @@ struct SeriesDetailView: View {
             Button {
                 if let stand { starte(stand) }
             } label: {
-                HStack(spacing: 8) {
-                    // Kein Ring im Knopf: die Beschriftung sagt es ohnehin
-                    // („Lädt…"), und ein zweites Zeichen daneben ist Lärm.
-                    Image(systemName: "play.fill").font(.system(size: 15))
-                        .opacity(bereitet ? 0.5 : 1)
-                    Text(knopftext)
+                // **Leer, bis die Folge feststeht — dann blendet der Inhalt an
+                // seinem Platz ein.** Vorher stand dort „Lädt…" und wechselte
+                // zur Folge; die Beschriftung wurde breiter, und das Symbol fuhr
+                // aus der Mitte nach links. Jetzt kommt der ganze Inhalt auf
+                // einmal, und nichts bewegt sich. Der unsichtbare Platzhalter
+                // hält die Höhe, damit der Knopf dabei nicht wächst.
+                ZStack {
+                    Text(verbatim: " ").hidden()
+                    if knopfBereit {
+                        HStack(spacing: 8) {
+                            Image(systemName: "play.fill").font(.system(size: 15))
+                                .opacity(bereitet ? 0.5 : 1)
+                            Text(knopftext)
+                        }
+                        .transition(.opacity)
+                    }
                 }
+                .animation(Stil.einblenden, value: knopfBereit)
+                .accessibilityLabel(Text(knopftext))
             }
             .buttonStyle(HauptknopfStil(dehnt: !breit))
             // **Waehrend geladen wird bleibt er an und zeigt „Laedt…".**
@@ -366,7 +407,7 @@ struct SeriesDetailView: View {
             //
             // Ein Druck waehrend des Ladens tut nichts — `starte` hat den
             // `guard` ohnehin.
-            .disabled(bereitet || (stand == nil && !laedt))
+            .disabled(bereitet || (stand == nil && standGeklaert && !laedt))
 
             if let stand, let rest = restzeit(stand) {
                 Text(rest).font(.system(size: 11)).foregroundStyle(Stil.schriftLeise)
@@ -417,7 +458,7 @@ struct SeriesDetailView: View {
 
     @ViewBuilder
     private var beschreibung: some View {
-        if let text = serie.overview {
+        if let text = serie.beschreibung {
             Klapptext(text: text)
         }
     }
@@ -512,8 +553,11 @@ struct SeriesDetailView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 110), spacing: 14)],
                       spacing: 20) {
                 ForEach(leute) { person in
-                    Besetzungskachel(bild: model.personBild(person),
-                                     name: person.name, rolle: person.role)
+                    NavigationLink(value: PersonRoute(person: person, herkunft: serie.name)) {
+                        Besetzungskachel(bild: model.personBild(person),
+                                         name: person.name, rolle: person.role)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, Stil.rand(breit: breit))
@@ -526,18 +570,24 @@ struct SeriesDetailView: View {
         if aehnliche.isEmpty {
             leerhinweis("Nichts Ähnliches gefunden.")
         } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: Stil.kachelBreite,
-                                                   maximum: Stil.kachelBreite + 30),
-                                         spacing: Stil.kachelAbstand)],
+            // **Dieselbe Spaltenrechnung wie Bibliothek und Suche.** Hier stand
+            // ein adaptives Raster mit fester Mindestbreite je Kachel. Auf dem
+            // iPhone passten damit zwei nebeneinander, rechts blieb eine
+            // Lücke — überall sonst stehen an derselben Stelle drei. Von einem
+            // Tester gemeldet.
+            let nutzbar = rasterbreite - 2 * Stil.rand(breit: breit)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Stil.kachelAbstand),
+                                     count: Stil.spalten(nutzbar: nutzbar, breit: breit)),
                       alignment: .leading, spacing: 20) {
                 ForEach(aehnliche) { titel in
                     NavigationLink(value: titel) {
-                        PosterTile(model: model, item: titel)
+                        PosterTile(model: model, item: titel, breite: nil)
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, Stil.rand(breit: breit))
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rasterbreite = $0 }
             .padding(.top, 20)
         }
     }
@@ -556,7 +606,13 @@ struct SeriesDetailView: View {
 
     // MARK: Ableitungen
 
-    private var knopftext: String { Item.serienknopf(folge: stand, laedt: laedt) }
+    /// Die Beschriftung steht fest: die Folge ist geklärt und, falls es keine
+    /// gibt, auch das Laden der Staffel vorbei.
+    private var knopfBereit: Bool { standGeklaert && (stand != nil || !laedt) }
+
+    private var knopftext: String {
+        Item.serienknopf(folge: stand, laedt: laedt || !standGeklaert)
+    }
 
     private func restzeit(_ folge: Item) -> String? { folge.restzeitText }
 
@@ -782,9 +838,22 @@ struct SeasonView: View {
     /// Fehlte hier — auf der Serienseite gab es sie, in der Staffelansicht nicht.
     @State private var bereitet = false
 
+    @Environment(\.breit) private var breit
+    @Environment(\.dismiss) private var zurueck
+
     var body: some View {
         ZStack {
             Stil.grund.ignoresSafeArea()
+            VStack(spacing: 0) {
+            // **Unser Kopf, nicht Apples Leiste.**
+            //
+            // Diese Seite war die einzige von dreiundzwanzig, die Apples
+            // Systemleiste zeigte — mit deren Zurueckpfeil, deren Grad und
+            // deren Material. Jede andere Unterseite blendet sie aus und
+            // traegt `Unterseitenkopf` oder `Detailkopf`. Aufgefallen ist es
+            // erst im Abgleich aller Seiten nebeneinander; einzeln sieht so
+            // etwas nie falsch aus.
+            Unterseitenkopf(titel: staffel.name) { zurueck() }
             ScrollView {
                 VStack(spacing: 0) {
                     ForEach(folgen) { folge in
@@ -801,14 +870,13 @@ struct SeasonView: View {
                 }
             }
             .scrollIndicators(.hidden)
+            }
         }
-        .navigationTitle(staffel.name)
         #if os(iOS)
+        .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
         #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Stil.grund, for: .navigationBar)
         .fullScreenCover(item: $abspielen) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)

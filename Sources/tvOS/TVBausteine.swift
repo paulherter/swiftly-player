@@ -474,55 +474,102 @@ struct Kopfleiste: View {
 /// allein wirft die Frage auf, was es tut; wer es dann drückt, hält
 /// versehentlich seinen Film auf dem anderen Gerät an. Der Text sagt, was
 /// passiert, bevor es passiert.
+///
+/// **In Ruhe eine Zeile, der Titel kommt im Fokus dazu.** Zwei Zeilen in 22
+/// und 18 Punkt standen neben Reitern in 31 — über dem Titelbild ging die
+/// zweite darin unter. „Hier weiterschauen" sagt schon in Ruhe, was ein Druck
+/// tut; welcher Titel es ist, steht da, bevor man drückt: im Fokus.
 struct Uebernahmeabzeichen: View {
     let sitzung: Fremdsitzung
     var aktion: () -> Void
 
     var body: some View {
-        Button(action: aktion) {
+        Button(action: aktion) { Inhalt(sitzung: sitzung) }
+            .buttonStyle(AbzeichenStil(anderesGeraet: true))
+            .accessibilityLabel(Text("Hier weiterschauen"))
+            .accessibilityValue(Text(sitzung.titelzeile))
+    }
+
+    private struct Inhalt: View {
+        let sitzung: Fremdsitzung
+        @Environment(\.isFocused) private var fokus
+
+        var body: some View {
             HStack(spacing: 14) {
                 Image(systemName: sitzung.geraetezeichen)
-                    .font(.system(size: 24, weight: .medium))
+                    .font(.system(size: 26, weight: .medium))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Hier weiterschauen")
-                        .font(.system(size: 22, weight: .semibold))
-                    // Der Titel in der zweiten Zeile: er ist die Auskunft,
-                    // die man wirklich braucht, und er darf umbrechen —
-                    // Serverdaten, also `String` und nicht `LocalizedStringKey`.
-                    Text(sitzung.titelzeile)
-                        .font(.system(size: 18))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .font(.system(size: 27, weight: .semibold))
+                    if fokus {
+                        // Serverdaten, also `String` und nicht `LocalizedStringKey`.
+                        Text(sitzung.titelzeile)
+                            .font(.system(size: 21))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
-            .padding(.horizontal, 24)
-            .frame(height: 60)
+            .padding(.horizontal, 28)
+            .frame(height: fokus ? 76 : 64)
         }
-        .buttonStyle(AbzeichenStil())
-        .accessibilityLabel(Text("Hier weiterschauen"))
-        .accessibilityValue(Text(sitzung.titelzeile))
     }
 }
 
-/// Derselbe Ruhe-zu-Fokus-Sprung wie überall auf dem Fernseher: gewählt ist
-/// Akzent, fokussiert die helle Fläche.
+/// Derselbe Ruhe-zu-Fokus-Sprung wie überall auf dem Fernseher: in Ruhe eine
+/// ruhige Fläche, im Fokus die helle.
+///
+/// **Kühl, wenn es von einem anderen Gerät kommt.** Das Abzeichen stand grau
+/// da, im selben Ton wie „Abbrechen" — dabei sagt es als einziges „woanders
+/// läuft etwas". Seit dem 10.09.2026 trägt das auf allen Fassungen
+/// `Stil.kuehl`.
+///
+/// **Deckend, nicht durchsichtig.** Zuerst lag die Tönung direkt auf dem, was
+/// darunter war — auf dunklem Grund stimmte das, über dem Titelbild der
+/// Startseite schien das Bild durch, und die Schrift ging darin unter. Jetzt
+/// liegt dieselbe Tönung auf dem Seitengrund: kein neuer Farbwert, aber eine
+/// Fläche, die über jedem Bild gleich aussieht.
+///
+/// Rund, als Kapsel. Am 11.09.2026 so entschieden, nachdem eine Runde lang
+/// die Ecke des Knopfes daran war.
 struct AbzeichenStil: ButtonStyle {
+    var anderesGeraet = false
+
     func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration)
+        Inhalt(configuration: configuration, anderesGeraet: anderesGeraet)
     }
 
     private struct Inhalt: View {
         let configuration: Configuration
+        let anderesGeraet: Bool
         @Environment(\.isFocused) private var fokus
 
         var body: some View {
             configuration.label
-                .foregroundStyle(fokus ? Stil.grund : .white)
-                .background(fokus ? AnyShapeStyle(.white)
-                                  : AnyShapeStyle(Stil.erhoeht), in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(fokus ? 0 : 0.18)))
+                .foregroundStyle(vordergrund)
+                .background { grund }
+                .overlay {
+                    Capsule().strokeBorder(.white.opacity(fokus || anderesGeraet ? 0 : 0.18))
+                }
                 .scaleEffect(fokus ? 1.06 : 1)
                 .animation(.easeOut(duration: 0.16), value: fokus)
+        }
+
+        private var vordergrund: Color {
+            if fokus { return Stil.grund }
+            return anderesGeraet ? Stil.kuehl : .white
+        }
+
+        @ViewBuilder
+        private var grund: some View {
+            if fokus {
+                Capsule().fill(.white)
+            } else if anderesGeraet {
+                Capsule().fill(Stil.kuehl.opacity(0.18))
+                    .background(Stil.grund, in: Capsule())
+            } else {
+                Capsule().fill(Stil.erhoeht)
+            }
         }
     }
 }
@@ -770,7 +817,11 @@ struct Kopfauskunft<Schluss: View>: View {
             .frame(height: 34)
             .padding(.top, 14)
 
-            Text(item.overview ?? "")
+            // **Der bereinigte Text, nicht der rohe.** Jellyfin gibt
+            // Beschreibungen aus, wie sie beim Anbieter standen — mit `<br>`,
+            // `<p>` und `&amp;`. Auf drei Meter Entfernung stand das wörtlich
+            // im Bild.
+            Text(item.beschreibung ?? "")
                 .font(.system(size: 29))
                 .lineSpacing(Stil.beschreibungLuft)
                 .foregroundStyle(Stil.schrift.opacity(0.62))
@@ -1165,7 +1216,10 @@ struct TVUebernahmeauswahl: View {
                             .frame(height: 88)
                             .frame(maxWidth: 760)
                         }
-                        .buttonStyle(AbzeichenStil())
+                        // Jede Zeile ist ein anderes Gerät — also kühl wie das
+                        // Abzeichen, das hierher geführt hat. „Abbrechen"
+                        // darunter bleibt grau.
+                        .buttonStyle(AbzeichenStil(anderesGeraet: true))
                     }
                 }
                 .focusSection()

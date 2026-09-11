@@ -212,6 +212,17 @@ public enum Seerr {
     /// unterscheiden. Unter `recommendations` einer Filmseite stehen nur
     /// Filme, und Seerr spart sich das Feld. Ohne diesen Rueckfall kam dort
     /// nie ein Treffer an, obwohl die Antwort voll war.
+    struct Filmografie: Decodable { let cast: [Trefferliste.Eintrag]? }
+
+    /// **Ohne Doppelte.** Eine Serie steht in der Filmografie einmal je Rolle
+    /// — wer zwei Figuren gespielt hat, stünde sonst zweimal da.
+    public static func treffer(ausFilmografie daten: Data) -> [Seerrtreffer] {
+        guard let f = try? JSONDecoder().decode(Filmografie.self, from: daten) else { return [] }
+        var gesehen = Set<String>()
+        return treffer(aus: f.cast ?? [], standardArt: nil)
+            .filter { gesehen.insert("\($0.art)-\($0.id)").inserted }
+    }
+
     static func treffer(aus eintraege: [Trefferliste.Eintrag],
                         standardArt: String?) -> [Seerrtreffer] {
         eintraege.compactMap { e in
@@ -529,6 +540,14 @@ public actor SeerrClient {
     }
 
     /// Ein GET, der bei allem ausser einer 200 nichts zurueckgibt.
+    /// **Was eine Person gemacht hat**, soweit Seerr es kennt — für „Kann
+    /// angefragt werden" auf ihrer Seite. Ohne zu werfen: das ist eine
+    /// Zugabe, ein Fehler hier darf die Seite nicht kosten.
+    public func filmografie(person tmdb: Int) async -> [Seerrtreffer] {
+        guard let daten = await hole("person/\(tmdb)/combined_credits") else { return [] }
+        return Seerr.treffer(ausFilmografie: daten)
+    }
+
     private func hole(_ pfad: String) async -> Data? {
         guard let req = try? anfrage(pfad),
               let (daten, antwort) = try? await sitzung.data(for: req),

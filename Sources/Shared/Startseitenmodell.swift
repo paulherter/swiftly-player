@@ -24,6 +24,14 @@ final class Startseitenmodell {
     /// merken nichts davon.
     private(set) var neueFilme: [Item] = []
     private(set) var neueSerien: [Item] = []
+    /// Die gewählten Genres als eigene Reihen — nur, wenn keine Chips.
+    private(set) var gattungsreihen: [Gattungsreihe] = []
+
+    struct Gattungsreihe: Identifiable {
+        let name: String
+        let items: [Item]
+        var id: String { name }
+    }
     private(set) var geladen = false
     /// Kein einziger der drei Aufrufe kam durch — dann liegt es am Server,
     /// nicht am leeren Bestand.
@@ -147,6 +155,23 @@ final class Startseitenmodell {
         // `neuzugangGetrennt`, und das steht in der Vorgabe aus. Wer nur die
         // getrennten Reihen vorholt, deckt also genau die Einstellung nicht
         // ab, die fast jeder hat. Von der Mac-Sitzung gemessen und gemeldet.
+        // **Genres zuletzt, nach den festen Reihen.** Die stehen dann schon;
+        // was hier dazukommt, ist Zugabe und darf sie nicht aufhalten.
+        // Entweder Chips oder Reihen, je nach Einstellung — nie beides.
+        if model.genreChips {
+            // Die Chips sind die Genres aus den Einstellungen; zu laden gibt
+            // es dafür nichts.
+            gattungsreihen = []
+        } else {
+            var reihen: [Gattungsreihe] = []
+            for name in model.startGenres {
+                if let titel = await model.titel(gattung: name), !titel.isEmpty {
+                    reihen.append(Gattungsreihe(name: name, items: titel))
+                }
+            }
+            gattungsreihen = reihen
+        }
+
         Serienspeicher.geteilt.vorholen(
             weiterschauen + naechsteFolge + zuletzt + neueSerien, mit: model)
     }

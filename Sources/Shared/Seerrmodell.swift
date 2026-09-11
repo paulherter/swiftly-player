@@ -22,6 +22,14 @@ final class Seerrmodell {
     /// Jellyfin die Seerr-Anmeldung nicht mitnimmt — es sind zwei Dienste.
     private static let schluessel = "seerr"
 
+    /// **Seerr hängt am Server.** Der Jellyfin-Server, zu dem der gerade
+    /// geladene Zugang gehört — jeder hat seinen eigenen Eintrag im
+    /// Schlüsselbund.
+    private var server: String?
+    private var schluessel: String {
+        server.map { Self.schluessel + "|" + $0 } ?? Self.schluessel
+    }
+
     private(set) var zugang: Seerrzugang?
     private(set) var traegt = false
     private(set) var fehler: String?
@@ -37,6 +45,25 @@ final class Seerrmodell {
     }
 
     init() { zugang = geladen() }
+
+    /// Beim Wechsel auf ein Konto eines anderen Servers gilt dessen Zugang.
+    ///
+    /// Beim ersten Aufruf zieht ein Zugang von vor dem zweiten Server auf den
+    /// Server um, der dann aktiv ist — das ist der, zu dem er gehörte.
+    func serverGewechselt(_ url: URL?) {
+        var neu = url?.absoluteString.lowercased()
+        while neu?.hasSuffix("/") == true { neu?.removeLast() }
+        guard neu != server else { return }
+        server = neu
+        if let neu, Keychain.load(key: Self.schluessel + "|" + neu) == nil,
+           let alt = Keychain.load(key: Self.schluessel) {
+            try? Keychain.save(alt, key: Self.schluessel + "|" + neu)
+            Keychain.delete(key: Self.schluessel)
+        }
+        zugang = geladen()
+        traegt = false
+        fehler = nil
+    }
 
     // MARK: Verbinden
 
@@ -87,7 +114,7 @@ final class Seerrmodell {
 
     /// Trennen. Nur unsere Seite — bei Seerr selbst bleibt alles, wie es ist.
     func trennen() {
-        Keychain.delete(key: Self.schluessel)
+        Keychain.delete(key: schluessel)
         zugang = nil
         traegt = false
         fehler = nil
@@ -110,6 +137,13 @@ final class Seerrmodell {
         return await client.suchen(begriff)
     }
 
+    /// Was eine Person gemacht hat, soweit Seerr es kennt — für „Kann
+    /// angefragt werden" auf ihrer Seite. Ohne zu werfen, wie `suchen`.
+    func filmografie(person tmdb: Int) async -> [Seerrtreffer] {
+        guard let client else { return [] }
+        return await client.filmografie(person: tmdb)
+    }
+
     /// Beschreibung, Bewertung und Staffeln — für die Seite eines Titels.
     func detail(_ treffer: Seerrtreffer) async -> Seerrdetail? {
         guard let client else { return nil }
@@ -125,7 +159,7 @@ final class Seerrmodell {
     // MARK: Ablage
 
     private func geladen() -> Seerrzugang? {
-        guard let daten = Keychain.load(key: Self.schluessel) else { return nil }
+        guard let daten = Keychain.load(key: schluessel) else { return nil }
         return try? JSONDecoder().decode(Seerrzugang.self, from: daten)
     }
 
@@ -133,6 +167,6 @@ final class Seerrmodell {
         guard let daten = try? JSONEncoder().encode(z) else { return }
         // **In den Schlüsselbund, nicht in die Einstellungen.** Der Keks ist
         // ein Zugang zu einem Dienst, der Titel anfordern kann.
-        try? Keychain.save(daten, key: Self.schluessel)
+        try? Keychain.save(daten, key: schluessel)
     }
 }

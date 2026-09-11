@@ -477,6 +477,12 @@ extension View {
             .navigationDestination(for: ProfilRoute.self) { _ in
                 ProfilView(model: model)
             }
+            .navigationDestination(for: PersonRoute.self) { route in
+                PersonView(model: model, route: route)
+            }
+            .navigationDestination(for: GenreRoute.self) { route in
+                GenreView(model: model, name: route.name)
+            }
     }
 }
 
@@ -566,7 +572,7 @@ struct StaffelZiel: View {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .bildgrund(url: model.querbildURL(for: folge, breite: 1600)
-                                    ?? model.backdropURL(for: folge))
+                                    ?? model.kopfbildURL(for: folge))
             }
         }
         .task {
