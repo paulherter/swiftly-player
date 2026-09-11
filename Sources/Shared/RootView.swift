@@ -35,6 +35,12 @@ struct RootView: View {
                 HauptView(model: model)
             }
         }
+        // **Einmal an der Wurzel, nicht an jeder Kachel.** Welche Kachel
+        // ihren Fortschrittsbalken zeigt, entscheidet eine Einstellung — und
+        // die 33 Aufrufstellen, die `fortschritt:` weiterreichen, sollen
+        // nichts davon wissen muessen. Gelesen wird sie dort, wo der Balken
+        // entsteht. Siehe `EnvironmentValues.fortschrittAufKacheln`.
+        .environment(\.fortschrittAufKacheln, model.fortschrittAufKacheln)
         .overlay {
             #if os(iOS)
             if !gestartet {

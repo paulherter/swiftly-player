@@ -381,3 +381,22 @@ private struct Kopierbar: ViewModifier {
         }
     }
 }
+
+// MARK: - Fortschritt auf Kacheln
+
+extension EnvironmentValues {
+    /// **Ob Kacheln ihren Fortschrittsbalken zeigen** — Profil → Darstellung.
+    ///
+    /// Er lag als Einstellung vor, wurde gespeichert und gelesen hat ihn
+    /// **niemand**: die Kacheln zeichneten den Balken immer. Ein Schalter, der
+    /// nichts tut, auf vier Fassungen — genau das Muster, das CLAUDE.md
+    /// „gebaut, aber nicht angeschlossen" nennt. Gefunden am 12.09.2026 beim
+    /// Durchsehen vor der Beta.
+    ///
+    /// **Ueber die Umgebung, nicht ueber 33 Aufrufstellen.** So viele geben
+    /// `fortschritt:` weiter; sie alle anzufassen hiesse, dieselbe Abfrage
+    /// dreiunddreissigmal zu schreiben, und beim vierunddreissigsten Aufruf
+    /// stuende sie nicht da. Gelesen wird sie an der einen Stelle je
+    /// Plattform, an der der Balken wirklich entsteht.
+    @Entry var fortschrittAufKacheln: Bool = true
+}

@@ -293,7 +293,13 @@ struct SucheView: View {
         async let eigene = model.suche(wort)
         async let fremde = model.seerr.suchen(wort)
         let (a, b) = await (eigene, fremde)
-        treffer = a
+        // **Doppelte Kennungen raus, bevor sie in ein `ForEach` gehen.**
+        //
+        // Am 07.09.2026 gemeldet: ein Druck auf eine Serie oeffnete die
+        // uebernaechste. `ForEach` ordnet ueber die Kennung zu, und der
+        // Server liefert denselben Titel gelegentlich zweimal. Die
+        // iPhone-Fassung faengt das ab; hier fehlte der Schutz.
+        treffer = Listenregeln.ohneDoppelte(a)
         // Was schon auf dem Server liegt, gehoert in den oberen Block —
         // sonst staende derselbe Titel zweimal auf der Seite.
         seerrtreffer = b.filter { !$0.stand.schonDa }

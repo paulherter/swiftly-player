@@ -311,6 +311,9 @@ struct Bild: View {
     /// Fortschritt am unteren Rand, innerhalb der Maske.
     var fortschritt: Double? = nil
 
+    /// Profil → Darstellung. Siehe `EnvironmentValues.fortschrittAufKacheln`.
+    @Environment(\.fortschrittAufKacheln) private var balkenZeigen
+
     /// **Ein abgebrochener Abruf ist kein Fehlschlag — er ist einen zweiten
     /// Versuch wert.**
     ///
@@ -355,7 +358,7 @@ struct Bild: View {
             // Eine neue Adresse heißt ein frischer Anlauf.
             .onChange(of: url) { _, _ in anlauf = 0 }
             .overlay(alignment: .bottom) {
-                if let fortschritt {
+                if let fortschritt, balkenZeigen {
                     Fortschrittsbalken(anteil: fortschritt)
                 }
             }

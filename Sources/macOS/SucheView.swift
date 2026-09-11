@@ -27,6 +27,27 @@ struct SucheView: View {
 
     private var letzte: [String] { Suchverlauf.liste(letzteRoh) }
 
+    /// **Was hier ueberhaupt zu suchen ist.** Steht nur, solange weder ein
+    /// Wort im Feld noch ein Verlauf da ist — sonst stuende ein Hinweis ueber
+    /// dem, was er erklaert.
+    ///
+    /// Mittig unter dem Feld, nicht mittig im Fenster: das Feld steht links
+    /// in seiner Breite, und ein Hinweis in der Mitte der ganzen Flaeche
+    /// schwebte neben dem, worauf er sich bezieht.
+    private var leerhinweis: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(Stil.schriftSehrLeise)
+            Text("Filme, Serien und Folgen durchsuchen")
+                .font(Stil.koerper)
+                .foregroundStyle(Stil.schriftLeise)
+        }
+        .frame(maxWidth: 420)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 70)
+    }
+
     /// „Zuletzt gesucht" — dieselbe Liste wie auf iPhone und Fernseher, hier
     /// als Zeilen in einer Karte.
     private var zuletzt: some View {
@@ -84,7 +105,9 @@ struct SucheView: View {
 
                 // Ohne Wort im Feld: woran man zuletzt war. Ein Klick sucht
                 // es noch einmal.
-                if begriff.isEmpty, !letzte.isEmpty { zuletzt }
+                if begriff.isEmpty {
+                    if letzte.isEmpty { leerhinweis } else { zuletzt }
+                }
 
                 if !treffer.isEmpty {
                     LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {
@@ -153,11 +176,16 @@ struct SucheView: View {
         .ohneKanteneffekt()
         .onAppear { imFeld = true }
         .task(id: begriff) {
-            guard begriff.count > 1 else {
+            // **Die Regel kommt aus dem Paket, nicht von hier.** Hier stand
+            // `begriff.count > 1` — dasselbe Ergebnis, aber ohne Trimmen:
+            // ein Leerzeichen und ein Buchstabe loesten auf dem Mac schon
+            // eine Anfrage aus, auf dem iPhone nicht. Und der Wert haette
+            // sich beim naechsten Mal an einer Stelle geaendert.
+            guard Anzeigeregeln.suchbegriffTaugt(begriff) else {
                 treffer = []; seerrtreffer = []; gesucht = false; return
             }
             // Kurz warten, statt bei jedem Tastendruck zu fragen.
-            try? await Task.sleep(for: .milliseconds(280))
+            try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             // **Nebeneinander, nicht nacheinander.** Seerr ist eine Zugabe;
             // kommt von dort nichts oder kommt es spaet, steht trotzdem
@@ -165,7 +193,14 @@ struct SucheView: View {
             async let eigene = model.suche(begriff)
             async let fremde = model.seerr.suchen(begriff)
             let (a, b) = await (eigene, fremde)
-            treffer = a
+            // **Doppelte Kennungen raus, bevor sie in ein `ForEach` gehen.**
+            //
+            // Am 07.09.2026 gemeldet: auf „Zuletzt hinzugefuegt" oeffnete ein
+            // Druck auf eine Serie die uebernaechste. `ForEach` ordnet ueber
+            // die Kennung zu, und der Server liefert denselben Titel
+            // gelegentlich zweimal. Die iPhone-Fassung faengt das hier ab —
+            // die Mac-Fassung hatte den Schutz nie bekommen.
+            treffer = Listenregeln.ohneDoppelte(a)
             // Was schon auf dem Server liegt, gehoert in den oberen Block —
             // sonst staende derselbe Titel zweimal auf der Seite.
             seerrtreffer = b.filter { !$0.stand.schonDa }

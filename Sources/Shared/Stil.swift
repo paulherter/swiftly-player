@@ -567,6 +567,9 @@ struct Bild<Platzhalter: View>: View {
     var fortschritt: Double? = nil
     @ViewBuilder var platzhalter: () -> Platzhalter
 
+    /// Profil → Darstellung. Siehe `EnvironmentValues.fortschrittAufKacheln`.
+    @Environment(\.fortschrittAufKacheln) private var balkenZeigen
+
     /// **Laedt ueber ``Bildspeicher``, nicht ueber `AsyncImage`.**
     ///
     /// Hier stand `AsyncImage`, und daneben lag seit dem 05.09.2026 in
@@ -660,7 +663,7 @@ struct Bild<Platzhalter: View>: View {
                 withAnimation(Stil.einblenden) { sichtbar = true }
             }
             .overlay(alignment: .bottom) {
-                if let fortschritt {
+                if let fortschritt, balkenZeigen {
                     Kachelfortschritt(anteil: fortschritt)
                 }
             }

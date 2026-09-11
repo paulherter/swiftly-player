@@ -29,6 +29,14 @@ struct ServerAufnahmeView: View {
     /// Umgeschaltet auf den Code-Weg. Der Vorgang läuft erst dann an — sonst
     /// zöge jeder Besuch dieser Seite einen Code beim Server, den niemand
     /// braucht.
+    ///
+    /// **Im Fenster, nicht als Blatt darüber.** Auf dem iPhone öffnet Quick
+    /// Connect einen eigenen Vollbildschirm: dort ist kein Platz, ein Feld
+    /// und einen sechsstelligen Code nebeneinander lesbar zu halten. Hier
+    /// ist Platz, und ein Blatt über einem halb ausgefüllten Formular nähme
+    /// genau die Angabe weg, auf die sich der Code bezieht — an welchem
+    /// Server man sich gerade anmeldet. Dieselbe Entscheidung wie bei
+    /// „Weiteres Konto", einen Bildschirm weiter.
     @State private var perCode = false
     @State private var stand = QuickConnectModell()
     @FocusState private var feld: Feld?

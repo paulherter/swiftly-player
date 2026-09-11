@@ -32,6 +32,12 @@ struct RootView: View {
             }
         }
         .animation(.default, value: model.phase)
+        // **Einmal an der Wurzel, nicht an jeder Kachel.** Welche Kachel
+        // ihren Fortschrittsbalken zeigt, entscheidet eine Einstellung — und
+        // die Aufrufstellen, die `fortschritt:` weiterreichen, sollen nichts
+        // davon wissen muessen. Gelesen wird sie dort, wo der Balken
+        // entsteht. Siehe `EnvironmentValues.fortschrittAufKacheln`.
+        .environment(\.fortschrittAufKacheln, model.fortschrittAufKacheln)
         // Ein helles Thema gibt es nicht — die Gestaltung ist auf Dunkel
         // gebaut. Auf tvOS ohnehin die Regel.
         .preferredColorScheme(.dark)

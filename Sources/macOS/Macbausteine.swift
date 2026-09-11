@@ -375,6 +375,9 @@ struct Bildflaeche: View {
     let breite: CGFloat
     let hoehe: CGFloat
     var fortschritt: Double?
+
+    /// Einstellungen → Darstellung. Siehe `EnvironmentValues.fortschrittAufKacheln`.
+    @Environment(\.fortschrittAufKacheln) private var balkenZeigen
     /// Zeichen für den Fall, dass der Server kein Bild hat.
     var zeichen: String?
 
@@ -382,7 +385,7 @@ struct Bildflaeche: View {
         ZStack(alignment: .bottom) {
             Stil.flaeche
             Netzbild(url: bild, zeichen: zeichen)
-            if let fortschritt, fortschritt > 0 {
+            if let fortschritt, fortschritt > 0, balkenZeigen {
                 GeometryReader { raum in
                     ZStack(alignment: .leading) {
                         Rectangle().fill(Stil.schrift.opacity(0.16))
