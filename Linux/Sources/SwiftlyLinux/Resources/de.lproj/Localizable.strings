@@ -267,3 +267,16 @@
 "Weiter" = "Weiter";
 "Prüfe …" = "Prüfe …";
 "Diese Adresse ergibt keinen Server." = "Diese Adresse ergibt keinen Server.";
+
+/* Darstellung: Startseite und Genres */
+"Startseite" = "Startseite";
+"Reihen" = "Reihen";
+"Reihen, ihre Folge und Genres" = "Reihen, ihre Folge und Genres";
+"Mit den Pfeilen umsortieren. Was aus ist, steht nicht auf der Startseite." = "Mit den Pfeilen umsortieren. Was aus ist, steht nicht auf der Startseite.";
+"Genres" = "Genres";
+"Als eigene Reihen" = "Als eigene Reihen";
+"Als Chips über den Reihen" = "Als Chips über den Reihen";
+"Genre hinzufügen" = "Genre hinzufügen";
+"Alle Genres stehen schon auf der Startseite." = "Alle Genres stehen schon auf der Startseite.";
+"Auf deinem Server sind keine Genres hinterlegt." = "Auf deinem Server sind keine Genres hinterlegt.";
+"Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist." = "Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist.";

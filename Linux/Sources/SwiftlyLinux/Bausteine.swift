@@ -690,3 +690,84 @@ func kachelmarkeLegen(_ huelle: Widget!, item: Item) {
     gtk_widget_set_valign(feld, GTK_ALIGN_START)
     gtk_overlay_add_overlay(OpaquePointer(huelle), feld)
 }
+
+
+/// Ein kleiner Pfeil- oder Minusknopf am rechten Rand einer Listenzeile.
+///
+/// **Nicht `insensitive`, wenn er nicht geht** — GTK legt darüber seinen
+/// eigenen Schleier, und der sieht aus wie ein Fehler. Stattdessen halbe
+/// Deckung und ein Rückruf, der nichts tut; dieselbe Lehre wie beim aktiven
+/// Konto im Profil.
+func listenpfeil(_ symbol: String, an: Bool, _ tun: @escaping () -> Void) -> Widget! {
+    let knopf: Widget! = gtk_button_new()
+    gtk_widget_add_css_class(knopf, "swiftly-listenpfeil")
+    gtk_button_set_child(alsKnopf(knopf), gtk_image_new_from_icon_name(symbol))
+    gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
+    if !an { gtk_widget_set_opacity(knopf, 0.3) }
+    beiSignal(knopf, "clicked") { if an { tun() } }
+    return knopf
+}
+
+/// Eine Zeile, die eine von mehreren Möglichkeiten trägt — Haken rechts bei
+/// der gewählten.
+///
+/// **Kein `GtkCheckButton`** (E4): der Haken ist ein Zeichen in Akzent, und
+/// der Akzent steht hier für Auswahl (E2).
+func auswahlzeile(_ text: String, an: Bool, _ tun: @escaping () -> Void) -> Widget! {
+    let knopf: Widget! = gtk_button_new()
+    gtk_widget_add_css_class(knopf, "swiftly-zeilenrumpf")
+    let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+    gtk_widget_set_margin_start(zeile, 14)
+    gtk_widget_set_margin_end(zeile, 14)
+    gtk_widget_set_margin_top(zeile, 10)
+    gtk_widget_set_margin_bottom(zeile, 10)
+    let l = beschriftung(text, stil: "swiftly-koerper")
+    gtk_label_set_xalign(OpaquePointer(l), 0)
+    gtk_widget_set_hexpand(l, 1)
+    anhaengen(zeile, l)
+    if an {
+        let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+        gtk_widget_add_css_class(haken, "swiftly-akzentzeile")
+        anhaengen(zeile, haken)
+    }
+    gtk_button_set_child(alsKnopf(knopf), zeile)
+    beiSignal(knopf, "clicked", tun)
+    return knopf
+}
+
+/// Der Schalter aus ``schalterzeile(symbol:titel:unter:an:umgeschaltet:)``,
+/// aber ohne Zeile drumherum — für Listen, die schon eine eigene haben.
+func kleinerSchalter(an: Bool, _ umgeschaltet: @escaping (Bool) -> Void) -> Widget! {
+    var zustand = an
+    let schalter: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(schalter, "swiftly-schalter")
+    gtk_widget_set_size_request(schalter, 46, 28)
+    gtk_widget_set_valign(schalter, GTK_ALIGN_CENTER)
+    let knauf: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(knauf, "swiftly-knauf")
+    gtk_widget_set_size_request(knauf, 22, 22)
+    gtk_widget_set_valign(knauf, GTK_ALIGN_CENTER)
+    anhaengen(schalter, knauf)
+
+    func anmalen() {
+        if zustand {
+            gtk_widget_add_css_class(schalter, "swiftly-aktiv")
+            gtk_widget_set_halign(knauf, GTK_ALIGN_END)
+        } else {
+            gtk_widget_remove_css_class(schalter, "swiftly-aktiv")
+            gtk_widget_set_halign(knauf, GTK_ALIGN_START)
+        }
+    }
+    anmalen()
+
+    let knopf: Widget! = gtk_button_new()
+    gtk_widget_add_css_class(knopf, "swiftly-blank")
+    gtk_button_set_child(alsKnopf(knopf), schalter)
+    gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
+    beiSignal(knopf, "clicked") {
+        zustand.toggle()
+        anmalen()
+        umgeschaltet(zustand)
+    }
+    return knopf
+}

@@ -14,7 +14,7 @@ import JellyfinKit
 /// Wiedergabe getrennt, der Fernseher hat eine Seite. Linux folgt dem Mac.
 extension App {
 
-    enum Unterseite { case profil, quickConnect, wiedergabe, seerr, einstellungen, kontoHinzufuegen, serverAufnahme }
+    enum Unterseite { case profil, quickConnect, wiedergabe, seerr, einstellungen, kontoHinzufuegen, serverAufnahme, darstellung, genrewahl }
 
     /// **Einstellungen blenden über, sie schieben nicht.**
     ///
@@ -48,6 +48,8 @@ extension App {
         case .einstellungen:  einstellungenBauen(block)
         case .kontoHinzufuegen: kontoHinzufuegenBauen(block)
         case .serverAufnahme:   serverAufnahmeBauen(block)
+        case .darstellung:      darstellungBauen(block)
+        case .genrewahl:        genrewahlBauen(block)
         }
 
         let scroller = seitenscroller()
@@ -388,6 +390,13 @@ extension App {
             self?.wahlen.sichern()
             self?.startseiteLaden()
         })
+        anhaengen(d.raum, zeilenstrich())
+        anhaengen(d.raum, wertezeile(symbol: "view-list-ordered-symbolic",
+                                     titel: uebersetzt("Startseite"),
+                                     unter: uebersetzt("Reihen, ihre Folge und Genres"),
+                                     pfeil: true) { [weak self] in
+            self?.unterseiteOeffnen(.darstellung)
+        })
         anhaengen(block, d.aussen)
 
         // **H1 — aus im Auslieferungszustand**, und dann steht hier genau
@@ -702,6 +711,194 @@ extension App {
         gtk_widget_set_hexpand(luft, 1)
         anhaengen(reihe, luft)
         return reihe
+    }
+
+    // MARK: Darstellung — die Startseite einstellen
+
+    /// **Welche Reihen, in welcher Folge, und Genres als Reihen oder Chips.**
+    ///
+    /// Auf Linux war die Startseite fest verdrahtet. Die Rechnung dahinter
+    /// liegt als ``Startreihenfolge`` im Paket, damit dieselbe Ablage auf
+    /// jeder Plattform dasselbe ergibt.
+    private func darstellungBauen(_ block: Widget!) {
+        anhaengen(block, unterseitenkopf(uebersetzt("Darstellung")))
+
+        // „Neuzugänge getrennt" steht in den Einstellungen unter Darstellung
+        // und **nicht auch hier**: eine Einstellung an zwei Stellen ist eine
+        // Frage, die zweimal gestellt wird.
+        let g0 = einstellungsgruppe(uebersetzt("Reihen"))
+        anhaengen(block, g0.aussen)
+
+        // **Umsortiert wird mit dem, was die Eingabeart hergibt** — auf dem
+        // iPhone Griffe, hier zwei Pfeile je Zeile. Abschnitt F erlaubt genau
+        // diesen Unterschied; Ziehen mit der Maus über eine Liste, die auch
+        // ausblenden kann, wäre zwei Gesten an derselben Zeile.
+        let g1 = zeilengruppe()
+        _ = g0
+        let sichtbar = Startreihenfolge.geltend(abgelegt: wahlen.startReihen)
+            .filter { $0.passt(getrennt: wahlen.neuzugaengeGetrennt) }
+        for (stelle, reihe) in sichtbar.enumerated() {
+            if stelle > 0 { anhaengen(g1.raum, zeilenstrich()) }
+            anhaengen(g1.raum, reihenzeile(reihe, stelle: stelle, von: sichtbar.count))
+        }
+        anhaengen(block, g1.aussen)
+
+        let fuss1 = beschriftung(uebersetzt("Mit den Pfeilen umsortieren. Was aus ist, steht nicht auf der Startseite."),
+                                 stil: "swiftly-zweitzeile", umbruch: true)
+        gtk_widget_add_css_class(fuss1, "swiftly-sehrleise")
+        gtk_label_set_xalign(OpaquePointer(fuss1), 0)
+        gtk_widget_set_margin_top(fuss1, 8)
+        anhaengen(block, fuss1)
+
+        anhaengen(block, luftHoch(26))
+
+        // **Zwei Formen derselben Auswahl**, nicht zwei Mengen.
+        let g2 = einstellungsgruppe(uebersetzt("Genres"))
+        anhaengen(g2.raum, auswahlzeile(uebersetzt("Als eigene Reihen"), an: !wahlen.genreChips) {
+            [weak self] in
+            self?.wahlen.genreChips = false
+            self?.wahlen.sichern()
+            self?.geladen.remove(.start)
+            self?.unterseiteOeffnen(.darstellung)
+        })
+        anhaengen(g2.raum, zeilenstrich())
+        anhaengen(g2.raum, auswahlzeile(uebersetzt("Als Chips über den Reihen"), an: wahlen.genreChips) {
+            [weak self] in
+            self?.wahlen.genreChips = true
+            self?.wahlen.sichern()
+            self?.geladen.remove(.start)
+            self?.unterseiteOeffnen(.darstellung)
+        })
+        anhaengen(block, g2.aussen)
+
+        if !wahlen.startGenres.isEmpty {
+            let g3 = zeilengruppe()
+            for (stelle, name) in wahlen.startGenres.enumerated() {
+                if stelle > 0 { anhaengen(g3.raum, zeilenstrich()) }
+                anhaengen(g3.raum, genrezeile(name))
+            }
+            anhaengen(block, g3.aussen)
+        }
+
+        let g4 = zeilengruppe()
+        anhaengen(g4.raum, wertezeile(symbol: "list-add-symbolic",
+                                      titel: uebersetzt("Genre hinzufügen"),
+                                      pfeil: true) { [weak self] in
+            self?.unterseiteOeffnen(.genrewahl)
+        })
+        anhaengen(block, g4.aussen)
+
+        let fuss2 = beschriftung(uebersetzt("Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist."),
+                                 stil: "swiftly-zweitzeile", umbruch: true)
+        gtk_widget_add_css_class(fuss2, "swiftly-sehrleise")
+        gtk_label_set_xalign(OpaquePointer(fuss2), 0)
+        gtk_widget_set_margin_top(fuss2, 8)
+        anhaengen(block, fuss2)
+    }
+
+    /// Eine Reihe in der Liste: Name, Schalter, zwei Pfeile.
+    private func reihenzeile(_ reihe: Startreihe, stelle: Int, von: Int) -> Widget! {
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        gtk_widget_set_margin_start(zeile, 14)
+        gtk_widget_set_margin_end(zeile, 14)
+        gtk_widget_set_margin_top(zeile, 10)
+        gtk_widget_set_margin_bottom(zeile, 10)
+
+        let name = beschriftung(uebersetzt(reihe.listenname), stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(name), 0)
+        gtk_widget_set_hexpand(name, 1)
+        anhaengen(zeile, name)
+
+        let hoch = listenpfeil("go-up-symbolic", an: stelle > 0) { [weak self] in
+            self?.reiheVerschieben(reihe, um: -1)
+        }
+        anhaengen(zeile, hoch)
+        let runter = listenpfeil("go-down-symbolic", an: stelle < von - 1) { [weak self] in
+            self?.reiheVerschieben(reihe, um: 1)
+        }
+        anhaengen(zeile, runter)
+
+        let an = !wahlen.startAus.contains(reihe.rawValue)
+        anhaengen(zeile, kleinerSchalter(an: an) { [weak self] neu in
+            guard let self else { return }
+            if neu { self.wahlen.startAus.removeAll { $0 == reihe.rawValue } }
+            else { self.wahlen.startAus.append(reihe.rawValue) }
+            self.wahlen.sichern()
+            self.geladen.remove(.start)
+        })
+        return zeile
+    }
+
+    private func reiheVerschieben(_ reihe: Startreihe, um schritt: Int) {
+        wahlen.startReihen = Startreihenfolge.verschoben(reihe, um: schritt,
+                                                         abgelegt: wahlen.startReihen,
+                                                         getrennt: wahlen.neuzugaengeGetrennt)
+        wahlen.sichern()
+        geladen.remove(.start)
+        unterseiteOeffnen(.darstellung)
+    }
+
+    /// Ein gewähltes Genre: Name und ein Weg, es wieder loszuwerden.
+    private func genrezeile(_ name: String) -> Widget! {
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        gtk_widget_set_margin_start(zeile, 14)
+        gtk_widget_set_margin_end(zeile, 14)
+        gtk_widget_set_margin_top(zeile, 10)
+        gtk_widget_set_margin_bottom(zeile, 10)
+        // **Der Name kommt vom Server** und wird nicht übersetzt (E7).
+        let l = beschriftung(name, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        gtk_widget_set_hexpand(l, 1)
+        anhaengen(zeile, l)
+        let weg = listenpfeil("list-remove-symbolic", an: true) { [weak self] in
+            guard let self else { return }
+            self.wahlen.startGenres.removeAll { $0 == name }
+            self.wahlen.sichern()
+            self.geladen.remove(.start)
+            self.unterseiteOeffnen(.darstellung)
+        }
+        anhaengen(zeile, weg)
+        return zeile
+    }
+
+    /// Die freien Genres des Servers.
+    private func genrewahlBauen(_ block: Widget!) {
+        anhaengen(block, unterseitenkopf(uebersetzt("Genre hinzufügen")))
+        let gruppe = zeilengruppe()
+        anhaengen(block, gruppe.aussen)
+        let raum = gruppe.raum
+        let schon = Set(wahlen.startGenres)
+        guard let client else { return }
+        let kiste = gehalten(raum)
+        Task.detached { [self] in
+            let alle = (try? await client.gattungen()) ?? []
+            aufHauptfaden {
+                defer { losgelassen(kiste) }
+                let frei = alle.filter { !schon.contains($0) }
+                guard !frei.isEmpty else {
+                    let text = alle.isEmpty
+                        ? uebersetzt("Auf deinem Server sind keine Genres hinterlegt.")
+                        : uebersetzt("Alle Genres stehen schon auf der Startseite.")
+                    let l = beschriftung(text, stil: "swiftly-koerper", umbruch: true)
+                    gtk_widget_set_margin_start(l, 14)
+                    gtk_widget_set_margin_top(l, 12)
+                    gtk_widget_set_margin_bottom(l, 12)
+                    anhaengen(kiste.widget, l)
+                    return
+                }
+                for (stelle, name) in frei.enumerated() {
+                    if stelle > 0 { anhaengen(kiste.widget, zeilenstrich()) }
+                    anhaengen(kiste.widget, wertezeile(symbol: "tag-symbolic", titel: name) {
+                        [weak self] in
+                        guard let self else { return }
+                        self.wahlen.startGenres.append(name)
+                        self.wahlen.sichern()
+                        self.geladen.remove(.start)
+                        self.unterseiteOeffnen(.darstellung)
+                    })
+                }
+            }
+        }
     }
 
     // MARK: Ein zweiter Server

@@ -711,14 +711,11 @@ final class AppModel {
 
     /// Titel eines Genres, die zuletzt hinzugefügten zuerst. `nil`, wenn der
     /// Server nicht geantwortet hat — dann bleibt eine Reihe, wie sie war.
+    /// **Die Regel liegt im Paket** (`JellyfinClient.titel(gattung:)`), damit
+    /// Linux und Windows sie erreichen.
     func titel(gattung: String, limit: Int = 24) async -> [Item]? {
-        guard let client,
-              let antwort = try? await client.items(limit: limit, sortBy: "DateCreated",
-                                                    sortOrder: "Descending", recursive: true,
-                                                    includeItemTypes: ["Movie", "Series"],
-                                                    gattungen: [gattung])
-        else { return nil }
-        return Listenregeln.ohneDoppelte(antwort.items)
+        guard let client else { return nil }
+        return await client.titel(gattung: gattung, limit: limit)
     }
 
     func gattungen() async -> [String] {
@@ -871,16 +868,11 @@ final class AppModel {
     }
 
     /// Wo man in dieser Serie steht — für den großen Knopf.
+    /// **Die Regel liegt im Paket** (`JellyfinClient.standInSerie(_:)`) — sie
+    /// gehört zu A10 und muss überall dieselbe Antwort geben.
     func standInSerie(_ serie: Item) async -> Item? {
         guard let client else { return nil }
-        // `try?` einer optionalen Rückgabe flacht Swift zu **einer** Ebene ab
-        // — `offen` ist hier also schon ein `Item`, und das zusätzliche
-        // `offen != nil`, das einmal danebenstand, war immer wahr.
-        if let offen = try? await client.naechsteFolgeDerSerie(seriesID: serie.id) {
-            return offen
-        }
-        // Serie ganz gesehen oder NextUp leer: dann die erste Folge.
-        return (try? await client.folgen(seriesID: serie.id))?.first
+        return await client.standInSerie(serie.id)
     }
 
     /// Das Profilbild aus Jellyfin. Fehlt es, antwortet der Server mit 404
@@ -1492,20 +1484,9 @@ extension AppModel {
 /// **Neue Filme und neue Serien sind eigene Reihen**, damit man sie einzeln
 /// schieben kann: wer Serien oben will und Filme unten, soll das können.
 /// `neuzugaenge` ist die gemeinsame Reihe, wenn „Neuzugänge getrennt" aus ist.
-enum Startreihe: String, CaseIterable, Identifiable, Sendable {
-    case weiterschauen, naechsteFolge, neueFilme, neueSerien, neuzugaenge
-    var id: String { rawValue }
-
-    /// Welche Reihen es gerade gibt: getrennt die neuen Filme und Serien
-    /// einzeln, sonst die gemeinsame.
-    func passt(getrennt: Bool) -> Bool {
-        switch self {
-        case .neuzugaenge:            !getrennt
-        case .neueFilme, .neueSerien: getrennt
-        default:                      true
-        }
-    }
-}
+// `Startreihe` liegt seit dem 13.09.2026 im Paket (`Startreihen.swift`) — die
+// Frage, welche Reihe wann gilt, ist keine Anzeigefrage, und hier erreichte
+// sie Linux und Windows nicht.
 
 /// Name und Zeichen einer Reihe — **hier, nicht in einer Ansicht.**
 ///

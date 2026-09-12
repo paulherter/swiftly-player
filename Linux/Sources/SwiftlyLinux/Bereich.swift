@@ -35,6 +35,13 @@ enum Bereich: CaseIterable {
     /// genau das behoben (`Seitenziel.bibliothek`); hier stand es noch.
     case bibliothek
 
+    /// **Alle Titel eines Genres — aus den Chips über der Startseite.**
+    ///
+    /// Wie ``bibliothek`` in dieser Aufzählung, weil sie dieselbe Rasterseite
+    /// benutzt, und wie sie kein Eintrag in der Leiste: sie kommt von einem
+    /// Chip, nicht aus der Navigation.
+    case gattung
+
     /// **Oben, was der Server hat.** Vier Zeilen, wie eh und je.
     static let obenGruppe: [Bereich] = [.start, .filme, .serien, .suche]
 
@@ -66,6 +73,8 @@ enum Bereich: CaseIterable {
         case .suche:  uebersetzt("Suche")
         // Der Titel kommt vom geoeffneten Eintrag, nicht von hier.
         case .bibliothek: ""
+        // Der Genrename kommt vom Server und wird **nicht** uebersetzt (E7).
+        case .gattung: ""
         }
     }
 
@@ -79,6 +88,7 @@ enum Bereich: CaseIterable {
         case .downloads: "downloads"
         case .suche:  "suche"
         case .bibliothek: "bibliothek"
+        case .gattung: "gattung"
         }
     }
 
@@ -97,6 +107,8 @@ enum Bereich: CaseIterable {
         case .downloads: "folder-download-symbolic"
         case .suche:  "system-search-symbolic"
         case .bibliothek: "folder-symbolic"
+        // Steht nie in der Leiste; das Zeichen gilt nur fuer den Kopf.
+        case .gattung: "tag-symbolic"
         }
     }
 }

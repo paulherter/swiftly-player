@@ -66,6 +66,8 @@ final class App: @unchecked Sendable {
     // Startseite
     var bereich: Bereich = .start
     private var reihenstapel: Widget!
+    /// Die gewählten Genres, wenn sie als Chips über den Reihen stehen.
+    private var gattungschips: [String] = []
     var kopfzeile: Widget!
 
     /// Die Kreise unten in der Leiste. Ein ``GtkFixed``, weil sie sich
@@ -974,6 +976,11 @@ final class App: @unchecked Sendable {
     /// Der Titel der Bibliotheksseite. Er wechselt mit jeder Sammlung; die
     /// Bereichsseiten tragen ihren Titel fest.
     private var bibliothekstitel: Widget!
+    /// Der Titel der Genre-Seite. Er trägt den **unübersetzten** Namen vom
+    /// Server (E7).
+    private var gattungstitel: Widget!
+    /// Welches Genre gerade offen ist.
+    var offeneGattung: String?
     private var profilbild: Widget!
     private var profilname: Widget!
     private var profilserver: Widget!
@@ -1288,6 +1295,7 @@ final class App: @unchecked Sendable {
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.serien), "serien")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.merkliste), "merkliste")
         gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.bibliothek), "bibliothek")
+        gtk_stack_add_named(OpaquePointer(inhalt), rasterseiteBauen(.gattung), "gattung")
         gtk_stack_add_named(OpaquePointer(inhalt), downloadseiteBauen(), "downloads")
         gtk_stack_add_named(OpaquePointer(inhalt), sucheBauen(), "suche")
 
@@ -1880,6 +1888,7 @@ final class App: @unchecked Sendable {
         // sondern gezeigt.
         case .downloads: downloadseiteFuellen()
         case .bibliothek: rasterLaden(.bibliothek)
+        case .gattung: rasterLaden(.gattung)
         case .suche:  break
         }
     }
@@ -1945,6 +1954,7 @@ final class App: @unchecked Sendable {
         anhaengen(block, seitenkopf(was.beschriftung, zahl: &zahl, titelfeld: &titel))
         // Nur diese eine Seite wechselt ihren Titel.
         if was == .bibliothek { bibliothekstitel = titel }
+        if was == .gattung { gattungstitel = titel }
 
         let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
         chipzeilen[was] = zeile
@@ -2537,6 +2547,23 @@ final class App: @unchecked Sendable {
         zeige(.bibliothek)
     }
 
+    /// **Ein Genre als eigene Seite** — dasselbe Raster wie Bibliothek,
+    /// Merkliste und Suche, mit dem Genrenamen als Titel.
+    ///
+    /// Sortiert nach „zuletzt hinzugefügt": wer ein Genre antippt, sucht
+    /// meist, was neu ist. Die Regel steht als `titel(gattung:)` im Paket.
+    func gattungOeffnen(_ name: String) {
+        offeneGattung = name
+        if gattungstitel != nil {
+            gtk_label_set_text(OpaquePointer(gattungstitel), name)
+        }
+        geladen.remove(.gattung)
+        seitenstapel[.gattung] = []
+        filter[.gattung] = .alle
+        sortierung[.gattung] = .name
+        zeige(.gattung)
+    }
+
     private func bibliothekszeilenMalen() {
         for (kennung, knopf) in bibliotheksknoepfe {
             if kennung == offeneBibliothek?.id {
@@ -2569,6 +2596,10 @@ final class App: @unchecked Sendable {
 
         // Die Wahl vor dem Faden ablesen — `wahlen` gehört dem Hauptfaden.
         let getrennt = wahlen.neuzugaengeGetrennt
+        let reihenfolge = wahlen.startReihen
+        let ausgeblendet = wahlen.startAus
+        let gattungen = wahlen.startGenres
+        let alsChips = wahlen.genreChips
         Task.detached { [self] in
             // **Hier wird der Fehler gelesen, nicht verschluckt.** Die
             // Startseite lädt bei jedem Wechsel in den Vordergrund (D8) und
@@ -2606,23 +2637,41 @@ final class App: @unchecked Sendable {
             // **Neue Filme und neue Serien getrennt, wenn gewünscht.** Eine
             // gemischte Reihe ist die Vorgabe; wer viel neu bekommt, will sie
             // auseinander. Die Zeile fehlte auf Linux ganz.
-            // **Die Ueberschrift heisst nicht wie die Einstellung.** In der
-            // Darstellung steht "Neue Filme" — das ist der Name der Zeile, die
-            // man dort verschiebt. Auf der Seite selbst steht "Zuletzt
-            // hinzugefuegte Filme" (`macOS/HomeView.swift:220`). Hier stand
-            // der Einstellungsname, also ein Titel, den es auf keiner anderen
-            // Plattform gibt.
-            let letzte: [(String, Reihenart, [Item])] = getrennt
-                ? [(uebersetzt("Zuletzt hinzugefügte Filme"), .neu, filme),
-                   (uebersetzt("Zuletzt hinzugefügte Serien"), .neu, serien)]
-                : [(uebersetzt("Zuletzt hinzugefügt"), .neu, neuzugaenge)]
-            let reihen: [(String, Reihenart, [Item])] = ([
-                (uebersetzt("Weiterschauen"), .weiterschauen, await weiter ?? []),
-                (uebersetzt("Nächste Folge"), .naechste, await naechste ?? [])
-            ] + letzte).filter { !$0.2.isEmpty }
+            // **Die feste Reihenfolge kam aus dem Code, jetzt aus den
+            // Einstellungen.** Welche Reihen, in welcher Folge, und welche
+            // ausgeblendet sind — `Startreihenfolge` im Paket rechnet es aus,
+            // damit dieselbe Ablage auf jeder Plattform dasselbe ergibt.
+            let inhalt: [Startreihe: (Reihenart, [Item])] = [
+                .weiterschauen: (.weiterschauen, await weiter ?? []),
+                .naechsteFolge: (.naechste, await naechste ?? []),
+                .neuzugaenge:   (.neu, neuzugaenge),
+                .neueFilme:     (.neu, filme),
+                .neueSerien:    (.neu, serien),
+            ]
+            var gesammelt: [(String, Reihenart, [Item])] = Startreihenfolge
+                .sichtbar(abgelegt: reihenfolge, aus: Set(ausgeblendet), getrennt: getrennt)
+                .compactMap { r in
+                    guard let (art, items) = inhalt[r], !items.isEmpty else { return nil }
+                    return (uebersetzt(r.reihentitel), art, items)
+                }
+
+            // **Die Genres als eigene Reihen, nach den festen** — nur wenn
+            // sie nicht als Chips oben stehen. Ihre Namen kommen vom Server
+            // und laufen deshalb **nie** durch die Übersetzung (E7).
+            if !alsChips {
+                for name in gattungen {
+                    guard let treffer = await client.titel(gattung: name), !treffer.isEmpty
+                    else { continue }
+                    gesammelt.append((name, .neu, treffer))
+                }
+            }
+            // Ab hier unveraenderlich — sonst faengt der Sprung auf den
+            // Hauptfaden eine `var` ein, und Swift 6 laesst das nicht zu.
+            let reihen = gesammelt
 
             aufHauptfaden {
                 guard self.kontowechsel == stand else { return }
+                self.gattungschipsZeigen(alsChips ? gattungen : [])
                 self.reihenZeigen(reihen)
             }
         }
@@ -2676,23 +2725,30 @@ final class App: @unchecked Sendable {
         // Die Merkliste hat keine Bibliothek — sie geht ueber alles.
         let eltern: String?
         switch was {
-        case .merkliste:  eltern = nil
+        case .merkliste, .gattung: eltern = nil
         case .bibliothek: eltern = offeneBibliothek?.id
         default:          eltern = gewaehlteBibliothek[was] ?? bibliotheken(fuer: was).first?.id
         }
         let stand = kontowechsel
+        // **Ein Genre geht ueber alle Bibliotheken**, wie die Merkliste — es
+        // ist kein Ort, sondern eine Eigenschaft. Und es sortiert nach
+        // „zuletzt hinzugefuegt", nicht nach dem gewaehlten Feld: wer ein
+        // Genre antippt, sucht meist, was neu ist.
+        let genre = was == .gattung ? offeneGattung : nil
         Task.detached { [self] in
             let antwort = try? await client.items(parentID: eltern,
                                                   limit: 100,
                                                   startIndex: ab,
-                                                  sortBy: sort.feld,
-                                                  sortOrder: sort.richtung,
+                                                  sortBy: genre != nil ? "DateCreated" : sort.feld,
+                                                  sortOrder: genre != nil ? "Descending"
+                                                                          : sort.richtung,
                                                   filters: was == .merkliste
                                                       ? ["IsFavorite"] : f.jellyfinFilter,
                                                   istGesehen: was == .merkliste
                                                       ? nil : f.istGesehen,
                                                   recursive: true,
-                                                  includeItemTypes: gattungen)
+                                                  includeItemTypes: gattungen,
+                                                  gattungen: genre.map { [$0] } ?? [])
             let items = antwort?.items ?? []
             let gesamt = antwort?.totalRecordCount ?? items.count
             aufHauptfaden {
@@ -2817,8 +2873,36 @@ final class App: @unchecked Sendable {
         }
     }
 
+    /// **Genres als Chips, ganz oben** — ein Einstieg, kein Inhalt: ein Klick
+    /// öffnet das Genre.
+    ///
+    /// **Eckig, nicht rund.** Ecke wie ein Knopf; rund ist, was ein Bild ist
+    /// (E26). Die Namen kommen vom Server und laufen deshalb nie durch die
+    /// Übersetzung (E7).
+    private func gattungschipsZeigen(_ namen: [String]) {
+        gattungschips = namen
+    }
+
+    private func gattungschipzeile() -> Widget! {
+        let scroller = gtk_scrolled_window_new()
+        gtk_scrolled_window_set_policy(OpaquePointer(scroller),
+                                       GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        gtk_widget_set_margin_start(reihe, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_end(reihe, Int32(Stil.randAbstand))
+        for name in gattungschips {
+            let chip: Widget! = gtk_button_new_with_label(name)
+            gtk_widget_add_css_class(chip, "swiftly-gattungschip")
+            beiSignal(chip, "clicked") { [weak self] in self?.gattungOeffnen(name) }
+            anhaengen(reihe, chip)
+        }
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
+        return scroller
+    }
+
     private func reihenZeigen(_ reihen: [(String, Reihenart, [Item])]) {
         leeren(reihenstapel)
+        if !gattungschips.isEmpty { anhaengen(reihenstapel, gattungschipzeile()) }
         guard !reihen.isEmpty else {
             // Symbol, Satz, Erklärzeile — dieselbe Form wie auf dem Mac
             // (`Leerzustand`), statt einer einzelnen Textzeile.

@@ -84,6 +84,21 @@ struct Wahlen: Codable {
     /// einer Stelle steht und nicht in drei Ansichten.
     var suchverlauf = ""
 
+    // MARK: Startseite
+
+    /// Die Reihenfolge der Startseitenreihen, als `rawValue` von
+    /// ``Startreihe``. Leer heisst: die Grundfolge des Pakets.
+    var startReihen: [String] = []
+    /// Welche Reihen ausgeblendet sind.
+    var startAus: [String] = []
+    /// Die gewählten Genres — als eigene Reihen unten oder als Chips oben.
+    var startGenres: [String] = []
+    /// **Zwei Formen derselben Auswahl, nicht zwei Mengen.** Der Schalter
+    /// wechselt, *wie* die gewählten Genres erscheinen, nicht *welche* — ein
+    /// früherer Anlauf auf Apple zeigte als Chips plötzlich alle Genres des
+    /// Servers, und niemand verstand, warum.
+    var genreChips = false
+
     var puffer: Pufferstufe { Pufferstufe(rawValue: pufferstufe) ?? .normal }
 
     // MARK: Lesen, das eine aeltere Datei ueberlebt
@@ -124,6 +139,10 @@ struct Wahlen: Codable {
         pufferstufe            = w(.pufferstufe, Pufferstufe.normal.rawValue)
         discordAnzeigen        = w(.discordAnzeigen, false)
         suchverlauf            = w(.suchverlauf, "")
+        startReihen            = w(.startReihen, [])
+        startAus               = w(.startAus, [])
+        startGenres            = w(.startGenres, [])
+        genreChips             = w(.genreChips, false)
     }
 
     /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.

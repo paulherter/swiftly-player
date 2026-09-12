@@ -37,3 +37,27 @@ public extension JellyfinClient {
         return Listenregeln.ohneDoppelte(antwort?.items ?? [])
     }
 }
+
+public extension JellyfinClient {
+
+    /// Titel eines Genres, die **zuletzt hinzugefügten zuerst**.
+    ///
+    /// Wer ein Genre antippt, sucht meist, was neu ist — deshalb `DateCreated`
+    /// und nicht der Name. Wie bei der Filmografie nur Film und Serie: ohne
+    /// die Grenze kämen die einzelnen Folgen mit, jede mit dem Plakat ihrer
+    /// Serie.
+    ///
+    /// `nil` heisst: der Server hat nicht geantwortet. Das ist etwas anderes
+    /// als „hier liegt nichts" — eine Reihe bleibt dann stehen, wie sie war,
+    /// statt sich zu leeren.
+    func titel(gattung: String, limit: Int = 24) async -> [Item]? {
+        guard let antwort = try? await items(limit: limit,
+                                             sortBy: "DateCreated",
+                                             sortOrder: "Descending",
+                                             recursive: true,
+                                             includeItemTypes: ["Movie", "Series"],
+                                             gattungen: [gattung])
+        else { return nil }
+        return Listenregeln.ohneDoppelte(antwort.items)
+    }
+}

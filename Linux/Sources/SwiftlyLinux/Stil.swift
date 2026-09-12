@@ -488,6 +488,29 @@ enum Stil {
             min-height: 40px;
         }
         .swiftly-kontoplus:hover { background-color: rgba(255,255,255,0.06); }
+        /* **Ein Genre-Chip ueber der Startseite.** Eckig, nicht rund: Ecke
+           wie ein Knopf, denn rund ist, was ein Bild ist (E26). 34 hoch, 14
+           seitlich — die Masse des Macs (`HomeView.swift:274`). */
+        button.swiftly-gattungschip {
+            min-height: 34px;
+            padding: 0 14px;
+            border-radius: \(ecke)px;
+            background-color: \(flaeche);
+            border: 1px solid \(rand);
+            font-size: 14px;
+            font-weight: 500;
+            color: \(schrift);
+        }
+        button.swiftly-gattungschip:hover { background-color: \(erhoeht); }
+        .swiftly-listenpfeil {
+            background: none;
+            border: none;
+            padding: 4px;
+            min-width: 28px;
+            min-height: 28px;
+            color: \(schriftLeise);
+        }
+        .swiftly-listenpfeil:hover { background-color: rgba(255,255,255,0.06); }
         .swiftly-trennlinie { background-color: \(linie); min-height: 1px; }
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
