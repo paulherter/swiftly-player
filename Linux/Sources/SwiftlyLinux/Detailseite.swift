@@ -642,7 +642,10 @@ extension App {
             // Öffnen neu aus `titel.istGesehen` gebaut. Gesagt werden muss es
             // trotzdem — sonst sieht es aus, als hätte es geklappt.
             Task.detached { [self] in
-                do { try await client.setzeGesehen(itemID: titel.id, an: neu) }
+                do {
+                    try await client.setzeGesehen(itemID: titel.id, an: neu)
+                    aufHauptfaden { self.sehstandVergessen(titel) }
+                }
                 catch { aufHauptfaden { self.melden(lesbarerFehler(error)) } }
             }
         })
@@ -679,7 +682,10 @@ extension App {
                     [weak self] in
                     gtk_popover_popdown(alsTafel(tafel))
                     guard let self, let client = self.client else { return }
-                    Task.detached { try? await client.setzeGesehen(itemID: staffel.id, an: true) }
+                    Task.detached { [weak self] in
+                        try? await client.setzeGesehen(itemID: staffel.id, an: true)
+                        aufHauptfaden { self?.sehstandVergessen(staffel) }
+                    }
                     self.melden(String(format: uebersetzt("%@ ist als gesehen vermerkt."), staffel.name))
                 })
             }
@@ -695,7 +701,10 @@ extension App {
                 [weak self] in
                 gtk_popover_popdown(alsTafel(tafel))
                 guard let self, let client = self.client else { return }
-                Task.detached { try? await client.setzeGesehen(itemID: titel.id, an: false) }
+                Task.detached { [weak self] in
+                    try? await client.setzeGesehen(itemID: titel.id, an: false)
+                    aufHauptfaden { self?.sehstandVergessen(titel) }
+                }
                 self.melden(uebersetzt("Der Fortschritt ist zurückgesetzt."))
             })
         }

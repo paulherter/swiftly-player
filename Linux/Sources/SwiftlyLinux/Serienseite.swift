@@ -328,7 +328,11 @@ extension App {
             let knopfkiste = gehalten(knopf)
             let hakenkiste = gehalten(ruhig)
             Task.detached { [self] in
-                do { try await client.setzeGesehen(itemID: folge.id, an: neu) }
+                do {
+                    try await client.setzeGesehen(itemID: folge.id, an: neu)
+                    // Der gemerkte Stand dieser Staffel ist ab jetzt falsch.
+                    aufHauptfaden { self.sehstandVergessen(folge) }
+                }
                 catch {
                     aufHauptfaden {
                         knopfzustand(knopfkiste.widget, aktiv: !neu,

@@ -1035,6 +1035,32 @@ final class App: @unchecked Sendable {
     var staffelspeicher: [String: [Item]] = [:]
     var folgenspeicher: [String: [Item]] = [:]
 
+    /// **Was hier liegt, traegt auch den Sehstand.**
+    ///
+    /// Die gemerkten Folgen tragen `userData` — also Haken und Fortschritt.
+    /// Wer eine Folge abhakt, aendert den Stand beim Server; was hier liegt,
+    /// weiss nichts davon, und beim naechsten Oeffnen der Staffel steht sie
+    /// wieder offen da.
+    ///
+    /// Am 12.09.2026 auf dem iPhone gemeldet und dort gleich behoben
+    /// (`Sources/Shared/AppModel.swift`): eine ganze Staffel abgehakt,
+    /// zurueck, wieder hinein — alles wieder ungesehen. Derselbe Speicher,
+    /// dieselbe Falle, nur in GTK.
+    ///
+    /// **Wegwerfen statt nachtragen.** Den Haken im gemerkten `Item` zu
+    /// aendern hiesse, `Item` und `UserItemData` neu zu bauen; der Speicher
+    /// ist dafuer da, dass der Rueckweg nicht leer ist, nicht dafuer, die
+    /// Wahrheit ueber den Sehstand zu halten.
+    func sehstandVergessen(_ item: Item) {
+        let serie = item.seriesId ?? item.id
+        for staffel in staffelspeicher[serie] ?? [] { folgenspeicher[staffel.id] = nil }
+        staffelspeicher[serie] = nil
+        // Die Staffel selbst, und die Staffel, in der eine Folge steht —
+        // beide koennen gemerkt sein, ohne dass die Serie es ist.
+        folgenspeicher[item.id] = nil
+        if let staffel = item.seasonId { folgenspeicher[staffel] = nil }
+    }
+
     // MARK: Spieler
     /// **Erst beim ersten Abspielen.** Der Abspieler legt ein `GtkPicture`
     /// an, und ``App`` entsteht als globale Referenz — also **bevor**
