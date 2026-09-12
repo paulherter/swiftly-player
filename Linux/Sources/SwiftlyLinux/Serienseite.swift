@@ -282,7 +282,7 @@ extension App {
         if let adressen, let marke = folge.imageTags?["Primary"],
            let url = adressen.bauen(itemID: folge.id, marke: marke,
                                     mass: .hoechstensHoch(220)) {
-            bildLaden(bild, url: url, schluessel: url.absoluteString)
+            bildLaden(bild, url: url, schluessel: Bildschluessel.fuer(url))
         } else {
             zeichenLegen(huelle, serie: true)
         }
@@ -488,7 +488,7 @@ extension App {
         if let adressen, let marke = person.primaryImageTag,
            let url = adressen.bauen(itemID: person.id, marke: marke,
                                     mass: .hoechstensHoch(200)) {
-            bildLaden(bild, url: url, schluessel: url.absoluteString)
+            bildLaden(bild, url: url, schluessel: Bildschluessel.fuer(url))
         } else {
             zeichenLegen(huelle, serie: false)
         }

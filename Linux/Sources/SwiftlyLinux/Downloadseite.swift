@@ -350,7 +350,19 @@ extension App {
             return Downloadregeln.groesse(p.geladen) + " / " + Downloadregeln.groesse(p.bytes)
         case .angehalten: return uebersetzt("Angehalten")
         case .fehler:     return p.grund ?? uebersetzt("Fehler")
-        case .fertig:     return Downloadregeln.groesse(p.geladen)
+        case .fertig:
+            // **H9: verschwindet der Titel vom Server, bleibt die Datei — und
+            // die Zeile traegt einen leisen Hinweis.** Mitloeschen waere eine
+            // boese Ueberraschung im Flugzeug, und das ist der Fall, fuer den
+            // die ganze Funktion gebaut ist. Der Hinweis fehlte hier ganz.
+            var stuecke = [Downloadregeln.groesse(p.geladen)]
+            if let behaelter = p.container, !behaelter.isEmpty {
+                stuecke.append(behaelter.uppercased())
+            }
+            if !p.nochAufDemServer {
+                stuecke.append(uebersetzt("nicht mehr auf dem Server"))
+            }
+            return stuecke.joined(separator: " · ")
         }
     }
 

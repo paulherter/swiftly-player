@@ -78,7 +78,9 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         k.timeoutIntervalForRequest = 60
         k.timeoutIntervalForResource = 60 * 60 * 24
         sitzung = URLSession(configuration: k, delegate: self, delegateQueue: nil)
-        posten = Speicher.downloadsLesen()
+        // **Hier wird nichts geladen.** Welche Titel gelten, haengt am Konto,
+        // und das steht beim Start noch nicht fest — `anmelden(client:konto:)`
+        // laedt.
         aufraeumenNachAbsturz()
     }
 
@@ -87,7 +89,28 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     func anmelden(client: JellyfinClient?, konto: String?) {
         self.client = client
         self.konto = konto
+        laden()
         takt()
+    }
+
+    /// **Ein Download gehoert seinem Konto** (H11).
+    ///
+    /// Die Liste auf der Platte traegt die Titel **aller** Konten; gezeigt
+    /// wird nur das eigene. Hier stand vorher ein ungefiltertes
+    /// `Speicher.downloadsLesen()` im `init` — zwei Konten auf demselben
+    /// Geraet sahen dieselben Titel und, schlimmer, denselben Fortschritt.
+    /// Genau der Schaden, den H11 beschreibt, und dieselbe Lehre wie beim
+    /// `Serienspeicher`.
+    ///
+    /// **Geloescht wird hier nichts.** Das andere Konto findet seine Titel
+    /// wieder, wenn es sich anmeldet.
+    private func laden() {
+        guard let konto else { posten = []; return }
+        posten = Speicher.downloadsLesen().filter { $0.konto == konto }
+        // Was beim letzten Mal mitten im Laden war, wartet jetzt wieder.
+        for i in posten.indices where posten[i].stand == .laedt {
+            posten[i].stand = .wartet
+        }
     }
 
     /// **Was beim letzten Mal mitten im Laden stand, wartet wieder.**
@@ -117,8 +140,14 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         posten.first { $0.id == id }
     }
 
+    /// **Die fremden Posten bleiben stehen** (H11). Wer nur die eigene Liste
+    /// schreibt, loescht die Titel des anderen Kontos von der Platte —
+    /// waehrend die Dateien liegenbleiben und niemand mehr weiss, wem sie
+    /// gehoeren.
     private func sichern() {
-        Speicher.downloadsSchreiben(posten)
+        let meins = konto
+        let fremde = Speicher.downloadsLesen().filter { $0.konto != meins }
+        Speicher.downloadsSchreiben(fremde + posten)
         melden()
     }
 
@@ -266,6 +295,43 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         sichern()
     }
 
+    /// **Was der Server inzwischen sagt** — H6 und H9.
+    ///
+    /// `nichtMehrAufDemServer` und `gesehen` gab es hier, aber **niemand rief
+    /// sie**: beide Angaben standen fuer immer auf dem Stand des
+    /// Downloadzeitpunkts. Damit rechnete H6 („welche Titel sind
+    /// entbehrlich") dauerhaft mit alten Daten, und H9s leiser Hinweis
+    /// erschien nie. Auf Apple laeuft derselbe Abgleich als
+    /// `AppModel.downloadsNachziehen` bei jedem Erscheinen der Hauptansicht.
+    ///
+    /// **Hundert Kennungen je Anfrage** — dasselbe Mass, mit dem auch die
+    /// Bibliotheksseiten blaettern. Bei zehn Downloads ist es eine.
+    func nachziehen() {
+        guard let client, !posten.isEmpty else { return }
+        let ids = posten.map(\.id)
+        Task.detached { [self] in
+            var vorhanden: Set<String> = []
+            var gesehene: Set<String> = []
+            for ab in stride(from: 0, to: ids.count, by: 100) {
+                let stueck = Array(ids[ab ..< min(ab + 100, ids.count)])
+                guard let antwort = try? await client.items(limit: stueck.count, ids: stueck)
+                else { return }
+                for titel in antwort.items {
+                    vorhanden.insert(titel.id)
+                    if titel.istGesehen { gesehene.insert(titel.id) }
+                }
+            }
+            let da = vorhanden, gs = gesehene
+            aufHauptfaden {
+                for id in self.posten.map(\.id) {
+                    self.gesehen(id, gs.contains(id))
+                    // **Was zurueckkommt, gibt es; was fehlt, nicht mehr.**
+                    if !da.contains(id) { self.nichtMehrAufDemServer(id) }
+                }
+            }
+        }
+    }
+
     // MARK: Der Takt
 
     /// Die **einzige** Stelle, die einen Download startet.
@@ -359,7 +425,7 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
         let jetzt = Date()
         if jetzt.timeIntervalSince(zuletztGesichert) > 1 {
             zuletztGesichert = jetzt
-            Speicher.downloadsSchreiben(posten)
+            sichern()
         }
         melden()
     }

@@ -134,6 +134,12 @@ enum Stil {
     /// Die Breite des Anmeldeblocks. Auf dem Mac steht `.frame(width: 360)`
     /// an jedem der beiden Felder.
     static let anmeldeBreite = 360
+    /// **Wie breit eine Unterseite wird.** Profil, Wiedergabe und Quick
+    /// Connect lesen sich wie Text — 700, die `lesebreite` des Macs. Die
+    /// Einstellungen tragen zwei Spalten nebeneinander und duerfen weiter
+    /// (`Stil.einstellungBreite` = 1366 auf dem Mac).
+    static let lesebreite = 700
+    static let einstellungBreite = 1100
     /// Oberer Rand im Inhaltsbereich — auf dem Mac 52, **gemessen ab
     /// Fensteroberkante**: dort gibt es keine Titelzeile, die Ampel schwebt
     /// über der Seitenleiste.

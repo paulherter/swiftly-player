@@ -146,7 +146,7 @@ extension App {
         gtk_fixed_put(alsFeld2(feld), huelle, 0, 0)
         if let adressen, let url = adressen.bauen(itemID: person.id,
                                                   mass: .hoechstensHoch(300)) {
-            bildLaden(bild, url: url, schluessel: url.absoluteString)
+            bildLaden(bild, url: url, schluessel: Bildschluessel.fuer(url))
         }
 
         let name = beschriftung(person.name, stil: "swiftly-titel")
@@ -214,7 +214,7 @@ extension App {
             }
             guard let gross,
                   let daten = await Bildlager.shared.laden(gross,
-                                                           schluessel: gross.absoluteString)
+                                                           schluessel: Bildschluessel.fuer(gross))
             else { return }
             aufHauptfaden { kulisse.setzen(daten) }
         }

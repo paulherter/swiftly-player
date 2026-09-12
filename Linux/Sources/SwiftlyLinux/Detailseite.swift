@@ -395,12 +395,12 @@ extension App {
             }
             guard let gross = kopf else { return }
             if let klein,
-               let daten = await Bildlager.shared.laden(klein, schluessel: klein.absoluteString),
+               let daten = await Bildlager.shared.laden(klein, schluessel: Bildschluessel.fuer(klein)),
                let ton = Bildfarbe.ton(aus: daten) {
                 aufHauptfaden { Tonblatt.setzen(ton) }
             }
             guard let daten = await Bildlager.shared.laden(gross,
-                                                           schluessel: gross.absoluteString)
+                                                           schluessel: Bildschluessel.fuer(gross))
             else { return }
             aufHauptfaden { kulisse.setzen(daten) }
         }

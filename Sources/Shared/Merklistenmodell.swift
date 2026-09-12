@@ -77,37 +77,5 @@ final class Merklistenmodell {
     }
 }
 
-/// Die Gattungen, zwischen denen die Merkliste unterscheidet.
-enum Merkgattung: String, CaseIterable, Identifiable {
-    case alle, filme, serien
-    var id: String { rawValue }
-
-    /// **Nicht „Alle".** Auf der Bibliotheksseite steht an derselben Stelle
-    /// eine Pille mit demselben Wort — die meint dort aber den *Zustand*
-    /// (alle, angefangen, gemerkt, ungesehen), hier die *Gattung*. Gleiches
-    /// Wort, gleiches Zeichen, gleicher Platz, zwei Bedeutungen: das ist
-    /// keine Kürze, sondern eine Falle.
-    var beschriftung: String {
-        switch self {
-        case .alle:   String(localized: "Filme & Serien")
-        case .filme:  String(localized: "Filme")
-        case .serien: String(localized: "Serien")
-        }
-    }
-
-    /// Jellyfins `CollectionType`, wie ihn `AppModel.gemerkte` erwartet.
-    var art: String? {
-        switch self {
-        case .alle:   nil
-        case .filme:  "movies"
-        case .serien: "tvshows"
-        }
-    }
-
-    /// Aus der gemerkten Gattung wieder eine Pille machen — die Ansicht
-    /// haelt ihren Chip getrennt vom Modell, und beim Start muessen beide
-    /// dasselbe sagen.
-    static func zu(art: String?) -> Merkgattung {
-        allCases.first { $0.art == art } ?? .alle
-    }
-}
+// `Merkgattung` liegt seit dem 13.09.2026 im Paket (`Bibliothek.swift`) —
+// sie stand hier und erreichte Linux und Windows deshalb nicht.

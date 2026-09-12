@@ -99,6 +99,24 @@ struct Wahlen: Codable {
     /// Servers, und niemand verstand, warum.
     var genreChips = false
 
+    // MARK: Was je Ort gemerkt wird
+
+    /// **Sortierung und Filter überleben den Neustart** (D9).
+    ///
+    /// Ein Nutzer am 07.09.2026: „ich sortiere nach zuletzt, weil es
+    /// praktisch ist. Verlasse ich die App und komme wieder, bin ich zurück
+    /// beim Standard." Er hat recht, und es ist keine Kleinigkeit: eine
+    /// Sortierung ist keine Handlung, sondern eine Einstellung — man trifft
+    /// sie einmal und erwartet sie danach vorzufinden.
+    ///
+    /// **Je Ort, nicht global.** Filme nach Jahr und Serien nach zuletzt
+    /// hinzugefügt ist eine sinnvolle Kombination; ein gemeinsamer Wert
+    /// spielte sie gegeneinander aus. Der Schlüssel ist die Bereichskennung.
+    var sortierungJeOrt: [String: String] = [:]
+    var filterJeOrt: [String: String] = [:]
+    /// Welche Bibliothek ein Bereich zeigt, wenn es mehrere gibt (D9).
+    var bibliothekJeGattung: [String: String] = [:]
+
     var puffer: Pufferstufe { Pufferstufe(rawValue: pufferstufe) ?? .normal }
 
     // MARK: Lesen, das eine aeltere Datei ueberlebt
@@ -143,6 +161,9 @@ struct Wahlen: Codable {
         startAus               = w(.startAus, [])
         startGenres            = w(.startGenres, [])
         genreChips             = w(.genreChips, false)
+        sortierungJeOrt        = w(.sortierungJeOrt, [:])
+        filterJeOrt            = w(.filterJeOrt, [:])
+        bibliothekJeGattung    = w(.bibliothekJeGattung, [:])
     }
 
     /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.

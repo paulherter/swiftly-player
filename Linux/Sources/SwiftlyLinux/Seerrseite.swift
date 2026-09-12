@@ -110,7 +110,7 @@ extension App {
         if let gross = t.kulisse(breite: 1280) {
             Task.detached {
                 guard let daten = await Bildlager.shared.laden(
-                    gross, schluessel: gross.absoluteString) else { return }
+                    gross, schluessel: Bildschluessel.fuer(gross)) else { return }
                 aufHauptfaden { bild.setzen(daten) }
             }
         }
@@ -202,6 +202,13 @@ extension App {
         let knopf = hauptknopf(titel, symbol: "folder-download-symbolic")
         gtk_widget_set_size_request(knopf, Int32(Stil.hauptknopfBreite),
                                     Int32(Stil.hauptknopfHoehe))
+        // Solange keine Staffel angekreuzt ist, gibt es nichts anzufragen.
+        // **Halbe Deckung statt `insensitive`** — GTK legt ueber ein
+        // gesperrtes Widget seinen eigenen Schleier, und der sieht aus wie
+        // ein Fehler; dieselbe Lehre wie beim aktiven Konto im Profil.
+        if t.istSerie, seerrGewaehlteStaffeln.isEmpty {
+            gtk_widget_set_opacity(knopf, 0.4)
+        }
         beiSignal(knopf, "clicked") { [weak self] in self?.seerrAnfragenVonSeite(t) }
         anhaengen(seerrKnopfreihe, knopf)
     }
@@ -281,7 +288,7 @@ extension App {
 
     private func seerrPersonenreihe(_ titel: String, _ leute: [Seerrperson]) -> Widget! {
         var kacheln: [Widget?] = []
-        for person in leute.prefix(20) {
+        for person in leute.prefix(12) {
             let kachel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
             gtk_widget_set_size_request(kachel, 110, -1)
             let (huelle, bild) = gerahmtesBild(breite: 110, hoehe: 110, stil: "swiftly-rund")
@@ -321,10 +328,16 @@ extension App {
 
     // MARK: Anfragen
 
+    /// **Nie leer.** Bei einer Serie bedeutet `nil` fuer Seerr „alle
+    /// Staffeln", und das ist der Fall, den niemand versehentlich ausloesen
+    /// soll: wer nur nachsieht, welche es gibt, fragt sonst die ganze Serie
+    /// an. Auf Apple faengt das ein `guard` und ein gesperrter Knopf ab
+    /// (`SeerrDetailView.swift:419`); auf Linux war der Knopf immer aktiv und
+    /// schickte bei leerer Auswahl `staffeln: nil`.
     private func seerrAnfragenVonSeite(_ t: Seerrtreffer) {
         guard let client = seerrclient else { return }
-        let staffeln = t.istSerie && !seerrGewaehlteStaffeln.isEmpty
-            ? Array(seerrGewaehlteStaffeln).sorted() : nil
+        guard !t.istSerie || !seerrGewaehlteStaffeln.isEmpty else { return }
+        let staffeln = t.istSerie ? Array(seerrGewaehlteStaffeln).sorted() : nil
         melden(uebersetzt("Wird angefragt …"))
         Task.detached { [self] in
             do {

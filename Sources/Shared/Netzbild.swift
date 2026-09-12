@@ -1,5 +1,6 @@
 import CoreGraphics
 import ImageIO
+import JellyfinKit
 import SwiftUI
 
 /// Ein Bild aus dem Netz — geholt, **abseits des Hauptlaufs entschlüsselt**,
@@ -184,16 +185,10 @@ final class Bildspeicher {
     /// pruefte, liesse in einem Speicher, der einen Kontowechsel ueberlebt,
     /// die alten Adressen mit Merkmal stehen — und dieselben Bilder laegen
     /// zweimal drin, einmal je Konto.
-    private static func merkmal(_ name: String) -> Bool {
-        name == "ApiKey" || name == "api_key"
-    }
-
+    /// **Die Rechnung liegt im Paket** (`Bildschluessel`) — sie stand hier
+    /// und erreichte Linux und Windows damit nicht.
     private func gerechnet(_ url: URL) -> URL {
-        guard var teile = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let werte = teile.queryItems, werte.contains(where: { Self.merkmal($0.name) })
-        else { return url }
-        teile.queryItems = werte.filter { !Self.merkmal($0.name) }
-        return teile.url ?? url
+        URL(string: Bildschluessel.fuer(url)) ?? url
     }
 
     /// `vorrang` laesst die Schleuse aus.

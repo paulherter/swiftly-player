@@ -250,6 +250,11 @@ extension App {
         gtk_widget_set_visible(seerrKopfzeile, sichtbar ? 1 : 0)
         gtk_widget_set_visible(seerrRaster, sichtbar ? 1 : 0)
         gtk_label_set_text(OpaquePointer(seerrZahl), String(fremde.count))
+        // Erst wenn auch Seerr nichts hat, gilt „Nichts gefunden".
+        seerrTrefferLeer = fremde.isEmpty
+        if suchleer != nil {
+            gtk_widget_set_visible(suchleer, eigeneTrefferLeer && fremde.isEmpty ? 1 : 0)
+        }
         leeren(seerrRaster)
         for t in fremde {
             gtk_flow_box_insert(OpaquePointer(seerrRaster), seerrKachel(t), -1)

@@ -36,7 +36,13 @@ extension App {
         offeneUnterseite = was
 
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_size_request(block, 560, -1)
+        // **Nicht alle Unterseiten sind gleich breit.** Die Einstellungen
+        // tragen zwei Spalten nebeneinander, der Rest liest sich wie Text.
+        // Hier stand fuer alle dieselbe 560 — auf einem 1400 Punkt breiten
+        // Fenster sah das aus wie eine Handyansicht in der Mitte.
+        let breit = was == .einstellungen
+        gtk_widget_set_size_request(block, Int32(breit ? Stil.einstellungBreite
+                                                       : Stil.lesebreite), -1)
         gtk_widget_set_halign(block, GTK_ALIGN_CENTER)
         gtk_widget_set_margin_top(block, Int32(Stil.inhaltOben))
         gtk_widget_set_margin_bottom(block, 40)
@@ -117,6 +123,14 @@ extension App {
                                       unter: uebersetzt("Sprache, Untertitel, Tempo"),
                                       pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.wiedergabe)
+        })
+        anhaengen(g2.raum, zeilenstrich())
+        // Zwischen Wiedergabe und Einstellungen — die Reihenfolge des Macs.
+        anhaengen(g2.raum, wertezeile(symbol: "view-grid-symbolic",
+                                      titel: uebersetzt("Darstellung"),
+                                      unter: uebersetzt("Startseite, Reihen und Genres"),
+                                      pfeil: true) { [weak self] in
+            self?.unterseiteOeffnen(.darstellung)
         })
         anhaengen(g2.raum, zeilenstrich())
         anhaengen(g2.raum, wertezeile(symbol: "emblem-system-symbolic",
@@ -377,39 +391,27 @@ extension App {
         // „Querformat im Player sperren" gibt es hier **nicht**: ein Fenster
         // hat keine Ausrichtung, die man sperren könnte. Kein Weglassen,
         // sondern eine Einstellung ohne Gegenstück (VERHALTEN.md F).
-        let d = einstellungsgruppe(uebersetzt("Darstellung"))
-        anhaengen(d.raum, schalterzeile(symbol: "view-list-symbolic",
-                                        titel: uebersetzt("Fortschritt auf Kacheln"),
-                                        an: wahlen.fortschrittAufKacheln) { [weak self] an in
-            self?.wahlen.fortschrittAufKacheln = an
-            self?.wahlen.sichern()
-        })
-        anhaengen(d.raum, zeilenstrich())
-        anhaengen(d.raum, schalterzeile(symbol: "folder-new-symbolic",
-                                        titel: uebersetzt("Neuzugänge getrennt"),
-                                        unter: uebersetzt("Neue Filme und neue Serien in eigenen Reihen"),
-                                        an: wahlen.neuzugaengeGetrennt) { [weak self] an in
-            self?.wahlen.neuzugaengeGetrennt = an
-            self?.wahlen.sichern()
-            self?.startseiteLaden()
-        })
-        anhaengen(d.raum, zeilenstrich())
-        anhaengen(d.raum, wertezeile(symbol: "view-list-ordered-symbolic",
-                                     titel: uebersetzt("Startseite"),
-                                     unter: uebersetzt("Reihen, ihre Folge und Genres"),
-                                     pfeil: true) { [weak self] in
-            self?.unterseiteOeffnen(.darstellung)
-        })
-        anhaengen(block, d.aussen)
+        // **„Darstellung" ist eine eigene Seite**, erreichbar ueber das Profil
+        // — wie auf dem Mac (`ProfilView.swift:71`). Sie stand hier als Gruppe
+        // mitten in den Einstellungen; damit lagen dieselben Einstellungen an
+        // zwei Orten in verschiedener Form.
 
-        // **H1 — aus im Auslieferungszustand**, und dann steht hier genau
-        // eine Zeile. Die Rubrik heisst „Offline" und nicht „Downloads":
-        // gemeint ist, was ohne Netz geht, nicht der Ladevorgang.
-        //
-        // „Nur ueber WLAN" faellt hier weg. H5 ist eine Regel gegen
-        // Mobilfunkkosten; ein Schreibtischrechner hat kein Mobilfunknetz,
-        // und was ein angestecktes Modem kostet, weiss die App nicht. Ein
-        // Schalter, der nichts unterscheidet, ist kein Schalter.
+        // **Zwei Spalten, wie auf dem Mac** (`EinstellungenView.swift:18`):
+        // links Offline und Integration, rechts Server. Hier stand alles
+        // untereinander in einer 560 Punkt schmalen Saeule — auf einem breiten
+        // Fenster sah das aus wie eine Handyansicht in der Mitte.
+        let spalten = stapel(GTK_ORIENTATION_HORIZONTAL,
+                             abstand: Int32(Stil.randAbstand * 2))
+        gtk_widget_set_valign(spalten, GTK_ALIGN_START)
+        let links = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_set_hexpand(links, 1)
+        let rechts = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_set_hexpand(rechts, 1)
+        gtk_widget_set_valign(rechts, GTK_ALIGN_START)
+        anhaengen(spalten, links)
+        anhaengen(spalten, rechts)
+        anhaengen(block, spalten)
+
         let o = einstellungsgruppe(uebersetzt("Offline"))
         anhaengen(o.raum, schalterzeile(symbol: "folder-download-symbolic",
                                         titel: uebersetzt("Downloads"),
@@ -444,7 +446,7 @@ extension App {
                                                        downloads.posten.count),
                                          wert: Downloadregeln.groesse(b.bytes)))
         }
-        anhaengen(block, o.aussen)
+        anhaengen(links, o.aussen)
 
         // **Steht zwischen Offline und Server, und das ist kein Zufall.**
         // Es ist ein zweiter Dienst, kein zweiter Server — und eine Zugabe:
@@ -476,7 +478,7 @@ extension App {
             self.wahlen.sichern()
             if !an { Discordstand.abraeumen() }
         })
-        anhaengen(block, i.aussen)
+        anhaengen(links, i.aussen)
 
         let s = einstellungsgruppe(uebersetzt("Server"))
         anhaengen(s.raum, wertezeile(symbol: "network-server-symbolic",
@@ -491,7 +493,7 @@ extension App {
             self?.verbindungPruefen()
         }
         anhaengen(s.raum, pruefzeile)
-        anhaengen(block, s.aussen)
+        anhaengen(rechts, s.aussen)
 
         let fuss = beschriftung("\(Fassung.voll) · libVLC \(VLCFassung.text)",
                                 stil: "swiftly-zweitzeile")
@@ -726,10 +728,28 @@ extension App {
     private func darstellungBauen(_ block: Widget!) {
         anhaengen(block, unterseitenkopf(uebersetzt("Darstellung")))
 
-        // „Neuzugänge getrennt" steht in den Einstellungen unter Darstellung
-        // und **nicht auch hier**: eine Einstellung an zwei Stellen ist eine
-        // Frage, die zweimal gestellt wird.
-        let g0 = einstellungsgruppe(uebersetzt("Reihen"))
+        // **Allgemein** — dieselbe Rubrik wie auf Apple
+        // (`DarstellungView.swift:79`).
+        let ga = einstellungsgruppe(uebersetzt("Allgemein"))
+        anhaengen(ga.raum, schalterzeile(symbol: "view-list-symbolic",
+                                         titel: uebersetzt("Fortschritt auf Kacheln"),
+                                         an: wahlen.fortschrittAufKacheln) { [weak self] an in
+            self?.wahlen.fortschrittAufKacheln = an
+            self?.wahlen.sichern()
+        })
+        anhaengen(block, ga.aussen)
+        anhaengen(block, luftHoch(26))
+
+        let g0 = einstellungsgruppe(uebersetzt("Startseite"))
+        anhaengen(g0.raum, schalterzeile(symbol: "folder-new-symbolic",
+                                         titel: uebersetzt("Neuzugänge getrennt"),
+                                         unter: uebersetzt("Neue Filme und neue Serien in eigenen Reihen"),
+                                         an: wahlen.neuzugaengeGetrennt) { [weak self] an in
+            self?.wahlen.neuzugaengeGetrennt = an
+            self?.wahlen.sichern()
+            self?.geladen.remove(.start)
+            self?.unterseiteOeffnen(.darstellung)
+        })
         anhaengen(block, g0.aussen)
 
         // **Umsortiert wird mit dem, was die Eingabeart hergibt** — auf dem
@@ -737,7 +757,6 @@ extension App {
         // diesen Unterschied; Ziehen mit der Maus über eine Liste, die auch
         // ausblenden kann, wäre zwei Gesten an derselben Zeile.
         let g1 = zeilengruppe()
-        _ = g0
         let sichtbar = Startreihenfolge.geltend(abgelegt: wahlen.startReihen)
             .filter { $0.passt(getrennt: wahlen.neuzugaengeGetrennt) }
         for (stelle, reihe) in sichtbar.enumerated() {
