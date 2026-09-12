@@ -492,11 +492,16 @@ func schalterzeile(symbol: String, titel: String, unter: String? = nil,
     var zustand = an
     let schalter: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(schalter, "swiftly-schalter")
-    gtk_widget_set_size_request(schalter, 38, 22)
+    // **46 x 28 mit 22er Knauf, wie auf dem Mac** (`Stil.swift:795` —
+    // `Capsule().frame(width: 46, height: 28)` und `Circle().frame(22)`).
+    // Hier standen 38 x 22 mit 16er Knauf; beide Fassungen laufen auf einem
+    // Schreibtisch, das ist also keine erlaubte Abweichung nach Abschnitt F,
+    // sondern eine Zahl, die beim Nachbauen geschaetzt wurde.
+    gtk_widget_set_size_request(schalter, 46, 28)
     gtk_widget_set_valign(schalter, GTK_ALIGN_CENTER)
     let knauf: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(knauf, "swiftly-knauf")
-    gtk_widget_set_size_request(knauf, 16, 16)
+    gtk_widget_set_size_request(knauf, 22, 22)
     gtk_widget_set_valign(knauf, GTK_ALIGN_CENTER)
     anhaengen(schalter, knauf)
 

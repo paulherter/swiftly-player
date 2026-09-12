@@ -149,7 +149,7 @@ extension App {
             bildLaden(bild, url: url, schluessel: url.absoluteString)
         }
 
-        let name = beschriftung(person.name, stil: "swiftly-heldtitel")
+        let name = beschriftung(person.name, stil: "swiftly-titel")
         gtk_label_set_xalign(OpaquePointer(name), 0)
         gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
         gtk_widget_set_size_request(name, 520, 42)

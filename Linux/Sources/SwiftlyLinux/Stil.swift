@@ -75,6 +75,14 @@ enum Stil {
     static let eckeFeld = 12
     /// Was eine eigene Fläche ist: Blätter, die Tafel, Auskunftskästen.
     static let eckeFlaeche = 16
+    /// Freigabe- und Seerr-Marken. **8, nicht 3** — die 3 ist auf Apple nur
+    /// der Vorgabewert von `Plakette`, den dort kein einziger Aufrufer nimmt;
+    /// Detailseite, Heldkopf und tvOS setzen alle ausdrücklich 8.
+    static let eckeMarke = 8
+    /// Chip und Hinweis sind **Kapseln** (E11). Weit über der halben Kante,
+    /// damit die Form rund bleibt, wenn jemand später am Maß dreht — eine
+    /// feste Zahl wäre beim nächsten Maß wieder falsch, ohne dass es auffällt.
+    static let eckeKapsel = 999
     // MARK: Seitenschub
 
     /// Wie lange eine Seite hereinschiebt — `Stil.zeitSeitenschub` vom Mac,
@@ -149,7 +157,12 @@ enum Stil {
     // MARK: Schriftstufen — dieselbe Abstufung wie iPhone und Mac
 
     static let titelGross = 28
-    static let titel = 22
+    /// **27, nicht 22.** Apple hat die Stufe am 06.09.2026 mit den anderen
+    /// hochgezogen („durchweg eine Stufe groesser — die Schrift war zu
+    /// klein", `Sources/Shared/Stil.swift:337`); hier blieb sie stehen. Sie
+    /// traegt den Namen auf der Personenseite, die Serverzeile und die
+    /// Ueberschriften der Einstellungen.
+    static let titel = 27
     static let reihe = 20
     static let listentitel = 15
     static let koerper = 15
@@ -205,7 +218,9 @@ enum Stil {
 
         /* Die Schriftstufen des Macs, eins zu eins. */
         .swiftly-titel-gross { font-size: \(titelGross)px; font-weight: 700; }
-        .swiftly-titel       { font-size: \(titel)px; font-weight: 600; }
+        /* Fett wie `Stil.titel` auf Apple (`.bold`, also 700), mit derselben
+           leichten Sperrung von -0,6. */
+        .swiftly-titel       { font-size: \(titel)px; font-weight: 700; letter-spacing: -0.6px; }
         .swiftly-reihe       { font-size: \(reihe)px; font-weight: 600; }
         .swiftly-listentitel { font-size: \(listentitel)px; font-weight: 600; }
         .swiftly-koerper     { font-size: \(koerper)px; }
@@ -348,7 +363,7 @@ enum Stil {
         button.swiftly-chip {
             min-height: 28px;
             padding: 0 12px;
-            border-radius: 14px;
+            border-radius: \(eckeKapsel)px;
             border: 1px solid \(rand);
             font-size: 13px;
             font-weight: 400;
@@ -479,7 +494,7 @@ enum Stil {
             font-weight: 600;
             color: \(schriftLeise);
             border: 1px solid \(rand);
-            border-radius: 3px;
+            border-radius: \(eckeMarke)px;
             padding: 2px 5px;
         }
 
@@ -615,12 +630,14 @@ enum Stil {
         /* Der Schalter — Kapsel, Akzent wenn an. Kein GtkSwitch: der bringt
            Form, Farbe und Maße des Systems mit (E4). */
         .swiftly-schalter {
-            background-color: rgba(255,255,255,0.14);
-            border-radius: 11px;
+            /* Weiss zu 16 %, wie `Color.white.opacity(0.16)` auf dem Mac. */
+            background-color: rgba(255,255,255,0.16);
+            border-radius: \(eckeKapsel)px;
             padding: 3px;
         }
         .swiftly-schalter.swiftly-aktiv { background-color: \(akzent); }
-        .swiftly-knauf { background-color: \(schrift); border-radius: 8px; }
+        /* Ein Kreis, kein abgerundetes Rechteck — `Circle()` auf dem Mac. */
+        .swiftly-knauf { background-color: \(schrift); border-radius: \(eckeKapsel)px; }
         .swiftly-schalter.swiftly-aktiv .swiftly-knauf { background-color: \(grund); }
 
         .swiftly-werteliste { background-color: rgba(255,255,255,0.03); }
@@ -743,13 +760,19 @@ enum Stil {
         .swiftly-akzentzeichen { color: \(akzent); }
         .swiftly-sehrleise, .swiftly-sehrleise image { color: \(schriftSehrLeise); }
 
+        /* **Eine Kapsel in `erhoeht`, kein Rechteck auf Schwarz.** So steht
+           `Hinweisstreifen` auf dem Mac (`Macbausteine.swift:632`): Kapsel,
+           Grund `erhoeht`, Haarlinie in `rand`. Hier stand ein eigener
+           schwarzer Kasten mit Radius 10 — E11 zählt den Hinweis
+           ausdrücklich zu den Kapseln, und ein zweiter Grundton neben
+           `erhoeht` ist eine Fläche, die es sonst nirgends gibt. */
         .swiftly-hinweis {
             font-size: 14px;
             color: \(schrift);
-            background-color: rgba(0,0,0,0.72);
+            background-color: \(erhoeht);
             border: 1px solid \(rand);
-            border-radius: 10px;
-            padding: 9px 16px;
+            border-radius: \(eckeKapsel)px;
+            padding: 12px 18px;
         }
         .swiftly-spieler { background-color: #000000; }
         /* Die Steuerung liegt über dem Bild und blendet weich weg. */
@@ -909,7 +932,7 @@ enum Stil {
             padding: 0;
             min-width: 28px;
             min-height: 28px;
-            border-radius: 999px;
+            border-radius: \(eckeKapsel)px;
         }
         /* `Stil.ecke` wie auf Apple (`Technikschild.swift:115`), nicht das
            Feldmass. Bis zum 12.09.2026 stand hier `eckeFeld` — und traf,
