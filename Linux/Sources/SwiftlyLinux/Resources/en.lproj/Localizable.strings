@@ -253,3 +253,14 @@
 "Staffel" = "Season";
 "Zuletzt hinzugefügte Filme" = "Recently Added Movies";
 "Zuletzt hinzugefügte Serien" = "Recently Added Shows";
+
+/* Kontokarte und Serveraufnahme */
+"Server hinzufügen" = "Add server";
+"Ein zweiter Jellyfin, eigene Konten" = "A second Jellyfin, its own accounts";
+"Klicken zum Wechseln" = "Click to switch";
+"Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "A second Jellyfin with its own accounts. Both stay signed in; switch between them on the profile page.";
+"Ein weiteres Konto auf diesem Server. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "Another account on this server. Both stay signed in; switch between them on the profile page.";
+"jellyfin.beispiel.de" = "jellyfin.example.com";
+"Weiter" = "Continue";
+"Prüfe …" = "Checking…";
+"Diese Adresse ergibt keinen Server." = "That address doesn't resolve to a server.";

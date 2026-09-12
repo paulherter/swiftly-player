@@ -256,3 +256,14 @@
 "Staffel" = "Staffel";
 "Zuletzt hinzugefügte Filme" = "Zuletzt hinzugefügte Filme";
 "Zuletzt hinzugefügte Serien" = "Zuletzt hinzugefügte Serien";
+
+/* Kontokarte und Serveraufnahme */
+"Server hinzufügen" = "Server hinzufügen";
+"Ein zweiter Jellyfin, eigene Konten" = "Ein zweiter Jellyfin, eigene Konten";
+"Klicken zum Wechseln" = "Klicken zum Wechseln";
+"Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen.";
+"Ein weiteres Konto auf diesem Server. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "Ein weiteres Konto auf diesem Server. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen.";
+"jellyfin.beispiel.de" = "jellyfin.beispiel.de";
+"Weiter" = "Weiter";
+"Prüfe …" = "Prüfe …";
+"Diese Adresse ergibt keinen Server." = "Diese Adresse ergibt keinen Server.";

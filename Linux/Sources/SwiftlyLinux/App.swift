@@ -645,9 +645,15 @@ final class App: @unchecked Sendable {
     ///
     /// **Kein neues Passwort.** Beide Merkmale liegen in `konten.json`; der
     /// Wechsel tauscht nur, welches gilt.
+    /// **Die Kennung ist der `kontoschluessel`, nicht die `userID`.** Sobald
+    /// zwei Server im Bund liegen, kann dieselbe Benutzerkennung auf beiden
+    /// vorkommen; ein Vergleich auf `userID` traefe dann das falsche Konto
+    /// oder gar keins. `Kontenbund.konto(_:)` prueft zuerst den vollen
+    /// Schluessel und faellt nur zur Sicherheit auf die Benutzerkennung
+    /// zurueck — damit bleiben aeltere Aufrufer lesbar.
     func kontoWechseln(zu kennung: String) {
         guard var neu = bund, neu.aktiveKennung != kennung,
-              neu.konten.contains(where: { $0.userID == kennung }) else { return }
+              neu.konto(kennung) != nil else { return }
         neu.wechseln(zu: kennung)
         bund = neu
         let name = servername.isEmpty ? nil : servername
@@ -720,6 +726,86 @@ final class App: @unchecked Sendable {
     /// **Die Seite schliesst sich selbst — aber nur, wenn es geklappt hat.**
     /// Bei einem Fehler bleibt sie stehen und zeigt ihn; sie hier zu
     /// schliessen hiesse, die Meldung zu verschlucken.
+    /// **Antwortet dort ein Jellyfin?**
+    ///
+    /// `/System/Info/Public` braucht keine Anmeldung — derselbe Endpunkt, den
+    /// die erste Anmeldung nimmt. Erst wenn er antwortet, gibt es ein
+    /// Formular; sonst tippt man Name und Passwort in eine Adresse, die es
+    /// nicht gibt.
+    func serverPruefen(_ eingabe: String) {
+        let roh = eingabe.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !roh.isEmpty, let url = AppModelURLNormalizer.normalize(roh) else {
+            serverAufnahmeFehlerZeigen(uebersetzt("Diese Adresse ergibt keinen Server."))
+            return
+        }
+        gtk_widget_set_sensitive(serverAufnahmeKnopf, 0)
+        hauptknopfBeschriften(serverAufnahmeKnopf, uebersetzt("Prüfe …"))
+        Task.detached { [self] in
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
+                                   deviceName: Geraet.name, clientVersion: Geraet.fassung)
+            do {
+                let auskunft = try await c.publicSystemInfo()
+                aufHauptfaden {
+                    self.serverAufnahmeURL = url
+                    var stuecke: [String] = []
+                    if let n = auskunft.serverName, !n.isEmpty { stuecke.append(n) }
+                    if let v = auskunft.version, !v.isEmpty { stuecke.append("Jellyfin \(v)") }
+                    if stuecke.isEmpty { stuecke.append(url.host() ?? url.absoluteString) }
+                    self.serverAufnahmeGeprueft = stuecke.joined(separator: " · ")
+                    self.serverAufnahmeFehler = ""
+                    self.unterseiteOeffnen(.serverAufnahme, schub: .ohne)
+                }
+            } catch {
+                aufHauptfaden {
+                    gtk_widget_set_sensitive(self.serverAufnahmeKnopf, 1)
+                    hauptknopfBeschriften(self.serverAufnahmeKnopf, uebersetzt("Weiter"))
+                    self.serverAufnahmeFehlerZeigen(lesbarerFehler(error))
+                }
+            }
+        }
+    }
+
+    func serverAufnahmeFehlerZeigen(_ text: String) {
+        serverAufnahmeFehler = text
+        guard serverAufnahmeStand != nil else { return }
+        gtk_label_set_text(OpaquePointer(serverAufnahmeStand), text)
+        gtk_widget_set_visible(serverAufnahmeStand, text.isEmpty ? 0 : 1)
+    }
+
+    /// Anmeldung an einem **anderen** Server als dem verbundenen.
+    ///
+    /// **`sitzungAufnehmen` traegt das schon.** `Kontenbund.aufnehmen` prueft
+    /// seit dem 11.09.2026 nicht mehr, ob die Sitzung zum selben Server
+    /// gehoert — ein Bund haelt beliebig viele. Hier ist also nichts
+    /// Besonderes zu tun ausser der eigenen Adresse.
+    func amNeuenServerAnmelden(benutzer: String, passwort: String) {
+        let name = benutzer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let url = serverAufnahmeURL else { return }
+        gtk_widget_set_sensitive(serverAufnahmeKnopf, 0)
+        hauptknopfBeschriften(serverAufnahmeKnopf, uebersetzt("Melde an …"))
+        serverAufnahmeFehlerZeigen("")
+        Task.detached { [self] in
+            let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
+                                   deviceName: Geraet.name, clientVersion: Geraet.fassung)
+            do {
+                let sitzung = try await c.authenticate(username: name, password: passwort)
+                let auskunft = try? await c.publicSystemInfo()
+                aufHauptfaden {
+                    self.serverAufnahmeFehler = ""
+                    self.kontoPerCode = false
+                    self.sitzungAufnehmen(sitzung, servername: auskunft?.serverName)
+                    self.unterseiteOeffnen(.profil, schub: .ohne)
+                }
+            } catch {
+                aufHauptfaden {
+                    gtk_widget_set_sensitive(self.serverAufnahmeKnopf, 1)
+                    hauptknopfBeschriften(self.serverAufnahmeKnopf, uebersetzt("Anmelden"))
+                    self.serverAufnahmeFehlerZeigen(lesbarerFehler(error))
+                }
+            }
+        }
+    }
+
     func kontoAnmelden(benutzer: String, passwort: String) {
         let name = benutzer.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, let url = bund?.serverURL else { return }
@@ -936,6 +1022,16 @@ final class App: @unchecked Sendable {
     /// steht in keinem Item — sie gehört zur *Verbindung* zwischen Titel und
     /// Person, nicht zur Person. Den Stapel dafür auf eine Aufzählung von
     /// Zielen umzubauen wäre ein Umbau an jeder Seite, für zwei Zeichenketten.
+    /// Stand der Serveraufnahme — Adresse, geprüfter Name, Fehler.
+    var serverAufnahmeAdresse = ""
+    var serverAufnahmeGeprueft: String?
+    var serverAufnahmeFehler = ""
+    var serverAufnahmeVorgegeben = false
+    var serverAufnahmeStand: Widget!
+    var serverAufnahmeKnopf: Widget!
+    /// Die geprüfte Adresse, an der angemeldet wird.
+    var serverAufnahmeURL: URL?
+
     var personRolle: String?
     var personHerkunft: String?
     /// Wohin der Hauptknopf der offenen Detailseite zeigt, und welche Staffel

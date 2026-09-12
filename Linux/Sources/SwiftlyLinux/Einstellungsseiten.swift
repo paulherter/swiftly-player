@@ -14,7 +14,7 @@ import JellyfinKit
 /// Wiedergabe getrennt, der Fernseher hat eine Seite. Linux folgt dem Mac.
 extension App {
 
-    enum Unterseite { case profil, quickConnect, wiedergabe, seerr, einstellungen, kontoHinzufuegen }
+    enum Unterseite { case profil, quickConnect, wiedergabe, seerr, einstellungen, kontoHinzufuegen, serverAufnahme }
 
     /// **Einstellungen blenden über, sie schieben nicht.**
     ///
@@ -47,6 +47,7 @@ extension App {
         case .seerr:          seerrSeiteBauen(block)
         case .einstellungen:  einstellungenBauen(block)
         case .kontoHinzufuegen: kontoHinzufuegenBauen(block)
+        case .serverAufnahme:   serverAufnahmeBauen(block)
         }
 
         let scroller = seitenscroller()
@@ -89,35 +90,10 @@ extension App {
         // Nur der Pfeil, kein Titel — der Bildblock ist der Titel.
         anhaengen(block, unterseitenpfeil())
 
-        let bildblock = stapel(GTK_ORIENTATION_VERTICAL, abstand: 10)
+        let bildblock = stapel(GTK_ORIENTATION_VERTICAL, abstand: 14)
         gtk_widget_set_margin_top(bildblock, 42)
         gtk_widget_set_margin_bottom(bildblock, 30)
-
-        // **Bei einem Konto steht kein Streifen da.** Wer nur eines hat, soll
-        // nicht das Gefühl haben, ihm fehle eines.
-        if let bund, bund.konten.count > 1 {
-            anhaengen(bildblock, kontenstreifen(bund))
-        } else {
-            let teile = profilzeichen(name: benutzername.isEmpty ? "?" : benutzername,
-                                      kante: 84, stil: "swiftly-profilgross",
-                                      schriftstil: "swiftly-zeichen84")
-            gtk_widget_set_halign(teile.huelle, GTK_ALIGN_CENTER)
-            anhaengen(bildblock, teile.huelle)
-            profilbildLaden(teile,
-                            url: benutzerID.isEmpty ? nil
-                                                    : adressen?.benutzer(benutzerID, kante: 200),
-                            schluessel: "konto-\(benutzerID)")
-        }
-
-        let name = beschriftung(benutzername.isEmpty ? uebersetzt("Angemeldet") : benutzername,
-                                stil: "swiftly-titel")
-        anhaengen(bildblock, name)
-        var teile: [String] = []
-        if !servername.isEmpty { teile.append(servername) }
-        if !serverfassung.isEmpty { teile.append("Jellyfin \(serverfassung)") }
-        let unter = beschriftung(teile.joined(separator: " · "), stil: "swiftly-zweitzeile")
-        gtk_widget_add_css_class(unter, "swiftly-leise")
-        anhaengen(bildblock, unter)
+        anhaengen(bildblock, kontenkarten())
         anhaengen(block, bildblock)
 
         let g1 = zeilengruppe()
@@ -147,14 +123,18 @@ extension App {
         anhaengen(block, luftHoch(26))
 
         let g3 = zeilengruppe()
-        // **Eine Zeile über „Abmelden", ohne Anstrich.** Sie steht auch bei
-        // einem einzigen Konto da — das ist der Einstieg, nicht die Auskunft,
-        // dass etwas fehlt.
-        anhaengen(g3.raum, wertezeile(symbol: "contact-new-symbolic",
-                                      titel: uebersetzt("Weiteres Konto hinzufügen"),
-                                      unter: uebersetzt("Auf demselben Server"),
+        // **„Weiteres Konto hinzufügen" stand hier und ist weg.** Das Plus in
+        // der Kontokarte tut dasselbe, und zwar dort, wo die Konten stehen —
+        // auf dem Mac am 11.09.2026 aus demselben Grund entfernt.
+        //
+        // **„Server hinzufügen" steht dafür da**, und das ist etwas anderes:
+        // ein zweiter Jellyfin mit eigenen Konten, nicht ein zweites Konto
+        // auf demselben.
+        anhaengen(g3.raum, wertezeile(symbol: "network-server-symbolic",
+                                      titel: uebersetzt("Server hinzufügen"),
+                                      unter: uebersetzt("Ein zweiter Jellyfin, eigene Konten"),
                                       pfeil: true) { [weak self] in
-            self?.unterseiteOeffnen(.kontoHinzufuegen)
+            self?.serverAufnahmeOeffnen(nil)
         })
         anhaengen(g3.raum, zeilenstrich())
         anhaengen(g3.raum, wertezeile(symbol: "system-log-out-symbolic",
@@ -559,99 +539,309 @@ extension App {
     /// Die Mitte macht ``GtkCenterBox``: das aktive Konto ist das Mittelkind
     /// und bleibt in der Mitte, solange die Seiten es zulassen — genau das,
     /// was im Entwurf mit einem festen Abstand von links gezeichnet ist.
-    private func kontenstreifen(_ bund: Kontenbund) -> Widget! {
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(kontoAbstand))
-        gtk_widget_set_halign(reihe, GTK_ALIGN_CENTER)
-        for konto in bund.konten {
-            anhaengen(reihe, kontokachel(konto, aktiv: konto.userID == bund.aktiveKennung))
+    // MARK: Kontokarten
+
+    /// **Je Server eine Karte, der verbundene zuerst.**
+    ///
+    /// Hier stand bis zum 13.09.2026 ein Streifen aus Kreisen — das ist die
+    /// Fassung, die der Mac am 11.09.2026 durch die Karte ersetzt hat. Der
+    /// Nachbau hatte sogar ihre Begründung mitkopiert, samt Verweis auf eine
+    /// Rechnung namens `mittenversatz`, die es dort längst nicht mehr gibt.
+    /// Genau die Falle, vor der der Übernahmeskill warnt: die Änderungsliste
+    /// sagt *dass* etwas gebaut wurde, nicht *wie* es heute aussieht.
+    ///
+    /// **Untereinander, nicht zum Wischen.** Im Fenster ist Platz nach unten,
+    /// und Wischen ist eine Geste des Fingers. Das ist die Abweichung, die
+    /// Abschnitt F zulässt — Eingabeart und Fenstergröße, nicht Geschmack.
+    private func kontenkarten() -> Widget! {
+        let spalte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 14)
+        gtk_widget_set_halign(spalte, GTK_ALIGN_FILL)
+        guard let bund else { return spalte }
+        let server = bund.server.sorted { a, _ in istAktiverServer(a) }
+        if server.isEmpty {
+            anhaengen(spalte, kontokarte(nil, bund: bund))
+        } else {
+            for url in server { anhaengen(spalte, kontokarte(url, bund: bund)) }
+        }
+        return spalte
+    }
+
+    private func istAktiverServer(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        return url.absoluteString.lowercased()
+            == bund?.aktives.serverURL.absoluteString.lowercased()
+    }
+
+    private func kontokarte(_ server: URL?, bund: Kontenbund) -> Widget! {
+        let alle = server.map { bund.konten(auf: $0) } ?? bund.konten
+        let aktiv = istAktiverServer(server)
+        // Auf dem verbundenen Server steht vorn, wer angemeldet ist; auf einem
+        // anderen das erste Konto dort — ein Klick wechselt dorthin.
+        let vorn: Session? = aktiv ? bund.aktives : alle.first
+        let andere = alle.filter { $0.kontoschluessel != vorn?.kontoschluessel }
+
+        let karte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_add_css_class(karte, "swiftly-kontokarte")
+        // **Den Akzentrand nur, wenn es etwas zu unterscheiden gibt** (D10).
+        // Bei einem einzigen Server wäre er eine Auszeichnung ohne Gegenstück.
+        if aktiv, bund.server.count > 1 {
+            gtk_widget_add_css_class(karte, "swiftly-aktiv")
+        }
+        anhaengen(karte, kartenkopf(vorn, aktiv: aktiv, server: server))
+        let strich: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_add_css_class(strich, "swiftly-trennlinie")
+        gtk_widget_set_size_request(strich, -1, 1)
+        anhaengen(karte, strich)
+        anhaengen(karte, kartenreihe(andere, aktiv: aktiv, server: server))
+        return karte
+    }
+
+    /// Bild 56, daneben Name, Server und Fassung. Beim fremden Server ist die
+    /// ganze Zeile ein Knopf, beim verbundenen reiner Text.
+    private func kartenkopf(_ konto: Session?, aktiv: Bool, server: URL?) -> Widget! {
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
+        gtk_widget_set_margin_start(zeile, 16)
+        gtk_widget_set_margin_end(zeile, 16)
+        gtk_widget_set_margin_top(zeile, 16)
+        gtk_widget_set_margin_bottom(zeile, 16)
+
+        let mehrfach = (bund?.server.count ?? 0) > 1
+        let teile = profilzeichen(name: konto?.userName ?? "?", kante: 56,
+                                  stil: aktiv && mehrfach ? "swiftly-kontoaktiv"
+                                                          : "swiftly-profilgross",
+                                  schriftstil: "swiftly-zeichen72")
+        anhaengen(zeile, teile.huelle)
+        if let konto {
+            profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 200),
+                            schluessel: "konto-\(konto.userID)")
         }
 
-        // **Das aktive Konto steht in der Mitte, nicht der Streifen.**
-        //
-        // Der erste Anlauf nahm dafür eine ``GtkCenterBox`` mit dem aktiven
-        // Kreis als Mittelkind. Das stellte ihn zwar mittig, legte die
-        // übrigen aber an den **äusseren** Rand ihrer Hälfte statt neben ihn:
-        // gemessen 366 Bildpunkte von Mitte zu Mitte, wo der Mac 205 hat. Die
-        // beiden standen dadurch nicht als Gruppe da, sondern der zweite hing
-        // frei im Raum.
-        //
-        // Jetzt dieselbe Rechnung wie auf dem Mac (`mittenversatz`): eine
-        // gewöhnliche Reihe, mittig gestellt, und ein Rand, der den Überhang
-        // ausgleicht. `halign: CENTER` zentriert die Box **samt Rändern**, ein
-        // Rand von m verschiebt sie also um m/2 — deshalb steht hier die volle
-        // Differenz und nicht ihre Hälfte.
-        let stelle = bund.konten.firstIndex { $0.userID == bund.aktiveKennung } ?? 0
-        let schritt = kontoDaneben + kontoAbstand
-        let davor = stelle * schritt
-        let danach = (bund.konten.count - 1 - stelle) * schritt
-        if danach > davor {
-            gtk_widget_set_margin_start(reihe, Int32(danach - davor))
-        } else if davor > danach {
-            gtk_widget_set_margin_end(reihe, Int32(davor - danach))
+        let texte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+        gtk_widget_set_valign(texte, GTK_ALIGN_CENTER)
+        gtk_widget_set_hexpand(texte, 1)
+        let name = beschriftung(konto?.userName ?? uebersetzt("Angemeldet"),
+                                stil: "swiftly-kontoname")
+        gtk_label_set_xalign(OpaquePointer(name), 0)
+        anhaengen(texte, name)
+
+        // **Name und Fassung kennen wir nur vom Server, mit dem wir gerade
+        // verbunden sind**; bei den anderen steht die Adresse.
+        let zweite = aktiv ? (servername.isEmpty ? (server?.host() ?? "") : servername)
+                           : (server?.host() ?? "")
+        let z = beschriftung(zweite, stil: "swiftly-zweitzeile")
+        gtk_widget_add_css_class(z, "swiftly-leise")
+        gtk_label_set_xalign(OpaquePointer(z), 0)
+        gtk_label_set_ellipsize(OpaquePointer(z), PANGO_ELLIPSIZE_END)
+        anhaengen(texte, z)
+
+        if aktiv, !serverfassung.isEmpty {
+            let f = beschriftung("Jellyfin \(serverfassung)", stil: "swiftly-zweitzeile")
+            gtk_widget_add_css_class(f, "swiftly-leise")
+            gtk_label_set_xalign(OpaquePointer(f), 0)
+            anhaengen(texte, f)
+        } else if !aktiv {
+            // **„Klicken", nicht „Antippen"** — Maus und Tastatur, Abschnitt F.
+            let f = beschriftung(uebersetzt("Klicken zum Wechseln"), stil: "swiftly-zweitzeile")
+            gtk_widget_add_css_class(f, "swiftly-leise")
+            gtk_label_set_xalign(OpaquePointer(f), 0)
+            anhaengen(texte, f)
         }
+        anhaengen(zeile, texte)
+
+        guard !aktiv, let konto else { return zeile }
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-kontoknopf")
+        gtk_button_set_child(alsKnopf(knopf), zeile)
+        let schluessel = konto.kontoschluessel
+        beiSignal(knopf, "clicked") { [weak self] in self?.kontoWechseln(zu: schluessel) }
+        return knopf
+    }
+
+    /// Die übrigen Konten dieses Servers, dahinter das Plus.
+    private func kartenreihe(_ andere: [Session], aktiv: Bool, server: URL?) -> Widget! {
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
+        gtk_widget_set_margin_start(reihe, 16)
+        gtk_widget_set_margin_end(reihe, 16)
+        gtk_widget_set_margin_top(reihe, 12)
+        gtk_widget_set_margin_bottom(reihe, 12)
+
+        for konto in andere {
+            let knopf: Widget! = gtk_button_new()
+            gtk_widget_add_css_class(knopf, "swiftly-kontoknopf")
+            let teile = profilzeichen(name: konto.userName, kante: 40,
+                                      stil: "swiftly-kontoandere",
+                                      schriftstil: "swiftly-zeichen26")
+            gtk_button_set_child(alsKnopf(knopf), teile.huelle)
+            gtk_widget_set_tooltip_text(knopf, konto.userName)
+            profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 200),
+                            schluessel: "konto-\(konto.userID)")
+            let schluessel = konto.kontoschluessel
+            beiSignal(knopf, "clicked") { [weak self] in self?.kontoWechseln(zu: schluessel) }
+            anhaengen(reihe, knopf)
+        }
+
+        // **Das Plus steht auf jeder Karte** und legt ein Konto auf *diesem*
+        // Server an. Auf dem verbundenen die gewohnte Anmeldung, auf einem
+        // anderen dieselbe wie beim Hinzufügen eines Servers, nur mit schon
+        // eingetragener Adresse. Es stand auf dem Mac vorher nur auf der Karte
+        // des verbundenen Servers; wer ein Konto anderswo anlegen wollte,
+        // musste erst dorthin wechseln.
+        let plus: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(plus, "swiftly-kontoplus")
+        gtk_widget_set_size_request(plus, 40, 40)
+        gtk_button_set_child(alsKnopf(plus), gtk_image_new_from_icon_name("list-add-symbolic"))
+        gtk_widget_set_tooltip_text(plus, uebersetzt("Weiteres Konto hinzufügen"))
+        beiSignal(plus, "clicked") { [weak self] in
+            guard let self else { return }
+            if aktiv { self.unterseiteOeffnen(.kontoHinzufuegen) }
+            else if let server { self.serverAufnahmeOeffnen(server) }
+        }
+        anhaengen(reihe, plus)
+
+        let luft: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_set_hexpand(luft, 1)
+        anhaengen(reihe, luft)
         return reihe
     }
 
-    /// Die Masse des Streifens, aus dem abgenommenen Schreibtischentwurf.
-    private var kontoAktiv: Int { 96 }
-    private var kontoDaneben: Int { 72 }
-    private var kontoAbstand: Int { 26 }
+    // MARK: Ein zweiter Server
 
-    /// Ein Konto im Streifen: Bild, darunter der Punkt.
+    /// Öffnet die Aufnahme — ohne Adresse für einen neuen Server, mit Adresse
+    /// für ein weiteres Konto auf einem schon bekannten.
+    func serverAufnahmeOeffnen(_ voreingestellt: URL?) {
+        serverAufnahmeAdresse = voreingestellt?.absoluteString ?? ""
+        serverAufnahmeGeprueft = nil
+        serverAufnahmeFehler = ""
+        serverAufnahmeVorgegeben = voreingestellt != nil
+        kontoPerCode = false
+        unterseiteOeffnen(.serverAufnahme)
+    }
+
+    /// **Adresse prüfen, dann anmelden — im Fenster, nicht als Blatt.**
     ///
-    /// Die Zeile ist 96 hoch, egal wie gross das Bild ist — sonst hüpften die
-    /// kleineren Bilder an den oberen Rand, statt auf einer Linie mit dem
-    /// grossen zu stehen. Darunter liegen 14 Punkte Platz, in denen beim
-    /// aktiven Konto der Punkt sitzt; auch dieser Platz bleibt bei den
-    /// anderen leer stehen, damit die Bilder nicht wandern.
-    private func kontokachel(_ konto: Session, aktiv: Bool) -> Widget! {
-        let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-kontoknopf")
-        if !aktiv { gtk_widget_set_opacity(knopf, 0.55) }
+    /// Auf dem Mac steht beides untereinander auf einer Seite (`macOS/
+    /// ServerAufnahmeView.swift`), und die Begründung gilt hier genauso: ein
+    /// Blatt über einem halb ausgefüllten Formular nähme die Angabe weg, an
+    /// welchem Server man sich gerade anmeldet.
+    private func serverAufnahmeBauen(_ block: Widget!) {
+        let neuerServer = !serverAufnahmeVorgegeben
+        anhaengen(block, unterseitenkopf(neuerServer ? uebersetzt("Server hinzufügen")
+                                                     : uebersetzt("Weiteres Konto")))
 
-        let saeule = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        let satz = beschriftung(neuerServer
+            ? uebersetzt("Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen.")
+            : uebersetzt("Ein weiteres Konto auf diesem Server. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen."),
+            stil: "swiftly-koerper", umbruch: true)
+        gtk_widget_add_css_class(satz, "dim-label")
+        gtk_label_set_xalign(OpaquePointer(satz), 0)
+        gtk_widget_set_margin_top(satz, 14)
+        anhaengen(block, satz)
 
-        let zone = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_size_request(zone, -1, Int32(kontoAktiv))
-        let kante = aktiv ? kontoAktiv : kontoDaneben
-        let teile = profilzeichen(name: konto.userName, kante: kante,
-                                  stil: aktiv ? "swiftly-kontoaktiv" : "swiftly-kontoandere",
-                                  schriftstil: aktiv ? "swiftly-zeichen96" : "swiftly-zeichen72")
-        let huelle = teile.huelle
-        gtk_widget_set_valign(huelle, GTK_ALIGN_CENTER)
-        gtk_widget_set_vexpand(huelle, 1)
-        anhaengen(zone, huelle)
-        anhaengen(saeule, zone)
-
-        let punktzone = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_size_request(punktzone, -1, 14)
-        if aktiv {
-            let punkt: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
-            gtk_widget_add_css_class(punkt, "swiftly-kontopunkt")
-            gtk_widget_set_size_request(punkt, 5, 5)
-            gtk_widget_set_halign(punkt, GTK_ALIGN_CENTER)
-            gtk_widget_set_margin_top(punkt, 9)
-            anhaengen(punktzone, punkt)
+        if let geprueft = serverAufnahmeGeprueft {
+            // **Was geprüft ist, steht als Haken da** — nicht als Feld, das
+            // man noch einmal ausfüllen könnte.
+            let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+            gtk_widget_set_margin_top(zeile, 22)
+            let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+            gtk_widget_add_css_class(haken, "swiftly-akzentzeile")
+            anhaengen(zeile, haken)
+            let text = beschriftung(geprueft, stil: "swiftly-zweitzeile")
+            gtk_widget_add_css_class(text, "swiftly-leise")
+            gtk_widget_set_valign(text, GTK_ALIGN_CENTER)
+            anhaengen(zeile, text)
+            anhaengen(block, zeile)
+            if kontoPerCode { kontoCodeteil(block) } else { serverAufnahmeFormular(block) }
+            return
         }
-        anhaengen(saeule, punktzone)
 
-        gtk_button_set_child(alsKnopf(knopf), saeule)
-        profilbildLaden(teile, url: adressen?.benutzer(konto.userID, kante: 200),
-                        schluessel: "konto-\(konto.userID)")
-        // **Das aktive Konto wird nicht gesperrt.** Der erste Anlauf setzte es
-        // auf `insensitive`, weil es dort nichts umzuschalten gibt — und GTK
-        // legt über ein gesperrtes Widget seinen eigenen Schleier: ausgerechnet
-        // das verbundene Bild stand danach abgedunkelt da, die anderen klar.
-        // Genau verkehrt herum, denn **das hellste Bild muss das verbundene
-        // sein**; daran hängt der ganze Entwurf. (Die Mac-Sitzung ist in
-        // dieselbe Falle getreten, dort über SwiftUIs `disabled`.)
-        //
-        // Der Knopf bleibt also ansprechbar. Ein Klick darauf tut nichts, denn
-        // ``kontoWechseln(zu:)`` steigt bei der eigenen Kennung sofort wieder
-        // aus — das ist billiger als ein Sonderzustand, den man ansieht.
-        let kennung = konto.userID
-        beiSignal(knopf, "clicked") { [weak self] in self?.kontoWechseln(zu: kennung) }
-        return knopf
+        let feld = eingabezeile(symbol: "network-server-symbolic",
+                                platzhalter: uebersetzt("jellyfin.beispiel.de"))
+        gtk_widget_set_margin_top(feld, 26)
+        gtk_editable_set_text(OpaquePointer(feld), serverAufnahmeAdresse)
+        anhaengen(block, feld)
+
+        serverAufnahmeStand = beschriftung(serverAufnahmeFehler, stil: "swiftly-zweitzeile",
+                                           umbruch: true)
+        gtk_widget_add_css_class(serverAufnahmeStand, "swiftly-warnung")
+        gtk_label_set_xalign(OpaquePointer(serverAufnahmeStand), 0)
+        gtk_widget_set_visible(serverAufnahmeStand, serverAufnahmeFehler.isEmpty ? 0 : 1)
+        gtk_widget_set_margin_top(serverAufnahmeStand, 12)
+        anhaengen(block, serverAufnahmeStand)
+
+        serverAufnahmeKnopf = hauptknopf(uebersetzt("Weiter"))
+        let knopf: Widget! = serverAufnahmeKnopf
+        gtk_widget_set_margin_top(knopf, 22)
+        gtk_widget_set_sensitive(knopf, serverAufnahmeAdresse.isEmpty ? 0 : 1)
+        anhaengen(block, knopf)
+
+        let tun: () -> Void = { [weak self] in
+            guard let self else { return }
+            self.serverPruefen(self.text(feld))
+        }
+        beiSignal(knopf, "clicked", tun)
+        beiSignal(feld, "activate", tun)
+        beiSignal(feld, "changed") { [weak self] in
+            guard let self else { return }
+            gtk_widget_set_sensitive(knopf, self.text(feld).isEmpty ? 0 : 1)
+        }
+
+        // Kam die Adresse mit, gibt es nichts einzutippen — dann sofort prüfen.
+        if serverAufnahmeVorgegeben, !serverAufnahmeAdresse.isEmpty {
+            let adresse = serverAufnahmeAdresse
+            aufHauptfaden { [weak self] in self?.serverPruefen(adresse) }
+        }
+    }
+
+    /// Name und Passwort für den **neuen** Server.
+    private func serverAufnahmeFormular(_ block: Widget!) {
+        let name = eingabezeile(symbol: "avatar-default-symbolic",
+                                platzhalter: uebersetzt("Benutzername"))
+        gtk_widget_set_margin_top(name, 26)
+        anhaengen(block, name)
+
+        let wort = eingabezeile(symbol: "channel-secure-symbolic",
+                                platzhalter: uebersetzt("Passwort"), geheim: true)
+        gtk_widget_set_margin_top(wort, 10)
+        anhaengen(block, wort)
+
+        serverAufnahmeStand = beschriftung(serverAufnahmeFehler, stil: "swiftly-zweitzeile",
+                                           umbruch: true)
+        gtk_widget_add_css_class(serverAufnahmeStand, "swiftly-warnung")
+        gtk_label_set_xalign(OpaquePointer(serverAufnahmeStand), 0)
+        gtk_widget_set_visible(serverAufnahmeStand, serverAufnahmeFehler.isEmpty ? 0 : 1)
+        gtk_widget_set_margin_top(serverAufnahmeStand, 12)
+        anhaengen(block, serverAufnahmeStand)
+
+        serverAufnahmeKnopf = hauptknopf(uebersetzt("Anmelden"))
+        let knopf: Widget! = serverAufnahmeKnopf
+        gtk_widget_set_margin_top(knopf, 22)
+        gtk_widget_set_sensitive(knopf, 0)
+        anhaengen(block, knopf)
+
+        let tun: () -> Void = { [weak self] in
+            guard let self else { return }
+            self.amNeuenServerAnmelden(benutzer: self.text(name), passwort: self.text(wort))
+        }
+        beiSignal(knopf, "clicked", tun)
+        beiSignal(wort, "activate", tun)
+        beiSignal(name, "activate") { gtk_widget_grab_focus(wort) }
+        beiSignal(name, "changed") { [weak self] in
+            guard let self else { return }
+            gtk_widget_set_sensitive(knopf, self.text(name).isEmpty ? 0 : 1)
+        }
+
+        anhaengen(block, trennerMitOder())
+
+        let umschalten: Widget! = gtk_button_new_with_label(uebersetzt("Mit Quick Connect anmelden"))
+        gtk_widget_add_css_class(umschalten, "swiftly-umriss")
+        gtk_widget_set_margin_top(umschalten, 18)
+        beiSignal(umschalten, "clicked") { [weak self] in
+            guard let self else { return }
+            self.serverAufnahmeFehler = ""
+            self.kontoPerCode = true
+            self.unterseiteOeffnen(.serverAufnahme, schub: .ohne)
+        }
+        anhaengen(block, umschalten)
     }
 
     // MARK: Weiteres Konto

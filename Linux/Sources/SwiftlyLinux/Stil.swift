@@ -465,6 +465,29 @@ enum Stil {
             font-weight: 500;
             color: \(schriftSehrLeise);
         }
+        /* **Eine Karte je Server** (`macOS/ProfilView.swift:490`). Hier stand
+           bis zum 13.09.2026 ein Streifen aus Kreisen — die Fassung, die der
+           Mac am 11.09.2026 ersetzt hat. Der Akzentrand markiert den
+           verbundenen Server, aber nur wenn es mehr als einen gibt (D10). */
+        .swiftly-kontokarte {
+            background-color: \(flaeche);
+            border-radius: \(eckeFlaeche)px;
+        }
+        .swiftly-kontokarte.swiftly-aktiv {
+            border: 1.5px solid rgba(92,209,194,0.55);
+        }
+        .swiftly-kontoname { font-size: 19px; font-weight: 600; letter-spacing: -0.2px; }
+        /* Ein gestrichelter Kreis — ein Platz, der noch frei ist. */
+        .swiftly-kontoplus {
+            background: none;
+            border: 1.5px dashed \(rand);
+            border-radius: \(eckeKapsel)px;
+            color: rgba(255,255,255,0.45);
+            padding: 0;
+            min-width: 40px;
+            min-height: 40px;
+        }
+        .swiftly-kontoplus:hover { background-color: rgba(255,255,255,0.06); }
         .swiftly-trennlinie { background-color: \(linie); min-height: 1px; }
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
