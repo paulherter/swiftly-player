@@ -14,10 +14,14 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 [![Lizenz](https://img.shields.io/badge/MPL--2.0-1E1E22?style=flat-square&labelColor=1E1E22)](LICENSE)
 &nbsp;
 [![Jellyfin](https://img.shields.io/badge/Jellyfin_10.8+-1E1E22?style=flat-square&labelColor=1E1E22)](https://jellyfin.org)
+&nbsp;
+[![Website](https://img.shields.io/badge/swiftlyplayer.com-1E1E22?style=flat-square&labelColor=1E1E22)](https://swiftlyplayer.com)
 
 <br>
 
 [![Download on the App Store](https://img.shields.io/badge/Download_on_the_App_Store-5CD1C2?style=for-the-badge&logo=apple&logoColor=FFFFFF)](https://apps.apple.com/app/id6806824067)
+&nbsp;
+[![Join the beta on TestFlight](https://img.shields.io/badge/Join_the_beta-1E1E22?style=for-the-badge&logo=apple&logoColor=5CD1C2)](https://testflight.apple.com/join/MqeP2cnj)
 &nbsp;
 [![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=5CD1C2)](#-windows)
 &nbsp;
@@ -55,17 +59,21 @@ But three things it does that no other Jellyfin client does at all.
 <table>
 <tr>
 <td width="25%"><img src=".github/bilder/startseite.png" alt="Home"></td>
-<td width="25%"><img src=".github/bilder/detail-spritefright.png" alt="Detail"></td>
-<td width="25%"><img src=".github/bilder/player-quer.png" alt="Player"></td>
+<td width="25%"><img src=".github/bilder/detail.png" alt="Detail"></td>
+<td width="25%"><img src=".github/bilder/seerr.png" alt="Requests through Seerr"></td>
 <td width="25%"><img src=".github/bilder/bild-im-bild.png" alt="Picture in Picture"></td>
 </tr>
 <tr>
 <td align="center"><sub>Home</sub></td>
 <td align="center"><sub>Detail</sub></td>
-<td align="center"><sub>Player</sub></td>
+<td align="center"><sub>Requests</sub></td>
 <td align="center"><sub>Picture in Picture</sub></td>
 </tr>
 </table>
+
+<img src=".github/bilder/player-quer.png" alt="Player">
+
+<sub>The player, landscape.</sub>
 
 <br>
 
