@@ -200,8 +200,19 @@ extension App {
         guard let client, let adressen else { return }
         Task.detached { [self] in
             let titel = await client.titel(person: person.id)
-            guard let erster = titel.first,
-                  let gross = Bildwahl.quer(erster, adressen: adressen, breite: 1600)?.url,
+            guard let erster = titel.first else { return }
+            // **Nur echte Querbilder — und wenn keiner eines hat, der
+            // Ersatz.** Hat der erste Titel keinen Hintergrund, blieb die
+            // Kulisse hier leer, und der runde Kopf sass unten in 380 Punkt
+            // Dunkelheit. Genau der „viel zu tiefe" Kopf, den Paul gemeldet
+            // hat; auf Apple faengt `kopfbildURL` denselben Fall ab
+            // (`PersonView.swift:245`).
+            var gross = Bildwahl.quer(erster, adressen: adressen, breite: 1600)?.url
+            if gross == nil {
+                gross = await client.kopfbildErsatz(fuer: erster, adressen: adressen,
+                                                    breite: 1600)
+            }
+            guard let gross,
                   let daten = await Bildlager.shared.laden(gross,
                                                            schluessel: gross.absoluteString)
             else { return }

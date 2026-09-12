@@ -286,9 +286,29 @@ extension App {
         } else {
             zeichenLegen(huelle, serie: true)
         }
-        if wahlen.fortschrittAufKacheln, let anteil = folge.gesehenerAnteil {
+        // **Das Vorschaubild traegt den Sehstand**, nicht die Spalte rechts.
+        // Es zeigte schon den Fortschrittsbalken — „wie weit bin ich" —, und
+        // der Haken ist dessen Ende. Damit steht der Sehstand an einer Stelle
+        // statt an zweien, und rechts bleibt Platz fuer den Download. Auf dem
+        // Mac seit jeher so (`SerienView.swift:642`), auf dem iPhone seit
+        // `beb6a79`; auf Linux stand der Haken ganz rechts am Zeilenende.
+        //
+        // **Ein voller Balken und ein Haken waeren dieselbe Auskunft
+        // zweimal** — deshalb der Balken nur, solange nicht gesehen.
+        if wahlen.fortschrittAufKacheln, !folge.istGesehen,
+           let anteil = folge.gesehenerAnteil {
             balkenLegen(huelle, breite: 160, anteil: anteil)
         }
+        // Gesehenes tritt zurueck, es verschwindet nicht: 0,45 wie auf dem Mac.
+        gtk_widget_set_opacity(huelle, folge.istGesehen ? 0.45 : 1)
+
+        let bildhaken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(bildhaken), 10)
+        gtk_widget_add_css_class(bildhaken, "swiftly-folgenhaken")
+        gtk_widget_set_halign(bildhaken, GTK_ALIGN_END)
+        gtk_widget_set_valign(bildhaken, GTK_ALIGN_START)
+        gtk_widget_set_visible(bildhaken, folge.istGesehen ? 1 : 0)
+        gtk_overlay_add_overlay(OpaquePointer(huelle), bildhaken)
         // **Ein Abspielzeichen über dem Bild, wenn der Zeiger da ist** — der
         // Mac hat es (`SerienView.swift:443`). Ohne es sieht ein Standbild
         // nicht danach aus, als ließe es sich anklicken.
@@ -343,13 +363,9 @@ extension App {
         gtk_widget_set_valign(platz, GTK_ALIGN_START)
         gtk_widget_set_margin_top(platz, 2)
 
-        let ruhig: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(ruhig), 12)
-        gtk_widget_add_css_class(ruhig, "swiftly-leise")
-        gtk_widget_set_halign(ruhig, GTK_ALIGN_END)
-        gtk_widget_set_hexpand(ruhig, 1)
-        gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
-        anhaengen(platz, ruhig)
+        // **Der stille Haken steht jetzt auf dem Bild, nicht hier.** Diese
+        // Spalte traegt nur noch den Umschaltknopf, der beim Schweben kommt.
+        let ruhig = bildhaken
 
         let knopf = nebenknopf("object-select-symbolic", aktiv: gesehen)
         gtk_widget_add_css_class(knopf, "swiftly-hakenknopf")
@@ -360,6 +376,8 @@ extension App {
             gesehen.toggle()
             knopfzustand(knopf, aktiv: gesehen, symbol: "object-select-symbolic")
             gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
+            // Das Bild tritt mit zurueck — dieselbe Auskunft, dieselbe Stelle.
+            gtk_widget_set_opacity(huelle, gesehen ? 0.45 : 1)
             let neu = gesehen
             // **Der Zustand des Knopfes ist die Antwort** (D6) — aber nur,
             // solange sie stimmt. Lehnt der Server ab, geht der Haken zurück

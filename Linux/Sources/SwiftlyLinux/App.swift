@@ -1114,6 +1114,10 @@ final class App: @unchecked Sendable {
     /// Vorspann- und Abspannmarken des laufenden Titels, vom Server.
     var abschnitte: [Abschnitt] = []
     var jetzigesAngebot: Knopfangebot = .keiner
+    /// **Läuft gerade ein Folgenwechsel?** Siehe ``naechsteFolge()`` — ohne
+    /// diesen Riegel lief er mehrfach an, weil `Folgenende.weiterschalten`
+    /// jeden Takt wahr bleibt, während der Wechsel zwei Netzabrufe braucht.
+    var wechselt = false
     /// Ob der Nutzer auf der offenen Detailseite schon etwas gewählt hat.
     /// Die zuletzt aufgeklappte Tafel des Mehr-Knopfs. Sie wird beim nächsten
     /// Klick gelöst — sonst hängen sie sich am Knopf auf.
@@ -1849,7 +1853,24 @@ final class App: @unchecked Sendable {
     }
 
     /// Schaltet den Bereich um und färbt die Zeilen nach.
+    ///
+    /// **Ein Klick auf den offenen Bereich fuehrt auf dessen Wurzel.**
+    /// Vorher passierte nichts: `zeige(.start)` setzte `bereich` auf den Wert,
+    /// den es schon hatte, sah oben auf dem Stapel eine Detailseite und zeigte
+    /// genau die wieder. Wer aus einem Titel heraus auf „Start" klickte, blieb
+    /// im Titel — und hatte keinen Weg zurueck ausser dem Pfeil. Auf dem Mac
+    /// ist derselbe Fall in `bereichWaehlen` behoben.
+    ///
+    /// Ein Klick auf einen **anderen** Bereich laesst dessen Stapel stehen:
+    /// wer zwischen Filmen und Serien wechselt, findet zurueck, wo er war.
     func zeige(_ neu: Bereich) {
+        let schonHier = bereich == neu && offeneUnterseite == nil
+        // **Und er schliesst eine offene Unterseite.** Profil, Einstellungen
+        // und Wiedergabe liegen ueber dem Bereich, nicht daneben.
+        let ausUnterseite = offeneUnterseite != nil
+        offeneUnterseite = nil
+        if schonHier { seitenstapel[neu] = [] }
+
         // **Ein Bereich schliesst die offene Bibliothek.** Sonst bliebe ihre
         // Zeile hervorgehoben, waehrend rechts etwas anderes steht — auf dem
         // Mac macht das `bibliothekSchliessen()` an derselben Stelle.
@@ -1857,11 +1878,9 @@ final class App: @unchecked Sendable {
             offeneBibliothek = nil
             bibliothekszeilenMalen()
         }
+        _ = ausUnterseite
         bereich = neu
-        for (fall, knopf) in bereichsknoepfe {
-            if fall == neu { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
-            else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
-        }
+        bereichszeilenMalen()
         // **Der Stapel entscheidet, was zu sehen ist.** Liegt auf diesem
         // Bereich eine Detailseite, kommt sie zurück — nicht die Liste.
         // **Ein Bereichswechsel blendet — beide Wege.** Vorher blendete nur
@@ -2562,6 +2581,22 @@ final class App: @unchecked Sendable {
         filter[.gattung] = .alle
         sortierung[.gattung] = .name
         zeige(.gattung)
+    }
+
+    /// **Welche Leistenzeile hervorgehoben ist.**
+    ///
+    /// Nicht nur „welcher Bereich" — auch, ob ueberhaupt einer dran ist. Steht
+    /// eine Unterseite offen (Profil, Einstellungen, Wiedergabe) oder eine
+    /// Bibliothek, gehoert die Hervorhebung keiner Bereichszeile: sonst
+    /// leuchtet „Start", waehrend rechts das Profil steht. Auf dem Mac steht
+    /// dieselbe Bedingung an der Zeile selbst
+    /// (`bereich == fall && !bibliothekOffen && !imKonto`).
+    func bereichszeilenMalen() {
+        let keiner = offeneUnterseite != nil || offeneBibliothek != nil
+        for (fall, knopf) in bereichsknoepfe {
+            if !keiner, fall == bereich { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+            else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
+        }
     }
 
     private func bibliothekszeilenMalen() {

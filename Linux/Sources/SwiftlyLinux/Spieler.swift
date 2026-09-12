@@ -523,7 +523,12 @@ extension App {
             zeigtBild: abspieler.zeigtBild,
             stelltEin: abspieler.stelltEin,
             laeuft: abspieler.laeuft,
-            hatTonspuren: abspieler.hatTonspuren)
+            // **Die Spurliste nur lesen, solange sie gebraucht wird.**
+            // `hatTonspuren` baut bei jedem Aufruf die ganze VLC-Liste neu auf
+            // und laeuft sie ab — zweimal je Sekunde, den ganzen Film lang.
+            // Steht die Spur schon, kuerzt das `||` den Griff weg. Wortgleich
+            // auf iOS und macOS.
+            hatTonspuren: spielstand.spurenGesetzt || abspieler.hatTonspuren)
 
         // **`Wiedergabetakt` ist `@MainActor`, dieser Rückruf nicht.**
         // GTKs Taktgeber läuft auf dem Hauptfaden des Prozesses, und das ist
@@ -578,10 +583,14 @@ extension App {
         // einem überspringbaren Abschnitt, heisst er „Vorspann überspringen"
         // und springt an dessen Ende — dieselbe Entscheidung wie auf allen
         // anderen Plattformen, sie liegt in `Abschnittslogik`.
-        let angebot = Abschnittslogik.angebot(position: spielstand.position,
-                                              dauer: spielstand.dauer,
-                                              abschnitte: abschnitte,
-                                              hatNaechsteFolge: laufenderTitel?.seriesId != nil)
+        // **Waehrend ein Wechsel laeuft, gibt es nichts anzubieten.** Sonst
+        // bliebe der Knopf „Naechste Folge" antippbar, waehrend sie schon
+        // geholt wird — ein Druck stiesse denselben Wechsel ein zweites Mal an.
+        let angebot: Knopfangebot = wechselt ? .keiner
+            : Abschnittslogik.angebot(position: spielstand.position,
+                                      dauer: spielstand.dauer,
+                                      abschnitte: abschnitte,
+                                      hatNaechsteFolge: laufenderTitel?.seriesId != nil)
         jetzigesAngebot = angebot
         gtk_widget_set_visible(spielerWeiter, angebot.sichtbar ? 1 : 0)
         if angebot.sichtbar {
@@ -675,8 +684,19 @@ extension App {
         }
     }
 
+    /// **Der Riegel gegen den doppelten Wechsel.**
+    ///
+    /// `Folgenende.weiterschalten` bleibt wahr, sobald die Stelle das Ende
+    /// erreicht hat — und der Takt fragt alle 500 ms. Der Wechsel selbst
+    /// braucht zwei Netzabrufe, also lief er hier mehrfach an: jeder Lauf las
+    /// denselben `laufenderTitel`, holte dieselbe nächste Folge, meldete das
+    /// alte Item noch einmal als gestoppt und öffnete den Spieler erneut.
+    /// Der Kommentar unten behauptete „genau einmal" (C4); ohne diesen Riegel
+    /// stimmte das nicht. iOS und macOS haben ihn seit jeher (`wechselt`).
     func naechsteFolge() {
+        guard !wechselt else { return }
         guard let client, let titel = laufenderTitel, let serie = titel.seriesId else { return }
+        wechselt = true
         let grenze = wahlen.profilBitrate
         Task.detached { [self] in
             guard let naechste = try? await client.folgeNach(itemID: titel.id,
@@ -684,7 +704,10 @@ extension App {
                   let plan = try? await client.playbackPlan(for: naechste.id,
                                                             profile: .vlc(maxBitrate: grenze))
             else {
-                aufHauptfaden { self.melden(uebersetzt("Nächste Folge konnte nicht geladen werden.")) }
+                aufHauptfaden {
+                    self.wechselt = false
+                    self.melden(uebersetzt("Nächste Folge konnte nicht geladen werden."))
+                }
                 return
             }
             aufHauptfaden {
@@ -701,8 +724,18 @@ extension App {
                 }
                 self.laufenderTitel = naechste
                 self.laufenderPlan = plan
+                // **Der Start wird hier gemeldet, nicht von der Schleife.**
+                // Titel und Plan sind in diesem Augenblick bekannt, die Stelle
+                // ist null. Ueberliesse man es dem Takt, kaeme die Meldung erst,
+                // wenn ein Bild steht (C1) — also nach der Pufferzeit der neuen
+                // Datei. iOS und macOS melden hier, und `startGemeldet: true`
+                // gehoert dazu: sonst bliebe der Stand auf „noch nicht
+                // gemeldet" und der Takt eroeffnete die Sitzung ein zweites Mal.
+                Task.detached {
+                    try? await client.reportStart(itemID: naechste.id, plan: plan, ticks: 0)
+                }
                 MainActor.assumeIsolated {
-                    Wiedergabetakt.neuerTitel(&self.spielstand, startGemeldet: false)
+                    Wiedergabetakt.neuerTitel(&self.spielstand, startGemeldet: true)
                 }
                 self.spielstand.erstesBildDa = false
                 self.seitOeffnen = Date()
@@ -723,6 +756,8 @@ extension App {
                     let marken = await client.abschnitte(fuer: naechste.id)
                     aufHauptfaden { self.abschnitte = marken }
                 }
+                // Erst jetzt wieder offen: der Wechsel ist durch.
+                self.wechselt = false
             }
         }
     }

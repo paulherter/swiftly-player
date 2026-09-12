@@ -27,6 +27,9 @@ extension App {
     /// Wer eine Sprache wählt, löst einen Neubau aus; bisher fuhr dafür jedes
     /// Mal eine neue Seite herein, obwohl sich nur eine Zeile geändert hat.
     func unterseiteOeffnen(_ was: Unterseite, schub: Schub = .ohne) {
+        // Eine offene Unterseite nimmt der Leiste die Hervorhebung — sonst
+        // leuchtet „Start", waehrend rechts das Profil steht.
+        defer { bereichszeilenMalen() }
         let anOrt = (offeneUnterseite == was)
         let scheibe: Widget! = anOrt ? detailhuelle : naechsteScheibe()
         if anOrt { leeren(scheibe) }

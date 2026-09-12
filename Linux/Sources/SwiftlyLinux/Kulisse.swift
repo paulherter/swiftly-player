@@ -149,7 +149,12 @@ final class Kulisse: @unchecked Sendable {
     ]
 
     fileprivate func malen(_ cr: OpaquePointer, _ w: Double, _ h: Double) {
-        guard flaeche != nil, breite > 0, hoehe > 0, w > 0, h > 0 else { return }
+        // **Eine unglaubwuerdige Zuteilung wird nicht nachgerechnet.** Beim
+        // Umbau des Inhalts teilt GTK der Flaeche kurz eine Breite von wenigen
+        // Punkten zu. Rechnete man die nach, waere das Bild fuer diesen Zug in
+        // Briefmarkengroesse da und im naechsten wieder richtig — dasselbe
+        // Zucken. Unter 80 Punkt Breite bleibt stehen, was steht.
+        guard flaeche != nil, breite > 0, hoehe > 0, w >= 80, h >= 40 else { return }
         let teiler = max(gtk_widget_get_scale_factor(anzeige), 1)
         if fertig == nil || fertigBreite != Int(w) || fertigHoehe != Int(h)
             || fertigTeiler != teiler {
@@ -168,13 +173,25 @@ final class Kulisse: @unchecked Sendable {
     }
 
     /// Rechnet das maskierte Bild einmal in eine eigene Fläche.
+    ///
+    /// **Die alte Flaeche bleibt stehen, bis die neue fertig ist.**
+    ///
+    /// Hier stand `fertigLoesen()` als erste Zeile. Schlug danach irgendetwas
+    /// fehl — und beim Umbau des Inhalts teilt GTK die Zeichenflaeche fuer
+    /// einen Zug mit einer unbrauchbaren Groesse zu —, war `fertig` gleich
+    /// `nil`, und ``malen(_:_:_:)`` stieg ohne einen Strich wieder aus. Von
+    /// aussen sieht das aus, als verschwaende das Kopfbild kurz und kaeme dann
+    /// zurueck: genau das Zucken beim Wechsel zwischen Folgen, Besetzung und
+    /// Aehnlichem. Auf dem Mac gibt es das nicht, weil dort das Bild eine
+    /// Ansicht ist und keine Flaeche, die jemand wegwirft.
     private func fertigRechnen(_ w: Double, _ h: Double, _ teiler: Int32) {
         guard let flaeche else { return }
-        fertigLoesen()
         guard let ziel = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
                                                     Int32(w) * teiler,
                                                     Int32(h) * teiler),
               let cr = cairo_create(ziel) else { return }
+        // Ab hier steht die neue Flaeche; erst jetzt darf die alte weg.
+        fertigLoesen()
         defer { cairo_destroy(cr) }
         cairo_scale(cr, Double(teiler), Double(teiler))
 

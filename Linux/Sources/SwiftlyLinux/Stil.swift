@@ -511,6 +511,16 @@ enum Stil {
             color: \(schriftLeise);
         }
         .swiftly-listenpfeil:hover { background-color: rgba(255,255,255,0.06); }
+        /* Der Haken auf dem Folgenbild: 20 rund, dunkler Grund, 6 Abstand
+           zur Ecke — die Masse des Macs (`SerienView.swift:656`). */
+        .swiftly-folgenhaken {
+            color: \(schrift);
+            background-color: rgba(11,11,13,0.72);
+            border-radius: \(eckeKapsel)px;
+            min-width: 20px;
+            min-height: 20px;
+            margin: 6px;
+        }
         .swiftly-trennlinie { background-color: \(linie); min-height: 1px; }
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
