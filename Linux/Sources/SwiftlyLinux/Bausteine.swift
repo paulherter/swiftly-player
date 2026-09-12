@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import JellyfinKit
 
 /// Die Bausteine, die der Mac hat — in GTK nachgebaut, mit seinen Zahlen.
 ///
@@ -585,4 +586,107 @@ func gehalten(_ w: Widget!) -> Zeigerkiste {
 
 func losgelassen(_ kiste: Zeigerkiste) {
     g_object_unref(kiste.widget)
+}
+
+
+/// **Ein Platzhalter in der Form dessen, was kommt** (E17).
+///
+/// Statt eines Laderings, der nur „warte" sagt. Die Seite ist dann leer, nicht
+/// am Warten — und wenn die Daten eintreffen, wechselt nichts die Form.
+func ladefeld(breite: Int, hoehe: Int, schmal: Bool = false) -> Widget! {
+    let feld: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(feld, "swiftly-ladefeld")
+    if schmal { gtk_widget_add_css_class(feld, "swiftly-schmal") }
+    gtk_widget_set_size_request(feld, Int32(breite), Int32(hoehe))
+    gtk_widget_set_halign(feld, GTK_ALIGN_START)
+    gtk_widget_set_valign(feld, GTK_ALIGN_START)
+    return feld
+}
+
+/// Drei Folgenzeilen als Platzhalter — Standbild, Titel, Nebenzeile.
+///
+/// Die Maße sind die des Macs (`SerienView.swift:327`): 160 x 90 für das
+/// Standbild, darüber 220 x 14 und 90 x 11 für die zwei Zeilen.
+func folgenPlatzhalter(rand: Int) -> Widget! {
+    let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
+    gtk_widget_set_margin_start(block, Int32(rand))
+    gtk_widget_set_margin_end(block, Int32(rand))
+    for _ in 0 ..< 3 {
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 16)
+        anhaengen(zeile, ladefeld(breite: 160, hoehe: 90))
+        let texte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+        gtk_widget_set_valign(texte, GTK_ALIGN_CENTER)
+        anhaengen(texte, ladefeld(breite: 220, hoehe: 14, schmal: true))
+        anhaengen(texte, ladefeld(breite: 90, hoehe: 11, schmal: true))
+        anhaengen(zeile, texte)
+        anhaengen(block, zeile)
+    }
+    return block
+}
+
+/// Ein Raster aus Plakatplatzhaltern — für Reiter, die ein Raster füllen.
+func rasterPlatzhalter(anzahl: Int = 8, rand: Int) -> Widget! {
+    let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(Stil.kachelAbstand))
+    gtk_widget_set_margin_start(reihe, Int32(rand))
+    gtk_widget_set_margin_end(reihe, Int32(rand))
+    for _ in 0 ..< anzahl {
+        anhaengen(reihe, ladefeld(breite: Stil.kachelBreite, hoehe: Stil.kachelHoehe))
+    }
+    return reihe
+}
+
+
+/// Zwei Reihen als Platzhalter — Überschrift und Kacheln in ihrer Form.
+///
+/// Für die Startseite beim allerersten Laden. Danach bleibt stehen, was da
+/// ist, und wird ersetzt, sobald die neuen Reihen kommen.
+func reihenPlatzhalter(rand: Int) -> Widget! {
+    let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: Int32(Stil.reihenAbstand))
+    for i in 0 ..< 2 {
+        let reihe = stapel(GTK_ORIENTATION_VERTICAL, abstand: 14)
+        let kopf = ladefeld(breite: i == 0 ? 190 : 150, hoehe: 20, schmal: true)
+        gtk_widget_set_margin_start(kopf, Int32(rand))
+        anhaengen(reihe, kopf)
+        let quer = i == 0
+        let kacheln = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(Stil.kachelAbstand))
+        gtk_widget_set_margin_start(kacheln, Int32(rand))
+        gtk_widget_set_margin_end(kacheln, Int32(rand))
+        for _ in 0 ..< (quer ? 4 : 6) {
+            anhaengen(kacheln, ladefeld(breite: quer ? Stil.querBreite : Stil.kachelBreite,
+                                        hoehe: quer ? Stil.querHoehe : Stil.kachelHoehe))
+        }
+        anhaengen(reihe, kacheln)
+        anhaengen(block, reihe)
+    }
+    return block
+}
+
+
+/// **Die Plakette einer Kachel** (E16) — Haken, offene Folgen oder Staffeln.
+///
+/// Welche Auskunft gilt, entscheidet ``Anzeigeregeln/kachelmarke(art:staffeln:gesehen:offeneFolgen:)``
+/// im Paket: gesehen schlägt alles, offene Folgen schlagen die Staffelzahl,
+/// ein ungesehener Film bekommt nichts — eine Zahl, die immer eins wäre, ist
+/// keine Auskunft. Der **Wortlaut** steht hier, weil er am Katalog hängt.
+func kachelmarkeLegen(_ huelle: Widget!, item: Item) {
+    guard let marke = Anzeigeregeln.kachelmarke(art: item.type,
+                                                staffeln: item.childCount,
+                                                gesehen: item.userData?.played,
+                                                offeneFolgen: item.userData?.unplayedItemCount)
+    else { return }
+
+    let feld: Widget!
+    switch marke {
+    case .gesehen:
+        feld = gtk_image_new_from_icon_name("object-select-symbolic")
+    case .offen(let n):
+        feld = beschriftung(String(n))
+    case .staffeln(let n):
+        feld = beschriftung(n == 1 ? uebersetzt("1 Staffel")
+                                   : String(format: uebersetzt("%lld Staffeln"), n))
+    }
+    gtk_widget_add_css_class(feld, "swiftly-kachelmarke")
+    gtk_widget_set_halign(feld, GTK_ALIGN_END)
+    gtk_widget_set_valign(feld, GTK_ALIGN_START)
+    gtk_overlay_add_overlay(OpaquePointer(huelle), feld)
 }

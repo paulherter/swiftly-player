@@ -78,6 +78,12 @@ struct Wahlen: Codable {
 
     var pufferstufe = Pufferstufe.normal.rawValue
 
+    /// **„Zuletzt gesucht", roh wie auf der Platte.** Die Liste selbst rechnet
+    /// ``Suchverlauf`` im Paket aus — hoechstens acht, das Juengste zuerst,
+    /// ohne Doppelte. Hier liegt nur die Zeichenkette, damit das Format an
+    /// einer Stelle steht und nicht in drei Ansichten.
+    var suchverlauf = ""
+
     var puffer: Pufferstufe { Pufferstufe(rawValue: pufferstufe) ?? .normal }
 
     // MARK: Lesen, das eine aeltere Datei ueberlebt
@@ -117,6 +123,7 @@ struct Wahlen: Codable {
         downloadsAn            = w(.downloadsAn, false)
         pufferstufe            = w(.pufferstufe, Pufferstufe.normal.rawValue)
         discordAnzeigen        = w(.discordAnzeigen, false)
+        suchverlauf            = w(.suchverlauf, "")
     }
 
     /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.

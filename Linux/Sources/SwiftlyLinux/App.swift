@@ -900,6 +900,9 @@ final class App: @unchecked Sendable {
     private var rasterFeld: [Bereich: Widget] = [:]
     private var zahlFeld: [Bereich: Widget] = [:]
     private var suchfeld: Widget!
+    /// „Zuletzt gesucht" — steht, solange das Feld leer ist.
+    private var suchverlaufblock: Widget!
+    private var suchverlaufliste: Widget!
     private var suchraster: Widget!
     private var suchleer: Widget!
     var geladen: Set<Bereich> = []
@@ -920,6 +923,11 @@ final class App: @unchecked Sendable {
     /// Die Staffel, mit der eine Serienseite öffnet — gesetzt, wenn der Weg
     /// über eine Folge führte (A8).
     var startStaffel: String?
+    /// Die Staffel**nummer**, über die man kam — zweiter Weg neben der
+    /// Kennung. Am Gerät gemessen liefert der Server an einer Folge nicht
+    /// immer eine `SeasonId`; dann greift der Kennungsvergleich ins Leere
+    /// und nur die Nummer trägt noch (A10).
+    var startStaffelNummer: Int?
     /// Die Rolle, über die man auf eine Personenseite kam, und der Titel, in
     /// dem sie gespielt wurde.
     ///
@@ -1124,6 +1132,11 @@ final class App: @unchecked Sendable {
     var seerrGilt: Bool?
     /// Die Seerr-Treffer der Suche — Ueberschrift und Raster darunter.
     var seerrUeberschrift: Widget!
+    /// Die Zeile aus Überschrift und Zählmarke — sie wird als Ganzes
+    /// ein- und ausgeblendet, nicht nur die Überschrift.
+    var seerrKopfzeile: Widget!
+    /// Wie viele Treffer Seerr hat (E27).
+    var seerrZahl: Widget!
     var seerrRaster: Widget!
     /// Die Rueckfrage vor einer Anfrage — sie steht dort, wo geklickt wurde.
     var seerrRueckfrage: Widget!
@@ -1756,7 +1769,7 @@ final class App: @unchecked Sendable {
         }
         // **Wer auf „Suche" geht, will tippen.** Der Mac setzt den Fokus beim
         // Erscheinen der Seite; hier ging es nur über Strg+F.
-        if neu == .suche { gtk_widget_grab_focus(suchfeld) }
+        if neu == .suche { gtk_widget_grab_focus(suchfeld); suchverlaufZeigen() }
         // **Jeder Bereich lädt einmal.** Auf dem Mac bleiben die Stände der
         // Bereiche liegen; wer zwischen Filmen und Serien wechselt, wartet
         // nur beim ersten Mal.
@@ -1798,8 +1811,7 @@ final class App: @unchecked Sendable {
         gtk_label_set_xalign(OpaquePointer(t), 0)
         gtk_widget_set_hexpand(t, 1)
         anhaengen(reihe, t)
-        zahl = beschriftung("", stil: "swiftly-koerper")
-        gtk_widget_add_css_class(zahl, "swiftly-leise")
+        zahl = beschriftung("", stil: "swiftly-zaehlmarke")
         gtk_widget_set_valign(zahl, GTK_ALIGN_CENTER)
         anhaengen(reihe, zahl)
         return reihe
@@ -1955,6 +1967,32 @@ final class App: @unchecked Sendable {
         gtk_widget_set_hexpand(suchfeld, 1)
         anhaengen(block, suchfeld)
 
+        // **„Zuletzt gesucht" — dieselbe Liste wie auf iPhone, Fernseher und
+        // Mac.** Die Logik liegt als ``Suchverlauf`` im Paket und war hier nie
+        // angeschlossen: bei leerem Feld stand auf Linux gar nichts.
+        let (verlaufAussen, verlaufRaum) = zeilengruppe()
+        suchverlaufblock = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        let verlaufkopf = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        gtk_widget_set_margin_top(verlaufkopf, 26)
+        gtk_widget_set_margin_bottom(verlaufkopf, 8)
+        let verlauftitel = rubrik(uebersetzt("Zuletzt gesucht"))
+        gtk_widget_set_hexpand(verlauftitel, 1)
+        anhaengen(verlaufkopf, verlauftitel)
+        let verlaufWeg: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(verlaufWeg, "swiftly-blank")
+        gtk_button_set_child(alsKnopf(verlaufWeg),
+                             beschriftung(uebersetzt("Löschen"), stil: "swiftly-zaehlmarke"))
+        beiSignal(verlaufWeg, "clicked") { [weak self] in
+            self?.wahlen.suchverlauf = ""
+            self?.wahlen.sichern()
+            self?.suchverlaufZeigen()
+        }
+        anhaengen(verlaufkopf, verlaufWeg)
+        anhaengen(suchverlaufblock, verlaufkopf)
+        anhaengen(suchverlaufblock, verlaufAussen)
+        suchverlaufliste = verlaufRaum
+        anhaengen(block, suchverlaufblock)
+
         suchraster = rasterBauen()
         anhaengen(block, suchraster)
         // **Leer ist eine Auskunft.** Ohne sie steht die Seite still da, und
@@ -1970,11 +2008,20 @@ final class App: @unchecked Sendable {
         // Bibliothek, dann eine eigene Ueberschrift und darunter, was Seerr
         // kennt. Vermischt waere nicht zu sehen, was man ansehen kann und was
         // man erst anfordern muss.
+        // **Beide Blöcke der Suche tragen rechts die Zählmarke** (E27). Hier
+        // stand nur die Überschrift; wie viele Treffer Seerr hat, sagte nichts.
+        let seerrzeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
+        gtk_widget_set_margin_top(seerrzeile, 12)
+        gtk_widget_set_visible(seerrzeile, 0)
         seerrUeberschrift = beschriftung(uebersetzt("Anfragen über Seerr"), stil: "swiftly-reihe")
         gtk_label_set_xalign(OpaquePointer(seerrUeberschrift), 0)
-        gtk_widget_set_margin_top(seerrUeberschrift, 12)
-        gtk_widget_set_visible(seerrUeberschrift, 0)
-        anhaengen(block, seerrUeberschrift)
+        gtk_widget_set_hexpand(seerrUeberschrift, 1)
+        anhaengen(seerrzeile, seerrUeberschrift)
+        seerrZahl = beschriftung("", stil: "swiftly-zaehlmarke")
+        gtk_widget_set_valign(seerrZahl, GTK_ALIGN_CENTER)
+        anhaengen(seerrzeile, seerrZahl)
+        seerrKopfzeile = seerrzeile
+        anhaengen(block, seerrzeile)
 
         seerrRueckfrage = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
         gtk_widget_set_visible(seerrRueckfrage, 0)
@@ -2419,7 +2466,9 @@ final class App: @unchecked Sendable {
         // — dabei ändert sich meist nur ein Fortschrittsbalken. Ersetzt wird
         // erst, wenn die neuen Reihen da sind.
         if gtk_widget_get_first_child(reihenstapel) == nil {
-            anhaengen(reihenstapel, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
+            // **Kein Ladering, kein „Lade …"** (E17): die Reihen stehen in
+            // ihrer Form da und lösen sich auf, wenn die Daten kommen.
+            anhaengen(reihenstapel, reihenPlatzhalter(rand: Stil.randAbstand))
         }
 
         // Die Wahl vor dem Faden ablesen — `wahlen` gehört dem Hauptfaden.
@@ -2586,6 +2635,8 @@ final class App: @unchecked Sendable {
             gtk_widget_set_visible(suchleer, 0)
             seerrRueckfrageWeg()
             seerrTrefferZeigen([])
+            // Feld leer heisst: „Zuletzt gesucht" kommt zurueck.
+            suchverlaufZeigen()
             return
         }
         Task.detached { [self] in
@@ -2609,10 +2660,46 @@ final class App: @unchecked Sendable {
     /// eigenen Server war das lange folgenlos, weil er schneller antwortet,
     /// als jemand tippt. Seerr ist es nicht: ohne die Pruefung malt die
     /// Antwort auf „Herr" die Treffer unter „Herr der Ringe".
+    /// Baut „Zuletzt gesucht" neu und blendet den Block aus, wenn er leer ist
+    /// oder gerade gesucht wird.
+    func suchverlaufZeigen() {
+        guard suchverlaufliste != nil else { return }
+        let worte = Suchverlauf.liste(wahlen.suchverlauf)
+        let feldLeer = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        gtk_widget_set_visible(suchverlaufblock, (feldLeer && !worte.isEmpty) ? 1 : 0)
+        leeren(suchverlaufliste)
+        for (stelle, wort) in worte.enumerated() {
+            if stelle > 0 {
+                let strich: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+                gtk_widget_add_css_class(strich, "swiftly-trennlinie")
+                gtk_widget_set_size_request(strich, -1, 1)
+                gtk_widget_set_margin_start(strich, 48)
+                anhaengen(suchverlaufliste, strich)
+            }
+            let zeile = wertezeile(symbol: "document-open-recent-symbolic", titel: wort) {
+                [weak self] in
+                guard let self else { return }
+                gtk_editable_set_text(OpaquePointer(self.suchfeld), wort)
+                self.suchtakt += 1
+                self.suchen(self.suchtakt)
+            }
+            anhaengen(suchverlaufliste, zeile)
+        }
+    }
+
     private func suchen(_ meins: Int) {
         guard let client else { return }
         let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !begriff.isEmpty else { rasterFuellen(suchraster, []); return }
+        guard !begriff.isEmpty else {
+            rasterFuellen(suchraster, [])
+            suchverlaufZeigen()
+            return
+        }
+        // **Gemerkt wird, was gesucht wurde**, nicht jeder Tastendruck — der
+        // Aufruf steht deshalb hier und nicht am Taktgeber.
+        wahlen.suchverlauf = Suchverlauf.merken(begriff, in: wahlen.suchverlauf)
+        wahlen.sichern()
+        suchverlaufZeigen()
         let seerr = seerrclient
         Task.detached { [self] in
             let treffer = (try? await client.suche(begriff)) ?? []
@@ -2841,6 +2928,10 @@ final class App: @unchecked Sendable {
         if quer, let anteil = item.gesehenerAnteil {
             balkenLegen(kaefig, breite: breite, anteil: anteil)
         }
+        // **Die Plakette gehört auf jede hochkante Kachel** (E16) — Haken,
+        // offene Folgen oder Staffelzahl. Auf der Querkachel nicht: dort steht
+        // der Balken, und beides zusammen wäre zweimal dieselbe Auskunft.
+        if !quer { kachelmarkeLegen(kaefig, item: item) }
         // **Nur „Weiterschauen" springt direkt in die Wiedergabe** (A1).
         // „Nächste Folge" und „Zuletzt hinzugefügt" öffnen die Übersicht
         // (A2, A3) — was man nicht angefangen hat, will man erst ansehen.
@@ -2870,6 +2961,10 @@ final class App: @unchecked Sendable {
         } else {
             zeichenLegen(kaefig, serie: item.seriesId != nil || item.type == "Series")
         }
+        // **Die Plakette fehlte hier ganz** (E16): im Suchraster und in jedem
+        // Bibliotheksraster stand keine Auskunft, ob ein Titel gesehen ist
+        // oder wie viele Folgen offen sind.
+        kachelmarkeLegen(kaefig, item: item)
         // Jeder Suchtreffer und jede Kachel im Raster führt auf die Seite,
         // keiner startet (A7b).
         let kachel = kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,

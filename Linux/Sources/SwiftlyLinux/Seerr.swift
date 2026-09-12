@@ -247,8 +247,9 @@ extension App {
         guard seerrRaster != nil else { return }
         let fremde = treffer.filter { $0.stand != .da }
         let sichtbar = !fremde.isEmpty
-        gtk_widget_set_visible(seerrUeberschrift, sichtbar ? 1 : 0)
+        gtk_widget_set_visible(seerrKopfzeile, sichtbar ? 1 : 0)
         gtk_widget_set_visible(seerrRaster, sichtbar ? 1 : 0)
+        gtk_label_set_text(OpaquePointer(seerrZahl), String(fremde.count))
         leeren(seerrRaster)
         for t in fremde {
             gtk_flow_box_insert(OpaquePointer(seerrRaster), seerrKachel(t), -1)

@@ -25,6 +25,7 @@ extension App {
         // schon steht.
         guard item.type == "Episode", let serieID = item.seriesId, let client else {
             startStaffel = nil
+            startStaffelNummer = nil
             seitenstapel[bereich, default: []].append(item)
             detailZeigen(item)
             return
@@ -40,6 +41,7 @@ extension App {
             aufHauptfaden {
                 guard let s else { return }
                 self.startStaffel = f?.seasonId ?? item.seasonId
+                self.startStaffelNummer = f?.parentIndexNumber ?? item.parentIndexNumber
                 self.seitenstapel[self.bereich, default: []].append(s)
                 self.detailZeigen(s)
             }

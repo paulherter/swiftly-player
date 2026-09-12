@@ -245,3 +245,14 @@
 "Mehr" = "Mehr";
 "Weniger" = "Weniger";
 "Auf deinem Server gibt es sonst nichts mit %@." = "Auf deinem Server gibt es sonst nichts mit %@.";
+
+/* Kachelplakette (E16) */
+"1 Staffel" = "1 Staffel";
+"%lld Staffeln" = "%lld Staffeln";
+
+/* Suchverlauf */
+"Zuletzt gesucht" = "Zuletzt gesucht";
+"Löschen" = "Löschen";
+"Staffel" = "Staffel";
+"Zuletzt hinzugefügte Filme" = "Zuletzt hinzugefügte Filme";
+"Zuletzt hinzugefügte Serien" = "Zuletzt hinzugefügte Serien";

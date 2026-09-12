@@ -50,8 +50,15 @@ extension App {
             anhaengen(zeile, knopf)
         }
         anhaengen(reiterraum, zeile)
-        // **Ohne Haarlinie darunter.** Auf dem Mac läuft sie über die volle
-        // Breite; Das ist eine bewusste Abweichung — zurück ist es eine Zeile.
+        // **Die Haarlinie über die volle Breite**, wie auf dem Mac
+        // (`SerienView.swift:504`). Hier stand sie einmal nicht, mit dem
+        // Vermerk, das sei „eine bewusste Abweichung — zurück ist es eine
+        // Zeile". Aufwand ist keiner der drei Gründe, die Abschnitt F
+        // zulässt; hier ist die Zeile.
+        let reiterlinie: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_add_css_class(reiterlinie, "swiftly-trennlinie")
+        gtk_widget_set_size_request(reiterlinie, -1, 1)
+        anhaengen(reiterraum, reiterlinie)
 
         anhaengen(unten, reiterraum)
         anhaengen(unten, inhaltraum)
@@ -62,7 +69,9 @@ extension App {
         leeren(raum)
         switch was {
         case .folgen:
-            anhaengen(raum, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
+            // **Kein Ladering und kein „Lade …"** (E17), sondern drei
+            // Folgenzeilen in ihrer Form.
+            anhaengen(raum, folgenPlatzhalter(rand: Stil.randAbstand))
             staffelnLaden(serie, in: raum)
         case .besetzung:
             if serie.darsteller.isEmpty {
@@ -73,7 +82,7 @@ extension App {
                 anhaengen(raum, besetzungsreihe(serie.darsteller, herkunft: serie.name))
             }
         case .aehnliches:
-            anhaengen(raum, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
+            anhaengen(raum, rasterPlatzhalter(rand: Stil.randAbstand))
             aehnlicheNachladen(serie, in: raum, leeren: true, alsRaster: true)
         }
     }
@@ -82,38 +91,66 @@ extension App {
 
     private func staffelnLaden(_ serie: Item, in raum: Widget!) {
         guard let client else { return }
+        let id = startStaffel
+        let nummer = startStaffelNummer
+        // **Der Stand nur, wenn kein Hinweis kam** (A10). Ein Abruf, den
+        // niemand liest, kostet auf jeder Serienseite eine Anfrage.
+        let brauchtStand = Staffelwahlregel.brauchtStand(hinweisID: id, hinweisNummer: nummer)
+
         // **Schon geholt heisst: sofort da.** Kein Lader, kein Sprung.
-        if let schon = staffelspeicher[serie.id], !schon.isEmpty {
-            staffelnZeigen(schon, serie: serie, in: raum)
+        if let schon = staffelspeicher[serie.id], !schon.isEmpty, !brauchtStand {
+            staffelnZeigen(schon, serie: serie, in: raum,
+                           gewaehlt: Staffelwahlregel.waehle(aus: schon, hinweisID: id,
+                                                             hinweisNummer: nummer))
             return
         }
         let kiste = gehalten(raum)
         Task.detached { [self] in
-            let staffeln = (try? await client.staffeln(seriesID: serie.id)) ?? []
+            // Beides nebenher: der Stand haengt nicht an den Staffeln.
+            async let staffelnRoh = try? await client.staffeln(seriesID: serie.id)
+            async let standRoh = brauchtStand ? await client.standInSerie(serie.id) : nil
+            let staffeln = await staffelnRoh ?? []
+            let stand = await standRoh
+            let gewaehlt = Staffelwahlregel.waehle(aus: staffeln, hinweisID: id,
+                                                   hinweisNummer: nummer, stand: stand)
             aufHauptfaden {
                 defer { losgelassen(kiste) }
                 self.staffelspeicher[serie.id] = staffeln
-                self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget)
+                self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget,
+                                    gewaehlt: gewaehlt)
             }
         }
     }
 
-    private func staffelnZeigen(_ staffeln: [Item], serie: Item, in raum: Widget!) {
+    private func staffelnZeigen(_ staffeln: [Item], serie: Item, in raum: Widget!,
+                                gewaehlt: Item?) {
         leeren(raum)
         guard !staffeln.isEmpty else {
             anhaengen(raum, beschriftung(uebersetzt("Keine Staffeln gefunden."), stil: "swiftly-koerper"))
             return
         }
-        // Mit welcher Staffel geöffnet wird: der über eine Folge gewählten,
-        // sonst der ersten.
+        // **Welche Staffel dasteht, entscheidet der Weg auf die Seite** (A10).
+        // Die Rechnung liegt im Paket (`Staffelwahlregel`), damit sie auf
+        // jeder Plattform dieselbe Antwort gibt; hier stand vorher nur ein
+        // Kennungsvergleich mit Rückfall auf `staffeln[0]`, also Staffel 1 —
+        // während der Hauptknopf daneben „Weiterschauen S6E1" sagte.
         let wahl = Staffelwahl()
-        wahl.jetzt = staffeln.first { $0.id == startStaffel } ?? staffeln[0]
+        wahl.jetzt = gewaehlt ?? staffeln[0]
         offeneStaffel = wahl.jetzt
 
+        // **Mit Winkel, und der zeigt den Zustand.** Auf dem Mac trägt der
+        // Chip `chevron.down`, offen `chevron.up` (`SerienView.swift:548`);
+        // hier stand ein nacktes Textlabel, dem man nicht ansieht, dass es
+        // etwas aufklappt.
         let pille: Widget! = gtk_button_new()
         gtk_widget_add_css_class(pille, "swiftly-chip")
         gtk_widget_set_halign(pille, GTK_ALIGN_START)
-        gtk_button_set_label(alsKnopf(pille), wahl.jetzt?.name ?? "")
+        let pilleninhalt = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
+        let pillentext = beschriftung(wahl.jetzt?.name ?? uebersetzt("Staffel"))
+        let pillenwinkel: Widget! = gtk_image_new_from_icon_name("go-down-symbolic")
+        anhaengen(pilleninhalt, pillentext)
+        anhaengen(pilleninhalt, pillenwinkel)
+        gtk_button_set_child(alsKnopf(pille), pilleninhalt)
         // Nur bei mehr als einer Staffel ist eine Wahl zu treffen.
         // **Bei einer Staffel gibt es nichts zu waehlen.** Der Mac blendet
         // die Pille dann ganz aus; ausgegraut stehen zu lassen sieht aus wie
@@ -148,12 +185,16 @@ extension App {
                     wahl.jetzt = staffel
                     self?.offeneStaffel = staffel
                     self?.detailBeruehrt = true
-                    gtk_button_set_label(alsKnopf(pille), staffel.name)
+                    gtk_label_set_text(OpaquePointer(pillentext), staffel.name)
                     gtk_popover_popdown(alsTafel(tafel))
                     self?.folgenLaden(serie: serie, staffel: staffel, in: folgenraum)
                 })
             }
+            gtk_image_set_from_icon_name(OpaquePointer(pillenwinkel), "go-up-symbolic")
             gtk_popover_popup(alsTafel(tafel))
+        }
+        beiSignal(tafel, "closed") {
+            gtk_image_set_from_icon_name(OpaquePointer(pillenwinkel), "go-down-symbolic")
         }
 
         gtk_widget_set_margin_start(pille, Int32(Stil.randAbstand))
@@ -192,7 +233,7 @@ extension App {
             return
         }
         leeren(raum)
-        anhaengen(raum, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
+        anhaengen(raum, folgenPlatzhalter(rand: Stil.randAbstand))
         let kiste = gehalten(raum)
         Task.detached { [self] in
             let folgen = (try? await client.folgen(seriesID: serie.id,

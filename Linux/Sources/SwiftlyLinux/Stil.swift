@@ -435,6 +435,36 @@ enum Stil {
         }
         button.swiftly-profil:hover { background-color: rgba(255,255,255,0.06); }
 
+        /* **Ein Ladefeld in der Form des kommenden Inhalts** (E17). Der
+           Ladering kommt in der Oberfläche nicht vor — er sagt „warte" und
+           sonst nichts: nicht was kommt, nicht wie viel. Hier stand an
+           mehreren Stellen ein „Lade …" als Fließtext; das ist eine dritte
+           Form, die E17 auch nicht vorsieht.
+
+           `Stil.flaeche`, pulsierend zwischen halber und voller Deckung über
+           0,9 s — dieselben Werte wie `Ladefeld` auf Apple
+           (`Sources/Shared/Stil.swift:3302`). */
+        @keyframes swiftly-pulsen {
+            0%   { opacity: 0.5; }
+            50%  { opacity: 1.0; }
+            100% { opacity: 0.5; }
+        }
+        .swiftly-ladefeld {
+            background-color: \(flaeche);
+            border-radius: \(eckeKachel)px;
+            animation: swiftly-pulsen 1.8s ease-in-out infinite;
+        }
+        .swiftly-ladefeld.swiftly-schmal { border-radius: 3px; }
+        /* **Eine Rubrik über einer Liste sagt auch, wie viel** (E27). Sie
+           beantwortet „bin ich hier durch?"; ohne sie scrollt man ins
+           Ungewisse. 13 halbfett in `schriftSehrLeise`, wie `Zaehlmarke` auf
+           Apple (`Stil.swift:2682`) — hier stand Körpergröße in `leise`,
+           also zwei Stufen zu laut. */
+        .swiftly-zaehlmarke {
+            font-size: 13px;
+            font-weight: 500;
+            color: \(schriftSehrLeise);
+        }
         .swiftly-trennlinie { background-color: \(linie); min-height: 1px; }
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
@@ -465,6 +495,23 @@ enum Stil {
         /* Der Fortschrittsbalken auf einer „Weiterschauen"-Kachel: dunkle
            Spur über die ganze Breite, darauf der Akzent so weit, wie gesehen
            wurde. Genau wie auf dem Mac. */
+        /* **Drei Zustände, drei Zeichen auf einer Kachel** (E16). Balken
+           heisst angefangen, Haken heisst gesehen, eine Zahl heisst: so viel
+           liegt hier. **In Weiss auf Dunkel, nicht in Akzent** — eine
+           Plakette ist eine Angabe, keine Auswahl.
+
+           Radius 9, nicht 3: die Kachel darunter hat 10, und eine Marke, die
+           eckiger ist als ihr Untergrund, fällt auf (`Stil.swift:2996`). */
+        .swiftly-kachelmarke {
+            font-size: 10px;
+            font-weight: 600;
+            color: \(schrift);
+            background-color: rgba(11,11,13,0.78);
+            border: 1px solid \(rand);
+            border-radius: 9px;
+            padding: 3px 6px;
+            margin: 6px;
+        }
         .swiftly-balkenspur { background-color: rgba(255,255,255,0.16); }
         .swiftly-balken { background-color: \(akzent); }
 
