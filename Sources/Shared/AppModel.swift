@@ -841,8 +841,22 @@ final class AppModel {
     @discardableResult
     func setzeGesehen(_ item: Item, an: Bool) async -> String? {
         guard let client else { return String(localized: "Nicht angemeldet.") }
-        do { try await client.setzeGesehen(itemID: item.id, an: an); return nil }
-        catch { return lesbar(error) }
+        do {
+            try await client.setzeGesehen(itemID: item.id, an: an)
+            // **Hier, nicht in den sechs Ansichten, die das rufen.**
+            //
+            // Der `Serienspeicher` hält die Folgen einer Serie samt Sehstand
+            // und läuft nicht ab. Die Serienseite setzt sich daraus zusammen,
+            // die Staffelansicht holte frisch und schrieb nicht zurück — wer
+            // eine Staffel abhakte und zurückging, sah wieder lauter offene
+            // Folgen. Jede Ansicht einzeln nachziehen zu lassen hätte
+            // geheißen, dass die siebte es vergisst.
+            //
+            // Bei einer Folge und bei einer Staffel ist die Serie betroffen,
+            // bei einer Serie sie selbst.
+            Serienspeicher.geteilt.vergessen(item.seriesId ?? item.id)
+            return nil
+        } catch { return lesbar(error) }
     }
 
     func staffeln(_ serie: Item) async -> [Item] {

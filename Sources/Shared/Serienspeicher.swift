@@ -74,6 +74,30 @@ final class Serienspeicher {
         while reihenfolge.count > 12 { staende[reihenfolge.removeFirst()] = nil }
     }
 
+    /// **Was hier liegt, ist ab jetzt falsch.**
+    ///
+    /// Der Speicher hält die Folgen einer Serie samt `userData` — also samt
+    /// Haken und Fortschritt. Er läuft nicht ab; geleert wird er nur beim
+    /// Kontowechsel. Wer eine Folge als gesehen markiert, ändert den Stand
+    /// beim Server, und was hier liegt, weiß nichts davon.
+    ///
+    /// Genau das ist am 12.09.2026 gemeldet worden: eine ganze Staffel Folge
+    /// für Folge abgehakt, zurück, wieder hinein — alles wieder ungesehen.
+    /// Der Server hatte jeden Haken; die Staffelansicht schrieb ihre frisch
+    /// geholten Folgen nur nicht zurück, und die Serienseite setzt sich aus
+    /// dem Speicher zusammen.
+    ///
+    /// **Wegwerfen statt nachtragen.** Den Haken im gemerkten `Item` zu
+    /// ändern hieße, `Item` und `UserItemData` neu zu bauen, an einer Stelle,
+    /// die davon nichts wissen sollte — und beim nächsten Feld stünde
+    /// dieselbe Frage wieder. Der Speicher ist dafür da, dass der Rückweg
+    /// nicht leer ist, nicht dafür, die Wahrheit über den Sehstand zu halten.
+    func vergessen(_ serie: String) {
+        staende[serie] = nil
+        reihenfolge.removeAll { $0 == serie }
+        bekannt[serie] = nil
+    }
+
     /// Holt die Serie zu **einer** Folge — für das Überfahren einer Kachel.
     ///
     /// **Das ist der eine Teil, der von der Eingabeart abhängt.** Auf dem Mac
