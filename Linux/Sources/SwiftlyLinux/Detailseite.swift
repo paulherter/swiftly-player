@@ -687,9 +687,14 @@ extension App {
                     [weak self] in
                     gtk_popover_popdown(alsTafel(tafel))
                     guard let self, let client = self.client else { return }
-                    Task.detached { [weak self] in
+                    // `[self]` wie an den neun anderen Stellen dieser Datei.
+                    // Ein zweites `[weak self]` **innerhalb** einer Closure,
+                    // die oben schon `guard let self` gemacht hat, uebersetzt
+                    // unter Swift 6 nicht: „reference to captured var 'self'".
+                    // `App` lebt ohnehin so lange wie das Programm.
+                    Task.detached { [self] in
                         try? await client.setzeGesehen(itemID: staffel.id, an: true)
-                        aufHauptfaden { self?.sehstandVergessen(staffel) }
+                        aufHauptfaden { self.sehstandVergessen(staffel) }
                     }
                     self.melden(String(format: uebersetzt("%@ ist als gesehen vermerkt."), staffel.name))
                 })
@@ -706,9 +711,9 @@ extension App {
                 [weak self] in
                 gtk_popover_popdown(alsTafel(tafel))
                 guard let self, let client = self.client else { return }
-                Task.detached { [weak self] in
+                Task.detached { [self] in
                     try? await client.setzeGesehen(itemID: titel.id, an: false)
-                    aufHauptfaden { self?.sehstandVergessen(titel) }
+                    aufHauptfaden { self.sehstandVergessen(titel) }
                 }
                 self.melden(uebersetzt("Der Fortschritt ist zurückgesetzt."))
             })

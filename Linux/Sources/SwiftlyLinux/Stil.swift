@@ -48,10 +48,33 @@ enum Stil {
 
     // MARK: Maße, wörtlich aus macOS/Stil.swift
 
-    static let ecke = 6
-    static let eckeKachel = 8
-    /// Felder sind runder als Knöpfe — 10 gegen 6, so wie auf dem iPhone.
-    static let eckeFeld = 10
+    /// **Die Eckenskala (E11).** Je größer die Fläche, desto runder.
+    ///
+    /// | Was | Ecke |
+    /// |---|---|
+    /// | Knopf, Plakat, Kachel | 10 |
+    /// | Feld, Eingabe | 12 |
+    /// | Fläche, Blatt, Tafel | 16 |
+    /// | Chip, Hinweis | Kapsel |
+    ///
+    /// **Am 06.09.2026 um vier Punkte aufgerundet.** Vorher stand hier
+    /// 6/8/10, und genau daran ist Paul hängengeblieben: zwei Punkte
+    /// Unterschied zwischen zwei Dingen, die nebeneinander stehen, liest man
+    /// nicht als Rangfolge, sondern als Versehen.
+    ///
+    /// Die GTK-Fassung stand bis zum 12.09.2026 noch auf den alten Werten —
+    /// die Überschrift darüber behauptete „wörtlich aus macOS/Stil.swift",
+    /// und das war seit sechs Tagen nicht mehr wahr. Eine Zahl, die
+    /// anderswo geändert wird, wandert hier nicht von selbst mit; deshalb
+    /// steht jetzt die Regelnummer dabei.
+    static let ecke = 10
+    /// Plakate und Kacheln — **dieselbe** Ecke wie ein Knopf. Beides sind
+    /// kleine Gegenstände, die Rangfolge fängt erst darüber an.
+    static let eckeKachel = 10
+    /// Such- und Eingabefelder.
+    static let eckeFeld = 12
+    /// Was eine eigene Fläche ist: Blätter, die Tafel, Auskunftskästen.
+    static let eckeFlaeche = 16
     // MARK: Seitenschub
 
     /// Wie lange eine Seite hereinschiebt — `Stil.zeitSeitenschub` vom Mac,
@@ -196,7 +219,8 @@ enum Stil {
 
         /* MARK: Eingabefeld
            Auf dem Mac ein eigener Baustein statt des Systemfeldes: die Fläche
-           ist `flaeche`, der Rahmen eine Haarlinie in Weiß 12 %, die Ecke 10.
+           ist `flaeche`, der Rahmen eine Haarlinie in Weiß 12 %, die Ecke 12
+           (`eckeFeld` — Felder sind runder als Knöpfe, E11).
            Im Fokus wird der Rahmen zum Akzent bei halber Deckung. */
         entry {
             background-color: \(flaeche);
@@ -887,19 +911,24 @@ enum Stil {
             min-height: 28px;
             border-radius: 999px;
         }
+        /* `Stil.ecke` wie auf Apple (`Technikschild.swift:115`), nicht das
+           Feldmass. Bis zum 12.09.2026 stand hier `eckeFeld` — und traf,
+           solange beide 10 waren, zufaellig das Richtige. */
         .swiftly-technikschild {
             font-family: monospace;
             font-size: 12px;
             color: rgba(255,255,255,0.92);
             background-color: rgba(11,11,13,0.82);
             border: 1px solid \(rand);
-            border-radius: \(eckeFeld)px;
+            border-radius: \(ecke)px;
             padding: 10px 14px;
         }
+        /* Eine Tafel ist eine **Flaeche** (E11), kein Feld — `Handlungstafel`
+           auf Apple nimmt `Stil.eckeFlaeche`. */
         .swiftly-tafel {
             background-color: \(erhoeht);
             border: 1px solid \(rand);
-            border-radius: \(eckeFeld)px;
+            border-radius: \(eckeFlaeche)px;
             /* Sie liegt ueber bewegtem Bild und braucht eine Kante. */
             box-shadow: 0 10px 22px rgba(0,0,0,0.45);
         }
@@ -921,10 +950,12 @@ enum Stil {
             border: none;
             box-shadow: none;
         }
+        /* Dieselbe Rolle wie `.swiftly-tafel` — eine eigene Flaeche ueber der
+           Seite, also `eckeFlaeche` (E11), nicht das Feldmass. */
         popover.swiftly-mehr > contents {
             background-color: \(erhoeht);
             border: 1px solid \(rand);
-            border-radius: \(eckeFeld)px;
+            border-radius: \(eckeFlaeche)px;
             padding: 6px;
             box-shadow: 0 10px 22px rgba(0,0,0,0.45);
         }
