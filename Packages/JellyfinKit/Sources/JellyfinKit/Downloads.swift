@@ -285,8 +285,9 @@ public enum Downloadregeln {
     /// Zahl. Eine App, die 17,3 GiB sagt, wo die Einstellungen 18,6 GB
     /// zeigen, sieht falsch aus, auch wenn sie recht hat.
     ///
-    /// Nicht `Dateiangaben.groesse` benutzen: die ersetzt den Punkt fest
-    /// durch ein Komma und ist damit auf Englisch falsch.
+    /// ``Dateiangaben/groesse(_:)`` im Dateiauszug rechnet hierüber — eine
+    /// Datei darf in der Downloadliste nicht anders gemessen sein als auf
+    /// der Detailseite.
     public static func groesse(_ bytes: Int64) -> String {
         bytes.formatted(.byteCount(style: .file))
     }

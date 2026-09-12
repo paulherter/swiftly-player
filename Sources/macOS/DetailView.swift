@@ -714,7 +714,7 @@ struct Kopfbild: View {
 /// Ganz unten: was für eine Datei das eigentlich ist. Sie beantwortet eine
 /// Frage, die man erst später stellt.
 ///
-/// Die Texte kommen aus `Dateiangaben` in `Sources/Shared` — Container,
+/// Die Texte kommen aus `Dateiangaben` im Paket — Container,
 /// Codec und Untertitel sind auf allen Plattformen dieselbe Auskunft. Meine
 /// erste Fassung stellte sie selbst zusammen und ließ Codec und Untertitel
 /// weg.
@@ -734,11 +734,17 @@ struct Dateizeile: View {
 
     private var angaben: [String] {
         var zeilen: [String] = []
-        if let behaelter = Dateiangaben.container(quelle) { zeilen.append(behaelter) }
+        // Die Größe hängt an „MKV · 10,3 GB"; einzeln steht sie nur, wenn
+        // der Server keinen Container nennt. Vorher stand sie zweimal da —
+        // unbemerkt, weil sie mit einem führenden „ · " getarnt war.
+        if let behaelter = Dateiangaben.container(quelle) {
+            zeilen.append(behaelter)
+        } else {
+            zeilen.append(Dateiangaben.groesse(quelle))
+        }
         if let spur = Dateiangaben.videospur(quelle) {
             zeilen.append(Dateiangaben.video(spur, quelle))
         }
-        zeilen.append(Dateiangaben.groesse(quelle))
         let ut = Dateiangaben.untertitel(Dateiangaben.untertitelspuren(quelle))
         if !ut.isEmpty { zeilen.append(ut) }
         return zeilen.filter { !$0.isEmpty }

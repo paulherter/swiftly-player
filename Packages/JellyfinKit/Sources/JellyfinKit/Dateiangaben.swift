@@ -33,16 +33,32 @@ public enum Dateiangaben {
         return rest > 0 ? sichtbar + " + \(rest)" : (sichtbar.isEmpty ? "\(stroeme.count)" : sichtbar)
     }
 
+    /// Die Dateigröße — „10,3 GB" auf Deutsch, „10.3 GB" auf Englisch.
+    ///
+    /// Rechnet über ``Downloadregeln/groesse(_:)``, damit im Auszug und in
+    /// der Downloadliste nicht zwei verschiedene Zahlen für dieselbe Datei
+    /// stehen. Warum `.file` und nicht Zweierpotenzen, steht dort.
+    ///
+    /// **Zwei Fehler standen hier vorher.** `String(format: "%.1f GB")` mit
+    /// fest eingesetztem Komma war auf Englisch falsch — „10,3 GB", wo der
+    /// Rest des Systems „10.3 GB" schreibt. Und die Einheit war immer GB:
+    /// eine Tonspur von 112 kB stand als „0,0 GB" da.
+    ///
+    /// Ohne Größe vom Server bleibt die Zeile leer, nicht „0 bytes".
     public static func groesse(_ quelle: MediaSource) -> String {
         guard let bytes = quelle.size else { return "" }
-        return " · " + String(format: "%.1f GB", Double(bytes) / 1_073_741_824)
-            .replacingOccurrences(of: ".", with: ",")
+        return Downloadregeln.groesse(bytes)
     }
 
-    /// Container samt Größe — „MKV · 10,3 GB".
+    /// Container samt Größe — „MKV · 10,3 GB", ohne Größe nur „MKV".
+    ///
+    /// Das Trennzeichen steht hier und nicht in ``groesse(_:)``: dort war es
+    /// eine Falle, weil Mac und Linux die Größe auch einzeln anzeigen und
+    /// dann ein Mittelpunkt vor dem Nichts stand.
     public static func container(_ quelle: MediaSource) -> String? {
         guard let container = quelle.container else { return nil }
-        return container.uppercased() + groesse(quelle)
+        let masz = groesse(quelle)
+        return masz.isEmpty ? container.uppercased() : container.uppercased() + " · " + masz
     }
 
     public static func tonspuren(_ quelle: MediaSource) -> [MediaStream] {

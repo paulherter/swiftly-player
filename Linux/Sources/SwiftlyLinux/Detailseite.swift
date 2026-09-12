@@ -209,11 +209,16 @@ extension App {
     /// wird nichts zusätzlich geholt.
     func dateizeile(_ quelle: MediaSource) -> Widget! {
         var teile: [String] = []
-        if let behaelter = Dateiangaben.container(quelle) { teile.append(behaelter) }
+        // Wie auf dem Mac: die Größe steckt in „MKV · 10,3 GB" und steht
+        // nur dann einzeln, wenn der Server keinen Container nennt.
+        if let behaelter = Dateiangaben.container(quelle) {
+            teile.append(behaelter)
+        } else {
+            teile.append(Dateiangaben.groesse(quelle))
+        }
         if let spur = Dateiangaben.videospur(quelle) {
             teile.append(Dateiangaben.video(spur, quelle))
         }
-        teile.append(Dateiangaben.groesse(quelle))
         let ut = Dateiangaben.untertitel(Dateiangaben.untertitelspuren(quelle))
         if !ut.isEmpty { teile.append(ut) }
 
