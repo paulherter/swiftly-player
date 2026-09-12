@@ -13,11 +13,11 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 &nbsp;
 [![Lizenz](https://img.shields.io/badge/MPL--2.0-1E1E22?style=flat-square&labelColor=1E1E22)](LICENSE)
 &nbsp;
-[![Jellyfin](https://img.shields.io/badge/Jellyfin_10.10+-1E1E22?style=flat-square&labelColor=1E1E22)](https://jellyfin.org)
+[![Jellyfin](https://img.shields.io/badge/Jellyfin_10.8+-1E1E22?style=flat-square&labelColor=1E1E22)](https://jellyfin.org)
 
 <br>
 
-[![Join the beta on TestFlight](https://img.shields.io/badge/Join_the_beta-5CD1C2?style=for-the-badge&logo=apple&logoColor=FFFFFF)](https://testflight.apple.com/join/MqeP2cnj)
+[![Download on the App Store](https://img.shields.io/badge/Download_on_the_App_Store-5CD1C2?style=for-the-badge&logo=apple&logoColor=FFFFFF)](https://apps.apple.com/app/id6806824067)
 &nbsp;
 [![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=5CD1C2)](#-windows)
 &nbsp;
@@ -162,17 +162,20 @@ and only where distance, input or window size demand it.
 
 | Platform | State |
 |---|---|
-| 📱 iPhone | **1.0.1 (1)** · beta on TestFlight |
-| 📲 iPad | **1.0.1 (1)** · ships with the iPhone app |
-| 📺 Apple TV | **1.0.1 (1)** · beta on TestFlight |
-| 💻 Mac | **1.0.1 (1)** · beta on TestFlight |
-| 🐧 Linux | **1.0.0** · being rebuilt under the new name · [install](#-linux) |
-| 🪟 Windows | **1.0.0** · being rebuilt under the new name · [download](#-windows) |
+| 📱 iPhone | **1.0.1** on the App Store · 1.0.2 in review |
+| 📲 iPad | **1.0.1** on the App Store · ships with the iPhone app |
+| 📺 Apple TV | **1.0.1** on the App Store · 1.0.2 in review |
+| 💻 Mac | **1.0.1** on the App Store · 1.0.2 in review |
+| 🐧 Linux | **1.0.2** · [install](#-linux) |
+| 🪟 Windows | **1.0.2** · [download](#-windows) |
 
-**The beta is open.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
-— one link for iPhone, iPad, Apple TV and Mac. What each build wants tested is
-written in its release notes, and it is usually five specific things rather
-than "have a look around".
+**One download covers iPhone, iPad, Mac and Apple TV:**
+[App Store](https://apps.apple.com/app/id6806824067).
+
+**The beta runs alongside it.** [Join on TestFlight](https://testflight.apple.com/join/MqeP2cnj)
+— the next build lands there first, one link for all four. What each build
+wants tested is written in its release notes, and it is usually five specific
+things rather than "have a look around".
 
 <br>
 
@@ -319,7 +322,7 @@ installer, so there is nothing else to install.
 
 ## ✅ Requirements
 
-- Your own Jellyfin server, **10.10 or newer**. Swiftly Player hosts
+- Your own Jellyfin server, **10.8 or newer**. Swiftly Player hosts
   nothing and has no account of its own — you sign in with the credentials you
   already have.
 - iOS 18, tvOS 18 or macOS 15 — or a Linux desktop with GTK 4 and libVLC,
