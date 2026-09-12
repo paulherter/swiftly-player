@@ -319,7 +319,7 @@ extension App {
         }
         anhaengen(text, kopf)
 
-        if let inhalt = folge.overview, !inhalt.isEmpty {
+        if let inhalt = folge.beschreibung, !inhalt.isEmpty {
             let z = beschriftung(inhalt, stil: "swiftly-zweitzeile", umbruch: true)
             gtk_widget_add_css_class(z, "dim-label")
             gtk_label_set_xalign(OpaquePointer(z), 0)

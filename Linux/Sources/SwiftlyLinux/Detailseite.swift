@@ -380,12 +380,20 @@ extension App {
 
     /// Holt das Kopfbild und, aus einem winzigen Abbild, seinen Ton.
     private func tonUndBildNachladen(_ titel: Item, in kulisse: Kulisse) {
-        guard let adressen,
-              let gross = Bildwahl.quer(titel, adressen: adressen, breite: 1600)?.url
-        else { return }
+        guard let adressen, let client else { return }
         let klein = Bildwahl.quer(titel, adressen: adressen, breite: 16)?.url
 
         Task.detached { [self] in
+            // **Fehlt der Hintergrund, tritt bei einer Serie das Standbild der
+            // naechsten Folge ein, sonst das Plakat.** Bis zum 13.09.2026 blieb
+            // die Kopfzone hier einfach leer — die Regel steht als
+            // `kopfbildErsatz` im Paket und wurde nur nie aufgerufen.
+            var kopf = Bildwahl.quer(titel, adressen: adressen, breite: 1600)?.url
+            if kopf == nil {
+                kopf = await client.kopfbildErsatz(fuer: titel, adressen: adressen,
+                                                   breite: 1600)
+            }
+            guard let gross = kopf else { return }
             if let klein,
                let daten = await Bildlager.shared.laden(klein, schluessel: klein.absoluteString),
                let ton = Bildfarbe.ton(aus: daten) {
@@ -434,7 +442,10 @@ extension App {
         gtk_fixed_put(alsFeld2(feld), fach(angabenreihe(titel), breite: 640, hoehe: 20),
                       0, 54)
 
-        let text = beschriftung(titel.overview ?? "", stil: "swiftly-koerper", umbruch: true)
+        // **`beschreibung`, nicht `overview`.** Jellyfin liefert HTML — `<br>`
+        // und `&amp;` standen hier woertlich in der Seite. `Beschreibung.lesbar`
+        // im Paket raeumt das auf und wurde hier nur nie aufgerufen.
+        let text = beschriftung(titel.beschreibung ?? "", stil: "swiftly-koerper", umbruch: true)
         gtk_label_set_xalign(OpaquePointer(text), 0)
         gtk_label_set_yalign(OpaquePointer(text), 0)
         gtk_label_set_lines(OpaquePointer(text), 3)

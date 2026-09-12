@@ -1152,10 +1152,24 @@ extension App {
         gtk_widget_set_margin_top(satz, 26)
         anhaengen(block, satz)
 
+        // **Ein Klick legt den Code in die Zwischenablage.** Sechs Ziffern
+        // abzutippen, die man gerade vor sich hat, ist die Art Arbeit, die
+        // eine App abnehmen kann. Auf tvOS gibt es das nicht — dort gibt es
+        // keine Zwischenablage.
         kontoCodefeld = beschriftung(kontoCode.isEmpty ? "······" : kontoCode,
                                      stil: "swiftly-codegross")
-        gtk_widget_set_margin_top(kontoCodefeld, 14)
-        anhaengen(block, kontoCodefeld)
+        let codeknopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(codeknopf, "swiftly-blank")
+        gtk_button_set_child(alsKnopf(codeknopf), kontoCodefeld)
+        gtk_widget_set_halign(codeknopf, GTK_ALIGN_START)
+        gtk_widget_set_margin_top(codeknopf, 14)
+        gtk_widget_set_tooltip_text(codeknopf, uebersetzt("Code kopieren"))
+        beiSignal(codeknopf, "clicked") { [weak self] in
+            guard let self, !self.kontoCode.isEmpty else { return }
+            inZwischenablage(self.kontoCode, an: codeknopf)
+            self.melden(uebersetzt("Code kopiert."))
+        }
+        anhaengen(block, codeknopf)
 
         kontoStandfeld = beschriftung(kontoFehler, stil: "swiftly-zweitzeile", umbruch: true)
         gtk_widget_add_css_class(kontoStandfeld, "swiftly-warnung")

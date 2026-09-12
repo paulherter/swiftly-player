@@ -277,3 +277,5 @@
 "Alle Genres stehen schon auf der Startseite." = "Every genre is already on the home screen.";
 "Auf deinem Server sind keine Genres hinterlegt." = "Your server has no genres.";
 "Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist." = "Genres come from your server. As rows, each one sits at the bottom of the home screen, most recently added first. As chips they sit at the top, and a click opens the genre. With nothing selected the home screen stays as it is.";
+"Code kopieren" = "Copy code";
+"Code kopiert." = "Code copied.";

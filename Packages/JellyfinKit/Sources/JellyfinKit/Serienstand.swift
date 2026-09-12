@@ -61,3 +61,31 @@ public enum Staffelwahlregel {
         hinweisID == nil && hinweisNummer == nil
     }
 }
+
+public extension JellyfinClient {
+
+    /// **Was der Kopf einer Seite zeigt, wenn es keinen Hintergrund gibt.**
+    ///
+    /// Bei einer Serie tritt das Standbild der nächsten Folge ein — das ist
+    /// ein echtes Querbild und passt in die Kopfzone. Erst wenn auch das
+    /// fehlt, kommt das Plakat quer beschnitten.
+    ///
+    /// **Warum nicht einfach das Plakat.** Ein hochkantes Plakat in eine
+    /// 380 Punkt hohe Kopfzone geschnitten zeigt einen Ausschnitt aus der
+    /// Bildmitte, auf dem meist nichts zu erkennen ist. Das Standbild einer
+    /// Folge ist dafür gemacht.
+    func kopfbildErsatz(fuer item: Item, adressen: Bildadresse,
+                        breite: Int = 1200) async -> URL? {
+        if item.type == "Series" {
+            // Nicht mit `??` in einer Zeile: dessen rechte Seite ist eine
+            // Autoclosure und darf nicht `await` enthalten.
+            var folge = try? await naechsteFolgeDerSerie(seriesID: item.id)
+            if folge == nil { folge = (try? await folgen(seriesID: item.id))?.first }
+            if let folge, let url = Bildwahl.quer(folge, adressen: adressen,
+                                                  breite: breite)?.url {
+                return url
+            }
+        }
+        return Bildwahl.hochkant(item, adressen: adressen, maxHoehe: breite)
+    }
+}

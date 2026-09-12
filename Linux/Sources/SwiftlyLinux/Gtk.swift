@@ -773,3 +773,14 @@ func beschriften(_ ziel: Widget!, _ name: String) {
     gtk_accessible_update_property_value(OpaquePointer(ziel), 1, &eigenschaft, &wert)
     g_value_unset(&wert)
 }
+
+
+/// Legt Text in die Zwischenablage.
+///
+/// GTK4 fragt die Ablage über die Anzeige des Widgets ab — es gibt keine
+/// globale. Deshalb muss ein Widget mit, das gerade im Fenster hängt.
+func inZwischenablage(_ text: String, an widget: Widget!) {
+    guard let anzeige = gtk_widget_get_display(widget) else { return }
+    let ablage = gdk_display_get_clipboard(anzeige)
+    gdk_clipboard_set_text(ablage, text)
+}
