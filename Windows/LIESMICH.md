@@ -76,14 +76,24 @@ einem Durchgang beantwortet.
 Was hier baut, ist damit noch nicht gelaufen. Der Unterschied gehört
 aufgeschrieben, sonst hält die nächste Sitzung „übersetzt" für „geprüft".
 
-- **Discord Rich Presence** (`Discordbruecke`, Windows-Zweig). Baut durch,
-  **zur Laufzeit nie gelaufen**: in der VM ist Discord nicht installiert, und
-  es liegt keine `\\.\pipe\discord-ipc-*` an. Ohne Discord tut die Brücke
-  schlicht nichts — kein Fehler, keine Meldung, also sagt ein stiller Lauf
-  hier gar nichts. Belegt ist der Rahmen nur über die Unix-Steckdose auf dem
-  Mac (Handschlag und `SET_ACTIVITY` angenommen); offen ist allein
-  `CreateFileW`/`WriteFile` gegen `socket`/`write`. Absichtlich nicht
-  installiert: es ist Pauls Rechner, und er hat nicht darum gebeten.
+- **Discord Rich Presence.** Die Kette ist **bis zur Röhre am laufenden
+  Programm belegt** (10.09.2026, `677bc57`, Windows-VM): mit eingeschaltetem
+  Schalter meldet der Takt jede Sekunde
+
+      [Paket] [Discord] Stand: erlaubt=true dauer=6778 stelle=4233
+                              laeuft=true titel=Beauty & The Nerd
+
+  Also greift die Einstellung, VLC kennt die Laufzeit (`guard dauer > 0`
+  hält), die Stelle läuft mit, der Titel stimmt. **Offen bleibt allein
+  `CreateFileW`/`WriteFile`** — in der VM ist kein Discord, und es liegt keine
+  `\\.\pipe\discord-ipc-*` an. Absichtlich nicht installiert: es ist Pauls
+  Rechner, und er hat nicht darum gebeten. Der Rahmen selbst ist über die
+  Unix-Steckdose auf dem Mac belegt, und Linux nimmt seit `677bc57` denselben
+  Weg.
+
+  **Vorsicht bei der Deutung:** scheitert `verbinden()`, schreibt es **nichts**
+  — kein Fehler, keine Zeile. Ein Protokoll ohne Röhren-Eintrag beweist
+  deshalb nicht einmal, dass es *versucht* wurde.
 - **Die Sprachweiche** (`Textkatalog.systemsprachen()`,
   `GetUserPreferredUILanguages`). Baut und läuft, aber der entscheidende Fall
   fehlt: dieses Windows steht selbst auf Englisch (`CurrentUICulture=en-US`),
@@ -91,6 +101,14 @@ aufgeschrieben, sonst hält die nächste Sitzung „übersetzt" für „geprüft
   Windows trennt die Fälle.
 - **Der Kontowechsel.** Gebaut, aber nie gewechselt — dafür braucht es ein
   zweites Jellyfin-Konto und einmal dessen Passwort.
+
+- **Ein leeres Protokoll heisst nicht, dass nichts lief.** `Spur` schreibt
+  ueber `print` auf `stdout`, und `stdout` ist blockweise gepuffert, sobald es
+  in eine Datei umgeleitet wird — rund 4 KB. Bei einer Zeile je Sekunde sind
+  das gut **dreissig Sekunden**, in denen die Datei leer bleibt. Ein hartes
+  `Stop-Process` leert den Puffer **nicht**, die Zeilen sind dann fuer immer
+  weg. Wer kurz misst und ins Protokoll sieht, haelt eine laufende Sache fuer
+  tot. Also: lange genug laufen lassen, und nicht abschiessen.
 
 ## Die Pakettests laufen hier
 
