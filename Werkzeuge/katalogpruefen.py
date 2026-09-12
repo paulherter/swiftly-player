@@ -28,13 +28,45 @@ muster = re.compile(r'(?:Text\(|Button\(|Toggle\(|Label\(|Menu\(|Section\(|'
                     r'titel:\s*|unter:\s*|beschriftung:\s*|platzhalter:\s*|'
                     r'kopfzeile:\s*|hinweis:\s*|text:\s*|wort:\s*|ansage:\s*)"([^"\\]{3,})"')
 
+# **Und die Faelle eines `switch`, aber nur in einem `LocalizedStringKey`.**
+#
+# Der Kommentar oben behauptete das schon, das Muster konnte es nie: es sucht
+# nach einem Schluesselwort vor dem Anfuehrungszeichen, und vor `case .foo:`
+# steht keines. So blieben `Startreihe.name` — „Neue Filme", „Neue Serien",
+# „Neu hinzugefuegt" — bis zum 12.09.2026 unbemerkt.
+#
+# Eingegrenzt auf Bloecke, die ausdruecklich `LocalizedStringKey` liefern:
+# daneben steht regelmaessig ein zweiter `switch` mit denselben Faellen, der
+# **SF-Symbolnamen** zurueckgibt. Die gehoeren nicht uebersetzt, und ohne die
+# Eingrenzung stuenden sie ab sofort alle in dieser Liste.
+block = re.compile(r':\s*LocalizedStringKey\s*\{(.*?)\n(\s*)\}', re.S)
+fall = re.compile(r'case\s+\.[A-Za-z][A-Za-zÄÖÜäöü]*:\s*"([^"\\]{3,})"')
+
 fehlt, roh = set(), set()
-dateien = subprocess.run(["git", "ls-files", "Sources"], cwd=wurzel,
+
+# **Auch was noch nicht eingecheckt ist.** `git ls-files` kennt nur
+# nachverfolgte Dateien — eine gerade erst geschriebene Ansicht ist fuer den
+# Bogen also unsichtbar, und das ist genau der Zeitpunkt, zu dem ihre Texte am
+# ehesten noch nicht im Katalog stehen.
+#
+# Am 12.09.2026 genau so passiert: `PersonView`, `GenreView`, `DarstellungView`
+# und `ServerAufnahmeView` waren neu, der Bogen meldete „ok", und auf dem
+# englischen Simulator standen „Neue Filme" und „Neue Serien" auf Deutsch in
+# den Einstellungen. Zweiundzwanzig Beschriftungen, alle in neuen Dateien.
+#
+# `--others --exclude-standard` gibt dazu, was unverfolgt und nicht ignoriert
+# ist; das Bauverzeichnis bleibt damit draussen.
+dateien = subprocess.run(["git", "ls-files", "--cached", "--others",
+                          "--exclude-standard", "Sources"], cwd=wurzel,
                          capture_output=True, text=True).stdout.split()
 for weg in dateien:
     if not weg.endswith(".swift"):
         continue
-    for treffer in muster.findall((wurzel / weg).read_text()):
+    quelle = (wurzel / weg).read_text()
+    treffer_liste = muster.findall(quelle)
+    for rumpf, _ in block.findall(quelle):
+        treffer_liste += fall.findall(rumpf)
+    for treffer in treffer_liste:
         if not re.search(r"[a-zäöüßA-ZÄÖÜ]", treffer):
             continue
         eintrag = katalog.get(treffer)

@@ -959,6 +959,23 @@
         }
       }
     },
+    "Allgemein": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allgemein"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "General"
+          }
+        }
+      }
+    },
     "Als Chips": {
       "extractionState": "manual",
       "localizations": {
@@ -1407,6 +1424,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "On your server"
+          }
+        }
+      }
+    },
+    "Auf deinem Server steht gerade kein Film und keine Serie darin.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf deinem Server steht gerade kein Film und keine Serie darin."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your server has no film and no series in it right now."
           }
         }
       }
@@ -2360,6 +2394,23 @@
         }
       }
     },
+    "Die Adresse eines weiteren Jellyfin-Servers. Seine Konten kommen neben die, die du schon hast; auf der Profilseite wechselst du zwischen ihnen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Adresse eines weiteren Jellyfin-Servers. Seine Konten kommen neben die, die du schon hast; auf der Profilseite wechselst du zwischen ihnen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The address of another Jellyfin server. Its accounts sit alongside the ones you already have, and you switch between them on your profile page."
+          }
+        }
+      }
+    },
     "Die Adresse konnte nicht gelesen werden.": {
       "extractionState": "manual",
       "localizations": {
@@ -2660,6 +2711,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "On"
+          }
+        }
+      }
+    },
+    "Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A second Jellyfin with its own accounts. Both stay signed in, and you switch between them on your profile page."
+          }
+        }
+      }
+    },
+    "Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; im Profil wechselst du zwischen ihnen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; im Profil wechselst du zwischen ihnen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A second Jellyfin with its own accounts. Both stay signed in, and you switch between them in your profile."
           }
         }
       }
@@ -3339,6 +3424,23 @@
         }
       }
     },
+    "Genre hinzufügen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genre hinzufügen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add genre"
+          }
+        }
+      }
+    },
     "Genres": {
       "extractionState": "manual",
       "localizations": {
@@ -3352,6 +3454,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Genres"
+          }
+        }
+      }
+    },
+    "Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genres come from your server. As rows, each one sits at the bottom of the home screen with the newest titles first. As chips they sit along the top, and a click opens the genre. Pick none and your home screen stays as it is."
+          }
+        }
+      }
+    },
+    "Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Tipp öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Tipp öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genres come from your server. As rows, each one sits at the bottom of the home screen with the newest titles first. As chips they sit along the top, and a tap opens the genre. Pick none and your home screen stays as it is."
           }
         }
       }
@@ -3435,6 +3571,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Shown"
+          }
+        }
+      }
+    },
+    "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du an diesem Server schon angemeldet bist.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du an diesem Server schon angemeldet bist."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter this code in Jellyfin on a device that is already signed in to this server."
           }
         }
       }
@@ -3996,6 +4149,23 @@
         }
       }
     },
+    "Konto hinzufügen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konto hinzufügen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add account"
+          }
+        }
+      }
+    },
     "Kopiert": {
       "extractionState": "manual",
       "localizations": {
@@ -4094,6 +4264,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Use name and password instead"
+          }
+        }
+      }
+    },
+    "Lieber Quick Connect": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lieber Quick Connect"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Quick Connect instead"
           }
         }
       }
@@ -4436,6 +4623,57 @@
         }
       }
     },
+    "Neu hinzugefügt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neu hinzugefügt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently added"
+          }
+        }
+      }
+    },
+    "Neue Filme": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Filme"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New movies"
+          }
+        }
+      }
+    },
+    "Neue Filme und neue Serien als eigene Reihen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Filme und neue Serien als eigene Reihen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New movies and new series as their own rows"
+          }
+        }
+      }
+    },
     "Neue Filme und neue Serien in eigenen Reihen": {
       "extractionState": "manual",
       "localizations": {
@@ -4449,6 +4687,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Separate rows for new movies and new shows"
+          }
+        }
+      }
+    },
+    "Neue Serien": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Serien"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New series"
           }
         }
       }
@@ -4483,6 +4738,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "New code"
+          }
+        }
+      }
+    },
+    "Neuzugänge": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuzugänge"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently added"
           }
         }
       }
@@ -4619,6 +4891,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nothing found"
+          }
+        }
+      }
+    },
+    "Nichts in diesem Genre": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts in diesem Genre"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing in this genre"
           }
         }
       }
@@ -5112,6 +5401,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Director"
+          }
+        }
+      }
+    },
+    "Reihen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reihen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rows"
           }
         }
       }
@@ -7141,6 +7447,40 @@
         }
       }
     },
+    "Zum Umsortieren an den Griffen rechts ziehen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Umsortieren an den Griffen rechts ziehen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag the handles on the right to reorder."
+          }
+        }
+      }
+    },
+    "Zum Umsortieren eine Zeile ziehen.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Umsortieren eine Zeile ziehen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag a row to reorder."
+          }
+        }
+      }
+    },
     "Zur Übersicht": {
       "extractionState": "manual",
       "localizations": {
@@ -7462,6 +7802,23 @@
         }
       }
     },
+    "jellyfin.beispiel.de": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "jellyfin.beispiel.de"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "jellyfin.example.com"
+          }
+        }
+      }
+    },
     "kann angefragt werden": {
       "extractionState": "manual",
       "localizations": {
@@ -7639,6 +7996,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "tv.beispiel.de"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tv.example.com"
+          }
+        }
+      }
+    },
+    "tv.example.de": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tv.example.de"
           }
         },
         "en": {
