@@ -27,6 +27,15 @@ melden() { printf '%-34s %s\n' "$1" "$2"; }
 echo "── Pakettests ─────────────────────────────────────────"
 if ausgabe=$(cd Packages/JellyfinKit && xcrun swift test 2>&1); then
     melden "JellyfinKit" "${gruen}$(echo "$ausgabe" | grep -oE 'Test run with [0-9]+ tests' | tail -1)${aus}"
+    # SwiftPM wirft Linkerflaggen kommentarlos weg und sagt es in genau einer
+    # Zeile zwischen zweihundert anderen. Auf Linux hat das die App nur ueber
+    # ihr Bauskript starten lassen; sonst brach sie an librlottie.so ab, mit
+    # einer Meldung, die nach einem kaputten Bau aussah. (swiftly-ef, 08.09.2026)
+    if verworfen=$(echo "$ausgabe" | grep -i "prohibited flag" | head -3) && [ -n "$verworfen" ]; then
+        melden "Verworfene Flaggen" "${rot}SwiftPM hat etwas weggeworfen${aus}"
+        echo "$verworfen" | sed 's/^/      /'
+        fehler=1
+    fi
 else
     melden "JellyfinKit" "${rot}FEHLGESCHLAGEN${aus}"
     echo "$ausgabe" | grep -E "error:|failed" | head -10
@@ -40,16 +49,31 @@ if [ "$schnell" = false ]; then
     # project.yml stehen wortgleich in mehreren Zielbloecken, und ein
     # Suchen-und-Ersetzen trifft alle. Deshalb immer alle drei.
     xcodegen generate >/dev/null 2>&1
+    # Das Protokoll geht vollstaendig in eine Datei und nur durch xcbeautify
+    # auf den Schirm. Vorher stand bei einem Fehlschlag nur das Wort
+    # FEHLGESCHLAGEN da — man musste den Bau von Hand wiederholen, um zu
+    # sehen, woran. Jetzt stehen die Fehlerzeilen gleich darunter.
+    protokoll=$(mktemp -t pruefen)
     for ziel in Swiftly-iOS:"platform=iOS Simulator,name=iPhone 17 Pro" \
                 Swiftly-tvOS:"platform=tvOS Simulator,name=Apple TV 4K (3rd generation)" \
                 Swiftly-macOS:"platform=macOS"; do
         name=${ziel%%:*}; wohin=${ziel#*:}
-        if xcodebuild -project Swiftly.xcodeproj -scheme "$name" \
-               -destination "$wohin" build 2>&1 | grep -q "BUILD SUCCEEDED"; then
-            melden "$name" "${gruen}gebaut${aus}"
+        xcodebuild -project Swiftly.xcodeproj -scheme "$name" \
+            -destination "$wohin" build >"$protokoll" 2>&1
+        if grep -q "BUILD SUCCEEDED" "$protokoll"; then
+            warnungen=$(xcbeautify --disable-logging <"$protokoll" 2>/dev/null | grep -c "warning:")
+            if [ "$warnungen" -gt 0 ]; then
+                melden "$name" "${gruen}gebaut${aus} (${gelb}$warnungen Warnungen${aus})"
+            else
+                melden "$name" "${gruen}gebaut${aus}"
+            fi
         else
             melden "$name" "${rot}FEHLGESCHLAGEN${aus}"
+            xcbeautify --disable-logging <"$protokoll" 2>/dev/null \
+                | grep -E "error:|Undefined symbol|Multiple commands" | head -12 | sed 's/^/      /'
+            echo "      ganzes Protokoll: $protokoll"
             fehler=1
+            protokoll=$(mktemp -t pruefen)   # nicht ueberschreiben, das naechste Ziel braucht ein eigenes
         fi
     done
 fi
