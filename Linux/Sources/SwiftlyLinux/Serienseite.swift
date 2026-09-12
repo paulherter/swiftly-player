@@ -70,7 +70,7 @@ extension App {
                 gtk_widget_set_margin_start(leer, Int32(Stil.randAbstand))
                 anhaengen(raum, leer)
             } else {
-                anhaengen(raum, besetzungsreihe(serie.darsteller))
+                anhaengen(raum, besetzungsreihe(serie.darsteller, herkunft: serie.name))
             }
         case .aehnliches:
             anhaengen(raum, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
@@ -390,7 +390,8 @@ extension App {
 
     // MARK: Besetzung und Ähnliches
 
-    func besetzungsreihe(_ leute: [Person], rand: Int = Stil.randAbstand) -> Widget! {
+    func besetzungsreihe(_ leute: [Person], herkunft: String? = nil,
+                         rand: Int = Stil.randAbstand) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 14)
         let titel = beschriftung(uebersetzt("Besetzung"), stil: "swiftly-listentitel")
         gtk_label_set_xalign(OpaquePointer(titel), 0)
@@ -403,14 +404,14 @@ extension App {
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 18)
         gtk_widget_set_margin_start(reihe, Int32(rand))
         gtk_widget_set_margin_end(reihe, Int32(rand))
-        for person in leute { anhaengen(reihe, kopfbild(person)) }
+        for person in leute { anhaengen(reihe, kopfbild(person, herkunft: herkunft)) }
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
         anhaengen(block, scroller)
         return block
     }
 
     /// Ein Kopf: 84 rund, darunter Name und Rolle.
-    private func kopfbild(_ person: Person) -> Widget! {
+    private func kopfbild(_ person: Person, herkunft: String?) -> Widget! {
         // **Ein Knopf, damit `:hover` greift.** GTK führt den Zustand nur auf
         // Bedienelementen; auf einer schlichten Box wüchse das Bild nie.
         // Dieselbe Hülle wie bei den Kacheln.
@@ -448,6 +449,13 @@ extension App {
             anhaengen(kachel, r)
         }
         gtk_button_set_child(alsKnopf(huelleKnopf), kachel)
+        // **Bis zum 12.09.2026 hing hier nichts.** Der Knopf war gebaut, hob
+        // sich beim Überfahren und tat nichts — dieselbe Form, die auf tvOS
+        // ein Tester gemeldet hat. Die Herkunft geht mit, damit die
+        // Personenseite „Rolle in Titel" sagen kann.
+        beiSignal(huelleKnopf, "clicked") { [weak self] in
+            self?.oeffnePerson(person, herkunft: herkunft)
+        }
         return huelleKnopf
     }
 

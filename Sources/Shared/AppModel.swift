@@ -699,13 +699,14 @@ final class AppModel {
 
     /// Was es von einer Person auf dem Server gibt — Filme und Serien, die
     /// neuesten zuerst.
+    ///
+    /// **Die Regel liegt im Paket** (`JellyfinClient.titel(person:)`), nicht
+    /// hier. Sie stand bis zum 12.09.2026 an dieser Stelle und erreichte
+    /// damit Linux und Windows nicht — die hängen ausschließlich am Paket.
+    /// Dort hat sie jetzt auch Tests.
     func titel(person id: String) async -> [Item] {
         guard let client else { return [] }
-        let antwort = try? await client.items(limit: 60, sortBy: "ProductionYear,SortName",
-                                              sortOrder: "Descending", recursive: true,
-                                              includeItemTypes: ["Movie", "Series"],
-                                              personIDs: [id])
-        return Listenregeln.ohneDoppelte(antwort?.items ?? [])
+        return await client.titel(person: id)
     }
 
     /// Titel eines Genres, die zuletzt hinzugefügten zuerst. `nil`, wenn der

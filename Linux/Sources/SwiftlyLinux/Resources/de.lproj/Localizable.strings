@@ -238,3 +238,10 @@
 "Puffer" = "Puffer";
 "Discord" = "Discord";
 "Zeigt im Profil, was gerade läuft" = "Zeigt im Profil, was gerade läuft";
+
+/* Personenseite */
+"Geboren %@" = "Geboren %@";
+"%1$@ in %2$@" = "%1$@ in %2$@";
+"Mehr" = "Mehr";
+"Weniger" = "Weniger";
+"Auf deinem Server gibt es sonst nichts mit %@." = "Auf deinem Server gibt es sonst nichts mit %@.";

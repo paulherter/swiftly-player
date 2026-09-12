@@ -920,6 +920,16 @@ final class App: @unchecked Sendable {
     /// Die Staffel, mit der eine Serienseite öffnet — gesetzt, wenn der Weg
     /// über eine Folge führte (A8).
     var startStaffel: String?
+    /// Die Rolle, über die man auf eine Personenseite kam, und der Titel, in
+    /// dem sie gespielt wurde.
+    ///
+    /// **Beiwerk neben dem Stapel, wie `startStaffel`.** Auf Apple trägt
+    /// `PersonRoute` beides mit; hier hält der Stapel `Item`, und eine Rolle
+    /// steht in keinem Item — sie gehört zur *Verbindung* zwischen Titel und
+    /// Person, nicht zur Person. Den Stapel dafür auf eine Aufzählung von
+    /// Zielen umzubauen wäre ein Umbau an jeder Seite, für zwei Zeichenketten.
+    var personRolle: String?
+    var personHerkunft: String?
     /// Wohin der Hauptknopf der offenen Detailseite zeigt, und welche Staffel
     /// dort gewählt ist. Die Mehr-Liste braucht beides — ohne sie liesse sich
     /// „Folge von vorn" und „Staffel als gesehen" nicht anbieten.

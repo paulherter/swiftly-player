@@ -66,6 +66,14 @@ extension App {
     // MARK: - Aufbau
 
     func detailZeigen(_ item: Item, schub: Schub = .tiefer) {
+        // **Eine Person ist keine Detailseite** — sie hat keinen Hauptknopf,
+        // keine Aktionsreihe und keine Datei. Die Weiche steht hier und nicht
+        // beim Aufrufer, aus demselben Grund, aus dem A8 hier steht: jeder Weg
+        // auf eine Person soll dieselbe Seite ergeben, egal wer ihn nimmt.
+        if item.type == "Person" {
+            personseiteZeigen(item, schub: schub)
+            return
+        }
         detailBeruehrt = false
         abschnitte = []
         let scheibe = naechsteScheibe()
@@ -284,7 +292,7 @@ extension App {
             serienunterbau(titel, in: unten)
         } else {
             if !titel.darsteller.isEmpty {
-                anhaengen(unten, besetzungsreihe(titel.darsteller))
+                anhaengen(unten, besetzungsreihe(titel.darsteller, herkunft: titel.name))
             }
             extrasNachladen(titel, in: unten)
             aehnlicheNachladen(titel, in: unten)
@@ -301,7 +309,10 @@ extension App {
 
     // MARK: - Kopfleiste mit Pfeil
 
-    private func detailkopfBauen(_ item: Item) -> Widget! {
+    /// Nicht `private`: die Personenseite liegt in einer eigenen Datei und
+    /// braucht denselben Kopf. `private` gilt in einer `extension` dateiweit —
+    /// ein zweiter Kopf waere die kopierte Funktion, gegen die die Regel steht.
+    func detailkopfBauen(_ item: Item) -> Widget! {
         // Höhe wie auf dem Mac: 24 Luft, 40 Knopf, 10 unter dem Text.
         let kopf: Widget! = gtk_overlay_new()
         gtk_widget_set_valign(kopf, GTK_ALIGN_START)
