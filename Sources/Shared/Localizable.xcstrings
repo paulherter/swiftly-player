@@ -3391,6 +3391,23 @@
         }
       }
     },
+    "Geboren %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geboren %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Born %@"
+          }
+        }
+      }
+    },
     "Gehe zu": {
       "extractionState": "manual",
       "localizations": {

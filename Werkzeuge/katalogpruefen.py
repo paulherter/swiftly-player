@@ -77,6 +77,35 @@ for weg in dateien:
         if englisch.get("state") != "translated":
             roh.add((weg, treffer))
 
+# **Beschriftungen mit eingesetztem Wert.**
+#
+# `String(localized: "Geboren \(datum)")` wird zum Schluessel `Geboren %@` —
+# und das Muster oben kann es nicht finden, weil es Literale ohne Backslash
+# sucht. Am 12.09.2026 stand darum auf einem englischen Geraet „Geboren
+# October 22, 1986" auf der Personenseite.
+#
+# Welchen Platzhalter Foundation einsetzt, haengt am Typ: `%@` bei Text und
+# Datum, `%lld` bei einer ganzen Zahl. Der steht hier nicht, also werden
+# beide Formen gebildet und **eine** davon muss im Katalog stehen.
+eingesetzt = re.compile(r'String\(localized:\s*"((?:[^"\\]|\\\()+)"')
+loch = re.compile(r'\\\((?:[^()]|\([^()]*\))*\)')  # eine Klammerebene in der Einsetzung
+for weg in dateien:
+    if not weg.endswith(".swift"):
+        continue
+    for text in eingesetzt.findall((wurzel / weg).read_text()):
+        if "\\(" not in text:
+            continue
+        formen = {loch.sub(satz, text) for satz in ("%@", "%lld")}
+        # **Steht in der Einsetzung selbst ein Anfuehrungszeichen** — etwa
+        # `\\(name ?? "—")` —, endet das Literal fuer dieses Muster zu frueh
+        # und die gebildete Form waere Unsinn. Drei solche Stellen gibt es;
+        # ihre Schluessel stehen im Katalog. Lieber uebergehen als falsch
+        # melden: ein Bogen, der bekannte Zeilen anmeckert, wird nicht gelesen.
+        if any("\\(" in f for f in formen):
+            continue
+        if not (formen & set(katalog)):
+            fehlt.add((weg, sorted(formen)[0]))
+
 # **Der Bogen findet nur, was er kennt — der Katalog selbst weiss mehr.**
 #
 # Am 07.09.2026 hat ein Nutzer „12 offen" auf einem englischen Geraet
