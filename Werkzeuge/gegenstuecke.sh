@@ -61,7 +61,12 @@ ZUORDNUNG=(
   "Start:Sources/Shared/HomeView.swift:Sources/tvOS/HomeView.swift:Sources/macOS/HomeView.swift:Linux/Sources/SwiftlyLinux/App.swift"
   "Detailseite:Sources/Shared/BrowseViews.swift:Sources/tvOS/DetailView.swift:Sources/macOS/DetailView.swift:Linux/Sources/SwiftlyLinux/Detailseite.swift"
   "Serienseite:Sources/Shared/SeriesView.swift:Sources/tvOS/SerienView.swift:Sources/macOS/SerienView.swift:Linux/Sources/SwiftlyLinux/Serienseite.swift"
-  "Bibliotheksseite:Sources/Shared/BrowseViews.swift:Sources/tvOS/BibliothekView.swift:Sources/macOS/Bibliotheksseite.swift:?"
+  # Auf Linux liegt sie in `App.swift` — `Bereich.bibliothek` mit
+  # `offeneBibliothek`, `bibliotheksrubrik` und `rasterseiteBauen(.bibliothek)`.
+  # Hier stand ein `?`, und das meldete "KEINE" wie bei einer fehlenden
+  # Ansicht. Am 12.09.2026 hat genau das einen Abgleich in die Irre gefuehrt:
+  # die Seite ist seit Tagen da, der Befund sagte das Gegenteil.
+  "Bibliotheksseite:Sources/Shared/BrowseViews.swift:Sources/tvOS/BibliothekView.swift:Sources/macOS/Bibliotheksseite.swift:Linux/Sources/SwiftlyLinux/App.swift"
   "Bibliotheksliste:Sources/Shared/BrowseViews.swift:Sources/tvOS/BibliothekView.swift:Sources/macOS/BibliothekView.swift:Linux/Sources/SwiftlyLinux/App.swift"
   "Player:Sources/iOS/PlayerScreen.swift:Sources/tvOS/PlayerScreen.swift:Sources/macOS/PlayerScreen.swift:Linux/Sources/SwiftlyLinux/Spieler.swift"
   "VLC-Anbindung:Sources/Shared/VLCPlayer.swift:Sources/Shared/VLCPlayer.swift:Sources/Shared/VLCPlayer.swift:Linux/Sources/SwiftlyLinux/Abspieler.swift"
