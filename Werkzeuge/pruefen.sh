@@ -80,18 +80,44 @@ fi
 
 echo
 echo "── Liegt noch etwas auf einem Zweig? ──────────────────"
+# Auch die Fernzweige. linux und windows liegen NUR dort; die alte Schleife
+# sah nur lokale Zweige und uebersprang beide kommentarlos — genau die zwei
+# Plattformen, die am weitesten hinterherhinken. (12.09.2026)
 for zweig in ios ipad mac tvos linux windows; do
-    git rev-parse --verify -q "$zweig" >/dev/null 2>&1 || continue
-    eigene=$(git rev-list --count "main..$zweig")
-    hinter=$(git rev-list --count "$zweig..main")
+    ref=""
+    for kandidat in "$zweig" "linux/$zweig" "origin/$zweig"; do
+        git rev-parse --verify -q "$kandidat" >/dev/null 2>&1 && { ref="$kandidat"; break; }
+    done
+    [ -n "$ref" ] || continue
+    eigene=$(git rev-list --count "main..$ref")
+    hinter=$(git rev-list --count "$ref..main")
     if [ "$eigene" -gt 0 ]; then
-        melden "$zweig" "${gelb}$eigene Commits nicht in main${aus} ($hinter hinterher)"
-        git log --oneline "main..$zweig" | sed 's/^/      /'
+        melden "$ref" "${gelb}$eigene Commits nicht in main${aus} ($hinter hinterher)"
+        git log --oneline "main..$ref" | head -10 | sed 's/^/      /'
         fehler=1
     else
-        melden "$zweig" "${gruen}nichts offen${aus} ($hinter hinterher)"
+        melden "$ref" "${gruen}nichts offen${aus} ($hinter hinterher)"
     fi
 done
+
+echo
+echo "── Verdrahtung ────────────────────────────────────────"
+# Der Umzug am 12.09.2026 hat 13 Skills und 2 Agenten auf Pfade mit einem
+# woertlichen Backslash gelegt. Kein Bau und kein Test merkt das: die Sitzung
+# laeuft weiter, nur ohne ihr Wissen. Deshalb hier.
+tot=0
+for l in CLAUDE.md VERHALTEN.md GESTALTUNG.md Erfahrungen.md Fallen; do
+    [ -e "$l" ] || { melden "$l" "${rot}zeigt ins Leere${aus}"; tot=$((tot+1)); }
+done
+for l in ~/.claude/skills/* ~/.claude/agents/*; do
+    [ -L "$l" ] && [ ! -e "$l" ] && { melden "$(basename "$l")" "${rot}zeigt ins Leere${aus}"; tot=$((tot+1)); }
+done
+if [ "$tot" -eq 0 ]; then
+    melden "Symlinks" "${gruen}alle loesen auf${aus}"
+else
+    melden "Symlinks" "${rot}$tot tot${aus}"
+    fehler=1
+fi
 
 echo
 echo "── Katalog ────────────────────────────────────────────"
@@ -99,7 +125,7 @@ python3 "$(dirname "$0")/katalogpruefen.py" || fehler=1
 echo
 
 echo "── Offene Spalten in der Aenderungsliste ──────────────"
-liste="../Swiftly-Notizen/AppStore/Aenderungen.md"
+liste="../Notizen/AppStore/Aenderungen.md"
 if [ -f "$liste" ]; then
     offen=$(grep -cE '^\| [0-9]+ \|.*\| · \|' "$liste" 2>/dev/null || echo 0)
     melden "Zeilen mit einem ·" "$offen"

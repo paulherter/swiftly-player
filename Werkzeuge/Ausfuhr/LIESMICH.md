@@ -12,4 +12,4 @@ Baunummer beim Ausleiten selbst und überschreibt, was in `project.yml` steht.
 Wer `build/` löscht, verliert sie sonst und merkt es erst, wenn der nächste
 Bau nicht mehr hochgeht.
 
-Benutzt werden sie von `Swiftly-Notizen/Werkzeuge/Store/store.mjs`.
+Benutzt werden sie von `Notizen/Werkzeuge/Store/store.mjs`.

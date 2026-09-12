@@ -53,7 +53,7 @@ settings:
     # 1.0.1, also Bau 1.
     #
     # Vor einem Zuruecksetzen immer erst nachsehen:
-    #   cd Swiftly-Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
+    #   cd Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
     CURRENT_PROJECT_VERSION: "5"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites

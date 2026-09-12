@@ -58,7 +58,7 @@ laufende Sitzung merkt von der Aenderung nichts.
 | `fremder-baum-bash.sh` | vor Bash | dasselbe fuer `sed -i`, `>`, `git reset/checkout/clean`. Lesen bleibt frei |
 | `xcodegen-noetig.sh` | nach Write | meldet eine neue Datei unter `Sources/`, die das `.xcodeproj` noch nicht kennt |
 
-Nicht gesperrt wird `Swiftly-Notizen` — eigenes Repo, dort schreibt `main`
+Nicht gesperrt wird `Notizen` — eigenes Repo, dort schreibt `main`
 die Aenderungsliste.
 
 ## Nachpruefen, dass sie greifen

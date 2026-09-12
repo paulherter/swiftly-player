@@ -6,7 +6,7 @@
 # irgendwann uebersehen; eine, die der Haken durchsetzt, nicht.
 #
 # Gesperrt wird genau ein Fall: das Ziel liegt in einem **anderen Auscheck
-# desselben Git-Verzeichnisses**. Alles andere bleibt offen — Swiftly-Notizen
+# desselben Git-Verzeichnisses**. Alles andere bleibt offen — Notizen
 # ist ein eigenes Repo, der Kritzelordner gehoert zu keinem, beide sind frei.
 #
 # Rueckgabe 2 blockt und schickt stderr an die Sitzung zurueck.
