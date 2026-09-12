@@ -67,11 +67,21 @@ final class Kulisse: @unchecked Sendable {
     /// war.
     private var lebt = true
 
-    init() {
+    /// **Ueber die volle Breite malen statt rechtsbuendig auf 62 %.**
+    ///
+    /// Die 62 % sind die Komposition der *Detailseite*: links steht Text auf
+    /// dunklem Grund, rechts das Bild. Auf der **Personenseite** gibt es
+    /// diesen Text nicht — dort steht unten links ein runder Kopf, und Apple
+    /// fuellt das Banner ueber die ganze Breite (`Heldbild`). Mit der
+    /// Detailseiten-Rechnung blieben die linken 38 % leer, und darueber war
+    /// nichts: genau der „Riesen-Headspace", den Paul gemeldet hat.
+    var vollBreit = false
+
+    init(hoehe: Int = Stil.heldHoehe) {
         let feld: Widget! = gtk_drawing_area_new()
         gtk_widget_add_css_class(feld, "swiftly-blank")
         gtk_widget_set_hexpand(feld, 1)
-        gtk_widget_set_size_request(feld, -1, Int32(Stil.heldHoehe))
+        gtk_widget_set_size_request(feld, -1, Int32(hoehe))
         anzeige = feld!
         gtk_drawing_area_set_draw_func(alsZeichen(feld), kulisseMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
@@ -196,7 +206,9 @@ final class Kulisse: @unchecked Sendable {
         cairo_scale(cr, Double(teiler), Double(teiler))
 
         // **`max(breite * 0,62, 520)` — die Rechnung des Macs**, rechtsbündig.
-        let bb = max(w * 0.62, 520)
+        // Auf der Personenseite dagegen ueber die volle Breite, siehe
+        // ``vollBreit``.
+        let bb = vollBreit ? w : max(w * 0.62, 520)
         let x0 = w - bb
 
         // Füllend einpassen: die grössere der beiden Streckungen gewinnt,

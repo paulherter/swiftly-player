@@ -74,7 +74,7 @@ extension App {
         if let rolle = personRolle, !rolle.isEmpty, let herkunft = personHerkunft {
             let zeile = beschriftung(String(format: uebersetzt("%1$@ in %2$@"), rolle, herkunft),
                                      stil: "swiftly-zweitzeile")
-            gtk_widget_add_css_class(zeile, "swiftly-akzentzeile")
+            gtk_widget_add_css_class(zeile, "swiftly-rolle")
             gtk_label_set_xalign(OpaquePointer(zeile), 0)
             gtk_widget_set_margin_start(zeile, Int32(Stil.randAbstand))
             gtk_widget_set_margin_end(zeile, Int32(Stil.randAbstand))
@@ -119,7 +119,11 @@ extension App {
         let kopf: Widget! = gtk_overlay_new()
         gtk_widget_set_hexpand(kopf, 1)
 
-        let kulisse = Kulisse()
+        // **Kuerzer als eine Detailseite.** Dort traegt die Kopfzone 230 Punkt
+        // Block (Titel, Angaben, Beschreibung, Knopfreihe); hier stehen nur
+        // ein 104er Kopf und zwei Zeilen. Dieselbe Hoehe waere ein Loch.
+        let kulisse = Kulisse(hoehe: Stil.personHoehe)
+        kulisse.vollBreit = true
         gtk_overlay_set_child(OpaquePointer(kopf), kulisse.anzeige)
         gtk_overlay_add_overlay(OpaquePointer(kopf), personblock(person))
         personBannerNachladen(person, in: kulisse)
@@ -142,11 +146,16 @@ extension App {
         gtk_widget_set_margin_start(feld, Int32(Stil.randAbstand))
         gtk_widget_set_margin_bottom(feld, 16)
 
-        let (huelle, bild) = gerahmtesBild(breite: 104, hoehe: 104, stil: "swiftly-profilgross")
-        gtk_fixed_put(alsFeld2(feld), huelle, 0, 0)
+        // **Mit Initiale, wenn es kein Bild gibt.** `gerahmtesBild` laesst in
+        // dem Fall einen leeren Kreis stehen; `profilzeichen` traegt den
+        // Anfangsbuchstaben, so wie ueberall sonst in der App.
+        let teile = profilzeichen(name: person.name, kante: 104,
+                                  stil: "swiftly-personkopf",
+                                  schriftstil: "swiftly-zeichen96")
+        gtk_fixed_put(alsFeld2(feld), teile.huelle, 0, 0)
         if let adressen, let url = adressen.bauen(itemID: person.id,
                                                   mass: .hoechstensHoch(300)) {
-            bildLaden(bild, url: url, schluessel: Bildschluessel.fuer(url))
+            profilbildLaden(teile, url: url, schluessel: Bildschluessel.fuer(url))
         }
 
         let name = beschriftung(person.name, stil: "swiftly-titel")

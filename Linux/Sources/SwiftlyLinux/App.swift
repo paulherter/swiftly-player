@@ -68,6 +68,14 @@ final class App: @unchecked Sendable {
     private var reihenstapel: Widget!
     /// Die gewählten Genres, wenn sie als Chips über den Reihen stehen.
     private var gattungschips: [String] = []
+    /// Was zuletzt auf der Startseite stand — das Fernsteuerpult braucht
+    /// einen Titel, den es oeffnen kann.
+    var letzteStartreihe: [Item] = []
+    /// Vom Fernsteuerpult gesetzt: den Reiter der offenen Serienseite wechseln.
+    var reiterWaehlen: ((Reiter) -> Void)?
+    /// Den Reiter der offenen Serienseite umschalten — ueber den Stapel,
+    /// nicht ueber einen Neubau.
+    var reiterZeigen: ((Reiter) -> Void)?
     var kopfzeile: Widget!
 
     /// Die Kreise unten in der Leiste. Ein ``GtkFixed``, weil sie sich
@@ -3084,6 +3092,7 @@ final class App: @unchecked Sendable {
     }
 
     private func reihenZeigen(_ reihen: [(String, Reihenart, [Item])]) {
+        letzteStartreihe = reihen.first?.2 ?? []
         leeren(reihenstapel)
         if !gattungschips.isEmpty { anhaengen(reihenstapel, gattungschipzeile()) }
         guard !reihen.isEmpty else {

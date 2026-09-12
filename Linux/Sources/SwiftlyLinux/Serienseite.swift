@@ -26,7 +26,6 @@ extension App {
         // Folgenzeile nur bis 24 vor die Kante — auf dem Mac läuft sie über
         // die ganze Breite. Den Rand tragen die Zeilen selbst, als
         // Innenabstand, damit ihr Grund darunter durchläuft.
-        let inhaltraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
 
         var gewaehlt: Reiter = .folgen
         var reiterknoepfe: [Widget?] = []
@@ -45,7 +44,7 @@ extension App {
                     if f == fall { gtk_widget_add_css_class(k, "swiftly-aktiv") }
                     else { gtk_widget_remove_css_class(k, "swiftly-aktiv") }
                 }
-                self.reiterInhalt(fall, serie: serie, in: inhaltraum)
+                self.reiterZeigen?(fall)
             }
             anhaengen(zeile, knopf)
         }
@@ -61,8 +60,46 @@ extension App {
         anhaengen(reiterraum, reiterlinie)
 
         anhaengen(unten, reiterraum)
-        anhaengen(unten, inhaltraum)
-        reiterInhalt(.folgen, serie: serie, in: inhaltraum)
+
+        // **Ein Stapel, kein Abriss.**
+        //
+        // Vorher raeumte jeder Reiterwechsel `inhaltraum` leer und baute ihn
+        // neu. Damit aendert sich die Hoehe des ganzen Scrollinhalts in einem
+        // Zug — von einer langen Folgenliste auf eine kurze Besetzungsreihe —,
+        // GTK teilt die Seite neu zu, und die Zeichenflaeche der Kulisse geht
+        // durch eine Zwischengroesse. Von aussen: das Kopfbild verschwindet
+        // kurz und kommt wieder. Genau das hat Paul zweimal gemeldet.
+        //
+        // Ein `GtkStack` haelt die drei Seiten nebeneinander und blendet
+        // zwischen ihnen um; oben aendert sich nichts. Nebenbei faellt damit
+        // das Neuladen weg: „Besetzung" und „Aehnliches" holten bisher bei
+        // jedem Wechsel neu, obwohl sie schon dastanden.
+        let reiterstapel: Widget! = gtk_stack_new()
+        gtk_stack_set_transition_type(alsStapel(reiterstapel),
+                                      GTK_STACK_TRANSITION_TYPE_CROSSFADE)
+        gtk_stack_set_transition_duration(alsStapel(reiterstapel),
+                                          UInt32(Stil.zeitBlende * 1000))
+        // **Gleich hoch bleiben.** Ohne das nimmt der Stapel die Hoehe der
+        // sichtbaren Seite, und die Seite springt beim Wechsel doch wieder.
+        gtk_stack_set_vhomogeneous(alsStapel(reiterstapel), 0)
+        anhaengen(unten, reiterstapel)
+
+        var gebaut: Set<String> = []
+        let zeigen: (Reiter) -> Void = { [weak self] fall in
+            guard let self else { return }
+            let name = String(describing: fall)
+            if !gebaut.contains(name) {
+                gebaut.insert(name)
+                let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
+                gtk_stack_add_named(alsStapel(reiterstapel), raum, name)
+                self.reiterInhalt(fall, serie: serie, in: raum)
+            }
+            gtk_stack_set_visible_child_name(alsStapel(reiterstapel), name)
+        }
+        reiterZeigen = zeigen
+        zeigen(.folgen)
+        // Damit das Fernsteuerpult den Reiter wechseln kann, ohne zu klicken.
+        reiterWaehlen = zeigen
     }
 
     private func reiterInhalt(_ was: Reiter, serie: Item, in raum: Widget!) {

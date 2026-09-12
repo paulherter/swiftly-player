@@ -398,12 +398,19 @@ func reiterknopf(_ text: String, aktiv: Bool) -> Widget! {
 
 /// Eine Gruppe von Zeilen: Haarlinie oben, Haarlinie unten, sonst nichts.
 /// Keine Karten — dieselbe Entscheidung wie auf dem iPhone.
+/// **Eine Karte, keine zwei Striche.**
+///
+/// Auf dem Mac ist jede Zeilengruppe eine gefuellte Flaeche in `Stil.flaeche`
+/// mit `eckeFlaeche` (`macOS/Einstellungszeilen.swift:30`). Hier standen
+/// stattdessen eine Linie darueber und eine darunter, sonst nichts — die
+/// Zeilen lagen nackt auf dem Seitengrund. Damit sah jede Einstellungsseite
+/// anders aus als dieselbe Seite auf dem Mac, und die Gruppen ohne
+/// Ueberschrift sahen ueberhaupt nicht wie Gruppen aus.
 func zeilengruppe() -> (aussen: Widget, raum: Widget) {
     let aussen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-    anhaengen(aussen, trennlinie())
+    gtk_widget_add_css_class(aussen, "swiftly-karte")
     let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
     anhaengen(aussen, raum)
-    anhaengen(aussen, trennlinie())
     return (aussen!, raum!)
 }
 
@@ -443,11 +450,18 @@ private func zeilenrumpf(symbol: String, titel: String, unter: String?,
     gtk_widget_set_hexpand(text, 1)
     let t = beschriftung(titel, stil: "swiftly-koerper")
     gtk_label_set_xalign(OpaquePointer(t), 0)
+    gtk_label_set_ellipsize(OpaquePointer(t), PANGO_ELLIPSIZE_END)
     anhaengen(text, t)
     if let unter {
         let u = beschriftung(unter, stil: "swiftly-zweitzeile")
         gtk_widget_add_css_class(u, "swiftly-fuss")
         gtk_label_set_xalign(OpaquePointer(u), 0)
+        // **Die Unterzeile darf kuerzen.** Ohne das bestimmt der laengste Satz
+        // die Naturbreite der ganzen Spalte — „Download titles to this
+        // computer and watch without a connection" zog die Einstellungsseite
+        // ueber den Fensterrand, und die rechte Spalte stand draussen.
+        gtk_label_set_ellipsize(OpaquePointer(u), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(u), 34)
         anhaengen(text, u)
     }
     anhaengen(reihe, text)

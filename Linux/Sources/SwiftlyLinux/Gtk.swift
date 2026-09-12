@@ -784,3 +784,7 @@ func inZwischenablage(_ text: String, an widget: Widget!) {
     let ablage = gdk_display_get_clipboard(anzeige)
     gdk_clipboard_set_text(ablage, text)
 }
+
+@inline(__always) func alsStapel(_ w: Widget!) -> OpaquePointer! {
+    OpaquePointer(w)
+}

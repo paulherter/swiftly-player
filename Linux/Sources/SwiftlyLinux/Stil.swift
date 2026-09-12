@@ -128,6 +128,9 @@ enum Stil {
     static let hauptknopfBreite = 200
     /// Die Kopfzone der Detailseite: 150 oben plus 230 Block, keine Restluft.
     static let heldHoehe = 380
+    /// Die Kopfzone der **Personenseite**. Kuerzer als die einer Detailseite:
+    /// dort stehen 230 Punkt Block, hier ein 104er Kopf und zwei Zeilen.
+    static let personHoehe = 260
     /// Höhe der Kopfleiste einer Detailseite (Pfeil und einblendender Titel).
     static let titelHoehe = 52
     static let feldHoehe = 38
@@ -527,6 +530,15 @@ enum Stil {
             min-height: 20px;
             margin: 6px;
         }
+        /* **Die Karte, auf der Einstellungszeilen liegen.** `Stil.flaeche`
+           mit `eckeFlaeche` — wortgleich `Karte` auf dem Mac
+           (`Einstellungszeilen.swift:30`). Die erste und die letzte Zeile
+           bekommen die Ecke mit, sonst stiesse ein rechteckiger Knopf ueber
+           die runde Kante. */
+        .swiftly-karte {
+            background-color: \(flaeche);
+            border-radius: \(eckeFlaeche)px;
+        }
         .swiftly-trennlinie { background-color: \(linie); min-height: 1px; }
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
@@ -771,13 +783,27 @@ enum Stil {
 
         .swiftly-fuss { color: rgba(255,255,255,0.45); }
         .swiftly-akzentzeile label { color: \(akzent); }
+        /* **Die Rolle, ueber die man kam** — im Akzent, halbfett, wie auf
+           Apple (`PersonView.swift:190`). `swiftly-akzentzeile` trifft nur
+           Kind-Labels; hier ist das Widget selbst das Label. */
+        .swiftly-rolle { color: \(akzent); font-size: 14px; font-weight: 500; }
         .swiftly-akzentzeile image { color: \(akzent); }
         .swiftly-zeilenrumpf, button.swiftly-einstellzeile {
             min-height: 44px;
-            padding: 0 12px;
+            padding: 0 14px;
             border-radius: 0;
             background-color: transparent;
             border: none;
+        }
+        /* Erste und letzte Zeile runden mit der Karte ab — sonst stiesse ein
+           rechteckiges Schweben ueber die runde Kante. */
+        .swiftly-karte > box > :first-child {
+            border-top-left-radius: \(eckeFlaeche)px;
+            border-top-right-radius: \(eckeFlaeche)px;
+        }
+        .swiftly-karte > box > :last-child {
+            border-bottom-left-radius: \(eckeFlaeche)px;
+            border-bottom-right-radius: \(eckeFlaeche)px;
         }
         button.swiftly-einstellzeile:hover { background-color: rgba(255,255,255,0.05); }
         button.swiftly-einstellzeile image { color: \(schriftLeise); }
@@ -809,7 +835,11 @@ enum Stil {
         button.swiftly-wertzeile.swiftly-aktiv label { color: \(schrift); }
         button.swiftly-wertzeile.swiftly-aktiv image { color: \(akzent); }
 
-        .swiftly-profilgross { border-radius: 42px; background-image: \(profilverlauf); }
+        .swiftly-profilgross { border-radius: \(eckeKapsel)px; background-image: \(profilverlauf); }
+        /* **Rund, weil es ein Bild ist** (E26). Hier stand ein fester Radius
+           von 42 — auf einem 84er Bild ein Kreis, auf dem 104er Kopf der
+           Personenseite ein Quadrat mit weichen Ecken. */
+        .swiftly-personkopf { border-radius: \(eckeKapsel)px; background-image: \(profilverlauf); }
 
         /* **Der Buchstabe, wenn kein Bild kommt.** Die Groesse ist auf Apple
            `groesse * 0.38`; hier steht sie je Kreisgroesse fest, weil GTKs

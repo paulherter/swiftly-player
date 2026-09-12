@@ -62,6 +62,9 @@ nonisolated(unsafe) private let starten: @convention(c) (UnsafeMutableRawPointer
     Stil.anwenden()
     app.aufbauen(anwendung: anwendung!.assumingMemoryBound(to: GtkApplication.self))
     app.kopfzeileEinrichten()
+    // Nur im Debug-Bau: eine Datei sagt der App, wohin sie gehen soll —
+    // damit eine Sitzung nachsehen kann, bevor sie etwas meldet.
+    Fernsteuerpult.lauschen(app)
 }
 
 // **Ohne Sitzungsbus gibt es keine Einmaligkeit.**

@@ -40,10 +40,21 @@ extension App {
         // tragen zwei Spalten nebeneinander, der Rest liest sich wie Text.
         // Hier stand fuer alle dieselbe 560 — auf einem 1400 Punkt breiten
         // Fenster sah das aus wie eine Handyansicht in der Mitte.
-        let breit = was == .einstellungen
-        gtk_widget_set_size_request(block, Int32(breit ? Stil.einstellungBreite
-                                                       : Stil.lesebreite), -1)
-        gtk_widget_set_halign(block, GTK_ALIGN_CENTER)
+        //
+        // **`size_request` ist ein Mindestmass, kein Hoechstmass.** Der Mac
+        // deckelt mit `frame(maxWidth:)` nach oben und laesst die Spalten
+        // schrumpfen; setzt man dieselbe Zahl hier als Anforderung, sprengt
+        // die Seite das Fenster und die rechte Spalte steht draussen. Also
+        // fuellt die Einstellungsseite, was da ist, und traegt nur Raender.
+        if was == .einstellungen {
+            gtk_widget_set_halign(block, GTK_ALIGN_FILL)
+            gtk_widget_set_hexpand(block, 1)
+            gtk_widget_set_margin_start(block, Int32(Stil.randAbstand))
+            gtk_widget_set_margin_end(block, Int32(Stil.randAbstand))
+        } else {
+            gtk_widget_set_size_request(block, Int32(Stil.lesebreite), -1)
+            gtk_widget_set_halign(block, GTK_ALIGN_CENTER)
+        }
         gtk_widget_set_margin_top(block, Int32(Stil.inhaltOben))
         gtk_widget_set_margin_bottom(block, 40)
         gtk_widget_set_margin_start(block, Int32(Stil.randAbstand))
@@ -405,8 +416,19 @@ extension App {
         gtk_widget_set_valign(spalten, GTK_ALIGN_START)
         let links = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_set_hexpand(links, 1)
+        gtk_widget_set_halign(links, GTK_ALIGN_FILL)
         let rechts = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_set_hexpand(rechts, 1)
+        gtk_widget_set_halign(rechts, GTK_ALIGN_FILL)
+        // Gleich breit, egal wie viel Inhalt drinsteht — sonst zieht die
+        // linke Spalte mit ihren zwei Gruppen die rechte auf einen Streifen
+        // zusammen.
+        let gleich = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL)
+        gtk_size_group_add_widget(gleich, links)
+        gtk_size_group_add_widget(gleich, rechts)
+        // Ein Mindestmass, damit eine Spalte nicht auf einen Streifen faellt.
+        gtk_widget_set_size_request(links, 300, -1)
+        gtk_widget_set_size_request(rechts, 300, -1)
         gtk_widget_set_valign(rechts, GTK_ALIGN_START)
         anhaengen(spalten, links)
         anhaengen(spalten, rechts)
