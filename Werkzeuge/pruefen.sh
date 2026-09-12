@@ -84,19 +84,32 @@ echo "── Liegt noch etwas auf einem Zweig? ───────────
 # sah nur lokale Zweige und uebersprang beide kommentarlos — genau die zwei
 # Plattformen, die am weitesten hinterherhinken. (12.09.2026)
 for zweig in ios ipad mac tvos linux windows; do
+    # Volle Refnamen, sonst loest ein blankes "linux" auf den HEAD der
+    # Gegenstelle gleichen Namens auf statt auf den Zweig linux/linux — und
+    # meldet dann die Zahlen eines ganz anderen Zweigs als gruen.
     ref=""
-    for kandidat in "$zweig" "linux/$zweig" "origin/$zweig"; do
+    for kandidat in "refs/heads/$zweig" "refs/remotes/linux/$zweig" "refs/remotes/origin/$zweig"; do
         git rev-parse --verify -q "$kandidat" >/dev/null 2>&1 && { ref="$kandidat"; break; }
     done
     [ -n "$ref" ] || continue
+    # Ohne gemeinsame Wurzel sind "davor" und "dahinter" bedeutungslos: das
+    # cachy-Repo wurde 2026 nicht geklont, sondern frisch angelegt, deshalb
+    # meldete linux/linux 545 Commits "nicht in main", die keine Rueckstaende
+    # sind, sondern eine zweite Geschichte desselben Codes. Inhalt vergleichen,
+    # nicht Commits zaehlen.
+    if ! git merge-base "$ref" main >/dev/null 2>&1; then
+        anders=$(git diff --name-only main "$ref" | wc -l | tr -d ' ')
+        melden "${ref#refs/*/}" "${gelb}eigene Wurzel${aus} — $anders Dateien anders, git diff statt Zaehlung"
+        continue
+    fi
     eigene=$(git rev-list --count "main..$ref")
     hinter=$(git rev-list --count "$ref..main")
     if [ "$eigene" -gt 0 ]; then
-        melden "$ref" "${gelb}$eigene Commits nicht in main${aus} ($hinter hinterher)"
+        melden "${ref#refs/*/}" "${gelb}$eigene Commits nicht in main${aus} ($hinter hinterher)"
         git log --oneline "main..$ref" | head -10 | sed 's/^/      /'
         fehler=1
     else
-        melden "$ref" "${gruen}nichts offen${aus} ($hinter hinterher)"
+        melden "${ref#refs/*/}" "${gruen}nichts offen${aus} ($hinter hinterher)"
     fi
 done
 
