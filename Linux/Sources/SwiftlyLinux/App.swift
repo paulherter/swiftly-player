@@ -2641,12 +2641,16 @@ final class App: @unchecked Sendable {
             // Einstellungen.** Welche Reihen, in welcher Folge, und welche
             // ausgeblendet sind — `Startreihenfolge` im Paket rechnet es aus,
             // damit dieselbe Ablage auf jeder Plattform dasselbe ergibt.
+            // **Jede Reihe geht entdoppelt hinein** (`Listenregeln`). Der
+            // Server liefert denselben Titel gelegentlich zweimal; auf Apple
+            // beschwert sich `ForEach` ueber die doppelte Kennung, auf GTK
+            // stuende die Kachel schlicht zweimal in der Reihe.
             let inhalt: [Startreihe: (Reihenart, [Item])] = [
-                .weiterschauen: (.weiterschauen, await weiter ?? []),
-                .naechsteFolge: (.naechste, await naechste ?? []),
-                .neuzugaenge:   (.neu, neuzugaenge),
-                .neueFilme:     (.neu, filme),
-                .neueSerien:    (.neu, serien),
+                .weiterschauen: (.weiterschauen, Listenregeln.ohneDoppelte(await weiter ?? [])),
+                .naechsteFolge: (.naechste, Listenregeln.ohneDoppelte(await naechste ?? [])),
+                .neuzugaenge:   (.neu, Listenregeln.ohneDoppelte(neuzugaenge)),
+                .neueFilme:     (.neu, Listenregeln.ohneDoppelte(filme)),
+                .neueSerien:    (.neu, Listenregeln.ohneDoppelte(serien)),
             ]
             var gesammelt: [(String, Reihenart, [Item])] = Startreihenfolge
                 .sichtbar(abgelegt: reihenfolge, aus: Set(ausgeblendet), getrennt: getrennt)
@@ -2662,7 +2666,7 @@ final class App: @unchecked Sendable {
                 for name in gattungen {
                     guard let treffer = await client.titel(gattung: name), !treffer.isEmpty
                     else { continue }
-                    gesammelt.append((name, .neu, treffer))
+                    gesammelt.append((name, .neu, Listenregeln.ohneDoppelte(treffer)))
                 }
             }
             // Ab hier unveraenderlich — sonst faengt der Sprung auf den
@@ -2691,7 +2695,9 @@ final class App: @unchecked Sendable {
     private func rasterNachladen(_ was: Bereich) {
         guard !rasterLaedt.contains(was) else { return }
         let schon = (rasterItems[was] ?? []).count
-        guard schon > 0, schon < (rasterGesamt[was] ?? 0) else { return }
+        guard schon > 0,
+              Listenregeln.nochMehrDa(geladen: schon, gesamt: rasterGesamt[was] ?? 0)
+        else { return }
         rasterLaden(was, ab: schon)
     }
 
@@ -2709,15 +2715,18 @@ final class App: @unchecked Sendable {
         switch was {
         case .filme:  gattungen = ["Movie"]
         case .serien: gattungen = ["Series"]
-        // **Die Sammlung sagt selbst, was in ihr liegt.** Eine Sammlung ohne
-        // erkennbaren Typ — gemischte Ordner gibt es — bekommt beides,
-        // statt leer zu bleiben.
+        // **Die Sammlung sagt selbst, was in ihr liegt** — und die Zuordnung
+        // steht als `Bibliotheksgattung` im Paket, nicht hier.
+        //
+        // Hier stand eine eigene Fassung, die nur `movies` und `tvshows`
+        // kannte und sonst auf `["Movie", "Series"]` fiel. Auf einer Musik-,
+        // Buch- oder Heimvideobibliothek hiess das: der Server bekommt eine
+        // Einschraenkung auf Gattungen, die dort gar nicht liegen, und die
+        // Seite bleibt **leer**. Die Paketfassung antwortet in dem Fall mit
+        // einer leeren Liste — nicht einschraenken statt falsch einschraenken,
+        // lieber ein Ordner zu viel als eine leere Seite.
         case .bibliothek:
-            switch offeneBibliothek?.collectionType {
-            case "movies":  gattungen = ["Movie"]
-            case "tvshows": gattungen = ["Series"]
-            default:        gattungen = ["Movie", "Series"]
-            }
+            gattungen = Bibliotheksgattung.typen(zu: offeneBibliothek?.collectionType)
         default:      gattungen = ["Movie", "Series"]
         }
         let f = filter[was] ?? .alle
@@ -2759,7 +2768,14 @@ final class App: @unchecked Sendable {
                 self.rasterLaderZeigen(was, false)
                 guard let raster = self.rasterFeld[was], let zahl = self.zahlFeld[was]
                 else { return }
-                self.rasterItems[was, default: []] += items
+                // **Entdoppelt anhaengen** (`Listenregeln.anhaengen`). Der
+                // Server kann zwischen zwei Seiten etwas hinzufuegen; dann
+                // rutscht ein Titel eine Stelle nach hinten und kaeme in der
+                // naechsten Seite ein zweites Mal. Auf Apple beschwert sich
+                // `ForEach` darueber, auf GTK stuende die Kachel einfach
+                // zweimal im Raster. Hier stand ein blankes `+=`.
+                self.rasterItems[was] = Listenregeln.anhaengen(
+                    items, an: self.rasterItems[was] ?? [])
                 self.rasterGesamt[was] = gesamt
                 self.rasterFuellen(raster, self.rasterItems[was] ?? [])
                 gtk_label_set_text(OpaquePointer(zahl), String(gesamt))
@@ -2854,7 +2870,7 @@ final class App: @unchecked Sendable {
         suchverlaufZeigen()
         let seerr = seerrclient
         Task.detached { [self] in
-            let treffer = (try? await client.suche(begriff)) ?? []
+            let treffer = Listenregeln.ohneDoppelte((try? await client.suche(begriff)) ?? [])
             aufHauptfaden {
                 guard self.suchtakt == meins else { return }
                 self.rasterFuellen(self.suchraster, treffer)
