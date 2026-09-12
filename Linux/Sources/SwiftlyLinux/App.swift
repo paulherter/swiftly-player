@@ -1821,8 +1821,10 @@ final class App: @unchecked Sendable {
         // Seite auftauchen soll. `seitenscroller` setzt `EXTERNAL` (scrollen
         // ja, Leiste nein) und hängt das weiche Laufen dran.
         let scroller = seitenscroller()
-        gtk_widget_set_margin_top(reihenstapel,
-                                  Int32(Stil.inhaltOben + Stil.reihenkopfAusgleich))
+        // Der obere Abstand steckt im Stilblatt als `padding`, nicht hier als
+        // `margin`: der Farbschein ist der Anstrich dieses Kastens und begänne
+        // sonst erst unterhalb des Randes.
+        gtk_widget_add_css_class(reihenstapel, "swiftly-startschein")
         gtk_widget_set_margin_bottom(reihenstapel, Int32(Stil.randAbstand))
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihenstapel)
         return scroller
@@ -2432,7 +2434,21 @@ final class App: @unchecked Sendable {
             catch { aufHauptfaden { self.sitzungPruefen(error) } }
             async let weiter = try? await client.resumeItems(limit: 20)
             async let naechste = try? await client.nextUp(limit: 20)
-            async let neu = try? await client.latest(limit: 20)
+            // **Getrennt heisst getrennt gefragt, nicht nachtraeglich
+            // gesiebt.** Bis zum 13.09.2026 holte Linux die gemischte Reihe
+            // und filterte sie danach nach `type`. Damit zeigte "Zuletzt
+            // hinzugefuegte Filme" nur, was zufaellig in den obersten zwanzig
+            // der Mischung lag — bei einem Server, auf dem gerade eine Serie
+            // nach der anderen ankommt, war die Filmreihe leer, obwohl Filme
+            // dazugekommen waren. Der Mac fragt je Bibliothek einzeln
+            // (`Startseitenmodell.swift:73-79`); hier jetzt auch.
+            let filmBib = gewaehlteBibliothek[.filme] ?? bibliotheken(fuer: .filme).first?.id
+            let serienBib = gewaehlteBibliothek[.serien] ?? bibliotheken(fuer: .serien).first?.id
+            async let neu = getrennt ? nil : try? await client.latest(limit: 20)
+            async let neuFilme = getrennt
+                ? try? await client.latest(parentID: filmBib, limit: 20) : nil
+            async let neuSerien = getrennt
+                ? try? await client.latest(parentID: serienBib, limit: 20) : nil
 
             // **Jede Reihe hat ihre eigene Kachelform, und das ist keine
             // Geschmacksfrage.** A2 im Register: „Nächste Folge öffnet die
@@ -2440,12 +2456,20 @@ final class App: @unchecked Sendable {
             // direkt in die Wiedergabe." Waagerecht ist deshalb allein
             // „Weiterschauen" — auf iPhone, Fernseher und Mac genauso.
             let neuzugaenge = await neu ?? []
+            let filme = await neuFilme ?? []
+            let serien = await neuSerien ?? []
             // **Neue Filme und neue Serien getrennt, wenn gewünscht.** Eine
             // gemischte Reihe ist die Vorgabe; wer viel neu bekommt, will sie
             // auseinander. Die Zeile fehlte auf Linux ganz.
+            // **Die Ueberschrift heisst nicht wie die Einstellung.** In der
+            // Darstellung steht "Neue Filme" — das ist der Name der Zeile, die
+            // man dort verschiebt. Auf der Seite selbst steht "Zuletzt
+            // hinzugefuegte Filme" (`macOS/HomeView.swift:220`). Hier stand
+            // der Einstellungsname, also ein Titel, den es auf keiner anderen
+            // Plattform gibt.
             let letzte: [(String, Reihenart, [Item])] = getrennt
-                ? [(uebersetzt("Neue Filme"), .neu, neuzugaenge.filter { $0.type == "Movie" }),
-                   (uebersetzt("Neue Serien"), .neu, neuzugaenge.filter { $0.type != "Movie" })]
+                ? [(uebersetzt("Zuletzt hinzugefügte Filme"), .neu, filme),
+                   (uebersetzt("Zuletzt hinzugefügte Serien"), .neu, serien)]
                 : [(uebersetzt("Zuletzt hinzugefügt"), .neu, neuzugaenge)]
             let reihen: [(String, Reihenart, [Item])] = ([
                 (uebersetzt("Weiterschauen"), .weiterschauen, await weiter ?? []),

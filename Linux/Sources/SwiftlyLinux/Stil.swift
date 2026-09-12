@@ -35,6 +35,12 @@ enum Stil {
     static let akzent = "#5CD1C2"
     static let markeAkzent = Markenpfade.akzentHex     // #2FDBC0
     static let warnung = "#E8833A"
+    /// **Die zweite Farbe des Farbscheins**, und das Zeichen einer Übernahme.
+    /// Der Akzent sagt „hier läuft was" — `kuehl` sagt „woanders läuft was".
+    static let kuehl = "#7E9BFF"
+    /// **Die Mitte des Farbscheins**, zwischen `akzent` und `kuehl`. Ohne sie
+    /// steht links Türkis, rechts Blau und dazwischen ein dunkles Loch.
+    static let scheinMitte = "#6EB4E1"
     static let schrift = "#FFFFFF"
     static let schriftLeise = "rgba(255,255,255,0.62)"
     static let schriftSehrLeise = "rgba(255,255,255,0.38)"
@@ -146,6 +152,9 @@ enum Stil {
     /// Versalien lässt eine Zeile Platz, und der wächst mit dem Schriftgrad.
     /// Auf dem Mac sind es nachgemessene 2,1 Punkt.
     static let reihenkopfAusgleich = 2
+    /// Wie weit der Farbschein reicht — er endet über der ersten
+    /// Reihenüberschrift. Der Mac-Wert (`macOS/HomeView.swift:345`).
+    static let scheinHoehe = 180
 
     /// Poster, 2 : 3 — auf dem iPhone 112 × 168, auf dem Mac 150 × 225.
     static let kachelBreite = 150
@@ -221,7 +230,7 @@ enum Stil {
         /* Fett wie `Stil.titel` auf Apple (`.bold`, also 700), mit derselben
            leichten Sperrung von -0,6. */
         .swiftly-titel       { font-size: \(titel)px; font-weight: 700; letter-spacing: -0.6px; }
-        .swiftly-reihe       { font-size: \(reihe)px; font-weight: 600; }
+        .swiftly-reihe       { font-size: \(reihe)px; font-weight: 600; letter-spacing: -0.3px; }
         .swiftly-listentitel { font-size: \(listentitel)px; font-weight: 600; }
         .swiftly-koerper     { font-size: \(koerper)px; }
         .swiftly-kacheltitel { font-size: \(kachelTitel)px; font-weight: 500; }
@@ -336,6 +345,44 @@ enum Stil {
            Fläche wie das Feld, Zeilen 32 hoch. Der Akzent trägt die Auswahl —
            dieselbe Regel wie auf iOS. Der Schwebezustand bekommt bewusst nur
            Weiß: er zeigt „hier steht der Zeiger", keine Wahl. */
+        /* **Der Farbschein über der Startseite** (`macOS/HomeView.swift:343`).
+           Er kommt von der Webseite, wo hinter der Schlagzeile ein türkiser
+           und ein blauer Schein stehen.
+
+           **Zwei Schichten, keine Maske.** Auf Apple läuft die Farbe schräg
+           und die Deckkraft senkrecht — dafür gibt es dort `.mask`. GTKs
+           Stilblatt kennt keine Maske, aber es kennt gestapelte Verläufe, und
+           hier ist das gleichwertig: der Untergrund ist überall `grund`, also
+           ergibt eine zweite Schicht aus `grund` mit steigender Deckung
+           dieselben Bildpunkte wie das Wegmaskieren der ersten. Die Stufen
+           sind die des Macs, nur umgedreht (1 − Maskendeckung).
+
+           **Nicht nachbauen, was dort verworfen wurde:** zwei Kreise statt
+           eines Verlaufs (über 900 Punkt Breite steht dann links Türkis,
+           rechts Blau und dazwischen ein dunkles Loch), und die oberen 118
+           Punkt freilassen (das ist die iPhone-Lösung für eine Kopfleiste,
+           die es hier nicht gibt).
+
+           Er liegt als Anstrich am Reihenstapel, also **im** Scrollinhalt:
+           damit fährt er beim Scrollen mit, ohne dass jemand den Weg
+           mitzählt. Deshalb trägt der Stapel seinen oberen Abstand hier als
+           `padding` statt als `margin` — sonst begänne die Farbe erst
+           darunter. */
+        .swiftly-startschein {
+            padding-top: \(inhaltOben + reihenkopfAusgleich)px;
+            background-repeat: no-repeat;
+            background-position: top left;
+            background-size: 100% \(scheinHoehe)px, 100% \(scheinHoehe)px;
+            background-image:
+              linear-gradient(to bottom,
+                rgba(11,11,13,0.00) 0%,   rgba(11,11,13,0.08) 34%,
+                rgba(11,11,13,0.34) 58%,  rgba(11,11,13,0.72) 80%,
+                rgba(11,11,13,1.00) 100%),
+              linear-gradient(to bottom right,
+                rgba(92,209,194,0.22) 0%,  rgba(92,209,194,0.17) 26%,
+                rgba(110,180,225,0.15) 52%, rgba(126,155,255,0.17) 76%,
+                rgba(126,155,255,0.20) 100%);
+        }
         .swiftly-seitenleiste { background-color: \(flaeche); }
 
         button.swiftly-zeile {
