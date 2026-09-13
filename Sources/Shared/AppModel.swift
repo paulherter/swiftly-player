@@ -154,12 +154,11 @@ final class AppModel {
 
     private static func bibliotheksname(_ art: String) -> String { "bibliothek-\(art)" }
 
-    /// Was dem Server als Grenze gemeldet wird.
-    ///
-    /// Eine Milliarde heißt praktisch unbegrenzt — ein Limit löst
-    /// Transkodierung aus, auch wenn Container und Codec passen.
+    /// Was dem Server als Grenze gemeldet wird — die Rechnung liegt im Paket
+    /// (``Bitratengrenze``), weil Linux dieselbe Antwort geben muss und sie
+    /// dort wortgleich ein zweites Mal stand.
     private var profilBitrate: Int {
-        immerDirectPlay || bitratenGrenze <= 0 ? 1_000_000_000 : bitratenGrenze * 1_000_000
+        Bitratengrenze.fuer(immerDirectPlay: immerDirectPlay, megabit: bitratenGrenze)
     }
     var serverVersion: String?
     var isWorking = false

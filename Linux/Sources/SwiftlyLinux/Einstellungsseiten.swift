@@ -256,7 +256,11 @@ extension App {
         let standKiste = gehalten(stand)
         beiSignal(feld, "changed") { [weak self] in
             guard let self else { return }
-            gtk_widget_set_sensitive(knopf, self.text(feld).count == 6 ? 1 : 0)
+            // **Ab vier, nicht erst ab sechs.** Der Mac gibt den Knopf bei
+            // `code.count >= 4` frei (`ProfilView.swift:197-198`) — ein Code
+            // ist zwar sechsstellig, aber ein Knopf, der bis zum letzten
+            // Zeichen tot bleibt, sieht aus wie einer, der klemmt.
+            gtk_widget_set_sensitive(knopf, self.text(feld).count >= 4 ? 1 : 0)
         }
         beiSignal(knopf, "clicked") { [weak self] in
             guard let self, let client = self.client else { return }
@@ -561,12 +565,18 @@ extension App {
                                      wert: serverfassung))
         anhaengen(s.raum, zeilenstrich())
         // **Die Zeile stand da und tat nichts.** Der Mac stösst die Prüfung
-        // an, zeigt „Moment …" und danach das Ergebnis als Wert daneben.
+        // an, zeigt „Moment …" als Wert und das Ergebnis als **Unterzeile**;
+        // waehrend sie laeuft, ist die Zeile nicht anklickbar
+        // (`EinstellungenView.swift:199-202`). Hier stand beides im Wertfeld,
+        // und ein zweiter Klick stiess die Pruefung noch einmal an.
+        let laeuft = pruefergebnis == uebersetzt("Moment …")
         let pruefzeile = wertezeile(symbol: "network-wireless-symbolic",
                                     titel: uebersetzt("Verbindung prüfen"),
-                                    wert: pruefergebnis) { [weak self] in
-            self?.verbindungPruefen()
-        }
+                                    unter: laeuft ? nil : pruefergebnis,
+                                    wert: laeuft ? pruefergebnis : nil,
+                                    auswahl: laeuft ? nil : { [weak self] in
+                                        self?.verbindungPruefen()
+                                    })
         anhaengen(s.raum, pruefzeile)
         anhaengen(rechts, s.aussen)
 
@@ -1230,6 +1240,17 @@ extension App {
         gtk_widget_set_margin_top(wort, 10)
         anhaengen(block, wort)
 
+        // **„Läuft ab in 4:58"** — der Mac zeigt die Restzeit sekundenweise
+        // (`ProfilView.swift:366-370`, `ServerAufnahmeView.swift:194-197`).
+        // Hier lief die Fuenf-Minuten-Grenze nur intern als Zaehler; wer den
+        // Code las, wusste nicht, wie lange er noch gilt.
+        kontoRestfeld = beschriftung("", stil: "swiftly-zweitzeile")
+        gtk_widget_add_css_class(kontoRestfeld, "swiftly-sehrleise")
+        gtk_label_set_xalign(OpaquePointer(kontoRestfeld), 0)
+        gtk_widget_set_margin_top(kontoRestfeld, 14)
+        gtk_widget_set_visible(kontoRestfeld, 0)
+        anhaengen(block, kontoRestfeld)
+
         kontoStandfeld = beschriftung(kontoFehler, stil: "swiftly-zweitzeile", umbruch: true)
         gtk_widget_add_css_class(kontoStandfeld, "swiftly-warnung")
         gtk_label_set_xalign(OpaquePointer(kontoStandfeld), 0)
@@ -1292,7 +1313,11 @@ extension App {
         let codeknopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(codeknopf, "swiftly-blank")
         gtk_button_set_child(alsKnopf(codeknopf), kontoCodefeld)
-        gtk_widget_set_halign(codeknopf, GTK_ALIGN_START)
+        // **Ueber die volle Breite.** Er stand linksbuendig und war damit nur
+        // so breit wie sechs Ziffern; der Mac setzt `frame(maxWidth:
+        // .infinity)` (`ProfilView.swift:358`).
+        gtk_widget_set_halign(codeknopf, GTK_ALIGN_FILL)
+        gtk_widget_set_hexpand(codeknopf, 1)
         gtk_widget_set_margin_top(codeknopf, 14)
         gtk_widget_set_tooltip_text(codeknopf, uebersetzt("Code kopieren"))
         beiSignal(codeknopf, "clicked") { [weak self] in

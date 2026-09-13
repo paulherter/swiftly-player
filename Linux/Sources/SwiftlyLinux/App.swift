@@ -77,6 +77,9 @@ final class App: @unchecked Sendable {
     /// Seitenstapel liegt der magere Listeneintrag; der traegt keine
     /// Besetzung. Nur fuer das ``Fernsteuerpult``.
     var letzterVollerTitel: Item?
+    /// Die Kontozeile unten in der Seitenleiste — sie traegt die
+    /// Hervorhebung, solange eine Unterseite offen ist.
+    private var profilzeile: Widget?
     /// Den Reiter der offenen Serienseite umschalten — ueber den Stapel,
     /// nicht ueber einen Neubau.
     var reiterZeigen: ((Reiter) -> Void)?
@@ -387,9 +390,10 @@ final class App: @unchecked Sendable {
             aufHauptfaden {
                 self.anmeldestandZeigen(String(format: uebersetzt("Code %@ — auf einem angemeldeten Gerät freigeben"), vorgang.code))
             }
-            // Höchstens fünf Minuten warten; danach ist der Code ohnehin tot.
-            for _ in 0..<150 {
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            // Frist und Takt stehen im Paket (``Quickconnectfrist``) — sie
+            // standen hier und in `kontoCodeHolen` zweimal derselbe Wert.
+            for _ in 0..<Quickconnectfrist.versuche {
+                try? await Task.sleep(nanoseconds: UInt64(Quickconnectfrist.takt) * 1_000_000_000)
                 guard (try? await c.quickConnectFreigegeben(vorgang)) == true else { continue }
                 guard let sitzung = try? await c.anmeldenMitQuickConnect(vorgang) else { break }
                 aufHauptfaden {
@@ -403,7 +407,7 @@ final class App: @unchecked Sendable {
                 }
                 return
             }
-            aufHauptfaden { self.anmeldestandZeigen(uebersetzt("Der Code ist abgelaufen.")) }
+            aufHauptfaden { self.anmeldestandZeigen(uebersetzt("Der Code ist abgelaufen. Hol dir einen neuen.")) }
         }
     }
 
@@ -881,10 +885,19 @@ final class App: @unchecked Sendable {
                 self.kontoCode = vorgang.code
                 gtk_label_set_text(OpaquePointer(self.kontoCodefeld), vorgang.code)
             }
-            // Hoechstens fuenf Minuten; danach ist der Code ohnehin tot.
-            for _ in 0..<150 {
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                if Task.isCancelled { return }
+            // Frist und Takt: ``Quickconnectfrist`` im Paket.
+            for versuch in 0..<Quickconnectfrist.versuche {
+                // **Die Restzeit wird sekundenweise gezeigt**, nicht im
+                // Zwei-Sekunden-Takt der Abfrage: eine Uhr, die zweimal
+                // dieselbe Zahl zeigt und dann zwei ueberspringt, sieht
+                // kaputt aus. Also je Runde zwei Schritte à einer Sekunde.
+                for _ in 0..<Quickconnectfrist.takt {
+                    let rest = Quickconnectfrist.sekunden
+                        - versuch * Quickconnectfrist.takt
+                    aufHauptfaden { self.kontoRestZeigen(rest) }
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    if Task.isCancelled { return }
+                }
                 guard (try? await c.quickConnectFreigegeben(vorgang)) == true else { continue }
                 guard let sitzung = try? await c.anmeldenMitQuickConnect(vorgang) else { break }
                 aufHauptfaden {
@@ -897,8 +910,24 @@ final class App: @unchecked Sendable {
                 }
                 return
             }
-            aufHauptfaden { self.kontoFehlerZeigen(uebersetzt("Der Code ist abgelaufen.")) }
+            aufHauptfaden {
+                self.kontoRestZeigen(nil)
+                self.kontoFehlerZeigen(uebersetzt("Der Code ist abgelaufen. Hol dir einen neuen."))
+            }
         }
+    }
+
+    /// „Läuft ab in 4:58" — `nil` blendet die Zeile aus.
+    private func kontoRestZeigen(_ sekunden: Int?) {
+        guard let feld = kontoRestfeld else { return }
+        guard let sekunden, sekunden > 0 else {
+            gtk_widget_set_visible(feld, 0)
+            return
+        }
+        let text = String(format: uebersetzt("Läuft ab in %d:%02d"),
+                          sekunden / 60, sekunden % 60)
+        gtk_label_set_text(OpaquePointer(feld), text)
+        gtk_widget_set_visible(feld, 1)
     }
 
     /// Eine Meldung in die Zeile unter den Feldern — **nicht** dorthin, wo der
@@ -1285,6 +1314,8 @@ final class App: @unchecked Sendable {
     var detailBeruehrt = false
     /// Was zuletzt bei „Verbindung prüfen" herauskam.
     var pruefergebnis = ""
+    /// „Läuft ab in 4:58" unter dem Quick-Connect-Code.
+    var kontoRestfeld: Widget!
     /// **Staffeln und Folgen, einmal geholt.**
     ///
     /// Der Mac hat dafür `Seriencache`: wer eine Serienseite verlässt und
@@ -1792,14 +1823,21 @@ final class App: @unchecked Sendable {
     ///
     /// Ein Takt statt eines einmaligen Blicks: die andere Sitzung fängt an,
     /// während diese App schon offen ist, und ein Angebot, das erst nach dem
-    /// nächsten Start erscheint, ist keins. Zehn Sekunden — der Server meldet
-    /// den Fortschritt ohnehin in dem Takt.
+    /// nächsten Start erscheint, ist keins.
+    ///
+    /// **Fünf Sekunden, nicht zehn.** Hier standen zehn, mit genau der
+    /// Begründung, die auf Apple am 10.09.2026 verworfen wurde: „der Server
+    /// meldet den Fortschritt ohnehin in dem Takt". Das stimmt für die
+    /// Stelle — nur wird hier nicht nach einem neuen Sekundenstand gesucht,
+    /// sondern nach einer Sitzung, die es vorher **gar nicht gab**, und die
+    /// meldet sich sofort. Die ganze Wartezeit entstand allein an dieser
+    /// Zahl (`Sources/Shared/Uebernahmemodell.swift:46-60`).
     func uebernahmetaktStarten() {
         uebernahmelauf?.cancel()
         uebernahmelauf = Task.detached { [self] in
             while !Task.isCancelled {
                 await self.uebernahmeFragen()
-                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
         }
     }
@@ -1876,6 +1914,13 @@ final class App: @unchecked Sendable {
     private func profilzeileBauen() -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-profil")
+        // **Sie traegt die Hervorhebung, solange eine Unterseite offen ist.**
+        // Auf dem Mac bekommt `Profilzeile` dafuer `aktiv: imKonto`
+        // (`HauptView.swift:831`) und faerbt Namen und Flaeche im Akzent.
+        // Hier nahm `bereichszeilenMalen` allen Bereichszeilen die
+        // Hervorhebung, sobald eine Unterseite offen war, gab sie aber
+        // nirgends weiter: dann leuchtete gar nichts mehr.
+        profilzeile = knopf
         raender(knopf, 12)
 
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
@@ -2863,6 +2908,10 @@ final class App: @unchecked Sendable {
             if !keiner, fall == bereich { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
             else { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
         }
+        if let profilzeile {
+            if offeneUnterseite != nil { gtk_widget_add_css_class(profilzeile, "swiftly-aktiv") }
+            else { gtk_widget_remove_css_class(profilzeile, "swiftly-aktiv") }
+        }
     }
 
     private func bibliothekszeilenMalen() {
@@ -3263,7 +3312,9 @@ final class App: @unchecked Sendable {
             anhaengen(reihe, chip)
         }
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
-        return scroller
+        // 34 hoch und 120 je Stueck — `Blätterreihe(breiteJeStueck: 120,
+        // bildHoehe: 34)` auf dem Mac (`HomeView.swift:248-264`).
+        return blaetterflaeche(scroller, bildHoehe: 34, stueck: 120)
     }
 
     private func reihenZeigen(_ reihen: [(String, Reihenart, [Item])]) {
@@ -3345,6 +3396,20 @@ final class App: @unchecked Sendable {
         for k in kacheln { anhaengen(reihe, k) }
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
 
+        let ueber = blaetterflaeche(scroller, bildHoehe: bildHoehe, stueck: stueck)
+
+        anhaengen(block, ueber)
+        return block
+    }
+
+    /// **Die Blätterpfeile über einer waagerechten Fläche.**
+    ///
+    /// Sie standen fest in ``reiheBauen(titel:bildHoehe:stueck:rand:kacheln:)``
+    /// und damit **nur** dort — die Genrechips oben auf der Startseite waren
+    /// ein nackter Scroller ohne Pfeile, als einzige waagerechte Reihe der
+    /// App. Auf dem Mac baut `Blätterreihe` beide (`HomeView.swift:248`).
+    private func blaetterflaeche(_ scroller: Widget!, bildHoehe: Int,
+                                 stueck: Int) -> Widget! {
         let ueber: Widget! = gtk_overlay_new()
         gtk_overlay_set_child(OpaquePointer(ueber), scroller)
 
@@ -3399,9 +3464,7 @@ final class App: @unchecked Sendable {
         beiZeiger(ueber, herein: { schwebt = true; nachfuehren() },
                          hinaus: { schwebt = false; nachfuehren() })
         nachfuehren()
-
-        anhaengen(block, ueber)
-        return block
+        return ueber
     }
 
     /// Ein Blätterpfeil, oben auf halber Bildhöhe.

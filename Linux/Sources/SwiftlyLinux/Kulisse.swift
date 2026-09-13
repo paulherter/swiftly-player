@@ -65,7 +65,11 @@ final class Kulisse: @unchecked Sendable {
     /// nicht die Rettung, sondern der erste Zugriff daneben. Gemessen am
     /// 05.09.2026, als eine Serienseite verlassen wurde, bevor ihr Bild da
     /// war.
-    private var lebt = true
+    /// **Ob die Zeichenflaeche noch steht.** Nicht privat: der Bannertakt der
+    /// Personenseite fragt sie, bevor er ein neues Bild setzt oder weiter
+    /// wartet — ein Takt, der auf ein abgeraeumtes GTK-Objekt zeigt, ist ein
+    /// Absturz.
+    private(set) var lebt = true
 
     /// **Ueber die volle Breite malen statt rechtsbuendig auf 62 %.**
     ///

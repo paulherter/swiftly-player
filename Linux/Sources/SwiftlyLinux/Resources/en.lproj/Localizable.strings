@@ -32,7 +32,7 @@
 "Code vom Fernseher eingeben" = "Enter the code from your TV";
 "Danach kommt nichts mehr." = "That's the last one.";
 "Darstellung" = "Appearance";
-"Der Code ist abgelaufen." = "The code has expired.";
+"Der Code ist abgelaufen. Hol dir einen neuen." = "The code has expired. Get a new one.";
 "Der Code stimmt nicht oder ist abgelaufen." = "That code is wrong or has expired.";
 "Der Fortschritt ist zurückgesetzt." = "Progress has been reset.";
 "Der Server hat keinen Code gegeben." = "The server did not give a code.";
@@ -298,9 +298,9 @@
 "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier." = "Every movie and show page has “Watchlist” in the button row. What you tap there collects here.";
 "Nichts in diesem Genre" = "Nothing in this genre";
 "Auf deinem Server steht gerade kein Film und keine Serie darin." = "Your server has no film and no series in it right now.";
-"Qualität" = "Quality";
 "Danach frei" = "Free afterwards";
 "Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird." = "Swiftly downloads the original file — the same quality as streaming, because nothing is ever re-encoded.";
 "Film" = "Movie";
 "Serie" = "Series";
 "Wirklich anfragen?" = "Really request it?";
+"Läuft ab in %d:%02d" = "Expires in %d:%02d";

@@ -56,15 +56,30 @@ actor Bildlager {
 /// aufgelegt — ohne Aufgabe, ohne Warten, ohne ``Schubsperre``. Damit kostet
 /// eine zweite Fahrt auf dieselbe Seite gar nichts mehr.
 ///
-/// Eine Textur trägt entpackte Punkte, also wird sie gedeckelt. Zweihundert
-/// Plakate sind grob fünfzig Megabyte; das Älteste geht, wenn es eng wird.
+/// **Eine Speichergrenze in Byte, keine Anzahl.**
+///
+/// Hier stand „hoechstens 200" mit der Rechnung „zweihundert Plakate sind
+/// grob fuenfzig Megabyte". Genau diese Fassung ist auf Apple verworfen
+/// worden, und der Grund steht dort ausgeschrieben
+/// (`Sources/Shared/Netzbild.swift:109-127`): **240 Plakate sind etwas
+/// voellig anderes als 240 Querbilder.** Wer in Bildern rechnet, rechnet
+/// nicht in dem, was knapp wird — ein Raster aus Querbildern belegte hier das
+/// Dreifache dessen, was die Zahl versprach.
+///
+/// Gemessen wird jetzt, was eine entschluesselte Textur wirklich belegt:
+/// Breite mal Hoehe mal vier Byte. Die Grenze ist derselbe Betrag wie auf dem
+/// Mac — ein Fenster kann viele Raster gleichzeitig zeigen.
 ///
 /// `nonisolated(unsafe)`, wie alles hier: angefasst wird es nur auf GTKs
 /// Hauptfaden.
 enum Bildspeicher {
     nonisolated(unsafe) private static var texturen: [String: OpaquePointer] = [:]
+    nonisolated(unsafe) private static var groessen: [String: Int] = [:]
     nonisolated(unsafe) private static var reihenfolge: [String] = []
-    private static let hoechstens = 200
+    nonisolated(unsafe) private static var belegt = 0
+
+    /// 256 MB, wie `Netzbild.speichergrenze` unter `#if os(macOS)`.
+    private static let grenze = 256 * 1024 * 1024
 
     static func holen(_ schluessel: String) -> OpaquePointer? { texturen[schluessel] }
 
@@ -75,10 +90,19 @@ enum Bildspeicher {
             g_object_unref(UnsafeMutableRawPointer(textur))
             return
         }
+        let breite = Int(gdk_texture_get_width(textur))
+        let hoehe = Int(gdk_texture_get_height(textur))
+        let bytes = max(breite * hoehe * 4, 1)
         texturen[schluessel] = textur
+        groessen[schluessel] = bytes
         reihenfolge.append(schluessel)
-        while reihenfolge.count > hoechstens {
+        belegt += bytes
+        // **Nie den letzten wegwerfen.** Sonst raeumt ein einzelnes Bild, das
+        // groesser ist als die Grenze, sich selbst wieder ab, und die Schleife
+        // liefe leer — dieselbe Sorte Schleife wie in `Fallen/`.
+        while belegt > grenze, reihenfolge.count > 1 {
             let alt = reihenfolge.removeFirst()
+            belegt -= groessen.removeValue(forKey: alt) ?? 0
             if let raus = texturen.removeValue(forKey: alt) {
                 g_object_unref(UnsafeMutableRawPointer(raus))
             }

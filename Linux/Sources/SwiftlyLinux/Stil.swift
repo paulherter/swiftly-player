@@ -475,6 +475,16 @@ enum Stil {
             border-radius: \(ecke)px;
         }
         button.swiftly-profil:hover { background-color: rgba(255,255,255,0.06); }
+        /* **Dieselbe Auswahl-Optik wie eine Bereichszeile** (E2: der Akzent
+           traegt Auswahl). Der Mac faerbt bei offener Unterseite Name und
+           Flaeche der Kontozeile im Akzent
+           (`Sources/macOS/HauptView.swift:892,903`); hier leuchtete dann gar
+           keine Zeile mehr, weil `bereichszeilenMalen` allen die
+           Hervorhebung nimmt und keine sie bekam. */
+        button.swiftly-profil.swiftly-aktiv {
+            background-color: rgba(92,209,194,0.10);
+        }
+        button.swiftly-profil.swiftly-aktiv label { color: \(akzent); }
 
         /* **Ein Ladefeld in der Form des kommenden Inhalts** (E17). Der
            Ladering kommt in der Oberfläche nicht vor — er sagt „warte" und
@@ -967,11 +977,16 @@ enum Stil {
 
         /* Der Quick-Connect-Code bekommt einen eigenen Teil — nicht die Zeile,
            in der Fehler stehen. Gross, mittig, auf eigener Flaeche. */
+        /* **Ueber die volle Breite, mit Rand** — `ProfilView.swift:353-364`:
+           `frame(maxWidth: .infinity)`, `Stil.flaeche` mit `Stil.ecke` und
+           eine Haarlinie darum. Die Haarlinie fehlte, und ohne sie steht der
+           Kasten nur da, wo der Text steht. */
         .swiftly-codegross {
             font-size: 40px;
             font-weight: 600;
             letter-spacing: 6px;
             background-color: \(flaeche);
+            border: 1px solid \(rand);
             border-radius: \(ecke)px;
             padding: 18px 0;
         }

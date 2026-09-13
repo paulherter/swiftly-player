@@ -1,5 +1,6 @@
 import Foundation
 import JellyfinKit
+import CGtk
 
 // Auf Apple liegt `URLSession` in Foundation, hier in FoundationNetworking.
 // Derselbe bedingte Import steht im Paket, aus demselben Grund.
@@ -67,13 +68,24 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     /// H5 gilt hier nicht: ein Schreibtischrechner hat kein Mobilfunknetz,
     /// und was ein USB-Modem kostet, weiss die App nicht. Die Regel wird
     /// trotzdem befragt, damit es **eine** Stelle bleibt.
-    /// **Ein Schreibtischrechner haengt am Kabel oder am WLAN, nie am
-    /// Mobilfunk** — hier gibt es nichts zu messen. Die Einstellung existiert
-    /// trotzdem (H5), weil ein Laptop an einem getakteten Anschluss haengen
-    /// kann; sie wird nur nie wirksam, solange wir die Verbindungsart nicht
-    /// kennen.
-    private let imWLAN = true
-    private var nurUeberWLAN: Bool { false }
+    /// **Doch, es gibt hier etwas zu messen.**
+    ///
+    /// Hier stand `imWLAN = true` und `nurUeberWLAN = false`, fest, mit der
+    /// Begruendung, ein Schreibtischrechner haenge nie am Mobilfunk. Der
+    /// Schalter in den Einstellungen wurde also gezeigt, gesichert — und
+    /// gelesen hat ihn niemand. Ein Bedienelement, das eine Wirkung
+    /// verspricht, die es nicht hat, ist schlechter als keins.
+    ///
+    /// GLib beantwortet genau diese Frage: `g_network_monitor_get_network_metered`
+    /// sagt, ob die Verbindung getaktet ist — bei NetworkManager also
+    /// Mobilfunk oder ein als „getaktet" markiertes WLAN. Das ist dieselbe
+    /// Auskunft, die `NWPathMonitor.isExpensive` auf Apple gibt, und der
+    /// Laptop am Telefon-Hotspot ist genau der Fall, fuer den H5 gebaut ist.
+    private var imWLAN: Bool {
+        guard let wacht = g_network_monitor_get_default() else { return true }
+        return g_network_monitor_get_network_metered(wacht) == 0
+    }
+    private var nurUeberWLAN: Bool { Wahlen.lesen().nurUeberWLAN }
 
     override init() {
         super.init()
@@ -267,6 +279,15 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
             // Das Bild gehoert zum Posten. Bliebe es liegen, sammelte der
             // Ordner Plakate zu Titeln an, die es hier nicht mehr gibt.
             try? FileManager.default.removeItem(at: Self.bildweg(p.konto, p.id))
+            // **Das Serienplakat teilen sich alle Folgen** — es geht erst mit
+            // der letzten, sonst stuende die vorletzte ohne Bild da. Hier
+            // ging es **nie**: die Datei blieb fuer immer im Ordner liegen,
+            // eine je jemals geladener Serie. Der Mac prueft an derselben
+            // Stelle (`Sources/Shared/Downloadverwaltung.swift:306-311`).
+            if let sid = p.serienId,
+               !posten.contains(where: { !weg.contains($0.id) && $0.serienId == sid }) {
+                try? FileManager.default.removeItem(at: Self.bildweg(p.konto, sid))
+            }
         }
         posten.removeAll { weg.contains($0.id) }
         sichern()
@@ -418,8 +439,27 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
 
     // MARK: Rueckmeldungen aus der Sitzung
 
+    /// Zuletzt gemeldeter Stand je Download — siehe ``fortschritt(_:)``.
+    private var gemeldet: [String: Int64] = [:]
+
     private func fortschritt(_ geladen: Int64) {
         guard let id = laufend, let i = posten.firstIndex(where: { $0.id == id }) else { return }
+
+        // **Nicht jede Rueckmeldung ist eine Aenderung, die man sieht.**
+        //
+        // Sie kommt im Takt der ankommenden Pakete — bei einer schnellen
+        // Leitung viele Male je Bild —, und `melden()` zeichnet daran haengende
+        // Zeilen samt Ring neu. Das ist das Flackern, das auf Apple schon
+        // einmal behoben wurde (`Sources/Shared/Downloadverwaltung.swift:405-423`).
+        //
+        // Ein halbes Prozent ist bei einem kleinen Ring rund ein halber
+        // Bildpunkt Bogen — darunter gibt es nichts zu sehen, und der letzte
+        // Schritt auf voll kommt ohnehin ueber den Abschluss.
+        let grenze = max(Int64(1), posten[i].bytes / 200)
+        let vorher = gemeldet[id] ?? 0
+        guard geladen - vorher >= grenze || geladen < vorher else { return }
+        gemeldet[id] = geladen
+
         posten[i].geladen = geladen
 
         // **Nicht bei jedem Stueck auf die Platte.** Der Fortschritt aendert

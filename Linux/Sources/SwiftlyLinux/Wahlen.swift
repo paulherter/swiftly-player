@@ -20,15 +20,12 @@ struct Wahlen: Codable {
     /// `Startseitenmodell` wertet es aus; die Zeile fehlte auf Linux ganz.
     var neuzugaengeGetrennt = true
 
-    /// **Was dem Server als Grenze gemeldet wird.**
-    ///
-    /// Eine Milliarde heisst praktisch unbegrenzt — ein Limit löst
-    /// Transkodierung aus, auch wenn Container und Codec passen. Wörtlich
-    /// `AppModel.profilBitrate` vom Mac; die beiden Einstellungen darüber
-    /// waren auf Linux gesetzt, gesichert und ohne jede Wirkung, weil sie
-    /// niemand las.
+    /// **Was dem Server als Grenze gemeldet wird** — die Rechnung liegt im
+    /// Paket (``Bitratengrenze``). Sie stand hier und in `AppModel` wortgleich
+    /// zweimal; an ihr haengt das Versprechen der App, und zwei Bauplaetze
+    /// dafuer laufen garantiert auseinander.
     var profilBitrate: Int {
-        immerDirectPlay || bitratenGrenze <= 0 ? 1_000_000_000 : bitratenGrenze * 1_000_000
+        Bitratengrenze.fuer(immerDirectPlay: immerDirectPlay, megabit: bitratenGrenze)
     }
     var naechsteAutomatisch = true
     var zurueckSekunden = 10

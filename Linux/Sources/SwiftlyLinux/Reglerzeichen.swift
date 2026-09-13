@@ -112,3 +112,90 @@ nonisolated(unsafe) private let kreisMalen: @convention(c) (
     cairo_arc(cr, Double(breite) / 2, Double(hoehe) / 2, r, 0, 2 * Double.pi)
     cairo_stroke(cr)
 }
+
+/// **Das Lesezeichen — gezeichnet, weil beide Zeichensätze etwas anderes
+/// meinen.**
+///
+/// Der Mac nimmt `bookmark` und `bookmark.fill` (`DetailView.swift:506`): ein
+/// schlichtes Bändchen, leer oder gefüllt. Breeze hat unter
+/// `bookmark-new-symbolic` ein Bändchen **mit Pluszeichen** — „neues
+/// Lesezeichen anlegen", nicht „auf der Merkliste" —, und
+/// `user-bookmarks-symbolic` ist ein Ordner. Beides sagt etwas anderes als
+/// die Vorlage, und der Knopf hat zwei Zustände, die sich unterscheiden
+/// müssen.
+///
+/// Dieselbe Antwort wie bei ``Sprungzeichen``, ``Reglerzeichen`` und
+/// ``Kreiszeichen``.
+final class Merkzeichen: @unchecked Sendable {
+    fileprivate var lebt = true
+    fileprivate var gefuellt: Bool
+    fileprivate let mass: Double
+    let anzeige: Widget
+
+    init(gefuellt: Bool, mass: Double = 17) {
+        self.gefuellt = gefuellt
+        self.mass = mass
+        let feld: Widget! = gtk_drawing_area_new()
+        gtk_widget_add_css_class(feld, "swiftly-blank")
+        gtk_drawing_area_set_content_width(alsZeichen(feld), Int32(mass))
+        gtk_drawing_area_set_content_height(alsZeichen(feld), Int32(mass))
+        anzeige = feld!
+        gtk_drawing_area_set_draw_func(alsZeichen(feld), merkMalen,
+                                       Unmanaged.passUnretained(self).toOpaque(), nil)
+        beiSignal(feld, "destroy") { self.lebt = false }
+    }
+
+    /// Umschalten, ohne den Knopf neu zu bauen.
+    func setzen(_ neu: Bool) {
+        guard neu != gefuellt else { return }
+        gefuellt = neu
+        gtk_widget_queue_draw(anzeige)
+    }
+
+    /// **Welche Farbe das Zeichen trägt.** Ein `Nebenknopf` färbt sein Bild
+    /// über das Stilblatt; eine Zeichenfläche malt selbst, also muss sie den
+    /// Wechsel auf dunkle Schrift bei aktivem Knopf mitmachen.
+    fileprivate var dunkel = false
+    func aufHellemGrund(_ ja: Bool) {
+        guard ja != dunkel else { return }
+        dunkel = ja
+        gtk_widget_queue_draw(anzeige)
+    }
+}
+
+nonisolated(unsafe) private let merkMalen: @convention(c) (
+    UnsafeMutablePointer<GtkDrawingArea>?, OpaquePointer?, Int32, Int32, gpointer?
+) -> Void = { _, cr, breite, hoehe, daten in
+    guard let cr, let daten else { return }
+    let z = Unmanaged<Merkzeichen>.fromOpaque(daten).takeUnretainedValue()
+    guard z.lebt else { return }
+
+    let w = Double(breite), h = Double(hoehe)
+    let strich = max(z.mass * 0.088, 1.2)
+    // Das Bändchen: 60 % breit, 78 % hoch, mittig, unten eine Kerbe von
+    // 22 % der Höhe. Die Verhältnisse sind an `bookmark` abgemessen.
+    let bb = w * 0.60, bh = h * 0.78
+    let x0 = (w - bb) / 2, y0 = (h - bh) / 2
+    let kerbe = bh * 0.22
+    let r = strich * 0.9
+
+    cairo_new_path(cr)
+    cairo_move_to(cr, x0, y0 + r)
+    cairo_arc(cr, x0 + r, y0 + r, r, Double.pi, 1.5 * Double.pi)
+    cairo_line_to(cr, x0 + bb - r, y0)
+    cairo_arc(cr, x0 + bb - r, y0 + r, r, 1.5 * Double.pi, 2 * Double.pi)
+    cairo_line_to(cr, x0 + bb, y0 + bh)
+    cairo_line_to(cr, x0 + bb / 2, y0 + bh - kerbe)
+    cairo_line_to(cr, x0, y0 + bh)
+    cairo_close_path(cr)
+
+    if z.dunkel { cairo_set_source_rgba(cr, 0.043, 0.043, 0.051, 1) }
+    else        { cairo_set_source_rgba(cr, 1, 1, 1, 1) }
+    if z.gefuellt {
+        cairo_fill(cr)
+    } else {
+        cairo_set_line_width(cr, strich)
+        cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND)
+        cairo_stroke(cr)
+    }
+}

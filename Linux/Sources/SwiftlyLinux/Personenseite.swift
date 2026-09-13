@@ -206,35 +206,55 @@ extension App {
         return String(format: uebersetzt("Geboren %@"), f.string(from: datum))
     }
 
-    /// Das Banner zeigt einen Hintergrund aus den Titeln dieser Person.
+    /// Das Banner wechselt zwischen den Hintergründen ihrer Titel.
     ///
-    /// **Nur ein Bild, kein Wechsel.** Auf Apple wechselt es alle sechs
-    /// Sekunden zwischen den Hintergründen. Hier steht bewusst das erste
-    /// still: der Wechsel braucht einen Takt, der beim Verlassen der Seite
-    /// sauber endet, und ein Takt, der auf ein abgeräumtes GTK-Objekt zeigt,
-    /// ist ein Absturz. Das kommt nach, wenn der Rest steht — als eigener
-    /// Schritt, nicht nebenbei.
+    /// **Alle sechs Sekunden, weich** — so auf Apple
+    /// (`Sources/macOS/PersonView.swift:109-118`: sechs Sekunden Standzeit,
+    /// 1,2 Sekunden Überblendung). Hier stand bisher das erste Bild still,
+    /// mit dem Vermerk, ein Takt auf einem abgeräumten GTK-Objekt sei ein
+    /// Absturz. Das stimmt — und ``Kulisse`` weiss es schon: sie merkt sich
+    /// über `destroy`, ob sie noch lebt, und `setzen` steigt dann aus. Der
+    /// Takt fragt dasselbe, bevor er weitermacht, und endet damit von selbst.
+    ///
+    /// **Nur echte Querbilder wechseln.** Hat keiner der Titel eines, nimmt
+    /// das Banner, was der erste als Ersatz hergibt — sonst sässe der runde
+    /// Kopf unten in einer dunklen Fläche. Genau der „viel zu tiefe" Kopf,
+    /// den Paul gemeldet hat; auf Apple fängt `kopfbildURL` denselben Fall ab.
     private func personBannerNachladen(_ person: Item, in kulisse: Kulisse) {
         guard let client, let adressen else { return }
         Task.detached { [self] in
             let titel = await client.titel(person: person.id)
             guard let erster = titel.first else { return }
-            // **Nur echte Querbilder — und wenn keiner eines hat, der
-            // Ersatz.** Hat der erste Titel keinen Hintergrund, blieb die
-            // Kulisse hier leer, und der runde Kopf sass unten in 380 Punkt
-            // Dunkelheit. Genau der „viel zu tiefe" Kopf, den Paul gemeldet
-            // hat; auf Apple faengt `kopfbildURL` denselben Fall ab
-            // (`PersonView.swift:245`).
-            var gross = Bildwahl.quer(erster, adressen: adressen, breite: 1600)?.url
-            if gross == nil {
-                gross = await client.kopfbildErsatz(fuer: erster, adressen: adressen,
-                                                    breite: 1600)
+            var bilder = titel.compactMap {
+                Bildwahl.quer($0, adressen: adressen, breite: 1600)?.url
             }
-            guard let gross,
-                  let daten = await Bildlager.shared.laden(gross,
-                                                           schluessel: Bildschluessel.fuer(gross))
-            else { return }
-            aufHauptfaden { kulisse.setzen(daten) }
+            if bilder.isEmpty,
+               let ersatz = await client.kopfbildErsatz(fuer: erster, adressen: adressen,
+                                                        breite: 1600) {
+                bilder = [ersatz]
+            }
+            guard !bilder.isEmpty else { return }
+            await personBannerWechseln(bilder, in: kulisse)
+        }
+    }
+
+    /// Der Takt selbst. Läuft, bis die Zeichenfläche stirbt.
+    private func personBannerWechseln(_ bilder: [URL], in kulisse: Kulisse) async {
+        var stelle = 0
+        while true {
+            let url = bilder[stelle % bilder.count]
+            guard kulisse.lebt else { return }
+            if let daten = await Bildlager.shared.laden(url,
+                                                        schluessel: Bildschluessel.fuer(url)) {
+                // `setzen` prueft selbst noch einmal — zwischen hier und dem
+                // Hauptfaden kann die Seite weg sein.
+                aufHauptfaden { kulisse.setzen(daten) }
+            }
+            // Mit einem Bild gibt es nichts zu wechseln.
+            guard bilder.count > 1 else { return }
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            guard kulisse.lebt else { return }
+            stelle += 1
         }
     }
 

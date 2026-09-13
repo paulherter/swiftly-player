@@ -630,15 +630,29 @@ extension App {
         // **Merkliste schaltet sofort um, ohne Rückfrage** (D6). Der Zustand
         // des Knopfes ist die Antwort. Das Zeichen ist ein Lesezeichen, kein
         // Stern — auf dem Mac steht dort `bookmark`.
+        //
+        // **Gemalt, nicht gesucht.** Breeze fuehrt unter
+        // `bookmark-new-symbolic` ein Baendchen mit Pluszeichen — das heisst
+        // „neues Lesezeichen anlegen", nicht „auf der Merkliste" — und kennt
+        // keine gefuellte Fassung. Siehe ``Merkzeichen``.
         var gemerkt = titel.userData?.isFavorite ?? false
-        let merk = nebenknopf("bookmark-new-symbolic", aktiv: gemerkt)
+        let merkzeichen = Merkzeichen(gefuellt: gemerkt)
+        merkzeichen.aufHellemGrund(gemerkt)
+        let merk = nebenknopf("", name: uebersetzt("Merkliste"), aktiv: gemerkt,
+                              zeichnung: merkzeichen.anzeige)
         beiSignal(merk, "clicked") { [weak self] in
             guard let self, let client = self.client else { return }
             gemerkt.toggle()
-            knopfzustand(merk, aktiv: gemerkt, symbol: "bookmark-new-symbolic")
+            if gemerkt { gtk_widget_add_css_class(merk, "swiftly-aktiv") }
+            else       { gtk_widget_remove_css_class(merk, "swiftly-aktiv") }
+            merkzeichen.setzen(gemerkt)
+            merkzeichen.aufHellemGrund(gemerkt)
             let neu = gemerkt
             Task.detached { try? await client.setzeMerkliste(itemID: titel.id, an: neu) }
         }
+        // Die Zeichenflaeche haelt ihr Zeichen; ohne diesen Zugriff stirbt es
+        // beim Verlassen des Aufrufs.
+        beiSignal(merkzeichen.anzeige, "destroy") { _ = merkzeichen }
         anhaengen(reihe, merk)
 
         // **H1: der Ladeknopf gibt es nur mit dem Schalter.** Wer Downloads

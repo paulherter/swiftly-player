@@ -35,7 +35,7 @@
 "Code vom Fernseher eingeben" = "Code vom Fernseher eingeben";
 "Danach kommt nichts mehr." = "Danach kommt nichts mehr.";
 "Darstellung" = "Darstellung";
-"Der Code ist abgelaufen." = "Der Code ist abgelaufen.";
+"Der Code ist abgelaufen. Hol dir einen neuen." = "Der Code ist abgelaufen. Hol dir einen neuen.";
 "Der Code stimmt nicht oder ist abgelaufen." = "Der Code stimmt nicht oder ist abgelaufen.";
 "Der Fortschritt ist zurückgesetzt." = "Der Fortschritt ist zurückgesetzt.";
 "Der Server hat keinen Code gegeben." = "Der Server hat keinen Code gegeben.";
@@ -301,9 +301,9 @@
 "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier." = "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier.";
 "Nichts in diesem Genre" = "Nichts in diesem Genre";
 "Auf deinem Server steht gerade kein Film und keine Serie darin." = "Auf deinem Server steht gerade kein Film und keine Serie darin.";
-"Qualität" = "Qualität";
 "Danach frei" = "Danach frei";
 "Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird." = "Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird.";
 "Film" = "Film";
 "Serie" = "Serie";
 "Wirklich anfragen?" = "Wirklich anfragen?";
+"Läuft ab in %d:%02d" = "Läuft ab in %d:%02d";
