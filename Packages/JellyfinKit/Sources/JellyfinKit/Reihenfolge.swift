@@ -58,3 +58,33 @@ public enum Listenregeln {
         return items[max(0, items.count - 3 * spalten)].id
     }
 }
+
+public extension JellyfinClient {
+
+    /// **Was zuletzt dazugekommen ist — eine Zeile je Serie.**
+    ///
+    /// **Nicht Jellyfins eigene Gruppierung.** `GroupItems=true` fasst zwar
+    /// zusammen, liefert dabei aber so wenige Einträge, dass die Reihe fast
+    /// leer aussieht: bei zwanzig angefragten Titeln blieben vier übrig. Also
+    /// **ungruppiert und großzügig holen**, dann selbst zusammenfassen —
+    /// eine Serie steht einmal da, mit ihrer neuesten Folge, ein Film für sich.
+    ///
+    /// Sechzig geholt, vierundzwanzig gezeigt: der Überhang deckt den Fall,
+    /// dass eine einzelne Serie die halbe Antwort füllt.
+    func zuletztHinzugefuegt(in bibliothek: String? = nil,
+                             holen: Int = 60, zeigen: Int = 24) async -> [Item]? {
+        guard let roh = try? await latest(parentID: bibliothek, limit: holen,
+                                          gruppieren: false)
+        else { return nil }
+        var gesehen = Set<String>()
+        var ergebnis: [Item] = []
+        for eintrag in roh {
+            // Filme haben keine Serie und stehen für sich.
+            let schluessel = eintrag.seriesId ?? eintrag.id
+            guard gesehen.insert(schluessel).inserted else { continue }
+            ergebnis.append(eintrag)
+            if ergebnis.count >= zeigen { break }
+        }
+        return ergebnis
+    }
+}

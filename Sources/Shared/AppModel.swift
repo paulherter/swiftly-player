@@ -986,22 +986,11 @@ final class AppModel {
     /// zusammenfassen: die erste Folge je Serie ist die neueste, weil der
     /// Server bereits nach Datum sortiert.
     /// - Parameter in: Nur aus dieser Bibliothek. `nil` heißt: aus allen.
+    /// **Die Regel liegt im Paket** (`JellyfinClient.zuletztHinzugefuegt`) —
+    /// sie stand hier und erreichte Linux und Windows nicht.
     func zuletztHinzugefuegt(in bibliothek: String? = nil) async -> [Item]? {
-        guard let client,
-              let roh = try? await client.latest(parentID: bibliothek,
-                                                 limit: 60, gruppieren: false)
-        else { return nil }
-
-        var gesehen = Set<String>()
-        var ergebnis: [Item] = []
-        for eintrag in roh {
-            // Filme haben keine Serie und stehen für sich.
-            let schluessel = eintrag.seriesId ?? eintrag.id
-            guard gesehen.insert(schluessel).inserted else { continue }
-            ergebnis.append(eintrag)
-            if ergebnis.count >= 24 { break }
-        }
-        return ergebnis
+        guard let client else { return nil }
+        return await client.zuletztHinzugefuegt(in: bibliothek)
     }
 
     /// Eine Seite aus einer Bibliothek.

@@ -19,16 +19,25 @@ import JellyfinKit
 
 /// Ein Feld wie `Eingabezeile` auf dem Mac: Symbol links, 38 hoch, Ecke 10,
 /// Haarlinie in Weiß 12 %, im Fokus der Akzent. Die Maße stehen im Stilblatt.
-func eingabezeile(symbol: String, platzhalter: String, geheim: Bool = false) -> Widget! {
+///
+/// **`dehnt` sagt, ob das Feld seine Spalte füllt.** Auf dem Mac hat
+/// `Eingabezeile` gar keine eigene Breite (`macOS/RootView.swift:159-193`) —
+/// sie kommt vom Block darum: 360 auf dem Anmeldeschirm, 460 auf den
+/// Formularseiten. Hier standen überall feste 360 mit `ALIGN_CENTER`, und
+/// damit schwebte in einer 460 Punkt breiten Spalte ein schmaler Streifen in
+/// der Mitte.
+func eingabezeile(symbol: String, platzhalter: String, geheim: Bool = false,
+                  dehnt: Bool = false) -> Widget! {
     let feld: Widget! = gtk_entry_new()
     gtk_entry_set_placeholder_text(alsFeld(feld), platzhalter)
     gtk_entry_set_icon_from_icon_name(alsFeld(feld), GTK_ENTRY_ICON_PRIMARY, symbol)
     // Das Symbol soll nicht anklickbar wirken — es ist Beschriftung, kein Knopf.
     gtk_entry_set_icon_activatable(alsFeld(feld), GTK_ENTRY_ICON_PRIMARY, 0)
     if geheim { gtk_entry_set_visibility(alsFeld(feld), 0) }
-    gtk_widget_set_size_request(feld, Int32(Stil.anmeldeBreite), Int32(Stil.feldHoehe))
-    gtk_widget_set_hexpand(feld, 0)
-    gtk_widget_set_halign(feld, GTK_ALIGN_CENTER)
+    gtk_widget_set_size_request(feld, dehnt ? -1 : Int32(Stil.anmeldeBreite),
+                                Int32(Stil.feldHoehe))
+    gtk_widget_set_hexpand(feld, dehnt ? 1 : 0)
+    gtk_widget_set_halign(feld, dehnt ? GTK_ALIGN_FILL : GTK_ALIGN_CENTER)
     return feld
 }
 
@@ -296,8 +305,11 @@ func fach(_ kind: Widget!, breite: Int, hoehe: Int,
 /// Die halbfette Schrift im aktiven Zustand steht so auf dem Mac und ist
 /// kein Zufall: der Chip wird dadurch minimal breiter, und das ist die
 /// einzige Stelle, an der man die Wahl auch ohne Farbe sieht.
+/// - Parameter zeichnung: Ein selbst gemaltes Zeichen statt eines Namens aus
+///   dem Zeichensatz — für die Fälle, in denen Adwaita nichts Passendes hat
+///   (siehe ``Reglerzeichen``). Hat Vorrang vor `symbol`.
 func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false,
-          nurSymbol: Bool = false) -> Widget! {
+          nurSymbol: Bool = false, zeichnung: Widget? = nil) -> Widget! {
     let knopf: Widget! = gtk_button_new()
     gtk_widget_add_css_class(knopf, "swiftly-chip")
     if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
@@ -312,7 +324,9 @@ func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false,
     // Inhalt die Breite ohnehin ausfuellt — bei einem Zeichen allein schon:
     // es stand sichtbar links statt mittig. Am Geraet gemeldet.
     gtk_widget_set_halign(reihe, GTK_ALIGN_CENTER)
-    if let symbol {
+    if let zeichnung {
+        anhaengen(reihe, zeichnung)
+    } else if let symbol {
         let bild: Widget! = gtk_image_new_from_icon_name(symbol)
         gtk_image_set_pixel_size(OpaquePointer(bild), 12)
         anhaengen(reihe, bild)
@@ -507,16 +521,20 @@ func schalterzeile(symbol: String, titel: String, unter: String? = nil,
     var zustand = an
     let schalter: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(schalter, "swiftly-schalter")
-    // **46 x 28 mit 22er Knauf, wie auf dem Mac** (`Stil.swift:795` —
-    // `Capsule().frame(width: 46, height: 28)` und `Circle().frame(22)`).
-    // Hier standen 38 x 22 mit 16er Knauf; beide Fassungen laufen auf einem
-    // Schreibtisch, das ist also keine erlaubte Abweichung nach Abschnitt F,
-    // sondern eine Zahl, die beim Nachbauen geschaetzt wurde.
-    gtk_widget_set_size_request(schalter, 46, 28)
+    // **38 x 22 mit 16er Knauf — und die 46 x 28 waren ein Fehlgriff.**
+    //
+    // Sie standen hier mit Verweis auf `Stil.swift:795`. Diese Zeile gibt es
+    // nur in `Sources/Shared/Stil.swift`, dem iPhone-Blatt: dort ist der
+    // Schalter fuer den Finger gebaut. `Sources/macOS/Stil.swift` ist 295
+    // Zeilen lang und hat gar keine 795. Der Mac hat seinen eigenen
+    // `Schalter` (`Sources/macOS/Einstellungszeilen.swift:128-143`), und der
+    // ist ausdruecklich verkleinert — der Dateikopf dort sagt: „Zeilen sind
+    // 44 statt 52 hoch … Anders ist nur, was mit dem Zeiger zu tun hat."
+    gtk_widget_set_size_request(schalter, 38, 22)
     gtk_widget_set_valign(schalter, GTK_ALIGN_CENTER)
     let knauf: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(knauf, "swiftly-knauf")
-    gtk_widget_set_size_request(knauf, 22, 22)
+    gtk_widget_set_size_request(knauf, 16, 16)
     gtk_widget_set_valign(knauf, GTK_ALIGN_CENTER)
     anhaengen(schalter, knauf)
 
@@ -734,20 +752,31 @@ func auswahlzeile(_ text: String, an: Bool, _ tun: @escaping () -> Void) -> Widg
     let knopf: Widget! = gtk_button_new()
     gtk_widget_add_css_class(knopf, "swiftly-zeilenrumpf")
     let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
-    gtk_widget_set_margin_start(zeile, 14)
-    gtk_widget_set_margin_end(zeile, 14)
-    gtk_widget_set_margin_top(zeile, 10)
-    gtk_widget_set_margin_bottom(zeile, 10)
+    // **Keine eigenen Raender.** `swiftly-zeilenrumpf` traegt schon 44
+    // Mindesthoehe und 14 seitlich; die 14/10 hier oben drauf machten die
+    // Zeile hoeher als jede andere Zeile derselben Karte.
     // **Das Zeichen steht links, wie auf dem Mac** — Haken bei der gewaehlten,
     // leerer Kreis bei den uebrigen, und die gewaehlte Zeile traegt den Akzent
-    // (E2: der Akzent traegt Auswahl). Hier stand der Haken rechts und der
-    // Text blieb weiss; damit sah die Zeile aus wie eine Wertzeile.
-    let zeichen: Widget! = gtk_image_new_from_icon_name(
-        an ? "object-select-symbolic" : "radio-symbolic")
-    gtk_image_set_pixel_size(OpaquePointer(zeichen), 15)
+    // (E2: der Akzent traegt Auswahl).
+    //
+    // **Der leere Kreis wird gemalt.** Hier stand `radio-symbolic`, und das
+    // ist im Adwaita-Satz ein *Kofferradio mit Antenne*. Am Geraet
+    // nachgesehen — es stand tatsaechlich eines in der Zeile. Siehe
+    // ``Kreiszeichen``.
+    let zeichen: Widget!
+    if an {
+        zeichen = gtk_image_new_from_icon_name("object-select-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(zeichen), 15)
+        gtk_widget_add_css_class(zeichen, "swiftly-akzentzeile")
+    } else {
+        let kreis = Kreiszeichen(mass: 15)
+        zeichen = kreis.anzeige
+        // Die Zeichenflaeche haelt ihr Zeichen; ohne diesen Zugriff stirbt
+        // es beim Verlassen des Aufrufs. Derselbe Fall wie bei ``Kulisse``.
+        beiSignal(zeichen, "destroy") { _ = kreis }
+    }
     gtk_widget_set_size_request(zeichen, 22, -1)
-    if an { gtk_widget_add_css_class(zeichen, "swiftly-akzentzeile") }
-    else { gtk_widget_add_css_class(zeichen, "swiftly-sehrleise") }
+    gtk_widget_set_valign(zeichen, GTK_ALIGN_CENTER)
     anhaengen(zeile, zeichen)
     let l = beschriftung(text, stil: "swiftly-koerper")
     gtk_label_set_xalign(OpaquePointer(l), 0)
@@ -761,15 +790,19 @@ func auswahlzeile(_ text: String, an: Bool, _ tun: @escaping () -> Void) -> Widg
 
 /// Der Schalter aus ``schalterzeile(symbol:titel:unter:an:umgeschaltet:)``,
 /// aber ohne Zeile drumherum — für Listen, die schon eine eigene haben.
+///
+/// **„Klein" heisst hier ohne Zeile, nicht kleiner.** Der Mac kennt nur eine
+/// Baugroesse (`Einstellungszeilen.swift:128`); die Reihenliste in der
+/// Darstellung benutzt denselben `Schalter` wie jede andere Zeile.
 func kleinerSchalter(an: Bool, _ umgeschaltet: @escaping (Bool) -> Void) -> Widget! {
     var zustand = an
     let schalter: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(schalter, "swiftly-schalter")
-    gtk_widget_set_size_request(schalter, 46, 28)
+    gtk_widget_set_size_request(schalter, 38, 22)
     gtk_widget_set_valign(schalter, GTK_ALIGN_CENTER)
     let knauf: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(knauf, "swiftly-knauf")
-    gtk_widget_set_size_request(knauf, 22, 22)
+    gtk_widget_set_size_request(knauf, 16, 16)
     gtk_widget_set_valign(knauf, GTK_ALIGN_CENTER)
     anhaengen(schalter, knauf)
 

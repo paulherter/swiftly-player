@@ -281,15 +281,24 @@ extension App {
         // Die Tafel traegt mehr als Ton und Untertitel — seit sie die Form der
         // Mac-Fassung hat, stehen dort auch Bildformat, Tempo, Schlafzeit und
         // das Technikschild.
-        let spuren = chip(uebersetzt("Wiedergabe"), symbol: "media-eq-symbolic",
-                          nurSymbol: true)
+        // **Gezeichnet, nicht gesucht.** `media-eq-symbolic` gibt es im
+        // Adwaita-Satz nicht — GTK zeigte dafuer das Ersatzbild. Der Mac
+        // nimmt `slider.horizontal.3`; ``Reglerzeichen`` malt es.
+        let regler = Reglerzeichen(mass: 13)
+        spielerReglerzeichen = regler
+        let spuren = chip(uebersetzt("Wiedergabe"), nurSymbol: true,
+                          zeichnung: regler.anzeige)
         spielerSpurknopf = spuren
         beiSignal(spuren, "clicked") { [weak self] in self?.spurwahlZeigen() }
         anhaengen(oben, spuren)
 
         // Der Winkel zeigt nach unten, weil der Player von unten aufsteigt und
         // wieder dorthin verschwindet.
-        let zu = chip(uebersetzt("Schließen"), symbol: "go-down-symbolic", nurSymbol: true)
+        // `chevron.down` auf dem Mac (`PlayerScreen.swift:431`) — ein Winkel,
+        // kein Pfeil. Der Winkel heisst hier `pan-down-symbolic`;
+        // `go-down-symbolic` ist der ausgefuellte Pfeil und sagt „herunter-
+        // laden".
+        let zu = chip(uebersetzt("Schließen"), symbol: "pan-down-symbolic", nurSymbol: true)
         beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
         anhaengen(oben, zu)
         return oben
@@ -873,7 +882,7 @@ extension App {
     ///
     /// Die Tafel klappt weiter **unter dem Knopf** auf, aus dem sie stammt
     /// (E5) — kleine Entscheidungen erscheinen dort, wo sie ausgeloest wurden.
-    private func spurwahlZeigen() {
+    func spurwahlZeigen() {
         steuerungZeigen()
         if spurtafel != nil {
             // **Ein Ueberzug wird ueber den Ueberzug entfernt**, nicht ueber
@@ -898,9 +907,12 @@ extension App {
         let spalten = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
 
         // --- Leiste links ------------------------------------------------
-        let leiste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 3)
+        // 260 breit, Innenrand 10, Zeilenabstand 4 — `Spurwahl.swift:105,154`.
+        let leiste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 4)
+        gtk_widget_add_css_class(leiste, "swiftly-spurleiste")
         raender(leiste, 10)
-        gtk_widget_set_size_request(leiste, 250, -1)
+        gtk_widget_set_size_request(leiste, 260, -1)
+        gtk_widget_set_valign(leiste, GTK_ALIGN_FILL)
         // **Das Technikschild steht abgesetzt, und es ist ein Schalter.**
         //
         // Auf dem Mac trennt eine Haarlinie es von den fuenf Waehlern darueber
@@ -918,10 +930,18 @@ extension App {
         gtk_widget_set_margin_bottom(tstrich, 8)
         anhaengen(leiste, tstrich)
 
-        let tzeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 9)
-        raender(tzeile, 8)
+        // Dieselbe Zeile wie die fuenf darueber, nur mit Schalter statt Wert
+        // (`Spurwahl.swift:133-147`).
+        let tzeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        // Ein Kasten, kein Knopf — die Klassenregel greift nur auf `button`,
+        // also stehen Hoehe und seitlicher Rand hier.
+        gtk_widget_set_size_request(tzeile, -1, 40)
+        gtk_widget_set_margin_start(tzeile, 12)
+        gtk_widget_set_margin_end(tzeile, 12)
         let tbild: Widget! = gtk_image_new_from_icon_name(Spurbereich.technik.symbol)
         gtk_image_set_pixel_size(OpaquePointer(tbild), 13)
+        gtk_widget_set_size_request(tbild, 18, -1)
+        gtk_widget_add_css_class(tbild, "swiftly-spurzeichen")
         anhaengen(tzeile, tbild)
         let tl = beschriftung(Spurbereich.technik.titel, stil: "swiftly-koerper")
         gtk_label_set_xalign(OpaquePointer(tl), 0)
@@ -936,12 +956,18 @@ extension App {
         anhaengen(leiste, tzeile)
         anhaengen(spalten, leiste)
 
-        // **Kein Strich zwischen den Spalten.** Auf dem Mac ist es ein Kasten;
-        // hier standen zwei mit sichtbarer Kante dazwischen.
+        // **Doch ein Strich.** `Spurwahl.swift:79` setzt zwischen die Spalten
+        // `Stil.linie.frame(width: 1)`. Hier stand das Gegenteil als
+        // Kommentar — geschrieben, ohne die Vorlage aufzuschlagen.
+        let spaltenstrich: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        gtk_widget_add_css_class(spaltenstrich, "swiftly-trennlinie")
+        gtk_widget_set_size_request(spaltenstrich, 1, -1)
+        anhaengen(spalten, spaltenstrich)
 
         // --- Auswahl rechts ----------------------------------------------
+        // Innenrand 18 — `Spurwahl.swift:81`.
         let rechts = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
-        raender(rechts, 16)
+        raender(rechts, 18)
         gtk_widget_set_hexpand(rechts, 1)
         // **Ohne Rubrik.** Welcher Bereich gemeint ist, sagt die
         // hervorgehobene Zeile links — die Ueberschrift daneben wiederholt sie
@@ -966,7 +992,8 @@ extension App {
         let rahmen: Widget! = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_add_css_class(rahmen, "swiftly-tafel")
         anhaengen(rahmen, spalten)
-        gtk_widget_set_size_request(rahmen, 640, -1)
+        // 660 breit — `Spurwahl.swift:88`.
+        gtk_widget_set_size_request(rahmen, 660, -1)
         gtk_widget_set_halign(rahmen, GTK_ALIGN_END)
         gtk_widget_set_valign(rahmen, GTK_ALIGN_START)
         // 18 oben plus 28 Knopfhoehe plus 18 Abstand — der Versatz vom Mac.
@@ -979,13 +1006,19 @@ extension App {
     }
 
     /// Eine Zeile der Leiste: Zeichen, Name und der Stand.
+    /// **Eine eigene Klasse, nicht `swiftly-wertzeile`.** Die traegt 48
+    /// Punkt Einzug links, weil sie in den Einstellungen unter einem Symbol
+    /// beginnt, das es hier nicht gibt — in der Tafel stand der Text dadurch
+    /// eine halbe Spaltenbreite von seinem Zeichen entfernt.
     private func leistenzeile(_ b: Spurbereich) -> Widget! {
         let knopf: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(knopf, "swiftly-wertzeile")
+        gtk_widget_add_css_class(knopf, "swiftly-spurzeile")
         if b == spurbereich { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 9)
+        // Abstand 10, Zeichen in 18 Punkt Spalte — `Spurwahl.swift:110-114`.
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
         let bild: Widget! = gtk_image_new_from_icon_name(b.symbol)
         gtk_image_set_pixel_size(OpaquePointer(bild), 13)
+        gtk_widget_set_size_request(bild, 18, -1)
         anhaengen(reihe, bild)
         let l = beschriftung(b.titel, stil: "swiftly-koerper")
         gtk_label_set_xalign(OpaquePointer(l), 0)

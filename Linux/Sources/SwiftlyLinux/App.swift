@@ -73,6 +73,10 @@ final class App: @unchecked Sendable {
     var letzteStartreihe: [Item] = []
     /// Vom Fernsteuerpult gesetzt: den Reiter der offenen Serienseite wechseln.
     var reiterWaehlen: ((Reiter) -> Void)?
+    /// Der zuletzt **voll** geladene Titel der offenen Detailseite. Auf dem
+    /// Seitenstapel liegt der magere Listeneintrag; der traegt keine
+    /// Besetzung. Nur fuer das ``Fernsteuerpult``.
+    var letzterVollerTitel: Item?
     /// Den Reiter der offenen Serienseite umschalten — ueber den Stapel,
     /// nicht ueber einen Neubau.
     var reiterZeigen: ((Reiter) -> Void)?
@@ -104,7 +108,10 @@ final class App: @unchecked Sendable {
         g_set_prgname("swiftly")
         gtk_window_set_title(alsFenster(fenster), "for Jellyfin")
         gtk_window_set_icon_name(alsFenster(fenster), Zeichenwerk.kennung)
-        gtk_window_set_default_size(alsFenster(fenster), 1100, 760)
+        // 1440 x 900 wie `Sources/macOS/SwiftlyApp.swift:59`. Hier standen
+        // 1100 x 760 — kein Grund aus Abschnitt F, nur eine nie abgeglichene
+        // Zahl. Das Mindestmass darunter stimmt und bleibt.
+        gtk_window_set_default_size(alsFenster(fenster), 1440, 900)
         // **Unter 900 × 560 geht das Raster nicht mehr auf** — Seitenleiste
         // plus zwei Kachelspalten plus Ränder. Dieselbe Grenze wie auf dem
         // Mac; ohne sie liess sich das Fenster auf Briefmarkengrösse ziehen.
@@ -1267,6 +1274,9 @@ final class App: @unchecked Sendable {
     var spielerAbspielzeichen: Abspielzeichen?
     var spielerWeiter: Widget!
     var spielerSpurknopf: Widget!
+    /// Hält das gemalte Reglerzeichen des Wiedergabe-Chips am Leben, solange
+    /// die Spielerseite steht.
+    var spielerReglerzeichen: Reglerzeichen?
     var spielerVollknopf: Widget!
     var spielerLadeschirm: Widget!
     /// Bis wann VLCs Zeit nicht übernommen wird — nach jedem Sprung.
@@ -2787,11 +2797,11 @@ final class App: @unchecked Sendable {
             // (`Startseitenmodell.swift:73-79`); hier jetzt auch.
             let filmBib = gewaehlteBibliothek[.filme] ?? bibliotheken(fuer: .filme).first?.id
             let serienBib = gewaehlteBibliothek[.serien] ?? bibliotheken(fuer: .serien).first?.id
-            async let neu = getrennt ? nil : try? await client.latest(limit: 20)
+            async let neu = getrennt ? nil : await client.zuletztHinzugefuegt()
             async let neuFilme = getrennt
-                ? try? await client.latest(parentID: filmBib, limit: 20) : nil
+                ? await client.zuletztHinzugefuegt(in: filmBib) : nil
             async let neuSerien = getrennt
-                ? try? await client.latest(parentID: serienBib, limit: 20) : nil
+                ? await client.zuletztHinzugefuegt(in: serienBib) : nil
 
             // **Jede Reihe hat ihre eigene Kachelform, und das ist keine
             // Geschmacksfrage.** A2 im Register: „Nächste Folge öffnet die

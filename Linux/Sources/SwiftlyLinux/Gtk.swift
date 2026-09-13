@@ -788,3 +788,8 @@ func inZwischenablage(_ text: String, an widget: Widget!) {
 @inline(__always) func alsStapel(_ w: Widget!) -> OpaquePointer! {
     OpaquePointer(w)
 }
+
+/// Der `GtkRevealer` — für Listen, die im Seitenfluss auf- und zuklappen.
+@inline(__always) func alsAufklapp(_ w: Widget!) -> OpaquePointer! {
+    OpaquePointer(w)
+}

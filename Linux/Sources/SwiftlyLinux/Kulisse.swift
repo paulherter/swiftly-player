@@ -159,14 +159,24 @@ final class Kulisse: @unchecked Sendable {
     ]
 
     fileprivate func malen(_ cr: OpaquePointer, _ w: Double, _ h: Double) {
-        // **Eine unglaubwuerdige Zuteilung wird nicht nachgerechnet.** Beim
-        // Umbau des Inhalts teilt GTK der Flaeche kurz eine Breite von wenigen
-        // Punkten zu. Rechnete man die nach, waere das Bild fuer diesen Zug in
-        // Briefmarkengroesse da und im naechsten wieder richtig — dasselbe
-        // Zucken. Unter 80 Punkt Breite bleibt stehen, was steht.
-        guard flaeche != nil, breite > 0, hoehe > 0, w >= 80, h >= 40 else { return }
+        // **Eine unglaubwuerdige Zuteilung wird nicht nachgerechnet — aber
+        // gemalt wird trotzdem.**
+        //
+        // Beim Umbau des Inhalts teilt GTK der Flaeche kurz eine Breite von
+        // wenigen Punkten zu. Rechnete man die nach, waere das Bild fuer
+        // diesen Zug in Briefmarkengroesse da und im naechsten wieder
+        // richtig — dasselbe Zucken. Unter 80 Punkt Breite bleibt deshalb
+        // stehen, was steht.
+        //
+        // **Hier stand ein `guard`, der auch das Malen abbrach**, und genau
+        // das war das gemeldete Flackern beim ersten Wechsel auf einen
+        // Reiter: die fertige Flaeche lag im Speicher, und der Zug malte sie
+        // nicht. Jetzt betrifft die Bedingung nur noch die Neurechnung.
         let teiler = max(gtk_widget_get_scale_factor(anzeige), 1)
-        if fertig == nil || fertigBreite != Int(w) || fertigHoehe != Int(h)
+        let glaubwuerdig = flaeche != nil && breite > 0 && hoehe > 0
+                           && w >= 80 && h >= 40
+        if glaubwuerdig,
+           fertig == nil || fertigBreite != Int(w) || fertigHoehe != Int(h)
             || fertigTeiler != teiler {
             fertigRechnen(w, h, teiler)
         }

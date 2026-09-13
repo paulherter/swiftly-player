@@ -75,6 +75,21 @@ extension App {
                 oeffne(erster)
             }
 
+        /// Den ersten Titel der ersten Startreihe abspielen — der einzige
+        /// Weg in den Player ohne Klick.
+        case "spielen":
+            if let erster = letzteStartreihe.first { starte(erster) }
+
+        /// Die Steuerung einblenden — sie geht sonst nach ein paar Sekunden
+        /// von selbst weg, und ein Bildschirmabzug bekaeme sie nie zu sehen.
+        case "steuerung":  steuerungZeigen()
+
+        /// Den Player wieder schliessen.
+        case "spielerZu":  spielerSchliessen()
+
+        /// Die Wiedergabetafel im Player auf- und zuklappen.
+        case "spurwahl":   spurwahlZeigen()
+
         /// Einen Reiter der Serienseite wählen.
         case "reiter":
             switch teile.count > 1 ? teile[1] : "" {
@@ -86,7 +101,10 @@ extension App {
 
         /// Die erste Person der Besetzung öffnen.
         case "erstePerson":
-            if let titel = seitenstapel[bereich]?.last,
+            // **Der volle Satz, nicht der Stapeleintrag.** Auf dem Stapel
+            // liegt die magere Kachel, und die traegt keine Besetzung — der
+            // Befehl lief deshalb still ins Leere.
+            if let titel = letzterVollerTitel ?? seitenstapel[bereich]?.last,
                let erste = titel.darsteller.first {
                 oeffnePerson(erste, herkunft: titel.name)
             }

@@ -225,7 +225,19 @@ enum Spurbereich: CaseIterable {
         // der die Tafel oeffnet, und ein Zeichen soll eine Sache meinen.
         case .tempo:      return "media-seek-forward-symbolic"
         case .schlafzeit: return "weather-clear-night-symbolic"
-        case .technik:    return "utilities-system-monitor-symbolic"
+        // **Der Zeichensatz auf diesem Rechner ist Breeze, nicht Adwaita.**
+        //
+        // Am 13.09.2026 nachgemessen: `gsettings get
+        // org.gnome.desktop.interface icon-theme` sagt `breeze-dark`. Hier
+        // standen nacheinander `utilities-system-monitor-symbolic` und
+        // `preferences-system-details-symbolic` — beide kennt Breeze nicht,
+        // und Adwaitas `legacy`-Ordner faengt GTK4 nicht ab. Zu sehen war das
+        // Ersatzbild „fehlendes Bild" mit rotem Verbotszeichen.
+        //
+        // Der Mac nimmt `waveform.badge.magnifyingglass`. Was Breeze **hat**
+        // und dasselbe meint, ist das Zahnrad der Systemeinstellungen; es
+        // steht in den Einstellungen an derselben Zeile.
+        case .technik:    return "preferences-system-symbolic"
         }
     }
 }

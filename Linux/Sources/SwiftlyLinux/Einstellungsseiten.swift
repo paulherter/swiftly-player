@@ -26,7 +26,15 @@ extension App {
     /// **Und dieselbe Seite noch einmal wird an Ort und Stelle neu gebaut.**
     /// Wer eine Sprache wählt, löst einen Neubau aus; bisher fuhr dafür jedes
     /// Mal eine neue Seite herein, obwohl sich nur eine Zeile geändert hat.
-    func unterseiteOeffnen(_ was: Unterseite, schub: Schub = .ohne) {
+    /// **Von rechts herein, nicht hart geschnitten.** Der Mac legt jede
+    /// Unterseite ueber `Navigator.oeffne` auf den Seitenstapel, und dort
+    /// gilt woertlich: „tiefer gehen schiebt von rechts, zurueck schiebt nach
+    /// rechts hinaus" (`Sources/macOS/Navigator.swift:13`). Die Vorgabe stand
+    /// hier auf `.ohne` — damit erschien ausgerechnet die Profilseite, die
+    /// erste, die man oeffnet, ohne jede Bewegung. Die Stellen, die eine
+    /// Unterseite nach einem Kontowechsel *wiederherstellen*, geben `.ohne`
+    /// weiterhin ausdruecklich mit: dort ist die Seite schon dagewesen.
+    func unterseiteOeffnen(_ was: Unterseite, schub: Schub = .tiefer) {
         // Eine offene Unterseite nimmt der Leiste die Hervorhebung — sonst
         // leuchtet „Start", waehrend rechts das Profil steht.
         defer { bereichszeilenMalen() }
@@ -46,14 +54,36 @@ extension App {
         // schrumpfen; setzt man dieselbe Zahl hier als Anforderung, sprengt
         // die Seite das Fenster und die rechte Spalte steht draussen. Also
         // fuellt die Einstellungsseite, was da ist, und traegt nur Raender.
-        if was == .einstellungen {
+        // **Die zweispaltigen Seiten sind drei, nicht eine.** Wiedergabe und
+        // Darstellung bauen ebenfalls mit ``zweispalter`` und bekamen
+        // trotzdem `lesebreite` (700) — zwei Spalten zu je 326 Punkt, wo der
+        // Mac ihnen `Stil.einstellungBreite` gibt
+        // (`WiedergabeEinstellungenView.swift:58`, `DarstellungView.swift:44`).
+        // Das war „das Wiedergabe-Menue passt gar nicht".
+        //
+        // **Die Formularseiten sind dagegen schmaler als 700, nicht breiter.**
+        // Der Mac deckelt Serveraufnahme, Weiteres Konto und Quick Connect
+        // auf 460 (`ServerAufnahmeView.swift:71`, `ProfilView.swift:205,279`).
+        let zweispaltig: Set<Unterseite> = [.einstellungen, .wiedergabe, .darstellung]
+        let formular: Set<Unterseite> = [.serverAufnahme, .kontoHinzufuegen, .quickConnect]
+        if zweispaltig.contains(was) {
             gtk_widget_set_halign(block, GTK_ALIGN_FILL)
             gtk_widget_set_hexpand(block, 1)
             gtk_widget_set_margin_start(block, Int32(Stil.randAbstand))
             gtk_widget_set_margin_end(block, Int32(Stil.randAbstand))
+        } else if formular.contains(was) {
+            gtk_widget_set_size_request(block, Int32(Stil.formularBreite), -1)
+            gtk_widget_set_halign(block, GTK_ALIGN_START)
         } else {
+            // **Links, nicht mittig.** Der Mac setzt
+            // `frame(maxWidth: lesebreite, alignment: .leading)` und danach
+            // `frame(maxWidth: .infinity, alignment: .leading)`: der Block ist
+            // hoechstens 700 breit und steht am linken Rand. Hier stand
+            // `CENTER`, und damit sass ausgerechnet die Profilseite — die
+            // erste, die man oeffnet — als einzige in der Mitte, waehrend die
+            // Unterseiten darunter links standen.
             gtk_widget_set_size_request(block, Int32(Stil.lesebreite), -1)
-            gtk_widget_set_halign(block, GTK_ALIGN_CENTER)
+            gtk_widget_set_halign(block, GTK_ALIGN_START)
         }
         gtk_widget_set_margin_top(block, Int32(Stil.inhaltOben))
         gtk_widget_set_margin_bottom(block, 40)
@@ -97,12 +127,17 @@ extension App {
     }
 
     /// Zurück aus einer Unterseite: erst zum Profil, von dort in den Bereich.
+    ///
+    /// **Nach rechts hinaus, in beiden Stufen.** Das ist die zweite Hälfte der
+    /// Regel aus `Navigator.swift:13`; hier stand `.ohne` für den einen Weg
+    /// und die Vorgabe für den anderen, also fuhr die Wiedergabeseite beim
+    /// Zurückgehen von links herein, als ginge man tiefer.
     func unterseiteZurueck() {
         if offeneUnterseite == .profil {
             offeneUnterseite = nil
-            bereichZeigen(bereich.kennung, schub: .ohne)
+            bereichZeigen(bereich.kennung, schub: .zurueck)
         } else {
-            unterseiteOeffnen(.profil)
+            unterseiteOeffnen(.profil, schub: .zurueck)
         }
     }
 
@@ -116,8 +151,9 @@ extension App {
         anhaengen(block, unterseitenkopf(uebersetzt("Profil")))
 
         let bildblock = stapel(GTK_ORIENTATION_VERTICAL, abstand: 14)
-        gtk_widget_set_margin_top(bildblock, 42)
-        gtk_widget_set_margin_bottom(bildblock, 30)
+        // 10 ueber, 20 unter — `Sources/macOS/ProfilView.swift:29` und `:39`.
+        gtk_widget_set_margin_top(bildblock, 10)
+        gtk_widget_set_margin_bottom(bildblock, 20)
         anhaengen(bildblock, kontenkarten())
         anhaengen(block, bildblock)
 
@@ -129,7 +165,8 @@ extension App {
         })
         anhaengen(block, g1.aussen)
 
-        anhaengen(block, luftHoch(26))
+        // 18 zwischen den Gruppen — `Sources/macOS/ProfilView.swift:51` und `:84`.
+        anhaengen(block, luftHoch(18))
 
         let g2 = zeilengruppe()
         anhaengen(g2.raum, wertezeile(symbol: "media-playback-start-symbolic",
@@ -153,7 +190,7 @@ extension App {
         })
         anhaengen(block, g2.aussen)
 
-        anhaengen(block, luftHoch(26))
+        anhaengen(block, luftHoch(18))
 
         let g3 = zeilengruppe()
         // **„Weiteres Konto hinzufügen" stand hier und ist weg.** Das Plus in
@@ -349,6 +386,18 @@ extension App {
             self?.wahlen.naechsteAutomatisch = an
             self?.wahlen.sichern()
         })
+        // **Das Technikschild steht direkt hinter „Naechste Folge
+        // automatisch"** — `macOS/WiedergabeEinstellungenView.swift:139`.
+        // Es sass hier hinter Vor- und Zurueckspulen, also an fuenfter statt
+        // an zweiter Stelle.
+        anhaengen(v.raum, zeilenstrich())
+        anhaengen(v.raum, schalterzeile(symbol: "preferences-system-symbolic",
+                                        titel: uebersetzt("Technikschild im Player"),
+                                        an: wahlen.technikschild) { [weak self] an in
+            self?.wahlen.technikschild = an
+            self?.wahlen.sichern()
+            self?.technikschildSetzen(an)
+        })
         anhaengen(v.raum, zeilenstrich())
         anhaengen(v.raum, wertezeile(symbol: "media-seek-backward-symbolic", titel: uebersetzt("Zurückspulen"),
                                      wert: "\(wahlen.zurueckSekunden) s", pfeil: true) {
@@ -375,17 +424,6 @@ extension App {
                 self?.listeSchliessen(.wiedergabe)
             })
         }
-        // **Das Technikschild gehoert ins Verhalten** (`macOS/
-        // WiedergabeEinstellungenView.swift:139`) — es fehlte auf Linux ganz,
-        // obwohl die Einstellung dahinter existiert und der Player sie liest.
-        anhaengen(v.raum, zeilenstrich())
-        anhaengen(v.raum, schalterzeile(symbol: "media-eq-symbolic",
-                                        titel: uebersetzt("Technikschild im Player"),
-                                        an: wahlen.technikschild) { [weak self] an in
-            self?.wahlen.technikschild = an
-            self?.wahlen.sichern()
-            self?.technikschildSetzen(an)
-        })
         anhaengen(v.raum, zeilenstrich())
         // **Der Puffer — drei Faelle, keine Sekundenzahl.**
         //
@@ -565,7 +603,12 @@ extension App {
         return pfeil
     }
 
-    private func unterseitenkopf(_ titel: String) -> Widget! {
+    /// **Nicht privat.** Die Seerr-Seite baute sich ihren eigenen Kopf, weil
+    /// dieser hier privat war — und liess dabei ausgerechnet den Pfeil weg.
+    /// Die Seite war damit eine Sackgasse: hinein ja, hinaus nur ueber die
+    /// Seitenleiste. Auf dem Mac traegt sie denselben `Unterseitenkopf` wie
+    /// jede andere Unterseite (`SeerrEinstellungenView.swift:27`).
+    func unterseitenkopf(_ titel: String) -> Widget! {
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
         anhaengen(reihe, unterseitenpfeil())
         let t = beschriftung(titel, stil: "swiftly-titel-gross")
@@ -785,21 +828,24 @@ extension App {
         // Reihenfolge des Macs (`DarstellungView.swift:110`). Der Schalter
         // stand hier ueber den Reihen und schob sie damit unter eine
         // Ueberschrift, zu der sie nicht gehoeren.
-        let g0 = einstellungsgruppe(uebersetzt("Reihen"))
-        anhaengen(links, g0.aussen)
-
+        // **Eine Gruppe, nicht Ueberschrift und Karte getrennt.** Der Mac
+        // legt die Reihen in dieselbe `Einstellungsgruppe` wie ihre
+        // Ueberschrift (`DarstellungView.swift:76`); hier stand die
+        // Ueberschrift in einer leeren Gruppe und die Liste in einer zweiten
+        // Karte darunter, mit einer sichtbaren Fuge dazwischen.
+        //
         // **Umsortiert wird mit dem, was die Eingabeart hergibt** — auf dem
         // iPhone Griffe, hier zwei Pfeile je Zeile. Abschnitt F erlaubt genau
         // diesen Unterschied; Ziehen mit der Maus über eine Liste, die auch
         // ausblenden kann, wäre zwei Gesten an derselben Zeile.
-        let g1 = zeilengruppe()
+        let g0 = einstellungsgruppe(uebersetzt("Reihen"))
         let sichtbar = Startreihenfolge.geltend(abgelegt: wahlen.startReihen)
             .filter { $0.passt(getrennt: wahlen.neuzugaengeGetrennt) }
         for (stelle, reihe) in sichtbar.enumerated() {
-            if stelle > 0 { anhaengen(g1.raum, zeilenstrich()) }
-            anhaengen(g1.raum, reihenzeile(reihe, stelle: stelle, von: sichtbar.count))
+            if stelle > 0 { anhaengen(g0.raum, zeilenstrich()) }
+            anhaengen(g0.raum, reihenzeile(reihe, stelle: stelle, von: sichtbar.count))
         }
-        anhaengen(links, g1.aussen)
+        anhaengen(links, g0.aussen)
 
         let gn = einstellungsgruppe(uebersetzt("Neuzugänge"))
         anhaengen(gn.raum, schalterzeile(symbol: "folder-new-symbolic",
@@ -841,24 +887,28 @@ extension App {
             self?.geladen.remove(.start)
             self?.unterseiteOeffnen(.darstellung)
         })
-        anhaengen(rechts, g2.aussen)
-
-        if !wahlen.startGenres.isEmpty {
-            let g3 = zeilengruppe()
-            for (stelle, name) in wahlen.startGenres.enumerated() {
-                if stelle > 0 { anhaengen(g3.raum, zeilenstrich()) }
-                anhaengen(g3.raum, genrezeile(name))
-            }
-            anhaengen(rechts, g3.aussen)
+        // **Eine Karte, nicht drei.** Auf dem Mac stehen die beiden Formen,
+        // die gewaehlten Genres und „Genre hinzufuegen" in **einer**
+        // `Einstellungsgruppe` (`DarstellungView.swift:118-147`) — deshalb
+        // laeuft der Trennstrich zwischen ihnen durch und nicht ein Spalt.
+        for (stelle, name) in wahlen.startGenres.enumerated() {
+            _ = stelle
+            anhaengen(g2.raum, zeilenstrich())
+            anhaengen(g2.raum, genrezeile(name))
         }
-
-        let g4 = zeilengruppe()
-        anhaengen(g4.raum, wertezeile(symbol: "list-add-symbolic",
+        // Der Strich vor „Genre hinzufuegen" laeuft auf dem Mac ueber die
+        // volle Breite (`Trennstrich()` ohne Einzug, `:142`) — er trennt
+        // nicht zwei gleichartige Zeilen, sondern die Liste von ihrem Zugang.
+        anhaengen(g2.raum, trennlinie())
+        // **Im Akzent.** `Wertezeile(..., akzent: true, ...)` auf dem Mac
+        // (`DarstellungView.swift:144-146`).
+        anhaengen(g2.raum, wertezeile(symbol: "list-add-symbolic",
                                       titel: uebersetzt("Genre hinzufügen"),
+                                      akzent: true,
                                       pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.genrewahl)
         })
-        anhaengen(rechts, g4.aussen)
+        anhaengen(rechts, g2.aussen)
 
         let fuss2 = beschriftung(uebersetzt("Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist."),
                                  stil: "swiftly-zweitzeile", umbruch: true)
@@ -872,10 +922,12 @@ extension App {
     /// Eine Reihe in der Liste: Name, Schalter, zwei Pfeile.
     private func reihenzeile(_ reihe: Startreihe, stelle: Int, von: Int) -> Widget! {
         let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
-        gtk_widget_set_margin_start(zeile, 14)
-        gtk_widget_set_margin_end(zeile, 14)
-        gtk_widget_set_margin_top(zeile, 10)
-        gtk_widget_set_margin_bottom(zeile, 10)
+        // **Derselbe Rumpf wie jede andere Zeile.** Er trug eigene 14/10 und
+        // war damit als einziger in der Karte hoeher als „Fortschritt auf
+        // Kacheln" daneben — auf dem Mac ist `Wahlzeile` dieselbe
+        // 44-Punkt-Zeile wie `Schalterzeile`
+        // (`Sources/macOS/Einstellungszeilen.swift`).
+        gtk_widget_add_css_class(zeile, "swiftly-zeilenrumpf")
 
         // **Mit Zeichen wie jede andere Zeile der App.** Ohne es sah die
         // Reihenliste als einzige anders aus.
@@ -1031,7 +1083,7 @@ extension App {
         }
 
         let feld = eingabezeile(symbol: "network-server-symbolic",
-                                platzhalter: uebersetzt("jellyfin.beispiel.de"))
+                                platzhalter: uebersetzt("jellyfin.beispiel.de"), dehnt: true)
         gtk_widget_set_margin_top(feld, 26)
         gtk_editable_set_text(OpaquePointer(feld), serverAufnahmeAdresse)
         anhaengen(block, feld)
@@ -1071,12 +1123,12 @@ extension App {
     /// Name und Passwort für den **neuen** Server.
     private func serverAufnahmeFormular(_ block: Widget!) {
         let name = eingabezeile(symbol: "avatar-default-symbolic",
-                                platzhalter: uebersetzt("Benutzername"))
+                                platzhalter: uebersetzt("Benutzername"), dehnt: true)
         gtk_widget_set_margin_top(name, 26)
         anhaengen(block, name)
 
         let wort = eingabezeile(symbol: "channel-secure-symbolic",
-                                platzhalter: uebersetzt("Passwort"), geheim: true)
+                                platzhalter: uebersetzt("Passwort"), geheim: true, dehnt: true)
         gtk_widget_set_margin_top(wort, 10)
         anhaengen(block, wort)
 
@@ -1169,12 +1221,12 @@ extension App {
     /// Name und Passwort — der Normalweg auf dem Schreibtisch.
     private func kontoFormular(_ block: Widget!) {
         let name = eingabezeile(symbol: "avatar-default-symbolic",
-                                platzhalter: uebersetzt("Benutzername"))
+                                platzhalter: uebersetzt("Benutzername"), dehnt: true)
         gtk_widget_set_margin_top(name, 26)
         anhaengen(block, name)
 
         let wort = eingabezeile(symbol: "channel-secure-symbolic",
-                               platzhalter: uebersetzt("Passwort"), geheim: true)
+                               platzhalter: uebersetzt("Passwort"), geheim: true, dehnt: true)
         gtk_widget_set_margin_top(wort, 10)
         anhaengen(block, wort)
 

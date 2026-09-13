@@ -273,6 +273,10 @@ extension App {
     /// die Art steht schon in der Liste, und den Zweig unterwegs zu wechseln
     /// hiesse, die halbe Seite wegzuwerfen und neu zu bauen.
     private func aufbauenMit(_ titel: Item, in seite: Widget!) {
+        // Der volle Satz, wie er gerade gezeigt wird — das ``Fernsteuerpult``
+        // braucht ihn, weil auf dem Seitenstapel nur der magere
+        // Listeneintrag liegt und der keine Besetzung traegt.
+        letzterVollerTitel = titel
         anhaengen(seite, heldenkopf(titel))
 
 
@@ -389,28 +393,26 @@ extension App {
     }
 
     /// Holt das Kopfbild und, aus einem winzigen Abbild, seinen Ton.
+    ///
+    /// **Beide Grössen aus einer Hand.** Hier standen zwei Wege nebeneinander:
+    /// das grosse Bild ueber `kopfbildErsatz` mit seinem Ausweichweg, das
+    /// winzige direkt ueber `Bildwahl.quer`. Bei einer Serie ohne Hintergrund
+    /// fand der erste das Standbild der naechsten Folge und der zweite gar
+    /// nichts — Bild da, Ton nicht, und unter der Kulisse stand eine harte
+    /// Kante gegen den blanken Grund. Der Mac hat den Fall nicht: dort
+    /// bedient **eine** Adresse (`AppModel.kopfbildURL`) beides.
     private func tonUndBildNachladen(_ titel: Item, in kulisse: Kulisse) {
         guard let adressen, let client else { return }
-        let klein = Bildwahl.quer(titel, adressen: adressen, breite: 16)?.url
-
         Task.detached { [self] in
-            // **Fehlt der Hintergrund, tritt bei einer Serie das Standbild der
-            // naechsten Folge ein, sonst das Plakat.** Bis zum 13.09.2026 blieb
-            // die Kopfzone hier einfach leer — die Regel steht als
-            // `kopfbildErsatz` im Paket und wurde nur nie aufgerufen.
-            var kopf = Bildwahl.quer(titel, adressen: adressen, breite: 1600)?.url
-            if kopf == nil {
-                kopf = await client.kopfbildErsatz(fuer: titel, adressen: adressen,
-                                                   breite: 1600)
-            }
-            guard let gross = kopf else { return }
-            if let klein,
-               let daten = await Bildlager.shared.laden(klein, schluessel: Bildschluessel.fuer(klein)),
+            guard let paar = await client.kopfbildPaar(fuer: titel, adressen: adressen)
+            else { return }
+            if let daten = await Bildlager.shared.laden(paar.klein,
+                                                        schluessel: Bildschluessel.fuer(paar.klein)),
                let ton = Bildfarbe.ton(aus: daten) {
                 aufHauptfaden { Tonblatt.setzen(ton) }
             }
-            guard let daten = await Bildlager.shared.laden(gross,
-                                                           schluessel: Bildschluessel.fuer(gross))
+            guard let daten = await Bildlager.shared.laden(paar.gross,
+                                                           schluessel: Bildschluessel.fuer(paar.gross))
             else { return }
             aufHauptfaden { kulisse.setzen(daten) }
         }
@@ -489,6 +491,7 @@ extension App {
             let wert = beschriftung(komma(bewertung), stil: "swiftly-zweitzeile")
             gtk_widget_add_css_class(wert, "dim-label")
             anhaengen(paar, wert)
+            gtk_widget_add_css_class(paar, "swiftly-bewertung")
             gtk_widget_set_valign(paar, GTK_ALIGN_CENTER)
             anhaengen(reihe, paar)
         }
@@ -500,6 +503,7 @@ extension App {
         // in Warnorange, mit Grund (D2).
         let beleg = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
         gtk_widget_set_visible(beleg, 0)
+        gtk_widget_add_css_class(beleg, "swiftly-belegmarke")
         gtk_widget_set_valign(beleg, GTK_ALIGN_CENTER)
         anhaengen(reihe, beleg)
         planNachladen(titel, in: beleg)
@@ -601,7 +605,15 @@ extension App {
             let knopfKiste = gehalten(haupt)
             let vornKiste = gehalten(vorn)
             Task.detached {
-                let folge = try? await client.naechsteFolgeDerSerie(seriesID: titel.id)
+                // **`standInSerie`, nicht `naechsteFolgeDerSerie`** (A4): „der
+                // Hauptknopf startet dort, wo der Server sagt — angefangene
+                // Folge an ihrer Stelle, sonst naechste ungesehene, **sonst
+                // Folge 1**." Der blanke NextUp-Abruf liefert bei einer
+                // durchgesehenen Serie nichts, und dann blieb der Knopf fuer
+                // immer gesperrt: ausgegraut, waehrend jede Folge darunter
+                // sich abspielen liess. Der Rueckfall liegt seit dem
+                // 13.09.2026 im Paket.
+                let folge = await client.standInSerie(titel.id)
                 aufHauptfaden {
                     defer { losgelassen(knopfKiste); losgelassen(vornKiste) }
                     guard let folge else { return }

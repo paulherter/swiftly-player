@@ -134,22 +134,29 @@ extension App {
     /// ``heldenblock(_:)``. Was zu groß wird, wird abgeschnitten und
     /// verschiebt nichts.
     ///
-    ///     0    Kopfbild 130 rund, daneben ab 148:
-    ///     8    Name         48
-    ///     62   Geboren      18
-    ///     84   Ort          18
+    /// **Die Zahlen kommen aus `PersonView.swift:149-176`,** nicht aus dem
+    /// Augenmass: runder Kopf 88, 16 Abstand, daneben ein Textblock, der
+    /// **unten** buendig steht (`HStack(alignment: .bottom)`). Name 34 mit
+    /// 6 darunter, dann die beiden 14er Zeilen mit 1 dazwischen — zusammen
+    /// 82, also beginnt der Text 6 unter der Oberkante des Kopfes.
+    ///
+    ///     0    Kopfbild 88 rund, daneben ab 104:
+    ///     6    Name         41
+    ///     53   Geboren      17
+    ///     71   Ort          17
     private func personblock(_ person: Item) -> Widget! {
         let feld: Widget! = gtk_fixed_new()
         gtk_widget_set_halign(feld, GTK_ALIGN_START)
         gtk_widget_set_valign(feld, GTK_ALIGN_END)
-        gtk_widget_set_size_request(feld, 720, 130)
+        gtk_widget_set_size_request(feld, 720, Int32(Stil.personblockHoehe))
         gtk_widget_set_margin_start(feld, Int32(Stil.randAbstand))
-        gtk_widget_set_margin_bottom(feld, 16)
+        // 22 wie `PersonView.swift:143`.
+        gtk_widget_set_margin_bottom(feld, 22)
 
         // **Mit Initiale, wenn es kein Bild gibt.** `gerahmtesBild` laesst in
         // dem Fall einen leeren Kreis stehen; `profilzeichen` traegt den
         // Anfangsbuchstaben, so wie ueberall sonst in der App.
-        let teile = profilzeichen(name: person.name, kante: 130,
+        let teile = profilzeichen(name: person.name, kante: Stil.personblockHoehe,
                                   stil: "swiftly-personkopf",
                                   schriftstil: "swiftly-zeichen96")
         gtk_fixed_put(alsFeld2(feld), teile.huelle, 0, 0)
@@ -161,27 +168,29 @@ extension App {
         let name = beschriftung(person.name, stil: "swiftly-heldtitel")
         gtk_label_set_xalign(OpaquePointer(name), 0)
         gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
-        gtk_widget_set_size_request(name, 560, 48)
-        gtk_fixed_put(alsFeld2(feld), name, 148, 8)
+        gtk_widget_set_size_request(name, 560, 41)
+        gtk_fixed_put(alsFeld2(feld), name, 104, 6)
 
         // **Die zwei Zeilen haben ihren Platz von Anfang an.** Kämen sie erst
         // beim Laden dazu, schöben sie den Namen nach oben — mitten im
         // Hereinfahren. Hier stehen sie auf festen Stellen, also verschiebt
         // sich nichts, auch wenn eine leer bleibt.
         if let geboren = geburtszeile(person) {
-            let z = beschriftung(geboren, stil: "swiftly-zweitzeile")
-            gtk_widget_add_css_class(z, "swiftly-leise")
+            // 14 und `schriftLeise` — `Sources/macOS/PersonView.swift:169`.
+            // Hier standen 12 (`swiftly-zweitzeile`) und `schriftSehrLeise`.
+            let z = beschriftung(geboren, stil: "swiftly-angaben")
+            gtk_widget_add_css_class(z, "dim-label")
             gtk_label_set_xalign(OpaquePointer(z), 0)
-            gtk_widget_set_size_request(z, 520, 18)
-            gtk_fixed_put(alsFeld2(feld), z, 148, 62)
+            gtk_widget_set_size_request(z, 520, 17)
+            gtk_fixed_put(alsFeld2(feld), z, 104, 53)
         }
         if let ort = person.productionLocations?.first, !ort.isEmpty {
-            let z = beschriftung(ort, stil: "swiftly-zweitzeile")
-            gtk_widget_add_css_class(z, "swiftly-leise")
+            let z = beschriftung(ort, stil: "swiftly-angaben")
+            gtk_widget_add_css_class(z, "dim-label")
             gtk_label_set_xalign(OpaquePointer(z), 0)
             gtk_label_set_ellipsize(OpaquePointer(z), PANGO_ELLIPSIZE_END)
-            gtk_widget_set_size_request(z, 520, 18)
-            gtk_fixed_put(alsFeld2(feld), z, 148, 84)
+            gtk_widget_set_size_request(z, 520, 17)
+            gtk_fixed_put(alsFeld2(feld), z, 104, 71)
         }
         return feld
     }

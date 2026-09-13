@@ -89,3 +89,49 @@ public extension JellyfinClient {
         return Bildwahl.hochkant(item, adressen: adressen, maxHoehe: breite)
     }
 }
+
+public extension JellyfinClient {
+
+    /// **Das Kopfbild in zwei Größen — groß für die Kulisse, winzig für den
+    /// Ton.**
+    ///
+    /// Beide müssen dasselbe Bild zeigen: der Ton wird aus dem winzigen
+    /// Abbild gerechnet und färbt die Fläche, auf der das große liegt.
+    ///
+    /// **Warum es das gibt.** Linux holte das große über ``kopfbildErsatz``
+    /// und das winzige daneben über `Bildwahl.quer` — bei einer Serie ohne
+    /// Hintergrund gab das erste das Standbild der nächsten Folge und das
+    /// zweite gar nichts. Ergebnis: Bild da, Ton nicht, und unter der Kulisse
+    /// stand eine harte Kante gegen den blanken Grund. Genau die, die Paul am
+    /// 13.09.2026 gemeldet hat — auf Serienseiten, während Filmseiten
+    /// stimmten. Der Mac hat den Fall nicht, weil dort **eine** Adresse
+    /// (`kopfbildURL`) beides bedient.
+    ///
+    /// Der zweite Grund für ein Paar statt zweier Aufrufe: die Suche nach dem
+    /// Ersatz kostet einen Abruf. Zweimal gerufen, zweimal bezahlt.
+    func kopfbildPaar(fuer item: Item, adressen: Bildadresse,
+                      gross: Int = 1600,
+                      klein: Int = 16) async -> (gross: URL, klein: URL)? {
+        if let g = Bildwahl.quer(item, adressen: adressen, breite: gross)?.url,
+           let k = Bildwahl.quer(item, adressen: adressen, breite: klein)?.url {
+            return (g, k)
+        }
+        // Nicht mit `??` in einer Zeile: dessen rechte Seite ist eine
+        // Autoclosure und darf kein `await` enthalten.
+        if item.type == "Series" {
+            var folge = try? await naechsteFolgeDerSerie(seriesID: item.id)
+            if folge == nil { folge = (try? await folgen(seriesID: item.id))?.first }
+            if let folge,
+               let g = Bildwahl.quer(folge, adressen: adressen, breite: gross)?.url,
+               let k = Bildwahl.quer(folge, adressen: adressen, breite: klein)?.url {
+                return (g, k)
+            }
+        }
+        // **Das Plakat der Sache selbst, nicht das der Folge.** Eine Folge
+        // trägt als Plakat das der Serie — dasselbe Bild, ein Umweg mehr.
+        guard let g = Bildwahl.hochkant(item, adressen: adressen, maxHoehe: gross),
+              let k = Bildwahl.hochkant(item, adressen: adressen, maxHoehe: klein)
+        else { return nil }
+        return (g, k)
+    }
+}

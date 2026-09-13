@@ -151,13 +151,17 @@ extension App {
         anhaengen(block, reihe)
     }
 
-    /// Eigener Kopf statt `unterseitenkopf` — das ist dort privat, und eine
-    /// Kopie der Datei waere schlimmer als drei Zeilen hier.
+    /// **Derselbe Kopf wie jede andere Unterseite.**
+    ///
+    /// Hier stand ein eigener aus drei Zeilen, weil `unterseitenkopf` privat
+    /// war — und genau die eine Zeile fehlte darin, auf die es ankommt: der
+    /// Zurueckpfeil. Die Seite war damit eine Sackgasse. Der Mac nimmt an
+    /// derselben Stelle `Unterseitenkopf(titel:zurueck:)`
+    /// (`Sources/macOS/SeerrEinstellungenView.swift:27`).
     private func seerrKopf() -> Widget! {
-        let l = beschriftung(uebersetzt("Seerr"), stil: "swiftly-unterkopf")
-        gtk_label_set_xalign(OpaquePointer(l), 0)
-        gtk_widget_set_margin_bottom(l, 10)
-        return l
+        let kopf = unterseitenkopf(uebersetzt("Seerr"))
+        gtk_widget_set_margin_bottom(kopf, 10)
+        return kopf
     }
 
     private func seerrStandZeigen(_ kiste: Zeigerkiste, _ text: String) {
