@@ -643,7 +643,14 @@ extension App {
                     if leeren_ {
                         // Mittig, mit Zeichen — wie jeder andere Leerzustand.
                         // Hier stand eine Textzeile oben links.
-                        anhaengen(ziel, self.leerzustand("mail-archive-symbolic",
+                        //
+                        // **`mail-inbox-symbolic`, nicht `mail-archive`.**
+                        // Der Mac nimmt `tray` (`SerienView.swift:392`), und
+                        // den Ablagekorb hat unter Breeze nur der Posteingang;
+                        // `mail-archive-symbolic` gibt es dort gar nicht, GTK
+                        // zeigte dafuer das Ersatzbild mit rotem
+                        // Verbotszeichen. Am Bild gefunden.
+                        anhaengen(ziel, self.leerzustand("mail-inbox-symbolic",
                                                          uebersetzt("Nichts Ähnliches gefunden."),
                                                          nil))
                     }

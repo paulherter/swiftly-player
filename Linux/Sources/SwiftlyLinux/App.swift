@@ -2459,7 +2459,7 @@ final class App: @unchecked Sendable {
         anhaengen(block, suchraster)
         // **Leer ist eine Auskunft.** Ohne sie steht die Seite still da, und
         // man weiss nicht, ob gesucht wurde oder nichts da ist.
-        suchleer = leerzustand("system-search-symbolic", uebersetzt("Nichts gefunden"), nil)
+        suchleer = leerzustand("mail-inbox-symbolic", uebersetzt("Nichts gefunden"), nil)
         gtk_widget_set_visible(suchleer, 0)
         anhaengen(block, suchleer)
 
@@ -3389,7 +3389,7 @@ final class App: @unchecked Sendable {
             // Symbol, Satz, Erklärzeile — dieselbe Form wie auf dem Mac
             // (`Leerzustand`), statt einer einzelnen Textzeile.
             anhaengen(reihenstapel,
-                      leerzustand("folder-symbolic", uebersetzt("Hier ist noch nichts"),
+                      leerzustand("mail-inbox-symbolic", uebersetzt("Hier ist noch nichts"),
                                   uebersetzt("Sobald der Server Titel hat, stehen sie hier.")))
             return
         }
