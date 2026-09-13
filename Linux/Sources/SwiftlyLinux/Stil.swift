@@ -798,6 +798,19 @@ enum Stil {
         /* Malt nichts. Für Widgets, die nur ein Mass beisteuern — die
            Zeichenflaeche der Kulisse malt ihr Bild selbst mit Cairo. */
         .swiftly-blank { background-color: transparent; background-image: none; }
+        /* **Ein Knopf bringt bei Breeze eine Kante mit**, und `swiftly-blank`
+           nahm ihm nur den Grund. Um den Schalter in der Reihenliste stand
+           deshalb ein Rahmen, den es auf dem Mac nicht gibt — dort ist es ein
+           `Button(action:)` mit `.buttonStyle(.plain)` um eine `Capsule`.
+           Am 13.09.2026 am Bild gefunden. */
+        button.swiftly-blank {
+            border: none;
+            box-shadow: none;
+            outline: none;
+            padding: 0;
+            min-width: 0;
+            min-height: 0;
+        }
         drawingarea { background-color: transparent; }
 
         /* MARK: Die Leiste, die beim Scrollen kommt

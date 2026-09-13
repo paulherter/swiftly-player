@@ -2,9 +2,16 @@ import CGtk
 import Foundation
 import JellyfinKit
 
-/// **Der Player sieht überall gleich aus** (E10): Schließen oben links,
-/// Einstellungen oben rechts, Titel und Folge unten links, Zeitleiste
-/// darunter, die drei Knöpfe mittig. Bild-im-Bild entfällt — wie auf dem Mac,
+/// **Der Player sieht überall gleich aus** (E10): oben rechts die beiden
+/// Werkzeuge — Wiedergabe und Schließen, in dieser Reihenfolge —, Titel und
+/// Folge unten links, Zeitleiste darunter, die drei Knöpfe mittig.
+///
+/// Hier stand „Schließen oben links, Einstellungen oben rechts". Das war die
+/// gespiegelte Fassung von E10: die Fensterampel sitzt auf GTK rechts, also
+/// sollte der Schließweg ihr links ausweichen. Am 13.09.2026 hat Paul es am
+/// Bild verglichen und anders entschieden — die Ampel sitzt in der
+/// Titelzeile, die Werkzeuge gut fünfzig Punkt tiefer, sie stoßen gar nicht
+/// aneinander. Das Register ist nachgezogen. Bild-im-Bild entfällt — wie auf dem Mac,
 /// wo VLCKit es nicht trägt; hier gibt es unter Wayland kein Gegenstück.
 ///
 /// Was der Player tut und was der Server erfährt, entscheidet nicht diese
