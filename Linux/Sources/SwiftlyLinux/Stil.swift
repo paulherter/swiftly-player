@@ -162,7 +162,11 @@ enum Stil {
     /// dieselbe `lesebreite` wie ein Fliesstext, und darin schwebte ein 360
     /// Punkt breites, mittig gesetztes Feld.
     static let formularBreite = 460
-    static let einstellungBreite = 1100
+    /// **1366, wie `Sources/macOS/Stil.swift:31`.** Hier stand 1100 ohne
+    /// Grund aus Abschnitt F — und die Zahl wurde ausserdem nirgends
+    /// benutzt, weil GTK kein Hoechstmass kennt. Beides behoben: den Deckel
+    /// setzt jetzt `Einstellungsseiten.deckeln(_:in:auf:)`.
+    static let einstellungBreite = 1366
     /// Oberer Rand im Inhaltsbereich — auf dem Mac 52, **gemessen ab
     /// Fensteroberkante**: dort gibt es keine Titelzeile, die Ampel schwebt
     /// über der Seitenleiste.

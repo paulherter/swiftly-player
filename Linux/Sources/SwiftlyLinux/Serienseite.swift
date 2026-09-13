@@ -306,7 +306,7 @@ extension App {
         gtk_label_set_xalign(OpaquePointer(l), 0)
         gtk_widget_set_hexpand(l, 1)
         anhaengen(reihe, l)
-        // 12 fett, wie `Staffelzeile` auf dem Mac (`SerienView.swift:589`).
+        // 12 fett, wie `Staffelzeile` auf dem Mac (`SerienView.swift:592`).
         let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
         gtk_image_set_pixel_size(OpaquePointer(haken), 12)
         gtk_widget_set_visible(haken, gewaehlt ? 1 : 0)
@@ -411,7 +411,7 @@ extension App {
         gtk_widget_set_visible(bildhaken, folge.istGesehen ? 1 : 0)
         gtk_overlay_add_overlay(OpaquePointer(huelle), bildhaken)
         // **Ein Abspielzeichen über dem Bild, wenn der Zeiger da ist** — der
-        // Mac hat es (`SerienView.swift:443`). Ohne es sieht ein Standbild
+        // Mac hat es (`SerienView.swift:665-674`). Ohne es sieht ein Standbild
         // nicht danach aus, als ließe es sich anklicken.
         let kreis: Widget! = gtk_image_new_from_icon_name("media-playback-start-symbolic")
         gtk_image_set_pixel_size(OpaquePointer(kreis), 16)
@@ -623,7 +623,7 @@ extension App {
 
     /// **Auf der Serienseite ein Raster, auf der Filmseite eine Reihe.**
     ///
-    /// Auf dem Mac ist das derselbe Unterschied (`SerienView.swift:236` gegen
+    /// Auf dem Mac ist das derselbe Unterschied (`SerienView.swift:390-411` gegen
     /// `DetailView`): unter einem Reiter, den man ausdrücklich gewählt hat,
     /// steht alles auf einmal da; eine Reihe, durch die man erst blättern
     /// muss, wäre dort ein Weg im Weg. Auf der Filmseite läuft „Ähnliches"

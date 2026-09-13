@@ -49,11 +49,16 @@ extension App {
         // Hier stand fuer alle dieselbe 560 — auf einem 1400 Punkt breiten
         // Fenster sah das aus wie eine Handyansicht in der Mitte.
         //
-        // **`size_request` ist ein Mindestmass, kein Hoechstmass.** Der Mac
-        // deckelt mit `frame(maxWidth:)` nach oben und laesst die Spalten
-        // schrumpfen; setzt man dieselbe Zahl hier als Anforderung, sprengt
-        // die Seite das Fenster und die rechte Spalte steht draussen. Also
-        // fuellt die Einstellungsseite, was da ist, und traegt nur Raender.
+        // **`size_request` ist ein Mindestmass, kein Hoechstmass**, und GTK
+        // kennt kein `max-width`. Der Mac deckelt mit `frame(maxWidth:)` nach
+        // oben und laesst die Spalten schrumpfen; setzt man dieselbe Zahl
+        // hier als Anforderung, sprengt die Seite das Fenster und die rechte
+        // Spalte steht draussen.
+        //
+        // Der Deckel kommt deshalb ueber ``deckeln(_:auf:)`` von unten: die
+        // Anpassung des Scrollers kennt die sichtbare Breite und meldet jede
+        // Aenderung. Ohne ihn wuchsen die drei Seiten unbegrenzt mit dem
+        // Fenster, waehrend der Mac bei 1366 aufhoert.
         // **Die zweispaltigen Seiten sind drei, nicht eine.** Wiedergabe und
         // Darstellung bauen ebenfalls mit ``zweispalter`` und bekamen
         // trotzdem `lesebreite` (700) — zwei Spalten zu je 326 Punkt, wo der
@@ -104,6 +109,7 @@ extension App {
 
         let scroller = seitenscroller()
         gtk_scrolled_window_set_child(OpaquePointer(scroller), block)
+        if zweispaltig.contains(was) { deckeln(block, in: scroller, auf: Stil.einstellungBreite) }
         anhaengen(scheibe, scroller)
         if !anOrt { schieben(zu: scheibe, richtung: schub) }
     }
@@ -611,6 +617,39 @@ extension App {
         gtk_widget_set_margin_start(pfeil, 0)
         beiSignal(pfeil, "clicked") { [weak self] in self?.unterseiteZurueck() }
         return pfeil
+    }
+
+    /// **Ein Hoechstmass, das GTK nicht kennt.**
+    ///
+    /// Der Mac schreibt `frame(maxWidth: Stil.einstellungBreite)`. GTK hat
+    /// dafuer nichts: `set_size_request` ist ein Mindestmass, und wer es auf
+    /// 1366 setzt, zwingt das Fenster auf 1366 plus Seitenleiste.
+    ///
+    /// Die sichtbare Breite kennt die waagerechte Anpassung des Scrollers als
+    /// `page-size`, und sie meldet jede Aenderung ueber `changed`. Der Block
+    /// bekommt daraufhin genau so viel angefordert, wie er haben darf.
+    ///
+    /// **Nur bei echter Aenderung setzen.** Ein `set_size_request` aendert
+    /// die Anpassung und loest `changed` wieder aus — ohne den Vergleich
+    /// waere das eine Schleife, und von der Sorte steht schon eine in
+    /// `Fallen/`.
+    private func deckeln(_ block: Widget!, in scroller: Widget!, auf hoechstens: Int) {
+        gtk_widget_set_halign(block, GTK_ALIGN_START)
+        gtk_widget_set_hexpand(block, 0)
+        guard let anpassung = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))
+        else { return }
+        var zuletzt: Int32 = -1
+        let anpassen: () -> Void = {
+            let sichtbar = gtk_adjustment_get_page_size(anpassung)
+            guard sichtbar > 1 else { return }
+            let frei = sichtbar - Double(Stil.randAbstand) * 2
+            let breite = Int32(max(min(frei, Double(hoechstens)), 320))
+            guard breite != zuletzt else { return }
+            zuletzt = breite
+            gtk_widget_set_size_request(block, breite, -1)
+        }
+        beiSignalRoh(UnsafeMutableRawPointer(anpassung), "changed", anpassen)
+        anpassen()
     }
 
     /// **Nicht privat.** Die Seerr-Seite baute sich ihren eigenen Kopf, weil

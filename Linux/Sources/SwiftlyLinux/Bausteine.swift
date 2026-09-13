@@ -718,8 +718,8 @@ func kachelmarkeLegen(_ huelle: Widget!, item: Item) {
         feld = gtk_image_new_from_icon_name("object-select-symbolic")
     case .offen(let n):
         // **„6 offen", nicht „6".** Eine nackte Zahl auf einer Kachel sagt
-        // nicht, was sie zaehlt — auf dem Mac steht dort „6 left"
-        // (`Stil.swift:3006`).
+        // nicht, was sie zaehlt — der Mac setzt denselben Wortlaut
+        // (`Sources/macOS/Macbausteine.swift:531`, `wortlaut`).
         feld = beschriftung(String(format: uebersetzt("%lld offen"), n))
     case .staffeln(let n):
         feld = beschriftung(n == 1 ? uebersetzt("1 Staffel")
