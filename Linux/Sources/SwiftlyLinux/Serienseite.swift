@@ -569,13 +569,14 @@ extension App {
         }
 
         beiZeiger(zeile, herein: {
-            if ladeknopf != nil { gtk_widget_set_visible(ladeknopf, 1) }
             gtk_widget_add_css_class(zeile, "swiftly-schwebt")
             gtk_widget_set_visible(knopf, 1)
             gtk_widget_set_visible(ruhig, 0)
             gtk_widget_set_visible(kreis, 1)
         }, hinaus: {
-            if ladeknopf != nil { gtk_widget_set_visible(ladeknopf, 0) }
+            // Der Ladeknopf bleibt stehen. Er wurde hier versteckt — und
+            // sobald seine Tafel aufging, verliess der Zeiger die Zeile, der
+            // Knopf verschwand und nahm die Tafel mit. Das war „nichts passiert".
             gtk_widget_remove_css_class(zeile, "swiftly-schwebt")
             gtk_widget_set_visible(knopf, 0)
             gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)

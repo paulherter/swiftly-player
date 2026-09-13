@@ -673,7 +673,13 @@ func rasterPlatzhalter(anzahl: Int = 8, rand: Int) -> Widget! {
     for _ in 0 ..< anzahl {
         anhaengen(reihe, ladefeld(breite: Stil.kachelBreite, hoehe: Stil.kachelHoehe))
     }
-    return reihe
+    // **Abgeschnitten, nicht breiter als die Seite.** Acht Felder sind breiter
+    // als das Fenster; ohne Huelle wuchs die Seite fuer einen Augenblick mit,
+    // und das Kopfbild rutschte beim ersten „Aehnliches" nach rechts.
+    let huelle: Widget! = gtk_scrolled_window_new()
+    gtk_scrolled_window_set_policy(OpaquePointer(huelle), GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
+    gtk_scrolled_window_set_child(OpaquePointer(huelle), reihe)
+    return huelle
 }
 
 

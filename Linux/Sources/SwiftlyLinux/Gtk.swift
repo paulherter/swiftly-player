@@ -89,13 +89,20 @@ func anhaengen(_ eltern: Widget!, _ kind: Widget!) {
 ///
 /// Wer die Tafel in einem Feld haelt, nimmt deshalb ``App/tafelOeffnen(an:stil:)``
 /// und nicht diese Funktion allein.
+final class Tafelstand { var da = true }
+
 func tafelAn(_ anker: Widget!, stil: String = "swiftly-mehr",
              lage: GtkPositionType = GTK_POS_BOTTOM) -> Widget! {
     let tafel: Widget! = gtk_popover_new()
     gtk_widget_add_css_class(tafel, stil)
     gtk_popover_set_position(alsTafel(tafel), lage)
     gtk_widget_set_parent(tafel, anker)
-    beiSignal(anker, "destroy") { gtk_widget_unparent(tafel) }
+    // **Nur, wenn es sie noch gibt.** `tafelSchliessen` haengt sie selbst ab
+    // und gibt sie damit frei; ging danach der Anker weg, griff dieser
+    // Rueckruf auf freigegebenen Speicher — Absturz beim Verlassen der Seite.
+    let lebt = Tafelstand()
+    beiSignal(tafel, "destroy") { lebt.da = false }
+    beiSignal(anker, "destroy") { if lebt.da { gtk_widget_unparent(tafel) } }
     return tafel
 }
 
