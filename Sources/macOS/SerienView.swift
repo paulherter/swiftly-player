@@ -169,7 +169,8 @@ struct SerienView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Heldenkopf(model: model, titel: serie, stand: kopfstand)
+                Heldenkopf(model: model, titel: serie, stand: kopfstand,
+                           staffel: gewaehlt)
                     // **Der Kopf malt über das, was unter ihm steht.**
                     //
                     // Ohne das liegt das Mehr-Menü hinter Reiterreihe und

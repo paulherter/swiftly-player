@@ -64,6 +64,15 @@ struct StaffelZiel: View {
     /// S6E1" oben und Staffel 5 in der Folgenliste. Dasselbe Muster wie bei
     /// der Fortsetzstelle in `HomeView.starte`, und dieselbe Abhilfe.
     @State private var frischeStaffelID: String?
+    @State private var frischeStaffelnummer: Int?
+    /// **Und die Nummer mit.**
+    ///
+    /// Hier stand nur die Kennung; die Nummer kam weiter von der Kachel. Das
+    /// reicht nicht: am Geraet gemessen liefert der Server an einer Folge
+    /// nicht immer eine `SeasonId` (steht so in A10), und dann traegt allein
+    /// die Nummer den Vergleich — die veraltete. Genau die Fehlerform, die
+    /// A10 als behoben beschreibt, nur eine Stufe weiter unten. Linux frischt
+    /// beides auf, iPhone und Mac frischten nur die Kennung auf.
 
     /// **Was vorgeholt ist, steht sofort** — dann gibt es die leere Seite gar
     /// nicht erst. Nachgereicht käme der Wert zu spät: der leere Durchgang
@@ -80,7 +89,7 @@ struct StaffelZiel: View {
             if let serie {
                 SerienView(model: model, serie: serie,
                            startStaffelID: frischeStaffelID ?? folge.seasonId,
-                           startStaffelNummer: folge.parentIndexNumber,
+                           startStaffelNummer: frischeStaffelnummer ?? folge.parentIndexNumber,
                            zurueck: zurueck)
             } else {
                 // Kein Ring: die Seite kommt gleich von selbst.
@@ -95,7 +104,9 @@ struct StaffelZiel: View {
                 if let geholt { Serienspeicher.geteilt.merken(geholt) }
                 serie = geholt
             }
-            frischeStaffelID = await frisch?.seasonId
+            let f = await frisch
+            frischeStaffelID = f?.seasonId
+            frischeStaffelnummer = f?.parentIndexNumber
         }
     }
 }
@@ -241,6 +252,16 @@ struct Heldenkopf: View {
     let titel: Item
     /// Wo die Seite steht — nur fürs Mitziehen des Bildes gebraucht.
     let stand: Kopfstand
+    /// **Welche Staffel gerade offen ist** — für „Staffel als gesehen" in der
+    /// Mehr-Liste.
+    ///
+    /// Hier stand an der Aufrufstelle fest `staffel: nil`, und damit fehlte
+    /// der Eintrag auf dem Mac als einziger Plattform: iPhone
+    /// (`Shared/SeriesView.swift:950`) und Fernseher
+    /// (`tvOS/SerienView.swift:477`) reichen ihn durch, und Linux hat ihn
+    /// ebenfalls. Der Kopf weiss die Staffel nicht von selbst — sie steht
+    /// eine Ebene tiefer in `SerienView` —, also kommt sie von dort.
+    var staffel: Item? = nil
 
     /// **Wie weit über den oberen Rand hinausgezogen wurde.**
     ///
@@ -599,7 +620,7 @@ struct Heldenkopf: View {
         ]
         if titel.type == "Series" {
             liste += Titelhandlungen.fuerSerie(
-                titel, stand: spielbarerTitel, staffel: nil, model: model,
+                titel, stand: spielbarerTitel, staffel: staffel, model: model,
                 folgeStarten: { folge, ab in steuerung.starte(folge, ab: ab) },
                 melden: { melde($0) }, auffrischen: { await auffrischen() })
         } else {

@@ -816,3 +816,19 @@ func beiGriff(_ ziel: Widget!, _ block: @escaping (Bool) -> Void) {
     gtk_event_controller_set_propagation_phase(geste, GTK_PHASE_CAPTURE)
     gtk_widget_add_controller(ziel, geste)
 }
+
+/// **Eine Adresse im Standardbrowser öffnen.**
+///
+/// Für den Fall, dass der Server keinen Trailer hat und nur ein Verweis ins
+/// Netz bleibt — der Mac nimmt dafür `NSWorkspace.shared.open`
+/// (`Sources/macOS/DetailView.swift:620`).
+///
+/// `g_app_info_launch_default_for_uri` statt `GtkUriLauncher`: der Launcher
+/// ist asynchron und will ein Elternfenster, hier genügt der Aufruf. Ein
+/// Fehlschlag ist still — wer keinen Browser hat, dem sagt eine Meldung
+/// darüber auch nichts.
+func imBrowser(_ ziel: URL) {
+    var fehler: UnsafeMutablePointer<GError>?
+    _ = g_app_info_launch_default_for_uri(ziel.absoluteString, nil, &fehler)
+    if let fehler { g_error_free(fehler) }
+}

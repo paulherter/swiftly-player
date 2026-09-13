@@ -56,8 +56,23 @@ extension App {
         var zeilen: [String] = []
         let quelle = laufenderPlan?.quelle
 
+        var kopfzeilen: [String] = []
         if let plan = laufenderPlan {
-            zeilen.append(Technikangaben.auslieferung(plan.method))
+            // **Das Wort traegt die Farbe** (D1): Akzent, wenn nichts
+            // umgerechnet wird, sonst Warnorange. Der Mac faerbt es ueber
+            // `Technikangaben.gewicht` (`Sources/Shared/Technikschild.swift:133-138`);
+            // hier stand es als blanker Text, und ein transkodierender Strom
+            // sah aus wie ein sauberer.
+            kopfzeilen.append(faerben(Technikangaben.auslieferung(plan.method),
+                                      Technikangaben.gewicht(plan.method) == .gut
+                                          ? Stil.akzent : Stil.warnung))
+            // **Und der Grund steht direkt darunter** (D2). Wer
+            // „Transkodiert" liest, will als Naechstes wissen, woran es lag.
+            // Diese Zeile fehlte auf Linux ganz — `plan.reasons` wurde in der
+            // ganzen Datei nie gelesen.
+            if plan.method == .transcode, let grund = plan.reasons.first {
+                kopfzeilen.append(faerben(grund.text, Stil.warnung))
+            }
         }
         if let video = quelle.flatMap(Dateiangaben.videospur) {
             var t = ""
@@ -78,8 +93,10 @@ extension App {
         zeilen.append("\(uebersetzt("Stelle")) \(Spielzeit.text(abspieler.position))"
                       + " / \(Spielzeit.text(abspieler.dauer))")
 
-        guard let w = technikzaehler else { return zeilen.map(schutz).joined(separator: "\n") }
-        var fertig = zeilen.map(schutz)
+        guard let w = technikzaehler else {
+            return (kopfzeilen + zeilen.map(schutz)).joined(separator: "\n")
+        }
+        var fertig = kopfzeilen + zeilen.map(schutz)
         fertig.append("")
 
         // **Nur die Abweichung meldet sich lauter** (D2). Die Schwellen sind
@@ -110,6 +127,11 @@ extension App {
                             + " · \(uebersetzt("Sprünge")) \(w.roh.spruenge)",
                             warnt: w.roh.beschaedigt > 0 || w.roh.spruenge > 0))
         return fertig.joined(separator: "\n")
+    }
+
+    /// Eine Zeile in einer bestimmten Farbe.
+    private func faerben(_ text: String, _ farbe: String) -> String {
+        "<span foreground=\"\(farbe)\">\(schutz(text))</span>"
     }
 
     /// Eine Zeile im Markup — warnend in Orange, sonst wie der Rest.

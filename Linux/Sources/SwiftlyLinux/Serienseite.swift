@@ -200,7 +200,8 @@ extension App {
         gtk_widget_set_halign(pille, GTK_ALIGN_START)
         let pilleninhalt = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
         let pillentext = beschriftung(wahl.jetzt?.name ?? uebersetzt("Staffel"))
-        let pillenwinkel: Widget! = gtk_image_new_from_icon_name("go-down-symbolic")
+        // Ein Winkel, kein Pfeil — `chevron.down` auf dem Mac.
+        let pillenwinkel: Widget! = gtk_image_new_from_icon_name("pan-down-symbolic")
         anhaengen(pilleninhalt, pillentext)
         anhaengen(pilleninhalt, pillenwinkel)
         gtk_button_set_child(alsKnopf(pille), pilleninhalt)
@@ -279,14 +280,43 @@ extension App {
                                          offen ? "pan-up-symbolic" : "pan-down-symbolic")
         }
 
-        gtk_widget_set_margin_start(wahlblock, Int32(Stil.randAbstand))
+        // **„Staffel laden" steht daneben** (`SerienView.swift:317-322`):
+        // dieselbe Hoehe, dieselbe Form, rechts vom Wahlchip. Er fehlte auf
+        // Linux ganz — wer eine Staffel mitnehmen wollte, musste jede Folge
+        // einzeln anstossen. Ist sie schon vollstaendig da, steht dort
+        // nichts: ein Knopf, der nichts mehr tut, ist schlechter als keiner.
+        let wahlreihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
+        gtk_widget_set_margin_start(wahlreihe, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_end(wahlreihe, Int32(Stil.randAbstand))
         // 18 unter der Wahl, wie `SerienView.swift:324`.
-        gtk_widget_set_margin_bottom(wahlblock, 18)
-        anhaengen(raum, wahlblock)
+        gtk_widget_set_margin_bottom(wahlreihe, 18)
+        anhaengen(wahlreihe, wahlblock)
+        anhaengen(wahlreihe, luftQuer())
+        if downloadsAn {
+            let laden = chip(uebersetzt("Staffel laden"), symbol: "folder-download-symbolic")
+            gtk_widget_set_valign(laden, GTK_ALIGN_START)
+            gtk_widget_set_visible(laden, 0)
+            staffelladeknopf = laden
+            beiSignal(laden, "clicked") { [weak self] in
+                guard let self else { return }
+                self.staffelLaden(self.staffelfolgen)
+                self.staffelladeknopfMalen()
+            }
+            anhaengen(wahlreihe, laden)
+        }
+        anhaengen(raum, wahlreihe)
         anhaengen(raum, folgenraum)
         if let jetzt = wahl.jetzt {
             folgenLaden(serie: serie, staffel: jetzt, in: folgenraum)
         }
+    }
+
+    /// **Ist die Staffel schon vollstaendig da, faellt der Chip weg** — so
+    /// auf dem Mac (`SerienView.swift:46-50`, `staffelVollstaendig`).
+    func staffelladeknopfMalen() {
+        guard let knopf = staffelladeknopf else { return }
+        let offen = staffelfolgen.contains { downloads.posten(fuer: $0.id) == nil }
+        gtk_widget_set_visible(knopf, (downloadsAn && !staffelfolgen.isEmpty && offen) ? 1 : 0)
     }
 
     /// Eine Zeile in der Staffelliste — Name links, Haken bei der gewählten.
@@ -350,6 +380,9 @@ extension App {
     /// Zeigt eine Folgenliste — aus dem Netz oder aus dem Speicher.
     private func folgenZeigen(_ folgen: [Item], in raum: Widget!) {
         leeren(raum)
+        // Der Chip „Staffel laden" braucht die Liste, die er laden soll.
+        staffelfolgen = folgen
+        staffelladeknopfMalen()
         guard !folgen.isEmpty else {
             // **Leer ist eine Auskunft, kein leerer Kasten.** Sonst steht
             // dort nichts und man hält es für einen Fehler.

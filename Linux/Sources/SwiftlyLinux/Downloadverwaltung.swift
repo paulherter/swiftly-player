@@ -91,11 +91,12 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     /// nimmt `isExpensive` dazu, oder diese Zeile wird auf „immer WLAN"
     /// zurueckgedreht. Bis dahin tut Linux, was H5 sagt, und der Mac etwas
     /// Grosszuegigeres.
-    private var imWLAN: Bool {
+    /// Nicht privat: die Ladetafel fragt sie, bevor sie den Knopf beschriftet.
+    var imWLAN: Bool {
         guard let wacht = g_network_monitor_get_default() else { return true }
         return g_network_monitor_get_network_metered(wacht) == 0
     }
-    private var nurUeberWLAN: Bool { Wahlen.lesen().nurUeberWLAN }
+    var nurUeberWLAN: Bool { Wahlen.lesen().nurUeberWLAN }
 
     override init() {
         super.init()

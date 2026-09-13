@@ -102,6 +102,25 @@ enum Stil {
     /// Wie lange ein Bereichswechsel ueberblendet. Dieselbe Dauer, die
     /// `GtkStack` fuer seine Kreuzblende nimmt (200 ms) — sonst saehen die
     /// beiden Wege in denselben Bereich verschieden aus.
+    /// **Der Bereichswechsel blendet ineinander, nicht gleichzeitig.**
+    ///
+    /// Der Mac trennt zwei Dauern (`Sources/macOS/Stil.swift:208-210`): das
+    /// Alte geht in 0,20 s (`easeInOut`), das Neue kommt in 0,26 s
+    /// (`easeOut`) mit 0,04 s Vorlauf. Hier stand **eine** Zahl für beides —
+    /// eine gleichzeitige Kreuzblende, bei der die Seite in der Mitte auf
+    /// halber Deckung steht.
+    ///
+    /// **Ohne Skalierung und ohne Unschärfe**, und das ist derselbe Schluss
+    /// wie dort: die Vorschrift lässt das Eingehende von 92 % wachsen, und in
+    /// einem breiten Fenster verschiebt schon ein Prozent an der Kante acht
+    /// Punkte. Der Mac ersetzt sie durch 0,8 Punkt Unschärfe — die GTK nicht
+    /// lebend zeichnen kann (E19, dieselbe Grenze wie beim Glas). Bleibt die
+    /// Blende, und die trägt die Aussage allein.
+    static let zeitBlendeHinaus = 0.20
+    static let zeitBlendeHerein = 0.26
+    static let zeitBlendeVorlauf = 0.04
+    /// Die Kreuzblende des Reiterstapels — dort gibt es nur **eine** Dauer,
+    /// weil `GtkStack` keine zwei kennt.
     static let zeitBlende = 0.2
     /// Wie weit die Seite **darunter** mitgeht. Ein knappes Drittel — so hält
     /// es die Systemnavigation, und daher kommt der Eindruck von Ebenen statt
@@ -284,6 +303,19 @@ enum Stil {
             font-size: \(rubrik)px;
             font-weight: 600;
             letter-spacing: 0.7px;
+        }
+        /* **Die Ueberschrift ueber einer Einstellungsgruppe ist eine andere.**
+           Der Mac hat fuer diese Rolle einen eigenen Baustein
+           (`Sources/macOS/Einstellungszeilen.swift:49-53`): 11 medium, 1,2
+           Laufweite, Weiss zu 40 % — waehrend die Seitenleistenrubrik
+           (`Macbausteine.swift:70-77`) 11 halbfett, 0,7 und 48 % traegt.
+           Linux hatte beides auf **eine** Funktion gelegt und dabei die
+           Sidebar-Fassung als einzige Wahrheit genommen. */
+        .swiftly-gruppenrubrik {
+            font-size: \(rubrik)px;
+            font-weight: 500;
+            letter-spacing: 1.2px;
+            color: rgba(255,255,255,0.40);
         }
 
         /* MARK: Eingabefeld

@@ -72,6 +72,11 @@ final class Medienleiste: @unchecked Sendable {
     fileprivate var untertitel = ""
     fileprivate var dauer: Double = 0
     fileprivate var stelle: Double = 0
+    /// **Das Bild fuer die Kachel der Umgebung.** Der Mac setzt dafuer
+    /// `MPMediaItemPropertyArtwork` (`Sources/Shared/Wiedergabezentrale.swift:210`);
+    /// MPRIS kennt `mpris:artUrl`, und die Zeile fehlte hier ganz — die
+    /// Kachel in der Systemleiste stand ohne Plakat da.
+    fileprivate var bild = ""
 
     init(melden: @escaping (Griff) -> Void) {
         self.melden = melden
@@ -85,6 +90,10 @@ final class Medienleiste: @unchecked Sendable {
     }
 
     fileprivate func loesen(_ griff: Griff) { melden(griff) }
+
+    /// Ob „weiter" etwas zu tun hat — siehe `CanGoNext`.
+    fileprivate var hatNaechste = false
+    func naechsteMelden(_ ja: Bool) { hatNaechste = ja }
 
     // MARK: Anmelden
 
@@ -140,12 +149,13 @@ final class Medienleiste: @unchecked Sendable {
     /// Sagt der Umgebung, was gerade läuft. **Nach jeder Änderung**, sonst
     /// bleibt ihre Kachel auf dem alten Stand stehen.
     func standMelden(laeuft: Bool, titel: String, untertitel: String,
-                     dauer: Double, stelle: Double) {
+                     dauer: Double, stelle: Double, bild: String = "") {
         self.laeuft = laeuft
         self.titel = titel
         self.untertitel = untertitel
         self.dauer = dauer
         self.stelle = stelle
+        self.bild = bild
         guard let bus = verbindung else { return }
 
         // **Auch hier ist die bequeme Form variadisch und damit gesperrt.**
@@ -191,6 +201,9 @@ final class Medienleiste: @unchecked Sendable {
             defer { g_variant_builder_unref(liste) }
             g_variant_builder_add_value(liste, g_variant_new_string(untertitel))
             Medienleiste.eintragen(bauer, "xesam:artist", g_variant_builder_end(liste))
+        }
+        if !bild.isEmpty {
+            Medienleiste.eintragen(bauer, "mpris:artUrl", g_variant_new_string(bild))
         }
         return g_variant_builder_end(bauer)
     }
@@ -274,8 +287,19 @@ nonisolated(unsafe) private let mprisLesen: @convention(c) (
         return g_variant_new_string(leiste.laeuft ? "Playing" : "Paused")
     case "Metadata":            return leiste.metadaten()
     case "Position":            return g_variant_new_int64(gint64(leiste.stelle * 1_000_000))
-    case "CanPlay", "CanPause", "CanSeek", "CanControl", "CanGoNext":
+    case "CanPlay", "CanPause", "CanControl":
         return g_variant_new_boolean(1)
+    // **Was nicht geht, wird auch nicht behauptet.** `CanSeek` stand auf
+    // wahr, und `Seek`/`SetPosition` gibt es in der Beschreibung gar nicht —
+    // ein Aufruf aus der Umgebung lief ins Leere und wurde trotzdem als
+    // Erfolg quittiert. Der Mac hat dort echte Befehle
+    // (`Sources/Shared/Wiedergabezentrale.swift:412-419`); bis es die hier
+    // auch gibt, sagt die Kachel die Wahrheit.
+    case "CanSeek":             return g_variant_new_boolean(0)
+    // **Und „weiter" nur, wenn es eine naechste Folge gibt.** Der Mac setzt
+    // `nextTrackCommand.isEnabled = griffe?.naechste != nil`; hier stand fest
+    // wahr, und der Knopf in der Systemleiste war bei einem Film aktiv.
+    case "CanGoNext":           return g_variant_new_boolean(leiste.hatNaechste ? 1 : 0)
     case "CanGoPrevious":       return g_variant_new_boolean(0)
     default:                    return nil
     }

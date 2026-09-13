@@ -437,6 +437,10 @@ func zeilengruppe() -> (aussen: Widget, raum: Widget) {
 func einstellungsgruppe(_ titel: String) -> (aussen: Widget, raum: Widget) {
     let aussen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
     let kopf = rubrik(titel)
+    // **Nicht dieselbe Rubrik wie in der Seitenleiste** — siehe
+    // `swiftly-gruppenrubrik` im Stilblatt.
+    gtk_widget_remove_css_class(kopf, "swiftly-leise")
+    gtk_widget_add_css_class(kopf, "swiftly-gruppenrubrik")
     gtk_widget_set_margin_start(kopf, 0)
     gtk_widget_set_margin_top(kopf, 26)
     gtk_widget_set_margin_bottom(kopf, 8)

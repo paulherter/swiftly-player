@@ -34,22 +34,24 @@ extension App {
         // Listeneintrag trägt die Staffel, die er beim Laden hatte; wer eine
         // Staffel zu Ende sieht und die nächste dazulegt, hat dort weiter die
         // alte stehen. Dieselbe Abhilfe wie auf dem Mac (`StaffelZiel`).
+        // **Was das Ueberfahren schon geholt hat, steht sofort** — siehe
+        // ``serieVorholen(_:)``. Ohne das lief hier bei jedem Klick derselbe
+        // Abruf noch einmal.
+        let schon = vollspeicher[serieID]
         Task.detached { [self] in
             async let frisch = try? await client.item(id: item.id)
-            async let serie = try? await client.item(id: serieID)
+            async let serie = schon != nil ? schon : (try? await client.item(id: serieID))
             let (f, s) = await (frisch, serie)
             aufHauptfaden {
                 guard let s else { return }
-                // **Nur die Kennung wird frisch geholt, nicht die Nummer.**
-                // Der Mac uebergibt `folge.parentIndexNumber` vom Eintrag
-                // (`DetailView.swift:83`), wie die iPhone-Fassung
-                // (`Shared/HauptView.swift:833`), und frischt allein
-                // `seasonId` auf (`:98`). Hier stand beides frisch — im
-                // Randfall aus A10, wo der Server keine `SeasonId` liefert
-                // und nur die Nummer traegt, waehlte Linux dadurch eine
-                // andere Staffel als der Mac.
+                // **Beides frisch, Kennung und Nummer.** Der Mac holte lange
+                // nur die Kennung nach (`StaffelZiel.frischeStaffelID`) — und
+                // liefert der Server an einer Folge keine `SeasonId`, was A10
+                // ausdruecklich als gemessenen Fall nennt, traegt allein die
+                // Nummer den Vergleich. Dann waere es die veraltete gewesen.
+                // Seit dem 13.09.2026 zieht der Mac beides nach.
                 self.startStaffel = f?.seasonId ?? item.seasonId
-                self.startStaffelNummer = item.parentIndexNumber
+                self.startStaffelNummer = f?.parentIndexNumber ?? item.parentIndexNumber
                 self.seitenstapel[self.bereich, default: []].append(s)
                 self.detailZeigen(s)
             }
@@ -643,20 +645,50 @@ extension App {
         // `bookmark-new-symbolic` ein Baendchen mit Pluszeichen — das heisst
         // „neues Lesezeichen anlegen", nicht „auf der Merkliste" — und kennt
         // keine gefuellte Fassung. Siehe ``Merkzeichen``.
-        var gemerkt = titel.userData?.isFavorite ?? false
-        let merkzeichen = Merkzeichen(gefuellt: gemerkt)
-        merkzeichen.aufHellemGrund(gemerkt)
-        let merk = nebenknopf("", name: uebersetzt("Merkliste"), aktiv: gemerkt,
+        // **Der Stand liegt in einer Klasse, nicht in einer lokalen Variablen.**
+        // Der Rueckfall bei einem Serverfehler kommt aus einer abgesetzten
+        // Aufgabe zurueck, und eine `var` darf die Fadengrenze nicht
+        // ueberqueren — dieselbe Ueberlegung wie bei ``Spielziel``.
+        let stand = Merkstand(titel.userData?.isFavorite ?? false)
+        let merkzeichen = Merkzeichen(gefuellt: stand.an)
+        merkzeichen.aufHellemGrund(stand.an)
+        let merk = nebenknopf("", name: uebersetzt("Merkliste"), aktiv: stand.an,
                               zeichnung: merkzeichen.anzeige)
         beiSignal(merk, "clicked") { [weak self] in
             guard let self, let client = self.client else { return }
-            gemerkt.toggle()
-            if gemerkt { gtk_widget_add_css_class(merk, "swiftly-aktiv") }
-            else       { gtk_widget_remove_css_class(merk, "swiftly-aktiv") }
-            merkzeichen.setzen(gemerkt)
-            merkzeichen.aufHellemGrund(gemerkt)
-            let neu = gemerkt
-            Task.detached { try? await client.setzeMerkliste(itemID: titel.id, an: neu) }
+            stand.an.toggle()
+            if stand.an { gtk_widget_add_css_class(merk, "swiftly-aktiv") }
+            else        { gtk_widget_remove_css_class(merk, "swiftly-aktiv") }
+            merkzeichen.setzen(stand.an)
+            merkzeichen.aufHellemGrund(stand.an)
+            let neu = stand.an
+            // **Ein Fehlschlag dreht den Knopf zurueck** (D6: der Zustand des
+            // Knopfes **ist** die Antwort — dann muss er auch stimmen). Hier
+            // stand `try?`: der Knopf blieb umgeschaltet, der Server wusste
+            // nichts davon, und niemand erfuhr es. Der Gesehen-Knopf drei
+            // Zeilen weiter macht es seit jeher richtig, und der Mac auch
+            // (`DetailView.swift:506-515`).
+            // Der Zeiger geht ueber die Fadengrenze in der ``Zeigerkiste``,
+            // wie ueberall hier.
+            let kiste = gehalten(merk)
+            Task.detached { [self] in
+                do {
+                    try await client.setzeMerkliste(itemID: titel.id, an: neu)
+                    aufHauptfaden { losgelassen(kiste) }
+                } catch {
+                    aufHauptfaden {
+                        defer { losgelassen(kiste) }
+                        let zurueck = !neu
+                        stand.an = zurueck
+                        let knopf = kiste.widget
+                        if zurueck { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+                        else       { gtk_widget_remove_css_class(knopf, "swiftly-aktiv") }
+                        merkzeichen.setzen(zurueck)
+                        merkzeichen.aufHellemGrund(zurueck)
+                        self.melden(lesbarerFehler(error))
+                    }
+                }
+            }
         }
         // Die Zeichenflaeche haelt ihr Zeichen; ohne diesen Zugriff stirbt es
         // beim Verlassen des Aufrufs.
@@ -694,7 +726,8 @@ extension App {
     /// selbst, wenn man daneben klickt.
     private func mehrZeigen(_ titel: Item, an knopf: Widget!) {
         let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_size_request(liste, 230, -1)
+        // 260, wie `Handlungsliste` auf dem Mac (`Macbausteine.swift:591`).
+        gtk_widget_set_size_request(liste, 260, -1)
 
         var gesehen = titel.istGesehen
         let ersteZeile = gesehen ? uebersetzt("Als ungesehen markieren") : uebersetzt("Als gesehen markieren")
@@ -725,6 +758,17 @@ extension App {
         // **„Von vorn" nur, wenn es etwas zurueckzusetzen gibt** — bei einem
         // Film, der bei null steht, waere es eine Zeile ohne Wirkung. Wortlaut
         // und Bedingung aus `Titelhandlungen.fuerFilm`.
+        //
+        // **„Trailer" steht an zweiter Stelle, nicht an dritter.** Der Mac
+        // reiht Gesehen, Trailer, dann die typspezifischen Eintraege
+        // (`DetailView.swift:597-618`); hier stand Trailer dahinter. Die
+        // Eintraege selbst waren schon dieselben — nur die Reihenfolge nicht,
+        // und eine von Hand nachgezogene Liste laeuft genau so auseinander.
+        anhaengen(liste, handlungszeile("video-x-generic-symbolic", uebersetzt("Trailer")) {
+            [weak self] in
+            gtk_popover_popdown(alsTafel(tafel))
+            self?.trailerStarten(titel)
+        })
         if titel.type == "Series" {
             if let stand = offenesZiel?.titel {
                 anhaengen(liste, handlungszeile("media-playback-start-symbolic",
@@ -786,11 +830,6 @@ extension App {
                 self.melden(uebersetzt("Der Fortschritt ist zurückgesetzt."))
             })
         }
-        anhaengen(liste, handlungszeile("video-x-generic-symbolic", uebersetzt("Trailer")) {
-            [weak self] in
-            gtk_popover_popdown(alsTafel(tafel))
-            self?.trailerStarten(titel)
-        })
         anhaengen(liste, handlungszeile("view-refresh-symbolic", uebersetzt("Metadaten auffrischen")) {
             [weak self] in
             guard let client = self?.client else { return }
@@ -825,11 +864,21 @@ extension App {
                 // **Schweigen ist keine Antwort.** Ohne diese Zeile passierte
                 // beim Druck auf „Trailer" schlicht nichts, und man wusste
                 // nicht, ob der Knopf kaputt ist oder der Server nichts hat.
-                guard let film = filme.first else {
-                    self.melden(uebersetzt("Für diesen Titel liegt kein Trailer vor."))
+                if let film = filme.first {
+                    self.starte(film, ab: 0)
                     return
                 }
-                self.starte(film, ab: 0)
+                // **Der Server hat keinen, das Netz vielleicht schon.** Der
+                // Mac faellt auf `remoteTrailers` zurueck und oeffnet die
+                // Adresse im Browser (`DetailView.swift:618-621`); hier stand
+                // nur die Absage. `remoteTrailers` wurde in der ganzen Datei
+                // nie gelesen.
+                if let adresse = titel.remoteTrailers?.compactMap(\.url).first,
+                   let ziel = URL(string: adresse) {
+                    imBrowser(ziel)
+                    return
+                }
+                self.melden(uebersetzt("Für diesen Titel liegt kein Trailer vor."))
             }
         }
     }
@@ -844,6 +893,13 @@ extension App {
 /// gelesen und geschrieben wird ausschließlich auf GTKs Hauptfaden, das
 /// Nachladen kommt über ``aufHauptfaden`` dorthin zurück. Swift kann das
 /// nicht sehen, nur wir.
+/// Ob ein Titel auf der Merkliste steht — als Klasse, damit der Rueckfall
+/// nach einem Serverfehler denselben Wert sieht wie der Klick.
+final class Merkstand: @unchecked Sendable {
+    var an: Bool
+    init(_ an: Bool) { self.an = an }
+}
+
 final class Spielziel: @unchecked Sendable {
     var titel: Item?
 }
@@ -940,6 +996,22 @@ extension App {
             }
         }
 
+        // **Und der Fall dazwischen: Platz ja, Leitung getaktet** (H5). Der
+        // Mac hat dafuer einen eigenen Zweig mit Warnzeichen und dem Knopf
+        // „In die Warteschlange" (`Macdownloads.swift:161-166`); hier gab es
+        // nur „passt nicht" und „laedt", obwohl die Messung selbst existiert.
+        else if !Downloadregeln.darfLaden(imWLAN: downloads.imWLAN,
+                                          nurUeberWLAN: downloads.nurUeberWLAN) {
+            anhaengen(liste, ladeangabe(uebersetzt("Kein WLAN"),
+                                        uebersetzt("Mobilfunk"), warnend: true))
+            anhaengen(liste, handlungszeile("folder-download-symbolic",
+                                            uebersetzt("In die Warteschlange")) { [weak self] in
+                gtk_popover_popdown(alsTafel(tafel))
+                self?.ladenAnstossen(titel, quelle: quelle, bytes: bytes)
+            })
+            gtk_popover_popup(alsTafel(tafel))
+            return
+        }
         // **Drei Zahlen, ein Knopf** (H3). Groesse, Qualitaet und was danach
         // frei ist — so steht die Tafel auf dem Mac
         // (`Macdownloads.swift:168-176`). Hier stand im Normalfall nur die
@@ -1021,5 +1093,25 @@ extension App {
         }
         downloads.anstossen(posten, bilder: bilder)
         melden(uebersetzt("Wird geladen."))
+    }
+
+    /// **Die ganze Staffel, der Reihe nach** (H4).
+    ///
+    /// Der Chip neben der Staffelwahl fehlte auf Linux ganz — es gab nur den
+    /// Download je Einzelfolge, und wer eine Staffel mitnehmen wollte, musste
+    /// zweiundzwanzig Mal klicken. Der Mac hat ihn seit langem
+    /// (`SerienView.swift:103-110`, `:317-322`).
+    ///
+    /// **Was schon da ist, kommt nicht noch einmal in die Schlange**, und die
+    /// Reihenfolge macht `Downloadregeln.naechster` — hier wird nur
+    /// eingereiht.
+    func staffelLaden(_ folgen: [Item]) {
+        let offene = folgen.filter { downloads.posten(fuer: $0.id) == nil }
+        guard !offene.isEmpty else { return }
+        for folge in offene {
+            ladenAnstossen(folge, quelle: folge.mediaSources?.first,
+                           bytes: folge.mediaSources?.first?.size ?? 0)
+        }
+        melden(String(format: uebersetzt("%d Folgen werden geladen."), offene.count))
     }
 }

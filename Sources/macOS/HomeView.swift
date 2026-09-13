@@ -160,6 +160,25 @@ struct HomeView: View {
             guard stand.brauchtAuffrischung else { return }
             Task { await auffrischen() }
         }
+        // **Und beim Schliessen des Players** (D8) — die zweite Haelfte der
+        // Regel, und sie fehlte.
+        //
+        // Der Kommentar oben behauptet, `.task` decke das ab, weil die
+        // Ansicht dann wieder erscheine. Sie erscheint nicht: der Player
+        // liegt auf dem Mac als `.overlay` ueber der **stehenbleibenden**
+        // Startseite (`HauptView.swift:253-261`), und `schliessen()` setzt nur
+        // `wunsch = nil`. Wer eine Folge zu Ende sah und den Player schloss,
+        // sah in „Weiterschauen" weiter die alte Kachel mit dem alten Balken
+        // — bis nach dreissig Sekunden Fensterwechsel oder einem
+        // Kontowechsel. Genau der Fall, fuer den D8 gemacht ist.
+        //
+        // **Ohne Frist**, wie auf iPhone (`onDismiss` am `fullScreenCover`)
+        // und auf Linux (`Spieler.spielerSchliessen`): hier ist gerade etwas
+        // geschehen, das den Stand aendert.
+        .onChange(of: steuerung.wunsch == nil) { vorher, jetzt in
+            guard !vorher, jetzt else { return }
+            Task { await auffrischen() }
+        }
     }
 
     /// Eine feste Reihe — derselbe Aufbau wie vorher, nur einzeln abrufbar,

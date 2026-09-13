@@ -943,9 +943,9 @@ extension App {
         // `Einstellungsgruppe` (`DarstellungView.swift:118-147`) — deshalb
         // laeuft der Trennstrich zwischen ihnen durch und nicht ein Spalt.
         for (stelle, name) in wahlen.startGenres.enumerated() {
-            _ = stelle
             anhaengen(g2.raum, zeilenstrich())
-            anhaengen(g2.raum, genrezeile(name))
+            anhaengen(g2.raum, genrezeile(name, stelle: stelle,
+                                          von: wahlen.startGenres.count))
         }
         // Der Strich vor „Genre hinzufuegen" laeuft auf dem Mac ueber die
         // volle Breite (`Trennstrich()` ohne Einzug, `:142`) — er trennt
@@ -1021,17 +1021,30 @@ extension App {
     }
 
     /// Ein gewähltes Genre: Name und ein Weg, es wieder loszuwerden.
-    private func genrezeile(_ name: String) -> Widget! {
+    /// - Parameters:
+    ///   - stelle: Wo das Genre in der Liste steht — für die beiden Pfeile.
+    ///   - von: Wie viele es insgesamt sind.
+    ///
+    /// **Mit Pfeilen, wie die Startreihen darüber.** Der Mac lässt Genres
+    /// ziehen (`DarstellungView.swift:136-140`, `genreAblegen` `:153-161`);
+    /// hier gibt es dafür zwei Pfeile, genau wie bei den Reihen — dieselbe
+    /// Abweichung aus derselben Begründung (Abschnitt F, Eingabeart).
+    /// `genrezeile` hatte nur den Entfernen-Pfeil, obwohl `reihenzeile` drei
+    /// Zeilen weiter oben vormacht, wie es geht.
+    private func genrezeile(_ name: String, stelle: Int, von: Int) -> Widget! {
         let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
-        gtk_widget_set_margin_start(zeile, 14)
-        gtk_widget_set_margin_end(zeile, 14)
-        gtk_widget_set_margin_top(zeile, 10)
-        gtk_widget_set_margin_bottom(zeile, 10)
+        gtk_widget_add_css_class(zeile, "swiftly-zeilenrumpf")
         // **Der Name kommt vom Server** und wird nicht übersetzt (E7).
         let l = beschriftung(name, stil: "swiftly-koerper")
         gtk_label_set_xalign(OpaquePointer(l), 0)
         gtk_widget_set_hexpand(l, 1)
         anhaengen(zeile, l)
+        anhaengen(zeile, listenpfeil("go-up-symbolic", an: stelle > 0) { [weak self] in
+            self?.genreVerschieben(name, um: -1)
+        })
+        anhaengen(zeile, listenpfeil("go-down-symbolic", an: stelle < von - 1) { [weak self] in
+            self?.genreVerschieben(name, um: 1)
+        })
         let weg = listenpfeil("list-remove-symbolic", an: true) { [weak self] in
             guard let self else { return }
             self.wahlen.startGenres.removeAll { $0 == name }
@@ -1041,6 +1054,21 @@ extension App {
         }
         anhaengen(zeile, weg)
         return zeile
+    }
+
+    /// Verschiebt ein Genre um eine Stelle. Die gezogene rückt an die Stelle
+    /// der, auf der sie landet — wörtlich `genreAblegen` auf dem Mac.
+    private func genreVerschieben(_ name: String, um schritt: Int) {
+        var liste = wahlen.startGenres
+        guard let von = liste.firstIndex(of: name) else { return }
+        let nach = von + schritt
+        guard nach >= 0, nach < liste.count else { return }
+        liste.remove(at: von)
+        liste.insert(name, at: nach)
+        wahlen.startGenres = liste
+        wahlen.sichern()
+        geladen.remove(.start)
+        unterseiteOeffnen(.darstellung, schub: .ohne)
     }
 
     /// Die freien Genres des Servers.

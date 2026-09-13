@@ -1042,8 +1042,13 @@ extension App {
         // normal.** Der Scroller traegt die Hoehengrenze, nicht die Tafel: so
         // bleibt sie bei kurzen Listen so hoch wie ihr Inhalt.
         let rolle: Widget! = gtk_scrolled_window_new()
+        // **`EXTERNAL`, nicht `AUTOMATIC`** (E4): scrollen ja, Leiste nein.
+        // Das war die einzige Scrollflaeche der App mit einem echten
+        // Systembalken — bei einem Titel mit vierzig Untertiteln stand er da.
+        // Der Mac setzt an derselben Stelle `.scrollIndicators(.never)`
+        // (`Spurwahl.swift:86`).
         gtk_scrolled_window_set_policy(OpaquePointer(rolle),
-                                       GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
+                                       GTK_POLICY_NEVER, GTK_POLICY_EXTERNAL)
         gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(rolle), 1)
         gtk_scrolled_window_set_max_content_height(OpaquePointer(rolle), 420)
         gtk_scrolled_window_set_child(OpaquePointer(rolle), rechts)

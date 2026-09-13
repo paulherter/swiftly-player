@@ -305,3 +305,8 @@
 "Wirklich anfragen?" = "Really request it?";
 "Läuft ab in %d:%02d" = "Expires in %d:%02d";
 "Titel, Serie, Person" = "Title, series, person";
+"Kein WLAN" = "No Wi-Fi";
+"Mobilfunk" = "Cellular";
+"In die Warteschlange" = "Add to queue";
+"Staffel laden" = "Download season";
+"%d Folgen werden geladen." = "%d episodes are downloading.";

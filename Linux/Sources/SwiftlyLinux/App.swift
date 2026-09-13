@@ -77,6 +77,13 @@ final class App: @unchecked Sendable {
     /// Seitenstapel liegt der magere Listeneintrag; der traegt keine
     /// Besetzung. Nur fuer das ``Fernsteuerpult``.
     var letzterVollerTitel: Item?
+    /// Serien, die beim Ueberfahren einer Folgenkachel schon geholt wurden —
+    /// siehe ``serieVorholen(_:)``.
+    var vollspeicher: [String: Item] = [:]
+    var vorholend: Set<String> = []
+    /// Die Folgen der offenen Staffel und der Chip „Staffel laden" darueber.
+    var staffelfolgen: [Item] = []
+    var staffelladeknopf: Widget?
     /// Die Kontozeile unten in der Seitenleiste — sie traegt die
     /// Hervorhebung, solange eine Unterseite offen ist.
     private var profilzeile: Widget?
@@ -1988,16 +1995,30 @@ final class App: @unchecked Sendable {
         let fest = alsFest(buehne)
         let breite = Double(gtk_widget_get_width(buehne))
 
-        // Ueberblenden statt schieben: die neue Ebene liegt gleich an ihrem
-        // Platz und wird nur sichtbar. Dieselbe Dauer wie die Kreuzblende des
-        // Stapels, damit beide Wege gleich aussehen.
+        // **„Fade Through": erst hinaus, dann herein** — und die beiden
+        // ueberlappen. Hier stand eine gleichzeitige Kreuzblende mit **einer**
+        // Dauer; damit steht die Seite in der Mitte des Wechsels auf halber
+        // Deckung, und beide Bilder sind gleichzeitig halb zu sehen. Der Mac
+        // trennt die Dauern (`Sources/macOS/Stil.swift:208-210`): 0,20 s
+        // hinaus mit `easeInOut`, 0,26 s herein mit `easeOut` und 0,04 s
+        // Vorlauf. Zusammen 0,30 s, und es ist nie nichts zu sehen.
         if richtung == .blende {
             gtk_fixed_move(fest, ziel, 0, 0)
             gtk_widget_insert_before(ziel, buehne, nil)
             gtk_widget_set_opacity(ziel, 0)
-            laufen(auf: buehne, dauer: Stil.zeitBlende) { e in
-                gtk_widget_set_opacity(ziel, e)
-                gtk_widget_set_opacity(alt, 1 - e)
+            let hinaus = Stil.zeitBlendeHinaus
+            let vorlauf = Stil.zeitBlendeVorlauf
+            let herein = Stil.zeitBlendeHerein
+            let gesamt = max(hinaus, vorlauf + herein)
+            laufen(auf: buehne, dauer: gesamt) { e in
+                let t = e * gesamt
+                // Das Alte: `easeInOut` ueber `hinaus`.
+                let a = min(max(t / hinaus, 0), 1)
+                gtk_widget_set_opacity(alt, 1 - (a < 0.5 ? 2 * a * a
+                                                         : 1 - pow(-2 * a + 2, 2) / 2))
+                // Das Neue: `easeOut` ueber `herein`, nach dem Vorlauf.
+                let b = min(max((t - vorlauf) / herein, 0), 1)
+                gtk_widget_set_opacity(ziel, 1 - pow(1 - b, 3))
             } fertig: {
                 gtk_widget_set_opacity(ziel, 1)
                 gtk_widget_set_opacity(alt, 1)
@@ -2658,11 +2679,23 @@ final class App: @unchecked Sendable {
                                       dauer: 0, stelle: 0)
             return
         }
+        // **Mit Plakat.** Der Mac legt es als `MPMediaItemPropertyArtwork` in
+        // die Wiedergabezentrale (`Sources/Shared/Wiedergabezentrale.swift:210`);
+        // MPRIS kennt dafuer `mpris:artUrl`, und die Kachel in der
+        // Systemleiste stand hier ohne Bild da. **Die Adresse, nicht die
+        // Bytes** — jede Umgebung holt das Bild selbst, und die Adresse hat
+        // kein Zugangsmerkmal (G3, `Bildschluessel`).
+        let plakat = adressen.flatMap {
+            Bildwahl.hochkant(titel, adressen: $0, maxHoehe: 600)
+        }
         medienleiste?.standMelden(laeuft: spielstand.laeuft,
                                   titel: titel.name,
                                   untertitel: titel.kontextzeile ?? titel.seriesName ?? "",
                                   dauer: spielstand.dauer,
-                                  stelle: spielstand.position)
+                                  stelle: spielstand.position,
+                                  bild: plakat?.absoluteString ?? "")
+        // „Weiter" ist nur aktiv, wenn es eine naechste Folge gibt.
+        medienleiste?.naechsteMelden(titel.type == "Episode")
     }
 
     /// Was ein anderes Geraet hier ausloest. Dieselben Griffe wie am Knopf.
@@ -3626,10 +3659,35 @@ final class App: @unchecked Sendable {
         // „Nächste Folge" und „Zuletzt hinzugefügt" öffnen die Übersicht
         // (A2, A3) — was man nicht angefangen hat, will man erst ansehen.
         return kachelhuelle(bild: kaefig, breite: breite, oben: oben, unten: unten,
-                            uebersicht: quer ? { [weak self] in self?.oeffne(item) } : nil) {
+                            uebersicht: quer ? { [weak self] in self?.oeffne(item) } : nil,
+                            vorholen: { [weak self] in self?.serieVorholen(item) }) {
             [weak self] in
             guard let self else { return }
             if quer { self.starte(item) } else { self.oeffne(item) }
+        }
+    }
+
+    /// **Die Serie zu einer Folge schon holen, bevor jemand klickt.**
+    ///
+    /// Auf dem Schreibtisch liegt der Zeiger immer erst auf der Kachel; der
+    /// Mac nutzt das (`Serienspeicher.vorholen`, Begruendung in
+    /// `Sources/Shared/Serienspeicher.swift:100-124`). Auf Linux fehlte es,
+    /// und ein Klick auf eine Weiterschauen-Kachel stand bis zu zwei
+    /// nacheinander laufende Abrufe lang still.
+    ///
+    /// **Hoechstens einer je Serie, und nur einmal.** `serienspeicher` haelt,
+    /// was schon da ist; `serienlauf` verhindert, dass ein zweites Ueberfahren
+    /// denselben Abruf noch einmal startet.
+    private func serieVorholen(_ item: Item) {
+        guard item.type == "Episode", let serie = item.seriesId, let client else { return }
+        guard vollspeicher[serie] == nil, !vorholend.contains(serie) else { return }
+        vorholend.insert(serie)
+        Task.detached { [self] in
+            let geholt = try? await client.item(id: serie)
+            aufHauptfaden {
+                self.vorholend.remove(serie)
+                if let geholt { self.vollspeicher[serie] = geholt }
+            }
         }
     }
 
@@ -3687,8 +3745,11 @@ final class App: @unchecked Sendable {
     ///
     /// `uebersicht` ist `nil`, wo die Kachel ohnehin schon dorthin führt — ein
     /// Menü mit dem einen Eintrag, den der Klick auch tut, ist keiner.
+    /// - Parameter vorholen: Was geschieht, sobald der Zeiger die Kachel
+    ///   erreicht — siehe unten.
     func kachelhuelle(bild: Widget!, breite: Int, oben: String, unten: String?,
                       uebersicht: (() -> Void)? = nil,
+                      vorholen: (() -> Void)? = nil,
                       auswahl: @escaping () -> Void) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-kachel")
@@ -3709,6 +3770,16 @@ final class App: @unchecked Sendable {
 
         gtk_button_set_child(alsKnopf(knopf), kachel)
         beiSignal(knopf, "clicked", auswahl)
+        if let vorholen {
+            // **Vorholen beim Ueberfahren.** Auf dem Schreibtisch liegt der
+            // Zeiger immer erst auf der Kachel, bevor geklickt wird — der Mac
+            // nutzt das (`Macbausteine.swift:237-241`, Begruendung in
+            // `Serienspeicher.swift:100-124`) und holt die Serie zur Folge
+            // schon vor. Hier fehlte es ganz: ein Klick auf eine
+            // Weiterschauen-Kachel blieb bis zu zwei nacheinander laufende
+            // Abrufe lang ohne jede Reaktion.
+            beiZeiger(knopf, herein: vorholen, hinaus: {})
+        }
 
         if let uebersicht {
             let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
