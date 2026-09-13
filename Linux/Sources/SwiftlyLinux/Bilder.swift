@@ -192,6 +192,8 @@ func bildSetzen(_ bildfeld: Widget!, daten: Data, schluessel: String) {
 /// frische Bytes), säh man es flackern.
 private func bildEinblenden(_ bildfeld: Widget!) {
     guard gtk_widget_get_opacity(bildfeld) >= 0.999 else { return }
+    // Waehrend eine Seite faehrt, kostet jede Blende ein Bild der Fahrt.
+    guard !Schubsperre.faehrt else { return }
     gtk_widget_set_opacity(bildfeld, 0)
     laufen(auf: bildfeld, dauer: 0.22) { e in
         gtk_widget_set_opacity(bildfeld, e)

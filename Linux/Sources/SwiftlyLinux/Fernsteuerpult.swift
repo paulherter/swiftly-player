@@ -90,6 +90,13 @@ extension App {
         /// Die Wiedergabetafel im Player auf- und zuklappen.
         case "spurwahl":   spurwahlZeigen()
 
+        /// Den offenen Titel laden, wie der Knopf „Laden" in der Tafel.
+        case "laden":
+            if let t = letzterVollerTitel {
+                ladenAnstossen(t, quelle: t.mediaSources?.first,
+                               bytes: t.mediaSources?.first?.size ?? 0)
+            }
+
         /// Einen Reiter der Serienseite wählen.
         case "reiter":
             switch teile.count > 1 ? teile[1] : "" {

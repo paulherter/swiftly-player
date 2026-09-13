@@ -139,6 +139,9 @@ final class Merkzeichen: @unchecked Sendable {
         gtk_widget_add_css_class(feld, "swiftly-blank")
         gtk_drawing_area_set_content_width(alsZeichen(feld), Int32(mass))
         gtk_drawing_area_set_content_height(alsZeichen(feld), Int32(mass))
+        // Mittig, sonst dehnt der Knopf die Flaeche und das Zeichen waechst mit.
+        gtk_widget_set_halign(feld, GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(feld, GTK_ALIGN_CENTER)
         anzeige = feld!
         gtk_drawing_area_set_draw_func(alsZeichen(feld), merkMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)

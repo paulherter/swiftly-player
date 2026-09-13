@@ -1235,7 +1235,7 @@ final class App: @unchecked Sendable {
     /// Welche Unterseite offen ist (Profil, Quick Connect, …) — `nil`, wenn
     /// keine. Sie leben nicht im Bereichsstapel: auf dem Mac liegen sie
     /// ebenfalls quer dazu.
-    var offeneUnterseite: Unterseite?
+    var offeneUnterseite: Unterseite? { didSet { bereichszeilenMalen() } }
     var offeneListe: Werteauswahl?
     var wahlen = Wahlen.lesen()
 
@@ -1291,6 +1291,7 @@ final class App: @unchecked Sendable {
     var rasterItems: [Bereich: [Item]] = [:]
     var rasterGesamt: [Bereich: Int] = [:]
     var rasterLaedt: Set<Bereich> = []
+    var rasterAuftrag: [Bereich: Int] = [:]
     var laderFeld: [Bereich: Widget] = [:]
     /// Die Fernsteuerung über Jellyfins Socket. Ohne sie meldet der Server
     /// `SupportsRemoteControl: false` und blendet im Dashboard die Knöpfe aus.
@@ -1527,6 +1528,7 @@ final class App: @unchecked Sendable {
         gtk_fixed_put(alsFest(buehne), inhalt, 0, 0)
         for _ in 0..<2 {
             let scheibe: Widget! = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+            gtk_widget_add_css_class(scheibe, "swiftly-scheibe")
             detailscheiben.append(scheibe)
             gtk_fixed_put(alsFest(buehne), scheibe, 0, 0)
             gtk_widget_set_visible(scheibe, 0)
@@ -1559,8 +1561,15 @@ final class App: @unchecked Sendable {
             guard breite != self.buehnenBreite || hoehe != self.buehnenHoehe else { return }
             self.buehnenBreite = breite
             self.buehnenHoehe = hoehe
-            for ebene in [self.inhalt!] + self.detailscheiben {
-                gtk_widget_set_size_request(ebene, breite, hoehe)
+            // **Nicht mitten in der Auslegung.** Eine Anforderung aus dem
+            // `resize` heraus ging beim Vergroessern manchmal verloren, und
+            // der neue Streifen blieb schwarz.
+            aufHauptfaden {
+                guard self.buehnenBreite == breite, self.buehnenHoehe == hoehe else { return }
+                for ebene in [self.inhalt!] + self.detailscheiben {
+                    gtk_widget_set_size_request(ebene, breite, hoehe)
+                }
+                gtk_widget_queue_resize(self.buehne)
             }
         }
 
@@ -2347,6 +2356,8 @@ final class App: @unchecked Sendable {
         gtk_widget_set_visible(lader, 0)
         anhaengen(block, lader)
         rasterFeld[was] = raster
+        // Ein neues Raster ist leer — sonst glaubte `rasterLaden`, es stuende schon etwas da.
+        rasterItems[was] = []
         zahlFeld[was] = zahl
         laderFeld[was] = lader
 
@@ -2434,7 +2445,7 @@ final class App: @unchecked Sendable {
         for fall in was == .merkliste ? [] : Bibliotheksfilter.allCases {
             let c = chip(fall.beschriftung, aktiv: fall == jetztFilter)
             beiSignal(c, "clicked") { [weak self] in
-                guard let self else { return }
+                guard let self, fall != jetztFilter else { return }
                 self.filterSetzen(was, fall)
                 self.chipsFuellen(was)
                 self.rasterLaden(was)
@@ -2448,7 +2459,7 @@ final class App: @unchecked Sendable {
             let c = chip(fall.beschriftung, symbol: fall == jetztSort
                          ? "object-select-symbolic" : nil, aktiv: fall == jetztSort)
             beiSignal(c, "clicked") { [weak self] in
-                guard let self else { return }
+                guard let self, fall != jetztSort else { return }
                 self.sortierungSetzen(was, fall)
                 self.chipsFuellen(was)
                 self.rasterLaden(was)
@@ -3191,8 +3202,12 @@ final class App: @unchecked Sendable {
     private func rasterLaden(_ was: Bereich, ab: Int = 0) {
         guard let client else { return }
         rasterLaedt.insert(was)
-        if ab == 0 {
-            rasterItems[was] = []
+        // **Die alten Kacheln bleiben stehen, bis die neuen da sind.** Hier
+        // wurde erst geleert und der Platzhalter gezeigt — unter dem noch
+        // stehenden Raster, und bei jedem Klick auf einen Chip.
+        rasterAuftrag[was, default: 0] += 1
+        let auftrag = rasterAuftrag[was] ?? 0
+        if ab == 0, (rasterItems[was] ?? []).isEmpty {
             rasterLaderZeigen(was, true)
         }
         // **Die Merkliste ist keine Bibliothek, sondern ein Filter.** Sie
@@ -3277,6 +3292,8 @@ final class App: @unchecked Sendable {
                 // Auch hier: eine Antwort des vorigen Kontos wird
                 // weggeworfen, statt an seine Titel angehaengt zu werden.
                 guard self.kontowechsel == stand else { return }
+                // Eine spaetere Wahl hat diese Antwort ueberholt.
+                guard self.rasterAuftrag[was] == auftrag else { return }
                 self.rasterLaedt.remove(was)
                 self.rasterLaderZeigen(was, false)
                 guard let raster = self.rasterFeld[was], let zahl = self.zahlFeld[was]
@@ -3287,7 +3304,7 @@ final class App: @unchecked Sendable {
                 // naechsten Seite ein zweites Mal. Auf Apple beschwert sich
                 // `ForEach` darueber, auf GTK stuende die Kachel einfach
                 // zweimal im Raster. Hier stand ein blankes `+=`.
-                self.rasterItems[was] = Listenregeln.anhaengen(
+                self.rasterItems[was] = ab == 0 ? items : Listenregeln.anhaengen(
                     items, an: self.rasterItems[was] ?? [])
                 self.rasterGesamt[was] = gesamt
                 self.rasterFuellen(raster, self.rasterItems[was] ?? [])

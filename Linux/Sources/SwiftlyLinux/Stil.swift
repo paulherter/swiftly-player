@@ -275,6 +275,9 @@ enum Stil {
            einen Grund braucht, sagt es selbst; alles andere lässt das
            Fenster durchscheinen. */
         scrolledwindow, viewport { background-color: transparent; }
+        /* Eine Scheibe faehrt ueber die alte Seite — ohne Grund sah man
+           beim Schieben die Seite darunter durch. */
+        .swiftly-scheibe { background-color: \(grund); }
         /* **Und der Reiterstapel malt auch nicht mit.** Die Regel eine Zeile
            höher fasst `stack` mit — und der Wechsler zwischen Folgen,
            Besetzung und Ähnliches liegt mitten im ausklingenden Seitenton.

@@ -1065,7 +1065,7 @@ extension App {
     /// Aus dem Eintrag wird ein Posten. Was hier hineinkommt, muss reichen,
     /// um den Titel **ohne Server** zu zeigen und abzuspielen — deshalb
     /// Laufzeit, Container und die Serienangaben.
-    private func ladenAnstossen(_ titel: Item, quelle: MediaSource?, bytes: Int64) {
+    func ladenAnstossen(_ titel: Item, quelle: MediaSource?, bytes: Int64) {
         // H11: ohne Konto kein Posten. Leer heisst hier „nicht angemeldet",
         // und ein Download ohne Konto liefe unter derselben Datei wie der
         // eines zweiten Nutzers.

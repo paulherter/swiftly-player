@@ -86,7 +86,7 @@ extension App {
         // und schneidet den auslaufenden Seitenton ab.
         gtk_widget_add_css_class(reiterstapel, "swiftly-reiterstapel")
         gtk_stack_set_transition_type(alsStapel(reiterstapel),
-                                      GTK_STACK_TRANSITION_TYPE_CROSSFADE)
+                                      GTK_STACK_TRANSITION_TYPE_NONE)
         gtk_stack_set_transition_duration(alsStapel(reiterstapel),
                                           UInt32(Stil.zeitBlende * 1000))
         // **Gleich hoch bleiben.** Ohne das nimmt der Stapel die Hoehe der
@@ -209,7 +209,10 @@ extension App {
         // **Bei einer Staffel gibt es nichts zu waehlen.** Der Mac blendet
         // die Pille dann ganz aus; ausgegraut stehen zu lassen sieht aus wie
         // ein Knopf, der klemmt.
-        gtk_widget_set_visible(pille, staffeln.count > 1 ? 1 : 0)
+        // Die Beschriftung bleibt auch bei einer Staffel stehen — nur der
+        // Winkel faellt weg, weil es nichts zu waehlen gibt.
+        gtk_widget_set_visible(pille, staffeln.isEmpty ? 0 : 1)
+        gtk_widget_set_visible(pillenwinkel, staffeln.count > 1 ? 1 : 0)
 
         let folgenraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
 
@@ -274,6 +277,7 @@ extension App {
         }
 
         beiSignal(pille, "clicked") {
+            guard staffeln.count > 1 else { return }
             let offen = gtk_revealer_get_reveal_child(alsAufklapp(aufklapp)) == 0
             gtk_revealer_set_reveal_child(alsAufklapp(aufklapp), offen ? 1 : 0)
             gtk_image_set_from_icon_name(OpaquePointer(pillenwinkel),
