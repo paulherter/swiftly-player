@@ -128,6 +128,16 @@ final class App: @unchecked Sendable {
         // 1440 x 900 wie `Sources/macOS/SwiftlyApp.swift:59`. Hier standen
         // 1100 x 760 — kein Grund aus Abschnitt F, nur eine nie abgeglichene
         // Zahl. Das Mindestmass darunter stimmt und bleibt.
+        //
+        // **Das Fenster zu schliessen beendet hier die App, auf dem Mac
+        // nicht.** Der Mac bleibt geladen (`applicationShouldTerminate-
+        // AfterLastWindowClosed = false`) und holt sich das Fenster mit
+        // Befehl-0 zurueck — das ist die Sitte dort, wo eine App im Dock
+        // steht. Unter Wayland gibt es kein Dock und kein Gegenstueck dazu;
+        // ein Programm ohne Fenster, das weiterlaeuft, waere hier ein
+        // Programm, das man nicht mehr los wird. **Bewusst nicht angeglichen**
+        // — die Plattform entscheidet, so wie sie auch entscheidet, wo die
+        // Fensterampel sitzt.
         gtk_window_set_default_size(alsFenster(fenster), 1440, 900)
         // **Unter 900 × 560 geht das Raster nicht mehr auf** — Seitenleiste
         // plus zwei Kachelspalten plus Ränder. Dieselbe Grenze wie auf dem
@@ -1261,6 +1271,10 @@ final class App: @unchecked Sendable {
     /// Film — bei einer Serie ist die Staffelauswahl die zweite Stufe.
     /// Wird beim Oeffnen einer Seerr-Seite zurueckgesetzt.
     var seerrBestaetigt = false
+    /// Ob die Staffelliste einer Seerr-Serie aufgeklappt ist — der erste
+    /// Druck auf den Hauptknopf oeffnet sie, der zweite fragt an.
+    var seerrStaffelnOffen = false
+    var seerrStaffelaufklapp: Widget?
     /// Fortschrittsbalken und Standzeilen je Posten — damit ein Fortschritt
     /// die Liste nicht neu bauen muss.
     var downloadbalken: [String: Widget] = [:]
@@ -1756,6 +1770,16 @@ final class App: @unchecked Sendable {
         let zeile = seitenleistenzeile(symbol: fall.symbol,
                                        text: fall.beschriftung,
                                        aktiv: fall == bereich)
+        // **Das Kuerzel steht am Kurzhinweis.**
+        //
+        // Auf dem Mac stehen alle fuenf sichtbar in der Menueleiste unter
+        // „Gehe zu" (`SwiftlyApp.swift:102-110`). Die gibt es hier nicht —
+        // ein Wayland-Fenster hat keine —, und die Kuerzel selbst
+        // funktionierten, waren aber nirgends abzulesen. Ein Kurzhinweis ist
+        // der Ort, an dem eine Oberflaeche ohne Menue so etwas sagt.
+        if let kuerzel = fall.kuerzel {
+            gtk_widget_set_tooltip_text(zeile, "\(fall.beschriftung)   \(kuerzel)")
+        }
         beiSignal(zeile, "clicked") { [weak self] in self?.zeige(fall) }
         bereichsknoepfe[fall] = zeile
         return zeile

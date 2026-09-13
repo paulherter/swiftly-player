@@ -488,6 +488,18 @@ extension App {
         gtk_widget_set_size_request(spielerZeit, 52, -1)
         gtk_label_set_xalign(OpaquePointer(spielerZeit), 0)
         anhaengen(leiste, spielerZeit)
+        // **Die eine Stelle, an der ein Systemsteuerelement steht** (E4).
+        //
+        // Der Mac zeichnet die Zeitleiste selbst (`Zeitregler`, mit
+        // `DragGesture` statt `Slider`). Hier ist es ein `GtkScale`, per
+        // Stilblatt bis auf Spurhoehe (4), Knaufgroesse (13/15) und
+        // Schattierung auf dieselbe Optik gebracht, ohne Wert und ohne
+        // Systemfarben. Der Grund ist nicht Aufwand, sondern die Eingabe:
+        // ein Regler ist das eine Bedienelement, das mit der Tastatur
+        // erreichbar sein muss (E8), und `GtkScale` bringt Pfeiltasten,
+        // Bild-auf/ab und die Ansage der Position mit. Von Hand gezeichnet
+        // waere das noch einmal so viel Code — und die Vorlesehilfe saehe
+        // eine Flaeche.
         spielerRegler = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.001)
         gtk_scale_set_draw_value(alsSkala(spielerRegler), 0)
         gtk_widget_add_css_class(spielerRegler, "swiftly-regler")

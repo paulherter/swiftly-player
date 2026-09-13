@@ -78,6 +78,21 @@ enum Bereich: CaseIterable {
         }
     }
 
+    /// **Das Tastenkuerzel, wie es am Kurzhinweis steht.**
+    ///
+    /// Dieselben wie auf dem Mac (`Sources/macOS/SwiftlyApp.swift:102-110`),
+    /// nur mit Strg statt Befehl. Sie funktionierten hier schon; abzulesen
+    /// waren sie nirgends, weil ein Wayland-Fenster keine Menueleiste hat.
+    var kuerzel: String? {
+        switch self {
+        case .start:  "Strg+1"
+        case .filme:  "Strg+2"
+        case .serien: "Strg+3"
+        case .suche:  "Strg+F"
+        default:      nil
+        }
+    }
+
     /// Der Name der Seite im `GtkStack`.
     var kennung: String {
         switch self {

@@ -34,6 +34,7 @@ extension App {
     func seerrSeiteOeffnen(_ t: Seerrtreffer) {
         seerrGewaehlteStaffeln = []
         seerrBestaetigt = false
+        seerrStaffelnOffen = false
         let scheibe: Widget! = naechsteScheibe()
         // **Keine der Einstellungsunterseiten** — sonst hielte ein zweiter
         // Aufruf sie fuer dieselbe und baute an Ort und Stelle um, statt
@@ -209,7 +210,7 @@ extension App {
         let titel: String
         if t.istSerie {
             titel = seerrGewaehlteStaffeln.isEmpty
-                ? uebersetzt("Anfragen")
+                ? uebersetzt("Staffeln wählen")
                 : String(format: uebersetzt("%d Staffeln anfragen"), seerrGewaehlteStaffeln.count)
         } else {
             titel = seerrBestaetigt ? uebersetzt("Wirklich anfragen?") : uebersetzt("Anfragen")
@@ -217,16 +218,25 @@ extension App {
         let knopf = hauptknopf(titel, symbol: "folder-download-symbolic")
         gtk_widget_set_size_request(knopf, Int32(Stil.hauptknopfBreite),
                                     Int32(Stil.hauptknopfHoehe))
-        // Solange keine Staffel angekreuzt ist, gibt es nichts anzufragen.
-        // **Halbe Deckung statt `insensitive`** — GTK legt ueber ein
-        // gesperrtes Widget seinen eigenen Schleier, und der sieht aus wie
-        // ein Fehler; dieselbe Lehre wie beim aktiven Konto im Profil.
-        if t.istSerie, seerrGewaehlteStaffeln.isEmpty {
-            gtk_widget_set_opacity(knopf, 0.4)
-        }
         beiSignal(knopf, "clicked") { [weak self] in
             guard let self else { return }
-            if !t.istSerie, !self.seerrBestaetigt {
+            if t.istSerie {
+                // **Erster Druck klappt die Liste auf.** Ohne Auswahl
+                // passiert danach nichts — leer hiess frueher „alle", und
+                // wer nur nachsehen wollte, welche Staffeln es gibt, fragte
+                // die ganze Serie an.
+                guard self.seerrStaffelnOffen else {
+                    self.seerrStaffelnOffen = true
+                    if let auf = self.seerrStaffelaufklapp {
+                        gtk_revealer_set_reveal_child(alsAufklapp(auf), 1)
+                    }
+                    return
+                }
+                guard !self.seerrGewaehlteStaffeln.isEmpty else { return }
+                self.seerrAnfragenVonSeite(t)
+                return
+            }
+            if !self.seerrBestaetigt {
                 self.seerrBestaetigt = true
                 self.seerrKnopfreiheFuellen(t)
                 return
@@ -269,8 +279,22 @@ extension App {
         guard seerrBlock != nil else { return }
         leeren(seerrBlock)
 
+        // **Erst auf Druck, nicht von Anfang an.** Der Mac zeigt die
+        // Staffelliste erst, wenn jemand den Hauptknopf drueckt
+        // (`SeerrKachelUndSeite.swift:335-339, 373-379`) — der erste Druck
+        // heisst „Staffeln waehlen", der zweite fragt an. Hier stand sie
+        // immer offen, sobald die Daten da waren, und der Knopf sagte
+        // „Anfragen", ohne dass eine Auswahl getroffen war.
         if t.istSerie, !d.staffeln.isEmpty {
-            anhaengen(seerrBlock, seerrStaffelliste(t, d))
+            let liste = seerrStaffelliste(t, d)
+            let aufklapp: Widget! = gtk_revealer_new()
+            gtk_revealer_set_transition_type(alsAufklapp(aufklapp),
+                                             GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN)
+            gtk_revealer_set_transition_duration(alsAufklapp(aufklapp), 220)
+            gtk_revealer_set_child(alsAufklapp(aufklapp), liste)
+            gtk_revealer_set_reveal_child(alsAufklapp(aufklapp), seerrStaffelnOffen ? 1 : 0)
+            seerrStaffelaufklapp = aufklapp
+            anhaengen(seerrBlock, aufklapp)
         }
         if !d.besetzung.isEmpty {
             anhaengen(seerrBlock, seerrPersonenreihe(uebersetzt("Besetzung"), d.besetzung))
