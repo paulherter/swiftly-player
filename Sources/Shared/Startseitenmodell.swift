@@ -48,9 +48,13 @@ final class Startseitenmodell {
     /// Zu welchem Kontostand der Inhalt gehört.
     private var fuerKonto = 0
 
+    /// **Auch die Genrereihen zählen.** Wer alle festen Reihen ausblendet
+    /// und nur Genres als Reihen zeigt, hat eine volle Startseite — ohne
+    /// diese Zeile stünde der Leerzustand darüber.
     var alleLeer: Bool {
         weiterschauen.isEmpty && naechsteFolge.isEmpty
             && zuletzt.isEmpty && neueFilme.isEmpty && neueSerien.isEmpty
+            && gattungsreihen.allSatisfy { $0.items.isEmpty }
     }
 
     func laden(_ model: AppModel) async {

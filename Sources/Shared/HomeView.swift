@@ -42,8 +42,15 @@ struct HomeView: View {
 
             kopf
 
-            if stand.geladen, stand.weiterschauen.isEmpty,
-               stand.naechsteFolge.isEmpty, stand.zuletzt.isEmpty {
+            // **`alleLeer`, nicht drei eigene Abfragen.** Hier standen
+            // Weiterschauen, Nächste Folge und die gemeinsame Neuzugangsreihe
+            // — und nicht die getrennten Reihen „Neue Filme" und „Neue
+            // Serien". Wer „Neuzugänge getrennt" an hat und nichts angefangen
+            // hat, bekam deshalb „Hier ist noch nichts" **über** eine volle
+            // Startseite gelegt: `zuletzt` ist dann immer leer, weil die
+            // Titel in den getrennten Reihen stehen. Mac und Fernseher fragen
+            // seit jeher `alleLeer`; nur hier stand die ältere Abschrift.
+            if stand.geladen, stand.alleLeer {
                 // Das Wann zum Wie aus `Leerzustand`: ohne animiertes
                 // Einfuegen bleibt die `.transition` dort wirkungslos.
                 nichtsDa
