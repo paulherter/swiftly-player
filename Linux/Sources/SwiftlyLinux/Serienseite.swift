@@ -30,17 +30,20 @@ extension App {
         var gewaehlt: Reiter = .folgen
         var reiterknoepfe: [Widget?] = []
 
-        // **Die drei Reiter teilen sich die Breite.** Auf dem Mac steht jeder
-        // mittig in seinem Drittel, und die Unterstreichung laeuft ueber das
-        // ganze Drittel — nicht nur unter dem Wort. Hier standen sie
-        // linksbuendig mit 26 Abstand nebeneinander.
-        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
+        // **Linksbuendig mit 26 Abstand** — `Reiterreihe` auf dem Mac
+        // (`SerienView.swift:495`): `HStack(spacing: 26)` und ein `Spacer`
+        // dahinter, die Knoepfe ohne `maxWidth`.
+        //
+        // Hier stand das am 13.09.2026 schon richtig. Ich habe es auf Drittel
+        // umgebaut, weil ich einen Bildschirmabzug des Macs falsch gelesen
+        // hatte — und damit den Unterschied erst erzeugt, den ich beheben
+        // wollte. Der Quelltext ist die Vorlage; ein Abzug, der ihm
+        // widerspricht, wird nachgelesen, nicht nachgebaut.
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
         gtk_widget_set_margin_start(zeile, Int32(Stil.randAbstand))
         gtk_widget_set_margin_end(zeile, Int32(Stil.randAbstand))
         for fall in Reiter.allCases {
             let knopf = reiterknopf(fall.beschriftung, aktiv: fall == gewaehlt)
-            gtk_widget_set_hexpand(knopf, 1)
-            gtk_widget_set_halign(knopf, GTK_ALIGN_FILL)
             reiterknoepfe.append(knopf)
             beiSignal(knopf, "clicked") { [weak self] in
                 guard let self else { return }

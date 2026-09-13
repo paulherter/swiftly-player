@@ -385,15 +385,10 @@ func reiterknopf(_ text: String, aktiv: Bool) -> Widget! {
     gtk_widget_add_css_class(knopf, "swiftly-reiter")
     if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
     let stapelchen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
-    // Das Wort mittig im Drittel, der Strich ueber die ganze Breite.
-    let wort = beschriftung(text)
-    gtk_widget_set_halign(wort, GTK_ALIGN_CENTER)
-    anhaengen(stapelchen, wort)
+    anhaengen(stapelchen, beschriftung(text))
     let strich: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(strich, "swiftly-reiterstrich")
     gtk_widget_set_size_request(strich, -1, 2)
-    gtk_widget_set_hexpand(strich, 1)
-    gtk_widget_set_halign(strich, GTK_ALIGN_FILL)
     anhaengen(stapelchen, strich)
     gtk_button_set_child(alsKnopf(knopf), stapelchen)
     return knopf
