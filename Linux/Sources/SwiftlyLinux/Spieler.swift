@@ -263,41 +263,35 @@ extension App {
         gtk_widget_set_margin_end(oben, 22)
         gtk_widget_set_margin_start(oben, 16)
 
-        // **Links der Weg hinaus, rechts die Werkzeuge.**
+        // **Beide Knoepfe rechts oben, wie auf dem Mac.**
         //
-        // Auf dem Mac steht links nichts, weil dort die Fensterampel sitzt
-        // und zwei Schliesser an derselben Ecke verwirren. Unter Wayland
-        // gehört die Titelzeile dem Fenster und liegt **über** dem Player,
-        // nicht daneben — die Verwechslung gibt es hier nicht, und der Platz
-        // links ist frei. Er ist der bessere: der Zurückweg gehört nach links
-        // (E9), und rechts wird es sonst eng, weil hier ein Knopf mehr steht
-        // als auf dem Mac.
-        let zu = chip(uebersetzt("Schließen"), symbol: "pan-down-symbolic", nurSymbol: true)
-        beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
-        anhaengen(oben, zu)
-
+        // Hier stand der Schliessweg links, mit der Begruendung aus E10: auf
+        // GTK sitzt die Fensterampel rechts, also gehe unser Schliesser nach
+        // links. Am Bild nebeneinander gehalten stimmt das Ergebnis trotzdem
+        // nicht — die Titelzeile liegt unter Wayland **ueber** dem Player und
+        // nicht daneben, die Verwechslung, gegen die die Regel geschrieben
+        // wurde, gibt es hier gar nicht. Von Paul am 13.09.2026 so
+        // entschieden; E10 gehoert entsprechend nachgezogen.
+        //
+        // **Und nur noch zwei.** Der Mac hat Spurwahl und Schliessen; das
+        // Vollbild braucht auf einem Fenster keinen eigenen Knopf, das kann
+        // der Fensterverwalter. Es steht weiter in der Wiedergabetafel.
         anhaengen(oben, luftQuer())
 
-        // **Die Tafel traegt mehr als Ton und Untertitel** — seit sie die Form
-        // der Mac-Fassung hat, stehen dort auch Bildformat, Tempo,
-        // Schlafzeit und das Technikschild. Sie heisst deshalb wie dort:
-        // Wiedergabe.
-        let spuren = chip(uebersetzt("Wiedergabe"), symbol: "preferences-system-symbolic",
+        // Die Tafel traegt mehr als Ton und Untertitel — seit sie die Form der
+        // Mac-Fassung hat, stehen dort auch Bildformat, Tempo, Schlafzeit und
+        // das Technikschild.
+        let spuren = chip(uebersetzt("Wiedergabe"), symbol: "media-eq-symbolic",
                           nurSymbol: true)
         spielerSpurknopf = spuren
         beiSignal(spuren, "clicked") { [weak self] in self?.spurwahlZeigen() }
         anhaengen(oben, spuren)
 
-        // **Vollbild braucht kein Wort.** Das Zeichen ist eindeutig, und
-        // neben zwei beschrifteten Chips wäre ein dritter zu viel Text für
-        // eine Sache, die man einmal drückt und dann vergisst.
-        let voll = nebenknopf("view-fullscreen-symbolic", name: uebersetzt("Vollbild"))
-        gtk_widget_add_css_class(voll, "swiftly-vollknopf")
-        gtk_widget_set_size_request(voll, 28, 28)
-        gtk_widget_set_valign(voll, GTK_ALIGN_CENTER)
-        spielerVollknopf = voll
-        beiSignal(voll, "clicked") { [weak self] in self?.vollbildUmschalten() }
-        anhaengen(oben, voll)
+        // Der Winkel zeigt nach unten, weil der Player von unten aufsteigt und
+        // wieder dorthin verschwindet.
+        let zu = chip(uebersetzt("Schließen"), symbol: "go-down-symbolic", nurSymbol: true)
+        beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
+        anhaengen(oben, zu)
         return oben
     }
 

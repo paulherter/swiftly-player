@@ -109,8 +109,11 @@ extension App {
     // MARK: Profil
 
     private func profilbauen(_ block: Widget!) {
-        // Nur der Pfeil, kein Titel — der Bildblock ist der Titel.
-        anhaengen(block, unterseitenpfeil())
+        // **Mit Titel.** Er stand hier einmal nicht, weil der Bildblock als
+        // Titel galt — das war die Fassung vor der Kontokarte. Seit der Mac
+        // Karten zeigt, traegt er den Kopf wieder wie jede andere Unterseite
+        // (`ProfilView.swift:28`), und zwar buendig mit den Karten.
+        anhaengen(block, unterseitenkopf(uebersetzt("Profil")))
 
         let bildblock = stapel(GTK_ORIENTATION_VERTICAL, abstand: 14)
         gtk_widget_set_margin_top(bildblock, 42)
@@ -119,7 +122,7 @@ extension App {
         anhaengen(block, bildblock)
 
         let g1 = zeilengruppe()
-        anhaengen(g1.raum, wertezeile(symbol: "phone-symbolic", titel: uebersetzt("Quick Connect"),
+        anhaengen(g1.raum, wertezeile(symbol: "dialog-password-symbolic", titel: uebersetzt("Quick Connect"),
                                       unter: uebersetzt("Code vom Fernseher eingeben"),
                                       akzent: true, pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.quickConnect)
@@ -137,7 +140,7 @@ extension App {
         })
         anhaengen(g2.raum, zeilenstrich())
         // Zwischen Wiedergabe und Einstellungen — die Reihenfolge des Macs.
-        anhaengen(g2.raum, wertezeile(symbol: "view-grid-symbolic",
+        anhaengen(g2.raum, wertezeile(symbol: "view-app-grid-symbolic",
                                       titel: uebersetzt("Darstellung"),
                                       unter: uebersetzt("Startseite, Reihen und Genres"),
                                       pfeil: true) { [weak self] in
@@ -167,7 +170,7 @@ extension App {
             self?.serverAufnahmeOeffnen(nil)
         })
         anhaengen(g3.raum, zeilenstrich())
-        anhaengen(g3.raum, wertezeile(symbol: "system-log-out-symbolic",
+        anhaengen(g3.raum, wertezeile(symbol: "application-exit-symbolic",
                                       titel: uebersetzt("Abmelden")) { [weak self] in
             self?.abmelden()
         })
@@ -257,6 +260,11 @@ extension App {
         gtk_widget_set_margin_top(satz, 14)
         anhaengen(block, satz)
 
+        // **Zwei Spalten, wie auf dem Mac** (`WiedergabeEinstellungenView.swift:38`):
+        // links, was den Ton angeht — Qualitaet und Sprache. Rechts allein das
+        // Verhalten. Hier stand alles untereinander.
+        let (links, rechts) = zweispalter(in: block)
+
         // MARK: Qualität
         let q = einstellungsgruppe(uebersetzt("Qualität"))
         anhaengen(q.raum, schalterzeile(symbol: "media-playback-start-symbolic",
@@ -285,27 +293,7 @@ extension App {
                 self?.listeSchliessen(.wiedergabe)
             })
         }
-        anhaengen(q.raum, zeilenstrich())
-        // **Der Puffer — drei Faelle, keine Sekundenzahl.**
-        //
-        // Der Vorrat wird in Bytes gehalten: dieselben 16 MiB sind bei einer
-        // 5-Mbit-Serie rund fuenfundzwanzig Sekunden und bei einem 80-Mbit-
-        // Film knapp zwei. Eine Sekundenangabe waere deshalb bei jedem Titel
-        // etwas anderes. Die Stufen sagen den Fall.
-        anhaengen(q.raum, wertezeile(symbol: "network-wireless-signal-weak-symbolic",
-                                     titel: uebersetzt("Puffer"),
-                                     wert: wahlen.puffer.name, pfeil: true) {
-            [weak self] in self?.listeUmschalten(.puffer)
-        })
-        if offeneListe == .puffer {
-            anhaengen(q.raum, werteliste(Pufferstufe.allCases.map { ($0.name, $0) },
-                                         gewaehlt: wahlen.puffer) { [weak self] stufe in
-                self?.wahlen.pufferstufe = stufe.rawValue
-                self?.wahlen.sichern()
-                self?.listeSchliessen(.wiedergabe)
-            })
-        }
-        anhaengen(block, q.aussen)
+        anhaengen(links, q.aussen)
 
         let hinweis = beschriftung(uebersetzt("Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da."),
                                    stil: "swiftly-zweitzeile", umbruch: true)
@@ -351,7 +339,7 @@ extension App {
             self?.wahlen.untertitelAutomatisch = an
             self?.wahlen.sichern()
         })
-        anhaengen(block, sp.aussen)
+        anhaengen(links, sp.aussen)
 
         // MARK: Verhalten
         let v = einstellungsgruppe(uebersetzt("Verhalten"))
@@ -387,7 +375,38 @@ extension App {
                 self?.listeSchliessen(.wiedergabe)
             })
         }
-        anhaengen(block, v.aussen)
+        // **Das Technikschild gehoert ins Verhalten** (`macOS/
+        // WiedergabeEinstellungenView.swift:139`) — es fehlte auf Linux ganz,
+        // obwohl die Einstellung dahinter existiert und der Player sie liest.
+        anhaengen(v.raum, zeilenstrich())
+        anhaengen(v.raum, schalterzeile(symbol: "media-eq-symbolic",
+                                        titel: uebersetzt("Technikschild im Player"),
+                                        an: wahlen.technikschild) { [weak self] an in
+            self?.wahlen.technikschild = an
+            self?.wahlen.sichern()
+            self?.technikschildSetzen(an)
+        })
+        anhaengen(v.raum, zeilenstrich())
+        // **Der Puffer — drei Faelle, keine Sekundenzahl.**
+        //
+        // Der Vorrat wird in Bytes gehalten: dieselben 16 MiB sind bei einer
+        // 5-Mbit-Serie rund fuenfundzwanzig Sekunden und bei einem 80-Mbit-
+        // Film knapp zwei. Eine Sekundenangabe waere deshalb bei jedem Titel
+        // etwas anderes. Die Stufen sagen den Fall.
+        anhaengen(v.raum, wertezeile(symbol: "network-wireless-signal-weak-symbolic",
+                                     titel: uebersetzt("Puffer"),
+                                     wert: wahlen.puffer.name, pfeil: true) {
+            [weak self] in self?.listeUmschalten(.puffer)
+        })
+        if offeneListe == .puffer {
+            anhaengen(v.raum, werteliste(Pufferstufe.allCases.map { ($0.name, $0) },
+                                         gewaehlt: wahlen.puffer) { [weak self] stufe in
+                self?.wahlen.pufferstufe = stufe.rawValue
+                self?.wahlen.sichern()
+                self?.listeSchliessen(.wiedergabe)
+            })
+        }
+        anhaengen(rechts, v.aussen)
     }
 
     private func sprachname(_ wert: String, aus: String = uebersetzt("Wie die Datei")) -> String {
@@ -411,28 +430,7 @@ extension App {
         // links Offline und Integration, rechts Server. Hier stand alles
         // untereinander in einer 560 Punkt schmalen Saeule — auf einem breiten
         // Fenster sah das aus wie eine Handyansicht in der Mitte.
-        let spalten = stapel(GTK_ORIENTATION_HORIZONTAL,
-                             abstand: Int32(Stil.randAbstand * 2))
-        gtk_widget_set_valign(spalten, GTK_ALIGN_START)
-        let links = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_hexpand(links, 1)
-        gtk_widget_set_halign(links, GTK_ALIGN_FILL)
-        let rechts = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_hexpand(rechts, 1)
-        gtk_widget_set_halign(rechts, GTK_ALIGN_FILL)
-        // Gleich breit, egal wie viel Inhalt drinsteht — sonst zieht die
-        // linke Spalte mit ihren zwei Gruppen die rechte auf einen Streifen
-        // zusammen.
-        let gleich = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL)
-        gtk_size_group_add_widget(gleich, links)
-        gtk_size_group_add_widget(gleich, rechts)
-        // Ein Mindestmass, damit eine Spalte nicht auf einen Streifen faellt.
-        gtk_widget_set_size_request(links, 300, -1)
-        gtk_widget_set_size_request(rechts, 300, -1)
-        gtk_widget_set_valign(rechts, GTK_ALIGN_START)
-        anhaengen(spalten, links)
-        anhaengen(spalten, rechts)
-        anhaengen(block, spalten)
+        let (links, rechts) = zweispalter(in: block)
 
         let o = einstellungsgruppe(uebersetzt("Offline"))
         anhaengen(o.raum, schalterzeile(symbol: "folder-download-symbolic",
@@ -750,6 +748,10 @@ extension App {
     private func darstellungBauen(_ block: Widget!) {
         anhaengen(block, unterseitenkopf(uebersetzt("Darstellung")))
 
+        // Zwei Spalten wie auf dem Mac (`macOS/DarstellungView.swift:37`):
+        // links Allgemein, Reihen und Neuzugaenge, rechts die Genres.
+        let (links, rechts) = zweispalter(in: block)
+
         // **Allgemein** — dieselbe Rubrik wie auf Apple
         // (`DarstellungView.swift:79`).
         let ga = einstellungsgruppe(uebersetzt("Allgemein"))
@@ -759,8 +761,8 @@ extension App {
             self?.wahlen.fortschrittAufKacheln = an
             self?.wahlen.sichern()
         })
-        anhaengen(block, ga.aussen)
-        anhaengen(block, luftHoch(26))
+        anhaengen(links, ga.aussen)
+        anhaengen(links, luftHoch(26))
 
         let g0 = einstellungsgruppe(uebersetzt("Startseite"))
         anhaengen(g0.raum, schalterzeile(symbol: "folder-new-symbolic",
@@ -772,7 +774,7 @@ extension App {
             self?.geladen.remove(.start)
             self?.unterseiteOeffnen(.darstellung)
         })
-        anhaengen(block, g0.aussen)
+        anhaengen(links, g0.aussen)
 
         // **Umsortiert wird mit dem, was die Eingabeart hergibt** — auf dem
         // iPhone Griffe, hier zwei Pfeile je Zeile. Abschnitt F erlaubt genau
@@ -785,16 +787,16 @@ extension App {
             if stelle > 0 { anhaengen(g1.raum, zeilenstrich()) }
             anhaengen(g1.raum, reihenzeile(reihe, stelle: stelle, von: sichtbar.count))
         }
-        anhaengen(block, g1.aussen)
+        anhaengen(links, g1.aussen)
 
         let fuss1 = beschriftung(uebersetzt("Mit den Pfeilen umsortieren. Was aus ist, steht nicht auf der Startseite."),
                                  stil: "swiftly-zweitzeile", umbruch: true)
         gtk_widget_add_css_class(fuss1, "swiftly-sehrleise")
         gtk_label_set_xalign(OpaquePointer(fuss1), 0)
         gtk_widget_set_margin_top(fuss1, 8)
-        anhaengen(block, fuss1)
+        anhaengen(links, fuss1)
 
-        anhaengen(block, luftHoch(26))
+        anhaengen(links, luftHoch(26))
 
         // **Zwei Formen derselben Auswahl**, nicht zwei Mengen.
         let g2 = einstellungsgruppe(uebersetzt("Genres"))
@@ -813,7 +815,7 @@ extension App {
             self?.geladen.remove(.start)
             self?.unterseiteOeffnen(.darstellung)
         })
-        anhaengen(block, g2.aussen)
+        anhaengen(rechts, g2.aussen)
 
         if !wahlen.startGenres.isEmpty {
             let g3 = zeilengruppe()
@@ -821,7 +823,7 @@ extension App {
                 if stelle > 0 { anhaengen(g3.raum, zeilenstrich()) }
                 anhaengen(g3.raum, genrezeile(name))
             }
-            anhaengen(block, g3.aussen)
+            anhaengen(rechts, g3.aussen)
         }
 
         let g4 = zeilengruppe()
@@ -830,14 +832,14 @@ extension App {
                                       pfeil: true) { [weak self] in
             self?.unterseiteOeffnen(.genrewahl)
         })
-        anhaengen(block, g4.aussen)
+        anhaengen(rechts, g4.aussen)
 
         let fuss2 = beschriftung(uebersetzt("Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist."),
                                  stil: "swiftly-zweitzeile", umbruch: true)
         gtk_widget_add_css_class(fuss2, "swiftly-sehrleise")
         gtk_label_set_xalign(OpaquePointer(fuss2), 0)
         gtk_widget_set_margin_top(fuss2, 8)
-        anhaengen(block, fuss2)
+        anhaengen(rechts, fuss2)
     }
 
     /// Eine Reihe in der Liste: Name, Schalter, zwei Pfeile.

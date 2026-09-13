@@ -694,7 +694,10 @@ func kachelmarkeLegen(_ huelle: Widget!, item: Item) {
     case .gesehen:
         feld = gtk_image_new_from_icon_name("object-select-symbolic")
     case .offen(let n):
-        feld = beschriftung(String(n))
+        // **„6 offen", nicht „6".** Eine nackte Zahl auf einer Kachel sagt
+        // nicht, was sie zaehlt — auf dem Mac steht dort „6 left"
+        // (`Stil.swift:3006`).
+        feld = beschriftung(String(format: uebersetzt("%lld offen"), n))
     case .staffeln(let n):
         feld = beschriftung(n == 1 ? uebersetzt("1 Staffel")
                                    : String(format: uebersetzt("%lld Staffeln"), n))
@@ -784,4 +787,36 @@ func kleinerSchalter(an: Bool, _ umgeschaltet: @escaping (Bool) -> Void) -> Widg
         umgeschaltet(zustand)
     }
     return knopf
+}
+
+/// **Zwei Spalten, linksbündig — die Anordnung des Macs.**
+///
+/// Wiedergabe, Darstellung und Einstellungen tragen sie alle drei
+/// (`macOS/WiedergabeEinstellungenView.swift:38` und Geschwister). Der
+/// Zwischenraum ist doppelter Seitenrand, damit die Karten zueinander stehen
+/// wie zum Fensterrand, und beide Spalten sind gleich breit — sonst zieht die
+/// vollere die andere auf einen Streifen zusammen.
+///
+/// Hier stand dieselbe Rechnung dreimal nicht: nur die Einstellungsseite war
+/// zweispaltig, Wiedergabe und Darstellung standen einspaltig in einer
+/// schmalen Säule. Drei Seiten, drei Anmutungen — genau die fehlende
+/// Kontinuität.
+func zweispalter(in block: Widget!) -> (links: Widget, rechts: Widget) {
+    let spalten = stapel(GTK_ORIENTATION_HORIZONTAL,
+                         abstand: Int32(Stil.randAbstand * 2))
+    gtk_widget_set_valign(spalten, GTK_ALIGN_START)
+    let links = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+    let rechts = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+    for spalte in [links, rechts] {
+        gtk_widget_set_hexpand(spalte, 1)
+        gtk_widget_set_halign(spalte, GTK_ALIGN_FILL)
+        gtk_widget_set_valign(spalte, GTK_ALIGN_START)
+        gtk_widget_set_size_request(spalte, 300, -1)
+        anhaengen(spalten, spalte)
+    }
+    let gleich = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL)
+    gtk_size_group_add_widget(gleich, links)
+    gtk_size_group_add_widget(gleich, rechts)
+    anhaengen(block, spalten)
+    return (links!, rechts!)
 }

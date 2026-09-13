@@ -2048,6 +2048,12 @@ final class App: @unchecked Sendable {
         // `margin`: der Farbschein ist der Anstrich dieses Kastens und begänne
         // sonst erst unterhalb des Randes.
         gtk_widget_add_css_class(reihenstapel, "swiftly-startschein")
+        // **Ueber die volle Breite.** Ohne das behaelt der Stapel nach einem
+        // Zurueck die Breite, die er beim Hereinfahren hatte — rechts blieb
+        // ein schwarzer Streifen stehen, und der Farbschein endete mitten auf
+        // der Seite.
+        gtk_widget_set_hexpand(reihenstapel, 1)
+        gtk_widget_set_halign(reihenstapel, GTK_ALIGN_FILL)
         gtk_widget_set_margin_bottom(reihenstapel, Int32(Stil.randAbstand))
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihenstapel)
         return scroller

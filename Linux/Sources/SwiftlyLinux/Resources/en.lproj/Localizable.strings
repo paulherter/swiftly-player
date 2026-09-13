@@ -1,6 +1,6 @@
 /* The Linux interface. The German wording is the key; see de.lproj. */
 
-"%@ als gesehen" = "Mark %@ watched";
+"%@ als gesehen" = "Mark %@ as watched";
 "%@ ist als gesehen vermerkt." = "%@ is marked as watched.";
 "%d Sekunden vor" = "Forward %d seconds";
 "%d Sekunden zurück" = "Back %d seconds";
@@ -11,9 +11,9 @@
 "Als gesehen markieren" = "Mark as watched";
 "Als ungesehen markieren" = "Mark as unwatched";
 "Andere Schreibweise? Die Suche findet Filme und Serien." = "Try another spelling. Search finds movies and shows.";
-"Anderer Server" = "Another server";
-"Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen." = "A second Jellyfin account on the same server. Both stay signed in; you switch between them at the top of the profile page.";
-"Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist." = "Enter this code in Jellyfin on a device you are already signed in on.";
+"Anderer Server" = "Different server";
+"Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen." = "A second Jellyfin account on the same server. Both stay signed in; switch between them at the top of the profile page.";
+"Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist." = "Enter this code in Jellyfin on a device where you are already signed in.";
 "Hinzufügen" = "Add";
 "Lieber Name und Passwort" = "Use name and password instead";
 "Mit Quick Connect anmelden" = "Sign in with Quick Connect";
@@ -30,15 +30,15 @@
 "Bibliotheken" = "Libraries";
 "Code %@ — auf einem angemeldeten Gerät freigeben" = "Code %@ — approve it on a signed-in device";
 "Code vom Fernseher eingeben" = "Enter the code from your TV";
-"Danach kommt nichts mehr." = "There is nothing after this.";
+"Danach kommt nichts mehr." = "That's the last one.";
 "Darstellung" = "Appearance";
 "Der Code ist abgelaufen." = "The code has expired.";
 "Der Code stimmt nicht oder ist abgelaufen." = "That code is wrong or has expired.";
 "Der Fortschritt ist zurückgesetzt." = "Progress has been reset.";
 "Der Server hat keinen Code gegeben." = "The server did not give a code.";
 "Die Anmeldung gilt nicht mehr. Bitte neu anmelden." = "Your sign-in is no longer valid. Please sign in again.";
-"Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da." = "The bitrate only applies when Direct Play is not forced — otherwise it would sit there with no effect.";
-"Die Wiedergabe hat nicht geklappt — %@ hat keinen Plan geliefert." = "Playback did not work — %@ returned no plan.";
+"Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da." = "The bitrate only applies when Direct Play is not enforced — otherwise it would sit there without any effect.";
+"Die Wiedergabe hat nicht geklappt — %@ hat keinen Plan geliefert." = "Playback failed — %@ did not return a plan.";
 "Einstellungen" = "Settings";
 "Erreichbar" = "Reachable";
 "Extras" = "Extras";
@@ -52,12 +52,12 @@
 "Freigeben" = "Approve";
 "Freigegeben. Das andere Gerät meldet sich jetzt an." = "Approved. The other device is signing in now.";
 "Für diesen Titel liegt kein Trailer vor." = "There is no trailer for this title.";
-"Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen." = "Applies to anything that starts fresh. You can always change it in the player.";
+"Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen." = "Applies to anything that starts fresh. You can always change it while watching.";
 "Hier ist noch nichts" = "Nothing here yet";
 "Hier weiterschauen" = "Continue here";
 "Höchste Bitrate" = "Maximum bitrate";
 "Immer Direct Play" = "Always Direct Play";
-"Keine Besetzung hinterlegt." = "No cast on record.";
+"Keine Besetzung hinterlegt." = "No cast listed.";
 "Keine Folgen" = "No episodes";
 "Keine Staffeln gefunden." = "No seasons found.";
 "Lade …" = "Loading …";
@@ -68,27 +68,27 @@
 "Mit dieser Adresse kann ich nichts anfangen." = "That address cannot be read.";
 "Moment …" = "One moment …";
 "Neue Filme" = "New movies";
-"Neue Filme und neue Serien in eigenen Reihen" = "New movies and new shows in separate rows";
-"Neue Serien" = "New shows";
-"Neuzugänge getrennt" = "Split new additions";
+"Neue Filme und neue Serien in eigenen Reihen" = "Separate rows for new movies and new shows";
+"Neue Serien" = "New series";
+"Neuzugänge getrennt" = "Split recently added";
 "Nicht erreichbar" = "Not reachable";
 "Nichts gefunden" = "Nothing found";
 "Nichts Ähnliches gefunden." = "Nothing similar found.";
-"Nie umwandeln lassen — der Grund für diese App" = "Never let the server transcode — the reason for this app";
-"Nur wenn der Ton nicht in der gewählten Sprache läuft" = "Only when the audio is not in the chosen language";
-"Nächste Folge" = "Next up";
+"Nie umwandeln lassen — der Grund für diese App" = "Never let the server transcode — the reason this app exists";
+"Nur wenn der Ton nicht in der gewählten Sprache läuft" = "Only when the audio is in another language";
+"Nächste Folge" = "Next episode";
 "Nächste Folge abspielen" = "Play next episode";
-"Nächste Folge automatisch" = "Play next episode automatically";
+"Nächste Folge automatisch" = "Auto-play next episode";
 "Nächste Folge konnte nicht geladen werden." = "The next episode could not be loaded.";
 "Passwort" = "Password";
 "Qualität" = "Quality";
 "Quick Connect" = "Quick Connect";
 "Schlafzeit" = "Sleep timer";
-"Schlafzeit abgelaufen." = "Sleep timer elapsed.";
+"Schlafzeit abgelaufen." = "Sleep timer finished.";
 "Schließen" = "Close";
-"Serien" = "Shows";
+"Serien" = "Series";
 "Server" = "Server";
-"Sobald der Server Titel hat, stehen sie hier." = "As soon as your server has titles, they show up here.";
+"Sobald der Server Titel hat, stehen sie hier." = "As soon as the server has titles, they will appear here.";
 "Sprache" = "Language";
 "Sprache, Untertitel, Tempo" = "Language, subtitles, speed";
 "Start" = "Home";
@@ -106,12 +106,12 @@
 "Verbinde …" = "Connecting …";
 "Verbinden" = "Connect";
 "Verbindung prüfen" = "Check connection";
-"Verhalten" = "Behaviour";
+"Verhalten" = "Behavior";
 "Vollbild" = "Full screen";
 "Von vorn abspielen" = "Play from the start";
 "Vorspulen" = "Skip forward";
 "Weiterschauen" = "Continue watching";
-"Wie die Datei" = "Same as the file";
+"Wie die Datei" = "As in the file";
 "Wiedergabe" = "Playback";
 "Wiedergabe übernehmen" = "Take over playback";
 "Wo steht dein Jellyfin-Server?" = "Where is your Jellyfin server?";
@@ -138,9 +138,9 @@
 "Gezeigt" = "Shown";
 "Lauf" = "Pace";
 "Sprünge" = "Discontinuities";
-"Stelle" = "Position";
+"Stelle" = "At";
 "Technikschild" = "Technical overlay";
-"Ton weg" = "Audio lost";
+"Ton weg" = "audio lost";
 "Verworfen" = "Dropped";
 "Vorrat" = "Buffer";
 "Zeigt Ø" = "Showing Ø";
@@ -156,9 +156,9 @@
 "Diese Adresse ergibt keine." = "That is not a usable address.";
 "Seerr" = "Seerr";
 "Benutzername und Passwort fehlen" = "Username and password are missing";
-"Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt." = "Your password is not saved — only the session Seerr issues for it.";
+"Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt." = "Your password isn’t saved — only the session Seerr issues for it.";
 "Getrennt" = "Disconnected";
-"Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen." = "Jellyseerr or Overseerr. Search also finds what is not on your server yet — and lets you request it.";
+"Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen." = "Jellyseerr or Overseerr. With it, search also finds what isn’t on your server yet — and lets you request it.";
 "Keine Verbindung" = "No connection";
 
 /* Seerr */
@@ -216,7 +216,7 @@
 "Abwählen" = "Deselect";
 "Anfragen, was noch nicht da ist" = "Request what isn’t there yet";
 "Auf deinem Server" = "On your server";
-"Aufklappen" = "Expand";
+"Aufklappen" = "Show more";
 "Auswählen" = "Select";
 "Integration" = "Integration";
 "Nicht auf deinem Server" = "Not on your server";
@@ -224,7 +224,7 @@
 "Teilweise vorhanden" = "Partly available";
 "Wartet auf Freigabe" = "Waiting for approval";
 "Welche Staffeln?" = "Which seasons?";
-"Zuklappen" = "Collapse";
+"Zuklappen" = "Show less";
 "frei" = "free";
 "Ähnliche Titel" = "Similar titles";
 
@@ -256,9 +256,9 @@
 
 /* Kontokarte und Serveraufnahme */
 "Server hinzufügen" = "Add server";
-"Ein zweiter Jellyfin, eigene Konten" = "A second Jellyfin, its own accounts";
+"Ein zweiter Jellyfin, eigene Konten" = "A second Jellyfin, with its own accounts";
 "Klicken zum Wechseln" = "Click to switch";
-"Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "A second Jellyfin with its own accounts. Both stay signed in; switch between them on the profile page.";
+"Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "A second Jellyfin with its own accounts. Both stay signed in, and you switch between them on your profile page.";
 "Ein weiteres Konto auf diesem Server. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "Another account on this server. Both stay signed in; switch between them on the profile page.";
 "jellyfin.beispiel.de" = "jellyfin.example.com";
 "Weiter" = "Continue";
@@ -276,12 +276,15 @@
 "Genre hinzufügen" = "Add genre";
 "Alle Genres stehen schon auf der Startseite." = "Every genre is already on the home screen.";
 "Auf deinem Server sind keine Genres hinterlegt." = "Your server has no genres.";
-"Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist." = "Genres come from your server. As rows, each one sits at the bottom of the home screen, most recently added first. As chips they sit at the top, and a click opens the genre. With nothing selected the home screen stays as it is.";
+"Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist." = "Genres come from your server. As rows, each one sits at the bottom of the home screen with the newest titles first. As chips they sit along the top, and a click opens the genre. Pick none and your home screen stays as it is.";
 "Code kopieren" = "Copy code";
 "Code kopiert." = "Code copied.";
 "nicht mehr auf dem Server" = "no longer on the server";
 "Filme & Serien" = "Movies & Shows";
 "Allgemein" = "General";
 "Startseite, Reihen und Genres" = "Home screen, rows and genres";
-"Filme, Serien und Folgen durchsuchen" = "Search movies, shows and episodes";
+"Filme, Serien und Folgen durchsuchen" = "Search films, series and episodes";
 "Kann angefragt werden" = "Can be requested";
+"Technikschild im Player" = "Technical overlay in the player";
+"%lld offen" = "%lld left";
+"Profil" = "Profile";

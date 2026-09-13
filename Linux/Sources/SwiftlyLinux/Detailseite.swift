@@ -370,7 +370,11 @@ extension App {
         // **Die Kulisse ist das Hauptkind** — sie gibt das Mass (380 hoch)
         // und malt sich selbst, maskiert statt übermalt. Warum das den
         // Unterschied macht, steht in ``Kulisse``.
-        let bild = Kulisse()
+        // **Das Bild ragt weit ueber die Kopfzone hinaus** — `heldHoehe * 1,62`
+        // wie auf dem Mac (`DetailView.swift:311`). Seine eigene Maske beendet
+        // es, deshalb wird nicht beschnitten. Hier war es genau so hoch wie die
+        // Kopfzone: darunter stand eine harte Kante und dann Schwarz.
+        let bild = Kulisse(hoehe: Int(Double(Stil.heldHoehe) * 1.62))
         gtk_overlay_set_child(OpaquePointer(kopf), bild.anzeige)
         gtk_overlay_add_overlay(OpaquePointer(kopf), heldenblock(titel))
 
@@ -609,11 +613,11 @@ extension App {
         // des Knopfes ist die Antwort. Das Zeichen ist ein Lesezeichen, kein
         // Stern — auf dem Mac steht dort `bookmark`.
         var gemerkt = titel.userData?.isFavorite ?? false
-        let merk = nebenknopf("user-bookmarks-symbolic", aktiv: gemerkt)
+        let merk = nebenknopf("bookmark-new-symbolic", aktiv: gemerkt)
         beiSignal(merk, "clicked") { [weak self] in
             guard let self, let client = self.client else { return }
             gemerkt.toggle()
-            knopfzustand(merk, aktiv: gemerkt, symbol: "user-bookmarks-symbolic")
+            knopfzustand(merk, aktiv: gemerkt, symbol: "bookmark-new-symbolic")
             let neu = gemerkt
             Task.detached { try? await client.setzeMerkliste(itemID: titel.id, an: neu) }
         }
@@ -636,7 +640,7 @@ extension App {
         // **Vier Ziele, nicht fünf.** „Gesehen" und „Trailer" sind in die
         // Mehr-Liste gewandert; fünf beschriftete Knöpfe waren zu viel für
         // eine Reihe. So steht es auf dem Apple TV und auf dem Mac.
-        let mehr = nebenknopf("view-more-symbolic")
+        let mehr = nebenknopf("view-more-horizontal-symbolic")
         beiSignal(mehr, "clicked") { [weak self] in self?.mehrZeigen(titel, an: mehr) }
         anhaengen(reihe, mehr)
         return reihe

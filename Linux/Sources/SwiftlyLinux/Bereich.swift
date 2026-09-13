@@ -99,7 +99,7 @@ enum Bereich: CaseIterable {
         case .serien: "tv-symbolic"
         // `bookmark.fill` auf dem Mac; im Adwaita-Satz ist das das
         // Lesezeichen.
-        case .merkliste: "user-bookmarks-symbolic"
+        case .merkliste: "bookmark-new-symbolic"
         // `arrow.down.circle` auf dem Mac. Adwaita hat keinen Pfeil im
         // Kreis, der nach unten zeigt und nicht „aktualisieren" heisst;
         // der Ladeordner ist das naechstliegende und wird ueberall sonst
