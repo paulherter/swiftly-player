@@ -40,8 +40,16 @@ extension App {
             let (f, s) = await (frisch, serie)
             aufHauptfaden {
                 guard let s else { return }
+                // **Nur die Kennung wird frisch geholt, nicht die Nummer.**
+                // Der Mac uebergibt `folge.parentIndexNumber` vom Eintrag
+                // (`DetailView.swift:83`), wie die iPhone-Fassung
+                // (`Shared/HauptView.swift:833`), und frischt allein
+                // `seasonId` auf (`:98`). Hier stand beides frisch — im
+                // Randfall aus A10, wo der Server keine `SeasonId` liefert
+                // und nur die Nummer traegt, waehlte Linux dadurch eine
+                // andere Staffel als der Mac.
                 self.startStaffel = f?.seasonId ?? item.seasonId
-                self.startStaffelNummer = f?.parentIndexNumber ?? item.parentIndexNumber
+                self.startStaffelNummer = item.parentIndexNumber
                 self.seitenstapel[self.bereich, default: []].append(s)
                 self.detailZeigen(s)
             }

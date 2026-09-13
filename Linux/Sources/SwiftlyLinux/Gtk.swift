@@ -793,3 +793,26 @@ func inZwischenablage(_ text: String, an widget: Widget!) {
 @inline(__always) func alsAufklapp(_ w: Widget!) -> OpaquePointer! {
     OpaquePointer(w)
 }
+
+/// **Wann jemand ein Bedienelement anfasst und wieder loslässt.**
+///
+/// Für den Zeitregler: solange die Maus darauf steht, darf die Steuerung
+/// nicht ausblenden und die Stelle nicht vom Server überschrieben werden
+/// (B1, B4). Auf dem Mac liefert `Zeitregler` dafür `amRegler`; hier gibt es
+/// nichts Vergleichbares, also die Geste selbst — **`pressed` und
+/// `released` an derselben**, damit beide dasselbe Drücken meinen.
+func beiGriff(_ ziel: Widget!, _ block: @escaping (Bool) -> Void) {
+    let geste = gtk_gesture_click_new()
+    let runter = Unmanaged.passRetained(Auftrag { block(true) }).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(geste), "pressed",
+                          unsafeBitCast(auftragAlsKlick, to: GCallback.self),
+                          runter, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+    let hoch = Unmanaged.passRetained(Auftrag { block(false) }).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(geste), "released",
+                          unsafeBitCast(auftragAlsKlick, to: GCallback.self),
+                          hoch, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+    // **Die Geste horcht mit, sie fängt nicht ab.** Ohne diese Phase bekäme
+    // der Regler selbst den Druck nicht mehr und liesse sich nicht ziehen.
+    gtk_event_controller_set_propagation_phase(geste, GTK_PHASE_CAPTURE)
+    gtk_widget_add_controller(ziel, geste)
+}

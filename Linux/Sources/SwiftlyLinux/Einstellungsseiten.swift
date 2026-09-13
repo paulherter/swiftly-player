@@ -505,14 +505,17 @@ extension App {
         gtk_widget_set_visible(downloadabschaltfrage, 0)
         anhaengen(o.raum, downloadabschaltfrage)
 
-        if wahlen.downloadsAn {
-            anhaengen(o.raum, zeilenstrich())
-            let b = Downloadregeln.belegung(downloads.posten)
-            // **„Nur ueber WLAN" gibt es auch hier** (H5). Es stand nicht da, mit
+        // **„Nur ueber WLAN" gibt es auch hier** (H5). Es stand nicht da, mit
         // der Begruendung, ein Schreibtischrechner habe kein Mobilfunknetz —
         // der Mac ist auch einer und hat die Zeile trotzdem: ein Laptop haengt
         // durchaus mal an einem getakteten Anschluss.
+        //
+        // **Eine Bedingung, nicht zwei.** Hier standen zwei ineinander
+        // geschachtelte `if wahlen.downloadsAn` mit demselben Vergleich, und
+        // dazwischen ein `zeilenstrich()` zu viel — im Bild eine doppelte
+        // Haarlinie ueber der WLAN-Zeile.
         if wahlen.downloadsAn {
+            let b = Downloadregeln.belegung(downloads.posten)
             anhaengen(o.raum, zeilenstrich())
             anhaengen(o.raum, schalterzeile(symbol: "network-wireless-symbolic",
                                             titel: uebersetzt("Nur über WLAN"),
@@ -522,8 +525,7 @@ extension App {
                 self?.wahlen.sichern()
             })
             anhaengen(o.raum, zeilenstrich())
-        }
-        anhaengen(o.raum, wertezeile(symbol: "drive-harddisk-symbolic",
+            anhaengen(o.raum, wertezeile(symbol: "drive-harddisk-symbolic",
                                          titel: uebersetzt("Speicher"),
                                          unter: String(format: uebersetzt("%d Titel auf diesem Rechner"),
                                                        downloads.posten.count),

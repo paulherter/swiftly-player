@@ -40,7 +40,10 @@ extension App {
         let kopf = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
         let titelblock = stapel(GTK_ORIENTATION_VERTICAL, abstand: 4)
         gtk_widget_set_hexpand(titelblock, 1)
-        let titel = beschriftung(uebersetzt("Downloads"), stil: "swiftly-titelgross")
+        // **`swiftly-titel-gross`, mit Strichen.** Ohne sie gibt es die
+        // Klasse nicht, und die Ueberschrift stand als Fliesstext da — als
+        // einzige Seite der App. Am Bild gefunden.
+        let titel = beschriftung(uebersetzt("Downloads"), stil: "swiftly-titel-gross")
         gtk_label_set_xalign(OpaquePointer(titel), 0)
         anhaengen(titelblock, titel)
         downloadbelegung = beschriftung("", stil: "swiftly-zweitzeile")

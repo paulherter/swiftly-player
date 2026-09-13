@@ -501,6 +501,17 @@ extension App {
                               unsafeBitCast(reglerGezogen, to: GCallback.self),
                               Unmanaged.passUnretained(self).toOpaque(),
                               nil, GConnectFlags(rawValue: 0))
+        // **`amRegler` wurde nie gesetzt.** Das Feld stand da, wurde gelesen
+        // — als `amSchieben` in `Wiedergabetakt.rechnen` — und war immer
+        // `false`. Zwei Folgen: die Steuerung blendete nach vier Sekunden
+        // aus, **waehrend** jemand den Regler zog (B1 nimmt das Schieben
+        // ausdruecklich aus), und die Stelle des Servers ueberschrieb die
+        // gezogene (B4). Der Mac bindet dafuer `Zeitregler.amRegler`
+        // (`PlayerScreen.swift:707`, `:872`); hier gibt es dafuer die Geste.
+        beiGriff(spielerRegler) { [weak self] gedrueckt in
+            self?.amRegler = gedrueckt
+            if gedrueckt { self?.steuerungZeigen() }
+        }
         anhaengen(leiste, spielerRegler)
         spielerRest = beschriftung("−0:00", stil: "swiftly-spielerzeit")
         gtk_widget_set_size_request(spielerRest, 58, -1)
@@ -524,11 +535,17 @@ extension App {
         gtk_label_set_text(OpaquePointer(feld), text)
     }
 
-    // MARK: Der Takt — 500 ms (B12)
+    // MARK: Der Takt (B12)
 
     private func taktStarten() {
         taktBeenden()
-        spielertakt = g_timeout_add_full(200, 500, spielerTaktRuf,
+        // **Die Zahl kommt aus dem Paket**, nicht aus dieser Datei. Hier
+        // stand eine 500, und der Mac liest dieselbe Groesse aus
+        // `Wiedergabetakt.taktlaenge` — zwei Bauplaetze fuer eine Zahl, die
+        // in B12 als geteilt festgeschrieben ist.
+        let ms = UInt32(Wiedergabetakt.taktlaenge.components.seconds * 1000
+                        + Wiedergabetakt.taktlaenge.components.attoseconds / 1_000_000_000_000_000)
+        spielertakt = g_timeout_add_full(200, ms, spielerTaktRuf,
                                          Unmanaged.passUnretained(self).toOpaque(), nil)
     }
 
@@ -850,8 +867,10 @@ extension App {
         // **Eine offene Tafel hält die Steuerung.** Wer gerade eine Tonspur
         // sucht, hat den Zeiger stillstehen — das ist kein Grund, ihm die
         // Liste unter der Hand wegzunehmen.
+        // **Und nicht, waehrend jemand den Regler zieht** (B1). Der Mac
+        // nimmt `amRegler` an derselben Stelle aus (`PlayerScreen.swift:257`).
         guard laufenderTitel != nil, spielerSteuerung != nil,
-              spurtafel == nil, spielstand.laeuft else { return }
+              spurtafel == nil, spielstand.laeuft, !amRegler else { return }
         steuerungstakt += 1
         gtk_widget_set_opacity(spielerSteuerung, 0)
         spurwahlSchliessen()
@@ -888,8 +907,11 @@ extension App {
                 // **Der Player kann in den vier Sekunden zugegangen sein.**
                 // Dann steht in `spielerSteuerung` ein abgeräumtes Widget,
                 // und GTK meldet „assertion GTK_IS_WIDGET failed".
+                // **Nicht, waehrend jemand den Regler zieht** (B1: „nur bei
+                // Wiedergabe, nicht beim Schieben"). Der Mac prueft an
+                // derselben Stelle `!amRegler` (`PlayerScreen.swift:707`).
                 guard self.laufenderTitel != nil, self.spielerSteuerung != nil,
-                      self.spurtafel == nil,
+                      self.spurtafel == nil, !self.amRegler,
                       self.steuerungstakt == meins, self.spielstand.laeuft else { return }
                 gtk_widget_set_opacity(self.spielerSteuerung, 0)
                 self.zeigerZeigen(false)

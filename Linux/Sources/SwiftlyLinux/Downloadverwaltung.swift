@@ -78,9 +78,19 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     ///
     /// GLib beantwortet genau diese Frage: `g_network_monitor_get_network_metered`
     /// sagt, ob die Verbindung getaktet ist — bei NetworkManager also
-    /// Mobilfunk oder ein als „getaktet" markiertes WLAN. Das ist dieselbe
-    /// Auskunft, die `NWPathMonitor.isExpensive` auf Apple gibt, und der
-    /// Laptop am Telefon-Hotspot ist genau der Fall, fuer den H5 gebaut ist.
+    /// Mobilfunk oder ein als „getaktet" markiertes WLAN.
+    ///
+    /// **Das ist strenger als der Mac, und der Unterschied ist bekannt.**
+    /// Dort steht `pfad.usesInterfaceType(.wifi) || .wiredEthernet`
+    /// (`Sources/Shared/Downloadverwaltung.swift:512`) — die Schnittstellenart,
+    /// nicht die Taktung. Ein Telefon-Hotspot ist fuer den Mac damit „WLAN"
+    /// und laedt trotz eingeschaltetem Schalter; hier wartet er. GLib kennt
+    /// die Schnittstellenart gar nicht, und `NWPathMonitor.isExpensive` waere
+    /// auf Apple die Entsprechung zu dem, was hier gemessen wird — gerufen
+    /// wird es dort nirgends. **Fuer Paul zum Entscheiden:** entweder der Mac
+    /// nimmt `isExpensive` dazu, oder diese Zeile wird auf „immer WLAN"
+    /// zurueckgedreht. Bis dahin tut Linux, was H5 sagt, und der Mac etwas
+    /// Grosszuegigeres.
     private var imWLAN: Bool {
         guard let wacht = g_network_monitor_get_default() else { return true }
         return g_network_monitor_get_network_metered(wacht) == 0

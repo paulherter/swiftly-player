@@ -3251,7 +3251,7 @@ final class App: @unchecked Sendable {
         suchtakt += 1
         let meins = suchtakt
         let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard begriff.count > 1 else {
+        guard Anzeigeregeln.suchbegriffTaugt(begriff) else {
             rasterFuellen(suchraster, [])
             gtk_widget_set_visible(suchleer, 0)
             seerrRueckfrageWeg()
@@ -3324,7 +3324,12 @@ final class App: @unchecked Sendable {
     private func suchen(_ meins: Int, merken: Bool = false) {
         guard let client else { return }
         let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !begriff.isEmpty else {
+        // **Die Schwelle kommt aus dem Paket** (A7): `Anzeigeregeln`
+        // verlangt zwei Zeichen, getrimmt. Hier stand `!begriff.isEmpty` —
+        // ein einzelner Buchstabe loeste damit eine Serveranfrage aus, auf
+        // dem Mac nicht. Der Taktgeber prueft es zwar auch, aber Enter und
+        // ein Klick auf einen Verlaufseintrag laufen an ihm vorbei.
+        guard Anzeigeregeln.suchbegriffTaugt(begriff) else {
             rasterFuellen(suchraster, [])
             suchverlaufZeigen()
             return

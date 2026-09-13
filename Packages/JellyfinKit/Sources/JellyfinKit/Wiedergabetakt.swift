@@ -22,7 +22,13 @@ public enum Wiedergabetakt {
 
     /// Alle halbe Sekunde. Feiner braucht es niemand — die Anzeige zeigt
     /// Sekunden.
-    public static let taktlaenge: Duration = .milliseconds(500)
+    ///
+    /// **`nonisolated`, weil GTK den Takt nicht auf dem Hauptakteur startet.**
+    /// Auf Linux legt `g_timeout_add_full` ihn aus einer nicht isolierten
+    /// Methode an; ohne diese Angabe stand dort eine abgeschriebene 500, und
+    /// B12 verlangt ausdrücklich **eine** Quelle für die Zahl. Ein
+    /// unveränderliches `Sendable` darf den Akteur verlassen.
+    public nonisolated static let taktlaenge: Duration = .milliseconds(500)
     /// Wie oft der Server den Fortschritt erfährt.
     public static let meldeabstand: Double = 10
 
