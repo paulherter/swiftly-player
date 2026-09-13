@@ -2412,12 +2412,17 @@ final class App: @unchecked Sendable {
                                     titelfeld: &unbenutztertitel,
                                     serverfeld: &unbenutzteserverzeile))
 
-        suchfeld = eingabezeile(symbol: "system-search-symbolic", platzhalter: uebersetzt("Suchen"))
-        // Auf der Suchseite geht das Feld über die Inhaltsbreite, nicht über
-        // die 360 des Anmeldeblocks.
-        gtk_widget_set_size_request(suchfeld, -1, Int32(Stil.feldHoehe))
-        gtk_widget_set_halign(suchfeld, GTK_ALIGN_FILL)
-        gtk_widget_set_hexpand(suchfeld, 1)
+        // **„Titel, Serie, Person", nicht „Suchen".** Der Platzhalter sagt
+        // auf dem Mac, **wonach** man suchen kann (`SucheView.swift:100`);
+        // „Suchen" wiederholt nur die Überschrift darüber.
+        suchfeld = eingabezeile(symbol: "system-search-symbolic",
+                                platzhalter: uebersetzt("Titel, Serie, Person"))
+        // **420 breit, nicht über die ganze Seite** — `SucheView.swift:102`
+        // deckelt mit `frame(maxWidth: 420)`. Ein Feld über 1200 Punkt sieht
+        // aus, als erwarte es einen Satz.
+        gtk_widget_set_size_request(suchfeld, 420, Int32(Stil.feldHoehe))
+        gtk_widget_set_halign(suchfeld, GTK_ALIGN_START)
+        gtk_widget_set_hexpand(suchfeld, 0)
         anhaengen(block, suchfeld)
 
         // **„Zuletzt gesucht" — dieselbe Liste wie auf iPhone, Fernseher und
@@ -2444,6 +2449,12 @@ final class App: @unchecked Sendable {
         anhaengen(suchverlaufblock, verlaufkopf)
         anhaengen(suchverlaufblock, verlaufAussen)
         suchverlaufliste = verlaufRaum
+        // 700 breit und links — `SucheView.swift:83`
+        // (`frame(maxWidth: Stil.lesebreite, alignment: .leading)`). Ohne den
+        // Deckel lief die Karte über die ganze Fensterbreite, und eine
+        // Wortliste von zwölfhundert Punkt Breite liest sich nicht.
+        gtk_widget_set_size_request(suchverlaufblock, Int32(Stil.lesebreite), -1)
+        gtk_widget_set_halign(suchverlaufblock, GTK_ALIGN_START)
         anhaengen(block, suchverlaufblock)
 
         // **Solange nichts dasteht, sagt die Seite, wonach man suchen kann.**
