@@ -360,6 +360,7 @@ extension App {
             guard let self else { return }
             self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
             self.sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+            self.letzterSprung = Date()
             self.spielerZurueckZeichen?.stupsen()
             self.sprungZeigen(true)
             self.steuerungZeigen()
@@ -389,6 +390,7 @@ extension App {
             guard let self else { return }
             self.abspieler.springen(Double(self.wahlen.vorSekunden))
             self.sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+            self.letzterSprung = Date()
             self.spielerVorZeichen?.stupsen()
             self.sprungZeigen(false)
             self.steuerungZeigen()
@@ -591,6 +593,7 @@ extension App {
         }
 
         zeitenZeigen()
+        MainActor.assumeIsolated { stromPruefen() }
 
         // **Bis das erste Bild steht, deckt ein Schleier.** Ohne ihn sieht man
         // den Aufbau des Stroms — Klötzchen, ein Ruck, manchmal ein grüner
@@ -680,6 +683,60 @@ extension App {
         spielerAbspielzeichen?.setzen(spielstand.laeuft)
     }
 
+    /// **Steht der Strom, wird er neu aufgebaut** — die fünf Schwellen dafür
+    /// liegen als ``Stromwacht`` im Paket, mit Tests, und wurden auf Linux nie
+    /// gerufen.
+    ///
+    /// **Warum das nötig ist, obwohl libVLC `http-reconnect` kann.** Das
+    /// greift, wenn die Verbindung *abbricht*. Der Fall, den die Wacht meint,
+    /// ist der andere: die Verbindung steht, es kommt nur nichts mehr — ein
+    /// Server, der mitten im Strom aufhört zu liefern. Dann wartet libVLC
+    /// beliebig lange, und auf dem Bild steht ein Standbild.
+    ///
+    /// **Die Wacht ist eine Bremse und darf selbst keinen Hänger erzeugen.**
+    /// Deshalb entscheidet nicht diese Datei, sondern das Paket: ein Sprung
+    /// unterwegs, ein wachsender Puffer oder ein frischer Netzwechsel sind je
+    /// ein Grund zu warten. Die Zahlen stehen dort je Konstante begründet.
+    private func stromPruefen() {
+        guard let plan = laufenderPlan, plan.url.isFileURL == false,
+              spielstand.laeuft, spielstand.startGemeldet else {
+            stromStehtSeit = nil
+            return
+        }
+        let jetzt = abspieler.position
+        if abs(jetzt - stromLetzteStelle) > 0.05 {
+            stromLetzteStelle = jetzt
+            stromStehtSeit = nil
+            return
+        }
+        // Wächst der Puffer, lebt der Strom — dann ist es der Server, der
+        // langsam ist, und dem reisst man nichts ab.
+        let gelesen = abspieler.zaehlwerte?.gelesen ?? 0
+        if gelesen > stromGelesen {
+            stromGelesen = gelesen
+            stromPufferWuchs = Date()
+        }
+        let seit = stromStehtSeit ?? Date()
+        stromStehtSeit = seit
+
+        let rat = Stromwacht.rat(
+            stillstandSeit: Date().timeIntervalSince(seit),
+            netzwechselVor: nil,
+            sprungOffen: Date() < sprungBis,
+            letzterSprungVor: Date().timeIntervalSince(letzterSprung),
+            pufferWuchsVor: Date().timeIntervalSince(stromPufferWuchs))
+        guard rat == .neuVerbinden else { return }
+
+        // **An derselben Stelle wieder auf.** `oeffnen` baut den Strom neu
+        // auf, ohne die Seite anzufassen — die Steuerung, das Technikschild
+        // und der Takt laufen weiter.
+        stromStehtSeit = nil
+        let stelle = spielstand.position
+        abspieler.oeffnen(plan.url, ab: stelle, puffer: wahlen.puffer)
+        abspieler.bildfuellend(wahlen.bildfuellend)
+        spielstand.spurenGesetzt = false
+    }
+
     /// **Ton- und Untertitelspur werden einmal gesetzt, sobald VLC sie
     /// kennt** (B8).
     ///
@@ -738,6 +795,8 @@ extension App {
             abspieler.setzeZeit(nach)
             spielstand.position = nach
             sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+        letzterSprung = Date()
+            letzterSprung = Date()
             steuerungZeigen()
         case .naechsteFolge:
             naechsteFolge()
@@ -833,6 +892,7 @@ extension App {
         spielstand.position = ziel
         abspieler.setzeZeit(ziel)
         sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+        letzterSprung = Date()
         steuerungZeigen()
     }
 

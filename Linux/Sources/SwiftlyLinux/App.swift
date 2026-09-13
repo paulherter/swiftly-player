@@ -84,6 +84,13 @@ final class App: @unchecked Sendable {
     /// Die Folgen der offenen Staffel und der Chip „Staffel laden" darueber.
     var staffelfolgen: [Item] = []
     var staffelladeknopf: Widget?
+    // MARK: Stromwacht (siehe `Spieler.stromPruefen`)
+    var stromStehtSeit: Date?
+    var stromLetzteStelle: Double = -1
+    var stromGelesen: UInt64 = 0
+    var stromPufferWuchs = Date()
+    /// Wann zuletzt gesprungen wurde — die Wacht setzt danach aus.
+    var letzterSprung = Date.distantPast
     /// Die Kontozeile unten in der Seitenleiste — sie traegt die
     /// Hervorhebung, solange eine Unterseite offen ist.
     private var profilzeile: Widget?
@@ -1607,6 +1614,7 @@ final class App: @unchecked Sendable {
             case 0xFF51:                                   // Pfeil links
                 abspieler.springen(-Double(wahlen.zurueckSekunden))
                 sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+                letzterSprung = Date()
                 spielerZurueckZeichen?.stupsen()
                 sprungZeigen(true)
                 steuerungZeigen()
@@ -1614,6 +1622,7 @@ final class App: @unchecked Sendable {
             case 0xFF53:                                   // Pfeil rechts
                 abspieler.springen(Double(wahlen.vorSekunden))
                 sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+                letzterSprung = Date()
                 spielerVorZeichen?.stupsen()
                 sprungZeigen(false)
                 steuerungZeigen()
