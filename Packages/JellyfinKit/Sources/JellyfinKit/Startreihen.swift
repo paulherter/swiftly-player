@@ -43,6 +43,20 @@ public enum Startreihe: String, CaseIterable, Sendable, Identifiable {
         }
     }
 
+    /// Das Zeichen in der Einstellungsliste. **Adwaita-Namen**, weil nur
+    /// Linux und Windows diese Liste selbst bauen; Apple hat seine eigenen
+    /// SF-Symbole an der Ansicht. Ohne Zeichen sah die Reihenliste als
+    /// einzige Liste der App anders aus als alle anderen.
+    public var zeichen: String {
+        switch self {
+        case .weiterschauen: "media-playback-start-symbolic"
+        case .naechsteFolge: "media-skip-forward-symbolic"
+        case .neueFilme:     "video-x-generic-symbolic"
+        case .neueSerien:    "tv-symbolic"
+        case .neuzugaenge:   "starred-symbolic"
+        }
+    }
+
     /// Die Überschrift über der Reihe auf der Startseite selbst.
     public var reihentitel: String {
         switch self {

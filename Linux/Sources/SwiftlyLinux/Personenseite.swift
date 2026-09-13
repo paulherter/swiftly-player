@@ -134,22 +134,22 @@ extension App {
     /// ``heldenblock(_:)``. Was zu groß wird, wird abgeschnitten und
     /// verschiebt nichts.
     ///
-    ///     0    Kopfbild 104 rund, daneben ab 118:
-    ///     0    Name         42
-    ///     50   Geboren      18
-    ///     68   Ort          18
+    ///     0    Kopfbild 130 rund, daneben ab 148:
+    ///     8    Name         48
+    ///     62   Geboren      18
+    ///     84   Ort          18
     private func personblock(_ person: Item) -> Widget! {
         let feld: Widget! = gtk_fixed_new()
         gtk_widget_set_halign(feld, GTK_ALIGN_START)
         gtk_widget_set_valign(feld, GTK_ALIGN_END)
-        gtk_widget_set_size_request(feld, 640, 104)
+        gtk_widget_set_size_request(feld, 720, 130)
         gtk_widget_set_margin_start(feld, Int32(Stil.randAbstand))
         gtk_widget_set_margin_bottom(feld, 16)
 
         // **Mit Initiale, wenn es kein Bild gibt.** `gerahmtesBild` laesst in
         // dem Fall einen leeren Kreis stehen; `profilzeichen` traegt den
         // Anfangsbuchstaben, so wie ueberall sonst in der App.
-        let teile = profilzeichen(name: person.name, kante: 104,
+        let teile = profilzeichen(name: person.name, kante: 130,
                                   stil: "swiftly-personkopf",
                                   schriftstil: "swiftly-zeichen96")
         gtk_fixed_put(alsFeld2(feld), teile.huelle, 0, 0)
@@ -158,11 +158,11 @@ extension App {
             profilbildLaden(teile, url: url, schluessel: Bildschluessel.fuer(url))
         }
 
-        let name = beschriftung(person.name, stil: "swiftly-titel")
+        let name = beschriftung(person.name, stil: "swiftly-heldtitel")
         gtk_label_set_xalign(OpaquePointer(name), 0)
         gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
-        gtk_widget_set_size_request(name, 520, 42)
-        gtk_fixed_put(alsFeld2(feld), name, 118, 0)
+        gtk_widget_set_size_request(name, 560, 48)
+        gtk_fixed_put(alsFeld2(feld), name, 148, 8)
 
         // **Die zwei Zeilen haben ihren Platz von Anfang an.** Kämen sie erst
         // beim Laden dazu, schöben sie den Namen nach oben — mitten im
@@ -173,7 +173,7 @@ extension App {
             gtk_widget_add_css_class(z, "swiftly-leise")
             gtk_label_set_xalign(OpaquePointer(z), 0)
             gtk_widget_set_size_request(z, 520, 18)
-            gtk_fixed_put(alsFeld2(feld), z, 118, 50)
+            gtk_fixed_put(alsFeld2(feld), z, 148, 62)
         }
         if let ort = person.productionLocations?.first, !ort.isEmpty {
             let z = beschriftung(ort, stil: "swiftly-zweitzeile")
@@ -181,7 +181,7 @@ extension App {
             gtk_label_set_xalign(OpaquePointer(z), 0)
             gtk_label_set_ellipsize(OpaquePointer(z), PANGO_ELLIPSIZE_END)
             gtk_widget_set_size_request(z, 520, 18)
-            gtk_fixed_put(alsFeld2(feld), z, 118, 68)
+            gtk_fixed_put(alsFeld2(feld), z, 148, 84)
         }
         return feld
     }

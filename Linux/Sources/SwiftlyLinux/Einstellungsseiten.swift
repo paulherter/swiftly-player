@@ -460,7 +460,22 @@ extension App {
         if wahlen.downloadsAn {
             anhaengen(o.raum, zeilenstrich())
             let b = Downloadregeln.belegung(downloads.posten)
-            anhaengen(o.raum, wertezeile(symbol: "drive-harddisk-symbolic",
+            // **„Nur ueber WLAN" gibt es auch hier** (H5). Es stand nicht da, mit
+        // der Begruendung, ein Schreibtischrechner habe kein Mobilfunknetz —
+        // der Mac ist auch einer und hat die Zeile trotzdem: ein Laptop haengt
+        // durchaus mal an einem getakteten Anschluss.
+        if wahlen.downloadsAn {
+            anhaengen(o.raum, zeilenstrich())
+            anhaengen(o.raum, schalterzeile(symbol: "network-wireless-symbolic",
+                                            titel: uebersetzt("Nur über WLAN"),
+                                            unter: uebersetzt("Über Mobilfunk warten Downloads"),
+                                            an: wahlen.nurUeberWLAN) { [weak self] an in
+                self?.wahlen.nurUeberWLAN = an
+                self?.wahlen.sichern()
+            })
+            anhaengen(o.raum, zeilenstrich())
+        }
+        anhaengen(o.raum, wertezeile(symbol: "drive-harddisk-symbolic",
                                          titel: uebersetzt("Speicher"),
                                          unter: String(format: uebersetzt("%d Titel auf diesem Rechner"),
                                                        downloads.posten.count),
@@ -482,7 +497,9 @@ extension App {
                                      titel: uebersetzt("Seerr"),
                                      unter: uebersetzt("Anfragen, was noch nicht da ist"),
                                      wert: seerrDa ? uebersetzt("Verbunden") : nil,
-                                     pfeil: true) { [weak self] in
+                                     // Wert **oder** Pfeil, nicht beides — so
+                                     // steht es auf dem Mac.
+                                     pfeil: !seerrDa) { [weak self] in
             self?.unterseiteOeffnen(.seerr)
         })
         // **Hier und nicht bei „Wiedergabe".** Die Zeilen dort sagen, *wie*
@@ -764,16 +781,11 @@ extension App {
         anhaengen(links, ga.aussen)
         anhaengen(links, luftHoch(26))
 
-        let g0 = einstellungsgruppe(uebersetzt("Startseite"))
-        anhaengen(g0.raum, schalterzeile(symbol: "folder-new-symbolic",
-                                         titel: uebersetzt("Neuzugänge getrennt"),
-                                         unter: uebersetzt("Neue Filme und neue Serien in eigenen Reihen"),
-                                         an: wahlen.neuzugaengeGetrennt) { [weak self] an in
-            self?.wahlen.neuzugaengeGetrennt = an
-            self?.wahlen.sichern()
-            self?.geladen.remove(.start)
-            self?.unterseiteOeffnen(.darstellung)
-        })
+        // **„Reihen" ueber der Liste, „Neuzugaenge" darunter** — die
+        // Reihenfolge des Macs (`DarstellungView.swift:110`). Der Schalter
+        // stand hier ueber den Reihen und schob sie damit unter eine
+        // Ueberschrift, zu der sie nicht gehoeren.
+        let g0 = einstellungsgruppe(uebersetzt("Reihen"))
         anhaengen(links, g0.aussen)
 
         // **Umsortiert wird mit dem, was die Eingabeart hergibt** — auf dem
@@ -789,12 +801,26 @@ extension App {
         }
         anhaengen(links, g1.aussen)
 
+        let gn = einstellungsgruppe(uebersetzt("Neuzugänge"))
+        anhaengen(gn.raum, schalterzeile(symbol: "folder-new-symbolic",
+                                         titel: uebersetzt("Neuzugänge getrennt"),
+                                         unter: uebersetzt("Neue Filme und neue Serien in eigenen Reihen"),
+                                         an: wahlen.neuzugaengeGetrennt) { [weak self] an in
+            self?.wahlen.neuzugaengeGetrennt = an
+            self?.wahlen.sichern()
+            self?.geladen.remove(.start)
+            self?.unterseiteOeffnen(.darstellung)
+        })
+
         let fuss1 = beschriftung(uebersetzt("Mit den Pfeilen umsortieren. Was aus ist, steht nicht auf der Startseite."),
                                  stil: "swiftly-zweitzeile", umbruch: true)
         gtk_widget_add_css_class(fuss1, "swiftly-sehrleise")
         gtk_label_set_xalign(OpaquePointer(fuss1), 0)
+        gtk_label_set_justify(OpaquePointer(fuss1), GTK_JUSTIFY_LEFT)
         gtk_widget_set_margin_top(fuss1, 8)
         anhaengen(links, fuss1)
+        anhaengen(links, luftHoch(26))
+        anhaengen(links, gn.aussen)
 
         anhaengen(links, luftHoch(26))
 
@@ -838,6 +864,7 @@ extension App {
                                  stil: "swiftly-zweitzeile", umbruch: true)
         gtk_widget_add_css_class(fuss2, "swiftly-sehrleise")
         gtk_label_set_xalign(OpaquePointer(fuss2), 0)
+        gtk_label_set_justify(OpaquePointer(fuss2), GTK_JUSTIFY_LEFT)
         gtk_widget_set_margin_top(fuss2, 8)
         anhaengen(rechts, fuss2)
     }
@@ -850,6 +877,12 @@ extension App {
         gtk_widget_set_margin_top(zeile, 10)
         gtk_widget_set_margin_bottom(zeile, 10)
 
+        // **Mit Zeichen wie jede andere Zeile der App.** Ohne es sah die
+        // Reihenliste als einzige anders aus.
+        let bild: Widget! = gtk_image_new_from_icon_name(reihe.zeichen)
+        gtk_image_set_pixel_size(OpaquePointer(bild), 15)
+        gtk_widget_set_size_request(bild, 22, -1)
+        anhaengen(zeile, bild)
         let name = beschriftung(uebersetzt(reihe.listenname), stil: "swiftly-koerper")
         gtk_label_set_xalign(OpaquePointer(name), 0)
         gtk_widget_set_hexpand(name, 1)

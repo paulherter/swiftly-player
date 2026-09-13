@@ -901,20 +901,51 @@ extension App {
         let leiste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 3)
         raender(leiste, 10)
         gtk_widget_set_size_request(leiste, 250, -1)
-        for b in Spurbereich.allCases {
+        // **Das Technikschild steht abgesetzt, und es ist ein Schalter.**
+        //
+        // Auf dem Mac trennt eine Haarlinie es von den fuenf Waehlern darueber
+        // und es traegt einen Schalter statt eines Wertes
+        // (`macOS/PlayerScreen.swift`, Wiedergabetafel). Hier stand es als
+        // sechste Wahlzeile mit dem Wert „Aus" — eine Zeile, die aussieht als
+        // klappe sie etwas auf, und dann nur umschaltet.
+        for b in Spurbereich.allCases where b != .technik {
             anhaengen(leiste, leistenzeile(b))
         }
+        let tstrich: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_add_css_class(tstrich, "swiftly-trennlinie")
+        gtk_widget_set_size_request(tstrich, -1, 1)
+        gtk_widget_set_margin_top(tstrich, 8)
+        gtk_widget_set_margin_bottom(tstrich, 8)
+        anhaengen(leiste, tstrich)
+
+        let tzeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 9)
+        raender(tzeile, 8)
+        let tbild: Widget! = gtk_image_new_from_icon_name(Spurbereich.technik.symbol)
+        gtk_image_set_pixel_size(OpaquePointer(tbild), 13)
+        anhaengen(tzeile, tbild)
+        let tl = beschriftung(Spurbereich.technik.titel, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(tl), 0)
+        gtk_widget_set_hexpand(tl, 1)
+        anhaengen(tzeile, tl)
+        anhaengen(tzeile, kleinerSchalter(an: wahlen.technikschild) { [weak self] an in
+            guard let self else { return }
+            self.wahlen.technikschild = an
+            self.wahlen.sichern()
+            self.technikschildSetzen(an)
+        })
+        anhaengen(leiste, tzeile)
         anhaengen(spalten, leiste)
 
-        let strich: Widget! = gtk_separator_new(GTK_ORIENTATION_VERTICAL)
-        gtk_widget_add_css_class(strich, "swiftly-linie")
-        anhaengen(spalten, strich)
+        // **Kein Strich zwischen den Spalten.** Auf dem Mac ist es ein Kasten;
+        // hier standen zwei mit sichtbarer Kante dazwischen.
 
         // --- Auswahl rechts ----------------------------------------------
         let rechts = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
         raender(rechts, 16)
         gtk_widget_set_hexpand(rechts, 1)
-        anhaengen(rechts, rubrik(spurbereich.titel))
+        // **Ohne Rubrik.** Welcher Bereich gemeint ist, sagt die
+        // hervorgehobene Zeile links — die Ueberschrift daneben wiederholt sie
+        // nur. Auf dem Mac steht dort keine.
         let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         anhaengen(rechts, raum)
         auswahlFuellen(raum)

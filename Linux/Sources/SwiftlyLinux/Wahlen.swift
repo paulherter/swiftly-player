@@ -56,6 +56,10 @@ struct Wahlen: Codable {
     /// ausser der einen Zeile in den Einstellungen nichts davon. Wortgleich
     /// von `AppModel.downloadsAn`.
     var downloadsAn = false
+    /// **Über Mobilfunk warten Downloads** (H5). Steht auch auf dem
+    /// Schreibtisch zur Wahl: ein Laptop hängt durchaus mal an einem
+    /// getakteten Anschluss.
+    var nurUeberWLAN = true
 
     /// **Wie viel Vorrat der Player haelt** — die Stufe aus dem Paket.
     ///
@@ -154,6 +158,7 @@ struct Wahlen: Codable {
         bildfuellend           = w(.bildfuellend, false)
         technikschild          = w(.technikschild, false)
         downloadsAn            = w(.downloadsAn, false)
+        nurUeberWLAN           = w(.nurUeberWLAN, true)
         pufferstufe            = w(.pufferstufe, Pufferstufe.normal.rawValue)
         discordAnzeigen        = w(.discordAnzeigen, false)
         suchverlauf            = w(.suchverlauf, "")

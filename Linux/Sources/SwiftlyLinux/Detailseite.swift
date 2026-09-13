@@ -370,11 +370,17 @@ extension App {
         // **Die Kulisse ist das Hauptkind** — sie gibt das Mass (380 hoch)
         // und malt sich selbst, maskiert statt übermalt. Warum das den
         // Unterschied macht, steht in ``Kulisse``.
-        // **Das Bild ragt weit ueber die Kopfzone hinaus** — `heldHoehe * 1,62`
-        // wie auf dem Mac (`DetailView.swift:311`). Seine eigene Maske beendet
-        // es, deshalb wird nicht beschnitten. Hier war es genau so hoch wie die
-        // Kopfzone: darunter stand eine harte Kante und dann Schwarz.
-        let bild = Kulisse(hoehe: Int(Double(Stil.heldHoehe) * 1.62))
+        // **So hoch wie die Kopfzone.**
+        //
+        // Auf dem Mac ist das Bild `heldHoehe * 1,62` und liegt damit auch
+        // hinter dem Inhalt darunter — dort ist es eine Lage im Stapel, die
+        // nichts misst. In GTK ist die Kulisse das Hauptkind des Ueberzugs
+        // und gibt damit die Hoehe vor: mit 1,62 rutschten Reiter und
+        // Folgenliste um 236 Punkt nach unten. Die Maske beendet das Bild
+        // ohnehin weich; die fehlende Strecke dahinter ist der kleinere
+        // Fehler. Wer es nachbaut, braucht eine Lage **unter** dem Scroller,
+        // nicht im Kopf.
+        let bild = Kulisse()
         gtk_overlay_set_child(OpaquePointer(kopf), bild.anzeige)
         gtk_overlay_add_overlay(OpaquePointer(kopf), heldenblock(titel))
 

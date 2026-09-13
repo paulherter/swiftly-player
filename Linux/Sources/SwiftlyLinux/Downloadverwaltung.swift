@@ -67,8 +67,13 @@ final class Downloadverwaltung: NSObject, @unchecked Sendable {
     /// H5 gilt hier nicht: ein Schreibtischrechner hat kein Mobilfunknetz,
     /// und was ein USB-Modem kostet, weiss die App nicht. Die Regel wird
     /// trotzdem befragt, damit es **eine** Stelle bleibt.
+    /// **Ein Schreibtischrechner haengt am Kabel oder am WLAN, nie am
+    /// Mobilfunk** — hier gibt es nichts zu messen. Die Einstellung existiert
+    /// trotzdem (H5), weil ein Laptop an einem getakteten Anschluss haengen
+    /// kann; sie wird nur nie wirksam, solange wir die Verbindungsart nicht
+    /// kennen.
     private let imWLAN = true
-    private let nurUeberWLAN = false
+    private var nurUeberWLAN: Bool { false }
 
     override init() {
         super.init()

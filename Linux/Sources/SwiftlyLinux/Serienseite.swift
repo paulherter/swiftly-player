@@ -30,11 +30,17 @@ extension App {
         var gewaehlt: Reiter = .folgen
         var reiterknoepfe: [Widget?] = []
 
-        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
+        // **Die drei Reiter teilen sich die Breite.** Auf dem Mac steht jeder
+        // mittig in seinem Drittel, und die Unterstreichung laeuft ueber das
+        // ganze Drittel — nicht nur unter dem Wort. Hier standen sie
+        // linksbuendig mit 26 Abstand nebeneinander.
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
         gtk_widget_set_margin_start(zeile, Int32(Stil.randAbstand))
         gtk_widget_set_margin_end(zeile, Int32(Stil.randAbstand))
         for fall in Reiter.allCases {
             let knopf = reiterknopf(fall.beschriftung, aktiv: fall == gewaehlt)
+            gtk_widget_set_hexpand(knopf, 1)
+            gtk_widget_set_halign(knopf, GTK_ALIGN_FILL)
             reiterknoepfe.append(knopf)
             beiSignal(knopf, "clicked") { [weak self] in
                 guard let self else { return }
@@ -458,7 +464,9 @@ extension App {
             gtk_widget_set_size_request(ladeknopf, 34, 34)
             gtk_widget_set_valign(ladeknopf, GTK_ALIGN_START)
             gtk_widget_set_margin_top(ladeknopf, 2)
-            gtk_widget_set_visible(ladeknopf, 0)
+            // **Er steht immer da**, nicht erst beim Ueberfahren. Auf dem Mac
+            // traegt jede Folgenzeile ihren Pfeil sichtbar; versteckt findet
+            // ihn nur, wer weiss, dass er da ist.
             beiSignal(ladeknopf, "clicked") { [weak self] in
                 self?.ladetafelZeigen(folge, an: ladeknopf)
             }
@@ -575,8 +583,11 @@ extension App {
                 if leeren_ { leeren(ziel) }
                 guard !treffer.isEmpty else {
                     if leeren_ {
-                        anhaengen(ziel, beschriftung(uebersetzt("Nichts Ähnliches gefunden."),
-                                                     stil: "swiftly-koerper"))
+                        // Mittig, mit Zeichen — wie jeder andere Leerzustand.
+                        // Hier stand eine Textzeile oben links.
+                        anhaengen(ziel, self.leerzustand("mail-archive-symbolic",
+                                                         uebersetzt("Nichts Ähnliches gefunden."),
+                                                         nil))
                     }
                     return
                 }

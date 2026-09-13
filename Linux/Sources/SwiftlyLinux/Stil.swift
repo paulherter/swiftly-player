@@ -650,7 +650,8 @@ enum Stil {
 
         /* MARK: Detailseite */
 
-        .swiftly-heldtitel { font-size: 34px; font-weight: 700; letter-spacing: -0.8px; }
+        /* 40, nicht 34 — `Heldkopf.swift:74`. */
+        .swiftly-heldtitel { font-size: 40px; font-weight: 700; letter-spacing: -0.8px; }
         .swiftly-angaben { font-size: 14px; }
         .swiftly-beschreibung { color: rgba(255,255,255,0.62); font-size: \(koerper)px; }
         .swiftly-leistentitel { font-size: 17px; font-weight: 600; }

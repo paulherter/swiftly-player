@@ -385,10 +385,15 @@ func reiterknopf(_ text: String, aktiv: Bool) -> Widget! {
     gtk_widget_add_css_class(knopf, "swiftly-reiter")
     if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
     let stapelchen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
-    anhaengen(stapelchen, beschriftung(text))
+    // Das Wort mittig im Drittel, der Strich ueber die ganze Breite.
+    let wort = beschriftung(text)
+    gtk_widget_set_halign(wort, GTK_ALIGN_CENTER)
+    anhaengen(stapelchen, wort)
     let strich: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(strich, "swiftly-reiterstrich")
     gtk_widget_set_size_request(strich, -1, 2)
+    gtk_widget_set_hexpand(strich, 1)
+    gtk_widget_set_halign(strich, GTK_ALIGN_FILL)
     anhaengen(stapelchen, strich)
     gtk_button_set_child(alsKnopf(knopf), stapelchen)
     return knopf
@@ -738,15 +743,22 @@ func auswahlzeile(_ text: String, an: Bool, _ tun: @escaping () -> Void) -> Widg
     gtk_widget_set_margin_end(zeile, 14)
     gtk_widget_set_margin_top(zeile, 10)
     gtk_widget_set_margin_bottom(zeile, 10)
+    // **Das Zeichen steht links, wie auf dem Mac** — Haken bei der gewaehlten,
+    // leerer Kreis bei den uebrigen, und die gewaehlte Zeile traegt den Akzent
+    // (E2: der Akzent traegt Auswahl). Hier stand der Haken rechts und der
+    // Text blieb weiss; damit sah die Zeile aus wie eine Wertzeile.
+    let zeichen: Widget! = gtk_image_new_from_icon_name(
+        an ? "object-select-symbolic" : "radio-symbolic")
+    gtk_image_set_pixel_size(OpaquePointer(zeichen), 15)
+    gtk_widget_set_size_request(zeichen, 22, -1)
+    if an { gtk_widget_add_css_class(zeichen, "swiftly-akzentzeile") }
+    else { gtk_widget_add_css_class(zeichen, "swiftly-sehrleise") }
+    anhaengen(zeile, zeichen)
     let l = beschriftung(text, stil: "swiftly-koerper")
     gtk_label_set_xalign(OpaquePointer(l), 0)
     gtk_widget_set_hexpand(l, 1)
+    if an { gtk_widget_add_css_class(l, "swiftly-akzentzeile") }
     anhaengen(zeile, l)
-    if an {
-        let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-        gtk_widget_add_css_class(haken, "swiftly-akzentzeile")
-        anhaengen(zeile, haken)
-    }
     gtk_button_set_child(alsKnopf(knopf), zeile)
     beiSignal(knopf, "clicked", tun)
     return knopf
