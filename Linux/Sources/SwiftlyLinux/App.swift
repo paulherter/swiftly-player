@@ -2159,10 +2159,18 @@ final class App: @unchecked Sendable {
     }
 
     /// Eine Seitenüberschrift mit der Zahl rechts — „Filme … 7".
+    /// - Parameters:
+    ///   - mitServer: Ob die Serverzeile unter dem Titel steht. **Nur die
+    ///     Bibliotheksseiten** — `BibliothekView.swift:61-80` hat sie, die
+    ///     Merkliste (`MerklisteView.swift:42-49`) und die Genreseite
+    ///     (`GenreView.swift:29`, ein blanker `Unterseitenkopf`) nicht.
+    ///   - mitZahl: Ob rechts die Zaehlmarke steht. Die Genreseite hat keine.
     private func seitenkopf(_ titel: String, zahl: inout Widget!,
                             titelfeld: inout Widget!,
                             serverfeld: inout Widget!,
-                            zurueck: (() -> Void)? = nil) -> Widget! {
+                            zurueck: (() -> Void)? = nil,
+                            mitServer: Bool = true,
+                            mitZahl: Bool = true) -> Widget! {
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
         if let zurueck {
             let pfeil: Widget! = gtk_button_new()
@@ -2187,14 +2195,18 @@ final class App: @unchecked Sendable {
         let sv = beschriftung(servername, stil: "swiftly-zaehlmarke")
         gtk_label_set_xalign(OpaquePointer(sv), 0)
         gtk_label_set_ellipsize(OpaquePointer(sv), PANGO_ELLIPSIZE_END)
-        gtk_widget_set_visible(sv, servername.isEmpty ? 0 : 1)
-        serverfeld = sv
+        gtk_widget_set_visible(sv, (mitServer && !servername.isEmpty) ? 1 : 0)
+        serverfeld = mitServer ? sv : nil
         anhaengen(spalte, sv)
         anhaengen(reihe, spalte)
 
+        // **Erst ab eins.** Der Mac zeigt die Zahl nur bei `gesamt > 0`
+        // (`BibliothekView.swift:80`, `MerklisteView.swift:48`); hier stand
+        // bei leerem Ergebnis eine „0" neben der Ueberschrift.
         zahl = beschriftung("", stil: "swiftly-zaehlmarke")
         gtk_widget_set_valign(zahl, GTK_ALIGN_CENTER)
-        anhaengen(reihe, zahl)
+        gtk_widget_set_visible(zahl, 0)
+        if mitZahl { anhaengen(reihe, zahl) }
         return reihe
     }
 
@@ -2243,10 +2255,14 @@ final class App: @unchecked Sendable {
                                     serverfeld: &serverzeile,
                                     zurueck: was == .gattung ? { [weak self] in
                                         self?.zeige(.start)
-                                    } : nil))
+                                    } : nil,
+                                    mitServer: was != .gattung && was != .merkliste,
+                                    mitZahl: was != .gattung))
         // Nur diese eine Seite wechselt ihren Titel.
         if was == .bibliothek { bibliothekstitel = titel }
         if was == .gattung { gattungstitel = titel }
+        // `nil`, wo die Seite keine traegt — sonst faerbte
+        // `serverzeilenMalen` sie doch wieder ein.
         serverzeilen[was] = serverzeile
 
         let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
@@ -2283,7 +2299,13 @@ final class App: @unchecked Sendable {
         let rahmen = seitenrahmen(block)
         // **Am unteren Rand wird nachgeladen** (`edge-reached` — das Signal
         // bringt die Kante mit, also wieder ein eigener Rückruf, Falle 2).
-        randMelden(rahmen) { [weak self] in self?.rasterNachladen(was) }
+        // **Eine Genreseite laedt einmal.** Der Mac holt dort genau 200 und
+        // blaettert nicht nach (`GenreView.swift:69-72`; `titel(gattung:)`
+        // im Paket kennt kein `startIndex`). Hier hing dieselbe
+        // Nachladeschleife dran wie an einer Bibliothek.
+        if was != .gattung {
+            randMelden(rahmen) { [weak self] in self?.rasterNachladen(was) }
+        }
         return mitKopflinie(rahmen)
     }
 
@@ -3147,7 +3169,10 @@ final class App: @unchecked Sendable {
             : true
         Task.detached { [self] in
             let antwort = try? await client.items(parentID: eltern,
-                                                  limit: 100,
+                                                  // 200 auf einen Schlag fuer
+                                                  // ein Genre, sonst 100 je
+                                                  // Seite — `GenreView.swift:70`.
+                                                  limit: genre != nil ? 200 : 100,
                                                   startIndex: ab,
                                                   sortBy: genre != nil ? "DateCreated" : sort.feld,
                                                   sortOrder: genre != nil ? "Descending"
@@ -3190,6 +3215,7 @@ final class App: @unchecked Sendable {
                 self.rasterGesamt[was] = gesamt
                 self.rasterFuellen(raster, self.rasterItems[was] ?? [])
                 gtk_label_set_text(OpaquePointer(zahl), String(gesamt))
+                gtk_widget_set_visible(zahl, gesamt > 0 ? 1 : 0)
                 // Der Ersatzinhalt erscheint erst, wenn die Antwort da ist —
                 // vorher steht der Platzhalter.
                 if let leer = self.leerFeld[was] {

@@ -726,6 +726,8 @@ func kachelmarkeLegen(_ huelle: Widget!, item: Item) {
                                    : String(format: uebersetzt("%lld Staffeln"), n))
     }
     gtk_widget_add_css_class(feld, "swiftly-kachelmarke")
+    // Ohne Wort einen Punkt enger — siehe die Klasse im Stilblatt.
+    if case .gesehen = marke { gtk_widget_add_css_class(feld, "swiftly-nurhaken") }
     gtk_widget_set_halign(feld, GTK_ALIGN_END)
     gtk_widget_set_valign(feld, GTK_ALIGN_START)
     gtk_overlay_add_overlay(OpaquePointer(huelle), feld)

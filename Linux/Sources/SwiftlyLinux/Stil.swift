@@ -632,6 +632,11 @@ enum Stil {
             padding: 3px 6px;
             margin: 6px;
         }
+        /* **Beim blossen Haken einen Punkt enger** — `Stil.swift:2990`:
+           `padding(.horizontal, wortlaut == nil ? 5 : 6)`. Ein Zeichen ohne
+           Wort braucht weniger Luft als eine Zahl, sonst sieht die Marke
+           daneben zu breit aus. */
+        .swiftly-kachelmarke.swiftly-nurhaken { padding: 3px 5px; }
         .swiftly-balkenspur { background-color: rgba(255,255,255,0.16); }
         .swiftly-balken { background-color: \(akzent); }
 

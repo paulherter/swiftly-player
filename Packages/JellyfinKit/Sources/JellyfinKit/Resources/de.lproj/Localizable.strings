@@ -80,3 +80,13 @@
 "Normal" = "Normal";
 "Schlechte Verbindung" = "Schlechte Verbindung";
 "Sehr schlechte Verbindung" = "Sehr schlechte Verbindung";
+
+/* Merkgattung und Wiedergabeplan — standen im Code, aber in keinem Katalog:
+   auf Linux erschien die Gattungspille der Merkliste deshalb auch in der
+   englischen Fassung auf Deutsch. */
+"Filme" = "Filme";
+"Serien" = "Serien";
+"Filme & Serien" = "Filme & Serien";
+"Transkodiert" = "Transkodiert";
+"Direct Play" = "Direct Play";
+"Direct Stream" = "Direct Stream";

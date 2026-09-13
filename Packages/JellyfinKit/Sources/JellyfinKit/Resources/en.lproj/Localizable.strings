@@ -80,3 +80,11 @@
 "Normal" = "Normal";
 "Schlechte Verbindung" = "Poor connection";
 "Sehr schlechte Verbindung" = "Very poor connection";
+
+/* Merkgattung und Wiedergabeplan — standen im Code, aber in keinem Katalog. */
+"Filme" = "Movies";
+"Serien" = "Series";
+"Filme & Serien" = "Movies & Shows";
+"Transkodiert" = "Transcoded";
+"Direct Play" = "Direct Play";
+"Direct Stream" = "Direct Stream";
