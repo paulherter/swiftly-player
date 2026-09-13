@@ -2874,7 +2874,7 @@ final class App: @unchecked Sendable {
         // Der aktive vorn, danach die anderen in ihrer Reihenfolge.
         var reihenfolge: [Session] = []
         if let bund {
-            reihenfolge = [bund.aktives] + bund.konten.filter { $0.userID != bund.aktiveKennung }
+            reihenfolge = [bund.aktives] + bund.konten.filter { $0.kontoschluessel != bund.aktives.kontoschluessel }
         } else if !benutzerID.isEmpty {
             reihenfolge = []
         }
