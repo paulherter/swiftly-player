@@ -1329,9 +1329,15 @@ enum Stil {
             min-height: 40px;
             padding: 0 12px;
             border-radius: 8px;
-            background-color: transparent;
+            /* `background`, nicht nur die Farbe: unter Windows gilt das helle
+               Standardthema, und dessen Knopfverlauf lag weiss unter der
+               Schrift. */
+            background: none;
+            box-shadow: none;
             border: none;
+            color: \(schrift);
         }
+        button.swiftly-spurzeile label { color: \(schrift); }
         button.swiftly-spurzeile label:first-child { font-size: 14px; }
         button.swiftly-spurzeile:hover { background-color: rgba(255,255,255,0.06); }
         /* **Eine getoente Flaeche, nicht nur Akzentschrift.** Der Mac legt
