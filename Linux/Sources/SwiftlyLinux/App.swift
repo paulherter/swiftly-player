@@ -139,6 +139,20 @@ final class App: @unchecked Sendable {
         // — die Plattform entscheidet, so wie sie auch entscheidet, wo die
         // Fensterampel sitzt.
         gtk_window_set_default_size(alsFenster(fenster), 1440, 900)
+        // **Passt es nicht, dann maximiert.** Windows kuerzt eine Vorgabe, die
+        // groesser als der Bildschirm ist, nicht — auf 1280 x 800 stand das
+        // Fenster unten hinter der Taskleiste und rechts ueber den Rand.
+        if let anzeige = gdk_display_get_default(),
+           let liste = gdk_display_get_monitors(anzeige),
+           g_list_model_get_n_items(liste) > 0,
+           let roh = g_list_model_get_item(liste, 0) {
+            var flaeche = GdkRectangle()
+            gdk_monitor_get_geometry(OpaquePointer(roh), &flaeche)
+            g_object_unref(roh)
+            if flaeche.width < 1440 + 40 || flaeche.height < 900 + 80 {
+                gtk_window_maximize(alsFenster(fenster))
+            }
+        }
         // **Unter 900 × 560 geht das Raster nicht mehr auf** — Seitenleiste
         // plus zwei Kachelspalten plus Ränder. Dieselbe Grenze wie auf dem
         // Mac; ohne sie liess sich das Fenster auf Briefmarkengrösse ziehen.
