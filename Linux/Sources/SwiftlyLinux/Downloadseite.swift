@@ -319,11 +319,15 @@ extension App {
     private func downloadknopf(_ p: Downloadposten) -> Widget! {
         let (symbol, name, tat): (String, String, () -> Void)
         switch p.stand {
-        case .wartet, .laedt:
+        case .laedt:
             symbol = "media-playback-pause-symbolic"
             name = uebersetzt("Anhalten")
             tat = { [weak self] in self?.downloads.anhalten(p.id) }
-        case .angehalten:
+        // **Wartend ist nicht laufend.** `.wartet` stand hier mit `.laedt`
+        // zusammen und loeste damit „Anhalten" aus — bei etwas, das noch gar
+        // nicht laeuft. Der Mac fasst `.angehalten`, `.fehler` und `.wartet`
+        // zusammen und setzt fort (`Macdownloads.swift:115`).
+        case .angehalten, .wartet:
             symbol = "media-playback-start-symbolic"
             name = uebersetzt("Fortsetzen")
             tat = { [weak self] in self?.downloads.fortsetzen(p.id) }

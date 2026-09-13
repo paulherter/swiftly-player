@@ -281,26 +281,47 @@ extension App {
         if let url = t.plakat() {
             bildLaden(bild, url: url, schluessel: "seerr-\(t.art)-\(t.id)", sofort: true)
         }
+        // **Blass, und das ist die ganze Auskunft.** Ein Plakat in voller
+        // Deckung sieht aus wie ein Titel, den der Server hat
+        // (`Sources/macOS/SeerrKachelUndSeite.swift:17-20`). Hier fehlte das
+        // eine Merkmal, an dem man auf den ersten Blick sieht, dass er es
+        // nicht ist.
+        gtk_widget_set_opacity(huelle, 0.45)
+        // **Unten links, nicht oben rechts** — `:19`, `.bottomLeading` mit 8
+        // Innenrand. Und gefuellt in der Farbe des Standes, nicht als
+        // umrandete Plakette: `swiftly-marke` war eine Klasse, die es im
+        // Stilblatt gar nicht gab, also sahen „wartet", „angefragt" und
+        // „teilweise" identisch aus.
         if let wort = seerrMarkenwort(t.stand) {
-            let marke = beschriftung(wort, stil: "swiftly-plakette")
-            gtk_widget_add_css_class(marke, "swiftly-marke")
-            gtk_widget_set_halign(marke, GTK_ALIGN_END)
-            gtk_widget_set_valign(marke, GTK_ALIGN_START)
-            gtk_widget_set_margin_top(marke, 6)
-            gtk_widget_set_margin_end(marke, 6)
+            let marke = beschriftung(wort, stil: "swiftly-marke")
+            gtk_widget_add_css_class(marke, seerrMarkenstil(t.stand))
+            gtk_widget_set_halign(marke, GTK_ALIGN_START)
+            gtk_widget_set_valign(marke, GTK_ALIGN_END)
+            gtk_widget_set_margin_bottom(marke, 8)
+            gtk_widget_set_margin_start(marke, 8)
             gtk_overlay_add_overlay(OpaquePointer(huelle), marke)
         }
         anhaengen(block, huelle)
 
-        let titel = beschriftung(t.titel, stil: "swiftly-koerper")
+        // Innen 1 Punkt Abstand, Titel `kachelTitel` in `schriftLeise`, die
+        // Zweitzeile in `schriftSehrLeise` — `:24-31`. Hier stand der Titel in
+        // vollem Weiss und derselben Groesse wie ein Fliesstext.
+        let textblock = stapel(GTK_ORIENTATION_VERTICAL, abstand: 1)
+        let titel = beschriftung(t.titel, stil: "swiftly-kacheltitel")
+        gtk_widget_add_css_class(titel, "dim-label")
         gtk_label_set_xalign(OpaquePointer(titel), 0)
         gtk_label_set_ellipsize(OpaquePointer(titel), PANGO_ELLIPSIZE_END)
         gtk_label_set_max_width_chars(OpaquePointer(titel), 1)
-        anhaengen(block, titel)
+        anhaengen(textblock, titel)
 
-        let unten = beschriftung(t.jahr.map { String($0) } ?? "", stil: "swiftly-zweitzeile")
+        // „2019 · Serie", nicht nur die Jahreszahl — `:50-53`.
+        let art = t.istSerie ? uebersetzt("Serie") : uebersetzt("Film")
+        let unten = beschriftung(t.jahr.map { "\($0) · \(art)" } ?? art,
+                                 stil: "swiftly-zweitzeile")
+        gtk_widget_add_css_class(unten, "swiftly-leise")
         gtk_label_set_xalign(OpaquePointer(unten), 0)
-        anhaengen(block, unten)
+        anhaengen(textblock, unten)
+        anhaengen(block, textblock)
 
         gtk_button_set_child(alsKnopf(knopf), block)
         // **Erst die Seite, dann die Anfrage.** Vorher loeste ein Tipp
@@ -319,6 +340,16 @@ extension App {
     /// Oberflaeche nennt ihn ebenfalls „Requested". Auf dem Mac stand das
     /// schon einmal falsch und ist dort behoben; hier neu zu erfinden hiesse,
     /// denselben Fehler ein zweites Mal einzubauen.
+    /// Die Farbe der Marke, als Stilklasse. Dieselben Werte wie
+    /// `Seerrstand.farbe` auf Apple (`Sources/Shared/Seerrmarke.swift:63-68`).
+    private func seerrMarkenstil(_ stand: Seerrstand) -> String {
+        switch stand {
+        case .wartetAufFreigabe: return "swiftly-marke-wartet"
+        case .laedt:             return "swiftly-marke-laedt"
+        default:                 return "swiftly-marke-akzent"
+        }
+    }
+
     private func seerrMarkenwort(_ stand: Seerrstand) -> String? {
         switch stand {
         case .offen, .geloescht:    return nil

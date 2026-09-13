@@ -918,11 +918,28 @@ extension App {
             }
         }
 
+        // **Drei Zahlen, ein Knopf** (H3). Groesse, Qualitaet und was danach
+        // frei ist — so steht die Tafel auf dem Mac
+        // (`Macdownloads.swift:168-176`). Hier stand im Normalfall nur die
+        // Groesse; „Frei auf diesem Rechner" erschien ausschliesslich, wenn
+        // es knapp wurde, und der Erklaersatz zur Originalqualitaet fehlte
+        // ganz — dabei ist er der Grund, warum es keine Qualitaetswahl gibt.
+        else {
+            if let c = quelle?.container, !c.isEmpty {
+                anhaengen(liste, ladeangabe(uebersetzt("Qualität"), c.uppercased()))
+            }
+            anhaengen(liste, ladeangabe(uebersetzt("Danach frei"),
+                                        Downloadregeln.groesse(auskunft.freiDanach)))
+        }
+
         anhaengen(liste, handlungszeile("folder-download-symbolic",
                                         uebersetzt("Laden")) { [weak self] in
             gtk_popover_popdown(alsTafel(tafel))
             self?.ladenAnstossen(titel, quelle: quelle, bytes: bytes)
         })
+        if auskunft.reicht {
+            anhaengen(liste, ladehinweis(uebersetzt("Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird.")))
+        }
         gtk_popover_popup(alsTafel(tafel))
     }
 

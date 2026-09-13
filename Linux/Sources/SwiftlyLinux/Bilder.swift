@@ -90,9 +90,15 @@ enum Bildspeicher {
 ///
 /// GTK nimmt rohe Bytes über `GdkTexture` entgegen und erkennt das Format
 /// selbst — JPEG, PNG, WebP, was der Server eben liefert.
+/// **Und es blendet ein.** Auf Apple liegt hinter jedem Netzbild ein
+/// `withAnimation(.smooth(duration: 0.22))`, sobald die Bytes da sind
+/// (`Sources/Shared/Netzbild.swift:367`) — GESTALTUNG E, „Nichts erscheint
+/// hart". Hier erschien jedes Plakat, jedes Kopfbild und jede Folgenzeile
+/// schlagartig; bei einem Raster mit zwanzig Kacheln blitzt das sichtbar.
 func bildSetzen(_ bildfeld: Widget!, daten: Data, schluessel: String) {
     if let textur = Bildspeicher.holen(schluessel) {
         gtk_picture_set_paintable(OpaquePointer(bildfeld), textur)
+        bildEinblenden(bildfeld)
         return
     }
     daten.withUnsafeBytes { puffer in
@@ -111,6 +117,23 @@ func bildSetzen(_ bildfeld: Widget!, daten: Data, schluessel: String) {
         }
         gtk_picture_set_paintable(OpaquePointer(bildfeld), textur)
         Bildspeicher.legen(schluessel, textur)
+        bildEinblenden(bildfeld)
+    }
+}
+
+/// 0 → 1 über 220 ms, dieselbe Dauer wie `.smooth(duration: 0.22)`.
+///
+/// **Nur, wenn das Feld voll sichtbar ist.** Sonst blendet ein Bild, das
+/// gerade von einem anderen Lauf halb eingeblendet wird, von vorn an — und
+/// bei einem Kachelbild, das zweimal gesetzt wird (Speichertreffer, dann
+/// frische Bytes), säh man es flackern.
+private func bildEinblenden(_ bildfeld: Widget!) {
+    guard gtk_widget_get_opacity(bildfeld) >= 0.999 else { return }
+    gtk_widget_set_opacity(bildfeld, 0)
+    laufen(auf: bildfeld, dauer: 0.22) { e in
+        gtk_widget_set_opacity(bildfeld, e)
+    } fertig: {
+        gtk_widget_set_opacity(bildfeld, 1)
     }
 }
 

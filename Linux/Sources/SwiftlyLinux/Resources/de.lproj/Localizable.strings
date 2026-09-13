@@ -295,3 +295,15 @@
 "Neu hinzugefügt" = "Neu hinzugefügt";
 "Nur über WLAN" = "Nur über WLAN";
 "Über Mobilfunk warten Downloads" = "Über Mobilfunk warten Downloads";
+
+/* Leerzustaende der Raster — Wortlaut aus dem Katalog, nicht neu erfunden. */
+"Noch nichts gemerkt" = "Noch nichts gemerkt";
+"Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier." = "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier.";
+"Nichts in diesem Genre" = "Nichts in diesem Genre";
+"Auf deinem Server steht gerade kein Film und keine Serie darin." = "Auf deinem Server steht gerade kein Film und keine Serie darin.";
+"Qualität" = "Qualität";
+"Danach frei" = "Danach frei";
+"Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird." = "Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird.";
+"Film" = "Film";
+"Serie" = "Serie";
+"Wirklich anfragen?" = "Wirklich anfragen?";

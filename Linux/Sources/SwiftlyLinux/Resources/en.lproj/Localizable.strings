@@ -292,3 +292,15 @@
 "Neu hinzugefügt" = "Recently added";
 "Nur über WLAN" = "Wi‑Fi only";
 "Über Mobilfunk warten Downloads" = "Over cellular, downloads wait";
+
+/* Leerzustaende der Raster — Wortlaut aus dem Katalog, nicht neu erfunden. */
+"Noch nichts gemerkt" = "Nothing on your watchlist yet";
+"Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier." = "Every movie and show page has “Watchlist” in the button row. What you tap there collects here.";
+"Nichts in diesem Genre" = "Nothing in this genre";
+"Auf deinem Server steht gerade kein Film und keine Serie darin." = "Your server has no film and no series in it right now.";
+"Qualität" = "Quality";
+"Danach frei" = "Free afterwards";
+"Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird." = "Swiftly downloads the original file — the same quality as streaming, because nothing is ever re-encoded.";
+"Film" = "Movie";
+"Serie" = "Series";
+"Wirklich anfragen?" = "Really request it?";

@@ -285,6 +285,7 @@ extension App {
     private func personReihenNachladen(_ person: Item, in raum: Widget!) {
         guard let client else { return }
         let kiste = gehalten(raum)
+        let seerr = seerrclient
         Task.detached { [self] in
             let eigene = await client.titel(person: person.id)
             nachDemSchub {
@@ -292,6 +293,8 @@ extension App {
                 if !eigene.isEmpty {
                     anhaengen(ziel, self.reiheBauen(titel: uebersetzt("Auf deinem Server"),
                                                     art: .neu, items: eigene))
+                    self.personAnfragbareNachladen(person, eigene: eigene,
+                                                   seerr: seerr, in: ziel)
                 } else {
                     // **Nur, wenn wirklich nichts da ist.** Ein leerer Raum
                     // ohne Wort sähe aus wie eine Seite, die noch lädt.
@@ -304,8 +307,44 @@ extension App {
                     gtk_widget_set_margin_start(hinweis, Int32(Stil.randAbstand))
                     gtk_widget_set_margin_end(hinweis, Int32(Stil.randAbstand))
                     anhaengen(ziel, hinweis)
+                    self.personAnfragbareNachladen(person, eigene: eigene,
+                                                   seerr: seerr, in: ziel)
                 }
                 losgelassen(kiste)
+            }
+        }
+    }
+
+    /// **„Kann angefragt werden" — die zweite Reihe der Personenseite.**
+    ///
+    /// Sie fehlte auf Linux ganz, und zwar unabhaengig davon, ob jemand bei
+    /// Seerr angemeldet ist: es gab den Abruf nicht. Auf dem Mac steht sie
+    /// unter „Auf deinem Server" (`Sources/macOS/PersonView.swift:224-242`),
+    /// gefuellt aus `seerr.filmografie(person:)` ueber die TMDB-Kennung der
+    /// Person.
+    ///
+    /// **Unten und spaeter.** Seerr fragt dafuer erst bei TMDB nach und
+    /// braucht manchmal Sekunden; darauf darf die erste Reihe nicht warten.
+    ///
+    /// **Nur, was nicht schon da ist.** Seerr kennt, was es selbst verwaltet;
+    /// was anders auf den Server kam, steht dort als offen — der Name faengt
+    /// es ab (`PersonView.swift:277-280`).
+    private func personAnfragbareNachladen(_ person: Item, eigene: [Item],
+                                           seerr: SeerrClient?, in raum: Widget!) {
+        guard let seerr, let tmdb = person.tmdbKennung else { return }
+        let kiste = gehalten(raum)
+        let bekannt = Set(eigene.map { $0.name.lowercased() })
+        Task.detached { [self] in
+            let fremde = await seerr.filmografie(person: tmdb)
+                .filter { !$0.stand.schonDa && !bekannt.contains($0.titel.lowercased()) }
+            aufHauptfaden {
+                defer { losgelassen(kiste) }
+                guard !fremde.isEmpty else { return }
+                anhaengen(kiste.widget,
+                          self.reiheBauen(titel: uebersetzt("Kann angefragt werden"),
+                                          bildHoehe: Stil.kachelHoehe,
+                                          stueck: Stil.kachelBreite + Stil.kachelAbstand,
+                                          kacheln: fremde.map { self.seerrKachel($0) }))
             }
         }
     }

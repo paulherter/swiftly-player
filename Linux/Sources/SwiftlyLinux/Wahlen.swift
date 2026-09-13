@@ -18,7 +18,7 @@ struct Wahlen: Codable {
     var untertitelAutomatisch = false
     /// **Neue Filme und neue Serien in eigenen Reihen** statt in einer.
     /// `Startseitenmodell` wertet es aus; die Zeile fehlte auf Linux ganz.
-    var neuzugaengeGetrennt = false
+    var neuzugaengeGetrennt = true
 
     /// **Was dem Server als Grenze gemeldet wird.**
     ///
@@ -88,6 +88,13 @@ struct Wahlen: Codable {
     /// einer Stelle steht und nicht in drei Ansichten.
     var suchverlauf = ""
 
+    /// **Welche Gattung die Merkliste zeigt** — „Filme & Serien", „Filme"
+    /// oder „Serien". Sie war ein reiner Speicherwert und damit nach jedem
+    /// Start wieder `alle`; auf dem Mac liegt sie in `UserDefaults`, mit der
+    /// Begruendung „eine Sortierung ist eine Einstellung, keine Handlung"
+    /// (`Sources/Shared/Merklistenmodell.swift:24-25,36-47`).
+    var merkgattung = ""
+
     // MARK: Startseite
 
     /// Die Reihenfolge der Startseitenreihen, als `rawValue` von
@@ -150,7 +157,10 @@ struct Wahlen: Codable {
         tonSprache             = w(.tonSprache, "")
         untertitelSprache      = w(.untertitelSprache, "")
         untertitelAutomatisch  = w(.untertitelAutomatisch, false)
-        neuzugaengeGetrennt    = w(.neuzugaengeGetrennt, false)
+        // `true` wie auf dem Mac seit dem 11.09.2026
+        // (`Sources/Shared/AppModel.swift:265`) — hier stand weiter `false`,
+        // und damit sah eine frische Installation anders aus als dort.
+        neuzugaengeGetrennt    = w(.neuzugaengeGetrennt, true)
         naechsteAutomatisch    = w(.naechsteAutomatisch, true)
         zurueckSekunden        = w(.zurueckSekunden, 10)
         vorSekunden            = w(.vorSekunden, 30)
@@ -162,6 +172,7 @@ struct Wahlen: Codable {
         pufferstufe            = w(.pufferstufe, Pufferstufe.normal.rawValue)
         discordAnzeigen        = w(.discordAnzeigen, false)
         suchverlauf            = w(.suchverlauf, "")
+        merkgattung            = w(.merkgattung, "")
         startReihen            = w(.startReihen, [])
         startAus               = w(.startAus, [])
         startGenres            = w(.startGenres, [])

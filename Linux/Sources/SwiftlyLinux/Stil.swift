@@ -737,6 +737,23 @@ enum Stil {
         button.swiftly-staffelzeile.swiftly-aktiv label,
         button.swiftly-staffelzeile.swiftly-aktiv image { color: \(akzent); }
 
+        /* **Die Seerr-Marke auf einer Kachel** — gefuellte Kapsel in der Farbe
+           des Standes, dunkle Schrift, 11 halbfett, Innenrand 8 x 3
+           (`Sources/macOS/SeerrKachelUndSeite.swift:56-70`). Die Klasse
+           `swiftly-marke` stand im Code und gab es hier nicht: alle drei
+           Staende sahen gleich aus. Die Farben stehen als `Seerrstand.farbe`
+           in `Sources/Shared/Seerrmarke.swift:63-68`. */
+        .swiftly-marke {
+            font-size: 11px;
+            font-weight: 600;
+            color: \(grund);
+            border-radius: \(eckeKapsel)px;
+            padding: 3px 8px;
+        }
+        .swiftly-marke-akzent { background-color: \(akzent); }
+        .swiftly-marke-wartet { background-color: rgb(217,153,43); }
+        .swiftly-marke-laedt  { background-color: rgb(74,143,217); }
+
         .swiftly-plakette {
             font-size: 10px;
             font-weight: 600;

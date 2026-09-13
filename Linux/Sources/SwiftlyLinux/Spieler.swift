@@ -243,6 +243,15 @@ extension App {
                          hinaus: { [weak self] in self?.steuerungVerbergen() })
         // Und jede Bewegung holt sie zurück, nicht nur das Betreten.
         beiBewegung(ueber) { [weak self] in self?.steuerungZeigen() }
+        // **Ein Klick daneben schliesst die Wiedergabetafel.** Auf dem Mac
+        // liegt dafuer ein durchsichtiger Faenger unter ihr
+        // (`PlayerScreen.swift:365`); hier reicht die Steuerungsflaeche
+        // selbst, weil die Tafel als eigener Ueberzug darueber liegt und
+        // Klicks in ihr gar nicht bis hierher kommen.
+        beiKlick(ueber) { [weak self] in
+            guard let self, self.spurtafel != nil else { return }
+            self.spurwahlSchliessen()
+        }
         steuerungZeigen()
         return ueber
     }
@@ -650,20 +659,35 @@ extension App {
     /// Mac benutzt es (`VLCPlayer.swift`), ich hatte es übersehen.
     private func spurenVorwaehlen() {
         let tonWunsch = wahlen.tonSprache
+        var tonPasst = tonWunsch.isEmpty   // keine Vorgabe, also nichts einzuwenden
         if !tonWunsch.isEmpty,
            let treffer = abspieler.tonspuren.first(where: {
                $0.kennung >= 0 && Sprache.passt($0.name, zu: tonWunsch)
            }) {
             abspieler.setzeTonspur(treffer.kennung)
+            tonPasst = true
         }
 
-        // „Automatisch" heisst: Untertitel nur, wenn der Ton nicht in der
-        // gewünschten Sprache läuft. Sonst gilt die feste Vorwahl.
+        // **„Automatisch" schaltet auch ab, nicht nur ein.**
+        //
+        // Hier stand in beiden Faellen ein blankes `return`, und damit blieb
+        // stehen, was der Container vorgewaehlt hatte: bei einer Datei mit
+        // fest eingeschalteten deutschen Untertiteln liefen die weiter,
+        // obwohl der Ton schon Deutsch war. Der Mac schaltet an derselben
+        // Stelle `deselectAllTextTracks()` (`VLCPlayer.swift:1331-1338`) —
+        // „automatisch" heisst dort ausdruecklich: **nur** wenn der Ton nicht
+        // passt.
         let uWunsch = wahlen.untertitelSprache
-        guard !uWunsch.isEmpty else { return }
-        if wahlen.untertitelAutomatisch, !tonWunsch.isEmpty {
-            let tonLaeuft = abspieler.tonspuren.first { $0.kennung == abspieler.tonspur }
-            if let tonLaeuft, Sprache.passt(tonLaeuft.name, zu: tonWunsch) { return }
+        let automatisch = wahlen.untertitelAutomatisch
+        if automatisch, tonPasst {
+            abspieler.setzeUntertitel(-1)
+            return
+        }
+        guard !uWunsch.isEmpty else {
+            // Ohne Wunschsprache nichts erzwingen — ausser „automatisch"
+            // steht an, dann ist „kein Untertitel" die Antwort.
+            if automatisch { abspieler.setzeUntertitel(-1) }
+            return
         }
         if let treffer = abspieler.untertitelspuren.first(where: {
             $0.kennung >= 0 && Sprache.passt($0.name, zu: uWunsch)

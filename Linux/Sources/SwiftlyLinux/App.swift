@@ -720,6 +720,15 @@ final class App: @unchecked Sendable {
         seitenstapel.removeAll()
         geladen.removeAll()
         offeneUnterseite = nil
+        // **Und eine offene Bibliotheksseite.** Sie zeigt eine Sammlung des
+        // vorigen Kontos; auf dem Mac setzt `BibliothekView` sie beim
+        // Kontowechsel auf `nil` zurueck (`:187-190`). Hier wurde sie nur
+        // beim Bereichswechsel geleert, und wer im Konto wechselte, sah die
+        // fremde Sammlung stehenbleiben.
+        if offeneBibliothek != nil {
+            offeneBibliothek = nil
+            bibliothekszeilenMalen()
+        }
         // **Der Bereich bleibt, der Stapel geht** (G4). Wer aus „Filme" heraus
         // umschaltet, steht danach auf der Wurzel von „Filme", nicht auf der
         // Startseite — der Stapel gehoerte dem vorigen Konto, der Bereich
@@ -1002,7 +1011,13 @@ final class App: @unchecked Sendable {
     /// Welches Genre gerade offen ist.
     var offeneGattung: String?
     /// Welche Gattung die Merkliste zeigt (E25).
-    var merkgattung: Merkgattung = .alle
+    /// **Gesichert, nicht nur gemerkt.** Sie war ein reiner Speicherwert und
+    /// stand nach jedem Start wieder auf „Filme & Serien"; auf dem Mac liegt
+    /// sie in `UserDefaults` (`Merklistenmodell.swift:24-25`).
+    var merkgattung: Merkgattung {
+        get { Merkgattung(rawValue: wahlen.merkgattung) ?? .alle }
+        set { wahlen.merkgattung = newValue.rawValue; wahlen.sichern() }
+    }
     private var profilbild: Widget!
     private var profilname: Widget!
     private var profilserver: Widget!
@@ -1060,16 +1075,64 @@ final class App: @unchecked Sendable {
         set { }
     }
 
+    /// **Unter welchem Namen Filter und Sortierung eines Ortes liegen.**
+    ///
+    /// Nicht `Bereich.kennung`: die ist fuer `.bibliothek` die Konstante
+    /// „bibliothek", und damit teilten sich **alle** Sammlungen einen
+    /// einzigen Stand. Der Mac schluesselt ueber die Kennung der Bibliothek
+    /// (`Bibliotheksseite.swift:33-37`, `merkname: bibliothek.id`) und sagt
+    /// dazu: „zwei Filmbibliotheken sind zwei Orte". Dasselbe fuer ein Genre.
+    private func ortschluessel(_ was: Bereich) -> String {
+        switch was {
+        case .bibliothek: return "bibliothek:" + (offeneBibliothek?.id ?? "")
+        case .gattung:    return "gattung:" + (offeneGattung ?? "")
+        default:          return was.kennung
+        }
+    }
+
+    /// Was an diesem Ort gilt. **Die Merkliste startet auf „Zuletzt"** — das
+    /// ist die Reihenfolge, in der man eine Merkliste liest.
+    func sortierungVon(_ was: Bereich) -> Sortierung {
+        if let roh = wahlen.sortierungJeOrt[ortschluessel(was)],
+           let s = Sortierung(rawValue: roh) { return s }
+        return was == .merkliste ? .neueste : .name
+    }
+
+    func filterVon(_ was: Bereich) -> Bibliotheksfilter {
+        if let roh = wahlen.filterJeOrt[ortschluessel(was)],
+           let f = Bibliotheksfilter(rawValue: roh) { return f }
+        return .alle
+    }
+
     private func sortierungSetzen(_ was: Bereich, _ neu: Sortierung) {
-        wahlen.sortierungJeOrt[was.kennung] = neu.rawValue
+        wahlen.sortierungJeOrt[ortschluessel(was)] = neu.rawValue
         wahlen.sichern()
     }
 
     private func filterSetzen(_ was: Bereich, _ neu: Bibliotheksfilter) {
-        wahlen.filterJeOrt[was.kennung] = neu.rawValue
+        wahlen.filterJeOrt[ortschluessel(was)] = neu.rawValue
         wahlen.sichern()
     }
     private var chipzeilen: [Bereich: Widget] = [:]
+    /// Der Ersatzinhalt einer Rasterseite, die nichts hergibt — nur dort, wo
+    /// der Mac einen hat.
+    private var leerFeld: [Bereich: Widget] = [:]
+
+    /// Zeichen, Ueberschrift und Erklaerung des Leerzustands, wortgleich vom
+    /// Mac. `nil` heisst: dort steht keiner.
+    private func leertext(_ was: Bereich) -> (String, String, String?)? {
+        switch was {
+        // `MerklisteView.swift:117-125`
+        case .merkliste:
+            return ("bookmark-new-symbolic", uebersetzt("Noch nichts gemerkt"),
+                    uebersetzt("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier."))
+        // `GenreView.swift:56-60`
+        case .gattung:
+            return ("tag-symbolic", uebersetzt("Nichts in diesem Genre"),
+                    uebersetzt("Auf deinem Server steht gerade kein Film und keine Serie darin."))
+        default: return nil
+        }
+    }
     var benutzerID = ""
     var suchtakt = 0
 
@@ -1151,6 +1214,10 @@ final class App: @unchecked Sendable {
     /// Welche Staffeln angefragt werden sollen. Leer heisst: noch keine
     /// gewaehlt — und dann fragt der Knopf auch keine an.
     var seerrGewaehlteStaffeln: Set<Int> = []
+    /// **Der erste Druck fragt nach, der zweite schickt.** Nur bei einem
+    /// Film — bei einer Serie ist die Staffelauswahl die zweite Stufe.
+    /// Wird beim Oeffnen einer Seerr-Seite zurueckgesetzt.
+    var seerrBestaetigt = false
     /// Fortschrittsbalken und Standzeilen je Posten — damit ein Fortschritt
     /// die Liste nicht neu bauen muss.
     var downloadbalken: [String: Widget] = [:]
@@ -1517,7 +1584,13 @@ final class App: @unchecked Sendable {
                 vollbildUmschalten()
                 return true
             case 0xFF1B:                                   // Escape
-                if gtk_window_is_fullscreen(alsFenster(fenster)) != 0 {
+                // **Erst die Tafel, dann das Vollbild, dann der Player.**
+                // Der Mac prueft die offene Spurwahl vor allem anderen
+                // (`PlayerScreen.fluchttaste()`, `:659`); hier uebersprang
+                // Escape sie und schloss gleich den ganzen Player.
+                if spurtafel != nil {
+                    spurwahlSchliessen()
+                } else if gtk_window_is_fullscreen(alsFenster(fenster)) != 0 {
                     gtk_window_unfullscreen(alsFenster(fenster))
                 } else {
                     spielerSchliessen()
@@ -2011,8 +2084,18 @@ final class App: @unchecked Sendable {
     /// Eine Seitenüberschrift mit der Zahl rechts — „Filme … 7".
     private func seitenkopf(_ titel: String, zahl: inout Widget!,
                             titelfeld: inout Widget!,
-                            serverfeld: inout Widget!) -> Widget! {
+                            serverfeld: inout Widget!,
+                            zurueck: (() -> Void)? = nil) -> Widget! {
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
+        if let zurueck {
+            let pfeil: Widget! = gtk_button_new()
+            gtk_widget_add_css_class(pfeil, "swiftly-zurueck")
+            gtk_button_set_child(alsKnopf(pfeil),
+                                 gtk_image_new_from_icon_name("go-previous-symbolic"))
+            gtk_widget_set_valign(pfeil, GTK_ALIGN_CENTER)
+            beiSignal(pfeil, "clicked", zurueck)
+            anhaengen(reihe, pfeil)
+        }
         let spalte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 3)
         gtk_widget_set_hexpand(spalte, 1)
         let t = beschriftung(titel, stil: "swiftly-titel-gross")
@@ -2074,8 +2157,16 @@ final class App: @unchecked Sendable {
         var zahl: Widget!
         var titel: Widget!
         var serverzeile: Widget!
+        // **Eine Genreseite ist keine Wurzel** und traegt deshalb einen
+        // Zurueckpfeil im Inhalt, wie jede Unterseite
+        // (`Sources/macOS/GenreView.swift:29`). Filme, Serien, Merkliste und
+        // Downloads stehen in der Leiste und brauchen keinen; die Bibliothek
+        // steht dort ebenfalls.
         anhaengen(block, seitenkopf(was.beschriftung, zahl: &zahl, titelfeld: &titel,
-                                    serverfeld: &serverzeile))
+                                    serverfeld: &serverzeile,
+                                    zurueck: was == .gattung ? { [weak self] in
+                                        self?.zeige(.start)
+                                    } : nil))
         // Nur diese eine Seite wechselt ihren Titel.
         if was == .bibliothek { bibliothekstitel = titel }
         if was == .gattung { gattungstitel = titel }
@@ -2088,6 +2179,17 @@ final class App: @unchecked Sendable {
 
         let raster = rasterBauen()
         anhaengen(block, raster)
+
+        // **Leerzustaende, wie der Mac sie hat.** Genre und Merkliste zeigen
+        // dort einen (`GenreView.swift:56`, `MerklisteView.swift:117`); Filme,
+        // Serien und Bibliothek nicht — dort sagt die Zaehlmarke genug.
+        if let (zeichen, kopf, text) = leertext(was) {
+            let leer = leerzustand(zeichen, kopf, text)
+            gtk_widget_set_visible(leer, 0)
+            gtk_widget_set_margin_top(leer, 60)
+            anhaengen(block, leer)
+            leerFeld[was] = leer
+        }
         // **Kein „Lade …" als Fliesstext** (E17). Das Register laesst Text nur
         // an Knoepfen zu; auf einer Liste steht ein Platzhalter in der Form
         // dessen, was kommt. Auf der Serienseite und der Startseite steht das
@@ -2129,8 +2231,20 @@ final class App: @unchecked Sendable {
     func chipsFuellen(_ was: Bereich) {
         guard let zeile = chipzeilen[was] else { return }
         leeren(zeile)
-        let jetztFilter = filter[was] ?? .alle
-        let jetztSort = sortierung[was] ?? .name
+        // **Eine Genreseite hat keine Chips.** Der Mac zeigt dort weder
+        // Filter noch Sortierung (`Sources/macOS/GenreView.swift`): die
+        // Reihenfolge steht fest auf „zuletzt hinzugefuegt", weil man ein
+        // Genre antippt, um zu sehen, was neu ist. Hier hingen beide Reihen
+        // dran — der Sortierchip leuchtete auf und tat nichts, weil
+        // `rasterLaden` fuer Genres ohnehin `DateCreated` erzwingt, und der
+        // Filterchip tat etwas, das es beim Vorbild gar nicht gibt.
+        if was == .gattung {
+            gtk_widget_set_visible(zeile, 0)
+            return
+        }
+        gtk_widget_set_visible(zeile, 1)
+        let jetztFilter = filterVon(was)
+        let jetztSort = sortierungVon(was)
 
         // **Die Bibliothekswahl steht hier nicht mehr.**
         //
@@ -2290,7 +2404,8 @@ final class App: @unchecked Sendable {
         beiSignal(suchfeld, "activate") { [weak self] in
             guard let self else { return }
             self.suchtakt += 1
-            self.suchen(self.suchtakt)
+            // **Nur hier wird gemerkt.** Siehe ``suchen(_:merken:)``.
+            self.suchen(self.suchtakt, merken: true)
         }
         beiSignal(suchfeld, "changed") { [weak self] in self?.sucheAngestossen() }
         return seitenrahmen(block)
@@ -2363,7 +2478,12 @@ final class App: @unchecked Sendable {
         return raster
     }
 
-    func rasterFuellen(_ raster: Widget!, _ items: [Item]) {
+    /// - Parameter auskunft: Ob die Zweitzeile die reiche Trefferauskunft
+    ///   traegt („Serie · 3 Staffeln", „Breaking Bad · S1 E4 · 52 Min.")
+    ///   statt der blossen Jahreszahl. **Nur die Suche.** Der Mac setzt sie
+    ///   dort (`SucheView.swift:117`) und in der Bibliothek nicht
+    ///   (`BibliothekView.swift:136`).
+    func rasterFuellen(_ raster: Widget!, _ items: [Item], auskunft: Bool = false) {
         // **Dieselbe Bauart, die die App schon einmal aufgehängt hat.** Die
         // Schleife hing am Vorhandensein eines Kindes statt am Fortschritt:
         // schlägt `gtk_flow_box_remove` fehl — der Zeiger wird dafür blind
@@ -2377,7 +2497,8 @@ final class App: @unchecked Sendable {
             else { break }
         }
         for item in items {
-            gtk_flow_box_insert(OpaquePointer(raster), rasterkachel(item), -1)
+            gtk_flow_box_insert(OpaquePointer(raster),
+                                rasterkachel(item, auskunft: auskunft), -1)
         }
     }
 
@@ -2693,8 +2814,13 @@ final class App: @unchecked Sendable {
         // Beschwerde: „die falschen werden angezeigt".
         geladen.remove(.bibliothek)
         seitenstapel[.bibliothek] = []
-        filterSetzen(.bibliothek, .alle)
-        sortierungSetzen(.bibliothek, .name)
+        // **Nicht zuruecksetzen.** Hier standen zwei Zeilen, die Filter und
+        // Sortierung bei jedem Oeffnen auf die Vorgabe zwangen — damit war
+        // der gemerkte Stand nie zu sehen. Seit der Schluessel die Kennung
+        // der Sammlung traegt, ist auch nichts mehr zu bereinigen: jede
+        // Sammlung hat ihren eigenen. Der Mac laesst ihn ebenso stehen und
+        // begruendet das mit einem Nutzerzitat („ich sortiere nach zuletzt …
+        // komme wieder, bin ich zurueck beim Standard").
         chipsFuellen(.bibliothek)
         zeige(.bibliothek)
     }
@@ -2711,8 +2837,6 @@ final class App: @unchecked Sendable {
         }
         geladen.remove(.gattung)
         seitenstapel[.gattung] = []
-        filterSetzen(.gattung, .alle)
-        sortierungSetzen(.gattung, .name)
         zeige(.gattung)
     }
 
@@ -2909,14 +3033,21 @@ final class App: @unchecked Sendable {
             gattungen = Bibliotheksgattung.typen(zu: offeneBibliothek?.collectionType)
         default:      gattungen = ["Movie", "Series"]
         }
-        let f = filter[was] ?? .alle
-        let sort = sortierung[was] ?? .name
+        let f = filterVon(was)
+        let sort = sortierungVon(was)
         // Die Merkliste hat keine Bibliothek — sie geht ueber alles.
         let eltern: String?
         switch was {
         case .merkliste, .gattung: eltern = nil
         case .bibliothek: eltern = offeneBibliothek?.id
-        default:          eltern = gewaehlteBibliothek[was] ?? bibliotheken(fuer: was).first?.id
+        // **Und die gemerkte Sammlung muss es noch geben.** `?? .first`
+        // greift nur, wenn gar keine gemerkt ist — nicht, wenn die gemerkte
+        // vom Server verschwunden ist. Dann fragte die Seite eine Kennung ab,
+        // die es nicht mehr gibt, und blieb leer. Der Mac prueft an
+        // derselben Stelle (`AppModel.gewaehlteBibliothek(art:)`, `:142-149`).
+        default:
+            let da = bibliotheken(fuer: was)
+            eltern = da.first { $0.id == gewaehlteBibliothek[was] }?.id ?? da.first?.id
         }
         let stand = kontowechsel
         // **Ein Genre geht ueber alle Bibliotheken**, wie die Merkliste — es
@@ -2924,6 +3055,9 @@ final class App: @unchecked Sendable {
         // „zuletzt hinzugefuegt", nicht nach dem gewaehlten Feld: wer ein
         // Genre antippt, sucht meist, was neu ist.
         let genre = was == .gattung ? offeneGattung : nil
+        let rekursiv = was == .bibliothek
+            ? Bibliotheksgattung.rekursiv(zu: offeneBibliothek?.collectionType)
+            : true
         Task.detached { [self] in
             let antwort = try? await client.items(parentID: eltern,
                                                   limit: 100,
@@ -2935,7 +3069,17 @@ final class App: @unchecked Sendable {
                                                       ? ["IsFavorite"] : f.jellyfinFilter,
                                                   istGesehen: was == .merkliste
                                                       ? nil : f.istGesehen,
-                                                  recursive: true,
+                                                  // **Nicht fest `true`.**
+                                                  // `Bibliotheksgattung.rekursiv`
+                                                  // sagt `false`, sobald eine
+                                                  // Sammlung keine bekannten
+                                                  // Gattungen hat — dann ist
+                                                  // rekursiv zu suchen falsch,
+                                                  // weil gar nichts
+                                                  // einzuschraenken ist. So
+                                                  // steht es auf dem Mac
+                                                  // (`AppModel.swift:1022`).
+                                                  recursive: rekursiv,
                                                   includeItemTypes: gattungen,
                                                   gattungen: genre.map { [$0] } ?? [])
             let items = antwort?.items ?? []
@@ -2959,6 +3103,11 @@ final class App: @unchecked Sendable {
                 self.rasterGesamt[was] = gesamt
                 self.rasterFuellen(raster, self.rasterItems[was] ?? [])
                 gtk_label_set_text(OpaquePointer(zahl), String(gesamt))
+                // Der Ersatzinhalt erscheint erst, wenn die Antwort da ist —
+                // vorher steht der Platzhalter.
+                if let leer = self.leerFeld[was] {
+                    gtk_widget_set_visible(leer, gesamt == 0 ? 1 : 0)
+                }
             }
         }
     }
@@ -2988,7 +3137,9 @@ final class App: @unchecked Sendable {
             return
         }
         Task.detached { [self] in
-            try? await Task.sleep(nanoseconds: 280_000_000)
+            // 300 ms — `Sources/macOS/SucheView.swift:188`. Hier standen 280,
+            // und der Kommentar darueber nannte sie sogar als Mac-Wert.
+            try? await Task.sleep(nanoseconds: 300_000_000)
             aufHauptfaden {
                 guard self.suchtakt == meins else { return }
                 self.suchen(meins)
@@ -3038,7 +3189,15 @@ final class App: @unchecked Sendable {
         }
     }
 
-    private func suchen(_ meins: Int) {
+    /// - Parameter merken: Ob der Begriff in „Zuletzt gesucht" landet.
+    ///
+    ///   **Nur beim Abschicken, nicht beim Tippen.** Der Aufruf stand
+    ///   unbedingt hier drin, und diese Funktion haengt auch am Taktgeber
+    ///   nach jeder Tippause: wer „Ga", „Gam", „Game" eingibt, hatte danach
+    ///   drei Eintraege im Verlauf. Auf dem Mac haengt `merken` allein am
+    ///   `abschluss` des Feldes (`SucheView.swift:101`) — genau derselbe
+    ///   Fehler ist dort schon einmal behoben worden.
+    private func suchen(_ meins: Int, merken: Bool = false) {
         guard let client else { return }
         let begriff = text(suchfeld).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !begriff.isEmpty else {
@@ -3046,17 +3205,17 @@ final class App: @unchecked Sendable {
             suchverlaufZeigen()
             return
         }
-        // **Gemerkt wird, was gesucht wurde**, nicht jeder Tastendruck — der
-        // Aufruf steht deshalb hier und nicht am Taktgeber.
-        wahlen.suchverlauf = Suchverlauf.merken(begriff, in: wahlen.suchverlauf)
-        wahlen.sichern()
+        if merken {
+            wahlen.suchverlauf = Suchverlauf.merken(begriff, in: wahlen.suchverlauf)
+            wahlen.sichern()
+        }
         suchverlaufZeigen()
         let seerr = seerrclient
         Task.detached { [self] in
             let treffer = Listenregeln.ohneDoppelte((try? await client.suche(begriff)) ?? [])
             aufHauptfaden {
                 guard self.suchtakt == meins else { return }
-                self.rasterFuellen(self.suchraster, treffer)
+                self.rasterFuellen(self.suchraster, treffer, auskunft: true)
                 // **Beide leer, nicht nur die Bibliothek.** Stuende hier nur
                 // `treffer.isEmpty`, gewaenne dieser Zweig, sobald der eigene
                 // Server nichts hat — und „Nichts gefunden" stuende ueber den
@@ -3339,7 +3498,7 @@ final class App: @unchecked Sendable {
     /// bleiben. Der Mac legt dort ein `LazyVGrid` mit **fester** Spaltenweite
     /// an — der Platz, der übrig bleibt, geht in den Abstand, nicht in die
     /// Kachel. Mittig ausgerichtet kommt genau das heraus.
-    private func rasterkachel(_ item: Item) -> Widget! {
+    private func rasterkachel(_ item: Item, auskunft: Bool = false) -> Widget! {
         let (kaefig, bild) = gerahmtesBild(breite: Stil.kachelBreite,
                                            hoehe: Stil.kachelHoehe,
                                            stil: "swiftly-plakat")
@@ -3357,7 +3516,8 @@ final class App: @unchecked Sendable {
         // keiner startet (A7b).
         let kachel = kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,
                                   oben: item.name,
-                                  unten: item.productionYear.map(String.init)) {
+                                  unten: auskunft ? item.trefferauskunft
+                                                  : item.productionYear.map(String.init)) {
             [weak self] in self?.oeffne(item)
         }
         gtk_widget_set_halign(kachel, GTK_ALIGN_CENTER)

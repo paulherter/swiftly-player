@@ -33,6 +33,7 @@ extension App {
     /// von dort auf den Bereich, aus dem sie geoeffnet wurde.
     func seerrSeiteOeffnen(_ t: Seerrtreffer) {
         seerrGewaehlteStaffeln = []
+        seerrBestaetigt = false
         let scheibe: Widget! = naechsteScheibe()
         // **Keine der Einstellungsunterseiten** — sonst hielte ein zweiter
         // Aufruf sie fuer dieselbe und baute an Ort und Stelle um, statt
@@ -196,9 +197,23 @@ extension App {
             return
         }
 
-        let titel = t.istSerie && !seerrGewaehlteStaffeln.isEmpty
-            ? String(format: uebersetzt("%d Staffeln anfragen"), seerrGewaehlteStaffeln.count)
-            : uebersetzt("Anfragen")
+        // **Zwei Stufen, und die zweite ist der eigentliche Auftrag.**
+        //
+        // Bei einer Serie uebernimmt die Staffelliste die zweite Stufe: ohne
+        // Auswahl passiert nichts. Ein Film hat nichts auszuwaehlen, deshalb
+        // fragt dort der Knopf selbst nach — erster Druck „Wirklich
+        // anfragen?", zweiter schickt. Auf Linux ging die Anfrage bei einem
+        // Film beim **ersten** Druck raus; auf jeder anderen Plattform ist
+        // die Sicherung ausdruecklich eingebaut
+        // (`SeerrDetailView.swift:40-43`, `SeerrKachelUndSeite.swift:370-386`).
+        let titel: String
+        if t.istSerie {
+            titel = seerrGewaehlteStaffeln.isEmpty
+                ? uebersetzt("Anfragen")
+                : String(format: uebersetzt("%d Staffeln anfragen"), seerrGewaehlteStaffeln.count)
+        } else {
+            titel = seerrBestaetigt ? uebersetzt("Wirklich anfragen?") : uebersetzt("Anfragen")
+        }
         let knopf = hauptknopf(titel, symbol: "folder-download-symbolic")
         gtk_widget_set_size_request(knopf, Int32(Stil.hauptknopfBreite),
                                     Int32(Stil.hauptknopfHoehe))
@@ -209,7 +224,15 @@ extension App {
         if t.istSerie, seerrGewaehlteStaffeln.isEmpty {
             gtk_widget_set_opacity(knopf, 0.4)
         }
-        beiSignal(knopf, "clicked") { [weak self] in self?.seerrAnfragenVonSeite(t) }
+        beiSignal(knopf, "clicked") { [weak self] in
+            guard let self else { return }
+            if !t.istSerie, !self.seerrBestaetigt {
+                self.seerrBestaetigt = true
+                self.seerrKnopfreiheFuellen(t)
+                return
+            }
+            self.seerrAnfragenVonSeite(t)
+        }
         anhaengen(seerrKnopfreihe, knopf)
     }
 
