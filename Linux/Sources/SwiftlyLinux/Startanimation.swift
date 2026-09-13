@@ -195,8 +195,15 @@ final class Startanimation: @unchecked Sendable {
     fileprivate func malen(_ cr: OpaquePointer, _ breite: Int32, _ hoehe: Int32) {
         guard lebt, let tier else { return }
         let t = max(gtk_widget_get_scale_factor(anzeige), 1)
-        // **Die Marke ist ein Zeichen, kein Hintergrund** — gedeckelt bei 360.
-        let seite = min(Int(min(breite, hoehe)), 360)
+        // **520 Punkt Kante, wie auf dem Mac** (`Startanimation.swift:189`:
+        // „das Fenster ist kleiner als ein Fernseher und groesser als ein
+        // Telefon; 520 sitzt zwischen beiden"). Hier standen 360 als reiner
+        // Leistungsdeckel, ohne Bezug zu dieser Zahl — die Marke war beim
+        // Start sichtbar kleiner als dort.
+        //
+        // Der `min` gegen die Flaeche bleibt: in einem Fenster, das kleiner
+        // ist als 520, darf sie nicht ueber den Rand hinauslaufen.
+        let seite = min(Int(min(breite, hoehe)), 520)
         let neu = seite * Int(t)
         guard neu > 0 else { return }
 

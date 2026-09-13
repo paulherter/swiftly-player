@@ -2126,6 +2126,38 @@ final class App: @unchecked Sendable {
         return scroller
     }
 
+    /// **Die Haarlinie, die beim Scrollen einblendet** (E15).
+    ///
+    /// Sie fehlte auf den Rasterseiten als einzigen — die Serienseite hat sie
+    /// seit langem (`Serienseite.swift:61`). Ohne sie laeuft der Inhalt beim
+    /// Blaettern ohne Kante unter dem Kopf durch, und man sieht nicht, dass
+    /// oben noch etwas steht.
+    ///
+    /// Sie liegt als Ueberzug **ueber** dem Scroller, nicht darin: im Inhalt
+    /// wanderte sie mit.
+    private func mitKopflinie(_ scroller: Widget!) -> Widget! {
+        let ueber: Widget! = gtk_overlay_new()
+        gtk_overlay_set_child(OpaquePointer(ueber), scroller)
+
+        let linie: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_add_css_class(linie, "swiftly-trennlinie")
+        gtk_widget_set_size_request(linie, -1, 1)
+        gtk_widget_set_valign(linie, GTK_ALIGN_START)
+        gtk_widget_set_opacity(linie, 0)
+        gtk_widget_set_can_target(linie, 0)
+        gtk_overlay_add_overlay(OpaquePointer(ueber), linie)
+
+        guard let anpassung = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
+        else { return ueber }
+        // Ueber die ersten 24 Punkt einblenden — dieselbe kurze Strecke wie
+        // beim Detailkopf, damit es nicht als Bewegung auffaellt.
+        beiSignalRoh(UnsafeMutableRawPointer(anpassung), "value-changed") {
+            let wert = gtk_adjustment_get_value(anpassung)
+            gtk_widget_set_opacity(linie, min(max(wert / 24, 0), 1))
+        }
+        return ueber
+    }
+
     /// Eine Seitenüberschrift mit der Zahl rechts — „Filme … 7".
     private func seitenkopf(_ titel: String, zahl: inout Widget!,
                             titelfeld: inout Widget!,
@@ -2252,7 +2284,7 @@ final class App: @unchecked Sendable {
         // **Am unteren Rand wird nachgeladen** (`edge-reached` — das Signal
         // bringt die Kante mit, also wieder ein eigener Rückruf, Falle 2).
         randMelden(rahmen) { [weak self] in self?.rasterNachladen(was) }
-        return rahmen
+        return mitKopflinie(rahmen)
     }
 
     /// **Filter links, Sortierung rechts** — die Anordnung des Macs.
@@ -2927,6 +2959,12 @@ final class App: @unchecked Sendable {
     func startseiteLaden() {
         guard let client else { return }
         zuletztGeladen = Date()
+        // **H8: was der Server noch nicht weiss, geht jetzt raus.** Nicht in
+        // einem eigenen Takt — hier ist der Server nachweislich da, weil
+        // gleich darunter Reihen von ihm geholt werden. Dieselbe Stelle wie
+        // auf dem Mac, nur dass die dort an der Verbindungspruefung haengt.
+        let konto = benutzerID
+        Task.detached { await Nachmeldezettel.abschicken(client, konto: konto) }
         // **Wessen Antwort ist das gleich?** Der Wechsel laesst den alten
         // Client fallen, aber eine Abfrage, die schon unterwegs ist, kommt
         // trotzdem zurueck — und wuerde die Reihen des neuen Kontos mit denen

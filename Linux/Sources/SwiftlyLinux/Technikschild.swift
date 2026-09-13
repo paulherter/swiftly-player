@@ -48,7 +48,8 @@ extension App {
             Zaehlwerk($0, stelle: abspieler.position, laeuft: abspieler.laeuft,
                       vorher: technikzaehler)
         }
-        gtk_label_set_text(OpaquePointer(feld), technikschildText())
+        // **Markup, nicht Text** — die Warnzeilen tragen ihre Farbe selbst.
+        gtk_label_set_markup(OpaquePointer(feld), technikschildText())
     }
 
     private func technikschildText() -> String {
@@ -77,21 +78,60 @@ extension App {
         zeilen.append("\(uebersetzt("Stelle")) \(Spielzeit.text(abspieler.position))"
                       + " / \(Spielzeit.text(abspieler.dauer))")
 
-        guard let w = technikzaehler else { return zeilen.joined(separator: "\n") }
-        zeilen.append("")
+        guard let w = technikzaehler else { return zeilen.map(schutz).joined(separator: "\n") }
+        var fertig = zeilen.map(schutz)
+        fertig.append("")
 
-        zeilen.append("\(uebersetzt("Eingang")) \(Technikangaben.bitrate(w.eingang) ?? "—")")
-        zeilen.append("\(uebersetzt("Demuxer")) \(Technikangaben.bitrate(w.demuxer) ?? "—")")
-        zeilen.append("\(uebersetzt("Zeigt Ø")) \(zahl(w.zeigtProSekunde)) fps"
-                      + " · \(uebersetzt("Gezeigt")) \(w.roh.gezeigt)")
-        zeilen.append("\(uebersetzt("Lauf")) \(anteil(w.laufAnteil))")
-        zeilen.append("\(uebersetzt("Dekodiert Ø")) \(zahl(w.dekodiertProSekunde)) fps")
-        zeilen.append("\(uebersetzt("Vorrat")) \(vorratwort(w))")
-        zeilen.append("\(uebersetzt("Verworfen")) \(w.roh.verworfen)"
-                      + " · \(uebersetzt("Ton weg")) \(w.roh.tonVerloren)")
-        zeilen.append("\(uebersetzt("Beschädigt")) \(w.roh.beschaedigt)"
-                      + " · \(uebersetzt("Sprünge")) \(w.roh.spruenge)")
-        return zeilen.joined(separator: "\n")
+        // **Nur die Abweichung meldet sich lauter** (D2). Die Schwellen sind
+        // die des Macs (`Sources/Shared/Technikschild.swift`) — hier standen
+        // dieselben Zahlen, aber alle in derselben Farbe: ein haengender
+        // Strom sah aus wie ein sauber laufender.
+        let soll = laufenderPlan?.quelle
+            .flatMap(Dateiangaben.videospur)?.averageFrameRate
+        fertig.append(schutz("\(uebersetzt("Eingang")) \(Technikangaben.bitrate(w.eingang) ?? "—")"))
+        fertig.append(schutz("\(uebersetzt("Demuxer")) \(Technikangaben.bitrate(w.demuxer) ?? "—")"))
+        // Zwei Bilder Abstand: darunter ist es die Kante des Messfensters und
+        // kein Ereignis (`:255-262`).
+        let zeigtHinkt = if let ist = w.zeigtProSekunde, let soll { ist < soll - 2 } else { false }
+        fertig.append(zeile("\(uebersetzt("Zeigt Ø")) \(zahl(w.zeigtProSekunde)) fps"
+                            + " · \(uebersetzt("Gezeigt")) \(w.roh.gezeigt)", warnt: zeigtHinkt))
+        // Unter 97 % ist kein Messrauschen mehr — mehr als anderthalb
+        // Sekunden auf eine Minute (`:288`).
+        fertig.append(zeile("\(uebersetzt("Lauf")) \(anteil(w.laufAnteil))",
+                            warnt: (w.laufAnteil ?? 1) < 0.97))
+        let dekHinkt = if let ist = w.dekodiertProSekunde, let soll { ist < soll - 2 } else { false }
+        fertig.append(zeile("\(uebersetzt("Dekodiert Ø")) \(zahl(w.dekodiertProSekunde)) fps",
+                            warnt: dekHinkt))
+        fertig.append(zeile("\(uebersetzt("Vorrat")) \(vorratwort(w))", warnt: vorratKnapp(w)))
+        fertig.append(zeile("\(uebersetzt("Verworfen")) \(w.roh.verworfen)"
+                            + " · \(uebersetzt("Ton weg")) \(w.roh.tonVerloren)",
+                            warnt: w.roh.verworfen > 0 || w.roh.tonVerloren > 0))
+        fertig.append(zeile("\(uebersetzt("Beschädigt")) \(w.roh.beschaedigt)"
+                            + " · \(uebersetzt("Sprünge")) \(w.roh.spruenge)",
+                            warnt: w.roh.beschaedigt > 0 || w.roh.spruenge > 0))
+        return fertig.joined(separator: "\n")
+    }
+
+    /// Eine Zeile im Markup — warnend in Orange, sonst wie der Rest.
+    private func zeile(_ text: String, warnt: Bool) -> String {
+        warnt ? "<span foreground=\"\(Stil.warnung)\">\(schutz(text))</span>" : schutz(text)
+    }
+
+    /// Pango liest `&`, `<` und `>` als Auszeichnung. Ein Dateiname mit
+    /// Kaufmanns-Und wuerfe sonst das ganze Schild weg.
+    private func schutz(_ text: String) -> String {
+        text.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    /// Unter zwei Sekunden Vorrat wird es knapp (`:358`).
+    private func vorratKnapp(_ w: Zaehlwerk) -> Bool {
+        guard let quelle = laufenderPlan?.quelle, let bytes = quelle.size, bytes > 0,
+              abspieler.dauer > 1,
+              let sekunden = w.vorratSekunden(bytesJeSekunde: Double(bytes) / abspieler.dauer)
+        else { return false }
+        return sekunden < 2
     }
 
     private func zahl(_ w: Double?) -> String {

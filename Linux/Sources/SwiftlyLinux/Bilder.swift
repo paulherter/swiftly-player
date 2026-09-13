@@ -24,11 +24,50 @@ actor Bildlager {
     private var gespeichert: [String: Data] = [:]
     private var laufend: [String: Task<Data?, Never>] = [:]
 
+    // MARK: Die Schleuse
+
+    /// **Wie viele Bilder gleichzeitig geholt werden duerfen.**
+    ///
+    /// Sie fehlte hier ganz. Auf Apple ist sie am 10.09.2026 an 134 Bildern
+    /// gemessen worden (`Sources/Shared/Netzbild.swift:60-107`): zur Spitze
+    /// waren **fuenfundzwanzig Abrufe gleichzeitig unterwegs**, sie teilten
+    /// sich dieselbe Leitung und kamen deshalb alle **gleich spaet** an — bis
+    /// dahin stand die Seite leer.
+    ///
+    /// Mit einer Schleuse aendert sich die Gesamtzeit kaum; es aendert sich,
+    /// **wann das erste Bild dasteht**. Vier und nicht eins: eine einzelne
+    /// Verbindung laesst die Leitung zwischen den Anfragen brachliegen. Vier
+    /// und nicht zwoelf: dann waere der Unterschied wieder keiner.
+    private static let gleichzeitig = 4
+    private var imLauf = 0
+    private var wartend: [CheckedContinuation<Void, Never>] = []
+
+    /// Reihum und der Reihe nach — wer zuerst gefragt hat, kommt zuerst dran.
+    /// Die Kacheln fragen von oben nach unten, also laedt auch von oben nach
+    /// unten.
+    private func einlass() async {
+        if imLauf < Self.gleichzeitig {
+            imLauf += 1
+            return
+        }
+        await withCheckedContinuation { (fortsetzung: CheckedContinuation<Void, Never>) in
+            wartend.append(fortsetzung)
+        }
+        // Der Platz wurde beim Freigeben auf uns umgebucht, `imLauf` bleibt.
+    }
+
+    private func einlassZurueck() {
+        if wartend.isEmpty { imLauf -= 1 }
+        else { wartend.removeFirst().resume() }
+    }
+
     func laden(_ url: URL, schluessel: String) async -> Data? {
         if let da = gespeichert[schluessel] { return da }
         if let laeuft = laufend[schluessel] { return await laeuft.value }
 
-        let aufgabe = Task<Data?, Never> {
+        let aufgabe = Task<Data?, Never> { [self] in
+            await einlass()
+            defer { Task { await einlassZurueck() } }
             do {
                 let (daten, antwort) = try await URLSession.shared.data(from: url)
                 guard let http = antwort as? HTTPURLResponse,

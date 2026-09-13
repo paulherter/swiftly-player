@@ -122,9 +122,18 @@ extension App {
         if melden, spielstand.startGemeldet,
            let client, let plan = laufenderPlan, let titel = laufenderTitel {
             let ticks = Int64(spielstand.position * 10_000_000)
+            let konto = benutzerID
             Task.detached {
-                try? await client.reportStopped(itemID: titel.id, plan: plan,
-                                                positionTicks: ticks)
+                do {
+                    try await client.reportStopped(itemID: titel.id, plan: plan,
+                                                   positionTicks: ticks)
+                } catch {
+                    // **H8, zweite Haelfte.** Hier stand `try?` — der
+                    // Fehlschlag verschwand, und mit ihm die Stelle. Genau
+                    // die ist das, was ein Download hinterlaesst und der
+                    // Server nicht hat.
+                    Nachmeldezettel.aufnehmen(titel.id, ticks: ticks, konto: konto)
+                }
             }
         }
         taktBeenden()

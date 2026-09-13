@@ -255,3 +255,76 @@ enum Speicher {
         return try? JSONDecoder().decode(Merkzettel.self, from: daten)
     }
 }
+
+extension Speicher {
+
+    /// **Was der Server noch nicht weiss** (H8).
+    ///
+    /// Eine Ende-Meldung, die nicht durchkam, ist die eine Auskunft, die
+    /// niemand sonst hat: wo jemand aufgehört hat. Ginge sie verloren, hätte
+    /// der Server den Stand vom Beginn der Fahrt, und zu Hause liefe die
+    /// Folge von vorn los. Genau dafür gibt es Downloads.
+    ///
+    /// Die Regeln liegen als ``Nachmelderegeln`` im Paket und wurden auf
+    /// Linux nie gerufen — `reportStopped` verschluckte seinen Fehlschlag mit
+    /// `try?`. Hier liegt nur die Datei.
+    private static var nachmeldedatei: URL {
+        ordner.appendingPathComponent("nachmeldungen.json")
+    }
+
+    static func nachmeldungenLesen() -> [Nachmeldung] {
+        guard let daten = try? Data(contentsOf: nachmeldedatei) else { return [] }
+        return (try? JSONDecoder().decode([Nachmeldung].self, from: daten)) ?? []
+    }
+
+    static func nachmeldungenSchreiben(_ liste: [Nachmeldung]) {
+        try? FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                 attributes: nurIch)
+        try? JSONEncoder().encode(liste).write(to: nachmeldedatei, options: [.atomic])
+    }
+}
+
+/// **Der Zettel mit dem, was der Server noch nicht weiss** (H8).
+///
+/// Zwei Aufgaben, beide klein: eine gescheiterte Ende-Meldung aufnehmen, und
+/// alles Liegengebliebene abschicken, sobald der Server nachweislich wieder
+/// da ist. Die Regeln — welche Meldung gewinnt, was fällig ist, was danach
+/// wegfällt — stehen als ``Nachmelderegeln`` im Paket; hier steht nur, wann
+/// gerufen wird.
+/// **Nicht auf dem Hauptfaden festgenagelt.** Der Zettel liegt auf der
+/// Platte, nicht in der Oberflaeche; er wird aus einer abgesetzten Aufgabe
+/// heraus beschrieben, genau dann, wenn eine Meldung scheitert.
+enum Nachmeldezettel {
+
+    static func aufnehmen(_ itemID: String, ticks: Int64, konto: String) {
+        guard !konto.isEmpty else { return }
+        let neu = Nachmeldung(itemID: itemID, konto: konto, ticks: ticks)
+        Speicher.nachmeldungenSchreiben(
+            Nachmelderegeln.aufnehmen(neu, in: Speicher.nachmeldungenLesen()))
+    }
+
+    /// Alles Liegengebliebene abschicken.
+    ///
+    /// **Abbrechen, nicht weiterprobieren.** Scheitert eine, ist der Server
+    /// wieder weg; die übrigen scheiterten auch und stünden danach als
+    /// verloren da. Wörtlich `AppModel.nachmeldungenAbschicken()`.
+    static func abschicken(_ client: JellyfinClient, konto: String) async {
+        guard !konto.isEmpty else { return }
+        let offen = Nachmelderegeln.faellig(Speicher.nachmeldungenLesen(), konto: konto)
+        guard !offen.isEmpty else { return }
+        var geschafft: [String] = []
+        for m in offen {
+            // Ein Plan von der Platte reicht: `reportStopped` braucht daraus
+            // nur die Kennungen, und eine Sitzung gab es offline ohnehin nicht.
+            let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: "/"), container: nil)
+            do {
+                try await client.reportStopped(itemID: m.itemID, plan: plan,
+                                               positionTicks: m.ticks)
+                geschafft.append(m.id)
+            } catch { break }
+        }
+        guard !geschafft.isEmpty else { return }
+        Speicher.nachmeldungenSchreiben(
+            Nachmelderegeln.erledigt(geschafft, in: Speicher.nachmeldungenLesen()))
+    }
+}
