@@ -82,21 +82,30 @@ jobs:
           cp pakete/*.rpm seite/rpm/
           ( cd seite/deb && dpkg-scanpackages . /dev/null > Packages && gzip -9kf Packages
             apt-ftparchive release . > Release )
-          createrepo_c seite/rpm
-          if [ -n "$SCHLUESSEL" ]; then
-            echo "$SCHLUESSEL" | gpg --batch --import
-            kennung=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
-            gpg --batch --yes --armor --detach-sign -u "$kennung" \
-                -o seite/deb/Release.gpg seite/deb/Release
-            gpg --batch --yes --clearsign -u "$kennung" -o seite/deb/InRelease seite/deb/Release
-            for r in seite/rpm/*.rpm; do
-              rpm --define "_gpg_name $kennung" --addsign "$r" || true
-            done
-            gpg --batch --yes --armor --export "$kennung" > seite/swiftly.gpg
-            echo "signiert mit $kennung"
-          else
-            echo "::warning::Kein SIGNIERSCHLUESSEL hinterlegt — die Quelle bleibt unsigniert."
+          # **Ohne Schluessel wird nichts veroeffentlicht.** Hier stand eine
+          # Warnung, und der Lauf ging weiter: `keep_files` liess die alten
+          # Signaturen liegen, neben neuen, unsignierten Dateien — und apt,
+          # dnf und pacman lehnten die Quelle als verfaelscht ab (14.09.2026).
+          if [ -z "$SCHLUESSEL" ]; then
+            echo "::error::Kein SIGNIERSCHLUESSEL hinterlegt — ohne Signatur wird nichts veroeffentlicht."
+            exit 1
           fi
+          echo "$SCHLUESSEL" | gpg --batch --import
+          kennung=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          gpg --batch --yes --armor --detach-sign -u "$kennung" \
+              -o seite/deb/Release.gpg seite/deb/Release
+          gpg --batch --yes --clearsign -u "$kennung" -o seite/deb/InRelease seite/deb/Release
+          # **Erst die Pakete signieren, dann das Verzeichnis bauen.** Die
+          # Signatur aendert jede rpm-Datei; stand `createrepo_c` davor,
+          # stimmten die Pruefsummen in `repodata` nicht mehr.
+          for r in seite/rpm/*.rpm; do
+            rpm --define "_gpg_name $kennung" --addsign "$r"
+          done
+          createrepo_c seite/rpm
+          gpg --batch --yes --armor --detach-sign -u "$kennung" \
+              -o seite/rpm/repodata/repomd.xml.asc seite/rpm/repodata/repomd.xml
+          gpg --batch --yes --armor --export "$kennung" > seite/swiftly.gpg
+          echo "signiert mit $kennung"
           cp Linux/Installieren/quelle-einrichten.sh seite/ 2>/dev/null || true
           echo "swiftly-player" > seite/.nojekyll
 
@@ -196,18 +205,25 @@ jobs:
         run: |
           mkdir -p seite/arch
           cp pakete/*.pkg.tar.zst seite/arch/
-          if [ -n "$SCHLUESSEL" ]; then
-            echo "$SCHLUESSEL" | gpg --batch --import
-            kennung=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
-            for paket in seite/arch/*.pkg.tar.zst; do
-              gpg --batch --yes --detach-sign --no-armor -u "$kennung" "$paket"
-            done
-            repo-add -s -v -k "$kennung" seite/arch/swiftly.db.tar.gz seite/arch/*.pkg.tar.zst
-            gpg --batch --yes --armor --export "$kennung" > seite/swiftly.gpg
-          else
-            echo "::warning::Kein SIGNIERSCHLUESSEL — die pacman-Quelle bleibt unsigniert."
-            repo-add seite/arch/swiftly.db.tar.gz seite/arch/*.pkg.tar.zst
+          # Dieselbe Regel wie oben: ohne Schluessel bricht der Lauf ab.
+          if [ -z "$SCHLUESSEL" ]; then
+            echo "::error::Kein SIGNIERSCHLUESSEL — ohne Signatur wird nichts veroeffentlicht."
+            exit 1
           fi
+          echo "$SCHLUESSEL" | gpg --batch --import
+          kennung=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          for paket in seite/arch/*.pkg.tar.zst; do
+            gpg --batch --yes --detach-sign --no-armor -u "$kennung" "$paket"
+          done
+          repo-add -s -v -k "$kennung" seite/arch/swiftly.db.tar.gz seite/arch/*.pkg.tar.zst
+          # `repo-add` legt `swiftly.db` als Verweis an; Pages liefert Verweise
+          # nicht zuverlaessig aus. Echte Kopien, samt Signatur.
+          for d in db files; do
+            rm -f "seite/arch/swiftly.$d" "seite/arch/swiftly.$d.sig"
+            cp "seite/arch/swiftly.$d.tar.gz" "seite/arch/swiftly.$d"
+            cp "seite/arch/swiftly.$d.tar.gz.sig" "seite/arch/swiftly.$d.sig"
+          done
+          gpg --batch --yes --armor --export "$kennung" > seite/swiftly.gpg
 
       - name: Auf Pages stellen
         uses: peaceiris/actions-gh-pages@v4

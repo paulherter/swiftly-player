@@ -36,7 +36,7 @@ KENNUNG="de.paulherter.swiftly"
 QUELLE_URL="${SWIFTLY_QUELLE:-https://paulherter.github.io/swiftly-player}"
 # Der Fingerabdruck steht hier fest, nicht nur der Schluesselring: so wird
 # geprueft, dass der heruntergeladene Schluessel auch der erwartete ist.
-FINGERABDRUCK="705D676A71BF0121804A90BAC8589885A042FB8B"
+FINGERABDRUCK="5F31DEC1EAFF1AFFEA267E50B2ACD5E1D4945099"
 
 rot=''; gruen=''; fett=''; blass=''; aus=''
 if [ -t 1 ]; then

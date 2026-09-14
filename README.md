@@ -248,7 +248,7 @@ sudo dnf install swiftly-jellyfin
 
 ```sh
 curl -fsSL https://paulherter.github.io/swiftly-player/swiftly.gpg | sudo pacman-key --add -
-sudo pacman-key --lsign-key 705D676A71BF0121804A90BAC8589885A042FB8B
+sudo pacman-key --lsign-key 5F31DEC1EAFF1AFFEA267E50B2ACD5E1D4945099
 sudo tee -a /etc/pacman.conf <<'EOF'
 
 [swiftly]
