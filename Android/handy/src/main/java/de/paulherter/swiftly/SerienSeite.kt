@@ -44,6 +44,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.animation.core.MutableTransitionState
 import coil3.compose.AsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.gemeinsam.uebersetzt
@@ -314,21 +318,36 @@ private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boole
             if (mehrere) Icon(Icons.Filled.KeyboardArrowDown, contentDescription = uebersetzt("Öffnet die Auswahl"),
                               tint = Stil.schriftLeise, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = drehung })
         }
-        AnimatedVisibility(offen, Modifier.offset(y = 44.dp),
-            enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f)),
-            exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f))) {
-            val form = RoundedCornerShape(Stil.eckeFlaeche)
-            Column(Modifier.width(200.dp).shadow(16.dp, form, ambientColor = Color.Black, spotColor = Color.Black)
-                .clip(form).background(Stil.flaeche)) {
-                staffeln.forEach { st ->
-                    val an = st.id == gewaehlt
-                    Row(Modifier.fillMaxWidth().antippen { setzeOffen(false); waehlen(st.id) }.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.width(14.dp)) {
-                            if (an) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(14.dp))
+        // **Ueber den Folgen, nicht zwischen ihnen.** Als Kind dieser Kopfzeile wuchs sie mit auf —
+        // `offset` verschiebt nur das Zeichnen, nicht den Platz — und schob die Folgen beim Oeffnen
+        // herunter. Auf iOS liegt die Liste als Auflage darueber. Ein Popup hat in der Seite keine
+        // Hoehe und bleibt antippbar; eine Zeichnung ausserhalb der Kopfzeile bekaeme keine Tipps.
+        val zustand = remember { MutableTransitionState(false) }
+        zustand.targetState = offen
+        if (zustand.currentState || zustand.targetState) {
+            val dichte = LocalDensity.current
+            // 16 Rand im Popup, damit der Schatten Platz hat; die Liste selbst sitzt 44 unter der Pille.
+            val rand = with(dichte) { 16.dp.roundToPx() }
+            val unten = with(dichte) { 44.dp.roundToPx() }
+            Popup(offset = IntOffset(-rand, unten - rand), onDismissRequest = { setzeOffen(false) },
+                  properties = PopupProperties(focusable = false)) {
+                AnimatedVisibility(zustand, Modifier.padding(16.dp),
+                    enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f)),
+                    exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f))) {
+                val form = RoundedCornerShape(Stil.eckeFlaeche)
+                Column(Modifier.width(200.dp).shadow(16.dp, form, ambientColor = Color.Black, spotColor = Color.Black)
+                    .clip(form).background(Stil.flaeche)) {
+                    staffeln.forEach { st ->
+                        val an = st.id == gewaehlt
+                        Row(Modifier.fillMaxWidth().antippen { setzeOffen(false); waehlen(st.id) }.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(Modifier.width(14.dp)) {
+                                if (an) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(14.dp))
+                            }
+                            Text(st.name, style = TextStyle(fontSize = 15.sp), color = if (an) Stil.schrift else Stil.schrift.copy(alpha = 0.75f))
                         }
-                        Text(st.name, style = TextStyle(fontSize = 15.sp), color = if (an) Stil.schrift else Stil.schrift.copy(alpha = 0.75f))
                     }
+                }
                 }
             }
         }
