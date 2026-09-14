@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -207,7 +209,9 @@ fun Leerzustand(symbol: ImageVector, kopfzeile: String, text: String,
 data class Wahl(val wert: String, val text: String)
 
 /** Was ein `Auswahlblatt` zeigt. `waehlen` bekommt den `wert` des Eintrags. */
-class Blattwunsch(val titel: String, val eintraege: List<Wahl>, val gewaehlt: String?, val waehlen: (String) -> Unit)
+class Blattwunsch(val titel: String, val eintraege: List<Wahl>, val gewaehlt: String?,
+                  /** Zeichen je `wert` — das `Handlungsblatt` auf iOS; ohne sie das `Auswahlblatt`. */
+                  val symbole: Map<String, ImageVector> = emptyMap(), val waehlen: (String) -> Unit)
 
 /**
  * Vorlage: `Auswahlblatt` + `Blattmodifikator` in `Stil.swift`. **Liegt ueber der Leiste** —
@@ -260,10 +264,16 @@ private fun Blattkarte(w: Blattwunsch, schliessen: () -> Unit) {
                 Row(Modifier.fillMaxWidth().height(50.dp).antippen { w.waehlen(e.wert); schliessen() }
                         .padding(horizontal = Stil.randAbstand),
                     verticalAlignment = Alignment.CenterVertically) {
+                    w.symbole[e.wert]?.let {
+                        Icon(it, contentDescription = null, tint = Stil.schrift, modifier = Modifier.width(20.dp).height(17.dp))
+                        Spacer(Modifier.width(14.dp))
+                    }
                     Text(e.text, style = TextStyle(fontSize = 16.sp), color = Stil.schrift, modifier = Modifier.weight(1f))
                     if (e.wert == w.gewaehlt) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(16.dp))
                 }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
+                // Mit Zeichen beginnt die Linie hinter ihnen — `trennEinzug`.
+                Box(Modifier.padding(start = if (w.symbole.isEmpty()) 0.dp else Stil.randAbstand + 34.dp)
+                    .fillMaxWidth().height(1.dp).background(Stil.linie))
             }
         }
         Text(uebersetzt("Abbrechen"), style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),

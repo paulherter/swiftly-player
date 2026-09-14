@@ -31,6 +31,9 @@ class SwiftlyAnwendung : Application() {
     /** Je Gattung ein Stand — wie die Modelle in `HauptView`, die den Bereichswechsel ueberleben. */
     val bibliotheken = mutableMapOf<String, Bibliotheksstand>()
 
+    /** Der letzte Stand je Titel — zurueck aus einer tieferen Seite baut sonst neu auf. */
+    val titelSpeicher = mutableMapOf<String, Titel>()
+
     /** Das offene Auswahlblatt. Es liegt ueber der Leiste, deshalb haelt es die App, nicht die Seite. */
     val blatt = androidx.compose.runtime.mutableStateOf<Blattwunsch?>(null)
 

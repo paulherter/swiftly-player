@@ -183,6 +183,80 @@ public final class Kern: @unchecked Sendable {
                                             gesamt: antwort.totalRecordCount))
     }
 
+    // MARK: Titel
+
+    /// Alles fuer die Titelseite in einem Zug — `ItemDetailView.task`: Titel und Abspielplan
+    /// parallel. Aehnliches und Extras kommen getrennt (``titelUmfeld(id:)``), damit die Seite
+    /// nicht auf sie wartet.
+    public func titel(id: String) async throws -> String {
+        guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+        // Die Grenze aus den Einstellungen folgt mit der Einstellungsseite; bis dahin die Vorgabe.
+        let grenze = Bitratengrenze.fuer(immerDirectPlay: true, megabit: 0)
+        async let frisch = c.item(id: id)
+        async let geplant = try? c.playbackPlan(for: id, profile: .vlc(maxBitrate: grenze))
+        let i = try await frisch
+        let p = await geplant
+        let datei = p?.quelle.map { q -> Dateiantwort in
+            let spuren = Dateiangaben.untertitelspuren(q)
+            return Dateiantwort(
+                container: Dateiangaben.container(q),
+                video: Dateiangaben.videospur(q).map { Dateiangaben.video($0, q) },
+                ton: Array((q.mediaStreams ?? []).filter { $0.type == "Audio" }.prefix(2).map(\.kurz)),
+                untertitel: Dateiangaben.untertitel(spuren), hatUntertitel: !spuren.isEmpty)
+        }
+        func personenbild(_ person: Person) -> String? {
+            let u: URL? = a.bauen(itemID: person.id, marke: person.primaryImageTag, mass: .hoechstensHoch(220))
+            return u?.absoluteString
+        }
+        let ab = i.fortsetzenAb
+        return try json(Titelantwort(
+            id: i.id, name: i.name, typ: i.type ?? "", nebenzeile: i.nebenzeile,
+            kopfbild: (Bildwahl.kopf(i, adressen: a, breite: 1200) ?? Bildwahl.hochkant(i, adressen: a))?.absoluteString,
+            bewertung: i.communityRating, freigabe: i.officialRating,
+            planDa: p != nil, lossless: p?.isLossless ?? false, methode: p.map { $0.method.rawValue },
+            fortsetzenAb: ab, fortsetzenText: ab.map { zeitText($0) },
+            beschreibung: i.beschreibung, regie: i.regie,
+            darsteller: Array(i.darsteller.prefix(12)).map {
+                Personantwort(id: $0.id, name: $0.name, rolle: $0.role, bild: personenbild($0))
+            },
+            gemerkt: i.userData?.isFavorite ?? false, gesehen: i.userData?.played ?? false,
+            trailer: i.remoteTrailers?.first?.url.map { "\($0)" }, datei: datei))
+    }
+
+    /// Aehnliche Titel und Extras — `AppModel.aehnliche(_:)` und `extras(_:)`. Fehler geben leere Reihen.
+    public func titelUmfeld(id: String) async throws -> String {
+        guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+        async let aehnlich = try? c.aehnliche(itemID: id)
+        async let zusatz = try? c.extras(itemID: id)
+        let ae = await aehnlich ?? []
+        let ex = await zusatz ?? []
+        return try json(Umfeldantwort(
+            aehnliche: ae.map { rasterkachel($0, a) },
+            extras: ex.map { e in
+                Extraantwort(id: e.id, name: e.name, bild: Bildwahl.quer(e, adressen: a)?.url.absoluteString,
+                             laufzeit: Anzeigeregeln.laufzeitZeigen(sekunden: e.runtimeSeconds)
+                                 ? e.runtimeSeconds.map { laufzeit($0) } : nil)
+            }))
+    }
+
+    /// Leer heisst: erledigt. Sonst der Grund — `nichtAngemeldet` als Kennung, der Wortlaut steht im App-Katalog.
+    public func merken(id: String, an: Bool) async -> String {
+        await erledigen { try await $0.setzeMerkliste(itemID: id, an: an) }
+    }
+
+    public func gesehen(id: String, an: Bool) async -> String {
+        await erledigen { try await $0.setzeGesehen(itemID: id, an: an) }
+    }
+
+    public func metadatenAuffrischen(id: String) async -> String {
+        await erledigen { try await $0.metadatenAuffrischen(id) }
+    }
+
+    private func erledigen(_ tun: (JellyfinClient) async throws -> Void) async -> String {
+        guard let c = client else { return "nichtAngemeldet" }
+        do { try await tun(c); return "" } catch { return error.localizedDescription }
+    }
+
     /// Die Beschriftungen fuer Sortierung und Filter, in der Reihenfolge von `allCases`.
     public static func beschriftungen() -> String {
         let alle = Beschriftungsantwort(
@@ -204,7 +278,7 @@ public final class Kern: @unchecked Sendable {
         case .none: (nil, 0)
         }
         return Rasterkachelantwort(
-            id: i.id, titel: folge ? (i.seriesName ?? i.name) : i.name,
+            id: i.id, titel: folge ? (i.seriesName ?? i.name) : i.name, typ: i.type ?? "",
             unterzeile: folge ? i.folgenkuerzel : i.productionYear.map(String.init),
             plakat: Bildwahl.hochkant(i, adressen: a)?.absoluteString,
             fortschritt: i.userData?.playedPercentage.map { $0 / 100 },
@@ -231,13 +305,37 @@ struct Reihenantwort: Encodable {
 struct Sammlungsantwort: Encodable { let id, name: String }
 struct Rasterseitenantwort: Encodable { let titel: [Rasterkachelantwort]; let gesamt: Int }
 struct Rasterkachelantwort: Encodable {
-    let id, titel: String
+    let id, titel, typ: String
     let unterzeile, plakat: String?
     let fortschritt: Double?
     /// `gesehen`, `offen`, `staffeln` — oder nichts.
     let marke: String?
     let markenzahl: Int
 }
+struct Titelantwort: Encodable {
+    let id, name, typ, nebenzeile: String
+    let kopfbild: String?
+    let bewertung: Double?
+    let freigabe: String?
+    let planDa, lossless: Bool
+    let methode: String?
+    let fortsetzenAb: Double?
+    let fortsetzenText, beschreibung: String?
+    let regie: [String]
+    let darsteller: [Personantwort]
+    let gemerkt, gesehen: Bool
+    let trailer: String?
+    let datei: Dateiantwort?
+}
+struct Personantwort: Encodable { let id, name: String; let rolle, bild: String? }
+struct Dateiantwort: Encodable {
+    let container, video: String?
+    let ton: [String]
+    let untertitel: String
+    let hatUntertitel: Bool
+}
+struct Umfeldantwort: Encodable { let aehnliche: [Rasterkachelantwort]; let extras: [Extraantwort] }
+struct Extraantwort: Encodable { let id, name: String; let bild, laufzeit: String? }
 struct Beschriftungsantwort: Encodable {
     struct Eintrag: Encodable { let wert, text: String }
     let sortierung, filter: [Eintrag]

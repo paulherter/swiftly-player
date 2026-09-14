@@ -27,6 +27,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,6 +48,9 @@ enum class Bereich(val titel: String, val symbol: ImageVector) {
     Suche("Suche", Icons.Outlined.Search),
 }
 
+/** Ein Ort im Stapel eines Bereichs — `NavigationLink(value: Item)` auf iOS. */
+data class Ziel(val id: String, val name: String, val typ: String)
+
 /** Vorlage: `HauptView` in `Sources/Shared/HauptView.swift` — Inhalt oben, Leiste unten. */
 @Composable
 fun Hauptansicht(app: SwiftlyAnwendung) {
@@ -54,17 +59,30 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     val zustaende = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     // Sofort beim Ankommen, nicht erst in der Bibliothek — dort liess er den Kopf nachwachsen.
     androidx.compose.runtime.LaunchedEffect(Unit) { app.servernameLaden() }
+    // Je Bereich ein eigener Stapel — `pfade[b.rawValue]` in `HauptView`.
+    val stapel = remember { mutableStateMapOf<Bereich, List<Ziel>>() }
+    val oben = stapel[bereich].orEmpty()
+    // Die Wegeregel aus `zielorte`: Serie → Serienseite, Folge → ihre Staffel, sonst Titelseite.
+    // Serien- und Folgenseite folgen; bis dahin oeffnen sie nichts.
+    val oeffnen: (Ziel) -> Unit = { z ->
+        if (z.typ != "Series" && z.typ != "Episode") stapel[bereich] = stapel[bereich].orEmpty() + z
+    }
+    val zurueck = { stapel[bereich] = stapel[bereich].orEmpty().dropLast(1) }
+    BackHandler(enabled = oben.isNotEmpty(), onBack = zurueck)
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(Stil.grund)) {
         Box(Modifier.weight(1f)) {
-            zustaende.SaveableStateProvider(bereich.name) {
-            when (bereich) {
-                Bereich.Start -> StartSeite(app)
+            val ziel = oben.lastOrNull()
+            // Der Schluessel traegt Tiefe und Titel: jede Seite behaelt ihre Scrollstelle.
+            zustaende.SaveableStateProvider("${bereich.name}/${oben.size}/${ziel?.id.orEmpty()}") {
+            if (ziel != null) TitelSeite(app, ziel, oeffnen, zurueck)
+            else when (bereich) {
+                Bereich.Start -> StartSeite(app, oeffnen)
                 Bereich.Filme -> BibliothekSeite(app, "movies", uebersetzt("Filme"),
-                                                 listOf("alle", "angefangen", "merkliste", "ungesehen"))
+                                                 listOf("alle", "angefangen", "merkliste", "ungesehen"), oeffnen)
                 // Bei Serien hilft „ungesehen" wenig — dieselbe Liste wie auf iOS.
                 Bereich.Serien -> BibliothekSeite(app, "tvshows", uebersetzt("Serien"),
-                                                  listOf("alle", "angefangen", "merkliste"))
+                                                  listOf("alle", "angefangen", "merkliste"), oeffnen)
                 // Die Suche folgt als eigene Seite.
                 else -> Box(Modifier.fillMaxSize().statusBarsPadding().padding(Stil.randAbstand)) {
                     Text(uebersetzt(bereich.titel), style = Stil.titel, color = Stil.schrift)
@@ -72,7 +90,8 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
             }
             }
         }
-        Leiste(bereich) { bereich = it }
+        // Ein zweiter Tipp auf den Bereich, in dem man steht, fuehrt an seinen Anfang.
+        Leiste(bereich) { b -> if (b == bereich) stapel[b] = emptyList() else bereich = b }
     }
     // Ueber der Leiste, wie auf iOS: das Blatt haengt dort hinter `.bereichsleiste()`.
     Blattauflage(app)

@@ -79,7 +79,7 @@ private fun reihenLesen(json: String): List<Reihe> {
 
 /** Vorlage: `HomeView` in `Sources/Shared/HomeView.swift` (Kopf, Reihen, Kacheln). */
 @Composable
-fun StartSeite(app: SwiftlyAnwendung) {
+fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     var reihen by remember { mutableStateOf(app.startReihen) }
     var fehler by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
@@ -111,7 +111,7 @@ fun StartSeite(app: SwiftlyAnwendung) {
                    contentPadding = PaddingValues(top = kopfDp + 8.dp, bottom = 24.dp),
                    modifier = Modifier.fillMaxSize()) {
             fehler?.let { item { Text(it, color = Stil.warnung, style = Stil.klein, modifier = Modifier.padding(horizontal = Stil.randAbstand)) } }
-            items(reihen ?: emptyList(), key = { it.titel }) { reihe -> ReiheAnsicht(reihe) }
+            items(reihen ?: emptyList(), key = { it.titel }) { reihe -> ReiheAnsicht(reihe, oeffnen) }
         }
         // Oben: Kopfverlauf (zieht erst beim Scrollen auf), darueber der Farbschein auf
         // Kopfhoehe beschnitten — `Farbschein(fenster: .ueberDemVerlauf)` —, dann der Kopf.
@@ -190,23 +190,23 @@ private fun Farbschein(versatz: Float, ausgespartOben: Dp = 0.dp) {
 }
 
 @Composable
-private fun ReiheAnsicht(reihe: Reihe) {
+private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
         Text(reihe.titel, style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift,
              modifier = Modifier.padding(horizontal = Stil.randAbstand))
         LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
                 horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand)) {
-            items(reihe.kacheln, key = { it.id }) { KachelAnsicht(it, reihe.quer) }
+            items(reihe.kacheln, key = { it.id }) { KachelAnsicht(it, reihe.quer, oeffnen) }
         }
     }
 }
 
 /** Vorlage: `Kachel` in `HomeView.swift` — 112×168 hochkant, 236×133 quer, Ecke 10, Balken 4 unten. */
 @Composable
-private fun KachelAnsicht(k: Kachel, quer: Boolean) {
+private fun KachelAnsicht(k: Kachel, quer: Boolean, oeffnen: (Ziel) -> Unit) {
     val breite: Dp = if (quer) 236.dp else Stil.kachelBreite
     val hoehe: Dp = if (quer) 133.dp else Stil.kachelHoehe
-    Column(Modifier.width(breite), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(Modifier.width(breite).antippen { oeffnen(Ziel(k.id, k.name, k.typ)) }, verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.size(breite, hoehe).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             val adresse = if (quer) k.quer ?: k.plakat else k.plakat
             SubcomposeAsyncImage(

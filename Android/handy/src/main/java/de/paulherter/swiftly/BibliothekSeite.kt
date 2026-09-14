@@ -67,7 +67,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.text.NumberFormat
 
-data class Rasterkachel(val id: String, val titel: String, val unterzeile: String?, val plakat: String?,
+data class Rasterkachel(val id: String, val titel: String, val typ: String, val unterzeile: String?, val plakat: String?,
                         val fortschritt: Double?, val marke: String?, val markenzahl: Int)
 data class Sammlung(val id: String, val name: String)
 
@@ -75,6 +75,11 @@ data class Sammlung(val id: String, val name: String)
 private const val SEITE = 60L
 
 private fun JSONObject.textOderNull(feld: String): String? = if (isNull(feld)) null else getString(feld)
+
+/** Liest eine Kachel aus `Kern.bibliothekSeite` und `Kern.titelUmfeld` — dieselbe Form. */
+fun rasterkachelLesen(k: JSONObject) = Rasterkachel(
+    k.getString("id"), k.getString("titel"), k.optString("typ"), k.textOderNull("unterzeile"), k.textOderNull("plakat"),
+    if (k.isNull("fortschritt")) null else k.getDouble("fortschritt"), k.textOderNull("marke"), k.optInt("markenzahl"))
 
 /** Die Woerter fuer Sortierung und Filter kommen aus dem Paket — dieselben wie auf Apple und Linux. */
 object Wahlen {
@@ -169,18 +174,14 @@ class Bibliotheksstand(val art: String, private val ablage: Ablage) {
         })
         val a = o.getJSONArray("titel")
         return (0 until a.length()).map { i ->
-            a.getJSONObject(i).let { k ->
-                Rasterkachel(k.getString("id"), k.getString("titel"), k.textOderNull("unterzeile"), k.textOderNull("plakat"),
-                             if (k.isNull("fortschritt")) null else k.getDouble("fortschritt"),
-                             k.textOderNull("marke"), k.optInt("markenzahl"))
-            }
+            rasterkachelLesen(a.getJSONObject(i))
         } to o.getInt("gesamt")
     }
 }
 
 /** Vorlage: `BibliothekView` in `Sources/Shared/HauptView.swift` (schmale Fassung). */
 @Composable
-fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwahl: List<String>) {
+fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwahl: List<String>, oeffnen: (Ziel) -> Unit) {
     val stand = remember(art) { app.bibliotheken.getOrPut(art) { Bibliotheksstand(art, app.ablage) } }
     val bereich = rememberCoroutineScope()
     LaunchedEffect(stand.sortierung, stand.filter) { stand.laden(app.kern) }
@@ -212,7 +213,7 @@ fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwah
         ) {
             // Platzhalter statt Ring: das Raster steht schon in seiner Form.
             if (stand.items.isEmpty() && stand.laedt) items(anzahl * 3) { Kachelplatzhalter() }
-            items(stand.items, key = { it.id }) { RasterKachelAnsicht(it) }
+            items(stand.items, key = { it.id }) { RasterKachelAnsicht(it) { oeffnen(Ziel(it.id, it.titel, it.typ)) } }
             // Kein Ring beim Nachladen — eine Reihe Platzhalter.
             if (stand.items.isNotEmpty() && stand.nochMehrDa) items(anzahl) { Kachelplatzhalter() }
         }
@@ -311,8 +312,8 @@ private fun BibliothekKopf(app: SwiftlyAnwendung, stand: Bibliotheksstand, titel
 
 /** Vorlage: `PosterTile` in `BrowseViews.swift` — fuellt die Spalte, 2:3, Titel zweizeilig. */
 @Composable
-private fun RasterKachelAnsicht(k: Rasterkachel) {
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+fun RasterKachelAnsicht(k: Rasterkachel, modifier: Modifier = Modifier, tun: () -> Unit) {
+    Column(modifier.antippen(tun), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             SubcomposeAsyncImage(
                 model = k.plakat, contentDescription = k.titel, contentScale = ContentScale.Crop,
