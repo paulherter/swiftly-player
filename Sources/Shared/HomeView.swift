@@ -18,7 +18,7 @@ struct HomeView: View {
     @State private var laedtNeu = false
     /// Wie weit die Seite gescrollt ist — **nur für den Farbschein und den
     /// Kopfverlauf.** Siehe ``Farbschein``.
-    @State private var versatz: CGFloat = 0
+    @State private var weg = Scrollweg()
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -31,9 +31,9 @@ struct HomeView: View {
                 // Inhalt und vor dem Grund. Siehe ``Farbschein``.
                 .bereichsinhalt {
                     if breit {
-                        FarbscheinBreit(versatz: versatz)
+                        FarbscheinBreit(weg: weg)
                     } else {
-                        Farbschein(versatz: versatz, fenster: .hinterDemInhalt)
+                        Farbschein(weg: weg, fenster: .hinterDemInhalt)
                     }
                 }
                 // Unter dem Kopf und unter der Uebernahmeauswahl, ueber dem
@@ -107,8 +107,7 @@ struct HomeView: View {
         // **Der Verlauf zieht erst beim Scrollen auf.** Im Ruhezustand liegt
         // unter dem Kopf noch kein Inhalt — dort deckt er nichts ab und nimmt
         // dem Farbschein nur die obere Kante weg, die seine kraeftigste ist.
-        Unschaerfekopf(verlaufStaerke: min(Double(versatz) / 40, 1),
-                       lage: AnyView(Farbschein(versatz: versatz, fenster: .ueberDemVerlauf))) {
+        Kopfleser(weg: weg) {
             HStack(alignment: .center, spacing: 0) {
                 Wortmarke(hoehe: 30)
                 Spacer(minLength: 0)
@@ -215,7 +214,14 @@ struct HomeView: View {
         .onScrollGeometryChange(for: CGFloat.self) {
             $0.contentOffset.y + $0.contentInsets.top
         } action: { _, neu in
-            versatz = max(neu, 0)
+            // **Nicht jedes Bild, und nicht ueber 240.** Der Versatz stand als
+            // `@State` in dieser Ansicht; jeder Scrollschritt baute damit die
+            // ganze Scrollflaeche samt `refreshable` und `contentMargins` neu,
+            // und unter iOS 18 lief die Seite dabei auf und ab. Jetzt lesen ihn
+            // nur Farbschein und Kopf, und oberhalb von 240 aendert sich an
+            // beiden sichtbar nichts mehr.
+            let wert = min(max(neu, 0), 240)
+            if abs(wert - weg.wert) >= 0.5 { weg.wert = wert }
         }
         .refreshable { await laden() }
     }
@@ -544,7 +550,7 @@ private struct Farbschein: View {
     enum Fenster { case ueberDemVerlauf, hinterDemInhalt }
 
     /// Der zurückgelegte Scrollweg, 0 im Ruhezustand.
-    let versatz: CGFloat
+    let weg: Scrollweg
     let fenster: Fenster
 
     /// So weit reicht `Kopfverlauf` (Kopf 101 + Zugabe 17). **Dieselbe Zahl
@@ -611,7 +617,7 @@ private struct Farbschein: View {
         }
         // **Er fährt mit, und sonst nichts.** Eins zu eins mit dem Inhalt,
         // ohne Ausblenden: er verhält sich wie das oberste Stück der Seite.
-        .offset(y: -versatz)
+        .offset(y: -weg.wert)
     }
 }
 
@@ -651,7 +657,7 @@ private extension View {
 /// Er ist leiser als auf dem iPhone — 0,20 gegen 0,28. Dieselbe Farbe auf
 /// der zweieinhalbfachen Fläche ist nicht dieselbe Menge Farbe.
 private struct FarbscheinBreit: View {
-    let versatz: CGFloat
+    let weg: Scrollweg
 
     /// Endet über der ersten Reihenüberschrift. Die Scrollfläche beginnt
     /// breit bei `Stil.kopfOben + 20`, also bei 46.
@@ -680,8 +686,32 @@ private struct FarbscheinBreit: View {
             .frame(height: hoehe)
         }
         .ignoresSafeArea(edges: .top)
-        .offset(y: -versatz)
+        .offset(y: -weg.wert)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+
+/// **Wie weit die Startseite gescrollt ist — ausserhalb der Seite.**
+///
+/// Als `@State` in `HomeView` machte jeder Scrollschritt die ganze Seite neu.
+/// Als beobachtetes Objekt werden nur die Ansichten neu gebaut, die `wert`
+/// tatsaechlich lesen: Farbschein und Kopf.
+@Observable
+final class Scrollweg {
+    var wert: CGFloat = 0
+}
+
+/// Der Kopf der Startseite, der den Scrollweg selbst liest — damit nicht
+/// `HomeView` es tut.
+private struct Kopfleser<Inhalt: View>: View {
+    let weg: Scrollweg
+    @ViewBuilder var inhalt: () -> Inhalt
+
+    var body: some View {
+        Unschaerfekopf(verlaufStaerke: min(Double(weg.wert) / 40, 1),
+                       lage: AnyView(Farbschein(weg: weg, fenster: .ueberDemVerlauf)),
+                       inhalt: inhalt)
     }
 }
