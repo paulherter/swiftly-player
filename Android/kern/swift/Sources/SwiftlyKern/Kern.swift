@@ -42,6 +42,18 @@ public final class Kern: @unchecked Sendable {
                        clientVersion: fassung, session: sitzung)
     }
 
+    // MARK: Sprache
+
+    /// **Vor dem ersten Text aufrufen** — beim Start der App. `ordner` enthaelt
+    /// die `.lproj`-Ordner des Pakets (aus den Assets entpackt), `sprache` ist
+    /// die Geraetesprache. Siehe `Paketsprache` im Paket.
+    public static func paketspracheSetzen(ordner: String, sprache: String) {
+        #if os(Android)
+        Paketsprache.ordner = ordner
+        Paketsprache.sprache = sprache
+        #endif
+    }
+
     // MARK: Verbinden und Anmelden
 
     /// Wie `AppModel.connect(to:)`: Adresse normalisieren, bei `https` ohne
@@ -87,44 +99,47 @@ public final class Kern: @unchecked Sendable {
                            filmBibliothek: String, serienBibliothek: String,
                            gattungen: [String], alsChips: Bool) async throws -> String {
         guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+        // Ohne gemerkte Wahl die erste Sammlung ihrer Art — wie
+        // `AppModel.gewaehlteBibliothek(art:)` auf Apple.
+        var filme = filmBibliothek.isEmpty ? nil : filmBibliothek
+        var serien = serienBibliothek.isEmpty ? nil : serienBibliothek
+        if getrennt, filme == nil || serien == nil, let sammlungen = try? await c.userViews() {
+            filme = filme ?? sammlungen.first { $0.collectionType == "movies" }?.id
+            serien = serien ?? sammlungen.first { $0.collectionType == "tvshows" }?.id
+        }
         let stand = await Startseitenlader.laden(von: c, .init(
-            getrennt: getrennt,
-            filmBibliothek: filmBibliothek.isEmpty ? nil : filmBibliothek,
-            serienBibliothek: serienBibliothek.isEmpty ? nil : serienBibliothek,
+            getrennt: getrennt, filmBibliothek: filme, serienBibliothek: serien,
             gattungen: alsChips ? nil : gattungen))
-        let inhalt: [Startreihe: (quer: Bool, items: [Item])] = [
-            .weiterschauen: (true, stand.weiterschauen ?? []),
-            .naechsteFolge: (false, stand.naechsteFolge ?? []),
-            .neuzugaenge: (false, stand.zuletzt ?? []),
-            .neueFilme: (false, stand.neueFilme ?? []),
-            .neueSerien: (false, stand.neueSerien ?? []),
+        let inhalt: [Startreihe: (quer: Bool, neu: Bool, items: [Item])] = [
+            .weiterschauen: (true, false, stand.weiterschauen ?? []),
+            .naechsteFolge: (false, false, stand.naechsteFolge ?? []),
+            .neuzugaenge: (false, true, stand.zuletzt ?? []),
+            .neueFilme: (false, true, stand.neueFilme ?? []),
+            .neueSerien: (false, true, stand.neueSerien ?? []),
         ]
         var reihen: [Reihenantwort] = Startreihenfolge
             .sichtbar(abgelegt: abgelegt, aus: Set(aus), getrennt: getrennt)
             .compactMap { r in
-                guard let (quer, items) = inhalt[r], !items.isEmpty else { return nil }
+                guard let (quer, neu, items) = inhalt[r], !items.isEmpty else { return nil }
                 return Reihenantwort(titelSchluessel: r.reihentitel, name: nil, quer: quer,
-                                     kacheln: items.map { kachel($0, quer: quer, a) })
+                                     kacheln: items.map { kachel($0, neuzugang: neu, a) })
             }
         reihen += stand.gattungsreihen.map {
             Reihenantwort(titelSchluessel: nil, name: $0.name, quer: false,
-                          kacheln: $0.items.map { kachel($0, quer: false, a) })
+                          kacheln: $0.items.map { kachel($0, neuzugang: false, a) })
         }
         return try json(Startseitenantwort(reihen: reihen, gestoert: stand.gestoert))
     }
 
-    private func kachel(_ i: Item, quer: Bool, _ a: Bildadresse) -> Kachelantwort {
-        let unterzeile: String?
-        if i.type == "Episode", let s = i.parentIndexNumber, let e = i.indexNumber {
-            unterzeile = "S\(s) • E\(e)"
-        } else {
-            unterzeile = i.productionYear.map(String.init)
-        }
-        return Kachelantwort(
-            id: i.id, name: i.seriesName ?? i.name, typ: i.type ?? "", unterzeile: unterzeile,
+    /// Dieselben Zeilen wie `HomeView.Kachel` auf dem iPhone: `neuzugangszeile`
+    /// in den Neuzugangsreihen, sonst `folgenkuerzel` — beide aus dem Paket.
+    private func kachel(_ i: Item, neuzugang: Bool, _ a: Bildadresse) -> Kachelantwort {
+        Kachelantwort(
+            id: i.id, name: i.seriesName ?? i.name, typ: i.type ?? "",
+            unterzeile: neuzugang ? i.neuzugangszeile : i.folgenkuerzel,
             plakat: Bildwahl.hochkant(i, adressen: a)?.absoluteString,
             quer: Bildwahl.quer(i, adressen: a)?.url.absoluteString,
-            fortschritt: i.userData?.playedPercentage.map { $0 / 100 })
+            fortschritt: i.gesehenerAnteil)
     }
 
     private func json<T: Encodable>(_ wert: T) throws -> String {

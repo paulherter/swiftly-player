@@ -34,6 +34,10 @@ android {
 
 dependencies {
     implementation(project(":kern"))
+    implementation(project(":gemeinsam"))
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+    implementation(libs.androidx.material.icons.extended)
     implementation(libs.swiftkit.core)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

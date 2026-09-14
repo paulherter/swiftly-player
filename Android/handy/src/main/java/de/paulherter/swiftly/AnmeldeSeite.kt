@@ -1,0 +1,95 @@
+package de.paulherter.swiftly
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import de.paulherter.swiftly.gemeinsam.Eingabefeld
+import de.paulherter.swiftly.gemeinsam.Hauptknopf
+import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.gemeinsam.uebersetzt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.future.await
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** Vorlage: `LoginView` in `Sources/Shared/RootView.swift` (ohne Benutzerwahl und Quick Connect — folgt). */
+@Composable
+fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
+                 andererServer: () -> Unit, angemeldet: () -> Unit) {
+    var benutzer by remember { mutableStateOf("") }
+    var passwort by remember { mutableStateOf("") }
+    var laeuft by remember { mutableStateOf(false) }
+    var fehler by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun anmelden() {
+        if (benutzer.isBlank() || laeuft) return
+        laeuft = true; fehler = null
+        scope.launch {
+            try {
+                val sitzung = withContext(Dispatchers.IO) { app.kern.anmelden(benutzer, passwort).await() }
+                app.ablage.sitzung = sitzung
+                angemeldet()
+            } catch (e: Throwable) {
+                fehler = e.message ?: e.toString()
+            } finally { laeuft = false }
+        }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Column(Modifier.widthIn(max = Stil.formularbreite).fillMaxWidth()) {
+                Column(Modifier.padding(top = 48.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.size(7.dp).background(Stil.akzent, CircleShape))
+                        Text(uebersetzt("Verbunden · Jellyfin %s", fassung), style = Stil.klein.copy(fontSize = 12.sp), color = Stil.schriftSehrLeise)
+                    }
+                    Text(servername, style = Stil.titel, color = Stil.schrift)
+                }
+                Column(Modifier.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Eingabefeld(benutzer, { benutzer = it }, Icons.Outlined.Person, uebersetzt("Benutzername"))
+                    Eingabefeld(passwort, { passwort = it }, Icons.Outlined.Lock, uebersetzt("Passwort"), geheim = true) { anmelden() }
+                    Hauptknopf(if (laeuft) uebersetzt("Anmelden…") else uebersetzt("Anmelden"),
+                               freigegeben = benutzer.isNotBlank() && !laeuft,
+                               modifier = Modifier.padding(top = 10.dp)) { anmelden() }
+                    fehler?.let {
+                        Text(it, style = Stil.klein, color = Stil.warnung, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        }
+        Text(uebersetzt("Anderer Server"), style = Stil.klein.copy(fontSize = 13.sp), color = Stil.schriftSehrLeise,
+             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 22.dp)
+                 .clickable { andererServer() })
+    }
+}

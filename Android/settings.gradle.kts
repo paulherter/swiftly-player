@@ -26,3 +26,4 @@ dependencyResolutionManagement {
 rootProject.name = "Swiftly"
 include(":kern")
 include(":handy")
+include(":gemeinsam")

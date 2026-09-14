@@ -26,6 +26,32 @@ import Foundation
 func uebersetzt(_ schluessel: String.LocalizationValue) -> String {
     String(localized: schluessel, bundle: .module)
 }
+#elseif os(Android)
+/// **Auf Android gibt es `Bundle.module` nicht.**
+///
+/// Der von SwiftPM erzeugte Zugriff sucht das Ressourcenbuendel neben dem
+/// Programm und ruft sonst `fatalError` — in einer `.so` gibt es kein
+/// Programmverzeichnis. Jeder uebersetzte Text haette die App beendet, auch
+/// jede Fehlermeldung (gefunden 15.09.2026, vor dem ersten Einsatz).
+///
+/// Die Android-App entpackt die `.lproj`-Ordner beim Start und nennt den
+/// Ordner hier, bevor ein Text gebraucht wird. Fehlt er, stehen die Schluessel
+/// da — deutsch, lesbar, und kein Absturz.
+public enum Paketsprache {
+    nonisolated(unsafe) public static var ordner: String?
+    nonisolated(unsafe) public static var sprache: String?
+}
+
+let paketkatalog: Textkatalog = {
+    guard let ordner = Paketsprache.ordner, let buendel = Bundle(path: ordner) else {
+        return Textkatalog(leer: Paketsprache.sprache ?? "de")
+    }
+    return Textkatalog(bundle: buendel, sprache: Paketsprache.sprache)
+}()
+
+func uebersetzt(_ schluessel: Textschluessel) -> String {
+    paketkatalog.text(schluessel)
+}
 #else
 /// Einmal gelesen, für die Laufzeit des Programms. Die Sprache eines Nutzers
 /// ändert sich nicht, während die App läuft.

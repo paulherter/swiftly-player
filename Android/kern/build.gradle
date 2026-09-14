@@ -73,12 +73,26 @@ def jniKopieren = tasks.register("jniKopieren", Copy) {
     into(jniAusgabe)
 }
 
+// **Die Uebersetzungen des Pakets reisen als Assets mit.** `Bundle.module` gibt es
+// in einer .so nicht; die App entpackt den Ordner und nennt ihn dem Paket
+// (`Kern.paketspracheSetzen`).
+def paketspracheAusgabe = layout.buildDirectory.dir("generated/paketsprache")
+def paketspracheKopieren = tasks.register("paketspracheKopieren", Copy) {
+    dependsOn(swiftBauen)
+    from(swiftOrdner.dir(".build/aarch64-unknown-linux-android28/debug/JellyfinKit_JellyfinKit.resources")) {
+        into("paketsprache")
+    }
+    into(paketspracheAusgabe)
+}
+
 android {
     sourceSets {
         main {
             java { srcDir(swiftBauen) }
             jniLibs { srcDir(jniAusgabe) }
+            assets { srcDir(paketspracheAusgabe) }
         }
     }
 }
 preBuild.dependsOn(jniKopieren)
+preBuild.dependsOn(paketspracheKopieren)

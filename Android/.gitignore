@@ -7,3 +7,5 @@ kern/swift/.swiftpm/
 .idea/
 *.iml
 .kotlin/
+blick-*.png
+build-*.log
