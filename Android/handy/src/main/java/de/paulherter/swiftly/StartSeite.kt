@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -84,8 +88,19 @@ fun StartSeite(app: SwiftlyAnwendung) {
         }
     }
     Column(Modifier.fillMaxSize()) {
-        Box(Modifier.statusBarsPadding().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp)) {
+        // Vorlage: Kopf in `HomeView` — Wortmarke links, `Kopfziele` rechts (Merkliste, Profil, je 44).
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             Wortmarke(hoehe = 30.dp)
+            Spacer(Modifier.weight(1f))
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Bookmark, contentDescription = uebersetzt("Merkliste"), tint = Stil.schrift, modifier = Modifier.size(20.dp))
+            }
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(30.dp).background(Stil.erhoeht, CircleShape), contentAlignment = Alignment.Center) {
+                    Text(app.benutzername().take(1).uppercase(), color = Stil.schrift, style = Stil.klein.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold))
+                }
+            }
         }
         fehler?.let { Text(it, color = Stil.warnung, style = Stil.klein, modifier = Modifier.padding(Stil.randAbstand)) }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(Stil.reihenAbstand),

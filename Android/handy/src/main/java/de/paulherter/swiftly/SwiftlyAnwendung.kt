@@ -36,6 +36,11 @@ class SwiftlyAnwendung : Application() {
         return try { kern.sitzungSetzen(json); true } catch (e: Exception) { ablage.sitzung = null; false }
     }
 
+    /** Der Name aus der gemerkten Sitzung — fuer das Profilzeichen. */
+    fun benutzername(): String = ablage.sitzung?.let {
+        runCatching { org.json.JSONObject(it).optString("userName") }.getOrNull()
+    }.orEmpty().ifEmpty { "?" }
+
     /** Assets koennen keinen Dateipfad nennen; `Bundle(path:)` braucht einen. Also einmal entpacken. */
     private fun paketspracheEntpacken(): File {
         val ziel = File(filesDir, "paketsprache")

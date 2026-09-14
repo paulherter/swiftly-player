@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
                     Phase.Server -> ServerSeite(app) { name, fassung -> phase = Phase.Anmeldung(name, fassung) }
                     is Phase.Anmeldung -> AnmeldeSeite(app, p.servername, p.fassung,
                         andererServer = { phase = Phase.Server }) { phase = Phase.Start }
-                    Phase.Start -> StartSeite(app)
+                    Phase.Start -> Hauptansicht(app)
                 }
             }
         }
