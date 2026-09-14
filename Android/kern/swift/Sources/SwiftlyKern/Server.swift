@@ -21,4 +21,5 @@ public func serverPruefen(adresse: String) async throws -> String {
 
 public enum Kernfehler: Error {
     case adresse(String)
+    case nichtVerbunden
 }
