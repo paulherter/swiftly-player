@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.Icon
@@ -213,7 +212,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
                 items(aehnliche) { k -> RasterKachelAnsicht(k, Modifier.width(Stil.kachelBreite)) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
             }
             t?.datei?.let { Dateiauszug(it) }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
 
         Detailkopf(name, { ((scroll.value / dichte - 150f) / 70f).coerceIn(0f, 1f) }, zurueck)
@@ -251,10 +250,10 @@ private fun Belegzeile(t: Titel?) {
             val farbe = if (t.lossless) Stil.akzent else Stil.warnung
             Row(Modifier.clip(RoundedCornerShape(8.dp)).background(farbe.copy(alpha = 0.15f))
                     .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Icon(if (t.lossless) Icons.Filled.Check else Icons.Filled.Warning, contentDescription = null, tint = farbe, modifier = Modifier.size(13.dp))
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(if (t.lossless) Icons.Filled.Check else Icons.Filled.Warning, contentDescription = null, tint = farbe, modifier = Modifier.size(12.dp))
                 Text(if (t.lossless) "Direct Play" else t.methode.orEmpty(),
-                     style = TextStyle(fontSize = 13.sp, fontWeight = if (t.lossless) FontWeight.Bold else FontWeight.Normal), color = farbe)
+                     style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = farbe)
             }
         }
         t?.bewertung?.let { b ->
@@ -310,7 +309,7 @@ private fun Spielknopf(symbol: ImageVector, text: String, an: Boolean, haupt: Bo
 private fun RowScope.Aktionsknopf(symbol: ImageVector, beschreibung: String, aktiv: Boolean, tun: () -> Unit) {
     Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche).antippen(tun),
         contentAlignment = Alignment.Center) {
-        Icon(symbol, contentDescription = beschreibung, tint = if (aktiv) Stil.akzent else Stil.schrift, modifier = Modifier.size(21.dp))
+        Icon(symbol, contentDescription = beschreibung, tint = if (aktiv) Stil.akzent else Stil.schrift, modifier = Modifier.size(24.dp))
     }
 }
 
@@ -321,7 +320,7 @@ private fun Klapptext(text: String) {
     val drehung by animateFloatAsState(if (offen) 180f else 0f, tween(220), label = "pfeil")
     Row(Modifier.fillMaxWidth().animateContentSize(tween(220)).antippen { offen = !offen },
         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(text, style = TextStyle(fontSize = 15.sp, lineHeight = 21.sp), color = Color.White.copy(alpha = 0.78f),
+        Text(text, style = TextStyle(fontSize = 16.sp, lineHeight = 22.sp), color = Color.White.copy(alpha = 0.78f),
              maxLines = if (offen) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Color.White.copy(alpha = 0.45f),
              modifier = Modifier.padding(top = 2.dp).size(18.dp).graphicsLayer { rotationZ = drehung })
@@ -410,7 +409,7 @@ private fun Detailkopf(titel: String, staerke: () -> Float, zurueck: () -> Unit)
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 6.dp, end = Stil.randAbstand, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).antippen(zurueck), contentAlignment = Alignment.Center) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = uebersetzt("Zurück"), tint = Stil.schrift, modifier = Modifier.size(32.dp))
+                Icon(Icons.Filled.ArrowBackIosNew, contentDescription = uebersetzt("Zurück"), tint = Stil.schrift, modifier = Modifier.size(22.dp))
             }
             Text(titel, style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift,
                  maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.graphicsLayer { alpha = staerke() })
@@ -426,7 +425,7 @@ private fun Hinweisstreifen(text: String?, modifier: Modifier, schliessen: () ->
     if (text != null) gemerkt[0] = text
     AnimatedVisibility(text != null, modifier, enter = fadeIn(), exit = fadeOut()) {
         Text(gemerkt[0].orEmpty(), style = TextStyle(fontSize = 14.sp, textAlign = TextAlign.Center), color = Stil.schrift,
-             modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 34.dp).clip(CircleShape).background(Stil.erhoeht)
+             modifier = Modifier.navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 34.dp).clip(CircleShape).background(Stil.erhoeht)
                  .border(1.dp, Stil.rand, CircleShape).padding(horizontal = 18.dp, vertical = 12.dp))
     }
 }

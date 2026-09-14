@@ -91,7 +91,8 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
             }
         }
         // Ein zweiter Tipp auf den Bereich, in dem man steht, fuehrt an seinen Anfang.
-        Leiste(bereich) { b -> if (b == bereich) stapel[b] = emptyList() else bereich = b }
+        // Nur auf den Anfangsseiten — auf iOS haengt `bereichsleiste()` an ihnen, nicht an tieferen.
+        if (oben.isEmpty()) Leiste(bereich) { b -> if (b == bereich) stapel[b] = emptyList() else bereich = b }
     }
     // Ueber der Leiste, wie auf iOS: das Blatt haengt dort hinter `.bereichsleiste()`.
     Blattauflage(app)
