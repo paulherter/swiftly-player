@@ -70,7 +70,8 @@ struct SeriesDetailView: View {
     @Environment(\.weit) private var weit
 
     /// Wie weit gescrollt wurde — der Kopf blendet danach ein.
-    @State private var versatz: CGFloat = 0
+    /// Siehe `ItemDetailView.weg` — als `@State` baute jeder Scrollschritt die Seite neu.
+    @State private var weg = Scrollweg()
 
     @State private var stand: Item?
     /// **Ob die nächste Folge schon geklärt ist** — auch dann, wenn es keine
@@ -177,7 +178,7 @@ struct SeriesDetailView: View {
             .scrollIndicators(.hidden)
             .coordinateSpace(.named("blatt"))
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
-                versatz = neu
+                weg.setzen(neu)
                 // **Scrollen schliesst die Staffelliste, Tippen nicht mehr.**
                 //
                 // Hier hing eine `simultaneousGesture` auf der ganzen
@@ -224,7 +225,7 @@ struct SeriesDetailView: View {
                     .zIndex(21)
             }
 
-            Detailkopf(titel: serie.name, versatz: versatz) { zurueck() }
+            Detailkopfleser(titel: serie.name, weg: weg) { zurueck() }
         }
         .animation(.easeOut(duration: 0.14), value: staffellisteOffen)
         .animation(.easeInOut(duration: 0.16), value: reiter)

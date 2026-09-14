@@ -701,6 +701,30 @@ private struct FarbscheinBreit: View {
 @Observable
 final class Scrollweg {
     var wert: CGFloat = 0
+
+    /// **Nur schreiben, wenn es jemand sieht.** Der Detailkopf aendert sich
+    /// zwischen 150 und 220 Punkt; darueber hinaus und bei Bruchteilen eines
+    /// Punkts bleibt der Wert stehen, und niemand wird neu gebaut. Die Grenzen
+    /// selbst werden immer erreicht, damit der Kopf nie halb stehen bleibt.
+    func setzen(_ neu: CGFloat, bis: CGFloat = 240) {
+        let geklemmt = min(max(neu, 0), bis)
+        guard geklemmt != wert else { return }
+        if abs(geklemmt - wert) >= 0.5 || geklemmt == 0 || geklemmt == bis {
+            wert = geklemmt
+        }
+    }
+}
+
+/// Der Detailkopf, der den Scrollweg selbst liest — damit nicht die ganze
+/// Film- oder Serienseite es tut.
+struct Detailkopfleser: View {
+    let titel: String
+    let weg: Scrollweg
+    let zurueck: () -> Void
+
+    var body: some View {
+        Detailkopf(titel: titel, versatz: weg.wert, zurueck: zurueck)
+    }
 }
 
 /// Der Kopf der Startseite, der den Scrollweg selbst liest — damit nicht
