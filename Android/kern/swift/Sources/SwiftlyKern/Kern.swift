@@ -20,6 +20,7 @@ public final class Kern: @unchecked Sendable {
     private let sperre = NSLock()
     private var _client: JellyfinClient?
     private var _adressen: Bildadresse?
+    private var _sitzung: Session?
 
     public init(geraeteID: String, geraeteName: String, fassung: String) {
         self.geraeteID = geraeteID
@@ -33,8 +34,16 @@ public final class Kern: @unchecked Sendable {
     private var adressen: Bildadresse? {
         get { sperre.lock(); defer { sperre.unlock() }; return _adressen }
     }
-    private func setzen(_ c: JellyfinClient?, _ a: Bildadresse?) {
-        sperre.lock(); _client = c; _adressen = a; sperre.unlock()
+    private func setzen(_ c: JellyfinClient?, _ a: Bildadresse?, _ s: Session? = nil) {
+        sperre.lock(); _client = c; _adressen = a; _sitzung = s; sperre.unlock()
+    }
+
+    /// Das Profilbild des angemeldeten Kontos — dieselbe Adresse wie
+    /// `AppModel.benutzerbildURL()` auf Apple. `nil` ohne Sitzung.
+    public func benutzerbild(kante: Int) -> String? {
+        sperre.lock(); defer { sperre.unlock() }
+        guard let s = _sitzung, let a = _adressen else { return nil }
+        return a.benutzer(s.userID, kante: kante)?.absoluteString
     }
 
     private func neuerClient(_ url: URL, _ sitzung: Session? = nil) -> JellyfinClient {
@@ -82,13 +91,13 @@ public final class Kern: @unchecked Sendable {
         guard let c = client else { throw Kernfehler.nichtVerbunden }
         let s = try await c.authenticate(username: benutzer, password: passwort)
         let neu = neuerClient(s.serverURL, s)
-        setzen(neu, Bildadresse(basis: s.serverURL, token: s.accessToken))
+        setzen(neu, Bildadresse(basis: s.serverURL, token: s.accessToken), s)
         return try json(s)
     }
 
     public func sitzungSetzen(json text: String) throws {
         let s = try JSONDecoder().decode(Session.self, from: Data(text.utf8))
-        setzen(neuerClient(s.serverURL, s), Bildadresse(basis: s.serverURL, token: s.accessToken))
+        setzen(neuerClient(s.serverURL, s), Bildadresse(basis: s.serverURL, token: s.accessToken), s)
     }
 
     // MARK: Startseite

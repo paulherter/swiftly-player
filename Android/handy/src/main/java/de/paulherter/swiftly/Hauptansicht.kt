@@ -78,7 +78,7 @@ private fun Leiste(aktiv: Bereich, waehlen: (Bereich) -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Icon(b.symbol, contentDescription = null, tint = farbe, modifier = Modifier.size(22.dp))
+                    Icon(b.symbol, contentDescription = null, tint = farbe, modifier = Modifier.size(26.dp))
                     Text(uebersetzt(b.titel), color = farbe,
                          style = TextStyle(fontSize = 10.sp, fontWeight = if (an) FontWeight.SemiBold else FontWeight.Medium))
                 }
