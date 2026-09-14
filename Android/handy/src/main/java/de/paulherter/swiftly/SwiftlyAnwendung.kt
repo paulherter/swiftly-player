@@ -27,6 +27,12 @@ class SwiftlyAnwendung : Application() {
      */
     var startReihen: List<Reihe>? = null
 
+    /** Je Gattung ein Stand — wie die Modelle in `HauptView`, die den Bereichswechsel ueberleben. */
+    val bibliotheken = mutableMapOf<String, Bibliotheksstand>()
+
+    /** Das offene Auswahlblatt. Es liegt ueber der Leiste, deshalb haelt es die App, nicht die Seite. */
+    val blatt = androidx.compose.runtime.mutableStateOf<Blattwunsch?>(null)
+
     override fun onCreate() {
         super.onCreate()
         ablage = Ablage(this)
@@ -87,6 +93,10 @@ class Ablage(context: Context) {
     var letzterServer: String?
         get() = prefs.getString("letzterServer", null)
         set(wert) { prefs.edit().putString("letzterServer", wert).apply() }
+
+    /** Sortierung, Filter, gewaehlte Bibliothek — dieselben Schluessel wie in UserDefaults auf Apple. */
+    fun merkwert(schluessel: String): String? = prefs.getString(schluessel, null)
+    fun merken(schluessel: String, wert: String) { prefs.edit().putString(schluessel, wert).apply() }
 
     fun geraeteID(): String = prefs.getString("de.paulherter.swiftly.deviceID", null)
         ?: UUID.randomUUID().toString().also { prefs.edit().putString("de.paulherter.swiftly.deviceID", it).apply() }

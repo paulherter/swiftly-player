@@ -52,12 +52,18 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     var bereich by rememberSaveable { mutableStateOf(Bereich.Start) }
     // Jeder Bereich behaelt seinen Zustand (Scrollposition) beim Wechsel.
     val zustaende = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(Stil.grund)) {
         Box(Modifier.weight(1f)) {
             zustaende.SaveableStateProvider(bereich.name) {
             when (bereich) {
                 Bereich.Start -> StartSeite(app)
-                // Folgen als eigene Seiten, sobald die Fassade Raster und Suche kann.
+                Bereich.Filme -> BibliothekSeite(app, "movies", uebersetzt("Filme"),
+                                                 listOf("alle", "angefangen", "merkliste", "ungesehen"))
+                // Bei Serien hilft „ungesehen" wenig — dieselbe Liste wie auf iOS.
+                Bereich.Serien -> BibliothekSeite(app, "tvshows", uebersetzt("Serien"),
+                                                  listOf("alle", "angefangen", "merkliste"))
+                // Die Suche folgt als eigene Seite.
                 else -> Box(Modifier.fillMaxSize().statusBarsPadding().padding(Stil.randAbstand)) {
                     Text(uebersetzt(bereich.titel), style = Stil.titel, color = Stil.schrift)
                 }
@@ -65,6 +71,9 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
             }
         }
         Leiste(bereich) { bereich = it }
+    }
+    // Ueber der Leiste, wie auf iOS: das Blatt haengt dort hinter `.bereichsleiste()`.
+    Blattauflage(app)
     }
 }
 

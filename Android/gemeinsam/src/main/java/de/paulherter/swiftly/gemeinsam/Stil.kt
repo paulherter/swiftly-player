@@ -44,6 +44,11 @@ object Stil {
     val heldHoehe = 300.dp
     val leisteHoehe = 54.dp
     val formularbreite = 420.dp
+    /** Zielbreite einer Rasterkachel — `kachelZiel(breit: false)`. */
+    const val kachelZiel = 104f
+
+    /** `Stil.spalten(nutzbar:breit:)` — Kacheln dehnen sich, auf jedem Telefon kommen drei heraus. */
+    fun spalten(nutzbar: Float): Int = maxOf(2, ((nutzbar + 12f) / (kachelZiel + 12f)).toInt())
 
     // Schrift — Stil.swift, „Schrift — iPhone"
     val titelGross = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold)

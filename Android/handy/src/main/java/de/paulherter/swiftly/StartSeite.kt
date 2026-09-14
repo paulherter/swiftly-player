@@ -131,23 +131,7 @@ fun StartSeite(app: SwiftlyAnwendung) {
             verticalAlignment = Alignment.CenterVertically) {
             Wortmarke(hoehe = 30.dp)
             Spacer(Modifier.weight(1f))
-            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Bookmark, contentDescription = uebersetzt("Merkliste"), tint = Stil.schrift, modifier = Modifier.size(20.dp))
-            }
-            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                // Das Bild, sonst der Buchstabe — erst, wenn klar ist, dass keins kommt.
-                SubcomposeAsyncImage(
-                    model = app.kern.benutzerbild(90).orElse(null), contentDescription = app.benutzername(),
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(32.dp).clip(CircleShape),
-                    error = {
-                        Box(Modifier.fillMaxSize().background(Stil.erhoeht), contentAlignment = Alignment.Center) {
-                            Text(app.benutzername().take(1).uppercase(), color = Stil.schrift,
-                                 style = Stil.klein.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold))
-                        }
-                    }
-                )
-            }
+            Kopfziele(app)
         }
     }
 }
@@ -227,11 +211,7 @@ private fun KachelAnsicht(k: Kachel, quer: Boolean) {
                 modifier = Modifier.fillMaxSize(),
                 error = { Ersatz(k) }, loading = { Box(Modifier.fillMaxSize().background(Stil.flaeche)) }
             )
-            k.fortschritt?.takeIf { it > 0 }?.let { anteil ->
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color.White.copy(alpha = 0.25f))) {
-                    Box(Modifier.fillMaxHeight().fillMaxWidth(anteil.toFloat().coerceIn(0f, 1f)).background(Stil.akzent))
-                }
-            }
+            k.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
         }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(k.name, style = Stil.kachel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -151,6 +151,66 @@ public final class Kern: @unchecked Sendable {
             fortschritt: i.gesehenerAnteil)
     }
 
+    // MARK: Bibliothek
+
+    /// Die Sammlungen einer Art (`movies`, `tvshows`) — `AppModel.bibliotheken(art:)`.
+    /// Antwort: `[{"id","name"}]`.
+    public func bibliotheken(art: String) async throws -> String {
+        guard let c = client else { throw Kernfehler.nichtVerbunden }
+        let sammlungen = try await c.userViews().filter { $0.collectionType == art }
+        return try json(sammlungen.map { Sammlungsantwort(id: $0.id, name: $0.name) })
+    }
+
+    /// Der Name des Servers fuer die Zeile unter dem Titel — leer, wenn er keinen nennt.
+    public func servername() async throws -> String {
+        guard let c = client else { throw Kernfehler.nichtVerbunden }
+        return try await c.publicSystemInfo().serverName ?? ""
+    }
+
+    /// Eine Seite einer Bibliothek — dieselbe Abfrage wie `AppModel.items(in:art:sortierung:filter:ab:)`.
+    /// `sortierung`/`filter` sind die `rawValue`s aus dem Paket; Unbekanntes faellt auf die Vorgabe.
+    public func bibliothekSeite(bibliothek: String, art: String, sortierung: String, filter: String,
+                                ab: Int, anzahl: Int) async throws -> String {
+        guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+        let s = Sortierung(rawValue: sortierung) ?? .name
+        let f = Bibliotheksfilter(rawValue: filter) ?? .alle
+        let antwort = try await c.items(parentID: bibliothek, limit: anzahl, startIndex: ab,
+                                        sortBy: s.feld, sortOrder: s.richtung,
+                                        filters: f.jellyfinFilter, istGesehen: f.istGesehen,
+                                        recursive: Bibliotheksgattung.rekursiv(zu: art),
+                                        includeItemTypes: Bibliotheksgattung.typen(zu: art))
+        return try json(Rasterseitenantwort(titel: antwort.items.map { rasterkachel($0, a) },
+                                            gesamt: antwort.totalRecordCount))
+    }
+
+    /// Die Beschriftungen fuer Sortierung und Filter, in der Reihenfolge von `allCases`.
+    public static func beschriftungen() -> String {
+        let alle = Beschriftungsantwort(
+            sortierung: Sortierung.allCases.map { .init(wert: $0.rawValue, text: $0.beschriftung) },
+            filter: Bibliotheksfilter.allCases.map { .init(wert: $0.rawValue, text: $0.beschriftung) })
+        return (try? JSONEncoder().encode(alle)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+    }
+
+    /// Dieselben Zeilen wie `PosterTile`: bei einer Folge Serie und Nummer, sonst Titel und Jahr.
+    /// Die Marke kommt aus `Anzeigeregeln.kachelmarke`; Kotlin setzt nur den Wortlaut ein.
+    private func rasterkachel(_ i: Item, _ a: Bildadresse) -> Rasterkachelantwort {
+        let folge = i.type == "Episode"
+        let (marke, zahl): (String?, Int) = switch Anzeigeregeln.kachelmarke(
+            art: i.type, staffeln: i.childCount, gesehen: i.userData?.played,
+            offeneFolgen: i.userData?.unplayedItemCount) {
+        case .gesehen?: ("gesehen", 0)
+        case .offen(let n)?: ("offen", n)
+        case .staffeln(let n)?: ("staffeln", n)
+        case .none: (nil, 0)
+        }
+        return Rasterkachelantwort(
+            id: i.id, titel: folge ? (i.seriesName ?? i.name) : i.name,
+            unterzeile: folge ? i.folgenkuerzel : i.productionYear.map(String.init),
+            plakat: Bildwahl.hochkant(i, adressen: a)?.absoluteString,
+            fortschritt: i.userData?.playedPercentage.map { $0 / 100 },
+            marke: marke, markenzahl: zahl)
+    }
+
     private func json<T: Encodable>(_ wert: T) throws -> String {
         String(decoding: try JSONEncoder().encode(wert), as: UTF8.self)
     }
@@ -167,6 +227,20 @@ struct Reihenantwort: Encodable {
     let name: String?
     let quer: Bool
     let kacheln: [Kachelantwort]
+}
+struct Sammlungsantwort: Encodable { let id, name: String }
+struct Rasterseitenantwort: Encodable { let titel: [Rasterkachelantwort]; let gesamt: Int }
+struct Rasterkachelantwort: Encodable {
+    let id, titel: String
+    let unterzeile, plakat: String?
+    let fortschritt: Double?
+    /// `gesehen`, `offen`, `staffeln` — oder nichts.
+    let marke: String?
+    let markenzahl: Int
+}
+struct Beschriftungsantwort: Encodable {
+    struct Eintrag: Encodable { let wert, text: String }
+    let sortierung, filter: [Eintrag]
 }
 struct Kachelantwort: Encodable {
     let id, name, typ: String
