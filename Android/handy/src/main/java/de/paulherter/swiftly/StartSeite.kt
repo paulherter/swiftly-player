@@ -36,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
@@ -105,7 +107,7 @@ fun StartSeite(app: SwiftlyAnwendung) {
     Box(Modifier.fillMaxSize()) {
         // Unten: Farbschein, dann die Reihen — sie laufen **unter** dem Kopf durch,
         // statt an seiner Unterkante hart abgeschnitten zu werden.
-        Farbschein(versatz)
+        Farbschein(versatz, ausgespartOben = kopfDp)
         LazyColumn(state = liste, verticalArrangement = Arrangement.spacedBy(Stil.reihenAbstand),
                    contentPadding = PaddingValues(top = kopfDp + 8.dp, bottom = 24.dp),
                    modifier = Modifier.fillMaxSize()) {
@@ -156,13 +158,25 @@ fun StartSeite(app: SwiftlyAnwendung) {
  * Scrollen mit. Als radiale Verlaeufe statt `blur(60)`: der Weichzeichner kaeme erst ab Android 12.
  */
 @Composable
-private fun Farbschein(versatz: Float) {
+private fun Farbschein(versatz: Float, ausgespartOben: Dp = 0.dp) {
     val dichte = androidx.compose.ui.platform.LocalDensity.current.density
+    // **Die ganze Flaeche wandert, samt Maske** — wie `.offset(y: -versatz)` am
+    // Ende von `gemalt` auf iOS. Vorher liefen nur die Kreise unter einer stehenden
+    // Maske weg, und der Schein blendete aus, statt nach oben zu rutschen.
+    //
+    // `ausgespartOben` bleibt dagegen fest am Bildschirm: dort liegt die zweite
+    // Kopie ueber dem Kopfverlauf (`hinterDemInhalt` spart auf iOS genau das aus).
+    Box(Modifier.fillMaxWidth().height(260.dp).drawWithContent {
+        clipRect(top = ausgespartOben.toPx()) { this@drawWithContent.drawContent() }
+    }) {
     androidx.compose.foundation.Canvas(
         Modifier.fillMaxWidth().height(260.dp)
-            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            .graphicsLayer {
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+                translationY = -versatz * dichte
+            }
     ) {
-        val oben = -versatz * dichte
+        val oben = 0f
         val mitte = size.width / 2
         fun kreis(farbe: Color, deckung: Float, durchmesser: Float, dx: Float, dy: Float) {
             val radius = (durchmesser / 2 + 60) * dichte
@@ -182,6 +196,7 @@ private fun Farbschein(versatz: Float) {
                 0.80f to Color.White.copy(alpha = 0.34f), 1f to Color.Transparent,
                 startY = 0f, endY = 205 * dichte),
             blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+    }
     }
 }
 
