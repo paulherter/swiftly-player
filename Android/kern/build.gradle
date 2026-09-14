@@ -59,6 +59,11 @@ abis.each { abi, info ->
         executable(swiftlyPfad)
         args("run", "swift", "build", "+${swiftFassung}", "--swift-sdk", info.triple, "--build-system", "native")
         environment("ANDROID_NDK_HOME", "${System.getProperty('user.home')}/Library/Android/sdk/ndk/27.3.13750724")
+        // **Das macOS-SDK fest auf 26.5.** Am 15.09.2026 haben sich die CommandLineTools still auf
+        // macOS 27 aktualisiert; `MacOSX.sdk` zeigte danach auf 27.0, dessen libSystem.B.tbd die
+        // Architektur `arm64e.x1` nennt — der Linker von Swift 6.3.3 kennt sie nicht, und schon das
+        // Paket-Manifest liess sich nicht mehr linken. Mit einem neueren Swift wieder freigeben.
+        environment("SDKROOT", "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk")
     }
     swiftBauen.configure { dependsOn(t) }
 }
