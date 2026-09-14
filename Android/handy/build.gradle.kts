@@ -21,7 +21,15 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
-    packaging { jniLibs { useLegacyPackaging = false } }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+            // **Zweimal libc++_shared.so:** aus dem Kern (NDK r27, fuer die Swift-
+            // Laufzeit) und aus libvlc-all. Die erste gewinnt — das Kernmodul steht
+            // in den Abhaengigkeiten vorn, und die Swift-Laufzeit braucht die neuere.
+            pickFirsts += "lib/**/libc++_shared.so"
+        }
+    }
 }
 
 dependencies {
@@ -35,4 +43,5 @@ dependencies {
     implementation(libs.androidx.foundation)
     implementation(libs.androidx.material3)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.libvlc.all)
 }

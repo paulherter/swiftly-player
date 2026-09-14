@@ -8,6 +8,8 @@ lifecycleRuntimeKtx = "2.9.2"
 activityCompose = "1.10.1"
 composeBom = "2024.09.00"
 coroutines = "1.10.2"
+# Dieselbe Maschine wie auf Apple, Linux und Windows — Direct Play verhaelt sich gleich.
+libvlc = "3.6.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -18,6 +20,7 @@ androidx-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-foundation = { group = "androidx.compose.foundation", name = "foundation" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+libvlc-all = { group = "org.videolan.android", name = "libvlc-all", version.ref = "libvlc" }
 swiftkit-core = { group = "org.swift.swiftkit", name = "swiftkit-core", version = "+" }
 
 [plugins]
