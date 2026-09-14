@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import de.paulherter.swiftly.gemeinsam.Texte
 import de.paulherter.swiftly.kern.Kern
+import kotlinx.coroutines.future.await
 import org.swift.swiftkit.core.SwiftArena
 import java.io.File
 import java.util.Locale
@@ -32,6 +33,24 @@ class SwiftlyAnwendung : Application() {
 
     /** Das offene Auswahlblatt. Es liegt ueber der Leiste, deshalb haelt es die App, nicht die Seite. */
     val blatt = androidx.compose.runtime.mutableStateOf<Blattwunsch?>(null)
+
+    /**
+     * **Der Servername, einmal fuer alle Seiten** — wie `AppModel.serverName`. `null` heisst
+     * „noch nicht gefragt", leer heisst „der Server nennt keinen".
+     *
+     * Er stand in jeder Bibliothek einzeln und kam dort erst nach den Platzhaltern an; der Kopf
+     * wuchs dann um eine Zeile und das ganze Raster rutschte herunter.
+     */
+    val servername = androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    suspend fun servernameLaden() {
+        if (servername.value != null) return
+        try {
+            servername.value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                kern.servername().await()
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) {}
+    }
 
     override fun onCreate() {
         super.onCreate()

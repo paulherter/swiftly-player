@@ -52,6 +52,8 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     var bereich by rememberSaveable { mutableStateOf(Bereich.Start) }
     // Jeder Bereich behaelt seinen Zustand (Scrollposition) beim Wechsel.
     val zustaende = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    // Sofort beim Ankommen, nicht erst in der Bibliothek — dort liess er den Kopf nachwachsen.
+    androidx.compose.runtime.LaunchedEffect(Unit) { app.servernameLaden() }
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(Stil.grund)) {
         Box(Modifier.weight(1f)) {

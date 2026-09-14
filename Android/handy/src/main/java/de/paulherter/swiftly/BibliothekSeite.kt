@@ -101,7 +101,6 @@ class Bibliotheksstand(val art: String, private val ablage: Ablage) {
     var gestoert by mutableStateOf(false); private set
     var sammlungen by mutableStateOf<List<Sammlung>>(emptyList()); private set
     var gewaehlt by mutableStateOf<Sammlung?>(null); private set
-    var servername by mutableStateOf<String?>(null); private set
     var sortierung by mutableStateOf(ablage.merkwert("sortierung.$art") ?: "name"); private set
     var filter by mutableStateOf(ablage.merkwert("filter.$art") ?: "alle"); private set
     private var laedtNach = false
@@ -122,10 +121,6 @@ class Bibliotheksstand(val art: String, private val ablage: Ablage) {
                 sammlungen = (0 until a.length()).map { a.getJSONObject(it).let { o -> Sammlung(o.getString("id"), o.getString("name")) } }
                 erreicht = true
             } catch (e: CancellationException) { throw e } catch (_: Exception) {}
-        }
-        if (servername == null) {
-            try { servername = withContext(Dispatchers.IO) { kern.servername().await() }.takeIf { it.isNotEmpty() } }
-            catch (e: CancellationException) { throw e } catch (_: Exception) {}
         }
         // Die gemerkte Wahl, sonst die erste — `AppModel.gewaehlteBibliothek(art:)`.
         if (gewaehlt == null || sammlungen.none { it.id == gewaehlt?.id }) {
@@ -281,8 +276,12 @@ private fun BibliothekKopf(app: SwiftlyAnwendung, stand: Bibliotheksstand, titel
                     Text(titel, style = gross, color = Stil.schrift)
                 }
                 // Wo bin ich hier eigentlich? Der Servername.
-                stand.servername?.let {
-                    Text(it, style = TextStyle(fontSize = 13.sp), color = Stil.schriftSehrLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Solange er unterwegs ist, haelt eine leere Zeile seinen Platz — sonst waechst der
+                // Kopf bei seiner Ankunft und das Raster springt.
+                val server = app.servername.value
+                if (server == null || server.isNotEmpty()) {
+                    Text(server ?: " ", style = TextStyle(fontSize = 13.sp), color = Stil.schriftSehrLeise,
+                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             Kopfziele(app)
