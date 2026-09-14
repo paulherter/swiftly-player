@@ -21,6 +21,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -56,8 +58,12 @@ fun Eingabefeld(
     text: String, aenderung: (String) -> Unit, symbol: ImageVector, platzhalter: String,
     geheim: Boolean = false, adresse: Boolean = false, abschluss: () -> Unit = {}
 ) {
+    // **Die ganze Flaeche nimmt den Tipp an**, nicht nur die Textzeile — wie auf
+    // dem iPhone. Vorher setzte ein Tipp neben die Zeile keinen Cursor.
+    val fokus = remember { FocusRequester() }
     Row(
         Modifier.fillMaxWidth().height(48.dp).background(Stil.flaeche, RoundedCornerShape(Stil.eckeFeld))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { fokus.requestFocus() }
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -73,7 +79,7 @@ fun Eingabefeld(
                     keyboardType = when { geheim -> KeyboardType.Password; adresse -> KeyboardType.Uri; else -> KeyboardType.Text },
                     autoCorrectEnabled = false, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { abschluss() }),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().focusRequester(fokus)
             )
         }
     }
