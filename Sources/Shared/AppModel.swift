@@ -40,6 +40,9 @@ final class AppModel {
     /// Sprache läuft.
     var untertitelAutomatisch: Bool { didSet { merken(untertitelAutomatisch, "utAuto") } }
     var naechsteAutomatisch: Bool { didSet { merken(naechsteAutomatisch, "naechsteAuto") } }
+    /// Steht auf `true`, sobald nach einem fertig geschauten Titel die Frage
+    /// nach einer Bewertung dran ist. Die Wurzel fragt und setzt zurück.
+    var bewertungFaellig = false
 
     /// „Zuletzt hinzugefügt" getrennt nach Filmen und Serien.
     ///
@@ -1212,6 +1215,22 @@ final class AppModel {
         guard let stand = Spielstand.frisch else { return }
         await reportProgress(item: laufenderTitel.item, plan: laufenderTitel.plan,
                              seconds: stand.stelle, paused: !stand.laeuft)
+    }
+
+    /// Zählt einen fertig geschauten Titel und meldet, wenn die Frage nach
+    /// einer Bewertung dran ist — höchstens einmal je Fassung
+    /// (``Bewertungsfrage``).
+    func fertigGeschaut(position: Double, dauer: Double) {
+        guard Bewertungsfrage.zaehltAlsFertig(position: position, dauer: dauer) else { return }
+        let ablage = UserDefaults.standard
+        let fertig = ablage.integer(forKey: "bewertungFertig") + 1
+        ablage.set(fertig, forKey: "bewertungFertig")
+        let fassung = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        guard Bewertungsfrage.faellig(fertig: fertig,
+                                      zuletztGefragt: ablage.string(forKey: "bewertungFassung"),
+                                      fassung: fassung) else { return }
+        ablage.set(fassung, forKey: "bewertungFassung")
+        bewertungFaellig = true
     }
 
     func reportStopped(item: Item, plan: PlaybackPlan, seconds: Double) async {

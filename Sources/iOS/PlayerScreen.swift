@@ -610,6 +610,7 @@ struct PlayerScreen: View {
                 // null, und wer die beiden Zeilen einmal tauscht, verliert
                 // genau das, worum es bei „Weiterschauen" geht.
                 let stelle = position
+                model.fertigGeschaut(position: stelle, dauer: dauer)
                 surface?.stop()
                 zentrale.abgeben()
                 Task { await model.reportStopped(item: item, plan: plan, seconds: stelle) }
@@ -933,6 +934,7 @@ struct PlayerScreen: View {
     /// Übersicht zu springen.
     private func zurNaechstenFolge(_ folge: Item) {
         wechselt = true
+        model.fertigGeschaut(position: position, dauer: dauer)
         Task {
             // **Nebeneinander, nicht nacheinander.** Beides sind Abrufe, und
             // sie brauchen einander nicht: die Abmeldung der alten Folge hoert
