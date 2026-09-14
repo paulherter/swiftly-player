@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -70,6 +71,29 @@ import de.paulherter.swiftly.gemeinsam.uebersetzt
 /** Antippen ohne Welle — auf iOS sind die Knoepfe `.plain`. */
 fun Modifier.antippen(tun: () -> Unit): Modifier = composed {
     clickable(remember { MutableInteractionSource() }, null, onClick = tun)
+}
+
+/**
+ * **Kopf und Inhalt in einem Messdurchgang** — das Gegenstueck zu `.safeAreaInset(edge: .top)`.
+ *
+ * Beide Seiten massen ihren Kopf mit `onSizeChanged` und gaben die Hoehe als oberen Abstand
+ * an die Liste. Das braucht ein gezeichnetes Bild: beim Bereichswechsel wird die Seite neu
+ * aufgebaut, im ersten Bild war die Hoehe null, der Inhalt stand oben und sprang ein Bild
+ * spaeter herunter — das Flackern bei jedem Wechsel. Hier wird der Kopf zuerst gemessen und
+ * der Inhalt im selben Durchgang mit seiner Hoehe gebaut. Gezeichnet wird der Kopf zuletzt,
+ * also ueber dem Inhalt, der darunter durchlaeuft.
+ */
+@Composable
+fun KopfUndInhalt(kopf: @Composable () -> Unit, inhalt: @Composable (kopfhoehe: Dp) -> Unit) {
+    SubcomposeLayout(Modifier.fillMaxSize()) { grenzen ->
+        val kopfteile = subcompose("kopf", kopf).map { it.measure(grenzen.copy(minWidth = 0, minHeight = 0)) }
+        val hoehe = kopfteile.maxOfOrNull { it.height } ?: 0
+        val inhaltsteile = subcompose("inhalt") { inhalt(hoehe.toDp()) }.map { it.measure(grenzen) }
+        layout(grenzen.maxWidth, grenzen.maxHeight) {
+            inhaltsteile.forEach { it.place(0, 0) }
+            kopfteile.forEach { it.place(0, 0) }
+        }
+    }
 }
 
 /** Vorlage: `Kopfziele` in `Stil.swift` — Merkliste und Profil, je 44, auf jeder Hauptseite gleich. */

@@ -43,6 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -192,9 +195,8 @@ fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwah
     val versatz by remember {
         derivedStateOf { if (raster.firstVisibleItemIndex > 0) 100f else raster.firstVisibleItemScrollOffset / dichte.density }
     }
-    var kopfHoehe by remember { mutableIntStateOf(0) }
-    val kopfDp = with(dichte) { kopfHoehe.toDp() }
 
+    KopfUndInhalt(kopf = { BibliothekKopf(app, stand, titel, filterwahl) { versatz } }) { kopfDp ->
     BoxWithConstraints(Modifier.fillMaxSize().background(Stil.grund)) {
         // `Stil.spalten(nutzbar:)` — auf jedem Telefon drei.
         val anzahl = Stil.spalten((maxWidth - Stil.randAbstand * 2).value)
@@ -236,61 +238,75 @@ fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwah
                                else uebersetzt("Filter zurücksetzen") to { stand.filterSetzen("alle") })
         }
 
-        // Der Kopf deckt, was darunter durchlaeuft — `Unschaerfekopf(versatz:)` mit Grund.
-        Column(Modifier.fillMaxWidth().onSizeChanged { kopfHoehe = it.height }.background(Stil.grund)
-                .statusBarsPadding().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    val gross = Stil.titelGross.copy(letterSpacing = (-0.6).sp)
-                    // Nur ab zwei Bibliotheken ein Menue.
-                    if (stand.sammlungen.size > 1) {
-                        Row(Modifier.antippen {
-                                app.blatt.value = Blattwunsch(uebersetzt("Bibliothek"), stand.sammlungen.map { Wahl(it.id, it.name) },
-                                                              stand.gewaehlt?.id) { id ->
-                                    val s = stand.sammlungen.firstOrNull { it.id == id }
-                                    if (s != null && s.id != stand.gewaehlt?.id) {
-                                        stand.waehlen(s)
-                                        bereich.launch { stand.laden(app.kern) }
-                                    }
-                                }
-                            },
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(stand.gewaehlt?.name.orEmpty(), style = gross, color = Stil.schrift)
-                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Stil.schriftLeise, modifier = Modifier.size(22.dp))
-                        }
-                    } else {
-                        Text(titel, style = gross, color = Stil.schrift)
-                    }
-                    // Wo bin ich hier eigentlich? Der Servername.
-                    stand.servername?.let {
-                        Text(it, style = TextStyle(fontSize = 13.sp), color = Stil.schriftSehrLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                Kopfziele(app)
+    }
+    }
+}
+
+/** Kopf der Bibliothek: Titel oder Bibliothekswahl, Servername, Kopfziele, Pillen, Anzahl. */
+@Composable
+private fun BibliothekKopf(app: SwiftlyAnwendung, stand: Bibliotheksstand, titel: String,
+                           filterwahl: List<String>, versatz: () -> Float) {
+    val bereich = rememberCoroutineScope()
+    // Der Kopf deckt, was darunter durchlaeuft — `Unschaerfekopf(versatz:)` mit Grund.
+    Column(Modifier.fillMaxWidth()
+            // Die Haarlinie, sobald gescrollt ist — unten im Kopf, wie bei `Unschaerfekopf`.
+            .drawWithContent {
+                drawContent()
+                val staerke = 1.dp.toPx()
+                drawRect(Stil.linie, topLeft = Offset(0f, size.height - staerke), size = Size(size.width, staerke),
+                         alpha = (versatz() / 30f).coerceIn(0f, 1f))
             }
-            Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Wertpille(Icons.Outlined.FilterList, Wahlen.text(Wahlen.filter, stand.filter)) {
-                    app.blatt.value = Blattwunsch(uebersetzt("Filtern"), Wahlen.filter.filter { it.wert in filterwahl }, stand.filter) {
-                        stand.filterSetzen(it)
+            .background(Stil.grund)
+            .statusBarsPadding().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                val gross = Stil.titelGross.copy(letterSpacing = (-0.6).sp)
+                // Nur ab zwei Bibliotheken ein Menue.
+                if (stand.sammlungen.size > 1) {
+                    Row(Modifier.antippen {
+                            app.blatt.value = Blattwunsch(uebersetzt("Bibliothek"), stand.sammlungen.map { Wahl(it.id, it.name) },
+                                                          stand.gewaehlt?.id) { id ->
+                                val s = stand.sammlungen.firstOrNull { it.id == id }
+                                if (s != null && s.id != stand.gewaehlt?.id) {
+                                    stand.waehlen(s)
+                                    bereich.launch { stand.laden(app.kern) }
+                                }
+                            }
+                        },
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(stand.gewaehlt?.name.orEmpty(), style = gross, color = Stil.schrift)
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Stil.schriftLeise, modifier = Modifier.size(22.dp))
                     }
+                } else {
+                    Text(titel, style = gross, color = Stil.schrift)
                 }
-                Wertpille(Icons.Outlined.SwapVert, Wahlen.text(Wahlen.sortierungen, stand.sortierung)) {
-                    app.blatt.value = Blattwunsch(uebersetzt("Sortieren"), Wahlen.sortierungen, stand.sortierung) {
-                        stand.sortierungSetzen(it)
-                    }
+                // Wo bin ich hier eigentlich? Der Servername.
+                stand.servername?.let {
+                    Text(it, style = TextStyle(fontSize = 13.sp), color = Stil.schriftSehrLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Spacer(Modifier.weight(1f))
-                // Erst wenn wir sie kennen — eine Null, die noch keine ist, waere falsch.
-                if (stand.gesamt > 0) {
-                    Text(NumberFormat.getInstance().format(stand.gesamt),
-                         style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum"),
-                         color = Stil.schriftSehrLeise)
+            }
+            Kopfziele(app)
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Wertpille(Icons.Outlined.FilterList, Wahlen.text(Wahlen.filter, stand.filter)) {
+                app.blatt.value = Blattwunsch(uebersetzt("Filtern"), Wahlen.filter.filter { it.wert in filterwahl }, stand.filter) {
+                    stand.filterSetzen(it)
                 }
+            }
+            Wertpille(Icons.Outlined.SwapVert, Wahlen.text(Wahlen.sortierungen, stand.sortierung)) {
+                app.blatt.value = Blattwunsch(uebersetzt("Sortieren"), Wahlen.sortierungen, stand.sortierung) {
+                    stand.sortierungSetzen(it)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            // Erst wenn wir sie kennen — eine Null, die noch keine ist, waere falsch.
+            if (stand.gesamt > 0) {
+                Text(NumberFormat.getInstance().format(stand.gesamt),
+                     style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum"),
+                     color = Stil.schriftSehrLeise)
             }
         }
-        Box(Modifier.padding(top = (kopfDp - 1.dp).coerceAtLeast(0.dp)).fillMaxWidth().height(1.dp)
-            .alpha((versatz / 30f).coerceIn(0f, 1f)).background(Stil.linie))
     }
 }
 

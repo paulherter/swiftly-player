@@ -101,9 +101,8 @@ fun StartSeite(app: SwiftlyAnwendung) {
             else liste.firstVisibleItemScrollOffset / dichte.density
         }
     }
-    var kopfHoehe by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val kopfDp = with(dichte) { kopfHoehe.toDp() }
 
+    KopfUndInhalt(kopf = { StartKopf(app) }) { kopfDp ->
     Box(Modifier.fillMaxSize()) {
         // Unten: Farbschein, dann die Reihen — sie laufen **unter** dem Kopf durch,
         // statt an seiner Unterkante hart abgeschnitten zu werden.
@@ -125,14 +124,18 @@ fun StartSeite(app: SwiftlyAnwendung) {
                 0.89f to Stil.grund.copy(alpha = 0.19f), 0.95f to Stil.grund.copy(alpha = 0.09f),
                 1f to Color.Transparent)))
         Box(Modifier.fillMaxWidth().height(kopfDp).clipToBounds()) { Farbschein(versatz) }
-        // Vorlage: Kopf in `HomeView` — Wortmarke links, `Kopfziele` rechts (Merkliste, Profil, je 44).
-        Row(Modifier.fillMaxWidth().onSizeChanged { kopfHoehe = it.height }
-                .statusBarsPadding().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Wortmarke(hoehe = 30.dp)
-            Spacer(Modifier.weight(1f))
-            Kopfziele(app)
-        }
+    }
+    }
+}
+
+/** Vorlage: Kopf in `HomeView` — Wortmarke links, `Kopfziele` rechts (Merkliste, Profil, je 44). */
+@Composable
+private fun StartKopf(app: SwiftlyAnwendung) {
+    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Wortmarke(hoehe = 30.dp)
+        Spacer(Modifier.weight(1f))
+        Kopfziele(app)
     }
 }
 
