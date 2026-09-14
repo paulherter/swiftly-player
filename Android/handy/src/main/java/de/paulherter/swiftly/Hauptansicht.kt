@@ -50,14 +50,18 @@ enum class Bereich(val titel: String, val symbol: ImageVector) {
 @Composable
 fun Hauptansicht(app: SwiftlyAnwendung) {
     var bereich by rememberSaveable { mutableStateOf(Bereich.Start) }
+    // Jeder Bereich behaelt seinen Zustand (Scrollposition) beim Wechsel.
+    val zustaende = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     Column(Modifier.fillMaxSize().background(Stil.grund)) {
         Box(Modifier.weight(1f)) {
+            zustaende.SaveableStateProvider(bereich.name) {
             when (bereich) {
                 Bereich.Start -> StartSeite(app)
                 // Folgen als eigene Seiten, sobald die Fassade Raster und Suche kann.
                 else -> Box(Modifier.fillMaxSize().statusBarsPadding().padding(Stil.randAbstand)) {
                     Text(uebersetzt(bereich.titel), style = Stil.titel, color = Stil.schrift)
                 }
+            }
             }
         }
         Leiste(bereich) { bereich = it }

@@ -80,14 +80,14 @@ private fun reihenLesen(json: String): List<Reihe> {
 /** Vorlage: `HomeView` in `Sources/Shared/HomeView.swift` (Kopf, Reihen, Kacheln). */
 @Composable
 fun StartSeite(app: SwiftlyAnwendung) {
-    var reihen by remember { mutableStateOf<List<Reihe>?>(null) }
+    var reihen by remember { mutableStateOf(app.startReihen) }
     var fehler by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         try {
             val json = withContext(Dispatchers.IO) {
                 app.kern.startseite(true, arrayOf(), arrayOf(), "", "", arrayOf(), false).await()
             }
-            reihen = reihenLesen(json)
+            reihen = reihenLesen(json).also { app.startReihen = it }
         } catch (e: Throwable) {
             fehler = e.message ?: e.toString()
         }

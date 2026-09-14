@@ -20,6 +20,13 @@ class SwiftlyAnwendung : Application() {
     lateinit var ablage: Ablage
         private set
 
+    /**
+     * **Die zuletzt geladenen Reihen der Startseite.** Compose baut eine Seite beim
+     * Bereichswechsel ab; ohne diesen Stand stand die Startseite beim Zurueckkommen
+     * eine Sekunde leer. Auf iOS haelt `HauptView` das `Startseitenmodell` genauso.
+     */
+    var startReihen: List<Reihe>? = null
+
     override fun onCreate() {
         super.onCreate()
         ablage = Ablage(this)
