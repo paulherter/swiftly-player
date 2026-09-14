@@ -171,12 +171,12 @@ private fun Farbschein(versatz: Float, ausgespartOben: Dp = 0.dp) {
     }) {
     androidx.compose.foundation.Canvas(
         Modifier.fillMaxWidth().height(260.dp)
-            .graphicsLayer {
-                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
-                translationY = -versatz * dichte
-            }
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
     ) {
-        val oben = 0f
+        // **Verschoben wird die Zeichnung, nicht die Ebene.** Eine verschobene Ebene
+        // riss in der auf Kopfhoehe beschnittenen Kopie unten auf — ein leerer
+        // Streifen, durch den der dunkle Kopfverlauf als harte Kante zu sehen war.
+        val oben = -versatz * dichte
         val mitte = size.width / 2
         fun kreis(farbe: Color, deckung: Float, durchmesser: Float, dx: Float, dy: Float) {
             val radius = (durchmesser / 2 + 60) * dichte
@@ -194,7 +194,9 @@ private fun Farbschein(versatz: Float, ausgespartOben: Dp = 0.dp) {
             brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                 0f to Color.White, 0.34f to Color.White.copy(alpha = 0.94f), 0.58f to Color.White.copy(alpha = 0.72f),
                 0.80f to Color.White.copy(alpha = 0.34f), 1f to Color.Transparent,
-                startY = 0f, endY = 205 * dichte),
+                // Die Maske wandert mit den Kreisen; ueber und unter ihr klemmt der
+                // Verlauf auf Weiss bzw. Durchsichtig, also bleibt nichts unmaskiert.
+                startY = oben, endY = oben + 205 * dichte),
             blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
     }
     }
