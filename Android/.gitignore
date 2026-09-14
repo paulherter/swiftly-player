@@ -1,0 +1,8 @@
+.gradle/
+build/
+local.properties
+kern/swift/.build/
+kern/swift/.swiftpm/
+**/src/*/jniLibs/
+.idea/
+*.iml
