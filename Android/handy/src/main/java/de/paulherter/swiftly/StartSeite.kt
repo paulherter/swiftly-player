@@ -35,6 +35,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -89,17 +91,41 @@ fun StartSeite(app: SwiftlyAnwendung) {
         }
     }
     val liste = androidx.compose.foundation.lazy.rememberLazyListState()
-    // Wie weit gescrollt ist — nur fuer den Farbschein, wie `versatz` auf dem iPhone.
-    val versatz by androidx.compose.runtime.remember {
+    val dichte = androidx.compose.ui.platform.LocalDensity.current
+    // Wie weit gescrollt ist — fuer Farbschein und Kopfverlauf, wie `versatz` auf dem iPhone.
+    val versatz by remember {
         androidx.compose.runtime.derivedStateOf {
-            if (liste.firstVisibleItemIndex > 0) 400f else liste.firstVisibleItemScrollOffset.toFloat()
+            if (liste.firstVisibleItemIndex > 0) 400f
+            else liste.firstVisibleItemScrollOffset / dichte.density
         }
     }
+    var kopfHoehe by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val kopfDp = with(dichte) { kopfHoehe.toDp() }
+
     Box(Modifier.fillMaxSize()) {
-    Farbschein(versatz)
-    Column(Modifier.fillMaxSize()) {
+        // Unten: Farbschein, dann die Reihen — sie laufen **unter** dem Kopf durch,
+        // statt an seiner Unterkante hart abgeschnitten zu werden.
+        Farbschein(versatz)
+        LazyColumn(state = liste, verticalArrangement = Arrangement.spacedBy(Stil.reihenAbstand),
+                   contentPadding = PaddingValues(top = kopfDp + 8.dp, bottom = 24.dp),
+                   modifier = Modifier.fillMaxSize()) {
+            fehler?.let { item { Text(it, color = Stil.warnung, style = Stil.klein, modifier = Modifier.padding(horizontal = Stil.randAbstand)) } }
+            items(reihen ?: emptyList(), key = { it.titel }) { reihe -> ReiheAnsicht(reihe) }
+        }
+        // Oben: Kopfverlauf (zieht erst beim Scrollen auf), darueber der Farbschein auf
+        // Kopfhoehe beschnitten — `Farbschein(fenster: .ueberDemVerlauf)` —, dann der Kopf.
+        Box(Modifier.fillMaxWidth().height(kopfDp + 17.dp)
+            .graphicsLayer { alpha = (versatz / 40f).coerceIn(0f, 1f) }
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(
+                0f to Stil.grund.copy(alpha = 0.98f), 0.30f to Stil.grund.copy(alpha = 0.94f),
+                0.48f to Stil.grund.copy(alpha = 0.85f), 0.62f to Stil.grund.copy(alpha = 0.70f),
+                0.73f to Stil.grund.copy(alpha = 0.52f), 0.82f to Stil.grund.copy(alpha = 0.34f),
+                0.89f to Stil.grund.copy(alpha = 0.19f), 0.95f to Stil.grund.copy(alpha = 0.09f),
+                1f to Color.Transparent)))
+        Box(Modifier.fillMaxWidth().height(kopfDp).clipToBounds()) { Farbschein(versatz) }
         // Vorlage: Kopf in `HomeView` — Wortmarke links, `Kopfziele` rechts (Merkliste, Profil, je 44).
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp),
+        Row(Modifier.fillMaxWidth().onSizeChanged { kopfHoehe = it.height }
+                .statusBarsPadding().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Wortmarke(hoehe = 30.dp)
             Spacer(Modifier.weight(1f))
@@ -109,7 +135,7 @@ fun StartSeite(app: SwiftlyAnwendung) {
             Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
                 // Das Bild, sonst der Buchstabe — erst, wenn klar ist, dass keins kommt.
                 SubcomposeAsyncImage(
-                    model = app.kern.benutzerbild(90), contentDescription = app.benutzername(),
+                    model = app.kern.benutzerbild(90).orElse(null), contentDescription = app.benutzername(),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.size(32.dp).clip(CircleShape),
                     error = {
@@ -121,12 +147,6 @@ fun StartSeite(app: SwiftlyAnwendung) {
                 )
             }
         }
-        fehler?.let { Text(it, color = Stil.warnung, style = Stil.klein, modifier = Modifier.padding(Stil.randAbstand)) }
-        LazyColumn(state = liste, verticalArrangement = Arrangement.spacedBy(Stil.reihenAbstand),
-                   contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
-            items(reihen ?: emptyList(), key = { it.titel }) { reihe -> ReiheAnsicht(reihe) }
-        }
-    }
     }
 }
 
@@ -142,7 +162,7 @@ private fun Farbschein(versatz: Float) {
         Modifier.fillMaxWidth().height(260.dp)
             .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
     ) {
-        val oben = -versatz
+        val oben = -versatz * dichte
         val mitte = size.width / 2
         fun kreis(farbe: Color, deckung: Float, durchmesser: Float, dx: Float, dy: Float) {
             val radius = (durchmesser / 2 + 60) * dichte
@@ -160,7 +180,7 @@ private fun Farbschein(versatz: Float) {
             brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                 0f to Color.White, 0.34f to Color.White.copy(alpha = 0.94f), 0.58f to Color.White.copy(alpha = 0.72f),
                 0.80f to Color.White.copy(alpha = 0.34f), 1f to Color.Transparent,
-                startY = 0f, endY = 165 * dichte + 40 * dichte),
+                startY = 0f, endY = 205 * dichte),
             blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
     }
 }
