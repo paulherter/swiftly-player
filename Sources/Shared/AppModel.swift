@@ -768,13 +768,13 @@ final class AppModel {
 
     private func kopfbildErsatzSuchen(for item: Item) async -> URL? {
         guard let bilder else { return nil }
+        var folge: Item?
         if item.type == "Series", let client {
-            var folge: Item?
             if let naechste = try? await client.naechsteFolgeDerSerie(seriesID: item.id) { folge = naechste }
             if folge == nil { folge = (try? await client.folgen(seriesID: item.id))?.first }
-            if let folge, let url = Bildwahl.quer(folge, adressen: bilder, breite: 1200)?.url { return url }
         }
-        return Bildwahl.hochkant(item, adressen: bilder, maxHoehe: 1200)
+        // Welches Bild gilt, steht im Paket — dieselbe Regel wie auf Android.
+        return Bildwahl.kopfMitErsatz(item, folge: folge, adressen: bilder)
     }
 
     /// Der eine Ort, an dem Bildadressen entstehen.

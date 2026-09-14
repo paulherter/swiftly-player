@@ -211,7 +211,7 @@ public final class Kern: @unchecked Sendable {
         let ab = i.fortsetzenAb
         return try json(Titelantwort(
             id: i.id, name: i.name, typ: i.type ?? "", nebenzeile: i.nebenzeile,
-            kopfbild: (Bildwahl.kopf(i, adressen: a, breite: 1200) ?? Bildwahl.hochkant(i, adressen: a))?.absoluteString,
+            kopfbild: Bildwahl.kopfMitErsatz(i, folge: nil, adressen: a)?.absoluteString,
             bewertung: i.communityRating, freigabe: i.officialRating,
             planDa: p != nil, lossless: p?.isLossless ?? false, methode: p.map { $0.method.rawValue },
             fortsetzenAb: ab, fortsetzenText: ab.map { zeitText($0) },
@@ -268,7 +268,8 @@ public final class Kern: @unchecked Sendable {
             staffelzeile: staffeln.count == 1 ? staffeln.first?.name : nil,
             staffelzahl: staffeln.count == 1 ? nil : (staffeln.isEmpty ? serie.childCount : staffeln.count),
             gattungen: serie.genres.flatMap { $0.isEmpty ? nil : $0.prefix(2).joined(separator: ", ") },
-            kopfbild: (Bildwahl.kopf(serie, adressen: a, breite: 1200) ?? Bildwahl.hochkant(serie, adressen: a))?.absoluteString,
+            // `stand` ist die naechste oder erste Folge — dieselbe, die iOS fuer den Ersatz sucht.
+            kopfbild: Bildwahl.kopfMitErsatz(serie, folge: stand, adressen: a)?.absoluteString,
             bewertung: serie.communityRating, freigabe: serie.officialRating, beschreibung: serie.beschreibung,
             gemerkt: serie.userData?.isFavorite ?? false, gesehen: serie.userData?.played ?? false,
             trailer: serie.remoteTrailers?.first?.url.map { "\($0)" },
