@@ -3120,49 +3120,24 @@ final class App: @unchecked Sendable {
             // Seite blieb leer.
             do { _ = try await client.resumeItems(limit: 1) }
             catch { aufHauptfaden { self.sitzungPruefen(error) } }
-            async let weiter = try? await client.resumeItems(limit: 20)
-            async let naechste = try? await client.nextUp(limit: 20)
-            // **Getrennt heisst getrennt gefragt, nicht nachtraeglich
-            // gesiebt.** Bis zum 13.09.2026 holte Linux die gemischte Reihe
-            // und filterte sie danach nach `type`. Damit zeigte "Zuletzt
-            // hinzugefuegte Filme" nur, was zufaellig in den obersten zwanzig
-            // der Mischung lag — bei einem Server, auf dem gerade eine Serie
-            // nach der anderen ankommt, war die Filmreihe leer, obwohl Filme
-            // dazugekommen waren. Der Mac fragt je Bibliothek einzeln
-            // (`Startseitenmodell.swift:73-79`); hier jetzt auch.
             let filmBib = gewaehlteBibliothek[.filme] ?? bibliotheken(fuer: .filme).first?.id
             let serienBib = gewaehlteBibliothek[.serien] ?? bibliotheken(fuer: .serien).first?.id
-            async let neu = getrennt ? nil : await client.zuletztHinzugefuegt()
-            async let neuFilme = getrennt
-                ? await client.zuletztHinzugefuegt(in: filmBib) : nil
-            async let neuSerien = getrennt
-                ? await client.zuletztHinzugefuegt(in: serienBib) : nil
-
-            // **Jede Reihe hat ihre eigene Kachelform, und das ist keine
-            // Geschmacksfrage.** A2 im Register: „Nächste Folge öffnet die
-            // Übersicht, sie startet nicht. Nur ‚Weiterschauen' springt
-            // direkt in die Wiedergabe." Waagerecht ist deshalb allein
-            // „Weiterschauen" — auf iPhone, Fernseher und Mac genauso.
-            let neuzugaenge = await neu ?? []
-            let filme = await neuFilme ?? []
-            let serien = await neuSerien ?? []
-            // **Neue Filme und neue Serien getrennt, wenn gewünscht.** Eine
-            // gemischte Reihe ist die Vorgabe; wer viel neu bekommt, will sie
-            // auseinander. Die Zeile fehlte auf Linux ganz.
-            // **Die feste Reihenfolge kam aus dem Code, jetzt aus den
-            // Einstellungen.** Welche Reihen, in welcher Folge, und welche
-            // ausgeblendet sind — `Startreihenfolge` im Paket rechnet es aus,
-            // damit dieselbe Ablage auf jeder Plattform dasselbe ergibt.
-            // **Jede Reihe geht entdoppelt hinein** (`Listenregeln`). Der
-            // Server liefert denselben Titel gelegentlich zweimal; auf Apple
-            // beschwert sich `ForEach` ueber die doppelte Kennung, auf GTK
-            // stuende die Kachel schlicht zweimal in der Reihe.
+            // **Eine Regel fuer alle Plattformen** — `Startseitenlader` im Paket.
+            //
+            // Hier stand bis zum 15.09.2026 eine eigene Abschrift von
+            // `Startseitenmodell.laden`, und sie war schon auseinandergelaufen: „Nächste
+            // Folge" behielt die Titel, die schon in „Weiterschauen" standen. Jetzt holt
+            // das Paket die Reihen fuer Apple, Linux/Windows und Android gleich; hier
+            // wird nur noch angeordnet und angezeigt.
+            let startseite = await Startseitenlader.laden(von: client, .init(
+                getrennt: getrennt, filmBibliothek: filmBib, serienBibliothek: serienBib,
+                gattungen: alsChips ? nil : gattungen))
             let inhalt: [Startreihe: (Reihenart, [Item])] = [
-                .weiterschauen: (.weiterschauen, Listenregeln.ohneDoppelte(await weiter ?? [])),
-                .naechsteFolge: (.naechste, Listenregeln.ohneDoppelte(await naechste ?? [])),
-                .neuzugaenge:   (.neu, Listenregeln.ohneDoppelte(neuzugaenge)),
-                .neueFilme:     (.neu, Listenregeln.ohneDoppelte(filme)),
-                .neueSerien:    (.neu, Listenregeln.ohneDoppelte(serien)),
+                .weiterschauen: (.weiterschauen, startseite.weiterschauen ?? []),
+                .naechsteFolge: (.naechste, startseite.naechsteFolge ?? []),
+                .neuzugaenge:   (.neu, startseite.zuletzt ?? []),
+                .neueFilme:     (.neu, startseite.neueFilme ?? []),
+                .neueSerien:    (.neu, startseite.neueSerien ?? []),
             ]
             var gesammelt: [(String, Reihenart, [Item])] = Startreihenfolge
                 .sichtbar(abgelegt: reihenfolge, aus: Set(ausgeblendet), getrennt: getrennt)
@@ -3170,19 +3145,7 @@ final class App: @unchecked Sendable {
                     guard let (art, items) = inhalt[r], !items.isEmpty else { return nil }
                     return (uebersetzt(r.reihentitel), art, items)
                 }
-
-            // **Die Genres als eigene Reihen, nach den festen** — nur wenn
-            // sie nicht als Chips oben stehen. Ihre Namen kommen vom Server
-            // und laufen deshalb **nie** durch die Übersetzung (E7).
-            if !alsChips {
-                for name in gattungen {
-                    guard let treffer = await client.titel(gattung: name), !treffer.isEmpty
-                    else { continue }
-                    gesammelt.append((name, .neu, Listenregeln.ohneDoppelte(treffer)))
-                }
-            }
-            // Ab hier unveraenderlich — sonst faengt der Sprung auf den
-            // Hauptfaden eine `var` ein, und Swift 6 laesst das nicht zu.
+            gesammelt += startseite.gattungsreihen.map { ($0.name, .neu, $0.items) }
             let reihen = gesammelt
 
             aufHauptfaden {
