@@ -48,17 +48,27 @@ klagen()  { printf '%sFehler:%s %s\n' "$rot$fett" "$aus" "$1" >&2; exit 1; }
 
 # ---------------------------------------------------------------- Abbau
 
+# **Eine aus der Quelle gebaute Fassung liegt unter ~/.local.** Sie steht im
+# Suchpfad vor /usr/bin und hat einen eigenen Menueeintrag. Wer spaeter ueber
+# den Paketverwalter installiert, bekaeme sonst weiter die alte Fassung
+# gestartet — am 14.09.2026 genau so passiert: pacman hatte 1.0.2 installiert,
+# gestartet wurde die 1.0.0 vom 5. September.
+eigene_fassung_entfernen() {
+    rm -rf "$ZIEL/share/$PROGRAMM" "$ZIEL/bin/$PROGRAMM" \
+           "$ZIEL/share/applications/$KENNUNG.desktop" \
+           "$ZIEL/share/metainfo/$KENNUNG.metainfo.xml"
+    find "$ZIEL/share/icons/hicolor" -name "$KENNUNG.png" -delete 2>/dev/null || true
+    command -v update-desktop-database >/dev/null 2>&1 &&
+        update-desktop-database "$ZIEL/share/applications" 2>/dev/null || true
+}
+
 aus_quelle=0
 [ "${1:-}" = "--aus-quelle" ] && aus_quelle=1
 
 if [ "${1:-}" = "--deinstallieren" ] || [ "${1:-}" = "--entfernen" ]; then
     sagen "Swiftly Player entfernen"
-    rm -rf "$ZIEL/share/$PROGRAMM" "$ZIEL/bin/$PROGRAMM" \
-           "$ZIEL/share/applications/$KENNUNG.desktop" \
-           "$ZIEL/share/metainfo/$KENNUNG.metainfo.xml" "$ARBEIT"
-    find "$ZIEL/share/icons/hicolor" -name "$KENNUNG.png" -delete 2>/dev/null || true
-    command -v update-desktop-database >/dev/null 2>&1 &&
-        update-desktop-database "$ZIEL/share/applications" 2>/dev/null || true
+    eigene_fassung_entfernen
+    rm -rf "$ARBEIT"
     leise "Die Einstellungen unter ~/.config/swiftly bleiben liegen."
     leise "Weg damit: rm -rf ~/.config/swiftly"
     sagen "Entfernt."
@@ -180,6 +190,11 @@ if [ "${aus_quelle:-0}" = "0" ]; then
         leise "Die Quelle ist noch nicht signiert — sie wird als vertrauenswuerdig eingetragen."
     leise "Dafuer fragt der Paketverwalter gleich nach deinem Passwort."
     if quelle_eintragen; then
+        if [ -e "$ZIEL/share/$PROGRAMM/$PROGRAMM" ] || [ -L "$ZIEL/bin/$PROGRAMM" ]; then
+            leise "Eine aeltere, selbst gebaute Fassung unter $ZIEL wird entfernt."
+            eigene_fassung_entfernen
+            leise "Laeuft Swiftly gerade, einmal beenden und neu starten."
+        fi
         sagen "Fertig."
         echo
         leise "Im Anwendungsmenue steht jetzt „Swiftly\"."
