@@ -24,9 +24,20 @@ object Texte {
     }
 
     fun text(schluessel: String, vararg argumente: Any): String {
-        val format = tabelle[schluessel] ?: schluessel
-        return if (argumente.isEmpty()) format else String.format(format, *argumente)
+        // Das Skript legt auch den **Schluessel** umgeschrieben ab (`%d offen`), gerufen wird
+        // mit Swifts Wortlaut (`%lld offen`) — also beide Fassungen nachschlagen.
+        val format = tabelle[schluessel] ?: tabelle[javaFormat(schluessel)] ?: schluessel
+        if (argumente.isEmpty()) return format
+        // **Fehlt der Eintrag, ist der Schluessel die Vorlage** — und der traegt Swifts
+        // Platzhalter. `%lld` kennt Java nicht und warf mitten im Zeichnen einer Kachel:
+        // die App stuerzte auf der Serienseite ab. Dieselbe Umschrift wie im Skript.
+        return runCatching { String.format(javaFormat(format), *argumente) }.getOrDefault(format)
     }
+
+    private fun javaFormat(text: String): String = text
+        .replace(Regex("%(\\d+\\$)?@")) { "%${it.groupValues[1]}s" }
+        .replace(Regex("%(\\d+\\$)?l{0,2}[du]")) { "%${it.groupValues[1]}d" }
+        .replace(Regex("%(\\d+\\$)?l?f")) { "%${it.groupValues[1]}f" }
 }
 
 /** Kurzform wie auf Linux: `uebersetzt("Anmelden")`. */
