@@ -24,7 +24,13 @@ sealed interface Phase {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // **Immer helle Symbole in der Statusleiste** — die App ist dunkel, egal was im
+        // System eingestellt ist. Ohne Vorgabe richtet sich `enableEdgeToEdge` nach dem
+        // Systemthema, und auf hellem Thema standen Uhr und Akku schwarz auf Schwarz.
+        enableEdgeToEdge(
+            statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
         val app = application as SwiftlyAnwendung
         setContent {
             var phase by remember { mutableStateOf<Phase>(if (app.sitzungWiederherstellen()) Phase.Start else Phase.Server) }
