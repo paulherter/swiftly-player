@@ -40,7 +40,7 @@ settings:
     # als `READY_FOR_SALE` in App Store Connect. Einen Bau an eine bereits
     # veroeffentlichte Fassung zu haengen geht nicht sauber; und was hier
     # drinsteckt, gehoert ohnehin bald in den Store.
-    MARKETING_VERSION: "1.0.2"
+    MARKETING_VERSION: "1.0.3"
     # Muss bei JEDEM Upload hochgezaehlt werden — Apple nimmt dieselbe
     # Buildnummer je Version kein zweites Mal an (Fehler 90189).
     #
@@ -54,7 +54,7 @@ settings:
     #
     # Vor einem Zuruecksetzen immer erst nachsehen:
     #   cd Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
-    CURRENT_PROJECT_VERSION: "5"
+    CURRENT_PROJECT_VERSION: "1"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
     # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
