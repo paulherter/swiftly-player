@@ -6,3 +6,4 @@ kern/swift/.swiftpm/
 **/src/*/jniLibs/
 .idea/
 *.iml
+.kotlin/
