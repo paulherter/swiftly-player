@@ -63,10 +63,7 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     val stapel = remember { mutableStateMapOf<Bereich, List<Ziel>>() }
     val oben = stapel[bereich].orEmpty()
     // Die Wegeregel aus `zielorte`: Serie → Serienseite, Folge → ihre Staffel, sonst Titelseite.
-    // Serien- und Folgenseite folgen; bis dahin oeffnen sie nichts.
-    val oeffnen: (Ziel) -> Unit = { z ->
-        if (z.typ != "Series" && z.typ != "Episode") stapel[bereich] = stapel[bereich].orEmpty() + z
-    }
+    val oeffnen: (Ziel) -> Unit = { z -> stapel[bereich] = stapel[bereich].orEmpty() + z }
     val zurueck = { stapel[bereich] = stapel[bereich].orEmpty().dropLast(1) }
     BackHandler(enabled = oben.isNotEmpty(), onBack = zurueck)
     Box(Modifier.fillMaxSize()) {
@@ -75,7 +72,8 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
             val ziel = oben.lastOrNull()
             // Der Schluessel traegt Tiefe und Titel: jede Seite behaelt ihre Scrollstelle.
             zustaende.SaveableStateProvider("${bereich.name}/${oben.size}/${ziel?.id.orEmpty()}") {
-            if (ziel != null) TitelSeite(app, ziel, oeffnen, zurueck)
+            if (ziel != null && (ziel.typ == "Series" || ziel.typ == "Episode")) SerienSeite(app, ziel, oeffnen, zurueck)
+            else if (ziel != null) TitelSeite(app, ziel, oeffnen, zurueck)
             else when (bereich) {
                 Bereich.Start -> StartSeite(app, oeffnen)
                 Bereich.Filme -> BibliothekSeite(app, "movies", uebersetzt("Filme"),

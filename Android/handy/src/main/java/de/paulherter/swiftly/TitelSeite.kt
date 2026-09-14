@@ -70,11 +70,11 @@ data class Titel(
     val gemerkt: Boolean, val gesehen: Boolean, val trailer: String?, val datei: Datei?,
 )
 
-private fun JSONObject.feldText(feld: String): String? = if (isNull(feld)) null else getString(feld)
-private fun JSONObject.feldZahl(feld: String): Double? = if (isNull(feld)) null else getDouble(feld)
-private fun JSONObject.feldTexte(feld: String): List<String> =
+internal fun JSONObject.feldText(feld: String): String? = if (isNull(feld)) null else getString(feld)
+internal fun JSONObject.feldZahl(feld: String): Double? = if (isNull(feld)) null else getDouble(feld)
+internal fun JSONObject.feldTexte(feld: String): List<String> =
     optJSONArray(feld)?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
-private fun <T> JSONObject.feldListe(feld: String, lesen: (JSONObject) -> T): List<T> =
+internal fun <T> JSONObject.feldListe(feld: String, lesen: (JSONObject) -> T): List<T> =
     optJSONArray(feld)?.let { a -> (0 until a.length()).map { lesen(a.getJSONObject(it)) } } ?: emptyList()
 
 private fun titelLesen(json: String): Titel = JSONObject(json).let { o ->
@@ -91,7 +91,7 @@ private fun titelLesen(json: String): Titel = JSONObject(json).let { o ->
 }
 
 /** Die Fassade meldet „nicht angemeldet" als Kennung, weil der Wortlaut im App-Katalog steht. */
-private fun fehlertext(grund: String) = if (grund == "nichtAngemeldet") uebersetzt("Nicht angemeldet.") else grund
+internal fun fehlertext(grund: String) = if (grund == "nichtAngemeldet") uebersetzt("Nicht angemeldet.") else grund
 
 /**
  * Vorlage: `ItemDetailView` in `Sources/Shared/BrowseViews.swift`, schmale Fassung.
@@ -222,7 +222,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
 
 /** Vorlage: `Heldbild` + `Heldauslauf` — 300 hoch, Verlauf 190, Titel und Nebenzeile unten links. */
 @Composable
-private fun Held(bild: String?, name: String, nebenzeile: String) {
+internal fun Held(bild: String?, name: String, nebenzeile: String) {
     Box(Modifier.fillMaxWidth().height(Stil.heldHoehe)) {
         AsyncImage(model = bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(190.dp).background(Brush.verticalGradient(
@@ -242,28 +242,32 @@ private fun Held(bild: String?, name: String, nebenzeile: String) {
  * als Ganzes eingeblendet**, damit der Knopf darunter nicht nachrutscht.
  */
 @Composable
-private fun Belegzeile(t: Titel?) {
-    val sichtbar by animateFloatAsState(if (t != null) 1f else 0f, tween(250), label = "beleg")
+private fun Belegzeile(t: Titel?) =
+    Belegzeile(t != null, t?.planDa == true, t?.lossless == true, t?.methode, t?.bewertung, t?.freigabe)
+
+@Composable
+internal fun Belegzeile(geladen: Boolean, planDa: Boolean, lossless: Boolean, methode: String?, bewertung: Double?, freigabe: String?) {
+    val sichtbar by animateFloatAsState(if (geladen) 1f else 0f, tween(250), label = "beleg")
     Row(Modifier.heightIn(min = 26.dp).alpha(sichtbar), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        if (t != null && t.planDa) {
-            val farbe = if (t.lossless) Stil.akzent else Stil.warnung
+        if (planDa) {
+            val farbe = if (lossless) Stil.akzent else Stil.warnung
             Row(Modifier.clip(RoundedCornerShape(8.dp)).background(farbe.copy(alpha = 0.15f))
                     .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(if (t.lossless) Icons.Filled.Check else Icons.Filled.Warning, contentDescription = null, tint = farbe, modifier = Modifier.size(12.dp))
-                Text(if (t.lossless) "Direct Play" else t.methode.orEmpty(),
+                Icon(if (lossless) Icons.Filled.Check else Icons.Filled.Warning, contentDescription = null, tint = farbe, modifier = Modifier.size(12.dp))
+                Text(if (lossless) "Direct Play" else methode.orEmpty(),
                      style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = farbe)
             }
         }
-        t?.bewertung?.let { b ->
+        bewertung?.let { b ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Icon(Icons.Filled.Star, contentDescription = null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(12.dp))
                 Text(String.format(Locale.getDefault(), "%.1f", b), style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium),
                      color = Color.White.copy(alpha = 0.8f))
             }
         }
-        t?.freigabe?.takeIf { it.isNotBlank() }?.let {
+        freigabe?.takeIf { it.isNotBlank() }?.let {
             Text(it, style = Stil.plakette, color = Stil.schriftLeise,
                  modifier = Modifier.border(1.dp, Stil.rand, RoundedCornerShape(8.dp)).padding(horizontal = 5.dp, vertical = 2.dp))
         }
@@ -291,7 +295,7 @@ private fun Spielknoepfe(t: Titel?) {
  * Akzent traegt Zustand (E2), keine Knopffarbe.
  */
 @Composable
-private fun Spielknopf(symbol: ImageVector, text: String, an: Boolean, haupt: Boolean, tun: () -> Unit) {
+internal fun Spielknopf(symbol: ImageVector, text: String, an: Boolean, haupt: Boolean, tun: () -> Unit) {
     val grund = when { !an -> Stil.flaeche; haupt -> Color.White; else -> Color.White.copy(alpha = 0.10f) }
     val farbe = when { !an -> Stil.schriftSehrLeise; haupt -> Stil.grund; else -> Stil.schrift }
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(Stil.ecke)).background(grund)
@@ -306,7 +310,7 @@ private fun Spielknopf(symbol: ImageVector, text: String, an: Boolean, haupt: Bo
 
 /** Vorlage: `Aktionsknopf` — 44 hoch, Flaeche, Ecke 10, aktiv im Akzent. */
 @Composable
-private fun RowScope.Aktionsknopf(symbol: ImageVector, beschreibung: String, aktiv: Boolean, tun: () -> Unit) {
+internal fun RowScope.Aktionsknopf(symbol: ImageVector, beschreibung: String, aktiv: Boolean, tun: () -> Unit) {
     Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche).antippen(tun),
         contentAlignment = Alignment.Center) {
         Icon(symbol, contentDescription = beschreibung, tint = if (aktiv) Stil.akzent else Stil.schrift, modifier = Modifier.size(24.dp))
@@ -315,7 +319,7 @@ private fun RowScope.Aktionsknopf(symbol: ImageVector, beschreibung: String, akt
 
 /** Vorlage: `Klapptext` — eine Zeile mit Pfeil, aufgeklappt ganz. Der volle Text war zu schwer fuer die Seite. */
 @Composable
-private fun Klapptext(text: String) {
+internal fun Klapptext(text: String) {
     var offen by remember { mutableStateOf(false) }
     val drehung by animateFloatAsState(if (offen) 180f else 0f, tween(220), label = "pfeil")
     Row(Modifier.fillMaxWidth().animateContentSize(tween(220)).antippen { offen = !offen },
@@ -340,7 +344,7 @@ private fun Abschnitt(titel: String, abstand: Dp, inhalt: LazyListScope.() -> Un
 
 /** Vorlage: `Besetzungskachel` — Kreis 76, Name zweizeilig, Rolle, 84 breit. */
 @Composable
-private fun Besetzungskachel(p: Mitwirkender) {
+internal fun Besetzungskachel(p: Mitwirkender) {
     Column(Modifier.width(84.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SubcomposeAsyncImage(model = p.bild, contentDescription = null, contentScale = ContentScale.Crop,
             modifier = Modifier.size(76.dp).clip(CircleShape).background(Stil.flaeche),
@@ -400,7 +404,7 @@ private fun Dateiauszug(d: Datei) {
  * in der Zeichenphase gelesen: so zeichnet Scrollen die Seite nicht neu.
  */
 @Composable
-private fun Detailkopf(titel: String, staerke: () -> Float, zurueck: () -> Unit) {
+internal fun Detailkopf(titel: String, staerke: () -> Float, zurueck: () -> Unit) {
     Box(Modifier.fillMaxWidth()) {
         Box(Modifier.matchParentSize().graphicsLayer { alpha = 1f - staerke() }
             .background(Brush.verticalGradient(listOf(Stil.grund.copy(alpha = 0.7f), Stil.grund.copy(alpha = 0f)))))
@@ -419,7 +423,7 @@ private fun Detailkopf(titel: String, staerke: () -> Float, zurueck: () -> Unit)
 
 /** Vorlage: `Hinweisstreifen` — Kapsel unten, geht nach drei Sekunden von selbst. */
 @Composable
-private fun Hinweisstreifen(text: String?, modifier: Modifier, schliessen: () -> Unit) {
+internal fun Hinweisstreifen(text: String?, modifier: Modifier, schliessen: () -> Unit) {
     LaunchedEffect(text) { if (text != null) { delay(3000); schliessen() } }
     val gemerkt = remember { arrayOfNulls<String>(1) }
     if (text != null) gemerkt[0] = text

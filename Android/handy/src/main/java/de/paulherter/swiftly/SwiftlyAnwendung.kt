@@ -34,6 +34,14 @@ class SwiftlyAnwendung : Application() {
     /** Der letzte Stand je Titel — zurueck aus einer tieferen Seite baut sonst neu auf. */
     val titelSpeicher = mutableMapOf<String, Titel>()
 
+    /**
+     * **Gegenstueck zu `Serienspeicher`** — nur, damit der Weg zurueck nicht leer ist, nicht als
+     * Wahrheit ueber den Sehstand: die Seite laedt immer darueber. Schluessel ist das Ziel
+     * (Serie oder Folge), die Folgen haengen an der Staffel.
+     */
+    val serienSpeicher = mutableMapOf<String, Serie>()
+    val folgenSpeicher = mutableMapOf<String, List<Folge>>()
+
     /** Das offene Auswahlblatt. Es liegt ueber der Leiste, deshalb haelt es die App, nicht die Seite. */
     val blatt = androidx.compose.runtime.mutableStateOf<Blattwunsch?>(null)
 

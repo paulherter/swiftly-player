@@ -223,6 +223,89 @@ public final class Kern: @unchecked Sendable {
             trailer: i.remoteTrailers?.first?.url.map { "\($0)" }, datei: datei))
     }
 
+    // MARK: Serie
+
+    /// Die Serienseite — `SeriesDetailView.laden()` samt `StaffelZiel`. Ist `id` eine **Folge**,
+    /// wird sie frisch geholt (eine Kachel kann eine veraltete `seasonId` tragen), ihre Serie
+    /// geladen und ihre Staffel vorgewaehlt.
+    ///
+    /// Vorwahl wie auf iOS: Staffel der Folge → Staffel des Stands → Nummer der Folge → Nummer
+    /// des Stands → erste. **ID und Nummer sind gleichrangig**: der Server laesst `SeasonId`
+    /// manchmal weg, und ein Vergleich nur ueber die ID fiel still auf die erste Staffel.
+    public func serie(id: String) async throws -> String {
+        guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+        let erstes = try await c.item(id: id)
+        var hinweisID: String?
+        var hinweisNummer: Int?
+        let serie: Item
+        if erstes.type == "Episode", let serienID = erstes.seriesId {
+            hinweisID = erstes.seasonId
+            hinweisNummer = erstes.parentIndexNumber
+            serie = try await c.item(id: serienID)
+        } else {
+            serie = erstes
+        }
+        async let offen = c.standInSerie(serie.id)
+        async let geholt = try? c.staffeln(seriesID: serie.id)
+        let stand = await offen
+        let staffeln = await geholt ?? []
+        let gewaehlt = staffeln.first { hinweisID != nil && $0.id == hinweisID }
+            ?? staffeln.first { stand?.seasonId != nil && $0.id == stand?.seasonId }
+            ?? staffeln.first { hinweisNummer != nil && $0.indexNumber == hinweisNummer }
+            ?? staffeln.first { stand?.parentIndexNumber != nil && $0.indexNumber == stand?.parentIndexNumber }
+            ?? staffeln.first
+        var plan: PlaybackPlan?
+        if let stand {
+            plan = try? await c.playbackPlan(for: stand.id,
+                                             profile: .vlc(maxBitrate: Bitratengrenze.fuer(immerDirectPlay: true, megabit: 0)))
+        }
+        // Die Besetzung der Folge, die als Naechstes laeuft — sonst die der Serie.
+        let leute = (stand?.darsteller.isEmpty == false ? stand?.darsteller : nil) ?? serie.darsteller
+        return try json(Serienantwort(
+            id: serie.id, name: serie.name,
+            jahr: serie.productionYear.map { String($0) },
+            // Eine Staffel mit ihrem Namen; sonst die Zahl — `childCount` nur, solange die Liste fehlt.
+            staffelzeile: staffeln.count == 1 ? staffeln.first?.name : nil,
+            staffelzahl: staffeln.count == 1 ? nil : (staffeln.isEmpty ? serie.childCount : staffeln.count),
+            gattungen: serie.genres.flatMap { $0.isEmpty ? nil : $0.prefix(2).joined(separator: ", ") },
+            kopfbild: (Bildwahl.kopf(serie, adressen: a, breite: 1200) ?? Bildwahl.hochkant(serie, adressen: a))?.absoluteString,
+            bewertung: serie.communityRating, freigabe: serie.officialRating, beschreibung: serie.beschreibung,
+            gemerkt: serie.userData?.isFavorite ?? false, gesehen: serie.userData?.played ?? false,
+            trailer: serie.remoteTrailers?.first?.url.map { "\($0)" },
+            planDa: plan != nil, lossless: plan?.isLossless ?? false, methode: plan.map { $0.method.rawValue },
+            stand: stand.map { f in
+                Standantwort(id: f.id, fortsetzen: (f.userData?.playbackPositionTicks ?? 0) > 0,
+                             restzeit: f.restzeitText, fortschritt: f.userData?.playedPercentage.map { $0 / 100 },
+                             staffel: f.parentIndexNumber, folge: f.indexNumber)
+            },
+            knopftext: Item.serienknopf(folge: stand, laedt: false),
+            staffeln: staffeln.map { Staffelantwort(id: $0.id, name: $0.name) },
+            gewaehlt: gewaehlt?.id,
+            darsteller: leute.map { p in
+                let u: URL? = a.bauen(itemID: p.id, marke: p.primaryImageTag, mass: .hoechstensHoch(220))
+                return Personantwort(id: p.id, name: p.name, rolle: p.role, bild: u?.absoluteString)
+            }))
+    }
+
+    /// Die Folgen einer Staffel — Zeilen wie `Folgenzeile`: „3. Name", Restzeit oder Laufzeit,
+    /// der Balken nur, solange nicht gesehen.
+    public func folgen(serie: String, staffel: String) async throws -> String {
+        guard let c = client else { throw Kernfehler.nichtVerbunden }
+        let liste = try await c.folgen(seriesID: serie, seasonID: staffel.isEmpty ? nil : staffel)
+        var zeilen: [Folgenantwort] = []
+        for f in liste {
+            let gesehen = f.userData?.played ?? false
+            let zeit: String? = Anzeigeregeln.laufzeitZeigen(sekunden: f.runtimeSeconds)
+                ? (f.restzeitText ?? "\(Int((f.runtimeSeconds ?? 0) / 60)) min") : nil
+            let bild = await c.imageURL(for: f, maxHeight: 220)
+            zeilen.append(Folgenantwort(
+                id: f.id, titel: f.indexNumber.map { "\($0). \(f.name)" } ?? f.name, unterzeile: zeit,
+                bild: bild?.absoluteString,
+                fortschritt: gesehen ? nil : f.userData?.playedPercentage.map { $0 / 100 }, gesehen: gesehen))
+        }
+        return try json(zeilen)
+    }
+
     /// Aehnliche Titel und Extras — `AppModel.aehnliche(_:)` und `extras(_:)`. Fehler geben leere Reihen.
     public func titelUmfeld(id: String) async throws -> String {
         guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
@@ -326,6 +409,37 @@ struct Titelantwort: Encodable {
     let gemerkt, gesehen: Bool
     let trailer: String?
     let datei: Dateiantwort?
+}
+struct Serienantwort: Encodable {
+    let id, name: String
+    let jahr, staffelzeile: String?
+    let staffelzahl: Int?
+    let gattungen, kopfbild: String?
+    let bewertung: Double?
+    let freigabe, beschreibung: String?
+    let gemerkt, gesehen: Bool
+    let trailer: String?
+    let planDa, lossless: Bool
+    let methode: String?
+    let stand: Standantwort?
+    let knopftext: String
+    let staffeln: [Staffelantwort]
+    let gewaehlt: String?
+    let darsteller: [Personantwort]
+}
+struct Standantwort: Encodable {
+    let id: String
+    let fortsetzen: Bool
+    let restzeit: String?
+    let fortschritt: Double?
+    let staffel, folge: Int?
+}
+struct Staffelantwort: Encodable { let id, name: String }
+struct Folgenantwort: Encodable {
+    let id, titel: String
+    let unterzeile, bild: String?
+    let fortschritt: Double?
+    let gesehen: Bool
 }
 struct Personantwort: Encodable { let id, name: String; let rolle, bild: String? }
 struct Dateiantwort: Encodable {
