@@ -368,11 +368,7 @@ struct PlayerScreen: View {
             // Menue bricht zuerst das Spulen ab, nicht die Wiedergabe. Wer
             // sich verspult hat, will zurueck an seine Stelle — und nicht
             // aus dem Film heraus.
-            if spulziel != nil {
-                spulAufgabe?.cancel()
-                spulziel = nil
-                markeVomWisch = false
-            }
+            if spulziel != nil { markeVerwerfen() }
             else if blattOffen { blattOffen = false }
             else if folgenOffen { folgenOffen = false }
             else { verlassen() }
@@ -442,6 +438,10 @@ struct PlayerScreen: View {
             guard steuerungSichtbar, laeuft else { return }
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled, !blattOffen, !folgenOffen else { return }
+            // Eine Marke, die niemand mehr sieht, ist keine Absicht mehr.
+            // Bliebe sie stehen, zeigte die Leiste beim naechsten Einblenden
+            // ihre alte Zeit statt des Stands — siehe `markeVerwerfen`.
+            markeVerwerfen()
             steuerungSichtbar = false
         }
 
@@ -686,6 +686,9 @@ struct PlayerScreen: View {
         // alter Rueckruf einen alten Zeitpunkt und sie greift nie.
         guard Date().timeIntervalSince(schaltwerk.zuletzt) > 0.4 else { return }
         schaltwerk.zuletzt = Date()
+        // Anhalten/Weiter heisst „hier", nicht „dorthin" — die Marke wird
+        // verworfen, nicht bestaetigt. Bestaetigen bleibt der mittlere Knopf.
+        markeVerwerfen()
 
         if soll { flaeche.resume() } else { flaeche.pause() }
         if sofortAnzeigen { laeuftSetzen(soll) }
@@ -893,6 +896,25 @@ struct PlayerScreen: View {
         }
     }
 
+    /// **Eine Marke darf den Stand nicht dauerhaft verdecken.**
+    ///
+    /// Die Leiste zeigt Zeit und Kopf an der Marke, solange eine steht, und
+    /// dazwischen die helle Strecke bis zum wirklichen Stand. Bestaetigt oder
+    /// verworfen wurde sie bisher nur mit dem mittleren Knopf oder Menue. Wer
+    /// im Stehen den Daumen auf die Flaeche legte (Wisch → Marke an der
+    /// aktuellen Stelle) und dann mit der Wiedergabetaste weiterspielte,
+    /// behielt sie fuer den Rest des Films: Zeit eingefroren, Kopf bei 4 %,
+    /// die helle Strecke wuchs mit dem Film mit — gemeldet von einem Apple TV
+    /// (1.0.3, „Avatar", 7:24 nach 20 Minuten). VLC und `Zeitannahme` waren
+    /// unschuldig: gegen einen Server, der ruhende Verbindungen nach 25 s
+    /// schliesst, lief `time` nach der Pause lueckenlos weiter (16.09.2026).
+    private func markeVerwerfen() {
+        spulAufgabe?.cancel()
+        spulAufgabe = nil
+        spulziel = nil
+        markeVomWisch = false
+    }
+
     /// Ziel setzen, anzeigen, Steuerung wachhalten — ohne zu springen.
     private func spulzielSetzen(_ roh: Double) {
         guard dauer > 0 else { return }
@@ -1029,8 +1051,8 @@ struct PlayerScreen: View {
     private func ausfuehren(_ befehl: Fernbefehl) {
         guard let flaeche else { return }
         switch befehl {
-        case .pause:      flaeche.pause();  laeuftSetzen(false); zeigen()
-        case .weiter:     flaeche.resume(); laeuftSetzen(true);  zeigen()
+        case .pause:      markeVerwerfen(); flaeche.pause();  laeuftSetzen(false); zeigen()
+        case .weiter:     markeVerwerfen(); flaeche.resume(); laeuftSetzen(true);  zeigen()
         case .umschalten: anhaltenOderWeiter()
         case .stopp:      verlassen()
         case .vor:        springen(Double(model.vorSekunden))
