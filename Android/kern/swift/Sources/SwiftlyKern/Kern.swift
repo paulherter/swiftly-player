@@ -320,6 +320,32 @@ public final class Kern: @unchecked Sendable {
         return try json(zeilen)
     }
 
+    // MARK: Suche
+
+    /// `SucheView.suchen` ohne Seerr: `JellyfinClient.suche` (nur Filme und Serien), ohne doppelte
+    /// Kennungen, die Zeile unter dem Plakat aus `trefferauskunft`. Unter der Mindestlaenge leer.
+    public func suche(begriff: String) async throws -> String {
+        guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+        let sauber = begriff.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Anzeigeregeln.suchbegriffTaugt(sauber) else { return "[]" }
+        let treffer = Listenregeln.ohneDoppelte(try await c.suche(sauber))
+        return try json(treffer.map { i in
+            let k = rasterkachel(i, a)
+            return Rasterkachelantwort(id: k.id, titel: k.titel, typ: k.typ, unterzeile: i.trefferauskunft,
+                                       plakat: k.plakat, fortschritt: k.fortschritt, marke: k.marke, markenzahl: k.markenzahl)
+        })
+    }
+
+    /// Ab wann gesucht wird — dieselbe Regel auf allen Plattformen.
+    public static func suchbegriffTaugt(begriff: String) -> Bool { Anzeigeregeln.suchbegriffTaugt(begriff) }
+
+    /// Der Verlauf liegt als eine Zeichenkette in der Ablage; Regeln (acht, ohne Doppelte, neu vorn) im Paket.
+    public static func suchverlaufSchluessel() -> String { Suchverlauf.schluessel }
+    public static func suchverlaufMerken(wort: String, roh: String) -> String { Suchverlauf.merken(wort, in: roh) }
+    public static func suchverlaufListe(roh: String) -> String {
+        (try? JSONEncoder().encode(Suchverlauf.liste(roh))).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
+    }
+
     // MARK: Wiedergabe
 
     /// Oeffnet einen Titel zum Abspielen — `AppModel.plan(for:)`, die Abschnitte und die

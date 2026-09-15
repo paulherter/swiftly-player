@@ -50,6 +50,9 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Was gerade abgespielt wird — der Player liegt ueber allen Seiten, unter dem Blatt. */
     val spiel = androidx.compose.runtime.mutableStateOf<Abspielwunsch?>(null)
 
+    /** Begriff, Treffer und Suchzustand — ueberleben den Bereichswechsel wie auf iOS. */
+    val suche = Suchstand()
+
     /**
      * **Der Servername, einmal fuer alle Seiten** — wie `AppModel.serverName`. `null` heisst
      * „noch nicht gefragt", leer heisst „der Server nennt keinen".

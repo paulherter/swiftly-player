@@ -123,7 +123,11 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
         }
     }
     val waehlen: (Bereich) -> Unit = { b ->
-        if (b == bereich) stapel[b] = emptyList()
+        if (b == bereich) {
+            stapel[b] = emptyList()
+            // Der zweite Tipp auf die Suche oeffnet die Tastatur.
+            if (b == Bereich.Suche) app.suche.nochmal++
+        }
         else {
             bereich = b
             lauf.launch {
@@ -179,10 +183,7 @@ private fun Anfangsseite(app: SwiftlyAnwendung, bereich: Bereich, oeffnen: (Ziel
                 // Bei Serien hilft „ungesehen" wenig — dieselbe Liste wie auf iOS.
                 Bereich.Serien -> BibliothekSeite(app, "tvshows", uebersetzt("Serien"),
                                                   listOf("alle", "angefangen", "merkliste"), oeffnen)
-                // Die Suche folgt als eigene Seite.
-                Bereich.Suche -> Box(Modifier.fillMaxSize().statusBarsPadding().padding(Stil.randAbstand)) {
-                    Text(uebersetzt(bereich.titel), style = Stil.titel, color = Stil.schrift)
-                }
+                Bereich.Suche -> SuchSeite(app, oeffnen)
             }
         }
         Leiste(bereich, waehlen)
