@@ -1,10 +1,9 @@
 package de.paulherter.swiftly.tv
 
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
-import kotlin.math.abs
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
@@ -401,8 +400,20 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     // Fokusmotor auf tvOS Reihentitel und Kacheln gemeinsam frei, statt die vorherige Reihe
     // halb abgeschnitten stehen zu lassen. `listenzustand` ist das Kotlin-Gegenstueck: die
     // Zeile der fokussierten Reihe wandert an den oberen Rand des Fensters.
-    val listenzustand = rememberLazyListState()
+    //
+    // **`Column` + `verticalScroll`, keine `LazyColumn`.** Mit der Lazy-Liste war Hochscrollen
+    // manchmal sofort statt weich: stand die Reihe darueber nicht mehr in der Komposition, holte die
+    // Fokussuche sie ueber das Beyond-Bounds-Layout selbst herein, und unser Reihenwechsel fand sie
+    // nicht in `visibleItemsInfo` — der Rueckfall `animateScrollToItem` sprang dann mit eigener,
+    // kurzer Bewegung. Runter traf das nie, weil die naechste Reihe unten schon angeschnitten im
+    // Layout stand. Die Startseite hat wenige Reihen (feste plus Genres), also sind jetzt alle
+    // komponiert; die waagerechten `LazyRow`s bleiben lazy. `rememberScrollState` ist saveable,
+    // die Rueckkehr von einer Unterseite steht damit an derselben Stelle.
+    val listenzustand = rememberScrollState()
     var fokusReihe by rememberSaveable { mutableStateOf(0) }
+    // Lage jeder Reihe im Inhalt (oben, Hoehe; px) — vom Scrollstand unabhaengig, `positionInParent`.
+    val reihenlagen = remember { mutableStateMapOf<Int, Pair<Int, Int>>() }
+    var fenster by remember { mutableIntStateOf(0) }
 
     // **Eintritt in die Reihen — nur auf eine Kachel, die gerade im Bild steht.**
     //
@@ -422,12 +433,13 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     fun anfrage(marke: String) = anfragen.getOrPut(marke) { FocusRequester() }
     fun eintrittsziel(): FocusRequester? {
         val l = liste ?: return null
-        val spalte = listenzustand.layoutInfo
-        val sichtbareReihen = spalte.visibleItemsInfo.mapNotNull { info ->
-            val i = (info.key as? String)?.substringBefore('-')?.toIntOrNull() ?: return@mapNotNull null
+        val oben = listenzustand.value
+        if (fenster <= 0) return null
+        val sichtbareReihen = l.indices.filter { i ->
+            val (y, h) = reihenlagen[i] ?: return@filter false
             // Mindestens die untere Haelfte im Bild — waehrend des Reihenwechsels steht die
             // obere Reihe ein paar Pixel ueber der Kante und soll trotzdem zaehlen.
-            i.takeIf { it in l.indices && info.offset + info.size / 2 >= spalte.viewportStartOffset && info.offset < spalte.viewportEndOffset }
+            y - oben + h / 2 >= 0 && y - oben < fenster
         }
         fun ganzSichtbar(i: Int): List<String> {
             val zeile = reihenstaende[i]?.layoutInfo ?: return emptyList()
@@ -486,20 +498,13 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         if (liste == null) return@LaunchedEffect
         // Auf der ersten Reihe ganz nach oben, damit die Genre-Chips wieder mit ins Bild kommen —
         // nicht nur bis zum Reihentitel, der Chip-Zeile knapp darueber liegen liesse.
-        val index = if (fokusReihe == 0) 0 else fokusReihe + chipVersatz
-        val info = listenzustand.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
-        if (info == null) { listenzustand.animateScrollToItem(index); return@LaunchedEffect }
-        // Dasselbe Ziel wie `animateScrollToItem(index)`: die Zeile oben buendig.
-        val weg = (info.offset - listenzustand.layoutInfo.viewportStartOffset).toFloat()
-        if (abs(weg) < 0.5f) return@LaunchedEffect
-        val bewegung = Animatable(0f)
-        listenzustand.scroll {
-            var zuletzt = 0f
-            bewegung.animateTo(weg, tween(reihenwechselDauer, easing = reihenwechselKurve)) {
-                scrollBy(value - zuletzt)
-                zuletzt = value
-            }
-        }
+        // Die Zeile oben buendig; alle Reihen sind komponiert, ihre Lage steht nach dem ersten Layout
+        // fest — kein Rueckfall mit eigener Bewegung mehr (siehe `listenzustand`).
+        val ziel = if (fokusReihe == 0) 0 else snapshotFlow { reihenlagen[fokusReihe]?.first }.first { it != null } ?: 0
+        val soll = ziel.coerceIn(0, listenzustand.maxValue)
+        if (soll == listenzustand.value) return@LaunchedEffect
+        // `animateScrollTo` startet vom aktuellen Stand; der neue Effekt bricht den alten ab.
+        listenzustand.animateScrollTo(soll, tween(reihenwechselDauer, easing = reihenwechselKurve))
     }
 
     // Wie auf Apple: „gar nichts geladen" ist etwas anderes als „nichts vorhanden" —
@@ -549,12 +554,12 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                     // Systemvorgabe (`TvReihenBringIntoView`, der Nachbau davon) wieder bereit, damit
                     // die naechste Kachel dort weiter mitgescrollt wird.
                     CompositionLocalProvider(LocalBringIntoViewSpec provides TvKeinSenkrechtesBringIntoView) {
-                        LazyColumn(Modifier.weight(1f).tvEingeblendet { reiheneinblendung.value }
-                                       .focusProperties { enter = { eintrittsziel() ?: FocusRequester.Default } }
-                                       .focusGroup(), state = listenzustand,
-                                   contentPadding = PaddingValues(bottom = 40.dp),
-                                   verticalArrangement = Arrangement.spacedBy(TvStil.reihenAbstand - TvStil.reihenLuft * 2)) {
-                            if (e.genreChips && e.startGenres.isNotEmpty()) item(key = "genres") {
+                        Column(Modifier.weight(1f).onSizeChanged { fenster = it.height }
+                                   .tvEingeblendet { reiheneinblendung.value }
+                                   .focusProperties { enter = { eintrittsziel() ?: FocusRequester.Default } }
+                                   .focusGroup().verticalScroll(listenzustand).padding(bottom = 40.dp),
+                               verticalArrangement = Arrangement.spacedBy(TvStil.reihenAbstand - TvStil.reihenLuft * 2)) {
+                            if (e.genreChips && e.startGenres.isNotEmpty()) key("genres") {
                                 CompositionLocalProvider(LocalBringIntoViewSpec provides TvReihenBringIntoView) {
                                     LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
                                             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -566,11 +571,14 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                             // „Weiterschauen", die zweite hochkant wie die uebrigen. So springt beim
                             // Ankommen der Reihen nichts in der Form um.
                             if (liste == null) {
-                                item(key = "platzhalter-quer") { TvReihenplatzhalter(quer = true) }
-                                item(key = "platzhalter-plakat") { TvReihenplatzhalter(quer = false) }
+                                key("platzhalter-quer") { TvReihenplatzhalter(quer = true) }
+                                key("platzhalter-plakat") { TvReihenplatzhalter(quer = false) }
                             }
-                            itemsIndexed(liste.orEmpty(), key = { i, r -> "$i-${r.titel}" }) { i, r ->
-                                Column {
+                            liste.orEmpty().forEachIndexed { i, r -> key("$i-${r.titel}") {
+                                Column(Modifier.onGloballyPositioned { c ->
+                                    val lage = c.positionInParent().y.roundToInt() to c.size.height
+                                    if (reihenlagen[i] != lage) reihenlagen[i] = lage
+                                }) {
                                     TvReihentitel(r.titel)
                                     // Eigener, saveable Reihenstand (derselbe, den `LazyRow` sonst selbst
                                     // anlegt) — `eintrittsziel` liest daraus, welche Kacheln im Bild stehen.
@@ -596,7 +604,7 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                                         }
                                     }
                                 }
-                            }
+                            } }
                         }
                     }
                 }

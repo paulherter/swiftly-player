@@ -46,14 +46,22 @@ class PlayerAktivitaet : ComponentActivity() {
             statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
+        val app = application as SwiftlyAnwendung
         // **Der Player liegt oben drauf** (`fullScreenCover`): er faehrt von unten herein und wieder
         // hinunter, die App darunter bewegt sich nicht. Ohne eigene Uebergaenge spielte Android die
         // Animation fuer einen Aufgabenwechsel, und die App kam von oben herein.
+        //
+        // **Auf dem Fernseher keine Bewegung.** Vorlage: `PlayerScreen` auf tvOS — Folge druecken,
+        // der Player ist sofort da, beim Schliessen sofort weg. Das Handy behaelt seine Animation.
         if (android.os.Build.VERSION.SDK_INT >= 34) {
-            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, R.anim.player_hoch, R.anim.halten)
-            overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.halten, R.anim.player_runter)
+            if (app.istFernseher) {
+                overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
+                overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
+            } else {
+                overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, R.anim.player_hoch, R.anim.halten)
+                overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.halten, R.anim.player_runter)
+            }
         }
-        val app = application as SwiftlyAnwendung
         wunsch.value = app.spiel.value ?: run { finish(); return }
         // **Mit der Geste ins kleine Fenster, nicht danach.** Nach oben gewischt ging die Aktivitaet
         // zuerst in den Hintergrund; Android baute dabei die Videoflaeche ab, und das kleine Fenster
@@ -81,7 +89,10 @@ class PlayerAktivitaet : ComponentActivity() {
     override fun finish() {
         super.finish()
         if (android.os.Build.VERSION.SDK_INT < 34) {
-            @Suppress("DEPRECATION") overridePendingTransition(R.anim.halten, R.anim.player_runter)
+            val fernseher = (application as SwiftlyAnwendung).istFernseher
+            @Suppress("DEPRECATION")
+            if (fernseher) overridePendingTransition(0, 0)
+            else overridePendingTransition(R.anim.halten, R.anim.player_runter)
         }
     }
 

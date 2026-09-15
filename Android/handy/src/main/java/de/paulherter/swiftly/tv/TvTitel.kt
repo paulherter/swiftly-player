@@ -425,6 +425,9 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
         TvBildgrund(banner.getOrNull(if (banner.isEmpty()) 0 else stelle % banner.size))
         // Weich und langsam: 1,2 s zwischen den Querbildern der Titel.
         Kulisse(banner.getOrNull(if (banner.isEmpty()) 0 else stelle % banner.size), Modifier.align(Alignment.TopEnd), dauer = 1200)
+        // Vorlage: `PersonView` zeichnet `Kopfschatten()` wie Start und Detail — hier fehlte er, und
+        // der Grund dieser Seite ist deckend: beim Oeffnen einer Person war der Schatten schlagartig weg.
+        Box(Modifier.fillMaxWidth()) { Kopfschatten() }
         TvAbschnittsseite { a ->
                 // **306,5 dp, dieselbe Gesamthoehe wie `TvDetailkopf`** (`Stil.heldenHoeheDetail`
                 // halbiert) — tvOS baut den Kopf der Personenseite genau wie den von Film und Serie:

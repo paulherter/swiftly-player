@@ -259,11 +259,15 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                         }
                         Abteil.Konto -> {
                             // **„Weiteres Konto hinzufügen" steht als Plus in der Kontokarte**, dort wo die
-                            // Konten stehen — wie auf tvOS. An seiner Stelle hier der zweite Server; dahinter
-                            // liegt noch nichts, deshalb eine Anzeige und kein Knopf.
-                            TvAnzeige(uebersetzt("Server hinzufügen"), uebersetzt("Kommt später"))
+                            // Konten stehen — wie auf tvOS. An seiner Stelle hier der zweite Server: dieselbe
+                            // Handlung wie „Server hinzufügen" im Server-Abteil, derselbe Katalogschlüssel und
+                            // dasselbe Ziel (`ServerAufnahme` → `TvServerAufnahme`). Stand hier als tote
+                            // Anzeigezeile „Kommt später" — Paul will Server hinzufügen können.
+                            TvHandlung(uebersetzt("Server hinzufügen"), modifier = erste) {
+                                oeffnen(Ziel("serveraufnahme", uebersetzt("Server hinzufügen"), "ServerAufnahme"))
+                            }
                             Trennlinie()
-                            TvHandlung(uebersetzt("Abmelden"), modifier = erste) { app.abmelden() }
+                            TvHandlung(uebersetzt("Abmelden")) { app.abmelden() }
                         }
                     }
                 }

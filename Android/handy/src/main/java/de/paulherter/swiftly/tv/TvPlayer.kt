@@ -252,9 +252,16 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
         else blattAusgang[0] = false
     }
 
+    // **Vor dem ersten Bild keine Steuerung, nur der Lader.** Vorlage: `PlayerScreen.steuerungDa`
+    // auf tvOS — dort `steuerungSichtbar && erstesBildDa`; das Gegenstueck zu `erstesBildDa` ist
+    // hier `werk.bildFrei` (`Spielwerk`, gesetzt bei `ladeschirmWeg`). Anders als beim Handy-Player
+    // (`PlayerSeite.kt`), der bewusst schon vor `bildFrei` die volle Steuerung zeigt, blieb hier
+    // die Zeitleiste sonst auf 0 stehen und sprang sichtbar an die richtige Stelle, sobald VLC sie
+    // meldete — auf dem Fernseher sitzt man weiter weg und sieht den Sprung deutlicher.
+    val zielSichtbar = sichtbar && werk.bildFrei
     val deckung by animateFloatAsState(
-        if (sichtbar || !werk.bildFrei) 1f else 0f,
-        if (sichtbar || !werk.bildFrei) tween(180, easing = Bewegung.weich) else tween(340, easing = Bewegung.weich),
+        if (zielSichtbar) 1f else 0f,
+        if (zielSichtbar) tween(180, easing = Bewegung.weich) else tween(340, easing = Bewegung.weich),
         label = "steuerung")
     val steuerungDa by remember { derivedStateOf { deckung > 0.01f && !tafelOffen } }
     // Verschwinden die Knoepfe mit der Steuerung, darf der Fokus nicht ins Leere fallen.

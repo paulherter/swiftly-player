@@ -150,8 +150,12 @@ fun TvHaupt(app: SwiftlyAnwendung) {
         }
     }
     val spiel = app.spiel.value
+    // **Auf dem Fernseher ohne Bewegung.** Vorlage: `PlayerScreen` auf tvOS — Folge druecken, der
+    // Player ist sofort da (Lader), beim Schliessen sofort weg. Die Handy-Uebergaenge
+    // (`player_hoch`/`player_runter`) bleiben dem Handy vorbehalten; siehe `PlayerAktivitaet.kt`.
     LaunchedEffect(spiel) { if (spiel != null) kontext.startActivity(Intent(kontext, PlayerAktivitaet::class.java),
-            android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_hoch, de.paulherter.swiftly.R.anim.halten).toBundle()) }
+            (if (app.istFernseher) android.app.ActivityOptions.makeCustomAnimation(kontext, 0, 0)
+             else android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_hoch, de.paulherter.swiftly.R.anim.halten)).toBundle()) }
 
     // Gemeldete Kulissen je Seite (`seitenschluessel`) — siehe `TvKulissenebene`.
     val kulissen = remember { mutableStateMapOf<String, String?>() }
@@ -205,7 +209,7 @@ fun TvHaupt(app: SwiftlyAnwendung) {
         tween(TvStil.leisteDauer, easing = TvStil.leisteKurve), label = "kopfleiste")
 
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        TvKulissenebene(kulisse)
+        TvKulissenebene(kulisse, schatten = traegtKulisse)
         Crossfade(bereich, animationSpec = tween(250), label = "bereich") { b ->
             val ziel = stapel[b].orEmpty().lastOrNull()
             val tiefe = stapel[b].orEmpty().size
@@ -268,7 +272,7 @@ fun TvHaupt(app: SwiftlyAnwendung) {
  * (Speichertreffer haben keine Coil-Ueberblendung), und nur die 300-ms-Blende der Kulisse laeuft.
  */
 @Composable
-private fun TvKulissenebene(bild: String?) {
+private fun TvKulissenebene(bild: String?, schatten: Boolean) {
     val kontext = LocalContext.current
     val dichte = LocalDensity.current
     var steht by remember { mutableStateOf(bild) }
@@ -277,13 +281,22 @@ private fun TvKulissenebene(bild: String?) {
             SingletonImageLoader.get(kontext).execute(ImageRequest.Builder(kontext).data(bild)
                 .size(with(dichte) { 590.dp.roundToPx() }, with(dichte) { 350.dp.roundToPx() }).build())
         }
+        // Ein `null` nur, wenn es bleibt: beim Seitenwechsel kann die Adresse fuer ein, zwei Bilder
+        // fehlen, bis die neue Seite gemeldet hat — das darf nichts ausblenden. Kommt vorher eine
+        // Adresse, bricht dieser Effekt hier ab.
+        if (bild == null && steht != null) delay(150)
         steht = bild
     }
-    val schatten by animateFloatAsState(if (steht != null) 1f else 0f, tween(300), label = "kopfschatten")
+    // **Der Kopfschatten haengt am Seitentyp, nicht am Bild.** Vorher `steht != null`: jede Luecke in
+    // der Adresse (Seitenwechsel, Meldung kommt ein Bild spaeter) blendete den Schatten 300 ms aus
+    // und wieder ein, waehrend das Bild stand — das Blinken beim Oeffnen der Serienseite. tvOS
+    // zeichnet `Kopfschatten()` in `HomeView` wie in `DetailView` bedingungslos: dieselbe Ebene,
+    // also sieht man im Uebergang nichts. `schatten` ist auf Start, Film und Serie gleich (`true`).
+    val deckung by animateFloatAsState(if (schatten) 1f else 0f, tween(300), label = "kopfschatten")
     Box(Modifier.fillMaxSize()) {
         TvBildgrund(steht)
         Kulisse(steht, Modifier.align(Alignment.TopEnd))
-        Box(Modifier.fillMaxWidth().alpha(schatten)) { Kopfschatten() }
+        Box(Modifier.fillMaxWidth().alpha(deckung)) { Kopfschatten() }
     }
 }
 
@@ -389,14 +402,20 @@ private fun TvUebernahmeabzeichen(app: SwiftlyAnwendung, angebote: List<Angebot>
                 angebote.firstOrNull { it.sitzung == s }?.let { uebernehmen(it) }
             }
     }) { fokus ->
+        // Vorlage: `AbzeichenStil(anderesGeraet: true)` in `Sources/tvOS/TVBausteine.swift` — **nicht
+        // durchsichtig**: in Ruhe die kuehle Toenung ueber dem Seitengrund (deckend), im Fokus eine
+        // volle weisse Flaeche mit dunkler Schrift/Symbol statt der blauen, durchscheinenden Flaeche
+        // von vorher.
+        val vordergrund = if (fokus) Stil.grund else Stil.kuehl
         Row(Modifier.height(if (fokus) 38.dp else 32.dp).clip(RoundedCornerShape(50))
-                .background(Stil.kuehl.copy(alpha = 0.18f)).padding(horizontal = 14.dp),
+                .background(Stil.grund).background(if (fokus) Color.White else Stil.kuehl.copy(alpha = 0.18f))
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Icon(uebernahmezeichen(erstes.art), contentDescription = null, tint = Stil.kuehl, modifier = Modifier.size(13.dp))
+            Icon(uebernahmezeichen(erstes.art), contentDescription = null, tint = vordergrund, modifier = Modifier.size(13.dp))
             Column {
                 Text(uebersetzt("Hier weiterschauen"), style = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold),
-                     color = Stil.kuehl, maxLines = 1)
-                if (fokus) Text(erstes.titelzeile, style = TextStyle(fontSize = 10.5.sp), color = Stil.kuehl.copy(alpha = 0.75f),
+                     color = vordergrund, maxLines = 1)
+                if (fokus) Text(erstes.titelzeile, style = TextStyle(fontSize = 10.5.sp), color = vordergrund.copy(alpha = 0.75f),
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
