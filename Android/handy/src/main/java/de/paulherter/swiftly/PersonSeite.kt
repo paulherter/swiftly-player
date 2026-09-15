@@ -44,11 +44,12 @@ import java.time.format.FormatStyle
 
 /** Antwort von `Kern.person` — Querbilder und Titel stehen dort schon fest. */
 data class Personenstand(val beschreibung: String?, val geboren: String?, val ort: String?, val bild: String?,
-                         val banner: List<String>, val titel: List<Rasterkachel>)
+                         val banner: List<String>, val titel: List<Rasterkachel>, val tmdb: Int? = null)
 
 private fun personLesen(json: String): Personenstand = JSONObject(json).let { o ->
     Personenstand(o.feldText("beschreibung"), o.feldText("geboren"), o.feldText("ort"), o.feldText("bild"),
-                  o.feldTexte("banner"), o.feldListe("titel") { rasterkachelLesen(it) })
+                  o.feldTexte("banner"), o.feldListe("titel") { rasterkachelLesen(it) },
+                  if (o.isNull("tmdb")) null else o.getInt("tmdb"))
 }
 
 /** „24. Juni 1962" in der Sprache des Geraets — `Text(datum, format: .date(.long))`. */
@@ -61,7 +62,7 @@ private fun langesDatum(iso: String): String? =
  * **Nichts springt nach.** Bild, Name und Rolle stehen mit dem Tipp da; Geburtstag, Ort,
  * Biografie und Titel blenden zusammen ein, sobald der Server geantwortet hat. Die zwei Zeilen
  * unter dem Namen halten ihren Platz von Anfang an — kamen sie spaeter, schoben sie den Namen hoch.
- * „Kann angefragt werden" folgt mit der Seerr-Anbindung.
+ * „Kann angefragt werden" steht darunter, sobald Seerr verbunden ist — nie darueber, sonst rutscht es nach.
  */
 @Composable
 fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurueck: () -> Unit) {
@@ -74,6 +75,17 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
     val s = stand
+    // Seerrs Filmografie kommt nach — ohne das, was unter anderem Namen schon auf dem Server liegt.
+    var anfragbar by remember(ziel.id) { mutableStateOf<List<Seerrkachel>?>(null) }
+    val tmdb = s?.tmdb
+    val seerrDa = app.seerrVerbunden.value
+    LaunchedEffect(tmdb, seerrDa) {
+        if (tmdb == null || !seerrDa) return@LaunchedEffect
+        val eigene = s?.titel.orEmpty().mapTo(HashSet()) { it.titel.lowercase() }
+        anfragbar = seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrFilmografie(tmdb.toLong()).await() })
+            .filter { it.titel.lowercase() !in eigene }
+    }
+    val seerrFertig = anfragbar != null || !seerrDa || (s != null && tmdb == null)
     val ein by animateFloatAsState(if (s != null) 1f else 0f, Bewegung.einblenden(), label = "person")
 
     // Das Banner wechselt weich und langsam zwischen den Querbildern der Titel; eines bleibt stehen.
@@ -145,7 +157,19 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                             items(s.titel) { k -> RasterKachelAnsicht(k, Modifier.width(Stil.kachelBreite)) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
                         }
                     }
-                } else {
+                }
+                // Unter dem eigenen Server, damit darueber nichts nachrutscht.
+                anfragbar?.takeIf { it.isNotEmpty() }?.let { liste ->
+                    Abschnitt(uebersetzt("Kann angefragt werden"), Stil.kachelAbstand) {
+                        items(liste) { t ->
+                            SeerrkachelAnsicht(t, Modifier.width(Stil.kachelBreite)) {
+                                app.seerrTreffer[t.schluessel] = t
+                                oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel"))
+                            }
+                        }
+                    }
+                }
+                if (s.titel.isEmpty() && anfragbar.isNullOrEmpty() && seerrFertig) {
                     Text(uebersetzt("Auf deinem Server gibt es sonst nichts mit %@.", ziel.name),
                          style = Stil.koerper, color = Stil.schriftLeise,
                          modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 26.dp).alpha(ein))

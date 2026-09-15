@@ -71,6 +71,8 @@ import org.json.JSONArray
 class Suchstand {
     var begriff by mutableStateOf("")
     var treffer by mutableStateOf<List<Rasterkachel>>(emptyList())
+    /** Was Seerr kennt und der eigene Server nicht — erst, wenn der eigene Server geantwortet hat. */
+    var seerr by mutableStateOf<List<Seerrkachel>>(emptyList())
     var sucht by mutableStateOf(false)
     /** Im Suchzustand — geht erst mit dem Kreuz neben dem Feld zurueck, nicht mit der Tastatur. */
     var suchmodus by mutableStateOf(false)
@@ -111,13 +113,16 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     LaunchedEffect(st.begriff) {
         val sauber = st.begriff.trim()
         if (sauber == st.gesucht) return@LaunchedEffect
-        if (!Kern.suchbegriffTaugt(sauber)) { st.treffer = emptyList(); st.sucht = false; st.gesucht = sauber; return@LaunchedEffect }
+        if (!Kern.suchbegriffTaugt(sauber)) { st.treffer = emptyList(); st.seerr = emptyList(); st.sucht = false; st.gesucht = sauber; return@LaunchedEffect }
         st.sucht = true
         delay(300)
         try {
             val json = withContext(Dispatchers.IO) { app.kern.suche(sauber).await() }
             st.treffer = JSONArray(json).let { a -> (0 until a.length()).map { rasterkachelLesen(a.getJSONObject(it)) } }
             st.gesucht = sauber
+            // **Nebeneinander, nicht nacheinander** fuer den Nutzer: die eigenen Treffer stehen schon.
+            st.seerr = if (app.seerrVerbunden.value) seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrSuchen(sauber).await() })
+                       else emptyList()
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
         st.sucht = false
     }
@@ -193,16 +198,20 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                         }
                     }
                     // **Kein Ring:** stehen schon Treffer da, bleiben sie, bis neue kommen.
-                    st.sucht && st.treffer.isEmpty() -> {
+                    st.sucht && st.treffer.isEmpty() && st.seerr.isEmpty() -> {
                         ganz("abstand") { Spacer(Modifier.height(12.dp)) }
                         items(anzahl * 2, key = { "platzhalter$it" }) { Box(Modifier.padding(bottom = 16.dp)) { Kachelplatzhalter() } }
                     }
-                    st.treffer.isEmpty() -> ganz("keine") {
+                    // Beide leer, nicht nur die Bibliothek.
+                    st.treffer.isEmpty() && st.seerr.isEmpty() -> ganz("keine") {
                         Text(uebersetzt("Keine Treffer für „%@“", sauber), style = Stil.koerper.copy(textAlign = TextAlign.Center),
                              color = Stil.schriftLeise, modifier = Modifier.fillMaxWidth().padding(top = 40.dp))
                     }
                     // **Nach Art gruppiert, wie bei Plex.** Folgen fragt der Server gar nicht erst ab.
-                    else -> listOf(
+                    else -> {
+                    // Ohne Seerr keine Ueberschrift — sie kuendigte sonst einen Block an, dem keiner folgt.
+                    if (st.seerr.isNotEmpty() && st.treffer.isNotEmpty()) ganz("block-server") { Blocktitel(uebersetzt("Auf deinem Server"), st.treffer.size) }
+                    listOf(
                         "Serien" to { k: Rasterkachel -> k.typ == "Series" },
                         "Filme" to { k: Rasterkachel -> k.typ == "Movie" },
                         "Folgen" to { k: Rasterkachel -> k.typ == "Episode" },
@@ -219,6 +228,16 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                                 RasterKachelAnsicht(k, Modifier.padding(bottom = 16.dp)) { oeffnen(Ziel(k.id, k.titel, k.typ)) }
                             }
                         }
+                    }
+                    if (st.seerr.isNotEmpty()) {
+                        ganz("block-seerr") { Blocktitel(uebersetzt("Kann angefragt werden"), st.seerr.size, Modifier.padding(top = 8.dp)) }
+                        items(st.seerr, key = { "seerr-" + it.schluessel }) { t ->
+                            SeerrkachelAnsicht(t, Modifier.padding(bottom = 16.dp)) {
+                                app.seerrTreffer[t.schluessel] = t
+                                oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel"))
+                            }
+                        }
+                    }
                     }
                 }
             }

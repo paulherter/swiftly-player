@@ -29,6 +29,8 @@ public final class Kern: @unchecked Sendable {
     private var _quickconnect: Anmeldecode?
     /// Der Zaehlstand des Technikschilds — je Titel neu.
     private var _zaehlwerk: Zaehlwerk?
+    /// Seerr — ein Bonus: ohne Zugang gibt es keinen Client, und nichts auf den Seiten deutet darauf hin.
+    private var _seerr: SeerrClient?
     private var _immerDirectPlay = true
     private var _megabit = 0
 
@@ -762,6 +764,77 @@ public final class Kern: @unchecked Sendable {
             beschaedigt: roh.beschaedigt, spruenge: roh.spruenge))) ?? "{}"
     }
 
+    // MARK: Seerr
+
+    private var seerr: SeerrClient? { sperre.lock(); defer { sperre.unlock() }; return _seerr }
+
+    /// Setzt den gemerkten Zugang ein — Kotlin legt ihn je Jellyfin-Server verschluesselt ab.
+    public func seerrSetzen(zugang: String) {
+        let z = try? JSONDecoder().decode(Seerrzugang.self, from: Data(zugang.utf8))
+        sperre.lock(); _seerr = z.map { SeerrClient(zugang: $0) }; sperre.unlock()
+    }
+
+    public func seerrTrennen() { sperre.lock(); _seerr = nil; sperre.unlock() }
+
+    /// Verbindet mit Jellyfins eigenem Namen und Passwort. **Ein zweites Schema nur, wenn es geraten
+    /// war** (`Seerr.adressen`) — und nur nach einem Netzfehler, nie nach einem falschen Passwort.
+    /// Antwort: der Zugang als JSON; das Passwort bleibt nirgends liegen.
+    public func seerrVerbinden(adresse: String, benutzer: String, passwort: String) async throws -> String {
+        let adressen = Seerr.adressen(aus: adresse)
+        guard !adressen.isEmpty else { throw Kernfehler.adresse(adresse) }
+        var letzter: Error = Kernfehler.adresse(adresse)
+        for url in adressen {
+            do {
+                let zugang = try await SeerrClient.anmelden(an: url, benutzer: benutzer, passwort: passwort)
+                sperre.lock(); _seerr = SeerrClient(zugang: zugang); sperre.unlock()
+                return try json(zugang)
+            } catch let fehler as URLError {
+                letzter = fehler
+            }
+        }
+        throw letzter
+    }
+
+    public func seerrGilt() async -> Bool {
+        guard let s = seerr else { return false }
+        return await s.gilt()
+    }
+
+    /// Nur, was der eigene Server noch nicht hat — das andere steht im oberen Block.
+    public func seerrSuchen(begriff: String) async -> String {
+        guard let s = seerr, Anzeigeregeln.suchbegriffTaugt(begriff) else { return "[]" }
+        return Self.kodiert((await s.suchen(begriff)).filter { !$0.stand.schonDa }.map(Self.seerrkachel))
+    }
+
+    public func seerrFilmografie(tmdb: Int) async -> String {
+        guard let s = seerr else { return "[]" }
+        return Self.kodiert((await s.filmografie(person: tmdb)).filter { !$0.stand.schonDa }.map(Self.seerrkachel))
+    }
+
+    /// Details und Vorschlaege — Seerr holt beides nebeneinander; fehlen die Vorschlaege, steht der Rest trotzdem.
+    public func seerrDetail(art: String, id: Int) async -> String {
+        guard let s = seerr, let d = await s.detail(art: art, id: id) else { return "{}" }
+        return Self.kodiert(Seerrdetailantwort(
+            beschreibung: d.beschreibung, genres: d.genres, laufzeit: d.laufzeit, bewertung: d.bewertung,
+            staffeln: d.staffeln.map { Seerrstaffelantwort(nummer: $0.nummer, folgen: $0.folgen, stand: $0.stand.rawValue, anfragbar: $0.stand.anfragbar) },
+            besetzung: d.besetzung.map { Personantwort(id: String($0.id), name: $0.name, rolle: $0.rolle, bild: $0.bild()?.absoluteString) },
+            aehnliches: d.aehnliches.map(Self.seerrkachel)))
+    }
+
+    /// Leer heisst: erledigt. `staffeln` als „1,2" — bei einem Film ohne Bedeutung, bei einer Serie nie leer.
+    public func seerrAnfragen(art: String, id: Int, staffeln: String) async -> String {
+        guard let s = seerr else { return "nichtAngemeldet" }
+        let nummern = staffeln.split(separator: ",").compactMap { Int($0) }
+        if art == "tv", nummern.isEmpty { return "" }
+        do { try await s.anfragen(art: art, id: id, staffeln: art == "tv" ? nummern : nil); return "" }
+        catch { return error.localizedDescription }
+    }
+
+    private static func seerrkachel(_ t: Seerrtreffer) -> Seerrkachelantwort {
+        Seerrkachelantwort(id: t.id, art: t.art, titel: t.titel, jahr: t.jahr, plakat: t.plakat()?.absoluteString,
+                           kulisse: t.kulisse()?.absoluteString, stand: t.stand.rawValue, anfragbar: t.stand.anfragbar)
+    }
+
     // MARK: Person
 
     /// Die Personenseite — `PersonView.laden()` ohne Seerr: die Auskunft ueber die Person, ihre
@@ -788,7 +861,7 @@ public final class Kern: @unchecked Sendable {
             beschreibung: auskunft?.beschreibung, geboren: geboren,
             ort: auskunft?.productionLocations?.first { !$0.isEmpty },
             bild: bild?.absoluteString, banner: banner,
-            titel: titel.map { rasterkachel($0, a) }))
+            titel: titel.map { rasterkachel($0, a) }, tmdb: auskunft?.tmdbKennung))
     }
 
     /// Aehnliche Titel und Extras — `AppModel.aehnliche(_:)` und `extras(_:)`. Fehler geben leere Reihen.
@@ -959,6 +1032,25 @@ struct Personenseitenantwort: Encodable {
     let beschreibung, geboren, ort, bild: String?
     let banner: [String]
     let titel: [Rasterkachelantwort]
+    let tmdb: Int?
+}
+struct Seerrkachelantwort: Encodable {
+    let id: Int
+    let art, titel: String
+    let jahr: Int?
+    let plakat, kulisse: String?
+    let stand: Int
+    let anfragbar: Bool
+}
+struct Seerrstaffelantwort: Encodable { let nummer, folgen, stand: Int; let anfragbar: Bool }
+struct Seerrdetailantwort: Encodable {
+    let beschreibung: String?
+    let genres: [String]
+    let laufzeit: Int?
+    let bewertung: Double?
+    let staffeln: [Seerrstaffelantwort]
+    let besetzung: [Personantwort]
+    let aehnliches: [Seerrkachelantwort]
 }
 struct Personantwort: Encodable { let id, name: String; let rolle, bild: String? }
 struct Dateiantwort: Encodable {

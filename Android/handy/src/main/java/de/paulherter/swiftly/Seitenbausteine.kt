@@ -41,6 +41,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -342,7 +344,14 @@ data class Wahl(val wert: String, val text: String)
 /** Was ein `Auswahlblatt` zeigt. `waehlen` bekommt den `wert` des Eintrags. */
 class Blattwunsch(val titel: String, val eintraege: List<Wahl>, val gewaehlt: String?,
                   /** Zeichen je `wert` — das `Handlungsblatt` auf iOS; ohne sie das `Auswahlblatt`. */
-                  val symbole: Map<String, ImageVector> = emptyMap(), val waehlen: (String) -> Unit)
+                  val symbole: Map<String, ImageVector> = emptyMap(),
+                  /** Mehrfachauswahl mit Anfangsmenge — dann schliesst ein Tipp nicht, der Fuss bestaetigt. */
+                  val mehrfach: Set<String>? = null,
+                  /** Zeilen, die nicht waehlbar sind, mit ihrem Grund („vorhanden"). Ein toter Haken waere schlimmer als keiner. */
+                  val gesperrt: Map<String, String> = emptyMap(),
+                  val abschlussText: (Int) -> String = { "" },
+                  val abschluss: ((Set<String>) -> Unit)? = null,
+                  val waehlen: (String) -> Unit)
 
 /**
  * Vorlage: `Auswahlblatt` + `Blattmodifikator` in `Stil.swift`. **Liegt ueber der Leiste** —
@@ -388,6 +397,7 @@ private fun Blattkarte(w: Blattwunsch, zug: Animatable<Float, AnimationVector1D>
     val lauf = rememberCoroutineScope()
     var hoehe by remember { mutableIntStateOf(1) }
     val roh = remember { floatArrayOf(0f) }
+    var auswahl by remember(w) { mutableStateOf(w.mehrfach) }
     val oben = RoundedCornerShape(topStart = Stil.eckeFlaeche, topEnd = Stil.eckeFlaeche)
     Column(Modifier.fillMaxWidth()
         .onSizeChanged { hoehe = it.height; hoeheMelden(it.height) }
@@ -420,22 +430,43 @@ private fun Blattkarte(w: Blattwunsch, zug: Animatable<Float, AnimationVector1D>
         // So hoch wie die Eintraege, hoechstens 340.
         Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
             w.eintraege.forEach { e ->
-                Row(Modifier.fillMaxWidth().height(50.dp).druckzeile { schliessen(); w.waehlen(e.wert) }
+                val grund = w.gesperrt[e.wert]
+                val an = auswahl?.contains(e.wert) == true
+                Row(Modifier.fillMaxWidth().height(50.dp)
+                        .then(if (grund != null) Modifier else Modifier.druckzeile {
+                            val menge = auswahl
+                            if (menge != null) auswahl = if (an) menge - e.wert else menge + e.wert
+                            else { schliessen(); w.waehlen(e.wert) }
+                        })
                         .padding(horizontal = Stil.randAbstand),
                     verticalAlignment = Alignment.CenterVertically) {
                     w.symbole[e.wert]?.let {
                         Icon(it, contentDescription = null, tint = Stil.schrift, modifier = Modifier.width(20.dp).height(17.dp))
                         Spacer(Modifier.width(14.dp))
                     }
-                    Text(e.text, style = TextStyle(fontSize = 16.sp), color = Stil.schrift, modifier = Modifier.weight(1f))
-                    if (e.wert == w.gewaehlt) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(16.dp))
+                    Text(e.text, style = TextStyle(fontSize = 16.sp), color = if (grund != null) Stil.schriftLeise else Stil.schrift, modifier = Modifier.weight(1f))
+                    when {
+                        grund != null -> Text(grund, style = TextStyle(fontSize = 14.sp), color = Stil.schriftSehrLeise)
+                        auswahl != null -> Icon(if (an) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank, contentDescription = null,
+                                                tint = if (an) Stil.akzent else Stil.schriftSehrLeise, modifier = Modifier.size(20.dp))
+                        e.wert == w.gewaehlt -> Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(16.dp))
+                    }
                 }
                 // Mit Zeichen beginnt die Linie hinter ihnen — `trennEinzug`.
                 Box(Modifier.padding(start = if (w.symbole.isEmpty()) 0.dp else Stil.randAbstand + 34.dp)
                     .fillMaxWidth().height(1.dp).background(Stil.linie))
             }
         }
-        Text(uebersetzt("Abbrechen"), style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),
-             color = Stil.schriftLeise, modifier = Modifier.fillMaxWidth().druckzeile(schliessen).padding(vertical = 17.dp))
+        val abschluss = w.abschluss
+        if (abschluss != null) {
+            val menge = auswahl.orEmpty()
+            Text(w.abschlussText(menge.size), style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center),
+                 color = if (menge.isEmpty()) Stil.schriftSehrLeise else Stil.akzent,
+                 modifier = Modifier.fillMaxWidth().then(if (menge.isEmpty()) Modifier else Modifier.druckzeile { schliessen(); abschluss(menge) })
+                     .padding(vertical = 17.dp))
+        } else {
+            Text(uebersetzt("Abbrechen"), style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),
+                 color = Stil.schriftLeise, modifier = Modifier.fillMaxWidth().druckzeile(schliessen).padding(vertical = 17.dp))
+        }
     }
 }

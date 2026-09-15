@@ -268,12 +268,19 @@ private fun Darstellungsform(titel: String, gewaehlt: Boolean, waehlen: () -> Un
 
 /** Vorlage: `EinstellungenView` ohne Offline und Integration — Server und Verbindung. */
 @Composable
-fun EinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
+fun EinstellungenSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -> Unit) {
     val server by rememberServerauskunft(app)
     var prueft by remember { mutableStateOf(false) }
     var ergebnis by remember { mutableStateOf<String?>(null) }
     val lauf = rememberCoroutineScope()
     Einstellungsseite(uebersetzt("Einstellungen"), zurueck) {
+        // Integration vor Server: ein zweiter Dienst, kein zweiter Server.
+        Einstellungsgruppe(uebersetzt("Integration")) {
+            Wertzeile(Icons.Filled.ManageSearch, "Seerr", uebersetzt("Anfragen, was noch nicht da ist"),
+                      wert = if (app.seerrVerbunden.value) uebersetzt("Verbunden") else null) {
+                oeffnen(Ziel("seerr", "Seerr", "Seerr"))
+            }
+        }
         Einstellungsgruppe(uebersetzt("Server")) {
             Wertzeile(Icons.Filled.Storage, server?.first?.takeIf { it.isNotEmpty() } ?: app.servername.value.orEmpty().ifEmpty { "Jellyfin" },
                       wert = server?.second ?: "?")

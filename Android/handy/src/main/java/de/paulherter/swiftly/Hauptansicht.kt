@@ -86,7 +86,7 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     // Jeder Bereich behaelt seinen Zustand (Scrollposition) beim Wechsel.
     val zustaende = rememberSaveableStateHolder()
     // Sofort beim Ankommen, nicht erst in der Bibliothek — dort liess er den Kopf nachwachsen.
-    LaunchedEffect(Unit) { app.servernameLaden() }
+    LaunchedEffect(Unit) { app.seerrLaden(); app.servernameLaden() }
     // Je Bereich ein eigener Stapel — `pfade[b.rawValue]` in `HauptView`.
     val stapel = remember { mutableStateMapOf<Bereich, List<Ziel>>() }
     val oben = stapel[bereich].orEmpty()
@@ -240,7 +240,9 @@ private fun Unterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
         "QuickConnect" -> QuickConnectSeite(app, zurueck)
         "Wiedergabeeinstellungen" -> WiedergabeEinstellungenSeite(app, zurueck)
         "Darstellung" -> DarstellungSeite(app, oeffnen, zurueck)
-        "Einstellungen" -> EinstellungenSeite(app, zurueck)
+        "Einstellungen" -> EinstellungenSeite(app, oeffnen, zurueck)
+        "Seerr" -> SeerrEinstellungenSeite(app, zurueck)
+        "Seerrtitel" -> SeerrDetailSeite(app, ziel, oeffnen, zurueck)
         "Genrewahl" -> GenrewahlSeite(app, zurueck)
         else -> TitelSeite(app, ziel, oeffnen, zurueck)
     }

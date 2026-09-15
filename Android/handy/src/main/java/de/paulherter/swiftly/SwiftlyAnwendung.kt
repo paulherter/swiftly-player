@@ -65,6 +65,27 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Begriff, Treffer und Suchzustand — ueberleben den Bereichswechsel wie auf iOS. */
     val suche = Suchstand()
 
+    /** Seerr verbunden? Wer es nicht ist, sieht nirgends eine Spur davon. */
+    val seerrVerbunden = androidx.compose.runtime.mutableStateOf(false)
+    /** Treffer, deren Detailseite geoeffnet wird — die Seite braucht Stand, Jahr und Bild vorab. */
+    val seerrTreffer = mutableMapOf<String, Seerrkachel>()
+
+    /** Je Jellyfin-Server ein Zugang — so ueberlebt Seerr den Wechsel zu einem anderen Server. */
+    private fun seerrSchluessel(): String = "seerr|" + ablage.konten?.let { Kern.bundAktives(it) }?.let {
+        runCatching { org.json.JSONObject(it).optString("serverURL") }.getOrNull()
+    }.orEmpty().lowercase().trimEnd('/')
+
+    fun seerrLaden() {
+        val zugang = ablage.tresorLesen(seerrSchluessel())
+        if (zugang != null) kern.seerrSetzen(zugang) else kern.seerrTrennen()
+        seerrVerbunden.value = zugang != null
+    }
+    fun seerrMerken(zugang: String) { ablage.tresorSchreiben(seerrSchluessel(), zugang); seerrVerbunden.value = true }
+    fun seerrTrennen() { ablage.tresorSchreiben(seerrSchluessel(), null); kern.seerrTrennen(); seerrVerbunden.value = false }
+    fun seerrAdresse(): String? = ablage.tresorLesen(seerrSchluessel())?.let {
+        runCatching { org.json.JSONObject(it).optString("adresse") }.getOrNull()
+    }
+
     /** Gattung, Sortierung und die geladenen Titel der Merkliste. */
     val merkliste by lazy { Merklistenstand(ablage) }
 
@@ -238,6 +259,13 @@ class Ablage(context: Context) {
             if (wert == null) bearbeitung.remove("konten.tresor") else bearbeitung.putString("konten.tresor", Tresor.verschluesseln(wert))
             bearbeitung.apply()
         }
+
+    fun tresorLesen(schluessel: String): String? = prefs.getString("$schluessel.tresor", null)?.let { Tresor.entschluesseln(it) }
+    fun tresorSchreiben(schluessel: String, wert: String?) {
+        val bearbeitung = prefs.edit()
+        if (wert == null) bearbeitung.remove("$schluessel.tresor") else bearbeitung.putString("$schluessel.tresor", Tresor.verschluesseln(wert))
+        bearbeitung.apply()
+    }
 
     var letzterServer: String?
         get() = prefs.getString("letzterServer", null)
