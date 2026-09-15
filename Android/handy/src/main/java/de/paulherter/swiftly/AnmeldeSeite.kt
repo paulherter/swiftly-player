@@ -1,6 +1,19 @@
 package de.paulherter.swiftly
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import coil3.compose.AsyncImage
+import org.json.JSONArray
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +67,16 @@ fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
     var fehler by remember { mutableStateOf<String?>(null) }
     var quick by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    var bekannte by remember { mutableStateOf<List<Triple<String, String, String?>>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        bekannte = runCatching {
+            JSONArray(withContext(Dispatchers.IO) { app.kern.oeffentlicheBenutzer(false).await() }).let { a ->
+                (0 until a.length()).map { a.getJSONObject(it) }.map { Triple(it.getString("kennung"), it.getString("name"), it.feldText("bild")) }
+            }
+        }.getOrDefault(emptyList())
+        // Bei genau einem Konto gibt es nichts zu waehlen — den Namen trotzdem tippen zu lassen, ist eine Huerde ohne Zweck.
+        if (bekannte.size == 1 && benutzer.isEmpty()) benutzer = bekannte[0].second
+    }
 
     if (quick) {
         QuickConnectAnmeldung(app, neuerServer = false, zurueck = { quick = false }) { sitzung ->
@@ -92,6 +115,15 @@ fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
                     }
                     Text(servername, style = Stil.titel, color = Stil.schrift)
                 }
+                if (bekannte.isNotEmpty()) {
+                    Column(Modifier.padding(top = 22.dp)) {
+                        Text(uebersetzt("Wer schaut?").uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
+                             color = Stil.schriftSehrLeise, modifier = Modifier.padding(bottom = 8.dp))
+                        Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            bekannte.forEach { (_, name, bild) -> Kontozeichen(name, bild, benutzer == name) { benutzer = name } }
+                        }
+                    }
+                }
                 Column(Modifier.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Eingabefeld(benutzer, { benutzer = it }, Icons.Outlined.Person, uebersetzt("Benutzername"))
                     Eingabefeld(passwort, { passwort = it }, Icons.Outlined.Lock, uebersetzt("Passwort"), geheim = true) { anmelden() }
@@ -111,5 +143,21 @@ fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
         Text(uebersetzt(if (weiteresKonto) "Abbrechen" else "Anderer Server"), style = Stil.klein.copy(fontSize = 13.sp),
              color = Stil.schriftSehrLeise,
              modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 22.dp).antippen(andererServer))
+    }
+}
+
+/** Vorlage: `Kontozeichen` — 60er Kreis, Bild oder Anfangsbuchstabe, gewaehlt mit Akzentrand. */
+@Composable
+private fun Kontozeichen(name: String, bild: String?, gewaehlt: Boolean, tun: () -> Unit) {
+    Column(Modifier.width(72.dp).antippen(tun), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.size(60.dp).clip(CircleShape).background(Stil.erhoeht)
+                .border(if (gewaehlt) 2.dp else 1.dp, if (gewaehlt) Stil.akzent else Stil.rand, CircleShape),
+            contentAlignment = Alignment.Center) {
+            Text(name.take(1).uppercase(), style = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold),
+                 color = if (gewaehlt) Stil.schrift else Stil.schriftLeise)
+            if (bild != null) AsyncImage(model = bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape))
+        }
+        Text(name, style = TextStyle(fontSize = 13.sp), color = if (gewaehlt) Stil.schrift else Stil.schriftLeise,
+             maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
     }
 }

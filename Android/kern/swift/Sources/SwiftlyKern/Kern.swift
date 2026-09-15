@@ -479,6 +479,19 @@ public final class Kern: @unchecked Sendable {
     }
 
     /// Den Code eines anderen Geraets freigeben — `QuickConnectView`. Leer heisst: erledigt.
+    /// „Wer schaut?" — die oeffentlichen Benutzer, ohne Anmeldung. Hat der Server die Liste
+    /// abgeschaltet, ist sie leer; dann wird eben getippt.
+    public func oeffentlicheBenutzer(neuerServer: Bool) async -> String {
+        sperre.lock(); let c = neuerServer ? _aufnahme : _client; sperre.unlock()
+        guard let c, let liste = try? await c.oeffentlicheBenutzer() else { return "[]" }
+        var antwort: [Kontoantwort] = []
+        for b in liste {
+            let bild = await c.benutzerbild(b, kante: 180)
+            antwort.append(Kontoantwort(kennung: b.id, name: b.name, aktiv: false, bild: bild?.absoluteString))
+        }
+        return Self.kodiert(antwort)
+    }
+
     public func quickConnectFreigeben(code: String) async -> String {
         await erledigen { try await $0.quickConnectFreigeben(code: code) }
     }
