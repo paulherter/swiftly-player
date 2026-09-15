@@ -113,7 +113,7 @@ private fun TvUnterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> U
         "Series", "Episode" -> TvSerie(app, ziel, oeffnen)
         "Person" -> TvPerson(app, ziel, oeffnen)
         "Genre" -> TvGenre(app, ziel, oeffnen)
-        "Profil" -> ProfilSeite(app, oeffnen, zurueck)
+        "Profil" -> TvProfil(app, oeffnen)
         "WeiteresKonto" -> Box(Modifier.fillMaxSize().background(Stil.grund)) {
             AnmeldeSeite(app, app.servername.value.orEmpty(), "", andererServer = zurueck, weiteresKonto = true) { zurueck() }
         }
