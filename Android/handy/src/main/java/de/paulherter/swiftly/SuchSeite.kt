@@ -258,6 +258,7 @@ private fun LazyGridScope.ganz(schluessel: String, inhalt: @Composable () -> Uni
 @Composable
 private fun Suchfeld(text: String, aendern: (String) -> Unit, fokus: FocusRequester, modifier: Modifier,
                      amTippen: (Boolean) -> Unit, abschicken: () -> Unit) {
+    val tastatur = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     Row(modifier.height(44.dp).clip(RoundedCornerShape(Stil.eckeFeld)).background(Stil.flaeche)
             .clickable(remember { MutableInteractionSource() }, null) { fokus.requestFocus() }
             .padding(start = 14.dp),
@@ -268,7 +269,8 @@ private fun Suchfeld(text: String, aendern: (String) -> Unit, fokus: FocusReques
             BasicTextField(value = text, onValueChange = aendern, singleLine = true,
                 textStyle = TextStyle(fontSize = 16.sp, color = Stil.schrift), cursorBrush = SolidColor(Stil.akzent),
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { abschicken() }),
+                // Wie iOS: Suchen schickt ab **und** schliesst die Tastatur — die Treffer stehen ja schon.
+                keyboardActions = KeyboardActions(onSearch = { abschicken(); tastatur?.hide() }),
                 modifier = Modifier.fillMaxWidth().focusRequester(fokus).onFocusChanged { amTippen(it.isFocused) })
         }
         if (text.isNotEmpty()) {
