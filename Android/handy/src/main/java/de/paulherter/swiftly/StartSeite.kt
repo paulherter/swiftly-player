@@ -84,10 +84,14 @@ private fun reihenLesen(json: String): List<Reihe> {
 fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     var reihen by remember { mutableStateOf(app.startReihen) }
     var fehler by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
+    val e = app.einstellungen
+    // Neu laden, sobald sich Reihenfolge, ausgeblendete Reihen oder Genres aendern.
+    LaunchedEffect(e.neuzugangGetrennt, e.startReihen, e.startAus, e.startGenres) {
         try {
             val json = withContext(Dispatchers.IO) {
-                app.kern.startseite(true, arrayOf(), arrayOf(), "", "", arrayOf(), false).await()
+                app.kern.startseite(e.neuzugangGetrennt, e.startReihen.toTypedArray(), e.startAus.toTypedArray(),
+                                    app.ablage.merkwert("bibliothek-movies").orEmpty(), app.ablage.merkwert("bibliothek-tvshows").orEmpty(),
+                                    e.startGenres.toTypedArray(), false).await()
             }
             reihen = reihenLesen(json).also { app.startReihen = it }
         } catch (e: Throwable) {
@@ -104,7 +108,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         }
     }
 
-    KopfUndInhalt(kopf = { StartKopf(app) }) { kopfDp ->
+    KopfUndInhalt(kopf = { StartKopf(app, oeffnen) }) { kopfDp ->
     Box(Modifier.fillMaxSize()) {
         // Unten: Farbschein, dann die Reihen — sie laufen **unter** dem Kopf durch,
         // statt an seiner Unterkante hart abgeschnitten zu werden.
@@ -138,12 +142,12 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
 
 /** Vorlage: Kopf in `HomeView` — Wortmarke links, `Kopfziele` rechts (Merkliste, Profil, je 44). */
 @Composable
-private fun StartKopf(app: SwiftlyAnwendung) {
+private fun StartKopf(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Wortmarke(hoehe = 30.dp)
         Spacer(Modifier.weight(1f))
-        Kopfziele(app)
+        Kopfziele(app, oeffnen)
     }
 }
 
@@ -222,7 +226,7 @@ private fun KachelAnsicht(k: Kachel, quer: Boolean, oeffnen: (Ziel) -> Unit) {
                 modifier = Modifier.fillMaxSize(),
                 error = { Ersatz(k) }, loading = { Box(Modifier.fillMaxSize().background(Stil.flaeche)) }
             )
-            k.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
+            k.fortschritt?.takeIf { it > 0 && LocalFortschrittZeigen.current }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
         }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(k.name, style = Stil.kachel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)

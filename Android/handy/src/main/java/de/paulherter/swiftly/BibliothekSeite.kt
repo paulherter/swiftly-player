@@ -193,7 +193,7 @@ fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwah
         derivedStateOf { if (raster.firstVisibleItemIndex > 0) 100f else raster.firstVisibleItemScrollOffset / dichte.density }
     }
 
-    KopfUndInhalt(kopf = { BibliothekKopf(app, stand, titel, filterwahl) { versatz } }) { kopfDp ->
+    KopfUndInhalt(kopf = { BibliothekKopf(app, stand, titel, filterwahl, oeffnen) { versatz } }) { kopfDp ->
     BoxWithConstraints(Modifier.fillMaxSize().background(Stil.grund)) {
         // `Stil.spalten(nutzbar:)` — auf jedem Telefon drei.
         val anzahl = Stil.spalten((maxWidth - Stil.randAbstand * 2).value)
@@ -244,7 +244,7 @@ fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwah
 /** Kopf der Bibliothek: Titel oder Bibliothekswahl, Servername, Kopfziele, Pillen, Anzahl. */
 @Composable
 private fun BibliothekKopf(app: SwiftlyAnwendung, stand: Bibliotheksstand, titel: String,
-                           filterwahl: List<String>, versatz: () -> Float) {
+                           filterwahl: List<String>, oeffnen: (Ziel) -> Unit, versatz: () -> Float) {
     val bereich = rememberCoroutineScope()
     // Der Kopf deckt, was darunter durchlaeuft — `Unschaerfekopf(versatz:)` mit Grund.
     Column(Modifier.fillMaxWidth()
@@ -288,7 +288,7 @@ private fun BibliothekKopf(app: SwiftlyAnwendung, stand: Bibliotheksstand, titel
                          maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            Kopfziele(app)
+            Kopfziele(app, oeffnen)
         }
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -327,7 +327,7 @@ fun RasterKachelAnsicht(k: Rasterkachel, modifier: Modifier = Modifier, tun: () 
                     }
                 }
             )
-            k.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
+            k.fortschritt?.takeIf { it > 0 && LocalFortschrittZeigen.current }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
             k.marke?.let { Kachelplakette(it, k.markenzahl, Modifier.align(Alignment.TopEnd)) }
         }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {

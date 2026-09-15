@@ -171,26 +171,31 @@ fun KopfUndInhalt(kopf: @Composable () -> Unit, inhalt: @Composable (kopfhoehe: 
 
 /** Vorlage: `Kopfziele` in `Stil.swift` — Merkliste und Profil, je 44, auf jeder Hauptseite gleich. */
 @Composable
-fun Kopfziele(app: SwiftlyAnwendung) {
+fun Kopfziele(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     Row {
         Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.Bookmark, contentDescription = uebersetzt("Merkliste"), tint = Stil.schrift, modifier = Modifier.size(20.dp))
         }
-        Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-            // Das Bild, sonst der Buchstabe — erst, wenn klar ist, dass keins kommt.
-            SubcomposeAsyncImage(
-                model = app.kern.benutzerbild(90).orElse(null), contentDescription = app.benutzername(),
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(32.dp).clip(CircleShape),
-                error = {
-                    Box(Modifier.fillMaxSize().background(Stil.erhoeht), contentAlignment = Alignment.Center) {
-                        Text(app.benutzername().take(1).uppercase(), color = Stil.schrift,
-                             style = Stil.klein.copy(fontWeight = FontWeight.SemiBold))
-                    }
-                }
-            )
+        Box(Modifier.size(44.dp).antippen { oeffnen(Ziel("profil", uebersetzt("Profil"), "Profil")) }, contentAlignment = Alignment.Center) {
+            Profilbild(app, 32.dp)
         }
     }
+}
+
+/** Das Bild des Kontos, sonst der Buchstabe — erst, wenn klar ist, dass keins kommt (`Profilzeichen`). */
+@Composable
+fun Profilbild(app: SwiftlyAnwendung, groesse: Dp) {
+    SubcomposeAsyncImage(
+        model = app.kern.benutzerbild((groesse.value * 3).toLong()).orElse(null), contentDescription = app.benutzername(),
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.size(groesse).clip(CircleShape),
+        error = {
+            Box(Modifier.fillMaxSize().background(Stil.erhoeht), contentAlignment = Alignment.Center) {
+                Text(app.benutzername().take(1).uppercase(), color = Stil.schrift,
+                     style = TextStyle(fontSize = (groesse.value * 0.38f).sp, fontWeight = FontWeight.SemiBold))
+            }
+        }
+    )
 }
 
 /** Der Balken unten im Bild — 4 hoch, Akzent auf 25 % Weiss. */

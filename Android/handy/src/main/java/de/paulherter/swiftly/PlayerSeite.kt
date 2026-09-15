@@ -54,7 +54,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
+import de.paulherter.swiftly.kern.Kern
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -80,6 +82,14 @@ private fun zeitText(sekunden: Double): String {
     val m = (s % 3600) / 60
     val r = s % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, r) else "%d:%02d".format(m, r)
+}
+
+/** Das Spulzeichen zur eingestellten Spanne — fuer 15 und 60 gibt es kein eigenes. */
+private fun spulzeichen(zurueck: Boolean, sekunden: Int): ImageVector = when (sekunden) {
+    5 -> if (zurueck) Icons.Filled.Replay5 else Icons.Filled.Forward5
+    10 -> if (zurueck) Icons.Filled.Replay10 else Icons.Filled.Forward10
+    30 -> if (zurueck) Icons.Filled.Replay30 else Icons.Filled.Forward30
+    else -> if (zurueck) Icons.Filled.Replay else Icons.Filled.FastForward
 }
 
 private fun tempoText(wert: Float) = NumberFormat.getInstance().format(wert) + "×"
@@ -118,7 +128,9 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
     DisposableEffect(aktivitaet) {
         val fenster = aktivitaet?.window
         val vorher = aktivitaet?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        aktivitaet?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // „Querformat im Player sperren" — sonst darf das Telefon auch hochkant.
+        aktivitaet?.requestedOrientation = if (app.einstellungen.querformatFest) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                           else ActivityInfo.SCREEN_ORIENTATION_FULL_USER
         val leisten = fenster?.let { WindowCompat.getInsetsController(it, it.decorView) }
         leisten?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         leisten?.hide(WindowInsetsCompat.Type.systemBars())
@@ -183,6 +195,10 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
         // verschob und ein falsches Ende meldete; libVLC 3 kennt das nicht, und die `anlaufruhe`
         // aus `Folgenende` faengt ein falsches Ende in den ersten Sekunden ohnehin ab.
         ab?.takeIf { it > 1 }?.let { media.addOption(":start-time=$it") }
+        // Der Puffer aus den Einstellungen; „Normal" laesst VLCs Vorgabe stehen.
+        JSONArray(Kern.pufferstufen()).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
+            .firstOrNull { it.getString("wert") == app.einstellungen.pufferstufe }
+            ?.takeIf { !it.isNull("netz") }?.let { media.addOption(":network-caching=${it.getInt("netz")}") }
         spieler.media = media
         media.release()
         spieler.videoScale = if (bildfuellend) MediaPlayer.ScaleType.SURFACE_FIT_SCREEN else MediaPlayer.ScaleType.SURFACE_BEST_FIT
@@ -225,6 +241,29 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
         beruehrt++
     }
 
+    val zurueckS = app.einstellungen.zurueckSekunden
+    val vorS = app.einstellungen.vorSekunden
+
+    /**
+     * Ton und Untertitel nach den Einstellungen, einmal je Titel, sobald die Spuren bekannt sind.
+     * **Ueber den Namen, den VLC nennt** (`Sprache.passt`) — Sprachkuerzel liefert VLC nicht. Passt
+     * keine Tonspur, bleibt die der Datei: eine falsche ist schlimmer als ihre eigene Wahl.
+     */
+    fun sprachenAnwenden() {
+        val e = app.einstellungen
+        val ton = spieler.audioTracks?.filter { it.id >= 0 }.orEmpty()
+        var tonPasst = false
+        if (e.tonSprache.isNotEmpty()) {
+            val i = Kern.spurWaehlen(ton.map { it.name }.toTypedArray(), e.tonSprache).toInt()
+            if (i >= 0) { spieler.audioTrack = ton[i].id; tonPasst = true }
+        }
+        val spuren = spieler.spuTracks?.filter { it.id >= 0 }.orEmpty()
+        // „Untertitel automatisch": nur, wenn der Ton nicht in der gewaehlten Sprache laeuft.
+        val wollen = e.untertitelSprache.isNotEmpty() && !(e.untertitelAutomatisch && tonPasst)
+        val i = if (wollen) Kern.spurWaehlen(spuren.map { it.name }.toTypedArray(), e.untertitelSprache).toInt() else -1
+        spieler.spuTrack = if (i >= 0) spuren[i].id else -1
+    }
+
     BackHandler { beenden() }
 
     // Oeffnen, dann der Takt.
@@ -242,6 +281,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
                 laenge, (spieler.time / 1000.0).coerceAtLeast(0.0), zeigtBild[0], spieler.isPlaying,
                 spieler.audioTracksCount > 0, amSchieben, SystemClock.elapsedRealtime() < sprungBis[0]))
             if (antwort.optBoolean("ladeschirmWeg")) bildFrei = true
+            if (antwort.optBoolean("spurenAnwenden")) sprachenAnwenden()
             if (!amSchieben && SystemClock.elapsedRealtime() >= sprungBis[0] && antwort.has("position")) {
                 position = antwort.getDouble("position")
             }
@@ -249,7 +289,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
             angebotArt = antwort.optString("angebot", "keiner")
             angebotNach = if (antwort.isNull("nach")) null else antwort.getDouble("nach")
             angebotText = antwort.optString("angebotstext")
-            if (antwort.optBoolean("weiterschalten")) naechsteFolge()
+            if (antwort.optBoolean("weiterschalten") && app.einstellungen.naechsteAutomatisch) naechsteFolge()
             else if (ende[0] && plan?.naechste != true) { beenden(); break }
         }
     }
@@ -319,8 +359,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
                     if (jetzt - letzter < 300) {
                         sichtbar = !sichtbar
                         val links = stelle.x < size.width / 2
-                        springe(position + if (links) -10.0 else 30.0)
-                        sprungblase = if (links) "−10" else "+30"
+                        springe(position + if (links) -zurueckS.toDouble() else vorS.toDouble())
+                        sprungblase = if (links) "−$zurueckS" else "+$vorS"
                         letzter = 0L
                     } else {
                         sichtbar = !sichtbar
@@ -379,10 +419,10 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
             // Mittig, nicht oben oder unten angeklebt — so bleibt sie in beiden Lagen mit dem Daumen erreichbar.
             if (bildFrei) Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(56.dp),
                               verticalAlignment = Alignment.CenterVertically) {
-                Rundknopf(Icons.Filled.Replay10, uebersetzt("%lld Sekunden zurück", 10), 46.dp) { springe(position - 10) }
+                Rundknopf(spulzeichen(true, zurueckS), uebersetzt("%lld Sekunden zurück", zurueckS), 46.dp) { springe(position - zurueckS) }
                 Rundknopf(if (laeuft) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                           uebersetzt(if (laeuft) "Anhalten" else "Abspielen"), 78.dp) { umschalten() }
-                Rundknopf(Icons.Filled.Forward30, uebersetzt("%lld Sekunden vor", 30), 46.dp) { springe(position + 30) }
+                Rundknopf(spulzeichen(false, vorS), uebersetzt("%lld Sekunden vor", vorS), 46.dp) { springe(position + vorS) }
             }
 
             hinweis?.let {

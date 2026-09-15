@@ -34,6 +34,8 @@ class MainActivity : ComponentActivity() {
         val app = application as SwiftlyAnwendung
         setContent {
             var phase by remember { mutableStateOf<Phase>(if (app.sitzungWiederherstellen()) Phase.Start else Phase.Server) }
+            // Abgemeldet: zurueck zur Serverwahl.
+            androidx.compose.runtime.LaunchedEffect(app.abgemeldet.intValue) { if (app.abgemeldet.intValue > 0) phase = Phase.Server }
             // Einmal je Start, nicht je Drehung — deshalb gemerkt.
             var gestartet by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
             Box(Modifier.fillMaxSize().background(Stil.grund)) {

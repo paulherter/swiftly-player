@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import de.paulherter.swiftly.gemeinsam.Texte
 import de.paulherter.swiftly.kern.Kern
+import kotlinx.coroutines.launch
 import coil3.request.crossfade
 import kotlinx.coroutines.future.await
 import org.swift.swiftkit.core.SwiftArena
@@ -21,6 +22,12 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         private set
     lateinit var ablage: Ablage
         private set
+    lateinit var einstellungen: Einstellungen
+        private set
+
+    /** Zaehlt Abmeldungen — die Aktivitaet kehrt dann zur Serverwahl zurueck. */
+    val abgemeldet = androidx.compose.runtime.mutableIntStateOf(0)
+    private val lauf = kotlinx.coroutines.MainScope()
 
     /**
      * **Die zuletzt geladenen Reihen der Startseite.** Compose baut eine Seite beim
@@ -81,11 +88,28 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         ablage = Ablage(this)
+        einstellungen = Einstellungen(ablage)
         Texte.laden(this)
         val sprache = if (Locale.getDefault().language == "de") "de" else "en"
         // Vor dem ersten Text aus dem Paket — sonst stehen dort die Schluessel.
         Kern.paketspracheSetzen(paketspracheEntpacken().absolutePath, sprache)
         kern = Kern.init(ablage.geraeteID(), Build.MODEL ?: "Android", BuildConfigFassung, SwiftArena.ofAuto())
+        qualitaetMelden()
+    }
+
+    /** Direct Play und Bitrate an die Fassade — beim Start und bei jeder Aenderung. */
+    fun qualitaetMelden() = kern.wiedergabeWahlen(einstellungen.immerDirectPlay, einstellungen.bitratenGrenze.toLong())
+
+    /** Abmelden ohne Nachfrage, wie auf iOS: Server Bescheid geben, Sitzung und Zwischenstaende vergessen. */
+    fun abmelden() {
+        lauf.launch {
+            runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.abmelden().await() } }
+            ablage.sitzung = null
+            startReihen = null
+            bibliotheken.clear(); titelSpeicher.clear(); serienSpeicher.clear(); folgenSpeicher.clear(); personenSpeicher.clear()
+            servername.value = null
+            abgemeldet.intValue++
+        }
     }
 
     /** Stellt die gemerkte Sitzung wieder her. `false`, wenn es keine gibt oder sie nicht lesbar ist. */
@@ -120,6 +144,8 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
 
     companion object {
         const val BuildConfigFassung = "1.0.3"
+        /** `Fassung.zeile` auf iOS. */
+        const val FASSUNGSZEILE = "Swiftly Player 1.0.3 (Build 1)"
     }
 }
 

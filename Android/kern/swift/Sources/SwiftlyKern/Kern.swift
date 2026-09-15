@@ -22,6 +22,19 @@ public final class Kern: @unchecked Sendable {
     private var _adressen: Bildadresse?
     private var _sitzung: Session?
     private var _wiedergabe: Wiedergabe?
+    private var _immerDirectPlay = true
+    private var _megabit = 0
+
+    /// Was dem Server als Grenze gemeldet wird — `AppModel.profilBitrate`, die Rechnung im Paket.
+    private var profilBitrate: Int {
+        sperre.lock(); defer { sperre.unlock() }
+        return Bitratengrenze.fuer(immerDirectPlay: _immerDirectPlay, megabit: _megabit)
+    }
+
+    /// Aus den Einstellungen — beim Start und bei jeder Aenderung.
+    public func wiedergabeWahlen(immerDirectPlay: Bool, megabit: Int) {
+        sperre.lock(); _immerDirectPlay = immerDirectPlay; _megabit = megabit; sperre.unlock()
+    }
 
     /// Die laufende Wiedergabe — was `PlayerScreen` auf iOS haelt: Plan, Abschnitte, die
     /// naechste Folge und den Stand des Takts. Kotlin haelt nur Bild und Finger.
@@ -202,8 +215,7 @@ public final class Kern: @unchecked Sendable {
     /// nicht auf sie wartet.
     public func titel(id: String) async throws -> String {
         guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
-        // Die Grenze aus den Einstellungen folgt mit der Einstellungsseite; bis dahin die Vorgabe.
-        let grenze = Bitratengrenze.fuer(immerDirectPlay: true, megabit: 0)
+        let grenze = profilBitrate
         async let frisch = c.item(id: id)
         async let geplant = try? c.playbackPlan(for: id, profile: .vlc(maxBitrate: grenze))
         let i = try await frisch
@@ -269,7 +281,7 @@ public final class Kern: @unchecked Sendable {
         var plan: PlaybackPlan?
         if let stand {
             plan = try? await c.playbackPlan(for: stand.id,
-                                             profile: .vlc(maxBitrate: Bitratengrenze.fuer(immerDirectPlay: true, megabit: 0)))
+                                             profile: .vlc(maxBitrate: profilBitrate))
         }
         // Die Besetzung der Folge, die als Naechstes laeuft — sonst die der Serie.
         let leute = (stand?.darsteller.isEmpty == false ? stand?.darsteller : nil) ?? serie.darsteller
@@ -320,6 +332,70 @@ public final class Kern: @unchecked Sendable {
         return try json(zeilen)
     }
 
+    // MARK: Konto und Server
+
+    /// Name und Fassung des Servers — fuer Profil und Einstellungen.
+    public func serverauskunft() async throws -> String {
+        guard let c = client else { throw Kernfehler.nichtVerbunden }
+        let info = try await c.publicSystemInfo()
+        return try json(Serverantwort(name: info.serverName ?? "", version: info.version ?? "", adresse: ""))
+    }
+
+    /// Meldet beim Server ab und vergisst die Sitzung. Die Ablage leert Kotlin.
+    public func abmelden() async {
+        if let c = client { await c.abmelden() }
+        setzen(nil, nil, nil)
+    }
+
+    /// Den Code eines anderen Geraets freigeben — `QuickConnectView`. Leer heisst: erledigt.
+    public func quickConnectFreigeben(code: String) async -> String {
+        await erledigen { try await $0.quickConnectFreigeben(code: code) }
+    }
+
+    /// Die Genres des Servers — fuer „Genre hinzufuegen".
+    public func gattungen() async throws -> String {
+        guard let c = client else { throw Kernfehler.nichtVerbunden }
+        return try json(try await c.gattungen())
+    }
+
+    // MARK: Einstellungen — die Werte stehen im Paket
+
+    public static func bitratenstufen() -> String {
+        kodiert(Bitrate.stufen.map { Wahlantwort(wert: String($0.wert), text: Bitrate.text($0.wert)) })
+    }
+
+    public static func spannen() -> String { kodiert(Spanne.stufen.map(\.wert)) }
+
+    /// Mit leerer Beschriftung „Wie die Datei" (Ton), sonst diese als erster Eintrag (Untertitel: „Aus").
+    public static func sprachen(aus: String) -> String {
+        kodiert((aus.isEmpty ? Sprachwahl.alle : Sprachwahl.alle(aus: aus)).map { Wahlantwort(wert: $0.wert, text: $0.name) })
+    }
+
+    public static func pufferstufen() -> String {
+        kodiert(Pufferstufe.allCases.map { Pufferantwort(wert: $0.rawValue, text: $0.name, netz: $0.netzvorlaufMillisekunden) })
+    }
+
+    /// Welche Spur zu einer Sprache passt — `Sprache.passt` ueber den Namen, den VLC nennt. -1: keine.
+    public static func spurWaehlen(namen: [String], sprache: String) -> Int {
+        namen.firstIndex { Sprache.passt($0, zu: sprache) } ?? -1
+    }
+
+    /// Die Reihen der Startseite in der geltenden Folge, nur die zur Neuzugangs-Einstellung passenden.
+    /// `text` ist der deutsche Listenname — Kotlin uebersetzt ihn.
+    public static func startreihen(abgelegt: [String], getrennt: Bool) -> String {
+        kodiert(Startreihenfolge.geltend(abgelegt: abgelegt).filter { $0.passt(getrennt: getrennt) }
+            .map { Wahlantwort(wert: $0.rawValue, text: $0.listenname) })
+    }
+
+    public static func startreiheVerschoben(was: String, um: Int, abgelegt: [String], getrennt: Bool) -> String {
+        guard let reihe = Startreihe(rawValue: was) else { return kodiert(abgelegt) }
+        return kodiert(Startreihenfolge.verschoben(reihe, um: um, abgelegt: abgelegt, getrennt: getrennt))
+    }
+
+    private static func kodiert<T: Encodable>(_ wert: T) -> String {
+        (try? JSONEncoder().encode(wert)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
+    }
+
     // MARK: Suche
 
     /// `SucheView.suchen` ohne Seerr: `JellyfinClient.suche` (nur Filme und Serien), ohne doppelte
@@ -355,7 +431,7 @@ public final class Kern: @unchecked Sendable {
         guard let c = client else { throw Kernfehler.nichtVerbunden }
         try? await c.faehigkeitenMelden()
         let item = try await c.item(id: id)
-        let grenze = Bitratengrenze.fuer(immerDirectPlay: true, megabit: 0)
+        let grenze = profilBitrate
         async let geplant = c.playbackPlan(for: id, profile: .vlc(maxBitrate: grenze))
         async let teile = c.abschnitte(fuer: id)
         async let danach = naechsteFolge(nach: item, c)
@@ -615,6 +691,8 @@ struct Folgenantwort: Encodable {
     let gesehen: Bool
     let ab: Double?
 }
+struct Wahlantwort: Encodable { let wert, text: String }
+struct Pufferantwort: Encodable { let wert, text: String; let netz: Int? }
 struct Spielplanantwort: Encodable {
     let url: String
     let lossless: Bool

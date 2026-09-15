@@ -140,7 +140,7 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
         }
     }
 
-    CompositionLocalProvider(LocalBereichsmass provides bereichsmass) {
+    CompositionLocalProvider(LocalBereichsmass provides bereichsmass, LocalFortschrittZeigen provides app.einstellungen.fortschritt) {
         Box(Modifier.fillMaxSize().background(Stil.grund)) {
             val ab = if (bewegt && oben.isNotEmpty()) oben.size - 1 else oben.size
             for (tiefe in ab..oben.size) {
@@ -196,6 +196,12 @@ private fun Unterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
     when (ziel.typ) {
         "Series", "Episode" -> SerienSeite(app, ziel, oeffnen, zurueck)
         "Person" -> PersonSeite(app, ziel, oeffnen, zurueck)
+        "Profil" -> ProfilSeite(app, oeffnen, zurueck)
+        "QuickConnect" -> QuickConnectSeite(app, zurueck)
+        "Wiedergabeeinstellungen" -> WiedergabeEinstellungenSeite(app, zurueck)
+        "Darstellung" -> DarstellungSeite(app, oeffnen, zurueck)
+        "Einstellungen" -> EinstellungenSeite(app, zurueck)
+        "Genrewahl" -> GenrewahlSeite(app, zurueck)
         else -> TitelSeite(app, ziel, oeffnen, zurueck)
     }
 }

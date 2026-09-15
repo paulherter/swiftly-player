@@ -130,7 +130,7 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 verticalAlignment = Alignment.Top) {
                 Text(uebersetzt("Suchen"), style = Stil.titelGross.copy(letterSpacing = (-0.6).sp), color = Stil.schrift,
                      modifier = Modifier.weight(1f))
-                Kopfziele(app)
+                Kopfziele(app, oeffnen)
             }
         }
 
