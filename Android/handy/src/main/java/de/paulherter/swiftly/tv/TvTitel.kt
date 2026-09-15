@@ -298,6 +298,9 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     // Emulator nicht sichtbar einblendete, steht dort.
     val eingeblendet = rememberTvEinblendung(ziel.id)
     val einblendAlpha = { eingeblendet.value }
+    // Vorlage: `HauptView.errorMessage`-Band, angebunden wie am Handy (`TitelSeite.meldung`) —
+    // Android hat keine geteilte Fehlerquelle wie `AppModel.errorMessage`, deshalb eigener Zustand.
+    var meldung by remember { mutableStateOf<String?>(null) }
 
     Box(Modifier.fillMaxSize()) {
         TvAbschnittsseite { a ->
@@ -308,10 +311,15 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                              direktplay = titel?.planDa == true && titel.lossless,
                              hinweis = if (titel?.planDa == true && !titel.lossless) titel.methode else null,
                              knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf)) {
+                    // Vorlage: `DetailView.starte` — ohne Plan wird gemeldet statt schweigend nichts zu tun.
                     TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
                         if (titel?.planDa == true) app.spiel.value = Abspielwunsch(ziel.id, titel.fortsetzenAb)
+                        else meldung = uebersetzt("Der Server nennt keine Quelle für diesen Titel.")
                     }
-                    if (titel?.fortsetzenAb != null) TvKnopf(null, Icons.Filled.Replay) { app.spiel.value = Abspielwunsch(ziel.id, null) }
+                    if (titel?.fortsetzenAb != null) TvKnopf(null, Icons.Filled.Replay) {
+                        if (titel.planDa) app.spiel.value = Abspielwunsch(ziel.id, null)
+                        else meldung = uebersetzt("Der Server nennt keine Quelle für diesen Titel.")
+                    }
                     TvKnopf(null, if (titel?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
                         val an = !(titel?.gemerkt ?: false)
                         titel?.let { t = it.copy(gemerkt = an) }
@@ -337,10 +345,23 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                                   "zuruecksetzen" to Icons.Filled.RestartAlt, "metadaten" to Icons.Filled.Refresh)) { wahl ->
                             lauf.launch {
                                 when (wahl) {
-                                    "gesehen" -> if (withContext(Dispatchers.IO) { app.kern.gesehen(ziel.id, !gesehenJetzt).await() }.isEmpty()) titel.let { t = it.copy(gesehen = !gesehenJetzt) }
+                                    // Vorlage: `gesehenHandlung`/`DetailView.swift:189-194` (VERHALTEN D6) —
+                                    // sofort umschalten, bei Fehler zurueckdrehen und melden.
+                                    "gesehen" -> {
+                                        t = tt.copy(gesehen = !gesehenJetzt)
+                                        val grund = withContext(Dispatchers.IO) { app.kern.gesehen(ziel.id, !gesehenJetzt).await() }
+                                        if (grund.isNotEmpty()) { t = tt.copy(gesehen = gesehenJetzt); meldung = fehlertext(grund) }
+                                    }
                                     "vonvorn" -> app.spiel.value = Abspielwunsch(ziel.id, null)
-                                    "zuruecksetzen" -> if (withContext(Dispatchers.IO) { app.kern.gesehen(ziel.id, false).await() }.isEmpty()) neuLaden()
-                                    "metadaten" -> withContext(Dispatchers.IO) { app.kern.metadatenAuffrischen(ziel.id).await() }
+                                    "zuruecksetzen" -> {
+                                        val grund = withContext(Dispatchers.IO) { app.kern.gesehen(ziel.id, false).await() }
+                                        if (grund.isNotEmpty()) meldung = fehlertext(grund)
+                                        else { meldung = uebersetzt("Der Fortschritt ist zurückgesetzt."); neuLaden() }
+                                    }
+                                    "metadaten" -> {
+                                        val grund = withContext(Dispatchers.IO) { app.kern.metadatenAuffrischen(ziel.id).await() }
+                                        meldung = if (grund.isEmpty()) uebersetzt("Der Server liest die Metadaten neu ein.") else fehlertext(grund)
+                                    }
                                 }
                             }
                         }
@@ -359,6 +380,9 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                     items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
                 }
                 Spacer(Modifier.height(40.dp))
+        }
+        meldung?.let { text ->
+            TvHinweisstreifen(text, Modifier.align(Alignment.TopCenter).padding(top = 74.dp)) { meldung = null }
         }
     }
 }
@@ -481,7 +505,8 @@ fun TvGenre(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     val liste = titel
     val fokus = ersterFokus(liste != null)
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        TvRaster(liste.orEmpty(), fokus = fokus, oeffnen = oeffnen, laedt = liste == null, kopf = {
+        // Vorlage: `GenreView.swift:37` — `mitUnterzeile: false`, wie im Bibliotheksraster.
+        TvRaster(liste.orEmpty(), fokus = fokus, oeffnen = oeffnen, laedt = liste == null, mitUnterzeile = false, kopf = {
             Column {
                 Text(ziel.name, style = TvStil.reihe, color = Stil.schrift, maxLines = 1,
                      modifier = Modifier.padding(top = 48.dp, bottom = TvStil.titelAbstand))

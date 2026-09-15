@@ -115,6 +115,9 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     // Warum `rememberTvEinblendung` und nicht `animateFloatAsState`: siehe dort (TvStil.kt).
     val eingeblendet = rememberTvEinblendung(ziel.id)
     val einblendAlpha = { eingeblendet.value }
+    // Vorlage: `HauptView.errorMessage`-Band, angebunden wie am Handy (`SerienSeite.meldung`) —
+    // Android hat keine geteilte Fehlerquelle wie `AppModel.errorMessage`, deshalb eigener Zustand.
+    var meldung by remember { mutableStateOf<String?>(null) }
 
     Box(Modifier.fillMaxSize()) {
         TvAbschnittsseite { a ->
@@ -126,10 +129,16 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                              hinweis = if (serie?.planDa == true && !serie.lossless) serie.methode else null,
                              knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf)) {
                     // Nie gesperrt, solange geladen wird: der Knopf muss ein Fokusziel bleiben.
+                    // Vorlage: `SerienView.starte` — ohne Plan wird gemeldet statt schweigend nichts zu tun.
                     TvKnopf(serie?.knopftext?.ifEmpty { null } ?: uebersetzt("Lädt…"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
-                        serie?.stand?.let { app.spiel.value = Abspielwunsch(it.id, it.ab) }
+                        val st = serie?.stand
+                        if (st != null && serie?.planDa == true) app.spiel.value = Abspielwunsch(st.id, st.ab)
+                        else if (st != null) meldung = uebersetzt("Der Server nennt keine Quelle für diese Folge.")
                     }
-                    serie?.stand?.takeIf { it.fortsetzen }?.let { st -> TvKnopf(null, Icons.Filled.Replay) { app.spiel.value = Abspielwunsch(st.id, null) } }
+                    serie?.stand?.takeIf { it.fortsetzen }?.let { st -> TvKnopf(null, Icons.Filled.Replay) {
+                        if (serie?.planDa == true) app.spiel.value = Abspielwunsch(st.id, null)
+                        else meldung = uebersetzt("Der Server nennt keine Quelle für diese Folge.")
+                    } }
                     TvKnopf(null, if (serie?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
                         val alt = serie ?: return@TvKnopf
                         s = alt.copy(gemerkt = !alt.gemerkt)
@@ -157,19 +166,36 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                                   "metadaten" to Icons.Filled.Refresh)) { wahl ->
                             lauf.launch {
                                 when (wahl) {
-                                    "gesehen" -> if (withContext(Dispatchers.IO) { app.kern.gesehen(alt.id, !alt.gesehen).await() }.isEmpty()) s = alt.copy(gesehen = !alt.gesehen)
-                                    "vonvorn" -> alt.stand?.let { app.spiel.value = Abspielwunsch(it.id, null) }
+                                    // Vorlage: `gesehenHandlung`/`DetailView.swift:189-194` (VERHALTEN D6) —
+                                    // sofort umschalten, bei Fehler zurueckdrehen und melden.
+                                    "gesehen" -> {
+                                        s = alt.copy(gesehen = !alt.gesehen)
+                                        val grund = withContext(Dispatchers.IO) { app.kern.gesehen(alt.id, !alt.gesehen).await() }
+                                        if (grund.isNotEmpty()) { s = alt.copy(gesehen = alt.gesehen); meldung = fehlertext(grund) }
+                                    }
+                                    "vonvorn" -> alt.stand?.let { st ->
+                                        if (serie?.planDa == true) app.spiel.value = Abspielwunsch(st.id, null)
+                                        else meldung = uebersetzt("Der Server nennt keine Quelle für diese Folge.")
+                                    }
+                                    // Vorlage: `Titelhandlungen.fuerSerie` — ohne naechste Folge wird gemeldet.
                                     "naechste" -> alt.stand?.let { st ->
                                         val danach = withContext(Dispatchers.IO) { app.kern.folgeDanach(st.id, alt.id).await() }
                                         if (danach.isNotEmpty()) app.spiel.value = Abspielwunsch(danach, null)
+                                        else meldung = uebersetzt("Danach kommt nichts mehr.")
                                     }
                                     "staffel" -> gewaehlteStaffel?.let { st ->
-                                        if (withContext(Dispatchers.IO) { app.kern.gesehen(st.id, true).await() }.isEmpty()) {
+                                        val grund = withContext(Dispatchers.IO) { app.kern.gesehen(st.id, true).await() }
+                                        if (grund.isNotEmpty()) meldung = fehlertext(grund)
+                                        else {
+                                            meldung = uebersetzt("%@ ist als gesehen vermerkt.", st.name)
                                             neuLaden()
                                             serie?.id?.let { sid -> folgenLaden(sid, staffel) }
                                         }
                                     }
-                                    "metadaten" -> withContext(Dispatchers.IO) { app.kern.metadatenAuffrischen(alt.id).await() }
+                                    "metadaten" -> {
+                                        val grund = withContext(Dispatchers.IO) { app.kern.metadatenAuffrischen(alt.id).await() }
+                                        meldung = if (grund.isEmpty()) uebersetzt("Der Server liest die Metadaten neu ein.") else fehlertext(grund)
+                                    }
                                 }
                             }
                         }
@@ -225,6 +251,9 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                     items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
                 }
                 Spacer(Modifier.height(40.dp))
+        }
+        meldung?.let { text ->
+            TvHinweisstreifen(text, Modifier.align(Alignment.TopCenter).padding(top = 74.dp)) { meldung = null }
         }
     }
 }

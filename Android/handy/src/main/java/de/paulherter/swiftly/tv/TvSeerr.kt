@@ -36,7 +36,6 @@ import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -153,18 +152,22 @@ fun TvSeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
     var angefragt by remember(ziel.id) { mutableStateOf(false) }
     var bestaetigt by remember { mutableStateOf(false) }
     var laeuft by remember { mutableStateOf(false) }
+    // Vorlage: `SeerrDetailView.fehler` auf tvOS — dort steht der Grund neben dem Knopf, hier ueber
+    // `TvHinweisstreifen` wie am Handy; vorher verschluckte `anfragen()` den Grund ganz.
+    var meldung by remember { mutableStateOf<String?>(null) }
     val lauf = rememberCoroutineScope()
     LaunchedEffect(ziel.id) {
         detail = runCatching { JSONObject(withContext(Dispatchers.IO) { app.kern.seerrDetail(k.art, k.id.toLong()).await() }) }.getOrNull()
     }
-    LaunchedEffect(bestaetigt) { if (bestaetigt) { delay(5000); bestaetigt = false } }
+    // Vorlage: `SeerrView` — kein 5-Sekunden-Zeitgeber. Zurueckgesetzt wird nur ueber Knopfdruck,
+    // Erfolg (`anfragen`) oder das Verlassen der Seite (eigener `remember`, faellt beim Verlassen weg).
 
     fun anfragen(staffeln: List<Int>) {
         if (k.istSerie && staffeln.isEmpty()) return
         laeuft = true
         lauf.launch {
             val grund = withContext(Dispatchers.IO) { app.kern.seerrAnfragen(k.art, k.id.toLong(), staffeln.joinToString(",")).await() }
-            if (grund.isEmpty()) { angefragt = true; stand = 2; anfragbar = false }
+            if (grund.isEmpty()) { angefragt = true; stand = 2; anfragbar = false } else meldung = fehlertext(grund)
             laeuft = false; bestaetigt = false
         }
     }
@@ -246,6 +249,9 @@ fun TvSeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
                     }
                 }
                 Spacer(Modifier.height(40.dp))
+        }
+        meldung?.let { text ->
+            TvHinweisstreifen(text, Modifier.align(Alignment.TopCenter).padding(top = 74.dp)) { meldung = null }
         }
     }
 }

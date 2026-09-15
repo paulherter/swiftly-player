@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -385,4 +386,27 @@ fun TvKopfverlauf(modifier: Modifier = Modifier, kopfhoehe: Dp = 64.dp, ausklang
     )
     Box(modifier.fillMaxWidth().height(gesamt)
             .background(Brush.verticalGradient(colorStops = stufen.toTypedArray())))
+}
+
+/**
+ * Vorlage: `Hinweisstreifen` in `Sources/tvOS/Stil.swift` — Warnband mit Dreieck und Text, geht nach
+ * sechs Sekunden von selbst. Masse gegenueber tvOS halbiert, wie ueberall sonst in `TvStil`.
+ * Angebunden wie am Handy (`TitelSeite.Hinweisstreifen`): eigener `meldung`-Zustand je Seite, kein
+ * geteilter Ort wie `AppModel.errorMessage` auf tvOS — Android hat keine solche Quelle.
+ */
+@Composable
+fun TvHinweisstreifen(text: String, modifier: Modifier = Modifier, schliessen: () -> Unit) {
+    LaunchedEffect(text) {
+        kotlinx.coroutines.delay(6000)
+        schliessen()
+    }
+    Row(modifier.widthIn(max = 550.dp)
+            .clip(RoundedCornerShape(TvStil.ecke))
+            .background(Stil.erhoeht)
+            .border(1.dp, Stil.warnung.copy(alpha = 0.3f), RoundedCornerShape(TvStil.ecke))
+            .padding(horizontal = 15.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Filled.Warning, contentDescription = null, tint = Stil.warnung, modifier = Modifier.size(13.dp))
+        Text(text, style = TvStil.kachel, color = Stil.warnung, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
 }

@@ -431,7 +431,8 @@ class Spielwerk(
     private fun sprachenAnwenden() {
         val e = app.einstellungen
         val ton = spieler.audioTracks?.filter { it.id >= 0 }.orEmpty()
-        var tonPasst = false
+        // Vorlage: `VLCPlayer.swift:1326-1328` — keine Vorgabe, also nichts einzuwenden.
+        var tonPasst = e.tonSprache.isEmpty()
         if (e.tonSprache.isNotEmpty()) {
             val i = Kern.spurWaehlen(ton.map { it.name }.toTypedArray(), e.tonSprache).toInt()
             if (i >= 0) { spieler.audioTrack = ton[i].id; tonPasst = true }
@@ -500,7 +501,7 @@ class Spielwerk(
                         "vor" -> springe(position + vorS)
                         "zurueck" -> springe(position - zurueckS)
                         "naechste" -> if (plan?.naechste == true) naechsteFolge()
-                        "vorige" -> springe(0.0)
+                        // Vorlage: `case .vorige: break` in `PlayerScreen.swift` (tvOS/iOS) — ohne Wirkung.
                     }
                 }
             }

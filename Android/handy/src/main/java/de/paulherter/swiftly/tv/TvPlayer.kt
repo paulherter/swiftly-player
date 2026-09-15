@@ -51,6 +51,7 @@ import coil3.compose.AsyncImage
 import de.paulherter.swiftly.Abspielwunsch
 import de.paulherter.swiftly.Belegzeile
 import de.paulherter.swiftly.Folge
+import de.paulherter.swiftly.Ladefeld
 import de.paulherter.swiftly.Ruck
 import de.paulherter.swiftly.Spielwerk
 import de.paulherter.swiftly.SwiftlyAnwendung
@@ -439,7 +440,19 @@ private fun TvFolgenblatt(app: SwiftlyAnwendung, schliessen: () -> Unit, ausgang
                 }
                 Spacer(Modifier.height(28.dp))
                 when {
-                    laedt -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { TvLader(groesse = 48.dp) }
+                    // Vorlage: `Folgenblatt.swift:38-41` — drei `Ladefeld`-Zeilen in Form der
+                    // Folgenzeile (Vorschaubild, Titel, Laenge) statt eines Rings.
+                    laedt -> Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        repeat(4) {
+                            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                                Ladefeld(Modifier.size(TvStil.querBreite, TvStil.querHoehe), TvStil.eckeKachel)
+                                Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Ladefeld(Modifier.fillMaxWidth(0.5f).height(17.dp), 4.dp)
+                                    Ladefeld(Modifier.width(80.dp).height(13.dp), 4.dp)
+                                }
+                            }
+                        }
+                    }
                     else -> LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         itemsIndexed(folgen, key = { _, f -> f.id }) { i, f ->
                             TvFolgenzeile(f, modifier = if (i == 0) Modifier.focusRequester(erste) else Modifier) { waehlen(f.id) }

@@ -235,7 +235,9 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                             }
                         }
                         Abteil.Server -> {
-                            TvAnzeige(uebersetzt("Adresse"), host.ifEmpty { "—" })
+                            // Vorlage: `ProfilView.swift:423` `model.serverName` — der Servername, nicht
+                            // die gespeicherte Adresse; nur ohne Namen faellt es auf den Host zurueck.
+                            TvAnzeige(uebersetzt("Adresse"), server?.first?.ifEmpty { null } ?: app.servername.value ?: host.ifEmpty { "—" })
                             Trennlinie()
                             TvAnzeige(uebersetzt("Fassung"), server?.second?.let { "Jellyfin $it" } ?: "—")
                             TvAnzeige("Swiftly", SwiftlyAnwendung.FASSUNGSZEILE.removePrefix("Swiftly Player "))
