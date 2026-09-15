@@ -55,6 +55,12 @@ import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Info
+import de.paulherter.swiftly.kern.Kern
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -90,6 +96,7 @@ internal suspend fun weiterschauenWunsch(app: SwiftlyAnwendung, id: String): Abs
 }.getOrNull()
 
 /** Vorlage: `HomeView` in `Sources/Shared/HomeView.swift` (Kopf, Reihen, Kacheln). */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     var reihen by remember { mutableStateOf(app.startReihen) }
@@ -106,8 +113,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     }
     var fehler by remember { mutableStateOf<String?>(null) }
     val e = app.einstellungen
-    // Neu laden, sobald sich Reihenfolge, ausgeblendete Reihen oder Genres aendern.
-    LaunchedEffect(e.neuzugangGetrennt, e.startReihen, e.startAus, e.startGenres, e.genreChips) {
+    suspend fun laden() {
         try {
             val json = withContext(Dispatchers.IO) {
                 app.kern.startseite(e.neuzugangGetrennt, e.startReihen.toTypedArray(), e.startAus.toTypedArray(),
@@ -115,8 +121,42 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                                     e.startGenres.toTypedArray(), e.genreChips).await()
             }
             reihen = reihenLesen(json).also { app.startReihen = it }
+            app.startGeladenUm = System.currentTimeMillis()
+            fehler = null
         } catch (e: Throwable) {
             fehler = e.message ?: e.toString()
+        }
+    }
+    // Neu laden, sobald sich Reihenfolge, ausgeblendete Reihen oder Genres aendern.
+    LaunchedEffect(e.neuzugangGetrennt, e.startReihen, e.startAus, e.startGenres, e.genreChips) { laden() }
+    // **Nach dem Zusehen neu holen, ohne Frist** (D8): „Weiterschauen" ist dann sicher veraltet.
+    val spielt = app.spiel.value != null
+    var hatGespielt by remember { mutableStateOf(false) }
+    LaunchedEffect(spielt) { if (spielt) hatGespielt = true else if (hatGespielt) { hatGespielt = false; laden() } }
+    // Zurueck in die App: neu, wenn der Stand aelter als die Frist aus dem Paket ist.
+    @Suppress("DEPRECATION")
+    val lebenszyklus = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lebenszyklus) {
+        lebenszyklus.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            if (Kern.auffrischungFaellig(app.startGeladenUm)) laden()
+        }
+    }
+    var zieht by remember { mutableStateOf(false) }
+    val ziehstand = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
+    // Langer Druck auf „Weiterschauen": zur Uebersicht, oder gesehen/ungesehen — **beide immer**:
+    // eine nur durchgesprungene Folge gilt als angefangen, „ungesehen" holt sie aus der Reihe.
+    fun halten(k: Kachel) {
+        app.blatt.value = Blattwunsch(k.name, listOf(
+            Wahl("uebersicht", uebersetzt("Zur Übersicht")),
+            Wahl("gesehen", uebersetzt("Als gesehen markieren")),
+            Wahl("ungesehen", uebersetzt("Als ungesehen markieren"))), null,
+            mapOf("uebersicht" to androidx.compose.material.icons.Icons.Outlined.Info,
+                  "gesehen" to androidx.compose.material.icons.Icons.Outlined.CheckCircle,
+                  "ungesehen" to androidx.compose.material.icons.Icons.Outlined.VisibilityOff)) { wahl ->
+            when (wahl) {
+                "uebersicht" -> oeffnen(Ziel(k.id, k.name, k.typ))
+                else -> lauf.launch { withContext(Dispatchers.IO) { app.kern.gesehen(k.id, wahl == "gesehen").await() }; laden() }
+            }
         }
     }
     val liste = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -134,6 +174,13 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         // Unten: Farbschein, dann die Reihen — sie laufen **unter** dem Kopf durch,
         // statt an seiner Unterkante hart abgeschnitten zu werden.
         Farbschein({ versatz }, ausgespartOben = kopfDp)
+        // **Ziehen laedt neu** (`.refreshable`). Der Kreis erscheint unter dem Kopf, nicht dahinter.
+        androidx.compose.material3.pulltorefresh.PullToRefreshBox(zieht, onRefresh = { lauf.launch { zieht = true; laden(); zieht = false } },
+            state = ziehstand, modifier = Modifier.fillMaxSize(),
+            indicator = {
+                androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator(ziehstand, zieht,
+                    Modifier.align(Alignment.TopCenter).padding(top = kopfDp), containerColor = Stil.erhoeht, color = Stil.akzent)
+            }) {
         LazyColumn(state = liste, verticalArrangement = Arrangement.spacedBy(Stil.reihenAbstand),
                    contentPadding = PaddingValues(top = kopfDp + 8.dp, bottom = 24.dp),
                    modifier = Modifier.fillMaxSize().bereichsinhalt()) {
@@ -147,8 +194,9 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 Gattungschips(e.startGenres) { g -> oeffnen(Ziel(g, g, "Genre")) }
             }
             items(reihen ?: emptyList(), key = { it.titel }) { reihe ->
-                ReiheAnsicht(reihe, oeffnen, if (reihe.quer) { k -> weiterschauen(k) } else null, Modifier.animateItem(fadeInSpec = Bewegung.einblenden(), placementSpec = null, fadeOutSpec = null))
+                ReiheAnsicht(reihe, oeffnen, if (reihe.quer) { k -> weiterschauen(k) } else null, if (reihe.quer) { k -> halten(k) } else null, Modifier.animateItem(fadeInSpec = Bewegung.einblenden(), placementSpec = null, fadeOutSpec = null))
             }
+        }
         }
         // Oben: Kopfverlauf (zieht erst beim Scrollen auf), darueber der Farbschein auf
         // Kopfhoehe beschnitten — `Farbschein(fenster: .ueberDemVerlauf)` —, dann der Kopf.
@@ -228,23 +276,28 @@ private fun Farbschein(versatz: () -> Float, ausgespartOben: Dp = 0.dp) {
 }
 
 @Composable
-private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, direkt: ((Kachel) -> Unit)?, modifier: Modifier = Modifier) {
+private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, direkt: ((Kachel) -> Unit)?, halten: ((Kachel) -> Unit)?, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(11.dp)) {
         Text(reihe.titel, style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift,
              modifier = Modifier.padding(horizontal = Stil.randAbstand))
         LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
                 horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand)) {
-            items(reihe.kacheln, key = { it.id }) { k -> KachelAnsicht(k, reihe.quer) { direkt?.invoke(k) ?: oeffnen(Ziel(k.id, k.name, k.typ)) } }
+            items(reihe.kacheln, key = { it.id }) { k -> KachelAnsicht(k, reihe.quer, halten?.let { h -> { h(k) } }) { direkt?.invoke(k) ?: oeffnen(Ziel(k.id, k.name, k.typ)) } }
         }
     }
 }
 
 /** Vorlage: `Kachel` in `HomeView.swift` — 112×168 hochkant, 236×133 quer, Ecke 10, Balken 4 unten. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun KachelAnsicht(k: Kachel, quer: Boolean, tun: () -> Unit) {
+private fun KachelAnsicht(k: Kachel, quer: Boolean, lang: (() -> Unit)? = null, tun: () -> Unit) {
     val breite: Dp = if (quer) 236.dp else Stil.kachelBreite
     val hoehe: Dp = if (quer) 133.dp else Stil.kachelHoehe
-    Column(Modifier.width(breite).einblenden().antippen(tun), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    val ruck = rememberRuck()
+    val beruehrung = Modifier.then(if (lang == null) Modifier.antippen(tun) else
+        Modifier.combinedClickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null,
+            onLongClick = { ruck(Ruck.Mittel); lang() }, onClick = tun))
+    Column(Modifier.width(breite).einblenden().then(beruehrung), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.size(breite, hoehe).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             val adresse = if (quer) k.quer ?: k.plakat else k.plakat
             // **Kein `SubcomposeAsyncImage` in Reihen**: es komponiert je Kachel nach und kostete beim

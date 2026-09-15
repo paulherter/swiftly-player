@@ -800,6 +800,12 @@ public final class Kern: @unchecked Sendable {
             beschaedigt: roh.beschaedigt, spruenge: roh.spruenge))) ?? "{}"
     }
 
+    /// `Auffrischung.faelligBeiRueckkehr` — neu laden, wenn der letzte Stand aelter als 30 s ist.
+    /// `zuletztMs` in Millisekunden seit 1970, 0 heisst: noch nie geladen.
+    public static func auffrischungFaellig(zuletztMs: Int64) -> Bool {
+        Auffrischung.faelligBeiRueckkehr(zuletzt: zuletztMs > 0 ? Date(timeIntervalSince1970: Double(zuletztMs) / 1000) : nil)
+    }
+
     // MARK: Hier weiterschauen
 
     /// Was auf einem anderen Geraet desselben Kontos laeuft und sich uebernehmen laesst — die Regel

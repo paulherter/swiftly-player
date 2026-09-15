@@ -37,6 +37,8 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
      * eine Sekunde leer. Auf iOS haelt `HauptView` das `Startseitenmodell` genauso.
      */
     var startReihen: List<Reihe>? = null
+    /** Wann die Startseite zuletzt geladen wurde — fuer `Auffrischung` beim Zurueckkommen. */
+    var startGeladenUm = 0L
 
     /** Je Gattung ein Stand — wie die Modelle in `HauptView`, die den Bereichswechsel ueberleben. */
     val bibliotheken = mutableMapOf<String, Bibliotheksstand>()
