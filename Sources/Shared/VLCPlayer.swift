@@ -127,7 +127,52 @@ final class VLCPlayerView: Basisansicht {
     /// Swiftfin hat kein PiP — und Swiftfin springt schnell.
     static var pipAbgeschaltet = false
 
-    let player = VLCMediaPlayer()
+    /// **Eine eigene Bibliothek, damit VLC keine Bilder vorab wegwirft.**
+    ///
+    /// DVD-Rips ruckelten auf Apple TV und iPhone, 4K-HEVC nicht; beim
+    /// Kollegen alle DVD-Rips, also auch progressive. Paul am Geraet:
+    /// dekodiert Ø 22,6–25,4, gezeigt Ø 22,6–23,7, verworfen bis 298.
+    ///
+    /// **Der Ausgabeweg, im tvOS-Simulator protokolliert** (dessen VLCKit ist
+    /// wie am Geraet mit TARGET_OS_IPHONE gebaut): `samplebufferdisplay`
+    /// nimmt nur `CVPX_BGRA` (VLCSampleBufferDisplay.m, CreateCVPXConverter).
+    /// Software-Bilder laufen deshalb `I420 -> swscale -> BGRA -> cvpx`, jedes
+    /// Bild auf der CPU. HEVC kommt von VideoToolbox schon als CVPixelBuffer.
+    /// Der Mac nimmt einen anderen Weg (`vout_macosx`, OpenGL) und zeigt
+    /// davon nichts.
+    ///
+    /// **Verworfen wird vor dem Zeichnen, nach einer Schaetzung.** Der vout
+    /// nimmt den *Hoechstwert* von Filter- und Renderdauer
+    /// (video_output.c, IsPictureLateToStaticFilter) und wirft ein Bild weg,
+    /// wenn es danach zu spaet kaeme. Eine einzige Zeitspitze im Wandler
+    /// kostet so ganze Bilder, obwohl die CPU nicht ausgelastet ist.
+    ///
+    /// Gemessen am 15.09.2026 gegen 33e3c0e, tvOS-Simulator, Prozess auf
+    /// Hintergrund gedrosselt, nachgebaute Dateien (MPEG-2 720×576 5 Mbit/s,
+    /// AC-3 5.1, VobSub, MKV), je 25 s, Deinterlace `bob`:
+    ///
+    ///     Einstellung                          gezeigt/s   verloren
+    ///     Vorgabe, interlaced (2 Laeufe)       12,4–12,8   311
+    ///     Vorgabe, progressiv (2 Laeufe)       14,0–16,4   211–284
+    ///     --no-drop-late-frames, interlaced    24,9–25,3   0
+    ///     --no-drop-late-frames, progressiv    24,0–24,9   0
+    ///     :no-drop-late-frames (Medium)        11,2        344
+    ///     --no-skip-frames allein              15,5        230
+    ///     --swscale-mode=0                     15,2        246
+    ///
+    /// Ungedrosselt laeuft alles mit 25/s. **Als Medienoption wirkt es
+    /// nicht:** der vout haengt am Player und erbt von der Bibliothek, nicht
+    /// vom Eingang. `initWithOptions:` haengt an VLCKits Vorgaben an
+    /// (VLCLibrary.m:169), es geht also nichts verloren. Android setzt die
+    /// Option in `Spielwerk` seit jeher.
+    ///
+    /// Was es kostet: ein wirklich zu spaetes Bild wird kurz spaet gezeigt
+    /// statt weggelassen. Bei VideoToolbox-Material tritt das kaum ein.
+    /// Quellen: code.videolan.org/videolan/vlc/-/merge_requests/3436
+    /// (samplebufferdisplay), VLC-Quelltext im Baubaum.
+    static let bibliothek = VLCLibrary(options: ["--no-drop-late-frames"])
+
+    let player = VLCMediaPlayer(library: VLCPlayerView.bibliothek)
 
     #if os(iOS)
     fileprivate lazy var controller = MediaController(player: player)
@@ -157,7 +202,7 @@ final class VLCPlayerView: Basisansicht {
         // schrieb, wo tvOS nichts schreiben laesst: ein Werkzeug, das lautlos
         // ins Leere laeuft, sieht aus wie eines, das nichts zu melden hat.
         #if DEBUG
-        VLCLibrary.shared().loggers = [Dateiprotokoll()]
+        VLCPlayerView.bibliothek.loggers = [Dateiprotokoll()]
         #endif
 
         // Muss die View selbst sein: VLC prüft die Zeichenfläche auf
