@@ -279,6 +279,43 @@ fun Leerzustand(symbol: ImageVector, kopfzeile: String, text: String,
     }
 }
 
+/**
+ * Vorlage: `Wischzeile` in `Stil.swift` — nach links ziehen zeigt eine Handlung, 96 breit.
+ * **Offen oder zu, nie dazwischen.** Ueber 168 gezogen loest sie selbst aus und schnappt zu —
+ * die Zeile aendert im selben Augenblick ihren Haken, das verdeckt das Zuschnappen.
+ * Die Farbe dahinter erscheint erst beim Ziehen, sonst blitzt sie beim Aufbau der Liste.
+ */
+@Composable
+fun Wischzeile(symbol: ImageVector, text: String, farbe: Color = Stil.akzent, tun: () -> Unit, inhalt: @Composable () -> Unit) {
+    val dichte = LocalDensity.current
+    val feld = with(dichte) { 96.dp.toPx() }
+    val schwelle = with(dichte) { 168.dp.toPx() }
+    val weg = remember { Animatable(0f) }
+    val lauf = rememberCoroutineScope()
+    Box(Modifier.fillMaxWidth()) {
+        Box(Modifier.matchParentSize().graphicsLayer { alpha = if (weg.value < -0.5f) 1f else 0f }.background(farbe)) {
+            Column(Modifier.align(Alignment.CenterEnd).width(96.dp).fillMaxHeight()
+                    .antippen { lauf.launch { weg.snapTo(0f) }; tun() },
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Icon(symbol, contentDescription = null, tint = Stil.grund, modifier = Modifier.size(20.dp))
+                Text(text, style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium), color = Stil.grund)
+            }
+        }
+        Box(Modifier.graphicsLayer { translationX = weg.value }.background(Stil.grund)
+            .draggable(rememberDraggableState { d -> lauf.launch { weg.snapTo((weg.value + d).coerceAtMost(0f)) } },
+                Orientation.Horizontal,
+                onDragStopped = { tempo ->
+                    when {
+                        -weg.value > schwelle -> { tun(); weg.snapTo(0f) }
+                        -weg.value > feld / 2 || tempo < -700 * dichte.density -> weg.animateTo(-feld, Bewegung.sprung())
+                        else -> weg.animateTo(0f, Bewegung.sprung())
+                    }
+                })) {
+            inhalt()
+        }
+    }
+}
+
 // MARK: Blatt
 
 data class Wahl(val wert: String, val text: String)

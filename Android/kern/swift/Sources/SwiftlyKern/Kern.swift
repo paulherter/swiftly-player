@@ -307,6 +307,35 @@ public final class Kern: @unchecked Sendable {
         return try json(zeilen)
     }
 
+    // MARK: Person
+
+    /// Die Personenseite — `PersonView.laden()` ohne Seerr: die Auskunft ueber die Person, ihre
+    /// Titel auf dem Server (`JellyfinClient.titel(person:)`, die Regel steht im Paket) und die
+    /// Querbilder fuer das wechselnde Banner.
+    public func person(id: String) async throws -> String {
+        guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+        async let eigene = c.titel(person: id)
+        let auskunft = try? await c.item(id: id)
+        let titel = await eigene
+        // **Nur, was wirklich quer liegt** (`querbildEcht`) — ein beschnittenes Plakat gehoert
+        // nicht in den Wechsel. Gibt es keines, steht irgendein Kopfbild da.
+        var banner = titel.compactMap { Bildwahl.kopf($0, adressen: a)?.absoluteString }
+        if banner.isEmpty, let erstes = titel.first,
+           let url = Bildwahl.kopfMitErsatz(erstes, folge: nil, adressen: a) {
+            banner = [url.absoluteString]
+        }
+        let bild: URL? = a.bauen(itemID: id, marke: auskunft?.imageTags?["Primary"], mass: .hoechstensHoch(300))
+        let geboren = auskunft?.tagesdatum.flatMap { k -> String? in
+            guard let jahr = k.year, let monat = k.month, let tag = k.day else { return nil }
+            return String(format: "%04d-%02d-%02d", jahr, monat, tag)
+        }
+        return try json(Personenseitenantwort(
+            beschreibung: auskunft?.beschreibung, geboren: geboren,
+            ort: auskunft?.productionLocations?.first { !$0.isEmpty },
+            bild: bild?.absoluteString, banner: banner,
+            titel: titel.map { rasterkachel($0, a) }))
+    }
+
     /// Aehnliche Titel und Extras — `AppModel.aehnliche(_:)` und `extras(_:)`. Fehler geben leere Reihen.
     public func titelUmfeld(id: String) async throws -> String {
         guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
@@ -441,6 +470,11 @@ struct Folgenantwort: Encodable {
     let unterzeile, bild: String?
     let fortschritt: Double?
     let gesehen: Bool
+}
+struct Personenseitenantwort: Encodable {
+    let beschreibung, geboren, ort, bild: String?
+    let banner: [String]
+    let titel: [Rasterkachelantwort]
 }
 struct Personantwort: Encodable { let id, name: String; let rolle, bild: String? }
 struct Dateiantwort: Encodable {

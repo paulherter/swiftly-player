@@ -211,7 +211,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
 
             if (t != null && t.darsteller.isNotEmpty()) Abschnitt(uebersetzt("Besetzung"), 14.dp) {
                 // Ohne Schluessel: dieselbe Person kann zweimal mitspielen.
-                items(t.darsteller) { p -> Besetzungskachel(p) }
+                items(t.darsteller) { p -> Besetzungskachel(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
             }
             if (extras.isNotEmpty()) Abschnitt(uebersetzt("Extras"), 12.dp) {
                 items(extras) { e -> Extrakachel(e) }
@@ -233,9 +233,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
 internal fun Held(bild: String?, name: String, nebenzeile: String) {
     Box(Modifier.fillMaxWidth().height(Stil.heldHoehe)) {
         AsyncImage(model = bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(190.dp).background(Brush.verticalGradient(
-            0f to Stil.grund.copy(alpha = 0f), 0.32f to Stil.grund.copy(alpha = 0.28f), 0.56f to Stil.grund.copy(alpha = 0.58f),
-            0.78f to Stil.grund.copy(alpha = 0.85f), 1f to Stil.grund)))
+        Heldauslauf(Modifier.align(Alignment.BottomStart))
         Column(Modifier.align(Alignment.BottomStart).padding(horizontal = Stil.randAbstand).padding(bottom = 16.dp)) {
             Text(name, style = Stil.titel.copy(letterSpacing = (-0.6).sp), color = Stil.schrift)
             if (nebenzeile.isNotEmpty()) {
@@ -243,6 +241,14 @@ internal fun Held(bild: String?, name: String, nebenzeile: String) {
             }
         }
     }
+}
+
+/** Vorlage: `Heldauslauf` — 190 hoch, damit der Titel auch auf hellen Plakaten nicht blank steht (war 130). */
+@Composable
+internal fun Heldauslauf(modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth().height(190.dp).background(Brush.verticalGradient(
+        0f to Stil.grund.copy(alpha = 0f), 0.32f to Stil.grund.copy(alpha = 0.28f), 0.56f to Stil.grund.copy(alpha = 0.58f),
+        0.78f to Stil.grund.copy(alpha = 0.85f), 1f to Stil.grund)))
 }
 
 /**
@@ -352,7 +358,7 @@ internal fun Klapptext(text: String) {
 
 /** Vorlage: `Abschnitt` — 26 Abstand oben, Reihentitel, waagerechte Reihe. */
 @Composable
-private fun Abschnitt(titel: String, abstand: Dp, inhalt: LazyListScope.() -> Unit) {
+internal fun Abschnitt(titel: String, abstand: Dp, inhalt: LazyListScope.() -> Unit) {
     Column(Modifier.padding(top = 26.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(titel, style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift,
              modifier = Modifier.padding(horizontal = Stil.randAbstand))
@@ -363,8 +369,8 @@ private fun Abschnitt(titel: String, abstand: Dp, inhalt: LazyListScope.() -> Un
 
 /** Vorlage: `Besetzungskachel` — Kreis 76, Name zweizeilig, Rolle, 84 breit. */
 @Composable
-internal fun Besetzungskachel(p: Mitwirkender) {
-    Column(Modifier.width(84.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+internal fun Besetzungskachel(p: Mitwirkender, tun: () -> Unit = {}) {
+    Column(Modifier.width(84.dp).antippen(tun), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SubcomposeAsyncImage(model = p.bild, contentDescription = null, contentScale = ContentScale.Crop,
             modifier = Modifier.size(76.dp).clip(CircleShape).background(Stil.flaeche),
             error = {

@@ -191,6 +191,7 @@ private fun Anfangsseite(app: SwiftlyAnwendung, bereich: Bereich, oeffnen: (Ziel
 private fun Unterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurueck: () -> Unit) {
     when (ziel.typ) {
         "Series", "Episode" -> SerienSeite(app, ziel, oeffnen, zurueck)
+        "Person" -> PersonSeite(app, ziel, oeffnen, zurueck)
         else -> TitelSeite(app, ziel, oeffnen, zurueck)
     }
 }

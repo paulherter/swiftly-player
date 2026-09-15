@@ -42,6 +42,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
      */
     val serienSpeicher = mutableMapOf<String, Serie>()
     val folgenSpeicher = mutableMapOf<String, List<Folge>>()
+    val personenSpeicher = mutableMapOf<String, Personenstand>()
 
     /** Das offene Auswahlblatt. Es liegt ueber der Leiste, deshalb haelt es die App, nicht die Seite. */
     val blatt = androidx.compose.runtime.mutableStateOf<Blattwunsch?>(null)

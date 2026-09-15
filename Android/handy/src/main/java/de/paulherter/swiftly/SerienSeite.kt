@@ -153,6 +153,20 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
 
+    /** Erst umschalten, dann fragen — sagt der Server nein, zurueck und melden. Danach neu laden: der Knopf zeigt eine andere Folge. */
+    fun folgeUmschalten(f: Folge) {
+        val an = !f.gesehen
+        ruck(Ruck.Leicht)
+        folgen = folgen.map { if (it.id == f.id) it.copy(gesehen = an, fortschritt = if (an) null else it.fortschritt) else it }
+        bereich.launch {
+            val grund = withContext(Dispatchers.IO) { app.kern.gesehen(f.id, an).await() }
+            if (grund.isNotEmpty()) {
+                meldung = fehlertext(grund)
+                folgen = folgen.map { if (it.id == f.id) f else it }
+            } else laden()
+        }
+    }
+
     LaunchedEffect(ziel.id) {
         laden()
         val id = serie?.id ?: return@LaunchedEffect
@@ -257,14 +271,22 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                         }
                         folgen.forEachIndexed { i, f ->
                             if (i > 0) Box(Modifier.padding(start = Stil.randAbstand).fillMaxWidth().height(1.dp).background(Stil.linie))
-                            Folgenzeile(f)
+                            // Wischen schaltet gesehen — `Wischzeile` mit Haken oder Rueckpfeil.
+                            key(f.id) {
+                                Wischzeile(if (f.gesehen) Icons.Filled.Undo else Icons.Filled.Check,
+                                           uebersetzt(if (f.gesehen) "Ungesehen" else "Gesehen"), tun = { folgeUmschalten(f) }) {
+                                    Folgenzeile(f)
+                                }
+                            }
                         }
                     }
                     1 -> {
                         val leute = s?.darsteller.orEmpty()
                         if (s != null && leute.isEmpty()) Leerhinweis(uebersetzt("Keine Besetzung hinterlegt."))
                         else Raster(leute, spalten = { breite -> maxOf(1, ((breite + 14f) / (84f + 14f)).toInt()) }, abstand = 14) { p ->
-                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) { Besetzungskachel(p) }
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                                Besetzungskachel(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) }
+                            }
                         }
                     }
                     else -> {
