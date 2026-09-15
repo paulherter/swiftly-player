@@ -104,7 +104,11 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
         if (i > 0) streifen.scrollToItem(i)
     }
     val haupt = ersterFokus()
-    val name = serie?.name ?: ziel.name
+    // Wie `TvDetail`: bis `Kern.serie` antwortet, der Kopf aus der Startseite (`TvVorab`).
+    val vorab = remember(ziel.id) { TvUebergabe.fuer(ziel.id) }
+    val name = serie?.name ?: vorab?.titel ?: ziel.name
+    // Kulisse und Grund zeichnet `TvHaupt` (`TvKulissenebene`) — dieselbe Adresse wie auf Start.
+    TvKulisseMelden(serie?.let { it.kulisse ?: it.kopfbild }, bereit = serie != null)
 
     // Vorlage: `SerienView.eingeblendet` auf tvOS — derselbe Griff wie `TvDetail`: Kulisse und
     // Kopfauskunft (Titel/Angaben/Beschreibung) stehen sofort, Knopfreihe und Reihen blenden ein.
@@ -113,11 +117,12 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
         tween(TvStil.einblendenDauer, easing = TvStil.einblendenKurve), label = "eingeblendet")
     LaunchedEffect(ziel.id) { eingeblendet = true }
 
-    Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        TvBildgrund(serie?.kopfbild)
-        Kulisse(serie?.kopfbild, Modifier.align(Alignment.TopEnd))
+    Box(Modifier.fillMaxSize()) {
         TvAbschnittsseite { a ->
-                TvDetailkopf(name, serie?.jahr.orEmpty(), serie?.bewertung, serie?.freigabe, serie?.beschreibung,
+                TvDetailkopf(name, if (serie != null) serie.jahr.orEmpty() else vorab?.angaben.orEmpty(),
+                             if (serie != null) serie.bewertung else vorab?.bewertung,
+                             if (serie != null) serie.freigabe else vorab?.freigabe,
+                             if (serie != null) serie.beschreibung else vorab?.beschreibung,
                              direktplay = serie?.planDa == true && serie.lossless,
                              hinweis = if (serie?.planDa == true && !serie.lossless) serie.methode else null,
                              knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf)) {

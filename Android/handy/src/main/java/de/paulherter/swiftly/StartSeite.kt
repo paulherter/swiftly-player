@@ -75,7 +75,10 @@ data class Kachel(val id: String, val name: String, val typ: String, val unterze
                   /** Nur fuer den Fernseher-Kopf (`Kopfauskunft` in `tv/TvStart.kt`) — Bewertung,
                    *  Freigabe und Beschreibung des Titels unter dem Fokus, wie `Kopfauskunft` sie
                    *  auf tvOS aus dem vollen `Item` liest. Das Telefon liest sie nicht. */
-                  val bewertung: Double? = null, val freigabe: String? = null, val beschreibung: String? = null)
+                  val bewertung: Double? = null, val freigabe: String? = null, val beschreibung: String? = null,
+                  /** Nur fuer den Fernseher: die Kulisse, dieselbe Adresse wie `Titel.kulisse`/`Serie.kulisse`
+                   *  (`Kern.kulisse`) — damit Start und Detailseite dasselbe Bild und denselben Ton zeigen. */
+                  val kulisse: String? = null)
 /**
  * `schluessel` ist der rohe, unuebersetzte Reihenname aus dem Paket (`Startreihe.reihentitel`
  * in `Startreihen.swift`, z. B. „Weiterschauen" oder „Zuletzt hinzugefügt") — `null` bei
@@ -109,7 +112,8 @@ internal fun reihenLesen(json: String): List<Reihe> {
                    if (o.isNull("positionSekunden")) null else o.getDouble("positionSekunden"),
                    if (o.isNull("bewertung")) null else o.getDouble("bewertung"),
                    o.optString("freigabe").takeIf { !o.isNull("freigabe") },
-                   o.optString("beschreibung").takeIf { !o.isNull("beschreibung") })
+                   o.optString("beschreibung").takeIf { !o.isNull("beschreibung") },
+                   o.optString("kulisse").takeIf { o.has("kulisse") && !o.isNull("kulisse") })
         })
     }
 }

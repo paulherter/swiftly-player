@@ -345,7 +345,8 @@ public final class Kern: @unchecked Sendable {
             // **Nur fuer Android TVs Kopfzone** — `Kopfauskunft` auf tvOS zeigt Bewertung und
             // Freigabe auf der Startseite genauso wie auf der Detailseite (sie liest direkt vom
             // `Item`), und die Beschreibung stand hier bisher gar nicht in der Antwort.
-            bewertung: i.communityRating, freigabe: i.officialRating, beschreibung: i.beschreibung)
+            bewertung: i.communityRating, freigabe: i.officialRating, beschreibung: i.beschreibung,
+            kulisse: Kern.kulisse(i, folge: nil, adressen: a))
     }
 
     // MARK: Bibliothek
@@ -424,7 +425,8 @@ public final class Kern: @unchecked Sendable {
                 Personantwort(id: $0.id, name: $0.name, rolle: $0.role, bild: personenbild($0))
             },
             gemerkt: i.userData?.isFavorite ?? false, gesehen: i.userData?.played ?? false,
-            trailer: i.remoteTrailers?.first?.url.map { "\($0)" }, datei: datei))
+            trailer: i.remoteTrailers?.first?.url.map { "\($0)" }, datei: datei,
+            kulisse: Kern.kulisse(i, folge: nil, adressen: a)))
     }
 
     // MARK: Serie
@@ -487,7 +489,22 @@ public final class Kern: @unchecked Sendable {
             darsteller: leute.map { p in
                 let u: URL? = a.bauen(itemID: p.id, marke: p.primaryImageTag, mass: .hoechstensHoch(220))
                 return Personantwort(id: p.id, name: p.name, rolle: p.role, bild: u?.absoluteString)
-            }))
+            },
+            kulisse: Kern.kulisse(serie, folge: stand, adressen: a)))
+    }
+
+    /// **Die Kulisse fuer Android TV — eine Adresse fuer Startseite, Film- und Serienseite.**
+    ///
+    /// Vorlage: `HomeView.kulissenURL` und `DetailView`/`SerienView` auf tvOS, dort
+    /// `querbildURL(for:breite: 1600) ?? kopfbildURL(for:)` auf **jeder** der drei Seiten.
+    /// Vorher las die Startseite `quer` (600 breit, fuer die Kachel) und die Detailseite
+    /// `kopfbild` (1200 breit, andere Kette) — zwei Adressen fuer dasselbe Bild: auf Start
+    /// pixelig, beim Oeffnen kein Treffer im Bildspeicher, und `TvBildgrund` rechnete fuer die
+    /// zweite Adresse einen eigenen, manchmal anderen Farbton. 1600 passt zur Kulisse auf einem
+    /// 1080p-Fernseher (590 dp ≈ 1180 px).
+    static func kulisse(_ item: Item, folge: Item?, adressen a: Bildadresse) -> String? {
+        (Bildwahl.quer(item, adressen: a, breite: 1600)?.url
+            ?? Bildwahl.kopfMitErsatz(item, folge: folge, adressen: a))?.absoluteString
     }
 
     /// Die Folgen einer Staffel — Zeilen wie `Folgenzeile`: „3. Name", Restzeit oder Laufzeit,
@@ -1351,6 +1368,8 @@ struct Titelantwort: Encodable {
     let gemerkt, gesehen: Bool
     let trailer: String?
     let datei: Dateiantwort?
+    /// Siehe `Kern.kulisse` — dieselbe Adresse wie `Kachelantwort.kulisse`.
+    let kulisse: String?
 }
 struct Serienantwort: Encodable {
     let id, name: String
@@ -1368,6 +1387,8 @@ struct Serienantwort: Encodable {
     let staffeln: [Staffelantwort]
     let gewaehlt: String?
     let darsteller: [Personantwort]
+    /// Siehe `Kern.kulisse` — dieselbe Adresse wie `Kachelantwort.kulisse`.
+    let kulisse: String?
 }
 struct Standantwort: Encodable {
     let id: String
@@ -1482,6 +1503,8 @@ struct Kachelantwort: Encodable {
     let bewertung: Double?
     let freigabe: String?
     let beschreibung: String?
+    /// Siehe `Kern.kulisse` — die Kulisse, die auch Film- und Serienseite zeigen.
+    let kulisse: String?
 }
 
 struct Downloadantwort: Encodable { let posten: Downloadposten; let bild, serienbild: String? }

@@ -77,6 +77,8 @@ data class Serie(
     val planDa: Boolean, val lossless: Boolean, val methode: String?,
     val stand: Folgenstand?, val knopftext: String, val staffeln: List<Staffel>, val gewaehlt: String?,
     val darsteller: List<Mitwirkender>,
+    /** Nur fuer den Fernseher — siehe `Kachel.kulisse`. */
+    val kulisse: String? = null,
 ) {
     /**
      * Jahr · Staffeln · Gattungen. **Eine einzige Staffel steht mit ihrem Namen da**, nicht als
@@ -100,7 +102,8 @@ internal fun serieLesen(json: String): Serie = JSONObject(json).let { o ->
           o.optString("knopftext"),
           o.feldListe("staffeln") { Staffel(it.getString("id"), it.getString("name")) },
           o.feldText("gewaehlt"),
-          o.feldListe("darsteller") { Mitwirkender(it.getString("id"), it.getString("name"), it.feldText("rolle"), it.feldText("bild")) })
+          o.feldListe("darsteller") { Mitwirkender(it.getString("id"), it.getString("name"), it.feldText("rolle"), it.feldText("bild")) },
+          if (o.has("kulisse")) o.feldText("kulisse") else null)
 }
 
 internal fun folgenLesen(json: String): List<Folge> = JSONArray(json).let { a ->

@@ -81,6 +81,8 @@ data class Titel(
     val fortsetzenAb: Double?, val fortsetzenText: String?,
     val beschreibung: String?, val regie: List<String>, val darsteller: List<Mitwirkender>,
     val gemerkt: Boolean, val gesehen: Boolean, val trailer: String?, val datei: Datei?,
+    /** Nur fuer den Fernseher — siehe `Kachel.kulisse`. */
+    val kulisse: String? = null,
 )
 
 internal fun JSONObject.feldText(feld: String): String? = if (isNull(feld)) null else getString(feld)
@@ -101,7 +103,7 @@ internal fun titelLesen(json: String): Titel = JSONObject(json).let { o ->
           o.optBoolean("gemerkt"), o.optBoolean("gesehen"), o.feldText("trailer"),
           o.optJSONObject("datei")?.let { d ->
               Datei(d.feldText("container"), d.feldText("video"), d.feldTexte("ton"), d.optString("untertitel"), d.optBoolean("hatUntertitel"))
-          })
+          }, if (o.has("kulisse")) o.feldText("kulisse") else null)
 }
 
 /** Die Fassade meldet „nicht angemeldet" als Kennung, weil der Wortlaut im App-Katalog steht. */

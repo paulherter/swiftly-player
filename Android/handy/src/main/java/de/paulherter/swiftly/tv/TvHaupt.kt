@@ -3,7 +3,12 @@ package de.paulherter.swiftly.tv
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalDensity
+import coil3.SingletonImageLoader
+import coil3.request.ImageRequest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
@@ -62,6 +67,44 @@ import androidx.lifecycle.Lifecycle
  */
 enum class TvBereich(val titel: String) { Start("Start"), Filme("Filme"), Serien("Serien"), Merkliste("Merkliste"), Suche("Suche") }
 
+/**
+ * Was die Startseite von einem Titel schon weiss, wenn er geoeffnet wird — Vorlage: tvOS reicht
+ * dasselbe `Item` an `DetailView` weiter, dort steht der Kopf deshalb im ersten Bild. Hier kommt
+ * die Detailseite nur mit der Kennung an; ohne diese Uebergabe begann ihr Kopf leer und fuellte
+ * sich erst mit der Antwort von `Kern.titel`/`Kern.serie`. `angaben` ist schon so zugeschnitten,
+ * wie die Zielseite die Zeile zeigt (Film: Jahr · Laufzeit, Serie: nur Jahr), damit beim
+ * Eintreffen der vollen Daten nichts umspringt.
+ */
+data class TvVorab(val titel: String, val angaben: String?, val bewertung: Double?, val freigabe: String?,
+                   val beschreibung: String?, val kulisse: String?)
+
+/** Prozessweit, klein: je Kennung die letzte Uebergabe. Gelesen nur, bis die vollen Daten da sind. */
+object TvUebergabe {
+    private val vorab = HashMap<String, TvVorab>()
+    fun merken(id: String, v: TvVorab) { vorab[id] = v }
+    fun fuer(id: String): TvVorab? = vorab[id]
+}
+
+/** Die Meldestelle der gerade gezeichneten Seite — siehe `TvKulisseMelden`. */
+val LocalKulisseMelden = compositionLocalOf<(String?) -> Unit> { {} }
+
+/**
+ * Eine Seite meldet ihre Kulisse an `TvHaupt`, das sie **unter** dem Seitenstapel zeichnet.
+ * `bereit = false`: noch nichts Verlaessliches — `TvHaupt` laesst stehen, was steht.
+ */
+@Composable
+fun TvKulisseMelden(bild: String?, bereit: Boolean = true) {
+    val melden = LocalKulisseMelden.current
+    LaunchedEffect(bild, bereit, melden) { if (bereit) melden(bild) }
+}
+
+/** Unterseiten, die **nicht** die gemeinsame Kulisse tragen — Gegenstueck zu `TvUnterseite`. Person
+ *  und Seerr-Titel zeichnen ihre eigene (wechselndes Banner, fremde Adressen) auf deckendem Grund. */
+private val ohneGemeinsameKulisse = setOf("Person", "Genre", "Profil", "WeiteresKonto", "ServerAufnahme",
+    "Wiedergabeeinstellungen", "Darstellung", "Einstellungen", "Seerr", "Seerrtitel", "Genrewahl", "Merkliste")
+
+private fun seitenschluessel(b: TvBereich, tiefe: Int, id: String?) = "${b.name}/$tiefe/${id.orEmpty()}"
+
 /** Wie tief die Kopfleiste reicht — darunter beginnen die Seiten. */
 val kopfUnten = TvStil.randOben + TvStil.leisteHoehe + 12.dp
 
@@ -108,8 +151,14 @@ fun TvHaupt(app: SwiftlyAnwendung) {
     LaunchedEffect(spiel) { if (spiel != null) kontext.startActivity(Intent(kontext, PlayerAktivitaet::class.java),
             android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_hoch, de.paulherter.swiftly.R.anim.halten).toBundle()) }
 
+    // Gemeldete Kulissen je Seite (`seitenschluessel`) — siehe `TvKulissenebene`.
+    val kulissen = remember { mutableStateMapOf<String, String?>() }
     val oeffnen: (Ziel) -> Unit = { z -> stapel[bereich] = stapel[bereich].orEmpty() + z }
-    val zurueck: () -> Unit = { stapel[bereich] = stapel[bereich].orEmpty().dropLast(1) }
+    val zurueck: () -> Unit = {
+        val alt = stapel[bereich].orEmpty()
+        alt.lastOrNull()?.let { kulissen.remove(seitenschluessel(bereich, alt.size, it.id)) }
+        stapel[bereich] = alt.dropLast(1)
+    }
     val oben = stapel[bereich].orEmpty()
 
     // **Watch Next** (`TvWeiterschauenRegal`) fuehrt ueber "swiftly://titel/<id>" hierher zurueck —
@@ -131,12 +180,35 @@ fun TvHaupt(app: SwiftlyAnwendung) {
     BackHandler(enabled = oben.isEmpty() && bereich != TvBereich.Start) { bereich = TvBereich.Start }
     BackHandler(enabled = oben.isNotEmpty(), onBack = zurueck)
 
+    // **Die Kulisse gehoert keiner Seite, sondern dem Stapel.** Vorlage: auf tvOS steht beim Oeffnen
+    // dieselbe Adresse auf beiden Seiten (`HomeView.kulissenURL`), also aendert sich nichts. Hier lag
+    // Kulisse + `TvBildgrund` bisher in jeder Seite selbst — beim Oeffnen baute die neue Seite beides
+    // frisch auf: Bild kurz weg und neu eingeblendet, Ton neu gerechnet. Jetzt meldet die Seite oben
+    // nur ihre Adresse, gezeichnet wird hier, einmal. Start → Detail mit derselben Adresse: kein
+    // Neuaufbau, nichts blendet. Hat die Zielseite noch nicht gemeldet, zaehlt die Uebergabe aus der
+    // Startseite, sonst bleibt das zuletzt gezeigte Bild stehen. Bereichswechsel auf eine Seite ohne
+    // Kulisse blendet weiter aus.
+    val obenZiel = oben.lastOrNull()
+    val obenSchluessel = seitenschluessel(bereich, oben.size, obenZiel?.id)
+    val traegtKulisse = if (obenZiel == null) bereich == TvBereich.Start else obenZiel.typ !in ohneGemeinsameKulisse
+    val gezeigt = remember { arrayOfNulls<String>(1) }
+    val kulisse = when {
+        !traegtKulisse -> null
+        kulissen.containsKey(obenSchluessel) -> kulissen[obenSchluessel]
+        else -> obenZiel?.let { TvUebergabe.fuer(it.id)?.kulisse } ?: gezeigt[0]
+    }
+    gezeigt[0] = kulisse
+
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
+        TvKulissenebene(kulisse)
         Crossfade(bereich, animationSpec = tween(250), label = "bereich") { b ->
             val ziel = stapel[b].orEmpty().lastOrNull()
             val tiefe = stapel[b].orEmpty().size
             key(b, tiefe, ziel?.id) {
-                zustaende.SaveableStateProvider("${b.name}/$tiefe/${ziel?.id.orEmpty()}") {
+                val schluessel = seitenschluessel(b, tiefe, ziel?.id)
+                val melden = remember(schluessel) { { url: String? -> kulissen[schluessel] = url } }
+                CompositionLocalProvider(LocalKulisseMelden provides melden) {
+                zustaende.SaveableStateProvider(schluessel) {
                     if (ziel == null) {
                         Box(Modifier.fillMaxSize()) {
                             when (b) {
@@ -157,10 +229,42 @@ fun TvHaupt(app: SwiftlyAnwendung) {
                         TvUnterseite(app, ziel, oeffnen, zurueck)
                     }
                 }
+                }
             }
         }
         // Solange der Player laeuft, gehoert die Tafel ihm.
         if (spiel == null) TvTafel(app)
+    }
+}
+
+/**
+ * Grund, Kulisse und Kopfschatten fuer Start, Film- und Serienseite — dieselben Ebenen, die vorher
+ * jede dieser Seiten selbst trug (Vorlage: `bildgrund`, `Kulisse`, `Kopfschatten` auf tvOS; dort
+ * gehoert der Kopfschatten auch auf die Detailseite, „die letzte Ebene, die es nur auf einer der
+ * beiden Seiten gab").
+ *
+ * **Das alte Bild bleibt stehen, bis das neue geladen ist** (tvOS `bildwechseln`, Swiftfins
+ * `CinematicBackgroundView`): `steht` wechselt erst, wenn Coil das neue Bild in derselben Groesse
+ * im Speicher hat. Dann trifft `Kulisse` den Speicher, Coil blendet selbst nicht noch einmal
+ * (Speichertreffer haben keine Coil-Ueberblendung), und nur die 300-ms-Blende der Kulisse laeuft.
+ */
+@Composable
+private fun TvKulissenebene(bild: String?) {
+    val kontext = LocalContext.current
+    val dichte = LocalDensity.current
+    var steht by remember { mutableStateOf(bild) }
+    LaunchedEffect(bild) {
+        if (bild != null && bild != steht) {
+            SingletonImageLoader.get(kontext).execute(ImageRequest.Builder(kontext).data(bild)
+                .size(with(dichte) { 590.dp.roundToPx() }, with(dichte) { 350.dp.roundToPx() }).build())
+        }
+        steht = bild
+    }
+    val schatten by animateFloatAsState(if (steht != null) 1f else 0f, tween(300), label = "kopfschatten")
+    Box(Modifier.fillMaxSize()) {
+        TvBildgrund(steht)
+        Kulisse(steht, Modifier.align(Alignment.TopEnd))
+        Box(Modifier.fillMaxWidth().alpha(schatten)) { Kopfschatten() }
     }
 }
 

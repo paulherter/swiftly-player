@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.Shader
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -21,6 +21,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
@@ -47,16 +48,15 @@ import kotlin.math.sqrt
  * Quadrat, mehrere Gipfel statt eines Mittelwerts) siehe die Vorlage — die Rechnung hier ist eine
  * wortgetreue Uebertragung von `Bildton.toeneAus(_:)`.
  *
- * **Zwei bewusste Abweichungen von der Vorlage:**
+ * **Eine bewusste Abweichung von der Vorlage:**
  * - **Kein `MeshGradient`.** Compose kennt kein Flaechennetz. Nachgebaut mit einem linearen
  *   Verlauf mit vielen Stuetzstellen entlang der Diagonale (Kulisse oben rechts → Grund unten
  *   links, das traegt die Haupt-Helligkeits- und Tonbewegung aus `farbe(bei:)`) plus drei weichen
  *   Flecken in den uebrigen Ecken und der Mitte, damit die Flaeche nicht nur auf einer Geraden
  *   Farbe zeigt.
- * - **Immer eine 400-ms-Ueberblendung, kein stilles Uebernehmen bei bekanntem Ton.** Die Vorlage
- *   unterscheidet "schon gemerkt" (kein Uebergang) von "neu berechnet" (Uebergang); hier blendet
- *   jeder Wechsel gleich, was fuer Fokuswechsel auf derselben Seite unauffaellig ist, weil
- *   benachbarte Kacheln meist aehnliche Toene liefern.
+ *
+ * Frueher stand hier eine dritte: jeder Wechsel blendete 400 ms, auch bei bekanntem Ton. Das ist
+ * zurueckgenommen — siehe `TvBildgrund`.
  */
 object Bildton {
     /** Prozessweit, wie `Bildton.geteilt.bekannt` — eine neue Seite hat den Ton im ersten Bild. */
@@ -88,7 +88,10 @@ object Bildton {
     private suspend fun berechnen(kontext: Context, bild: String): List<Double> {
         val bitmap = runCatching {
             (SingletonImageLoader.get(kontext).execute(
-                ImageRequest.Builder(kontext).data(bild).size(48).allowHardware(false).build()
+                // **Eigener Speicherschluessel.** Coil legt Bilder unter ihrer Adresse ab; ohne ihn
+                // ersetzte dieses 48-px-Bild die grosse Kulisse derselben Adresse im Speicher, und
+                // die naechste `Kulisse` musste neu laden und einblenden.
+                ImageRequest.Builder(kontext).data(bild).size(48).allowHardware(false).memoryCacheKey("$bild#bildton").build()
             ) as? SuccessResult)?.image?.toBitmap()
         }.getOrNull() ?: return emptyList()
         // Die Histogramm-Rechnung ist der teure Teil (bis zu 48 x 48 Punkte) — nicht auf dem
@@ -290,25 +293,44 @@ fun TvBildgrund(bild: String?, modifier: Modifier = Modifier) {
 
     // Anfangswert aus dem Gedaechtnis, nicht aus dem Nichts — damit diese Seite im ersten Bild
     // schon den Ton zeigt, wenn ein anderer Aufruf (etwa die Startseite) ihn bereits kennt.
-    var toene by remember { mutableStateOf(bild?.let { Bildton.gemerkt(it) } ?: emptyList()) }
+    var jetzt by remember { mutableStateOf(bild?.let { Bildton.gemerkt(it) } ?: emptyList()) }
+    var vorher by remember { mutableStateOf<List<Double>?>(null) }
+    val deckung = remember { Animatable(1f) }
 
+    // **Nur wirklich Neues blendet** — wortgetreu `Bildgrund.body` (`.task(id: url)`): ist der Ton
+    // schon gemerkt, wird er ohne Animation gesetzt (`withTransaction(ohne)`), berechnet wird mit
+    // 400 ms `easeInOut`. Vorher blendete hier jeder Wechsel — auch einer, dessen Ton feststand.
     LaunchedEffect(bild) {
-        if (bild == null) { toene = emptyList(); return@LaunchedEffect }
-        toene = Bildton.toene(kontext, bild)
+        val gemerkt = bild?.let { Bildton.gemerkt(it) }
+        val neu = when {
+            bild == null -> emptyList()
+            gemerkt != null -> gemerkt
+            else -> Bildton.toene(kontext, bild)
+        }
+        if (neu == jetzt && vorher == null) return@LaunchedEffect
+        if (gemerkt != null) {
+            vorher = null; jetzt = neu; deckung.snapTo(1f)
+            return@LaunchedEffect
+        }
+        vorher = jetzt; jetzt = neu
+        deckung.snapTo(0f)
+        deckung.animateTo(1f, tween(400, easing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)))
+        vorher = null
     }
 
-    Crossfade(
-        targetState = toene,
-        animationSpec = tween(400, easing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)),
-        label = "bildgrund",
-        modifier = modifier.fillMaxSize()
-    ) { stand ->
-        Box(Modifier.fillMaxSize()) {
-            Netz(stand, Modifier.fillMaxSize())
-            // Der letzte Rest gegen Baender — siehe `Rauschen`/`Bildton.rauschen`.
-            if (stand.isNotEmpty()) {
-                Canvas(Modifier.fillMaxSize()) { drawRect(brush = Rauschen.brush, alpha = 0.008f) }
-            }
+    Box(modifier.fillMaxSize()) {
+        vorher?.let { Grundflaeche(it) }
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = deckung.value }) { Grundflaeche(jetzt) }
+    }
+}
+
+@Composable
+private fun Grundflaeche(stand: List<Double>) {
+    Box(Modifier.fillMaxSize()) {
+        Netz(stand, Modifier.fillMaxSize())
+        // Der letzte Rest gegen Baender — siehe `Rauschen`/`Bildton.rauschen`.
+        if (stand.isNotEmpty()) {
+            Canvas(Modifier.fillMaxSize()) { drawRect(brush = Rauschen.brush, alpha = 0.008f) }
         }
     }
 }

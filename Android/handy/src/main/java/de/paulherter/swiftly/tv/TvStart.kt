@@ -1,7 +1,10 @@
 package de.paulherter.swiftly.tv
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import kotlin.math.abs
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
@@ -370,8 +373,29 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     LaunchedEffect(liste) { if (aktuell == null) aktuell = liste?.firstOrNull()?.kacheln?.firstOrNull() }
     // Mit dem wiederhergestellten Titel sofort das passende Bild — sonst blendete die Kulisse nach
     // dem Zurueckkommen erst von leer herein.
-    var bild by remember { mutableStateOf(aktuell?.let { it.quer ?: it.plakat }) }
-    LaunchedEffect(aktuell) { delay(250); bild = aktuell?.let { it.quer ?: it.plakat } }
+    //
+    // **`kulisse`, nicht `quer`.** `quer` ist das Kachelbild (600 breit) — die Detailseite zeigte
+    // eine andere Adresse, also ein anderes Bild im Speicher, einen eigenen Ton und auf Start eine
+    // pixelige Kulisse. `kulisse` ist dieselbe Adresse wie `Titel.kulisse`/`Serie.kulisse`
+    // (`Kern.kulisse`, tvOS `kulissenURL`). Die Rueckfaelle gelten nur fuer einen alten Kern.
+    fun kulisseVon(k: Kachel?) = k?.let { it.kulisse ?: it.quer ?: it.plakat }
+    var bild by remember { mutableStateOf(kulisseVon(aktuell)) }
+    LaunchedEffect(aktuell) { delay(250); bild = kulisseVon(aktuell) }
+
+    // Beim Oeffnen mitgeben, was schon bekannt ist — siehe `TvVorab`. Eine Folge fuehrt auf die
+    // Serienseite, deren Angaben, Bewertung und Beschreibung die der Serie sind, nicht die der
+    // Folge: dort nur Name und Kulisse. Bei einer Serie zeigt die Zielseite nur das Jahr.
+    fun oeffnenMitVorab(k: Kachel) {
+        val folge = k.typ == "Episode"
+        val angaben = when (k.typ) {
+            "Episode" -> null
+            "Series" -> k.angabenzeile?.substringBefore(" · ")?.takeIf { it.length == 4 && it.all(Char::isDigit) }
+            else -> k.angabenzeile
+        }
+        TvUebergabe.merken(k.id, TvVorab(k.name, angaben, k.bewertung.takeUnless { folge }, k.freigabe.takeUnless { folge },
+                                         k.beschreibung.takeUnless { folge }, kulisseVon(k)))
+        oeffnen(Ziel(k.id, k.name, k.typ))
+    }
 
     // **Ein Abschnitt passt ins Fenster** — wandert der Fokus in eine andere Reihe, stellt der
     // Fokusmotor auf tvOS Reihentitel und Kacheln gemeinsam frei, statt die vorherige Reihe
@@ -401,7 +425,7 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         val spalte = listenzustand.layoutInfo
         val sichtbareReihen = spalte.visibleItemsInfo.mapNotNull { info ->
             val i = (info.key as? String)?.substringBefore('-')?.toIntOrNull() ?: return@mapNotNull null
-            // Mindestens die untere Haelfte im Bild — waehrend `animateScrollToItem` steht die
+            // Mindestens die untere Haelfte im Bild — waehrend des Reihenwechsels steht die
             // obere Reihe ein paar Pixel ueber der Kante und soll trotzdem zaehlen.
             i.takeIf { it in l.indices && info.offset + info.size / 2 >= spalte.viewportStartOffset && info.offset < spalte.viewportEndOffset }
         }
@@ -429,29 +453,56 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         runCatching { ziel?.requestFocus() }
     }
     val chipVersatz = if (e.genreChips && e.startGenres.isNotEmpty()) 1 else 0
+    // **Reihenwechsel mit einer gedaempften Feder, nicht mit `animateScrollToItem`.** Das lief mit
+    // der eingebauten Kurve und fing bei jedem Tastendruck bei Geschwindigkeit null neu an — stumpf,
+    // und beim schnellen Weiterdruecken ein Ruck je Reihe. tvOS' Fokusmotor bewegt weich und nimmt
+    // eine neue Zielposition mitten in der Bewegung auf.
+    //
+    // **Feder statt `tween(500, CubicBezier(0.25, 0.1, 0.25, 1))`:** eine Zeitkurve kennt keine
+    // Anfangsgeschwindigkeit — wird sie unterbrochen, beginnt die naechste wieder bei null, und genau
+    // das ist der Ruck. Die Feder startet mit `schwung` (der Geschwindigkeit, bei der die alte
+    // abgebrochen wurde). `dampingRatio = 1` schwingt nicht ueber; `stiffness = 260` setzt sich nach
+    // rund 450 ms — dieselbe Dauer wie die Zeitkurve.
+    val schwung = remember { floatArrayOf(0f) }
     LaunchedEffect(fokusReihe, liste) {
         if (liste == null) return@LaunchedEffect
         // Auf der ersten Reihe ganz nach oben, damit die Genre-Chips wieder mit ins Bild kommen —
         // nicht nur bis zum Reihentitel, der Chip-Zeile knapp darueber liegen liesse.
-        listenzustand.animateScrollToItem(if (fokusReihe == 0) 0 else fokusReihe + chipVersatz)
+        val index = if (fokusReihe == 0) 0 else fokusReihe + chipVersatz
+        val info = listenzustand.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+        if (info == null) { schwung[0] = 0f; listenzustand.animateScrollToItem(index); return@LaunchedEffect }
+        // Dasselbe Ziel wie `animateScrollToItem(index)`: die Zeile oben buendig.
+        val weg = (info.offset - listenzustand.layoutInfo.viewportStartOffset).toFloat()
+        if (abs(weg) < 0.5f && abs(schwung[0]) < 1f) return@LaunchedEffect
+        val feder = Animatable(0f)
+        listenzustand.scroll {
+            var zuletzt = 0f
+            feder.animateTo(weg, spring(dampingRatio = 1f, stiffness = 260f, visibilityThreshold = 0.5f),
+                            initialVelocity = schwung[0]) {
+                scrollBy(value - zuletzt)
+                zuletzt = value
+                schwung[0] = velocity
+            }
+        }
+        // Nur bei ungestoertem Ende — ein Abbruch laesst `schwung` fuer die naechste Bewegung stehen.
+        schwung[0] = 0f
     }
 
     // Wie auf Apple: „gar nichts geladen" ist etwas anderes als „nichts vorhanden" —
     // Genre-Chips sind ein Einstieg, kein Inhalt, und zaehlen deshalb nicht mit.
     val alleLeer = liste != null && liste.isEmpty() && !gestoert
 
+    // Vorlage: `HomeView` `.bildgrund(url: kulissenURL)` und `querbild` — gezeichnet in `TvHaupt`
+    // (`TvKulissenebene`), damit sie beim Oeffnen einer Seite einfach stehen bleiben. Kopfschatten
+    // dort ebenso. Fehler- und Leerzustand ohne Kulisse, wie bisher.
+    TvKulisseMelden(if (gestoert || alleLeer) null else bild)
     Box(Modifier.fillMaxSize()) {
-        // Vorlage: `HomeView` `.bildgrund(url: kulissenURL)` — ganz hinten, unter Fehler-,
-        // Leer- und Reihenzustand, mit demselben Bild wie `Kulisse` unten.
-        TvBildgrund(bild)
         when {
             gestoert -> TvStartFehler { lauf.launch { laden() } }
             alleLeer -> TvLeer(uebersetzt("Hier ist noch nichts"), uebersetzt("Sobald auf dem Server etwas liegt, taucht es hier auf."))
             else -> {
-                Kulisse(bild, Modifier.align(Alignment.TopEnd))
                 Column(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxWidth().height(TvStil.heldenHoehe)) {
-                        Kopfschatten()
                         // Vorlage: `auskunft` in `HomeView.swift` — derselbe Baustein wie die
                         // Detailseite (`Kopfauskunft`), mit dem Folgennamen als Zweitzeile und der
                         // Restzeitmarke hinten dran, statt eines eigenen zweiten Aufbaus.
@@ -462,10 +513,15 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                         // (siehe `TvHaupt.kt`), sie verschiebt den Inhalt nicht — `kopfUnten` war
                         // hier ein Rest aus einer Fassung, die das noch tat, und liess den
                         // Startseiten-Titel 12 dp tiefer stehen als den der Detailseite.
-                        aktuell?.let { k ->
-                            Kopfauskunft(k.name, k.folgenname, k.angabenzeile, k.bewertung, k.freigabe, k.beschreibung,
-                                         Modifier.padding(start = TvStil.randSeite, top = 98.dp)) {
-                                TvRestzeitmarke(k.restzeit, k.gesehen)
+                        //
+                        // **Kurz ueberblendet (200 ms), nicht hart umgesprungen** — der Text wechselt
+                        // weiter sofort mit dem Fokus (keine Entprellung wie beim Bild), nur weich.
+                        Crossfade(aktuell, animationSpec = tween(200), label = "kopfauskunft") { k ->
+                            if (k != null) {
+                                Kopfauskunft(k.name, k.folgenname, k.angabenzeile, k.bewertung, k.freigabe, k.beschreibung,
+                                             Modifier.padding(start = TvStil.randSeite, top = 98.dp)) {
+                                    TvRestzeitmarke(k.restzeit, k.gesehen)
+                                }
                             }
                         }
                     }
@@ -519,8 +575,8 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                                                          modifier = Modifier.focusRequester(anfrage("$i|${k.id}")),
                                                          fokusGeaendert = { if (it) { aktuell = k; fokusReihe = i; zuletztAmTitel = "$i|${k.id}" } }) {
                                                     // „Weiterschauen" spielt direkt ab, wie auf tvOS.
-                                                    if (r.quer) lauf.launch { weiterschauenWunsch(app, k.id)?.let { app.spiel.value = it } ?: oeffnen(Ziel(k.id, k.name, k.typ)) }
-                                                    else oeffnen(Ziel(k.id, k.name, k.typ))
+                                                    if (r.quer) lauf.launch { weiterschauenWunsch(app, k.id)?.let { app.spiel.value = it } ?: oeffnenMitVorab(k) }
+                                                    else oeffnenMitVorab(k)
                                                 }
                                             }
                                         }
@@ -579,7 +635,7 @@ private fun TvStartFehler(nochmal: () -> Unit) {
  * die Kulisse am hellsten und der gleichmaessige Verlauf allein reicht nicht.
  */
 @Composable
-private fun Kopfschatten() {
+internal fun Kopfschatten() {
     val hoehe = kopfUnten + 45.dp
     Box(Modifier.fillMaxWidth().height(hoehe)
             .background(Brush.verticalGradient(

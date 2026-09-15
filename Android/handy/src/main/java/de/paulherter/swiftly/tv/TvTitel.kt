@@ -280,7 +280,12 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     }
     val haupt = ersterFokus()
     val titel = t
-    val name = titel?.name ?: ziel.name
+    // Bis `Kern.titel` antwortet, steht der Kopf mit dem, was die Startseite schon zeigte (`TvVorab`)
+    // — dieselben Werte, also springt beim Eintreffen nichts. Nur Direct Play, Knoepfe und Reihen kommen nach.
+    val vorab = remember(ziel.id) { TvUebergabe.fuer(ziel.id) }
+    val name = titel?.name ?: vorab?.titel ?: ziel.name
+    // Kulisse und Grund zeichnet `TvHaupt` (`TvKulissenebene`) — dieselbe Adresse wie auf Start.
+    TvKulisseMelden(titel?.let { it.kulisse ?: it.kopfbild }, bereit = titel != null)
 
     // Vorlage: `DetailView.eingeblendet` auf tvOS — **beim Erscheinen blendet ein, nicht beim
     // Laden**, und zwar jedes Mal, ob die Daten (Zwischenspeicher) schon dastehen oder nicht.
@@ -293,11 +298,12 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
         tween(TvStil.einblendenDauer, easing = TvStil.einblendenKurve), label = "eingeblendet")
     LaunchedEffect(ziel.id) { eingeblendet = true }
 
-    Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        TvBildgrund(titel?.kopfbild)
-        Kulisse(titel?.kopfbild, Modifier.align(Alignment.TopEnd))
+    Box(Modifier.fillMaxSize()) {
         TvAbschnittsseite { a ->
-                TvDetailkopf(name, titel?.jahrLaufzeit.orEmpty(), titel?.bewertung, titel?.freigabe, titel?.beschreibung,
+                TvDetailkopf(name, if (titel != null) titel.jahrLaufzeit else vorab?.angaben.orEmpty(),
+                             if (titel != null) titel.bewertung else vorab?.bewertung,
+                             if (titel != null) titel.freigabe else vorab?.freigabe,
+                             if (titel != null) titel.beschreibung else vorab?.beschreibung,
                              direktplay = titel?.planDa == true && titel.lossless,
                              hinweis = if (titel?.planDa == true && !titel.lossless) titel.methode else null,
                              knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf)) {
