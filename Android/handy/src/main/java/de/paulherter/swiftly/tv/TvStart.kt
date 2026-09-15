@@ -27,6 +27,7 @@ import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -88,6 +89,7 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     LaunchedEffect(liste) { if (aktuell == null) aktuell = liste?.firstOrNull()?.kacheln?.firstOrNull() }
     var bild by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(aktuell) { delay(250); bild = aktuell?.let { it.quer ?: it.plakat } }
+    val lauf = rememberCoroutineScope()
     val erster = remember { FocusRequester() }
     LaunchedEffect(liste != null) { if (liste != null) { delay(60); runCatching { erster.requestFocus() } } }
 
@@ -124,7 +126,9 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                                          if (r.quer) k.fortschritt else null,
                                          modifier = if (i == 0 && j == 0) Modifier.focusRequester(erster) else Modifier,
                                          fokusGeaendert = { if (it) aktuell = k }) {
-                                    oeffnen(Ziel(k.id, k.name, k.typ))
+                                    // „Weiterschauen" spielt direkt ab, wie auf tvOS.
+                                    if (r.quer) lauf.launch { weiterschauenWunsch(app, k.id)?.let { app.spiel.value = it } ?: oeffnen(Ziel(k.id, k.name, k.typ)) }
+                                    else oeffnen(Ziel(k.id, k.name, k.typ))
                                 }
                             }
                         }

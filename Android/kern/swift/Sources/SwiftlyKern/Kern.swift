@@ -409,11 +409,9 @@ public final class Kern: @unchecked Sendable {
             ?? staffeln.first { hinweisNummer != nil && $0.indexNumber == hinweisNummer }
             ?? staffeln.first { stand?.parentIndexNumber != nil && $0.indexNumber == stand?.parentIndexNumber }
             ?? staffeln.first
-        var plan: PlaybackPlan?
-        if let stand {
-            plan = try? await c.playbackPlan(for: stand.id,
-                                             profile: .vlc(maxBitrate: profilBitrate))
-        }
+        // **Der Plan kommt getrennt** (`plan(id:)`), wie auf iOS nach dem Stand: `PlaybackInfo`
+        // braucht bei Dateien, die der Server noch nicht vermessen hat, Sekunden — und die
+        // ganze Seite wartete darauf. Deshalb waren manche Serien sofort da, andere nicht.
         // Die Besetzung der Folge, die als Naechstes laeuft — sonst die der Serie.
         let leute = (stand?.darsteller.isEmpty == false ? stand?.darsteller : nil) ?? serie.darsteller
         return try json(Serienantwort(
@@ -428,7 +426,7 @@ public final class Kern: @unchecked Sendable {
             bewertung: serie.communityRating, freigabe: serie.officialRating, beschreibung: serie.beschreibung,
             gemerkt: serie.userData?.isFavorite ?? false, gesehen: serie.userData?.played ?? false,
             trailer: serie.remoteTrailers?.first?.url.map { "\($0)" },
-            planDa: plan != nil, lossless: plan?.isLossless ?? false, methode: plan.map { $0.method.rawValue },
+            planDa: false, lossless: false, methode: nil,
             stand: stand.map { f in
                 Standantwort(id: f.id, fortsetzen: (f.userData?.playbackPositionTicks ?? 0) > 0,
                              restzeit: f.restzeitText, fortschritt: f.userData?.playedPercentage.map { $0 / 100 },
@@ -461,6 +459,14 @@ public final class Kern: @unchecked Sendable {
                 ab: f.fortsetzenAb))
         }
         return try json(zeilen)
+    }
+
+    /// Nur der Abspielplan — fuer die Belegzeile, nachgereicht. Leer, wenn es keinen gibt.
+    public func plan(id: String) async -> String {
+        guard let c = client else { return "{}" }
+        let geplant = (try? await c.playbackPlan(for: id, profile: .vlc(maxBitrate: profilBitrate))) ?? nil
+        guard let p = geplant else { return "{}" }
+        return Self.kodiert(Planantwort(lossless: p.isLossless, methode: p.method.rawValue))
     }
 
     // MARK: Konto und Server
@@ -1251,3 +1257,4 @@ struct Platzantwort: Encodable {
     let reichtNachAufraeumen: Bool
 }
 struct Downloadgruppenantwort: Encodable { let id, titel: String; let bytes: Int64; let serienId: String?; let folgen: [String] }
+struct Planantwort: Encodable { let lossless: Bool; let methode: String }

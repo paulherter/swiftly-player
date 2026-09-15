@@ -128,6 +128,8 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     var reiter by rememberSaveable(ziel.id) { mutableIntStateOf(0) }
     var listeOffen by remember { mutableStateOf(false) }
     var meldung by remember { mutableStateOf<String?>(null) }
+    /** Der Plan kommt nach der Seite — bis dahin haelt die Belegzeile ihren Platz. */
+    var planGeladen by remember(ziel.id) { mutableStateOf(serie?.planDa == true) }
     val bereich = rememberCoroutineScope()
     val kontext = LocalContext.current
     val ruck = rememberRuck()
@@ -140,11 +142,25 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
 
+    suspend fun planLaden(folgeId: String) {
+        try {
+            val o = JSONObject(withContext(Dispatchers.IO) { app.kern.plan(folgeId).await() })
+            val neu = serie?.copy(planDa = o.has("methode"), lossless = o.optBoolean("lossless"), methode = o.feldText("methode"))
+            if (neu != null) { serie = neu; app.serienSpeicher[ziel.id] = neu }
+            planGeladen = true
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { planGeladen = true }
+    }
+
     /** **Ein Laden fuer alles**, auch nach „Staffel als gesehen" — ein eigenes Auffrischen vergass auf iOS einmal den Plan. */
     suspend fun laden() {
         try {
-            val neu = serieLesen(withContext(Dispatchers.IO) { app.kern.serie(ziel.id).await() })
+            val gelesen = serieLesen(withContext(Dispatchers.IO) { app.kern.serie(ziel.id).await() })
+            // Den schon bekannten Plan behalten, bis der neue da ist — sonst flackert die Belegzeile.
+            val alt = serie
+            val neu = if (alt != null && alt.stand?.id == gelesen.stand?.id)
+                gelesen.copy(planDa = alt.planDa, lossless = alt.lossless, methode = alt.methode) else gelesen
             serie = neu
+            neu.stand?.let { st -> bereich.launch { planLaden(st.id) } } ?: run { planGeladen = true }
             app.serienSpeicher[ziel.id] = neu
             gemerkt = neu.gemerkt
             gesehen = neu.gesehen
@@ -205,7 +221,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
 
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp),
                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Belegzeile(s != null, s?.planDa == true, s?.lossless == true, s?.methode, s?.bewertung, s?.freigabe)
+                Belegzeile(s != null && planGeladen, s?.planDa == true, s?.lossless == true, s?.methode, s?.bewertung, s?.freigabe)
 
                 // Immer genau ein Knopf. Waehrend des Ladens sieht er bereit aus und sagt „Lädt…";
                 // gesperrt erst, wenn feststeht, dass es keine Folge gibt. Der Player folgt.

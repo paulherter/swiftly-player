@@ -55,6 +55,8 @@ import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 data class Kachel(val id: String, val name: String, val typ: String, val unterzeile: String?,
@@ -79,10 +81,29 @@ internal fun reihenLesen(json: String): List<Reihe> {
     }
 }
 
+/**
+ * **Aus „Weiterschauen" direkt in die Wiedergabe** — `starte` in `HomeView`: die Stelle frisch holen,
+ * die aus der Liste ist oft veraltet. Gibt es keinen Plan, fuehrt der Tipp auf die Seite.
+ */
+internal suspend fun weiterschauenWunsch(app: SwiftlyAnwendung, id: String): Abspielwunsch? = runCatching {
+    titelLesen(withContext(Dispatchers.IO) { app.kern.titel(id).await() }).takeIf { it.planDa }?.let { Abspielwunsch(id, it.fortsetzenAb) }
+}.getOrNull()
+
 /** Vorlage: `HomeView` in `Sources/Shared/HomeView.swift` (Kopf, Reihen, Kacheln). */
 @Composable
 fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     var reihen by remember { mutableStateOf(app.startReihen) }
+    val lauf = rememberCoroutineScope()
+    var startet by remember { mutableStateOf(false) }
+    fun weiterschauen(k: Kachel) {
+        if (startet) return
+        startet = true
+        lauf.launch {
+            val wunsch = weiterschauenWunsch(app, k.id)
+            if (wunsch != null) app.spiel.value = wunsch else oeffnen(Ziel(k.id, k.name, k.typ))
+            startet = false
+        }
+    }
     var fehler by remember { mutableStateOf<String?>(null) }
     val e = app.einstellungen
     // Neu laden, sobald sich Reihenfolge, ausgeblendete Reihen oder Genres aendern.
@@ -126,7 +147,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 Gattungschips(e.startGenres) { g -> oeffnen(Ziel(g, g, "Genre")) }
             }
             items(reihen ?: emptyList(), key = { it.titel }) { reihe ->
-                ReiheAnsicht(reihe, oeffnen, Modifier.animateItem(fadeInSpec = Bewegung.einblenden(), placementSpec = null, fadeOutSpec = null))
+                ReiheAnsicht(reihe, oeffnen, if (reihe.quer) { k -> weiterschauen(k) } else null, Modifier.animateItem(fadeInSpec = Bewegung.einblenden(), placementSpec = null, fadeOutSpec = null))
             }
         }
         // Oben: Kopfverlauf (zieht erst beim Scrollen auf), darueber der Farbschein auf
@@ -206,23 +227,23 @@ private fun Farbschein(versatz: Float, ausgespartOben: Dp = 0.dp) {
 }
 
 @Composable
-private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, modifier: Modifier = Modifier) {
+private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, direkt: ((Kachel) -> Unit)?, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(11.dp)) {
         Text(reihe.titel, style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift,
              modifier = Modifier.padding(horizontal = Stil.randAbstand))
         LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
                 horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand)) {
-            items(reihe.kacheln, key = { it.id }) { KachelAnsicht(it, reihe.quer, oeffnen) }
+            items(reihe.kacheln, key = { it.id }) { k -> KachelAnsicht(k, reihe.quer) { direkt?.invoke(k) ?: oeffnen(Ziel(k.id, k.name, k.typ)) } }
         }
     }
 }
 
 /** Vorlage: `Kachel` in `HomeView.swift` — 112×168 hochkant, 236×133 quer, Ecke 10, Balken 4 unten. */
 @Composable
-private fun KachelAnsicht(k: Kachel, quer: Boolean, oeffnen: (Ziel) -> Unit) {
+private fun KachelAnsicht(k: Kachel, quer: Boolean, tun: () -> Unit) {
     val breite: Dp = if (quer) 236.dp else Stil.kachelBreite
     val hoehe: Dp = if (quer) 133.dp else Stil.kachelHoehe
-    Column(Modifier.width(breite).einblenden().antippen { oeffnen(Ziel(k.id, k.name, k.typ)) }, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(Modifier.width(breite).einblenden().antippen(tun), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.size(breite, hoehe).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             val adresse = if (quer) k.quer ?: k.plakat else k.plakat
             SubcomposeAsyncImage(
