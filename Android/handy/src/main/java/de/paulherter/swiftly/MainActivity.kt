@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
                 // Der Vorhang faellt als reine Ueberblendung, 0,45 s — kein Rutschen, kein Wachsen.
                 androidx.compose.animation.AnimatedVisibility(!gestartet,
                     enter = androidx.compose.animation.EnterTransition.None,
-                    exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(450, easing = androidx.compose.animation.core.EaseOut))) {
+                    exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(450, easing = de.paulherter.swiftly.gemeinsam.Bewegung.weich))) {
                     Startvorhang { gestartet = true }
                 }
             }

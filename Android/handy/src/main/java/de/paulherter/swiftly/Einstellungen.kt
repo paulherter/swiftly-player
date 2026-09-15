@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import de.paulherter.swiftly.gemeinsam.Stil
+import androidx.compose.animation.core.Animatable
+import de.paulherter.swiftly.gemeinsam.Bewegung
+import kotlinx.coroutines.launch
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import org.json.JSONArray
 import kotlin.reflect.KProperty
@@ -220,34 +223,59 @@ fun <T> Umsortierbar(eintraege: List<T>, schluessel: (T) -> String, verschieben:
     val aktuell by rememberUpdatedState(eintraege)
     var gezogen by remember { mutableStateOf<String?>(null) }
     var zug by remember { mutableFloatStateOf(0f) }
+    val ruck = rememberRuck()
+    val lauf = rememberCoroutineScope()
     Column {
         eintraege.forEachIndexed { i, eintrag ->
             val kennung = schluessel(eintrag)
-            var hoehe by remember(kennung) { mutableIntStateOf(1) }
             if (i > 0) Trennlinie()
-            Row(Modifier.fillMaxWidth().onSizeChanged { hoehe = it.height }
-                    .zIndex(if (gezogen == kennung) 1f else 0f)
-                    .graphicsLayer { translationY = if (gezogen == kennung) zug else 0f }
-                    .background(if (gezogen == kennung) Stil.erhoeht else Color.Transparent),
-                verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { zeile(eintrag) }
-                Box(Modifier.size(44.dp).padding(end = 6.dp)
-                        .pointerInput(kennung) {
-                            detectVerticalDragGestures(
-                                onDragStart = { gezogen = kennung; zug = 0f },
-                                onDragEnd = { gezogen = null; zug = 0f },
-                                onDragCancel = { gezogen = null; zug = 0f },
-                                onVerticalDrag = { aenderung, d ->
-                                    aenderung.consume()
-                                    zug += d
-                                    val liste = aktuell
-                                    val stelle = liste.indexOfFirst { schluessel(it) == kennung }
-                                    if (zug > hoehe / 2f && stelle in 0 until liste.lastIndex) { verschieben(liste[stelle], 1); zug -= hoehe }
-                                    else if (zug < -hoehe / 2f && stelle > 0) { verschieben(liste[stelle], -1); zug += hoehe }
-                                })
-                        },
-                    contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.DragHandle, contentDescription = null, tint = Color.White.copy(alpha = 0.28f), modifier = Modifier.size(20.dp))
+            key(kennung) {
+                var hoehe by remember { mutableIntStateOf(1) }
+                // Wer den Platz tauscht, ohne gezogen zu werden, gleitet an den neuen — der Tausch
+                // ist die Rueckmeldung dieser Geste, ein Sprung saehe wie ein Fehler aus.
+                val versatz = remember { Animatable(0f) }
+                var vorher by remember { mutableIntStateOf(i) }
+                LaunchedEffect(i) {
+                    if (i != vorher && gezogen != kennung) {
+                        versatz.snapTo((vorher - i) * hoehe.toFloat())
+                        vorher = i
+                        versatz.animateTo(0f, tween(150, easing = Bewegung.weich))
+                    } else vorher = i
+                }
+                Row(Modifier.fillMaxWidth().onSizeChanged { hoehe = it.height }
+                        .zIndex(if (gezogen == kennung) 1f else 0f)
+                        .graphicsLayer { translationY = if (gezogen == kennung) zug else versatz.value }
+                        .background(if (gezogen == kennung) Stil.erhoeht else Color.Transparent),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { zeile(eintrag) }
+                    Box(Modifier.size(44.dp).padding(end = 6.dp)
+                            .pointerInput(kennung) {
+                                fun loslassen() {
+                                    val rest = zug
+                                    gezogen = null
+                                    zug = 0f
+                                    // Auch das Loslassen gleitet an den Platz, statt zu springen.
+                                    lauf.launch { versatz.snapTo(rest); versatz.animateTo(0f, tween(150, easing = Bewegung.weich)) }
+                                }
+                                detectVerticalDragGestures(
+                                    onDragStart = { gezogen = kennung; zug = 0f },
+                                    onDragEnd = { loslassen() },
+                                    onDragCancel = { loslassen() },
+                                    onVerticalDrag = { aenderung, d ->
+                                        aenderung.consume()
+                                        zug += d
+                                        val liste = aktuell
+                                        val stelle = liste.indexOfFirst { schluessel(it) == kennung }
+                                        if (zug > hoehe / 2f && stelle in 0 until liste.lastIndex) {
+                                            verschieben(liste[stelle], 1); zug -= hoehe; ruck(Ruck.Leicht)
+                                        } else if (zug < -hoehe / 2f && stelle > 0) {
+                                            verschieben(liste[stelle], -1); zug += hoehe; ruck(Ruck.Leicht)
+                                        }
+                                    })
+                            },
+                        contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.DragHandle, contentDescription = null, tint = Color.White.copy(alpha = 0.28f), modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }

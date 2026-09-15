@@ -50,6 +50,9 @@ import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /** Vorlage: `Bereich` in `Sources/Shared/Stil.swift` — Downloads nur, wenn eingeschaltet. */
 enum class Bereich(val titel: String, val symbol: ImageVector) {
@@ -95,8 +98,21 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     val bewegt by remember { derivedStateOf { schub.value > 0f } }
 
     // Die Wegeregel aus `zielorte` steht in `Unterseite`.
+    //
+    // **Ein neuer Auftrag verwirft keinen Tipp.** Laeuft noch eine Bewegung, wird sie an ihr Ziel
+    // gesetzt und ihr Abschluss abgewartet — ein zweiter Tipp oder Zurueck mitten im Wechsel wirkt,
+    // statt still unterzugehen.
+    val laufend = remember { arrayOfNulls<Job>(1) }
+    fun auftrag(block: suspend () -> Unit) {
+        val vorher = laufend[0]
+        laufend[0] = lauf.launch {
+            if (vorher?.isActive == true) { schub.snapTo(schub.targetValue); vorher.join() }
+            block()
+        }
+    }
+    fun wegnehmen() { stapel[bereich] = stapel[bereich].orEmpty().dropLast(1) }
     val oeffnen: (Ziel) -> Unit = { z ->
-        if (!schub.isRunning) lauf.launch {
+        auftrag {
             // Erst hinausschieben, dann einsetzen — im selben Bild, sonst blitzt die Seite auf.
             schub.snapTo(1f)
             stapel[bereich] = stapel[bereich].orEmpty() + z
@@ -104,21 +120,33 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
         }
     }
     val zurueck: () -> Unit = {
-        if (!schub.isRunning && stapel[bereich].orEmpty().isNotEmpty()) lauf.launch {
-            schub.animateTo(1f, Bewegung.seite())
-            stapel[bereich] = stapel[bereich].orEmpty().dropLast(1)
-            schub.snapTo(0f)
+        if (stapel[bereich].orEmpty().isNotEmpty()) auftrag {
+            // Auch abgebrochen gilt der Rueckweg — der Abschluss steht deshalb im finally.
+            try { schub.animateTo(1f, Bewegung.seite()) }
+            finally { withContext(NonCancellable) { wegnehmen(); schub.snapTo(0f) } }
         }
     }
     PredictiveBackHandler(enabled = oben.isNotEmpty()) { ereignisse ->
+        laufend[0]?.let { if (it.isActive) { schub.snapTo(schub.targetValue); it.join() } }
+        // Das Tempo des Fingers — damit das Loslassen weiterfliegt, statt neu anzusetzen.
+        var tempo = 0f
+        var zuletzt = 0L
+        var wert = schub.value
         try {
-            ereignisse.collect { e -> schub.snapTo(e.progress) }
-            schub.animateTo(1f, Bewegung.seite())
-            stapel[bereich] = stapel[bereich].orEmpty().dropLast(1)
+            ereignisse.collect { e ->
+                val jetzt = System.nanoTime()
+                if (zuletzt > 0) { val dt = (jetzt - zuletzt) / 1e9f; if (dt > 0f) tempo = (e.progress - wert) / dt }
+                zuletzt = jetzt
+                wert = e.progress
+                schub.snapTo(e.progress)
+            }
+            schub.animateTo(1f, Bewegung.wurf(), initialVelocity = tempo.coerceAtLeast(0f))
+            wegnehmen()
             schub.snapTo(0f)
         } catch (e: CancellationException) {
-            // Losgelassen, bevor es reichte: die Seite gleitet zurueck an ihren Platz.
-            lauf.launch { schub.animateTo(0f, Bewegung.seite()) }
+            // Losgelassen, bevor es reichte: die Seite gleitet mit ihrem Tempo zurueck.
+            val zurueckTempo = tempo.coerceAtMost(0f)
+            lauf.launch { schub.animateTo(0f, Bewegung.wurf(), initialVelocity = zurueckTempo) }
             throw e
         }
     }
@@ -147,7 +175,8 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
         }
     }
 
-    CompositionLocalProvider(LocalBereichsmass provides bereichsmass, LocalFortschrittZeigen provides app.einstellungen.fortschritt) {
+    CompositionLocalProvider(LocalBereichsmass provides bereichsmass, LocalFortschrittZeigen provides app.einstellungen.fortschritt,
+                              LocalLadepuls provides Ladepuls()) {
         Box(Modifier.fillMaxSize().background(Stil.grund)) {
             val ab = if (bewegt && oben.isNotEmpty()) oben.size - 1 else oben.size
             for (tiefe in ab..oben.size) {

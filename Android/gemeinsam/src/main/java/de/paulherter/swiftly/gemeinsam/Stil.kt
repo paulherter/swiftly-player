@@ -40,10 +40,19 @@ object Bewegung {
     fun <T> blatt(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.86f, stiffness = 322f)
     /** Das Push von `NavigationStack` — rund 350 ms, rasch an und lange auslaufend. */
     fun <T> seite(): FiniteAnimationSpec<T> = tween(350, easing = CubicBezierEasing(0.25f, 0.8f, 0.25f, 1f))
+    /**
+     * **Nach einer Geste weiter mit dem Tempo des Fingers** — ohne Nachfedern, damit ein Wurf
+     * nicht erst bremst und dann neu ansetzt. Fuer Zurueckgeste und weggeworfenes Blatt.
+     */
+    fun <T> wurf(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 380f)
     /** `druckkurve` beim Loslassen. Das Druecken selbst hat **keine** Dauer. */
     fun <T> loslassen(): FiniteAnimationSpec<T> = tween(120, easing = LinearEasing)
     /** `Stil.bereichsmass` — dreimal nach unten korrigiert: 0,97 und 0,99 sah man an der Oberkante. */
     const val BEREICHSMASS = 0.995f
+
+    // Reduzierte Bewegung: Android setzt bei „Animationen entfernen" die Dauer aller Compose-
+    // Animationen selbst auf null. Das ist dort die Erwartung; was sich nicht daran haelt (Lottie),
+    // fragt die Einstellung selbst ab.
 }
 
 object Stil {

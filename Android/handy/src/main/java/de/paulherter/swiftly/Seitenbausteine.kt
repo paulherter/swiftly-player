@@ -68,6 +68,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.State
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.spring
@@ -236,12 +239,21 @@ fun Kachelplakette(marke: String, zahl: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** Vorlage: `Ladefeld` — atmet zwischen halber und voller Deckung, 0,9 s. */
+/**
+ * **Ein Puls fuer alle Platzhalter** — eine Uhr, nicht dreissig. Mit eigener Uhr je Feld atmeten
+ * nachgeladene Platzhalter gegen die schon stehenden (iOS hat das aus demselben Grund verworfen).
+ */
+val LocalLadepuls = compositionLocalOf<State<Float>?> { null }
+
+@Composable
+fun Ladepuls(): State<Float> = rememberInfiniteTransition(label = "laden").animateFloat(
+    0.5f, 1f, infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "hell")
+
+/** Vorlage: `Ladefeld` — atmet zwischen halber und voller Deckung, 0,9 s, im gemeinsamen Takt. */
 @Composable
 fun Ladefeld(modifier: Modifier, ecke: Dp = Stil.eckeKachel) {
-    val hell by rememberInfiniteTransition(label = "laden").animateFloat(
-        0.5f, 1f, infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "hell")
-    Box(modifier.graphicsLayer { alpha = hell }.clip(RoundedCornerShape(ecke)).background(Stil.flaeche))
+    val puls = LocalLadepuls.current
+    Box(modifier.graphicsLayer { alpha = puls?.value ?: 0.75f }.clip(RoundedCornerShape(ecke)).background(Stil.flaeche))
 }
 
 /** Vorlage: `Kachelplatzhalter` — Plakat 2:3, darunter zwei Zeilen. */
@@ -353,10 +365,12 @@ fun Blattauflage(app: SwiftlyAnwendung) {
     var hoehe by remember { mutableIntStateOf(1) }
     LaunchedEffect(wunsch) { if (wunsch != null) zug.snapTo(0f) }
     val schleier by animateFloatAsState(if (offen) 0.55f else 0f, Bewegung.blatt(), label = "schleier")
+    val schleierDa by remember { derivedStateOf { schleier > 0.001f } }
     Box(Modifier.fillMaxSize()) {
-        if (schleier > 0.001f) Box(Modifier.fillMaxSize()
-            .graphicsLayer { alpha = 1f - (zug.value / hoehe).coerceIn(0f, 1f) }
-            .background(Color.Black.copy(alpha = schleier)).antippen(schliessen))
+        // Deckkraft in der Grafikebene — neu komponiert wird nur, wenn der Schleier kommt oder geht.
+        if (schleierDa) Box(Modifier.fillMaxSize()
+            .graphicsLayer { alpha = schleier * (1f - (zug.value / hoehe).coerceIn(0f, 1f)) }
+            .background(Color.Black).antippen(schliessen))
         AnimatedVisibility(offen, Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(Bewegung.blatt()) { it },
             exit = slideOutVertically(Bewegung.blatt()) { it }) {
@@ -389,7 +403,11 @@ private fun Blattkarte(w: Blattwunsch, zug: Animatable<Float, AnimationVector1D>
             onDragStarted = { roh[0] = zug.value },
             onDragStopped = { tempo ->
                 // Ein Viertel der Hoehe oder ein schneller Wurf schliesst; sonst mit Schwung zurueck.
-                if (zug.value > hoehe * 0.25f || tempo > 700 * dichte) schliessen()
+                // Geworfen fliegt die Karte mit ihrem Tempo hinaus, statt kurz zu stocken.
+                if (zug.value > hoehe * 0.25f || tempo > 700 * dichte) {
+                    zug.animateTo(hoehe.toFloat(), Bewegung.wurf(), initialVelocity = tempo.coerceAtLeast(0f))
+                    schliessen()
+                }
                 else { roh[0] = 0f; zug.animateTo(0f, spring(dampingRatio = 0.956f, stiffness = 280f), initialVelocity = tempo) }
             })
         .navigationBarsPadding()) {

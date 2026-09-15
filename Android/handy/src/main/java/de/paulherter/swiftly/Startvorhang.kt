@@ -35,6 +35,12 @@ fun Startvorhang(fertig: () -> Unit) {
     val rufen = { if (einmal.compareAndSet(false, true)) fertig() }
     val amEnde = komposition != null && fortschritt >= 1f
     LaunchedEffect(amEnde) { if (amEnde) { delay(500); rufen() } }
+    // Lottie kennt „Animationen entfernen" nicht — dann faellt der Vorhang sofort.
+    val kontext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        val masstab = android.provider.Settings.Global.getFloat(kontext.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        if (masstab == 0f) rufen()
+    }
     LaunchedEffect(Unit) { delay(3500); rufen() }
     Box(Modifier.fillMaxSize().background(Stil.grund), contentAlignment = Alignment.Center) {
         LottieAnimation(komposition, { fortschritt }, Modifier.size(440.dp))

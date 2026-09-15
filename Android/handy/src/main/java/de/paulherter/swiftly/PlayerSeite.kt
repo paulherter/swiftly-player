@@ -405,6 +405,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
         if (sichtbar || !bildFrei) 1f else 0f,
         if (sichtbar || !bildFrei) tween(180, easing = Bewegung.weich) else tween(340, easing = Bewegung.weich),
         label = "steuerung")
+    // Nur beim Ueberschreiten neu komponieren — die Deckkraft selbst liest die Grafikebene.
+    val steuerungDa by remember { derivedStateOf { deckung > 0.01f } }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { spieler.attachViews(it, null, true, false) } },
@@ -460,10 +462,10 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
         }
 
         // Ausgeblendet haelt die Mitte trotzdem an.
-        if (bildFrei && deckung < 0.01f && !imKleinenFenster) Box(Modifier.align(Alignment.Center).size(108.dp, 132.dp).antippen { umschalten() })
+        if (bildFrei && !steuerungDa && !imKleinenFenster) Box(Modifier.align(Alignment.Center).size(108.dp, 132.dp).antippen { umschalten() })
 
         // Im kleinen Fenster nur das Bild — die Steuerung bringt das System mit.
-        if (deckung > 0.01f && !imKleinenFenster) Box(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }) {
+        if (steuerungDa && !imKleinenFenster) Box(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }) {
             // `Playerschleier` — ohne ihn verschwinden weisse Zeichen ueber hellen Szenen.
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
             Box(Modifier.fillMaxWidth().height(140.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent))))
@@ -550,8 +552,8 @@ private fun Zeitzeile(position: Double, dauer: Double, schieben: (Boolean) -> Un
     var ziel by remember { mutableStateOf<Double?>(null) }
     val gezeigt = ziel ?: position
     val ziffern = TextStyle(fontSize = 13.sp, fontFeatureSettings = "tnum")
-    val dicke by animateDpAsState(if (ziel != null) 6.dp else 3.dp, Bewegung.umschalten(), label = "spur")
-    val knauf by animateDpAsState(if (ziel != null) 18.dp else 13.dp, Bewegung.umschalten(), label = "knauf")
+    // Feste Masse, skaliert in der Grafikebene — Spur 3 → 6, Knauf 13 → 18, ohne Layout je Bild.
+    val gross by animateFloatAsState(if (ziel != null) 1f else 0f, Bewegung.umschalten(), label = "regler")
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(zeitText(gezeigt), style = ziffern, color = Stil.schrift)
         BoxWithConstraints(Modifier.weight(1f).height(32.dp)
@@ -565,9 +567,11 @@ private fun Zeitzeile(position: Double, dauer: Double, schieben: (Boolean) -> Un
             .pointerInput(dauer) { detectTapGestures { o -> springen((o.x / size.width).coerceIn(0f, 1f).toDouble() * dauer) } },
             contentAlignment = Alignment.CenterStart) {
             val anteil = if (dauer > 0) (gezeigt / dauer).toFloat().coerceIn(0f, 1f) else 0f
-            Box(Modifier.fillMaxWidth().height(dicke).clip(CircleShape).background(Color.White.copy(alpha = 0.25f)))
-            Box(Modifier.fillMaxWidth(anteil).height(dicke).clip(CircleShape).background(Color.White))
-            Box(Modifier.offset(x = maxWidth * anteil - knauf / 2).size(knauf).clip(CircleShape).background(Color.White))
+            val spur = Modifier.height(6.dp).graphicsLayer { scaleY = 0.5f + 0.5f * gross }.clip(CircleShape)
+            Box(Modifier.fillMaxWidth().then(spur).background(Color.White.copy(alpha = 0.25f)))
+            Box(Modifier.fillMaxWidth(anteil).then(spur).background(Color.White))
+            Box(Modifier.offset(x = maxWidth * anteil - 9.dp).size(18.dp)
+                .graphicsLayer { val m = (13f + 5f * gross) / 18f; scaleX = m; scaleY = m }.clip(CircleShape).background(Color.White))
         }
         Text("−" + zeitText((dauer - gezeigt).coerceAtLeast(0.0)), style = ziffern, color = Stil.schrift)
     }

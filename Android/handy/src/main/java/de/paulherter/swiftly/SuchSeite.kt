@@ -49,6 +49,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.Stil
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import de.paulherter.swiftly.kern.Kern
 import kotlinx.coroutines.CancellationException
@@ -121,30 +127,46 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     LaunchedEffect(raster) { snapshotFlow { raster.isScrollInProgress }.collect { if (it) fokusVerwalter.clearFocus() } }
 
     // **Die Bewegung liegt an der ganzen Spalte, nicht am Feld** — sonst sprang eine dunkle Kante.
-    Column(Modifier.fillMaxSize().background(Stil.grund).statusBarsPadding().animateContentSize(Bewegung.blatt())) {
-        // Nur ausblenden, nicht wegfahren: ein Verschieben liess den Verlauf des Kopfes aufblitzen.
-        AnimatedVisibility(!st.suchmodus,
-            enter = fadeIn(Bewegung.blatt()) + expandVertically(Bewegung.blatt()),
-            exit = fadeOut(Bewegung.blatt()) + shrinkVertically(Bewegung.blatt())) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp),
+    //
+    // Nur Deckkraft und Verschieben, keine Hoehenanimation: die liess das Raster darunter bei jedem
+    // Bild neu aufbauen. Der Kopf bleibt im Layout, bis er ganz ausgeblendet ist; der Rest ruckt so
+    // lange um seine Hoehe nach oben und ist dafuer um genau diese Hoehe laenger.
+    val kopfweg = remember { Animatable(if (st.suchmodus) 1f else 0f) }
+    LaunchedEffect(st.suchmodus) { kopfweg.animateTo(if (st.suchmodus) 1f else 0f, Bewegung.blatt()) }
+    val kopfDa by remember { derivedStateOf { kopfweg.value < 1f } }
+    var kopfHoehe by remember { mutableIntStateOf(0) }
+    Column(Modifier.fillMaxSize().background(Stil.grund).statusBarsPadding()) {
+        if (kopfDa) {
+            Row(Modifier.fillMaxWidth().onSizeChanged { kopfHoehe = it.height }.graphicsLayer { alpha = 1f - kopfweg.value }
+                    .padding(horizontal = Stil.randAbstand).padding(bottom = 12.dp),
                 verticalAlignment = Alignment.Top) {
                 Text(uebersetzt("Suchen"), style = Stil.titelGross.copy(letterSpacing = (-0.6).sp), color = Stil.schrift,
                      modifier = Modifier.weight(1f))
                 Kopfziele(app, oeffnen)
             }
         }
+        Column(Modifier.fillMaxWidth().weight(1f)
+            .layout { messbar, grenzen ->
+                val mehr = if (kopfDa) kopfHoehe else 0
+                val platz = messbar.measure(grenzen.copy(minHeight = grenzen.maxHeight + mehr, maxHeight = grenzen.maxHeight + mehr))
+                layout(platz.width, grenzen.maxHeight) { platz.place(0, 0) }
+            }
+            .graphicsLayer { translationY = if (kopfDa) -kopfHoehe * kopfweg.value else 0f }) {
 
         Row(Modifier.fillMaxWidth().padding(horizontal = Stil.randAbstand)
                 .padding(top = if (st.suchmodus) 8.dp else 4.dp, bottom = 16.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            verticalAlignment = Alignment.CenterVertically) {
             Suchfeld(st.begriff, { st.begriff = it }, fokus, Modifier.weight(1f),
                      amTippen = { drin -> if (drin) st.suchmodus = true }, abschicken = ::merken)
             // **Der Ausweg steht neben dem Feld, nicht darin:** das Kreuz im Feld leert nur.
-            // Es kommt zuletzt und geht zuerst — sonst stiess es mit dem Profilbild zusammen.
+            // Die Zeile oeffnet ihm federnd Platz, statt das Feld springen zu lassen; es blendet
+            // danach ein und geht zuerst — sonst stiess es mit dem Profilbild zusammen.
             AnimatedVisibility(st.suchmodus,
-                enter = fadeIn(tween(280, delayMillis = 140, easing = Bewegung.weich)),
-                exit = fadeOut(tween(90, easing = EaseOut))) {
-                Box(Modifier.size(44.dp).antippen { st.begriff = ""; fokusVerwalter.clearFocus(); st.suchmodus = false },
+                enter = expandHorizontally(Bewegung.blatt(), expandFrom = Alignment.Start) +
+                        fadeIn(tween(150, delayMillis = 100, easing = Bewegung.weich)),
+                exit = shrinkHorizontally(Bewegung.blatt(), shrinkTowards = Alignment.Start) +
+                       fadeOut(tween(90, easing = Bewegung.weich))) {
+                Box(Modifier.padding(start = 12.dp).size(44.dp).antippen { st.begriff = ""; fokusVerwalter.clearFocus(); st.suchmodus = false },
                     contentAlignment = Alignment.Center) {
                     Box(Modifier.size(36.dp).clip(CircleShape).background(Stil.erhoeht), contentAlignment = Alignment.Center) {
                         Icon(Icons.Filled.Close, contentDescription = uebersetzt("Suche schließen"), tint = Stil.schriftLeise,
@@ -200,6 +222,7 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 }

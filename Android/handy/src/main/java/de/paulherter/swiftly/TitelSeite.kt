@@ -8,6 +8,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -460,7 +462,10 @@ internal fun Hinweisstreifen(text: String?, modifier: Modifier, schliessen: () -
     LaunchedEffect(text) { if (text != null) { delay(3000); schliessen() } }
     val gemerkt = remember { arrayOfNulls<String>(1) }
     if (text != null) gemerkt[0] = text
-    AnimatedVisibility(text != null, modifier, enter = fadeIn(), exit = fadeOut()) {
+    // Mit einem Viertel der eigenen Hoehe Weg — eine reine Ueberblendung tauchte aus dem Nichts auf.
+    AnimatedVisibility(text != null, modifier,
+        enter = fadeIn(tween(200, easing = Bewegung.weich)) + slideInVertically(tween(200, easing = Bewegung.weich)) { it / 4 },
+        exit = fadeOut(tween(150, easing = Bewegung.weich)) + slideOutVertically(tween(150, easing = Bewegung.weich)) { it / 4 }) {
         Text(gemerkt[0].orEmpty(), style = TextStyle(fontSize = 14.sp, textAlign = TextAlign.Center), color = Stil.schrift,
              modifier = Modifier.navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 34.dp).clip(CircleShape).background(Stil.erhoeht)
                  .border(1.dp, Stil.rand, CircleShape).padding(horizontal = 18.dp, vertical = 12.dp))

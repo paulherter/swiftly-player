@@ -366,8 +366,8 @@ private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boole
             Popup(offset = IntOffset(-rand, unten - rand), onDismissRequest = { setzeOffen(false) },
                   properties = PopupProperties(focusable = false)) {
                 AnimatedVisibility(zustand, Modifier.padding(16.dp),
-                    enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f)),
-                    exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f))) {
+                    enter = fadeIn(Bewegung.sprung()) + scaleIn(Bewegung.sprung(), initialScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f)),
+                    exit = fadeOut(Bewegung.sprung()) + scaleOut(Bewegung.sprung(), targetScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f))) {
                 val form = RoundedCornerShape(Stil.eckeFlaeche)
                 Column(Modifier.width(200.dp).shadow(16.dp, form, ambientColor = Color.Black, spotColor = Color.Black)
                     .clip(form).background(Stil.flaeche)) {
