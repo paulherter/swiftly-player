@@ -8,6 +8,30 @@ import android.net.Uri
 import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.AnimatedContent
 import kotlinx.coroutines.Job
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onKeyEvent
@@ -189,6 +213,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     var bildfuellend by remember { mutableStateOf(app.ablage.merkwert("bildfuellend") == "1") }
     var tempo by remember { mutableFloatStateOf(1f) }
     var schlafzeit by remember { mutableIntStateOf(0) }
+    /** Die Einstellungskarte oben rechts (`PlayerSettingsSheet`) — auf dem Fernseher bleibt die Tafel. */
+    var tafelOffen by remember { mutableStateOf(false) }
     val zeigtBild = remember { booleanArrayOf(false) }
     val ende = remember { booleanArrayOf(false) }
     val sprungBis = remember { longArrayOf(0L) }
@@ -434,6 +460,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     LaunchedEffect(sprungblase) { if (sprungblase != null) { delay(700); sprungblase = null } }
 
     fun einstellungen() {
+        if (!app.istFernseher) { tafelOffen = true; return }
         beruehrt++
         val ton = spieler.audioTracks?.filter { it.id >= 0 }.orEmpty()
         val spuren = spieler.spuTracks?.filter { it.id >= 0 }.orEmpty()
@@ -598,7 +625,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
         if (bildFrei && !steuerungDa && !imKleinenFenster) Box(Modifier.align(Alignment.Center).size(108.dp, 132.dp).antippen { umschalten() })
 
         // Im kleinen Fenster nur das Bild — die Steuerung bringt das System mit.
-        if (steuerungDa && !imKleinenFenster) Box(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }) {
+        if (steuerungDa && !imKleinenFenster && !tafelOffen) Box(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }) {
             // `Playerschleier` — ohne ihn verschwinden weisse Zeichen ueber hellen Szenen.
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
             Box(Modifier.fillMaxWidth().height(140.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent))))
@@ -665,7 +692,27 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                 Zeitzeile(position, dauer, { amSchieben = it; beruehrt++ }) { springe(it) }
             }
         }
-    }
+    
+        // **Die Karte liegt ueber allem**, das Bild laeuft darunter weiter — nur zurueckgenommen.
+        if (!imKleinenFenster && !app.istFernseher) {
+            BackHandler(enabled = tafelOffen) { tafelOffen = false; sichtbar = true; beruehrt++ }
+            Wiedergabetafel(
+                offen = tafelOffen, schliessen = { tafelOffen = false; sichtbar = true; beruehrt++ },
+                auslieferung = technikFest.firstOrNull()?.first,
+                tonspuren = { spieler.audioTracks?.filter { it.id >= 0 }.orEmpty().map { it.id to it.name } },
+                ton = { spieler.audioTrack }, tonWaehlen = { spieler.audioTrack = it },
+                untertitel = { spieler.spuTracks?.filter { it.id >= 0 }.orEmpty().map { it.id to it.name } },
+                spur = { spieler.spuTrack }, spurWaehlen = { spieler.spuTrack = it },
+                bildfuellend = bildfuellend, bildWaehlen = { bildfuellend = it },
+                tempo = tempo, tempoWaehlen = { tempo = it },
+                schlafzeit = schlafzeit, schlafWaehlen = { schlafzeit = it },
+                technik = app.einstellungen.technikschild, technikSetzen = { app.einstellungen.technikschild = it },
+                querformat = app.einstellungen.querformatFest, querformatSetzen = {
+                    app.einstellungen.querformatFest = it
+                    aktivitaet?.requestedOrientation = if (it) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+                })
+        }
+}
 }
 
 @Composable
@@ -749,5 +796,181 @@ private fun Technikschild(fest: List<Pair<String, String>>, live: JSONObject?, p
             val kaputt = w.optLong("beschaedigt"); val spruenge = w.optLong("spruenge")
             zeile("${uebersetzt("Beschädigt")} $kaputt · ${uebersetzt("Sprünge")} $spruenge", kaputt > 0 || spruenge > 0)
         }
+    }
+}
+
+private val tafelFeder = spring(dampingRatio = 0.86f, stiffness = 322f, visibilityThreshold = IntOffset.VisibilityThreshold)
+
+/**
+ * Vorlage: `PlayerSettingsSheet` in `Sources/iOS/PlayerSettings.swift`.
+ *
+ * - **Eine Karte oben rechts, kein Blatt von unten.** Der Film laeuft weiter; man stellt ein,
+ *   waehrend man schaut — also bleibt er sichtbar, nur zurueckgenommen (55 % Grund).
+ * - **Eine Ebene tief**: Ton und Untertitel greift man mitten im Film, sie sollen nicht hinter
+ *   zwei Ebenen liegen. Eine Wahl greift sofort, **die Liste bleibt offen** — Spuren vergleicht man.
+ * - Die Karte legt sich an ihren Inhalt an, statt sich auszudehnen; wird er zu hoch, scrollt sie.
+ * - Ein- und Ausblenden als reine Deckkraft (180 ms), der Wechsel der Ebene als Schub mit der
+ *   Blattfeder — die Richtung zeigt, ob es hinein oder zurueck geht.
+ * - Die eigene Wahl gilt vor VLCs Auskunft: VLC zieht die Auswahl erst einen Takt spaeter nach.
+ */
+@Composable
+private fun Wiedergabetafel(
+    offen: Boolean, schliessen: () -> Unit, auslieferung: String?,
+    tonspuren: () -> List<Pair<Int, String>>, ton: () -> Int, tonWaehlen: (Int) -> Unit,
+    untertitel: () -> List<Pair<Int, String>>, spur: () -> Int, spurWaehlen: (Int) -> Unit,
+    bildfuellend: Boolean, bildWaehlen: (Boolean) -> Unit,
+    tempo: Float, tempoWaehlen: (Float) -> Unit,
+    schlafzeit: Int, schlafWaehlen: (Int) -> Unit,
+    technik: Boolean, technikSetzen: (Boolean) -> Unit,
+    querformat: Boolean, querformatSetzen: (Boolean) -> Unit,
+) {
+    val deckung by animateFloatAsState(if (offen) 1f else 0f, tween(180, easing = EaseInOut), label = "tafel")
+    if (deckung < 0.01f && !offen) return
+    var ebene by remember { mutableStateOf("wurzel") }
+    LaunchedEffect(offen) { if (offen) ebene = "wurzel" }
+    val spurenTon = remember(offen, ebene) { tonspuren() }
+    val spurenText = remember(offen, ebene) { untertitel() }
+    var tonWahl by remember(offen) { mutableIntStateOf(ton()) }
+    var spurWahl by remember(offen) { mutableIntStateOf(spur()) }
+    val form = RoundedCornerShape(Stil.eckeFlaeche)
+
+    BoxWithConstraints(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }) {
+        val hoechstens = maxHeight - 60.dp
+        Box(Modifier.fillMaxSize().background(Stil.grund.copy(alpha = 0.55f)).antippen(schliessen))
+        Box(Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.safeDrawing).padding(14.dp)
+                .width(356.dp).shadow(24.dp, form, ambientColor = Color.Black, spotColor = Color.Black)
+                .clip(form).background(Stil.flaeche).border(1.dp, Stil.rand, form)
+                .pointerInput(Unit) { detectTapGestures { } }) {
+            AnimatedContent(ebene, label = "ebene", transitionSpec = {
+                val hinein = if (targetState != "wurzel") 1 else -1
+                (slideInHorizontally(tafelFeder) { it * hinein } + fadeIn(tween(150))) togetherWith
+                    (slideOutHorizontally(tafelFeder) { -it * hinein } + fadeOut(tween(150))) using SizeTransform(clip = true)
+            }) { e ->
+                Column(Modifier.heightIn(max = hoechstens).verticalScroll(rememberScrollState()).padding(bottom = 12.dp)) {
+                    if (e == "wurzel") {
+                        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(uebersetzt("Wiedergabe"), style = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift)
+                                auslieferung?.let { Text(it, style = TextStyle(fontSize = 12.sp), color = Stil.schriftSehrLeise, maxLines = 1) }
+                            }
+                            Box(Modifier.size(28.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.1f)).antippen(schliessen), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.Close, contentDescription = uebersetzt("Schließen"), tint = Stil.schrift, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                        Tafelgruppe {
+                            Navzeile(Icons.AutoMirrored.Filled.VolumeUp, uebersetzt("Ton"), spurenTon.firstOrNull { it.first == tonWahl }?.second ?: uebersetzt("Keine")) { ebene = "ton" }
+                            Tafeltrenner()
+                            Navzeile(Icons.Filled.ClosedCaption, uebersetzt("Untertitel"), spurenText.firstOrNull { it.first == spurWahl }?.second ?: uebersetzt("Aus")) { ebene = "untertitel" }
+                            Tafeltrenner()
+                            Navzeile(Icons.Filled.AspectRatio, uebersetzt("Bildformat"), uebersetzt(if (bildfuellend) "Formatfüllend" else "Ganzes Bild")) { ebene = "bild" }
+                            Tafeltrenner()
+                            Navzeile(Icons.Filled.Speed, uebersetzt("Tempo"), tempoText(tempo)) { ebene = "tempo" }
+                            Tafeltrenner()
+                            Navzeile(Icons.Filled.Bedtime, uebersetzt("Schlafzeit"), if (schlafzeit == 0) uebersetzt("Aus") else "$schlafzeit") { ebene = "schlaf" }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Tafelgruppe {
+                            Schalterzeile(Icons.Filled.BarChart, uebersetzt("Technikschild"), technik, technikSetzen)
+                            Tafeltrenner()
+                            Schalterzeile(Icons.Filled.ScreenLockRotation, uebersetzt("Querformat fest"), querformat, querformatSetzen)
+                        }
+                    } else {
+                        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.antippen { ebene = "wurzel" }.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(22.dp))
+                                Text(uebersetzt("Wiedergabe"), style = TextStyle(fontSize = 16.sp), color = Stil.akzent)
+                            }
+                            Spacer(Modifier.weight(1f))
+                            Text(uebersetzt(when (e) { "ton" -> "Ton"; "untertitel" -> "Untertitel"; "bild" -> "Bildformat"; "tempo" -> "Tempo"; else -> "Schlafzeit" }),
+                                 style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift)
+                        }
+                        when (e) {
+                            "ton" -> {
+                                Spaltentitel(uebersetzt("In dieser Datei"))
+                                Tafelgruppe { spurenTon.forEachIndexed { i, (id, name) ->
+                                    if (i > 0) Tafeltrenner(0.dp)
+                                    Auswahlzeile(name, id == tonWahl) { tonWahl = id; tonWaehlen(id) }
+                                } }
+                            }
+                            "untertitel" -> {
+                                Spaltentitel(uebersetzt("In dieser Datei"))
+                                Tafelgruppe {
+                                    Auswahlzeile(uebersetzt("Aus"), spurWahl == -1) { spurWahl = -1; spurWaehlen(-1) }
+                                    spurenText.forEach { (id, name) -> Tafeltrenner(0.dp); Auswahlzeile(name, id == spurWahl) { spurWahl = id; spurWaehlen(id) } }
+                                }
+                            }
+                            "bild" -> {
+                                Tafelgruppe {
+                                    Auswahlzeile(uebersetzt("Ganzes Bild"), !bildfuellend) { bildWaehlen(false) }
+                                    Tafeltrenner(0.dp)
+                                    Auswahlzeile(uebersetzt("Formatfüllend"), bildfuellend) { bildWaehlen(true) }
+                                }
+                                Text(uebersetzt("Formatfüllend schneidet links und rechts ab, damit keine Balken bleiben. Geht auch mit zwei Fingern im Bild."),
+                                     style = TextStyle(fontSize = 12.sp, lineHeight = 16.sp), color = Stil.schriftSehrLeise,
+                                     modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp))
+                            }
+                            "tempo" -> Tafelgruppe {
+                                listOf(0.75f, 1f, 1.25f, 1.5f, 2f).forEachIndexed { i, w ->
+                                    if (i > 0) Tafeltrenner(0.dp)
+                                    Auswahlzeile(tempoText(w), w == tempo) { tempoWaehlen(w) }
+                                }
+                            }
+                            else -> Tafelgruppe {
+                                Auswahlzeile(uebersetzt("Aus"), schlafzeit == 0) { schlafWaehlen(0) }
+                                listOf(15, 30, 45, 60, 90).forEach { m -> Tafeltrenner(0.dp); Auswahlzeile("$m", m == schlafzeit) { schlafWaehlen(m) } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Tafelgruppe(inhalt: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.padding(horizontal = 12.dp).fillMaxWidth().clip(RoundedCornerShape(Stil.eckeFeld)).background(Stil.erhoeht), content = inhalt)
+}
+
+@Composable
+private fun Tafeltrenner(einzug: Dp = 46.dp) {
+    Box(Modifier.padding(start = einzug).fillMaxWidth().height(1.dp).background(Stil.linie))
+}
+
+@Composable
+private fun Spaltentitel(text: String) {
+    Text(text.uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.2.sp),
+         color = Color.White.copy(alpha = 0.4f), modifier = Modifier.padding(start = 28.dp, top = 6.dp, bottom = 6.dp))
+}
+
+@Composable
+private fun Navzeile(symbol: ImageVector, titel: String, wert: String, tun: () -> Unit) {
+    Row(Modifier.fillMaxWidth().height(44.dp).druckzeile(tun).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(symbol, contentDescription = null, tint = Stil.schrift, modifier = Modifier.width(22.dp).height(18.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(titel, style = TextStyle(fontSize = 16.sp), color = Stil.schrift, modifier = Modifier.weight(1f))
+        Text(wert, style = TextStyle(fontSize = 15.sp), color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis,
+             modifier = Modifier.widthIn(max = 150.dp).padding(start = 8.dp))
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.padding(start = 4.dp).size(16.dp))
+    }
+}
+
+/** Nur der Schalter nimmt den Tipp, nicht die Zeile — wie auf iOS. */
+@Composable
+private fun Schalterzeile(symbol: ImageVector, titel: String, an: Boolean, setzen: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(symbol, contentDescription = null, tint = Stil.schrift, modifier = Modifier.width(22.dp).height(18.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(titel, style = TextStyle(fontSize = 16.sp), color = Stil.schrift, modifier = Modifier.weight(1f))
+        Schalter(an, setzen)
+    }
+}
+
+/** Gewaehlt im Akzent mit Haken dahinter — keine Kreise, keine Kaestchen. */
+@Composable
+private fun Auswahlzeile(text: String, gewaehlt: Boolean, tun: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).druckzeile(tun).padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, style = TextStyle(fontSize = 16.sp), color = if (gewaehlt) Stil.akzent else Stil.schrift, modifier = Modifier.weight(1f))
+        if (gewaehlt) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(15.dp))
     }
 }
