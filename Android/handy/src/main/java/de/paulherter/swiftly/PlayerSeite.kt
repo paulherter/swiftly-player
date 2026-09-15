@@ -220,6 +220,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
         zeigtBild[0] = false
         ende[0] = false
         position = ab ?: 0.0
+        ab?.takeIf { it > 1 }?.let { app.kern.wiedergabeStelle(it) }
         val media = Media(vlc, Uri.parse(neu.url))
         // Faellt die Verbindung kurz aus, faengt VLC sie wieder auf, statt das Ende zu melden.
         media.addOption(":http-reconnect")

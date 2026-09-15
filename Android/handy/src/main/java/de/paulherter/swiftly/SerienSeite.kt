@@ -366,8 +366,11 @@ private fun Reiter(titel: List<String>, gewaehlt: Int, waehlen: (Int) -> Unit) {
 private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boolean, setzeOffen: (Boolean) -> Unit, waehlen: (String) -> Unit) {
     val mehrere = staffeln.size > 1
     val drehung by animateFloatAsState(if (offen) 180f else 0f, Bewegung.sprung(), label = "pfeil")
+    // **Ein Tipp auf die Pille schliesst die offene Liste nur.** Er kam doppelt an: erst schloss das
+    // Popup sie als Tipp daneben, dann oeffnete die Pille sie im selben Zug wieder — auf iOS behoben.
+    val geschlossenUm = remember { longArrayOf(0L) }
     Box(Modifier.fillMaxWidth().zIndex(10f).padding(start = Stil.randAbstand, top = 14.dp, bottom = 14.dp)) {
-        Row(Modifier.height(36.dp).antippen { if (mehrere) setzeOffen(!offen) },
+        Row(Modifier.height(36.dp).antippen { if (mehrere && android.os.SystemClock.uptimeMillis() - geschlossenUm[0] > 300) setzeOffen(!offen) },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(staffeln.firstOrNull { it.id == gewaehlt }?.name ?: uebersetzt("Staffel"),
                  style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift)
@@ -385,7 +388,7 @@ private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boole
             // 16 Rand im Popup, damit der Schatten Platz hat; die Liste selbst sitzt 44 unter der Pille.
             val rand = with(dichte) { 16.dp.roundToPx() }
             val unten = with(dichte) { 44.dp.roundToPx() }
-            Popup(offset = IntOffset(-rand, unten - rand), onDismissRequest = { setzeOffen(false) },
+            Popup(offset = IntOffset(-rand, unten - rand), onDismissRequest = { geschlossenUm[0] = android.os.SystemClock.uptimeMillis(); setzeOffen(false) },
                   properties = PopupProperties(focusable = false)) {
                 AnimatedVisibility(zustand, Modifier.padding(16.dp),
                     enter = fadeIn(Bewegung.sprung()) + scaleIn(Bewegung.sprung(), initialScale = 0.94f, transformOrigin = TransformOrigin(0f, 0f)),

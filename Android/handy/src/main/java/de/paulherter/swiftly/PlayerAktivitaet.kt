@@ -42,6 +42,13 @@ class PlayerAktivitaet : ComponentActivity() {
             statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
+        // **Der Player liegt oben drauf** (`fullScreenCover`): er faehrt von unten herein und wieder
+        // hinunter, die App darunter bewegt sich nicht. Ohne eigene Uebergaenge spielte Android die
+        // Animation fuer einen Aufgabenwechsel, und die App kam von oben herein.
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, R.anim.player_hoch, R.anim.halten)
+            overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.halten, R.anim.player_runter)
+        }
         val app = application as SwiftlyAnwendung
         wunsch.value = app.spiel.value ?: run { finish(); return }
         setContent {
@@ -52,6 +59,13 @@ class PlayerAktivitaet : ComponentActivity() {
                 }
                 if (!kleinesFenster.value) if (app.istFernseher) de.paulherter.swiftly.tv.TvTafel(app) else Blattauflage(app)
             }
+        }
+    }
+
+    override fun finish() {
+        super.finish()
+        if (android.os.Build.VERSION.SDK_INT < 34) {
+            @Suppress("DEPRECATION") overridePendingTransition(R.anim.halten, R.anim.player_runter)
         }
     }
 

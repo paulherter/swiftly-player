@@ -634,6 +634,13 @@ public final class Kern: @unchecked Sendable {
             }()))
     }
 
+    /// **Die Startstelle, bevor VLC sie meldet.** Sonst stand die Zeitleiste auf 0:00 und sprang
+    /// dann an die richtige Stelle — auf iOS steht sie von Anfang an dort (`position = startAt`).
+    /// `Zeitannahme` haelt sie, bis VLC sie bestaetigt: kein Ruecksprung kurz nach dem Oeffnen.
+    public func wiedergabeStelle(ab: Double) {
+        sperre.lock(); _wiedergabe?.stand.position = ab; sperre.unlock()
+    }
+
     private func naechsteFolge(nach item: Item, _ c: JellyfinClient) async -> Item? {
         guard item.type == "Episode", let serie = item.seriesId else { return nil }
         return try? await c.folgeNach(itemID: item.id, seriesID: serie)

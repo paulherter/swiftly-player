@@ -69,7 +69,8 @@ fun TvHaupt(app: SwiftlyAnwendung) {
         app.nachDemVerbinden()
     }
     val spiel = app.spiel.value
-    LaunchedEffect(spiel) { if (spiel != null) kontext.startActivity(Intent(kontext, PlayerAktivitaet::class.java)) }
+    LaunchedEffect(spiel) { if (spiel != null) kontext.startActivity(Intent(kontext, PlayerAktivitaet::class.java),
+            android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_hoch, de.paulherter.swiftly.R.anim.halten).toBundle()) }
 
     val oeffnen: (Ziel) -> Unit = { z -> stapel[bereich] = stapel[bereich].orEmpty() + z }
     val zurueck: () -> Unit = { stapel[bereich] = stapel[bereich].orEmpty().dropLast(1) }

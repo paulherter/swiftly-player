@@ -161,7 +161,8 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     val kontext = androidx.compose.ui.platform.LocalContext.current
     val spiel = app.spiel.value
     LaunchedEffect(spiel) {
-        if (spiel != null) kontext.startActivity(android.content.Intent(kontext, PlayerAktivitaet::class.java))
+        if (spiel != null) kontext.startActivity(android.content.Intent(kontext, PlayerAktivitaet::class.java),
+            android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_hoch, de.paulherter.swiftly.R.anim.halten).toBundle())
     }
 
     val waehlen: (Bereich) -> Unit = { b ->
