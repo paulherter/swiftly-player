@@ -79,6 +79,22 @@ class Suchstand {
     /** Ein zweiter Tipp auf den Reiter — der oeffnet die Tastatur (`reiterNochmal`). */
     var nochmal by mutableIntStateOf(0)
     internal var gesucht = ""
+
+    /** Suchen wie `SucheView.suchen` — Telefon und Fernseher rufen beide hierher. */
+    suspend fun suchen(app: SwiftlyAnwendung, sauber: String) {
+            if (!Kern.suchbegriffTaugt(sauber)) { treffer = emptyList(); seerr = emptyList(); sucht = false; gesucht = sauber; return }
+            sucht = true
+            delay(300)
+            try {
+                val json = withContext(Dispatchers.IO) { app.kern.suche(sauber).await() }
+                treffer = JSONArray(json).let { a -> (0 until a.length()).map { rasterkachelLesen(a.getJSONObject(it)) } }
+                gesucht = sauber
+                // **Nebeneinander, nicht nacheinander** fuer den Nutzer: die eigenen Treffer stehen schon.
+                seerr = if (app.seerrVerbunden.value) seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrSuchen(sauber).await() })
+                           else emptyList()
+            } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            sucht = false
+    }
 }
 
 /**
@@ -113,18 +129,7 @@ fun SuchSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     LaunchedEffect(st.begriff) {
         val sauber = st.begriff.trim()
         if (sauber == st.gesucht) return@LaunchedEffect
-        if (!Kern.suchbegriffTaugt(sauber)) { st.treffer = emptyList(); st.seerr = emptyList(); st.sucht = false; st.gesucht = sauber; return@LaunchedEffect }
-        st.sucht = true
-        delay(300)
-        try {
-            val json = withContext(Dispatchers.IO) { app.kern.suche(sauber).await() }
-            st.treffer = JSONArray(json).let { a -> (0 until a.length()).map { rasterkachelLesen(a.getJSONObject(it)) } }
-            st.gesucht = sauber
-            // **Nebeneinander, nicht nacheinander** fuer den Nutzer: die eigenen Treffer stehen schon.
-            st.seerr = if (app.seerrVerbunden.value) seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrSuchen(sauber).await() })
-                       else emptyList()
-        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
-        st.sucht = false
+        st.suchen(app, sauber)
     }
 
     val raster = rememberLazyGridState()

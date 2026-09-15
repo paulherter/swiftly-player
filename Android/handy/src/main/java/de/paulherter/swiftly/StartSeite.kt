@@ -62,7 +62,7 @@ data class Kachel(val id: String, val name: String, val typ: String, val unterze
 data class Reihe(val titel: String, val quer: Boolean, val kacheln: List<Kachel>)
 
 /** Liest die Antwort von `Kern.startseite` — die Reihen stehen dort schon fertig. */
-private fun reihenLesen(json: String): List<Reihe> {
+internal fun reihenLesen(json: String): List<Reihe> {
     val reihen = JSONObject(json).getJSONArray("reihen")
     return (0 until reihen.length()).map { i ->
         val r = reihen.getJSONObject(i)

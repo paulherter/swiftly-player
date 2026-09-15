@@ -46,7 +46,7 @@ import java.time.format.FormatStyle
 data class Personenstand(val beschreibung: String?, val geboren: String?, val ort: String?, val bild: String?,
                          val banner: List<String>, val titel: List<Rasterkachel>, val tmdb: Int? = null)
 
-private fun personLesen(json: String): Personenstand = JSONObject(json).let { o ->
+internal fun personLesen(json: String): Personenstand = JSONObject(json).let { o ->
     Personenstand(o.feldText("beschreibung"), o.feldText("geboren"), o.feldText("ort"), o.feldText("bild"),
                   o.feldTexte("banner"), o.feldListe("titel") { rasterkachelLesen(it) },
                   if (o.isNull("tmdb")) null else o.getInt("tmdb"))

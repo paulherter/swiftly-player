@@ -87,7 +87,7 @@ data class Spielplan(val url: String, val lossless: Boolean, val methode: String
                      val untertitel: String, val naechste: Boolean,
                      val serie: String? = null, val kuerzel: String? = null, val bild: String? = null)
 
-private fun spielplanLesen(json: String) = JSONObject(json).let { o ->
+internal fun spielplanLesen(json: String) = JSONObject(json).let { o ->
     Spielplan(o.getString("url"), o.optBoolean("lossless"), o.optString("methode"), o.optString("titel"),
               o.optString("untertitel"), o.optBoolean("naechste"),
               o.optString("serie").takeIf { !o.isNull("serie") }, o.optString("kuerzel").takeIf { !o.isNull("kuerzel") },

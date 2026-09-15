@@ -85,7 +85,7 @@ internal fun JSONObject.feldTexte(feld: String): List<String> =
 internal fun <T> JSONObject.feldListe(feld: String, lesen: (JSONObject) -> T): List<T> =
     optJSONArray(feld)?.let { a -> (0 until a.length()).map { lesen(a.getJSONObject(it)) } } ?: emptyList()
 
-private fun titelLesen(json: String): Titel = JSONObject(json).let { o ->
+internal fun titelLesen(json: String): Titel = JSONObject(json).let { o ->
     Titel(o.getString("id"), o.getString("name"), o.optString("typ"), o.optString("nebenzeile"), o.feldText("kopfbild"),
           o.feldZahl("bewertung"), o.feldText("freigabe"),
           o.optBoolean("planDa"), o.optBoolean("lossless"), o.feldText("methode"),

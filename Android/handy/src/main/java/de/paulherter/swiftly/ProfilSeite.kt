@@ -274,7 +274,8 @@ fun EinstellungenSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: 
     var ergebnis by remember { mutableStateOf<String?>(null) }
     val lauf = rememberCoroutineScope()
     Einstellungsseite(uebersetzt("Einstellungen"), zurueck) {
-        OfflineGruppe(app)
+        // Auf dem Fernseher keine Downloads — dort steckt kein Speicher, den man fuellen will (tvOS).
+        if (!app.istFernseher) OfflineGruppe(app)
         // Integration vor Server: ein zweiter Dienst, kein zweiter Server.
         Einstellungsgruppe(uebersetzt("Integration")) {
             Wertzeile(Icons.Filled.ManageSearch, "Seerr", uebersetzt("Anfragen, was noch nicht da ist"),

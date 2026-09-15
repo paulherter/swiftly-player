@@ -86,6 +86,9 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         runCatching { org.json.JSONObject(it).optString("adresse") }.getOrNull()
     }
 
+    /** Laeuft die App auf einem Fernseher? Dann ohne Downloads, wie tvOS. */
+    val istFernseher: Boolean by lazy { packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) }
+
     /** Downloads — die Liste lebt so lange wie die App, wie `Downloadverwaltung` auf iOS. */
     val downloads by lazy { Downloadverwaltung(this) }
 

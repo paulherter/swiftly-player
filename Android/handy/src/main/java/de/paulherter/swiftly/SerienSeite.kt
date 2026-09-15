@@ -84,7 +84,7 @@ data class Serie(
             .joinToString(" · ")
 }
 
-private fun serieLesen(json: String): Serie = JSONObject(json).let { o ->
+internal fun serieLesen(json: String): Serie = JSONObject(json).let { o ->
     Serie(o.getString("id"), o.getString("name"), o.feldText("jahr"), o.feldText("staffelzeile"),
           if (o.isNull("staffelzahl")) null else o.getInt("staffelzahl"),
           o.feldText("gattungen"), o.feldText("kopfbild"), o.feldZahl("bewertung"), o.feldText("freigabe"),
@@ -100,7 +100,7 @@ private fun serieLesen(json: String): Serie = JSONObject(json).let { o ->
           o.feldListe("darsteller") { Mitwirkender(it.getString("id"), it.getString("name"), it.feldText("rolle"), it.feldText("bild")) })
 }
 
-private fun folgenLesen(json: String): List<Folge> = JSONArray(json).let { a ->
+internal fun folgenLesen(json: String): List<Folge> = JSONArray(json).let { a ->
     (0 until a.length()).map { i ->
         a.getJSONObject(i).let { f ->
             Folge(f.getString("id"), f.getString("titel"), f.feldText("unterzeile"), f.feldText("bild"), f.feldZahl("fortschritt"), f.optBoolean("gesehen"), f.feldZahl("ab"))
