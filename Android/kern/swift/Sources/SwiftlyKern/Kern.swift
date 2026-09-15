@@ -27,6 +27,8 @@ public final class Kern: @unchecked Sendable {
     private var _aufnahme: JellyfinClient?
     /// Der laufende Quick-Connect-Vorgang. Der geheime Teil verlaesst Swift nie.
     private var _quickconnect: Anmeldecode?
+    /// Der Zaehlstand des Technikschilds — je Titel neu.
+    private var _zaehlwerk: Zaehlwerk?
     private var _immerDirectPlay = true
     private var _megabit = 0
 
@@ -691,6 +693,75 @@ public final class Kern: @unchecked Sendable {
         return try await wiedergabeOeffnen(id: naechste.id)
     }
 
+    // MARK: Technikschild
+
+    /// Die festen Zeilen des Technikschilds, einmal je Titel: Auslieferung, Grund, Bild, Video, Ton,
+    /// Untertitel, Datei, Bedarf. `art` ist `gut`, `warnend` oder leer; `schluessel` die Beschriftung
+    /// fuer den Katalog. Die Werte formatiert `Technikangaben`, wie auf iOS.
+    public func technikFest() -> String {
+        sperre.lock(); let w = _wiedergabe; _zaehlwerk = nil; sperre.unlock()
+        guard let w else { return "[]" }
+        let plan = w.plan
+        var zeilen = [Technikzeile(text: Technikangaben.auslieferung(plan.method),
+                                   art: Technikangaben.gewicht(plan.method) == .gut ? "gut" : "warnend")]
+        if plan.method == .transcode, let grund = plan.reasons.first {
+            zeilen.append(Technikzeile(text: grund.text, art: "warnend"))
+        }
+        if let q = plan.quelle {
+            let stroeme = q.mediaStreams ?? []
+            let video = Dateiangaben.videospur(q)
+            let ton = stroeme.first { $0.type == "Audio" }
+            let untertitel = stroeme.first { $0.type == "Subtitle" }
+            func teile(_ werte: [String?]) -> String? {
+                let da = werte.compactMap { $0 }
+                return da.isEmpty ? nil : da.joined(separator: " · ")
+            }
+            if let bild = Technikangaben.bildzeile(breite: video?.width, hoehe: video?.height, tiefe: nil, umfang: video?.videoRangeType.map { String(describing: $0) }) {
+                zeilen.append(Technikzeile(text: bild, art: ""))
+            }
+            if let v = teile([Technikangaben.codecname(video?.codec), Technikangaben.bildrate(video?.bildrate)]) {
+                zeilen.append(Technikzeile(text: v, art: ""))
+            }
+            if let t = teile([Technikangaben.codecname(ton?.codec), Technikangaben.kanalwort(ton?.channels), Technikangaben.sprache(ton?.language)]) {
+                zeilen.append(Technikzeile(text: t, art: "", schluessel: "Ton"))
+            }
+            if let u = teile([Technikangaben.codecname(untertitel?.codec), Technikangaben.sprache(untertitel?.language)]) {
+                zeilen.append(Technikzeile(text: u, art: "", schluessel: "Untertitel"))
+            }
+            if let c = Dateiangaben.container(q) { zeilen.append(Technikzeile(text: c, art: "", schluessel: "Datei")) }
+            if let groesse = q.size, let dauer = w.item.runtimeSeconds, dauer > 0,
+               let bedarf = Technikangaben.bitrate(Double(groesse) * 8 / dauer) {
+                zeilen.append(Technikzeile(text: "Ø " + bedarf, art: "", schluessel: "Datei braucht"))
+            }
+        }
+        return (try? json(zeilen)) ?? "[]"
+    }
+
+    /// Ein Messpunkt aus VLCs Zaehlern — `Zaehlwerk` rechnet Raten, Lauf und Vorrat ueber sein Fenster.
+    /// „zu spät" zaehlt libVLC fuer Android nicht; es geht als 0 hinein und wird nicht angezeigt.
+    public func technikTakt(gelesen: Int64, entpackt: Int64, gezeigt: Int64, verworfen: Int64, videoBloecke: Int64,
+                            tonBloecke: Int64, tonGespielt: Int64, tonVerloren: Int64, beschaedigt: Int64, spruenge: Int64,
+                            stelle: Double, laeuft: Bool) -> String {
+        func u(_ x: Int64) -> UInt64 { UInt64(max(0, x)) }
+        let roh = Zaehlwerk.Rohwerte(gelesen: u(gelesen), entpackt: u(entpackt), gezeigt: u(gezeigt), verworfen: u(verworfen),
+                                     zuSpaet: 0, videoBloecke: u(videoBloecke), tonBloecke: u(tonBloecke), tonGespielt: u(tonGespielt),
+                                     tonVerloren: u(tonVerloren), beschaedigt: u(beschaedigt), spruenge: u(spruenge))
+        sperre.lock(); let vorher = _zaehlwerk; let w = _wiedergabe; sperre.unlock()
+        guard let werk = Zaehlwerk(roh, stelle: stelle, laeuft: laeuft, vorher: vorher) else { return "{}" }
+        sperre.lock(); _zaehlwerk = werk; sperre.unlock()
+        let quelle = w?.plan.quelle
+        let soll = quelle.flatMap { Dateiangaben.videospur($0)?.bildrate }
+        var jeSekunde: Double?
+        if let groesse = quelle?.size, let dauer = w?.item.runtimeSeconds, dauer > 0 { jeSekunde = Double(groesse) / dauer }
+        return (try? json(Technikantwort(
+            eingang: Technikangaben.bitrate(werk.eingang), demuxer: Technikangaben.bitrate(werk.demuxer),
+            zeigt: werk.zeigtProSekunde, gezeigt: roh.gezeigt, soll: soll, lauf: werk.laufAnteil,
+            dekodiert: werk.dekodiertProSekunde,
+            vorratSekunden: jeSekunde.flatMap { $0 > 0 ? Double(werk.vorratBytes) / $0 : nil },
+            vorratKiB: werk.vorratBytes / 1024, verworfen: roh.verworfen, tonVerloren: roh.tonVerloren,
+            beschaedigt: roh.beschaedigt, spruenge: roh.spruenge))) ?? "{}"
+    }
+
     // MARK: Person
 
     /// Die Personenseite — `PersonView.laden()` ohne Seerr: die Auskunft ueber die Person, ihre
@@ -859,6 +930,14 @@ struct Folgenantwort: Encodable {
 }
 struct Serverkartenantwort: Encodable { let adresse, host: String; let aktiv: Bool; let konten: [Kontoantwort] }
 struct Kontoantwort: Encodable { let kennung, name: String; let aktiv: Bool; let bild: String? }
+struct Technikzeile: Encodable { let text, art: String; var schluessel: String? = nil }
+struct Technikantwort: Encodable {
+    let eingang, demuxer: String?
+    let zeigt: Double?
+    let gezeigt: UInt64
+    let soll, lauf, dekodiert, vorratSekunden: Double?
+    let vorratKiB, verworfen, tonVerloren, beschaedigt, spruenge: UInt64
+}
 struct Wahlantwort: Encodable { let wert, text: String }
 struct Pufferantwort: Encodable { let wert, text: String; let netz: Int? }
 struct Spielplanantwort: Encodable {

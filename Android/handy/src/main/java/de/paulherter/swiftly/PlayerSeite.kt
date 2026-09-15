@@ -71,6 +71,13 @@ import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.text.NumberFormat
+import android.content.Intent
+import androidx.core.content.ContextCompat
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontFamily
+import java.util.Locale
+import kotlin.math.roundToInt
 
 /** Was abgespielt werden soll und ab wo — `Abspielwunsch` auf iOS. `ab == null` heisst: von vorn. */
 data class Abspielwunsch(val id: String, val ab: Double?)
@@ -302,7 +309,12 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             override fun onSkipToNext() { if (plan?.naechste == true) lauf.launch { naechsteFolge() } }
         })
         sitzung.isActive = true
-        onDispose { sitzung.isActive = false; sitzung.release() }
+        onDispose {
+            kontext.stopService(Intent(kontext, WiedergabeDienst::class.java))
+            app.medienToken = null
+            sitzung.isActive = false
+            sitzung.release()
+        }
     }
     // Titel, Serie, Folge, Laenge und das Standbild; das Bild kommt nach, der Rest steht sofort.
     LaunchedEffect(plan, dauer > 0) {
@@ -314,6 +326,12 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             bild?.let { putBitmap(MediaMetadata.METADATA_KEY_ART, it) }
         }.build()
         sitzung.setMetadata(metadaten(null))
+        // Benachrichtigung und Sperrbildschirm — der Dienst liest Titel und Knoepfe aus der Sitzung.
+        app.medienToken = sitzung.sessionToken
+        runCatching {
+            ContextCompat.startForegroundService(kontext, Intent(kontext, WiedergabeDienst::class.java)
+                .putExtra("titel", p.titel).putExtra("untertitel", p.untertitel))
+        }
         val adresse = p.bild ?: return@LaunchedEffect
         val bild = runCatching {
             (SingletonImageLoader.get(kontext).execute(ImageRequest.Builder(kontext).data(adresse).size(600).allowHardware(false).build())
@@ -322,6 +340,34 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
         sitzung.setMetadata(metadaten(bild))
     }
     val kannKlein = remember { kontext.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }
+
+    // Technikschild: die festen Zeilen einmal je Titel, die gezaehlten alle zwei Sekunden — schnell genug,
+    // um einem Ruckler zuzusehen, langsam genug, dass die Zahlen lesbar stehen. Laeuft nur, solange es
+    // sichtbar ist: ein vergessener Zaehler waere selbst die Last, die er misst.
+    var technikFest by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var technikLive by remember { mutableStateOf<JSONObject?>(null) }
+    LaunchedEffect(app.einstellungen.technikschild, plan) {
+        if (!app.einstellungen.technikschild || plan == null) { technikLive = null; return@LaunchedEffect }
+        technikFest = JSONArray(app.kern.technikFest()).let { a ->
+            (0 until a.length()).map { a.getJSONObject(it).let { o ->
+                (o.feldText("schluessel")?.let { k -> uebersetzt(k) + " " }.orEmpty() + o.getString("text")) to o.getString("art")
+            } }
+        }
+        while (true) {
+            val medium = spieler.media
+            val werte = medium?.stats
+            medium?.release()
+            if (werte != null) {
+                // VLC zaehlt in `int` — ueber 2 GB laeuft das ueber; vorzeichenlos gelesen stimmt es wieder.
+                fun roh(x: Int) = x.toLong() and 0xFFFFFFFFL
+                technikLive = JSONObject(app.kern.technikTakt(
+                    roh(werte.readBytes), roh(werte.demuxReadBytes), roh(werte.displayedPictures), roh(werte.lostPictures),
+                    roh(werte.decodedVideo), roh(werte.decodedAudio), roh(werte.playedAbuffers), roh(werte.lostAbuffers),
+                    roh(werte.demuxCorrupted), roh(werte.demuxDiscontinuity), position, spieler.isPlaying))
+            }
+            delay(2000)
+        }
+    }
 
     BackHandler { beenden() }
 
@@ -382,6 +428,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             Wahl("bild", "${uebersetzt("Bildformat")} · ${uebersetzt(if (bildfuellend) "Formatfüllend" else "Ganzes Bild")}"),
             Wahl("tempo", "${uebersetzt("Tempo")} · ${tempoText(tempo)}"),
             Wahl("schlaf", "${uebersetzt("Schlafzeit")} · ${minuten(schlafzeit)}"),
+            // Ein Schalter, kein Weg — er schaltet sofort und schliesst das Blatt.
+            Wahl("technik", "${uebersetzt("Technikschild")} · ${uebersetzt(if (app.einstellungen.technikschild) "An" else "Aus")}"),
         ), null) { wahl ->
             app.blatt.value = when (wahl) {
                 "ton" -> Blattwunsch(uebersetzt("Ton"), ton.map { Wahl(it.id.toString(), it.name) }, spieler.audioTrack.toString()) {
@@ -395,6 +443,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                     if (bildfuellend) "fuellend" else "ganz") { bildfuellend = it == "fuellend" }
                 "tempo" -> Blattwunsch(uebersetzt("Tempo"), listOf(0.75f, 1f, 1.25f, 1.5f, 2f).map { Wahl(it.toString(), tempoText(it)) },
                     tempo.toString()) { tempo = it.toFloat() }
+                "technik" -> { app.einstellungen.technikschild = !app.einstellungen.technikschild; null }
                 else -> Blattwunsch(uebersetzt("Schlafzeit"), listOf(0, 15, 30, 45, 60, 90).map { Wahl(it.toString(), minuten(it)) },
                     schlafzeit.toString()) { schlafzeit = it.toInt() }
             }
@@ -459,6 +508,11 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                 contentAlignment = Alignment.Center) {
                 Text(text, style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"), color = Stil.schrift)
             }
+        }
+
+        if (app.einstellungen.technikschild && !imKleinenFenster && technikFest.isNotEmpty()) {
+            Technikschild(technikFest, technikLive, position, dauer,
+                Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout).padding(start = 18.dp, top = 70.dp))
         }
 
         // Ausgeblendet haelt die Mitte trotzdem an.
@@ -574,5 +628,47 @@ private fun Zeitzeile(position: Double, dauer: Double, schieben: (Boolean) -> Un
                 .graphicsLayer { val m = (13f + 5f * gross) / 18f; scaleX = m; scaleY = m }.clip(CircleShape).background(Color.White))
         }
         Text("−" + zeitText((dauer - gezeigt).coerceAtLeast(0.0)), style = ziffern, color = Stil.schrift)
+    }
+}
+
+/**
+ * Vorlage: `Technikschild` — oben links, unter dem Kopf, nie antippbar. Fast deckend statt
+ * durchscheinend: lesbar ueber bewegtem Bild geht vor. Die Schwellen sind die von iOS: Bildrate
+ * mehr als zwei unter Soll, Lauf unter 97 %, Vorrat unter zwei Sekunden, jeder Verlust.
+ * „zu spät" fehlt — libVLC fuer Android zaehlt verspaetete Bilder nicht; eine Null waere gelogen.
+ */
+@Composable
+private fun Technikschild(fest: List<Pair<String, String>>, live: JSONObject?, position: Double, dauer: Double, modifier: Modifier) {
+    val schrift = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace)
+    val form = RoundedCornerShape(Stil.ecke)
+    fun komma(x: Double, stellen: Int = 1) = String.format(Locale.getDefault(), "%.${stellen}f", x)
+    Column(modifier.width(260.dp).clip(form).background(Stil.grund.copy(alpha = 0.82f)).border(1.dp, Stil.rand, form)
+               .padding(horizontal = 12.dp, vertical = 10.dp),
+           verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        fest.forEachIndexed { i, (text, art) ->
+            Text(text, style = if (i == 0) schrift.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold) else schrift,
+                 color = when (art) { "gut" -> Stil.akzent; "warnend" -> Stil.warnung; else -> if (i == 0) Stil.schrift else Stil.schriftLeise })
+        }
+        Text("${uebersetzt("Stelle")} ${zeitText(position)} / ${zeitText(dauer)}", style = schrift, color = Stil.schriftLeise)
+        live?.let { w ->
+            Box(Modifier.padding(vertical = 2.dp).width(150.dp).height(1.dp).background(Stil.rand))
+            @Composable fun zeile(text: String, warnend: Boolean) =
+                Text(text, style = schrift, color = if (warnend) Stil.warnung else Stil.schriftLeise)
+            val soll = w.feldZahl("soll")
+            w.feldText("eingang")?.let { zeile("${uebersetzt("Eingang")} $it", false) }
+            w.feldText("demuxer")?.let { zeile("${uebersetzt("Demuxer")} $it", false) }
+            w.feldZahl("zeigt")?.let { ist ->
+                zeile("${uebersetzt("Zeigt Ø")} ${komma(ist)} fps · ${uebersetzt("Gezeigt")} ${w.optLong("gezeigt")}", soll != null && ist < soll - 2)
+            }
+            w.feldZahl("lauf")?.let { anteil -> zeile("${uebersetzt("Lauf")} ${(anteil * 100).roundToInt()} %", anteil < 0.97) }
+            w.feldZahl("dekodiert")?.let { ist -> zeile("${uebersetzt("Dekodiert Ø")} ${komma(ist)} fps", soll != null && ist < soll - 2) }
+            val kib = w.optLong("vorratKiB")
+            val sekunden = w.feldZahl("vorratSekunden")
+            zeile("${uebersetzt("Vorrat")} ${sekunden?.let { "${komma(it, 0)} s · " }.orEmpty()}$kib KiB", sekunden != null && sekunden < 2)
+            val verworfen = w.optLong("verworfen"); val tonWeg = w.optLong("tonVerloren")
+            zeile("${uebersetzt("Verworfen")} $verworfen · ${uebersetzt("Ton weg")} $tonWeg", verworfen > 0 || tonWeg > 0)
+            val kaputt = w.optLong("beschaedigt"); val spruenge = w.optLong("spruenge")
+            zeile("${uebersetzt("Beschädigt")} $kaputt · ${uebersetzt("Sprünge")} $spruenge", kaputt > 0 || spruenge > 0)
+        }
     }
 }

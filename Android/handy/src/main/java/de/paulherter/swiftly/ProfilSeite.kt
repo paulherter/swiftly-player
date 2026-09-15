@@ -175,6 +175,9 @@ fun WiedergabeEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
         Einstellungsgruppe(uebersetzt("Verhalten")) {
             Wahlzeile(Icons.Filled.SkipNext, uebersetzt("Nächste Folge automatisch"), an = e.naechsteAutomatisch) { e.naechsteAutomatisch = it }
             Trennlinie()
+            Wahlzeile(Icons.Filled.Insights, uebersetzt("Technikschild im Player"),
+                      uebersetzt("Zeigt Bildrate, Vorrat und verworfene Bilder über dem Film."), e.technikschild) { e.technikschild = it }
+            Trennlinie()
             Wertzeile(Icons.Filled.Replay, uebersetzt("Zurückspulen"), wert = uebersetzt("%lld s", e.zurueckSekunden)) {
                 blatt(uebersetzt("Zurückspulen"), sekundenwahl(), e.zurueckSekunden.toString()) { e.zurueckSekunden = it.toInt() }
             }

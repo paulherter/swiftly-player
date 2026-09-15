@@ -59,6 +59,9 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Was gerade abgespielt wird — der Player liegt ueber allen Seiten, unter dem Blatt. */
     val spiel = androidx.compose.runtime.mutableStateOf<Abspielwunsch?>(null)
 
+    /** Das Zeichen der Mediensitzung des Players — der Wiedergabedienst haengt seine Benachrichtigung daran. */
+    var medienToken: android.media.session.MediaSession.Token? = null
+
     /** Begriff, Treffer und Suchzustand — ueberleben den Bereichswechsel wie auf iOS. */
     val suche = Suchstand()
 

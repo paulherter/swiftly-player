@@ -87,6 +87,8 @@ class Einstellungen(ablage: Ablage) {
     var pufferstufe by Merkwert(a, "pufferstufe", a.merkwert("pufferstufe") ?: "normal") { it }
     var zurueckSekunden by Merkwert(a, "zurueckSek", zahl("zurueckSek", 10)) { it.toString() }
     var vorSekunden by Merkwert(a, "vorSek", zahl("vorSek", 30)) { it.toString() }
+    /** Aus, bis ihn jemand sucht — er aendert nichts an der Wiedergabe, er zeigt nur, was sie tut. */
+    var technikschild by Merkwert(a, "technikschild", bool("technikschild", false), jaNein)
 }
 
 /** Liest eine Wahlliste der Fassade: `[{"wert","text"}]`. */
