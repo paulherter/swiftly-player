@@ -51,26 +51,12 @@ private fun rememberServerauskunft(app: SwiftlyAnwendung): State<Pair<String, St
  *
  * **Eine eigene Seite statt eines Menues** — ein Menue an einem 34-Punkt-Zeichen wirkte fremd,
  * und alles darin fuehrte ohnehin woanders hin. Abmelden fragt nicht nach, wie auf iOS.
- * Weitere Konten und ein zweiter Server folgen mit dem `Kontenbund`.
  */
 @Composable
 fun ProfilSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -> Unit) {
     val server by rememberServerauskunft(app)
     Einstellungsseite(uebersetzt("Profil"), zurueck) {
-        Karte {
-            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Profilbild(app, 56.dp)
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(app.benutzername(), style = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp),
-                         color = Stil.schrift, maxLines = 1)
-                    val name = server?.first?.takeIf { it.isNotEmpty() } ?: app.servername.value
-                    name?.takeIf { it.isNotEmpty() }?.let { Text(it, style = TextStyle(fontSize = 13.sp), color = Stil.schriftSehrLeise, maxLines = 1) }
-                    server?.second?.takeIf { it.isNotEmpty() }?.let {
-                        Text(uebersetzt("Jellyfin %@", it), style = TextStyle(fontSize = 12.sp), color = Stil.schriftSehrLeise)
-                    }
-                }
-            }
-        }
+        Kontokarten(app, server, oeffnen)
         Spacer(Modifier.height(20.dp))
         Karte {
             Profilzeile(Icons.Filled.Tv, uebersetzt("Quick Connect"), uebersetzt("Code vom Fernseher eingeben"), akzent = true) {
@@ -93,7 +79,11 @@ fun ProfilSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -> U
         }
         Spacer(Modifier.height(18.dp))
         Karte {
-            // Betrifft nur das angemeldete Konto.
+            Profilzeile(Icons.Filled.Dns, uebersetzt("Server hinzufügen"), uebersetzt("Ein zweiter Jellyfin, eigene Konten")) {
+                oeffnen(Ziel("serveraufnahme", uebersetzt("Server hinzufügen"), "ServerAufnahme"))
+            }
+            Trennlinie()
+            // Betrifft nur das geltende Konto; bleiben andere, gilt danach das naechste.
             Profilzeile(Icons.AutoMirrored.Filled.Logout, uebersetzt("Abmelden")) { app.abmelden() }
         }
         Text(SwiftlyAnwendung.FASSUNGSZEILE, style = TextStyle(fontSize = 12.sp), color = Color.White.copy(alpha = 0.3f),

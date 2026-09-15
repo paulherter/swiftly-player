@@ -27,6 +27,8 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
 
     /** Zaehlt Abmeldungen — die Aktivitaet kehrt dann zur Serverwahl zurueck. */
     val abgemeldet = androidx.compose.runtime.mutableIntStateOf(0)
+    /** Zaehlt Kontowechsel — `AppModel.kontowechsel`: die Hauptansicht baut sich dann neu. */
+    val kontowechsel = androidx.compose.runtime.mutableIntStateOf(0)
     private val lauf = kotlinx.coroutines.MainScope()
 
     /**
@@ -103,29 +105,79 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Direct Play und Bitrate an die Fassade — beim Start und bei jeder Aenderung. */
     fun qualitaetMelden() = kern.wiedergabeWahlen(einstellungen.immerDirectPlay, einstellungen.bitratenGrenze.toLong())
 
-    /** Abmelden ohne Nachfrage, wie auf iOS: Server Bescheid geben, Sitzung und Zwischenstaende vergessen. */
+
+    /**
+     * Stellt das geltende Konto wieder her. **Umzug:** eine einzelne Sitzung von frueher wird beim
+     * ersten Start zum Buendel — niemand muss sich neu anmelden.
+     */
+    fun sitzungWiederherstellen(): Boolean {
+        if (ablage.konten == null) {
+            ablage.sitzung?.let { alt -> Kern.bundAusSitzung(alt).takeIf { it.isNotEmpty() }?.let { ablage.konten = it } }
+        }
+        val bund = ablage.konten ?: return false
+        val aktiv = Kern.bundAktives(bund).takeIf { it.isNotEmpty() } ?: return false
+        return try { kern.sitzungSetzen(aktiv); true } catch (e: Exception) { false }
+    }
+
+    /** Der Name des geltenden Kontos — fuer das Profilzeichen. */
+    fun benutzername(): String = ablage.konten?.let { Kern.bundAktives(it) }?.let {
+        runCatching { org.json.JSONObject(it).optString("userName") }.getOrNull()
+    }.orEmpty().ifEmpty { "?" }
+
+    /** Nimmt eine frische Sitzung auf; gab es schon Konten, ist das ein Wechsel. */
+    fun sitzungAufnehmen(sitzung: String) {
+        val vorher = ablage.konten
+        ablage.konten = Kern.bundAufnehmen(sitzung, vorher.orEmpty())
+        kern.sitzungSetzen(sitzung)
+        if (vorher != null) nachDemWechsel()
+    }
+
+    /** **Beim Wechsel wird nicht abgemeldet** — das verlassene Konto bleibt gueltig fuer den Weg zurueck. */
+    fun kontoWechseln(kennung: String) {
+        val bund = ablage.konten ?: return
+        if (Kern.bundAktiveKennung(bund) == kennung) return
+        val neu = Kern.bundWechseln(bund, kennung)
+        ablage.konten = neu
+        kern.sitzungSetzen(Kern.bundAktives(neu))
+        nachDemWechsel()
+    }
+
+    /**
+     * **Abmelden trifft nur das geltende Konto**, ohne Nachfrage wie auf iOS. Bleiben andere, gilt das
+     * naechste; war es das letzte, geht es zurueck zur Serverwahl.
+     */
     fun abmelden() {
         lauf.launch {
             runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.abmelden().await() } }
-            ablage.sitzung = null
-            startReihen = null
-            bibliotheken.clear(); titelSpeicher.clear(); serienSpeicher.clear(); folgenSpeicher.clear(); personenSpeicher.clear()
-            servername.value = null
-            merkliste.vergessen()
-            abgemeldet.intValue++
+            val bund = ablage.konten
+            val rest = bund?.let { Kern.bundEntfernt(it, Kern.bundAktiveKennung(it)) }.orEmpty()
+            if (rest.isEmpty()) {
+                ablage.konten = null
+                ablage.sitzung = null
+                zwischenstaendeLeeren()
+                abgemeldet.intValue++
+            } else {
+                ablage.konten = rest
+                kern.sitzungSetzen(Kern.bundAktives(rest))
+                nachDemWechsel()
+            }
         }
     }
 
-    /** Stellt die gemerkte Sitzung wieder her. `false`, wenn es keine gibt oder sie nicht lesbar ist. */
-    fun sitzungWiederherstellen(): Boolean {
-        val json = ablage.sitzung ?: return false
-        return try { kern.sitzungSetzen(json); true } catch (e: Exception) { ablage.sitzung = null; false }
+    /** Was einem Konto gehoert, ist nach dem Wechsel weg; `kontowechsel` baut die Hauptansicht neu. */
+    private fun nachDemWechsel() {
+        zwischenstaendeLeeren()
+        kontowechsel.intValue++
+        lauf.launch { servernameLaden() }
     }
 
-    /** Der Name aus der gemerkten Sitzung — fuer das Profilzeichen. */
-    fun benutzername(): String = ablage.sitzung?.let {
-        runCatching { org.json.JSONObject(it).optString("userName") }.getOrNull()
-    }.orEmpty().ifEmpty { "?" }
+    private fun zwischenstaendeLeeren() {
+        startReihen = null
+        bibliotheken.clear(); titelSpeicher.clear(); serienSpeicher.clear(); folgenSpeicher.clear(); personenSpeicher.clear()
+        servername.value = null
+        merkliste.vergessen()
+        suche.begriff = ""; suche.treffer = emptyList(); suche.suchmodus = false
+    }
 
     /** Assets koennen keinen Dateipfad nennen; `Bundle(path:)` braucht einen. Also einmal entpacken. */
     private fun paketspracheEntpacken(): File {
@@ -156,14 +208,33 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
 /**
  * **Plattformablage** — das Gegenstueck zu Keychain und UserDefaults auf Apple.
  * Das Format der Sitzung kommt aus dem Paket; hier wird nur abgelegt.
- * Offen (PLAN): Sitzung im Android Keystore verschluesseln.
  */
 class Ablage(context: Context) {
     private val prefs = context.getSharedPreferences("swiftly", Context.MODE_PRIVATE)
 
+    /**
+     * **Verschluesselt im Android Keystore** — das Gegenstueck zur Keychain. Eine alte Sitzung im
+     * Klartext wird beim ersten Lesen umgezogen und geloescht; niemand muss sich neu anmelden.
+     */
     var sitzung: String?
-        get() = prefs.getString("sitzung", null)
-        set(wert) { prefs.edit().putString("sitzung", wert).apply() }
+        get() {
+            prefs.getString("sitzung", null)?.let { klar -> sitzung = klar; return klar }
+            return prefs.getString("sitzung.tresor", null)?.let { Tresor.entschluesseln(it) }
+        }
+        set(wert) {
+            val bearbeitung = prefs.edit().remove("sitzung")
+            if (wert == null) bearbeitung.remove("sitzung.tresor") else bearbeitung.putString("sitzung.tresor", Tresor.verschluesseln(wert))
+            bearbeitung.apply()
+        }
+
+    /** Das Kontenbuendel (`Kontenbund`) — verschluesselt wie die Sitzung. */
+    var konten: String?
+        get() = prefs.getString("konten.tresor", null)?.let { Tresor.entschluesseln(it) }
+        set(wert) {
+            val bearbeitung = prefs.edit()
+            if (wert == null) bearbeitung.remove("konten.tresor") else bearbeitung.putString("konten.tresor", Tresor.verschluesseln(wert))
+            bearbeitung.apply()
+        }
 
     var letzterServer: String?
         get() = prefs.getString("letzterServer", null)
@@ -175,4 +246,38 @@ class Ablage(context: Context) {
 
     fun geraeteID(): String = prefs.getString("de.paulherter.swiftly.deviceID", null)
         ?: UUID.randomUUID().toString().also { prefs.edit().putString("de.paulherter.swiftly.deviceID", it).apply() }
+}
+
+/**
+ * AES-GCM mit einem Schluessel, der den Keystore nie verlaesst. Laesst sich etwas nicht
+ * entschluesseln (Schluessel nach einer Wiederherstellung weg), gilt die Sitzung als nicht da.
+ */
+internal object Tresor {
+    private const val NAME = "de.paulherter.swiftly.sitzung"
+
+    private fun schluessel(): javax.crypto.SecretKey {
+        val lager = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (lager.getKey(NAME, null) as? javax.crypto.SecretKey)?.let { return it }
+        val erzeuger = javax.crypto.KeyGenerator.getInstance(android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        erzeuger.init(android.security.keystore.KeyGenParameterSpec.Builder(NAME,
+                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+            .build())
+        return erzeuger.generateKey()
+    }
+
+    fun verschluesseln(klar: String): String {
+        val chiffre = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        chiffre.init(javax.crypto.Cipher.ENCRYPT_MODE, schluessel())
+        val daten = chiffre.doFinal(klar.toByteArray(Charsets.UTF_8))
+        return android.util.Base64.encodeToString(chiffre.iv + daten, android.util.Base64.NO_WRAP)
+    }
+
+    fun entschluesseln(roh: String): String? = runCatching {
+        val alles = android.util.Base64.decode(roh, android.util.Base64.NO_WRAP)
+        val chiffre = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        chiffre.init(javax.crypto.Cipher.DECRYPT_MODE, schluessel(), javax.crypto.spec.GCMParameterSpec(128, alles, 0, 12))
+        String(chiffre.doFinal(alles, 12, alles.size - 12), Charsets.UTF_8)
+    }.getOrNull()
 }

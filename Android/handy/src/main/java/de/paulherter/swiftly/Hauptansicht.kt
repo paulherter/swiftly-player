@@ -232,6 +232,10 @@ private fun Unterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
         "Person" -> PersonSeite(app, ziel, oeffnen, zurueck)
         "Profil" -> ProfilSeite(app, oeffnen, zurueck)
         "Merkliste" -> MerklisteSeite(app, oeffnen, zurueck)
+        "WeiteresKonto" -> Box(Modifier.fillMaxSize().background(Stil.grund)) {
+            AnmeldeSeite(app, app.servername.value.orEmpty(), "", andererServer = zurueck, weiteresKonto = true) { zurueck() }
+        }
+        "ServerAufnahme" -> ServerAufnahmeSeite(app, ziel.id.takeIf { it != "serveraufnahme" }, zurueck)
         "Genre" -> GenreSeite(app, ziel, oeffnen, zurueck)
         "QuickConnect" -> QuickConnectSeite(app, zurueck)
         "Wiedergabeeinstellungen" -> WiedergabeEinstellungenSeite(app, zurueck)

@@ -22,6 +22,11 @@ public final class Kern: @unchecked Sendable {
     private var _adressen: Bildadresse?
     private var _sitzung: Session?
     private var _wiedergabe: Wiedergabe?
+    /// Der Client eines Servers, der gerade aufgenommen wird — `AppModel.aufnahme`. Die laufende
+    /// Sitzung bleibt dabei unberuehrt; bricht die Aufnahme ab, ist nichts passiert.
+    private var _aufnahme: JellyfinClient?
+    /// Der laufende Quick-Connect-Vorgang. Der geheime Teil verlaesst Swift nie.
+    private var _quickconnect: Anmeldecode?
     private var _immerDirectPlay = true
     private var _megabit = 0
 
@@ -123,6 +128,128 @@ public final class Kern: @unchecked Sendable {
     public func sitzungSetzen(json text: String) throws {
         let s = try JSONDecoder().decode(Session.self, from: Data(text.utf8))
         setzen(neuerClient(s.serverURL, s), Bildadresse(basis: s.serverURL, token: s.accessToken), s)
+    }
+
+    // MARK: Quick Connect und weitere Server
+
+    private func anmeldeclient(_ neuerServer: Bool) -> JellyfinClient? {
+        sperre.lock(); defer { sperre.unlock() }
+        return neuerServer ? _aufnahme : _client
+    }
+
+    /// Prueft einen weiteren Server, ohne die laufende Sitzung anzufassen. Antwort wie ``verbinden(adresse:)``.
+    public func aufnahmeVerbinden(adresse: String) async throws -> String {
+        guard let url = AppModelURLNormalizer.normalize(adresse) else { throw Kernfehler.adresse(adresse) }
+        var kandidaten = [url]
+        if let anders = AppModelURLNormalizer.andersHerum(url) { kandidaten.append(anders) }
+        var letzter: Error = Kernfehler.adresse(adresse)
+        for kandidat in kandidaten {
+            let c = neuerClient(kandidat)
+            do {
+                let info = try await c.publicSystemInfo()
+                sperre.lock(); _aufnahme = c; sperre.unlock()
+                return try json(Serverantwort(name: info.serverName ?? kandidat.host() ?? "", version: info.version ?? "",
+                                              adresse: kandidat.absoluteString))
+            } catch { letzter = error }
+        }
+        throw letzter
+    }
+
+    public func aufnahmeAbbrechen() {
+        sperre.lock(); _aufnahme = nil; _quickconnect = nil; sperre.unlock()
+    }
+
+    /// Anmelden am aufgenommenen Server. Die Sitzung kommt zurueck; aktiv wird sie erst ueber `sitzungSetzen`.
+    public func aufnahmeAnmelden(benutzer: String, passwort: String) async throws -> String {
+        guard let c = anmeldeclient(true) else { throw Kernfehler.nichtVerbunden }
+        return try json(try await c.authenticate(username: benutzer, password: passwort))
+    }
+
+    /// Holt einen Code — am verbundenen oder am aufgenommenen Server. Antwort: der Code.
+    public func quickConnectStarten(neuerServer: Bool) async throws -> String {
+        guard let c = anmeldeclient(neuerServer) else { throw Kernfehler.nichtVerbunden }
+        let vorgang = try await c.quickConnectStarten()
+        sperre.lock(); _quickconnect = vorgang; sperre.unlock()
+        return vorgang.code
+    }
+
+    /// Ob der Code freigegeben ist. Wirft, wenn er abgelaufen ist.
+    public func quickConnectFreigegeben(neuerServer: Bool) async throws -> Bool {
+        sperre.lock(); let vorgang = _quickconnect; sperre.unlock()
+        guard let c = anmeldeclient(neuerServer), let vorgang else { throw Kernfehler.nichtVerbunden }
+        return try await c.quickConnectFreigegeben(vorgang)
+    }
+
+    /// Der freigegebene Code wird zur Sitzung. Am verbundenen Server gilt sie sofort, wie nach ``anmelden(benutzer:passwort:)``.
+    public func quickConnectAnmelden(neuerServer: Bool) async throws -> String {
+        sperre.lock(); let vorgang = _quickconnect; sperre.unlock()
+        guard let c = anmeldeclient(neuerServer), let vorgang else { throw Kernfehler.nichtVerbunden }
+        let s = try await c.anmeldenMitQuickConnect(vorgang)
+        sperre.lock(); _quickconnect = nil; sperre.unlock()
+        if !neuerServer { setzen(neuerClient(s.serverURL, s), Bildadresse(basis: s.serverURL, token: s.accessToken), s) }
+        return try json(s)
+    }
+
+    /// `[sekunden, takt]` — `Quickconnectfrist`, eine Quelle fuer alle Plattformen.
+    public static func quickConnectFrist() -> String {
+        kodiert([Quickconnectfrist.sekunden, Quickconnectfrist.takt])
+    }
+
+    // MARK: Konten — die Regeln stehen in `Kontenbund`
+
+    private static func bundLesen(_ roh: String) -> Kontenbund? {
+        try? JSONDecoder().decode(Kontenbund.self, from: Data(roh.utf8))
+    }
+    private static func sitzungLesen(_ roh: String) -> Session? {
+        try? JSONDecoder().decode(Session.self, from: Data(roh.utf8))
+    }
+
+    /// Nimmt eine Sitzung ins Buendel auf: dasselbe Konto ersetzt, ein neues kommt dazu und gilt.
+    public static func bundAufnehmen(sitzung: String, bund: String) -> String {
+        guard let s = sitzungLesen(sitzung) else { return bund }
+        return kodiert(Kontenbund.aufnehmen(s, in: bundLesen(bund)).bund)
+    }
+
+    public static func bundWechseln(bund: String, kennung: String) -> String {
+        guard var b = bundLesen(bund) else { return bund }
+        b.wechseln(zu: kennung)
+        return kodiert(b)
+    }
+
+    /// Ohne das Konto — leer, wenn es das letzte war.
+    public static func bundEntfernt(bund: String, kennung: String) -> String {
+        guard let neu = bundLesen(bund)?.entfernt(kennung) else { return "" }
+        return kodiert(neu)
+    }
+
+    /// Die geltende Sitzung als JSON; leer, wenn das Buendel nicht lesbar ist.
+    public static func bundAktives(bund: String) -> String {
+        bundLesen(bund).map { kodiert($0.aktives) } ?? ""
+    }
+
+    public static func bundAktiveKennung(bund: String) -> String {
+        bundLesen(bund)?.aktives.kontoschluessel ?? ""
+    }
+
+    /// Umzug: die einzelne Sitzung von frueher als Buendel.
+    public static func bundAusSitzung(sitzung: String) -> String {
+        sitzungLesen(sitzung).map { kodiert(Kontenbund($0)) } ?? ""
+    }
+
+    /// Fuer die Kontokarten: je Server seine Konten, das geltende markiert, mit Bild.
+    public static func bundUebersicht(bund: String) -> String {
+        guard let b = bundLesen(bund) else { return "[]" }
+        let aktiv = b.aktives.kontoschluessel
+        return kodiert(b.server.map { url in
+            let konten = b.konten(auf: url)
+            return Serverkartenantwort(
+                adresse: url.absoluteString, host: url.host() ?? url.absoluteString,
+                aktiv: konten.contains { $0.kontoschluessel == aktiv },
+                konten: konten.map { s in
+                    Kontoantwort(kennung: s.kontoschluessel, name: s.userName, aktiv: s.kontoschluessel == aktiv,
+                                 bild: Bildadresse(basis: s.serverURL, token: s.accessToken).benutzer(s.userID, kante: 120)?.absoluteString)
+                })
+        })
     }
 
     // MARK: Startseite
@@ -392,8 +519,11 @@ public final class Kern: @unchecked Sendable {
         return kodiert(Startreihenfolge.verschoben(reihe, um: um, abgelegt: abgelegt, getrennt: getrennt))
     }
 
+    /// Mit sortierten Schluesseln — so ist dasselbe Buendel immer dieselbe Zeichenkette.
     private static func kodiert<T: Encodable>(_ wert: T) -> String {
-        (try? JSONEncoder().encode(wert)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
+        let kodierer = JSONEncoder()
+        kodierer.outputFormatting = [.sortedKeys]
+        return (try? kodierer.encode(wert)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
     }
 
     // MARK: Genre
@@ -727,6 +857,8 @@ struct Folgenantwort: Encodable {
     let gesehen: Bool
     let ab: Double?
 }
+struct Serverkartenantwort: Encodable { let adresse, host: String; let aktiv: Bool; let konten: [Kontoantwort] }
+struct Kontoantwort: Encodable { let kennung, name: String; let aktiv: Bool; let bild: String? }
 struct Wahlantwort: Encodable { let wert, text: String }
 struct Pufferantwort: Encodable { let wert, text: String; let netz: Int? }
 struct Spielplanantwort: Encodable {

@@ -43,7 +43,8 @@ class MainActivity : ComponentActivity() {
                     Phase.Server -> ServerSeite(app) { name, fassung -> phase = Phase.Anmeldung(name, fassung) }
                     is Phase.Anmeldung -> AnmeldeSeite(app, p.servername, p.fassung,
                         andererServer = { phase = Phase.Server }) { phase = Phase.Start }
-                    Phase.Start -> Hauptansicht(app)
+                    // Nach einem Kontowechsel frisch — Stapel, Bereiche und Seiten gehoeren dem vorigen Konto.
+                    Phase.Start -> androidx.compose.runtime.key(app.kontowechsel.intValue) { Hauptansicht(app) }
                 }
                 // Der Vorhang faellt als reine Ueberblendung, 0,45 s — kein Rutschen, kein Wachsen.
                 androidx.compose.animation.AnimatedVisibility(!gestartet,

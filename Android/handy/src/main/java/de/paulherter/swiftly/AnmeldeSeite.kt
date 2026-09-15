@@ -1,7 +1,6 @@
 package de.paulherter.swiftly
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,15 +39,29 @@ import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Vorlage: `LoginView` in `Sources/Shared/RootView.swift` (ohne Benutzerwahl und Quick Connect — folgt). */
+/**
+ * Vorlage: `LoginView` in `Sources/Shared/RootView.swift` — Name und Passwort, darunter Quick Connect.
+ *
+ * `weiteresKonto`: dieselbe Seite fuer ein zweites Konto am verbundenen Server. Unten steht dann
+ * „Abbrechen" statt „Anderer Server", und die laufende Sitzung bleibt, bis die neue steht.
+ */
 @Composable
 fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
-                 andererServer: () -> Unit, angemeldet: () -> Unit) {
+                 andererServer: () -> Unit, weiteresKonto: Boolean = false, angemeldet: () -> Unit) {
     var benutzer by remember { mutableStateOf("") }
     var passwort by remember { mutableStateOf("") }
     var laeuft by remember { mutableStateOf(false) }
     var fehler by remember { mutableStateOf<String?>(null) }
+    var quick by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    if (quick) {
+        QuickConnectAnmeldung(app, neuerServer = false, zurueck = { quick = false }) { sitzung ->
+            app.sitzungAufnehmen(sitzung)
+            angemeldet()
+        }
+        return
+    }
 
     fun anmelden() {
         if (benutzer.isBlank() || laeuft) return
@@ -55,7 +69,7 @@ fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
         scope.launch {
             try {
                 val sitzung = withContext(Dispatchers.IO) { app.kern.anmelden(benutzer, passwort).await() }
-                app.ablage.sitzung = sitzung
+                app.sitzungAufnehmen(sitzung)
                 angemeldet()
             } catch (e: Throwable) {
                 fehler = e.message ?: e.toString()
@@ -70,9 +84,11 @@ fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
         ) {
             Column(Modifier.widthIn(max = Stil.formularbreite).fillMaxWidth()) {
                 Column(Modifier.padding(top = 48.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.size(7.dp).background(Stil.akzent, CircleShape))
-                        Text(uebersetzt("Verbunden · Jellyfin %s", fassung), style = Stil.klein.copy(fontSize = 12.sp), color = Stil.schriftSehrLeise)
+                    if (fassung.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.size(7.dp).background(Stil.akzent, CircleShape))
+                            Text(uebersetzt("Verbunden · Jellyfin %@", fassung), style = Stil.klein.copy(fontSize = 12.sp), color = Stil.schriftSehrLeise)
+                        }
                     }
                     Text(servername, style = Stil.titel, color = Stil.schrift)
                 }
@@ -85,11 +101,15 @@ fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
                     fehler?.let {
                         Text(it, style = Stil.klein, color = Stil.warnung, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     }
+                    // Immer da — wie auf iOS, das nicht vorher fragt, ob der Server es kann; sagt er nein,
+                    // steht das auf der Quick-Connect-Seite.
+                    Oder(Modifier.padding(top = 12.dp))
+                    Nebenknopf(Icons.Outlined.Tv, uebersetzt("Mit Quick Connect anmelden")) { quick = true }
                 }
             }
         }
-        Text(uebersetzt("Anderer Server"), style = Stil.klein.copy(fontSize = 13.sp), color = Stil.schriftSehrLeise,
-             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 22.dp)
-                 .clickable { andererServer() })
+        Text(uebersetzt(if (weiteresKonto) "Abbrechen" else "Anderer Server"), style = Stil.klein.copy(fontSize = 13.sp),
+             color = Stil.schriftSehrLeise,
+             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 22.dp).antippen(andererServer))
     }
 }
