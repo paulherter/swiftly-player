@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -109,9 +110,7 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     val oben = stapel[bereich].orEmpty()
     val lauf = rememberCoroutineScope()
     /** Wie weit die oberste Seite nach rechts hinaus ist: 0 steht, 1 ist draussen. */
-    // **Begrenzt auf 0…1.** Ein schneller Wurf gab der Feder so viel Tempo mit, dass sie ueber das
-    // Ziel hinausschoss und zurueckfederte; an der Grenze bleibt sie stehen.
-    val schub = remember { Animatable(0f).apply { updateBounds(0f, 1f) } }
+    val schub = remember { Animatable(0f) }
     /** `bereichsmass` — der Inhalt waechst beim Bereichswechsel von 0,995 auf 1. */
     val bereichsmass = remember { Animatable(1f) }
     val bewegt by remember { derivedStateOf { schub.value > 0f } }
@@ -141,7 +140,14 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     val zurueck: () -> Unit = {
         if (stapel[bereich].orEmpty().isNotEmpty()) auftrag {
             // Auch abgebrochen gilt der Rueckweg — der Abschluss steht deshalb im finally.
-            try { schub.animateTo(1f, Bewegung.zurueck()) }
+            try {
+                // **Die Seite darunter zuerst aufbauen, dann bewegen** — wie beim Oeffnen. Sonst entstand
+                // sie im ersten Bild der Bewegung, und das Schliessen stockte gleich am Anfang.
+                schub.snapTo(0.0001f)
+                androidx.compose.runtime.withFrameNanos { }
+                androidx.compose.runtime.withFrameNanos { }
+                schub.animateTo(1f, Bewegung.zurueck())
+            }
             finally { withContext(NonCancellable) { wegnehmen(); schub.snapTo(0f) } }
         }
     }
@@ -159,12 +165,13 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
                 wert = e.progress
                 schub.snapTo(e.progress)
             }
-            schub.animateTo(1f, Bewegung.wurf(), initialVelocity = tempo.coerceAtLeast(0f))
+            // Etwas Nachfedern darf sein; ein sehr schneller Wurf schoss aber weit darueber hinaus.
+            schub.animateTo(1f, Bewegung.wurf(), initialVelocity = tempo.coerceIn(0f, 6f))
             wegnehmen()
             schub.snapTo(0f)
         } catch (e: CancellationException) {
             // Losgelassen, bevor es reichte: die Seite gleitet mit ihrem Tempo zurueck.
-            val zurueckTempo = tempo.coerceAtMost(0f)
+            val zurueckTempo = tempo.coerceIn(-6f, 0f)
             lauf.launch { schub.animateTo(0f, Bewegung.wurf(), initialVelocity = zurueckTempo) }
             throw e
         }
@@ -285,7 +292,8 @@ private fun Leiste(aktiv: Bereich, downloads: Boolean, waehlen: (Bereich) -> Uni
                 val an = b == aktiv
                 val farbe = if (an) Stil.akzent else Color.White.copy(alpha = 0.42f)
                 Column(
-                    Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, null) { waehlen(b) },
+                    Modifier.weight(1f).selectable(an, remember { MutableInteractionSource() }, null,
+                        role = androidx.compose.ui.semantics.Role.Tab) { waehlen(b) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {

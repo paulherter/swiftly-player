@@ -8,6 +8,11 @@ import android.net.Uri
 import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -268,6 +273,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
         // Die Stelle vor dem Anhalten lesen — VLC setzt seine Uhr beim Anhalten zurueck.
         val stelle = (spieler.time / 1000.0).coerceAtLeast(0.0)
         beendet[0] = true
+        app.fertigGeschaut(stelle, dauer)
         app.wiedergabeBeenden(stelle)
         spieler.stop()
         schliessen()
@@ -275,6 +281,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
 
     suspend fun naechsteFolge() {
         val stelle = (spieler.time / 1000.0).coerceAtLeast(0.0)
+        app.fertigGeschaut(stelle, dauer)
         spieler.stop()
         try {
             starte(spielplanLesen(withContext(Dispatchers.IO) { app.kern.naechsteFolgeOeffnen(stelle).await() }), null)
@@ -744,7 +751,13 @@ private fun Zeitzeile(position: Double, dauer: Double, schieben: (Boolean) -> Un
                     onDragCancel = { ziel = null; schieben(false) },
                     onHorizontalDrag = { aenderung, _ -> ziel = (aenderung.position.x / size.width).coerceIn(0f, 1f).toDouble() * dauer })
             }
-            .pointerInput(dauer) { detectTapGestures { o -> springen((o.x / size.width).coerceIn(0f, 1f).toDouble() * dauer) } },
+            .pointerInput(dauer) { detectTapGestures { o -> springen((o.x / size.width).coerceIn(0f, 1f).toDouble() * dauer) } }
+            // TalkBack liest die Stelle vor und kann sie verstellen — wie `accessibilityAdjustableAction`.
+            .semantics {
+                stateDescription = zeitText(gezeigt) + " / " + zeitText(dauer)
+                if (dauer > 0) progressBarRangeInfo = ProgressBarRangeInfo(gezeigt.toFloat().coerceIn(0f, dauer.toFloat()), 0f..dauer.toFloat())
+                setProgress { wert -> springen(wert.toDouble()); true }
+            },
             contentAlignment = Alignment.CenterStart) {
             val anteil = if (dauer > 0) (gezeigt / dauer).toFloat().coerceIn(0f, 1f) else 0f
             val spur = Modifier.height(6.dp).graphicsLayer { scaleY = 0.5f + 0.5f * gross }.clip(CircleShape)

@@ -45,7 +45,7 @@ object Bewegung {
      * `seite` lag fast der ganze Weg im ersten Moment, und Zurueck wirkte wie ein Schnitt. Eine Feder
      * statt dieser Kurve war am Geraet schlechter: das Oeffnen schwamm (Paul, 15.09.2026).
      */
-    fun <T> zurueck(): FiniteAnimationSpec<T> = tween(420, easing = weich)
+    fun <T> zurueck(): FiniteAnimationSpec<T> = tween(400, easing = CubicBezierEasing(0.25f, 0.8f, 0.25f, 1f))
     /**
      * **Nach einer Geste weiter mit dem Tempo des Fingers** — ohne Nachfedern, damit ein Wurf
      * nicht erst bremst und dann neu ansetzt. Fuer Zurueckgeste und weggeworfenes Blatt.

@@ -14,6 +14,8 @@ libvlc = "3.6.3"
 coil = "3.0.4"
 # Dieselbe Startanimation wie auf Apple (`Startanimation.swift` spielt sie mit Lottie ab).
 lottie = "6.5.2"
+# Googles Bewertungsdialog — das Gegenstueck zu `requestReview` auf iOS.
+playReview = "2.0.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -27,6 +29,7 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+play-review-ktx = { group = "com.google.android.play", name = "review-ktx", version.ref = "playReview" }
 lottie-compose = { group = "com.airbnb.android", name = "lottie-compose", version.ref = "lottie" }
 libvlc-all = { group = "org.videolan.android", name = "libvlc-all", version.ref = "libvlc" }
 swiftkit-core = { group = "org.swift.swiftkit", name = "swiftkit-core", version = "+" }

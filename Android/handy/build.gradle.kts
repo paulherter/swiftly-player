@@ -52,6 +52,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.libvlc.all)
     implementation(libs.lottie.compose)
+    implementation(libs.play.review.ktx)
 }
 
 // **Die Startanimation liegt einmal im Repo** (`Sources/Shared/Mittel`) und wird beim Bau

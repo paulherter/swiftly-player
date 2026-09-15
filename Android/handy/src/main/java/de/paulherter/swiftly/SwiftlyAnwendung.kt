@@ -61,6 +61,23 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Was gerade abgespielt wird — der Player liegt ueber allen Seiten, unter dem Blatt. */
     val spiel = androidx.compose.runtime.mutableStateOf<Abspielwunsch?>(null)
 
+    /** Nach einem fertig geschauten Titel steht die Bewertungsfrage an — die Hauptaktivitaet fragt und setzt zurueck. */
+    val bewertungFaellig = androidx.compose.runtime.mutableStateOf(false)
+
+    /**
+     * Vorlage: `AppModel.fertigGeschaut`. **Die Regel steht im Paket** (`Bewertungsfrage`): ab 90 %
+     * eines Titels ueber einer Minute zaehlt er, ab dem dritten wird gefragt — einmal je Fassung.
+     * Dieselben Schluessel wie in `UserDefaults` auf iOS.
+     */
+    fun fertigGeschaut(position: Double, dauer: Double) {
+        if (!Kern.bewertungZaehlt(position, dauer)) return
+        val fertig = (ablage.merkwert("bewertungFertig")?.toIntOrNull() ?: 0) + 1
+        ablage.merken("bewertungFertig", fertig.toString())
+        if (!Kern.bewertungFaellig(fertig.toLong(), ablage.merkwert("bewertungFassung").orEmpty(), BuildConfigFassung)) return
+        ablage.merken("bewertungFassung", BuildConfigFassung)
+        bewertungFaellig.value = true
+    }
+
     /** Laeuft der Player gerade im kleinen Fenster? Dann zeigt die App darunter, wo der Film ist. */
     val kleinesFenster = androidx.compose.runtime.mutableStateOf(false)
 

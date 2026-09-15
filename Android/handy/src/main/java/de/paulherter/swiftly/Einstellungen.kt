@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -172,7 +173,9 @@ fun Fusszeile(text: String) {
 fun Schalter(an: Boolean, aendern: (Boolean) -> Unit) {
     val lage by animateFloatAsState(if (an) 1f else 0f, tween(150, easing = EaseInOut), label = "schalter")
     Box(Modifier.size(46.dp, 28.dp).clip(CircleShape).background(lerp(Color.White.copy(alpha = 0.16f), Stil.akzent, lage))
-            .antippen { aendern(!an) }.padding(3.dp)) {
+            // Fuer TalkBack ein Schalter mit Zustand, nicht eine namenlose Flaeche.
+            .toggleable(an, remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null,
+                role = androidx.compose.ui.semantics.Role.Switch) { aendern(it) }.padding(3.dp)) {
         Box(Modifier.offset(x = 18.dp * lage).size(22.dp).clip(CircleShape).background(lerp(Color.White, Stil.grund, lage)))
     }
 }

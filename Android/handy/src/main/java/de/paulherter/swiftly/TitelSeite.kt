@@ -25,6 +25,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -348,7 +351,8 @@ internal fun Spielknopf(symbol: ImageVector, text: String, an: Boolean, haupt: B
 /** Vorlage: `Aktionsknopf` — 44 hoch, Flaeche, Ecke 10, aktiv im Akzent. */
 @Composable
 internal fun RowScope.Aktionsknopf(symbol: ImageVector, beschreibung: String, aktiv: Boolean, tun: () -> Unit) {
-    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche).antippen(tun),
+    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche).antippen(tun)
+            .semantics { selected = aktiv; role = androidx.compose.ui.semantics.Role.Button },
         contentAlignment = Alignment.Center) {
         Icon(symbol, contentDescription = beschreibung, tint = if (aktiv) Stil.akzent else Stil.schrift, modifier = Modifier.size(24.dp))
     }

@@ -800,6 +800,16 @@ public final class Kern: @unchecked Sendable {
             beschaedigt: roh.beschaedigt, spruenge: roh.spruenge))) ?? "{}"
     }
 
+    /// `Bewertungsfrage.zaehltAlsFertig` — ab 90 %, und nur bei mehr als einer Minute.
+    public static func bewertungZaehlt(position: Double, dauer: Double) -> Bool {
+        Bewertungsfrage.zaehltAlsFertig(position: position, dauer: dauer)
+    }
+
+    /// `Bewertungsfrage.faellig` — ab dem dritten fertigen Titel, einmal je Fassung.
+    public static func bewertungFaellig(fertig: Int, zuletztGefragt: String, fassung: String) -> Bool {
+        Bewertungsfrage.faellig(fertig: fertig, zuletztGefragt: zuletztGefragt.isEmpty ? nil : zuletztGefragt, fassung: fassung)
+    }
+
     /// `Auffrischung.faelligBeiRueckkehr` — neu laden, wenn der letzte Stand aelter als 30 s ist.
     /// `zuletztMs` in Millisekunden seit 1970, 0 heisst: noch nie geladen.
     public static func auffrischungFaellig(zuletztMs: Int64) -> Bool {
