@@ -48,4 +48,14 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.libvlc.all)
+    implementation(libs.lottie.compose)
 }
+
+// **Die Startanimation liegt einmal im Repo** (`Sources/Shared/Mittel`) und wird beim Bau
+// hierher kopiert — eine zweite Datei liefe auseinander.
+val startanimationKopieren by tasks.registering(Copy::class) {
+    from(rootProject.file("../Sources/Shared/Mittel/startanimation.json"))
+    into(layout.buildDirectory.dir("generated/startanimation"))
+}
+android.sourceSets.getByName("main").assets.srcDir(file("build/generated/startanimation"))
+tasks.named("preBuild") { dependsOn(startanimationKopieren) }

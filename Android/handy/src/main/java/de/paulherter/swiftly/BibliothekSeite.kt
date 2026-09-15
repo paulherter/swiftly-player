@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import de.paulherter.swiftly.kern.Kern
 import kotlinx.coroutines.CancellationException
@@ -209,13 +210,15 @@ fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwah
             contentPadding = PaddingValues(start = Stil.randAbstand, end = Stil.randAbstand, top = kopfDp + 8.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand),
             verticalArrangement = Arrangement.spacedBy(20.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize().bereichsinhalt()
         ) {
             // Platzhalter statt Ring: das Raster steht schon in seiner Form.
-            if (stand.items.isEmpty() && stand.laedt) items(anzahl * 3) { Kachelplatzhalter() }
+            if (stand.items.isEmpty() && stand.laedt) items(anzahl * 3, key = { "platzhalter$it" }) {
+                Box(Modifier.animateItem(fadeInSpec = null, placementSpec = null, fadeOutSpec = Bewegung.einblenden())) { Kachelplatzhalter() }
+            }
             items(stand.items, key = { it.id }) { RasterKachelAnsicht(it) { oeffnen(Ziel(it.id, it.titel, it.typ)) } }
             // Kein Ring beim Nachladen — eine Reihe Platzhalter.
-            if (stand.items.isNotEmpty() && stand.nochMehrDa) items(anzahl) { Kachelplatzhalter() }
+            if (stand.items.isNotEmpty() && stand.nochMehrDa) items(anzahl, key = { "nachschub$it" }) { Kachelplatzhalter() }
         }
 
         if (stand.gestoert) {
@@ -313,7 +316,7 @@ private fun BibliothekKopf(app: SwiftlyAnwendung, stand: Bibliotheksstand, titel
 /** Vorlage: `PosterTile` in `BrowseViews.swift` — fuellt die Spalte, 2:3, Titel zweizeilig. */
 @Composable
 fun RasterKachelAnsicht(k: Rasterkachel, modifier: Modifier = Modifier, tun: () -> Unit) {
-    Column(modifier.antippen(tun), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(modifier.einblenden().antippen(tun), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             SubcomposeAsyncImage(
                 model = k.plakat, contentDescription = k.titel, contentScale = ContentScale.Crop,

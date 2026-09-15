@@ -5,6 +5,7 @@
         android:name=".SwiftlyAnwendung"
         android:label="Swiftly"
         android:usesCleartextTraffic="true"
+        android:enableOnBackInvokedCallback="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
             android:name=".MainActivity"

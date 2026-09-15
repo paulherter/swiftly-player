@@ -50,6 +50,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.animation.core.MutableTransitionState
 import coil3.compose.AsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -129,6 +130,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     var meldung by remember { mutableStateOf<String?>(null) }
     val bereich = rememberCoroutineScope()
     val kontext = LocalContext.current
+    val ruck = rememberRuck()
 
     suspend fun folgenLaden(serieId: String, staffelId: String) {
         try {
@@ -169,6 +171,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
 
     fun umschalten(an: Boolean, setzen: (Boolean) -> Unit, frage: suspend (String, Boolean) -> String) {
         val id = s?.id ?: return
+        ruck(Ruck.Leicht)
         setzen(an)
         bereich.launch {
             val grund = withContext(Dispatchers.IO) { frage(id, an) }
@@ -309,7 +312,7 @@ private fun Reiter(titel: List<String>, gewaehlt: Int, waehlen: (Int) -> Unit) {
 @Composable
 private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boolean, setzeOffen: (Boolean) -> Unit, waehlen: (String) -> Unit) {
     val mehrere = staffeln.size > 1
-    val drehung by animateFloatAsState(if (offen) 180f else 0f, tween(220), label = "pfeil")
+    val drehung by animateFloatAsState(if (offen) 180f else 0f, Bewegung.sprung(), label = "pfeil")
     Box(Modifier.fillMaxWidth().zIndex(10f).padding(start = Stil.randAbstand, top = 14.dp, bottom = 14.dp)) {
         Row(Modifier.height(36.dp).antippen { if (mehrere) setzeOffen(!offen) },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -339,7 +342,7 @@ private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boole
                     .clip(form).background(Stil.flaeche)) {
                     staffeln.forEach { st ->
                         val an = st.id == gewaehlt
-                        Row(Modifier.fillMaxWidth().antippen { setzeOffen(false); waehlen(st.id) }.padding(horizontal = 14.dp, vertical = 12.dp),
+                        Row(Modifier.fillMaxWidth().druckzeile { setzeOffen(false); waehlen(st.id) }.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Box(Modifier.width(14.dp)) {
                                 if (an) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(14.dp))
@@ -361,7 +364,7 @@ private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boole
  */
 @Composable
 private fun Folgenzeile(f: Folge) {
-    Row(Modifier.fillMaxWidth().antippen { /* Der Player folgt. */ }.padding(horizontal = Stil.randAbstand, vertical = 12.dp),
+    Row(Modifier.fillMaxWidth().druckzeile { /* Der Player folgt. */ }.padding(horizontal = Stil.randAbstand, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(116.dp, 65.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             AsyncImage(model = f.bild, contentDescription = null, contentScale = ContentScale.Crop,

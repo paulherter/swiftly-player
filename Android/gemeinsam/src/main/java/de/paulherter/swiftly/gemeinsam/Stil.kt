@@ -1,5 +1,10 @@
 package de.paulherter.swiftly.gemeinsam
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -16,6 +21,31 @@ import androidx.compose.ui.unit.sp
  *
  * Aendert sich dort ein Wert, aendert er sich hier — dieselben Namen.
  */
+/**
+ * **Die Bewegungen des Telefons** — Vorlage: die Kurven in `Sources/Shared/Stil.swift`
+ * (`einblenden`, `bereichswechsel`, `sprung`, `umschalten`, `blattbewegung`) und das Push von
+ * `NavigationStack`. `.smooth` und `.snappy` federn nicht nach: schnell an, weich aus.
+ */
+object Bewegung {
+    val weich = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    /** `Stil.einblenden` — `.smooth(duration: 0.28)`. Kacheln, Bilder, Platzhalter ↔ Inhalt. */
+    fun <T> einblenden(): FiniteAnimationSpec<T> = tween(280, easing = weich)
+    /** `Stil.bereichswechsel` — `.snappy(duration: 0.20)`. */
+    fun <T> bereichswechsel(): FiniteAnimationSpec<T> = tween(200, easing = weich)
+    /** `Stil.sprung` — `.snappy(duration: 0.22)`. Aufklappen, Pfeile. */
+    fun <T> sprung(): FiniteAnimationSpec<T> = tween(220, easing = weich)
+    /** `Stil.umschalten` — `.snappy(duration: 0.1)`. */
+    fun <T> umschalten(): FiniteAnimationSpec<T> = tween(100, easing = weich)
+    /** `Stil.blattbewegung` — `.spring(response: 0.35, dampingFraction: 0.86)`; Steifigkeit (2π / 0,35)² ≈ 322. */
+    fun <T> blatt(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.86f, stiffness = 322f)
+    /** Das Push von `NavigationStack` — rund 350 ms, rasch an und lange auslaufend. */
+    fun <T> seite(): FiniteAnimationSpec<T> = tween(350, easing = CubicBezierEasing(0.25f, 0.8f, 0.25f, 1f))
+    /** `druckkurve` beim Loslassen. Das Druecken selbst hat **keine** Dauer. */
+    fun <T> loslassen(): FiniteAnimationSpec<T> = tween(120, easing = LinearEasing)
+    /** `Stil.bereichsmass` — dreimal nach unten korrigiert: 0,97 und 0,99 sah man an der Oberkante. */
+    const val BEREICHSMASS = 0.995f
+}
+
 object Stil {
     // Farben — Farben.swift
     val grund = Color(0xFF0B0B0D)

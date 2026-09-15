@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import de.paulherter.swiftly.gemeinsam.Texte
 import de.paulherter.swiftly.kern.Kern
+import coil3.request.crossfade
 import kotlinx.coroutines.future.await
 import org.swift.swiftkit.core.SwiftArena
 import java.io.File
@@ -15,7 +16,7 @@ import java.util.UUID
  * **Was die App einmal beim Start braucht:** Texte, die Uebersetzungen des Pakets,
  * und den Kern. Der Kern lebt so lange wie die App — wie `AppModel` auf Apple.
  */
-class SwiftlyAnwendung : Application() {
+class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     lateinit var kern: Kern
         private set
     lateinit var ablage: Ablage
@@ -62,6 +63,13 @@ class SwiftlyAnwendung : Application() {
             }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) {}
     }
+
+    /**
+     * Bilder blenden beim ersten Laden ein — `Bild` auf iOS, `Stil.einblenden`. Was schon im
+     * Speicher liegt, steht sofort da: Coil blendet Treffer aus dem Speicher nicht.
+     */
+    override fun newImageLoader(context: coil3.PlatformContext): coil3.ImageLoader =
+        coil3.ImageLoader.Builder(context).crossfade(280).build()
 
     override fun onCreate() {
         super.onCreate()

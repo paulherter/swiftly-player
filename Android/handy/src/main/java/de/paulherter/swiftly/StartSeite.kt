@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
+import androidx.compose.foundation.layout.wrapContentWidth
+import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.Wortmarke
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.Dispatchers
@@ -109,9 +111,15 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         Farbschein(versatz, ausgespartOben = kopfDp)
         LazyColumn(state = liste, verticalArrangement = Arrangement.spacedBy(Stil.reihenAbstand),
                    contentPadding = PaddingValues(top = kopfDp + 8.dp, bottom = 24.dp),
-                   modifier = Modifier.fillMaxSize()) {
+                   modifier = Modifier.fillMaxSize().bereichsinhalt()) {
             fehler?.let { item { Text(it, color = Stil.warnung, style = Stil.klein, modifier = Modifier.padding(horizontal = Stil.randAbstand)) } }
-            items(reihen ?: emptyList(), key = { it.titel }) { reihe -> ReiheAnsicht(reihe, oeffnen) }
+            // Platzhalter in der Form der Reihen, dann eine Ueberblendung — kein Ring (`einblenden`).
+            if (reihen == null) items(3, key = { "platzhalter$it" }) { i ->
+                Reihenplatzhalter(quer = i == 0, Modifier.animateItem(fadeInSpec = null, placementSpec = null, fadeOutSpec = Bewegung.einblenden()))
+            }
+            items(reihen ?: emptyList(), key = { it.titel }) { reihe ->
+                ReiheAnsicht(reihe, oeffnen, Modifier.animateItem(fadeInSpec = Bewegung.einblenden(), placementSpec = null, fadeOutSpec = null))
+            }
         }
         // Oben: Kopfverlauf (zieht erst beim Scrollen auf), darueber der Farbschein auf
         // Kopfhoehe beschnitten — `Farbschein(fenster: .ueberDemVerlauf)` —, dann der Kopf.
@@ -190,8 +198,8 @@ private fun Farbschein(versatz: Float, ausgespartOben: Dp = 0.dp) {
 }
 
 @Composable
-private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(11.dp)) {
         Text(reihe.titel, style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift,
              modifier = Modifier.padding(horizontal = Stil.randAbstand))
         LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
@@ -206,7 +214,7 @@ private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit) {
 private fun KachelAnsicht(k: Kachel, quer: Boolean, oeffnen: (Ziel) -> Unit) {
     val breite: Dp = if (quer) 236.dp else Stil.kachelBreite
     val hoehe: Dp = if (quer) 133.dp else Stil.kachelHoehe
-    Column(Modifier.width(breite).antippen { oeffnen(Ziel(k.id, k.name, k.typ)) }, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(Modifier.width(breite).einblenden().antippen { oeffnen(Ziel(k.id, k.name, k.typ)) }, verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.size(breite, hoehe).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             val adresse = if (quer) k.quer ?: k.plakat else k.plakat
             SubcomposeAsyncImage(
@@ -228,5 +236,17 @@ private fun Ersatz(k: Kachel) {
     Box(Modifier.fillMaxSize().background(Stil.flaeche), contentAlignment = Alignment.Center) {
         Icon(if (k.typ == "Episode" || k.typ == "Series") Icons.Outlined.Tv else Icons.Outlined.Movie,
              contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(22.dp))
+    }
+}
+
+/** Vorlage: `Reihenplatzhalter` — Titelbalken 148 × 18, darunter vier Kacheln in der Form, die kommt. */
+@Composable
+private fun Reihenplatzhalter(quer: Boolean, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(11.dp)) {
+        Ladefeld(Modifier.padding(horizontal = Stil.randAbstand).size(148.dp, 18.dp), 4.dp)
+        Row(Modifier.padding(horizontal = Stil.randAbstand).wrapContentWidth(Alignment.Start, unbounded = true),
+            horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand)) {
+            repeat(4) { Ladefeld(if (quer) Modifier.size(236.dp, 133.dp) else Modifier.size(Stil.kachelBreite, Stil.kachelHoehe)) }
+        }
     }
 }

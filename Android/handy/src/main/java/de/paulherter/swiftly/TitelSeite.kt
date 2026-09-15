@@ -45,6 +45,12 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.draw.drawBehind
+import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +116,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
     var meldung by remember { mutableStateOf<String?>(null) }
     val bereich = rememberCoroutineScope()
     val kontext = LocalContext.current
+    val ruck = rememberRuck()
 
     suspend fun auffrischen() {
         try {
@@ -132,6 +139,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
 
     /** Erst umschalten, dann fragen; sagt der Server nein, zurueck und melden — wie auf iOS. */
     fun umschalten(an: Boolean, setzen: (Boolean) -> Unit, frage: suspend (Boolean) -> String, merken: (Titel, Boolean) -> Titel) {
+        ruck(Ruck.Leicht)
         setzen(an)
         bereich.launch {
             val grund = withContext(Dispatchers.IO) { frage(an) }
@@ -247,7 +255,7 @@ private fun Belegzeile(t: Titel?) =
 
 @Composable
 internal fun Belegzeile(geladen: Boolean, planDa: Boolean, lossless: Boolean, methode: String?, bewertung: Double?, freigabe: String?) {
-    val sichtbar by animateFloatAsState(if (geladen) 1f else 0f, tween(250), label = "beleg")
+    val sichtbar by animateFloatAsState(if (geladen) 1f else 0f, Bewegung.einblenden(), label = "beleg")
     Row(Modifier.heightIn(min = 26.dp).alpha(sichtbar), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         if (planDa) {
@@ -296,10 +304,21 @@ private fun Spielknoepfe(t: Titel?) {
  */
 @Composable
 internal fun Spielknopf(symbol: ImageVector, text: String, an: Boolean, haupt: Boolean, tun: () -> Unit) {
-    val grund = when { !an -> Stil.flaeche; haupt -> Color.White; else -> Color.White.copy(alpha = 0.10f) }
+    val quelle = remember { MutableInteractionSource() }
+    val gedrueckt by quelle.collectIsPressedAsState()
+    // `HauptknopfStil`: weiss, gedrueckt 75 %; `NebenknopfStil`: 10 %, gedrueckt 16 %. Sofort an, 120 ms aus.
+    val druck = remember { Animatable(0f) }
+    LaunchedEffect(gedrueckt) { if (gedrueckt) druck.snapTo(1f) else druck.animateTo(0f, Bewegung.loslassen()) }
     val farbe = when { !an -> Stil.schriftSehrLeise; haupt -> Stil.grund; else -> Stil.schrift }
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(Stil.ecke)).background(grund)
-            .then(if (an) Modifier.antippen(tun) else Modifier),
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(Stil.ecke))
+            .drawBehind {
+                drawRect(when {
+                    !an -> Stil.flaeche
+                    haupt -> Color.White.copy(alpha = 1f - 0.25f * druck.value)
+                    else -> Color.White.copy(alpha = 0.10f + 0.06f * druck.value)
+                })
+            }
+            .then(if (an) Modifier.clickable(quelle, null, onClick = tun) else Modifier),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically) {
         Icon(symbol, contentDescription = null, tint = farbe, modifier = Modifier.size(18.dp))
@@ -321,8 +340,8 @@ internal fun RowScope.Aktionsknopf(symbol: ImageVector, beschreibung: String, ak
 @Composable
 internal fun Klapptext(text: String) {
     var offen by remember { mutableStateOf(false) }
-    val drehung by animateFloatAsState(if (offen) 180f else 0f, tween(220), label = "pfeil")
-    Row(Modifier.fillMaxWidth().animateContentSize(tween(220)).antippen { offen = !offen },
+    val drehung by animateFloatAsState(if (offen) 180f else 0f, Bewegung.sprung(), label = "pfeil")
+    Row(Modifier.fillMaxWidth().animateContentSize(Bewegung.sprung()).antippen { offen = !offen },
         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(text, style = TextStyle(fontSize = 16.sp, lineHeight = 22.sp), color = Color.White.copy(alpha = 0.78f),
              maxLines = if (offen) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))

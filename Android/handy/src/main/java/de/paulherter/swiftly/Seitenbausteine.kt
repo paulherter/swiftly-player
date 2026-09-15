@@ -68,7 +68,78 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
+import android.os.Build
+import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.uebersetzt
+
+/**
+ * Das Mass des Bereichswechsels — `bereichsinhalt()` liest es. Nur der Inhalt waechst, nicht der
+ * Kopf: der liegt fest wie die Leiste unten.
+ */
+val LocalBereichsmass = staticCompositionLocalOf<Animatable<Float, AnimationVector1D>?> { null }
+
+/** `bereichsinhalt()` — waechst von unten, damit die sichtbare Unterkante stehen bleibt. */
+fun Modifier.bereichsinhalt(): Modifier = composed {
+    val mass = LocalBereichsmass.current
+    if (mass == null) Modifier
+    else Modifier.graphicsLayer { val m = mass.value; scaleX = m; scaleY = m; transformOrigin = TransformOrigin(0.5f, 1f) }
+}
+
+/**
+ * **Einmal einblenden**, wenn es zum ersten Mal erscheint — `PosterTile.da`. Gemerkt ueber den
+ * Bereichswechsel hinweg: auf iOS bleibt der Bereich stehen und blendet dann nicht erneut ein.
+ */
+fun Modifier.einblenden(): Modifier = composed {
+    var da by rememberSaveable { mutableStateOf(false) }
+    val deckung = remember { Animatable(if (da) 1f else 0f) }
+    LaunchedEffect(Unit) { if (!da) { deckung.animateTo(1f, Bewegung.einblenden()); da = true } }
+    Modifier.graphicsLayer { alpha = deckung.value }
+}
+
+/**
+ * `Druckzeile` — **Zeilen dunkeln ab, Knoepfe schrumpfen.** Der Druck kommt sofort; das
+ * Loslassen klingt 120 ms nach. Eine Dauer auf dem Finger fuehlt sich wie Verzoegerung an.
+ */
+fun Modifier.druckzeile(tun: () -> Unit): Modifier = composed {
+    val quelle = remember { MutableInteractionSource() }
+    val gedrueckt by quelle.collectIsPressedAsState()
+    val schleier = remember { Animatable(0f) }
+    LaunchedEffect(gedrueckt) { if (gedrueckt) schleier.snapTo(1f) else schleier.animateTo(0f, Bewegung.loslassen()) }
+    Modifier.drawBehind { drawRect(Color.White.copy(alpha = 0.06f * schleier.value)) }.clickable(quelle, null, onClick = tun)
+}
+
+enum class Ruck { Leicht, Mittel, Erfolg }
+
+/** `Stil.ruck` — beim Druecken, nie erst auf die Antwort des Servers: ein spaeter Ruck gehoert zu nichts. */
+@Composable
+fun rememberRuck(): (Ruck) -> Unit {
+    val ansicht = LocalView.current
+    return remember(ansicht) {
+        { r ->
+            ansicht.performHapticFeedback(when (r) {
+                Ruck.Leicht -> HapticFeedbackConstants.CLOCK_TICK
+                Ruck.Mittel -> HapticFeedbackConstants.CONTEXT_CLICK
+                Ruck.Erfolg -> if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.CONTEXT_CLICK
+            })
+        }
+    }
+}
 
 /** Antippen ohne Welle — auf iOS sind die Knoepfe `.plain`. */
 fun Modifier.antippen(tun: () -> Unit): Modifier = composed {
@@ -182,7 +253,11 @@ fun Kachelplatzhalter() {
 @Composable
 fun Leerzustand(symbol: ImageVector, kopfzeile: String, text: String,
                 hauptknopf: Pair<String, () -> Unit>? = null, stillerKnopf: Pair<String, () -> Unit>? = null) {
-    Column(Modifier.fillMaxSize().padding(horizontal = Stil.randAbstand),
+    // Erscheint mit Deckkraft und aus 0,97 — `.opacity.combined(with: .scale(0.97))`.
+    val ein = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { ein.animateTo(1f, Bewegung.einblenden()) }
+    Column(Modifier.fillMaxSize().graphicsLayer { alpha = ein.value; val m = 0.97f + 0.03f * ein.value; scaleX = m; scaleY = m }
+               .padding(horizontal = Stil.randAbstand),
            horizontalAlignment = Alignment.CenterHorizontally,
            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)) {
         Box(Modifier.size(78.dp).clip(CircleShape).background(Stil.flaeche).border(1.dp, Color.White.copy(alpha = 0.10f), CircleShape),
@@ -217,6 +292,9 @@ class Blattwunsch(val titel: String, val eintraege: List<Wahl>, val gewaehlt: St
  * Vorlage: `Auswahlblatt` + `Blattmodifikator` in `Stil.swift`. **Liegt ueber der Leiste** —
  * auf iOS haengt das Blatt hinter `.bereichsleiste()`. Deshalb haelt es die Hauptansicht
  * (`app.blatt`), nicht die Seite, die es oeffnet.
+ *
+ * Die Karte federt wie Apples Blatt (`blattbewegung`), folgt dem Finger 1:1 nach unten und
+ * nach oben nur gegen die Gummikante; der Schleier hellt beim Ziehen mit auf.
  */
 @Composable
 fun Blattauflage(app: SwiftlyAnwendung) {
@@ -227,30 +305,49 @@ fun Blattauflage(app: SwiftlyAnwendung) {
     val offen = wunsch != null
     val schliessen = { app.blatt.value = null }
     BackHandler(enabled = offen, onBack = schliessen)
-    val schleier by animateFloatAsState(if (offen) 0.55f else 0f, tween(300), label = "schleier")
+    val zug = remember { Animatable(0f) }
+    var hoehe by remember { mutableIntStateOf(1) }
+    LaunchedEffect(wunsch) { if (wunsch != null) zug.snapTo(0f) }
+    val schleier by animateFloatAsState(if (offen) 0.55f else 0f, Bewegung.blatt(), label = "schleier")
     Box(Modifier.fillMaxSize()) {
-        if (schleier > 0f) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = schleier)).antippen(schliessen))
+        if (schleier > 0.001f) Box(Modifier.fillMaxSize()
+            .graphicsLayer { alpha = 1f - (zug.value / hoehe).coerceIn(0f, 1f) }
+            .background(Color.Black.copy(alpha = schleier)).antippen(schliessen))
         AnimatedVisibility(offen, Modifier.align(Alignment.BottomCenter),
-            enter = slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it },
-            exit = slideOutVertically(tween(260, easing = FastOutSlowInEasing)) { it }) {
-            gemerkt[0]?.let { Blattkarte(it, schliessen) }
+            enter = slideInVertically(Bewegung.blatt()) { it },
+            exit = slideOutVertically(Bewegung.blatt()) { it }) {
+            gemerkt[0]?.let { w -> Blattkarte(w, zug, { h -> hoehe = h }, schliessen) }
         }
     }
 }
 
+/** Die Gummikante von `UIScrollView` — Apples Beiwert c = 0,55. */
+private fun gummi(weg: Float, d: Float): Float = (1f - 1f / (weg * 0.55f / d + 1f)) * d
+
 @Composable
-private fun Blattkarte(w: Blattwunsch, schliessen: () -> Unit) {
+private fun Blattkarte(w: Blattwunsch, zug: Animatable<Float, AnimationVector1D>, hoeheMelden: (Int) -> Unit, schliessen: () -> Unit) {
     val dichte = LocalDensity.current.density
-    var zug by remember { mutableFloatStateOf(0f) }
+    val lauf = rememberCoroutineScope()
     var hoehe by remember { mutableIntStateOf(1) }
+    val roh = remember { floatArrayOf(0f) }
     val oben = RoundedCornerShape(topStart = Stil.eckeFlaeche, topEnd = Stil.eckeFlaeche)
     Column(Modifier.fillMaxWidth()
-        .onSizeChanged { hoehe = it.height }
-        .graphicsLayer { translationY = zug }
+        .onSizeChanged { hoehe = it.height; hoeheMelden(it.height) }
+        .graphicsLayer { translationY = zug.value }
+        // Die Flaeche reicht unter die Karte: federt sie ueber ihr Ziel, sieht man nichts darunter.
+        .drawBehind { drawRect(Stil.flaeche, topLeft = Offset(0f, size.height - 1f), size = Size(size.width, 400.dp.toPx())) }
         .clip(oben).background(Stil.flaeche)
-        // Nach unten ziehen schliesst ab einem Viertel oder schnell — wie `ziehen` auf iOS.
-        .draggable(rememberDraggableState { zug = (zug + it).coerceAtLeast(0f) }, Orientation.Vertical,
-            onDragStopped = { tempo -> if (zug > hoehe * 0.25f || tempo > 700 * dichte) schliessen() else zug = 0f })
+        .draggable(rememberDraggableState { d ->
+                roh[0] += d
+                val ziel = if (roh[0] >= 0f) roh[0] else -gummi(-roh[0], hoehe.toFloat())
+                lauf.launch { zug.snapTo(ziel) }
+            }, Orientation.Vertical,
+            onDragStarted = { roh[0] = zug.value },
+            onDragStopped = { tempo ->
+                // Ein Viertel der Hoehe oder ein schneller Wurf schliesst; sonst mit Schwung zurueck.
+                if (zug.value > hoehe * 0.25f || tempo > 700 * dichte) schliessen()
+                else { roh[0] = 0f; zug.animateTo(0f, spring(dampingRatio = 0.956f, stiffness = 280f), initialVelocity = tempo) }
+            })
         .navigationBarsPadding()) {
         Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp).size(36.dp, 5.dp)
             .clip(CircleShape).background(Color.White.copy(alpha = 0.25f)))
@@ -261,7 +358,7 @@ private fun Blattkarte(w: Blattwunsch, schliessen: () -> Unit) {
         // So hoch wie die Eintraege, hoechstens 340.
         Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
             w.eintraege.forEach { e ->
-                Row(Modifier.fillMaxWidth().height(50.dp).antippen { w.waehlen(e.wert); schliessen() }
+                Row(Modifier.fillMaxWidth().height(50.dp).druckzeile { w.waehlen(e.wert); schliessen() }
                         .padding(horizontal = Stil.randAbstand),
                     verticalAlignment = Alignment.CenterVertically) {
                     w.symbole[e.wert]?.let {
@@ -277,6 +374,6 @@ private fun Blattkarte(w: Blattwunsch, schliessen: () -> Unit) {
             }
         }
         Text(uebersetzt("Abbrechen"), style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),
-             color = Stil.schriftLeise, modifier = Modifier.fillMaxWidth().antippen(schliessen).padding(vertical = 17.dp))
+             color = Stil.schriftLeise, modifier = Modifier.fillMaxWidth().druckzeile(schliessen).padding(vertical = 17.dp))
     }
 }

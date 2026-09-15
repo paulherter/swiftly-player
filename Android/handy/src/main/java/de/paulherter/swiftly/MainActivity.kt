@@ -34,12 +34,20 @@ class MainActivity : ComponentActivity() {
         val app = application as SwiftlyAnwendung
         setContent {
             var phase by remember { mutableStateOf<Phase>(if (app.sitzungWiederherstellen()) Phase.Start else Phase.Server) }
+            // Einmal je Start, nicht je Drehung — deshalb gemerkt.
+            var gestartet by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
             Box(Modifier.fillMaxSize().background(Stil.grund)) {
                 when (val p = phase) {
                     Phase.Server -> ServerSeite(app) { name, fassung -> phase = Phase.Anmeldung(name, fassung) }
                     is Phase.Anmeldung -> AnmeldeSeite(app, p.servername, p.fassung,
                         andererServer = { phase = Phase.Server }) { phase = Phase.Start }
                     Phase.Start -> Hauptansicht(app)
+                }
+                // Der Vorhang faellt als reine Ueberblendung, 0,45 s — kein Rutschen, kein Wachsen.
+                androidx.compose.animation.AnimatedVisibility(!gestartet,
+                    enter = androidx.compose.animation.EnterTransition.None,
+                    exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(450, easing = androidx.compose.animation.core.EaseOut))) {
+                    Startvorhang { gestartet = true }
                 }
             }
         }
