@@ -336,7 +336,12 @@ public final class Kern: @unchecked Sendable {
             fortschritt: i.gesehenerAnteil, marke: marke, markenzahl: zahl,
             angabenzeile: angaben.isEmpty ? nil : angaben.joined(separator: " · "),
             restzeit: i.restzeitText, gesehen: i.istGesehen,
-            folgenname: i.type == "Episode" ? i.name : nil)
+            folgenname: i.type == "Episode" ? i.name : nil,
+            // **Nur fuer Android TV** (`TvWeiterschauenRegal.kt`, Watch-Next-Reihe): die
+            // Fortschrittsanzeige dort will echte Millisekunden, nicht nur den Anteil, sonst
+            // zeigt der Systemstarter eine erfundene Restzeit an. tvOS braucht das nicht — sein
+            // Top Shelf (`RegalAnbieter.swift`) kennt nur `playbackProgress`, einen Anteil.
+            laufzeitSekunden: i.runtimeSeconds, positionSekunden: i.fortsetzenAb)
     }
 
     // MARK: Bibliothek
@@ -1464,6 +1469,9 @@ struct Kachelantwort: Encodable {
     let gesehen: Bool
     /// Nur bei einer Folge gesetzt — der Serienname steht schon in `name`.
     let folgenname: String?
+    /// Fuer Android TVs Watch-Next-Reihe — siehe `kachel(_:neuzugang:mitMarke:_:)`.
+    let laufzeitSekunden: Double?
+    let positionSekunden: Double?
 }
 
 struct Downloadantwort: Encodable { let posten: Downloadposten; let bild, serienbild: String? }

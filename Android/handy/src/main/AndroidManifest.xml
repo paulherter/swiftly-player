@@ -31,14 +31,26 @@
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden" />
-        <!-- Fernseher: eigener Einstieg ueber den Leanback-Starter, dieselbe App darunter. -->
+        <!-- Fernseher: eigener Einstieg ueber den Leanback-Starter, dieselbe App darunter.
+             singleTask: ein Tipp auf einen Watch-Next-Eintrag (siehe TvWeiterschauenRegal.kt)
+             soll in die schon laufende Aktivitaet gehen (onNewIntent), nicht eine zweite
+             daneben oeffnen — sonst haette die App zwei eigene Seitenstapel gleichzeitig. -->
         <activity
             android:name=".tv.TvAktivitaet"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <!-- Watch Next fuehrt ueber diesen Link zurueck in die App — dieselbe Adresse wie
+                 "swiftly://titel/<id>" im Top Shelf auf tvOS (`RegalAnbieter.swift`). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="swiftly" android:host="titel" />
             </intent-filter>
         </activity>
         <service

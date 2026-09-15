@@ -1,9 +1,11 @@
 package de.paulherter.swiftly.tv
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -70,9 +72,20 @@ fun TvDetailkopf(titel: String, jahrLaufzeit: String, bewertung: Double?, freiga
     // **306,5 dp statt 177 — aus `Stil.heldenHoeheDetail` halbiert.** Vorher war die Zone knapp
     // bemessen und die Beschreibung wuchs mit ihrem Inhalt: eine kurze liess die Knopfreihe fast an
     // ihr kleben, tvOS reserviert dafuer immer drei Zeilen (`Stil.auskunftHoehe`).
-    Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp).height(306.5.dp)) {
-        TvKopfauskunft(titel, jahrLaufzeit, bewertung, freigabe, beschreibung, direktplay, hinweis)
-        Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), content = { knoepfe() })
+    //
+    // **Die 306,5 dp sind die ganze Zone, nicht zusaetzlich zum oberen Abstand.** Auf tvOS traegt
+    // `.frame(height: heldenHoeheDetail)` den ganzen `rumpf`-Stapel, und `block` liegt darin mit
+    // `.padding(.top, 196)` — der Abstand steht **innerhalb** der festen Hoehe. Hier lagen Innenabstand
+    // und Hoehe bisher auf demselben `Column`: `padding(top = 98.dp)` schob die Spalte 98 dp nach
+    // unten, `height(306.5.dp)` gab ihr danach nochmal 306,5 dp — macht 404,5 dp fuer eine Zone, die
+    // nur 306,5 dp gross sein soll. Der Rest zwischen Knopfreihe und „Episodes" war genau dieser
+    // verdoppelte Abstand. Jetzt traegt eine `Box` die feste Gesamthoehe, der Innenabstand liegt am
+    // `Column` darin — wie auf tvOS am `block`, nicht am `rumpf`.
+    Box(Modifier.fillMaxWidth().height(306.5.dp)) {
+        Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp)) {
+            TvKopfauskunft(titel, jahrLaufzeit, bewertung, freigabe, beschreibung, direktplay, hinweis)
+            Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), content = { knoepfe() })
+        }
     }
 }
 
@@ -90,7 +103,13 @@ private fun TvKopfauskunft(titel: String, jahrLaufzeit: String, bewertung: Doubl
     Column(Modifier.width(500.dp)) {
         Text(titel, style = TvStil.auskunftTitel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
              modifier = Modifier.height(34.dp))
-        Row(Modifier.padding(top = 7.dp).height(17.dp), verticalAlignment = Alignment.CenterVertically,
+        // **`heightIn(min=)` statt `height()`.** 17 dp ist die Vorgabe aus `Stil.auskunftHoehe`
+        // (34 pt halbiert), aber die Direct-Play-Marke braucht mit Symbol, Text und ihrem eigenen
+        // senkrechten Innenabstand mehr Platz. Auf tvOS steht dieselbe Zahl nur als Layout-Budget in
+        // der Rechnung, ohne `.frame` mit fester Hoehe auf dieser Zeile — die Marke darf dort
+        // ueberstehen, ohne beschnitten zu werden. Ein hartes `height()` zwingt Compose dagegen, die
+        // Zeile auf genau 17 dp zusammenzudruecken, und schnitt der Marke die Schrift unten ab.
+        Row(Modifier.padding(top = 7.dp).heightIn(min = 17.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (jahrLaufzeit.isNotEmpty()) {
                 Text(jahrLaufzeit, style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.62f), maxLines = 1)
@@ -148,11 +167,23 @@ private fun TvPlakette(text: String) {
  *
  * Der Fokus bleibt im Menue (`focusGroup` mit gesperrtem Ausgang), bis es zugeht; die
  * Zurueck-Taste schliesst nur das Menue, nicht die Seite.
+ *
+ * **Fokus zurueck an den „…"-Knopf beim Schliessen** — Auswahl wie Zurueck, dasselbe Mittel wie
+ * `TvTafel` in `TvHaupt.kt`: `Fokusmerker`/`LocalInnerhalbTafel` aus `TvStil.kt`. Ohne das landete
+ * der Fokus nach dem Schliessen zufaellig irgendwo auf der Seite. `warOffen` haelt fest, ob das Menue
+ * wirklich offen **war** — ohne die Wache liefe der Ruecknahme-Aufruf schon beim ersten Aufbau der
+ * Seite (`offen` startet `false`) und koennte den `Fokusmerker` eines ganz anderen, gerade erst
+ * geoeffneten Ausloesers auf dieser Seite verwerfen.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, ImageVector> = emptyMap(), waehlen: (String) -> Unit) {
     var offen by remember { mutableStateOf(false) }
+    var warOffen by remember { mutableStateOf(false) }
+    LaunchedEffect(offen) {
+        if (offen) warOffen = true
+        else if (warOffen) { warOffen = false; delay(30); Fokusmerker.zurueckfordern() }
+    }
     Box {
         TvKnopf(null, Icons.Filled.MoreHoriz) { offen = !offen }
         if (offen) {
@@ -163,13 +194,18 @@ fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, ImageVector> = empty
             // (`Staffelkopf` in `SerienSeite.kt`), aus demselben Grund: knapp unter der eigenen Hoehe.
             Popup(offset = IntOffset(0, with(LocalDensity.current) { 44.dp.roundToPx() }),
                   onDismissRequest = { offen = false }, properties = PopupProperties(focusable = false)) {
-                Column(Modifier.width(340.dp).clip(RoundedCornerShape(10.dp)).background(Stil.erhoeht)
-                        .padding(vertical = 6.dp)
-                        .focusProperties { exit = { FocusRequester.Cancel } }.focusGroup()) {
-                    eintraege.forEachIndexed { i, e ->
-                        TvZeile(e.text, symbole[e.wert], modifier = if (i == 0) Modifier.focusRequester(erste) else Modifier) {
-                            offen = false
-                            waehlen(e.wert)
+                // Innerhalb der Tafel: eine angeklickte Zeile darf sich nicht selbst als „Ausloeser"
+                // bei `Fokusmerker` eintragen, sonst zeigte das naechste Schliessen auf die zuletzt
+                // gewaehlte Zeile statt zurueck auf den „…"-Knopf.
+                CompositionLocalProvider(LocalInnerhalbTafel provides true) {
+                    Column(Modifier.width(340.dp).clip(RoundedCornerShape(10.dp)).background(Stil.erhoeht)
+                            .padding(vertical = 6.dp)
+                            .focusProperties { exit = { FocusRequester.Cancel } }.focusGroup()) {
+                        eintraege.forEachIndexed { i, e ->
+                            TvZeile(e.text, symbole[e.wert], modifier = if (i == 0) Modifier.focusRequester(erste) else Modifier) {
+                                offen = false
+                                waehlen(e.wert)
+                            }
                         }
                     }
                 }
@@ -178,13 +214,25 @@ fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, ImageVector> = empty
     }
 }
 
-/** Ein Streifen mit Titel — `reihenabschnitt` und `streifen` aus `Titelreihen.swift`. */
+/**
+ * Ein Streifen mit Titel — `reihenabschnitt` und `streifen` aus `Titelreihen.swift`.
+ *
+ * **`TvReihenBringIntoView` ausdruecklich wieder eingesetzt**, siehe `TvKeinSenkrechtesBringIntoView`
+ * in `TvStart.kt`: die Seiten, die diesen Streifen einbetten (`TvDetail`, `TvSerie`, `TvPerson`,
+ * `TvSeerrDetailSeite`), schalten das Bring-into-View ihres `verticalScroll` auf
+ * `TvAbschnittsweisesBringIntoView` um, damit ein sichtbarer Fokuswechsel die Seite nicht mehr
+ * zappelig zurechtrueckt. Ohne diese Zeile wuerde die `LazyRow` dieselbe gedaempfte Spec erben und
+ * beim Wandern nicht mehr zur naechsten Kachel scrollen.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvStreifen(titel: String, inhalt: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
     Column(Modifier.padding(top = TvStil.reihenAbstand - TvStil.reihenLuft)) {
         TvReihentitel(titel)
-        LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
-                horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand), content = inhalt)
+        CompositionLocalProvider(LocalBringIntoViewSpec provides TvReihenBringIntoView) {
+            LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
+                    horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand), content = inhalt)
+        }
     }
 }
 
@@ -213,6 +261,7 @@ fun TvBesetzung(p: Mitwirkender, tun: () -> Unit) {
  * tvOS: fuenf beschriftete Knoepfe waren zu viel fuer eine Reihe. `Kern.lokalerTrailer` liefert
  * ihn getrennt von `titelUmfeld`, weil nicht jeder Titel einen hat.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     var t by remember(ziel.id) { mutableStateOf(app.titelSpeicher[ziel.id]) }
@@ -244,61 +293,63 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         TvBildgrund(titel?.kopfbild)
         Kulisse(titel?.kopfbild, Modifier.align(Alignment.TopEnd))
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            TvDetailkopf(name, titel?.jahrLaufzeit.orEmpty(), titel?.bewertung, titel?.freigabe, titel?.beschreibung,
-                         direktplay = titel?.planDa == true && titel.lossless,
-                         hinweis = if (titel?.planDa == true && !titel.lossless) titel.methode else null) {
-                TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
-                    if (titel?.planDa == true) app.spiel.value = Abspielwunsch(ziel.id, titel.fortsetzenAb)
-                }
-                if (titel?.fortsetzenAb != null) TvKnopf(null, Icons.Filled.Replay) { app.spiel.value = Abspielwunsch(ziel.id, null) }
-                TvKnopf(null, if (titel?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
-                    val an = !(titel?.gemerkt ?: false)
-                    titel?.let { t = it.copy(gemerkt = an) }
-                    lauf.launch { if (withContext(Dispatchers.IO) { app.kern.merken(ziel.id, an).await() }.isNotEmpty()) titel?.let { t = it } }
-                }
-                // **`TvMehrknopf` statt `app.blatt`** — auf tvOS klappt das Menue direkt unter dem
-                // Knopf auf, nicht als Tafel am rechten Rand. Siehe Doc-Kommentar dort.
-                val tt = titel
-                if (tt != null) {
-                    val gesehenJetzt = tt.gesehen
-                    // `Titelhandlungen.fuerFilm`: „Gesehen" vorn (aus der Knopfreihe heraus,
-                    // siehe `gesehenHandlung`), „Von vorn"/„Zuruecksetzen" nur mit Fortschritt.
-                    val eintraege = buildList {
-                        add(Wahl("gesehen", uebersetzt(if (gesehenJetzt) "Als ungesehen merken" else "Als gesehen merken")))
-                        if (tt.planDa && tt.fortsetzenAb != null) {
-                            add(Wahl("vonvorn", uebersetzt("Von vorn abspielen")))
-                            add(Wahl("zuruecksetzen", uebersetzt("Fortschritt zurücksetzen")))
-                        }
-                        add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
+        CompositionLocalProvider(LocalBringIntoViewSpec provides TvAbschnittsweisesBringIntoView) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                TvDetailkopf(name, titel?.jahrLaufzeit.orEmpty(), titel?.bewertung, titel?.freigabe, titel?.beschreibung,
+                             direktplay = titel?.planDa == true && titel.lossless,
+                             hinweis = if (titel?.planDa == true && !titel.lossless) titel.methode else null) {
+                    TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
+                        if (titel?.planDa == true) app.spiel.value = Abspielwunsch(ziel.id, titel.fortsetzenAb)
                     }
-                    TvMehrknopf(eintraege,
-                        mapOf("gesehen" to Icons.Filled.CheckCircle, "vonvorn" to Icons.Filled.Replay,
-                              "zuruecksetzen" to Icons.Filled.RestartAlt, "metadaten" to Icons.Filled.Refresh)) { wahl ->
-                        lauf.launch {
-                            when (wahl) {
-                                "gesehen" -> if (withContext(Dispatchers.IO) { app.kern.gesehen(ziel.id, !gesehenJetzt).await() }.isEmpty()) titel.let { t = it.copy(gesehen = !gesehenJetzt) }
-                                "vonvorn" -> app.spiel.value = Abspielwunsch(ziel.id, null)
-                                "zuruecksetzen" -> if (withContext(Dispatchers.IO) { app.kern.gesehen(ziel.id, false).await() }.isEmpty()) neuLaden()
-                                "metadaten" -> withContext(Dispatchers.IO) { app.kern.metadatenAuffrischen(ziel.id).await() }
+                    if (titel?.fortsetzenAb != null) TvKnopf(null, Icons.Filled.Replay) { app.spiel.value = Abspielwunsch(ziel.id, null) }
+                    TvKnopf(null, if (titel?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
+                        val an = !(titel?.gemerkt ?: false)
+                        titel?.let { t = it.copy(gemerkt = an) }
+                        lauf.launch { if (withContext(Dispatchers.IO) { app.kern.merken(ziel.id, an).await() }.isNotEmpty()) titel?.let { t = it } }
+                    }
+                    // **`TvMehrknopf` statt `app.blatt`** — auf tvOS klappt das Menue direkt unter dem
+                    // Knopf auf, nicht als Tafel am rechten Rand. Siehe Doc-Kommentar dort.
+                    val tt = titel
+                    if (tt != null) {
+                        val gesehenJetzt = tt.gesehen
+                        // `Titelhandlungen.fuerFilm`: „Gesehen" vorn (aus der Knopfreihe heraus,
+                        // siehe `gesehenHandlung`), „Von vorn"/„Zuruecksetzen" nur mit Fortschritt.
+                        val eintraege = buildList {
+                            add(Wahl("gesehen", uebersetzt(if (gesehenJetzt) "Als ungesehen merken" else "Als gesehen merken")))
+                            if (tt.planDa && tt.fortsetzenAb != null) {
+                                add(Wahl("vonvorn", uebersetzt("Von vorn abspielen")))
+                                add(Wahl("zuruecksetzen", uebersetzt("Fortschritt zurücksetzen")))
+                            }
+                            add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
+                        }
+                        TvMehrknopf(eintraege,
+                            mapOf("gesehen" to Icons.Filled.CheckCircle, "vonvorn" to Icons.Filled.Replay,
+                                  "zuruecksetzen" to Icons.Filled.RestartAlt, "metadaten" to Icons.Filled.Refresh)) { wahl ->
+                            lauf.launch {
+                                when (wahl) {
+                                    "gesehen" -> if (withContext(Dispatchers.IO) { app.kern.gesehen(ziel.id, !gesehenJetzt).await() }.isEmpty()) titel.let { t = it.copy(gesehen = !gesehenJetzt) }
+                                    "vonvorn" -> app.spiel.value = Abspielwunsch(ziel.id, null)
+                                    "zuruecksetzen" -> if (withContext(Dispatchers.IO) { app.kern.gesehen(ziel.id, false).await() }.isEmpty()) neuLaden()
+                                    "metadaten" -> withContext(Dispatchers.IO) { app.kern.metadatenAuffrischen(ziel.id).await() }
+                                }
                             }
                         }
+                    } else {
+                        TvKnopf(null, Icons.Filled.MoreHoriz) {}
                     }
-                } else {
-                    TvKnopf(null, Icons.Filled.MoreHoriz) {}
                 }
+                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme")) {
+                    items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
+                }
+                if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras")) {
+                    items(extras, key = { it.id }) { x -> TvKachel(x.bild, x.name, x.laufzeit, quer = true) { app.spiel.value = Abspielwunsch(x.id, null) } }
+                }
+                val leute = titel?.darsteller.orEmpty()
+                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung")) {
+                    items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
+                }
+                Spacer(Modifier.height(40.dp))
             }
-            if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme")) {
-                items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
-            }
-            if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras")) {
-                items(extras, key = { it.id }) { x -> TvKachel(x.bild, x.name, x.laufzeit, quer = true) { app.spiel.value = Abspielwunsch(x.id, null) } }
-            }
-            val leute = titel?.darsteller.orEmpty()
-            if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung")) {
-                items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
-            }
-            Spacer(Modifier.height(40.dp))
         }
     }
 }
@@ -313,6 +364,7 @@ private fun tvLangesDatum(iso: String): String? =
  * **„Es gibt sonst nichts" wartet auf Seerr** (`seerrFertig`), sonst blitzt die Meldung kurz auf,
  * bevor die Filmografie da ist — derselbe Fehler, den `PersonView.swift` mit `seerrFertig` behebt.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     var stand by remember(ziel.id) { mutableStateOf(app.personenSpeicher[ziel.id]) }
@@ -340,54 +392,66 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
         TvBildgrund(banner.getOrNull(if (banner.isEmpty()) 0 else stelle % banner.size))
         // Weich und langsam: 1,2 s zwischen den Querbildern der Titel.
         Kulisse(banner.getOrNull(if (banner.isEmpty()) 0 else stelle % banner.size), Modifier.align(Alignment.TopEnd), dauer = 1200)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Row(Modifier.padding(start = TvStil.randSeite, top = 98.dp).height(TvStil.heldenHoehe + 20.dp - 98.dp),
-                horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Box(Modifier.size(TvStil.posterBreite).clip(CircleShape).background(Stil.flaeche), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(40.dp))
-                    AsyncImage(model = s?.bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                }
-                Column(Modifier.width(480.dp)) {
-                    Text(ziel.name, style = TvStil.titelGross, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    // **Zwei Zeilen, wie auf tvOS** (`PersonView.block`) — dort stehen Geburtsdatum
-                    // und -ort in einer eigenen `VStack`, nicht zusammengefasst mit „·".
-                    val geburt = s?.geboren?.let(::tvLangesDatum)?.let { uebersetzt("Geboren %@", it) }
-                    Column(Modifier.padding(top = 5.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                        Text(geburt.orEmpty(), style = TvStil.kachel, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(s?.ort.orEmpty(), style = TvStil.kachel, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    if (!ziel.rolle.isNullOrEmpty() && ziel.herkunft != null) {
-                        Text(uebersetzt("%@ in %@", ziel.rolle, ziel.herkunft), style = TvStil.koerper.copy(fontWeight = FontWeight.Medium),
-                             color = Stil.akzent, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
-                    }
-                    s?.beschreibung?.let { Text(it, style = TvStil.koerper, color = Stil.schriftLeise, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp)) }
-                }
-            }
-            // **Ohne Jahr, dafuer mit Marke** — wie `Titelstreifen` auf tvOS (`mitUnterzeile: false`,
-            // `marke: Anzeigeregeln.kachelmarke(...)`). Die Marke steht schon im JSON, dieselbe
-            // Regel wie im Bibliotheksraster; nur die Kachel hier zeigte sie bisher nicht an.
-            if (s != null && s.titel.isNotEmpty()) TvStreifen(uebersetzt("Auf deinem Server")) {
-                items(s.titel.size, key = { s.titel[it].id }) { i ->
-                    val k = s.titel[i]
-                    TvKachel(k.plakat, k.titel, null, marke = k.marke, markenzahl = k.markenzahl,
-                             modifier = if (i == 0) Modifier.focusRequester(fokus) else Modifier) { oeffnen(Ziel(k.id, k.titel, k.typ)) }
-                }
-            }
-            anfragbar?.takeIf { it.isNotEmpty() }?.let { liste ->
-                TvStreifen(uebersetzt("Kann angefragt werden")) {
-                    items(liste, key = { it.schluessel }) { t ->
-                        TvKachel(t.plakat, t.titel, Seerrmarke.kurzwort(t.stand) ?: t.jahr?.toString(), deckkraft = 0.45f) {
-                            app.seerrTreffer[t.schluessel] = t
-                            oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel"))
+        CompositionLocalProvider(LocalBringIntoViewSpec provides TvAbschnittsweisesBringIntoView) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                // **306,5 dp, dieselbe Gesamthoehe wie `TvDetailkopf`** (`Stil.heldenHoeheDetail`
+                // halbiert) — tvOS baut den Kopf der Personenseite genau wie den von Film und Serie:
+                // `.padding(.top, 140 + kopfversatzDetail)` **innerhalb** von `.frame(height:
+                // heldenHoeheDetail)` (siehe `PersonView.swift`). Vorher trug dieselbe `Row` sowohl den
+                // oberen Abstand (98 dp) als auch eine eigene Hoehe (`heldenHoehe + 20 - 98` = 177 dp) —
+                // macht zusammen 275 dp statt der 306,5 dp, die tvOS fuer diesen Kopf vorsieht, und der
+                // Abstand lag ausserhalb der festen Zone statt darin. Jetzt traegt die `Box` die
+                // Gesamthoehe, der Innenabstand liegt an der `Row` darin.
+                Box(Modifier.fillMaxWidth().height(306.5.dp)) {
+                    Row(Modifier.padding(start = TvStil.randSeite, top = 98.dp),
+                        horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        Box(Modifier.size(TvStil.posterBreite).clip(CircleShape).background(Stil.flaeche), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(40.dp))
+                            AsyncImage(model = s?.bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        }
+                        Column(Modifier.width(480.dp)) {
+                            Text(ziel.name, style = TvStil.titelGross, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            // **Zwei Zeilen, wie auf tvOS** (`PersonView.block`) — dort stehen Geburtsdatum
+                            // und -ort in einer eigenen `VStack`, nicht zusammengefasst mit „·".
+                            val geburt = s?.geboren?.let(::tvLangesDatum)?.let { uebersetzt("Geboren %@", it) }
+                            Column(Modifier.padding(top = 5.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                Text(geburt.orEmpty(), style = TvStil.kachel, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(s?.ort.orEmpty(), style = TvStil.kachel, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            if (!ziel.rolle.isNullOrEmpty() && ziel.herkunft != null) {
+                                Text(uebersetzt("%@ in %@", ziel.rolle, ziel.herkunft), style = TvStil.koerper.copy(fontWeight = FontWeight.Medium),
+                                     color = Stil.akzent, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
+                            }
+                            s?.beschreibung?.let { Text(it, style = TvStil.koerper, color = Stil.schriftLeise, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp)) }
                         }
                     }
                 }
+                // **Ohne Jahr, dafuer mit Marke** — wie `Titelstreifen` auf tvOS (`mitUnterzeile: false`,
+                // `marke: Anzeigeregeln.kachelmarke(...)`). Die Marke steht schon im JSON, dieselbe
+                // Regel wie im Bibliotheksraster; nur die Kachel hier zeigte sie bisher nicht an.
+                if (s != null && s.titel.isNotEmpty()) TvStreifen(uebersetzt("Auf deinem Server")) {
+                    items(s.titel.size, key = { s.titel[it].id }) { i ->
+                        val k = s.titel[i]
+                        TvKachel(k.plakat, k.titel, null, marke = k.marke, markenzahl = k.markenzahl,
+                                 modifier = if (i == 0) Modifier.focusRequester(fokus) else Modifier) { oeffnen(Ziel(k.id, k.titel, k.typ)) }
+                    }
+                }
+                anfragbar?.takeIf { it.isNotEmpty() }?.let { liste ->
+                    TvStreifen(uebersetzt("Kann angefragt werden")) {
+                        items(liste, key = { it.schluessel }) { t ->
+                            TvKachel(t.plakat, t.titel, Seerrmarke.kurzwort(t.stand) ?: t.jahr?.toString(), deckkraft = 0.45f) {
+                                app.seerrTreffer[t.schluessel] = t
+                                oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel"))
+                            }
+                        }
+                    }
+                }
+                if (s != null && seerrFertig && s.titel.isEmpty() && anfragbar.orEmpty().isEmpty()) {
+                    Text(uebersetzt("Auf deinem Server gibt es sonst nichts mit %@.", ziel.name), style = TvStil.koerper, color = Stil.schriftLeise,
+                         modifier = Modifier.padding(start = TvStil.randSeite, top = 30.dp))
+                }
+                Spacer(Modifier.height(40.dp))
             }
-            if (s != null && seerrFertig && s.titel.isEmpty() && anfragbar.orEmpty().isEmpty()) {
-                Text(uebersetzt("Auf deinem Server gibt es sonst nichts mit %@.", ziel.name), style = TvStil.koerper, color = Stil.schriftLeise,
-                     modifier = Modifier.padding(start = TvStil.randSeite, top = 30.dp))
-            }
-            Spacer(Modifier.height(40.dp))
         }
     }
 }

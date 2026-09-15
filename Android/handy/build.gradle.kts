@@ -78,6 +78,7 @@ dependencies {
     implementation(libs.libvlc.all)
     implementation(libs.lottie.compose)
     implementation(libs.play.review.ktx)
+    implementation(libs.androidx.tvprovider)
 }
 
 // **Die Startanimation liegt einmal im Repo** (`Sources/Shared/Mittel`) und wird beim Bau

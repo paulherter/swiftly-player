@@ -1,5 +1,6 @@
 package de.paulherter.swiftly.tv
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,11 +24,17 @@ import de.paulherter.swiftly.gemeinsam.Stil
  * Vorlage: `Sources/tvOS/RootView.swift` — derselbe Ablauf wie auf dem Telefon, nur mit einer
  * Oberflaeche fuer drei Meter Entfernung. Startet ueber `LEANBACK_LAUNCHER`; Kern, Konten,
  * Einstellungen und Player teilt sie mit der Telefonfassung in derselben App.
+ *
+ * **Zweiter Einstieg: ein Tipp auf einen Watch-Next-Eintrag** (`TvWeiterschauenRegal`) liefert
+ * die Adresse "swiftly://titel/<id>" ueber den Intent — dasselbe Muster wie `onOpenURL` auf
+ * tvOS (`HauptView.swift`). `singleTask` im Manifest sorgt dafuer, dass so ein Tipp in diese
+ * schon laufende Aktivitaet geht (`onNewIntent`), statt eine zweite danebenzustellen.
  */
 class TvAktivitaet : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as SwiftlyAnwendung
+        app.tiefenlink.value = intent?.data
         setContent {
             var phase by remember { mutableStateOf<Phase>(if (app.sitzungWiederherstellen()) Phase.Start else Phase.Server) }
             LaunchedEffect(app.abgemeldet.intValue) { if (app.abgemeldet.intValue > 0) phase = Phase.Server }
@@ -48,5 +55,11 @@ class TvAktivitaet : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        (application as SwiftlyAnwendung).tiefenlink.value = intent.data
     }
 }

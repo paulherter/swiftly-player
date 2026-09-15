@@ -103,6 +103,22 @@ fun TvHaupt(app: SwiftlyAnwendung) {
     val zurueck: () -> Unit = { stapel[bereich] = stapel[bereich].orEmpty().dropLast(1) }
     val oben = stapel[bereich].orEmpty()
 
+    // **Watch Next** (`TvWeiterschauenRegal`) fuehrt ueber "swiftly://titel/<id>" hierher zurueck —
+    // dieselbe Adresse wie tvOS' Top Shelf, nur ueber den Intent statt `onOpenURL`. Dieselbe Regel
+    // wie `weiterschauenWunsch` beim Antippen von „Weiterschauen" auf der Startseite
+    // (`StartSeite.kt`): ist eine Anschlussstelle da, direkt abspielen, sonst zur Titelseite. Nur
+    // fehlen hier Name und Art noch, deshalb ein einziger eigener Abruf statt der Hilfsfunktion.
+    LaunchedEffect(app.tiefenlink.value) {
+        val adresse = app.tiefenlink.value ?: return@LaunchedEffect
+        app.tiefenlink.value = null
+        if (adresse.scheme != "swiftly" || adresse.host != "titel") return@LaunchedEffect
+        val id = adresse.lastPathSegment ?: return@LaunchedEffect
+        bereich = TvBereich.Start
+        runCatching { titelLesen(withContext(Dispatchers.IO) { app.kern.titel(id).await() }) }.getOrNull()?.let { t ->
+            if (t.planDa) app.spiel.value = Abspielwunsch(id, t.fortsetzenAb) else oeffnen(Ziel(id, t.name, t.typ))
+        }
+    }
+
     BackHandler(enabled = oben.isEmpty() && bereich != TvBereich.Start) { bereich = TvBereich.Start }
     BackHandler(enabled = oben.isNotEmpty(), onBack = zurueck)
 
@@ -272,37 +288,45 @@ private fun Reiter(text: String, gewaehlt: Boolean, tun: () -> Unit) {
 /**
  * Vorlage: `Handlungstafel` — dieselben Wuensche wie das Blatt auf dem Telefon (`app.blatt`), als
  * Tafel am rechten Rand. **Der Fokus bleibt drin**, bis sie zu ist; Zurueck schliesst nur sie.
+ *
+ * **Fokus zurueck an die Zeile, die die Tafel geoeffnet hat** (Auswahl oder Zurueck) — siehe
+ * `Fokusmerker` in TvStil.kt. Ohne das landete der Fokus nach dem Schliessen zufaellig, z. B. auf
+ * dem „+"-Knopf im Kontenstreifen der Profilseite, egal welche Zeile die Tafel ausgeloest hatte.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun TvTafel(app: SwiftlyAnwendung) {
-    val w = app.blatt.value ?: return
+    val w = app.blatt.value
+    LaunchedEffect(w == null) { if (w == null) { delay(30); Fokusmerker.zurueckfordern() } }
+    if (w == null) return
     val schliessen = { app.blatt.value = null }
     BackHandler(onBack = schliessen)
     var auswahl by remember(w) { mutableStateOf(w.mehrfach) }
     val erster = remember(w) { FocusRequester() }
     LaunchedEffect(w) { delay(30); runCatching { erster.requestFocus() } }
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))) {
-        Column(Modifier.align(Alignment.CenterEnd).padding(end = TvStil.randSeite).width(310.dp)
-                .clip(RoundedCornerShape(10.dp)).background(Stil.erhoeht).padding(10.dp)
-                .focusProperties { exit = { FocusRequester.Cancel } }.focusGroup()) {
-            Text(w.titel, style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift, maxLines = 2,
-                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
-            Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
-                w.eintraege.forEachIndexed { i, e ->
-                    val menge = auswahl
-                    TvZeile(e.text, w.symbole[e.wert], rechts = w.gesperrt[e.wert],
-                            haken = if (menge != null) e.wert in menge else e.wert == w.gewaehlt,
-                            modifier = if (i == 0) Modifier.focusRequester(erster) else Modifier) {
-                        if (w.gesperrt[e.wert] != null) return@TvZeile
-                        if (menge != null) auswahl = if (e.wert in menge) menge - e.wert else menge + e.wert
-                        else { schliessen(); w.waehlen(e.wert) }
+        CompositionLocalProvider(LocalInnerhalbTafel provides true) {
+            Column(Modifier.align(Alignment.CenterEnd).padding(end = TvStil.randSeite).width(310.dp)
+                    .clip(RoundedCornerShape(10.dp)).background(Stil.erhoeht).padding(10.dp)
+                    .focusProperties { exit = { FocusRequester.Cancel } }.focusGroup()) {
+                Text(w.titel, style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift, maxLines = 2,
+                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                    w.eintraege.forEachIndexed { i, e ->
+                        val menge = auswahl
+                        TvZeile(e.text, w.symbole[e.wert], rechts = w.gesperrt[e.wert],
+                                haken = if (menge != null) e.wert in menge else e.wert == w.gewaehlt,
+                                modifier = if (i == 0) Modifier.focusRequester(erster) else Modifier) {
+                            if (w.gesperrt[e.wert] != null) return@TvZeile
+                            if (menge != null) auswahl = if (e.wert in menge) menge - e.wert else menge + e.wert
+                            else { schliessen(); w.waehlen(e.wert) }
+                        }
                     }
                 }
-            }
-            w.abschluss?.let { abschluss ->
-                val menge = auswahl.orEmpty()
-                TvZeile(w.abschlussText(menge.size)) { if (menge.isNotEmpty()) { schliessen(); abschluss(menge) } }
+                w.abschluss?.let { abschluss ->
+                    val menge = auswahl.orEmpty()
+                    TvZeile(w.abschlussText(menge.size)) { if (menge.isNotEmpty()) { schliessen(); abschluss(menge) } }
+                }
             }
         }
     }

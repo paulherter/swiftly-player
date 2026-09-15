@@ -84,6 +84,14 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** „Hier weiterschauen" — was auf einem anderen Geraet desselben Kontos laeuft. */
     val angebote = androidx.compose.runtime.mutableStateOf<List<Angebot>>(emptyList())
 
+    /**
+     * Fernseher: die Adresse aus einem Tipp auf einen Watch-Next-Eintrag (`TvAktivitaet`,
+     * `TvWeiterschauenRegal`) — `TvHaupt` liest sie, oeffnet den Titel und setzt sie zurueck auf
+     * `null`. Genau die "swiftly://titel/<id>"-Adresse, die auch tvOS' Top Shelf verwendet
+     * (`RegalAnbieter.swift`), nur ohne `onOpenURL`: Android liefert sie ueber den Intent.
+     */
+    val tiefenlink = androidx.compose.runtime.mutableStateOf<android.net.Uri?>(null)
+
     /** Das Zeichen der Mediensitzung des Players — der Wiedergabedienst haengt seine Benachrichtigung daran. */
     var medienToken: android.media.session.MediaSession.Token? = null
 
@@ -281,6 +289,10 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         servername.value = null
         merkliste.vergessen()
         suche.begriff = ""; suche.treffer = emptyList(); suche.suchmodus = false
+        // Vorlage: `AppModel.nachDemWechsel`/Abmelden auf Apple, `Regal.leeren()` — sonst
+        // zeigt Watch Next auf dem Fernseher-Startbildschirm weiter die Filme und Serien
+        // des vorigen Kontos, sichtbar fuer jeden im Raum.
+        de.paulherter.swiftly.tv.TvWeiterschauenRegal.leeren(this)
     }
 
     /** Assets koennen keinen Dateipfad nennen; `Bundle(path:)` braucht einen. Also einmal entpacken. */

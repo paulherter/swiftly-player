@@ -22,6 +22,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -91,19 +93,56 @@ object TvStil {
  * Eine fokussierbare Flaeche mit Lupe — `KachelStil`, `KnopfStil`, `ReiterStil` teilen sich das.
  * **Keine Schatten, kein Leuchten, kein Ring:** zwei Anlaeufe damit sahen an einer Einzelkachel
  * sauber aus und in einer Reihe mit sechs Nachbarn matschig.
+ *
+ * **Traegt einen eigenen `FocusRequester`** und meldet sich beim Ausloesen bei `Fokusmerker` —
+ * so kann eine Tafel oder ein Blatt, die diese Flaeche geoeffnet hat, den Fokus beim Schliessen
+ * dorthin zurueckgeben. tvOS laesst den Ausloeser stehen, der Fokus bleibt dort von selbst;
+ * Compose braucht dafuer diesen Umweg (siehe `Fokusmerker`, `LocalInnerhalbTafel`).
  */
 @Composable
 fun Fokusflaeche(modifier: Modifier = Modifier, lupe: Float = TvStil.fokusLupe, fokusGeaendert: (Boolean) -> Unit = {},
                  tun: () -> Unit, inhalt: @Composable BoxScope.(fokus: Boolean) -> Unit) {
     var fokus by remember { mutableStateOf(false) }
     val mass by animateFloatAsState(if (fokus) lupe else 1f, tween(TvStil.fokusDauer, easing = TvStil.fokusKurve), label = "lupe")
+    val eigenerFokus = remember { FocusRequester() }
+    val innerhalbTafel = LocalInnerhalbTafel.current
     Box(modifier
+            .focusRequester(eigenerFokus)
             .onFocusChanged { if (fokus != it.isFocused) { fokus = it.isFocused; fokusGeaendert(it.isFocused) } }
             .graphicsLayer { scaleX = mass; scaleY = mass }
-            .clickable(remember { MutableInteractionSource() }, null, onClick = tun)) {
+            .clickable(remember { MutableInteractionSource() }, null, onClick = {
+                // Nicht innerhalb einer offenen Tafel: sonst ueberschriebe eine Auswahlzeile *in*
+                // ihr den Rueckweg zu der Zeile, die sie geoeffnet hat.
+                if (!innerhalbTafel) Fokusmerker.letzter = eigenerFokus
+                tun()
+            })) {
         inhalt(fokus)
     }
 }
+
+/**
+ * Wer eine Tafel oder ein Blatt ausgeloest hat — damit `TvTafel`/`TvWiedergabeblatt`/
+ * `TvFolgenblatt` den Fokus beim Schliessen (Auswahl **oder** Zurueck) dorthin zurueckgeben,
+ * statt ihn der zufaelligen Fokussuche von Compose zu ueberlassen (die sonst z. B. beim ersten
+ * fokussierbaren Element der Seite landet).
+ */
+object Fokusmerker {
+    var letzter: FocusRequester? = null
+
+    /** Fordert den gemerkten Ausloeser zurueck, sonst `ersatz` (falls angegeben) — danach
+     *  vergessen, damit ein spaeteres Schliessen ohne neuen Ausloeser nicht denselben Knopf trifft. */
+    fun zurueckfordern(ersatz: FocusRequester? = null) {
+        val ziel = letzter
+        letzter = null
+        val traf = ziel != null && runCatching { ziel.requestFocus() }.isSuccess
+        if (!traf) ersatz?.let { runCatching { it.requestFocus() } }
+    }
+}
+
+/** True innerhalb einer offenen Tafel/eines Blatts (`TvTafel`, `TvWiedergabeblatt`,
+ *  `TvFolgenblatt`) — dort zaehlt eine angeklickte `Fokusflaeche` nicht als Ausloeser fuer
+ *  `Fokusmerker`, sonst waere immer die zuletzt gewaehlte Zeile der „Ausloeser". */
+val LocalInnerhalbTafel = compositionLocalOf { false }
 
 /**
  * Vorlage: `KnopfStil` — die fokussierte Fassung ist Zeichen fuer Zeichen der Hauptknopf vom iPhone:

@@ -2,7 +2,10 @@ package de.paulherter.swiftly.tv
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -23,8 +26,11 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,19 +52,111 @@ import org.json.JSONObject
 /**
  * Vorlage: `Kulisse` und `Kulissenblende` — das Querbild rechts oben, zum Text hin und nach unten
  * in den Grund auslaufend. Startseite, Titel, Serie und Person teilen sich dieselbe.
+ *
+ * **Eine Alpha-Maske, kein Anstrich in `Stil.grund`.** So stand es hier vorher: zwei Verlaeufe von
+ * `Stil.grund` nach durchsichtig, **ueber** das Bild gemalt. Das setzt einen einfarbigen Seitengrund
+ * voraus — seit `TvBildgrund` den Grund nach der Kulisse toent, endete das Bild links und unten mit
+ * einer harten Kante, wo der Anstrich in der falschen Farbe auf den getoenten Grund traf.
+ *
+ * tvOS loest das mit `Kulissenblende` (`Sources/tvOS/TVBausteine.swift`) als Maske: **das Bild selbst
+ * wird links und unten durchsichtig**, und was dahinter liegt, kommt durch, welche Farbe es auch hat.
+ * Nachgebaut mit `graphicsLayer(compositingStrategy = Offscreen)` — `BlendMode.DstIn` braucht eine
+ * eigene Ebene, sonst wirkt es auf alles darunter statt nur auf dieses Bild — und zwei `drawRect`-
+ * Aufrufen mit `DstIn` statt SwiftUIs zwei `.mask`-Aufrufen. Dieselben Anker wie in der Vorlage.
  */
 @Composable
 fun Kulisse(bild: String?, modifier: Modifier = Modifier, dauer: Int = 300) {
     Crossfade(bild, animationSpec = tween(dauer), label = "kulisse", modifier = modifier.size(590.dp, 350.dp)) { url ->
-        Box(Modifier.fillMaxSize().drawWithContent {
-            drawContent()
-            drawRect(Brush.horizontalGradient(0f to Stil.grund, 0.45f to Stil.grund.copy(alpha = 0.55f), 1f to Color.Transparent))
-            drawRect(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Stil.grund))
-        }) {
+        Box(Modifier.fillMaxSize()
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                    drawContent()
+                    // Waagerecht: links durchsichtig, rechts voll da — dieselben Anker wie
+                    // `Kulissenblende`s erste Maske (`.leading` → `.trailing`).
+                    drawRect(Brush.horizontalGradient(
+                        0.00f to Color.White.copy(alpha = 0.00f),
+                        0.15f to Color.White.copy(alpha = 0.05f),
+                        0.29f to Color.White.copy(alpha = 0.22f),
+                        0.45f to Color.White.copy(alpha = 0.50f),
+                        0.57f to Color.White.copy(alpha = 0.75f),
+                        0.70f to Color.White.copy(alpha = 0.90f),
+                        0.85f to Color.White.copy(alpha = 0.98f),
+                        1.00f to Color.White.copy(alpha = 1.00f),
+                    ), blendMode = BlendMode.DstIn)
+                    // Senkrecht: oben voll da, unten durchsichtig — dieselben Anker wie
+                    // `Kulissenblende`s zweite Maske (`.top` → `.bottom`).
+                    drawRect(Brush.verticalGradient(
+                        0.00f to Color.White.copy(alpha = 1.00f),
+                        0.50f to Color.White.copy(alpha = 1.00f),
+                        0.60f to Color.White.copy(alpha = 0.88f),
+                        0.70f to Color.White.copy(alpha = 0.62f),
+                        0.80f to Color.White.copy(alpha = 0.34f),
+                        0.89f to Color.White.copy(alpha = 0.14f),
+                        0.95f to Color.White.copy(alpha = 0.04f),
+                        1.00f to Color.White.copy(alpha = 0.00f),
+                    ), blendMode = BlendMode.DstIn)
+                }) {
             AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
     }
 }
+
+/**
+ * Vorlage: kein Gegenstueck auf tvOS — SwiftUI kennt kein eingebautes „Bring the focused view into
+ * view" fuer eigene Listen. Compose dagegen meldet bei jedem Fokuswechsel eine Anfrage an **jeden**
+ * umschliessenden Scroll-Container, senkrecht wie waagerecht; auf einem Fernseher (`leanback`-Merkmal)
+ * ist die Systemvorgabe intern ein Pivot-Verhalten, das das fokussierte Element auf 30 % Hoehe haelt,
+ * auch wenn es schon vollstaendig sichtbar ist — `PivotBringIntoViewSpec` selbst ist seit Foundation
+ * 1.7 `internal` und von hier aus nicht erreichbar, deshalb unten `TvReihenBringIntoView` als eigener,
+ * schlanker Nachbau derselben Rechnung.
+ *
+ * Wandert der Fokus **waagerecht** innerhalb einer `LazyRow` (die Fokuslupe laesst die Kachel dabei
+ * waechst), meldet sich die wachsende Kachel bei jedem Zwischenschritt erneut beim **senkrechten**
+ * Vorfahren — der `LazyColumn` der Startseite —, und die rueckt sie artig auf ihre 30 % zurecht.
+ * Genau das Zucken nach oben und unten bei jedem Links/Rechts innerhalb einer Reihe.
+ *
+ * Der senkrechte Reihenwechsel hat mit `listenzustand.animateScrollToItem(...)` schon eine eigene,
+ * bewusste Bewegung — das eingebaute Bring-into-View braucht es dafuer nicht. Deshalb hier ganz
+ * abgeschaltet (immer 0), um die `LazyColumn` gelegt; innerhalb jeder `LazyRow` steht wieder
+ * `TvReihenBringIntoView`, damit die naechste Kachel beim Weiterwandern waagerecht mitgescrollt wird.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+object TvKeinSenkrechtesBringIntoView : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float) = 0f
+}
+
+/**
+ * Eigener Nachbau des Pivot-Verhaltens, mit dem jede `LazyRow` von sich aus schon bedient war, bevor
+ * `LocalBringIntoViewSpec` hier ueberschrieben wurde: die fokussierte Kachel wandert auf 30 % der
+ * Streifenbreite, nicht ganz an den Rand, damit rechts noch die naechste zu sehen ist. Passt die
+ * Kachel dort nicht mehr hinein (sie ist breiter als der Streifen), richtet sich ihr Ende an der
+ * Streifenkante aus statt am Pivot-Punkt — dieselbe Randbehandlung wie im Systemverhalten.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+object TvReihenBringIntoView : BringIntoViewSpec {
+    private const val pivot = 0.3f
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        if (containerSize <= 0f) return 0f
+        val idealeVorderkante = pivot * containerSize
+        val platzDanach = containerSize - idealeVorderkante
+        val zielVorderkante = if (size <= containerSize && platzDanach < size) containerSize - size else idealeVorderkante
+        return offset - zielVorderkante
+    }
+}
+
+/**
+ * Dasselbe Werkzeug wie oben, aber fuer Seiten **ohne** eigene Scroll-Steuerung (Serie, Film, Person,
+ * Seerr-Detail — `verticalScroll`, keine `LazyColumn`): dort darf die senkrechte Seite nicht ganz
+ * taub werden, sonst waere ein Abschnitt unterhalb des Bildes gar nicht mehr erreichbar.
+ *
+ * Ein Objekt ohne eigene Ueberschreibung erbt `BringIntoViewSpec.calculateScrollDistance`s
+ * Standardmethode — dieselbe Rechnung, die auf einem Telefon (ohne `leanback`-Merkmal) automatisch
+ * greift: **scrollen nur, wenn das Ziel nicht schon vollstaendig im Bild steht**, dann in einem Zug um
+ * genau die noetige Strecke. Kein Pivot-Zurechtruecken, also kein Zappeln bei einem Fokuswechsel, der
+ * ohnehin im Bild bleibt — aber ein Wechsel in einen Abschnitt ausserhalb des Bildes scrollt weiterhin.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+object TvAbschnittsweisesBringIntoView : BringIntoViewSpec
 
 /**
  * Vorlage: `Kopfauskunft` — **eine Quelle** fuer Startseite und Detailseiten, sonst laufen sie
@@ -118,7 +216,7 @@ private fun gestoertLesen(json: String): Boolean = JSONObject(json).optBoolean("
  * **Vier Zustaende, wie auf tvOS:** laedt (zwei Platzhalterreihen, eine quer), gestoert (der Server
  * antwortet nicht, mit „Nochmal versuchen"), leer (gar kein Inhalt) und die Reihen selbst.
  */
-@OptIn(ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val e = app.einstellungen
@@ -134,9 +232,16 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                                     e.startGenres.toTypedArray(), e.genreChips).await()
             }
         }.onSuccess { json ->
-            reihen = reihenLesen(json).also { app.startReihen = it }
+            val liste = reihenLesen(json).also { app.startReihen = it }
+            reihen = liste
             gestoert = gestoertLesen(json)
             if (!gestoert) app.startGeladenUm = System.currentTimeMillis()
+            // Vorlage: `regalSchreiben()` in `HomeView.swift` — bei jedem Laden der Startseite
+            // dieselben Rubriken fuers Watch-Next-Regal ablegen. Abseits des Hauptthreads: der
+            // Systemanbieter braucht mehrere Zugriffe (lesen, schreiben, ggf. loeschen).
+            if (!gestoert) withContext(Dispatchers.IO) {
+                runCatching { TvWeiterschauenRegal.aktualisieren(app, liste) }
+            }
         }.onFailure { gestoert = true }
     }
     LaunchedEffect(e.neuzugangGetrennt, e.startReihen, e.startAus, e.startGenres, e.genreChips) { laden() }
@@ -206,36 +311,48 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                     // wieder auf der zuletzt fokussierten Kachel, nicht auf der ersten — wie
                     // `zuletztAmTitel`/`defaultFocus` auf tvOS. Vor dem ersten Fokus greift
                     // `erster` als Rueckfall.
-                    LazyColumn(Modifier.weight(1f).focusRestorer { erster }, state = listenzustand,
-                               contentPadding = PaddingValues(bottom = 40.dp),
-                               verticalArrangement = Arrangement.spacedBy(TvStil.reihenAbstand - TvStil.reihenLuft * 2)) {
-                        if (e.genreChips && e.startGenres.isNotEmpty()) item(key = "genres") {
-                            LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                items(e.startGenres) { g -> TvChip(g, false) { oeffnen(Ziel(g, g, "Genre")) } }
+                    // Senkrecht abgeschaltet, siehe `TvKeinSenkrechtesBringIntoView` — der
+                    // Reihenwechsel oben (`animateScrollToItem`) bewegt die Liste schon bewusst, ein
+                    // zusaetzliches Bring-into-View liess beim waagerechten Wandern in einer Reihe
+                    // alles kurz hoch- und runterzucken. In jeder `LazyRow` unten steht die
+                    // Systemvorgabe (`TvReihenBringIntoView`, der Nachbau davon) wieder bereit, damit
+                    // die naechste Kachel dort weiter mitgescrollt wird.
+                    CompositionLocalProvider(LocalBringIntoViewSpec provides TvKeinSenkrechtesBringIntoView) {
+                        LazyColumn(Modifier.weight(1f).focusRestorer { erster }, state = listenzustand,
+                                   contentPadding = PaddingValues(bottom = 40.dp),
+                                   verticalArrangement = Arrangement.spacedBy(TvStil.reihenAbstand - TvStil.reihenLuft * 2)) {
+                            if (e.genreChips && e.startGenres.isNotEmpty()) item(key = "genres") {
+                                CompositionLocalProvider(LocalBringIntoViewSpec provides TvReihenBringIntoView) {
+                                    LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        items(e.startGenres) { g -> TvChip(g, false) { oeffnen(Ziel(g, g, "Genre")) } }
+                                    }
+                                }
                             }
-                        }
-                        // **Zwei Platzhalterreihen, nicht eine** — die erste quer wie
-                        // „Weiterschauen", die zweite hochkant wie die uebrigen. So springt beim
-                        // Ankommen der Reihen nichts in der Form um.
-                        if (liste == null) {
-                            item(key = "platzhalter-quer") { TvReihenplatzhalter(quer = true) }
-                            item(key = "platzhalter-plakat") { TvReihenplatzhalter(quer = false) }
-                        }
-                        itemsIndexed(liste.orEmpty(), key = { i, r -> "$i-${r.titel}" }) { i, r ->
-                            Column {
-                                TvReihentitel(r.titel)
-                                LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
-                                        horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand)) {
-                                    itemsIndexed(r.kacheln, key = { _, k -> k.id }) { j, k ->
-                                        TvKachel(if (r.quer) k.quer ?: k.plakat else k.plakat, k.name, k.unterzeile, r.quer,
-                                                 if (r.quer) k.fortschritt else null,
-                                                 marke = k.marke, markenzahl = k.markenzahl,
-                                                 modifier = if (i == 0 && j == 0) Modifier.focusRequester(erster) else Modifier,
-                                                 fokusGeaendert = { if (it) { aktuell = k; fokusReihe = i } }) {
-                                            // „Weiterschauen" spielt direkt ab, wie auf tvOS.
-                                            if (r.quer) lauf.launch { weiterschauenWunsch(app, k.id)?.let { app.spiel.value = it } ?: oeffnen(Ziel(k.id, k.name, k.typ)) }
-                                            else oeffnen(Ziel(k.id, k.name, k.typ))
+                            // **Zwei Platzhalterreihen, nicht eine** — die erste quer wie
+                            // „Weiterschauen", die zweite hochkant wie die uebrigen. So springt beim
+                            // Ankommen der Reihen nichts in der Form um.
+                            if (liste == null) {
+                                item(key = "platzhalter-quer") { TvReihenplatzhalter(quer = true) }
+                                item(key = "platzhalter-plakat") { TvReihenplatzhalter(quer = false) }
+                            }
+                            itemsIndexed(liste.orEmpty(), key = { i, r -> "$i-${r.titel}" }) { i, r ->
+                                Column {
+                                    TvReihentitel(r.titel)
+                                    CompositionLocalProvider(LocalBringIntoViewSpec provides TvReihenBringIntoView) {
+                                        LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
+                                                horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand)) {
+                                            itemsIndexed(r.kacheln, key = { _, k -> k.id }) { j, k ->
+                                                TvKachel(if (r.quer) k.quer ?: k.plakat else k.plakat, k.name, k.unterzeile, r.quer,
+                                                         if (r.quer) k.fortschritt else null,
+                                                         marke = k.marke, markenzahl = k.markenzahl,
+                                                         modifier = if (i == 0 && j == 0) Modifier.focusRequester(erster) else Modifier,
+                                                         fokusGeaendert = { if (it) { aktuell = k; fokusReihe = i } }) {
+                                                    // „Weiterschauen" spielt direkt ab, wie auf tvOS.
+                                                    if (r.quer) lauf.launch { weiterschauenWunsch(app, k.id)?.let { app.spiel.value = it } ?: oeffnen(Ziel(k.id, k.name, k.typ)) }
+                                                    else oeffnen(Ziel(k.id, k.name, k.typ))
+                                                }
+                                            }
                                         }
                                     }
                                 }

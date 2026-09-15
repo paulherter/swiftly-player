@@ -34,6 +34,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -95,6 +96,11 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     val aktivitaet = remember(kontext) { kontext.aktivitaet() }
     val lauf = rememberCoroutineScope()
     val ruck = rememberRuck()
+
+    // Der Player laeuft in einer eigenen Activity (`PlayerAktivitaet`) — ein `Fokusmerker.letzter`
+    // von der vorigen Seite (z. B. die Kachel, die den Player geoeffnet hat) gehoert zu einer
+    // fremden Komposition und darf hier keine Tafel treffen wollen.
+    LaunchedEffect(Unit) { Fokusmerker.letzter = null }
 
     val werk = remember { Spielwerk(app, kontext, lauf) }
     val flaeche = remember { arrayOfNulls<org.videolan.libvlc.util.VLCVideoLayout>(1) }
@@ -180,6 +186,7 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     BackHandler(enabled = folgenOffen) { folgenOffen = false; zeigen() }
     BackHandler { werk.beenden(schliessen) }
 
+    val knopfOben = remember { FocusRequester() }
     fun taste(e: KeyEvent): Boolean {
         if (tafelOffen || folgenOffen) return false
         if (e.type != KeyEventType.KeyDown) return false
@@ -196,8 +203,13 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
             Key.MediaRewind -> spulen(-werk.zurueckS)
             Key.MediaFastForward -> spulen(werk.vorS)
             Key.MediaNext -> if (werk.plan?.naechste == true) lauf.launch { werk.naechsteFolge() }
-            // Oben: erst die Steuerung zeigen; ist sie schon da, das Angebot, sonst die Einstellungen.
-            Key.DirectionUp -> if (!sichtbar) zeigen() else if (!angebotAusfuehren()) { tafelOffen = true; zeigen() }
+            // **Oben fuehrt zu den Knoepfen, nicht in die Einstellungen.** Vorlage: `PlayerScreen`
+            // — „der Fokus liegt auf der Zeitleiste … nach oben kommt man zu den Knoepfen". Vorher
+            // oeffnete Oben sofort die Tafel, und die beiden Knoepfe oben rechts waren mit der
+            // Fernbedienung gar nicht erreichbar. Steht ein Angebot, hat es weiter Vorrang.
+            Key.DirectionUp -> if (!sichtbar) zeigen() else if (!angebotAusfuehren()) {
+                zeigen(); lauf.launch { delay(30); runCatching { knopfOben.requestFocus() } }
+            }
             Key.Menu -> { tafelOffen = true; zeigen() }
             Key.DirectionDown -> { sichtbar = !sichtbar; beruehrt++ }
             else -> return false
@@ -206,13 +218,18 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     }
 
     val fernbedienung = remember { FocusRequester() }
-    LaunchedEffect(tafelOffen, folgenOffen) { if (!tafelOffen && !folgenOffen) { delay(50); runCatching { fernbedienung.requestFocus() } } }
+    // Fokus zurueck an den Knopf, der die Tafel/das Blatt geoeffnet hat (siehe `Fokusmerker` in
+    // TvStil.kt) — kam die Oeffnung stattdessen von der Fernbedienung (Oben/Menue ohne Knopfklick),
+    // ist nichts gemerkt und es bleibt bei der bisherigen Fassung: zurueck auf die Fernbedienungsflaeche.
+    LaunchedEffect(tafelOffen, folgenOffen) { if (!tafelOffen && !folgenOffen) { delay(50); Fokusmerker.zurueckfordern(fernbedienung) } }
 
     val deckung by animateFloatAsState(
         if (sichtbar || !werk.bildFrei) 1f else 0f,
         if (sichtbar || !werk.bildFrei) tween(180, easing = Bewegung.weich) else tween(340, easing = Bewegung.weich),
         label = "steuerung")
     val steuerungDa by remember { derivedStateOf { deckung > 0.01f && !tafelOffen } }
+    // Verschwinden die Knoepfe mit der Steuerung, darf der Fokus nicht ins Leere fallen.
+    LaunchedEffect(steuerungDa) { if (!steuerungDa && !tafelOffen && !folgenOffen) runCatching { fernbedienung.requestFocus() } }
 
     Box(Modifier.fillMaxSize().background(Color.Black)
             .focusRequester(fernbedienung).focusable().onKeyEvent { taste(it) }) {
@@ -257,12 +274,18 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
 
             // Werkzeuge oben rechts — Folgenliste nur, wenn es eine naechste Folge gibt (Vorlage:
             // `if naechste != nil` in `PlayerScreen.werkzeuge`), dahinter die Einstellungen.
-            Row(Modifier.align(Alignment.TopEnd).padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben),
+            // Unten fuehrt von den Knoepfen zurueck auf die Zeitleiste; jeder Tastendruck hier haelt
+            // die Steuerung wach, sonst verschwaende der fokussierte Knopf unter dem Finger.
+            Row(Modifier.align(Alignment.TopEnd).padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben)
+                    .onPreviewKeyEvent { e ->
+                        if (e.type == KeyEventType.KeyDown) zeigen()
+                        if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown) { runCatching { fernbedienung.requestFocus() }; true } else false
+                    },
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (werk.plan?.naechste == true) {
                     TvKnopf(text = null, symbol = Icons.Filled.PlaylistPlay) { folgenOffen = true; zeigen() }
                 }
-                TvKnopf(text = null, symbol = Icons.Filled.Tune) { tafelOffen = true; zeigen() }
+                TvKnopf(text = null, symbol = Icons.Filled.Tune, modifier = Modifier.focusRequester(knopfOben)) { tafelOffen = true; zeigen() }
             }
 
             Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben),
@@ -373,17 +396,22 @@ private fun TvFolgenblatt(app: SwiftlyAnwendung, schliessen: () -> Unit, waehlen
     LaunchedEffect(laedt) { if (!laedt) { delay(30); runCatching { erste.requestFocus() } } }
 
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.9f))) {
-        Column(Modifier.fillMaxSize().padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(uebersetzt("Folgen"), style = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift, modifier = Modifier.weight(1f))
-                TvKnopf(uebersetzt("Fertig")) { schliessen() }
-            }
-            Spacer(Modifier.height(28.dp))
-            when {
-                laedt -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { TvLader(groesse = 48.dp) }
-                else -> LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    itemsIndexed(folgen, key = { _, f -> f.id }) { i, f ->
-                        TvFolgenzeile(f, modifier = if (i == 0) Modifier.focusRequester(erste) else Modifier) { waehlen(f.id) }
+        // Innerhalb des Blatts: eine gewaehlte Folge zaehlt nicht als eigener Ausloeser fuer
+        // `Fokusmerker`, sonst ginge der Fokus beim naechsten Oeffnen nicht mehr zum Knopf zurueck,
+        // der dieses Blatt aufgemacht hat (siehe `LocalInnerhalbTafel` in TvStil.kt).
+        CompositionLocalProvider(LocalInnerhalbTafel provides true) {
+            Column(Modifier.fillMaxSize().padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(uebersetzt("Folgen"), style = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift, modifier = Modifier.weight(1f))
+                    TvKnopf(uebersetzt("Fertig")) { schliessen() }
+                }
+                Spacer(Modifier.height(28.dp))
+                when {
+                    laedt -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { TvLader(groesse = 48.dp) }
+                    else -> LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        itemsIndexed(folgen, key = { _, f -> f.id }) { i, f ->
+                            TvFolgenzeile(f, modifier = if (i == 0) Modifier.focusRequester(erste) else Modifier) { waehlen(f.id) }
+                        }
                     }
                 }
             }
@@ -447,6 +475,11 @@ private fun TvWiedergabeblatt(offen: Boolean, schliessen: () -> Unit, werk: Spie
         Box(Modifier.fillMaxWidth().height(280.dp).align(Alignment.BottomCenter)
                 .background(Brush.verticalGradient(listOf(Stil.grund.copy(alpha = 0f), Stil.grund.copy(alpha = 0.9f), Stil.grund))))
 
+        // Innerhalb der Tafel: eine gewaehlte Kategorie oder ein gewaehlter Wert zaehlt nicht als
+        // eigener Ausloeser fuer `Fokusmerker`, sonst ginge der Fokus beim Schliessen nicht mehr
+        // zum „Einstellungen"-Knopf zurueck, der diese Tafel geoeffnet hat (siehe `LocalInnerhalbTafel`
+        // in TvStil.kt).
+        CompositionLocalProvider(LocalInnerhalbTafel provides true) {
         Column(Modifier.align(Alignment.BottomStart).fillMaxWidth()
                    .padding(horizontal = TvStil.randSeite).padding(bottom = TvStil.randOben)) {
             // Vorlage: der Beleg steht neben dem Titel, nicht als Fusszeile unter allem —
@@ -479,6 +512,7 @@ private fun TvWiedergabeblatt(offen: Boolean, schliessen: () -> Unit, werk: Spie
                     }
                 }
             }
+        }
         }
     }
     BackHandler(onBack = schliessen)

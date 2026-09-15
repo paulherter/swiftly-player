@@ -1,7 +1,9 @@
 package de.paulherter.swiftly.tv
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -141,6 +143,7 @@ fun TvSeerrSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
  * Mehrfachauswahl, genau wie `staffelblatt()` in `SeerrDetailSeite` auf dem Telefon — derselbe
  * Baustein wie jede andere Tafel auf dem Fernseher, keine eigene Staffeltafel wie auf tvOS.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvSeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurueck: () -> Unit) {
     val k = app.seerrTreffer[ziel.id] ?: run { LaunchedEffect(Unit) { zurueck() }; return }
@@ -193,43 +196,48 @@ fun TvSeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         TvBildgrund(k.kulisse)
         Kulisse(k.kulisse, Modifier.align(Alignment.TopEnd))
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp).height(TvStil.heldenHoehe + 20.dp - 98.dp)) {
-                Kopfauskunft(k.titel, nebenzeile, d?.feldText("beschreibung"))
-                Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    val farbe = Seerrmarke.farbe(stand)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Seerrmarke.symbol(stand), contentDescription = null, tint = farbe, modifier = Modifier.size(15.dp))
-                        Text(Seerrmarke.wort(stand), style = TvStil.koerper.copy(fontWeight = FontWeight.Medium), color = farbe)
+        // Minimaler Eingriff, siehe `TvKeinSenkrechtesBringIntoView`/`TvAbschnittsweisesBringIntoView`
+        // in `TvStart.kt`: derselbe Sprung nach oben beim Oeffnen wie auf `TvDetail`
+        // (`TvTitel.kt`), gleiche Behebung, hier bewusst nicht mehr angefasst als das.
+        CompositionLocalProvider(LocalBringIntoViewSpec provides TvAbschnittsweisesBringIntoView) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp).height(TvStil.heldenHoehe + 20.dp - 98.dp)) {
+                    Kopfauskunft(k.titel, nebenzeile, d?.feldText("beschreibung"))
+                    Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        val farbe = Seerrmarke.farbe(stand)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Seerrmarke.symbol(stand), contentDescription = null, tint = farbe, modifier = Modifier.size(15.dp))
+                            Text(Seerrmarke.wort(stand), style = TvStil.koerper.copy(fontWeight = FontWeight.Medium), color = farbe)
+                        }
+                        // 0 heisst bei TMDB „keine Bewertung", nicht null Sterne.
+                        d?.feldZahl("bewertung")?.takeIf { it > 0 }?.let { b ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.Star, contentDescription = null, tint = Stil.schrift.copy(alpha = 0.8f), modifier = Modifier.size(14.dp))
+                                Text(String.format(Locale.getDefault(), "%.1f", b), style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.8f))
+                            }
+                        }
                     }
-                    // 0 heisst bei TMDB „keine Bewertung", nicht null Sterne.
-                    d?.feldZahl("bewertung")?.takeIf { it > 0 }?.let { b ->
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Filled.Star, contentDescription = null, tint = Stil.schrift.copy(alpha = 0.8f), modifier = Modifier.size(14.dp))
-                            Text(String.format(Locale.getDefault(), "%.1f", b), style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.8f))
+                    Row(Modifier.padding(top = 18.dp)) {
+                        when {
+                            angefragt -> Text(uebersetzt("Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."), style = TvStil.koerper, color = Stil.schriftLeise)
+                            anfragbar -> TvKnopf(uebersetzt(when { laeuft -> "Wird angefragt…"; bestaetigt -> "Wirklich anfragen?"; else -> "Anfragen" }),
+                                    Icons.Filled.Add, Modifier.focusRequester(haupt)) {
+                                when { k.istSerie -> staffelblatt(); bestaetigt -> anfragen(emptyList()); else -> bestaetigt = true }
+                            }
+                            else -> Text(Seerrmarke.hinweis(stand), style = TvStil.koerper, color = Stil.schriftLeise)
                         }
                     }
                 }
-                Row(Modifier.padding(top = 18.dp)) {
-                    when {
-                        angefragt -> Text(uebersetzt("Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."), style = TvStil.koerper, color = Stil.schriftLeise)
-                        anfragbar -> TvKnopf(uebersetzt(when { laeuft -> "Wird angefragt…"; bestaetigt -> "Wirklich anfragen?"; else -> "Anfragen" }),
-                                Icons.Filled.Add, Modifier.focusRequester(haupt)) {
-                            when { k.istSerie -> staffelblatt(); bestaetigt -> anfragen(emptyList()); else -> bestaetigt = true }
-                        }
-                        else -> Text(Seerrmarke.hinweis(stand), style = TvStil.koerper, color = Stil.schriftLeise)
+                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung")) {
+                    items(leute, key = { it.id }) { p -> TvBesetzung(p) {} }
+                }
+                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Titel")) {
+                    items(aehnliche, key = { it.schluessel }) { t ->
+                        Seerrkachel(t) { app.seerrTreffer[t.schluessel] = t; oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel")) }
                     }
                 }
+                Spacer(Modifier.height(40.dp))
             }
-            if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung")) {
-                items(leute, key = { it.id }) { p -> TvBesetzung(p) {} }
-            }
-            if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Titel")) {
-                items(aehnliche, key = { it.schluessel }) { t ->
-                    Seerrkachel(t) { app.seerrTreffer[t.schluessel] = t; oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel")) }
-                }
-            }
-            Spacer(Modifier.height(40.dp))
         }
     }
 }

@@ -69,17 +69,27 @@ data class Kachel(val id: String, val name: String, val typ: String, val unterze
                   val plakat: String?, val quer: String?, val fortschritt: Double?,
                   val marke: String? = null, val markenzahl: Int = 0,
                   val angabenzeile: String? = null, val restzeit: String? = null,
-                  val gesehen: Boolean = false, val folgenname: String? = null)
-data class Reihe(val titel: String, val quer: Boolean, val kacheln: List<Kachel>)
+                  val gesehen: Boolean = false, val folgenname: String? = null,
+                  /** Nur fuers Watch-Next-Regal auf dem Fernseher (`TvWeiterschauenRegal.kt`). */
+                  val laufzeitSekunden: Double? = null, val positionSekunden: Double? = null)
+/**
+ * `schluessel` ist der rohe, unuebersetzte Reihenname aus dem Paket (`Startreihe.reihentitel`
+ * in `Startreihen.swift`, z. B. „Weiterschauen" oder „Zuletzt hinzugefügt") — `null` bei
+ * Genre-Reihen. `titel` ist dagegen schon uebersetzt und dient nur der Anzeige. Das
+ * Watch-Next-Regal braucht den rohen Schluessel: er bleibt in jeder Spracheinstellung
+ * derselbe, der uebersetzte Titel nicht.
+ */
+data class Reihe(val titel: String, val schluessel: String?, val quer: Boolean, val kacheln: List<Kachel>)
 
 /** Liest die Antwort von `Kern.startseite` — die Reihen stehen dort schon fertig. */
 internal fun reihenLesen(json: String): List<Reihe> {
     val reihen = JSONObject(json).getJSONArray("reihen")
     return (0 until reihen.length()).map { i ->
         val r = reihen.getJSONObject(i)
-        val titel = if (r.isNull("titelSchluessel")) r.optString("name") else uebersetzt(r.getString("titelSchluessel"))
+        val schluessel = if (r.isNull("titelSchluessel")) null else r.getString("titelSchluessel")
+        val titel = schluessel?.let { uebersetzt(it) } ?: r.optString("name")
         val kacheln = r.getJSONArray("kacheln")
-        Reihe(titel, r.getBoolean("quer"), (0 until kacheln.length()).map { k ->
+        Reihe(titel, schluessel, r.getBoolean("quer"), (0 until kacheln.length()).map { k ->
             val o = kacheln.getJSONObject(k)
             Kachel(o.getString("id"), o.getString("name"), o.getString("typ"),
                    o.optString("unterzeile").takeIf { !o.isNull("unterzeile") },
@@ -90,7 +100,9 @@ internal fun reihenLesen(json: String): List<Reihe> {
                    o.optString("angabenzeile").takeIf { !o.isNull("angabenzeile") },
                    o.optString("restzeit").takeIf { !o.isNull("restzeit") },
                    o.optBoolean("gesehen"),
-                   o.optString("folgenname").takeIf { !o.isNull("folgenname") })
+                   o.optString("folgenname").takeIf { !o.isNull("folgenname") },
+                   if (o.isNull("laufzeitSekunden")) null else o.getDouble("laufzeitSekunden"),
+                   if (o.isNull("positionSekunden")) null else o.getDouble("positionSekunden"))
         })
     }
 }
