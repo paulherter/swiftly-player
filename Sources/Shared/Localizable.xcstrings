@@ -137,6 +137,23 @@
         }
       }
     },
+    "%@ in %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ in %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ in %@"
+          }
+        }
+      }
+    },
     "%@ ist als gesehen vermerkt.": {
       "extractionState": "manual",
       "localizations": {
@@ -1424,6 +1441,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "On your server"
+          }
+        }
+      }
+    },
+    "Auf deinem Server gibt es sonst nichts mit %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf deinem Server gibt es sonst nichts mit %@."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There is nothing else with %@ on your server."
           }
         }
       }
@@ -7103,6 +7137,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Which seasons?"
+          }
+        }
+      }
+    },
+    "Weniger": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weniger"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Less"
           }
         }
       }
