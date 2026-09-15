@@ -173,7 +173,9 @@ fun KopfUndInhalt(kopf: @Composable () -> Unit, inhalt: @Composable (kopfhoehe: 
 @Composable
 fun Kopfziele(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     Row {
-        Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+        // Gefuellt, aber kein Zustand: hier ist das Lesezeichen ein Ziel, keine Markierung.
+        Box(Modifier.size(44.dp).antippen { oeffnen(Ziel("merkliste", uebersetzt("Merkliste"), "Merkliste")) },
+            contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.Bookmark, contentDescription = uebersetzt("Merkliste"), tint = Stil.schrift, modifier = Modifier.size(20.dp))
         }
         Box(Modifier.size(44.dp).antippen { oeffnen(Ziel("profil", uebersetzt("Profil"), "Profil")) }, contentAlignment = Alignment.Center) {

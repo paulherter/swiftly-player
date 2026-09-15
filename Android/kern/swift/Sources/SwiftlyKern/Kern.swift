@@ -396,6 +396,26 @@ public final class Kern: @unchecked Sendable {
         (try? JSONEncoder().encode(wert)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
     }
 
+    // MARK: Merkliste
+
+    /// Eine Seite der Merkliste — `AppModel.gemerkte`: Favoriten ueber alle Bibliotheken
+    /// (rekursiv, **immer mit Gattungen** — ohne sie kamen leere virtuelle Ordner als Titel),
+    /// dieselben Kacheln wie die Bibliothek. `gattung` ist `Merkgattung.art`, leer heisst beides.
+    public func merkliste(gattung: String, sortierung: String, ab: Int, anzahl: Int) async throws -> String {
+        guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+        let art = Merkgattung.zu(art: gattung.isEmpty ? nil : gattung)
+        let s = Sortierung(rawValue: sortierung) ?? .neueste
+        let antwort = try await c.items(limit: anzahl, startIndex: ab, sortBy: s.feld, sortOrder: s.richtung,
+                                        filters: ["IsFavorite"], recursive: true, includeItemTypes: art.typen)
+        let titel = ab == 0 ? Listenregeln.ohneDoppelte(antwort.items) : antwort.items
+        return try json(Rasterseitenantwort(titel: titel.map { rasterkachel($0, a) }, gesamt: antwort.totalRecordCount))
+    }
+
+    /// „Filme & Serien", „Filme", „Serien" — `wert` ist die Art, leer fuer beides.
+    public static func merkgattungen() -> String {
+        kodiert(Merkgattung.allCases.map { Wahlantwort(wert: $0.art ?? "", text: $0.beschriftung) })
+    }
+
     // MARK: Suche
 
     /// `SucheView.suchen` ohne Seerr: `JellyfinClient.suche` (nur Filme und Serien), ohne doppelte

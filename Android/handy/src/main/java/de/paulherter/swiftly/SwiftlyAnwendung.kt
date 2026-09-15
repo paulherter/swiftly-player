@@ -60,6 +60,9 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Begriff, Treffer und Suchzustand — ueberleben den Bereichswechsel wie auf iOS. */
     val suche = Suchstand()
 
+    /** Gattung, Sortierung und die geladenen Titel der Merkliste. */
+    val merkliste by lazy { Merklistenstand(ablage) }
+
     /**
      * **Der Servername, einmal fuer alle Seiten** — wie `AppModel.serverName`. `null` heisst
      * „noch nicht gefragt", leer heisst „der Server nennt keinen".
@@ -108,6 +111,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
             startReihen = null
             bibliotheken.clear(); titelSpeicher.clear(); serienSpeicher.clear(); folgenSpeicher.clear(); personenSpeicher.clear()
             servername.value = null
+            merkliste.vergessen()
             abgemeldet.intValue++
         }
     }

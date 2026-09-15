@@ -197,6 +197,7 @@ private fun Unterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
         "Series", "Episode" -> SerienSeite(app, ziel, oeffnen, zurueck)
         "Person" -> PersonSeite(app, ziel, oeffnen, zurueck)
         "Profil" -> ProfilSeite(app, oeffnen, zurueck)
+        "Merkliste" -> MerklisteSeite(app, oeffnen, zurueck)
         "QuickConnect" -> QuickConnectSeite(app, zurueck)
         "Wiedergabeeinstellungen" -> WiedergabeEinstellungenSeite(app, zurueck)
         "Darstellung" -> DarstellungSeite(app, oeffnen, zurueck)
