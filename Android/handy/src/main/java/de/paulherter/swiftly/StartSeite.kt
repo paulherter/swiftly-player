@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.gemeinsam.iosFling
 import androidx.compose.foundation.layout.wrapContentWidth
 import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.Wortmarke
@@ -181,7 +182,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator(ziehstand, zieht,
                     Modifier.align(Alignment.TopCenter).padding(top = kopfDp), containerColor = Stil.erhoeht, color = Stil.akzent)
             }) {
-        LazyColumn(state = liste, verticalArrangement = Arrangement.spacedBy(Stil.reihenAbstand),
+        LazyColumn(flingBehavior = iosFling(), state = liste, verticalArrangement = Arrangement.spacedBy(Stil.reihenAbstand),
                    contentPadding = PaddingValues(top = kopfDp + 8.dp, bottom = 24.dp),
                    modifier = Modifier.fillMaxSize().bereichsinhalt()) {
             fehler?.let { item { Text(it, color = Stil.warnung, style = Stil.klein, modifier = Modifier.padding(horizontal = Stil.randAbstand)) } }
@@ -280,7 +281,7 @@ private fun ReiheAnsicht(reihe: Reihe, oeffnen: (Ziel) -> Unit, direkt: ((Kachel
     Column(modifier, verticalArrangement = Arrangement.spacedBy(11.dp)) {
         Text(reihe.titel, style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift,
              modifier = Modifier.padding(horizontal = Stil.randAbstand))
-        LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
+        LazyRow(flingBehavior = iosFling(), contentPadding = PaddingValues(horizontal = Stil.randAbstand),
                 horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand)) {
             items(reihe.kacheln, key = { it.id }) { k -> KachelAnsicht(k, reihe.quer, halten?.let { h -> { h(k) } }) { direkt?.invoke(k) ?: oeffnen(Ziel(k.id, k.name, k.typ)) } }
         }

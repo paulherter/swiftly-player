@@ -220,7 +220,7 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
                     Box(Modifier.fillMaxSize()
                         .graphicsLayer {
                             translationX = if (istOben) schub.value * size.width
-                                           else -0.3f * (1f - schub.value) * size.width
+                                           else -0.25f * (1f - schub.value) * size.width
                         }
                         .background(Stil.grund)) {
                         zustaende.SaveableStateProvider("${bereich.name}/$tiefe/${ziel?.id.orEmpty()}") {
@@ -229,7 +229,7 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
                         }
                         // Die Seite darunter dunkelt ab, solange die obere sie verdeckt.
                         if (!istOben) Box(Modifier.matchParentSize().graphicsLayer { alpha = 1f - schub.value }
-                            .background(Color.Black.copy(alpha = 0.2f)))
+                            .background(Color.Black.copy(alpha = 0.15f)))
                     }
                 }
             }

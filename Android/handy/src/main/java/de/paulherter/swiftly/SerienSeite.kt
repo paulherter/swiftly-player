@@ -50,6 +50,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.animation.core.MutableTransitionState
 import coil3.compose.AsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.gemeinsam.iosFling
 import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
@@ -216,7 +217,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     }
 
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll, flingBehavior = iosFling())) {
             Held(s?.kopfbild, name, s?.nebenzeile.orEmpty())
 
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp),

@@ -31,6 +31,7 @@ import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.gemeinsam.iosFling
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -98,7 +99,7 @@ fun PersonSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
     val dichte = LocalDensity.current.density
 
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll, flingBehavior = iosFling())) {
             Box(Modifier.fillMaxWidth().height(Stil.heldHoehe)) {
                 Crossfade(banner.getOrNull(if (banner.isEmpty()) 0 else stelle % banner.size),
                           animationSpec = tween(1200, easing = EaseInOut), label = "banner") { url ->

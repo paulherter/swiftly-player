@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.gemeinsam.iosFling
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +37,7 @@ import org.json.JSONArray
 @Composable
 fun Gattungschips(genres: List<String>, waehlen: (String) -> Unit) {
     val form = RoundedCornerShape(Stil.ecke)
-    LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyRow(flingBehavior = iosFling(), contentPadding = PaddingValues(horizontal = Stil.randAbstand), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(genres) { g ->
             Box(Modifier.height(34.dp).clip(form).background(Stil.flaeche).border(1.dp, Stil.rand, form)
                     .druckzeile { waehlen(g) }.padding(horizontal = 14.dp),

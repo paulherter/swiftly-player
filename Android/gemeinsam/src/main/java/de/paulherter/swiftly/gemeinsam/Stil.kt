@@ -1,5 +1,8 @@
 package de.paulherter.swiftly.gemeinsam
 
+import androidx.compose.animation.core.generateDecayAnimationSpec
+import androidx.compose.animation.core.animateDecay
+import androidx.compose.animation.core.AnimationState
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearEasing
@@ -28,6 +31,11 @@ import androidx.compose.ui.unit.sp
  */
 object Bewegung {
     val weich = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    /**
+     * **Die Navigationskurve von UIKit, nachgemessen** — dieselbe, die compose-cupertino fuer
+     * `UINavigationController` nimmt. Mehrere eigene Anlaeufe davor sahen am Pixel falsch aus.
+     */
+    val cupertino = CubicBezierEasing(0.2833f, 0.99f, 0.31833f, 0.99f)
     /** `Stil.einblenden` — `.smooth(duration: 0.28)`. Kacheln, Bilder, Platzhalter ↔ Inhalt. */
     fun <T> einblenden(): FiniteAnimationSpec<T> = tween(280, easing = weich)
     /** `Stil.bereichswechsel` — `.snappy(duration: 0.20)`. */
@@ -38,19 +46,16 @@ object Bewegung {
     fun <T> umschalten(): FiniteAnimationSpec<T> = tween(100, easing = weich)
     /** `Stil.blattbewegung` — `.spring(response: 0.35, dampingFraction: 0.86)`; Steifigkeit (2π / 0,35)² ≈ 322. */
     fun <T> blatt(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.86f, stiffness = 322f)
-    /** Das Push von `NavigationStack` — rund 350 ms, rasch an und lange auslaufend. */
-    fun <T> seite(): FiniteAnimationSpec<T> = tween(350, easing = CubicBezierEasing(0.25f, 0.8f, 0.25f, 1f))
-    /**
-     * **Zurueck ueber den Knopf** — laenger und gleichmaessiger als das Oeffnen. Mit der Kurve von
-     * `seite` lag fast der ganze Weg im ersten Moment, und Zurueck wirkte wie ein Schnitt. Eine Feder
-     * statt dieser Kurve war am Geraet schlechter: das Oeffnen schwamm (Paul, 15.09.2026).
-     */
-    fun <T> zurueck(): FiniteAnimationSpec<T> = tween(400, easing = CubicBezierEasing(0.25f, 0.8f, 0.25f, 1f))
+    /** Das Push von `NavigationStack` — 350 ms auf der UIKit-Kurve. */
+    fun <T> seite(): FiniteAnimationSpec<T> = tween(350, easing = cupertino)
+    /** Zurueck ueber den Knopf — **gleich lang wie das Oeffnen**: ungleiche Dauern lesen sich als falsche Kurve. */
+    fun <T> zurueck(): FiniteAnimationSpec<T> = tween(350, easing = cupertino)
     /**
      * **Nach einer Geste weiter mit dem Tempo des Fingers** — ohne Nachfedern, damit ein Wurf
      * nicht erst bremst und dann neu ansetzt. Fuer Zurueckgeste und weggeworfenes Blatt.
      */
-    fun <T> wurf(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 380f)
+    // Wie compose-cupertino beim Loslassen: eine schnelle Feder ohne Nachschwingen (StiffnessMedium).
+    fun <T> wurf(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 1500f)
     /** `druckkurve` beim Loslassen. Das Druecken selbst hat **keine** Dauer. */
     fun <T> loslassen(): FiniteAnimationSpec<T> = tween(120, easing = LinearEasing)
     /** `Stil.bereichsmass` — dreimal nach unten korrigiert: 0,97 und 0,99 sah man an der Oberkante. */
@@ -104,4 +109,46 @@ object Stil {
     val klein = TextStyle(fontSize = 12.sp)
     val listentitel = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
     val plakette = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+}
+
+/**
+ * **Auslaufen wie `UIScrollView`** — `decelerationRate` 0,998 je Millisekunde, geschlossen gerechnet
+ * wie JetBrains' `CupertinoScrollDecayAnimationSpec` fuer Compose auf iOS. Androids Spline-Auslauf
+ * bremst frueher und haerter; darum fuehlte sich Scrollen am Pixel weniger direkt an.
+ */
+private class Iosauslauf : androidx.compose.animation.core.FloatDecayAnimationSpec {
+    private val rate = 0.998f
+    private val k = 1000f * kotlin.math.ln(rate)
+    override val absVelocityThreshold = 0.5f
+    override fun getValueFromNanos(playTimeNanos: Long, initialValue: Float, initialVelocity: Float): Float =
+        initialValue + (Math.pow(rate.toDouble(), 1000.0 * playTimeNanos / 1e9).toFloat() - 1f) / k * initialVelocity
+    override fun getVelocityFromNanos(playTimeNanos: Long, initialValue: Float, initialVelocity: Float): Float =
+        initialVelocity * Math.pow(rate.toDouble(), 1000.0 * playTimeNanos / 1e9).toFloat()
+    override fun getDurationNanos(initialValue: Float, initialVelocity: Float): Long {
+        val v = kotlin.math.abs(initialVelocity)
+        if (v <= absVelocityThreshold) return 0L
+        return (kotlin.math.ln(absVelocityThreshold / v) / k * 1e9).toLong()
+    }
+    override fun getTargetValue(initialValue: Float, initialVelocity: Float): Float = initialValue - initialVelocity / k
+}
+
+/** Der Schwung fuer Listen und Seiten — unter 500 px/s gar keiner, wie bei iOS (`CupertinoFlingBehavior`). */
+@androidx.compose.runtime.Composable
+fun iosFling(): androidx.compose.foundation.gestures.FlingBehavior = androidx.compose.runtime.remember {
+    val auslauf = Iosauslauf().generateDecayAnimationSpec<Float>()
+    object : androidx.compose.foundation.gestures.FlingBehavior {
+        override suspend fun androidx.compose.foundation.gestures.ScrollScope.performFling(initialVelocity: Float): Float {
+            if (kotlin.math.abs(initialVelocity) < 500f) return 0f
+            var rest = initialVelocity
+            var zuletzt = 0f
+            AnimationState(0f, initialVelocity).animateDecay(auslauf) {
+                val schritt = value - zuletzt
+                val genommen = scrollBy(schritt)
+                zuletzt = value
+                rest = velocity
+                if (kotlin.math.abs(schritt - genommen) > 0.5f) cancelAnimation()
+            }
+            return rest
+        }
+    }
 }

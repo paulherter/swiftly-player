@@ -34,6 +34,7 @@ import coil3.compose.AsyncImage
 import de.paulherter.swiftly.gemeinsam.Eingabefeld
 import de.paulherter.swiftly.gemeinsam.Hauptknopf
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.gemeinsam.iosFling
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -253,7 +254,7 @@ fun SeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit,
     val dichte = LocalDensity.current.density
 
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll, flingBehavior = iosFling())) {
             Held(k.kulisse, k.titel, nebenzeile)
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(Modifier.heightIn(min = 26.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
