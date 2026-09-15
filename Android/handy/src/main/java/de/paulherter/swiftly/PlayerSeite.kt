@@ -8,6 +8,16 @@ import android.net.Uri
 import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.Job
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.foundation.focusable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -457,6 +467,66 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
         }
     }
 
+    // **Fernbedienung** (tvOS `PlayerScreen`): OK haelt an — oder springt sofort zum gesammelten
+    // Ziel. Links und rechts spulen um die eingestellten Sekunden; der erste Druck bei verborgener
+    // Steuerung weckt sie nur. Schnelle Tipps sammeln sich 350 ms zu **einem** Sprung, weil VLC bei
+    // jedem Sprung den Strom neu aufbaut. Zurueck bricht zuerst das Spulen ab, nicht die Wiedergabe.
+    val fernbedienung = remember { FocusRequester() }
+    var spulziel by remember { mutableStateOf<Double?>(null) }
+    val letzterSchritt = remember { longArrayOf(0L) }
+    var sammler by remember { mutableStateOf<Job?>(null) }
+    BackHandler(enabled = spulziel != null) { sammler?.cancel(); spulziel = null; sprungblase = null }
+    fun spulen(um: Int, wecken: Boolean) {
+        val jetzt = SystemClock.elapsedRealtime()
+        if (wecken && !sichtbar && spulziel == null) { sichtbar = true; beruehrt++; return }
+        beruehrt++
+        if (spulziel == null && jetzt - letzterSchritt[0] > 450) {
+            letzterSchritt[0] = jetzt
+            springe(position + um)
+            sprungblase = if (um > 0) "+$um" else "−${-um}"
+            return
+        }
+        letzterSchritt[0] = jetzt
+        val ziel = (spulziel ?: position) + um
+        spulziel = ziel
+        val weg = (ziel - position).roundToInt()
+        sprungblase = if (weg >= 0) "+$weg" else "−${-weg}"
+        sammler?.cancel()
+        sammler = lauf.launch { delay(350); spulziel?.let { springe(it) }; spulziel = null }
+    }
+    fun angebotAusfuehren(): Boolean {
+        if (angebotArt == "keiner" || angebotText.isEmpty()) return false
+        val nach = angebotNach
+        if (angebotArt == "ueberspringen" && nach != null) springe(nach) else lauf.launch { naechsteFolge() }
+        return true
+    }
+    fun taste(e: KeyEvent): Boolean {
+        if (e.type != KeyEventType.KeyDown) return false
+        when (e.key) {
+            Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.MediaPlayPause, Key.Spacebar -> {
+                sichtbar = true; beruehrt++
+                val ziel = spulziel
+                if (ziel != null) { sammler?.cancel(); spulziel = null; springe(ziel) } else umschalten()
+            }
+            Key.MediaPlay -> if (!spieler.isPlaying) umschalten()
+            Key.MediaPause -> if (spieler.isPlaying) umschalten()
+            Key.DirectionLeft -> spulen(-zurueckS, wecken = true)
+            Key.DirectionRight -> spulen(vorS, wecken = true)
+            Key.MediaRewind -> spulen(-zurueckS, wecken = false)
+            Key.MediaFastForward -> spulen(vorS, wecken = false)
+            Key.MediaNext -> if (plan?.naechste == true) lauf.launch { naechsteFolge() }
+            // Oben: das Angebot (Vorspann, naechste Folge), sonst die Wiedergabeeinstellungen.
+            Key.DirectionUp -> if (!sichtbar) { sichtbar = true; beruehrt++ } else if (!angebotAusfuehren()) einstellungen()
+            Key.Menu -> einstellungen()
+            Key.DirectionDown -> { sichtbar = !sichtbar; beruehrt++ }
+            else -> return false
+        }
+        return true
+    }
+    if (app.istFernseher) LaunchedEffect(app.blatt.value == null) {
+        if (app.blatt.value == null) { delay(50); runCatching { fernbedienung.requestFocus() } }
+    }
+
     val deckung by animateFloatAsState(
         if (sichtbar || !bildFrei) 1f else 0f,
         if (sichtbar || !bildFrei) tween(180, easing = Bewegung.weich) else tween(340, easing = Bewegung.weich),
@@ -464,7 +534,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     // Nur beim Ueberschreiten neu komponieren — die Deckkraft selbst liest die Grafikebene.
     val steuerungDa by remember { derivedStateOf { deckung > 0.01f } }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(Color.Black)
+            .then(if (app.istFernseher) Modifier.focusRequester(fernbedienung).focusable().onKeyEvent { taste(it) } else Modifier)) {
         AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { spieler.attachViews(it, null, true, false) } },
                     modifier = Modifier.fillMaxSize())
 

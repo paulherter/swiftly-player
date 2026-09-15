@@ -50,7 +50,7 @@ class PlayerAktivitaet : ComponentActivity() {
                     // Ein neuer Wunsch (aus der App, waehrend das kleine Fenster laeuft) baut den Player neu.
                     key(w) { PlayerSeite(app, w, kleinesFenster.value, ::bildImBild) { finish() } }
                 }
-                if (!kleinesFenster.value) Blattauflage(app)
+                if (!kleinesFenster.value) if (app.istFernseher) de.paulherter.swiftly.tv.TvTafel(app) else Blattauflage(app)
             }
         }
     }
