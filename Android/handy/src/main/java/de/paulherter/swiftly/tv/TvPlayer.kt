@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -181,14 +182,27 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     // **Zurueck bricht zuerst das Spulen ab, dann die Tafel, dann die Folgenliste, dann erst der
     // Player** — dieselbe Reihenfolge wie `onExitCommand` in der Vorlage. `BackHandler`s wirken
     // zuletzt-deklariert-zuerst.
+    val fernbedienung = remember { FocusRequester() }
+    // **Erst den Fokus in Sicherheit, dann das Blatt entfernen.** Verschwindet die fokussierte Zeile
+    // mit dem Blatt, faellt der Fokus auf den ersten fokussierbaren Knoten, und das Zurueckholen
+    // danach ist ein sichtbarer Sprung. Das Folgenblatt liegt ueber den Knoepfen — dessen Ausloeser
+    // steht noch da und bekommt den Fokus direkt. Die Wiedergabetafel blendet die Knoepfe aus
+    // (`steuerungDa`), ihr Ausloeser ist erst nach dem Schliessen wieder da: bis dahin haelt die
+    // Fernbedienungsflaeche den Fokus (sie zeichnet keinen), der Effekt unten gibt ihn dann weiter.
+    fun tafelZu() { runCatching { fernbedienung.requestFocus() }; tafelOffen = false; zeigen() }
+    fun folgenZu() { Fokusmerker.zurueckgeben(fernbedienung); folgenOffen = false; zeigen() }
     BackHandler(enabled = spulziel != null) { sammler?.cancel(); spulziel = null }
-    BackHandler(enabled = tafelOffen) { tafelOffen = false; zeigen() }
-    BackHandler(enabled = folgenOffen) { folgenOffen = false; zeigen() }
+    BackHandler(enabled = tafelOffen) { tafelZu() }
+    BackHandler(enabled = folgenOffen) { folgenZu() }
     BackHandler { werk.beenden(schliessen) }
 
     val knopfOben = remember { FocusRequester() }
+    // **Nur die Zeitleiste selbst deutet Tasten.** `onKeyEvent` am aeusseren Kasten bekommt auch,
+    // was ein fokussierter Knopf oben rechts nicht verbraucht — Links wurde dort zum Spulen, und der
+    // Fokus konnte nie vom Einstellungs- zum Folgenknopf wechseln.
+    var leisteFokus by remember { mutableStateOf(false) }
     fun taste(e: KeyEvent): Boolean {
-        if (tafelOffen || folgenOffen) return false
+        if (tafelOffen || folgenOffen || !leisteFokus) return false
         if (e.type != KeyEventType.KeyDown) return false
         when (e.key) {
             Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.MediaPlayPause, Key.Spacebar -> {
@@ -217,11 +231,13 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
         return true
     }
 
-    val fernbedienung = remember { FocusRequester() }
     // Fokus zurueck an den Knopf, der die Tafel/das Blatt geoeffnet hat (siehe `Fokusmerker` in
     // TvStil.kt) — kam die Oeffnung stattdessen von der Fernbedienung (Oben/Menue ohne Knopfklick),
     // ist nichts gemerkt und es bleibt bei der bisherigen Fassung: zurueck auf die Fernbedienungsflaeche.
-    LaunchedEffect(tafelOffen, folgenOffen) { if (!tafelOffen && !folgenOffen) { delay(50); Fokusmerker.zurueckfordern(fernbedienung) } }
+    //
+    // **Ohne Zeitverzug:** der Effekt startet nach dem Anwenden der Komposition, in der die Tafel zu
+    // ging — die Knoepfe oben (`steuerungDa`) sind dann schon wieder angebunden.
+    LaunchedEffect(tafelOffen, folgenOffen) { if (!tafelOffen && !folgenOffen) Fokusmerker.zurueckfordern(fernbedienung) }
 
     val deckung by animateFloatAsState(
         if (sichtbar || !werk.bildFrei) 1f else 0f,
@@ -232,7 +248,7 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     LaunchedEffect(steuerungDa) { if (!steuerungDa && !tafelOffen && !folgenOffen) runCatching { fernbedienung.requestFocus() } }
 
     Box(Modifier.fillMaxSize().background(Color.Black)
-            .focusRequester(fernbedienung).focusable().onKeyEvent { taste(it) }) {
+            .focusRequester(fernbedienung).onFocusChanged { leisteFokus = it.isFocused }.focusable().onKeyEvent { taste(it) }) {
         AndroidView(factory = { ctx -> org.videolan.libvlc.util.VLCVideoLayout(ctx).also { flaeche[0] = it; werk.spieler.attachViews(it, null, true, false) } },
                     modifier = Modifier.fillMaxSize())
 
@@ -308,11 +324,11 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
             }
         }
 
-        TvWiedergabeblatt(offen = tafelOffen, schliessen = { tafelOffen = false; zeigen() }, werk = werk, app = app)
+        TvWiedergabeblatt(offen = tafelOffen, schliessen = { tafelZu() }, werk = werk, app = app)
 
         if (folgenOffen) {
-            TvFolgenblatt(app, schliessen = { folgenOffen = false; zeigen() }) { id ->
-                folgenOffen = false
+            TvFolgenblatt(app, schliessen = { folgenZu() }) { id ->
+                folgenZu()
                 lauf.launch { werk.wechsleZu(id) }
             }
         }

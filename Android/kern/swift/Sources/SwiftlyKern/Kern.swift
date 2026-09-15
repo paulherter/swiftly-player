@@ -341,7 +341,11 @@ public final class Kern: @unchecked Sendable {
             // Fortschrittsanzeige dort will echte Millisekunden, nicht nur den Anteil, sonst
             // zeigt der Systemstarter eine erfundene Restzeit an. tvOS braucht das nicht — sein
             // Top Shelf (`RegalAnbieter.swift`) kennt nur `playbackProgress`, einen Anteil.
-            laufzeitSekunden: i.runtimeSeconds, positionSekunden: i.fortsetzenAb)
+            laufzeitSekunden: i.runtimeSeconds, positionSekunden: i.fortsetzenAb,
+            // **Nur fuer Android TVs Kopfzone** — `Kopfauskunft` auf tvOS zeigt Bewertung und
+            // Freigabe auf der Startseite genauso wie auf der Detailseite (sie liest direkt vom
+            // `Item`), und die Beschreibung stand hier bisher gar nicht in der Antwort.
+            bewertung: i.communityRating, freigabe: i.officialRating, beschreibung: i.beschreibung)
     }
 
     // MARK: Bibliothek
@@ -1472,6 +1476,12 @@ struct Kachelantwort: Encodable {
     /// Fuer Android TVs Watch-Next-Reihe — siehe `kachel(_:neuzugang:mitMarke:_:)`.
     let laufzeitSekunden: Double?
     let positionSekunden: Double?
+    /// Fuer Android TVs Kopfzone (`Kopfauskunft`) — dieselben drei Angaben, die `Kopfauskunft`
+    /// auf tvOS direkt vom vollen `Item` liest (Bewertung, Freigabe, Beschreibung). Die Startseite
+    /// des Telefons braucht sie nicht und liest sie nicht.
+    let bewertung: Double?
+    let freigabe: String?
+    let beschreibung: String?
 }
 
 struct Downloadantwort: Encodable { let posten: Downloadposten; let bild, serienbild: String? }

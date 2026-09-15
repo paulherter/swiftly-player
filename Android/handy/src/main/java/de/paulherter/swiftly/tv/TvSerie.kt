@@ -1,5 +1,7 @@
 package de.paulherter.swiftly.tv
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -15,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -103,6 +106,13 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     val haupt = ersterFokus()
     val name = serie?.name ?: ziel.name
 
+    // Vorlage: `SerienView.eingeblendet` auf tvOS — derselbe Griff wie `TvDetail`: Kulisse und
+    // Kopfauskunft (Titel/Angaben/Beschreibung) stehen sofort, Knopfreihe und Reihen blenden ein.
+    var eingeblendet by remember(ziel.id) { mutableStateOf(false) }
+    val einblendAlpha by animateFloatAsState(if (eingeblendet) 1f else 0f,
+        tween(TvStil.einblendenDauer, easing = TvStil.einblendenKurve), label = "eingeblendet")
+    LaunchedEffect(ziel.id) { eingeblendet = true }
+
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         TvBildgrund(serie?.kopfbild)
         Kulisse(serie?.kopfbild, Modifier.align(Alignment.TopEnd))
@@ -110,7 +120,8 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 TvDetailkopf(name, serie?.jahr.orEmpty(), serie?.bewertung, serie?.freigabe, serie?.beschreibung,
                              direktplay = serie?.planDa == true && serie.lossless,
-                             hinweis = if (serie?.planDa == true && !serie.lossless) serie.methode else null) {
+                             hinweis = if (serie?.planDa == true && !serie.lossless) serie.methode else null,
+                             knopfAlpha = einblendAlpha) {
                     // Nie gesperrt, solange geladen wird: der Knopf muss ein Fokusziel bleiben.
                     TvKnopf(serie?.knopftext?.ifEmpty { null } ?: uebersetzt("Lädt…"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
                         serie?.stand?.let { app.spiel.value = Abspielwunsch(it.id, it.ab) }
@@ -164,7 +175,7 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                     }
                 }
 
-                Column(Modifier.padding(top = TvStil.reihenAbstand - TvStil.reihenLuft)) {
+                Column(Modifier.padding(top = TvStil.reihenAbstand - TvStil.reihenLuft).alpha(einblendAlpha)) {
                     Row(Modifier.padding(start = TvStil.randSeite), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text(uebersetzt("Folgen"), style = TvStil.reihe, color = Stil.schrift)
                         val liste = serie?.staffeln.orEmpty()
@@ -204,10 +215,10 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                     }
                 }
                 val leute = serie?.darsteller.orEmpty()
-                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung")) {
+                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.alpha(einblendAlpha)) {
                     items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
                 }
-                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliches")) {
+                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliches"), Modifier.alpha(einblendAlpha)) {
                     items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
                 }
                 Spacer(Modifier.height(40.dp))

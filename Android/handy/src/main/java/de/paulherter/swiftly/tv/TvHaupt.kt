@@ -70,6 +70,15 @@ val kopfUnten = TvStil.randOben + TvStil.leisteHoehe + 12.dp
  * Ueberblendung** — eine fruehere Fassung liess sie aneinander vorbeigleiten, und das sah wie ein
  * Fehler aus. Unterseiten erscheinen ohne Schub. **Zurueck fuehrt eine Stufe zurueck, nicht aus der
  * App:** erst die Tafel, dann der Stapel, dann zum Start.
+ *
+ * **Der Sprung Start → Unterseite selbst bleibt ohne Animation, mit Absicht.** tvOS schaltet die
+ * Push-Animation seines `NavigationStack` fuer genau diesen Wechsel ab (`HauptView.stapel`,
+ * `UIView.setAnimationsEnabled(false)`) — hier tut `key(b, tiefe, ziel?.id)` dasselbe, indem es die
+ * alte Seite ohne eigenen Uebergang gegen `TvUnterseite` austauscht. Trotzdem sieht der Wechsel
+ * weich aus, weil Kulisse und Kopfauskunft auf beiden Seiten **pixelgleich** stehen (`Kopfauskunft`
+ * in `TvStart.kt`, `TvDetailkopf` in `TvTitel.kt`) — es gibt nichts, was dabei zuckt. Was dagegen
+ * neu ist, blendet **in der Zielseite selbst** ein (`eingeblendet` in `TvDetail`/`TvSerie`), nicht
+ * hier im Router: Knopfreihe und Reihen kommen 300 ms nach dem Erscheinen, der Kopf steht sofort.
  */
 @Composable
 fun TvHaupt(app: SwiftlyAnwendung) {
@@ -299,7 +308,23 @@ fun TvTafel(app: SwiftlyAnwendung) {
     val w = app.blatt.value
     LaunchedEffect(w == null) { if (w == null) { delay(30); Fokusmerker.zurueckfordern() } }
     if (w == null) return
-    val schliessen = { app.blatt.value = null }
+    // `exit = Cancel` haelt die Fokussuche in der Tafel — sperrt aber auch ein programmatisches
+    // `requestFocus` nach draussen (Compose fragt beim Verlassen jeder Gruppe `exit`). Deshalb
+    // gibt `freigabe` den Ausgang genau fuer das Zurueckgeben frei.
+    val freigabe = remember(w) { booleanArrayOf(false) }
+    // **Erst den Fokus zurueck an den Ausloeser, dann die Tafel entfernen** — umgekehrt fiele der
+    // Fokus fuer ein paar Bilder auf den ersten fokussierbaren Knoten (siehe `Fokusmerker.zurueckgeben`).
+    val schliessen = {
+        freigabe[0] = true
+        Fokusmerker.zurueckgeben()
+        if (app.blatt.value === w) app.blatt.value = null
+    }
+    // Eine Zeile kann gleich die naechste Tafel oeffnen (`waehlen` setzt `app.blatt` neu) — dann
+    // bleibt der Fokus in der Tafel und nichts wird geschlossen.
+    val waehlenUndSchliessen = { tun: () -> Unit ->
+        tun()
+        if (app.blatt.value === w) schliessen()
+    }
     BackHandler(onBack = schliessen)
     var auswahl by remember(w) { mutableStateOf(w.mehrfach) }
     val erster = remember(w) { FocusRequester() }
@@ -308,7 +333,7 @@ fun TvTafel(app: SwiftlyAnwendung) {
         CompositionLocalProvider(LocalInnerhalbTafel provides true) {
             Column(Modifier.align(Alignment.CenterEnd).padding(end = TvStil.randSeite).width(310.dp)
                     .clip(RoundedCornerShape(10.dp)).background(Stil.erhoeht).padding(10.dp)
-                    .focusProperties { exit = { FocusRequester.Cancel } }.focusGroup()) {
+                    .focusProperties { exit = { if (freigabe[0]) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup()) {
                 Text(w.titel, style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift, maxLines = 2,
                      modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
                 Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
@@ -319,13 +344,13 @@ fun TvTafel(app: SwiftlyAnwendung) {
                                 modifier = if (i == 0) Modifier.focusRequester(erster) else Modifier) {
                             if (w.gesperrt[e.wert] != null) return@TvZeile
                             if (menge != null) auswahl = if (e.wert in menge) menge - e.wert else menge + e.wert
-                            else { schliessen(); w.waehlen(e.wert) }
+                            else waehlenUndSchliessen { w.waehlen(e.wert) }
                         }
                     }
                 }
                 w.abschluss?.let { abschluss ->
                     val menge = auswahl.orEmpty()
-                    TvZeile(w.abschlussText(menge.size)) { if (menge.isNotEmpty()) { schliessen(); abschluss(menge) } }
+                    TvZeile(w.abschlussText(menge.size)) { if (menge.isNotEmpty()) waehlenUndSchliessen { abschluss(menge) } }
                 }
             }
         }

@@ -18,9 +18,12 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -61,14 +64,21 @@ import java.util.Locale
  * Funktion statt zweier fast gleicher Bloecke — sonst laufen die Seiten auseinander, wie es
  * `nachladen()` auf tvOS/Android schon einmal getan hat (CLAUDE.md).
  *
- * **Eigene `TvKopfauskunft` statt der geteilten `Kopfauskunft` aus `TvStart.kt`.** Die dort traegt
- * auch die Startseite, und die Metazeile (Bewertung, Freigabe, Direct-Play) sowie die feste
- * Beschreibungshoehe gehoeren nur einer Detailseite — die Startseite kennt das eine wie das
- * andere nicht. Zwei fast gleiche Kopfbloecke sind hier also richtig, keine Kopie.
+ * **Ruft die geteilte `Kopfauskunft` aus `TvStart.kt` auf, statt einer eigenen Fassung.** Hier
+ * stand einmal eine zweite, fast gleiche Kopie — mit eigener Zeilenfarbe fuer die Beschreibung
+ * (`schriftLeise` statt `schrift.copy(alpha=0.62)`) und ohne Bewertung/Freigabe auf der Startseite.
+ * Genau die Art Abweichung, an der `nachladen()` und `Titelangaben` schon einmal auseinandergelaufen
+ * sind — deshalb jetzt eine Quelle: Bewertung und Freigabe stehen in `Kopfauskunft` selbst, nur der
+ * Direct-Play-Beleg kommt hier ueber `schluss`.
+ *
+ * `knopfAlpha` blendet die Knopfreihe ein, waehrend Titel/Angaben/Beschreibung/Kulisse sofort
+ * stehen — siehe `eingeblendet` in `TvDetail`/`TvSerie`, dieselbe Regel wie tvOS' `DetailView`:
+ * „Instant bleibt, was schon auf der Startseite stand […]. Ueberblendet wird nur, was neu
+ * dazukommt."
  */
 @Composable
 fun TvDetailkopf(titel: String, jahrLaufzeit: String, bewertung: Double?, freigabe: String?, beschreibung: String?,
-                 direktplay: Boolean, hinweis: String?, knoepfe: @Composable () -> Unit) {
+                 direktplay: Boolean, hinweis: String?, knopfAlpha: Float = 1f, knoepfe: @Composable () -> Unit) {
     // **306,5 dp statt 177 — aus `Stil.heldenHoeheDetail` halbiert.** Vorher war die Zone knapp
     // bemessen und die Beschreibung wuchs mit ihrem Inhalt: eine kurze liess die Knopfreihe fast an
     // ihr kleben, tvOS reserviert dafuer immer drei Zeilen (`Stil.auskunftHoehe`).
@@ -81,43 +91,16 @@ fun TvDetailkopf(titel: String, jahrLaufzeit: String, bewertung: Double?, freiga
     // nur 306,5 dp gross sein soll. Der Rest zwischen Knopfreihe und „Episodes" war genau dieser
     // verdoppelte Abstand. Jetzt traegt eine `Box` die feste Gesamthoehe, der Innenabstand liegt am
     // `Column` darin — wie auf tvOS am `block`, nicht am `rumpf`.
+    //
+    // **`zweitzeile = null`** — die Detailseiten sehen sie nie: eine Folge bekommt keine eigene
+    // Seite, jeder Weg zu ihr fuehrt auf die Serienseite (A8). Siehe `Kopfauskunft`.
     Box(Modifier.fillMaxWidth().height(306.5.dp)) {
         Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp)) {
-            TvKopfauskunft(titel, jahrLaufzeit, bewertung, freigabe, beschreibung, direktplay, hinweis)
-            Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), content = { knoepfe() })
-        }
-    }
-}
-
-/**
- * Vorlage: `Kopfauskunft` auf tvOS, **Fassung fuer die Detailseiten** — Titel, dann „Jahr ·
- * Laufzeit" mit Bewertung, Freigabe und Direct-Play-Beleg in einer Zeile (`Belegzeile`), dann die
- * Beschreibung. **Die Beschreibung reserviert immer drei Zeilen** (`Stil.beschreibungHoehe`,
- * halbiert): nur so steht die Knopfreihe darunter unabhaengig von der Textlaenge immer an
- * derselben Stelle, und eine kurze Beschreibung laesst sichtbar Luft statt die Knoepfe nach oben
- * zu ziehen — genau die fehlende Luft, die der Bildabgleich gegen tvOS zeigte.
- */
-@Composable
-private fun TvKopfauskunft(titel: String, jahrLaufzeit: String, bewertung: Double?, freigabe: String?,
-                           beschreibung: String?, direktplay: Boolean, hinweis: String?) {
-    Column(Modifier.width(500.dp)) {
-        Text(titel, style = TvStil.auskunftTitel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
-             modifier = Modifier.height(34.dp))
-        // **`heightIn(min=)` statt `height()`.** 17 dp ist die Vorgabe aus `Stil.auskunftHoehe`
-        // (34 pt halbiert), aber die Direct-Play-Marke braucht mit Symbol, Text und ihrem eigenen
-        // senkrechten Innenabstand mehr Platz. Auf tvOS steht dieselbe Zahl nur als Layout-Budget in
-        // der Rechnung, ohne `.frame` mit fester Hoehe auf dieser Zeile — die Marke darf dort
-        // ueberstehen, ohne beschnitten zu werden. Ein hartes `height()` zwingt Compose dagegen, die
-        // Zeile auf genau 17 dp zusammenzudruecken, und schnitt der Marke die Schrift unten ab.
-        Row(Modifier.padding(top = 7.dp).heightIn(min = 17.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (jahrLaufzeit.isNotEmpty()) {
-                Text(jahrLaufzeit, style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.62f), maxLines = 1)
+            Kopfauskunft(titel, null, jahrLaufzeit, bewertung, freigabe, beschreibung) {
+                TvBelegzeile(direktplay, hinweis, bewertung = null, freigabe = null)
             }
-            TvBelegzeile(direktplay, hinweis, bewertung, freigabe)
+            Row(Modifier.padding(top = 18.dp).alpha(knopfAlpha), horizontalArrangement = Arrangement.spacedBy(12.dp), content = { knoepfe() })
         }
-        Text(beschreibung.orEmpty(), style = TvStil.koerper, color = Stil.schriftLeise, maxLines = 3, overflow = TextOverflow.Ellipsis,
-             modifier = Modifier.padding(top = 11.dp).height(63.dp))
     }
 }
 
@@ -179,31 +162,40 @@ private fun TvPlakette(text: String) {
 @Composable
 fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, ImageVector> = emptyMap(), waehlen: (String) -> Unit) {
     var offen by remember { mutableStateOf(false) }
-    var warOffen by remember { mutableStateOf(false) }
-    LaunchedEffect(offen) {
-        if (offen) warOffen = true
-        else if (warOffen) { warOffen = false; delay(30); Fokusmerker.zurueckfordern() }
+    // **Erst den Fokus zurueck an den „…"-Knopf, dann das Menue schliessen** — umgekehrt fiele der
+    // Fokus beim Entfernen der fokussierten Zeile kurz auf den ersten fokussierbaren Knoten, und ein
+    // spaeteres Zurueckholen waere als Sprung zu sehen. Der Knopf traegt dafuer einen eigenen
+    // `FocusRequester`, kein globaler Merker noetig. `freigabe` oeffnet den gesperrten Ausgang
+    // (`exit = Cancel` sperrt sonst auch das programmatische `requestFocus`).
+    val knopf = remember { FocusRequester() }
+    val freigabe = remember { booleanArrayOf(false) }
+    fun schliessen() {
+        freigabe[0] = true
+        runCatching { knopf.requestFocus() }
+        offen = false
     }
     Box {
-        TvKnopf(null, Icons.Filled.MoreHoriz) { offen = !offen }
+        TvKnopf(null, Icons.Filled.MoreHoriz, modifier = Modifier.focusRequester(knopf)) {
+            if (offen) schliessen() else { freigabe[0] = false; offen = true }
+        }
         if (offen) {
-            BackHandler(onBack = { offen = false })
+            BackHandler(onBack = { schliessen() })
             val erste = remember { FocusRequester() }
             LaunchedEffect(Unit) { delay(30); runCatching { erste.requestFocus() } }
             // 44 dp unter dem Knopf — dieselbe Zahl wie die Staffelliste auf dem Telefon
             // (`Staffelkopf` in `SerienSeite.kt`), aus demselben Grund: knapp unter der eigenen Hoehe.
             Popup(offset = IntOffset(0, with(LocalDensity.current) { 44.dp.roundToPx() }),
-                  onDismissRequest = { offen = false }, properties = PopupProperties(focusable = false)) {
+                  onDismissRequest = { schliessen() }, properties = PopupProperties(focusable = false)) {
                 // Innerhalb der Tafel: eine angeklickte Zeile darf sich nicht selbst als „Ausloeser"
                 // bei `Fokusmerker` eintragen, sonst zeigte das naechste Schliessen auf die zuletzt
                 // gewaehlte Zeile statt zurueck auf den „…"-Knopf.
                 CompositionLocalProvider(LocalInnerhalbTafel provides true) {
                     Column(Modifier.width(340.dp).clip(RoundedCornerShape(10.dp)).background(Stil.erhoeht)
                             .padding(vertical = 6.dp)
-                            .focusProperties { exit = { FocusRequester.Cancel } }.focusGroup()) {
+                            .focusProperties { exit = { if (freigabe[0]) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup()) {
                         eintraege.forEachIndexed { i, e ->
                             TvZeile(e.text, symbole[e.wert], modifier = if (i == 0) Modifier.focusRequester(erste) else Modifier) {
-                                offen = false
+                                schliessen()
                                 waehlen(e.wert)
                             }
                         }
@@ -226,8 +218,8 @@ fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, ImageVector> = empty
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TvStreifen(titel: String, inhalt: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
-    Column(Modifier.padding(top = TvStil.reihenAbstand - TvStil.reihenLuft)) {
+fun TvStreifen(titel: String, modifier: Modifier = Modifier, inhalt: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+    Column(modifier.padding(top = TvStil.reihenAbstand - TvStil.reihenLuft)) {
         TvReihentitel(titel)
         CompositionLocalProvider(LocalBringIntoViewSpec provides TvReihenBringIntoView) {
             LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
@@ -290,6 +282,17 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     val titel = t
     val name = titel?.name ?: ziel.name
 
+    // Vorlage: `DetailView.eingeblendet` auf tvOS — **beim Erscheinen blendet ein, nicht beim
+    // Laden**, und zwar jedes Mal, ob die Daten (Zwischenspeicher) schon dastehen oder nicht.
+    // Kulisse, Titel, Angabenzeile und Beschreibung stehen sofort (`TvDetailkopf`/`Kopfauskunft`
+    // sehen `eingeblendet` gar nicht) — nur die Knopfreihe und die Reihen darunter sind neu
+    // gegenueber der Startseite und blenden ein. Ohne das sprang beim Oeffnen einer Serie/eines
+    // Films alles auf einmal hart hin, statt dass nur der Zusatz kommt.
+    var eingeblendet by remember(ziel.id) { mutableStateOf(false) }
+    val einblendAlpha by animateFloatAsState(if (eingeblendet) 1f else 0f,
+        tween(TvStil.einblendenDauer, easing = TvStil.einblendenKurve), label = "eingeblendet")
+    LaunchedEffect(ziel.id) { eingeblendet = true }
+
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         TvBildgrund(titel?.kopfbild)
         Kulisse(titel?.kopfbild, Modifier.align(Alignment.TopEnd))
@@ -297,7 +300,8 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 TvDetailkopf(name, titel?.jahrLaufzeit.orEmpty(), titel?.bewertung, titel?.freigabe, titel?.beschreibung,
                              direktplay = titel?.planDa == true && titel.lossless,
-                             hinweis = if (titel?.planDa == true && !titel.lossless) titel.methode else null) {
+                             hinweis = if (titel?.planDa == true && !titel.lossless) titel.methode else null,
+                             knopfAlpha = einblendAlpha) {
                     TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
                         if (titel?.planDa == true) app.spiel.value = Abspielwunsch(ziel.id, titel.fortsetzenAb)
                     }
@@ -338,14 +342,14 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                         TvKnopf(null, Icons.Filled.MoreHoriz) {}
                     }
                 }
-                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme")) {
+                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme"), Modifier.alpha(einblendAlpha)) {
                     items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
                 }
-                if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras")) {
+                if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras"), Modifier.alpha(einblendAlpha)) {
                     items(extras, key = { it.id }) { x -> TvKachel(x.bild, x.name, x.laufzeit, quer = true) { app.spiel.value = Abspielwunsch(x.id, null) } }
                 }
                 val leute = titel?.darsteller.orEmpty()
-                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung")) {
+                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.alpha(einblendAlpha)) {
                     items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
                 }
                 Spacer(Modifier.height(40.dp))

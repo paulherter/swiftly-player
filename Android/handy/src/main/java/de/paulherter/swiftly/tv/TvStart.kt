@@ -4,6 +4,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.*
@@ -11,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -19,13 +21,14 @@ import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -44,6 +47,7 @@ import de.paulherter.swiftly.gemeinsam.uebersetzt
 import de.paulherter.swiftly.kern.Kern
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -159,28 +163,45 @@ object TvReihenBringIntoView : BringIntoViewSpec {
 object TvAbschnittsweisesBringIntoView : BringIntoViewSpec
 
 /**
- * Vorlage: `Kopfauskunft` — **eine Quelle** fuer Startseite und Detailseiten, sonst laufen sie
- * auseinander. Feste Hoehen: wechselt der Fokus, springt darunter nichts.
+ * Vorlage: `Kopfauskunft` in `Sources/tvOS/TVBausteine.swift` — **eine Quelle** fuer Startseite,
+ * Filmseite und Serienseite, sonst laufen sie auseinander (`nachladen()`, `Titelangaben` sind auf
+ * genau diese Art schon einmal auseinandergelaufen). Titel, optionale Zweitzeile (Folgentitel),
+ * dann eine Zeile „Kuerzel · Jahr · Laufzeit" mit Bewertung und Freigabe, dann die Beschreibung —
+ * **immer drei Zeilen, zwei mit Zweitzeile**, damit die Knopfreihe (Detail) bzw. die Reihen
+ * (Start) auf jeder Seite an derselben Stelle stehen.
  *
- * `schluss` ist das Gegenstueck zu tvOS' `@ViewBuilder var schluss`: auf der Startseite die
- * `TvRestzeitmarke`, auf Detailseiten und bei Seerr leer (Vorgabe) — dieselbe Funktion, kein
- * zweiter Aufbau.
+ * `schluss` ist das Gegenstueck zu tvOS' `@ViewBuilder var schluss`: `TvRestzeitmarke` auf der
+ * Startseite, ein Direct-Play-`TvBelegzeile` auf Film- und Serienseite — dieselbe Funktion, kein
+ * zweiter Aufbau. `TvDetailkopf` (`TvTitel.kt`) ruft dieselbe Funktion auf.
  */
 @Composable
-fun Kopfauskunft(titel: String, zweitzeile: String?, text: String?, modifier: Modifier = Modifier,
+fun Kopfauskunft(titel: String, zweitzeile: String?, angabenzeile: String?, bewertung: Double?,
+                 freigabe: String?, beschreibung: String?, modifier: Modifier = Modifier,
                  schluss: @Composable () -> Unit = {}) {
     Column(modifier.width(500.dp)) {
         Text(titel, style = TvStil.auskunftTitel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
              modifier = Modifier.height(34.dp))
-        Text(zweitzeile.orEmpty(), style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.68f), maxLines = 1,
-             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp).height(20.dp))
-        Row(Modifier.padding(top = 11.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            text?.let {
-                Text(it, style = TvStil.koerper, color = Stil.schriftLeise, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        zweitzeile?.let {
+            Text(it, style = TvStil.auskunftZweitzeile, color = Stil.schrift.copy(alpha = 0.78f), maxLines = 1,
+                 overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp).height(22.dp))
+        }
+        // **`heightIn(min=)` statt `height()`.** 17 dp ist die Vorgabe aus `Stil.auskunftHoehe`
+        // (34 pt halbiert), aber die Direct-Play-Marke braucht mit Symbol, Text und eigenem
+        // senkrechten Innenabstand mehr Platz — ein hartes `height()` schnitte ihr die Schrift
+        // unten ab.
+        Row(Modifier.padding(top = 7.dp).heightIn(min = 17.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            angabenzeile?.takeIf { it.isNotEmpty() }?.let {
+                Text(it, style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.62f), maxLines = 1)
             }
+            // Bewertung und Freigabe stehen auf **jeder** Seite, Start wie Detail — nur der
+            // Direct-Play-Beleg ist Detail vorbehalten und kommt ueber `schluss`.
+            TvBelegzeile(direktplay = false, hinweis = null, bewertung = bewertung, freigabe = freigabe)
             schluss()
         }
+        Text(beschreibung.orEmpty(), style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.62f),
+             maxLines = if (zweitzeile != null) 2 else 3, overflow = TextOverflow.Ellipsis,
+             modifier = Modifier.padding(top = 11.dp).height(TvStil.beschreibungHoehe(if (zweitzeile != null) 2 else 3)))
     }
 }
 
@@ -259,20 +280,79 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         }
     }
 
-    var aktuell by remember { mutableStateOf<Kachel?>(null) }
+    // Vorlage: `zuletztAmTitel` in `HomeView.swift` — wo der Fokus wirklich stand, als "reihe|id".
+    // **`rememberSaveable`, nicht `remember`:** `TvHaupt` wirft die Startseite beim Oeffnen einer
+    // Unterseite und beim Bereichswechsel aus der Komposition und stellt sie ueber den
+    // `SaveableStateHolder` wieder her. Mit `remember` begann sie danach bei null — Fokus auf der
+    // ersten Kachel, `fokusReihe` 0 und damit `animateScrollToItem(0)`: die Seite fuhr nach oben.
+    var zuletztAmTitel by rememberSaveable { mutableStateOf<String?>(null) }
+    fun kachelZu(marke: String?, l: List<Reihe>?): Kachel? {
+        val teile = marke?.split('|', limit = 2) ?: return null
+        return l?.getOrNull(teile[0].toIntOrNull() ?: -1)?.kacheln?.firstOrNull { it.id == teile.getOrNull(1) }
+    }
+    var aktuell by remember { mutableStateOf(kachelZu(zuletztAmTitel, reihen)) }
     val liste = reihen
     LaunchedEffect(liste) { if (aktuell == null) aktuell = liste?.firstOrNull()?.kacheln?.firstOrNull() }
-    var bild by remember { mutableStateOf<String?>(null) }
+    // Mit dem wiederhergestellten Titel sofort das passende Bild — sonst blendete die Kulisse nach
+    // dem Zurueckkommen erst von leer herein.
+    var bild by remember { mutableStateOf(aktuell?.let { it.quer ?: it.plakat }) }
     LaunchedEffect(aktuell) { delay(250); bild = aktuell?.let { it.quer ?: it.plakat } }
-    val erster = remember { FocusRequester() }
-    LaunchedEffect(liste != null) { if (liste != null) { delay(60); runCatching { erster.requestFocus() } } }
 
     // **Ein Abschnitt passt ins Fenster** — wandert der Fokus in eine andere Reihe, stellt der
     // Fokusmotor auf tvOS Reihentitel und Kacheln gemeinsam frei, statt die vorherige Reihe
     // halb abgeschnitten stehen zu lassen. `listenzustand` ist das Kotlin-Gegenstueck: die
     // Zeile der fokussierten Reihe wandert an den oberen Rand des Fensters.
     val listenzustand = rememberLazyListState()
-    var fokusReihe by remember { mutableStateOf(0) }
+    var fokusReihe by rememberSaveable { mutableStateOf(0) }
+
+    // **Eintritt in die Reihen — nur auf eine Kachel, die gerade im Bild steht.**
+    //
+    // Vorher `focusRestorer`: der stellt die zuletzt fokussierte Kachel wieder her, egal wo sie
+    // steht. Lag sie ueber dem Fenster (Lazy-Listen halten die fokussierte Kachel als „gepinnt"
+    // weiter komponiert, nur ausserhalb des Ausschnitts), stand der Fokus unsichtbar unter der
+    // Heldenzone — Rechts fuehrte von dort zum Profilbild, Unten eine Reihe zu tief. Und seit das
+    // senkrechte Bring-into-View aus ist, scrollte auch nichts hinterher.
+    //
+    // Jetzt entscheidet `eintrittsziel` anhand des Layouts: die gemerkte Kachel, wenn sie ganz im
+    // Bild steht (tvOS: `defaultFocus(zuletztAmTitel)`), sonst die vorderste sichtbare Kachel der
+    // obersten sichtbaren Reihe (tvOS: `vordersteMarke`). Genre-Chips zaehlen nicht — tvOS' Vorwahl
+    // zeigt immer auf eine Kachel. Fuer jede Kachel ein eigener `FocusRequester`, damit `enter`
+    // genau dorthin umlenken kann; nur Kacheln, die im Layout stehen, sind sicher angebunden.
+    val anfragen = remember { HashMap<String, FocusRequester>() }
+    val reihenstaende = remember { HashMap<Int, LazyListState>() }
+    fun anfrage(marke: String) = anfragen.getOrPut(marke) { FocusRequester() }
+    fun eintrittsziel(): FocusRequester? {
+        val l = liste ?: return null
+        val spalte = listenzustand.layoutInfo
+        val sichtbareReihen = spalte.visibleItemsInfo.mapNotNull { info ->
+            val i = (info.key as? String)?.substringBefore('-')?.toIntOrNull() ?: return@mapNotNull null
+            // Mindestens die untere Haelfte im Bild — waehrend `animateScrollToItem` steht die
+            // obere Reihe ein paar Pixel ueber der Kante und soll trotzdem zaehlen.
+            i.takeIf { it in l.indices && info.offset + info.size / 2 >= spalte.viewportStartOffset && info.offset < spalte.viewportEndOffset }
+        }
+        fun ganzSichtbar(i: Int): List<String> {
+            val zeile = reihenstaende[i]?.layoutInfo ?: return emptyList()
+            return zeile.visibleItemsInfo
+                .filter { it.offset >= zeile.viewportStartOffset && it.offset + it.size <= zeile.viewportEndOffset }
+                .mapNotNull { it.key as? String }
+        }
+        zuletztAmTitel?.let { m ->
+            val i = m.substringBefore('|').toIntOrNull() ?: -1
+            if (i in sichtbareReihen && m.substringAfter('|') in ganzSichtbar(i)) return anfrage(m)
+        }
+        val oberste = sichtbareReihen.minOrNull() ?: return null
+        val id = ganzSichtbar(oberste).firstOrNull() ?: return null
+        return anfrage("$oberste|$id")
+    }
+    // Beim Erscheinen — erster Aufbau, Zurueck von einer Unterseite, Bereichswechsel auf „Start" —
+    // derselbe Weg: warten, bis das Layout steht (Listen- und Reihenstand sind dann schon
+    // wiederhergestellt), dann direkt auf das Eintrittsziel. Kein fester Zeitverzug, kein Umweg
+    // ueber die erste Kachel.
+    LaunchedEffect(liste != null) {
+        if (liste == null) return@LaunchedEffect
+        val ziel = snapshotFlow { eintrittsziel() }.first { it != null }
+        runCatching { ziel?.requestFocus() }
+    }
     val chipVersatz = if (e.genreChips && e.startGenres.isNotEmpty()) 1 else 0
     LaunchedEffect(fokusReihe, liste) {
         if (liste == null) return@LaunchedEffect
@@ -300,17 +380,23 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                         // Vorlage: `auskunft` in `HomeView.swift` — derselbe Baustein wie die
                         // Detailseite (`Kopfauskunft`), mit dem Folgennamen als Zweitzeile und der
                         // Restzeitmarke hinten dran, statt eines eigenen zweiten Aufbaus.
+                        //
+                        // **98 dp, nicht `kopfUnten + 34.dp`.** 196 pt aus der Tafel, halbiert —
+                        // dieselbe Zahl, mit der `TvDetailkopf` (`TvTitel.kt`) seine Spalte
+                        // einrueckt. Die Kopfleiste liegt als eigene Ebene *ueber* dieser Zone
+                        // (siehe `TvHaupt.kt`), sie verschiebt den Inhalt nicht — `kopfUnten` war
+                        // hier ein Rest aus einer Fassung, die das noch tat, und liess den
+                        // Startseiten-Titel 12 dp tiefer stehen als den der Detailseite.
                         aktuell?.let { k ->
-                            Kopfauskunft(k.name, k.folgenname, k.angabenzeile,
-                                         Modifier.padding(start = TvStil.randSeite, top = kopfUnten + 34.dp)) {
+                            Kopfauskunft(k.name, k.folgenname, k.angabenzeile, k.bewertung, k.freigabe, k.beschreibung,
+                                         Modifier.padding(start = TvStil.randSeite, top = 98.dp)) {
                                 TvRestzeitmarke(k.restzeit, k.gesehen)
                             }
                         }
                     }
-                    // `focusRestorer`: kommt der Fokus von einer Detailseite zurueck, steht er
-                    // wieder auf der zuletzt fokussierten Kachel, nicht auf der ersten — wie
-                    // `zuletztAmTitel`/`defaultFocus` auf tvOS. Vor dem ersten Fokus greift
-                    // `erster` als Rueckfall.
+                    // `enter`: jeder Eintritt von aussen (Unten aus der Kopfleiste, programmatisch)
+                    // landet auf `eintrittsziel` — siehe dort. Kein Ziel im Layout: Compose sucht
+                    // selbst (`Default`).
                     // Senkrecht abgeschaltet, siehe `TvKeinSenkrechtesBringIntoView` — der
                     // Reihenwechsel oben (`animateScrollToItem`) bewegt die Liste schon bewusst, ein
                     // zusaetzliches Bring-into-View liess beim waagerechten Wandern in einer Reihe
@@ -318,7 +404,9 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                     // Systemvorgabe (`TvReihenBringIntoView`, der Nachbau davon) wieder bereit, damit
                     // die naechste Kachel dort weiter mitgescrollt wird.
                     CompositionLocalProvider(LocalBringIntoViewSpec provides TvKeinSenkrechtesBringIntoView) {
-                        LazyColumn(Modifier.weight(1f).focusRestorer { erster }, state = listenzustand,
+                        LazyColumn(Modifier.weight(1f)
+                                       .focusProperties { enter = { eintrittsziel() ?: FocusRequester.Default } }
+                                       .focusGroup(), state = listenzustand,
                                    contentPadding = PaddingValues(bottom = 40.dp),
                                    verticalArrangement = Arrangement.spacedBy(TvStil.reihenAbstand - TvStil.reihenLuft * 2)) {
                             if (e.genreChips && e.startGenres.isNotEmpty()) item(key = "genres") {
@@ -339,15 +427,22 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                             itemsIndexed(liste.orEmpty(), key = { i, r -> "$i-${r.titel}" }) { i, r ->
                                 Column {
                                     TvReihentitel(r.titel)
+                                    // Eigener, saveable Reihenstand (derselbe, den `LazyRow` sonst selbst
+                                    // anlegt) — `eintrittsziel` liest daraus, welche Kacheln im Bild stehen.
+                                    val zeile = rememberLazyListState()
+                                    DisposableEffect(zeile, i) {
+                                        reihenstaende[i] = zeile
+                                        onDispose { if (reihenstaende[i] === zeile) reihenstaende.remove(i) }
+                                    }
                                     CompositionLocalProvider(LocalBringIntoViewSpec provides TvReihenBringIntoView) {
-                                        LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
+                                        LazyRow(state = zeile, contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
                                                 horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand)) {
-                                            itemsIndexed(r.kacheln, key = { _, k -> k.id }) { j, k ->
+                                            itemsIndexed(r.kacheln, key = { _, k -> k.id }) { _, k ->
                                                 TvKachel(if (r.quer) k.quer ?: k.plakat else k.plakat, k.name, k.unterzeile, r.quer,
                                                          if (r.quer) k.fortschritt else null,
                                                          marke = k.marke, markenzahl = k.markenzahl,
-                                                         modifier = if (i == 0 && j == 0) Modifier.focusRequester(erster) else Modifier,
-                                                         fokusGeaendert = { if (it) { aktuell = k; fokusReihe = i } }) {
+                                                         modifier = Modifier.focusRequester(anfrage("$i|${k.id}")),
+                                                         fokusGeaendert = { if (it) { aktuell = k; fokusReihe = i; zuletztAmTitel = "$i|${k.id}" } }) {
                                                     // „Weiterschauen" spielt direkt ab, wie auf tvOS.
                                                     if (r.quer) lauf.launch { weiterschauenWunsch(app, k.id)?.let { app.spiel.value = it } ?: oeffnen(Ziel(k.id, k.name, k.typ)) }
                                                     else oeffnen(Ziel(k.id, k.name, k.typ))

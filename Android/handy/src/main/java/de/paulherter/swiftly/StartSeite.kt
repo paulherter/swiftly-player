@@ -71,7 +71,11 @@ data class Kachel(val id: String, val name: String, val typ: String, val unterze
                   val angabenzeile: String? = null, val restzeit: String? = null,
                   val gesehen: Boolean = false, val folgenname: String? = null,
                   /** Nur fuers Watch-Next-Regal auf dem Fernseher (`TvWeiterschauenRegal.kt`). */
-                  val laufzeitSekunden: Double? = null, val positionSekunden: Double? = null)
+                  val laufzeitSekunden: Double? = null, val positionSekunden: Double? = null,
+                  /** Nur fuer den Fernseher-Kopf (`Kopfauskunft` in `tv/TvStart.kt`) — Bewertung,
+                   *  Freigabe und Beschreibung des Titels unter dem Fokus, wie `Kopfauskunft` sie
+                   *  auf tvOS aus dem vollen `Item` liest. Das Telefon liest sie nicht. */
+                  val bewertung: Double? = null, val freigabe: String? = null, val beschreibung: String? = null)
 /**
  * `schluessel` ist der rohe, unuebersetzte Reihenname aus dem Paket (`Startreihe.reihentitel`
  * in `Startreihen.swift`, z. B. „Weiterschauen" oder „Zuletzt hinzugefügt") — `null` bei
@@ -102,7 +106,10 @@ internal fun reihenLesen(json: String): List<Reihe> {
                    o.optBoolean("gesehen"),
                    o.optString("folgenname").takeIf { !o.isNull("folgenname") },
                    if (o.isNull("laufzeitSekunden")) null else o.getDouble("laufzeitSekunden"),
-                   if (o.isNull("positionSekunden")) null else o.getDouble("positionSekunden"))
+                   if (o.isNull("positionSekunden")) null else o.getDouble("positionSekunden"),
+                   if (o.isNull("bewertung")) null else o.getDouble("bewertung"),
+                   o.optString("freigabe").takeIf { !o.isNull("freigabe") },
+                   o.optString("beschreibung").takeIf { !o.isNull("beschreibung") })
         })
     }
 }

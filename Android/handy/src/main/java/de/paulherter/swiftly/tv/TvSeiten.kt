@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,6 +76,17 @@ fun TvRaster(kacheln: List<Rasterkachel>, nachladen: () -> Unit = {}, fokus: Foc
              mitUnterzeile: Boolean = true,
              kopf: @Composable () -> Unit, mehr: LazyGridScope.() -> Unit = {}) {
     val gitter = rememberLazyGridState()
+    // **Zurueck heisst dorthin, wo man war** (tvOS: `zuletztAmTitel`). Das Raster behaelt seinen
+    // Scrollstand ueber `rememberLazyGridState` (saveable, `TvHaupt` stellt die Seite wieder her) —
+    // aber `fokus` hing immer an Kachel 0: nach dem Zurueckkommen war die entweder gar nicht
+    // komponiert (Fokus nirgends) oder das Raster fuhr zu ihr nach oben. Jetzt haengt `fokus` beim
+    // Wiedererscheinen an der zuletzt fokussierten Kachel, die mit dem Scrollstand im Bild steht.
+    // Nur beim Erscheinen gelesen (`rueckkehr`), und verworfen, sobald neu geladen wird (Filter,
+    // Bibliothek) — dann gilt wieder die erste Kachel.
+    var zuletzt by rememberSaveable { mutableStateOf<String?>(null) }
+    var rueckkehr by remember { mutableStateOf(zuletzt) }
+    LaunchedEffect(laedt) { if (laedt) rueckkehr = null }
+    val fokusIndex = rueckkehr?.let { id -> kacheln.indexOfFirst { it.id == id } }?.takeIf { it >= 0 } ?: 0
     val ende by remember { derivedStateOf { (gitter.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= gitter.layoutInfo.totalItemsCount - TvStil.gitterSpalten * 3 } }
     LaunchedEffect(ende, kacheln.size) { if (ende && kacheln.isNotEmpty()) nachladen() }
     LazyVerticalGrid(GridCells.Fixed(TvStil.gitterSpalten), state = gitter, modifier = Modifier.fillMaxSize(),
@@ -91,7 +103,8 @@ fun TvRaster(kacheln: List<Rasterkachel>, nachladen: () -> Unit = {}, fokus: Foc
                 // tvOS) — in der Suche bleibt es, dort steht dort „Serie · 2008" statt eines Jahres.
                 TvKachel(k.plakat, k.titel, if (mitUnterzeile) k.unterzeile else null,
                          marke = k.marke, markenzahl = k.markenzahl,
-                         modifier = if (i == 0 && fokus != null) Modifier.focusRequester(fokus) else Modifier) {
+                         modifier = if (i == fokusIndex && fokus != null) Modifier.focusRequester(fokus) else Modifier,
+                         fokusGeaendert = { if (it) zuletzt = k.id }) {
                     oeffnen(Ziel(k.id, k.titel, k.typ))
                 }
             }

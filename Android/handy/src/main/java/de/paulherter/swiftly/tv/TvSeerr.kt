@@ -201,19 +201,26 @@ fun TvSeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
         // (`TvTitel.kt`), gleiche Behebung, hier bewusst nicht mehr angefasst als das.
         CompositionLocalProvider(LocalBringIntoViewSpec provides TvAbschnittsweisesBringIntoView) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp).height(TvStil.heldenHoehe + 20.dp - 98.dp)) {
-                    Kopfauskunft(k.titel, nebenzeile, d?.feldText("beschreibung"))
-                    Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                // **Derselbe Kopf wie `TvDetailkopf`: feste Zone 306,5 dp, Block innen ab 98 dp.**
+                // Vorlage: `SeerrDetailView.kopf` — `.frame(height: heldenHoeheDetail)`, Block bei
+                // 140 + kopfversatzDetail. Und: „Der Stand steht in der Angabenzeile statt in einer
+                // eigenen darunter; so bleibt der Knopf auf der Hoehe, auf der er auf jeder anderen
+                // Seite steht." Vorher stand er in einer eigenen Zeile unter einer 177-dp-Spalte:
+                // 132,5 Kopfauskunft + 32 Standzeile + 56 Knopfreihe = 220,5 dp — die Knopfreihe
+                // ragte gut 40 dp in den Besetzungsstreifen.
+                Box(Modifier.fillMaxWidth().height(306.5.dp)) {
+                Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp)) {
+                    Kopfauskunft(k.titel, null, nebenzeile, null, null, d?.feldText("beschreibung")) {
                         val farbe = Seerrmarke.farbe(stand)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Seerrmarke.symbol(stand), contentDescription = null, tint = farbe, modifier = Modifier.size(15.dp))
-                            Text(Seerrmarke.wort(stand), style = TvStil.koerper.copy(fontWeight = FontWeight.Medium), color = farbe)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Seerrmarke.symbol(stand), contentDescription = null, tint = farbe, modifier = Modifier.size(10.dp))
+                            Text(Seerrmarke.wort(stand), style = TvStil.koerper.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium), color = farbe, maxLines = 1)
                         }
                         // 0 heisst bei TMDB „keine Bewertung", nicht null Sterne.
                         d?.feldZahl("bewertung")?.takeIf { it > 0 }?.let { b ->
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(Icons.Filled.Star, contentDescription = null, tint = Stil.schrift.copy(alpha = 0.8f), modifier = Modifier.size(14.dp))
-                                Text(String.format(Locale.getDefault(), "%.1f", b), style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.8f))
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.5.dp)) {
+                                Icon(Icons.Filled.Star, contentDescription = null, tint = Stil.schrift.copy(alpha = 0.8f), modifier = Modifier.size(10.dp))
+                                Text(String.format(Locale.getDefault(), "%.1f", b), style = TvStil.koerper.copy(fontSize = 12.sp), color = Stil.schrift.copy(alpha = 0.8f), maxLines = 1)
                             }
                         }
                     }
@@ -227,6 +234,7 @@ fun TvSeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
                             else -> Text(Seerrmarke.hinweis(stand), style = TvStil.koerper, color = Stil.schriftLeise)
                         }
                     }
+                }
                 }
                 if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung")) {
                     items(leute, key = { it.id }) { p -> TvBesetzung(p) {} }

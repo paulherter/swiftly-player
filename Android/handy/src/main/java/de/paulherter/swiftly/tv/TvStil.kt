@@ -82,11 +82,37 @@ object TvStil {
     const val fokusDauer = 140
 
     val titelGross = TextStyle(fontSize = 28.5.sp, fontWeight = FontWeight.Bold)
-    val auskunftTitel = TextStyle(fontSize = 30.sp, fontWeight = FontWeight.Bold)
+    /** Vorlage: `Kopfauskunft`-Titel — 60 pt, `tracking(-1.4)`, halbiert. */
+    val auskunftTitel = TextStyle(fontSize = 30.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.7).sp)
+    /** Vorlage: `Kopfauskunft`-Zweitzeile (Folgentitel) — 38 pt semibold, `tracking(-0.3)`, halbiert. */
+    val auskunftZweitzeile = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.15).sp)
     val reihe = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
     val koerper = TextStyle(fontSize = 14.5.sp)
     val kachel = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
     val klein = TextStyle(fontSize = 12.5.sp)
+
+    // MARK: Kopfauskunft — gemeinsam fuer Start, Film und Serie
+
+    /** `Stil.beschreibungZeile`/`beschreibungLuft`, halbiert. Nur fuer `beschreibungHoehe`. */
+    private const val beschreibungZeile = 17.5f
+    private const val beschreibungLuft = 5.5f
+
+    /** Vorlage: `Stil.beschreibungHoehe(_:)` — wie hoch `zeilen` Zeilen Beschreibung stehen. */
+    fun beschreibungHoehe(zeilen: Int): Dp = (zeilen * beschreibungZeile + (zeilen - 1) * beschreibungLuft).dp
+
+    /**
+     * Vorlage: `Stil.auskunftHoehe(zweitzeile:)` — **gerechnet, nicht gesetzt**, damit
+     * `Kopfauskunft` auf Start und Detail immer dieselbe Gesamthoehe hat: 34 (Titel) + 27
+     * (Zweitzeile, nur wenn vorhanden) + 7 + 17 (Angabenzeile) + 11 + Beschreibung (drei Zeilen,
+     * zwei mit Zweitzeile).
+     */
+    fun auskunftHoehe(zweitzeile: Boolean): Dp =
+        34.dp + (if (zweitzeile) 27.dp else 0.dp) + 7.dp + 17.dp + 11.dp + beschreibungHoehe(if (zweitzeile) 2 else 3)
+
+    /** `.easeOut(duration: 0.3)` — dieselbe Kurve wie `fokusKurve`, hier fuer `eingeblendet`
+     *  auf Film- und Serienseite (`TvDetail`, `TvSerie`): der Kopf steht sofort, der Rest blendet. */
+    val einblendenKurve = fokusKurve
+    const val einblendenDauer = 300
 }
 
 /**
@@ -136,6 +162,22 @@ object Fokusmerker {
         letzter = null
         val traf = ziel != null && runCatching { ziel.requestFocus() }.isSuccess
         if (!traf) ersatz?.let { runCatching { it.requestFocus() } }
+    }
+
+    /**
+     * **Vor** dem Schliessen aufrufen, solange die Tafel noch steht. Entfernt Compose einen
+     * fokussierten Knoten, faellt der Fokus sofort auf den ersten fokussierbaren Knoten des Fensters
+     * (auf der Profilseite das „+" im Kontenstreifen) — ein spaeteres `zurueckfordern` holt ihn erst
+     * danach, und genau dieser Zwischenhalt blitzte. Steht der Fokus schon am Ausloeser, wenn die
+     * Tafel verschwindet, gibt es nichts zu fallen.
+     *
+     * Der Merker bleibt stehen: waehlt eine Tafelzeile gleich die naechste Tafel, gilt derselbe
+     * Ausloeser weiter. Die Tafel muss ihren Ausgang dafuer freigeben (`exit`), siehe `TvTafel`.
+     */
+    fun zurueckgeben(ersatz: FocusRequester? = null): Boolean {
+        val ziel = letzter
+        if (ziel != null && runCatching { ziel.requestFocus() }.isSuccess) return true
+        return ersatz != null && runCatching { ersatz.requestFocus() }.isSuccess
     }
 }
 
