@@ -46,6 +46,9 @@ class MainActivity : ComponentActivity() {
                     // Nach einem Kontowechsel frisch — Stapel, Bereiche und Seiten gehoeren dem vorigen Konto.
                     Phase.Start -> androidx.compose.runtime.key(app.kontowechsel.intValue) { Hauptansicht(app) }
                 }
+                if (app.kleinesFenster.value) Bildimbildhinweis {
+                    startActivity(android.content.Intent(this@MainActivity, PlayerAktivitaet::class.java))
+                }
                 // Der Vorhang faellt als reine Ueberblendung, 0,45 s — kein Rutschen, kein Wachsen.
                 androidx.compose.animation.AnimatedVisibility(!gestartet,
                     enter = androidx.compose.animation.EnterTransition.None,

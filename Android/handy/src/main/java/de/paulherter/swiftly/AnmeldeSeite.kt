@@ -16,6 +16,8 @@ import coil3.compose.AsyncImage
 import org.json.JSONArray
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -100,13 +102,17 @@ fun AnmeldeSeite(app: SwiftlyAnwendung, servername: String, fassung: String,
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    // **Mittig, wie die Serverseite davor** — oben angeheftet sah der Wechsel aus wie ein Sprung.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val hoehe = maxHeight
         Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = hoehe)
+                .padding(horizontal = 28.dp).padding(bottom = 56.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Column(Modifier.widthIn(max = Stil.formularbreite).fillMaxWidth()) {
-                Column(Modifier.padding(top = 48.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (fassung.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(7.dp).background(Stil.akzent, CircleShape))

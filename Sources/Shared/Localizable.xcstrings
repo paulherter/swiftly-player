@@ -7158,6 +7158,23 @@
         }
       }
     },
+    "Dieses Video wird im Bild-im-Bild wiedergegeben.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Video wird im Bild-im-Bild wiedergegeben."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video is playing in Picture in Picture."
+          }
+        }
+      }
+    },
     "Wer schaut?": {
       "extractionState": "manual",
       "localizations": {

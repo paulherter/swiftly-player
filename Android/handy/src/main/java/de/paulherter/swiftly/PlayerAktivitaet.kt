@@ -15,11 +15,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.Lifecycle
 
 /**
- * **Der Player in einer eigenen Aktivitaet, in einer eigenen Aufgabe.**
+ * **Der Player in einer eigenen Aktivitaet** — in der Aufgabe der App, damit er oben drauf liegt.
  *
  * Auf iOS laeuft das kleine Fenster weiter, waehrend man in der App stoebert. Auf Android ist
  * Bild-im-Bild eine ganze Aktivitaet: laege der Player in der Hauptaktivitaet, schrumpfte die
@@ -89,6 +93,7 @@ class PlayerAktivitaet : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         kleinesFenster.value = isInPictureInPictureMode
+        (application as SwiftlyAnwendung).kleinesFenster.value = isInPictureInPictureMode
         // Aus dem kleinen Fenster heraus, ohne dass die Aktivitaet wieder vorn steht: weggewischt.
         if (!isInPictureInPictureMode && !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) finish()
     }
@@ -96,5 +101,26 @@ class PlayerAktivitaet : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (isFinishing) (application as SwiftlyAnwendung).spiel.value = null
+        (application as SwiftlyAnwendung).kleinesFenster.value = false
+    }
+}
+
+/**
+ * **Wie iOS:** laeuft der Film im kleinen Fenster, zeigt die App darunter nicht sich selbst, sondern
+ * wo er gerade ist. Vorher stand dort die ganze App zum Bedienen — der Film schien verschwunden.
+ * Ein Tipp holt ihn gross zurueck.
+ */
+@androidx.compose.runtime.Composable
+fun Bildimbildhinweis(zurueckholen: () -> Unit) {
+    Box(Modifier.fillMaxSize().background(de.paulherter.swiftly.gemeinsam.Stil.grund).antippen(zurueckholen),
+        contentAlignment = androidx.compose.ui.Alignment.Center) {
+        androidx.compose.foundation.layout.Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp)) {
+            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.PictureInPictureAlt, contentDescription = null,
+                tint = de.paulherter.swiftly.gemeinsam.Stil.schriftSehrLeise, modifier = Modifier.size(44.dp))
+            androidx.compose.material3.Text(de.paulherter.swiftly.gemeinsam.uebersetzt("Dieses Video wird im Bild-im-Bild wiedergegeben."),
+                style = de.paulherter.swiftly.gemeinsam.Stil.koerper, color = de.paulherter.swiftly.gemeinsam.Stil.schriftLeise,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 40.dp))
+        }
     }
 }

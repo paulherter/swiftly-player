@@ -133,7 +133,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     Box(Modifier.fillMaxSize()) {
         // Unten: Farbschein, dann die Reihen — sie laufen **unter** dem Kopf durch,
         // statt an seiner Unterkante hart abgeschnitten zu werden.
-        Farbschein(versatz, ausgespartOben = kopfDp)
+        Farbschein({ versatz }, ausgespartOben = kopfDp)
         LazyColumn(state = liste, verticalArrangement = Arrangement.spacedBy(Stil.reihenAbstand),
                    contentPadding = PaddingValues(top = kopfDp + 8.dp, bottom = 24.dp),
                    modifier = Modifier.fillMaxSize().bereichsinhalt()) {
@@ -160,7 +160,7 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 0.73f to Stil.grund.copy(alpha = 0.52f), 0.82f to Stil.grund.copy(alpha = 0.34f),
                 0.89f to Stil.grund.copy(alpha = 0.19f), 0.95f to Stil.grund.copy(alpha = 0.09f),
                 1f to Color.Transparent)))
-        Box(Modifier.fillMaxWidth().height(kopfDp).clipToBounds()) { Farbschein(versatz) }
+        Box(Modifier.fillMaxWidth().height(kopfDp).clipToBounds()) { Farbschein({ versatz }) }
     }
     }
 }
@@ -182,7 +182,7 @@ private fun StartKopf(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
  * Scrollen mit. Als radiale Verlaeufe statt `blur(60)`: der Weichzeichner kaeme erst ab Android 12.
  */
 @Composable
-private fun Farbschein(versatz: Float, ausgespartOben: Dp = 0.dp) {
+private fun Farbschein(versatz: () -> Float, ausgespartOben: Dp = 0.dp) {
     val dichte = androidx.compose.ui.platform.LocalDensity.current.density
     // **Die ganze Flaeche wandert, samt Maske** — wie `.offset(y: -versatz)` am
     // Ende von `gemalt` auf iOS. Vorher liefen nur die Kreise unter einer stehenden
@@ -200,7 +200,8 @@ private fun Farbschein(versatz: Float, ausgespartOben: Dp = 0.dp) {
         // **Verschoben wird die Zeichnung, nicht die Ebene.** Eine verschobene Ebene
         // riss in der auf Kopfhoehe beschnittenen Kopie unten auf — ein leerer
         // Streifen, durch den der dunkle Kopfverlauf als harte Kante zu sehen war.
-        val oben = -versatz * dichte
+        // Gelesen beim Zeichnen, nicht beim Aufbau — sonst baute jeder Scrollschritt die Startseite neu.
+        val oben = -versatz() * dichte
         val mitte = size.width / 2
         fun kreis(farbe: Color, deckung: Float, durchmesser: Float, dx: Float, dy: Float) {
             val radius = (durchmesser / 2 + 60) * dichte
@@ -246,11 +247,12 @@ private fun KachelAnsicht(k: Kachel, quer: Boolean, tun: () -> Unit) {
     Column(Modifier.width(breite).einblenden().antippen(tun), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.size(breite, hoehe).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             val adresse = if (quer) k.quer ?: k.plakat else k.plakat
-            SubcomposeAsyncImage(
-                model = adresse, contentDescription = k.name, contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                error = { Ersatz(k) }, loading = { Box(Modifier.fillMaxSize().background(Stil.flaeche)) }
-            )
+            // **Kein `SubcomposeAsyncImage` in Reihen**: es komponiert je Kachel nach und kostete beim
+            // schnellen Scrollen ganze Bilder (gemessen: 99. Perzentil 81 ms auf dem Pixel 10 Pro).
+            var fehlt by remember(adresse) { mutableStateOf(adresse == null) }
+            if (fehlt) Ersatz(k)
+            coil3.compose.AsyncImage(model = adresse, contentDescription = k.name, contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(), onError = { fehlt = true })
             k.fortschritt?.takeIf { it > 0 && LocalFortschrittZeigen.current }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
         }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {

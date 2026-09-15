@@ -318,15 +318,13 @@ private fun BibliothekKopf(app: SwiftlyAnwendung, stand: Bibliotheksstand, titel
 fun RasterKachelAnsicht(k: Rasterkachel, modifier: Modifier = Modifier, tun: () -> Unit) {
     Column(modifier.einblenden().antippen(tun), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
-            SubcomposeAsyncImage(
-                model = k.plakat, contentDescription = k.titel, contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                error = {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Movie, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(22.dp))
-                    }
-                }
-            )
+            // Kein `SubcomposeAsyncImage` im Raster — siehe `KachelAnsicht` auf der Startseite.
+            var fehlt by remember(k.plakat) { mutableStateOf(k.plakat == null) }
+            if (fehlt) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.Movie, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(22.dp))
+            }
+            coil3.compose.AsyncImage(model = k.plakat, contentDescription = k.titel, contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(), onError = { fehlt = true })
             k.fortschritt?.takeIf { it > 0 && LocalFortschrittZeigen.current }?.let { Fortschrittsbalken(it, Modifier.align(Alignment.BottomStart)) }
             k.marke?.let { Kachelplakette(it, k.markenzahl, Modifier.align(Alignment.TopEnd)) }
         }

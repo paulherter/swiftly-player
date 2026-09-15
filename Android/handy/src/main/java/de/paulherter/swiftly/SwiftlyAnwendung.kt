@@ -59,6 +59,9 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Was gerade abgespielt wird — der Player liegt ueber allen Seiten, unter dem Blatt. */
     val spiel = androidx.compose.runtime.mutableStateOf<Abspielwunsch?>(null)
 
+    /** Laeuft der Player gerade im kleinen Fenster? Dann zeigt die App darunter, wo der Film ist. */
+    val kleinesFenster = androidx.compose.runtime.mutableStateOf(false)
+
     /** Das Zeichen der Mediensitzung des Players — der Wiedergabedienst haengt seine Benachrichtigung daran. */
     var medienToken: android.media.session.MediaSession.Token? = null
 

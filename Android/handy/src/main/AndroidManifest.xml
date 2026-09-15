@@ -22,13 +22,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Eigene Aufgabe: im kleinen Fenster bleibt die App daneben bedienbar. -->
+        <!-- In der Aufgabe der App: der Player liegt oben drauf und faehrt beim Schliessen hinunter.
+             Fuer das kleine Fenster loest Android ihn von selbst in eine eigene Aufgabe. -->
         <activity
             android:name=".PlayerAktivitaet"
             android:exported="false"
             android:launchMode="singleTask"
-            android:taskAffinity="de.paulherter.swiftly.player"
-            android:excludeFromRecents="true"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden" />
