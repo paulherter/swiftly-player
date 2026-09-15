@@ -37,7 +37,7 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
+        versionCode = 2
         versionName = "1.0.3"
         // **Nur arm64.** Der Swift-Kern wird nur fuer arm64-v8a gebaut; auf jeder anderen ABI
         // stuerzte die App beim Start. libVLC brachte vier ABIs mit — rund 135 MB, die nie liefen.
