@@ -80,11 +80,15 @@ final class Bibliotheksmodell {
     /// Ob es hinter dem, was schon dasteht, noch etwas gibt.
     var nochMehrDa: Bool { Listenregeln.nochMehrDa(geladen: items.count, gesamt: gesamt) }
 
-    /// Ab welchem Eintrag nachgeladen wird — die drittletzte Reihe, damit der
-    /// Nachschub steht, bevor man unten ankommt.
-    func nachladenAb(spalten: Int) -> String? {
-        Listenregeln.nachladenAb(items, spalten: spalten)
+    /// Ob diese Kachel das Nachladen auslöst — jede der letzten drei Reihen,
+    /// siehe `Listenregeln.imNachladebereich`.
+    func loestNachladenAus(_ id: String, spalten: Int) -> Bool {
+        Listenregeln.imNachladebereich(id, in: items, spalten: spalten)
     }
+
+    /// Wofür `items` geladen wurden: Bibliothek, Sortierung, Filter, Konto.
+    /// Gleich heißt: nur auffrischen. Anders heißt: ersetzen.
+    private var geladenFuer: String?
 
     /// Welche Bibliothek gemeint ist — genannt oder über die Gattung gesucht.
     ///
@@ -113,7 +117,14 @@ final class Bibliotheksmodell {
         if let seite = await model.items(in: bib.id, art: art ?? bib.collectionType,
                                          sortierung: sortierung,
                                          filter: filter, ab: 0) {
-            items = seite.titel
+            // Beim Zurückkommen von einer Detailseite läuft das hier erneut —
+            // und darf nicht auf die erste Seite kürzen, siehe `auffrischen`.
+            let fuer = "\(bib.id)|\(kennung)|\(fuerKonto)"
+            items = geladenFuer == fuer
+                ? Listenregeln.auffrischen(seite.titel, in: items,
+                                           gesamtVorher: gesamt, gesamtJetzt: seite.gesamt)
+                : Listenregeln.ohneDoppelte(seite.titel)
+            geladenFuer = fuer
             gesamt = seite.gesamt
         } else if !Task.isCancelled {
             // Steht schon etwas da, bleibt es stehen — was geladen war, ist
@@ -137,15 +148,20 @@ final class Bibliotheksmodell {
         // nachlädt, ohne vorher neu geladen zu haben, bekommt hier nichts.
         guard !veraltet(model) else { return }
         guard nochMehrDa, !laedtNach, !laedt else { return }
-        guard let bib = await quelle(model, art: art, bibliothek: bibliothek) else { return }
+        // Vor dem ersten `await` gesperrt: sonst kommen zwei Kacheln des
+        // Nachladebereichs gleichzeitig durch.
         laedtNach = true
         defer { laedtNach = false }
+        guard let bib = await quelle(model, art: art, bibliothek: bibliothek) else { return }
+        let vorher = geladenFuer
         guard let seite = await model.items(in: bib.id, art: art ?? bib.collectionType,
                                             sortierung: sortierung,
                                             filter: filter, ab: items.count)
         else { return }
-        let bekannt = Set(items.map(\.id))
-        items.append(contentsOf: seite.titel.filter { !bekannt.contains($0.id) })
+        // Wurde inzwischen umsortiert oder gefiltert, gehört die Seite zu
+        // einer anderen Liste.
+        guard geladenFuer == vorher else { return }
+        items = Listenregeln.anhaengen(seite.titel, an: items)
         gesamt = seite.gesamt
     }
 }

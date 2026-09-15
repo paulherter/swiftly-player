@@ -80,7 +80,7 @@ struct MerklisteView: View {
                         }
                         .buttonStyle(.plain)
                         .onAppear {
-                            guard item.id == stand.nachladenAb(spalten: spalten) else { return }
+                            guard stand.loestNachladenAus(item.id, spalten: spalten) else { return }
                             Task { await stand.nachladen(model) }
                         }
                     }

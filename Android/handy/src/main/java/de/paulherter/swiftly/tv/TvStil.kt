@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -295,6 +296,26 @@ fun TvChip(text: String, an: Boolean, modifier: Modifier = Modifier, tun: () -> 
                 .padding(horizontal = 11.dp),
             contentAlignment = Alignment.Center) {
             Text(text, style = TextStyle(fontSize = 11.5.sp, fontWeight = FontWeight.Medium), color = if (an) Stil.grund else Stil.schrift, maxLines = 1)
+        }
+    }
+}
+
+/**
+ * Vorlage: `KapselStil` — eine Kapsel, die etwas aufklappt (Bibliothek, Sortierung). Form und Hoehe
+ * wie `TvChip`, damit die Reihe eine Form hat; halbfett und mit Pfeil dahinter. Fokus ist die ruhige
+ * Flaeche, der Pfeil folgt der Schriftfarbe.
+ */
+@Composable
+fun TvKapsel(text: String, modifier: Modifier = Modifier, tun: () -> Unit) {
+    Fokusflaeche(modifier, lupe = 1.06f, tun = tun) { fokus ->
+        Row(Modifier.height(TvStil.chipHoehe).clip(CircleShape)
+                .background(if (fokus) TvStil.fokusflaeche else Stil.erhoeht)
+                .border(1.dp, Stil.rand, CircleShape)
+                .padding(horizontal = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(text, style = TextStyle(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift, maxLines = 1)
+            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Stil.schrift.copy(alpha = 0.6f), modifier = Modifier.size(12.dp))
         }
     }
 }

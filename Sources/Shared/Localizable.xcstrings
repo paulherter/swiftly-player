@@ -1847,6 +1847,22 @@
         }
       }
     },
+    "Bibliothek, %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bibliothek, %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Library, %@"
+          }
+        }
+      }
+    },
     "Bibliotheken": {
       "extractionState": "manual",
       "localizations": {

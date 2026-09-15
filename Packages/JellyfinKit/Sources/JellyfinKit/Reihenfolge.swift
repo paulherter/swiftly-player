@@ -53,9 +53,34 @@ public enum Listenregeln {
     /// derselben Zahl laufen auseinander, sobald jemand eine davon anfasst,
     /// und der Unterschied waere nur einem aufgefallen, der beide Listen
     /// nebeneinander benutzt.
-    public static func nachladenAb(_ items: [Item], spalten: Int) -> String? {
-        guard !items.isEmpty else { return nil }
-        return items[max(0, items.count - 3 * spalten)].id
+    ///
+    /// **Jede Kachel der letzten drei Reihen löst aus, nicht genau eine.**
+    /// Vorher hing das Nachladen am `onAppear` einer einzigen Kachel. Kam
+    /// deren Auslöser ins Leere — die Liste war beim Zurückkommen von einer
+    /// Detailseite gerade auf die erste Seite gekürzt worden, oder das
+    /// Nachladen scheiterte —, erschien sie im `LazyVGrid` nicht noch einmal,
+    /// solange sie im Bild blieb. Auf dem Apple TV blieb eine große Bibliothek
+    /// damit nach etwa fünfzig Titeln stehen, bis man weit genug hoch- und
+    /// wieder runtergescrollt hatte. Mehrfache Auslöser fängt `laedtNach` ab.
+    public static func imNachladebereich(_ id: String, in items: [Item], spalten: Int) -> Bool {
+        items.suffix(max(1, 3 * spalten)).contains { $0.id == id }
+    }
+
+    /// **Neu geladen wird die erste Seite — die weiteren bleiben stehen.**
+    ///
+    /// Eine Ansicht lädt bei jedem Erscheinen neu, also auch beim Zurückkommen
+    /// von einer Detailseite. Ersetzte die erste Seite alles, standen danach
+    /// wieder sechzig Titel da: wer beim hundertsten war, fand seinen Titel
+    /// nicht mehr, der Fokus fiel woanders hin, und der Auslöser fürs
+    /// Nachladen stand schon im Bild.
+    ///
+    /// Hat sich die Gesamtzahl geändert, ist etwas dazugekommen oder
+    /// weggefallen, und hinten verschöbe sich alles — dann doch ersetzen.
+    public static func auffrischen(_ erste: [Item], in bestehende: [Item],
+                                   gesamtVorher: Int, gesamtJetzt: Int) -> [Item] {
+        guard gesamtVorher == gesamtJetzt, bestehende.count > erste.count
+        else { return ohneDoppelte(erste) }
+        return anhaengen(Array(bestehende.dropFirst(erste.count)), an: ohneDoppelte(erste))
     }
 }
 

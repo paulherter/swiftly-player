@@ -110,6 +110,8 @@ class Bibliotheksstand(val art: String, private val ablage: Ablage) {
     var sortierung by mutableStateOf(ablage.merkwert("sortierung.$art") ?: "name"); private set
     var filter by mutableStateOf(ablage.merkwert("filter.$art") ?: "alle"); private set
     private var laedtNach = false
+    /** Wofuer `items` geladen wurden — gleich heisst auffrischen, anders ersetzen. */
+    private var geladenFuer: String? = null
 
     val nochMehrDa: Boolean get() = items.size < gesamt
 
@@ -143,7 +145,16 @@ class Bibliotheksstand(val art: String, private val ablage: Ablage) {
         }
         try {
             val (neu, zahl) = seite(kern, bib.id, 0)
-            items = neu
+            // **Beim Zurueckkommen nicht auf die erste Seite kuerzen** — `Listenregeln.auffrischen`.
+            // `laden` laeuft bei jedem Wiedererscheinen der Seite; ersetzte die erste Seite alles,
+            // war der geoeffnete Titel hinter Nummer 60 weg, der Fokus fiel auf Kachel 0, und ein
+            // gleichzeitig laufendes Nachladen haengte an der alten Stelle an (Luecke).
+            val fuer = "${bib.id}|$sortierung|$filter"
+            items = if (geladenFuer == fuer && zahl == gesamt && items.size > neu.size) {
+                val bekannt = neu.mapTo(HashSet()) { it.id }
+                neu + items.drop(neu.size).filter { bekannt.add(it.id) }
+            } else neu
+            geladenFuer = fuer
             gesamt = zahl
         } catch (e: CancellationException) {
             // Ein Abbruch ist kein Ausfall: der Nachfolger laedt schon.
@@ -160,7 +171,10 @@ class Bibliotheksstand(val art: String, private val ablage: Ablage) {
         if (!nochMehrDa || laedtNach || laedt) return
         laedtNach = true
         try {
+            val vorher = geladenFuer
             val (neu, zahl) = seite(kern, bib.id, items.size)
+            // Inzwischen umsortiert oder gefiltert: die Seite gehoert zu einer anderen Liste.
+            if (geladenFuer != vorher) return
             // Der Server kann zwischen zwei Seiten etwas hinzufuegen — nichts doppelt.
             val bekannt = items.mapTo(HashSet()) { it.id }
             items = items + neu.filter { bekannt.add(it.id) }
@@ -197,7 +211,7 @@ fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwah
     BoxWithConstraints(Modifier.fillMaxSize().background(Stil.grund)) {
         // `Stil.spalten(nutzbar:)` — auf jedem Telefon drei.
         val anzahl = Stil.spalten((maxWidth - Stil.randAbstand * 2).value)
-        // Nachladen, sobald die drittletzte Reihe auftaucht — `Listenregeln.nachladenAb`.
+        // Nachladen, sobald die drittletzte Reihe auftaucht — `Listenregeln.imNachladebereich`.
         LaunchedEffect(raster, anzahl) {
             snapshotFlow { (raster.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1) to stand.items.size }
                 .collect { (letzter, geladen) ->

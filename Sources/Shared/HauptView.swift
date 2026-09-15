@@ -548,7 +548,7 @@ struct BibliothekView: View {
                         // dann steht der Nachschub schon, bevor man unten
                         // ankommt.
                         .onAppear {
-                            guard item.id == stand.nachladenAb(spalten: anzahl) else { return }
+                            guard stand.loestNachladenAus(item.id, spalten: anzahl) else { return }
                             Task { await stand.nachladen(model, art: art, bibliothek: gewaehlt) }
                         }
                     }

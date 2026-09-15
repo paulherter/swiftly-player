@@ -10,9 +10,10 @@ import SwiftUI
 /// Reihen gleich aussehender Kapseln mit verschiedener Bedeutung haben die
 /// Seite zugestellt.
 ///
-/// Jetzt: links die Filter, rechts die Anzahl und **ein** Knopf, der den
-/// aktuellen Wert nennt und die Wahl dort aufklappt, wo er steht (E5) — wie
-/// die Staffelpille auf der Serienseite.
+/// Jetzt: vorn die Bibliothek als Kapsel (ab zwei), dann die Filter, rechts
+/// die Anzahl und die Sortierung als Kapsel. Beide Kapseln nennen den
+/// aktuellen Wert und klappen die Wahl dort auf, wo sie stehen (E5). Alle
+/// drei Formen in der Reihe sind Kapseln — Entwurf A2.
 ///
 /// **Kein Kopfblock.** Startseite und Detailseiten tragen oben Titel,
 /// Angabenzeile und Beschreibung des Titels, um den es geht. Eine Bibliothek
@@ -30,12 +31,21 @@ struct BibliothekView: View {
     /// Blättern, Filtern und Sortieren stehen in `Bibliotheksmodell` —
     /// geteilt mit der iPhone-Fassung.
     @State private var stand: Bibliotheksmodell
-    @State private var sortierwahlOffen = false
+    /// Welche Tafel offen ist — hoechstens eine. Dieselbe Kennung sagt beim
+    /// Schliessen, auf welche Kapsel der Fokus zurueck muss.
+    @State private var offeneTafel: Tafel?
     /// Welche Bibliothek dieser Gattung gezeigt wird — nur wenn die Ansicht
     /// ueber die Gattung kam. Kommt sie ueber den Sprungpfad, ist die
     /// Bibliothek benannt und es gibt nichts zu waehlen.
     @State private var gewaehlt: Item?
-    @FocusState private var amSortierknopf: Bool
+    @FocusState private var amAusloeser: Tafel?
+
+    private enum Tafel: Hashable { case bibliothek, sortierung }
+    /// Welche Kachel den Fokus hat, und welche ihn zuletzt hatte — wie
+    /// `zuletztAmTitel` in `HomeView`. `amTitel` wird `nil`, sobald eine
+    /// Detailseite öffnet; `zuletztAmTitel` behält den Titel.
+    @FocusState private var amTitel: String?
+    @State private var zuletztAmTitel: String?
 
     /// Der Merkname steht beim Anlegen fest — siehe `Bibliotheksmodell`.
     /// Eine benannte Bibliothek merkt sich ihre eigene Sortierung, eine
@@ -93,8 +103,24 @@ struct BibliothekView: View {
                     .padding(.bottom, 60)
                 }
                 .scrollIndicators(.hidden)
+                // **Zurück heißt: auf den Titel, der offen war.**
+                //
+                // Ohne Vorgabe sucht tvOS beim Wiedererscheinen selbst eine
+                // Kachel aus, und zwar oben im sichtbaren Ausschnitt — ein bis
+                // zwei Reihen über dem geöffneten Titel. Dieselbe Lösung wie
+                // in `HomeView`: gemerkter Titel, `userInitiated` sticht die
+                // Wahl des Systems. Beim ersten Öffnen ist nichts gemerkt,
+                // dann bleibt es beim Systemfokus.
+                .defaultFocus($amTitel, zuletztAmTitel,
+                              priority: zuletztAmTitel == nil ? .automatic : .userInitiated)
+                .onChange(of: amTitel) { _, jetzt in
+                    if let jetzt { zuletztAmTitel = jetzt }
+                }
             }
         }
+        // Eine andere Liste — der gemerkte Titel gehört nicht mehr dazu.
+        .onChange(of: stand.kennung) { zuletztAmTitel = nil }
+        .onChange(of: gewaehlt?.id) { zuletztAmTitel = nil }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(grundton.ignoresSafeArea())
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
@@ -102,7 +128,7 @@ struct BibliothekView: View {
         .ignoresSafeArea(edges: .horizontal)
         // Hinter der offenen Tafel ist nichts fokussierbar — siehe die
         // Detailseiten, dort war es derselbe Fehler.
-        .disabled(sortierwahlOffen)
+        .disabled(offeneTafel != nil)
         // **Rechts, unter ihrem Ausloeser** — nicht links am Rand.
         //
         // Sie hing an `.topLeading`, der Sortierknopf steht aber ganz rechts.
@@ -114,20 +140,31 @@ struct BibliothekView: View {
         // sichere Bereich ist oben abgeschaltet, damit `randSeite` nicht
         // doppelt zaehlt.
         .overlay(alignment: .topTrailing) {
-            if sortierwahlOffen {
-                Handlungstafel(handlungen: sortierhandlungen, offen: $sortierwahlOffen)
+            if offeneTafel == .sortierung {
+                Handlungstafel(handlungen: sortierhandlungen, offen: tafelBindung)
                     .padding(.trailing, Stil.randSeite)
                     .padding(.top, Stil.erstesEnde + 16)
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: sortierwahlOffen)
+        // Die Bibliothekskapsel steht vorn links — ihre Tafel also auch.
+        .overlay(alignment: .topLeading) {
+            if offeneTafel == .bibliothek {
+                Handlungstafel(handlungen: bibliothekshandlungen, offen: tafelBindung)
+                    .padding(.leading, Stil.randSeite)
+                    .padding(.top, Stil.erstesEnde + 16)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: offeneTafel)
         // Die Seite schaltet sich selbst ab, die Kopfleiste gehoert ihr aber
         // nicht — die muss `HauptView` stilllegen. Sonst stieg der Fokus aus
         // der offenen Tafel nach oben auf die Bereichsknoepfe.
-        .onChange(of: sortierwahlOffen) { _, offen in
-            tafelOffen.wrappedValue = offen
-            if !offen { amSortierknopf = true }
+        //
+        // Nach dem Schliessen zurueck auf die Kapsel, die sie geoeffnet hat.
+        .onChange(of: offeneTafel) { alt, neu in
+            tafelOffen.wrappedValue = neu != nil
+            if neu == nil, let alt { amAusloeser = alt }
         }
         // Wer die Seite mit offener Tafel verlaesst, liesse die Leiste tot
         // zurueck.
@@ -208,33 +245,47 @@ struct BibliothekView: View {
         }
     }
 
+    /// Die Bibliotheken dieser Gattung als Tafel. Die Namen kommen vom Server
+    /// und stehen **wörtlich** — siehe `Titelhandlung.wortlaut`.
+    private var bibliothekshandlungen: [Titelhandlung] {
+        auswahl.map { bib in
+            Titelhandlung(symbol: bib.id == gewaehlt?.id ? "checkmark.circle.fill" : "circle",
+                          wortlaut: bib.name) {
+                guard bib.id != gewaehlt?.id else { return }
+                model.bibliothekWaehlen(bib, art: art ?? "")
+                gewaehlt = bib
+                Task { await laden() }
+            }
+        }
+    }
+
+    /// `Handlungstafel` kennt nur offen oder zu; zu heisst hier: keine Tafel.
+    private var tafelBindung: Binding<Bool> {
+        Binding(get: { offeneTafel != nil },
+                set: { if !$0 { offeneTafel = nil } })
+    }
+
     // MARK: Teile
 
     private var chipreihe: some View {
         HStack(alignment: .center, spacing: 20) {
-            // **Die Bibliothekswahl steht vorn, und nur ab zwei.**
+            // **Die Bibliothek steht vorn, als Kapsel, und nur ab zwei** (D9).
             //
-            // Als Chips und nicht als Tafel wie die Sortierung: die Namen
-            // kommen vom Server und sind deshalb `String`, waehrend
-            // `Titelhandlung.text` ein `LocalizedStringKey` ist — eine
-            // Bibliothek namens „Filme" wuerde dort als Schluessel
-            // nachgeschlagen. Chips nehmen den Namen, wie er ist.
-            //
-            // Ein Server mit mehr als drei Bibliotheken derselben Gattung
-            // draengt die Reihe; das ist selten genug, um es abzuwarten.
+            // Vorher je Bibliothek ein Chip. Bei acht Bibliotheken fuellten
+            // die allein die Reihe, und zwei Chipsaetze mit verschiedener
+            // Bedeutung sahen gleich aus. Jetzt nennt die Kapsel die gewaehlte
+            // und klappt die uebrigen als Tafel auf — wie die Sortierung.
+            // Entwurf: `Gestaltung/Bibliothekswahl-tvOS`, Variante A2.
             if auswahl.count > 1 {
-                ForEach(auswahl) { bib in
-                    Button(bib.name) {
-                        guard bib.id != gewaehlt?.id else { return }
-                        model.bibliothekWaehlen(bib, art: art ?? "")
-                        gewaehlt = bib
-                        Task { await laden() }
-                    }
-                    .buttonStyle(ChipStil(an: bib.id == gewaehlt?.id))
+                Button { offeneTafel = .bibliothek } label: {
+                    Text(verbatim: gewaehlt?.name ?? "")
                 }
-                // Senkrechter Strich statt Abstand: zwei Chipsorten
-                // nebeneinander sehen sonst aus wie eine Reihe, und man
-                // sieht nicht, welche Frage welche ist.
+                .buttonStyle(KapselStil())
+                .focused($amAusloeser, equals: .bibliothek)
+                .accessibilityLabel(Text("Bibliothek, \(gewaehlt?.name ?? "")"))
+
+                // Senkrechter Strich statt Abstand: Wahl und Filter
+                // nebeneinander sehen sonst aus wie eine Reihe.
                 Rectangle()
                     .fill(Stil.rand)
                     .frame(width: 2, height: Stil.chipHoehe * 0.6)
@@ -255,16 +306,11 @@ struct BibliothekView: View {
                     .foregroundStyle(Stil.schriftSehrLeise)
             }
 
-            Button { sortierwahlOffen.toggle() } label: {
-                HStack(spacing: 14) {
-                    Text(stand.sortierung.beschriftung)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(Stil.schrift.opacity(0.6))
-                }
+            Button { offeneTafel = .sortierung } label: {
+                Text(stand.sortierung.beschriftung)
             }
-            .buttonStyle(KnopfStil(hoehe: Stil.chipHoehe))
-            .focused($amSortierknopf)
+            .buttonStyle(KapselStil())
+            .focused($amAusloeser, equals: .sortierung)
             .accessibilityLabel(Text("Sortierung, \(stand.sortierung.beschriftung)"))
         }
         .focusSection()
@@ -288,10 +334,11 @@ struct BibliothekView: View {
                                     offeneFolgen: item.userData?.unplayedItemCount))
                 }
                 .buttonStyle(KachelStil())
-                // Nachladen, sobald die drittletzte Reihe auftaucht — dann
-                // steht der Nachschub, bevor der Fokus unten ankommt.
+                .focused($amTitel, equals: item.id)
+                // Nachladen, sobald eine der letzten drei Reihen auftaucht —
+                // dann steht der Nachschub, bevor der Fokus unten ankommt.
                 .onAppear {
-                    guard item.id == stand.nachladenAb(spalten: Stil.gitterSpalten)
+                    guard stand.loestNachladenAus(item.id, spalten: Stil.gitterSpalten)
                     else { return }
                     Task { await stand.nachladen(model, art: art, bibliothek: bibliothek ?? gewaehlt) }
                 }

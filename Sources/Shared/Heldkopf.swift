@@ -270,7 +270,7 @@ struct Handlungstafel: View {
                         Image(systemName: paar.element.symbol)
                             .font(.system(size: 17))
                             .frame(width: 20)
-                        Text(paar.element.text)
+                        paar.element.beschriftung
                             .font(.system(size: 16))
                         Spacer(minLength: 0)
                     }

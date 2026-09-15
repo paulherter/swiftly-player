@@ -161,8 +161,8 @@ fun TvLeer(kopfzeile: String, text: String, symbol: ImageVector? = null, knopf: 
 }
 
 /**
- * Vorlage: `BibliothekView` auf tvOS. **Eine Chipreihe**: Bibliotheken (nur wenn es mehrere gibt),
- * dann die Filter; die Sortierung ist ein einzelner Knopf mit Tafel — vier Chips, von denen immer
+ * Vorlage: `BibliothekView` auf tvOS. **Eine Chipreihe**: die Bibliothek als Kapsel mit Tafel (nur
+ * wenn es mehrere gibt), dann die Filter; die Sortierung ist ebenfalls eine Kapsel mit Tafel — vier Chips, von denen immer
  * genau einer an ist, sind eine Auswahl, kein Filter. Kein Kopfblock: eine Bibliothek beschreibt
  * keinen einzelnen Titel.
  */
@@ -179,14 +179,21 @@ fun TvBibliothek(app: SwiftlyAnwendung, art: String, filter: List<String>, oeffn
         TvRaster(stand.items, { lauf.launch { stand.nachladen(app.kern) } }, fokus, oeffnen, laedt = stand.laedt, mitUnterzeile = false, kopf = {
             Column(Modifier.padding(top = kopfUnten + 14.dp, bottom = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // **Die Bibliothek als Kapsel, nur ab zwei** (D9) — die Namen kommen vom Server
+                    // und stehen wie sie sind. Die Tafel oeffnet wie die der Sortierung; der Fokus
+                    // kehrt ueber `Fokusmerker` auf die Kapsel zurueck.
                     if (stand.sammlungen.size > 1) {
-                        stand.sammlungen.forEach { s -> TvChip(s.name, stand.gewaehlt?.id == s.id) { stand.waehlen(s) } }
-                        Box(Modifier.size(1.dp, 20.dp).background(Stil.rand))
+                        TvKapsel(stand.gewaehlt?.name ?: "") {
+                            app.blatt.value = Blattwunsch(uebersetzt("Bibliothek"), stand.sammlungen.map { Wahl(it.id, it.name) }, stand.gewaehlt?.id) { id ->
+                                stand.sammlungen.firstOrNull { it.id == id }?.let { if (it.id != stand.gewaehlt?.id) stand.waehlen(it) }
+                            }
+                        }
+                        Box(Modifier.size(1.dp, 15.dp).background(Stil.rand))
                     }
                     filter.forEach { f -> TvChip(Wahlen.text(Wahlen.filter, f), stand.filter == f) { stand.filterSetzen(f) } }
                     Spacer(Modifier.weight(1f))
                     if (stand.gesamt > 0) Text(uebersetzt("%lld · sortiert nach", stand.gesamt), style = TvStil.klein, color = Stil.schriftLeise)
-                    TvKnopf(Wahlen.text(Wahlen.sortierungen, stand.sortierung), Icons.Filled.KeyboardArrowDown, hoehe = TvStil.chipHoehe + 6.dp, symbolNachText = true) {
+                    TvKapsel(Wahlen.text(Wahlen.sortierungen, stand.sortierung)) {
                         app.blatt.value = Blattwunsch(uebersetzt("Sortieren"), Wahlen.sortierungen, stand.sortierung) { stand.sortierungSetzen(it) }
                     }
                 }

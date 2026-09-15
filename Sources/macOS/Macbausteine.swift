@@ -608,7 +608,7 @@ struct Handlungszeile: View {
                 Image(systemName: handlung.symbol)
                     .font(.system(size: 14))
                     .frame(width: 18)
-                Text(handlung.text).font(Stil.koerper)
+                handlung.beschriftung.font(Stil.koerper)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(handlung.warnend ? Stil.warnung : Stil.schrift)
