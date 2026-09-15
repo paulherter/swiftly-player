@@ -4,12 +4,12 @@
 
 # Swiftly Player
 
-**A native Jellyfin client for iPhone, iPad, Apple TV, Mac, Linux and Windows.**
+**A native Jellyfin client for iPhone, iPad, Apple TV, Mac, Android, Linux and Windows.**
 It never transcodes — every file plays as Direct Play or Direct Stream.
 
 <br>
 
-[![Plattformen](https://img.shields.io/badge/iOS_·_iPadOS_·_tvOS_·_macOS_·_Linux_·_Windows-1E1E22?style=flat-square&labelColor=1E1E22)](#-platforms)
+[![Plattformen](https://img.shields.io/badge/iOS_·_iPadOS_·_tvOS_·_macOS_·_Android_·_Linux_·_Windows-1E1E22?style=flat-square&labelColor=1E1E22)](#-platforms)
 &nbsp;
 [![Lizenz](https://img.shields.io/badge/MPL--2.0-1E1E22?style=flat-square&labelColor=1E1E22)](LICENSE)
 &nbsp;
@@ -22,6 +22,8 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 [![Download on the App Store](https://img.shields.io/badge/Download_on_the_App_Store-5CD1C2?style=for-the-badge&logo=apple&logoColor=FFFFFF)](https://apps.apple.com/app/id6806824067)
 &nbsp;
 [![Join the beta on TestFlight](https://img.shields.io/badge/Join_the_beta-1E1E22?style=for-the-badge&logo=apple&logoColor=5CD1C2)](https://testflight.apple.com/join/MqeP2cnj)
+&nbsp;
+[![Join the Android beta on Google Play](https://img.shields.io/badge/Android_beta-1E1E22?style=for-the-badge&logo=googleplay&logoColor=5CD1C2)](#-android)
 &nbsp;
 [![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=5CD1C2)](#-windows)
 &nbsp;
@@ -44,7 +46,8 @@ underneath, it works hard **never to make your server transcode**, so the
 picture stays untouched and your CPU stays cool.
 
 If you came here looking for a **Jellyfin app for iPhone or iPad**, a
-**Jellyfin client for Apple TV**, a **native Jellyfin player for macOS**, or a
+**Jellyfin client for Apple TV**, a **native Jellyfin player for macOS**, a
+**Jellyfin app for Android**, or a
 **Jellyfin desktop client for Linux or Windows** — that is all one app, and
 this is it. Picture in Picture, Direct Play without transcoding, several
 accounts on one server, and handing a running film from one device to the
@@ -86,7 +89,8 @@ badge next to your profile picture. **Tap it, and the film carries on here,
 from the same second.** The television stops on its own; you do not pause
 anything, you do not scroll to find where you were.
 
-It works in every direction: TV to phone, phone to Mac, Mac to TV. If two of
+It works in every direction: TV to phone, phone to Mac, Mac to TV — Android
+phones included. If two of
 your devices are playing, Swiftly asks which one you meant. Only your own
 account is offered, and only devices that are actually reachable.
 
@@ -158,7 +162,7 @@ the question, and the app simply respects the answer.
   device except the requests to the server you enter yourself.
 - **Free and open source**, MPL-2.0.
 
-<sub>1 Apple TV · 2 iPhone, iPad · 3 Linux, Windows, Mac</sub>
+<sub>1 Apple TV · 2 iPhone, iPad, Android · 3 Linux, Windows, Mac</sub>
 
 <br>
 
@@ -170,10 +174,12 @@ and only where distance, input or window size demand it.
 
 | Platform | State |
 |---|---|
-| 📱 iPhone | **1.0.1** on the App Store · 1.0.2 in review |
-| 📲 iPad | **1.0.1** on the App Store · ships with the iPhone app |
-| 📺 Apple TV | **1.0.1** on the App Store · 1.0.2 in review |
-| 💻 Mac | **1.0.1** on the App Store · 1.0.2 in review |
+| 📱 iPhone | **1.0.2** on the App Store · next build on TestFlight |
+| 📲 iPad | **1.0.2** on the App Store · ships with the iPhone app |
+| 📺 Apple TV | **1.0.2** on the App Store |
+| 💻 Mac | **1.0.2** on the App Store |
+| 🤖 Android | **1.0.3** beta on Google Play · [join](#-android) |
+| 📺 Android TV | in development |
 | 🐧 Linux | **1.0.2** · [install](#-linux) |
 | 🪟 Windows | **1.0.2** · [download](#-windows) |
 
@@ -187,12 +193,52 @@ things rather than "have a look around".
 
 <br>
 
+## 🤖 Android
+
+**The Android app is in beta on Google Play**, for phones with Android 9 or
+newer. It is the same app as on the iPhone: Direct Play through libVLC,
+downloads for offline viewing, continue on this device, several accounts,
+Seerr requests, skip intro, Picture in Picture and Quick Connect.
+
+Joining takes about two minutes. **Use the same Google account for every
+step** — the one signed in to the Play Store on your phone.
+
+1. **Join the tester group** —
+   [groups.google.com/g/swiftly-beta](https://groups.google.com/g/swiftly-beta),
+   then *Join group*. You will not receive any emails.
+2. **Become a tester** —
+   [play.google.com/apps/testing/de.paulherter.swiftly](https://play.google.com/apps/testing/de.paulherter.swiftly),
+   then *Become a tester*.
+3. **Install** — *Download it on Google Play* on that same page, or search for
+   Swiftly Player in the Play Store.
+
+<details>
+<summary>The app does not show up</summary>
+
+- It can take up to 15 minutes after step 2 before the Play Store lists it.
+- *Item not found* almost always means a different Google account. Tap your
+  profile picture in the Play Store, check which account it uses, and repeat
+  steps 1 and 2 with that one.
+- Several Google accounts on the phone: open both links in a browser where only
+  that account is signed in.
+
+</details>
+
+**Why joining now helps.** Google lets a new app go public only after at least
+12 testers have been in its test for 14 days. Every tester counts towards that.
+Updates arrive through the Play Store like for any other app; bugs and feedback
+go to the [Discord](https://discord.gg/MeGwfv3UwN).
+
+**Android TV** is being built from the Apple TV app, screen by screen, and
+follows after the phone.
+
+<br>
+
 ## 🐧 Linux
 
-> **The Linux build still says Swiftly for Jellyfin.** The app was renamed to
-> **Swiftly Player** in September 2026; the Apple builds carry the new name
-> already, the desktop packages are being rebuilt. What is offered here still
-> works — it is the shipped 1.0.0.
+> **Renamed in September 2026.** The app used to be called Swiftly for
+> Jellyfin. The packages keep the name `swiftly-jellyfin`, so the commands
+> below are unchanged.
 >
 > **If you added the package source before the rename**, the address moved.
 > Point it at the new one — it is one line, and updates keep arriving with your
@@ -289,10 +335,7 @@ transcodes" rests on.
 
 ## 🪟 Windows
 
-> **The Windows build still says Swiftly for Jellyfin** and is being rebuilt
-> under the new name. The installer below is the shipped 1.0.0 and works.
-
-**[Download Swiftly-1.0.0-Setup.exe](https://github.com/paulherter/swiftly-player/releases/download/v1.0.0/Swiftly-1.0.0-Setup.exe)** — 80 MB, Windows 10 and 11, 64-bit.
+**[Download Swiftly-1.0.2-Setup.exe](https://github.com/paulherter/swiftly-player/releases/download/v1.0.2/Swiftly-1.0.2-Setup.exe)** — 81 MB, Windows 10 and 11, 64-bit. It installs over an older version.
 
 The installer puts Swiftly where it belongs: Program Files (or your own folder
 if you run it without admin rights — you choose in the dialog), a Start menu
@@ -306,7 +349,7 @@ code-signing certificate. Jellyfin's own desktop app is in exactly the same
 position. The checksum below is there so you can verify what you downloaded:
 
 ```
-SHA256  2a8a30616de1399fb5643fa8ae0118f9c828eb352b1a6cd7f0e6c3dbc9899b3f
+SHA256  20c3cd13a8f861ebb8f351e334be7b8c62c0a8954dac5bc9304979bcfc4995cd
 ```
 
 **It is the same program as on Linux** — the same 8,900 lines of interface,
@@ -333,7 +376,7 @@ installer, so there is nothing else to install.
 - Your own Jellyfin server, **10.8 or newer**. Swiftly Player hosts
   nothing and has no account of its own — you sign in with the credentials you
   already have.
-- iOS 18, tvOS 18 or macOS 15 — or a Linux desktop with GTK 4 and libVLC,
+- iOS 18, tvOS 18, macOS 15 or Android 9 — or a Linux desktop with GTK 4 and libVLC,
   which the installer takes care of.
 
 <br>
@@ -343,7 +386,7 @@ installer, so there is nothing else to install.
 The Discord is the fastest way: **https://discord.gg/MeGwfv3UwN** — there are
 channels for bug reports and feature requests, and a beta chat.
 
-If you are on the TestFlight build, the release notes name the handful of
+If you are on a TestFlight or Google Play beta build, the release notes name the handful of
 things that changed since the last one. Reports against those are worth the
 most, because they can be traced to a specific change.
 
@@ -370,8 +413,8 @@ The code is licensed under the **Mozilla Public License 2.0** — see
 [LICENSE](LICENSE). In short: you may use, change and redistribute it, and if
 you change these files you publish your changes too.
 
-**The name and the artwork are not covered by that license.** "Swiftly for
-Jellyfin", the wordmark and the app icon remain the author's. You are welcome
+**The name and the artwork are not covered by that license.** "Swiftly
+Player" (formerly "Swiftly for Jellyfin"), the wordmark and the app icon remain the author's. You are welcome
 to fork the code; please do not ship the result under this name or with this
 icon.
 
