@@ -38,6 +38,7 @@ import de.paulherter.swiftly.*
 import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.gemeinsam.Wortmarke
 import de.paulherter.swiftly.gemeinsam.uebersetzt
+import kotlinx.coroutines.future.await
 import kotlinx.coroutines.delay
 
 /**
@@ -67,6 +68,7 @@ fun TvHaupt(app: SwiftlyAnwendung) {
         app.seerrLaden()
         app.servernameLaden()
         app.nachDemVerbinden()
+        app.kern.fernsteuerungStarten().await()
     }
     val spiel = app.spiel.value
     LaunchedEffect(spiel) { if (spiel != null) kontext.startActivity(Intent(kontext, PlayerAktivitaet::class.java),

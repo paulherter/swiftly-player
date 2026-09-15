@@ -272,6 +272,8 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     }
 
     private fun zwischenstaendeLeeren() {
+        // Der Socket gehoert dem vorigen Konto; die Hauptansicht startet ihn fuer das neue.
+        lauf.launch { runCatching { kern.fernsteuerungBeenden().await() } }
         startReihen = null
         bibliotheken.clear(); titelSpeicher.clear(); serienSpeicher.clear(); folgenSpeicher.clear(); personenSpeicher.clear()
         servername.value = null

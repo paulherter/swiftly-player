@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.gemeinsam.uebersetzt
+import kotlinx.coroutines.future.await
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
@@ -95,6 +96,8 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
         app.downloads.kontoSetzen(app.kontoKennung())
         app.servernameLaden()
         app.nachDemVerbinden()
+        // Fernsteuerung: Knoepfe im Dashboard, und andere Geraete sehen diese Sitzung zum Uebernehmen.
+        app.kern.fernsteuerungStarten().await()
     }
     // „Hier weiterschauen": alle fuenf Sekunden, solange die App vorn ist — gesucht wird eine Sitzung,
     // die es vorher nicht gab, und die soll nicht zehn Sekunden auf sich warten lassen.

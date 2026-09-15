@@ -31,6 +31,9 @@ public final class Kern: @unchecked Sendable {
     private var _zaehlwerk: Zaehlwerk?
     /// Seerr — ein Bonus: ohne Zugang gibt es keinen Client, und nichts auf den Seiten deutet darauf hin.
     private var _seerr: SeerrClient?
+    /// Der Socket, ueber den Jellyfin Befehle schickt — ohne ihn keine Knoepfe im Dashboard.
+    private var _fern: Fernsteuerung?
+    private let fernablage = Befehlsablage()
     private var _immerDirectPlay = true
     private var _megabit = 0
 
@@ -816,6 +819,37 @@ public final class Kern: @unchecked Sendable {
         Auffrischung.faelligBeiRueckkehr(zuletzt: zuletztMs > 0 ? Date(timeIntervalSince1970: Double(zuletztMs) / 1000) : nil)
     }
 
+    // MARK: Fernsteuerung
+
+    /// **Faehigkeiten melden und zuhoeren** — `AppModel.fernsteuerungStarten`. Beides ist noetig:
+    /// ohne Meldung bleiben die Knoepfe im Dashboard grau, ohne Socket kommen die Befehle nie an.
+    /// Und ohne beides liefert `Sessions?controllableByUserId` diese Sitzung nicht — kein anderes
+    /// Geraet bietet dann „Hier weiterschauen" an.
+    public func fernsteuerungStarten() async {
+        sperre.lock(); let c = _client; let schon = _fern != nil; sperre.unlock()
+        guard let c, !schon else { return }
+        try? await c.faehigkeitenMelden()
+        guard let steuerung = try? await c.fernsteuerung() else { return }
+        sperre.lock()
+        if _fern != nil { sperre.unlock(); return }
+        _fern = steuerung
+        sperre.unlock()
+        let ablage = fernablage
+        await steuerung.starten { befehl in ablage.ablegen(befehl) }
+    }
+
+    /// Beim Abmelden und Kontowechsel — zuerst vergessen, damit ein neuer Start nicht an der alten haengt.
+    public func fernsteuerungBeenden() async {
+        sperre.lock(); let alt = _fern; _fern = nil; sperre.unlock()
+        await alt?.beenden()
+        _ = fernablage.abholen()
+    }
+
+    /// Was seit dem letzten Abholen ankam — der Player holt es in seinem Takt ab.
+    public func fernbefehle() -> String {
+        Self.kodiert(fernablage.abholen())
+    }
+
     // MARK: Hier weiterschauen
 
     /// Was auf einem anderen Geraet desselben Kontos laeuft und sich uebernehmen laesst — die Regel
@@ -1315,3 +1349,36 @@ struct Platzantwort: Encodable {
 struct Downloadgruppenantwort: Encodable { let id, titel: String; let bytes: Int64; let serienId: String?; let folgen: [String] }
 struct Planantwort: Encodable { let lossless: Bool; let methode: String }
 struct Angebotantwort: Encodable { let id, itemID: String; let geraet: String?; let art, titelzeile: String; let stelle: Double; let stelleText: String }
+
+struct Fernbefehlantwort: Encodable { let art: String; let wert: Double? }
+
+/// Nimmt Befehle aus dem Socket entgegen, bis der Player sie abholt. Eigene Sperre — der Socket ruft
+/// von seinem eigenen Faden aus.
+final class Befehlsablage: @unchecked Sendable {
+    private let sperre = NSLock()
+    private var befehle: [Fernbefehlantwort] = []
+
+    func ablegen(_ befehl: Fernbefehl) {
+        let eintrag: Fernbefehlantwort
+        switch befehl {
+        case .pause: eintrag = .init(art: "pause", wert: nil)
+        case .weiter: eintrag = .init(art: "weiter", wert: nil)
+        case .umschalten: eintrag = .init(art: "umschalten", wert: nil)
+        case .stopp: eintrag = .init(art: "stopp", wert: nil)
+        case let .springenAuf(s): eintrag = .init(art: "springen", wert: s)
+        case .vor: eintrag = .init(art: "vor", wert: nil)
+        case .zurueck: eintrag = .init(art: "zurueck", wert: nil)
+        case .naechste: eintrag = .init(art: "naechste", wert: nil)
+        case .vorige: eintrag = .init(art: "vorige", wert: nil)
+        default: return
+        }
+        sperre.lock(); befehle.append(eintrag); if befehle.count > 20 { befehle.removeFirst() }; sperre.unlock()
+    }
+
+    func abholen() -> [Fernbefehlantwort] {
+        sperre.lock(); defer { sperre.unlock() }
+        let alle = befehle
+        befehle = []
+        return alle
+    }
+}

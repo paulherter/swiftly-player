@@ -432,6 +432,23 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
         }
         while (true) {
             delay(500)
+            // **Befehle aus dem Dashboard oder von einem anderen Geraet** — der Socket legt sie ab.
+            runCatching { JSONArray(app.kern.fernbefehle()) }.getOrNull()?.let { a ->
+                for (i in 0 until a.length()) {
+                    val b = a.getJSONObject(i)
+                    when (b.optString("art")) {
+                        "pause" -> if (spieler.isPlaying) umschalten()
+                        "weiter" -> if (!spieler.isPlaying) umschalten()
+                        "umschalten" -> umschalten()
+                        "stopp" -> { beenden(); return@LaunchedEffect }
+                        "springen" -> springe(b.optDouble("wert", position))
+                        "vor" -> springe(position + vorS)
+                        "zurueck" -> springe(position - zurueckS)
+                        "naechste" -> if (plan?.naechste == true) naechsteFolge()
+                        "vorige" -> springe(0.0)
+                    }
+                }
+            }
             val laenge = (spieler.length / 1000.0).coerceAtLeast(0.0)
             val antwort = JSONObject(app.kern.wiedergabeTakt(
                 laenge, (spieler.time / 1000.0).coerceAtLeast(0.0), zeigtBild[0], spieler.isPlaying,
