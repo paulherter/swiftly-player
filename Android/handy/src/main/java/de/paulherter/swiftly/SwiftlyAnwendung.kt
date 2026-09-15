@@ -86,6 +86,54 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         runCatching { org.json.JSONObject(it).optString("adresse") }.getOrNull()
     }
 
+    /** Downloads — die Liste lebt so lange wie die App, wie `Downloadverwaltung` auf iOS. */
+    val downloads by lazy { Downloadverwaltung(this) }
+
+    /** Die `userID` des geltenden Kontos — H11: Downloads und Nachmeldungen haengen daran. */
+    fun kontoKennung(): String = ablage.konten?.let { Kern.bundAktives(it) }?.let {
+        runCatching { org.json.JSONObject(it).optString("userID") }.getOrNull()
+    }.orEmpty()
+
+    /** Ende der Wiedergabe melden; scheitert es, wird die Stelle abgelegt und spaeter nachgemeldet (H8). */
+    fun wiedergabeBeenden(position: Double) {
+        lauf.launch {
+            val meldung = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.wiedergabeBeenden(position).await() }
+            }.getOrDefault("")
+            if (meldung.isNotEmpty()) ablage.merken(NACHMELDUNGEN, Kern.nachmeldungAufnehmen(ablage.merkwert(NACHMELDUNGEN) ?: "[]", meldung))
+        }
+    }
+
+    /**
+     * **Nach einer erfolgreichen Verbindung** — der einzige Punkt, an dem der Server nachweislich da ist:
+     * Liegengebliebenes abschicken, dann Gesehen und „noch auf dem Server" der Downloads nachziehen.
+     */
+    suspend fun nachDemVerbinden() {
+        if (servername.value == null) return
+        val roh = ablage.merkwert(NACHMELDUNGEN) ?: "[]"
+        if (roh != "[]") runCatching { kern.nachmeldungenAbschicken(roh).await() }.getOrNull()?.let { ablage.merken(NACHMELDUNGEN, it) }
+        downloads.nachziehen()
+    }
+
+    /** Posten beim Kern holen, dann das Ladeblatt — was schon da ist, faellt vorher heraus. */
+    fun downloadsAnlegen(ids: List<String>, titel: String) {
+        lauf.launch {
+            val roh = runCatching { kern.downloadPosten(ids.toTypedArray()).await() }.getOrNull() ?: return@launch
+            val a = org.json.JSONArray(roh)
+            val neue = mutableListOf<Downloadposten>()
+            val bilder = mutableMapOf<String, String>()
+            for (i in 0 until a.length()) {
+                val o = a.getJSONObject(i)
+                val p = Downloadposten.lesen(o.getJSONObject("posten"))
+                if (downloads.posten(p.id) != null) continue
+                neue += p
+                o.feldText("bild")?.let { bilder[p.id] = it }
+                p.serienId?.let { sid -> o.feldText("serienbild")?.let { bilder[sid] = it } }
+            }
+            if (neue.isNotEmpty()) ladeblattZeigen(this@SwiftlyAnwendung, neue, bilder, titel)
+        }
+    }
+
     /** Gattung, Sortierung und die geladenen Titel der Merkliste. */
     val merkliste by lazy { Merklistenstand(ablage) }
 
@@ -226,6 +274,8 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         const val BuildConfigFassung = "1.0.3"
         /** `Fassung.zeile` auf iOS. */
         const val FASSUNGSZEILE = "Swiftly Player 1.0.3 (Build 1)"
+        /** Derselbe Schluessel wie in `UserDefaults` auf iOS. */
+        const val NACHMELDUNGEN = "nachmeldungen"
     }
 }
 

@@ -84,6 +84,10 @@ class Einstellungen(ablage: Ablage) {
     var startGenres by Merkwert(a, "startGenres", liste("startGenres"), alsListe)
     /** Genres als Chips ueber den Reihen statt als eigene Reihen — nie beides. */
     var genreChips by Merkwert(a, "genreChips", bool("genreChips", false), jaNein)
+    /** H1: aus, bis jemand es will. */
+    var downloadsAn by Merkwert(a, "downloadsAn", bool("downloadsAn", false), jaNein)
+    /** H5: Originaldateien sind gross — ueber Mobilfunk wird gewartet. */
+    var nurUeberWLAN by Merkwert(a, "nurUeberWLAN", bool("nurUeberWLAN", true), jaNein)
     var pufferstufe by Merkwert(a, "pufferstufe", a.merkwert("pufferstufe") ?: "normal") { it }
     var zurueckSekunden by Merkwert(a, "zurueckSek", zahl("zurueckSek", 10)) { it.toString() }
     var vorSekunden by Merkwert(a, "vorSek", zahl("vorSek", 30)) { it.toString() }

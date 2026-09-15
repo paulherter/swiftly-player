@@ -172,6 +172,8 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
                     Aktionsknopf(if (gemerkt) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder, uebersetzt("Merkliste"), gemerkt) {
                         umschalten(!gemerkt, { gemerkt = it }, { app.kern.merken(ziel.id, it).await() }) { alt, an -> alt.copy(gemerkt = an) }
                     }
+                    // Das fuenfte Feld, nur wenn die Funktion an ist — neben der Merkliste: das Paar „fuer spaeter".
+                    if (app.einstellungen.downloadsAn && t?.typ != "Series") Downloadfeld(app, ziel.id, name)
                     // Der Trailer vom Server laeuft auf iOS im eigenen Player — der folgt; bis dahin der fremde.
                     Aktionsknopf(Icons.Outlined.Movie, uebersetzt("Trailer"), false) {
                         val adresse = t?.trailer

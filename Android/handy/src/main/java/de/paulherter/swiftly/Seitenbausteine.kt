@@ -12,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -351,6 +352,8 @@ class Blattwunsch(val titel: String, val eintraege: List<Wahl>, val gewaehlt: St
                   val gesperrt: Map<String, String> = emptyMap(),
                   val abschlussText: (Int) -> String = { "" },
                   val abschluss: ((Set<String>) -> Unit)? = null,
+                  /** Eigener Inhalt statt der Zeilen — das Ladeblatt hat Werte und Knoepfe, keine Wahl. */
+                  val inhalt: (@Composable ColumnScope.(schliessen: () -> Unit) -> Unit)? = null,
                   val waehlen: (String) -> Unit)
 
 /**
@@ -427,6 +430,8 @@ private fun Blattkarte(w: Blattwunsch, zug: Animatable<Float, AnimationVector1D>
              color = Stil.schrift, maxLines = 1,
              modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 5.dp, bottom = 14.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
+        val eigen = w.inhalt
+        if (eigen != null) eigen(schliessen) else {
         // So hoch wie die Eintraege, hoechstens 340.
         Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
             w.eintraege.forEach { e ->
@@ -467,6 +472,7 @@ private fun Blattkarte(w: Blattwunsch, zug: Animatable<Float, AnimationVector1D>
         } else {
             Text(uebersetzt("Abbrechen"), style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),
                  color = Stil.schriftLeise, modifier = Modifier.fillMaxWidth().druckzeile(schliessen).padding(vertical = 17.dp))
+        }
         }
     }
 }

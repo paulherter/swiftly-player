@@ -680,18 +680,28 @@ public final class Kern: @unchecked Sendable {
 
     /// Beendet — muss auch beim Schliessen kommen, sonst haengt die Sitzung im Dashboard. Ob der
     /// Titel als gesehen gilt, entscheidet der Server aus der gemeldeten Stelle.
-    public func wiedergabeBeenden(position: Double) {
-        sperre.lock(); let w = _wiedergabe; let c = _client; _wiedergabe = nil; sperre.unlock()
-        guard let w, let c else { return }
+    /// Leer heisst: gemeldet. Sonst die Nachmeldung als JSON — **hier entsteht die Angabe, fuer die
+    /// es Downloads gibt**: wo jemand im Flugzeug aufgehoert hat. Kotlin legt sie ab (H8).
+    public func wiedergabeBeenden(position: Double) async -> String {
+        sperre.lock(); let w = _wiedergabe; let c = _client; let s = _sitzung; _wiedergabe = nil; sperre.unlock()
+        guard let w else { return "" }
         let ticks = JellyfinClient.ticks(fromSeconds: position)
-        Task { try? await c.reportStopped(itemID: w.item.id, plan: w.plan, positionTicks: ticks) }
+        do {
+            guard let c else { throw URLError(.notConnectedToInternet) }
+            try await c.reportStopped(itemID: w.item.id, plan: w.plan, positionTicks: ticks)
+            return ""
+        } catch {
+            guard let konto = s?.userID else { return "" }
+            return Self.kodiert(Nachmeldung(itemID: w.item.id, konto: konto, ticks: ticks))
+        }
     }
 
     /// Zur naechsten Folge: die alte beenden, die neue oeffnen.
     public func naechsteFolgeOeffnen(position: Double) async throws -> String {
         sperre.lock(); let naechste = _wiedergabe?.naechste; sperre.unlock()
         guard let naechste else { throw URLError(.resourceUnavailable) }
-        wiedergabeBeenden(position: position)
+        // Eine naechste Folge gibt es nur mit Server — offline ist `naechste` leer.
+        _ = await wiedergabeBeenden(position: position)
         return try await wiedergabeOeffnen(id: naechste.id)
     }
 
@@ -762,6 +772,152 @@ public final class Kern: @unchecked Sendable {
             vorratSekunden: jeSekunde.flatMap { $0 > 0 ? Double(werk.vorratBytes) / $0 : nil },
             vorratKiB: werk.vorratBytes / 1024, verworfen: roh.verworfen, tonVerloren: roh.tonVerloren,
             beschaedigt: roh.beschaedigt, spruenge: roh.spruenge))) ?? "{}"
+    }
+
+    // MARK: Downloads
+
+    /// Posten fuer einen Download, samt der Bilder, die mit auf die Platte kommen. **Dieselbe Quelle,
+    /// die der Player naehme** (H2) — die erste des Titels, sonst die aus dem Abspielplan.
+    public func downloadPosten(ids: [String]) async -> String {
+        sperre.lock(); let c = _client; let a = _adressen; let s = _sitzung; sperre.unlock()
+        guard let c, let a, let konto = s?.userID else { return "[]" }
+        let grenze = profilBitrate
+        var geholt: [String: (Item, MediaSource?)] = [:]
+        await withTaskGroup(of: (String, Item, MediaSource?)?.self) { gruppe in
+            for id in ids {
+                gruppe.addTask {
+                    guard let i = try? await c.item(id: id) else { return nil }
+                    if let q = i.mediaSources?.first { return (id, i, q) }
+                    let plan = (try? await c.playbackPlan(for: id, profile: .vlc(maxBitrate: grenze))) ?? nil
+                    return (id, i, plan?.quelle)
+                }
+            }
+            for await r in gruppe { if let r { geholt[r.0] = (r.1, r.2) } }
+        }
+        var antwort: [Downloadantwort] = []
+        for id in ids {
+            guard let (i, q) = geholt[id] else { continue }
+            let folge = i.type == "Episode"
+            let posten = Downloadposten(
+                id: i.id, konto: konto, art: folge ? .folge : .film, titel: i.name,
+                serie: folge ? i.seriesName : nil, serienId: folge ? i.seriesId : nil,
+                staffel: folge ? i.parentIndexNumber : nil, folge: folge ? i.indexNumber : nil,
+                laufzeitTicks: i.runTimeTicks, container: q?.container, quelle: q?.id, bytes: q?.size ?? 0,
+                gesehen: i.userData?.played ?? false)
+            let bild: URL? = folge ? await c.imageURL(for: i, maxHeight: 220)
+                                   : a.bauen(itemID: i.id, marke: i.imageTags?["Primary"], mass: .hoechstensHoch(600))
+            let serienbild: URL? = folge ? i.seriesId.flatMap { a.bauen(itemID: $0, marke: nil, mass: .hoechstensHoch(600)) } : nil
+            antwort.append(Downloadantwort(posten: posten, bild: bild?.absoluteString, serienbild: serienbild?.absoluteString))
+        }
+        return Self.kodiert(antwort)
+    }
+
+    /// Dieselbe Adresse wie beim Streamen, ohne Sitzung — sonst stuende das Geraet am Server als
+    /// „spielt gerade" da. Nicht `/Items/{id}/Download`: das braucht ein eigenes Recht.
+    public func downloadAdresse(id: String, quelle: String) async throws -> String {
+        guard let c = client else { throw Kernfehler.nichtVerbunden }
+        return try await c.downloadURL(itemID: id, mediaSourceID: quelle.isEmpty ? nil : quelle).absoluteString
+    }
+
+    private static func postenLesen(_ roh: String) -> [Downloadposten] {
+        (try? JSONDecoder().decode([Downloadposten].self, from: Data(roh.utf8))) ?? []
+    }
+
+    public static func downloadNaechster(liste: String, imWLAN: Bool, nurUeberWLAN: Bool) -> String {
+        Downloadregeln.naechster(aus: postenLesen(liste), imWLAN: imWLAN, nurUeberWLAN: nurUeberWLAN)?.id ?? ""
+    }
+
+    public static func downloadDarfLaden(imWLAN: Bool, nurUeberWLAN: Bool) -> Bool {
+        Downloadregeln.darfLaden(imWLAN: imWLAN, nurUeberWLAN: nurUeberWLAN)
+    }
+
+    public static func downloadPlatz(bytes: Int64, frei: Int64, liste: String) -> String {
+        let p = Downloadregeln.platz(fuer: bytes, frei: frei, vorhanden: postenLesen(liste))
+        return kodiert(Platzantwort(reicht: p.reicht, freiDanach: p.freiDanach, entbehrlich: p.entbehrlich.map(\.id),
+                                    entbehrlichBytes: p.entbehrlichBytes, reichtNachAufraeumen: p.reichtNachAufraeumen))
+    }
+
+    /// H12: eine Serie ist eine Zeile.
+    public static func downloadGruppen(liste: String) -> String {
+        kodiert(Downloadregeln.gruppiert(postenLesen(liste)).map { g -> Downloadgruppenantwort in
+            switch g {
+            case let .einzeln(p): Downloadgruppenantwort(id: g.id, titel: g.titel, bytes: g.bytes, serienId: nil, folgen: [p.id])
+            case let .serie(sid, _, f): Downloadgruppenantwort(id: g.id, titel: g.titel, bytes: g.bytes, serienId: sid, folgen: f.map(\.id))
+            }
+        })
+    }
+
+    public static func downloadGroesse(bytes: Int64) -> String { Downloadregeln.groesse(bytes) }
+
+    /// Gesehen und „noch auf dem Server" nachziehen. **Ohne Antwort bleibt alles, wie es war** —
+    /// unterwegs antwortet kein Server, und sonst stuende an jedem Titel „nicht mehr auf dem Server".
+    public func downloadsNachziehen(liste: String) async -> String {
+        guard let c = client else { return liste }
+        var posten = Self.postenLesen(liste)
+        guard !posten.isEmpty else { return liste }
+        let ids = posten.map(\.id)
+        var vorhanden: Set<String> = []
+        var gesehen: Set<String> = []
+        for ab in stride(from: 0, to: ids.count, by: 100) {
+            let stueck = Array(ids[ab ..< min(ab + 100, ids.count)])
+            guard let antwort = try? await c.items(limit: stueck.count, ids: stueck) else { return liste }
+            for t in antwort.items {
+                vorhanden.insert(t.id)
+                if t.istGesehen { gesehen.insert(t.id) }
+            }
+        }
+        for i in posten.indices {
+            posten[i].nochAufDemServer = vorhanden.contains(posten[i].id)
+            if vorhanden.contains(posten[i].id) { posten[i].gesehen = gesehen.contains(posten[i].id) }
+        }
+        return Self.kodiert(posten)
+    }
+
+    /// Wiedergabe von der Platte — **vor jedem Server**, damit im Flugzeug kein Zeitlimit wartet.
+    /// `bild` ist die abgelegte Datei fuer die Mediensteuerung.
+    public func wiedergabeVonDerPlatte(posten: String, pfad: String, bild: String) throws -> String {
+        let p = try JSONDecoder().decode(Downloadposten.self, from: Data(posten.utf8))
+        let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: pfad), container: p.container, mediaSourceID: p.quelle)
+        let item = p.alsItem
+        let w = Wiedergabe(item: item, plan: plan, abschnitte: [], naechste: nil)
+        sperre.lock(); _wiedergabe = w; sperre.unlock()
+        return try json(Spielplanantwort(
+            url: plan.url.absoluteString, lossless: plan.isLossless, methode: plan.method.rawValue,
+            titel: item.name,
+            untertitel: [item.seriesName, item.folgenkuerzel].compactMap { $0 }.joined(separator: " · "),
+            naechste: false, serie: item.seriesName, kuerzel: item.folgenkuerzel,
+            bild: bild.isEmpty ? nil : bild))
+    }
+
+    // MARK: Nachmeldungen
+
+    private static func nachmeldungenLesen(_ roh: String) -> [Nachmeldung] {
+        (try? JSONDecoder().decode([Nachmeldung].self, from: Data(roh.utf8))) ?? []
+    }
+
+    /// Eine je Titel und Konto; die neuere gewinnt.
+    public static func nachmeldungAufnehmen(ablage: String, meldung: String) -> String {
+        guard let m = try? JSONDecoder().decode(Nachmeldung.self, from: Data(meldung.utf8)) else { return ablage }
+        return kodiert(Nachmelderegeln.aufnehmen(m, in: nachmeldungenLesen(ablage)))
+    }
+
+    /// Nach einer erfolgreichen Verbindung. **Beim ersten Fehler abbrechen** — dann ist der Server
+    /// wieder weg, und die uebrigen stuenden danach als verloren da.
+    public func nachmeldungenAbschicken(ablage: String) async -> String {
+        sperre.lock(); let c = _client; let s = _sitzung; sperre.unlock()
+        let alle = Self.nachmeldungenLesen(ablage)
+        guard let c, let konto = s?.userID else { return ablage }
+        let offen = Nachmelderegeln.faellig(alle, konto: konto)
+        guard !offen.isEmpty else { return ablage }
+        var geschafft: [String] = []
+        for m in offen {
+            let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: "/"), container: nil)
+            do {
+                try await c.reportStopped(itemID: m.itemID, plan: plan, positionTicks: m.ticks)
+                geschafft.append(m.id)
+            } catch { break }
+        }
+        return Self.kodiert(Nachmelderegeln.erledigt(geschafft, in: alle))
     }
 
     // MARK: Seerr
@@ -1072,3 +1228,13 @@ struct Kachelantwort: Encodable {
     let quer: String?
     let fortschritt: Double?
 }
+
+struct Downloadantwort: Encodable { let posten: Downloadposten; let bild, serienbild: String? }
+struct Platzantwort: Encodable {
+    let reicht: Bool
+    let freiDanach: Int64
+    let entbehrlich: [String]
+    let entbehrlichBytes: Int64
+    let reichtNachAufraeumen: Bool
+}
+struct Downloadgruppenantwort: Encodable { let id, titel: String; let bytes: Int64; let serienId: String?; let folgen: [String] }

@@ -196,7 +196,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
             }
         }
         onDispose {
-            if (!beendet[0]) app.kern.wiedergabeBeenden((spieler.time / 1000.0).coerceAtLeast(0.0))
+            if (!beendet[0]) app.wiedergabeBeenden((spieler.time / 1000.0).coerceAtLeast(0.0))
             spieler.stop()
             spieler.detachViews()
             spieler.release()
@@ -231,7 +231,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
         // Die Stelle vor dem Anhalten lesen — VLC setzt seine Uhr beim Anhalten zurueck.
         val stelle = (spieler.time / 1000.0).coerceAtLeast(0.0)
         beendet[0] = true
-        app.kern.wiedergabeBeenden(stelle)
+        app.wiedergabeBeenden(stelle)
         spieler.stop()
         schliessen()
     }
@@ -374,7 +374,14 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     // Oeffnen, dann der Takt.
     LaunchedEffect(wunsch) {
         try {
-            starte(spielplanLesen(withContext(Dispatchers.IO) { app.kern.wiedergabeOeffnen(wunsch.id).await() }), wunsch.ab)
+            // **Von der Platte vor jedem Server** — im Flugzeug wartet sonst ein Zeitlimit.
+            val platte = app.downloads.datei(wunsch.id)
+            val posten = app.downloads.posten(wunsch.id)
+            val antwort = if (platte != null && posten != null) {
+                val bild = app.downloads.bildDatei(posten.id).takeIf { it.exists() }?.let { "file://" + it.absolutePath }.orEmpty()
+                app.kern.wiedergabeVonDerPlatte(posten.json().toString(), platte.absolutePath, bild)
+            } else withContext(Dispatchers.IO) { app.kern.wiedergabeOeffnen(wunsch.id).await() }
+            starte(spielplanLesen(antwort), wunsch.ab)
         } catch (e: CancellationException) { throw e } catch (_: Exception) {
             hinweis = uebersetzt("Die Folge konnte nicht geladen werden.")
             return@LaunchedEffect

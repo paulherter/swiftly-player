@@ -270,6 +270,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
             Crossfade(reiter, animationSpec = tween(160), label = "reiter") { r ->
                 when (r) {
                     0 -> Column {
+                        Box {
                         Staffelkopf(s?.staffeln.orEmpty(), staffel, listeOffen, { listeOffen = it }) { neu ->
                             selbstGewaehlt = true
                             if (neu != staffel) {
@@ -278,13 +279,18 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                                 s?.id?.let { id -> bereich.launch { folgenLaden(id, neu) } }
                             }
                         }
+                        if (app.einstellungen.downloadsAn && folgen.isNotEmpty()) {
+                            StaffelLaden(app, folgen.map { it.id }, s?.staffeln?.firstOrNull { it.id == staffel }?.name ?: s?.name.orEmpty(),
+                                         Modifier.align(Alignment.CenterEnd).padding(end = Stil.randAbstand))
+                        }
+                        }
                         folgen.forEachIndexed { i, f ->
                             if (i > 0) Box(Modifier.padding(start = Stil.randAbstand).fillMaxWidth().height(1.dp).background(Stil.linie))
                             // Wischen schaltet gesehen — `Wischzeile` mit Haken oder Rueckpfeil.
                             key(f.id) {
                                 Wischzeile(if (f.gesehen) Icons.Filled.Undo else Icons.Filled.Check,
                                            uebersetzt(if (f.gesehen) "Ungesehen" else "Gesehen"), tun = { folgeUmschalten(f) }) {
-                                    Folgenzeile(f) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
+                                    Folgenzeile(f, if (app.einstellungen.downloadsAn) folgenring(app, f.id, f.titel) else null) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
                                 }
                             }
                         }
@@ -394,7 +400,7 @@ private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boole
  * Balken und Haken zugleich waeren dieselbe Auskunft zweimal.
  */
 @Composable
-private fun Folgenzeile(f: Folge, tun: () -> Unit) {
+private fun Folgenzeile(f: Folge, ende: (@Composable () -> Unit)? = null, tun: () -> Unit) {
     Row(Modifier.fillMaxWidth().druckzeile(tun).padding(horizontal = Stil.randAbstand, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(116.dp, 65.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
@@ -413,6 +419,7 @@ private fun Folgenzeile(f: Folge, tun: () -> Unit) {
                  color = if (f.gesehen) Stil.schriftLeise else Stil.schrift, maxLines = 2, overflow = TextOverflow.Ellipsis)
             f.unterzeile?.let { Text(it, style = Stil.klein, color = Stil.schriftSehrLeise, maxLines = 1) }
         }
+        ende?.let { Box(Modifier.align(Alignment.CenterVertically)) { it() } }
     }
 }
 

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowCircleDown
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Search
@@ -59,6 +60,7 @@ enum class Bereich(val titel: String, val symbol: ImageVector) {
     Start("Start", Icons.Outlined.Home),
     Filme("Filme", Icons.Outlined.Movie),
     Serien("Serien", Icons.Outlined.Tv),
+    Downloads("Downloads", Icons.Outlined.ArrowCircleDown),
     Suche("Suche", Icons.Outlined.Search),
 }
 
@@ -86,7 +88,12 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     // Jeder Bereich behaelt seinen Zustand (Scrollposition) beim Wechsel.
     val zustaende = rememberSaveableStateHolder()
     // Sofort beim Ankommen, nicht erst in der Bibliothek — dort liess er den Kopf nachwachsen.
-    LaunchedEffect(Unit) { app.seerrLaden(); app.servernameLaden() }
+    LaunchedEffect(Unit) {
+        app.seerrLaden()
+        app.downloads.kontoSetzen(app.kontoKennung())
+        app.servernameLaden()
+        app.nachDemVerbinden()
+    }
     // Je Bereich ein eigener Stapel — `pfade[b.rawValue]` in `HauptView`.
     val stapel = remember { mutableStateMapOf<Bereich, List<Ziel>>() }
     val oben = stapel[bereich].orEmpty()
@@ -175,6 +182,10 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
         }
     }
 
+    // Ausgeschaltet, waehrend man im Bereich steht: zurueck zum Start.
+    val downloadsAn = app.einstellungen.downloadsAn
+    LaunchedEffect(downloadsAn) { if (!downloadsAn && bereich == Bereich.Downloads) waehlen(Bereich.Start) }
+
     CompositionLocalProvider(LocalBereichsmass provides bereichsmass, LocalFortschrittZeigen provides app.einstellungen.fortschritt,
                               LocalLadepuls provides Ladepuls()) {
         Box(Modifier.fillMaxSize().background(Stil.grund)) {
@@ -217,10 +228,11 @@ private fun Anfangsseite(app: SwiftlyAnwendung, bereich: Bereich, oeffnen: (Ziel
                 // Bei Serien hilft „ungesehen" wenig — dieselbe Liste wie auf iOS.
                 Bereich.Serien -> BibliothekSeite(app, "tvshows", uebersetzt("Serien"),
                                                   listOf("alle", "angefangen", "merkliste"), oeffnen)
+                Bereich.Downloads -> DownloadsSeite(app, oeffnen)
                 Bereich.Suche -> SuchSeite(app, oeffnen)
             }
         }
-        Leiste(bereich, waehlen)
+        Leiste(bereich, app.einstellungen.downloadsAn, waehlen)
     }
 }
 
@@ -244,17 +256,19 @@ private fun Unterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
         "Seerr" -> SeerrEinstellungenSeite(app, zurueck)
         "Seerrtitel" -> SeerrDetailSeite(app, ziel, oeffnen, zurueck)
         "Genrewahl" -> GenrewahlSeite(app, zurueck)
+        "Downloadserie" -> DownloadserieSeite(app, ziel, zurueck)
         else -> TitelSeite(app, ziel, oeffnen, zurueck)
     }
 }
 
 /** Vorlage: `Bereichsleiste` in `Stil.swift` — 54 hoch, Grund, Haarlinie, 10 pt, aktiv im Akzent. */
 @Composable
-private fun Leiste(aktiv: Bereich, waehlen: (Bereich) -> Unit) {
+private fun Leiste(aktiv: Bereich, downloads: Boolean, waehlen: (Bereich) -> Unit) {
     Column(Modifier.fillMaxWidth().background(Stil.grund).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
         Row(Modifier.fillMaxWidth().height(Stil.leisteHoehe).padding(top = 9.dp)) {
-            Bereich.entries.forEach { b ->
+            // Downloads nur, wenn die Funktion an ist (H1) — links neben der Suche, die ganz rechts bleibt.
+            Bereich.entries.filter { it != Bereich.Downloads || downloads }.forEach { b ->
                 val an = b == aktiv
                 val farbe = if (an) Stil.akzent else Color.White.copy(alpha = 0.42f)
                 Column(
