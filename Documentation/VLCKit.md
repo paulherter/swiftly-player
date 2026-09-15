@@ -33,6 +33,31 @@ the CPU. The same file plays fine on VLC 3.
 Three to four frames at 120 Hz. Three causes, three patches; it is about one
 frame now.
 
+## MPEG-1, MPEG-2 and MPEG-4 Part 2 could crash in the decoder
+
+`0033-avcodec-pad-direct-rendered-MPEG-pictures-for-motion-compensation.patch`
+
+When FFmpeg decodes straight into picture buffers that libVLC allocates, its
+SIMD motion compensation for these codecs can read one byte past the edge of
+the luma plane. If that plane ends at a memory-region boundary, the app
+crashes. SD MPEG-2 files such as DVD rips are the typical case. The patch
+adds 32 pixels of horizontal padding to those pictures. Direct rendering stays
+on, and hardware decoding is not affected.
+
+## Resuming while buffering could still pause
+
+`0034-input-cancel-a-deferred-pause-when-a-resume-arrives.patch`
+
+A pause sent while the player is buffering is held back until buffering ends.
+A resume sent in that window was ignored, so playback paused anyway once the
+buffer was full. Swiftly starts media paused (`:start-paused`) and resumes
+it, which runs straight into that window. With the patch, the resume cancels
+the held-back pause.
+
+Both patches come from [SwiftVLC](https://github.com/harflabs/SwiftVLC) by
+harflabs and are taken over unchanged. The SwiftVLC project is MIT-licensed.
+The patches modify VLC and are therefore under VLC's LGPL-2.1-or-later.
+
 <br>
 
 ## License
