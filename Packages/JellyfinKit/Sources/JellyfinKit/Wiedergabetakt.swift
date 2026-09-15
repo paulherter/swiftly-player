@@ -30,7 +30,7 @@ public enum Wiedergabetakt {
     /// unveränderliches `Sendable` darf den Akteur verlassen.
     public nonisolated static let taktlaenge: Duration = .milliseconds(500)
     /// Wie oft der Server den Fortschritt erfährt.
-    public static let meldeabstand: Double = 10
+    public nonisolated static let meldeabstand: Double = 10
 
     /// Was die Ansicht zeigt und der Takt fortschreibt.
     public struct Stand: Sendable {
@@ -104,7 +104,7 @@ public enum Wiedergabetakt {
     /// das nicht; sie ruft stattdessen `startGemeldet: true` auf. Beide Wege
     /// sind richtig, solange einer davon gegangen wird — deshalb steht die
     /// Wahl hier und nicht im Gedächtnis dessen, der den Wechsel schreibt.
-    public static func neuerTitel(_ stand: inout Stand, startGemeldet: Bool) {
+    public nonisolated static func neuerTitel(_ stand: inout Stand, startGemeldet: Bool) {
         stand.position = 0
         stand.spurenGesetzt = false
         stand.startGemeldet = startGemeldet
@@ -120,7 +120,10 @@ public enum Wiedergabetakt {
     ///   - sprungLaeuft: Es wurde eben gesprungen und noch nicht angekommen.
     ///   - amSchieben: Der Finger liegt am Regler. Nur auf dem iPhone möglich;
     ///     der Fernseher übergibt `false`.
-    public static func rechnen(_ stand: inout Stand, messung: Messung,
+    /// **`nonisolated` wie `taktlaenge`:** die Android-Fassade ruft den Takt ueber JNI aus einem
+    /// nicht isolierten Kontext, und dort arbeitet niemand die Hauptwarteschlange ab — ein Sprung
+    /// auf den Hauptakteur hinge. Die Rechnung selbst beruehrt nur den hereingereichten Stand.
+    public nonisolated static func rechnen(_ stand: inout Stand, messung: Messung,
                         stelltWiederHer: Bool, sprungLaeuft: Bool,
                         amSchieben: Bool, seitStart: Date) -> Auftrag {
         var auftrag = Auftrag()
