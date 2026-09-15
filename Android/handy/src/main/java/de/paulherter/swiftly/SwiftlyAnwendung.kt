@@ -62,6 +62,9 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Laeuft der Player gerade im kleinen Fenster? Dann zeigt die App darunter, wo der Film ist. */
     val kleinesFenster = androidx.compose.runtime.mutableStateOf(false)
 
+    /** „Hier weiterschauen" — was auf einem anderen Geraet desselben Kontos laeuft. */
+    val angebote = androidx.compose.runtime.mutableStateOf<List<Angebot>>(emptyList())
+
     /** Das Zeichen der Mediensitzung des Players — der Wiedergabedienst haengt seine Benachrichtigung daran. */
     var medienToken: android.media.session.MediaSession.Token? = null
 

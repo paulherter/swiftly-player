@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -94,12 +95,23 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
         app.servernameLaden()
         app.nachDemVerbinden()
     }
+    // „Hier weiterschauen": alle fuenf Sekunden, solange die App vorn ist — gesucht wird eine Sitzung,
+    // die es vorher nicht gab, und die soll nicht zehn Sekunden auf sich warten lassen.
+    @Suppress("DEPRECATION")
+    val lebenszyklus = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lebenszyklus) {
+        lebenszyklus.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) { app.angeboteHolen(); kotlinx.coroutines.delay(5000) }
+        }
+    }
     // Je Bereich ein eigener Stapel — `pfade[b.rawValue]` in `HauptView`.
     val stapel = remember { mutableStateMapOf<Bereich, List<Ziel>>() }
     val oben = stapel[bereich].orEmpty()
     val lauf = rememberCoroutineScope()
     /** Wie weit die oberste Seite nach rechts hinaus ist: 0 steht, 1 ist draussen. */
-    val schub = remember { Animatable(0f) }
+    // **Begrenzt auf 0…1.** Ein schneller Wurf gab der Feder so viel Tempo mit, dass sie ueber das
+    // Ziel hinausschoss und zurueckfederte; an der Grenze bleibt sie stehen.
+    val schub = remember { Animatable(0f).apply { updateBounds(0f, 1f) } }
     /** `bereichsmass` — der Inhalt waechst beim Bereichswechsel von 0,995 auf 1. */
     val bereichsmass = remember { Animatable(1f) }
     val bewegt by remember { derivedStateOf { schub.value > 0f } }
@@ -129,7 +141,7 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
     val zurueck: () -> Unit = {
         if (stapel[bereich].orEmpty().isNotEmpty()) auftrag {
             // Auch abgebrochen gilt der Rueckweg — der Abschluss steht deshalb im finally.
-            try { schub.animateTo(1f, Bewegung.seite()) }
+            try { schub.animateTo(1f, Bewegung.zurueck()) }
             finally { withContext(NonCancellable) { wegnehmen(); schub.snapTo(0f) } }
         }
     }

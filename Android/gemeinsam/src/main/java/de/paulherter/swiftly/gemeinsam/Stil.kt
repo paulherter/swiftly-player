@@ -38,18 +38,19 @@ object Bewegung {
     fun <T> umschalten(): FiniteAnimationSpec<T> = tween(100, easing = weich)
     /** `Stil.blattbewegung` — `.spring(response: 0.35, dampingFraction: 0.86)`; Steifigkeit (2π / 0,35)² ≈ 322. */
     fun <T> blatt(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.86f, stiffness = 322f)
+    /** Das Push von `NavigationStack` — rund 350 ms, rasch an und lange auslaufend. */
+    fun <T> seite(): FiniteAnimationSpec<T> = tween(350, easing = CubicBezierEasing(0.25f, 0.8f, 0.25f, 1f))
     /**
-     * Das Push von `NavigationStack` — **eine Feder ohne Nachschwingen**, wie UIKits Navigation.
-     * Erst stand hier ein 350-ms-Tween mit (0.25, 0.8, 0.25, 1): der legte fast den ganzen Weg in
-     * den ersten Bildern zurueck, und Zurueck wirkte am Geraet wie ein Schnitt (Paul, 15.09.2026).
+     * **Zurueck ueber den Knopf** — laenger und gleichmaessiger als das Oeffnen. Mit der Kurve von
+     * `seite` lag fast der ganze Weg im ersten Moment, und Zurueck wirkte wie ein Schnitt. Eine Feder
+     * statt dieser Kurve war am Geraet schlechter: das Oeffnen schwamm (Paul, 15.09.2026).
      */
-    fun <T> seite(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 170f)
+    fun <T> zurueck(): FiniteAnimationSpec<T> = tween(420, easing = weich)
     /**
      * **Nach einer Geste weiter mit dem Tempo des Fingers** — ohne Nachfedern, damit ein Wurf
      * nicht erst bremst und dann neu ansetzt. Fuer Zurueckgeste und weggeworfenes Blatt.
      */
-    // 380 war am Geraet zu hart — die Zurueckgeste schnappte beim Loslassen zu.
-    fun <T> wurf(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 230f)
+    fun <T> wurf(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 380f)
     /** `druckkurve` beim Loslassen. Das Druecken selbst hat **keine** Dauer. */
     fun <T> loslassen(): FiniteAnimationSpec<T> = tween(120, easing = LinearEasing)
     /** `Stil.bereichsmass` — dreimal nach unten korrigiert: 0,97 und 0,99 sah man an der Oberkante. */

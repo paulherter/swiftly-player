@@ -800,6 +800,39 @@ public final class Kern: @unchecked Sendable {
             beschaedigt: roh.beschaedigt, spruenge: roh.spruenge))) ?? "{}"
     }
 
+    // MARK: Hier weiterschauen
+
+    /// Was auf einem anderen Geraet desselben Kontos laeuft und sich uebernehmen laesst — die Regel
+    /// (`Uebernahme.angebote`: nicht wir, dasselbe Konto, nimmt Befehle, in den letzten 90 s bewegt)
+    /// steht im Paket. **Ein Fehler ist hier kein Fehler**: dann gibt es eben kein Angebot.
+    public func uebernahmeAngebote() async -> String {
+        sperre.lock(); let c = _client; let s = _sitzung; sperre.unlock()
+        guard let c, let s, let alle = try? await c.fremdsitzungen() else { return "[]" }
+        let angebote = Uebernahme.angebote(aus: alle, eigeneGeraeteID: geraeteID, eigeneBenutzerID: s.userID)
+        return Self.kodiert(angebote.compactMap { f -> Angebotantwort? in
+            guard let titel = f.laeuft, !titel.id.isEmpty else { return nil }
+            let art: String
+            switch f.geraeteart {
+            case .telefon: art = "telefon"
+            case .tablet: art = "tablet"
+            case .rechner: art = "rechner"
+            case .fernseher: art = "fernseher"
+            case .unbekannt: art = "unbekannt"
+            }
+            let stelle = f.stand?.stelle ?? 0
+            return Angebotantwort(id: f.id, itemID: titel.id, geraet: f.geraetename, art: art,
+                                  titelzeile: f.titelzeile, stelle: stelle, stelleText: zeitText(stelle))
+        })
+    }
+
+    /// Das andere Geraet anhalten. **Leer heisst: angehalten** — erst dann startet Android hier.
+    /// Laeuft es dort weiter, stuenden zwei Tonspuren im Raum.
+    public func uebernehmen(sitzung: String) async -> String {
+        guard let c = client else { return "nichtVerbunden" }
+        do { try await c.fremdbefehl(.beenden, an: sitzung); return "" }
+        catch { return error.localizedDescription }
+    }
+
     // MARK: Downloads
 
     /// Posten fuer einen Download, samt der Bilder, die mit auf die Platte kommen. **Dieselbe Quelle,
@@ -1265,3 +1298,4 @@ struct Platzantwort: Encodable {
 }
 struct Downloadgruppenantwort: Encodable { let id, titel: String; let bytes: Int64; let serienId: String?; let folgen: [String] }
 struct Planantwort: Encodable { let lossless: Bool; let methode: String }
+struct Angebotantwort: Encodable { let id, itemID: String; let geraet: String?; let art, titelzeile: String; let stelle: Double; let stelleText: String }
