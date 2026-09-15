@@ -1,5 +1,3 @@
-import java.util.Properties
-
 // Swiftly fuer Android-Telefone. Vorlage: Sources/Shared + Sources/iOS.
 plugins {
     alias(libs.plugins.android.application)
@@ -7,24 +5,30 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// **Signatur fuer den Play Store** — aus einer Datei ausserhalb aller Repos, die Paul selbst anlegt.
-// Fehlt sie, baut `bundleRelease` unsigniert; Debug-Baue brauchen sie nie.
-val signaturDatei = file(System.getProperty("user.home") + "/.swiftly-android/signatur.properties")
-val signatur = Properties().apply { if (signaturDatei.exists()) signaturDatei.inputStream().use { load(it) } }
+// **Signatur fuer den Play Store.** Der Schluessel liegt ausserhalb aller Repos
+// (`~/.swiftly-android/swiftly-upload.jks`), das Passwort **im macOS-Schluesselbund**
+// (Eintrag `swiftly-android-signatur`) — nie in einer Datei, nie im Repo. Gefragt wird der
+// Schluesselbund nur bei Release-Baeuen; Debug-Baeue brauchen beides nie.
+val uploadSchluessel = file(System.getProperty("user.home") + "/.swiftly-android/swiftly-upload.jks")
+val releaseBau = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+val signaturPasswort: String? = if (releaseBau && uploadSchluessel.exists()) runCatching {
+    providers.exec { commandLine("security", "find-generic-password", "-s", "swiftly-android-signatur", "-w") }
+        .standardOutput.asText.get().trim().ifEmpty { null }
+}.getOrNull() else null
 
 android {
     namespace = "de.paulherter.swiftly"
     signingConfigs {
-        if (signaturDatei.exists()) create("play") {
-            storeFile = file(signatur.getProperty("storeFile"))
-            storePassword = signatur.getProperty("storePassword")
-            keyAlias = signatur.getProperty("keyAlias")
-            keyPassword = signatur.getProperty("keyPassword")
+        if (signaturPasswort != null) create("play") {
+            storeFile = uploadSchluessel
+            storePassword = signaturPasswort
+            keyAlias = "swiftly-upload"
+            keyPassword = signaturPasswort
         }
     }
     buildTypes {
         getByName("release") {
-            if (signaturDatei.exists()) signingConfig = signingConfigs.getByName("play")
+            if (signaturPasswort != null) signingConfig = signingConfigs.getByName("play")
             isMinifyEnabled = false
         }
     }
