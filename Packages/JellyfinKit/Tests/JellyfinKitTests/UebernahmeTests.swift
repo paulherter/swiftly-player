@@ -174,4 +174,27 @@ struct UebernahmeTests {
     func leer() {
         #expect(Uebernahme.angebot(aus: [], eigeneGeraeteID: "appletv", eigeneBenutzerID: "paul", jetzt: jetzt) == nil)
     }
+
+    // MARK: - Welches Gerät
+
+    private func art(_ name: String?, programm: String?) -> Fremdsitzung.Geraeteart {
+        Fremdsitzung(id: "g", geraeteID: "x", geraetename: name, programm: programm,
+                     nimmtBefehle: true, laeuft: nil, stand: nil).geraeteart
+    }
+
+    @Test("Swiftly auf einem Android-Telefon ist ein Telefon, kein Fernseher")
+    func androidTelefon() {
+        #expect(art("Pixel 10 Pro", programm: "Swiftly Player Android") == .telefon)
+    }
+
+    @Test("Swiftly auf Android TV ist ein Fernseher")
+    func androidFernseher() {
+        #expect(art("TCL 55C805", programm: "Swiftly Player Android TV") == .fernseher)
+    }
+
+    @Test("Ohne Android im Programm entscheidet weiter der Gerätename")
+    func nameEntscheidet() {
+        #expect(art("iPhone im Wohnzimmer", programm: "Swiftly Player") == .telefon)
+        #expect(art("iPad", programm: nil) == .tablet)
+    }
 }

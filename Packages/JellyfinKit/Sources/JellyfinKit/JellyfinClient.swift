@@ -62,6 +62,9 @@ public actor JellyfinClient {
     private let deviceID: String
     private let deviceName: String
     private let clientVersion: String
+    /// Der Name, unter dem der Server uns fuehrt. Auf Android mit Zusatz — sonst sieht ein anderes
+    /// Geraet nicht, dass es ein Telefon ist (`Fremdsitzung.geraeteart`).
+    private let programm: String
     private var session: Session?
     private let urlSession: URLSession
 
@@ -76,6 +79,7 @@ public actor JellyfinClient {
         deviceID: String,
         deviceName: String,
         clientVersion: String = Fassungsnummer.ausDemBuendel,
+        programm: String = "Swiftly Player",
         session: Session? = nil,
         urlSession: URLSession = .ortsnetzfaehig
     ) {
@@ -83,6 +87,7 @@ public actor JellyfinClient {
         self.deviceID = deviceID
         self.deviceName = deviceName
         self.clientVersion = clientVersion
+        self.programm = programm
         self.session = session
         self.urlSession = urlSession
     }
@@ -103,7 +108,7 @@ public actor JellyfinClient {
             // vom 07.09.2026 „Swiftly Player", und das ist der Name, den ein
             // Nutzer in seiner Geraeteliste wiedererkennen soll — er sieht
             // ihn in Jellyfin, nicht auf dem Homebildschirm.
-            "Client=\"Swiftly Player\"",
+            "Client=\"\(programm)\"",
             "Device=\"\(deviceName)\"",
             "DeviceId=\"\(deviceID)\"",
             "Version=\"\(clientVersion)\"",

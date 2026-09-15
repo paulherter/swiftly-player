@@ -202,6 +202,20 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
 
     val vlc = remember { LibVLC(kontext, arrayListOf("--no-drop-late-frames", "--no-skip-frames")) }
     val spieler = remember { MediaPlayer(vlc) }
+    // **Die Videoflaeche wieder anhaengen**, wenn Android sie beim Wechsel in den Hintergrund
+    // abgebaut hat — sonst lief der Ton weiter, und das Bild blieb schwarz, bis zum Neustart.
+    val flaeche = remember { arrayOfNulls<VLCVideoLayout>(1) }
+    @Suppress("DEPRECATION")
+    val lebenslauf = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lebenslauf) {
+        val beobachter = androidx.lifecycle.LifecycleEventObserver { _, ereignis ->
+            if (ereignis == androidx.lifecycle.Lifecycle.Event.ON_START && !spieler.vlcVout.areViewsAttached()) {
+                flaeche[0]?.let { spieler.attachViews(it, null, true, false) }
+            }
+        }
+        lebenslauf.addObserver(beobachter)
+        onDispose { lebenslauf.removeObserver(beobachter) }
+    }
     var plan by remember { mutableStateOf<Spielplan?>(null) }
     var bildFrei by remember { mutableStateOf(false) }
     var laeuft by remember { mutableStateOf(false) }
@@ -588,7 +602,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
 
     Box(Modifier.fillMaxSize().background(Color.Black)
             .then(if (app.istFernseher) Modifier.focusRequester(fernbedienung).focusable().onKeyEvent { taste(it) } else Modifier)) {
-        AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { spieler.attachViews(it, null, true, false) } },
+        AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { flaeche[0] = it; spieler.attachViews(it, null, true, false) } },
                     modifier = Modifier.fillMaxSize())
 
         // Gesten ueber dem Bild, unter der Steuerung.

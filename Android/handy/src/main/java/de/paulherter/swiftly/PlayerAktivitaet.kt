@@ -55,6 +55,12 @@ class PlayerAktivitaet : ComponentActivity() {
         }
         val app = application as SwiftlyAnwendung
         wunsch.value = app.spiel.value ?: run { finish(); return }
+        // **Mit der Geste ins kleine Fenster, nicht danach.** Nach oben gewischt ging die Aktivitaet
+        // zuerst in den Hintergrund; Android baute dabei die Videoflaeche ab, und das kleine Fenster
+        // blieb schwarz — auch nach dem Zurueckholen. Ab Android 12 verkleinert das System selbst.
+        if (android.os.Build.VERSION.SDK_INT >= 31 && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            runCatching { setPictureInPictureParams(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).setAutoEnterEnabled(true).build()) }
+        }
         setContent {
             Box(Modifier.fillMaxSize().background(Color.Black)) {
                 wunsch.value?.let { w ->
@@ -87,7 +93,8 @@ class PlayerAktivitaet : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (!isFinishing) bildImBild()
+        // Vor Android 12 gibt es kein automatisches Verkleinern — dort bleibt der Hinweis beim Verlassen.
+        if (!isFinishing && android.os.Build.VERSION.SDK_INT < 31) bildImBild()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {

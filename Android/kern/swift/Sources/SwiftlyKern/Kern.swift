@@ -15,6 +15,7 @@ import JellyfinKit
 /// Aufrufe kommen aus Coroutinen auf beliebigen Faeden.
 public final class Kern: @unchecked Sendable {
     private let geraeteID: String
+    private let programm: String
     private let geraeteName: String
     private let fassung: String
     private let sperre = NSLock()
@@ -59,8 +60,9 @@ public final class Kern: @unchecked Sendable {
         let start = Date()
     }
 
-    public init(geraeteID: String, geraeteName: String, fassung: String) {
+    public init(geraeteID: String, geraeteName: String, fassung: String, programm: String) {
         self.geraeteID = geraeteID
+        self.programm = programm
         self.geraeteName = geraeteName
         self.fassung = fassung
     }
@@ -85,7 +87,7 @@ public final class Kern: @unchecked Sendable {
 
     private func neuerClient(_ url: URL, _ sitzung: Session? = nil) -> JellyfinClient {
         JellyfinClient(baseURL: url, deviceID: geraeteID, deviceName: geraeteName,
-                       clientVersion: fassung, session: sitzung)
+                       clientVersion: fassung, programm: programm, session: sitzung)
     }
 
     // MARK: Sprache

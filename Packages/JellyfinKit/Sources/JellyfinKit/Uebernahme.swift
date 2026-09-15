@@ -123,6 +123,11 @@ public extension Fremdsitzung {
 
     var geraeteart: Geraeteart {
         let name = (geraetename ?? "").lowercased()
+        // **Android zuerst nach dem Programm.** Ein Android-Telefon heisst „Pixel 10 Pro" — darin
+        // steht nichts, woran der Name es erkennt, und auf dem iPhone erschien es als Fernseher.
+        let app = (programm ?? "").lowercased()
+        if app.contains("android tv") { return .fernseher }
+        if app.contains("android") { return .telefon }
         if name.contains("ipad") { return .tablet }
         if name.contains("mac") || name.contains("pc") || name.contains("linux") {
             return .rechner

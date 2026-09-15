@@ -1,3 +1,5 @@
+import java.util.Properties
+
 // Swiftly fuer Android-Telefone. Vorlage: Sources/Shared + Sources/iOS.
 plugins {
     alias(libs.plugins.android.application)
@@ -5,8 +7,27 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// **Signatur fuer den Play Store** — aus einer Datei ausserhalb aller Repos, die Paul selbst anlegt.
+// Fehlt sie, baut `bundleRelease` unsigniert; Debug-Baue brauchen sie nie.
+val signaturDatei = file(System.getProperty("user.home") + "/.swiftly-android/signatur.properties")
+val signatur = Properties().apply { if (signaturDatei.exists()) signaturDatei.inputStream().use { load(it) } }
+
 android {
     namespace = "de.paulherter.swiftly"
+    signingConfigs {
+        if (signaturDatei.exists()) create("play") {
+            storeFile = file(signatur.getProperty("storeFile"))
+            storePassword = signatur.getProperty("storePassword")
+            keyAlias = signatur.getProperty("keyAlias")
+            keyPassword = signatur.getProperty("keyPassword")
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            if (signaturDatei.exists()) signingConfig = signingConfigs.getByName("play")
+            isMinifyEnabled = false
+        }
+    }
     compileSdk = 36
     defaultConfig {
         applicationId = "de.paulherter.swiftly"

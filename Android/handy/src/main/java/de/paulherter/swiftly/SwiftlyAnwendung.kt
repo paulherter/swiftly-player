@@ -198,7 +198,9 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         val sprache = if (Locale.getDefault().language == "de") "de" else "en"
         // Vor dem ersten Text aus dem Paket — sonst stehen dort die Schluessel.
         Kern.paketspracheSetzen(paketspracheEntpacken().absolutePath, sprache)
-        kern = Kern.init(ablage.geraeteID(), Build.MODEL ?: "Android", BuildConfigFassung, SwiftArena.ofAuto())
+        // „Android" im Programmnamen: daran erkennen andere Geraete ein Telefon (oder den Fernseher).
+        kern = Kern.init(ablage.geraeteID(), Build.MODEL ?: "Android", BuildConfigFassung,
+                         if (istFernseher) "Swiftly Player Android TV" else "Swiftly Player Android", SwiftArena.ofAuto())
         qualitaetMelden()
     }
 
