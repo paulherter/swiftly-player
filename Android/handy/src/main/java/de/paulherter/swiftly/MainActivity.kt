@@ -52,10 +52,6 @@ class MainActivity : ComponentActivity() {
             androidx.compose.runtime.LaunchedEffect(app.abgemeldet.intValue) { if (app.abgemeldet.intValue > 0) phase = Phase.Server }
             // Einmal je Start, nicht je Drehung — deshalb gemerkt.
             var gestartet by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-            // **Kein Dehnen am Rand.** Androids Dehneffekt federte nach und nahm dabei den naechsten
-            // Wisch nicht an — schnelles Hoch-und-Runter blieb oben und unten haengen (Paul, Pixel 10 Pro).
-            @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-            androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalOverscrollConfiguration provides null) {
             Box(Modifier.fillMaxSize().background(Stil.grund)) {
                 when (val p = phase) {
                     Phase.Server -> ServerSeite(app) { name, fassung -> phase = Phase.Anmeldung(name, fassung) }
@@ -73,7 +69,6 @@ class MainActivity : ComponentActivity() {
                     exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(450, easing = de.paulherter.swiftly.gemeinsam.Bewegung.weich))) {
                     Startvorhang { gestartet = true }
                 }
-            }
             }
         }
     }

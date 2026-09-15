@@ -50,7 +50,6 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
-import de.paulherter.swiftly.gemeinsam.iosFling
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -165,7 +164,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
     val name = t?.name ?: ziel.name
 
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll, flingBehavior = iosFling())) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Held(t?.kopfbild, name, t?.nebenzeile.orEmpty())
 
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp),
@@ -379,7 +378,7 @@ internal fun Abschnitt(titel: String, abstand: Dp, inhalt: LazyListScope.() -> U
     Column(Modifier.padding(top = 26.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(titel, style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift,
              modifier = Modifier.padding(horizontal = Stil.randAbstand))
-        LazyRow(flingBehavior = iosFling(), contentPadding = PaddingValues(horizontal = Stil.randAbstand),
+        LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
                 horizontalArrangement = Arrangement.spacedBy(abstand), content = inhalt)
     }
 }

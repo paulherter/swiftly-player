@@ -56,7 +56,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.gemeinsam.Stil
-import de.paulherter.swiftly.gemeinsam.iosFling
 import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import de.paulherter.swiftly.kern.Kern
@@ -206,7 +205,7 @@ fun BibliothekSeite(app: SwiftlyAnwendung, art: String, titel: String, filterwah
                 }
         }
 
-        LazyVerticalGrid(flingBehavior = iosFling(), 
+        LazyVerticalGrid(
             columns = GridCells.Fixed(anzahl), state = raster,
             contentPadding = PaddingValues(start = Stil.randAbstand, end = Stil.randAbstand, top = kopfDp + 8.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(Stil.kachelAbstand),

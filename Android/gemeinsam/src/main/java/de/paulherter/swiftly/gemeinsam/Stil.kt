@@ -1,8 +1,5 @@
 package de.paulherter.swiftly.gemeinsam
 
-import androidx.compose.animation.core.generateDecayAnimationSpec
-import androidx.compose.animation.core.animateDecay
-import androidx.compose.animation.core.AnimationState
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearEasing
@@ -46,8 +43,11 @@ object Bewegung {
     fun <T> umschalten(): FiniteAnimationSpec<T> = tween(100, easing = weich)
     /** `Stil.blattbewegung` — `.spring(response: 0.35, dampingFraction: 0.86)`; Steifigkeit (2π / 0,35)² ≈ 322. */
     fun <T> blatt(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.86f, stiffness = 322f)
-    /** Das Push von `NavigationStack` — 350 ms auf der UIKit-Kurve. */
-    fun <T> seite(): FiniteAnimationSpec<T> = tween(350, easing = cupertino)
+    /**
+     * Das Push von `NavigationStack` — rund 350 ms, rasch an und lange auslaufend. **Nicht die
+     * UIKit-Kurve**: fuers Oeffnen war sie am Pixel zu schnell; fuers Zurueck ist sie genau richtig.
+     */
+    fun <T> seite(): FiniteAnimationSpec<T> = tween(350, easing = CubicBezierEasing(0.25f, 0.8f, 0.25f, 1f))
     /** Zurueck ueber den Knopf — **gleich lang wie das Oeffnen**: ungleiche Dauern lesen sich als falsche Kurve. */
     fun <T> zurueck(): FiniteAnimationSpec<T> = tween(350, easing = cupertino)
     /**
@@ -111,44 +111,3 @@ object Stil {
     val plakette = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
 }
 
-/**
- * **Auslaufen wie `UIScrollView`** — `decelerationRate` 0,998 je Millisekunde, geschlossen gerechnet
- * wie JetBrains' `CupertinoScrollDecayAnimationSpec` fuer Compose auf iOS. Androids Spline-Auslauf
- * bremst frueher und haerter; darum fuehlte sich Scrollen am Pixel weniger direkt an.
- */
-private class Iosauslauf : androidx.compose.animation.core.FloatDecayAnimationSpec {
-    private val rate = 0.998f
-    private val k = 1000f * kotlin.math.ln(rate)
-    override val absVelocityThreshold = 0.5f
-    override fun getValueFromNanos(playTimeNanos: Long, initialValue: Float, initialVelocity: Float): Float =
-        initialValue + (Math.pow(rate.toDouble(), 1000.0 * playTimeNanos / 1e9).toFloat() - 1f) / k * initialVelocity
-    override fun getVelocityFromNanos(playTimeNanos: Long, initialValue: Float, initialVelocity: Float): Float =
-        initialVelocity * Math.pow(rate.toDouble(), 1000.0 * playTimeNanos / 1e9).toFloat()
-    override fun getDurationNanos(initialValue: Float, initialVelocity: Float): Long {
-        val v = kotlin.math.abs(initialVelocity)
-        if (v <= absVelocityThreshold) return 0L
-        return (kotlin.math.ln(absVelocityThreshold / v) / k * 1e9).toLong()
-    }
-    override fun getTargetValue(initialValue: Float, initialVelocity: Float): Float = initialValue - initialVelocity / k
-}
-
-/** Der Schwung fuer Listen und Seiten — unter 500 px/s gar keiner, wie bei iOS (`CupertinoFlingBehavior`). */
-@androidx.compose.runtime.Composable
-fun iosFling(): androidx.compose.foundation.gestures.FlingBehavior = androidx.compose.runtime.remember {
-    val auslauf = Iosauslauf().generateDecayAnimationSpec<Float>()
-    object : androidx.compose.foundation.gestures.FlingBehavior {
-        override suspend fun androidx.compose.foundation.gestures.ScrollScope.performFling(initialVelocity: Float): Float {
-            if (kotlin.math.abs(initialVelocity) < 500f) return 0f
-            var rest = initialVelocity
-            var zuletzt = 0f
-            AnimationState(0f, initialVelocity).animateDecay(auslauf) {
-                val schritt = value - zuletzt
-                val genommen = scrollBy(schritt)
-                zuletzt = value
-                rest = velocity
-                if (kotlin.math.abs(schritt - genommen) > 0.5f) cancelAnimation()
-            }
-            return rest
-        }
-    }
-}
