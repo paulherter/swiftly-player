@@ -7,6 +7,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -189,8 +191,15 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     // steht noch da und bekommt den Fokus direkt. Die Wiedergabetafel blendet die Knoepfe aus
     // (`steuerungDa`), ihr Ausloeser ist erst nach dem Schliessen wieder da: bis dahin haelt die
     // Fernbedienungsflaeche den Fokus (sie zeichnet keinen), der Effekt unten gibt ihn dann weiter.
-    fun tafelZu() { runCatching { fernbedienung.requestFocus() }; tafelOffen = false; zeigen() }
-    fun folgenZu() { Fokusmerker.zurueckgeben(fernbedienung); folgenOffen = false; zeigen() }
+    //
+    // **Beide Blaetter sind geschlossene Fokusgruppen** (`exit = Cancel`, wie `TvTafel`): Oben aus der
+    // ersten Folge suchte Compose vorher im ganzen Player und fand den Einstellungsknopf oben rechts
+    // *hinter* dem Blatt — er steht genau dort, wo im Blatt „Fertig" steht. Vorlage: auf tvOS ist das
+    // Blatt eine eigene Auflage, dahinter ist nichts fokussierbar. `blattAusgang` gibt den Ausgang nur
+    // fuer das programmatische Zurueckgeben frei (Compose fragt `exit` auch bei `requestFocus`).
+    val blattAusgang = remember { booleanArrayOf(false) }
+    fun tafelZu() { blattAusgang[0] = true; runCatching { fernbedienung.requestFocus() }; tafelOffen = false; zeigen() }
+    fun folgenZu() { blattAusgang[0] = true; Fokusmerker.zurueckgeben(fernbedienung); folgenOffen = false; zeigen() }
     BackHandler(enabled = spulziel != null) { sammler?.cancel(); spulziel = null }
     BackHandler(enabled = tafelOffen) { tafelZu() }
     BackHandler(enabled = folgenOffen) { folgenZu() }
@@ -237,7 +246,10 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     //
     // **Ohne Zeitverzug:** der Effekt startet nach dem Anwenden der Komposition, in der die Tafel zu
     // ging — die Knoepfe oben (`steuerungDa`) sind dann schon wieder angebunden.
-    LaunchedEffect(tafelOffen, folgenOffen) { if (!tafelOffen && !folgenOffen) Fokusmerker.zurueckfordern(fernbedienung) }
+    LaunchedEffect(tafelOffen, folgenOffen) {
+        if (!tafelOffen && !folgenOffen) Fokusmerker.zurueckfordern(fernbedienung)
+        else blattAusgang[0] = false
+    }
 
     val deckung by animateFloatAsState(
         if (sichtbar || !werk.bildFrei) 1f else 0f,
@@ -324,10 +336,10 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
             }
         }
 
-        TvWiedergabeblatt(offen = tafelOffen, schliessen = { tafelZu() }, werk = werk, app = app)
+        TvWiedergabeblatt(offen = tafelOffen, schliessen = { tafelZu() }, werk = werk, app = app, ausgang = { blattAusgang[0] })
 
         if (folgenOffen) {
-            TvFolgenblatt(app, schliessen = { folgenZu() }) { id ->
+            TvFolgenblatt(app, schliessen = { folgenZu() }, ausgang = { blattAusgang[0] }) { id ->
                 folgenZu()
                 lauf.launch { werk.wechsleZu(id) }
             }
@@ -398,8 +410,9 @@ private fun TvZeitleiste(position: Double, dauer: Double, marke: Double?) {
  * Antworten statt Einzelteile). Datenform und Zeile sind die der Serienseite (`Folge`,
  * `folgenLesen` aus `SerienSeite.kt`), keine zweite Auffassung von „eine Folge".
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-private fun TvFolgenblatt(app: SwiftlyAnwendung, schliessen: () -> Unit, waehlen: (String) -> Unit) {
+private fun TvFolgenblatt(app: SwiftlyAnwendung, schliessen: () -> Unit, ausgang: () -> Boolean, waehlen: (String) -> Unit) {
     var folgen by remember { mutableStateOf<List<Folge>>(emptyList()) }
     var laedt by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
@@ -416,7 +429,10 @@ private fun TvFolgenblatt(app: SwiftlyAnwendung, schliessen: () -> Unit, waehlen
         // `Fokusmerker`, sonst ginge der Fokus beim naechsten Oeffnen nicht mehr zum Knopf zurueck,
         // der dieses Blatt aufgemacht hat (siehe `LocalInnerhalbTafel` in TvStil.kt).
         CompositionLocalProvider(LocalInnerhalbTafel provides true) {
-            Column(Modifier.fillMaxSize().padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben)) {
+            // Geschlossene Fokusgruppe — siehe `blattAusgang` in `TvPlayer`. Oben aus der ersten Folge
+            // erreicht so „Fertig" statt der Knoepfe dahinter.
+            Column(Modifier.fillMaxSize().padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben)
+                       .focusProperties { exit = { if (ausgang()) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(uebersetzt("Folgen"), style = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift, modifier = Modifier.weight(1f))
                     TvKnopf(uebersetzt("Fertig")) { schliessen() }
@@ -475,8 +491,9 @@ private fun TvFolgenzeile(folge: Folge, modifier: Modifier = Modifier, tun: () -
  * `flaechenzeile` etc.) — das ist die Fehlersuche-Auskunft fuer Apples AVDisplayManager-Eigenheiten
  * und hat auf Android keine Entsprechung; das Technikschild deckt dieselbe Absicht ab.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-private fun TvWiedergabeblatt(offen: Boolean, schliessen: () -> Unit, werk: Spielwerk, app: SwiftlyAnwendung) {
+private fun TvWiedergabeblatt(offen: Boolean, schliessen: () -> Unit, werk: Spielwerk, app: SwiftlyAnwendung, ausgang: () -> Boolean) {
     if (!offen) return
     var kategorie by remember(offen) { mutableStateOf(Kategorie.UNTERTITEL) }
     val erste = remember { FocusRequester() }
@@ -496,8 +513,10 @@ private fun TvWiedergabeblatt(offen: Boolean, schliessen: () -> Unit, werk: Spie
         // zum „Einstellungen"-Knopf zurueck, der diese Tafel geoeffnet hat (siehe `LocalInnerhalbTafel`
         // in TvStil.kt).
         CompositionLocalProvider(LocalInnerhalbTafel provides true) {
+        // Dasselbe Muster wie das Folgenblatt: geschlossene Fokusgruppe, Ausgang nur programmatisch.
         Column(Modifier.align(Alignment.BottomStart).fillMaxWidth()
-                   .padding(horizontal = TvStil.randSeite).padding(bottom = TvStil.randOben)) {
+                   .padding(horizontal = TvStil.randSeite).padding(bottom = TvStil.randOben)
+                   .focusProperties { exit = { if (ausgang()) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup()) {
             // Vorlage: der Beleg steht neben dem Titel, nicht als Fusszeile unter allem —
             // derselbe Baustein wie auf der Titelseite (`Belegzeile`), keine zweite Fassung.
             Row(verticalAlignment = Alignment.CenterVertically) {

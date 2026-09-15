@@ -112,10 +112,9 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
 
     // Vorlage: `SerienView.eingeblendet` auf tvOS — derselbe Griff wie `TvDetail`: Kulisse und
     // Kopfauskunft (Titel/Angaben/Beschreibung) stehen sofort, Knopfreihe und Reihen blenden ein.
-    var eingeblendet by remember(ziel.id) { mutableStateOf(false) }
-    val einblendAlpha by animateFloatAsState(if (eingeblendet) 1f else 0f,
-        tween(TvStil.einblendenDauer, easing = TvStil.einblendenKurve), label = "eingeblendet")
-    LaunchedEffect(ziel.id) { eingeblendet = true }
+    // Warum `rememberTvEinblendung` und nicht `animateFloatAsState`: siehe dort (TvStil.kt).
+    val eingeblendet = rememberTvEinblendung(ziel.id)
+    val einblendAlpha = { eingeblendet.value }
 
     Box(Modifier.fillMaxSize()) {
         TvAbschnittsseite { a ->
@@ -179,7 +178,7 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                     }
                 }
 
-                Column(Modifier.tvAbschnitt(a, "folgen").padding(top = TvStil.reihenAbstand - TvStil.reihenLuft).alpha(einblendAlpha)) {
+                Column(Modifier.tvAbschnitt(a, "folgen").padding(top = TvStil.reihenAbstand - TvStil.reihenLuft).tvEingeblendet(einblendAlpha)) {
                     Row(Modifier.padding(start = TvStil.randSeite), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text(uebersetzt("Folgen"), style = TvStil.reihe, color = Stil.schrift)
                         val liste = serie?.staffeln.orEmpty()
@@ -219,10 +218,10 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                     }
                 }
                 val leute = serie?.darsteller.orEmpty()
-                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.alpha(einblendAlpha).tvAbschnitt(a, "besetzung")) {
+                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "besetzung")) {
                     items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
                 }
-                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliches"), Modifier.alpha(einblendAlpha).tvAbschnitt(a, "aehnliche")) {
+                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliches"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "aehnliche")) {
                     items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
                 }
                 Spacer(Modifier.height(40.dp))

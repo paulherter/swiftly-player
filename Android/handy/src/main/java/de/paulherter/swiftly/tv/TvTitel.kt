@@ -78,7 +78,7 @@ import java.util.Locale
  */
 @Composable
 fun TvDetailkopf(titel: String, jahrLaufzeit: String, bewertung: Double?, freigabe: String?, beschreibung: String?,
-                 direktplay: Boolean, hinweis: String?, knopfAlpha: Float = 1f, modifier: Modifier = Modifier,
+                 direktplay: Boolean, hinweis: String?, knopfAlpha: () -> Float = { 1f }, modifier: Modifier = Modifier,
                  knoepfe: @Composable () -> Unit) {
     // **306,5 dp statt 177 — aus `Stil.heldenHoeheDetail` halbiert.** Vorher war die Zone knapp
     // bemessen und die Beschreibung wuchs mit ihrem Inhalt: eine kurze liess die Knopfreihe fast an
@@ -100,7 +100,7 @@ fun TvDetailkopf(titel: String, jahrLaufzeit: String, bewertung: Double?, freiga
             Kopfauskunft(titel, null, jahrLaufzeit, bewertung, freigabe, beschreibung) {
                 TvBelegzeile(direktplay, hinweis, bewertung = null, freigabe = null)
             }
-            Row(Modifier.padding(top = 18.dp).alpha(knopfAlpha), horizontalArrangement = Arrangement.spacedBy(12.dp), content = { knoepfe() })
+            Row(Modifier.padding(top = 18.dp).tvEingeblendet(knopfAlpha), horizontalArrangement = Arrangement.spacedBy(12.dp), content = { knoepfe() })
         }
     }
 }
@@ -293,10 +293,11 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     // sehen `eingeblendet` gar nicht) — nur die Knopfreihe und die Reihen darunter sind neu
     // gegenueber der Startseite und blenden ein. Ohne das sprang beim Oeffnen einer Serie/eines
     // Films alles auf einmal hart hin, statt dass nur der Zusatz kommt.
-    var eingeblendet by remember(ziel.id) { mutableStateOf(false) }
-    val einblendAlpha by animateFloatAsState(if (eingeblendet) 1f else 0f,
-        tween(TvStil.einblendenDauer, easing = TvStil.einblendenKurve), label = "eingeblendet")
-    LaunchedEffect(ziel.id) { eingeblendet = true }
+    //
+    // `rememberTvEinblendung` statt eigenem `animateFloatAsState` — warum die alte Fassung am
+    // Emulator nicht sichtbar einblendete, steht dort.
+    val eingeblendet = rememberTvEinblendung(ziel.id)
+    val einblendAlpha = { eingeblendet.value }
 
     Box(Modifier.fillMaxSize()) {
         TvAbschnittsseite { a ->
@@ -347,14 +348,14 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                         TvKnopf(null, Icons.Filled.MoreHoriz) {}
                     }
                 }
-                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme"), Modifier.alpha(einblendAlpha).tvAbschnitt(a, "aehnliche")) {
+                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "aehnliche")) {
                     items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
                 }
-                if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras"), Modifier.alpha(einblendAlpha).tvAbschnitt(a, "extras")) {
+                if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "extras")) {
                     items(extras, key = { it.id }) { x -> TvKachel(x.bild, x.name, x.laufzeit, quer = true) { app.spiel.value = Abspielwunsch(x.id, null) } }
                 }
                 val leute = titel?.darsteller.orEmpty()
-                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.alpha(einblendAlpha).tvAbschnitt(a, "besetzung")) {
+                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "besetzung")) {
                     items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
                 }
                 Spacer(Modifier.height(40.dp))

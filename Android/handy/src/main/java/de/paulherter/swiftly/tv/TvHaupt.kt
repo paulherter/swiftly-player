@@ -6,6 +6,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
@@ -123,6 +124,7 @@ val kopfUnten = TvStil.randOben + TvStil.leisteHoehe + 12.dp
  * neu ist, blendet **in der Zielseite selbst** ein (`eingeblendet` in `TvDetail`/`TvSerie`), nicht
  * hier im Router: Knopfreihe und Reihen kommen 300 ms nach dem Erscheinen, der Kopf steht sofort.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun TvHaupt(app: SwiftlyAnwendung) {
     var bereich by rememberSaveable { mutableStateOf(TvBereich.Start) }
@@ -198,6 +200,9 @@ fun TvHaupt(app: SwiftlyAnwendung) {
         else -> obenZiel?.let { TvUebergabe.fuer(it.id)?.kulisse } ?: gezeigt[0]
     }
     gezeigt[0] = kulisse
+    // Kopfleiste und -verlauf: sichtbar nur an der Wurzel eines Bereichs — siehe die Ebene unten.
+    val leiste = animateFloatAsState(if (oben.isEmpty()) 1f else 0f,
+        tween(TvStil.leisteDauer, easing = TvStil.leisteKurve), label = "kopfleiste")
 
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         TvKulissenebene(kulisse)
@@ -222,14 +227,28 @@ fun TvHaupt(app: SwiftlyAnwendung) {
                             // nichts mehr unter die Leiste (feste Heldenzone), auf den anderen Wurzelseiten
                             // schon (die Chip-/Filterzeile traegt ihren eigenen oberen Abstand als Teil
                             // des scrollenden Inhalts, nicht als `contentPadding`).
-                            if (b != TvBereich.Start) TvKopfverlauf(Modifier.align(Alignment.TopStart))
-                            Kopfleiste(app, b, { bereich = it }, app.angebote.value) { oeffnen(Ziel("profil", uebersetzt("Profil"), "Profil")) }
+                            if (b != TvBereich.Start) TvKopfverlauf(Modifier.align(Alignment.TopStart).graphicsLayer { alpha = leiste.value })
                         }
                     } else {
                         TvUnterseite(app, ziel, oeffnen, zurueck)
                     }
                 }
                 }
+            }
+        }
+        // **Die Kopfleiste als eigene Ebene ueber dem Stapel, nicht in der Wurzelseite.** Vorlage:
+        // `HauptView.leisteDa` auf tvOS (und die Leiste auf dem Mac) — beim Oeffnen einer Unterseite
+        // blendet sie aus, beim Zurueck wieder ein, `.easeInOut(duration: 0.26)`. Solange sie in der
+        // Wurzelseite stand, verschwand sie mit ihr hart, sobald `key(b, tiefe, …)` die Seite tauschte.
+        //
+        // Ausgeblendet ist sie **kein Fokusziel** — dieselbe Regel wie `.disabled(!leisteDa)` auf
+        // tvOS: `enter = Cancel` laesst keine Richtungstaste mehr hinein, waehrend sie verschwindet
+        // oder unsichtbar steht. Bei 0 faellt sie ganz aus der Komposition.
+        if (leiste.value > 0.001f || oben.isEmpty()) {
+            val leisteDa = oben.isEmpty()
+            Box(Modifier.fillMaxWidth().graphicsLayer { alpha = leiste.value }
+                    .focusProperties { if (!leisteDa) enter = { FocusRequester.Cancel } }.focusGroup()) {
+                Kopfleiste(app, bereich, { bereich = it }, app.angebote.value) { oeffnen(Ziel("profil", uebersetzt("Profil"), "Profil")) }
             }
         }
         // Solange der Player laeuft, gehoert die Tafel ihm.

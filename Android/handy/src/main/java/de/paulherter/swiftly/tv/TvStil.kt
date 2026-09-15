@@ -115,7 +115,40 @@ object TvStil {
      *  auf Film- und Serienseite (`TvDetail`, `TvSerie`): der Kopf steht sofort, der Rest blendet. */
     val einblendenKurve = fokusKurve
     const val einblendenDauer = 300
+
+    /** Vorlage: `HauptView.leisteDa` auf tvOS — `.easeInOut(duration: 0.26)`. Die Kopfleiste weicht
+     *  beim Oeffnen einer Unterseite und kommt beim Zurueck wieder, siehe `TvHaupt`. */
+    val leisteKurve = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
+    const val leisteDauer = 260
 }
+
+/**
+ * Die Einblendung beim Erscheinen einer Seite (`eingeblendet` auf tvOS) — 0 → 1 in
+ * `einblendenDauer` mit `einblendenKurve`, jedes Mal neu, wenn `schluessel` wechselt.
+ *
+ * **Warum nicht einfach `animateFloatAsState` + `LaunchedEffect { eingeblendet = true }`** — so
+ * stand es vorher, und am Emulator war davon nichts zu sehen, die Knoepfe waren „zack da". Zwei
+ * Gruende zusammen: (1) der Wert wurde in der Komposition gelesen (`Modifier.alpha(wert)`), also
+ * setzte jedes Animationsbild die **ganze** Detailseite neu zusammen; (2) die Animation startete im
+ * Bild direkt nach dem ersten Aufbau, genau in den teuren Bildern, in denen die Seite ihre Reihen,
+ * Bilder und den Fokus einrichtet. Die Animation laeuft nach Uhrzeit, also waren die 300 ms vorbei,
+ * bevor ein ruhiges Bild kam. Jetzt: erst zwei gezeichnete Bilder abwarten (die Seite steht mit
+ * Deckkraft 0), dann animieren — und gelesen wird nur in der Zeichenphase (`graphicsLayer`, siehe
+ * `Modifier.tvEingeblendet`), kein Neuaufbau je Bild.
+ */
+@Composable
+fun rememberTvEinblendung(schluessel: Any?): androidx.compose.runtime.State<Float> {
+    val wert = remember(schluessel) { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(schluessel) {
+        withFrameNanos { }
+        withFrameNanos { }
+        wert.animateTo(1f, tween(TvStil.einblendenDauer, easing = TvStil.einblendenKurve))
+    }
+    return wert.asState()
+}
+
+/** Deckkraft aus einer Einblendung, gelesen erst beim Zeichnen — siehe `rememberTvEinblendung`. */
+fun Modifier.tvEingeblendet(deckkraft: () -> Float): Modifier = this.graphicsLayer { alpha = deckkraft() }
 
 /**
  * Eine fokussierbare Flaeche mit Lupe — `KachelStil`, `KnopfStil`, `ReiterStil` teilen sich das.

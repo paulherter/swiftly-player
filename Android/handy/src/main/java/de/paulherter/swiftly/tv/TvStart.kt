@@ -2,7 +2,7 @@ package de.paulherter.swiftly.tv
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import kotlin.math.abs
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -453,39 +453,53 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         runCatching { ziel?.requestFocus() }
     }
     val chipVersatz = if (e.genreChips && e.startGenres.isNotEmpty()) 1 else 0
-    // **Reihenwechsel mit einer gedaempften Feder, nicht mit `animateScrollToItem`.** Das lief mit
-    // der eingebauten Kurve und fing bei jedem Tastendruck bei Geschwindigkeit null neu an — stumpf,
-    // und beim schnellen Weiterdruecken ein Ruck je Reihe. tvOS' Fokusmotor bewegt weich und nimmt
-    // eine neue Zielposition mitten in der Bewegung auf.
+    // Begruendung beider Werte am Reihenwechsel direkt darunter.
+    val reihenwechselDauer = 500
+    val reihenwechselKurve = remember { CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f) }
+    // Vorlage: wie `eingeblendet` auf den Detailseiten — kommt die Startseite zurueck (Zurueck von
+    // einer Unterseite), blenden die Reihen wieder ein, waehrend Kulisse und Kopfauskunft stehen
+    // bleiben. Gegenstueck zum Ausblenden der Kopfleiste in `TvHaupt`.
+    val reiheneinblendung = rememberTvEinblendung(Unit)
+    // **Reihenwechsel: jedes Mal dieselbe Bewegung — feste Dauer, feste Kurve.**
     //
-    // **Feder statt `tween(500, CubicBezier(0.25, 0.1, 0.25, 1))`:** eine Zeitkurve kennt keine
-    // Anfangsgeschwindigkeit — wird sie unterbrochen, beginnt die naechste wieder bei null, und genau
-    // das ist der Ruck. Die Feder startet mit `schwung` (der Geschwindigkeit, bei der die alte
-    // abgebrochen wurde). `dampingRatio = 1` schwingt nicht ueber; `stiffness = 260` setzt sich nach
-    // rund 450 ms — dieselbe Dauer wie die Zeitkurve.
-    val schwung = remember { floatArrayOf(0f) }
+    // Vorher lief hier eine Feder (Daempfung 1, Steifigkeit 260), die beim Unterbrechen die
+    // Geschwindigkeit der alten Bewegung uebernahm. Am Emulator wirkte das je nach Tempo anders: wer
+    // schneller drueckte, bekam schnellere, kuerzere Bewegungen, weil jede neue mit dem Schwung der
+    // vorigen losging. Paul will **immer dieselbe Weichheit**, egal wie schnell gedrueckt wird.
+    //
+    // Deshalb jetzt pro Reihenwechsel eine Zeitkurve, die bei neuem Ziel **von der aktuellen
+    // Position aus** neu startet — mit derselben Dauer, ohne Geschwindigkeitsuebernahme und ohne
+    // Sprung. Der neue `LaunchedEffect` bricht den alten ab (`scroll {}` ist ein Mutex, die laufende
+    // Bewegung endet dort, wo sie gerade steht), und `weg` wird aus dem Layout dieses Moments
+    // gerechnet, also vom tatsaechlichen Stand aus.
+    //
+    // **500 ms:** eine Reihe ist gut eine Kachelhoehe Weg (~200 dp) — kuerzer wirkt auf drei Metern
+    // Abstand hektisch, laenger laesst die Liste dem Fokus sichtbar hinterherhaengen. **Kurve
+    // `CubicBezier(0.25, 0.1, 0.25, 1)`** (CSS „ease"): zieht schnell an, damit die Liste dem Druck
+    // sofort folgt, und laeuft lang und sanft aus — das weiche Ankommen ist, was „weich" ausmacht.
+    // Anders als `easeInOut` beginnt sie nicht zaeh, darum wirkt auch ein Neustart mitten in der
+    // Bewegung nicht wie ein Stocken.
+    //
+    // Links/Rechts in einer Reihe aendert `fokusReihe` nicht, dieser Effekt laeuft dann gar nicht —
+    // das senkrechte Zucken bleibt weg (siehe `TvKeinSenkrechtesBringIntoView` unten).
     LaunchedEffect(fokusReihe, liste) {
         if (liste == null) return@LaunchedEffect
         // Auf der ersten Reihe ganz nach oben, damit die Genre-Chips wieder mit ins Bild kommen —
         // nicht nur bis zum Reihentitel, der Chip-Zeile knapp darueber liegen liesse.
         val index = if (fokusReihe == 0) 0 else fokusReihe + chipVersatz
         val info = listenzustand.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
-        if (info == null) { schwung[0] = 0f; listenzustand.animateScrollToItem(index); return@LaunchedEffect }
+        if (info == null) { listenzustand.animateScrollToItem(index); return@LaunchedEffect }
         // Dasselbe Ziel wie `animateScrollToItem(index)`: die Zeile oben buendig.
         val weg = (info.offset - listenzustand.layoutInfo.viewportStartOffset).toFloat()
-        if (abs(weg) < 0.5f && abs(schwung[0]) < 1f) return@LaunchedEffect
-        val feder = Animatable(0f)
+        if (abs(weg) < 0.5f) return@LaunchedEffect
+        val bewegung = Animatable(0f)
         listenzustand.scroll {
             var zuletzt = 0f
-            feder.animateTo(weg, spring(dampingRatio = 1f, stiffness = 260f, visibilityThreshold = 0.5f),
-                            initialVelocity = schwung[0]) {
+            bewegung.animateTo(weg, tween(reihenwechselDauer, easing = reihenwechselKurve)) {
                 scrollBy(value - zuletzt)
                 zuletzt = value
-                schwung[0] = velocity
             }
         }
-        // Nur bei ungestoertem Ende — ein Abbruch laesst `schwung` fuer die naechste Bewegung stehen.
-        schwung[0] = 0f
     }
 
     // Wie auf Apple: „gar nichts geladen" ist etwas anderes als „nichts vorhanden" —
@@ -535,7 +549,7 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                     // Systemvorgabe (`TvReihenBringIntoView`, der Nachbau davon) wieder bereit, damit
                     // die naechste Kachel dort weiter mitgescrollt wird.
                     CompositionLocalProvider(LocalBringIntoViewSpec provides TvKeinSenkrechtesBringIntoView) {
-                        LazyColumn(Modifier.weight(1f)
+                        LazyColumn(Modifier.weight(1f).tvEingeblendet { reiheneinblendung.value }
                                        .focusProperties { enter = { eintrittsziel() ?: FocusRequester.Default } }
                                        .focusGroup(), state = listenzustand,
                                    contentPadding = PaddingValues(bottom = 40.dp),
