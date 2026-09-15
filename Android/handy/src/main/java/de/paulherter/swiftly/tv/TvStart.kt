@@ -35,6 +35,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.CoroutineScope
+import kotlin.math.roundToInt
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -148,19 +159,79 @@ object TvReihenBringIntoView : BringIntoViewSpec {
     }
 }
 
+/** Wie ein Abschnitt beim Fokuseintritt ins Bild kommt — siehe `TvAbschnitte.betreten`. */
+enum class TvAbschnittsart {
+    /** Kopf mit Knopfreihe: Seite ganz nach oben, voller Kopf sichtbar. */
+    Kopf,
+    /** Abschnitt oben buendig (mit `TvAbschnitte.rand`), am Seitenende nicht ueber `maxValue` hinaus. */
+    Buendig,
+    /** Erster Abschnitt einer Seite ohne fokussierbaren Kopf (Person, Seerr ohne Anfrageknopf):
+     *  so wenig wie moeglich scrollen, dass seine Unterkante im Bild steht — der Kopf bleibt sichtbar. */
+    Kopfnah,
+}
+
 /**
- * Dasselbe Werkzeug wie oben, aber fuer Seiten **ohne** eigene Scroll-Steuerung (Serie, Film, Person,
- * Seerr-Detail — `verticalScroll`, keine `LazyColumn`): dort darf die senkrechte Seite nicht ganz
- * taub werden, sonst waere ein Abschnitt unterhalb des Bildes gar nicht mehr erreichbar.
+ * Vorlage: tvOS-Fokusmotor mit `focusSection` auf `DetailView`/`SerienView`/`PersonView`/
+ * `SeerrDetailView` — wechselt der Fokus in einen Abschnitt, steht **der ganze Abschnitt** frei
+ * (Reihentitel, Kacheln, Beschriftung samt Lupen-Luft); zurueck in die Knopfreihe steht die Seite
+ * wieder ganz oben.
  *
- * Ein Objekt ohne eigene Ueberschreibung erbt `BringIntoViewSpec.calculateScrollDistance`s
- * Standardmethode — dieselbe Rechnung, die auf einem Telefon (ohne `leanback`-Merkmal) automatisch
- * greift: **scrollen nur, wenn das Ziel nicht schon vollstaendig im Bild steht**, dann in einem Zug um
- * genau die noetige Strecke. Kein Pivot-Zurechtruecken, also kein Zappeln bei einem Fokuswechsel, der
- * ohnehin im Bild bleibt — aber ein Wechsel in einen Abschnitt ausserhalb des Bildes scrollt weiterhin.
+ * Vorher lag hier `TvAbschnittsweisesBringIntoView` (Compose-Standardrechnung „nur so weit wie
+ * noetig"). Die rechnet aber mit dem **fokussierten Element**, nicht mit dem Abschnitt: nach unten
+ * blieben die Namen unter den Besetzungsbildern abgeschnitten, nach oben kam nur der Play-Knopf ins
+ * Bild und Titel/Beschreibung darueber nie wieder. Jetzt ist das senkrechte Bring-into-View auf
+ * diesen Seiten ganz aus (`TvKeinSenkrechtesBringIntoView`), jeder Abschnitt meldet seine Lage und
+ * scrollt beim **Eintritt** (`hasFocus` wechselt) selbst — Links/Rechts innerhalb bewegt nichts.
+ */
+class TvAbschnitte internal constructor(val scroll: ScrollState, private val lauf: CoroutineScope, private val randPx: Float) {
+    internal var inhalt: LayoutCoordinates? = null
+    internal var fenster = 0
+    private val lagen = HashMap<String, LayoutCoordinates>()
+    private var aktiv: String? = null
+
+    internal fun lage(schluessel: String, c: LayoutCoordinates) { lagen[schluessel] = c }
+    internal fun verlassen(schluessel: String) { if (aktiv == schluessel) aktiv = null }
+
+    internal fun betreten(schluessel: String, art: TvAbschnittsart) {
+        if (aktiv == schluessel) return
+        aktiv = schluessel
+        val ziel = if (art == TvAbschnittsart.Kopf) 0f else {
+            val c = lagen[schluessel] ?: return
+            val i = inhalt ?: return
+            if (!c.isAttached || !i.isAttached || fenster <= 0) return
+            // Beide Koordinaten liegen im gescrollten Inhalt — der Abstand ist vom Scrollstand frei.
+            val oben = i.localPositionOf(c, Offset.Zero).y
+            val unten = oben + c.size.height
+            if (art == TvAbschnittsart.Buendig) oben - randPx else unten - fenster
+        }
+        val soll = ziel.roundToInt().coerceIn(0, scroll.maxValue)
+        if (soll != scroll.value) lauf.launch { scroll.animateScrollTo(soll, tween(TvStil.abschnittDauer, easing = TvStil.fokusKurve)) }
+    }
+}
+
+/**
+ * Die scrollende Spalte fuer `TvDetail`, `TvSerie`, `TvPerson`, `TvSeerrDetailSeite`. Senkrechtes
+ * Bring-into-View aus; `TvStreifen` und der Folgenstreifen setzen innen wieder `TvReihenBringIntoView`.
  */
 @OptIn(ExperimentalFoundationApi::class)
-object TvAbschnittsweisesBringIntoView : BringIntoViewSpec
+@Composable
+fun TvAbschnittsseite(inhalt: @Composable ColumnScope.(TvAbschnitte) -> Unit) {
+    val scroll = rememberScrollState()
+    val lauf = rememberCoroutineScope()
+    val rand = with(LocalDensity.current) { 12.dp.toPx() }
+    val abschnitte = remember(scroll) { TvAbschnitte(scroll, lauf, rand) }
+    CompositionLocalProvider(LocalBringIntoViewSpec provides TvKeinSenkrechtesBringIntoView) {
+        Column(Modifier.fillMaxSize().onSizeChanged { abschnitte.fenster = it.height }
+                   .verticalScroll(scroll).onGloballyPositioned { abschnitte.inhalt = it }) {
+            inhalt(abschnitte)
+        }
+    }
+}
+
+/** Meldet Lage und Fokuseintritt eines Abschnitts an `TvAbschnitte`. */
+fun Modifier.tvAbschnitt(abschnitte: TvAbschnitte, schluessel: String, art: TvAbschnittsart = TvAbschnittsart.Buendig): Modifier =
+    this.onGloballyPositioned { abschnitte.lage(schluessel, it) }
+        .onFocusChanged { if (it.hasFocus) abschnitte.betreten(schluessel, art) else abschnitte.verlassen(schluessel) }
 
 /**
  * Vorlage: `Kopfauskunft` in `Sources/tvOS/TVBausteine.swift` — **eine Quelle** fuer Startseite,
@@ -185,11 +256,14 @@ fun Kopfauskunft(titel: String, zweitzeile: String?, angabenzeile: String?, bewe
             Text(it, style = TvStil.auskunftZweitzeile, color = Stil.schrift.copy(alpha = 0.78f), maxLines = 1,
                  overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp).height(22.dp))
         }
-        // **`heightIn(min=)` statt `height()`.** 17 dp ist die Vorgabe aus `Stil.auskunftHoehe`
-        // (34 pt halbiert), aber die Direct-Play-Marke braucht mit Symbol, Text und eigenem
-        // senkrechten Innenabstand mehr Platz — ein hartes `height()` schnitte ihr die Schrift
-        // unten ab.
-        Row(Modifier.padding(top = 7.dp).heightIn(min = 17.dp), verticalAlignment = Alignment.CenterVertically,
+        // **Feste 17 dp, Inhalt darf hinausragen** — tvOS: `.frame(height: 34)`, die Direct-Play-Marke
+        // steht mittig und ragt ueber die Zeile, ohne etwas zu verschieben. Vorher `heightIn(min = 17)`:
+        // mit Marke (~26 dp) oder Freigabe-Plakette wuchs die Zeile auf der Detailseite, und Beschreibung
+        // und Knopfreihe standen tiefer als auf der Startseite. `wrapContentHeight(unbounded = true)`
+        // misst die Reihe ohne Hoehengrenze, meldet aber nur 17 dp und zentriert sie darin; Box und
+        // Row clippen nicht, also wird nichts abgeschnitten.
+        Box(Modifier.padding(top = 7.dp).height(17.dp)) {
+        Row(Modifier.wrapContentHeight(Alignment.CenterVertically, unbounded = true), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             angabenzeile?.takeIf { it.isNotEmpty() }?.let {
                 Text(it, style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.62f), maxLines = 1)
@@ -198,6 +272,7 @@ fun Kopfauskunft(titel: String, zweitzeile: String?, angabenzeile: String?, bewe
             // Direct-Play-Beleg ist Detail vorbehalten und kommt ueber `schluss`.
             TvBelegzeile(direktplay = false, hinweis = null, bewertung = bewertung, freigabe = freigabe)
             schluss()
+        }
         }
         Text(beschreibung.orEmpty(), style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.62f),
              maxLines = if (zweitzeile != null) 2 else 3, overflow = TextOverflow.Ellipsis,

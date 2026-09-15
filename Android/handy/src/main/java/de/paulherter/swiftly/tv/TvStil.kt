@@ -80,6 +80,8 @@ object TvStil {
     /** `.easeOut(duration: 0.14)`. */
     val fokusKurve = CubicBezierEasing(0f, 0f, 0.58f, 1f)
     const val fokusDauer = 140
+    /** Seitenscroll beim Abschnittswechsel (`TvAbschnitte`) — ruhiger als die Lupe, dieselbe Kurve. */
+    const val abschnittDauer = 300
 
     val titelGross = TextStyle(fontSize = 28.5.sp, fontWeight = FontWeight.Bold)
     /** Vorlage: `Kopfauskunft`-Titel — 60 pt, `tracking(-1.4)`, halbiert. */
@@ -297,9 +299,12 @@ fun TvKachel(bild: String?, titel: String, unterzeile: String?, quer: Boolean = 
                 // bleibt `Stil.flaeche` sichtbar — genau das Verhalten von `Bild` in
                 // `Sources/tvOS/Stil.swift` (dort auch nur eine Flaeche, kein Symbol).
                 AsyncImage(model = bild, contentDescription = titel, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().alpha(deckkraft))
+                // Vorlage: `Fortschrittsbalken` in `Sources/tvOS/Stil.swift` — **buendig an der
+                // Unterkante, volle Breite, eckig**; die Rundung kommt allein vom Beschnitt der Kachel.
+                // Vorher schwebte hier eine eingerueckte Pille ueber dem Bild.
                 fortschritt?.takeIf { it > 0 }?.let { a ->
-                    Box(Modifier.align(Alignment.BottomStart).padding(8.dp).fillMaxWidth().height(3.dp).clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.25f))) {
+                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp)
+                            .background(Color.White.copy(alpha = 0.22f))) {
                         Box(Modifier.fillMaxWidth(a.toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(Stil.akzent))
                     }
                 }

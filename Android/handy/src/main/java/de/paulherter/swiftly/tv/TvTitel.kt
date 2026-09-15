@@ -78,7 +78,8 @@ import java.util.Locale
  */
 @Composable
 fun TvDetailkopf(titel: String, jahrLaufzeit: String, bewertung: Double?, freigabe: String?, beschreibung: String?,
-                 direktplay: Boolean, hinweis: String?, knopfAlpha: Float = 1f, knoepfe: @Composable () -> Unit) {
+                 direktplay: Boolean, hinweis: String?, knopfAlpha: Float = 1f, modifier: Modifier = Modifier,
+                 knoepfe: @Composable () -> Unit) {
     // **306,5 dp statt 177 — aus `Stil.heldenHoeheDetail` halbiert.** Vorher war die Zone knapp
     // bemessen und die Beschreibung wuchs mit ihrem Inhalt: eine kurze liess die Knopfreihe fast an
     // ihr kleben, tvOS reserviert dafuer immer drei Zeilen (`Stil.auskunftHoehe`).
@@ -94,7 +95,7 @@ fun TvDetailkopf(titel: String, jahrLaufzeit: String, bewertung: Double?, freiga
     //
     // **`zweitzeile = null`** — die Detailseiten sehen sie nie: eine Folge bekommt keine eigene
     // Seite, jeder Weg zu ihr fuehrt auf die Serienseite (A8). Siehe `Kopfauskunft`.
-    Box(Modifier.fillMaxWidth().height(306.5.dp)) {
+    Box(modifier.fillMaxWidth().height(306.5.dp)) {
         Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp)) {
             Kopfauskunft(titel, null, jahrLaufzeit, bewertung, freigabe, beschreibung) {
                 TvBelegzeile(direktplay, hinweis, bewertung = null, freigabe = null)
@@ -211,10 +212,9 @@ fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, ImageVector> = empty
  *
  * **`TvReihenBringIntoView` ausdruecklich wieder eingesetzt**, siehe `TvKeinSenkrechtesBringIntoView`
  * in `TvStart.kt`: die Seiten, die diesen Streifen einbetten (`TvDetail`, `TvSerie`, `TvPerson`,
- * `TvSeerrDetailSeite`), schalten das Bring-into-View ihres `verticalScroll` auf
- * `TvAbschnittsweisesBringIntoView` um, damit ein sichtbarer Fokuswechsel die Seite nicht mehr
- * zappelig zurechtrueckt. Ohne diese Zeile wuerde die `LazyRow` dieselbe gedaempfte Spec erben und
- * beim Wandern nicht mehr zur naechsten Kachel scrollen.
+ * `TvSeerrDetailSeite`), schalten das senkrechte Bring-into-View ihrer Spalte ganz ab und scrollen
+ * abschnittsweise selbst (`TvAbschnittsseite` in `TvStart.kt`). Ohne diese Zeile wuerde die
+ * `LazyRow` die abgeschaltete Spec erben und beim Wandern nicht mehr zur naechsten Kachel scrollen.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -296,12 +296,11 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         TvBildgrund(titel?.kopfbild)
         Kulisse(titel?.kopfbild, Modifier.align(Alignment.TopEnd))
-        CompositionLocalProvider(LocalBringIntoViewSpec provides TvAbschnittsweisesBringIntoView) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        TvAbschnittsseite { a ->
                 TvDetailkopf(name, titel?.jahrLaufzeit.orEmpty(), titel?.bewertung, titel?.freigabe, titel?.beschreibung,
                              direktplay = titel?.planDa == true && titel.lossless,
                              hinweis = if (titel?.planDa == true && !titel.lossless) titel.methode else null,
-                             knopfAlpha = einblendAlpha) {
+                             knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf)) {
                     TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
                         if (titel?.planDa == true) app.spiel.value = Abspielwunsch(ziel.id, titel.fortsetzenAb)
                     }
@@ -342,18 +341,17 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                         TvKnopf(null, Icons.Filled.MoreHoriz) {}
                     }
                 }
-                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme"), Modifier.alpha(einblendAlpha)) {
+                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme"), Modifier.alpha(einblendAlpha).tvAbschnitt(a, "aehnliche")) {
                     items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
                 }
-                if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras"), Modifier.alpha(einblendAlpha)) {
+                if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras"), Modifier.alpha(einblendAlpha).tvAbschnitt(a, "extras")) {
                     items(extras, key = { it.id }) { x -> TvKachel(x.bild, x.name, x.laufzeit, quer = true) { app.spiel.value = Abspielwunsch(x.id, null) } }
                 }
                 val leute = titel?.darsteller.orEmpty()
-                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.alpha(einblendAlpha)) {
+                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.alpha(einblendAlpha).tvAbschnitt(a, "besetzung")) {
                     items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
                 }
                 Spacer(Modifier.height(40.dp))
-            }
         }
     }
 }
@@ -396,8 +394,7 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
         TvBildgrund(banner.getOrNull(if (banner.isEmpty()) 0 else stelle % banner.size))
         // Weich und langsam: 1,2 s zwischen den Querbildern der Titel.
         Kulisse(banner.getOrNull(if (banner.isEmpty()) 0 else stelle % banner.size), Modifier.align(Alignment.TopEnd), dauer = 1200)
-        CompositionLocalProvider(LocalBringIntoViewSpec provides TvAbschnittsweisesBringIntoView) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        TvAbschnittsseite { a ->
                 // **306,5 dp, dieselbe Gesamthoehe wie `TvDetailkopf`** (`Stil.heldenHoeheDetail`
                 // halbiert) — tvOS baut den Kopf der Personenseite genau wie den von Film und Serie:
                 // `.padding(.top, 140 + kopfversatzDetail)` **innerhalb** von `.frame(height:
@@ -433,7 +430,8 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                 // **Ohne Jahr, dafuer mit Marke** — wie `Titelstreifen` auf tvOS (`mitUnterzeile: false`,
                 // `marke: Anzeigeregeln.kachelmarke(...)`). Die Marke steht schon im JSON, dieselbe
                 // Regel wie im Bibliotheksraster; nur die Kachel hier zeigte sie bisher nicht an.
-                if (s != null && s.titel.isNotEmpty()) TvStreifen(uebersetzt("Auf deinem Server")) {
+                // Kein fokussierbarer Kopf: der erste Abschnitt haelt den Kopf so weit wie moeglich im Bild.
+                if (s != null && s.titel.isNotEmpty()) TvStreifen(uebersetzt("Auf deinem Server"), Modifier.tvAbschnitt(a, "server", TvAbschnittsart.Kopfnah)) {
                     items(s.titel.size, key = { s.titel[it].id }) { i ->
                         val k = s.titel[i]
                         TvKachel(k.plakat, k.titel, null, marke = k.marke, markenzahl = k.markenzahl,
@@ -441,7 +439,8 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                     }
                 }
                 anfragbar?.takeIf { it.isNotEmpty() }?.let { liste ->
-                    TvStreifen(uebersetzt("Kann angefragt werden")) {
+                    TvStreifen(uebersetzt("Kann angefragt werden"), Modifier.tvAbschnitt(a, "anfragbar",
+                               if (s?.titel.isNullOrEmpty()) TvAbschnittsart.Kopfnah else TvAbschnittsart.Buendig)) {
                         items(liste, key = { it.schluessel }) { t ->
                             TvKachel(t.plakat, t.titel, Seerrmarke.kurzwort(t.stand) ?: t.jahr?.toString(), deckkraft = 0.45f) {
                                 app.seerrTreffer[t.schluessel] = t
@@ -455,7 +454,6 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                          modifier = Modifier.padding(start = TvStil.randSeite, top = 30.dp))
                 }
                 Spacer(Modifier.height(40.dp))
-            }
         }
     }
 }

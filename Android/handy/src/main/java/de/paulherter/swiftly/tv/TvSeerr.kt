@@ -196,11 +196,11 @@ fun TvSeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
         TvBildgrund(k.kulisse)
         Kulisse(k.kulisse, Modifier.align(Alignment.TopEnd))
-        // Minimaler Eingriff, siehe `TvKeinSenkrechtesBringIntoView`/`TvAbschnittsweisesBringIntoView`
-        // in `TvStart.kt`: derselbe Sprung nach oben beim Oeffnen wie auf `TvDetail`
-        // (`TvTitel.kt`), gleiche Behebung, hier bewusst nicht mehr angefasst als das.
-        CompositionLocalProvider(LocalBringIntoViewSpec provides TvAbschnittsweisesBringIntoView) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        // Abschnittsweises Scrollen wie `TvDetail`, siehe `TvAbschnittsseite` in `TvStart.kt`.
+        // Ohne Anfrageknopf ist der Kopf nicht fokussierbar — dann haelt der erste Abschnitt ihn
+        // so weit wie moeglich im Bild (`Kopfnah`).
+        val ersteArt = if (anfragbar && !angefragt) TvAbschnittsart.Buendig else TvAbschnittsart.Kopfnah
+        TvAbschnittsseite { a ->
                 // **Derselbe Kopf wie `TvDetailkopf`: feste Zone 306,5 dp, Block innen ab 98 dp.**
                 // Vorlage: `SeerrDetailView.kopf` — `.frame(height: heldenHoeheDetail)`, Block bei
                 // 140 + kopfversatzDetail. Und: „Der Stand steht in der Angabenzeile statt in einer
@@ -208,7 +208,7 @@ fun TvSeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
                 // Seite steht." Vorher stand er in einer eigenen Zeile unter einer 177-dp-Spalte:
                 // 132,5 Kopfauskunft + 32 Standzeile + 56 Knopfreihe = 220,5 dp — die Knopfreihe
                 // ragte gut 40 dp in den Besetzungsstreifen.
-                Box(Modifier.fillMaxWidth().height(306.5.dp)) {
+                Box(Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf).fillMaxWidth().height(306.5.dp)) {
                 Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp)) {
                     Kopfauskunft(k.titel, null, nebenzeile, null, null, d?.feldText("beschreibung")) {
                         val farbe = Seerrmarke.farbe(stand)
@@ -236,16 +236,16 @@ fun TvSeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
                     }
                 }
                 }
-                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung")) {
+                if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung"), Modifier.tvAbschnitt(a, "besetzung", ersteArt)) {
                     items(leute, key = { it.id }) { p -> TvBesetzung(p) {} }
                 }
-                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Titel")) {
+                if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Titel"),
+                        Modifier.tvAbschnitt(a, "aehnliche", if (leute.isEmpty()) ersteArt else TvAbschnittsart.Buendig)) {
                     items(aehnliche, key = { it.schluessel }) { t ->
                         Seerrkachel(t) { app.seerrTreffer[t.schluessel] = t; oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel")) }
                     }
                 }
                 Spacer(Modifier.height(40.dp))
-            }
         }
     }
 }
