@@ -21,6 +21,18 @@ public final class Kern: @unchecked Sendable {
     private var _client: JellyfinClient?
     private var _adressen: Bildadresse?
     private var _sitzung: Session?
+    private var _wiedergabe: Wiedergabe?
+
+    /// Die laufende Wiedergabe — was `PlayerScreen` auf iOS haelt: Plan, Abschnitte, die
+    /// naechste Folge und den Stand des Takts. Kotlin haelt nur Bild und Finger.
+    private struct Wiedergabe {
+        let item: Item
+        let plan: PlaybackPlan
+        var abschnitte: [Abschnitt]
+        var naechste: Item?
+        var stand = Wiedergabetakt.Stand()
+        let start = Date()
+    }
 
     public init(geraeteID: String, geraeteName: String, fassung: String) {
         self.geraeteID = geraeteID
@@ -277,7 +289,7 @@ public final class Kern: @unchecked Sendable {
             stand: stand.map { f in
                 Standantwort(id: f.id, fortsetzen: (f.userData?.playbackPositionTicks ?? 0) > 0,
                              restzeit: f.restzeitText, fortschritt: f.userData?.playedPercentage.map { $0 / 100 },
-                             staffel: f.parentIndexNumber, folge: f.indexNumber)
+                             staffel: f.parentIndexNumber, folge: f.indexNumber, ab: f.fortsetzenAb)
             },
             knopftext: Item.serienknopf(folge: stand, laedt: false),
             staffeln: staffeln.map { Staffelantwort(id: $0.id, name: $0.name) },
@@ -302,9 +314,113 @@ public final class Kern: @unchecked Sendable {
             zeilen.append(Folgenantwort(
                 id: f.id, titel: f.indexNumber.map { "\($0). \(f.name)" } ?? f.name, unterzeile: zeit,
                 bild: bild?.absoluteString,
-                fortschritt: gesehen ? nil : f.userData?.playedPercentage.map { $0 / 100 }, gesehen: gesehen))
+                fortschritt: gesehen ? nil : f.userData?.playedPercentage.map { $0 / 100 }, gesehen: gesehen,
+                ab: f.fortsetzenAb))
         }
         return try json(zeilen)
+    }
+
+    // MARK: Wiedergabe
+
+    /// Oeffnet einen Titel zum Abspielen — `AppModel.plan(for:)`, die Abschnitte und die
+    /// naechste Folge in einem Zug. **Die Faehigkeiten werden vor jedem Start neu gemeldet:**
+    /// nach einem Neustart des Servers brach die Uebernahme sonst still.
+    public func wiedergabeOeffnen(id: String) async throws -> String {
+        guard let c = client else { throw Kernfehler.nichtVerbunden }
+        try? await c.faehigkeitenMelden()
+        let item = try await c.item(id: id)
+        let grenze = Bitratengrenze.fuer(immerDirectPlay: true, megabit: 0)
+        async let geplant = c.playbackPlan(for: id, profile: .vlc(maxBitrate: grenze))
+        async let teile = c.abschnitte(fuer: id)
+        async let danach = naechsteFolge(nach: item, c)
+        guard let plan = try await geplant else { throw URLError(.resourceUnavailable) }
+        let w = Wiedergabe(item: item, plan: plan, abschnitte: await teile, naechste: await danach)
+        sperre.lock(); _wiedergabe = w; sperre.unlock()
+        return try json(Spielplanantwort(
+            url: plan.url.absoluteString, lossless: plan.isLossless, methode: plan.method.rawValue,
+            titel: item.name,
+            untertitel: [item.seriesName, item.folgenkuerzel].compactMap { $0 }.joined(separator: " · "),
+            naechste: w.naechste != nil))
+    }
+
+    private func naechsteFolge(nach item: Item, _ c: JellyfinClient) async -> Item? {
+        guard item.type == "Episode", let serie = item.seriesId else { return nil }
+        return try? await c.folgeNach(itemID: item.id, seriesID: serie)
+    }
+
+    /// Ein Takt alle 500 ms — `Wiedergabetakt.rechnen` wie auf iOS. Start und Fortschritt gehen
+    /// von hier an den Server; zurueck kommt, was die Oberflaeche tun soll.
+    public func wiedergabeTakt(dauer: Double, position: Double, zeigtBild: Bool, laeuft: Bool,
+                               hatTonspuren: Bool, amSchieben: Bool, sprungLaeuft: Bool) -> String {
+        sperre.lock()
+        guard var w = _wiedergabe, let c = _client else { sperre.unlock(); return "{}" }
+        let messung = Wiedergabetakt.Messung(dauer: dauer, position: position, guteStelle: position,
+                                             zeigtBild: zeigtBild, stelltEin: false, laeuft: laeuft,
+                                             hatTonspuren: hatTonspuren)
+        let auftrag = Wiedergabetakt.rechnen(&w.stand, messung: messung, stelltWiederHer: false,
+                                             sprungLaeuft: sprungLaeuft, amSchieben: amSchieben, seitStart: w.start)
+        _wiedergabe = w
+        sperre.unlock()
+
+        let stelle = w.stand.position
+        let ticks = JellyfinClient.ticks(fromSeconds: stelle)
+        let id = w.item.id, plan = w.plan, pausiert = !w.stand.laeuft
+        if auftrag.startMelden {
+            Task { try? await c.reportStart(itemID: id, plan: plan, ticks: ticks) }
+        } else if auftrag.fortschrittMelden {
+            Task { try? await c.reportProgress(itemID: id, plan: plan, positionTicks: ticks, paused: pausiert) }
+        }
+
+        // Mit Abschnitten entscheidet `Abschnittslogik`; ohne sie die Restzeitregel aus `Folgenende`.
+        var art = "keiner"
+        var nach: Double?
+        var text = ""
+        if w.abschnitte.isEmpty {
+            if w.naechste != nil, Folgenende.knopfZeigen(position: stelle, dauer: w.stand.dauer) {
+                art = "naechste"
+                text = Knopfangebot.naechsteFolge.beschriftung
+            }
+        } else {
+            let angebot = Abschnittslogik.angebot(position: stelle, dauer: w.stand.dauer,
+                                                  abschnitte: w.abschnitte, hatNaechsteFolge: w.naechste != nil)
+            text = angebot.beschriftung
+            switch angebot {
+            case .keiner: break
+            case let .ueberspringen(ziel, _): art = "ueberspringen"; nach = ziel
+            case .naechsteFolge: art = "naechste"
+            }
+        }
+        let weiter = w.naechste != nil
+            && Folgenende.weiterschalten(position: stelle, dauer: w.stand.dauer,
+                                         seitOeffnen: Date().timeIntervalSince(w.start))
+        return (try? json(Taktantwort(ladeschirmWeg: auftrag.ladeschirmWeg, spurenAnwenden: auftrag.spurenAnwenden,
+                                      position: stelle, angebot: art, nach: nach, angebotstext: text,
+                                      weiterschalten: weiter))) ?? "{}"
+    }
+
+    /// Ausser der Reihe melden — nach Anhalten, Weiterspielen und Springen.
+    public func wiedergabeMelden(position: Double, pausiert: Bool) {
+        sperre.lock(); let w = _wiedergabe; let c = _client; sperre.unlock()
+        guard let w, let c, w.stand.startGemeldet else { return }
+        let ticks = JellyfinClient.ticks(fromSeconds: position)
+        Task { try? await c.reportProgress(itemID: w.item.id, plan: w.plan, positionTicks: ticks, paused: pausiert) }
+    }
+
+    /// Beendet — muss auch beim Schliessen kommen, sonst haengt die Sitzung im Dashboard. Ob der
+    /// Titel als gesehen gilt, entscheidet der Server aus der gemeldeten Stelle.
+    public func wiedergabeBeenden(position: Double) {
+        sperre.lock(); let w = _wiedergabe; let c = _client; _wiedergabe = nil; sperre.unlock()
+        guard let w, let c else { return }
+        let ticks = JellyfinClient.ticks(fromSeconds: position)
+        Task { try? await c.reportStopped(itemID: w.item.id, plan: w.plan, positionTicks: ticks) }
+    }
+
+    /// Zur naechsten Folge: die alte beenden, die neue oeffnen.
+    public func naechsteFolgeOeffnen(position: Double) async throws -> String {
+        sperre.lock(); let naechste = _wiedergabe?.naechste; sperre.unlock()
+        guard let naechste else { throw URLError(.resourceUnavailable) }
+        wiedergabeBeenden(position: position)
+        return try await wiedergabeOeffnen(id: naechste.id)
     }
 
     // MARK: Person
@@ -463,6 +579,7 @@ struct Standantwort: Encodable {
     let restzeit: String?
     let fortschritt: Double?
     let staffel, folge: Int?
+    let ab: Double?
 }
 struct Staffelantwort: Encodable { let id, name: String }
 struct Folgenantwort: Encodable {
@@ -470,6 +587,21 @@ struct Folgenantwort: Encodable {
     let unterzeile, bild: String?
     let fortschritt: Double?
     let gesehen: Bool
+    let ab: Double?
+}
+struct Spielplanantwort: Encodable {
+    let url: String
+    let lossless: Bool
+    let methode, titel, untertitel: String
+    let naechste: Bool
+}
+struct Taktantwort: Encodable {
+    let ladeschirmWeg, spurenAnwenden: Bool
+    let position: Double
+    let angebot: String
+    let nach: Double?
+    let angebotstext: String
+    let weiterschalten: Bool
 }
 struct Personenseitenantwort: Encodable {
     let beschreibung, geboren, ort, bild: String?

@@ -47,6 +47,9 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Das offene Auswahlblatt. Es liegt ueber der Leiste, deshalb haelt es die App, nicht die Seite. */
     val blatt = androidx.compose.runtime.mutableStateOf<Blattwunsch?>(null)
 
+    /** Was gerade abgespielt wird — der Player liegt ueber allen Seiten, unter dem Blatt. */
+    val spiel = androidx.compose.runtime.mutableStateOf<Abspielwunsch?>(null)
+
     /**
      * **Der Servername, einmal fuer alle Seiten** — wie `AppModel.serverName`. `null` heisst
      * „noch nicht gefragt", leer heisst „der Server nennt keinen".

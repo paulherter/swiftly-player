@@ -62,9 +62,9 @@ import org.json.JSONObject
 
 data class Staffel(val id: String, val name: String)
 data class Folgenstand(val id: String, val fortsetzen: Boolean, val restzeit: String?, val fortschritt: Double?,
-                       val staffel: Int?, val folge: Int?)
+                       val staffel: Int?, val folge: Int?, val ab: Double? = null)
 data class Folge(val id: String, val titel: String, val unterzeile: String?, val bild: String?,
-                 val fortschritt: Double?, val gesehen: Boolean)
+                 val fortschritt: Double?, val gesehen: Boolean, val ab: Double? = null)
 
 /** Antwort von `Kern.serie` — Knopftext, Vorwahl der Staffel und Besetzung stehen dort schon fest. */
 data class Serie(
@@ -92,7 +92,7 @@ private fun serieLesen(json: String): Serie = JSONObject(json).let { o ->
           o.optBoolean("planDa"), o.optBoolean("lossless"), o.feldText("methode"),
           o.optJSONObject("stand")?.let { s ->
               Folgenstand(s.getString("id"), s.optBoolean("fortsetzen"), s.feldText("restzeit"), s.feldZahl("fortschritt"),
-                          if (s.isNull("staffel")) null else s.getInt("staffel"), if (s.isNull("folge")) null else s.getInt("folge"))
+                          if (s.isNull("staffel")) null else s.getInt("staffel"), if (s.isNull("folge")) null else s.getInt("folge"), s.feldZahl("ab"))
           },
           o.optString("knopftext"),
           o.feldListe("staffeln") { Staffel(it.getString("id"), it.getString("name")) },
@@ -103,7 +103,7 @@ private fun serieLesen(json: String): Serie = JSONObject(json).let { o ->
 private fun folgenLesen(json: String): List<Folge> = JSONArray(json).let { a ->
     (0 until a.length()).map { i ->
         a.getJSONObject(i).let { f ->
-            Folge(f.getString("id"), f.getString("titel"), f.feldText("unterzeile"), f.feldText("bild"), f.feldZahl("fortschritt"), f.optBoolean("gesehen"))
+            Folge(f.getString("id"), f.getString("titel"), f.feldText("unterzeile"), f.feldText("bild"), f.feldZahl("fortschritt"), f.optBoolean("gesehen"), f.feldZahl("ab"))
         }
     }
 }
@@ -167,6 +167,11 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
         }
     }
 
+    // Nach dem Schauen neu laden: der Knopf zeigt jetzt eine andere Folge.
+    val spielt = app.spiel.value != null
+    var hatGespielt by remember { mutableStateOf(false) }
+    LaunchedEffect(spielt) { if (spielt) hatGespielt = true else if (hatGespielt) { hatGespielt = false; laden() } }
+
     LaunchedEffect(ziel.id) {
         laden()
         val id = serie?.id ?: return@LaunchedEffect
@@ -206,7 +211,9 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                 // gesperrt erst, wenn feststeht, dass es keine Folge gibt. Der Player folgt.
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Spielknopf(Icons.Filled.PlayArrow, s?.knopftext ?: uebersetzt("Lädt…"),
-                               an = s == null || s.stand != null, haupt = true) {}
+                               an = s == null || s.stand != null, haupt = true) {
+                        s?.stand?.let { st -> ruck(Ruck.Mittel); app.spiel.value = Abspielwunsch(st.id, st.ab) }
+                    }
                     s?.stand?.restzeit?.let { Text(it, style = TextStyle(fontSize = 11.sp), color = Stil.schriftLeise) }
                     s?.stand?.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.clip(RoundedCornerShape(2.dp))) }
                 }
@@ -227,16 +234,18 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                     }
                     Aktionsknopf(Icons.Filled.MoreHoriz, uebersetzt("Mehr"), false) {
                         val gewaehlteStaffel = s?.staffeln?.firstOrNull { it.id == staffel }
-                        // `Titelhandlungen.fuerSerie` — die beiden Abspielzeilen kommen mit dem Player.
+                        // `Titelhandlungen.fuerSerie` — „Nächste Folge abspielen" folgt mit der Fernsteuerung.
                         val eintraege = buildList {
+                            s?.stand?.let { add(Wahl("vonvorn", uebersetzt("Folge von vorn abspielen"))) }
                             gewaehlteStaffel?.let { add(Wahl("staffel", uebersetzt("%@ als gesehen", it.name))) }
                             add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
                         }
                         val kuerzel = s?.stand?.let { st -> if (st.staffel != null && st.folge != null) " · S${st.staffel} E${st.folge}" else "" }.orEmpty()
                         app.blatt.value = Blattwunsch(name + kuerzel, eintraege, null,
-                            mapOf("staffel" to Icons.Filled.CheckCircleOutline, "metadaten" to Icons.Filled.Refresh)) { wahl ->
+                            mapOf("vonvorn" to Icons.Filled.Replay, "staffel" to Icons.Filled.CheckCircleOutline, "metadaten" to Icons.Filled.Refresh)) { wahl ->
                             bereich.launch {
                                 when (wahl) {
+                                    "vonvorn" -> s?.stand?.let { st -> app.spiel.value = Abspielwunsch(st.id, null) }
                                     "staffel" -> gewaehlteStaffel?.let { st ->
                                         val grund = withContext(Dispatchers.IO) { app.kern.gesehen(st.id, true).await() }
                                         if (grund.isNotEmpty()) meldung = fehlertext(grund)
@@ -275,7 +284,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                             key(f.id) {
                                 Wischzeile(if (f.gesehen) Icons.Filled.Undo else Icons.Filled.Check,
                                            uebersetzt(if (f.gesehen) "Ungesehen" else "Gesehen"), tun = { folgeUmschalten(f) }) {
-                                    Folgenzeile(f)
+                                    Folgenzeile(f) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
                                 }
                             }
                         }
@@ -385,8 +394,8 @@ private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boole
  * Balken und Haken zugleich waeren dieselbe Auskunft zweimal.
  */
 @Composable
-private fun Folgenzeile(f: Folge) {
-    Row(Modifier.fillMaxWidth().druckzeile { /* Der Player folgt. */ }.padding(horizontal = Stil.randAbstand, vertical = 12.dp),
+private fun Folgenzeile(f: Folge, tun: () -> Unit) {
+    Row(Modifier.fillMaxWidth().druckzeile(tun).padding(horizontal = Stil.randAbstand, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(116.dp, 65.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {
             AsyncImage(model = f.bild, contentDescription = null, contentScale = ContentScale.Crop,

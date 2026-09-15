@@ -137,6 +137,11 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
 
+    // Nach dem Schauen neu laden: Fortschritt, Gesehen und Plan haben sich geaendert.
+    val spielt = app.spiel.value != null
+    var hatGespielt by remember { mutableStateOf(false) }
+    LaunchedEffect(spielt) { if (spielt) hatGespielt = true else if (hatGespielt) { hatGespielt = false; auffrischen() } }
+
     /** Erst umschalten, dann fragen; sagt der Server nein, zurueck und melden — wie auf iOS. */
     fun umschalten(an: Boolean, setzen: (Boolean) -> Unit, frage: suspend (Boolean) -> String, merken: (Titel, Boolean) -> Titel) {
         ruck(Ruck.Leicht)
@@ -160,7 +165,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp),
                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Belegzeile(t)
-                Spielknoepfe(t)
+                Spielknoepfe(t) { ab -> ruck(Ruck.Mittel); app.spiel.value = Abspielwunsch(ziel.id, ab) }
                 Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Aktionsknopf(if (gemerkt) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder, uebersetzt("Merkliste"), gemerkt) {
                         umschalten(!gemerkt, { gemerkt = it }, { app.kern.merken(ziel.id, it).await() }) { alt, an -> alt.copy(gemerkt = an) }
@@ -177,15 +182,19 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
                         umschalten(!gesehen, { gesehen = it }, { app.kern.gesehen(ziel.id, it).await() }) { alt, an -> alt.copy(gesehen = an) }
                     }
                     Aktionsknopf(Icons.Filled.MoreHoriz, uebersetzt("Mehr"), false) {
-                        // `Titelhandlungen.fuerFilm` — „Von vorn abspielen" kommt mit dem Player.
+                        // `Titelhandlungen.fuerFilm`.
                         val eintraege = buildList {
-                            if (t != null && t.planDa && t.fortsetzenAb != null) add(Wahl("zuruecksetzen", uebersetzt("Fortschritt zurücksetzen")))
+                            if (t != null && t.planDa && t.fortsetzenAb != null) {
+                                add(Wahl("vonvorn", uebersetzt("Von vorn abspielen")))
+                                add(Wahl("zuruecksetzen", uebersetzt("Fortschritt zurücksetzen")))
+                            }
                             add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
                         }
                         app.blatt.value = Blattwunsch(name, eintraege, null,
-                            mapOf("zuruecksetzen" to Icons.Filled.RestartAlt, "metadaten" to Icons.Filled.Refresh)) { wahl ->
+                            mapOf("vonvorn" to Icons.Filled.Replay, "zuruecksetzen" to Icons.Filled.RestartAlt, "metadaten" to Icons.Filled.Refresh)) { wahl ->
                             bereich.launch {
                                 when (wahl) {
+                                    "vonvorn" -> app.spiel.value = Abspielwunsch(ziel.id, null)
                                     "zuruecksetzen" -> {
                                         val grund = withContext(Dispatchers.IO) { app.kern.gesehen(ziel.id, false).await() }
                                         if (grund.isNotEmpty()) meldung = fehlertext(grund)
@@ -290,16 +299,15 @@ internal fun Belegzeile(geladen: Boolean, planDa: Boolean, lossless: Boolean, me
 
 /** Vorlage: `hauptknopf` — Fortsetzen und „Von vorn" untereinander, sonst „Abspielen". Ohne Plan gesperrt. */
 @Composable
-private fun Spielknoepfe(t: Titel?) {
+private fun Spielknoepfe(t: Titel?, spielen: (Double?) -> Unit) {
     val bereit = t?.planDa == true
-    // Der Player ist der naechste Schritt; bis dahin tun die Knoepfe nichts.
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         val ab = t?.fortsetzenText
         if (ab != null) {
-            Spielknopf(Icons.Filled.PlayArrow, uebersetzt("Fortsetzen ab %@", ab), bereit, haupt = true) {}
-            Spielknopf(Icons.Filled.Replay, uebersetzt("Von vorn"), bereit, haupt = false) {}
+            Spielknopf(Icons.Filled.PlayArrow, uebersetzt("Fortsetzen ab %@", ab), bereit, haupt = true) { spielen(t?.fortsetzenAb) }
+            Spielknopf(Icons.Filled.Replay, uebersetzt("Von vorn"), bereit, haupt = false) { spielen(null) }
         } else {
-            Spielknopf(Icons.Filled.PlayArrow, uebersetzt("Abspielen"), bereit, haupt = true) {}
+            Spielknopf(Icons.Filled.PlayArrow, uebersetzt("Abspielen"), bereit, haupt = true) { spielen(null) }
         }
     }
 }

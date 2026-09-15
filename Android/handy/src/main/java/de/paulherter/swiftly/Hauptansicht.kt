@@ -159,6 +159,9 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
                     }
                 }
             }
+            // Der Player ueber den Seiten — `fullScreenCover` auf iOS. Das Blatt liegt darueber,
+            // damit seine Einstellungen dort aufgehen.
+            app.spiel.value?.let { w -> key(w) { PlayerSeite(app, w) { app.spiel.value = null } } }
             // Ueber allem, auch ueber der Leiste: das Blatt haengt auf iOS hinter `.bereichsleiste()`.
             Blattauflage(app)
         }

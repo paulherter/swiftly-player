@@ -395,7 +395,7 @@ private fun Blattkarte(w: Blattwunsch, zug: Animatable<Float, AnimationVector1D>
         // So hoch wie die Eintraege, hoechstens 340.
         Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
             w.eintraege.forEach { e ->
-                Row(Modifier.fillMaxWidth().height(50.dp).druckzeile { w.waehlen(e.wert); schliessen() }
+                Row(Modifier.fillMaxWidth().height(50.dp).druckzeile { schliessen(); w.waehlen(e.wert) }
                         .padding(horizontal = Stil.randAbstand),
                     verticalAlignment = Alignment.CenterVertically) {
                     w.symbole[e.wert]?.let {
