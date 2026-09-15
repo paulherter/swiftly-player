@@ -79,6 +79,8 @@ class Einstellungen(ablage: Ablage) {
     var startReihen by Merkwert(a, "startReihen", liste("startReihen"), alsListe)
     var startAus by Merkwert(a, "startAus", liste("startAus"), alsListe)
     var startGenres by Merkwert(a, "startGenres", liste("startGenres"), alsListe)
+    /** Genres als Chips ueber den Reihen statt als eigene Reihen — nie beides. */
+    var genreChips by Merkwert(a, "genreChips", bool("genreChips", false), jaNein)
     var pufferstufe by Merkwert(a, "pufferstufe", a.merkwert("pufferstufe") ?: "normal") { it }
     var zurueckSekunden by Merkwert(a, "zurueckSek", zahl("zurueckSek", 10)) { it.toString() }
     var vorSekunden by Merkwert(a, "vorSek", zahl("vorSek", 30)) { it.toString() }

@@ -86,12 +86,12 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     var fehler by remember { mutableStateOf<String?>(null) }
     val e = app.einstellungen
     // Neu laden, sobald sich Reihenfolge, ausgeblendete Reihen oder Genres aendern.
-    LaunchedEffect(e.neuzugangGetrennt, e.startReihen, e.startAus, e.startGenres) {
+    LaunchedEffect(e.neuzugangGetrennt, e.startReihen, e.startAus, e.startGenres, e.genreChips) {
         try {
             val json = withContext(Dispatchers.IO) {
                 app.kern.startseite(e.neuzugangGetrennt, e.startReihen.toTypedArray(), e.startAus.toTypedArray(),
                                     app.ablage.merkwert("bibliothek-movies").orEmpty(), app.ablage.merkwert("bibliothek-tvshows").orEmpty(),
-                                    e.startGenres.toTypedArray(), false).await()
+                                    e.startGenres.toTypedArray(), e.genreChips).await()
             }
             reihen = reihenLesen(json).also { app.startReihen = it }
         } catch (e: Throwable) {
@@ -120,6 +120,10 @@ fun StartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             // Platzhalter in der Form der Reihen, dann eine Ueberblendung — kein Ring (`einblenden`).
             if (reihen == null) items(3, key = { "platzhalter$it" }) { i ->
                 Reihenplatzhalter(quer = i == 0, Modifier.animateItem(fadeInSpec = null, placementSpec = null, fadeOutSpec = Bewegung.einblenden()))
+            }
+            // Genres entweder als Chips oder als Reihen, nie beides — die Fassade laesst die Reihen dann weg.
+            if (e.genreChips && e.startGenres.isNotEmpty()) item(key = "gattungschips") {
+                Gattungschips(e.startGenres) { g -> oeffnen(Ziel(g, g, "Genre")) }
             }
             items(reihen ?: emptyList(), key = { it.titel }) { reihe ->
                 ReiheAnsicht(reihe, oeffnen, Modifier.animateItem(fadeInSpec = Bewegung.einblenden(), placementSpec = null, fadeOutSpec = null))

@@ -57,6 +57,15 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import de.paulherter.swiftly.kern.Kern
+import android.content.pm.PackageManager
+import android.media.MediaMetadata
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
+import coil3.SingletonImageLoader
+import coil3.request.ImageRequest
+import coil3.request.SuccessResult
+import coil3.request.allowHardware
+import coil3.toBitmap
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -68,11 +77,14 @@ data class Abspielwunsch(val id: String, val ab: Double?)
 
 /** Antwort von `Kern.wiedergabeOeffnen` — Adresse und die Zeilen fuer den Fuss. */
 data class Spielplan(val url: String, val lossless: Boolean, val methode: String, val titel: String,
-                     val untertitel: String, val naechste: Boolean)
+                     val untertitel: String, val naechste: Boolean,
+                     val serie: String? = null, val kuerzel: String? = null, val bild: String? = null)
 
 private fun spielplanLesen(json: String) = JSONObject(json).let { o ->
     Spielplan(o.getString("url"), o.optBoolean("lossless"), o.optString("methode"), o.optString("titel"),
-              o.optString("untertitel"), o.optBoolean("naechste"))
+              o.optString("untertitel"), o.optBoolean("naechste"),
+              o.optString("serie").takeIf { !o.isNull("serie") }, o.optString("kuerzel").takeIf { !o.isNull("kuerzel") },
+              o.optString("bild").takeIf { !o.isNull("bild") })
 }
 
 /** 1:23:45 oder 23:45 — Ziffern gleich breit, damit die Zeile beim Laufen nicht zittert. */
@@ -118,7 +130,7 @@ private tailrec fun Context.aktivitaet(): Activity? = when (this) {
  * - Die Stelle wird **vor** dem Anhalten gelesen: VLC setzt seine Uhr beim Anhalten zurueck.
  */
 @Composable
-fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Unit) {
+fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: Boolean, bildImBild: () -> Boolean, schliessen: () -> Unit) {
     val kontext = LocalContext.current
     val aktivitaet = remember(kontext) { kontext.aktivitaet() }
     val lauf = rememberCoroutineScope()
@@ -163,6 +175,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
     val zeigtBild = remember { booleanArrayOf(false) }
     val ende = remember { booleanArrayOf(false) }
     val sprungBis = remember { longArrayOf(0L) }
+    /** Schon mit „gestoppt" gemeldet — sonst meldet das Abraeumen es (weggewischtes kleines Fenster). */
+    val beendet = remember { booleanArrayOf(false) }
 
     DisposableEffect(spieler) {
         spieler.setEventListener { e ->
@@ -175,6 +189,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
             }
         }
         onDispose {
+            if (!beendet[0]) app.kern.wiedergabeBeenden((spieler.time / 1000.0).coerceAtLeast(0.0))
             spieler.stop()
             spieler.detachViews()
             spieler.release()
@@ -208,6 +223,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
     fun beenden() {
         // Die Stelle vor dem Anhalten lesen — VLC setzt seine Uhr beim Anhalten zurueck.
         val stelle = (spieler.time / 1000.0).coerceAtLeast(0.0)
+        beendet[0] = true
         app.kern.wiedergabeBeenden(stelle)
         spieler.stop()
         schliessen()
@@ -264,6 +280,49 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
         spieler.spuTrack = if (i >= 0) spuren[i].id else -1
     }
 
+    // Mediensteuerung — `Wiedergabezentrale`: Bild-im-Bild, Kopfhoerer und Systemsteuerung sprechen
+    // dieselben Befehle. **Umschalten folgt dem eigenen Zustand**, nicht dem, was das System schickt.
+    val sitzung = remember { MediaSession(kontext, "Swiftly") }
+    fun sitzungMelden() {
+        var aktionen = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
+            PlaybackState.ACTION_SEEK_TO or PlaybackState.ACTION_FAST_FORWARD or PlaybackState.ACTION_REWIND
+        // „Nächste" nur, wenn es eine gibt; „vorige" nie — grau ist ehrlicher als ins Leere.
+        if (plan?.naechste == true) aktionen = aktionen or PlaybackState.ACTION_SKIP_TO_NEXT
+        sitzung.setPlaybackState(PlaybackState.Builder().setActions(aktionen)
+            .setState(if (laeuft) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED, (position * 1000).toLong(),
+                      if (laeuft) tempo else 0f).build())
+    }
+    DisposableEffect(sitzung) {
+        sitzung.setCallback(object : MediaSession.Callback() {
+            override fun onPlay() { if (!spieler.isPlaying) umschalten() }
+            override fun onPause() { if (spieler.isPlaying) umschalten() }
+            override fun onSeekTo(pos: Long) { springe(pos / 1000.0) }
+            override fun onFastForward() { springe(position + vorS) }
+            override fun onRewind() { springe(position - zurueckS) }
+            override fun onSkipToNext() { if (plan?.naechste == true) lauf.launch { naechsteFolge() } }
+        })
+        sitzung.isActive = true
+        onDispose { sitzung.isActive = false; sitzung.release() }
+    }
+    // Titel, Serie, Folge, Laenge und das Standbild; das Bild kommt nach, der Rest steht sofort.
+    LaunchedEffect(plan, dauer > 0) {
+        val p = plan ?: return@LaunchedEffect
+        fun metadaten(bild: android.graphics.Bitmap?) = MediaMetadata.Builder().apply {
+            putString(MediaMetadata.METADATA_KEY_TITLE, p.titel)
+            p.serie?.let { putString(MediaMetadata.METADATA_KEY_ALBUM, it); p.kuerzel?.let { k -> putString(MediaMetadata.METADATA_KEY_ARTIST, k) } }
+            if (dauer > 0) putLong(MediaMetadata.METADATA_KEY_DURATION, (dauer * 1000).toLong())
+            bild?.let { putBitmap(MediaMetadata.METADATA_KEY_ART, it) }
+        }.build()
+        sitzung.setMetadata(metadaten(null))
+        val adresse = p.bild ?: return@LaunchedEffect
+        val bild = runCatching {
+            (SingletonImageLoader.get(kontext).execute(ImageRequest.Builder(kontext).data(adresse).size(600).allowHardware(false).build())
+                as? SuccessResult)?.image?.toBitmap()
+        }.getOrNull()
+        sitzung.setMetadata(metadaten(bild))
+    }
+    val kannKlein = remember { kontext.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }
+
     BackHandler { beenden() }
 
     // Oeffnen, dann der Takt.
@@ -286,6 +345,7 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
                 position = antwort.getDouble("position")
             }
             dauer = laenge
+            sitzungMelden()
             angebotArt = antwort.optString("angebot", "keiner")
             angebotNach = if (antwort.isNull("nach")) null else antwort.getDouble("nach")
             angebotText = antwort.optString("angebotstext")
@@ -400,9 +460,10 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
         }
 
         // Ausgeblendet haelt die Mitte trotzdem an.
-        if (bildFrei && deckung < 0.01f) Box(Modifier.align(Alignment.Center).size(108.dp, 132.dp).antippen { umschalten() })
+        if (bildFrei && deckung < 0.01f && !imKleinenFenster) Box(Modifier.align(Alignment.Center).size(108.dp, 132.dp).antippen { umschalten() })
 
-        if (deckung > 0.01f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }) {
+        // Im kleinen Fenster nur das Bild — die Steuerung bringt das System mit.
+        if (deckung > 0.01f && !imKleinenFenster) Box(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }) {
             // `Playerschleier` — ohne ihn verschwinden weisse Zeichen ueber hellen Szenen.
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
             Box(Modifier.fillMaxWidth().height(140.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent))))
@@ -413,6 +474,10 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
                 verticalAlignment = Alignment.CenterVertically) {
                 Rundknopf(Icons.Filled.KeyboardArrowDown, uebersetzt("Player schließen"), 32.dp) { beenden() }
                 Spacer(Modifier.weight(1f))
+                // Gedimmt, nicht weg, wenn das Geraet es nicht kann.
+                Rundknopf(Icons.Filled.PictureInPictureAlt, uebersetzt("Bild im Bild"), 24.dp, deckkraft = if (kannKlein) 1f else 0.4f) {
+                    if (kannKlein) bildImBild()
+                }
                 Rundknopf(Icons.Filled.Tune, uebersetzt("Wiedergabeeinstellungen"), 24.dp) { einstellungen() }
             }
 
@@ -469,8 +534,8 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> 
 }
 
 @Composable
-private fun Rundknopf(symbol: ImageVector, beschreibung: String, groesse: Dp, tun: () -> Unit) {
-    Box(Modifier.size(if (groesse < 44.dp) 44.dp else groesse).antippen(tun), contentAlignment = Alignment.Center) {
+private fun Rundknopf(symbol: ImageVector, beschreibung: String, groesse: Dp, deckkraft: Float = 1f, tun: () -> Unit) {
+    Box(Modifier.size(if (groesse < 44.dp) 44.dp else groesse).graphicsLayer { alpha = deckkraft }.antippen(tun), contentAlignment = Alignment.Center) {
         Icon(symbol, contentDescription = beschreibung, tint = Color.White, modifier = Modifier.size(groesse))
     }
 }

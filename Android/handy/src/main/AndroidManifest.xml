@@ -15,5 +15,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Eigene Aufgabe: im kleinen Fenster bleibt die App daneben bedienbar. -->
+        <activity
+            android:name=".PlayerAktivitaet"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="de.paulherter.swiftly.player"
+            android:excludeFromRecents="true"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden" />
     </application>
 </manifest>

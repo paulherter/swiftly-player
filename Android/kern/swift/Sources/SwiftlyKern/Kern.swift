@@ -396,6 +396,15 @@ public final class Kern: @unchecked Sendable {
         (try? JSONEncoder().encode(wert)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
     }
 
+    // MARK: Genre
+
+    /// Die Titel eines Genres — `GenreView`: bis zu 200, das neueste zuerst, Filme und Serien.
+    public func genre(name: String) async throws -> String {
+        guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+        guard let titel = await c.titel(gattung: name, limit: 200) else { throw URLError(.cannotLoadFromNetwork) }
+        return try json(titel.map { rasterkachel($0, a) })
+    }
+
     // MARK: Merkliste
 
     /// Eine Seite der Merkliste — `AppModel.gemerkte`: Favoriten ueber alle Bibliotheken
@@ -449,6 +458,7 @@ public final class Kern: @unchecked Sendable {
     /// nach einem Neustart des Servers brach die Uebernahme sonst still.
     public func wiedergabeOeffnen(id: String) async throws -> String {
         guard let c = client else { throw Kernfehler.nichtVerbunden }
+        let a = adressen
         try? await c.faehigkeitenMelden()
         let item = try await c.item(id: id)
         let grenze = profilBitrate
@@ -462,7 +472,13 @@ public final class Kern: @unchecked Sendable {
             url: plan.url.absoluteString, lossless: plan.isLossless, methode: plan.method.rawValue,
             titel: item.name,
             untertitel: [item.seriesName, item.folgenkuerzel].compactMap { $0 }.joined(separator: " · "),
-            naechste: w.naechste != nil))
+            naechste: w.naechste != nil,
+            // Fuer die Mediensteuerung: bei einer Folge ihr Standbild — es zeigt, wo man ist —, sonst das Plakat.
+            serie: item.seriesName, kuerzel: item.folgenkuerzel,
+            bild: { () -> String? in
+                let u: URL? = a?.bauen(itemID: item.id, marke: item.imageTags?["Primary"], mass: .hoechstensHoch(600))
+                return u?.absoluteString
+            }()))
     }
 
     private func naechsteFolge(nach item: Item, _ c: JellyfinClient) async -> Item? {
@@ -718,6 +734,7 @@ struct Spielplanantwort: Encodable {
     let lossless: Bool
     let methode, titel, untertitel: String
     let naechste: Bool
+    let serie, kuerzel, bild: String?
 }
 struct Taktantwort: Encodable {
     let ladeschirmWeg, spurenAnwenden: Bool

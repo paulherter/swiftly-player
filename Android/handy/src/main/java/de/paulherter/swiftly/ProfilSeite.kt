@@ -205,7 +205,6 @@ fun WiedergabeEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
 /**
  * Vorlage: `DarstellungView` — Allgemein, Startseite (umsortierbar, einzeln abschaltbar),
  * Genres. **Eine Genreliste**, keine zweite verborgene: frueher tauschte „Chips" still die Daten.
- * Die Chip-Darstellung auf der Startseite folgt; bis dahin stehen Genres als eigene Reihen.
  */
 @Composable
 fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -> Unit) {
@@ -236,6 +235,11 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
         Fusszeile(uebersetzt("Zum Umsortieren an den Griffen rechts ziehen."))
 
         Einstellungsgruppe(uebersetzt("Genres")) {
+            // Eine Liste, zwei Formen.
+            Darstellungsform(uebersetzt("Als eigene Reihen"), !e.genreChips) { e.genreChips = false }
+            Trennlinie()
+            Darstellungsform(uebersetzt("Als Chips über den Reihen"), e.genreChips) { e.genreChips = true }
+            if (e.startGenres.isNotEmpty()) Trennlinie()
             Umsortierbar(e.startGenres, { it }, verschieben = { g, schritt ->
                 val liste = e.startGenres.toMutableList()
                 val von = liste.indexOf(g)
@@ -257,6 +261,15 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
                 Text(uebersetzt("Genre hinzufügen"), style = TextStyle(fontSize = 15.sp), color = Stil.akzent)
             }
         }
+    }
+}
+
+@Composable
+private fun Darstellungsform(titel: String, gewaehlt: Boolean, waehlen: () -> Unit) {
+    Row(Modifier.fillMaxWidth().druckzeile(waehlen).padding(horizontal = Stil.randAbstand, vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(titel, style = TextStyle(fontSize = 15.sp), color = Stil.schrift, modifier = Modifier.weight(1f))
+        if (gewaehlt) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(16.dp))
     }
 }
 

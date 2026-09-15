@@ -122,6 +122,13 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
             throw e
         }
     }
+    // Der Player hat eine eigene Aktivitaet (Bild-im-Bild) — ein Wunsch startet sie.
+    val kontext = androidx.compose.ui.platform.LocalContext.current
+    val spiel = app.spiel.value
+    LaunchedEffect(spiel) {
+        if (spiel != null) kontext.startActivity(android.content.Intent(kontext, PlayerAktivitaet::class.java))
+    }
+
     val waehlen: (Bereich) -> Unit = { b ->
         if (b == bereich) {
             stapel[b] = emptyList()
@@ -163,11 +170,9 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
                     }
                 }
             }
-            // Der Player ueber den Seiten — `fullScreenCover` auf iOS. Das Blatt liegt darueber,
-            // damit seine Einstellungen dort aufgehen.
-            app.spiel.value?.let { w -> key(w) { PlayerSeite(app, w) { app.spiel.value = null } } }
             // Ueber allem, auch ueber der Leiste: das Blatt haengt auf iOS hinter `.bereichsleiste()`.
-            Blattauflage(app)
+            // Solange der Player laeuft, gehoert das Blatt ihm.
+            if (spiel == null) Blattauflage(app)
         }
     }
 }
@@ -198,6 +203,7 @@ private fun Unterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
         "Person" -> PersonSeite(app, ziel, oeffnen, zurueck)
         "Profil" -> ProfilSeite(app, oeffnen, zurueck)
         "Merkliste" -> MerklisteSeite(app, oeffnen, zurueck)
+        "Genre" -> GenreSeite(app, ziel, oeffnen, zurueck)
         "QuickConnect" -> QuickConnectSeite(app, zurueck)
         "Wiedergabeeinstellungen" -> WiedergabeEinstellungenSeite(app, zurueck)
         "Darstellung" -> DarstellungSeite(app, oeffnen, zurueck)
