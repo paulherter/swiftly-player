@@ -1018,6 +1018,40 @@ final class VLCPlayerView: Basisansicht {
             medium.addOption(":http-reconnect")
         }
 
+        // **Entflechten: `bob` statt `x` — und nur, wo VLC Halbbilder erkennt.**
+        //
+        // DVD-Rips (MPEG-2, 720×576, interlaced) ruckelten auf Apple TV und
+        // iPhone, 4K-HEVC nicht. VLC 4 entflechtet von selbst (`deinterlace`
+        // -1), sobald ein Bild als interlaced markiert ist, und `auto` heisst
+        // im Filter **`x`** (deinterlace.c, SetFilterMethod), nicht yadif2x.
+        // Das laeuft auf der CPU nach dem Dekoder. MPEG-2 selbst geht in
+        // unserem VLCKit immer ueber avcodec: `libmpeg2` ist nicht gebaut,
+        // VideoToolbox hat MPEG-2 abgeschaltet (decoder.c, `#if 0`).
+        //
+        // Gemessen am 15.09.2026 gegen 61784e2 auf dem Mac (M1 Max, derselbe Bau,
+        // nachgebaute Datei: MPEG-2 TFF 5 Mbit/s, AC-3 5.1, VobSub, MKV), je
+        // 30 s, auf die Effizienzkerne gedrosselt (`taskpolicy -c background`):
+        //
+        //     Modus          dekodiert  gezeigt  verloren
+        //     x (Vorgabe)    24,7/s     12,9–13,2   346–352
+        //     bob            24,8/s     15,0        295
+        //     linear         24,7/s     14,7        301
+        //     aus            24,8–25,0  13,9–16,8   243–335
+        //     x ohne VobSub  25,1/s     12,7        371
+        //
+        // Der Dekoder haelt immer Schritt; verloren geht es dahinter. Der
+        // Untertitel kostet nichts Messbares. `x` ist das teuerste der
+        // Verfahren, `bob` holt etwa den Abstand zu „aus" zurueck, ohne
+        // Kammbilder stehen zu lassen. Ungedrosselt liegen alle Varianten bei
+        // 25/s und 8–15 % eines Kerns — der Mac zeigt den Unterschied nur mit
+        // Bremse, und ein Teil des Verlusts liegt auch mit „aus" noch in der
+        // Ausgabe.
+        //
+        // **Warum pauschal gesetzt:** der Modus greift nur, wenn VLC ein Bild
+        // als interlaced erkennt. HEVC/4K ist progressiv und nimmt den Filter
+        // nie — dort aendert sich nichts.
+        medium.addOption(":deinterlace-mode=bob")
+
         // **Am Vorrat lag es nicht -- nachgemessen, nicht vermutet.**
         //
         // Hier stand kurz `:network-caching=10000`, weil VLCs Voreinstellung
