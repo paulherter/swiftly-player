@@ -64,7 +64,10 @@ data class Staffel(val id: String, val name: String)
 data class Folgenstand(val id: String, val fortsetzen: Boolean, val restzeit: String?, val fortschritt: Double?,
                        val staffel: Int?, val folge: Int?, val ab: Double? = null)
 data class Folge(val id: String, val titel: String, val unterzeile: String?, val bild: String?,
-                 val fortschritt: Double?, val gesehen: Boolean, val ab: Double? = null)
+                 val fortschritt: Double?, val gesehen: Boolean, val ab: Double? = null,
+                 /** Roh, fuer den Fernseher — `TvSerie` baut daraus das Katalogformat „F2 · Titel". */
+                 val name: String = "", val nummer: Int? = null,
+                 val laufzeitMin: Int? = null, val restzeit: String? = null)
 
 /** Antwort von `Kern.serie` — Knopftext, Vorwahl der Staffel und Besetzung stehen dort schon fest. */
 data class Serie(
@@ -103,7 +106,9 @@ internal fun serieLesen(json: String): Serie = JSONObject(json).let { o ->
 internal fun folgenLesen(json: String): List<Folge> = JSONArray(json).let { a ->
     (0 until a.length()).map { i ->
         a.getJSONObject(i).let { f ->
-            Folge(f.getString("id"), f.getString("titel"), f.feldText("unterzeile"), f.feldText("bild"), f.feldZahl("fortschritt"), f.optBoolean("gesehen"), f.feldZahl("ab"))
+            Folge(f.getString("id"), f.getString("titel"), f.feldText("unterzeile"), f.feldText("bild"), f.feldZahl("fortschritt"), f.optBoolean("gesehen"), f.feldZahl("ab"),
+                  f.optString("name"), if (f.isNull("nummer")) null else f.getInt("nummer"),
+                  if (f.isNull("laufzeitMin")) null else f.getInt("laufzeitMin"), f.feldText("restzeit"))
         }
     }
 }

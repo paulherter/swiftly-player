@@ -668,9 +668,21 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld results"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld result"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld results"
+                }
+              }
+            }
           }
         }
       }
@@ -3168,6 +3180,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Episodes"
+          }
+        }
+      }
+    },
+    "Form": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Form"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layout"
           }
         }
       }

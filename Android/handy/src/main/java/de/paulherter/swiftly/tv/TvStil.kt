@@ -10,6 +10,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
@@ -20,17 +23,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import de.paulherter.swiftly.Kachelplakette
 import de.paulherter.swiftly.gemeinsam.Stil
 
 /**
@@ -98,34 +108,76 @@ fun Fokusflaeche(modifier: Modifier = Modifier, lupe: Float = TvStil.fokusLupe, 
 /**
  * Vorlage: `KnopfStil` — die fokussierte Fassung ist Zeichen fuer Zeichen der Hauptknopf vom iPhone:
  * weiss mit dunkler Schrift. Ohne Fokus 10 % weiss.
+ *
+ * **`freigegeben` — gedaempft, nicht durchscheinend** (`KnopfStil.vordergrund`/`hintergrund` bei
+ * `!freigegeben`): dieselbe Begruendung wie auf tvOS, weiss auf 40 Prozent saehe aus wie ein Knopf,
+ * der noch wartet. Vorgabe `true`, also bricht kein bestehender Aufruf.
  */
 @Composable
 fun TvKnopf(text: String?, symbol: ImageVector? = null, modifier: Modifier = Modifier, hoehe: Dp = TvStil.knopfHoehe,
-            fokusGeaendert: (Boolean) -> Unit = {}, tun: () -> Unit) {
-    Fokusflaeche(modifier, lupe = 1.04f, fokusGeaendert = fokusGeaendert, tun = tun) { fokus ->
-        val farbe = if (fokus) Stil.grund else Stil.schrift
+            freigegeben: Boolean = true, symbolNachText: Boolean = false, fokusGeaendert: (Boolean) -> Unit = {}, tun: () -> Unit) {
+    Fokusflaeche(modifier, lupe = 1.04f, fokusGeaendert = fokusGeaendert, tun = { if (freigegeben) tun() }) { fokus ->
+        val farbe = if (!freigegeben) Stil.schriftSehrLeise else if (fokus) Stil.grund else Stil.schrift
         Row(Modifier.height(hoehe).then(if (text == null) Modifier.width(hoehe) else Modifier)
                 .clip(RoundedCornerShape(TvStil.ecke))
-                .background(if (fokus) Color.White else Color.White.copy(alpha = 0.10f))
+                .background(if (!freigegeben) Stil.flaeche else if (fokus) Color.White else Color.White.copy(alpha = 0.10f))
                 .padding(horizontal = if (text == null) 0.dp else 20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-            symbol?.let { Icon(it, contentDescription = text, tint = farbe, modifier = Modifier.size(17.dp)) }
-            text?.let { Text(it, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), color = farbe, maxLines = 1) }
+            val symbolInhalt: @Composable () -> Unit = { symbol?.let { Icon(it, contentDescription = text, tint = farbe, modifier = Modifier.size(17.dp)) } }
+            val textInhalt: @Composable () -> Unit = { text?.let { Text(it, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), color = farbe, maxLines = 1) } }
+            // **Sortierknoepfe zeigen den Pfeil hinter dem Wort** — „A–Z ⌄" auf tvOS, kein
+            // fuehrendes Symbol wie bei jedem anderen `TvKnopf`.
+            if (symbolNachText) { textInhalt(); symbolInhalt() } else { symbolInhalt(); textInhalt() }
         }
     }
 }
 
-/** Vorlage: `ChipStil` — drei Zustaende: gewaehlt weiss, fokussiert ruhig, sonst erhoeht. */
+/**
+ * Vorlage: `Eingabefeld` in `Sources/tvOS/RootView.swift`. Dort liegt ein fast unsichtbares
+ * `TextField` hinter der eigenen Zeichnung, weil tvOS jedem Textfeld eine weisse Kapsel mit Schein
+ * und Schatten aufzwingt, die sich nicht abschalten laesst. Diesen Umweg braucht Compose nicht:
+ * `BasicTextField` zeichnet von sich aus nichts, `decorationBox` uebernimmt die ganze Flaeche —
+ * derselbe Griff wie schon beim Suchfeld in `TvSuche`.
+ */
+@Composable
+fun TvFeld(wert: String, aendern: (String) -> Unit, platzhalter: String, modifier: Modifier = Modifier,
+          geheim: Boolean = false, imeAction: ImeAction = ImeAction.Done,
+          tastaturTyp: KeyboardType = KeyboardType.Text, tastaturAktion: () -> Unit = {}) {
+    var fokus by remember { mutableStateOf(false) }
+    val farbe = if (fokus) Stil.grund else Stil.schrift
+    BasicTextField(wert, aendern, singleLine = true,
+        textStyle = TextStyle(fontSize = 14.5.sp, color = farbe),
+        cursorBrush = SolidColor(farbe),
+        visualTransformation = if (geheim) PasswordVisualTransformation() else VisualTransformation.None,
+        keyboardOptions = KeyboardOptions(imeAction = imeAction, keyboardType = tastaturTyp),
+        keyboardActions = KeyboardActions(onDone = { tastaturAktion() }, onGo = { tastaturAktion() }, onSearch = { tastaturAktion() }),
+        modifier = modifier.height(TvStil.knopfHoehe).onFocusChanged { fokus = it.isFocused },
+        decorationBox = { innen ->
+            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(TvStil.ecke))
+                    .background(if (fokus) Color.White else Stil.erhoeht)
+                    .border(2.dp, if (fokus) Color.Transparent else Stil.rand, RoundedCornerShape(TvStil.ecke))
+                    .padding(horizontal = 15.dp), contentAlignment = Alignment.CenterStart) {
+                if (wert.isEmpty()) Text(platzhalter, style = TextStyle(fontSize = 14.5.sp),
+                                        color = if (fokus) Stil.grund.copy(alpha = 0.45f) else Stil.schriftSehrLeise)
+                innen()
+            }
+        })
+}
+
+/**
+ * Vorlage: `ChipStil` — drei Zustaende: gewaehlt weiss, fokussiert ruhig, sonst erhoeht. **Immer
+ * ein feiner Rand** (1 dp, halbiert aus tvOS' 2 pt) — nicht nur, solange der Fokus draufsteht.
+ */
 @Composable
 fun TvChip(text: String, an: Boolean, modifier: Modifier = Modifier, tun: () -> Unit) {
     Fokusflaeche(modifier, lupe = 1.06f, tun = tun) { fokus ->
         Box(Modifier.height(TvStil.chipHoehe).clip(CircleShape)
                 .background(when { an -> Color.White; fokus -> TvStil.fokusflaeche; else -> Stil.erhoeht })
-                .border(1.dp, if (fokus && !an) Color.White.copy(alpha = 0.5f) else Color.Transparent, CircleShape)
-                .padding(horizontal = 14.dp),
+                .border(1.dp, if (an) Color.White else Stil.rand, CircleShape)
+                .padding(horizontal = 11.dp),
             contentAlignment = Alignment.Center) {
-            Text(text, style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = if (an) Stil.grund else Stil.schrift, maxLines = 1)
+            Text(text, style = TextStyle(fontSize = 11.5.sp, fontWeight = FontWeight.Medium), color = if (an) Stil.grund else Stil.schrift, maxLines = 1)
         }
     }
 }
@@ -153,12 +205,16 @@ fun TvZeile(text: String, symbol: ImageVector? = null, rechts: String? = null, h
  */
 @Composable
 fun TvKachel(bild: String?, titel: String, unterzeile: String?, quer: Boolean = false, fortschritt: Double? = null,
+             marke: String? = null, markenzahl: Int = 0,
              modifier: Modifier = Modifier, deckkraft: Float = 1f, fokusGeaendert: (Boolean) -> Unit = {}, tun: () -> Unit) {
     val breite = if (quer) TvStil.querBreite else TvStil.posterBreite
     Column(modifier.width(breite)) {
         Fokusflaeche(fokusGeaendert = fokusGeaendert, tun = tun) {
             Box(Modifier.size(breite, if (quer) TvStil.querHoehe else TvStil.posterHoehe)
                     .clip(RoundedCornerShape(TvStil.eckeKachel)).background(Stil.flaeche)) {
+                // Kein eigener Platzhalter-Zeichentrick: fehlt das Bild oder laedt es noch,
+                // bleibt `Stil.flaeche` sichtbar — genau das Verhalten von `Bild` in
+                // `Sources/tvOS/Stil.swift` (dort auch nur eine Flaeche, kein Symbol).
                 AsyncImage(model = bild, contentDescription = titel, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().alpha(deckkraft))
                 fortschritt?.takeIf { it > 0 }?.let { a ->
                     Box(Modifier.align(Alignment.BottomStart).padding(8.dp).fillMaxWidth().height(3.dp).clip(CircleShape)
@@ -166,6 +222,9 @@ fun TvKachel(bild: String?, titel: String, unterzeile: String?, quer: Boolean = 
                         Box(Modifier.fillMaxWidth(a.toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(Stil.akzent))
                     }
                 }
+                // Vorlage: `Kachelplakette` in `Sources/tvOS/TVBausteine.swift` — Haken, „N offen"
+                // oder „N Staffeln". Steht auch ueber einem fehlenden Plakat, wie auf tvOS.
+                marke?.let { Kachelplakette(it, markenzahl, Modifier.align(Alignment.TopEnd)) }
             }
         }
         Text(titel, style = TvStil.kachel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
@@ -178,4 +237,33 @@ fun TvKachel(bild: String?, titel: String, unterzeile: String?, quer: Boolean = 
 fun TvReihentitel(text: String, modifier: Modifier = Modifier) {
     Text(text, style = TvStil.reihe, color = Stil.schrift, maxLines = 1,
          modifier = modifier.padding(start = TvStil.randSeite, bottom = TvStil.titelAbstand - TvStil.reihenLuft))
+}
+
+/**
+ * Vorlage: `Kopfverlauf` — dunkelt den oberen Rand ab, damit die Kopfleiste ueber durchlaufendem
+ * Bildmaterial lesbar bleibt. **Nur auf Unterseiten der Bereiche**, nicht auf Start: dort steht eine
+ * feste Heldenzone ueber der scrollenden Liste, darunter kommt nichts mehr unter die Leiste — genau
+ * die Begruendung, mit der tvOS den Verlauf dort wegliess.
+ *
+ * Punktwerte aus tvOS **halbiert zu dp**, dieselben Stuetzpunkte wie dort (drei waeren eine
+ * sichtbare Kante an der Stelle, an der die Steigung umspringt).
+ */
+@Composable
+fun TvKopfverlauf(modifier: Modifier = Modifier, kopfhoehe: Dp = 64.dp, ausklang: Dp = 110.dp) {
+    val gesamt = kopfhoehe + ausklang
+    fun punkt(y: Dp, deckung: Float) = (y.value / gesamt.value).coerceIn(0f, 1f) to Stil.grund.copy(alpha = deckung)
+    val stufen = listOf(
+        punkt(0.dp, 0.92f),
+        punkt(kopfhoehe, 0.90f),
+        punkt(kopfhoehe + 9.dp, 0.72f),
+        punkt(kopfhoehe + 18.dp, 0.52f),
+        punkt(kopfhoehe + 27.dp, 0.34f),
+        punkt(kopfhoehe + 36.dp, 0.18f),
+        punkt(kopfhoehe + 43.dp, 0.09f),
+        punkt(kopfhoehe + 52.dp, 0.04f),
+        punkt(kopfhoehe + 66.dp, 0.015f),
+        punkt(gesamt, 0f),
+    )
+    Box(modifier.fillMaxWidth().height(gesamt)
+            .background(Brush.verticalGradient(colorStops = stufen.toTypedArray())))
 }

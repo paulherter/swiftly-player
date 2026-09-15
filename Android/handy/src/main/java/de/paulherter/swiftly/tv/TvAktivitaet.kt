@@ -13,10 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import de.paulherter.swiftly.AnmeldeSeite
 import de.paulherter.swiftly.Phase
-import de.paulherter.swiftly.QuickConnectAnmeldung
-import de.paulherter.swiftly.ServerSeite
 import de.paulherter.swiftly.Startvorhang
 import de.paulherter.swiftly.SwiftlyAnwendung
 import de.paulherter.swiftly.gemeinsam.Bewegung
@@ -37,8 +34,12 @@ class TvAktivitaet : ComponentActivity() {
             var gestartet by rememberSaveable { mutableStateOf(false) }
             Box(Modifier.fillMaxSize().background(Stil.grund)) {
                 when (val p = phase) {
-                    Phase.Server -> ServerSeite(app) { name, fassung -> phase = Phase.Anmeldung(name, fassung) }
-                    is Phase.Anmeldung -> TvAnmeldung(app, p, andererServer = { phase = Phase.Server }) { phase = Phase.Start }
+                    // Vorlage: `RootView` auf tvOS — echte TV-Seiten statt der Telefonseiten, die
+                    // hier vorher standen (`ServerSeite`, `AnmeldeSeite`, `QuickConnectAnmeldung`).
+                    // Siehe `TvAnmeldung.kt`.
+                    Phase.Server -> TvServerSeite(app) { name, fassung -> phase = Phase.Anmeldung(name, fassung) }
+                    is Phase.Anmeldung -> TvAnmeldeSeite(app, p.servername, p.fassung,
+                        andererServer = { phase = Phase.Server }) { phase = Phase.Start }
                     // Nach einem Kontowechsel frisch — G4: die Stapel gehoeren dem vorigen Konto.
                     Phase.Start -> key(app.kontowechsel.intValue) { TvHaupt(app) }
                 }
@@ -47,23 +48,5 @@ class TvAktivitaet : ComponentActivity() {
                 }
             }
         }
-    }
-}
-
-/**
- * **Quick Connect zuerst** (`ServerAufnahmeView` auf tvOS): mit der Fernbedienung heisst ein
- * Passwort, sich Buchstabe fuer Buchstabe durch ein Raster zu wischen. Name und Passwort bleiben
- * der zweite Weg.
- */
-@Composable
-private fun TvAnmeldung(app: SwiftlyAnwendung, p: Phase.Anmeldung, andererServer: () -> Unit, angemeldet: () -> Unit) {
-    var perCode by remember { mutableStateOf(true) }
-    if (perCode) {
-        QuickConnectAnmeldung(app, neuerServer = false, zurueck = { perCode = false }) { sitzung ->
-            app.sitzungAufnehmen(sitzung)
-            angemeldet()
-        }
-    } else {
-        AnmeldeSeite(app, p.servername, p.fassung, andererServer = andererServer) { angemeldet() }
     }
 }

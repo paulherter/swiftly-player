@@ -1,8 +1,10 @@
 package de.paulherter.swiftly.tv
 
+import android.graphics.Color as AndroidColor
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -14,13 +16,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Search
@@ -33,28 +32,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.gemeinsam.uebersetzt
 import de.paulherter.swiftly.kern.Kern
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import org.json.JSONObject
 
 /** Den ersten Fokus setzen, sobald die Seite steht — ohne Fokus nimmt der Fernseher keine Eingabe an. */
 @Composable
@@ -67,34 +62,88 @@ fun ersterFokus(bereit: Boolean = true): FocusRequester {
 /**
  * Vorlage: das Raster aus `BibliothekView` — **sieben Spalten**, 104 dp breit mit 25 dp Luecke
  * (7 × 208 + 6 × 50 + 2 × 80 = 1916 Punkt auf tvOS). Kopf als ganze Zeile ueber dem Raster.
+ *
+ * **Nachladen ab der drittletzten Reihe** (`gitterSpalten * 3`), wie tvOS es beschreibt — der
+ * Nachschub steht, bevor der Fokus unten ankommt.
+ *
+ * `laedt`: solange noch nichts da ist, stehen Platzhalterkacheln statt eines leeren Rasters —
+ * Gegenstueck zu `Rasterplatzhalter` auf tvOS, das an derselben Stelle ein leeres Gitter vermeidet.
  */
 @Composable
 fun TvRaster(kacheln: List<Rasterkachel>, nachladen: () -> Unit = {}, fokus: FocusRequester? = null,
-             oeffnen: (Ziel) -> Unit, kopf: @Composable () -> Unit, mehr: LazyGridScope.() -> Unit = {}) {
+             oeffnen: (Ziel) -> Unit, laedt: Boolean = false, platzhalterReihen: Int = 2,
+             mitUnterzeile: Boolean = true,
+             kopf: @Composable () -> Unit, mehr: LazyGridScope.() -> Unit = {}) {
     val gitter = rememberLazyGridState()
-    val ende by remember { derivedStateOf { (gitter.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= gitter.layoutInfo.totalItemsCount - 14 } }
+    val ende by remember { derivedStateOf { (gitter.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= gitter.layoutInfo.totalItemsCount - TvStil.gitterSpalten * 3 } }
     LaunchedEffect(ende, kacheln.size) { if (ende && kacheln.isNotEmpty()) nachladen() }
     LazyVerticalGrid(GridCells.Fixed(TvStil.gitterSpalten), state = gitter, modifier = Modifier.fillMaxSize(),
                      contentPadding = PaddingValues(start = TvStil.randSeite, end = TvStil.randSeite, bottom = 40.dp),
                      horizontalArrangement = Arrangement.spacedBy(TvStil.gitterSpalte),
                      verticalArrangement = Arrangement.spacedBy(TvStil.gitterZeile - 16.dp)) {
         item(span = { GridItemSpan(maxLineSpan) }) { kopf() }
-        items(kacheln.size, key = { kacheln[it].id }) { i ->
-            val k = kacheln[i]
-            TvKachel(k.plakat, k.titel, k.unterzeile, modifier = if (i == 0 && fokus != null) Modifier.focusRequester(fokus) else Modifier) {
-                oeffnen(Ziel(k.id, k.titel, k.typ))
+        if (laedt && kacheln.isEmpty()) {
+            items(TvStil.gitterSpalten * platzhalterReihen) { TvKachelplatzhalter() }
+        } else {
+            items(kacheln.size, key = { kacheln[it].id }) { i ->
+                val k = kacheln[i]
+                // **Kein Jahr unter dem Titel in Bibliothek/Merkliste** (`mitUnterzeile: false` auf
+                // tvOS) — in der Suche bleibt es, dort steht dort „Serie · 2008" statt eines Jahres.
+                TvKachel(k.plakat, k.titel, if (mitUnterzeile) k.unterzeile else null,
+                         marke = k.marke, markenzahl = k.markenzahl,
+                         modifier = if (i == 0 && fokus != null) Modifier.focusRequester(fokus) else Modifier) {
+                    oeffnen(Ziel(k.id, k.titel, k.typ))
+                }
             }
         }
         mehr()
     }
 }
 
-/** Vorlage: `Leerzustand` — gross, mittig, ohne Knopf, der nichts tut. */
+/** Vorlage: `Kachelplatzhalter` auf tvOS — Plakatmass, darunter zwei atmende Zeilen. */
 @Composable
-fun TvLeer(kopfzeile: String, text: String) {
+private fun TvKachelplatzhalter() {
+    Column(Modifier.width(TvStil.posterBreite)) {
+        Ladefeld(Modifier.size(TvStil.posterBreite, TvStil.posterHoehe), TvStil.eckeKachel)
+        Ladefeld(Modifier.fillMaxWidth().height(11.dp).padding(top = 9.dp), 3.dp)
+        Ladefeld(Modifier.size(42.dp, 9.dp).padding(top = 5.dp), 3.dp)
+    }
+}
+
+/**
+ * Vorlage: `grundton` in `BibliothekView` — Filme in der Komplementaerfarbe (351°), Serien im
+ * Akzentton (171°), kraeftiger nahe der rechten oberen Ecke. tvOS rechnet das ueber ein
+ * `MeshGradient` mit 25 Stuetzpunkten; Compose kennt kein Gegenstueck dafuer, deshalb ein
+ * angenaeherter Radialverlauf von der gleichen Stelle nach durchsichtig, ueber `Stil.grund`.
+ */
+@Composable
+private fun TvGrundton(art: String) {
+    val ton = if (art == "movies") 351f else 171f
+    val kern = remember(ton) { Color(AndroidColor.HSVToColor(floatArrayOf(ton, 0.42f, 0.16f))) }
+    Canvas(Modifier.fillMaxSize()) {
+        val mitte = Offset(size.width * 0.97f, size.height * 0.28f)
+        drawRect(Brush.radialGradient(listOf(kern, Color.Transparent), center = mitte,
+                                       radius = maxOf(size.width, size.height) * 1.05f))
+    }
+}
+
+/**
+ * Vorlage: `Leerzustand` auf tvOS — Zeichen, Titel, Hinweis, **und ein Ausweg**: „Auf der
+ * Fernbedienung ist eine Sackgasse unangenehmer als am Finger" (tvOS-Kommentar). Ohne `knopf`
+ * bleibt es beim blossen Hinweis, wie in Merkliste und Suche.
+ */
+@Composable
+fun TvLeer(kopfzeile: String, text: String, symbol: ImageVector? = null, knopf: Pair<String, () -> Unit>? = null) {
     Column(Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        symbol?.let {
+            Icon(it, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(38.dp).padding(bottom = 10.dp))
+        }
         Text(kopfzeile, style = TvStil.reihe, color = Stil.schrift)
-        Text(text, style = TvStil.koerper, color = Stil.schriftLeise, modifier = Modifier.padding(top = 8.dp).widthIn(max = 480.dp))
+        Text(text, style = TvStil.koerper, color = Stil.schriftLeise, textAlign = TextAlign.Center,
+             modifier = Modifier.padding(top = 8.dp).widthIn(max = 480.dp))
+        knopf?.let { (titel, tun) ->
+            TvKnopf(titel, modifier = Modifier.padding(top = 16.dp), tun = tun)
+        }
     }
 }
 
@@ -110,26 +159,33 @@ fun TvBibliothek(app: SwiftlyAnwendung, art: String, filter: List<String>, oeffn
     val lauf = rememberCoroutineScope()
     LaunchedEffect(stand.gewaehlt?.id, stand.sortierung, stand.filter) { stand.laden(app.kern) }
     val fokus = ersterFokus(!stand.laedt)
-    TvRaster(stand.items, { lauf.launch { stand.nachladen(app.kern) } }, fokus, oeffnen, kopf = {
-        Column(Modifier.padding(top = kopfUnten + 14.dp, bottom = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (stand.sammlungen.size > 1) {
-                    stand.sammlungen.forEach { s -> TvChip(s.name, stand.gewaehlt?.id == s.id) { stand.waehlen(s) } }
-                    Box(Modifier.size(1.dp, 20.dp).background(Stil.rand))
+    Box(Modifier.fillMaxSize()) {
+        // Je Bereich ein eigener Grundton — Serien im Akzent, Filme in der Komplementaerfarbe.
+        // Man sieht am Grund, wo man ist, bevor man die Leiste liest.
+        TvGrundton(art)
+        TvRaster(stand.items, { lauf.launch { stand.nachladen(app.kern) } }, fokus, oeffnen, laedt = stand.laedt, mitUnterzeile = false, kopf = {
+            Column(Modifier.padding(top = kopfUnten + 14.dp, bottom = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (stand.sammlungen.size > 1) {
+                        stand.sammlungen.forEach { s -> TvChip(s.name, stand.gewaehlt?.id == s.id) { stand.waehlen(s) } }
+                        Box(Modifier.size(1.dp, 20.dp).background(Stil.rand))
+                    }
+                    filter.forEach { f -> TvChip(Wahlen.text(Wahlen.filter, f), stand.filter == f) { stand.filterSetzen(f) } }
+                    Spacer(Modifier.weight(1f))
+                    if (stand.gesamt > 0) Text(uebersetzt("%lld · sortiert nach", stand.gesamt), style = TvStil.klein, color = Stil.schriftLeise)
+                    TvKnopf(Wahlen.text(Wahlen.sortierungen, stand.sortierung), Icons.Filled.KeyboardArrowDown, hoehe = TvStil.chipHoehe + 6.dp, symbolNachText = true) {
+                        app.blatt.value = Blattwunsch(uebersetzt("Sortieren"), Wahlen.sortierungen, stand.sortierung) { stand.sortierungSetzen(it) }
+                    }
                 }
-                filter.forEach { f -> TvChip(Wahlen.text(Wahlen.filter, f), stand.filter == f) { stand.filterSetzen(f) } }
-                Spacer(Modifier.weight(1f))
-                Text(uebersetzt("%lld Titel", stand.gesamt), style = TvStil.klein, color = Stil.schriftLeise)
-                TvKnopf(Wahlen.text(Wahlen.sortierungen, stand.sortierung), Icons.Filled.KeyboardArrowDown, hoehe = TvStil.chipHoehe + 6.dp) {
-                    app.blatt.value = Blattwunsch(uebersetzt("Sortieren"), Wahlen.sortierungen, stand.sortierung) { stand.sortierungSetzen(it) }
+                if (!stand.laedt && stand.items.isEmpty()) {
+                    if (stand.filter == "alle") TvLeer(uebersetzt("Hier ist noch nichts"), uebersetzt("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."),
+                        symbol = Icons.Filled.Inbox, knopf = uebersetzt("Aktualisieren") to { lauf.launch { stand.laden(app.kern) } })
+                    else TvLeer(uebersetzt("Nichts gefunden"), uebersetzt("Unter diesem Filter liegt gerade nichts."),
+                        symbol = Icons.Filled.FilterList, knopf = uebersetzt("Filter zurücksetzen") to { stand.filterSetzen("alle") })
                 }
             }
-            if (!stand.laedt && stand.items.isEmpty()) {
-                if (stand.filter == "alle") TvLeer(uebersetzt("Hier ist noch nichts"), uebersetzt("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."))
-                else TvLeer(uebersetzt("Nichts gefunden"), uebersetzt("Unter diesem Filter liegt gerade nichts."))
-            }
-        }
-    })
+        })
+    }
 }
 
 /** Vorlage: `MerklisteView` auf tvOS — ein eigener Bereich, weil der Fernseher keine Downloads hat. */
@@ -140,18 +196,23 @@ fun TvMerkliste(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val gattungen = remember { wahlenLesen(Kern.merkgattungen()) }
     LaunchedEffect(stand.gattung, stand.sortierung) { stand.laden(app.kern) }
     val fokus = ersterFokus(!stand.laedt)
-    TvRaster(stand.items, { lauf.launch { stand.nachladen(app.kern) } }, fokus, oeffnen, kopf = {
+    TvRaster(stand.items, { lauf.launch { stand.nachladen(app.kern) } }, fokus, oeffnen, laedt = stand.laedt, mitUnterzeile = false, kopf = {
         Column(Modifier.padding(top = kopfUnten + 14.dp, bottom = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 gattungen.forEach { g -> TvChip(g.text, stand.gattung == g.wert) { stand.gattungSetzen(g.wert) } }
                 Spacer(Modifier.weight(1f))
-                Text(uebersetzt("%lld Titel", stand.gesamt), style = TvStil.klein, color = Stil.schriftLeise)
-                TvKnopf(Wahlen.text(Wahlen.sortierungen, stand.sortierung), Icons.Filled.KeyboardArrowDown, hoehe = TvStil.chipHoehe + 6.dp) {
+                if (stand.gesamt > 0) Text(uebersetzt("%lld · sortiert nach", stand.gesamt), style = TvStil.klein, color = Stil.schriftLeise)
+                TvKnopf(Wahlen.text(Wahlen.sortierungen, stand.sortierung), Icons.Filled.KeyboardArrowDown, hoehe = TvStil.chipHoehe + 6.dp, symbolNachText = true) {
                     app.blatt.value = Blattwunsch(uebersetzt("Sortieren"), Wahlen.sortierungen, stand.sortierung) { stand.sortierungSetzen(it) }
                 }
             }
+            // Kein Ausweg-Knopf hier — anders als in der Bibliothek, tvOS' `MerklisteView.leer`
+            // hat keinen: es gibt nichts zu aktualisieren oder zurueckzusetzen, nur den Hinweis,
+            // wo man Titel hinzufuegt.
             if (!stand.laedt && stand.items.isEmpty()) {
-                TvLeer(uebersetzt("Merkliste"), uebersetzt("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort auswählst, sammelt sich hier."))
+                TvLeer(uebersetzt("Noch nichts gemerkt"),
+                    uebersetzt("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort auswählst, sammelt sich hier."),
+                    symbol = Icons.Filled.Bookmark)
             }
         }
     })
@@ -171,7 +232,7 @@ fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val feld = ersterFokus()
     fun merken() { verlaufRoh = Kern.suchverlaufMerken(st.begriff, verlaufRoh); app.ablage.merken(Kern.suchverlaufSchluessel(), verlaufRoh) }
 
-    TvRaster(st.treffer, oeffnen = oeffnen, kopf = {
+    TvRaster(st.treffer, oeffnen = oeffnen, laedt = st.sucht && st.treffer.isEmpty(), platzhalterReihen = 1, kopf = {
         Column(Modifier.padding(top = kopfUnten + 14.dp, bottom = 10.dp)) {
             var imFeld by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -205,12 +266,18 @@ fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 !Kern.suchbegriffTaugt(st.begriff.trim()) -> Text(uebersetzt("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht."),
                                                                style = TvStil.koerper, color = Stil.schriftLeise, modifier = Modifier.padding(top = 20.dp))
                 !st.sucht && st.gesucht.isNotEmpty() && st.treffer.isEmpty() && st.seerr.isEmpty() ->
-                    TvLeer(uebersetzt("Nichts gefunden"), uebersetzt("Versuch es mit einem anderen Wort."))
+                    TvLeer(uebersetzt("Nichts gefunden"), uebersetzt("Versuch es mit einem anderen Wort."), symbol = Icons.Outlined.Search)
             }
         }
     }, mehr = {
         if (st.seerr.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { Text(uebersetzt("Kann angefragt werden"), style = TvStil.reihe, color = Stil.schrift, modifier = Modifier.padding(top = 20.dp)) }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Row(Modifier.padding(top = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(uebersetzt("Kann angefragt werden"), style = TvStil.reihe, color = Stil.schrift)
+                    // Wie `Zaehlmarke` auf tvOS — eine nackte Zahl, keine Plakette.
+                    Text("${st.seerr.size}", style = TvStil.klein, color = Stil.schriftSehrLeise)
+                }
+            }
             items(st.seerr, key = { "seerr-" + it.schluessel }) { t ->
                 TvKachel(t.plakat, t.titel, Seerrmarke.kurzwort(t.stand) ?: t.jahr?.toString(), deckkraft = 0.45f) {
                     app.seerrTreffer[t.schluessel] = t
@@ -221,187 +288,5 @@ fun TvSuche(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     })
 }
 
-/** Ein Streifen mit Titel — `reihenabschnitt` und `streifen` aus `Titelreihen.swift`. */
-@Composable
-fun TvStreifen(titel: String, inhalt: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
-    Column(Modifier.padding(top = TvStil.reihenAbstand - TvStil.reihenLuft)) {
-        TvReihentitel(titel)
-        LazyRow(contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
-                horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand), content = inhalt)
-    }
-}
-
-/** Vorlage: `Besetzungskachel` — rund, 104 dp, Name und Rolle darunter. */
-@Composable
-fun TvBesetzung(p: Mitwirkender, tun: () -> Unit) {
-    Column(Modifier.width(TvStil.posterBreite), horizontalAlignment = Alignment.CenterHorizontally) {
-        Fokusflaeche(tun = tun) {
-            Box(Modifier.size(TvStil.posterBreite).clip(CircleShape).background(Stil.flaeche), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(36.dp))
-                AsyncImage(model = p.bild, contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            }
-        }
-        Text(p.name, style = TvStil.kachel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
-        p.rolle?.let { Text(it, style = TvStil.klein, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-    }
-}
-
-/**
- * Vorlage: `DetailView` auf tvOS — **510 hoch, nicht 1080**: Kulisse rechts, Text links, darunter
- * beginnen die Reihen auf derselben Hoehe wie auf der Startseite. Kein Zurueckpfeil: Zurueck macht
- * die Fernbedienung. **Ein Hauptknopf mit Text, dahinter drei quadratische** (Von vorn, Merkliste,
- * Mehr); „Gesehen" steht in der Tafel. Der erste Fokus liegt auf dem Hauptknopf.
- */
-@Composable
-fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
-    var t by remember(ziel.id) { mutableStateOf(app.titelSpeicher[ziel.id]) }
-    var aehnliche by remember(ziel.id) { mutableStateOf<List<Rasterkachel>>(emptyList()) }
-    var extras by remember(ziel.id) { mutableStateOf<List<Extra>>(emptyList()) }
-    val lauf = rememberCoroutineScope()
-    val spielt = app.spiel.value != null
-    LaunchedEffect(ziel.id, spielt) {
-        if (spielt) return@LaunchedEffect
-        try { t = titelLesen(withContext(Dispatchers.IO) { app.kern.titel(ziel.id).await() }).also { app.titelSpeicher[ziel.id] = it } }
-        catch (e: CancellationException) { throw e } catch (_: Exception) {}
-    }
-    LaunchedEffect(ziel.id) {
-        try {
-            val o = JSONObject(withContext(Dispatchers.IO) { app.kern.titelUmfeld(ziel.id).await() })
-            aehnliche = o.feldListe("aehnliche") { rasterkachelLesen(it) }
-            extras = o.feldListe("extras") { Extra(it.getString("id"), it.getString("name"), it.feldText("bild"), it.feldText("laufzeit")) }
-        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
-    }
-    val haupt = ersterFokus()
-    val titel = t
-    val name = titel?.name ?: ziel.name
-
-    Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        Kulisse(titel?.kopfbild, Modifier.align(Alignment.TopEnd))
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp).height(TvStil.heldenHoehe + 20.dp - 98.dp)) {
-                Kopfauskunft(name, titel?.nebenzeile, titel?.beschreibung)
-                Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
-                        if (titel?.planDa == true) app.spiel.value = Abspielwunsch(ziel.id, titel.fortsetzenAb)
-                    }
-                    if (titel?.fortsetzenAb != null) TvKnopf(null, Icons.Filled.Replay) { app.spiel.value = Abspielwunsch(ziel.id, null) }
-                    TvKnopf(null, if (titel?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
-                        val an = !(titel?.gemerkt ?: false)
-                        titel?.let { t = it.copy(gemerkt = an) }
-                        lauf.launch { if (withContext(Dispatchers.IO) { app.kern.merken(ziel.id, an).await() }.isNotEmpty()) titel?.let { t = it } }
-                    }
-                    TvKnopf(null, Icons.Filled.MoreHoriz) {
-                        val gesehen = titel?.gesehen ?: false
-                        app.blatt.value = Blattwunsch(name, listOf(
-                            Wahl("gesehen", uebersetzt(if (gesehen) "Als ungesehen merken" else "Als gesehen merken")),
-                            Wahl("metadaten", uebersetzt("Metadaten neu einlesen"))), null,
-                            mapOf("gesehen" to Icons.Filled.CheckCircle, "metadaten" to Icons.Filled.Refresh)) { wahl ->
-                            lauf.launch {
-                                when (wahl) {
-                                    "gesehen" -> if (withContext(Dispatchers.IO) { app.kern.gesehen(ziel.id, !gesehen).await() }.isEmpty()) titel?.let { t = it.copy(gesehen = !gesehen) }
-                                    "metadaten" -> withContext(Dispatchers.IO) { app.kern.metadatenAuffrischen(ziel.id).await() }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme")) {
-                items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
-            }
-            if (extras.isNotEmpty()) TvStreifen(uebersetzt("Extras")) {
-                items(extras, key = { it.id }) { x -> TvKachel(x.bild, x.name, x.laufzeit, quer = true) { app.spiel.value = Abspielwunsch(x.id, null) } }
-            }
-            val leute = titel?.darsteller.orEmpty()
-            if (leute.isNotEmpty()) TvStreifen(uebersetzt("Besetzung")) {
-                items(leute, key = { it.id }) { p -> TvBesetzung(p) { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, name)) } }
-            }
-            Spacer(Modifier.height(40.dp))
-        }
-    }
-}
-
-/**
- * Vorlage: `PersonView` auf tvOS — aufgebaut wie eine Detailseite: rundes Bild, Name, Geburt, Ort,
- * die Rolle im Akzent. Das Banner wechselt alle sechs Sekunden weich zwischen den Querbildern.
- */
-@Composable
-fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
-    var stand by remember(ziel.id) { mutableStateOf(app.personenSpeicher[ziel.id]) }
-    LaunchedEffect(ziel.id) {
-        try { stand = personLesen(withContext(Dispatchers.IO) { app.kern.person(ziel.id).await() }).also { app.personenSpeicher[ziel.id] = it } }
-        catch (e: CancellationException) { throw e } catch (_: Exception) {}
-    }
-    val s = stand
-    var anfragbar by remember(ziel.id) { mutableStateOf<List<Seerrkachel>>(emptyList()) }
-    LaunchedEffect(s?.tmdb, app.seerrVerbunden.value) {
-        val tmdb = s?.tmdb ?: return@LaunchedEffect
-        if (!app.seerrVerbunden.value) return@LaunchedEffect
-        val eigene = s.titel.mapTo(HashSet()) { it.titel.lowercase() }
-        anfragbar = seerrkachelnLesen(withContext(Dispatchers.IO) { app.kern.seerrFilmografie(tmdb.toLong()).await() }).filter { it.titel.lowercase() !in eigene }
-    }
-    val banner = s?.banner.orEmpty()
-    var stelle by remember(ziel.id) { mutableIntStateOf(0) }
-    LaunchedEffect(banner.size) { if (banner.size > 1) while (true) { delay(6000); stelle++ } }
-    val fokus = ersterFokus(s != null)
-
-    Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        // Weich und langsam: 1,2 s zwischen den Querbildern der Titel.
-        Kulisse(banner.getOrNull(if (banner.isEmpty()) 0 else stelle % banner.size), Modifier.align(Alignment.TopEnd), dauer = 1200)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Row(Modifier.padding(start = TvStil.randSeite, top = 98.dp).height(TvStil.heldenHoehe + 20.dp - 98.dp),
-                horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Box(Modifier.size(TvStil.posterBreite).clip(CircleShape).background(Stil.flaeche), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(40.dp))
-                    AsyncImage(model = s?.bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                }
-                Column(Modifier.width(480.dp)) {
-                    Text(ziel.name, style = TvStil.titelGross, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    val zeile = listOfNotNull(s?.geboren?.let { uebersetzt("Geboren %@", it) }, s?.ort).joinToString(" · ")
-                    Text(zeile, style = TvStil.koerper, color = Stil.schriftLeise, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
-                    if (!ziel.rolle.isNullOrEmpty() && ziel.herkunft != null) {
-                        Text(uebersetzt("%@ in %@", ziel.rolle, ziel.herkunft), style = TvStil.koerper.copy(fontWeight = FontWeight.Medium),
-                             color = Stil.akzent, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
-                    }
-                    s?.beschreibung?.let { Text(it, style = TvStil.koerper, color = Stil.schriftLeise, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp)) }
-                }
-            }
-            if (s != null && s.titel.isNotEmpty()) TvStreifen(uebersetzt("Auf deinem Server")) {
-                items(s.titel.size, key = { s.titel[it].id }) { i ->
-                    val k = s.titel[i]
-                    TvKachel(k.plakat, k.titel, k.unterzeile, modifier = if (i == 0) Modifier.focusRequester(fokus) else Modifier) { oeffnen(Ziel(k.id, k.titel, k.typ)) }
-                }
-            }
-            if (anfragbar.isNotEmpty()) TvStreifen(uebersetzt("Kann angefragt werden")) {
-                items(anfragbar, key = { it.schluessel }) { t ->
-                    TvKachel(t.plakat, t.titel, Seerrmarke.kurzwort(t.stand) ?: t.jahr?.toString(), deckkraft = 0.45f) {
-                        app.seerrTreffer[t.schluessel] = t
-                        oeffnen(Ziel(t.schluessel, t.titel, "Seerrtitel"))
-                    }
-                }
-            }
-            if (s != null && s.titel.isEmpty() && anfragbar.isEmpty()) {
-                Text(uebersetzt("Auf deinem Server gibt es sonst nichts mit %@.", ziel.name), style = TvStil.koerper, color = Stil.schriftLeise,
-                     modifier = Modifier.padding(start = TvStil.randSeite, top = 30.dp))
-            }
-            Spacer(Modifier.height(40.dp))
-        }
-    }
-}
-
-/** Vorlage: `GenreView` — dasselbe Raster, nur der Genrename darueber, neueste zuerst. */
-@Composable
-fun TvGenre(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
-    var titel by remember(ziel.id) { mutableStateOf<List<Rasterkachel>?>(null) }
-    LaunchedEffect(ziel.id) {
-        titel = try {
-            JSONArray(withContext(Dispatchers.IO) { app.kern.genre(ziel.id).await() }).let { a -> (0 until a.length()).map { rasterkachelLesen(a.getJSONObject(it)) } }
-        } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
-    }
-    val fokus = ersterFokus(titel != null)
-    Box(Modifier.fillMaxSize().background(Stil.grund)) {
-        TvRaster(titel.orEmpty(), fokus = fokus, oeffnen = oeffnen, kopf = {
-            Text(ziel.name, style = TvStil.titelGross, color = Stil.schrift, modifier = Modifier.padding(top = 50.dp, bottom = 16.dp))
-        })
-    }
-}
+// TvStreifen, TvBesetzung, TvDetail, TvPerson und TvGenre stehen seit heute in `TvTitel.kt` —
+// das ist die Datei des TITEL-Agenten, hierher gehoeren sie nicht mehr.

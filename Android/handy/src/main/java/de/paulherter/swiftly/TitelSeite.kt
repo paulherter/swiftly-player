@@ -72,7 +72,9 @@ data class Extra(val id: String, val name: String, val bild: String?, val laufze
 
 /** Antwort von `Kern.titel` — die Zeilen stehen dort schon fertig. */
 data class Titel(
-    val id: String, val name: String, val typ: String, val nebenzeile: String, val kopfbild: String?,
+    val id: String, val name: String, val typ: String, val nebenzeile: String,
+    /** „2026 · 1 Std. 52 Min." ohne Gattung — fuer den Fernseher (`TvDetailkopf`). */
+    val jahrLaufzeit: String, val kopfbild: String?,
     val bewertung: Double?, val freigabe: String?,
     /** Es gibt einen Abspielplan — ohne ihn bleiben die Knoepfe gesperrt. */
     val planDa: Boolean, val lossless: Boolean, val methode: String?,
@@ -89,7 +91,8 @@ internal fun <T> JSONObject.feldListe(feld: String, lesen: (JSONObject) -> T): L
     optJSONArray(feld)?.let { a -> (0 until a.length()).map { lesen(a.getJSONObject(it)) } } ?: emptyList()
 
 internal fun titelLesen(json: String): Titel = JSONObject(json).let { o ->
-    Titel(o.getString("id"), o.getString("name"), o.optString("typ"), o.optString("nebenzeile"), o.feldText("kopfbild"),
+    Titel(o.getString("id"), o.getString("name"), o.optString("typ"), o.optString("nebenzeile"),
+          o.optString("jahrLaufzeit"), o.feldText("kopfbild"),
           o.feldZahl("bewertung"), o.feldText("freigabe"),
           o.optBoolean("planDa"), o.optBoolean("lossless"), o.feldText("methode"),
           o.feldZahl("fortsetzenAb"), o.feldText("fortsetzenText"),

@@ -66,7 +66,10 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 data class Kachel(val id: String, val name: String, val typ: String, val unterzeile: String?,
-                  val plakat: String?, val quer: String?, val fortschritt: Double?)
+                  val plakat: String?, val quer: String?, val fortschritt: Double?,
+                  val marke: String? = null, val markenzahl: Int = 0,
+                  val angabenzeile: String? = null, val restzeit: String? = null,
+                  val gesehen: Boolean = false, val folgenname: String? = null)
 data class Reihe(val titel: String, val quer: Boolean, val kacheln: List<Kachel>)
 
 /** Liest die Antwort von `Kern.startseite` — die Reihen stehen dort schon fertig. */
@@ -82,7 +85,12 @@ internal fun reihenLesen(json: String): List<Reihe> {
                    o.optString("unterzeile").takeIf { !o.isNull("unterzeile") },
                    o.optString("plakat").takeIf { !o.isNull("plakat") },
                    o.optString("quer").takeIf { !o.isNull("quer") },
-                   if (o.isNull("fortschritt")) null else o.getDouble("fortschritt"))
+                   if (o.isNull("fortschritt")) null else o.getDouble("fortschritt"),
+                   o.optString("marke").takeIf { !o.isNull("marke") }, o.optInt("markenzahl"),
+                   o.optString("angabenzeile").takeIf { !o.isNull("angabenzeile") },
+                   o.optString("restzeit").takeIf { !o.isNull("restzeit") },
+                   o.optBoolean("gesehen"),
+                   o.optString("folgenname").takeIf { !o.isNull("folgenname") })
         })
     }
 }

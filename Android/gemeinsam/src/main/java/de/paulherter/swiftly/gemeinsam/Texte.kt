@@ -26,7 +26,11 @@ object Texte {
     fun text(schluessel: String, vararg argumente: Any): String {
         // Das Skript legt auch den **Schluessel** umgeschrieben ab (`%d offen`), gerufen wird
         // mit Swifts Wortlaut (`%lld offen`) — also beide Fassungen nachschlagen.
-        val format = tabelle[schluessel] ?: tabelle[javaFormat(schluessel)] ?: schluessel
+        // **Genau eins hat eine eigene Form**, wo der Katalog sie traegt: „1 result", nicht
+        // „1 results". Das Skript legt sie als `…#eins` ab.
+        val eins = (argumente.singleOrNull() as? Number)?.toLong() == 1L
+        val format = (if (eins) tabelle["$schluessel#eins"] ?: tabelle["${javaFormat(schluessel)}#eins"] else null)
+            ?: tabelle[schluessel] ?: tabelle[javaFormat(schluessel)] ?: schluessel
         if (argumente.isEmpty()) return format
         // **Fehlt der Eintrag, ist der Schluessel die Vorlage** — und der traegt Swifts
         // Platzhalter. `%lld` kennt Java nicht und warf mitten im Zeichnen einer Kachel:

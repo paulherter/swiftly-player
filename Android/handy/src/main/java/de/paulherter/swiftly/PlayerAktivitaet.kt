@@ -65,7 +65,13 @@ class PlayerAktivitaet : ComponentActivity() {
             Box(Modifier.fillMaxSize().background(Color.Black)) {
                 wunsch.value?.let { w ->
                     // Ein neuer Wunsch (aus der App, waehrend das kleine Fenster laeuft) baut den Player neu.
-                    key(w) { PlayerSeite(app, w, kleinesFenster.value, ::bildImBild) { finish() } }
+                    // **Der Fernseher bekommt einen eigenen Player** (`tv/TvPlayer.kt`, Vorlage
+                    // `Sources/tvOS/PlayerScreen.swift`) statt des Telefon-Players: kein Bild-im-Bild,
+                    // dafuer Fernbedienung statt Finger. Beide teilen sich die Mechanik in `Spielwerk`.
+                    key(w) {
+                        if (app.istFernseher) de.paulherter.swiftly.tv.TvPlayer(app, w) { finish() }
+                        else PlayerSeite(app, w, kleinesFenster.value, ::bildImBild) { finish() }
+                    }
                 }
                 if (!kleinesFenster.value) if (app.istFernseher) de.paulherter.swiftly.tv.TvTafel(app) else Blattauflage(app)
             }

@@ -30,6 +30,11 @@ def wert(eintrag: dict):
     anders = mehrzahl.get("other") or next(iter(mehrzahl.values()), None)
     return anders["stringUnit"]["value"] if anders and "stringUnit" in anders else None
 
+def einzahl(eintrag: dict):
+    """Die Form fuer genau eins, falls der Katalog eine eigene hat („1 result" statt „1 results")."""
+    eins = eintrag.get("variations", {}).get("plural", {}).get("one")
+    return eins["stringUnit"]["value"] if eins and "stringUnit" in eins else None
+
 katalog = json.loads(QUELLE.read_text(encoding="utf-8"))
 quellsprache = katalog.get("sourceLanguage", "de")
 sprachen = sorted({s for v in katalog["strings"].values() for s in v.get("localizations", {})} | {quellsprache})
@@ -42,6 +47,10 @@ for schluessel, eintrag in katalog["strings"].items():
         w = wert(orte[s]) if s in orte else (schluessel if s == quellsprache else None)
         if w is not None:
             tabellen[s][kotlinformat(schluessel)] = kotlinformat(w)
+        # Einzahl nur ablegen, wenn sie sich unterscheidet — `Texte.text` fragt `…#eins` bei genau 1.
+        e = einzahl(orte[s]) if s in orte else None
+        if e is not None and e != w:
+            tabellen[s][kotlinformat(schluessel) + "#eins"] = kotlinformat(e)
 
 ZIEL.mkdir(parents=True, exist_ok=True)
 for s, t in tabellen.items():

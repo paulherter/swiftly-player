@@ -1,7 +1,11 @@
 package de.paulherter.swiftly.tv
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,8 +13,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -19,14 +24,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
@@ -42,16 +51,17 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-private enum class Abteil(val titel: String, val symbol: ImageVector) {
-    Wiedergabe("Wiedergabe", Icons.Filled.PlayArrow), Sprachen("Sprachen", Icons.Filled.Translate),
-    Darstellung("Darstellung", Icons.Filled.GridView), Integration("Integration", Icons.Filled.ManageSearch),
-    Server("Server", Icons.Filled.Dns), Konto("Konto", Icons.Filled.Person),
+/** Vorlage: `Bereichswahl` (tvOS) — nur der Name, kein Symbol. Die Ueberschriften rechts
+ *  ("PLAYBACK" &c.) sind derselbe Wortlaut, nicht eine zweite Beschriftung. */
+private enum class Abteil(val titel: String) {
+    Wiedergabe("Wiedergabe"), Sprachen("Sprachen"), Darstellung("Darstellung"),
+    Integration("Integration"), Server("Server"), Konto("Konto"),
 }
 
 @Composable
 private fun Gruppenkopf(text: String) {
     Text(text.uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
-         color = Stil.schriftSehrLeise, modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 6.dp))
+         color = Stil.schriftSehrLeise, modifier = Modifier.padding(start = 13.dp, top = 18.dp, bottom = 6.dp))
 }
 
 /**
@@ -60,6 +70,13 @@ private fun Gruppenkopf(text: String) {
  * Breite da ist, spart jeder Sprung, der wegfaellt. Umsortiert wird mit Pfeilen — mit der
  * Fernbedienung gibt es nichts zu greifen. Keine Offline-Gruppe, kein Querformat, kein Quick-Connect-
  * Freigeben: nichts davon hat auf dem Fernseher einen Sinn.
+ *
+ * **Aufbau am 15.09.2026 auf tvOS gezogen** — vorher stand hier ein Kopf ueber der ganzen Seite,
+ * die Abteile trugen Symbole und die Zeilen "An"/"Aus" als Text. Jetzt: die Kontokarte links oben
+ * (Bild, Name, Server, Trennlinie, Kontenstreifen mit gestricheltem Plus), darunter die
+ * Abteile nur als Text — gewaehlt in Akzentflaeche und Akzentschrift, wie `BereichsStil`. Rechts
+ * eine gruppierte Karte mit Haarlinien statt einer flachen Liste, Zeilen ohne Symbole, gezeichnete
+ * Schalter statt Text und ein Pfeil an jeder Auswahlzeile.
  */
 @Composable
 fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
@@ -71,6 +88,7 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val lauf = rememberCoroutineScope()
     BackHandler(enabled = !linksImFokus) { runCatching { links.requestFocus() } }
 
+    var bildrateAnpassen by remember { mutableStateOf(app.ablage.merkwert("bildrateAnpassen") != "0") }
     val bitraten = remember { wahlenLesen(Kern.bitratenstufen()) }
     val puffer = remember { JSONArray(Kern.pufferstufen()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Wahl(o.getString("wert"), o.getString("text")) } } } }
     val sekunden = remember { JSONArray(Kern.spannen()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
@@ -80,7 +98,6 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         app.blatt.value = Blattwunsch(titel, eintraege, gewaehlt, waehlen = waehlen)
     }
     fun sekundenwahl() = sekunden.map { Wahl(it.toString(), uebersetzt("%lld s", it)) }
-    val anAus: (Boolean) -> String = { uebersetzt(if (it) "An" else "Aus") }
 
     var server by remember { mutableStateOf<Pair<String, String>?>(null) }
     LaunchedEffect(Unit) {
@@ -89,140 +106,345 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
             server = o.optString("name") to o.optString("version")
         } catch (x: CancellationException) { throw x } catch (_: Exception) {}
     }
+    // Fuer „Genre hinzufuegen" unten — dieselbe Liste wie `GenrewahlSeite` auf dem Telefon.
+    var alleGattungen by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        alleGattungen = try {
+            JSONArray(withContext(Dispatchers.IO) { app.kern.gattungen().await() }).let { a -> (0 until a.length()).map { a.getString(it) } }
+        } catch (x: CancellationException) { throw x } catch (_: Exception) { emptyList() }
+    }
     var pruefung by remember { mutableStateOf<String?>(null) }
     val karten = remember(app.kontowechsel.intValue) {
         app.ablage.konten?.let { b -> runCatching { JSONArray(Kern.bundUebersicht(b)).let { a -> (0 until a.length()).map { a.getJSONObject(it) } } }.getOrNull() }.orEmpty()
     }
     val host = karten.firstOrNull { it.optBoolean("aktiv") }?.optString("host").orEmpty()
+    val serverzeile = listOfNotNull(server?.first?.ifEmpty { null } ?: app.servername.value,
+                                     server?.second?.let { "Jellyfin $it" }).joinToString(" · ")
 
-    Column(Modifier.fillMaxSize().background(Stil.grund).padding(horizontal = TvStil.randSeite).padding(top = 40.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            SubcomposeAsyncImage(model = app.kern.benutzerbild(200).orElse(null), contentDescription = null, contentScale = ContentScale.Crop,
-                modifier = Modifier.size(56.dp).clip(CircleShape).background(Stil.erhoeht),
-                error = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftLeise, modifier = Modifier.size(26.dp))
-                } })
-            Column {
-                Text(app.benutzername(), style = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold), color = Stil.schrift)
-                Text(listOfNotNull(server?.first?.ifEmpty { null } ?: app.servername.value, server?.second?.let { "Jellyfin $it" }).joinToString(" · "),
-                     style = TvStil.klein, color = Stil.schriftLeise)
-            }
-        }
-
-        Row(Modifier.padding(top = 24.dp).fillMaxWidth().weight(1f)) {
+    Column(Modifier.fillMaxSize().background(Stil.grund)
+            .padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben)) {
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(36.dp)) {
             Column(Modifier.width(230.dp).focusGroup()) {
+                Kontokarte(app, serverzeile, karten,
+                           aufnehmen = { oeffnen(Ziel("weiteresKonto", uebersetzt("Konto hinzufügen"), "WeiteresKonto")) },
+                           wechseln = { k -> app.kontoWechseln(k) })
+                Spacer(Modifier.height(20.dp))
+                Gruppenkopf(uebersetzt("Bereiche"))
                 Abteil.entries.forEachIndexed { i, a ->
-                    Fokusflaeche(if (i == 0) Modifier.fillMaxWidth().focusRequester(links) else Modifier.fillMaxWidth(), lupe = 1f,
+                    BereichZeile(uebersetzt(a.titel), ausgewaehlt = a == abteil,
+                                 modifier = if (i == 0) Modifier.focusRequester(links) else Modifier,
                                  fokusGeaendert = { if (it) { abteil = a; linksImFokus = true } },
-                                 tun = { runCatching { rechts.requestFocus() } }) { fokus ->
-                        Row(Modifier.fillMaxWidth().height(TvStil.zeilenHoehe).clip(RoundedCornerShape(TvStil.ecke))
-                                .background(when { fokus -> TvStil.fokusflaeche; a == abteil -> Color.White.copy(alpha = 0.05f); else -> Color.Transparent })
-                                .padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Icon(a.symbol, contentDescription = null, tint = if (a == abteil) Stil.schrift else Stil.schriftLeise, modifier = Modifier.size(18.dp))
-                            Text(uebersetzt(a.titel), style = TextStyle(fontSize = 15.5.sp, fontWeight = if (a == abteil) FontWeight.SemiBold else FontWeight.Normal),
-                                 color = if (a == abteil) Stil.schrift else Stil.schriftLeise)
-                        }
-                    }
+                                 tun = { runCatching { rechts.requestFocus() } })
                 }
             }
-            Spacer(Modifier.width(36.dp))
             Column(Modifier.weight(1f).alpha(if (linksImFokus) 0.5f else 1f)
                     .onFocusChanged { if (it.hasFocus) linksImFokus = false }
                     .verticalScroll(rememberScrollState()).focusGroup()) {
                 val erste = Modifier.focusRequester(rechts)
-                when (abteil) {
-                    Abteil.Wiedergabe -> {
-                        TvZeile(uebersetzt("Immer Direct Play"), Icons.Filled.PlayArrow, anAus(e.immerDirectPlay), modifier = erste) {
-                            e.immerDirectPlay = !e.immerDirectPlay; app.qualitaetMelden()
+                Gruppenkopf(uebersetzt(abteil.titel))
+                Column(Modifier.padding(5.dp).clip(RoundedCornerShape(TvStil.eckeKachel)).background(Stil.flaeche)) {
+                    when (abteil) {
+                        Abteil.Wiedergabe -> {
+                            TvSchalterzeile(uebersetzt("Immer Direct Play"), e.immerDirectPlay, modifier = erste) {
+                                e.immerDirectPlay = !e.immerDirectPlay; app.qualitaetMelden()
+                            }
+                            Trennlinie()
+                            // Gedimmt, solange Direct Play erzwungen ist — dort griffe sie nicht.
+                            TvHandlung(uebersetzt("Höchste Bitrate"), wert = bitraten.firstOrNull { it.wert == e.bitratenGrenze.toString() }?.text,
+                                       modifier = Modifier.alpha(if (e.immerDirectPlay) 0.4f else 1f)) {
+                                if (!e.immerDirectPlay) blatt(uebersetzt("Höchste Bitrate"), bitraten, e.bitratenGrenze.toString()) { e.bitratenGrenze = it.toInt(); app.qualitaetMelden() }
+                            }
+                            Trennlinie()
+                            TvHandlung(uebersetzt("Puffer"), wert = puffer.firstOrNull { it.wert == e.pufferstufe }?.text) {
+                                blatt(uebersetzt("Puffer"), puffer, e.pufferstufe) { e.pufferstufe = it }
+                            }
+                            Trennlinie()
+                            TvSchalterzeile(uebersetzt("Untertitel automatisch"), e.untertitelAutomatisch) { e.untertitelAutomatisch = !e.untertitelAutomatisch }
+                            Trennlinie()
+                            // Derselbe Ablageschluessel wie im Player (`TvPlayer`/`TvBildtakt`, Vorgabe an) —
+                            // kein eigener in `Einstellungen`, weil es die Bildrateanpassung nur auf tvOS/Android-TV
+                            // gibt (`ProfilView.swift` haelt sie ebenfalls per `@AppStorage`, nicht in `AppModel`).
+                            TvSchalterzeile(uebersetzt("Bildrate an den Film anpassen"), bildrateAnpassen) {
+                                bildrateAnpassen = !bildrateAnpassen
+                                app.ablage.merken("bildrateAnpassen", if (bildrateAnpassen) "1" else "0")
+                            }
+                            Trennlinie()
+                            TvSchalterzeile(uebersetzt("Nächste Folge automatisch"), e.naechsteAutomatisch) { e.naechsteAutomatisch = !e.naechsteAutomatisch }
+                            Trennlinie()
+                            TvHandlung(uebersetzt("Zurückspulen"), wert = uebersetzt("%lld s", e.zurueckSekunden)) {
+                                blatt(uebersetzt("Zurückspulen"), sekundenwahl(), e.zurueckSekunden.toString()) { e.zurueckSekunden = it.toInt() }
+                            }
+                            Trennlinie()
+                            TvHandlung(uebersetzt("Vorspulen"), wert = uebersetzt("%lld s", e.vorSekunden)) {
+                                blatt(uebersetzt("Vorspulen"), sekundenwahl(), e.vorSekunden.toString()) { e.vorSekunden = it.toInt() }
+                            }
                         }
-                        // Gedimmt, solange Direct Play erzwungen ist — dort griffe sie nicht.
-                        TvZeile(uebersetzt("Höchste Bitrate"), Icons.Filled.BarChart, bitraten.firstOrNull { it.wert == e.bitratenGrenze.toString() }?.text,
-                                modifier = Modifier.alpha(if (e.immerDirectPlay) 0.4f else 1f)) {
-                            if (!e.immerDirectPlay) blatt(uebersetzt("Höchste Bitrate"), bitraten, e.bitratenGrenze.toString()) { e.bitratenGrenze = it.toInt(); app.qualitaetMelden() }
+                        Abteil.Sprachen -> {
+                            TvHandlung(uebersetzt("Ton"), wert = tonwahl.firstOrNull { it.wert == e.tonSprache }?.text, modifier = erste) {
+                                blatt(uebersetzt("Ton"), tonwahl, e.tonSprache) { e.tonSprache = it }
+                            }
+                            Trennlinie()
+                            TvHandlung(uebersetzt("Untertitel"), wert = untertitelwahl.firstOrNull { it.wert == e.untertitelSprache }?.text) {
+                                blatt(uebersetzt("Untertitel"), untertitelwahl, e.untertitelSprache) { e.untertitelSprache = it }
+                            }
                         }
-                        TvZeile(uebersetzt("Puffer"), Icons.Filled.Wifi, puffer.firstOrNull { it.wert == e.pufferstufe }?.text) {
-                            blatt(uebersetzt("Puffer"), puffer, e.pufferstufe) { e.pufferstufe = it }
+                        Abteil.Darstellung -> {
+                            TvSchalterzeile(uebersetzt("Fortschritt auf Kacheln"), e.fortschritt, modifier = erste) { e.fortschritt = !e.fortschritt }
+                            Trennlinie()
+                            Gruppenkopf(uebersetzt("Startseite"))
+                            val reihen = remember(e.startReihen, e.neuzugangGetrennt) { wahlenLesen(Kern.startreihen(e.startReihen.toTypedArray(), e.neuzugangGetrennt)) }
+                            fun verschieben(r: Wahl, schritt: Int) {
+                                e.startReihen = JSONArray(Kern.startreiheVerschoben(r.wert, schritt.toLong(), e.startReihen.toTypedArray(), e.neuzugangGetrennt))
+                                    .let { a -> (0 until a.length()).map { a.getString(it) } }
+                            }
+                            reihen.forEachIndexed { idx, r ->
+                                TvReihenzeile(uebersetzt(r.text), an = r.wert !in e.startAus,
+                                              kannHoch = idx != 0, kannRunter = idx != reihen.lastIndex,
+                                              umschalten = { e.startAus = if (r.wert in e.startAus) e.startAus - r.wert else e.startAus + r.wert },
+                                              schieben = { schritt -> verschieben(r, schritt) })
+                                Trennlinie()
+                            }
+                            TvSchalterzeile(uebersetzt("Neuzugänge getrennt"), e.neuzugangGetrennt) { e.neuzugangGetrennt = !e.neuzugangGetrennt }
+                            Trennlinie()
+                            Gruppenkopf(uebersetzt("Genres"))
+                            // **Eine Liste, zwei Formen** — dieselbe Wertzeile wie „Puffer" &c., nicht zwei
+                            // Zeilen mit Haken: das war die Fassung vor dem Angleich an `ProfilView.swift`.
+                            TvHandlung(uebersetzt("Form"), wert = if (e.genreChips) uebersetzt("Als Chips") else uebersetzt("Als Reihen")) {
+                                blatt(uebersetzt("Form"),
+                                      listOf(Wahl("reihen", uebersetzt("Als eigene Reihen")), Wahl("chips", uebersetzt("Als Chips über den Reihen"))),
+                                      if (e.genreChips) "chips" else "reihen") { e.genreChips = it == "chips" }
+                            }
+                            e.startGenres.forEach { g ->
+                                Trennlinie()
+                                TvHandlung(name = g, wert = uebersetzt("Entfernen")) { e.startGenres = e.startGenres - g }
+                            }
+                            Trennlinie()
+                            val freieGattungen = alleGattungen.filter { it !in e.startGenres }
+                            TvHandlung(uebersetzt("Genre hinzufügen"), wert = if (freieGattungen.isEmpty()) uebersetzt("Keins offen") else "") {
+                                if (freieGattungen.isNotEmpty()) blatt(uebersetzt("Genre hinzufügen"), freieGattungen.map { Wahl(it, it) }, "") { g -> e.startGenres = e.startGenres + g }
+                            }
                         }
-                        TvZeile(uebersetzt("Untertitel automatisch"), Icons.Filled.Subtitles, anAus(e.untertitelAutomatisch)) { e.untertitelAutomatisch = !e.untertitelAutomatisch }
-                        TvZeile(uebersetzt("Nächste Folge automatisch"), Icons.Filled.SkipNext, anAus(e.naechsteAutomatisch)) { e.naechsteAutomatisch = !e.naechsteAutomatisch }
-                        TvZeile(uebersetzt("Zurückspulen"), Icons.Filled.Replay, uebersetzt("%lld s", e.zurueckSekunden)) {
-                            blatt(uebersetzt("Zurückspulen"), sekundenwahl(), e.zurueckSekunden.toString()) { e.zurueckSekunden = it.toInt() }
+                        Abteil.Integration -> {
+                            // **Ein zweiter Dienst, kein zweiter Server** — deshalb eine Angabe darüber, ob
+                            // verbunden ist, und darunter die Handlung. Wie auf tvOS ist die Angabe selbst
+                            // nicht fokussierbar.
+                            TvAnzeige(uebersetzt("Seerr"), uebersetzt(if (app.seerrVerbunden.value) "Verbunden" else "Nicht verbunden"))
+                            Trennlinie()
+                            TvHandlung(uebersetzt(if (app.seerrVerbunden.value) "Ändern" else "Anbinden"), modifier = erste) {
+                                oeffnen(Ziel("seerr", "Seerr", "Seerr"))
+                            }
                         }
-                        TvZeile(uebersetzt("Vorspulen"), Icons.Filled.FastForward, uebersetzt("%lld s", e.vorSekunden)) {
-                            blatt(uebersetzt("Vorspulen"), sekundenwahl(), e.vorSekunden.toString()) { e.vorSekunden = it.toInt() }
-                        }
-                    }
-                    Abteil.Sprachen -> {
-                        TvZeile(uebersetzt("Ton"), Icons.Filled.VolumeUp, tonwahl.firstOrNull { it.wert == e.tonSprache }?.text, modifier = erste) {
-                            blatt(uebersetzt("Ton"), tonwahl, e.tonSprache) { e.tonSprache = it }
-                        }
-                        TvZeile(uebersetzt("Untertitel"), Icons.Filled.ClosedCaption, untertitelwahl.firstOrNull { it.wert == e.untertitelSprache }?.text) {
-                            blatt(uebersetzt("Untertitel"), untertitelwahl, e.untertitelSprache) { e.untertitelSprache = it }
-                        }
-                    }
-                    Abteil.Darstellung -> {
-                        TvZeile(uebersetzt("Fortschritt auf Kacheln"), Icons.Filled.BarChart, anAus(e.fortschritt), modifier = erste) { e.fortschritt = !e.fortschritt }
-                        Gruppenkopf(uebersetzt("Startseite"))
-                        val reihen = remember(e.startReihen, e.neuzugangGetrennt) { wahlenLesen(Kern.startreihen(e.startReihen.toTypedArray(), e.neuzugangGetrennt)) }
-                        fun verschieben(r: Wahl, schritt: Int) {
-                            e.startReihen = JSONArray(Kern.startreiheVerschoben(r.wert, schritt.toLong(), e.startReihen.toTypedArray(), e.neuzugangGetrennt))
-                                .let { a -> (0 until a.length()).map { a.getString(it) } }
-                        }
-                        reihen.forEach { r ->
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TvZeile(uebersetzt(r.text), Icons.Filled.ViewAgenda, anAus(r.wert !in e.startAus), modifier = Modifier.weight(1f)) {
-                                    e.startAus = if (r.wert in e.startAus) e.startAus - r.wert else e.startAus + r.wert
+                        Abteil.Server -> {
+                            TvAnzeige(uebersetzt("Adresse"), host.ifEmpty { "—" })
+                            Trennlinie()
+                            TvAnzeige(uebersetzt("Fassung"), server?.second?.let { "Jellyfin $it" } ?: "—")
+                            TvAnzeige("Swiftly", SwiftlyAnwendung.FASSUNGSZEILE.removePrefix("Swiftly Player "))
+                            Trennlinie()
+                            // Mehrere Server, seit dem 12.09.2026 — vorher hielt der Bund genau einen.
+                            TvHandlung(uebersetzt("Server hinzufügen")) { oeffnen(Ziel("serveraufnahme", uebersetzt("Server hinzufügen"), "ServerAufnahme")) }
+                            Trennlinie()
+                            // Wie auf tvOS traegt „Verbindung pruefen" den ersten Fokus dieses Abteils,
+                            // nicht „Server hinzufuegen" — so steht es in `ProfilView.swift`.
+                            TvHandlung(uebersetzt("Verbindung prüfen"), wert = pruefung, pfeil = false, modifier = erste) {
+                                pruefung = uebersetzt("Moment…")
+                                lauf.launch {
+                                    pruefung = try {
+                                        val o = JSONObject(withContext(Dispatchers.IO) { app.kern.serverauskunft().await() })
+                                        uebersetzt("Erreichbar — Jellyfin %@", o.optString("version"))
+                                    } catch (x: CancellationException) { throw x } catch (x: Exception) { x.message ?: x.toString() }
                                 }
-                                TvKnopf(null, Icons.Filled.KeyboardArrowUp, hoehe = 34.dp) { verschieben(r, -1) }
-                                TvKnopf(null, Icons.Filled.KeyboardArrowDown, hoehe = 34.dp) { verschieben(r, 1) }
                             }
                         }
-                        TvZeile(uebersetzt("Neuzugänge getrennt"), Icons.Filled.VerticalSplit, anAus(e.neuzugangGetrennt)) { e.neuzugangGetrennt = !e.neuzugangGetrennt }
-                        Gruppenkopf(uebersetzt("Genres"))
-                        TvZeile(uebersetzt("Als eigene Reihen"), haken = !e.genreChips) { e.genreChips = false }
-                        TvZeile(uebersetzt("Als Chips über den Reihen"), haken = e.genreChips) { e.genreChips = true }
-                        e.startGenres.forEach { g -> TvZeile(g, Icons.Filled.Label, uebersetzt("Löschen")) { e.startGenres = e.startGenres - g } }
-                        TvZeile(uebersetzt("Genre hinzufügen"), Icons.Filled.Add) { oeffnen(Ziel("genrewahl", uebersetzt("Genre hinzufügen"), "Genrewahl")) }
-                    }
-                    Abteil.Integration -> {
-                        TvZeile("Seerr", Icons.Filled.ManageSearch, uebersetzt(if (app.seerrVerbunden.value) "Verbunden" else "Nicht verbunden"), modifier = erste) {
-                            oeffnen(Ziel("seerr", "Seerr", "Seerr"))
+                        Abteil.Konto -> {
+                            // **„Weiteres Konto hinzufügen" steht als Plus in der Kontokarte**, dort wo die
+                            // Konten stehen — wie auf tvOS. An seiner Stelle hier der zweite Server; dahinter
+                            // liegt noch nichts, deshalb eine Anzeige und kein Knopf.
+                            TvAnzeige(uebersetzt("Server hinzufügen"), uebersetzt("Kommt später"))
+                            Trennlinie()
+                            TvHandlung(uebersetzt("Abmelden"), modifier = erste) { app.abmelden() }
                         }
-                    }
-                    Abteil.Server -> {
-                        TvZeile(uebersetzt("Adresse"), Icons.Filled.Link, host, modifier = erste) {}
-                        TvZeile(uebersetzt("Fassung"), Icons.Filled.Info, server?.second?.let { "Jellyfin $it" }) {}
-                        // Ein Fehlerbericht haengt daran, welche Fassung laeuft.
-                        TvZeile("Swiftly", Icons.Filled.Tv, SwiftlyAnwendung.FASSUNGSZEILE.removePrefix("Swiftly Player ")) {}
-                        TvZeile(uebersetzt("Server hinzufügen"), Icons.Filled.Dns) { oeffnen(Ziel("serveraufnahme", uebersetzt("Server hinzufügen"), "ServerAufnahme")) }
-                        TvZeile(uebersetzt("Verbindung prüfen"), Icons.Filled.NetworkCheck, pruefung) {
-                            pruefung = uebersetzt("Moment…")
-                            lauf.launch {
-                                pruefung = try {
-                                    val o = JSONObject(withContext(Dispatchers.IO) { app.kern.serverauskunft().await() })
-                                    uebersetzt("Erreichbar — Jellyfin %@", o.optString("version"))
-                                } catch (x: CancellationException) { throw x } catch (x: Exception) { x.message ?: x.toString() }
-                            }
-                        }
-                    }
-                    Abteil.Konto -> {
-                        var zuerst = true
-                        karten.forEach { k ->
-                            val konten = k.optJSONArray("konten") ?: JSONArray()
-                            (0 until konten.length()).map { konten.getJSONObject(it) }.forEach { konto ->
-                                val aktiv = konto.optBoolean("aktiv") && k.optBoolean("aktiv")
-                                TvZeile(konto.optString("name"), Icons.Filled.Person, k.optString("host"), haken = aktiv,
-                                        modifier = if (zuerst) erste else Modifier) {
-                                    if (!aktiv) app.kontoWechseln(konto.getString("kennung"))
-                                }
-                                zuerst = false
-                            }
-                        }
-                        TvZeile(uebersetzt("Abmelden"), Icons.AutoMirrored.Filled.Logout, modifier = if (zuerst) erste else Modifier) { app.abmelden() }
                     }
                 }
             }
         }
     }
+}
+
+// MARK: - Zeilen
+
+/** Ein Abteil in der linken Spalte. Vorlage: `BereichsStil` — vier Zustaende, kein Symbol:
+ *  gewaehlt traegt Akzentflaeche und Akzentschrift, fokussiert die ruhige Flaeche. */
+@Composable
+private fun BereichZeile(titel: String, ausgewaehlt: Boolean, modifier: Modifier = Modifier,
+                          fokusGeaendert: (Boolean) -> Unit = {}, tun: () -> Unit) {
+    Fokusflaeche(modifier.fillMaxWidth(), lupe = 1f, fokusGeaendert = fokusGeaendert, tun = tun) { fokus ->
+        val grund = when {
+            ausgewaehlt && fokus -> Stil.akzent.copy(alpha = 0.26f)
+            ausgewaehlt          -> Stil.akzent.copy(alpha = 0.15f)
+            fokus                -> TvStil.fokusflaeche
+            else                 -> Color.Transparent
+        }
+        Row(Modifier.fillMaxWidth().height(TvStil.zeilenHoehe).clip(RoundedCornerShape(TvStil.ecke))
+                .background(grund).padding(horizontal = 13.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(titel, style = TextStyle(fontSize = 15.5.sp,
+                     fontWeight = if (ausgewaehlt || fokus) FontWeight.SemiBold else FontWeight.Normal),
+                 color = if (ausgewaehlt) Stil.akzent else Stil.schrift, maxLines = 1)
+        }
+    }
+}
+
+/** Zeile ohne Handlung — nur Angabe. Vorlage: `Anzeigezeile`. Anders als jede Zeile daneben kein
+ *  Knopf: eine Angabe ohne Wirkung, die trotzdem Fokus annimmt, ist auf dem Fernseher eine Falle. */
+@Composable
+private fun TvAnzeige(titel: String, wert: String, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth().height(TvStil.zeilenHoehe).padding(horizontal = 13.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(titel, style = TextStyle(fontSize = 15.5.sp, fontWeight = FontWeight.Normal), color = Stil.schrift,
+             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(20.dp))
+        Text(wert, style = TextStyle(fontSize = 14.sp), color = Stil.schriftLeise, maxLines = 1)
+    }
+}
+
+/** Zeile, die etwas ausloest — mit oder ohne Wert und Pfeil rechts. Vorlage: `Handlungszeile`.
+ *  `name` ist der Wortlaut vom Server (Genre) und laeuft nicht durch den Katalog. */
+@Composable
+private fun TvHandlung(titel: String = "", name: String? = null, wert: String? = null,
+                        pfeil: Boolean = wert != null, modifier: Modifier = Modifier, tun: () -> Unit) {
+    Fokusflaeche(modifier.fillMaxWidth(), lupe = 1f, tun = tun) { fokus ->
+        Row(Modifier.fillMaxWidth().height(TvStil.zeilenHoehe).clip(RoundedCornerShape(TvStil.ecke))
+                .background(if (fokus) TvStil.fokusflaeche else Color.Transparent).padding(horizontal = 13.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(name ?: titel, style = TextStyle(fontSize = 15.5.sp, fontWeight = FontWeight.Normal),
+                 color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (wert != null) {
+                Text(wert, style = TextStyle(fontSize = 14.sp), color = Stil.schriftLeise, maxLines = 1)
+                if (pfeil) Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null,
+                                tint = Stil.schriftSehrLeise, modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+/** Der gezeichnete Schalter — Vorlage: `Schalter` (tvOS). Keine Material-`Switch`: eigene Masse,
+ *  eigener Radius, eigene Bewegung. Der Fokus liegt auf der Zeile, nicht auf dem Schalter. */
+@Composable
+private fun TvSchalter(an: Boolean) {
+    val breite = 42.dp; val hoehe = 25.dp; val kreis = 20.dp; val einzug = 2.5.dp
+    val versatz by animateDpAsState(if (an) breite - kreis - einzug else einzug,
+                                     tween(150), label = "schalterVersatz")
+    val kapsel by animateColorAsState(if (an) Stil.akzent else Color.White.copy(alpha = 0.16f),
+                                       tween(150), label = "schalterKapsel")
+    val knopf by animateColorAsState(if (an) Stil.grund else Color.White,
+                                      tween(150), label = "schalterKnopf")
+    Box(Modifier.width(breite).height(hoehe).clip(CircleShape).background(kapsel)) {
+        Box(Modifier.offset(x = versatz, y = einzug).size(kreis).clip(CircleShape).background(knopf))
+    }
+}
+
+/** Zeile mit Schalter rechts — Vorlage: `Schalterzeile`. Gedrueckt wird die ganze Zeile. */
+@Composable
+private fun TvSchalterzeile(titel: String, an: Boolean, modifier: Modifier = Modifier, tun: () -> Unit) {
+    Fokusflaeche(modifier.fillMaxWidth(), lupe = 1f, tun = tun) { fokus ->
+        Row(Modifier.fillMaxWidth().height(TvStil.zeilenHoehe).clip(RoundedCornerShape(TvStil.ecke))
+                .background(if (fokus) TvStil.fokusflaeche else Color.Transparent).padding(horizontal = 13.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(titel, style = TextStyle(fontSize = 15.5.sp), color = Stil.schrift, maxLines = 1,
+                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            TvSchalter(an)
+        }
+    }
+}
+
+/** Eine Reihe der Startseite: an oder aus, und wohin sie gehoert. Vorlage: `Reihenzeile` — Pfeile
+ *  statt Ziehgriff, weil die Fernbedienung nichts zum Greifen hat. */
+@Composable
+private fun TvReihenzeile(name: String, an: Boolean, kannHoch: Boolean, kannRunter: Boolean,
+                           umschalten: () -> Unit, schieben: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TvSchalterzeile(name, an, modifier = Modifier.weight(1f), tun = umschalten)
+        TvKnopf(null, Icons.Filled.KeyboardArrowUp, hoehe = 28.dp, freigegeben = kannHoch) { schieben(-1) }
+        TvKnopf(null, Icons.Filled.KeyboardArrowDown, hoehe = 28.dp, freigegeben = kannRunter) { schieben(1) }
+    }
+}
+
+/** Haarlinie zwischen Zeilen. Vorlage: `Trennlinie`. */
+@Composable
+private fun Trennlinie() {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 13.dp).height(1.dp).background(Stil.linie))
+}
+
+// MARK: - Konto
+
+/** Wer angemeldet ist, als Karte ueber den Abteilen. Vorlage: `kontokarte` — Bild, Name, Server,
+ *  Trennlinie, darunter die anderen Konten und das Plus. */
+@Composable
+private fun Kontokarte(app: SwiftlyAnwendung, serverzeile: String, karten: List<JSONObject>,
+                        aufnehmen: () -> Unit, wechseln: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvStil.eckeKachel)).background(Stil.flaeche).padding(16.dp)) {
+        Profilbild(app, 42.dp)
+        Text(app.benutzername(), style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),
+             color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
+             modifier = Modifier.padding(top = 9.dp))
+        // Serverdaten, kein Katalogtext.
+        Text(serverzeile, style = TvStil.klein, color = Stil.schriftLeise, maxLines = 1,
+             modifier = Modifier.padding(top = 2.dp))
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
+        Spacer(Modifier.height(12.dp))
+        Kontenstreifen(karten, aufnehmen, wechseln)
+    }
+}
+
+/** Die anderen Konten und das Plus — unten in der Kontokarte. Vorlage: `Kontenstreifen`.
+ *  **Das angemeldete Konto steht nicht mehr darin** — es steht groesser darueber. Zaehlt alle
+ *  Konten aus allen Servern des Buendels, nicht nur die des aktiven — dieselbe Reichweite wie
+ *  `model.konten` auf tvOS (`Kontenbund.konten` ueber alle Server hinweg). */
+@Composable
+private fun Kontenstreifen(karten: List<JSONObject>, aufnehmen: () -> Unit, wechseln: (String) -> Unit) {
+    val groesse = 30.dp
+    val andere = karten.flatMap { k ->
+        val konten = k.optJSONArray("konten") ?: JSONArray()
+        (0 until konten.length()).map { konten.getJSONObject(it) }
+    }.filter { !it.optBoolean("aktiv") }
+
+    Row(Modifier.fillMaxWidth().focusGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        andere.forEach { konto ->
+            Fokusflaeche(lupe = 1.12f, tun = { wechseln(konto.optString("kennung")) }) { fokus ->
+                Box(Modifier.size(groesse).clip(CircleShape)
+                        .then(if (fokus) Modifier.border(2.dp, Color.White, CircleShape) else Modifier)) {
+                    Kontokreis(konto.optString("name"), konto.optString("bild").ifEmpty { null }, groesse)
+                }
+            }
+        }
+        Fokusflaeche(lupe = 1.12f, tun = aufnehmen) { fokus ->
+            Box(Modifier.size(groesse)
+                    .drawBehind {
+                        drawCircle(color = Color.White.copy(alpha = 0.28f),
+                                   style = Stroke(width = 1.5.dp.toPx(),
+                                       pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.5.dp.toPx()))))
+                    }
+                    .then(if (fokus) Modifier.border(2.dp, Color.White, CircleShape) else Modifier),
+                contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Add, contentDescription = uebersetzt("Weiteres Konto hinzufügen"),
+                     tint = Stil.schriftLeise, modifier = Modifier.size(12.dp))
+            }
+        }
+    }
+}
+
+/** Das Bild eines fremden Kontos, sonst sein Anfangsbuchstabe — dasselbe Muster wie `Profilbild`,
+ *  nur fuer ein Konto, das gerade nicht das eigene ist (eigene Adresse statt `app.kern`). */
+@Composable
+private fun Kontokreis(name: String, bild: String?, groesse: Dp) {
+    SubcomposeAsyncImage(model = bild, contentDescription = name, contentScale = ContentScale.Crop,
+        modifier = Modifier.size(groesse).clip(CircleShape),
+        error = {
+            Box(Modifier.fillMaxSize().background(Stil.erhoeht), contentAlignment = Alignment.Center) {
+                Text(name.take(1).uppercase(), color = Stil.schrift,
+                     style = TextStyle(fontSize = (groesse.value * 0.38f).sp, fontWeight = FontWeight.SemiBold))
+            }
+        })
 }

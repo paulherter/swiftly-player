@@ -280,36 +280,63 @@ public final class Kern: @unchecked Sendable {
         let stand = await Startseitenlader.laden(von: c, .init(
             getrennt: getrennt, filmBibliothek: filme, serienBibliothek: serien,
             gattungen: alsChips ? nil : gattungen))
-        let inhalt: [Startreihe: (quer: Bool, neu: Bool, items: [Item])] = [
-            .weiterschauen: (true, false, stand.weiterschauen ?? []),
-            .naechsteFolge: (false, false, stand.naechsteFolge ?? []),
-            .neuzugaenge: (false, true, stand.zuletzt ?? []),
-            .neueFilme: (false, true, stand.neueFilme ?? []),
-            .neueSerien: (false, true, stand.neueSerien ?? []),
+        // **Die Marke nur auf den Reihen, die tvOS mit ihr zeigt.** `HomeView.Streifen`
+        // (weiterschauen, naechsteFolge) kennt sie nicht — nur der Reihenbau aus
+        // `Titelreihen.swift` (`Reihe`), fuer Neuzugaenge, neue Filme/Serien und die
+        // Genre-Reihen. Sonst haette Kotlin diese Ausnahme selbst nachbilden muessen.
+        let inhalt: [Startreihe: (quer: Bool, neu: Bool, marke: Bool, items: [Item])] = [
+            .weiterschauen: (true, false, false, stand.weiterschauen ?? []),
+            .naechsteFolge: (false, false, false, stand.naechsteFolge ?? []),
+            .neuzugaenge: (false, true, true, stand.zuletzt ?? []),
+            .neueFilme: (false, true, true, stand.neueFilme ?? []),
+            .neueSerien: (false, true, true, stand.neueSerien ?? []),
         ]
         var reihen: [Reihenantwort] = Startreihenfolge
             .sichtbar(abgelegt: abgelegt, aus: Set(aus), getrennt: getrennt)
             .compactMap { r in
-                guard let (quer, neu, items) = inhalt[r], !items.isEmpty else { return nil }
+                guard let (quer, neu, marke, items) = inhalt[r], !items.isEmpty else { return nil }
                 return Reihenantwort(titelSchluessel: r.reihentitel, name: nil, quer: quer,
-                                     kacheln: items.map { kachel($0, neuzugang: neu, a) })
+                                     kacheln: items.map { kachel($0, neuzugang: neu, mitMarke: marke, a) })
             }
         reihen += stand.gattungsreihen.map {
             Reihenantwort(titelSchluessel: nil, name: $0.name, quer: false,
-                          kacheln: $0.items.map { kachel($0, neuzugang: false, a) })
+                          kacheln: $0.items.map { kachel($0, neuzugang: false, mitMarke: true, a) })
         }
         return try json(Startseitenantwort(reihen: reihen, gestoert: stand.gestoert))
     }
 
     /// Dieselben Zeilen wie `HomeView.Kachel` auf dem iPhone: `neuzugangszeile`
-    /// in den Neuzugangsreihen, sonst `folgenkuerzel` — beide aus dem Paket.
-    private func kachel(_ i: Item, neuzugang: Bool, _ a: Bildadresse) -> Kachelantwort {
-        Kachelantwort(
+    /// in den Neuzugangsreihen, sonst `folgenkuerzel` — beide aus dem Paket. Die Marke
+    /// kommt aus derselben `Anzeigeregeln.kachelmarke` wie `rasterkachel(_:_:)`.
+    ///
+    /// **`angabenzeile`/`restzeit`/`gesehen` fuer die Kopfzone der Startseite** —
+    /// dieselben Angaben wie `Kopfauskunft.angabenzeile`/`Restzeitmarke` auf tvOS. Sie
+    /// stehen fertig in jeder Kachel, statt dass Kotlin bei jedem Fokuswechsel eine
+    /// zweite Anfrage stellen muesste (die Fassade spricht in fertigen Antworten).
+    private func kachel(_ i: Item, neuzugang: Bool, mitMarke: Bool, _ a: Bildadresse) -> Kachelantwort {
+        let (marke, zahl): (String?, Int) = mitMarke ? {
+            switch Anzeigeregeln.kachelmarke(art: i.type, staffeln: i.childCount,
+                                             gesehen: i.userData?.played,
+                                             offeneFolgen: i.userData?.unplayedItemCount) {
+            case .gesehen?: return ("gesehen", 0)
+            case .offen(let n)?: return ("offen", n)
+            case .staffeln(let n)?: return ("staffeln", n)
+            case .none: return (nil, 0)
+            }
+        }() : (nil, 0)
+        var angaben: [String] = []
+        if i.type == "Episode", let kuerzel = i.folgenkuerzel { angaben.append(kuerzel) }
+        if let jahr = i.productionYear { angaben.append(String(jahr)) }
+        if let sekunden = i.runtimeSeconds, sekunden > 0 { angaben.append(laufzeit(sekunden)) }
+        return Kachelantwort(
             id: i.id, name: i.seriesName ?? i.name, typ: i.type ?? "",
             unterzeile: neuzugang ? i.neuzugangszeile : i.folgenkuerzel,
             plakat: Bildwahl.hochkant(i, adressen: a)?.absoluteString,
             quer: Bildwahl.quer(i, adressen: a)?.url.absoluteString,
-            fortschritt: i.gesehenerAnteil)
+            fortschritt: i.gesehenerAnteil, marke: marke, markenzahl: zahl,
+            angabenzeile: angaben.isEmpty ? nil : angaben.joined(separator: " · "),
+            restzeit: i.restzeitText, gesehen: i.istGesehen,
+            folgenname: i.type == "Episode" ? i.name : nil)
     }
 
     // MARK: Bibliothek
@@ -369,8 +396,16 @@ public final class Kern: @unchecked Sendable {
             return u?.absoluteString
         }
         let ab = i.fortsetzenAb
+        // **Jahr und Laufzeit ohne Gattung** — der Fernseher zeigt die Gattung
+        // in dieser Zeile nicht (`Detailkopf.angabenzeile` auf tvOS), anders
+        // als `nebenzeile` fuers Telefon. Dieselben Teile wie dort, nur ohne
+        // den dritten.
+        let jahrLaufzeit = [i.productionYear.map { String($0) },
+                            i.runtimeSeconds.flatMap { $0 > 0 ? laufzeit($0) : nil }]
+            .compactMap { $0 }.joined(separator: " · ")
         return try json(Titelantwort(
             id: i.id, name: i.name, typ: i.type ?? "", nebenzeile: i.nebenzeile,
+            jahrLaufzeit: jahrLaufzeit,
             kopfbild: Bildwahl.kopfMitErsatz(i, folge: nil, adressen: a)?.absoluteString,
             bewertung: i.communityRating, freigabe: i.officialRating,
             planDa: p != nil, lossless: p?.isLossless ?? false, methode: p.map { $0.method.rawValue },
@@ -461,9 +496,26 @@ public final class Kern: @unchecked Sendable {
                 id: f.id, titel: f.indexNumber.map { "\($0). \(f.name)" } ?? f.name, unterzeile: zeit,
                 bild: bild?.absoluteString,
                 fortschritt: gesehen ? nil : f.userData?.playedPercentage.map { $0 / 100 }, gesehen: gesehen,
-                ab: f.fortsetzenAb))
+                ab: f.fortsetzenAb,
+                // **Rohe Teile fuer den Fernseher.** Die Kachel dort traegt das
+                // Katalogformat „F2 · Titel" (`Folgenstreifen.kopfzeile` auf
+                // tvOS), das Telefon bleibt bei „2. Titel" — deshalb hier
+                // zusaetzlich, statt `titel`/`unterzeile` zu aendern und beide
+                // Plattformen zu verstellen.
+                name: f.name, nummer: f.indexNumber,
+                laufzeitMin: (f.runtimeSeconds ?? 0) > 0 ? Int((f.runtimeSeconds ?? 0) / 60) : nil,
+                restzeit: f.restzeitText))
         }
         return try json(zeilen)
+    }
+
+    /// Die Folgen der laufenden Staffel, aus dem Player heraus — `Folgenblatt` auf tvOS. Serie
+    /// und Staffel kommen vom geladenen Titel selbst; Kotlin muss dafuer keine eigenen Kennungen
+    /// mitfuehren. Leer ohne laufende Wiedergabe oder bei einem Film (keine `seriesId`).
+    public func wiedergabeFolgen() async throws -> String {
+        sperre.lock(); let item = _wiedergabe?.item; sperre.unlock()
+        guard let item, let serie = item.seriesId else { return "[]" }
+        return try await folgen(serie: serie, staffel: item.seasonId ?? "")
     }
 
     /// Nur der Abspielplan — fuer die Belegzeile, nachgereicht. Leer, wenn es keinen gibt.
@@ -629,14 +681,30 @@ public final class Kern: @unchecked Sendable {
         return try json(Spielplanantwort(
             url: plan.url.absoluteString, lossless: plan.isLossless, methode: plan.method.rawValue,
             titel: item.name,
-            untertitel: [item.seriesName, item.folgenkuerzel].compactMap { $0 }.joined(separator: " · "),
+            // **`item.kontextzeile` aus dem Paket, keine eigene Zeile.** Stand hier einmal selbst
+            // zusammengesetzt (Serienname zuerst, Trennzeichen „·") und lief prompt auseinander:
+            // tvOS zeigt „S20 • E2 • Die Höhle der Löwen" (`PlayerScreen.fuss`, `item.kontextzeile`).
+            untertitel: item.kontextzeile ?? "",
             naechste: w.naechste != nil,
+            dateizeile: dateizeile(plan),
             // Fuer die Mediensteuerung: bei einer Folge ihr Standbild — es zeigt, wo man ist —, sonst das Plakat.
             serie: item.seriesName, kuerzel: item.folgenkuerzel,
             bild: { () -> String? in
                 let u: URL? = a?.bauen(itemID: item.id, marke: item.imageTags?["Primary"], mass: .hoechstensHoch(600))
                 return u?.absoluteString
             }()))
+    }
+
+    /// „MKV · 1080p · H.264 · German · AAC · Stereo" — Vorlage: `dateizeile` in
+    /// `Sources/tvOS/Wiedergabeblatt.swift`. Einmal hier, damit Kotlin sie nicht selbst aus
+    /// `Dateiangaben` zusammensetzen muss.
+    private func dateizeile(_ plan: PlaybackPlan) -> String? {
+        guard let quelle = plan.quelle else { return nil }
+        var teile: [String] = []
+        if let behaelter = quelle.container { teile.append(behaelter.uppercased()) }
+        if let video = Dateiangaben.videospur(quelle) { teile.append(Dateiangaben.video(video, quelle)) }
+        if let ton = Dateiangaben.tonspuren(quelle).first { teile.append(ton.kurz) }
+        return teile.isEmpty ? nil : teile.joined(separator: " · ")
     }
 
     /// **Die Startstelle, bevor VLC sie meldet.** Sonst stand die Zeitleiste auf 0:00 und sprang
@@ -734,6 +802,14 @@ public final class Kern: @unchecked Sendable {
         // Eine naechste Folge gibt es nur mit Server — offline ist `naechste` leer.
         _ = await wiedergabeBeenden(position: position)
         return try await wiedergabeOeffnen(id: naechste.id)
+    }
+
+    /// Zu einer selbst gewaehlten Folge wechseln — `Folgenblatt` auf tvOS (`wechsleZu`). Dieselbe
+    /// Reihenfolge wie `naechsteFolgeOeffnen`, nur mit einer frei gewaehlten Kennung statt der
+    /// vorgemerkten naechsten Folge.
+    public func folgeOeffnen(id: String, position: Double) async throws -> String {
+        _ = await wiedergabeBeenden(position: position)
+        return try await wiedergabeOeffnen(id: id)
     }
 
     // MARK: Technikschild
@@ -994,9 +1070,8 @@ public final class Kern: @unchecked Sendable {
         sperre.lock(); _wiedergabe = w; sperre.unlock()
         return try json(Spielplanantwort(
             url: plan.url.absoluteString, lossless: plan.isLossless, methode: plan.method.rawValue,
-            titel: item.name,
-            untertitel: [item.seriesName, item.folgenkuerzel].compactMap { $0 }.joined(separator: " · "),
-            naechste: false, serie: item.seriesName, kuerzel: item.folgenkuerzel,
+            titel: item.name, untertitel: item.kontextzeile ?? "",
+            naechste: false, dateizeile: dateizeile(plan), serie: item.seriesName, kuerzel: item.folgenkuerzel,
             bild: bild.isEmpty ? nil : bild))
     }
 
@@ -1115,9 +1190,20 @@ public final class Kern: @unchecked Sendable {
         // **Nur, was wirklich quer liegt** (`querbildEcht`) — ein beschnittenes Plakat gehoert
         // nicht in den Wechsel. Gibt es keines, steht irgendein Kopfbild da.
         var banner = titel.compactMap { Bildwahl.kopf($0, adressen: a)?.absoluteString }
-        if banner.isEmpty, let erstes = titel.first,
-           let url = Bildwahl.kopfMitErsatz(erstes, folge: nil, adressen: a) {
-            banner = [url.absoluteString]
+        // **Derselbe Ersatz wie auf der Serienseite**, mit derselben Folge als
+        // Rueckfall (`AppModel.kopfbildErsatzSuchen`) — sonst landet hier ein
+        // anderes Bild als das, von dem man gerade kam. Eine Serie ohne
+        // eigenen Hintergrund hat auf der Serienseite den Hintergrund ihrer
+        // naechsten Folge; ohne diesen Rueckfall waere es hier das Plakat.
+        if banner.isEmpty, let erstes = titel.first {
+            var folge: Item?
+            if erstes.type == "Series" {
+                if let naechste = try? await c.naechsteFolgeDerSerie(seriesID: erstes.id) { folge = naechste }
+                if folge == nil { folge = (try? await c.folgen(seriesID: erstes.id))?.first }
+            }
+            if let url = Bildwahl.kopfMitErsatz(erstes, folge: folge, adressen: a) {
+                banner = [url.absoluteString]
+            }
         }
         let bild: URL? = a.bauen(itemID: id, marke: auskunft?.imageTags?["Primary"], mass: .hoechstensHoch(300))
         let geboren = auskunft?.tagesdatum.flatMap { k -> String? in
@@ -1145,6 +1231,26 @@ public final class Kern: @unchecked Sendable {
                              laufzeit: Anzeigeregeln.laufzeitZeigen(sekunden: e.runtimeSeconds)
                                  ? e.runtimeSeconds.map { laufzeit($0) } : nil)
             }))
+    }
+
+    /// Der erste Trailer, der als eigene Datei auf dem Server liegt — steht auf tvOS vorn in den
+    /// Extras der Filmseite (`DetailView.task`: `model.trailer(zu:)`, `extras.insert(vorschau, at: 0)`).
+    /// Leer JSON-Objekt, wenn es keinen gibt oder nicht verbunden — Kotlin ueberspringt ihn dann.
+    public func lokalerTrailer(id: String) async -> String {
+        guard let c = client, let a = adressen else { return "{}" }
+        guard let t = (try? await c.trailer(zu: id))?.first else { return "{}" }
+        return Self.kodiert(Extraantwort(
+            id: t.id, name: t.name, bild: Bildwahl.quer(t, adressen: a)?.url.absoluteString,
+            laufzeit: Anzeigeregeln.laufzeitZeigen(sekunden: t.runtimeSeconds)
+                ? t.runtimeSeconds.map { laufzeit($0) } : nil))
+    }
+
+    /// Die Folge nach `episode` in derselben Serie — fuer „Nächste Folge abspielen" im Mehr-Blatt
+    /// der Serienseite (`Titelhandlung.fuerSerie`, `model.folgeNach`). Leer, wenn keine folgt.
+    public func folgeDanach(episode: String, serie: String) async -> String {
+        guard let c = client else { return "" }
+        guard let naechste = try? await c.folgeNach(itemID: episode, seriesID: serie) else { return "" }
+        return naechste.id
     }
 
     /// Leer heisst: erledigt. Sonst der Grund — `nichtAngemeldet` als Kennung, der Wortlaut steht im App-Katalog.
@@ -1222,6 +1328,8 @@ struct Rasterkachelantwort: Encodable {
 }
 struct Titelantwort: Encodable {
     let id, name, typ, nebenzeile: String
+    /// „2026 · 1 Std. 52 Min." — ohne Gattung, fuer den Fernseher.
+    let jahrLaufzeit: String
     let kopfbild: String?
     let bewertung: Double?
     let freigabe: String?
@@ -1267,6 +1375,11 @@ struct Folgenantwort: Encodable {
     let fortschritt: Double?
     let gesehen: Bool
     let ab: Double?
+    /// Roh, fuer den Fernseher — siehe `Kern.folgen(serie:staffel:)`.
+    let name: String
+    let nummer: Int?
+    let laufzeitMin: Int?
+    let restzeit: String?
 }
 struct Serverkartenantwort: Encodable { let adresse, host: String; let aktiv: Bool; let konten: [Kontoantwort] }
 struct Kontoantwort: Encodable { let kennung, name: String; let aktiv: Bool; let bild: String? }
@@ -1285,6 +1398,8 @@ struct Spielplanantwort: Encodable {
     let lossless: Bool
     let methode, titel, untertitel: String
     let naechste: Bool
+    /// „MKV · 1080p · H.264 · German · AAC · Stereo" — fuer den Beleg im Wiedergabeblatt.
+    let dateizeile: String?
     let serie, kuerzel, bild: String?
 }
 struct Taktantwort: Encodable {
@@ -1338,6 +1453,17 @@ struct Kachelantwort: Encodable {
     let plakat: String?
     let quer: String?
     let fortschritt: Double?
+    /// `gesehen`, `offen`, `staffeln` — oder nichts. Wie `Rasterkachelantwort.marke`.
+    let marke: String?
+    let markenzahl: Int
+    /// Fuer die Kopfzone der Startseite, wenn diese Kachel den Fokus haelt — Jahr, Laufzeit,
+    /// Folgenkuerzel, wie `Kopfauskunft.angabenzeile` auf tvOS.
+    let angabenzeile: String?
+    /// „Noch 50 Minuten" — wie `Restzeitmarke`. `nil` heisst: nichts angefangen.
+    let restzeit: String?
+    let gesehen: Bool
+    /// Nur bei einer Folge gesetzt — der Serienname steht schon in `name`.
+    let folgenname: String?
 }
 
 struct Downloadantwort: Encodable { let posten: Downloadposten; let bild, serienbild: String? }

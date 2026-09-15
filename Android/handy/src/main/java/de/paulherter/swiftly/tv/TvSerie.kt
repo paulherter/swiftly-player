@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.gemeinsam.Stil
@@ -29,30 +30,60 @@ import org.json.JSONObject
  * Vorlage: `SerienView` auf tvOS. **Keine Reiter mehr**: Folgen, Besetzung und Aehnliches stehen
  * untereinander wie die Reihen der Startseite. Die Folgen sind ein waagerechter Streifen mit
  * Querkacheln wie „Weiterschauen"; die Staffel wechselt ueber eine Pille neben dem Reihentitel.
- * **Der erste Fokus gehoert dem Hauptknopf, nicht einer Folge.**
+ * **Der erste Fokus gehoert dem Hauptknopf, nicht einer Folge.** Der Kopf ist derselbe wie auf der
+ * Filmseite — `TvDetailkopf` in `TvTitel.kt` —, sonst laufen die beiden Seiten wieder auseinander.
  */
 @Composable
 fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     var s by remember(ziel.id) { mutableStateOf(app.serienSpeicher[ziel.id]) }
     val spielt = app.spiel.value != null
     val lauf = rememberCoroutineScope()
-    LaunchedEffect(ziel.id, spielt) {
-        if (spielt) return@LaunchedEffect
+
+    suspend fun neuLaden() {
         try { s = serieLesen(withContext(Dispatchers.IO) { app.kern.serie(ziel.id).await() }).also { app.serienSpeicher[ziel.id] = it } }
         catch (e: CancellationException) { throw e } catch (_: Exception) {}
+    }
+    // **Der Plan kommt nach, wie auf dem Telefon** (`SerienSeite.planLaden`) — `Kern.serie` liefert
+    // ihn nicht mit, weil `PlaybackInfo` bei einer frisch vermessenen Datei Sekunden braucht und
+    // sonst die ganze Seite darauf wartet. Ohne diesen Nachtrag war die Direct-Play-Marke im Kopf
+    // auf dem Fernseher immer aus (`planDa` blieb `false`).
+    suspend fun planLaden(folgeId: String) {
+        try {
+            val o = JSONObject(withContext(Dispatchers.IO) { app.kern.plan(folgeId).await() })
+            s?.let { alt ->
+                val neu = alt.copy(planDa = o.has("methode"), lossless = o.optBoolean("lossless"), methode = o.feldText("methode"))
+                s = neu; app.serienSpeicher[ziel.id] = neu
+            }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+    }
+    LaunchedEffect(ziel.id, spielt) {
+        if (!spielt) {
+            neuLaden()
+            s?.stand?.let { st -> lauf.launch { planLaden(st.id) } }
+        }
     }
     val serie = s
     var staffel by remember(ziel.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(serie?.gewaehlt) { if (staffel == null) staffel = serie?.gewaehlt }
+
     var folgen by remember(ziel.id) { mutableStateOf<List<Folge>>(emptyList()) }
+    // Getrennt von der Leere: „Keine Folgen in dieser Staffel" gilt erst, wenn der Server
+    // wirklich geantwortet hat — sonst blitzt der Hinweis auf, bevor die erste Antwort da ist
+    // (`SerienView.laedtFolgen` auf tvOS).
+    var laedtFolgen by remember(ziel.id) { mutableStateOf(true) }
+    suspend fun folgenLaden(sid: String, stf: String?) {
+        if (folgen.isEmpty()) laedtFolgen = true
+        try {
+            folgen = folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(sid, stf.orEmpty()).await() })
+            stf?.let { app.folgenSpeicher[it] = folgen }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+        finally { laedtFolgen = false }
+    }
     LaunchedEffect(serie?.id, staffel, spielt) {
         val sid = serie?.id ?: return@LaunchedEffect
         if (spielt || (serie.staffeln.isNotEmpty() && staffel == null)) return@LaunchedEffect
         staffel?.let { app.folgenSpeicher[it] }?.let { folgen = it }
-        try {
-            folgen = folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(sid, staffel.orEmpty()).await() })
-            staffel?.let { app.folgenSpeicher[it] = folgen }
-        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+        folgenLaden(sid, staffel)
     }
     var aehnliche by remember(ziel.id) { mutableStateOf<List<Rasterkachel>>(emptyList()) }
     LaunchedEffect(serie?.id) {
@@ -70,35 +101,62 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     val name = serie?.name ?: ziel.name
 
     Box(Modifier.fillMaxSize().background(Stil.grund)) {
+        TvBildgrund(serie?.kopfbild)
         Kulisse(serie?.kopfbild, Modifier.align(Alignment.TopEnd))
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Column(Modifier.padding(start = TvStil.randSeite, top = 98.dp).height(TvStil.heldenHoehe + 20.dp - 98.dp)) {
-                Kopfauskunft(name, serie?.nebenzeile, serie?.beschreibung)
-                Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Nie gesperrt, solange geladen wird: der Knopf muss ein Fokusziel bleiben.
-                    TvKnopf(serie?.knopftext?.ifEmpty { null } ?: uebersetzt("Lädt…"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
-                        serie?.stand?.let { app.spiel.value = Abspielwunsch(it.id, it.ab) }
+            TvDetailkopf(name, serie?.jahr.orEmpty(), serie?.bewertung, serie?.freigabe, serie?.beschreibung,
+                         direktplay = serie?.planDa == true && serie.lossless,
+                         hinweis = if (serie?.planDa == true && !serie.lossless) serie.methode else null) {
+                // Nie gesperrt, solange geladen wird: der Knopf muss ein Fokusziel bleiben.
+                TvKnopf(serie?.knopftext?.ifEmpty { null } ?: uebersetzt("Lädt…"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
+                    serie?.stand?.let { app.spiel.value = Abspielwunsch(it.id, it.ab) }
+                }
+                serie?.stand?.takeIf { it.fortsetzen }?.let { st -> TvKnopf(null, Icons.Filled.Replay) { app.spiel.value = Abspielwunsch(st.id, null) } }
+                TvKnopf(null, if (serie?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
+                    val alt = serie ?: return@TvKnopf
+                    s = alt.copy(gemerkt = !alt.gemerkt)
+                    lauf.launch { if (withContext(Dispatchers.IO) { app.kern.merken(alt.id, !alt.gemerkt).await() }.isNotEmpty()) s = alt }
+                }
+                // **`TvMehrknopf` statt `app.blatt`** — auf tvOS klappt das Menue direkt unter dem
+                // Knopf auf, nicht als Tafel am rechten Rand (siehe Doc-Kommentar in `TvTitel.kt`).
+                val alt = serie
+                if (alt != null) {
+                    val gewaehlteStaffel = alt.staffeln.firstOrNull { it.id == staffel }
+                    // `Titelhandlungen.fuerSerie`: „Gesehen" vorn (aus der Knopfreihe heraus,
+                    // siehe `gesehenHandlung`), dann Folge/Staffel-Aktionen, zuletzt Metadaten.
+                    val eintraege = buildList {
+                        add(Wahl("gesehen", uebersetzt(if (alt.gesehen) "Als ungesehen merken" else "Als gesehen merken")))
+                        alt.stand?.let {
+                            add(Wahl("vonvorn", uebersetzt("Folge von vorn abspielen")))
+                            add(Wahl("naechste", uebersetzt("Nächste Folge abspielen")))
+                        }
+                        gewaehlteStaffel?.let { add(Wahl("staffel", uebersetzt("%@ als gesehen", it.name))) }
+                        add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
                     }
-                    serie?.stand?.takeIf { it.fortsetzen }?.let { st -> TvKnopf(null, Icons.Filled.Replay) { app.spiel.value = Abspielwunsch(st.id, null) } }
-                    TvKnopf(null, if (serie?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
-                        val alt = serie ?: return@TvKnopf
-                        s = alt.copy(gemerkt = !alt.gemerkt)
-                        lauf.launch { if (withContext(Dispatchers.IO) { app.kern.merken(alt.id, !alt.gemerkt).await() }.isNotEmpty()) s = alt }
-                    }
-                    TvKnopf(null, Icons.Filled.MoreHoriz) {
-                        val alt = serie ?: return@TvKnopf
-                        app.blatt.value = Blattwunsch(name, listOf(
-                            Wahl("gesehen", uebersetzt(if (alt.gesehen) "Als ungesehen merken" else "Als gesehen merken")),
-                            Wahl("metadaten", uebersetzt("Metadaten neu einlesen"))), null,
-                            mapOf("gesehen" to Icons.Filled.CheckCircle, "metadaten" to Icons.Filled.Refresh)) { wahl ->
-                            lauf.launch {
-                                when (wahl) {
-                                    "gesehen" -> if (withContext(Dispatchers.IO) { app.kern.gesehen(alt.id, !alt.gesehen).await() }.isEmpty()) s = alt.copy(gesehen = !alt.gesehen)
-                                    "metadaten" -> withContext(Dispatchers.IO) { app.kern.metadatenAuffrischen(alt.id).await() }
+                    TvMehrknopf(eintraege,
+                        mapOf("gesehen" to Icons.Filled.CheckCircle, "vonvorn" to Icons.Filled.Replay,
+                              "naechste" to Icons.Filled.SkipNext, "staffel" to Icons.Filled.CheckCircleOutline,
+                              "metadaten" to Icons.Filled.Refresh)) { wahl ->
+                        lauf.launch {
+                            when (wahl) {
+                                "gesehen" -> if (withContext(Dispatchers.IO) { app.kern.gesehen(alt.id, !alt.gesehen).await() }.isEmpty()) s = alt.copy(gesehen = !alt.gesehen)
+                                "vonvorn" -> alt.stand?.let { app.spiel.value = Abspielwunsch(it.id, null) }
+                                "naechste" -> alt.stand?.let { st ->
+                                    val danach = withContext(Dispatchers.IO) { app.kern.folgeDanach(st.id, alt.id).await() }
+                                    if (danach.isNotEmpty()) app.spiel.value = Abspielwunsch(danach, null)
                                 }
+                                "staffel" -> gewaehlteStaffel?.let { st ->
+                                    if (withContext(Dispatchers.IO) { app.kern.gesehen(st.id, true).await() }.isEmpty()) {
+                                        neuLaden()
+                                        serie?.id?.let { sid -> folgenLaden(sid, staffel) }
+                                    }
+                                }
+                                "metadaten" -> withContext(Dispatchers.IO) { app.kern.metadatenAuffrischen(alt.id).await() }
                             }
                         }
                     }
+                } else {
+                    TvKnopf(null, Icons.Filled.MoreHoriz) {}
                 }
             }
 
@@ -112,14 +170,26 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                         }
                     }
                 }
-                if (serie != null && folgen.isEmpty()) {
-                    Text(uebersetzt("Keine Folgen in dieser Staffel"), style = TvStil.koerper, color = Stil.schriftLeise,
-                         modifier = Modifier.padding(start = TvStil.randSeite, top = 16.dp).height(TvStil.querHoehe))
-                } else {
-                    LazyRow(state = streifen, contentPadding = PaddingValues(start = TvStil.randSeite, end = TvStil.randSeite, top = TvStil.titelAbstand, bottom = TvStil.reihenLuft),
+                // Ein Stapel wie auf tvOS: laedt / leer / Streifen teilen sich dieselbe Hoehe,
+                // damit die Besetzung darunter beim Staffelwechsel nicht hin- und herspringt.
+                val platzHoehe = TvStil.querHoehe + TvStil.reihenLuft * 2 + 40.dp
+                when {
+                    laedtFolgen -> Box(Modifier.padding(start = TvStil.randSeite, top = TvStil.titelAbstand).height(platzHoehe))
+                    folgen.isEmpty() -> Text(uebersetzt("Keine Folgen in dieser Staffel"), style = TvStil.koerper, color = Stil.schriftLeise,
+                         modifier = Modifier.padding(start = TvStil.randSeite, top = 16.dp).height(platzHoehe))
+                    else -> LazyRow(state = streifen, contentPadding = PaddingValues(start = TvStil.randSeite, end = TvStil.randSeite, top = TvStil.titelAbstand, bottom = TvStil.reihenLuft),
                             horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand)) {
                         items(folgen, key = { it.id }) { f ->
-                            TvKachel(f.bild, f.titel, f.unterzeile, quer = true, fortschritt = f.fortschritt) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
+                            // **Dasselbe Katalogformat wie tvOS** (`Folgenstreifen.kopfzeile`/
+                            // `dauerzeile`): „F2 · Titel", darunter „24 min" und bei einer gesehenen
+                            // Folge „Gesehen" dahinter. `titel`/`unterzeile` bleiben fuers Telefon
+                            // unveraendert — die rohen Teile kommen eigens aus `Kern.folgen`.
+                            val titel = f.nummer?.let { "F$it · ${f.name}" } ?: f.name
+                            val unterzeile = buildList {
+                                f.laufzeitMin?.let { add(uebersetzt("%lld Min", it)) }
+                                if (f.restzeit != null) add(f.restzeit) else if (f.gesehen) add(uebersetzt("Gesehen"))
+                            }.joinToString(" · ").ifEmpty { null }
+                            TvKachel(f.bild, titel, unterzeile, quer = true, fortschritt = f.fortschritt) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
                         }
                     }
                 }
