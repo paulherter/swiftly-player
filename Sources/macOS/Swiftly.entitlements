@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Der Mac App Store verlangt die Sandbox zwingend. Ohne sie wird die
+	     App beim Hochladen abgewiesen, nicht erst bei der Pruefung. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- Und ohne das erreicht sie in der Sandbox keinen Jellyfin mehr:
+	     ausgehende Verbindungen sind darin standardmaessig gesperrt. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- **Kein com.apple.security.network.server.** Es stand hier einmal,
+	     begruendet mit einer Suche nach dem Server im lokalen Netz — die es
+	     nicht gibt: kein UDP, kein Bonjour, kein Lauschen, die Adresse wird
+	     von Hand eingegeben. Apples Pruefung hat den Bau am 03.09.2026
+	     deshalb abgewiesen. Ein Client, der nur hinausgeht, braucht nur
+	     .client. Kaeme die Serversuche je dazu, gehoert das Entitlement
+	     zurueck — zusammen mit dem Code, der es rechtfertigt. -->
+	<!-- Dieselbe Begruendung wie auf iOS: ohne die Zugriffsgruppe verweigert
+	     der Keychain das Schreiben (-34018) und die Anmeldung ginge bei
+	     jedem Start verloren. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)de.paulherter.swiftly</string>
+	</array>
+</dict>
+</plist>

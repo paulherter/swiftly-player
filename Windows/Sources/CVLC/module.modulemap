@@ -1,0 +1,9 @@
+// **`libvlc`, nicht `vlc`.** Der Bindename muss zur Datei passen: das SDK
+// von VideoLAN liefert `libvlc.lib`, waehrend auf Linux `libvlc.so` mit
+// `-lvlc` gefunden wird. Ein `link "vlc"` sucht hier `vlc.lib` — die gibt es
+// zwar auch, sie gehoert aber zum Programm, nicht zur Bibliothek.
+module CVLC [system] {
+    header "shim.h"
+    link "libvlc"
+    export *
+}

@@ -1,0 +1,963 @@
+import CGtk
+import CSchriften
+import Foundation
+import JellyfinKit
+
+/// **Swiftlys Aussehen, in GTKs Sprache übersetzt.**
+///
+/// Die Zahlen und Farben hier sind keine neuen Entscheidungen — sie stehen so
+/// in `Sources/Shared/Farben.swift` und `Sources/macOS/Stil.swift` und gelten
+/// auf iPhone, iPad, Apple TV und Mac. Wer eine ändert, ändert sie dort und
+/// trägt sie hierher nach; eine zweite Palette wäre der sichere Weg, dass die
+/// Plattformen auseinanderlaufen.
+///
+/// **Der Mac ist die Vorlage, nicht das Gefühl.** Am 04.09.2026 standen hier
+/// erst geschätzte Werte, und sie waren zu zweit falsch: die Feldfläche war
+/// `erhoeht` (#1E1E22) statt `flaeche` (#161619), und der Hauptknopf trug den
+/// Akzent, obwohl er auf dem Mac **weiß mit dunkler Schrift** ist. Beides
+/// stand die ganze Zeit in `Macbausteine.swift` — nachgelesen statt geraten
+/// wäre billiger gewesen.
+///
+/// **Warum reines GTK4 und nicht libadwaita.** libadwaita ist GNOMEs
+/// Gestaltungsbibliothek: sie sorgt dafür, dass eine App wie eine GNOME-App
+/// aussieht. Das arbeitet gegen das Ziel — Swiftly soll auf jedem System wie
+/// Swiftly aussehen, nicht wie das System. Dazu kommt, dass libadwaita auf
+/// Windows kaum unterstützt wird, und Windows steht auf dem Plan. Alles, was
+/// unten steht, ist deshalb einfaches GTK4 mit eigenem Stilblatt.
+enum Stil {
+
+    // MARK: Farben, wörtlich aus Farben.swift
+
+    static let grund = "#0B0B0D"
+    /// Die Fläche eines Feldes und der Seitenleiste. **Nicht `erhoeht`.**
+    static let flaeche = "#161619"
+    static let erhoeht = "#1E1E22"
+    static let akzent = "#5CD1C2"
+    static let markeAkzent = Markenpfade.akzentHex     // #2FDBC0
+    static let warnung = "#E8833A"
+    static let schrift = "#FFFFFF"
+    static let schriftLeise = "rgba(255,255,255,0.62)"
+    static let schriftSehrLeise = "rgba(255,255,255,0.38)"
+    static let rand = "rgba(255,255,255,0.12)"
+    static let linie = "rgba(255,255,255,0.08)"
+
+    // MARK: Maße, wörtlich aus macOS/Stil.swift
+
+    static let ecke = 6
+    static let eckeKachel = 8
+    /// Felder sind runder als Knöpfe — 10 gegen 6, so wie auf dem iPhone.
+    static let eckeFeld = 10
+    // MARK: Seitenschub
+
+    /// Wie lange eine Seite hereinschiebt — `Stil.zeitSeitenschub` vom Mac,
+    /// `easeInOut` über 0,45 s.
+    static let zeitSeitenschub = 0.45
+    /// Wie weit die Seite **darunter** mitgeht. Ein knappes Drittel — so hält
+    /// es die Systemnavigation, und daher kommt der Eindruck von Ebenen statt
+    /// von einem Rechteck, das vorbeischiebt.
+    static let schubMitgabe = 0.3
+    /// Der Schleier über der Seite darunter. Auf dem Mac liegt dort Schwarz
+    /// zu 28 %; über unserem dunklen Grund kommt dasselbe heraus, wenn die
+    /// Ebene stattdessen auf 72 % Deckkraft geht — und das ist ein Zug im
+    /// Bildbaum statt einer weiteren Fläche.
+    static let schubSchleier = 0.28
+
+    static let randAbstand = 24
+    static let kachelAbstand = 12
+    static let reihenAbstand = 28
+
+    /// Kleinste Fenstergröße, unter der das Raster nicht mehr aufgeht:
+    /// Seitenleiste plus zwei Kachelspalten plus Ränder. Vom Mac.
+    static let fensterMinBreite = 900
+    static let fensterMinHoehe = 560
+
+    static let seitenleisteBreite = 220
+    /// Ein Zeiger trifft genauer als ein Finger: Seitenleistenzeilen sind 32
+    /// hoch, nicht 44 wie am Telefon.
+    static let zeileHoehe = 32
+    static let hauptknopfHoehe = 48
+    /// **Feste Breite des Hauptknopfes.** Sonst richtet sich der Rest der
+    /// Reihe nach der Länge der Beschriftung, und Merkliste und Mehr stehen
+    /// auf jeder Seite woanders. 200 trägt „Fortsetzen" wie „Abspielen".
+    static let hauptknopfBreite = 200
+    /// Die Kopfzone der Detailseite: 150 oben plus 230 Block, keine Restluft.
+    static let heldHoehe = 380
+    /// Höhe der Kopfleiste einer Detailseite (Pfeil und einblendender Titel).
+    static let titelHoehe = 52
+    static let feldHoehe = 38
+    /// Die Breite des Anmeldeblocks. Auf dem Mac steht `.frame(width: 360)`
+    /// an jedem der beiden Felder.
+    static let anmeldeBreite = 360
+    /// Oberer Rand im Inhaltsbereich — auf dem Mac 52, **gemessen ab
+    /// Fensteroberkante**: dort gibt es keine Titelzeile, die Ampel schwebt
+    /// über der Seitenleiste.
+    ///
+    /// Unter Wayland gehört die Titelzeile dem Fenster, und ihre Höhe kommt
+    /// oben drauf. Genau das war der „viel zu viel Platz über Weiterschauen":
+    /// 19 plus 52 statt 52. Abgezogen stimmt der Abstand zur Fensterkante
+    /// wieder mit dem Mac überein.
+    static let kopfzeileHoehe = 24
+    static let inhaltObenMac = 52
+    static var inhaltOben: Int { inhaltObenMac - kopfzeileHoehe }
+
+    /// **Optischer Ausgleich für die Startseite.** „Filme" steht als
+    /// 28-Punkt-Titel oben, die Startseite beginnt mit „Weiterschauen" in 20.
+    /// Bei gleichem Abstand von oben stehen sie nicht gleich hoch: über den
+    /// Versalien lässt eine Zeile Platz, und der wächst mit dem Schriftgrad.
+    /// Auf dem Mac sind es nachgemessene 2,1 Punkt.
+    static let reihenkopfAusgleich = 2
+
+    /// Poster, 2 : 3 — auf dem iPhone 112 × 168, auf dem Mac 150 × 225.
+    static let kachelBreite = 150
+    static let kachelHoehe = 225
+    /// Weiterschauen liegt quer, 16 : 9.
+    static let querBreite = 280
+    static let querHoehe = 158
+
+    // MARK: Schriftstufen — dieselbe Abstufung wie iPhone und Mac
+
+    static let titelGross = 28
+    static let titel = 22
+    static let reihe = 20
+    static let listentitel = 15
+    static let koerper = 15
+    static let kachelTitel = 14
+    static let zweitzeile = 12
+    static let rubrik = 11
+
+    // MARK: Stilblatt
+
+    /// Wird einmal beim Start geladen und gilt für das ganze Programm.
+    ///
+    /// GTKs Stilblätter kennen dieselben Begriffe wie im Netz — Farbe,
+    /// Rundung, Abstand —, nur die Auswahl geschieht über Widget-Namen statt
+    /// über Marken. `.swiftly-*` sind unsere eigenen Klassen; alles ohne
+    /// Punkt ist ein GTK-Typ.
+    static var blatt: String {
+        """
+        /* **Die Schrift ist die groesste einzelne Aehnlichkeit.**
+           Apple setzt SF Pro; die darf nicht mitgeliefert werden und liegt
+           auf keinem Linux. Inter ist genau dafuer entworfen worden — gleiche
+           Bauart, gleiche Strichstaerke, offene Lizenz (SIL OFL), also auch
+           beilegbar. Ohne sie faellt es auf Noto Sans zurueck, und das ist
+           deutlich runder und breiter als SF.
+           Ein ausgelieferter Bau muss Inter mitbringen; hier kommt sie noch
+           vom System.
+
+           **Die Kette gilt fuer beide Plattformen, ohne Verzweigung.** Was ein
+           System nicht hat, ueberspringt es: Windows kennt weder Noto Sans
+           noch DejaVu und landet auf Segoe UI Variable — der dortigen
+           Systemschrift, also demselben Verhaeltnis wie SF auf Apple. Linux
+           kennt Segoe nicht und faellt auf Noto zurueck. Eine Zeile, kein
+           `#if`, und auf jedem System die Schrift, die dort richtig ist. */
+        window, .background, scrolledwindow, viewport, stack, entry, button, label {
+            font-family: Inter, "Segoe UI Variable Text", "Segoe UI",
+                         "Noto Sans", "DejaVu Sans", sans-serif;
+        }
+
+        window, .background, stack {
+            background-color: \(grund);
+            color: \(schrift);
+        }
+        /* **Scrollflächen malen nicht mit.** Sie standen hier mit `grund` —
+           und auf einer eingefärbten Detailseite ist das eine schwarze Ebene
+           hinter jeder Reihe. Paul hat sie unter „Besetzung" gesehen. Was
+           einen Grund braucht, sagt es selbst; alles andere lässt das
+           Fenster durchscheinen. */
+        scrolledwindow, viewport { background-color: transparent; }
+
+        label { color: \(schrift); }
+        .dim-label { color: \(schriftLeise); }
+        .swiftly-leise { color: \(schriftSehrLeise); }
+        .swiftly-warnung { color: \(warnung); }
+
+        /* Die Schriftstufen des Macs, eins zu eins. */
+        .swiftly-titel-gross { font-size: \(titelGross)px; font-weight: 700; }
+        .swiftly-titel       { font-size: \(titel)px; font-weight: 600; }
+        .swiftly-reihe       { font-size: \(reihe)px; font-weight: 600; }
+        .swiftly-listentitel { font-size: \(listentitel)px; font-weight: 600; }
+        .swiftly-koerper     { font-size: \(koerper)px; }
+        .swiftly-kacheltitel { font-size: \(kachelTitel)px; font-weight: 500; }
+        .swiftly-zweitzeile  { font-size: \(zweitzeile)px; }
+        .swiftly-rubrik {
+            font-size: \(rubrik)px;
+            font-weight: 600;
+            letter-spacing: 0.7px;
+        }
+
+        /* MARK: Eingabefeld
+           Auf dem Mac ein eigener Baustein statt des Systemfeldes: die Fläche
+           ist `flaeche`, der Rahmen eine Haarlinie in Weiß 12 %, die Ecke 10.
+           Im Fokus wird der Rahmen zum Akzent bei halber Deckung. */
+        entry {
+            background-color: \(flaeche);
+            background-image: none;
+            color: \(schrift);
+            border: 1px solid \(rand);
+            border-radius: \(eckeFeld)px;
+            min-height: \(feldHoehe)px;
+            padding: 0 12px;
+            font-size: \(koerper)px;
+            caret-color: \(akzent);
+            box-shadow: none;
+            outline: none;
+        }
+        /* **`:focus` allein trifft das Feld nicht.** GTK4 setzt den Fokus
+           auf den inneren `text`-Knoten, nicht auf das `entry` darum. Der
+           Rahmen gehoert aber dem `entry` — also `:focus-within`. Am Mac ist
+           er im Fokus der Akzent bei halber Deckung. */
+        entry:focus, entry:focus-within {
+            border-color: rgba(92,209,194,0.5);
+            outline: none;
+            box-shadow: none;
+        }
+        entry placeholder, entry text placeholder { color: \(schriftSehrLeise); }
+        /* Das Symbol im Feld: 17 breit, dahinter 9 Luft — die Zahlen der
+           `Eingabezeile` auf dem Mac. */
+        entry image { color: \(schriftSehrLeise); min-width: 17px; margin-right: 9px; }
+
+        /* MARK: Knöpfe
+           **Der Reset gilt nur für unsere eigenen.** Er stand einmal auf
+           schlichtem `button` — und traf damit auch Minimieren, Maximieren
+           und Schließen, die danach unsichtbar dastanden. Der Versuch, sie
+           selbst nachzuzeichnen, sah dann nach nichts aus: die Fensterknöpfe
+           gehören dem System, nicht uns. Sie sind hier deshalb gar nicht
+           erwähnt und tragen, was das Systemthema ihnen gibt. */
+        /* **Jede eigene Knopfklasse gehört in diese Liste.** Wer eine
+           vergisst, bekommt vom Systemthema Rahmen und Schatten dazu — und
+           genau so standen Schatten unter den Folgenzeilen und um den
+           Zurückpfeil, der gar kein Kasten sein soll. */
+        button.swiftly-haupt, button.swiftly-flach, button.swiftly-zeile,
+        button.swiftly-chip, button.swiftly-profil, button.swiftly-kachel,
+        button.swiftly-pfeil, button.swiftly-zurueck, button.swiftly-neben,
+        button.swiftly-reiter,
+        button.swiftly-einstellzeile, button.swiftly-wertzeile,
+        button.swiftly-handlung, button.swiftly-spielrund,
+        button.swiftly-spielrund-gross {
+            background-image: none;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            color: \(schrift);
+            border-radius: \(ecke)px;
+            padding: 0;
+            min-height: 0;
+            min-width: 0;
+        }
+        button.swiftly-haupt {
+            background-color: \(schrift);
+            color: \(grund);
+            border-radius: \(ecke)px;
+            min-height: \(hauptknopfHoehe)px;
+            padding: 0 30px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        button.swiftly-haupt:hover { background-color: rgba(255,255,255,0.88); }
+        /* Der Mac legt `.opacity(0.4)` über den ganzen Knopf. Dieselbe
+           Wirkung, nur ausgerechnet: Weiß zu 40 % über dem Grund. */
+        button.swiftly-haupt:disabled {
+            background-color: rgba(255,255,255,0.40);
+            color: rgba(11,11,13,0.55);
+        }
+
+        /* **Die Farbe muss am Kind stehen, nicht nur am Knopf.**
+           Oben steht `label { color: … }` — eine Regel auf dem Element
+           selbst, und die schlägt jede geerbte Farbe. Der Hauptknopf war
+           deshalb weiß auf weiß: der Pfeil (ein `image`, von der Regel nicht
+           getroffen) stand da, die Beschriftung nicht. Also trägt jeder
+           Knopfzustand seine Farbe ausdrücklich bis ans Kind durch. */
+        button.swiftly-haupt label, button.swiftly-haupt image { color: \(grund); }
+        button.swiftly-haupt:disabled label,
+        button.swiftly-haupt:disabled image { color: rgba(11,11,13,0.55); }
+
+        button.swiftly-flach {
+            background-color: transparent;
+            color: \(schriftLeise);
+            font-size: \(koerper)px;
+            min-height: \(zeileHoehe)px;
+            padding: 0 10px;
+        }
+        button.swiftly-flach label { color: \(schriftLeise); }
+        button.swiftly-flach:hover {
+            background-color: rgba(255,255,255,0.06);
+        }
+        button.swiftly-flach:hover label { color: \(schrift); }
+
+        /* MARK: Seitenleiste
+           Fläche wie das Feld, Zeilen 32 hoch. Der Akzent trägt die Auswahl —
+           dieselbe Regel wie auf iOS. Der Schwebezustand bekommt bewusst nur
+           Weiß: er zeigt „hier steht der Zeiger", keine Wahl. */
+        .swiftly-seitenleiste { background-color: \(flaeche); }
+
+        button.swiftly-zeile {
+            min-height: \(zeileHoehe)px;
+            padding: 0 10px;
+            border-radius: \(ecke)px;
+            font-size: \(koerper)px;
+            font-weight: 500;
+        }
+        button.swiftly-zeile label, button.swiftly-zeile image {
+            color: \(schriftLeise);
+        }
+        button.swiftly-zeile image { min-width: 17px; }
+        button.swiftly-zeile:hover { background-color: rgba(255,255,255,0.06); }
+        button.swiftly-zeile:hover label,
+        button.swiftly-zeile:hover image { color: \(schrift); }
+        button.swiftly-zeile.swiftly-aktiv {
+            background-color: rgba(92,209,194,0.10);
+        }
+        button.swiftly-zeile.swiftly-aktiv label,
+        button.swiftly-zeile.swiftly-aktiv image { color: \(akzent); }
+
+        /* MARK: Chip — 28 hoch, 12 seitlich, vollrund.
+           Aktiv weiss mit dunkler Schrift, sonst leise mit Haarlinie. */
+        button.swiftly-chip {
+            min-height: 28px;
+            padding: 0 12px;
+            border-radius: 14px;
+            border: 1px solid \(rand);
+            font-size: 13px;
+            font-weight: 400;
+        }
+        button.swiftly-chip label,
+        button.swiftly-chip image { color: \(schriftLeise); }
+        button.swiftly-chip:hover label,
+        button.swiftly-chip:hover image { color: \(schrift); }
+        button.swiftly-chip:hover { background-color: rgba(255,255,255,0.06); }
+        button.swiftly-chip:hover label { color: \(schrift); }
+        button.swiftly-chip.swiftly-aktiv {
+            background-color: \(schrift);
+            border-color: transparent;
+            font-weight: 600;
+        }
+        button.swiftly-chip.swiftly-aktiv label { color: \(grund); }
+
+        button.swiftly-profil {
+            min-height: 40px;
+            padding: 0 10px;
+            border-radius: \(ecke)px;
+        }
+        button.swiftly-profil:hover { background-color: rgba(255,255,255,0.06); }
+
+        .swiftly-trennlinie { background-color: \(linie); min-height: 1px; }
+
+        /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
+           Dieselbe Wirkung: gleiche Farbe, keine Linie, kein Schatten. */
+        /* **Die Leiste ist so hoch wie ihre Knöpfe, nicht wie ihre Regel.**
+           `min-height` allein hat nichts gebracht: die Fensterknöpfe bringen
+           vom Systemthema ihre eigene Mindesthöhe samt Innenabstand mit, und
+           die gewinnt. Also beides. Auf dem Mac gibt es hier gar keine Leiste
+           — die Ampel schwebt über der Seitenleiste; unter Wayland gehört die
+           Titelzeile dem Fenster, sie soll nur so wenig Platz nehmen wie
+           möglich. */
+        headerbar {
+            background-color: \(flaeche);
+            background-image: none;
+            border: none;
+            box-shadow: none;
+            min-height: 0;
+            padding: 0 4px;
+        }
+        headerbar windowcontrols { margin: 0; min-height: 0; }
+        headerbar windowcontrols button {
+            min-height: 20px;
+            min-width: 20px;
+            padding: 0;
+            margin: 0 2px;
+        }
+
+        /* Der Fortschrittsbalken auf einer „Weiterschauen"-Kachel: dunkle
+           Spur über die ganze Breite, darauf der Akzent so weit, wie gesehen
+           wurde. Genau wie auf dem Mac. */
+        .swiftly-balkenspur { background-color: rgba(255,255,255,0.16); }
+        .swiftly-balken { background-color: \(akzent); }
+
+        /* Plakate: eigener Grund, solange das Bild noch nicht da ist.
+           **Und sie wachsen unter dem Zeiger.** Auf dem Mac steht dafür
+           `.scaleEffect(schwebt ? 1.04 : 1)` am Bild — nur am Bild, nicht an
+           der Kachel: der Text darunter soll stehen bleiben. GTK4 kennt
+           `transform` im Stilblatt, also geht dasselbe hier.
+           Die Kachel muss ein Knopf sein, damit `:hover` überhaupt greift —
+           auf einer schlichten Box führt GTK den Zustand nicht. */
+        .swiftly-plakat {
+            background-color: \(flaeche);
+            border-radius: \(eckeKachel)px;
+            transition: transform 120ms ease-out;
+        }
+        button.swiftly-kachel { padding: 0; background-color: transparent; }
+        button.swiftly-kachel:hover .swiftly-plakat { transform: scale(1.04); }
+
+        /* Der Blätterpfeil: 34 rund, Grund zu 72 %, Haarlinie darum. */
+        button.swiftly-pfeil {
+            min-width: 34px;
+            min-height: 34px;
+            padding: 0;
+            margin: 0 6px;
+            border-radius: 17px;
+            background-color: rgba(11,13,13,0.72);
+            border: 1px solid \(rand);
+        }
+        button.swiftly-pfeil { transition: opacity 140ms ease-out; }
+        button.swiftly-pfeil image { color: \(schrift); }
+        button.swiftly-pfeil:hover { background-color: rgba(11,13,13,0.92); }
+
+        /* Das Raster: GTK malt Auswahl- und Randflächen, die wir nicht
+           wollen — es soll nur anordnen. */
+        flowbox, flowboxchild {
+            background-color: transparent;
+            background-image: none;
+            padding: 0;
+            border: none;
+        }
+        flowboxchild:selected, flowboxchild:focus { outline: none; box-shadow: none; }
+
+        /* Das Benutzerbild ist rund. 26 Punkt, wie auf dem Mac. */
+        .swiftly-profilbild {
+            border-radius: 13px;
+            background-color: \(erhoeht);
+        }
+
+        /* MARK: Detailseite */
+
+        .swiftly-heldtitel { font-size: 34px; font-weight: 700; letter-spacing: -0.8px; }
+        .swiftly-angaben { font-size: 14px; }
+        .swiftly-beschreibung { color: rgba(255,255,255,0.62); font-size: \(koerper)px; }
+        .swiftly-leistentitel { font-size: 17px; font-weight: 600; }
+        .swiftly-beleg label, .swiftly-beleg image { color: \(akzent); }
+        .swiftly-warnung label, .swiftly-warnung image { color: \(warnung); }
+
+        .swiftly-plakette {
+            font-size: 10px;
+            font-weight: 600;
+            color: \(schriftLeise);
+            border: 1px solid \(rand);
+            border-radius: 3px;
+            padding: 2px 5px;
+        }
+
+        /* Die Kopfleiste schwebt über der Seite und malt nichts. */
+        .swiftly-detailkopf { background-color: transparent; }
+        button.swiftly-zurueck {
+            min-width: 40px;
+            min-height: 40px;
+            padding: 0;
+            border-radius: \(ecke)px;
+            background-color: transparent;
+            border: none;
+        }
+        button.swiftly-zurueck image { color: \(schrift); -gtk-icon-size: 20px; }
+        /* **Kein Grund, auch nicht beim Schweben.** Auf dem Mac ist es ein
+           blanker Winkel mit `.buttonStyle(.plain)` — kein Rahmen, keine
+           Fläche. Ein Kasten, der nur unter dem Zeiger erscheint, ist eine
+           Zutat, die dort nicht steht. */
+        button.swiftly-zurueck:hover { background-color: transparent; }
+        button.swiftly-zurueck:hover image { color: rgba(255,255,255,0.72); }
+
+        /* MARK: Kopfzone der Detailseite
+           Der Ton kommt aus ``Tonblatt`` und wechselt mit dem Titel; hier
+           steht nur, was ohne Ton gilt. */
+        .swiftly-seitenton { background-color: \(grund); }
+        /* Malt nichts. Für Widgets, die nur ein Mass beisteuern — die
+           Zeichenflaeche der Kulisse malt ihr Bild selbst mit Cairo. */
+        .swiftly-blank { background-color: transparent; background-image: none; }
+        drawingarea { background-color: transparent; }
+
+        /* MARK: Die Leiste, die beim Scrollen kommt
+           Wie auf iPhone, iPad und Mac: unten eine Haarlinie, dahinter Glas —
+           und solange das Bild oben steht stattdessen ein weicher Verlauf,
+           damit der Pfeil auf hellem Bild lesbar bleibt.
+           **Ohne Glas.** GTK hat keine lebende Unschaerfe; was den Inhalt
+           darunter verwischt, gibt es hier nicht. An ihre Stelle tritt eine
+           dunkle Flaeche — dieselbe Aufgabe, anderes Mittel. */
+        .swiftly-kopfverlauf {
+            background-image: linear-gradient(to bottom,
+                rgba(11,11,13,0.70) 0%, rgba(11,11,13,0) 100%);
+        }
+        .swiftly-kopfleiste {
+            background-color: rgba(11,11,13,0.86);
+            border-bottom: 1px solid \(linie);
+        }
+
+        /* Nebenknopf: abgerundetes Quadrat, nur Symbol. */
+        button.swiftly-neben {
+            border-radius: \(ecke)px;
+            background-color: rgba(255,255,255,0.14);
+            padding: 0;
+            border: none;
+        }
+        button.swiftly-neben image { color: \(schrift); }
+        button.swiftly-neben:hover { background-color: rgba(255,255,255,0.22); }
+        button.swiftly-neben.swiftly-aktiv { background-color: \(schrift); }
+        button.swiftly-neben.swiftly-aktiv image { color: \(grund); }
+
+        /* Reiter: aktiv halbfett mit Akzentstrich. */
+        button.swiftly-reiter {
+            background-color: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 0;
+            font-size: 15px;
+        }
+        button.swiftly-reiter label { color: \(schriftLeise); }
+        button.swiftly-reiter:hover label { color: \(schrift); }
+        button.swiftly-reiter.swiftly-aktiv label { color: \(schrift); font-weight: 600; }
+        .swiftly-reiterstrich { background-color: transparent; }
+        button.swiftly-reiter.swiftly-aktiv .swiftly-reiterstrich {
+            background-color: \(akzent);
+        }
+
+        /* **Der Rand steckt im Innenabstand, nicht im aeusseren.**
+           So laeuft die Hervorhebung ueber die ganze Breite, wie auf dem Mac,
+           und das Vorschaubild steht trotzdem in der Flucht der
+           Reiterbeschriftung darueber. Keine Rundung: eine Zeile, die von
+           Kante zu Kante geht, hat keine Ecken. */
+        .swiftly-folgenzeile {
+            background-color: transparent;
+            padding: 12px \(randAbstand)px;
+            transition: background-color 120ms ease-out;
+        }
+        /* Weiss zu vier Prozent — der Wert vom Mac. */
+        .swiftly-folgenzeile.swiftly-schwebt { background-color: rgba(255,255,255,0.04); }
+        /* **Eine Haarlinie zwischen den Folgen** — der Mac hat sie
+           (`SerienView.swift:217`). Ohne sie fliessen zwei Zeilen mit langer
+           Beschreibung ineinander. */
+        .swiftly-folgenzeile { border-bottom: 1px solid \(linie); }
+        /* Der Abspielkreis, der beim Schweben ueber dem Bild erscheint. */
+        .swiftly-spielkreis {
+            background-color: rgba(0,0,0,0.55);
+            border-radius: 17px;
+            min-width: 34px;
+            min-height: 34px;
+        }
+        .swiftly-spielkreis image { color: \(schrift); }
+        /* Rund, nicht abgerundet-eckig: der Mac nimmt hier den kleinen
+           Aktionsknopf, kein Nebenknopf der Knopfreihe. */
+        button.swiftly-hakenknopf {
+            border-radius: 17px;
+            padding: 0;
+            min-width: 34px;
+            min-height: 34px;
+            background-color: rgba(255,255,255,0.14);
+        }
+        button.swiftly-hakenknopf:hover { background-color: rgba(255,255,255,0.22); }
+
+        .swiftly-kopfbild { border-radius: 42px; }
+
+        /* MARK: Einstellungszeilen */
+
+        .swiftly-fuss { color: rgba(255,255,255,0.45); }
+        .swiftly-akzentzeile label { color: \(akzent); }
+        .swiftly-akzentzeile image { color: \(akzent); }
+        .swiftly-zeilenrumpf, button.swiftly-einstellzeile {
+            min-height: 44px;
+            padding: 0 12px;
+            border-radius: 0;
+            background-color: transparent;
+            border: none;
+        }
+        button.swiftly-einstellzeile:hover { background-color: rgba(255,255,255,0.05); }
+        button.swiftly-einstellzeile image { color: \(schriftLeise); }
+        button.swiftly-einstellzeile.swiftly-akzentzeile image { color: \(akzent); }
+
+        /* Der Schalter — Kapsel, Akzent wenn an. Kein GtkSwitch: der bringt
+           Form, Farbe und Maße des Systems mit (E4). */
+        .swiftly-schalter {
+            background-color: rgba(255,255,255,0.14);
+            border-radius: 11px;
+            padding: 3px;
+        }
+        .swiftly-schalter.swiftly-aktiv { background-color: \(akzent); }
+        .swiftly-knauf { background-color: \(schrift); border-radius: 8px; }
+        .swiftly-schalter.swiftly-aktiv .swiftly-knauf { background-color: \(grund); }
+
+        .swiftly-werteliste { background-color: rgba(255,255,255,0.03); }
+        button.swiftly-wertzeile {
+            min-height: 36px;
+            padding: 0 12px 0 48px;
+            border-radius: 0;
+            background-color: transparent;
+            border: none;
+        }
+        button.swiftly-wertzeile:hover { background-color: rgba(255,255,255,0.06); }
+        button.swiftly-wertzeile label { color: \(schriftLeise); }
+        button.swiftly-wertzeile.swiftly-aktiv label { color: \(schrift); }
+        button.swiftly-wertzeile.swiftly-aktiv image { color: \(akzent); }
+
+        .swiftly-profilgross { border-radius: 42px; background-color: \(flaeche); }
+
+        /* Der Quick-Connect-Code: gross, mittig, gesperrt. */
+        entry.swiftly-code {
+            font-size: 34px;
+            font-weight: 600;
+            min-height: 76px;
+            letter-spacing: 6px;
+        }
+        entry.swiftly-code text { caret-color: \(akzent); }
+
+        /* MARK: Player (E10) */
+
+        /* Der Grund der Startanimation — auf iOS eine eigene Farbe
+           („Startgrund"), hier derselbe dunkle Grund wie überall. */
+        .swiftly-startgrund { background-color: \(grund); }
+        /* Der Dateiauszug: Haarlinie darüber, 14 Punkt Luft. */
+        .swiftly-dateizeile {
+            border-top: 1px solid \(linie);
+            padding-top: 14px;
+            margin-top: 8px;
+        }
+
+        /* Die Hinweiszeile: drei Sekunden, dann weg. */
+        /* Die Übernahmezeile: 40 hoch, Akzent zu 6 % mit Rand zu 18 %,
+           schwebend 12 und 35 — die Werte vom Mac. */
+        button.swiftly-uebernahme {
+            min-height: 40px;
+            padding: 0 10px;
+            border-radius: \(ecke)px;
+            background-color: rgba(92,209,194,0.06);
+            border: 1px solid rgba(92,209,194,0.18);
+            transition: background-color 120ms ease-out, border-color 120ms ease-out;
+        }
+        button.swiftly-uebernahme:hover {
+            background-color: rgba(92,209,194,0.12);
+            border-color: rgba(92,209,194,0.35);
+        }
+        button.swiftly-uebernahme image { color: \(akzent); }
+        .swiftly-uebernahmezeile { font-size: 11px; color: \(schriftSehrLeise); }
+
+        .swiftly-akzentzeichen { color: \(akzent); }
+        .swiftly-sehrleise, .swiftly-sehrleise image { color: \(schriftSehrLeise); }
+
+        .swiftly-hinweis {
+            font-size: 14px;
+            color: \(schrift);
+            background-color: rgba(0,0,0,0.72);
+            border: 1px solid \(rand);
+            border-radius: 10px;
+            padding: 9px 16px;
+        }
+        .swiftly-spieler { background-color: #000000; }
+        /* Die Steuerung liegt über dem Bild und blendet weich weg. */
+        /* Zwei Schleier, oben 0,60 über 150 Punkt, unten 0,70 über 230 —
+           die Werte vom Mac. In Anteilen ausgedrückt, weil ein Fenster
+           anders hoch ist als das nächste; bei rund 800 Punkt Höhe kommt
+           dasselbe heraus. */
+        /* **Zwei Schleier mit fester Höhe, nicht in Anteilen.**
+
+           In Anteilen wuchsen sie mit dem Fenster mit: bei 1200 Punkt Höhe
+           waren die unteren 29 % schon 348 Punkt statt der 230 vom Mac, und
+           die Leiste unten sah entsprechend wuchtig aus. Zwei Anstriche mit
+           `background-size` treffen die Werte genau, egal wie hoch das
+           Fenster ist. */
+        .swiftly-steuerung {
+            background-image:
+                linear-gradient(to bottom, rgba(0,0,0,0.60), rgba(0,0,0,0)),
+                linear-gradient(to top, rgba(0,0,0,0.70), rgba(0,0,0,0));
+            background-size: 100% 150px, 100% 230px;
+            background-position: top, bottom;
+            background-repeat: no-repeat;
+            transition: opacity 180ms ease-out;
+        }
+        /* **Die Knöpfe der Mitte tragen keine Fläche.** Auf dem Mac steht
+           dort nur das Zeichen (`buttonStyle(.plain)`), darunter das
+           Tastenkürzel. Die runden Flächen, die hier standen, waren meine
+           Erfindung und haben den Player nach Systemabspieler aussehen
+           lassen. */
+        button.swiftly-spieltaste {
+            background-color: transparent;
+            background-image: none;
+            border: none;
+            box-shadow: none;
+            padding: 0;
+            min-width: 0;
+            min-height: 0;
+        }
+        button.swiftly-spieltaste image { color: \(schrift); }
+        /* Der Zeiger hebt das Zeichen an, statt einen Kasten zu malen. */
+        button.swiftly-spieltaste:hover label { color: \(schriftLeise); }
+        /* Der Vollbildknopf: so gross wie ein Chip hoch ist, rund, leise. */
+        button.swiftly-vollknopf {
+            border-radius: 14px;
+            padding: 0;
+            min-width: 28px;
+            min-height: 28px;
+            border: 1px solid \(rand);
+            background-color: transparent;
+        }
+        button.swiftly-vollknopf image { color: \(schriftLeise); }
+        button.swiftly-vollknopf:hover { background-color: rgba(255,255,255,0.06); }
+        button.swiftly-vollknopf:hover image { color: \(schrift); }
+
+        .swiftly-kuerzel {
+            font-size: 11px;
+            color: \(schriftSehrLeise);
+        }
+
+        /* Titel und Zeiten unten. 19 halbfett, darunter 14 auf 68 %, und
+           die Zeiten 13 mit gleich breiten Ziffern — die Masse des Macs. */
+        .swiftly-spielertitel { font-size: 19px; font-weight: 600; color: \(schrift); }
+        .swiftly-spielerzeile { font-size: 14px; color: rgba(255,255,255,0.68); }
+        .swiftly-spielerzeit {
+            font-size: 13px;
+            font-feature-settings: "tnum";
+            color: rgba(255,255,255,0.68);
+        }
+        .swiftly-warnung label, .swiftly-warnung image { color: \(warnung); }
+
+        /* **Der Zeitregler — und Breeze wieder mit seinen Rändern.**
+
+           Hier stand nur `min-width` und `min-height`. Das Systemthema legt
+           auf `slider` einen Rand, und GTK meldete es sogar wörtlich:
+           „slider reported min width −5, but sizes must be >= 0". Ein
+           negatives Mass verwirft GTK, und dann malt Breeze seinen eigenen
+           Regler — genau der, den Paul unverändert wiedergesehen hat.
+
+           Dieselbe Falle wie bei `scrollbar slider` ein paar Zeilen weiter
+           oben, und dieselbe Abhilfe: **wer eine Mindestgrösse überschreibt,
+           muss Rand und Innenabstand mit überschreiben.** */
+        scale.swiftly-regler {
+            min-height: 14px;
+            padding: 0;
+            margin: 0;
+        }
+        /* **Die Spur wird mit Rand auf 4 gehalten, nicht mit `min-height`.**
+           `min-height` ist ein Mindestmass — der Knoten `trough` bekommt
+           trotzdem die volle Höhe der Skala und malt seinen Grund über
+           vierzehn Punkt. Genau das war die zu dicke Leiste. Fünf Punkt Rand
+           oben und unten lassen ihm rechnerisch vier. */
+        scale.swiftly-regler trough {
+            min-height: 4px;
+            margin: 5px 0;
+            padding: 0;
+            border: none;
+            background-image: none;
+            background-color: rgba(255,255,255,0.18);
+            border-radius: 2px;
+            box-shadow: none;
+        }
+        scale.swiftly-regler highlight {
+            margin: 0;
+            padding: 0;
+            border: none;
+            background-image: none;
+            background-color: \(akzent);
+            border-radius: 2px;
+            box-shadow: none;
+        }
+        /* **Der Griff ragt aus der Spur heraus, er weitet sie nicht.**
+           Der Griff ist ein Kind der Spur; ohne negativen Rand zieht er sie
+           auf seine dreizehn Punkt auf, und dann malt sie ihren Grund ueber
+           die ganze Hoehe — das war die zu dicke Leiste, auch nachdem die
+           Warnung weg war. −5 oben und unten lassen der Spur ihre vier.
+           Genau so macht es Adwaita selbst. */
+        scale.swiftly-regler slider {
+            min-width: 13px;
+            min-height: 13px;
+            margin: -5px 0;
+            padding: 0;
+            border: none;
+            background-image: none;
+            background-color: \(schrift);
+            border-radius: 7px;
+            /* Der Griff liegt über dem Bild und braucht eine Kante, sonst
+               verschwindet er auf einer hellen Stelle — auf dem Mac ist es
+               derselbe Schatten. */
+            box-shadow: 0 1px 5px rgba(0,0,0,0.55);
+        }
+        scale.swiftly-regler:hover slider {
+            min-width: 15px;
+            min-height: 15px;
+            margin: -6px 0;
+        }
+
+        /* Die Spurtafel über dem Bild: 320 breit, erhoeht, Ecke 10. */
+        .swiftly-tafel {
+            background-color: \(erhoeht);
+            border: 1px solid \(rand);
+            border-radius: \(eckeFeld)px;
+            /* Sie liegt ueber bewegtem Bild und braucht eine Kante. */
+            box-shadow: 0 10px 22px rgba(0,0,0,0.45);
+        }
+        /* **Die gewaehlte Zeile traegt den Akzent**, nicht eine Flaeche —
+           so auf dem Mac (`Spurwahl.Wahlzeile`). */
+        button.swiftly-wertzeile.swiftly-aktiv label,
+        button.swiftly-wertzeile.swiftly-aktiv image { color: \(akzent); }
+
+        /* Die Mehr-Liste. GTKs Popover bringt einen eigenen Grund mit —
+           der wird hier überschrieben, sonst stünde Apples… nein: KDEs
+           Gestalt darin. */
+        /* **Der Popover malt hinter seinem Inhalt noch selbst.** Sein
+           eigener Knoten trägt vom Systemthema Grund und Schatten; nur den
+           Inhalt zu gestalten ließ eine schwarze Fläche ringsum stehen. */
+        popover.swiftly-mehr,
+        popover.swiftly-mehr > arrow {
+            background-color: transparent;
+            background-image: none;
+            border: none;
+            box-shadow: none;
+        }
+        popover.swiftly-mehr > contents {
+            background-color: \(erhoeht);
+            border: 1px solid \(rand);
+            border-radius: \(eckeFeld)px;
+            padding: 6px;
+            box-shadow: 0 10px 22px rgba(0,0,0,0.45);
+        }
+        button.swiftly-handlung {
+            min-height: 36px;
+            padding: 0 10px;
+            border-radius: \(ecke)px;
+            background-color: transparent;
+            border: none;
+        }
+        button.swiftly-handlung:hover { background-color: rgba(255,255,255,0.08); }
+        button.swiftly-handlung image { color: \(schriftLeise); }
+
+        scrollbar { background-color: transparent; }
+        /* **Den Rand des Systemthemas mit zurücksetzen.** Breeze legt auf
+           `scrollbar slider` einen Rand von 4; mit unseren 6 Punkt
+           Mindestbreite bleiben davon −2 übrig, und GTK meldet genau das:
+           „slider reported min width -2, but sizes must be >= 0". Wer eine
+           Mindestgröße überschreibt, muss den Rand mit überschreiben. */
+        scrollbar slider {
+            background-color: rgba(255,255,255,0.22);
+            border-radius: 8px;
+            min-width: 6px;
+            min-height: 6px;
+            margin: 0;
+            border: none;
+        }
+        scrollbar slider:hover { background-color: rgba(255,255,255,0.36); }
+        """
+    }
+
+    /// **Die Schrift kommt mit, sie wird nicht erwartet.**
+    ///
+    /// Auf dem Mac ist die Oberfläche in SF Pro gesetzt, und die gibt es nur
+    /// dort. Inter ist ihr nächster Verwandter und liegt neben der App; auf
+    /// Linux ist sie oft schon installiert, unter Windows nie — dort fiele
+    /// die Oberfläche sonst auf Segoe UI zurück und sähe anders aus als auf
+    /// dem Mac. Da alle Plattformen gleich aussehen sollen, wird sie hier
+    /// angemeldet, bevor das erste Stilblatt greift.
+    ///
+    /// Still im Fehlerfall: findet sich der Ordner nicht, bleibt es bei der
+    /// Schrift des Systems.
+    private static func schriftMitbringen() {
+        guard let ordner = Plattform.mitgeliefert("Schriften") else { return }
+        _ = ordner.withCString { schriften_laden($0) }
+    }
+
+    /// Lädt das Stilblatt in die Anzeige.
+    static func anwenden() {
+        schriftMitbringen()
+        let anbieter = gtk_css_provider_new()
+        meckern(anbieter)
+        gtk_css_provider_load_from_string(anbieter, blatt)
+        if let anzeige = gdk_display_get_default() {
+            // `GtkStyleProvider` ist eine Schnittstelle, kein Typ, den Swift
+            // benennen kann — wie `GtkEditable`. Der Anbieter geht deshalb
+            // als undurchsichtiger Zeiger hinein.
+            gtk_style_context_add_provider_for_display(
+                anzeige, OpaquePointer(anbieter),
+                800)   // GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
+        }
+        g_object_unref(UnsafeMutableRawPointer(anbieter))
+    }
+
+    /// **GTK meldet einen Fehler im Stilblatt nicht auf der Fehlerleitung**,
+    /// sondern über das Signal `parsing-error` — wer nicht zuhört, merkt
+    /// nichts. Eine Schreibweise, die GTK nicht kennt, fällt damit lautlos
+    /// aus, und die Suche beginnt beim falschen Widget. Das ist heute schon
+    /// einmal passiert.
+    static func meckern(_ anbieter: UnsafeMutablePointer<GtkCssProvider>!) {
+        g_signal_connect_data(UnsafeMutableRawPointer(anbieter), "parsing-error",
+                              unsafeBitCast(stilfehler, to: GCallback.self),
+                              nil, nil, GConnectFlags(rawValue: 0))
+    }
+
+    // MARK: Wortmarke
+
+    /// Legt die Wortmarke einmal als SVG-Datei ab und gibt den Pfad zurück.
+    ///
+    /// Der Pfad selbst kommt aus `Markenpfade` im geteilten Paket — dieselbe
+    /// Zeichenkette, aus der die Apple-Fassungen ihre Vektorform bauen. GTK
+    /// liest SVG über librsvg; fehlt das, gibt es einen Textrückfall.
+    static func wortmarkeDatei(hoehe: Int) -> String? {
+        let r = Markenpfade.wortmarkeRahmen
+        let svg = """
+        <svg xmlns="http://www.w3.org/2000/svg" \
+        viewBox="\(r.x) \(r.y) \(r.breite) \(r.hoehe)" \
+        width="\(Int(Double(hoehe) * r.breite / r.hoehe))" height="\(hoehe)">
+        <path d="\(Markenpfade.wortmarke)" fill="\(schrift)"/>
+        <path d="\(Markenpfade.wortmarkeAkzent)" fill="\(markeAkzent)"/>
+        </svg>
+        """
+        let ziel = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("swiftly-wortmarke-\(hoehe).svg")
+        do {
+            try svg.write(to: ziel, atomically: true, encoding: .utf8)
+            return ziel.path
+        } catch {
+            return nil
+        }
+    }
+
+    /// Die Wortmarke als Widget, in der gewünschten Höhe.
+    ///
+    /// **44 auf der Anmeldung, 28 in der Seitenleiste** — beides steht so in
+    /// `Sources/macOS/RootView.swift` und `HauptView.swift`. Geraten war sie
+    /// vorher 64, und das war eineinhalbmal zu groß.
+    ///
+    /// **Zwei Fallen liegen hier hintereinander.**
+    ///
+    /// `GtkImage` nimmt seine Größenangabe nur für Symbole; eine geladene
+    /// Datei zeigt es in deren eigener Größe und ignoriert den Wunsch. Also
+    /// `GtkPicture`.
+    ///
+    /// Aber `gtk_widget_set_size_request` setzt nur eine **Mindest**größe.
+    /// Ein `GtkPicture` wächst darüber hinaus, sobald Platz da ist — deshalb
+    /// stand die Marke danach zweieinhalbmal zu groß im Fenster. Es braucht
+    /// zusätzlich `hexpand`/`vexpand` auf null und eine Ausrichtung, sonst
+    /// nimmt sie sich, was der Stapel ihr anbietet.
+    ///
+    /// Die Breite folgt dem Seitenverhältnis des Rahmens (3005 zu 1024, also
+    /// knapp 2,94 zu 1) statt geraten zu werden.
+    static func wortmarke(hoehe: Int = 44, links: Bool = false) -> Widget! {
+        let r = Markenpfade.wortmarkeRahmen
+        let breite = Int(Double(hoehe) * r.breite / r.hoehe)
+        // Doppelt so fein anlegen, damit es auf feinen Bildschirmen scharf bleibt.
+        guard let datei = wortmarkeDatei(hoehe: hoehe * 2) else {
+            return beschriftung("swiftly", stil: "swiftly-titel-gross")
+        }
+        // **Und der doppelt so feine Aufbau war zugleich die Falle.** Die
+        // Marke stand doppelt so groß da, weil `set_size_request` nur ein
+        // Mindestmaß ist und ein Bild von 164 × 56 genau die verlangt, sobald
+        // Platz da ist. Der Überzug misst nur sein Hauptkind — dasselbe
+        // Mittel wie bei den Plakaten, siehe ``gerahmtesBild``.
+        let huelle: Widget! = gtk_overlay_new()
+        let mass: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        gtk_widget_set_size_request(mass, Int32(breite), Int32(hoehe))
+        gtk_overlay_set_child(OpaquePointer(huelle), mass)
+
+        let bild: Widget! = gtk_picture_new_for_filename(datei)
+        gtk_picture_set_content_fit(OpaquePointer(bild), GTK_CONTENT_FIT_CONTAIN)
+        gtk_picture_set_can_shrink(OpaquePointer(bild), 1)
+        gtk_overlay_add_overlay(OpaquePointer(huelle), bild)
+
+        gtk_widget_set_hexpand(huelle, 0)
+        gtk_widget_set_vexpand(huelle, 0)
+        gtk_widget_set_halign(huelle, links ? GTK_ALIGN_START : GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(huelle, GTK_ALIGN_CENTER)
+        return huelle
+    }
+}
+
+
+/// Form: `(GtkCssProvider*, GtkCssSection*, GError*, gpointer)`.
+nonisolated(unsafe) let stilfehler: @convention(c) (
+    UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<GError>?, gpointer?
+) -> Void = { _, abschnitt, fehler, _ in
+    let text = fehler?.pointee.message.map { String(cString: $0) } ?? "unbekannt"
+    let stelle = abschnitt.map { String(cString: gtk_css_section_to_string($0)) } ?? "?"
+    FileHandle.standardError.write(Data("[Stilblatt] \(stelle): \(text)\n".utf8))
+}

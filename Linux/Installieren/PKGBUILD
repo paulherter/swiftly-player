@@ -1,0 +1,65 @@
+# Maintainer: Paul Herter <accounts@paulherter.de>
+#
+# Fuer Arch, CachyOS, Manjaro, EndeavourOS. Bauen und installieren:
+#
+#     makepkg -si
+#
+# Swift liegt nicht in den offiziellen Quellen. `swift-bin` aus dem AUR ist
+# der uebliche Weg; wer die Toolchain schon ueber swiftly unter $HOME hat,
+# setzt einfach SWIFT=/pfad/zu/swift und makepkg nimmt die.
+
+pkgname=swiftly-jellyfin
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Jellyfin-Client, der niemals transkodiert"
+arch=('x86_64' 'aarch64')
+url="https://github.com/paulherter/swiftly-for-jellyfin"
+license=('MPL-2.0')
+depends=('gtk4' 'vlc' 'glibc' 'gcc-libs')
+makedepends=('git' 'gcc' 'pkgconf' 'swift-bin')
+source=("git+$url.git#branch=main"
+        "git+https://github.com/Samsung/rlottie.git")
+sha256sums=('SKIP' 'SKIP')
+
+_swift() { echo "${SWIFT:-swift}"; }
+
+build() {
+    # rlottie kommt statisch mit ins Programm — es gibt sie in keinem Repo,
+    # und eine mitgelieferte .so waere genau die Sorte Abhaengigkeit, die auf
+    # fremden Rechnern nicht gefunden wird.
+    export SWIFTLY_RLOTTIE_ZIEL="$srcdir/rlottie-praefix"
+    bash "$srcdir/swiftly-for-jellyfin/Werkzeuge/rlottie-bauen.sh" "$srcdir/rlottie"
+
+    export PKG_CONFIG_PATH="$SWIFTLY_RLOTTIE_ZIEL/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+    cd "$srcdir/swiftly-for-jellyfin/Linux"
+    "$(_swift)" build -c release -Xswiftc -static-stdlib
+}
+
+package() {
+    local q="$srcdir/swiftly-for-jellyfin"
+    local b="$q/Linux/.build/release"
+
+    # Programm und Ressourcenbuendel bleiben beisammen: Swift findet
+    # `Bundle.module` ueber den Pfad der laufenden Datei.
+    install -Dm755 "$b/SwiftlyLinux" "$pkgdir/usr/lib/$pkgname/$pkgname"
+    for buendel in "$b"/*.resources; do
+        [ -d "$buendel" ] || continue
+        cp -r "$buendel" "$pkgdir/usr/lib/$pkgname/"
+    done
+    cp -r "$q/Linux/Ressourcen" "$pkgdir/usr/lib/$pkgname/Ressourcen"
+    install -d "$pkgdir/usr/bin"
+    ln -s "/usr/lib/$pkgname/$pkgname" "$pkgdir/usr/bin/$pkgname"
+
+    install -Dm644 "$q/Linux/Installieren/de.paulherter.swiftly.desktop" \
+        "$pkgdir/usr/share/applications/de.paulherter.swiftly.desktop"
+    install -Dm644 "$q/Linux/Installieren/de.paulherter.swiftly.metainfo.xml" \
+        "$pkgdir/usr/share/metainfo/de.paulherter.swiftly.metainfo.xml"
+
+    for grad in 32 64 128 256 512; do
+        install -Dm644 \
+            "$q/Linux/Ressourcen/icons/hicolor/${grad}x${grad}/apps/de.paulherter.swiftly.png" \
+            "$pkgdir/usr/share/icons/hicolor/${grad}x${grad}/apps/de.paulherter.swiftly.png"
+    done
+
+    install -Dm644 "$q/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE" 2>/dev/null || true
+}

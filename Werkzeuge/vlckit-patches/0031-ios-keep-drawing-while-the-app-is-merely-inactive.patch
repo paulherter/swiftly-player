@@ -1,0 +1,64 @@
+From fed16f23b310ef3f06e47ce6275ae58489ffcbe0 Mon Sep 17 00:00:00 2001
+From: Swiftly <accounts@paulherter.de>
+Date: Thu, 3 Sep 2026 04:20:00 +0200
+Subject: [PATCH] ios: keep drawing while the app is merely inactive
+
+Pulling down Notification Centre or Control Centre posts
+UIApplicationWillResignActive, not UIApplicationDidEnterBackground. The
+OpenGL view treated both the same and cleared _appActive, which makes
+makeCurrent() fail and stalls the vout. Playback froze for as long as it
+took the decoder to reach the next keyframe after the app became active
+again -- measured between 0.7 and 2.6 seconds on the same file -- and
+occasionally never resumed at all.
+
+Drawing while inactive is allowed on iOS; only drawing in the background
+is not, and that case is handled separately two branches below, where
+the EAGL context is flushed and _eaglEnabled is cleared.
+
+_appActive is therefore only cleared on DidEnterBackground, which is
+also how it is initialised (line 172 compares against
+UIApplicationStateBackground, not against Inactive).
+---
+ modules/video_output/apple/VLCOpenGLES2VideoView.m | 12 +-----------
+ 1 file changed, 1 insertion(+), 11 deletions(-)
+
+diff --git a/modules/video_output/apple/VLCOpenGLES2VideoView.m b/modules/video_output/apple/VLCOpenGLES2VideoView.m
+index ea9d16695e..d3e02a6dd2 100644
+--- a/modules/video_output/apple/VLCOpenGLES2VideoView.m
++++ b/modules/video_output/apple/VLCOpenGLES2VideoView.m
+@@ -219,10 +219,6 @@ - (id)initWithFrame:(CGRect)frame gl:(vlc_gl_t*)gl
+                                              selector:@selector(applicationStateChanged:)
+                                                  name:UIApplicationDidEnterBackgroundNotification
+                                                object:nil];
+-    [[NSNotificationCenter defaultCenter] addObserver:self
+-                                             selector:@selector(applicationStateChanged:)
+-                                                 name:UIApplicationWillResignActiveNotification
+-                                               object:nil];
+     [[NSNotificationCenter defaultCenter] addObserver:self
+                                              selector:@selector(applicationStateChanged:)
+                                                  name:UIApplicationDidBecomeActiveNotification
+@@ -297,10 +293,6 @@ - (void)detachFromWindow
+          /* Remove the external references to the view so that
+           * dealloc can be called by ARC. */
+ 
+-         [[NSNotificationCenter defaultCenter] removeObserver:self
+-                                                         name:UIApplicationWillResignActiveNotification
+-                                                       object:nil];
+-
+          [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                          name:UIApplicationDidBecomeActiveNotification
+                                                        object:nil];
+@@ -441,9 +433,7 @@ - (void)applicationStateChanged:(NSNotification *)notification
+ {
+     vlc_mutex_lock(&_mutex);
+ 
+-    if ([[notification name] isEqualToString:UIApplicationWillResignActiveNotification])
+-        _appActive = NO;
+-    else if ([[notification name] isEqualToString:UIApplicationDidEnterBackgroundNotification])
++    if ([[notification name] isEqualToString:UIApplicationDidEnterBackgroundNotification])
+     {
+         _appActive = NO;
+ 
+-- 
+2.50.1 (Apple Git-155)
+

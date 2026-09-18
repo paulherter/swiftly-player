@@ -1,0 +1,53 @@
+# XcodeGen erzeugt das Projekt — nie einchecken
+*.xcodeproj
+*.xcworkspace
+
+.DS_Store
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+build/
+
+# 2,7 GB — wird mit Werkzeuge/vlckit-holen.sh geholt
+Vendor
+
+# Die Notizen liegen in ../Swiftly-Notizen und haengen hier als Symlink.
+# **Ohne Schraegstrich** — mit einem greift die Regel auf Symlinks nicht,
+# und genau so ist der Vendor-Symlink einmal ins Repo gerutscht.
+CLAUDE.md
+VERHALTEN.md
+Erfahrungen.md
+
+# **Riegel, kein Aufraeumen.** Diese Pfade liegen in ../Swiftly-Notizen und
+# sind hier nicht vorhanden. Der Eintrag verhindert, dass sie es je wieder
+# werden — wer eine dieser Dateien anlegt, veroeffentlicht sie sonst beim
+# naechsten Push, ohne es zu merken. Alle **ohne Schraegstrich**, sonst
+# greift die Regel auf Symlinks nicht.
+AppStore
+Entwuerfe
+Rohbilder
+Spec
+Werkzeuge/Discord
+Werkzeuge/Grafik
+Werkzeuge/Iconbauer
+# **Claudes eigener Ordner.** Hier liegen Einstellungen, Faehigkeiten — und
+# unter `worktrees/` ganze Abzuege des Arbeitsbaums samt CLAUDE.md,
+# AppStore/, Spec/ und Rohbildern. Am 04.09.2026 lag genau so ein Abzug da:
+# nicht eingecheckt, aber auch nicht gesperrt. Ein `git add -A` haette
+# gereicht. Die Regeln darunter greifen zwar auf jeder Ebene, aber nicht auf
+# README.md oder project.yml in so einem Abzug.
+.claude
+
+# **Das Aufspielwerkzeug fuer den Linux-Rechner.** Es nennt Rechnernamen,
+# Pfade und die Wayland-Sitzung — Werkzeug, kein Code. Es liegt dauerhaft
+# unter ~/swiftly-starten.sh auf dem Zielrechner, und der post-receive-Hook
+# ruft es dort auf, nicht aus dem Auscheck.
+.linux
+
+MORGEN.md
+OFFEN.md
+PRUEFUNG.md
+TESTEN.md
+PLAYER-TVOS.md

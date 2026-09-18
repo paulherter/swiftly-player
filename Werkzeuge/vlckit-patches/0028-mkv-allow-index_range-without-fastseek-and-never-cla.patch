@@ -1,0 +1,128 @@
+From 2118ca864fc94f460868eaf18b8dbc40a877cc3f Mon Sep 17 00:00:00 2001
+From: Swiftly <accounts@paulherter.de>
+Date: Wed, 2 Sep 2026 03:33:29 +0200
+Subject: [PATCH] mkv: allow index_range() without fastseek and never claim an
+ empty cue index
+
+Two independent changes. (2) is the one measured to fix the symptom;
+(1) is a correctness fix that did not fire on the file we measured.
+Keep them apart when reasoning about either.
+
+Symptom: a Matroska served over HTTP whose Cues cannot be fully parsed
+cannot be seeked forward at all. Every seek falls back to the first
+cluster already read -- the start of the file -- and the demuxer then
+reads forward to the target. Measured on a 718 MB HEVC file
+(Muxing Application=Lavf58.29.100, Writing Application=HandBrake 1.3.2):
+30 to 90 seconds for one forward seek, and the next seek starts over.
+VLC 3.0.x plays the same file from the same HTTP source and seeks
+instantly.
+
+1) matroska_segment.cpp: LoadCues() set b_cues = true unconditionally,
+   even when the loop added no seekpoint at all. That happens whenever
+   the EbmlParser bails out inside the Cues element before adding
+   anything. Every later check that asks !b_cues then believes an index
+   exists. An empty index is not an index.
+
+   Note: on the file above this branch does NOT fire. Its Cues start
+   with an EBMLCrc32, the parser logs " * Unknown (EBMLCrc32)" and
+   "m_el[mi_level] == NULL" -- but enough cue points are loaded before
+   that for the index to be non-empty. The change is defensible on its
+   own terms; it is not what fixes the symptom, and it is unproven.
+
+2) matroska_segment_seeker.cpp: get_seekpoints() gated index_range() on
+   ms.sys.b_fastseekable, which is never true over HTTP -- the prefetch
+   stream filter does not forward STREAM_CAN_FASTSEEK. With a partial
+   cue index the seekpoint pair around the target has a finite end, so
+   the remaining condition passes and index_range() refines the range.
+   VLC 3.0.x calls it here without the fastseekable condition. The scan
+   stays bounded by Range(start.fpos, end.fpos), i.e. between two
+   cluster positions already known -- that is what made it safe there
+   and what keeps it safe here.
+
+Measured with both applied, on tvOS and iOS:
+
+    seek to 1027 s  ->  byte 300335029   (38 ms after the command)
+    seek to 1097 s  ->  byte 326557072   45.4 %   138 ms
+    seek to 1485 s  ->  byte 445771192   62.0 %   146 ms
+    seek to  634 s  ->  byte 177497688   24.7 %   104 ms
+
+Before: byte 3154 in every case.
+---
+ modules/demux/mkv/matroska_segment.cpp        | 19 ++++++++++++++++++-
+ modules/demux/mkv/matroska_segment_seeker.cpp | 16 ++++++++++++++--
+ 2 files changed, 32 insertions(+), 3 deletions(-)
+
+diff --git a/modules/demux/mkv/matroska_segment.cpp b/modules/demux/mkv/matroska_segment.cpp
+index 9951c0b..1a93edc 100644
+--- a/modules/demux/mkv/matroska_segment.cpp
++++ b/modules/demux/mkv/matroska_segment.cpp
+@@ -91,6 +91,7 @@ matroska_segment_c::~matroska_segment_c()
+  *****************************************************************************/
+ void matroska_segment_c::LoadCues( KaxCues *cues )
+ {
++    unsigned i_seekpoints_loaded = 0;
+     EbmlElement *el;
+ 
+     if( b_cues )
+@@ -217,6 +218,7 @@ void matroska_segment_c::LoadCues( KaxCues *cues )
+ 
+                 _seeker.add_seekpoint( track_id,
+                     SegmentSeeker::Seekpoint( cue_position, cue_mk_time, level ) );
++                i_seekpoints_loaded++;
+             }
+         }
+         else
+@@ -224,7 +226,22 @@ void matroska_segment_c::LoadCues( KaxCues *cues )
+             msg_Dbg( &sys.demuxer, " * Unknown (%s)", EBML_NAME(el) );
+         }
+     }
+-    b_cues = true;
++
++    /* Swiftly: only claim to have an index if one was actually built.
++     *
++     * b_cues was set unconditionally, even when the loop above added no
++     * seekpoint at all -- which happens whenever the EbmlParser bails out
++     * mid-Cues. Measured on a file whose Cues start with an EBMLCrc32: the
++     * parser logs " * Unknown (EBMLCrc32)", then "m_el[mi_level] == NULL",
++     * and LoadCues still reported success. Every later check that asks
++     * !b_cues then believes an index exists, so SegmentSeeker never falls
++     * back to index_range() and a forward seek lands on the first cluster
++     * already read, i.e. the start of the file.
++     *
++     * An empty index is not an index. */
++    b_cues = ( i_seekpoints_loaded > 0 );
++    if( !b_cues )
++        msg_Warn( &sys.demuxer, "|   - cues parsed but empty, treating as absent" );
+     msg_Dbg( &sys.demuxer, "|   - loading cues done." );
+ }
+ 
+diff --git a/modules/demux/mkv/matroska_segment_seeker.cpp b/modules/demux/mkv/matroska_segment_seeker.cpp
+index ebf4d05..4c2c907 100644
+--- a/modules/demux/mkv/matroska_segment_seeker.cpp
++++ b/modules/demux/mkv/matroska_segment_seeker.cpp
+@@ -318,8 +318,20 @@ SegmentSeeker::get_seekpoints( matroska_segment_c& ms, vlc_tick_t target_pts,
+         if ( start.fpos == std::numeric_limits<fptr_t>::max() )
+             return tracks_seekpoint_t();
+ 
+-        if ( ms.sys.b_fastseekable &&
+-             (end.fpos != std::numeric_limits<fptr_t>::max() || !ms.b_cues) &&
++        /* Swiftly: b_fastseekable removed — it is never true over HTTP, and
++         * without index_range() a Matroska whose Cues cannot be parsed has no
++         * way to seek forward at all: every seek falls back to the first
++         * already-read cluster, i.e. the start of the file, and the demuxer
++         * then reads forward to the target. Measured on a 718 MB HEVC file
++         * whose Cues begin with an EBML CRC-32 that the parser skips, leaving
++         * zero seekpoints while still logging "loading cues done": a forward
++         * seek took 30-90 s. VLC 3.0.x calls index_range() unconditionally
++         * here and seeks the same file instantly over the same HTTP source.
++         *
++         * The range stays bounded by Range(start.fpos, end.fpos), i.e. between
++         * two known cluster positions from the SeekHead — that is what made it
++         * safe in 3.0.x. The trust_level condition is kept. */
++        if ( (end.fpos != std::numeric_limits<fptr_t>::max() || !ms.b_cues) &&
+              (needle_pts != start.pts || start.trust_level < Seekpoint::TRUSTED))
+             // do not read the whole (infinite?) file to get seek indexes
+             // do not generate an index if we already have the correct seekpoint
+-- 
+2.50.1 (Apple Git-155)
+

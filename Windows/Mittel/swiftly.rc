@@ -1,0 +1,3 @@
+// Programmsymbol und Angaben, die Windows im Dateidialog zeigt.
+// Kennung 1: Windows nimmt das Symbol mit der kleinsten Kennung als Programmsymbol.
+1 ICON "swiftly.ico"
