@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Swiftly <accounts@paulherter.de>
+Date: Tue, 15 Sep 2026 23:55:59 +0200
+Subject: [PATCH] avcodec: pad direct-rendered MPEG pictures for SIMD motion compensation
+
+FFmpeg software decoders can render directly into libVLC-owned picture
+planes. The pinned FFmpeg's avcodec_align_dimensions2() does not reserve the
+horizontal edge bytes that MPEG motion-compensation kernels may read. A
+frame-edge half-pel vector can therefore read one byte beyond a tightly sized
+plane and fault when that plane ends at a VM-region boundary.
+
+VideoLAN MR !8159 applies 32 pixels of horizontal padding for MPEG-1/2 while
+waiting for FFmpeg's allocator contract to be corrected. SwiftVLC PR #170
+reports the same mpeg_motion -> ff_put_pixels8_x2_neon signature for MPEG-4
+Part 2, with the faulting address exactly one byte after a width*height luma
+allocation. Apply the narrow allocation workaround to all three codecs. This
+keeps direct rendering enabled and avoids the extra full-frame copy imposed
+by disabling avcodec-dr globally; hardware-decoded paths are unchanged.
+
+Origin: SwiftVLC (harflabs), scripts/patches/0021-avcodec-mpeg-motion-padding.patch
+SwiftVLC is MIT-licensed; this patch modifies VLC and is under VLC's
+LGPL-2.1-or-later. Taken over unchanged into Swiftly's VLCKit build.
+---
+ modules/codec/avcodec/video.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index 8dea45815a..b05449513c 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -296,6 +296,7 @@ static int lavc_GetVideoFormat(decoder_t *dec, video_format_t *restrict fmt,
+ {
+     int width = ctx->coded_width;
+     int height = ctx->coded_height;
++    bool needs_motion_padding = false;
+ 
+     video_format_Init(fmt, 0);
+ 
+@@ -314,6 +315,9 @@ static int lavc_GetVideoFormat(decoder_t *dec, video_format_t *restrict fmt,
+             fmt->i_chroma = VLC_CODEC_XRGB;
+ 
+         avcodec_align_dimensions2(ctx, &width, &height, aligns);
++        needs_motion_padding = ctx->codec_id == AV_CODEC_ID_MPEG1VIDEO ||
++                               ctx->codec_id == AV_CODEC_ID_MPEG2VIDEO ||
++                               ctx->codec_id == AV_CODEC_ID_MPEG4;
+     }
+ 
+     if( width == 0 || height == 0 || width > 8192 || height > 8192 ||
+@@ -325,6 +329,13 @@ static int lavc_GetVideoFormat(decoder_t *dec, video_format_t *restrict fmt,
+         return -1; /* invalid display size */
+     }
+ 
++    /* FFmpeg's SIMD MPEG motion compensation may read beyond the visible
++     * edge. Direct rendering therefore needs horizontal padding in the
++     * libVLC-owned picture, matching FFmpeg-owned frame allocation. Add it
++     * after validating the coded dimensions so 8192-pixel video stays valid. */
++    if (needs_motion_padding)
++        width += 32;
++
+     fmt->i_width = width;
+     fmt->i_height = height;
+     if ( dec->fmt_in->video.i_visible_width != 0 &&
+-- 
+2.50.1
+

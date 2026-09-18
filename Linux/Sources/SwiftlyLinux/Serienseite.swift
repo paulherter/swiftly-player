@@ -433,9 +433,10 @@ extension App {
         //
         // **Ein voller Balken und ein Haken waeren dieselbe Auskunft
         // zweimal** — deshalb der Balken nur, solange nicht gesehen.
+        var balkenteile: [Widget?] = []
         if wahlen.fortschrittAufKacheln, !folge.istGesehen,
            let anteil = folge.gesehenerAnteil {
-            balkenLegen(huelle, breite: 160, anteil: anteil)
+            balkenteile = balkenLegen(huelle, breite: 160, anteil: anteil)
         }
         // Gesehenes tritt zurueck, es verschwindet nicht: 0,45 wie auf dem Mac.
         gtk_widget_set_opacity(huelle, folge.istGesehen ? 0.45 : 1)
@@ -568,7 +569,32 @@ extension App {
             anhaengen(zeile, ladeknopf)
         }
 
+        // **Nach dem Player frischt die Zeile sich selbst auf** — Balken,
+        // Haken, Knopf und die Stelle, an der ein Klick startet. Vorher baute
+        // `nachDemPlayerAuffrischen` die ganze Serienseite neu, und sie sprang
+        // nach oben (bafc898). So bleiben Scrollstelle, Staffel und Fokus.
+        var aktuell = folge
+        var schwebt = false
+        let marke = naechsteSehstandMarke()
+        sehstandZeilen[folge.id] = (marke, { [weak self] neu in
+            guard let self else { return }
+            aktuell = neu
+            for teil in balkenteile { gtk_overlay_remove_overlay(OpaquePointer(huelle), teil) }
+            balkenteile = []
+            if self.wahlen.fortschrittAufKacheln, !neu.istGesehen, let anteil = neu.gesehenerAnteil {
+                balkenteile = balkenLegen(huelle, breite: 160, anteil: anteil)
+            }
+            gesehen = neu.istGesehen
+            gtk_widget_set_opacity(huelle, gesehen ? 0.45 : 1)
+            knopfzustand(knopf, aktiv: gesehen, symbol: "object-select-symbolic")
+            gtk_widget_set_visible(ruhig, !schwebt && gesehen ? 1 : 0)
+        })
+        beiSignal(zeile, "destroy") { [weak self] in
+            if self?.sehstandZeilen[folge.id]?.marke == marke { self?.sehstandZeilen[folge.id] = nil }
+        }
+
         beiZeiger(zeile, herein: {
+            schwebt = true
             gtk_widget_add_css_class(zeile, "swiftly-schwebt")
             gtk_widget_set_visible(knopf, 1)
             gtk_widget_set_visible(ruhig, 0)
@@ -577,6 +603,7 @@ extension App {
             // Der Ladeknopf bleibt stehen. Er wurde hier versteckt — und
             // sobald seine Tafel aufging, verliess der Zeiger die Zeile, der
             // Knopf verschwand und nahm die Tafel mit. Das war „nichts passiert".
+            schwebt = false
             gtk_widget_remove_css_class(zeile, "swiftly-schwebt")
             gtk_widget_set_visible(knopf, 0)
             gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
@@ -584,7 +611,7 @@ extension App {
         })
 
         // **Eine Folge aus der Liste startet an ihrer eigenen Stelle** (A5).
-        beiKlick(zeile) { [weak self] in self?.starte(folge) }
+        beiKlick(zeile) { [weak self] in self?.starte(aktuell) }
         return zeile
     }
 

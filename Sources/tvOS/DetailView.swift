@@ -348,6 +348,9 @@ struct DetailView: View {
                     .padding(.top, Stil.randOben)
             }
         }
+        // Nach dem Player neu holen — er liegt als Ebene darüber, `.task`
+        // läuft kein zweites Mal. Siehe `AppModel.wiedergabeBeendet`.
+        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await auffrischen() } }
         .task {
             withAnimation(.easeOut(duration: 0.3)) { eingeblendet = true }
             async let frischerTitel = model.item(id: item.id)

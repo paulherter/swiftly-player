@@ -391,7 +391,7 @@ extension App {
                 try await client.anfragen(art: t.art, id: t.id, staffeln: staffeln)
                 aufHauptfaden { self.melden(uebersetzt("Angefragt")) }
             } catch {
-                let text = error.localizedDescription
+                let text = lesbarerFehler(error)
                 aufHauptfaden { self.melden(text) }
             }
         }

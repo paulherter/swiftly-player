@@ -237,7 +237,10 @@ func profilbildLaden(_ teile: (huelle: Widget, bild: Widget, zeichen: Widget),
 /// und darauf der Akzent, so breit wie der gesehene Anteil. Drei Punkt hoch —
 /// nicht vier. GTK kennt keinen Anteil als Breitenangabe, aber die Kachel hat
 /// eine feste Breite, also lässt er sich ausrechnen.
-func balkenLegen(_ huelle: Widget!, breite: Int, anteil: Double) {
+/// Gibt Spur und Balken zurueck, damit ein Aufrufer sie wieder abnehmen kann.
+@discardableResult
+func balkenLegen(_ huelle: Widget!, breite: Int, anteil: Double) -> [Widget?] {
+    Pruefzaehler.balken += 1
     let spur: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(spur, "swiftly-balkenspur")
     gtk_widget_set_size_request(spur, -1, 3)
@@ -251,6 +254,7 @@ func balkenLegen(_ huelle: Widget!, breite: Int, anteil: Double) {
     gtk_widget_set_valign(balken, GTK_ALIGN_END)
     gtk_widget_set_halign(balken, GTK_ALIGN_START)
     gtk_overlay_add_overlay(OpaquePointer(huelle), balken)
+    return [spur, balken]
 }
 
 /// **Ein Zeichen statt Leere, wenn der Server kein Bild hat.**

@@ -137,6 +137,26 @@ echo "── Katalog ───────────────────�
 python3 "$(dirname "$0")/katalogpruefen.py" || fehler=1
 echo
 
+# **Android liest denselben Katalog** (`Texte.kt` zieht die `.xcstrings` beim Bau heran). Ein
+# Schluessel, der dort fehlt, steht auf dem Telefon als deutscher Text im englischen Geraet —
+# kein Bau bricht daran. Deshalb hier, statt erst am Geraet.
+echo "── Android-Texte ──────────────────────────────────────"
+if [ -d Android/handy ]; then
+    fehlend=$(grep -rhoE 'uebersetzt\("[^"]+"' Android/handy/src/main/java Android/gemeinsam/src/main/java 2>/dev/null \
+        | sed 's/uebersetzt("//; s/"$//' | sort -u \
+        | while IFS= read -r k; do grep -qF "\"$k\"" Sources/Shared/Localizable.xcstrings || printf '%s\n' "$k"; done)
+    if [ -z "$fehlend" ]; then
+        melden "Android-Schluessel im Katalog" "${gruen}alle da${aus}"
+    else
+        melden "Android-Schluessel im Katalog" "${rot}$(printf '%s\n' "$fehlend" | wc -l | tr -d ' ') fehlen${aus}"
+        printf '%s\n' "$fehlend" | sed 's/^/    /'
+        fehler=1
+    fi
+else
+    melden "Android" "${gelb}kein Ordner${aus}"
+fi
+echo
+
 echo "── Offene Spalten in der Aenderungsliste ──────────────"
 liste="../Notizen/AppStore/Aenderungen.md"
 if [ -f "$liste" ]; then

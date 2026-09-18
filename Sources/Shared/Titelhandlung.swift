@@ -21,12 +21,29 @@ struct Titelhandlung: Identifiable {
     var warnend = false
     let tun: () -> Void
 
+    /// **Wörtlich, nicht nachgeschlagen** — für Namen vom Server. Eine
+    /// Bibliothek namens „Filme" würde als `LocalizedStringKey` im Katalog
+    /// gesucht und auf Englisch zu „Movies".
+    var wortlaut: String?
+
     init(symbol: String, text: LocalizedStringKey, warnend: Bool = false,
          tun: @escaping () -> Void) {
         self.symbol = symbol
         self.text = text
         self.warnend = warnend
         self.tun = tun
+    }
+
+    init(symbol: String, wortlaut: String, tun: @escaping () -> Void) {
+        self.symbol = symbol
+        self.text = LocalizedStringKey(wortlaut)
+        self.wortlaut = wortlaut
+        self.tun = tun
+    }
+
+    /// Was jede Darstellung zeigt: der Wortlaut, wenn es einen gibt.
+    var beschriftung: Text {
+        wortlaut.map { Text(verbatim: $0) } ?? Text(text)
     }
 }
 

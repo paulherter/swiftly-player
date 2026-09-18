@@ -56,45 +56,47 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-# Ansicht : iOS/iPad : tvOS : macOS : Linux+Windows
+# Ansicht : iOS/iPad : tvOS : macOS : Linux+Windows : Android : Android TV
+# Android TV liegt im selben App-Modul (`…/tv/`); wo es keine eigene Seite hat, zeigt die Spalte
+# auf die Telefonseite, die dort laeuft.
 ZUORDNUNG=(
-  "Start:Sources/Shared/HomeView.swift:Sources/tvOS/HomeView.swift:Sources/macOS/HomeView.swift:Linux/Sources/SwiftlyLinux/App.swift"
-  "Detailseite:Sources/Shared/BrowseViews.swift:Sources/tvOS/DetailView.swift:Sources/macOS/DetailView.swift:Linux/Sources/SwiftlyLinux/Detailseite.swift"
-  "Serienseite:Sources/Shared/SeriesView.swift:Sources/tvOS/SerienView.swift:Sources/macOS/SerienView.swift:Linux/Sources/SwiftlyLinux/Serienseite.swift"
+  "Start:Sources/Shared/HomeView.swift:Sources/tvOS/HomeView.swift:Sources/macOS/HomeView.swift:Linux/Sources/SwiftlyLinux/App.swift:Android/handy/src/main/java/de/paulherter/swiftly/StartSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvStart.kt"
+  "Detailseite:Sources/Shared/BrowseViews.swift:Sources/tvOS/DetailView.swift:Sources/macOS/DetailView.swift:Linux/Sources/SwiftlyLinux/Detailseite.swift:Android/handy/src/main/java/de/paulherter/swiftly/TitelSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvSeiten.kt"
+  "Serienseite:Sources/Shared/SeriesView.swift:Sources/tvOS/SerienView.swift:Sources/macOS/SerienView.swift:Linux/Sources/SwiftlyLinux/Serienseite.swift:Android/handy/src/main/java/de/paulherter/swiftly/SerienSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvSerie.kt"
   # Auf Linux liegt sie in `App.swift` — `Bereich.bibliothek` mit
   # `offeneBibliothek`, `bibliotheksrubrik` und `rasterseiteBauen(.bibliothek)`.
   # Hier stand ein `?`, und das meldete "KEINE" wie bei einer fehlenden
   # Ansicht. Am 12.09.2026 hat genau das einen Abgleich in die Irre gefuehrt:
   # die Seite ist seit Tagen da, der Befund sagte das Gegenteil.
-  "Bibliotheksseite:Sources/Shared/BrowseViews.swift:Sources/tvOS/BibliothekView.swift:Sources/macOS/Bibliotheksseite.swift:Linux/Sources/SwiftlyLinux/App.swift"
-  "Bibliotheksliste:Sources/Shared/BrowseViews.swift:Sources/tvOS/BibliothekView.swift:Sources/macOS/BibliothekView.swift:Linux/Sources/SwiftlyLinux/App.swift"
-  "Player:Sources/iOS/PlayerScreen.swift:Sources/tvOS/PlayerScreen.swift:Sources/macOS/PlayerScreen.swift:Linux/Sources/SwiftlyLinux/Spieler.swift"
-  "VLC-Anbindung:Sources/Shared/VLCPlayer.swift:Sources/Shared/VLCPlayer.swift:Sources/Shared/VLCPlayer.swift:Linux/Sources/SwiftlyLinux/Abspieler.swift"
-  "Profil:Sources/Shared/ProfilView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/ProfilView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift"
-  "Einstellungen:Sources/Shared/EinstellungenView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/EinstellungenView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift"
-  "Wiedergabe:Sources/Shared/WiedergabeEinstellungenView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/WiedergabeEinstellungenView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift"
-  "Suche:Sources/Shared/SucheView.swift:Sources/tvOS/SucheView.swift:Sources/macOS/SucheView.swift:Linux/Sources/SwiftlyLinux/App.swift"
-  "Merkliste:Sources/Shared/MerklisteView.swift:Sources/tvOS/MerklisteView.swift:Sources/macOS/MerklisteView.swift:-kein eigenes Gegenstueck, liegt als Bereich-Fall in App.swift (E21)"
-  "Downloads:Sources/Shared/DownloadsView.swift:-:Sources/macOS/Macdownloads.swift:Linux/Sources/SwiftlyLinux/Downloadseite.swift"
-  "Downloadverwaltung:Sources/Shared/Downloadverwaltung.swift:-:Sources/Shared/Downloadverwaltung.swift:Linux/Sources/SwiftlyLinux/Downloadverwaltung.swift"
-  "Seerr-Seite:Sources/Shared/SeerrDetailView.swift:Sources/tvOS/SeerrView.swift:Sources/macOS/SeerrKachelUndSeite.swift:Linux/Sources/SwiftlyLinux/Seerrseite.swift"
-  "Seerr-Zugang:Sources/Shared/SeerrEinstellungenView.swift:-:Sources/macOS/SeerrEinstellungenView.swift:Linux/Sources/SwiftlyLinux/Seerr.swift"
-  "~Rahmen:Sources/Shared/HauptView.swift:Sources/tvOS/HauptView.swift:Sources/macOS/HauptView.swift:Linux/Sources/SwiftlyLinux/App.swift"
-  "Bereiche:Sources/Shared/HauptView.swift:Sources/tvOS/HauptView.swift:Sources/macOS/HauptView.swift:Linux/Sources/SwiftlyLinux/Bereich.swift"
-  "Stil:Sources/Shared/Stil.swift:Sources/tvOS/Stil.swift:Sources/macOS/Stil.swift:Linux/Sources/SwiftlyLinux/Stil.swift"
-  "Bausteine:Sources/Shared/Bausteine.swift:Sources/tvOS/TVBausteine.swift:Sources/macOS/Macbausteine.swift:Linux/Sources/SwiftlyLinux/Bausteine.swift"
-  "Bildlader:Sources/Shared/Netzbild.swift:Sources/Shared/Netzbild.swift:Sources/Shared/Netzbild.swift:Linux/Sources/SwiftlyLinux/Bilder.swift"
-  "Bildfarbe:-:-:Sources/macOS/Bildfarbe.swift:Linux/Sources/SwiftlyLinux/Bildfarbe.swift"
-  "Technikschild:Sources/Shared/Technikschild.swift:-:Sources/macOS/DetailView.swift:Linux/Sources/SwiftlyLinux/Technikschild.swift"
-  "Schluesselbund:Sources/Shared/Keychain.swift:Sources/Shared/Keychain.swift:Sources/Shared/Keychain.swift:Linux/Sources/SwiftlyLinux/Speicher.swift"
-  "Medienleiste:Sources/Shared/Wiedergabezentrale.swift:Sources/Shared/Wiedergabezentrale.swift:Sources/Shared/Wiedergabezentrale.swift:Linux/Sources/SwiftlyLinux/Medienleiste.swift"
-  "Fassung:Sources/Shared/Bausteine.swift:Sources/Shared/Bausteine.swift:Sources/Shared/Bausteine.swift:Linux/Sources/SwiftlyLinux/Fassung.swift"
-  "Startanimation:Sources/Shared/Startanimation.swift:Sources/Shared/Startanimation.swift:Sources/Shared/Startanimation.swift:Linux/Sources/SwiftlyLinux/Startanimation.swift"
-  "Kulisse:Sources/Shared/Heldkopf.swift:Sources/tvOS/Titelreihen.swift:Sources/macOS/Kulisse.swift:Linux/Sources/SwiftlyLinux/Kulisse.swift"
+  "Bibliotheksseite:Sources/Shared/BrowseViews.swift:Sources/tvOS/BibliothekView.swift:Sources/macOS/Bibliotheksseite.swift:Linux/Sources/SwiftlyLinux/App.swift:Android/handy/src/main/java/de/paulherter/swiftly/BibliothekSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvSeiten.kt"
+  "Bibliotheksliste:Sources/Shared/BrowseViews.swift:Sources/tvOS/BibliothekView.swift:Sources/macOS/BibliothekView.swift:Linux/Sources/SwiftlyLinux/App.swift:Android/handy/src/main/java/de/paulherter/swiftly/BibliothekSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvSeiten.kt"
+  "Player:Sources/iOS/PlayerScreen.swift:Sources/tvOS/PlayerScreen.swift:Sources/macOS/PlayerScreen.swift:Linux/Sources/SwiftlyLinux/Spieler.swift:Android/handy/src/main/java/de/paulherter/swiftly/PlayerSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/PlayerSeite.kt"
+  "VLC-Anbindung:Sources/Shared/VLCPlayer.swift:Sources/Shared/VLCPlayer.swift:Sources/Shared/VLCPlayer.swift:Linux/Sources/SwiftlyLinux/Abspieler.swift:Android/handy/src/main/java/de/paulherter/swiftly/PlayerSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/PlayerSeite.kt"
+  "Profil:Sources/Shared/ProfilView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/ProfilView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift:Android/handy/src/main/java/de/paulherter/swiftly/ProfilSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvProfil.kt"
+  "Einstellungen:Sources/Shared/EinstellungenView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/EinstellungenView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift:Android/handy/src/main/java/de/paulherter/swiftly/ProfilSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvProfil.kt"
+  "Wiedergabe:Sources/Shared/WiedergabeEinstellungenView.swift:Sources/tvOS/ProfilView.swift:Sources/macOS/WiedergabeEinstellungenView.swift:Linux/Sources/SwiftlyLinux/Einstellungsseiten.swift:Android/handy/src/main/java/de/paulherter/swiftly/ProfilSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvProfil.kt"
+  "Suche:Sources/Shared/SucheView.swift:Sources/tvOS/SucheView.swift:Sources/macOS/SucheView.swift:Linux/Sources/SwiftlyLinux/App.swift:Android/handy/src/main/java/de/paulherter/swiftly/SuchSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvSeiten.kt"
+  "Merkliste:Sources/Shared/MerklisteView.swift:Sources/tvOS/MerklisteView.swift:Sources/macOS/MerklisteView.swift:-kein eigenes Gegenstueck, liegt als Bereich-Fall in App.swift (E21):Android/handy/src/main/java/de/paulherter/swiftly/MerklisteSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvSeiten.kt"
+  "Downloads:Sources/Shared/DownloadsView.swift:-:Sources/macOS/Macdownloads.swift:Linux/Sources/SwiftlyLinux/Downloadseite.swift:Android/handy/src/main/java/de/paulherter/swiftly/DownloadsSeite.kt:-keine Downloads auf dem Fernseher, wie tvOS"
+  "Downloadverwaltung:Sources/Shared/Downloadverwaltung.swift:-:Sources/Shared/Downloadverwaltung.swift:Linux/Sources/SwiftlyLinux/Downloadverwaltung.swift:Android/handy/src/main/java/de/paulherter/swiftly/Downloads.kt:-keine Downloads auf dem Fernseher, wie tvOS"
+  "Seerr-Seite:Sources/Shared/SeerrDetailView.swift:Sources/tvOS/SeerrView.swift:Sources/macOS/SeerrKachelUndSeite.swift:Linux/Sources/SwiftlyLinux/Seerrseite.swift:Android/handy/src/main/java/de/paulherter/swiftly/SeerrSeiten.kt:Android/handy/src/main/java/de/paulherter/swiftly/SeerrSeiten.kt"
+  "Seerr-Zugang:Sources/Shared/SeerrEinstellungenView.swift:-:Sources/macOS/SeerrEinstellungenView.swift:Linux/Sources/SwiftlyLinux/Seerr.swift:Android/handy/src/main/java/de/paulherter/swiftly/SeerrSeiten.kt:Android/handy/src/main/java/de/paulherter/swiftly/SeerrSeiten.kt"
+  "~Rahmen:Sources/Shared/HauptView.swift:Sources/tvOS/HauptView.swift:Sources/macOS/HauptView.swift:Linux/Sources/SwiftlyLinux/App.swift:Android/handy/src/main/java/de/paulherter/swiftly/Hauptansicht.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvHaupt.kt"
+  "Bereiche:Sources/Shared/HauptView.swift:Sources/tvOS/HauptView.swift:Sources/macOS/HauptView.swift:Linux/Sources/SwiftlyLinux/Bereich.swift:Android/handy/src/main/java/de/paulherter/swiftly/Hauptansicht.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvHaupt.kt"
+  "Stil:Sources/Shared/Stil.swift:Sources/tvOS/Stil.swift:Sources/macOS/Stil.swift:Linux/Sources/SwiftlyLinux/Stil.swift:Android/gemeinsam/src/main/java/de/paulherter/swiftly/gemeinsam/Stil.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvStil.kt"
+  "Bausteine:Sources/Shared/Bausteine.swift:Sources/tvOS/TVBausteine.swift:Sources/macOS/Macbausteine.swift:Linux/Sources/SwiftlyLinux/Bausteine.swift:Android/handy/src/main/java/de/paulherter/swiftly/Seitenbausteine.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvStil.kt"
+  "Bildlader:Sources/Shared/Netzbild.swift:Sources/Shared/Netzbild.swift:Sources/Shared/Netzbild.swift:Linux/Sources/SwiftlyLinux/Bilder.swift:-Coil, kein eigener Code:-Coil, kein eigener Code"
+  "Bildfarbe:-:-:Sources/macOS/Bildfarbe.swift:Linux/Sources/SwiftlyLinux/Bildfarbe.swift:-:-"
+  "Technikschild:Sources/Shared/Technikschild.swift:-:Sources/macOS/DetailView.swift:Linux/Sources/SwiftlyLinux/Technikschild.swift:Android/handy/src/main/java/de/paulherter/swiftly/PlayerSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/PlayerSeite.kt"
+  "Schluesselbund:Sources/Shared/Keychain.swift:Sources/Shared/Keychain.swift:Sources/Shared/Keychain.swift:Linux/Sources/SwiftlyLinux/Speicher.swift:Android/handy/src/main/java/de/paulherter/swiftly/SwiftlyAnwendung.kt:Android/handy/src/main/java/de/paulherter/swiftly/SwiftlyAnwendung.kt"
+  "Medienleiste:Sources/Shared/Wiedergabezentrale.swift:Sources/Shared/Wiedergabezentrale.swift:Sources/Shared/Wiedergabezentrale.swift:Linux/Sources/SwiftlyLinux/Medienleiste.swift:Android/handy/src/main/java/de/paulherter/swiftly/WiedergabeDienst.kt:Android/handy/src/main/java/de/paulherter/swiftly/WiedergabeDienst.kt"
+  "Fassung:Sources/Shared/Bausteine.swift:Sources/Shared/Bausteine.swift:Sources/Shared/Bausteine.swift:Linux/Sources/SwiftlyLinux/Fassung.swift:Android/handy/src/main/java/de/paulherter/swiftly/SwiftlyAnwendung.kt:Android/handy/src/main/java/de/paulherter/swiftly/SwiftlyAnwendung.kt"
+  "Startanimation:Sources/Shared/Startanimation.swift:Sources/Shared/Startanimation.swift:Sources/Shared/Startanimation.swift:Linux/Sources/SwiftlyLinux/Startanimation.swift:Android/handy/src/main/java/de/paulherter/swiftly/Startvorhang.kt:Android/handy/src/main/java/de/paulherter/swiftly/Startvorhang.kt"
+  "Kulisse:Sources/Shared/Heldkopf.swift:Sources/tvOS/Titelreihen.swift:Sources/macOS/Kulisse.swift:Linux/Sources/SwiftlyLinux/Kulisse.swift:Android/handy/src/main/java/de/paulherter/swiftly/TitelSeite.kt:Android/handy/src/main/java/de/paulherter/swiftly/tv/TvStart.kt"
 )
 
 filter="${1:-}"
-PLATTFORMEN=("iOS/iPad" "tvOS" "macOS" "Linux/Win")
+PLATTFORMEN=("iOS/iPad" "tvOS" "macOS" "Linux/Win" "Android" "Android TV")
 
 zeitstempel() {
   local pfad="$1"
@@ -116,26 +118,26 @@ text() {
   echo "$kurz $alter"
 }
 
-printf '%-19s%-21s%-21s%-21s%-21s\n' "Ansicht" "iOS/iPad" "tvOS" "macOS" "Linux/Win"
-printf '%s\n' "------------------------------------------------------------------------------------------------"
+printf '%-19s%-17s%-17s%-17s%-17s%-17s%-17s\n' "Ansicht" "iOS/iPad" "tvOS" "macOS" "Linux/Win" "Android" "Android TV"
+printf '%s\n' "-------------------------------------------------------------------------------------------------------------------------"
 
 ohne=()
 geprueft=()
 kaputt=0
 for zeile in "${ZUORDNUNG[@]}"; do
-  IFS=':' read -r name ios tv mac linux <<< "$zeile"
+  IFS=':' read -r name ios tv mac linux handy fernseher <<< "$zeile"
   grob=0
   case "$name" in "~"*) grob=1; name="${name#\~}";; esac
   [ -n "$filter" ] && [[ "$name" != *"$filter"* ]] && continue
 
-  pfade=("$ios" "$tv" "$mac" "$linux")
+  pfade=("$ios" "$tv" "$mac" "$linux" "$handy" "$fernseher")
   hoechst=0
   for p in "${pfade[@]}"; do
     t=$(zeitstempel "$p"); [ "$t" -gt "$hoechst" ] && hoechst=$t
   done
 
   printf '%-19s' "$name$([ $grob = 1 ] && echo ' ~')"
-  for i in 0 1 2 3; do
+  for i in 0 1 2 3 4 5; do
     p="${pfade[$i]}"
     t=$(zeitstempel "$p")
     [ "$p" = "?" ] && ohne+=("$name — ${PLATTFORMEN[$i]}")
@@ -148,7 +150,7 @@ for zeile in "${ZUORDNUNG[@]}"; do
     # Der Stern nur, wo der Vergleich etwas bedeutet: eine grobe Zeile
     # vergleicht Dateien mit verschiedenem Zuschnitt.
     [ "$grob" = 0 ] && [ "$t" != 0 ] && [ "$t" = "$hoechst" ] && marke="*"
-    printf '%s%-20s' "$marke" "$(text "$p")"
+    printf '%s%-16s' "$marke" "$(text "$p")"
   done
   printf '\n'
 done

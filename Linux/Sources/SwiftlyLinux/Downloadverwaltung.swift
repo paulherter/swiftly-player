@@ -567,7 +567,7 @@ extension Downloadverwaltung: URLSessionDataDelegate {
         do {
             try ziel.write(contentsOf: data)
         } catch {
-            let text = error.localizedDescription
+            let text = lesbarerFehler(error)
             aufHauptfaden { [weak self] in
                 guard let self, let id = self.laufend else { return }
                 self.gescheitert(id, grund: text)
@@ -580,7 +580,7 @@ extension Downloadverwaltung: URLSessionDataDelegate {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        let text = error?.localizedDescription
+        let text = error.map(lesbarerFehler)
         aufHauptfaden { [weak self] in
             guard let self, let id = self.laufend else { return }
             if let text {

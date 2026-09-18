@@ -252,14 +252,25 @@ public struct Textkatalog: Sendable {
 
     // MARK: Lesen
 
-    public init(bundle: Bundle) {
+    /// Ein Katalog ohne Eintraege: jeder Text steht als sein Schluessel da.
+    init(leer sprache: String) {
+        self.sprache = sprache
+        eintraege = [:]
+        mehrzahl = [:]
+    }
+
+    /// - Parameter wunsch: Die Sprache, die die Plattform vorgibt. Auf Android
+    ///   kommt sie aus Kotlin — dort gibt es keine Umgebungsvariable, aus der
+    ///   `systemsprachen()` lesen koennte.
+    public init(bundle: Bundle, sprache wunsch: String? = nil) {
         let vorhanden = Set(bundle.localizations)
         // **Eine lokale Konstante, kein `self.sprache`.** Die Hilfsfunktion
         // unten liest sie; griffe sie über `self` darauf zu, verlangte der
         // Compiler die vollständige Initialisierung, bevor das erste Feld
         // steht.
-        let gewaehlt = Self.sprachwuensche(aus: ProcessInfo.processInfo.environment,
-                                           system: Self.systemsprachen())
+        let gewaehlt = wunsch.flatMap { vorhanden.contains($0) ? $0 : nil }
+            ?? Self.sprachwuensche(aus: ProcessInfo.processInfo.environment,
+                                   system: Self.systemsprachen())
             .first { vorhanden.contains($0) } ?? bundle.developmentLocalization ?? "de"
         sprache = gewaehlt
 

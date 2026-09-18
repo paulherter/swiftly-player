@@ -122,6 +122,8 @@ enum Bildspeicher {
 
     static func holen(_ schluessel: String) -> OpaquePointer? { texturen[schluessel] }
 
+    static var anzahl: Int { texturen.count }
+
     /// Nimmt die Textur **mitsamt unserer Referenz** — der Aufrufer gibt sie
     /// nicht mehr frei. Das Bildfeld hält sich seine eigene.
     static func legen(_ schluessel: String, _ textur: OpaquePointer) {
@@ -170,7 +172,11 @@ func bildSetzen(_ bildfeld: Widget!, daten: Data, schluessel: String) {
         defer { g_bytes_unref(bytes) }
 
         var fehler: UnsafeMutablePointer<GError>?
-        guard let textur = gdk_texture_new_from_bytes(bytes, &fehler) else {
+        let gelesen = gdk_texture_new_from_bytes(bytes, &fehler)
+        #if DEBUG
+        Pruefzaehler.bild(daten, gelesen: gelesen != nil)
+        #endif
+        guard let textur = gelesen else {
             if let fehler {
                 let text = fehler.pointee.message.map { String(cString: $0) } ?? "unbekannt"
                 FileHandle.standardError.write(Data("Bild ließ sich nicht lesen: \(text)\n".utf8))

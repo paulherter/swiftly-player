@@ -3156,10 +3156,13 @@ struct Leerzustand: View {
                 Image(systemName: symbol)
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(Stil.schriftLeise)
-                    .opacity(laedt ? 0.45 : 1)
+                    // Eingegrenzt auf die Deckkraft — dieselbe Falle wie in
+                    // `Ladefeld`: eine Endlosschleife per `value:` erfasst
+                    // alles, was sich im selben Zug an der Ansicht ändert.
                     .animation(laedt ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
-                                     : Stil.einblenden,
-                               value: laedt)
+                                     : Stil.einblenden) {
+                        $0.opacity(laedt ? 0.45 : 1)
+                    }
             }
 
             Text(kopfzeile)
@@ -3306,12 +3309,23 @@ struct Ladefeld: View {
     var body: some View {
         RoundedRectangle(cornerRadius: ecke)
             .fill(Stil.flaeche)
-            .opacity(hell ? 1 : 0.5)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-                    hell = true
-                }
+            // **Die Endlosschleife gilt nur der Deckkraft.** Vorher startete
+            // `onAppear` sie mit `withAnimation(…repeatForever)` — und wer
+            // gerade aus der Anmeldung kam, stand dabei mitten im animierten
+            // Phasenwechsel (`RootView`, `.animation(value: model.phase)`).
+            // Unter iOS 18 nahm die Endlos-Transaktion die Rahmen und Ränder
+            // dieses Übergangs mit: die ganze Startseite fuhr in Dauerschleife
+            // hoch und runter, gemessen am 15.09.2026 im iOS-18.6-Simulator —
+            // oberer Rand 120 ↔ 58, Höhe 654 ↔ 640, der Inhalt still. Nach
+            // einem Neustart gab es keinen Übergang, also auch kein Pendeln.
+            // Der eingegrenzte `animation(_:body:)` kann nichts ausserhalb
+            // seines Blocks erfassen.
+            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                $0.opacity(hell ? 1 : 0.5)
             }
+            // Ohne Transaktion setzen, nicht im Übergang: `task` läuft nach
+            // dem Einfügen, nicht in dessen Animation.
+            .task { hell = true }
             // Für die Sprachausgabe ist ein Platzhalter nichts — sie soll
             // „Lädt" hören, und das sagt der Rahmen darum.
             .accessibilityHidden(true)

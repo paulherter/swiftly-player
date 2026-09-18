@@ -1,10 +1,16 @@
 import JellyfinKit
+import StoreKit
 import SwiftUI
 
 struct RootView: View {
     @State private var model = AppModel()
     /// Der Vorhang liegt über allem, bis die Animation durch ist.
     @State private var gestartet = false
+    #if os(iOS)
+    /// Apples eigene Bewertungsabfrage. Wann sie kommt, entscheidet
+    /// `Bewertungsfrage` im Paket; Apple zeigt sie höchstens dreimal im Jahr.
+    @Environment(\.requestReview) private var bewerten
+    #endif
 
     /// Nur hier gelesen. Die Ansichten fragen `\.breit` ab, damit die Regel
     /// an einer Stelle steht und nicht in jeder Ansicht neu.
@@ -41,6 +47,19 @@ struct RootView: View {
         // nichts davon wissen muessen. Gelesen wird sie dort, wo der Balken
         // entsteht. Siehe `EnvironmentValues.fortschrittAufKacheln`.
         .environment(\.fortschrittAufKacheln, model.fortschrittAufKacheln)
+        #if os(iOS)
+        // **Erst nach dem Player, und mit einem Atemzug Abstand.** Die Frage
+        // kommt, wenn jemand gerade etwas zu Ende geschaut hat — nicht mitten
+        // in der Wiedergabe und nicht beim Start.
+        .onChange(of: model.bewertungFaellig) { _, jetzt in
+            guard jetzt else { return }
+            model.bewertungFaellig = false
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                bewerten()
+            }
+        }
+        #endif
         .overlay {
             #if os(iOS)
             if !gestartet {

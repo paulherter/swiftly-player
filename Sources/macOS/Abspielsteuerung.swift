@@ -27,6 +27,12 @@ final class Abspielsteuerung {
     /// sonst von vorn. Wörtlich die Regel der iPhone-Fassung.
     func starte(_ item: Item, ab: Double? = nil) {
         Task {
+            // **Die Stelle frisch holen, wenn keine vorgegeben ist** (Audit
+            // 16.09., T2-M5). Die aus der Kachel kann alt sein: auf dem Handy
+            // weitergeschaut, am Mac geklickt, bevor die Startseite neu lud —
+            // und der Film begann an der alten Stelle. iOS und tvOS holen sie
+            // schon so; hier nebenher zum Plan, damit es nicht länger dauert.
+            async let frisch = ab == nil ? model.item(id: item.id) : nil
             guard let plan = await model.plan(for: item.id) else {
                 // Der Fehler nennt den Server, nicht nur „ging nicht" — sonst
                 // weiß man bei mehreren Servern nicht, welcher gemeint ist.
@@ -34,8 +40,9 @@ final class Abspielsteuerung {
                 fehler = String(localized: "Die Wiedergabe hat nicht geklappt — \(wo) hat keinen Plan geliefert.")
                 return
             }
-            wunsch = Abspielwunsch(item: item, plan: plan,
-                                   startAt: ab ?? item.fortsetzenAb ?? 0)
+            let frischer = await frisch
+            let stelle = ab ?? (frischer ?? item).fortsetzenAb ?? 0
+            wunsch = Abspielwunsch(item: item, plan: plan, startAt: stelle)
         }
     }
 

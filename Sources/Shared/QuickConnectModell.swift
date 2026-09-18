@@ -18,7 +18,7 @@ import Observation
 final class QuickConnectModell {
     private(set) var vorgang: Anmeldecode?
     private(set) var fehler: String?
-    private(set) var restsekunden = 300
+    private(set) var restsekunden = Quickconnectfrist.sekunden
     /// Gesetzt, sobald jemand den Code freigegeben hat. Die Ansicht meldet
     /// damit an.
     private(set) var freigegeben: Anmeldecode?
@@ -26,60 +26,66 @@ final class QuickConnectModell {
     /// verbunden ist. Siehe `ServerAufnahmeView`.
     var neuerServer = false
 
-    /// Zählt hoch, wenn ein neuer Code geholt wird — die alte Warteschleife
-    /// sieht daran, dass sie überholt ist, und hört auf.
+    /// Zählt hoch, wenn ein neuer Code geholt wird — ein überholter Start
+    /// sieht daran, dass er überholt ist, und hört auf.
     private var lauf = 0
+    /// Das laufende Warten. Wird beim Anhalten abgebrochen, damit keine
+    /// Nachfrage mehr rausgeht und eine späte Freigabe niemanden anmeldet.
+    private var warteaufgabe: Task<Void, Never>?
 
     func neuStarten(_ model: AppModel) async {
-        lauf += 1
+        anhalten()
         let meiner = lauf
         fehler = nil
         vorgang = nil
         freigegeben = nil
-        restsekunden = 300
+        restsekunden = Quickconnectfrist.sekunden
         do {
             let neu = try await (neuerServer ? model.quickConnectStartenAmNeuenServer()
                                              : model.quickConnectStarten())
             guard meiner == lauf else { return }
             vorgang = neu
-            await warten(auf: neu, lauf: meiner, model: model)
+            let aufgabe = Task { await warten(auf: neu, lauf: meiner, model: model) }
+            warteaufgabe = aufgabe
+            // `.task` der Ansicht bricht ab → das Warten auch.
+            await withTaskCancellationHandler { await aufgabe.value }
+                onCancel: { aufgabe.cancel() }
         } catch {
             guard meiner == lauf else { return }
             fehler = model.lesbar(error)
         }
     }
 
-    /// Die Uhr läuft im Sekundentakt, gefragt wird jede zweite Sekunde.
-    ///
-    /// Jellyfin bietet für Quick Connect keinen Rückkanal an, es bleibt beim
-    /// Nachfragen. Jede Sekunde wären über fünf Minuten dreihundert Anfragen
-    /// für nichts; zwei Sekunden merkt niemand, und die Restzeit läuft
-    /// trotzdem sichtbar weiter.
+    /// **Der Ablauf steht im Paket** (`Quickconnectwarten`): Frist an der
+    /// Uhr, Nachfrage im Takt und sofort nach der Rückkehr aus dem Browser,
+    /// ein Netzfehler beendet das Warten nicht. Vorher brach hier der erste
+    /// gescheiterte Abruf alles ab — auf dem iPhone genau beim Zurückkommen
+    /// aus Safari, wenn die Verbindung im Hintergrund getrennt war.
     private func warten(auf vorgang: Anmeldecode, lauf meiner: Int, model: AppModel) async {
-        while restsekunden > 0 {
-            try? await Task.sleep(for: .seconds(1))
+        let amNeuen = neuerServer
+        let strom = Quickconnectwarten.ablauf {
+            await (amNeuen ? model.quickConnectNachfragenAmNeuenServer(vorgang)
+                           : model.quickConnectNachfragen(vorgang))
+        }
+        for await ereignis in strom {
             guard meiner == lauf, !Task.isCancelled else { return }
-            restsekunden -= 1
-            guard restsekunden % 2 == 0 else { continue }
-            do {
-                let frei = try await (neuerServer ? model.quickConnectFreigegebenAmNeuenServer(vorgang)
-                                                  : model.quickConnectFreigegeben(vorgang))
-                if frei {
-                    guard meiner == lauf else { return }
-                    lauf += 1
-                    freigegeben = vorgang
-                    return
-                }
-            } catch {
-                guard meiner == lauf else { return }
+            switch ereignis {
+            case let .rest(sekunden):
+                restsekunden = sekunden
+            case .freigegeben:
                 lauf += 1
-                fehler = model.lesbar(error)
-                return
+                freigegeben = vorgang
+            case let .ende(letzte):
+                restsekunden = 0
+                fehler = Quickconnectfrist.schlusstext(letzte: letzte)
             }
         }
-        fehler = String(localized: "Der Code ist abgelaufen. Hol dir einen neuen.")
     }
 
     /// Hält eine laufende Warteschleife an — beim Schließen der Ansicht.
-    func anhalten() { lauf += 1 }
+    func anhalten() {
+        lauf += 1
+        warteaufgabe?.cancel()
+        warteaufgabe = nil
+    }
 }

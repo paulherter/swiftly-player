@@ -99,6 +99,8 @@ struct Chip: View {
     /// unter dem Zeiger und zu dem, was VoiceOver vorliest.
     var nurSymbol = false
     let aktiv: Bool
+    /// Countdown im Player: die Uhr der Füllung von links (`Fuellungsuhr`).
+    var fuellung: Fuellungsuhr? = nil
     let auswahl: () -> Void
 
     @State private var schwebt = false
@@ -118,6 +120,20 @@ struct Chip: View {
             .foregroundStyle(aktiv ? Stil.grund : (schwebt ? Stil.schrift : Stil.schriftLeise))
             .background(aktiv ? Stil.schrift : (schwebt ? Stil.schrift.opacity(0.06) : .clear),
                         in: Capsule())
+            .background {
+                if let fuellung {
+                    // Durchgehend aus der Uhr, in Akzentfarbe halb deckend —
+                    // wie auf iOS (Paul, 17.09.2026).
+                    TimelineView(.animation) { zeit in
+                        GeometryReader { g in
+                            Rectangle()
+                                .fill(Stil.akzent.opacity(0.5))
+                                .frame(width: g.size.width * fuellung.anteil(jetzt: zeit.date))
+                        }
+                    }
+                    .clipShape(Capsule())
+                }
+            }
             .overlay(Capsule().strokeBorder(aktiv ? .clear : Stil.rand, lineWidth: 1))
             .contentShape(Capsule())
         }
@@ -608,7 +624,7 @@ struct Handlungszeile: View {
                 Image(systemName: handlung.symbol)
                     .font(.system(size: 14))
                     .frame(width: 18)
-                Text(handlung.text).font(Stil.koerper)
+                handlung.beschriftung.font(Stil.koerper)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(handlung.warnend ? Stil.warnung : Stil.schrift)

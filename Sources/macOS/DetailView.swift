@@ -46,6 +46,11 @@ struct DetailView: View {
             }
         }
         .task { if voll == nil { voll = await model.item(id: item.id) } }
+        // Nach dem Player den Titel neu holen — er liegt als Ebene darüber,
+        // `.task` läuft nicht neu. Siehe `AppModel.wiedergabeBeendet`.
+        .onChange(of: model.wiedergabeBeendet) { _, _ in
+            Task { if let neu = await model.item(id: item.id) { voll = neu } }
+        }
     }
 }
 
@@ -353,7 +358,8 @@ struct Heldenkopf: View {
                 .padding(.top, Stil.titelHoehe + 98)
         }
         .frame(height: Stil.heldHoehe, alignment: .topLeading)
-        .task(id: titel.id) {
+        // Auch am Stand: nach dem Player kommt derselbe Titel frisch zurück.
+        .task(id: "\(titel.id)|\(titel.istGesehen)|\(model.wiedergabeBeendet)") {
             merkliste = titel.userData?.isFavorite ?? false
             gesehen = titel.istGesehen
             if titel.type == "Series" {

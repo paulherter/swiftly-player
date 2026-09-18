@@ -147,7 +147,7 @@ struct BibliothekView: View {
                         .buttonStyle(.plain)
                         .task {
                             // Nachschub steht, bevor man unten ankommt.
-                            if eintrag.id == regal.nachladenAb(spalten: geschaetzteSpalten) {
+                            if regal.loestNachladenAus(eintrag.id, spalten: geschaetzteSpalten) {
                                 await regal.nachladen(model, art: art, bibliothek: gewaehlt)
                             }
                         }

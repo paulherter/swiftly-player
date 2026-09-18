@@ -61,6 +61,16 @@ struct StaffelwahlTests {
         #expect(Staffelwahlregel.waehle(aus: alle, stand: stand)?.id == "s5")
     }
 
+    /// Audit T2-M4: Die Folge kommt ohne `SeasonId`, man schaut aber gerade
+    /// eine andere Staffel. Die Nummer des Hinweises schlägt die Kennung des
+    /// Stands — die alten Kopien auf iOS und tvOS prüften andersherum.
+    @Test("Hinweisnummer schlägt Kennung des Stands")
+    func hinweisnummerVorStand() {
+        let stand = folge(seasonID: "s5", staffelnummer: 5)
+        #expect(Staffelwahlregel.waehle(aus: alle, hinweisID: nil, hinweisNummer: 6,
+                                        stand: stand)?.id == "s6")
+    }
+
     @Test("Ohne alles bleibt die erste")
     func rueckfall() {
         #expect(Staffelwahlregel.waehle(aus: alle)?.id == "s1")

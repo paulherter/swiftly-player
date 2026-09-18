@@ -54,12 +54,12 @@ extension JellyfinClient {
             // Der Server antwortet mit true oder false, nicht mit einem Fehler.
             let text = String(data: daten, encoding: .utf8)?.lowercased() ?? ""
             if text.contains("false") {
-                throw JellyfinError.transport("Der Code ist abgelaufen oder falsch.")
+                throw JellyfinError.transport(uebersetzt("Der Code ist abgelaufen oder falsch."))
             }
         case 403:
             throw JellyfinError.transport("Der Server hat die Freigabe abgelehnt.")
         case 503:
-            throw JellyfinError.transport("Der Server hat Quick Connect abgeschaltet.")
+            throw JellyfinError.transport(uebersetzt("Der Server hat Quick Connect abgeschaltet."))
         default:
             throw JellyfinError.http(status: http.statusCode,
                                      body: String(data: daten.prefix(200), encoding: .utf8))

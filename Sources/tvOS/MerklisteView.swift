@@ -131,7 +131,9 @@ struct MerklisteView: View {
                     Text(stand.sortierung.beschriftung)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(Stil.schrift.opacity(0.6))
+                        // Folgt der Schrift — fest halbweiss verschwand
+                        // der Pfeil auf der weissen Fokusflaeche.
+                        .opacity(0.6)
                 }
             }
             .buttonStyle(KnopfStil(hoehe: Stil.chipHoehe))
@@ -170,7 +172,7 @@ struct MerklisteView: View {
                 }
                 .buttonStyle(KachelStil())
                 .onAppear {
-                    guard item.id == stand.nachladenAb(spalten: Stil.gitterSpalten)
+                    guard stand.loestNachladenAus(item.id, spalten: Stil.gitterSpalten)
                     else { return }
                     Task { await stand.nachladen(model) }
                 }

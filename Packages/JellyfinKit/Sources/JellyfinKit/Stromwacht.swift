@@ -87,4 +87,23 @@ public enum Stromwacht {
         if pufferWuchsVor < pufferruhe { return .pufferWaechst }
         return .neuVerbinden
     }
+
+    // MARK: Bildfluss (Audit 16.09., T1-M5)
+
+    /// Stehen die Bilder, während die Uhr läuft?
+    ///
+    /// `nil`: nichts zu sagen — kein Vorwert, oder dieses Medium hat noch nie
+    /// ein Bild gezeigt. Ohne diese zweite Sperre galt ein Titel ohne Bildspur
+    /// (oder mit einem Bild, das VLC nicht dekodiert) als toter Strom, und
+    /// der Player baute ihn alle paar Sekunden neu auf.
+    public static func bilderStehen(vorher: UInt64?, jetzt: UInt64) -> Bool? {
+        guard let vorher, vorher > 0 else { return nil }
+        return jetzt == vorher
+    }
+
+    /// Neue Bytes seit dem letzten Blick. Ein neues Medium zählt von null;
+    /// die rohe Differenz lief dann unter null, und Swift bricht dabei ab.
+    public static func zuwachs(_ jetzt: UInt64, seit vorher: UInt64) -> UInt64 {
+        jetzt >= vorher ? jetzt - vorher : 0
+    }
 }

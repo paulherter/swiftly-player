@@ -348,6 +348,7 @@ enum Bildtakt {
     private static func kennung(text: String?) -> CMVideoCodecType {
         switch text?.lowercased() {
         case "h264", "avc", "avc1": return kCMVideoCodecType_H264
+        case "hevc", "h265":        return kCMVideoCodecType_HEVC
         case "mpeg4", "msmpeg4v3":  return kCMVideoCodecType_MPEG4Video
         case "vp9":                 return kCMVideoCodecType_VP9
         case "av1":                 return kCMVideoCodecType_AV1
@@ -355,18 +356,12 @@ enum Bildtakt {
         }
     }
 
+    /// VLCs Kennung liegt niederwertiges Byte zuerst (`VLC_FOURCC`). Hier
+    /// stand bis zum 16.09.2026 eine eigene Lesung vom hochwertigen Byte her
+    /// — aus `h264` wurde `462h`, und jede Datei ging als HEVC durch. Die
+    /// Lesung liegt jetzt geprüft im Paket (`VLCKennung`), die Zuordnung ist
+    /// dieselbe wie für den Text des Servers.
     private static func kennung(_ fourcc: UInt32) -> CMVideoCodecType {
-        let zeichen = String(bytes: [UInt8((fourcc >> 24) & 0xFF),
-                                     UInt8((fourcc >> 16) & 0xFF),
-                                     UInt8((fourcc >> 8) & 0xFF),
-                                     UInt8(fourcc & 0xFF)],
-                             encoding: .ascii)?.lowercased() ?? ""
-        switch zeichen {
-        case "h264", "avc1", "x264": return kCMVideoCodecType_H264
-        case "mp4v", "divx", "xvid": return kCMVideoCodecType_MPEG4Video
-        case "vp09", "vp90":         return kCMVideoCodecType_VP9
-        case "av01":                 return kCMVideoCodecType_AV1
-        default:                     return kCMVideoCodecType_HEVC
-        }
+        kennung(text: VLCKennung.videocodec(fourcc))
     }
 }

@@ -91,7 +91,7 @@ struct MerklisteView: View {
                         }
                         .buttonStyle(.plain)
                         .task {
-                            if eintrag.id == stand.nachladenAb(spalten: 6) {
+                            if stand.loestNachladenAus(eintrag.id, spalten: 6) {
                                 await stand.nachladen(model)
                             }
                         }

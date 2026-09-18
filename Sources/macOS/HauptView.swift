@@ -696,9 +696,9 @@ extension HauptView {
     fileprivate func hierWeiterschauen(_ sitzung: Fremdsitzung) {
         auswahlOffen = false
         Task {
-            guard let (titel, ab) = await uebernahme.uebernehmen(sitzung, model: model)
+            guard let wunsch = await uebernahme.wunsch(fuer: sitzung, model: model)
             else { return }
-            steuerung.starte(titel, ab: ab)
+            steuerung.wunsch = wunsch
         }
     }
 }

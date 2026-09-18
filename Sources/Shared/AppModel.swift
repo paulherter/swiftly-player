@@ -39,7 +39,22 @@ final class AppModel {
     /// Untertitel nur einschalten, wenn der Ton nicht in der gewünschten
     /// Sprache läuft.
     var untertitelAutomatisch: Bool { didSet { merken(untertitelAutomatisch, "utAuto") } }
-    var naechsteAutomatisch: Bool { didSet { merken(naechsteAutomatisch, "naechsteAuto") } }
+    /// Ob am Ende von selbst weitergeschaltet wird. Regel in `Weiterschalten`:
+    /// eigene Wahl vor Konto-Einstellung vor „an".
+    var naechsteAutomatisch: Bool {
+        get { Weiterschalten.gilt(eigeneWahl: naechsteAutomatischGewaehlt, konto: naechsteAutomatischKonto) }
+        set { naechsteAutomatischGewaehlt = newValue }
+    }
+    /// Nur gesetzt, wenn jemand den Schalter in Swiftly umgelegt hat.
+    private var naechsteAutomatischGewaehlt: Bool? {
+        didSet { if let naechsteAutomatischGewaehlt { merken(naechsteAutomatischGewaehlt, "naechsteAuto") } }
+    }
+    /// `EnableNextEpisodeAutoPlay` des Kontos. Nicht gespeichert: sie kommt
+    /// bei jedem Start frisch, und ein anderes Konto hat eine andere.
+    private var naechsteAutomatischKonto: Bool?
+    /// Steht auf `true`, sobald nach einem fertig geschauten Titel die Frage
+    /// nach einer Bewertung dran ist. Die Wurzel fragt und setzt zurück.
+    var bewertungFaellig = false
 
     /// „Zuletzt hinzugefügt" getrennt nach Filmen und Serien.
     ///
@@ -200,6 +215,22 @@ final class AppModel {
     /// vorige Konto.
     private(set) var kontowechsel = 0
 
+    /// **Zählt jede beendete Wiedergabe — erst, wenn der Server sie kennt.**
+    ///
+    /// Am 16.09.2026 gemeldet: aus einer Folge nach sechs, sieben Minuten
+    /// raus, und die Serienseite zeigte sie weiter als ungesehen. Gemessen am
+    /// Simulator gegen den Testserver: die Endmeldung kam an, der Server
+    /// führte die Stelle auf die Sekunde (399 s gemeldet, 399 s gespeichert).
+    /// Falsch war nur die Seite darunter — sie hatte ihren Stand **vor** der
+    /// Wiedergabe geholt und nie wieder: der Player liegt auf tvOS und macOS
+    /// als Ebene über der stehenbleibenden Seite, `.task` läuft nicht neu.
+    ///
+    /// Gezählt wird nach der Endmeldung und nicht beim Schließen des
+    /// Players: wer beim Schließen neu lädt, fragt, bevor die Meldung
+    /// angekommen ist, und bekommt den Stand des letzten Takts — bis zu zehn
+    /// Sekunden zu früh. Seiten mit Fortschritt hängen ihr Auffrischen hier an.
+    private(set) var wiedergabeBeendet = 0
+
     /// **Die Quelle der Wahrheit dafür, wer angemeldet ist.**
     ///
     /// `session` bleibt daneben stehen, weil die halbe App sie liest; sie
@@ -257,7 +288,9 @@ final class AppModel {
         tonSprache = ablage.string(forKey: "tonSprache") ?? ""
         untertitelSprache = ablage.string(forKey: "utSprache") ?? ""
         untertitelAutomatisch = ablage.object(forKey: "utAuto") as? Bool ?? false
-        naechsteAutomatisch = ablage.object(forKey: "naechsteAuto") as? Bool ?? true
+        // **Nie gesetzt heißt nicht „an".** Dann gilt die Einstellung des
+        // Jellyfin-Kontos (T3 #15); wer den Schalter umgelegt hat, behält ihn.
+        naechsteAutomatischGewaehlt = ablage.object(forKey: "naechsteAuto") as? Bool
         // **Getrennt ist die Vorgabe**, seit dem 11.09.2026. Wer es ausdrücklich
         // ausgeschaltet hat, behält das; wer es nie angefasst hat, bekommt die
         // beiden Reihen.
@@ -309,7 +342,7 @@ final class AppModel {
             await nachmeldungenAbschicken()
             return String(localized: "Erreichbar — Jellyfin \(info.version ?? "?")")
         } catch {
-            return error.localizedDescription
+            return lesbar(error)
         }
     }
 
@@ -570,9 +603,9 @@ final class AppModel {
         return try await aufnahme.quickConnectStarten()
     }
 
-    func quickConnectFreigegebenAmNeuenServer(_ vorgang: Anmeldecode) async throws -> Bool {
-        guard let aufnahme else { return false }
-        return try await aufnahme.quickConnectFreigegeben(vorgang)
+    func quickConnectNachfragenAmNeuenServer(_ vorgang: Anmeldecode) async -> Quickconnectstand {
+        guard let aufnahme else { return .gescheitert }
+        return await aufnahme.quickConnectNachfragen(vorgang)
     }
 
     func anmeldenMitQuickConnectAmNeuenServer(_ vorgang: Anmeldecode) async -> Bool {
@@ -633,8 +666,12 @@ final class AppModel {
         fern = steuerung
         await steuerung.starten { [weak self] befehl in
             Task { @MainActor in
+                // Gemeldet wird, was der Befehl ausloest: Pause und Weiter
+                // ueber `laufzustandGemeldet`, Spruenge ueber
+                // `sprungGemeldet`. Frueher stand hier eine eigene Meldung
+                // nach 400 ms aus `Spielstand` — die ging nach einem
+                // Folgenwechsel mit der neuen Stelle an die alte Folge (T1-M9).
                 self?.fernbefehl?(befehl)
-                await self?.sofortMelden(nach: befehl)
             }
         }
     }
@@ -648,10 +685,15 @@ final class AppModel {
         guard let client else { return }
         isWorking = true
         defer { isWorking = false }
+        // Nebenher und ohne Fehlermeldung: kommt nichts, bleibt es wie es war.
+        Task {
+            naechsteAutomatischKonto = await client.kontovorgaben()?.naechsteFolgeAutomatisch
+            Protokoll.schreib("[Konto] Nächste Folge automatisch: \(String(describing: naechsteAutomatischKonto))")
+        }
         do {
             views = try await client.userViews()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = lesbar(error)
         }
     }
 
@@ -675,7 +717,7 @@ final class AppModel {
             try await client.metadatenAuffrischen(item.id)
             return String(localized: "Der Server liest die Metadaten neu ein.")
         } catch {
-            return error.localizedDescription
+            return lesbar(error)
         }
     }
 
@@ -765,13 +807,13 @@ final class AppModel {
 
     private func kopfbildErsatzSuchen(for item: Item) async -> URL? {
         guard let bilder else { return nil }
+        var folge: Item?
         if item.type == "Series", let client {
-            var folge: Item?
             if let naechste = try? await client.naechsteFolgeDerSerie(seriesID: item.id) { folge = naechste }
             if folge == nil { folge = (try? await client.folgen(seriesID: item.id))?.first }
-            if let folge, let url = Bildwahl.quer(folge, adressen: bilder, breite: 1200)?.url { return url }
         }
-        return Bildwahl.hochkant(item, adressen: bilder, maxHoehe: 1200)
+        // Welches Bild gilt, steht im Paket — dieselbe Regel wie auf Android.
+        return Bildwahl.kopfMitErsatz(item, folge: folge, adressen: bilder)
     }
 
     /// Der eine Ort, an dem Bildadressen entstehen.
@@ -779,6 +821,15 @@ final class AppModel {
     /// Vorher taten das fünf fast gleiche Blöcke, und zwei davon hängten das
     /// Zugangsmerkmal nicht an — was nur solange gutging, wie der Server
     /// Bilder auch unangemeldet herausgibt.
+    /// Externe Untertiteldateien eines Plans, mit voller Adresse — der
+    /// Player hängt sie beim Öffnen an (T1-H4). Von der Platte keine.
+    func untertiteldateien(_ plan: PlaybackPlan) -> [Untertiteldatei] {
+        guard let session, !plan.url.isFileURL else { return [] }
+        return Untertiteldatei.aus(stroeme: plan.quelle?.mediaStreams ?? [],
+                                   server: session.serverURL, schluessel: session.accessToken,
+                                   merkmal: VLCPlayerView.untertitelmerkmal)
+    }
+
     private var bilder: Bildadresse? {
         guard let session else { return nil }
         return Bildadresse(basis: session.serverURL, token: session.accessToken)
@@ -1097,7 +1148,7 @@ final class AppModel {
             return plan
         } catch {
             Self.log.error("PlaybackInfo fehlgeschlagen für \(itemID, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            errorMessage = error.localizedDescription
+            errorMessage = lesbar(error)
             return nil
         }
     }
@@ -1130,8 +1181,79 @@ final class AppModel {
     // Schlägt eine Meldung fehl, ist das kein Grund, die Wiedergabe zu stören —
     // deshalb wird der Fehler hier nur vermerkt, nicht angezeigt.
 
-    func reportStart(item: Item, plan: PlaybackPlan, seconds: Double) async {
-        guard let client else { return }
+    /// Was eine Meldung an den Server braucht. Der Client wird beim Einreihen
+    /// festgehalten: wechselt danach das Konto, gehoert die Meldung trotzdem
+    /// dem, der geschaut hat.
+    struct Meldeinhalt: Sendable {
+        let client: JellyfinClient?
+        let item: Item
+        let plan: PlaybackPlan
+        let sekunden: Double
+        let spuren: Spurindizes
+    }
+
+    private enum Meldefehler: Error { case keinServer }
+
+    /// **Abgesetzt, nicht abgewartet** (Audit 16.09., T1-H2). Die Reihe steht
+    /// im Paket (`Meldewarteschlange`): Reihenfolge, Zusammenfassen, Frist
+    /// und die Stoppsperre je PlaySession. Hier steht nur, was gesendet wird.
+    @ObservationIgnored private let meldungen = Meldewarteschlange<Meldeinhalt> { meldung in
+        let inhalt = meldung.nutzlast
+        guard let client = inhalt.client else { throw Meldefehler.keinServer }
+        #if DEBUG
+        // Messlauf: ein Server, der nicht antwortet (tvOS `-messlauf`).
+        if ProcessInfo.processInfo.arguments.contains("-meldungenHaengen") {
+            try await Task.sleep(for: .seconds(30))
+        }
+        #endif
+        let item = inhalt.item, plan = inhalt.plan
+        let ticks = JellyfinClient.ticks(fromSeconds: inhalt.sekunden)
+        switch meldung.art {
+        case .start:
+            try await AppModel.startSenden(client: client, item: item, plan: plan, ticks: ticks,
+                                           spuren: inhalt.spuren)
+            Protokoll.schreib("[Melden] Start \(Int(inhalt.sekunden)) s \(item.id) session \(plan.playSessionID ?? "nil")"
+                + " Spuren \(inhalt.spuren.ton.map(String.init) ?? "—")/\(inhalt.spuren.untertitel.map(String.init) ?? "—")")
+        case let .fortschritt(pausiert):
+            try await client.reportProgress(itemID: item.id, plan: plan,
+                                            positionTicks: ticks, paused: pausiert, spuren: inhalt.spuren)
+            Protokoll.schreib("[Melden] Progress \(Int(inhalt.sekunden)) s pausiert \(pausiert) \(item.id)"
+                + " Spuren \(inhalt.spuren.ton.map(String.init) ?? "—")/\(inhalt.spuren.untertitel.map(String.init) ?? "—")")
+        case .stopp:
+            try await client.reportStopped(itemID: item.id, plan: plan, positionTicks: ticks)
+        }
+    }
+
+    private func meldung(_ art: Meldewarteschlange<Meldeinhalt>.Art, item: Item,
+                         plan: PlaybackPlan, seconds: Double) -> Meldewarteschlange<Meldeinhalt>.Meldung {
+        .init(art: art,
+              schluessel: Stoppsperre.schluessel(itemID: item.id, playSessionID: plan.playSessionID),
+              nutzlast: Meldeinhalt(client: client, item: item, plan: plan, sekunden: seconds,
+                                    spuren: laufendeSpuren))
+    }
+
+    /// Die Spuren, die der Player zuletzt gemeldet hat, als Jellyfin-Index
+    /// (T3 #8). Gehen mit Start und Fortschritt hinaus; der Player setzt sie
+    /// bei jedem Öffnen zurück und nach jeder Wahl neu.
+    @ObservationIgnored private var laufendeSpuren = Spurindizes()
+
+    func spurenGewaehlt(_ spuren: Spurindizes) {
+        laufendeSpuren = spuren
+    }
+
+    /// Kehrt sofort zurueck; gesendet wird in der Reihe.
+    func reportStart(item: Item, plan: PlaybackPlan, seconds: Double) {
+        // Auch ohne Server: ein Titel von der Platte laeuft wieder, und sein
+        // naechstes Ende soll gemeldet werden duerfen — die Reihe gibt die
+        // Sperre beim Einreihen frei.
+        laufenderTitel = (item, plan)
+        gemeldetPausiert = false
+        meldungen.melden(meldung(.start, item: item, plan: plan, seconds: seconds))
+    }
+
+    private nonisolated static func startSenden(client: JellyfinClient, item: Item,
+                                                plan: PlaybackPlan, ticks: Int64,
+                                                spuren: Spurindizes) async throws {
         // **Die Faehigkeiten vor jeder Wiedergabe erneut melden.**
         //
         // Sie wurden bisher **einmal** gemeldet, beim Erscheinen der
@@ -1154,80 +1276,134 @@ final class AppModel {
         // die Startmeldung geht, und ist beliebig oft wiederholbar. Hier und
         // nicht anderswo, weil genau das der Zeitpunkt ist, an dem das andere
         // Geraet uns sehen koennen muss.
+        //
+        // Scheitert das, geht der Start trotzdem — ausser die Frist hat
+        // abgebrochen; dann ist auch der Start nicht mehr dran.
         do {
             try await client.faehigkeitenMelden()
         } catch {
+            try Task.checkCancellation()
             Protokoll.schreib("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
-            Self.log.warning("Fähigkeiten nicht gemeldet: \(error.localizedDescription)")
         }
-        do {
-            try await client.reportStart(itemID: item.id, plan: plan,
-                                         ticks: JellyfinClient.ticks(fromSeconds: seconds))
-            Self.log.info("Wiedergabe gemeldet: Start bei \(Int(seconds)) s")
-        } catch {
-            Self.log.error("Start-Meldung fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
-        }
+        try await client.reportStart(itemID: item.id, plan: plan, ticks: ticks, spuren: spuren)
     }
 
-    /// Was gerade laeuft — gemerkt, damit ein Fernbefehl sofort gemeldet
-    /// werden kann, ohne den Player danach zu fragen.
+    /// Was gerade laeuft — gemerkt, damit ein Fernbefehl, eine Pause oder ein
+    /// Sprung sofort gemeldet werden kann, ohne den Player danach zu fragen.
+    ///
+    /// **Folgt dem Lebenslauf der Wiedergabe** (T1-M9): gesetzt mit dem Start,
+    /// geloescht mit dem Stopp. Frueher setzte ihn nur der Fortschritt, und nie
+    /// zurueck — ein Fernbefehl kurz nach Wechsel oder Schliessen meldete die
+    /// neue Stelle an die alte Folge.
     @ObservationIgnored private var laufenderTitel: (item: Item, plan: PlaybackPlan)?
+    /// Was dem Server zuletzt als Laufzustand gesagt wurde — damit VLCs
+    /// Meldung nur einmal je Wechsel hinausgeht.
+    @ObservationIgnored private var gemeldetPausiert = false
 
-    func reportProgress(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) async {
-        laufenderTitel = (item, plan)
-        guard let client else { return }
-        do {
-            try await client.reportProgress(itemID: item.id, plan: plan,
-                                            positionTicks: JellyfinClient.ticks(fromSeconds: seconds),
-                                            paused: paused)
-            Self.log.info("Wiedergabe gemeldet: \(Int(seconds)) s")
-        } catch {
-            Self.log.error("Fortschritt-Meldung fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+    /// Kehrt sofort zurueck; gesendet wird in der Reihe. Nach dem Stopp
+    /// dieser Sitzung verworfen.
+    func reportProgress(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) {
+        guard meldungen.melden(meldung(.fortschritt(pausiert: paused), item: item,
+                                       plan: plan, seconds: seconds)) else {
+            Protokoll.schreib("[Melden] Fortschritt nach Stopp verworfen \(item.id)")
+            return
         }
+        laufenderTitel = (item, plan)
+        gemeldetPausiert = paused
     }
 
-    /// **Nach einem Fernbefehl sofort melden, statt auf den Takt zu warten.**
+    /// **VLC hat angehalten oder laeuft wieder — sofort melden** (T1-N1).
     ///
-    /// Am Geraet gemeldet: wer in Jellyfin auf Pause drueckt, sieht die App
-    /// sofort anhalten — in der Uebersicht lief die Zeit aber noch fuenf,
-    /// sechs Sekunden weiter, bevor das Pausezeichen erschien. Die App
-    /// gehorchte also prompt und **sagte es nur niemandem**; die naechste
-    /// Meldung kam erst mit dem regulaeren Takt.
-    ///
-    /// Wer drueckt, sieht seinen eigenen Druck nicht ankommen und drueckt
-    /// noch einmal. Genau dafuer ist eine Rueckmeldung da.
-    ///
-    /// **Die kurze Wartezeit ist kein Ratespiel, sondern die Reihenfolge.**
-    /// Der Player bekommt den Befehl im selben Zug; er haelt an, und erst
-    /// dann steht der neue Stand in ``Spielstand``. Wer sofort meldete,
-    /// meldete den Zustand von davor — also genau das, was hier behoben
-    /// werden soll. 400 ms sind lang genug fuer den Weg durch VLC und kurz
-    /// genug, dass niemand es als Verzoegerung liest.
-    ///
-    /// Bei `stopp` passiert nichts: das Ende meldet der Player selbst, mit
-    /// seiner eigenen Endmeldung, und die traegt mehr als diese hier.
-    private func sofortMelden(nach befehl: Fernbefehl) async {
-        guard befehl != .stopp, let laufenderTitel else { return }
-        try? await Task.sleep(for: .milliseconds(400))
-        guard let stand = Spielstand.frisch else { return }
-        await reportProgress(item: laufenderTitel.item, plan: laufenderTitel.plan,
-                             seconds: stand.stelle, paused: !stand.laeuft)
+    /// Haengt an `VLCPlayerView.laeuftGemeldet`, nicht am Druck: der Knopf
+    /// wartet auf VLC, und wer im Druck meldete, las den Zustand von davor
+    /// (iOS meldete Pause als „laeuft"). Einmal hier fuer alle Fassungen;
+    /// vor dem Start und nach dem Stopp gibt es keinen laufenden Titel.
+    func laufzustandGemeldet(laeuft: Bool, sekunden: Double) {
+        guard let laufenderTitel, gemeldetPausiert == laeuft else { return }
+        Protokoll.schreib("[Melden] sofort: \(laeuft ? "weiter" : "Pause") bei \(Int(sekunden)) s")
+        reportProgress(item: laufenderTitel.item, plan: laufenderTitel.plan,
+                       seconds: sekunden, paused: !laeuft)
     }
 
+    /// **Gesprungen — sofort melden**, mit der Zielstelle. Haengt an
+    /// `VLCPlayerView.sprungGemeldet`, damit kein Sprungweg es vergisst.
+    func sprungGemeldet(ziel: Double) {
+        guard let laufenderTitel else { return }
+        reportProgress(item: laufenderTitel.item, plan: laufenderTitel.plan,
+                       seconds: max(0, ziel), paused: gemeldetPausiert)
+    }
+
+    /// **Die App geht in den Hintergrund** (T3 #5): den Stand jetzt melden,
+    /// nicht erst im naechsten Takt — eingefroren kaeme der nie.
+    ///
+    /// `beginBackgroundTask` haelt die App wach, bis die Meldung durch ist
+    /// oder ihre Frist abgelaufen.
+    func hintergrundMelden(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) {
+        let eintrag = meldung(.fortschritt(pausiert: paused), item: item, plan: plan, seconds: seconds)
+        guard meldungen.fortschrittErlaubt(eintrag.schluessel) else { return }
+        Protokoll.schreib("[Melden] Hintergrund: \(Int(seconds)) s pausiert \(paused)")
+        #if os(iOS) || os(tvOS)
+        let aufgabe = UIApplication.shared.beginBackgroundTask(withName: "Wiedergabe melden")
+        Task {
+            let ergebnis = await meldungen.meldenUndWarten(eintrag)
+            Protokoll.schreib("[Melden] Hintergrund: \(ergebnis)")
+            UIApplication.shared.endBackgroundTask(aufgabe)
+        }
+        #else
+        meldungen.melden(eintrag)
+        #endif
+        laufenderTitel = (item, plan)
+        gemeldetPausiert = paused
+    }
+
+    /// Zählt einen fertig geschauten Titel und meldet, wenn die Frage nach
+    /// einer Bewertung dran ist — höchstens einmal je Fassung
+    /// (``Bewertungsfrage``).
+    func fertigGeschaut(position: Double, dauer: Double) {
+        guard Bewertungsfrage.zaehltAlsFertig(position: position, dauer: dauer) else { return }
+        let ablage = UserDefaults.standard
+        let fertig = ablage.integer(forKey: "bewertungFertig") + 1
+        ablage.set(fertig, forKey: "bewertungFertig")
+        let fassung = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        guard Bewertungsfrage.faellig(fertig: fertig,
+                                      zuletztGefragt: ablage.string(forKey: "bewertungFassung"),
+                                      fassung: fassung) else { return }
+        ablage.set(fassung, forKey: "bewertungFassung")
+        bewertungFaellig = true
+    }
+
+    /// Das Ende — **abgewartet**, weil danach die Seiten neu laden (d8492ca).
+    /// Die Reihe schickt es hinter einem noch laufenden Start; doppelt kommt es
+    /// nicht (Stoppsperre in der Reihe).
     func reportStopped(item: Item, plan: PlaybackPlan, seconds: Double) async {
         let ticks = JellyfinClient.ticks(fromSeconds: seconds)
-        guard let client else { nachmelden(item.id, ticks); return }
-        do {
-            try await client.reportStopped(itemID: item.id, plan: plan, positionTicks: ticks)
+        // Auch nach einer Nachmeldung: die Seite soll dann wenigstens den
+        // Stand des letzten Takts zeigen, nicht den von vor dem Abspielen.
+        defer { wiedergabeBeendet += 1 }
+        let eintrag = meldung(.stopp, item: item, plan: plan, seconds: seconds)
+        // Sofort, nicht nach der Antwort: ein Fernbefehl in der Zwischenzeit
+        // gehoert keinem Titel mehr (T1-M9).
+        if let laufenderTitel,
+           Stoppsperre.schluessel(itemID: laufenderTitel.item.id,
+                                  playSessionID: laufenderTitel.plan.playSessionID) == eintrag.schluessel {
+            self.laufenderTitel = nil
+        }
+        let ergebnis = await meldungen.meldenUndWarten(eintrag)
+        switch ergebnis {
+        case .gesendet:
             Self.log.info("Wiedergabe gemeldet: Ende bei \(Int(seconds)) s")
-        } catch {
+            Protokoll.schreib("[Melden] Stopped \(Int(seconds)) s \(item.id) session \(plan.playSessionID ?? "nil")")
+        case .verworfen:
+            Protokoll.schreib("[Melden] Stopped doppelt verworfen \(item.id) session \(plan.playSessionID ?? "nil")")
+        case .gescheitert, .zeitUeberschritten:
             // **Hier entsteht die Angabe, für die es Downloads gibt.**
             //
             // Wer einen Titel im Flugzeug sieht, erzeugt genau eine Auskunft,
             // die niemand sonst hat: wo er aufgehört hat. Ginge sie hier
             // verloren, hätte der Server den Stand vom Start des Flugs, und
             // zu Hause liefe die Folge von vorn los. H8, zweite Hälfte.
-            Self.log.error("Ende-Meldung fehlgeschlagen, wird nachgemeldet: \(error.localizedDescription, privacy: .public)")
+            Self.log.error("Ende-Meldung nicht durch (\(String(describing: ergebnis), privacy: .public)), wird nachgemeldet")
+            Protokoll.schreib("[Melden] Stopped \(ergebnis) → Nachmeldung \(item.id)")
             nachmelden(item.id, ticks)
         }
     }

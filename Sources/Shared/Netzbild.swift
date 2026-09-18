@@ -212,30 +212,45 @@ final class Bildspeicher {
         // von der abgetrennten Aufgabe aus wäre der Zugriff ein Sprung über
         // die Isolationsgrenze, den Swift 6 zu Recht nicht durchlässt.
         let kante = Self.kantenlaenge
+        // Poster und Hintergründe auch auf der Platte — nur mit `tag`, siehe
+        // `Bildablage`. Profilbilder haben ihre eigene Ablage.
+        let platte = aufGeraet ? nil : Bildablage.name(merkmal)
         let lauf = Task<Eintrag?, Never> { [self] in
-            if !vorrang { await einlass() }
             let begonnen = Date()
             let daten: Data
-            if aufGeraet, let abgelegt = Geraeteablage.lesen(merkmal) {
+            // Die Schleuse ordnet die Leitung; ein Treffer auf der Platte
+            // braucht keine und wartet deshalb auch nicht in ihr.
+            var eingelassen = false
+            if let platte,
+               let abgelegt = await Task.detached(priority: .userInitiated, operation: {
+                   Bildablage.lesen(platte)
+               }).value {
+                daten = abgelegt
+            } else if aufGeraet, let abgelegt = Geraeteablage.lesen(merkmal) {
                 // Vom Gerät, sofort — und im Hintergrund frisch geholt, damit
                 // ein neues Profilbild beim nächsten Mal da ist.
                 daten = abgelegt
                 Task.detached(priority: .utility) { await Geraeteablage.auffrischen(url, merkmal) }
             } else {
+                if !vorrang { await einlass(); eingelassen = true }
                 guard let (geholt, antwort) = try? await URLSession.shared.data(from: url) else {
-                    if !vorrang { einlassZurueck() }
+                    if eingelassen { einlassZurueck() }
                     return nil
                 }
                 daten = geholt
-                if aufGeraet, (antwort as? HTTPURLResponse)?.statusCode == 200 {
+                let ok = (antwort as? HTTPURLResponse)?.statusCode == 200
+                if aufGeraet, ok {
                     Geraeteablage.schreiben(geholt, merkmal)
+                }
+                if let platte, ok {
+                    Task.detached(priority: .utility) { Bildablage.schreiben(geholt, platte) }
                 }
             }
             let geholt = Date()
             // **Vor dem Wandeln zurueckgeben, nicht danach.** Die Schleuse
             // soll die Leitung ordnen, nicht den Rechner; das Wandeln laeuft
             // ohnehin abseits und kostet acht Millisekunden.
-            if !vorrang { einlassZurueck() }
+            if eingelassen { einlassZurueck() }
             let kiste = await Task.detached(priority: .userInitiated) { () -> Bildkiste? in
                 guard let quelle = CGImageSourceCreateWithData(daten as CFData, nil) else { return nil }
                 let regeln: [CFString: Any] = [
@@ -392,12 +407,7 @@ enum Geraeteablage {
     /// Ein stabiler Dateiname aus der Adresse ohne Zugangsschlüssel (FNV-1a,
     /// 64 Bit). `hashValue` taugt nicht: der wechselt mit jedem Programmstart.
     private static func datei(_ merkmal: URL) -> URL? {
-        var wert: UInt64 = 0xcbf29ce484222325
-        for byte in merkmal.absoluteString.utf8 {
-            wert ^= UInt64(byte)
-            wert &*= 0x100000001b3
-        }
-        return ordner?.appendingPathComponent(String(wert, radix: 16))
+        ordner?.appendingPathComponent(dateiname(merkmal.absoluteString))
     }
 
     static func lesen(_ merkmal: URL) -> Data? {
@@ -415,5 +425,88 @@ enum Geraeteablage {
         guard let (daten, antwort) = try? await URLSession.shared.data(from: url),
               (antwort as? HTTPURLResponse)?.statusCode == 200 else { return }
         schreiben(daten, merkmal)
+    }
+}
+
+/// FNV-1a, 64 Bit, als Dateiname. Stabil über Programmstarts hinweg.
+private func dateiname(_ text: String) -> String {
+    var wert: UInt64 = 0xcbf29ce484222325
+    for byte in text.utf8 {
+        wert ^= UInt64(byte)
+        wert &*= 0x100000001b3
+    }
+    return String(wert, radix: 16)
+}
+
+/// **Poster und Hintergründe auf der Platte** (Audit Teil 3, #11).
+///
+/// `Bildspeicher` hielt sie nur im Arbeitsspeicher; nach jedem Kaltstart kam
+/// jede Kachel neu vom Server. Swiftfin legt bis 1 GB ab. Welche Adressen
+/// auf die Platte dürfen und unter welchem Schlüssel — ohne Host, ohne
+/// Zugang, nur mit `tag` —, steht in `Bildablageschluessel` im Paket.
+///
+/// Abgelegt wird im Cache-Ordner, den das System bei Platzmangel leert;
+/// darüber hinaus räumt `aufraeumen` einmal je Start die ältesten Dateien
+/// weg, bis die Grenze wieder passt.
+enum Bildablage {
+    /// Hergeleitet, nicht gemessen: ein Querbild in 1200 Punkt liegt als
+    /// JPEG bei 100–300 KB, ein Plakat darunter.
+    static let grenze: Int = {
+        #if os(tvOS)
+        256 * 1024 * 1024
+        #else
+        512 * 1024 * 1024
+        #endif
+    }()
+
+    private static let ordner: URL? = {
+        guard let basis = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        else { return nil }
+        let ordner = basis.appendingPathComponent("Bilder", isDirectory: true)
+        try? FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
+        return ordner
+    }()
+
+    /// Der Dateiname zu einem Bildschlüssel, `nil` ohne `tag` — die Regel
+    /// liegt im Paket (`Bildablageschluessel`).
+    static func name(_ merkmal: URL) -> String? {
+        Bildablageschluessel.fuer(merkmal).map(dateiname)
+    }
+
+    /// Liest und frischt das Datum auf, damit `aufraeumen` das zuletzt
+    /// Gezeigte behält. Nicht auf dem Hauptlauf aufrufen.
+    nonisolated static func lesen(_ name: String) -> Data? {
+        guard let datei = ordner?.appendingPathComponent(name),
+              let daten = try? Data(contentsOf: datei) else { return nil }
+        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: datei.path)
+        return daten
+    }
+
+    nonisolated static func schreiben(_ daten: Data, _ name: String) {
+        guard let ziel = ordner?.appendingPathComponent(name) else { return }
+        try? daten.write(to: ziel, options: .atomic)
+        _ = aufgeraeumt
+    }
+
+    /// Einmal je Start, beim ersten Schreiben.
+    private static let aufgeraeumt: Void = aufraeumen()
+
+    private static func aufraeumen() {
+        guard let ordner else { return }
+        let felder: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
+        guard let dateien = try? FileManager.default.contentsOfDirectory(
+            at: ordner, includingPropertiesForKeys: felder) else { return }
+        var liste = dateien.compactMap { datei -> (URL, Int, Date)? in
+            guard let werte = try? datei.resourceValues(forKeys: Set(felder)) else { return nil }
+            return (datei, werte.fileSize ?? 0, werte.contentModificationDate ?? .distantPast)
+        }
+        var summe = liste.reduce(0) { $0 + $1.1 }
+        guard summe > grenze else { return }
+        // Bis auf drei Viertel, damit nicht jeder Start wieder räumt.
+        liste.sort { $0.2 < $1.2 }
+        for (datei, groesse, _) in liste where summe > grenze * 3 / 4 {
+            try? FileManager.default.removeItem(at: datei)
+            summe -= groesse
+        }
     }
 }

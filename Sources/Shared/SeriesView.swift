@@ -70,7 +70,8 @@ struct SeriesDetailView: View {
     @Environment(\.weit) private var weit
 
     /// Wie weit gescrollt wurde — der Kopf blendet danach ein.
-    @State private var versatz: CGFloat = 0
+    /// Siehe `ItemDetailView.weg` — als `@State` baute jeder Scrollschritt die Seite neu.
+    @State private var weg = Scrollweg()
 
     @State private var stand: Item?
     /// **Ob die nächste Folge schon geklärt ist** — auch dann, wenn es keine
@@ -177,7 +178,7 @@ struct SeriesDetailView: View {
             .scrollIndicators(.hidden)
             .coordinateSpace(.named("blatt"))
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
-                versatz = neu
+                weg.setzen(neu)
                 // **Scrollen schliesst die Staffelliste, Tippen nicht mehr.**
                 //
                 // Hier hing eine `simultaneousGesture` auf der ganzen
@@ -224,7 +225,7 @@ struct SeriesDetailView: View {
                     .zIndex(21)
             }
 
-            Detailkopf(titel: serie.name, versatz: versatz) { zurueck() }
+            Detailkopfleser(titel: serie.name, weg: weg) { zurueck() }
         }
         .animation(.easeOut(duration: 0.14), value: staffellisteOffen)
         .animation(.easeInOut(duration: 0.16), value: reiter)
@@ -250,6 +251,12 @@ struct SeriesDetailView: View {
         }
         #endif
         .task { await laden() }
+        // **Nach dem Player neu holen**, und zwar erst, wenn die Endmeldung
+        // durch ist — siehe `AppModel.wiedergabeBeendet`. Sonst blieben
+        // Fortschritt und „gesehen" auf dem Stand von vor dem Abspielen.
+        .onChange(of: model.wiedergabeBeendet) { _, _ in
+            Task { await laden(); await folgenLaden() }
+        }
         // **Die mitgebrachte Staffel kann nachtraeglich eintreffen.**
         //
         // `StaffelZiel` holt die Folge frisch nach, weil der Listeneintrag
@@ -284,13 +291,15 @@ struct SeriesDetailView: View {
         standGeklaert = true
         // Kommt man von einer Folge, deren Staffel — sonst die, in der man
         // zuletzt war. Beim Auffrischen bleibt die getroffene Wahl stehen.
+        // A10: erst der Hinweis (Kennung, dann Nummer), dann der Stand. Die
+        // Kette liegt im Paket; die eigene Kopie hier prüfte die Kennung des
+        // Stands vor der Nummer des Hinweises — kam eine Folge ohne
+        // `SeasonId`, stand die laufende Staffel da statt ihrer.
         if gewaehlteStaffel == nil {
-            gewaehlteStaffel = staffeln.first { $0.id == startStaffelID }
-                ?? staffeln.first { $0.id == stand?.seasonId }
-                // Ueber die Nummer, wenn keine Kennung ankam.
-                ?? staffeln.first { nummer($0) != nil && nummer($0) == startStaffelNummer }
-                ?? staffeln.first { nummer($0) != nil && nummer($0) == stand?.parentIndexNumber }
-                ?? staffeln.first
+            gewaehlteStaffel = Staffelwahlregel.waehle(aus: staffeln,
+                                                       hinweisID: startStaffelID,
+                                                       hinweisNummer: startStaffelNummer,
+                                                       stand: stand)
         }
         Protokoll.schreib("[Staffel] \(serie.name): mitgebracht=\(startStaffelID ?? "-")/\(startStaffelNummer.map(String.init) ?? "-") "
             + "stand=\(stand.map { "S\($0.parentIndexNumber ?? -1)E\($0.indexNumber ?? -1) " + ($0.seasonId ?? "-") } ?? "-") "
@@ -616,8 +625,6 @@ struct SeriesDetailView: View {
 
     private func restzeit(_ folge: Item) -> String? { folge.restzeitText }
 
-    /// Die Nummer einer Staffel — Jellyfin fuehrt sie als `IndexNumber`.
-    private func nummer(_ staffel: Item) -> Int? { staffel.indexNumber }
 
     private func folgenLaden() async {
         folgen = await model.folgen(serie: serie.id, staffel: gewaehlteStaffel?.id)
@@ -882,7 +889,7 @@ struct SeasonView: View {
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
         #endif
-        .task {
+        .task(id: model.wiedergabeBeendet) {
             folgen = await model.folgen(serie: serie.id, staffel: staffel.id)
             laedt = false
         }

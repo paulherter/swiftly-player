@@ -392,8 +392,8 @@ extension App {
         let v = einstellungsgruppe(uebersetzt("Verhalten"))
         anhaengen(v.raum, schalterzeile(symbol: "media-skip-forward-symbolic",
                                         titel: uebersetzt("Nächste Folge automatisch"),
-                                        an: wahlen.naechsteAutomatisch) { [weak self] an in
-            self?.wahlen.naechsteAutomatisch = an
+                                        an: naechsteAutomatisch) { [weak self] an in
+            self?.wahlen.naechsteAutomatischGewaehlt = an
             self?.wahlen.sichern()
         })
         // **Das Technikschild steht direkt hinter „Naechste Folge
@@ -871,6 +871,9 @@ extension App {
                                          an: wahlen.fortschrittAufKacheln) { [weak self] an in
             self?.wahlen.fortschrittAufKacheln = an
             self?.wahlen.sichern()
+            // Die Startseite steht schon; ohne Neubau galt der Schalter erst
+            // beim naechsten Laden (M8). Raster bauen sich beim Oeffnen neu.
+            self?.startseiteLaden()
         })
         anhaengen(links, ga.aussen)
         anhaengen(links, luftHoch(26))

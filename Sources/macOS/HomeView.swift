@@ -172,13 +172,13 @@ struct HomeView: View {
         // — bis nach dreissig Sekunden Fensterwechsel oder einem
         // Kontowechsel. Genau der Fall, fuer den D8 gemacht ist.
         //
-        // **Ohne Frist**, wie auf iPhone (`onDismiss` am `fullScreenCover`)
-        // und auf Linux (`Spieler.spielerSchliessen`): hier ist gerade etwas
-        // geschehen, das den Stand aendert.
-        .onChange(of: steuerung.wunsch == nil) { vorher, jetzt in
-            guard !vorher, jetzt else { return }
-            Task { await auffrischen() }
-        }
+        // **Ohne Frist**, wie auf Linux (`Spieler.spielerSchliessen`): hier
+        // ist gerade etwas geschehen, das den Stand aendert.
+        //
+        // **Nach der Endmeldung, nicht beim Zumachen.** Beim Zumachen ist sie
+        // noch unterwegs; die Abfrage bekam den Stand des letzten Takts.
+        // Siehe `AppModel.wiedergabeBeendet`.
+        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await auffrischen() } }
     }
 
     /// Eine feste Reihe — derselbe Aufbau wie vorher, nur einzeln abrufbar,

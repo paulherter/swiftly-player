@@ -38,9 +38,18 @@ extension App {
     /// ihm die Meldungen an den Server: es gibt niemanden, dem man melden
     /// koennte. Alles Uebrige — Steuerung, Sprungzeichen, Technikschild — ist
     /// derselbe Weg.
-    func spielerOeffnen(_ item: Item, ab: Double, ausDatei datei: URL? = nil) {
+    func spielerOeffnen(_ item: Item, ab: Double, ausDatei datei: URL? = nil,
+                        stelleFrisch: Bool = false) {
         guard client != nil || datei != nil else { return }
         spielerSchliessen(melden: true)
+        // **Kein Bild des vorigen Titels** (T2-H1). Geschlossen wird mit
+        // stehendem Bild, angehalten erst nach der Fahrt — wer innerhalb
+        // dieser 380 ms den naechsten Titel oeffnet, saehe und hoerte sonst
+        // den alten, bis der neue Plan da ist.
+        abspieler.beenden(nurMedium: true)
+        folgenwechsel = Folgenwechsel()
+        vorgeholteFolge = nil
+        angebotsebene.neueFolge()
 
         laufenderTitel = item
         spielstand = Wiedergabetakt.Stand()
@@ -74,6 +83,7 @@ extension App {
         // keine Meldung — es gibt keinen Server, der davon wuesste.
         if let datei {
             laufenderPlan = nil
+            spurlageNeu(item, plan: nil)
             abspieler.oeffnen(datei, ab: ab, puffer: wahlen.puffer)
             abspieler.bildfuellend(wahlen.bildfuellend)
             technikschildSetzen(wahlen.technikschild)
@@ -90,14 +100,33 @@ extension App {
         // Abspann kommen vom Server; ohne sie entscheidet allein die
         // Restzeitregel, mit ihnen steht der Knopf an der Stelle, die in der
         // Datei vermerkt ist. `Abschnittslogik` im Paket wusste das längst.
+        let wechsel = folgenwechsel
+        nachschlagen(fuer: item, wechsel: wechsel, client: client)
+        // **Die Antwort gehoert zu genau diesem Oeffnen** (T2-H1). Der Player
+        // steht schon, der Plan kommt danach — wer in der Zwischenzeit
+        // schliesst oder einen anderen Titel oeffnet, bekam sonst den Film
+        // ohne Player zu hoeren, oder das Bild des ersten im zweiten.
+        let meiner = spielerZaehler
         Task.detached { [self] in
-            let marken = await client.abschnitte(fuer: item.id)
-            aufHauptfaden { self.abschnitte = marken }
-        }
-        Task.detached { [self] in
+            // Neben dem Plan, nicht davor: es kostet keine Wartezeit extra.
+            async let frisch = stelleFrisch ? try? await client.item(id: item.id) : nil
             let plan = try? await client.playbackPlan(for: item.id, profile: .vlc(maxBitrate: grenze))
+            let geholt = await frisch
+            let stelle = geholt.map { $0.fortsetzenAb ?? 0 } ?? ab
+            if stelleFrisch {
+                print("[Spieler] Stelle frisch \(geholt.map { _ in String(Int(stelle)) } ?? "nicht geholt"), Kachel \(Int(ab)) s")
+                fflush(nil)
+            }
             aufHauptfaden {
+                guard self.spielerZaehler == meiner, self.laufenderTitel?.id == item.id,
+                      self.folgenwechsel === wechsel else {
+                    print("[Spieler] Plan verworfen, Player zu oder anderer Titel \(item.id)")
+                    fflush(nil)
+                    return
+                }
                 guard let plan else {
+                    print("[Spieler] kein Plan \(item.id)")
+                    fflush(nil)
                     // **D3: der Fehler nennt den Server, nicht nur „ging
                     // nicht".** Bei mehreren Servern weiss man sonst nicht,
                     // welcher gemeint ist. Wörtlich der Satz vom Mac
@@ -108,12 +137,13 @@ extension App {
                     return
                 }
                 self.laufenderPlan = plan
+                self.spurlageNeu(item, plan: plan)
                 self.warnungZeigen(plan)
-                self.abspieler.oeffnen(plan.url, ab: ab, puffer: self.wahlen.puffer)
+                self.abspieler.oeffnen(plan.url, ab: stelle, puffer: self.wahlen.puffer)
                 // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
                 self.abspieler.bildfuellend(self.wahlen.bildfuellend)
                 self.technikschildSetzen(self.wahlen.technikschild)
-                self.spielstand.position = ab
+                self.spielstand.position = stelle
                 self.taktStarten()
             }
         }
@@ -126,22 +156,24 @@ extension App {
         // **Ein Stopp ohne Start ist keine Sitzung.** Wer den Player vor dem
         // ersten Bild wieder schliesst, hat nie eine eröffnet; der Mac meldet
         // dann auch nichts (`PlayerScreen.swift:547`).
+        //
+        // **Ueber den Folgenwechsel** (T2-H1): laeuft einer, bricht er ab und
+        // wendet nichts mehr an; ist der Start der neuen Folge unterwegs,
+        // geht der Stopp danach. **Die Seiten frischen erst nach der
+        // Endmeldung auf** (wie d8492ca auf Apple) — vorher holte die
+        // Startseite ihre Reihen, bevor der Server die Stelle kannte.
+        let gespielt = laufenderTitel!
         if melden, spielstand.startGemeldet,
            let client, let plan = laufenderPlan, let titel = laufenderTitel {
             let ticks = Int64(spielstand.position * 10_000_000)
             let konto = benutzerID
-            Task.detached {
-                do {
-                    try await client.reportStopped(itemID: titel.id, plan: plan,
-                                                   positionTicks: ticks)
-                } catch {
-                    // **H8, zweite Haelfte.** Hier stand `try?` — der
-                    // Fehlschlag verschwand, und mit ihm die Stelle. Genau
-                    // die ist das, was ein Download hinterlaesst und der
-                    // Server nicht hat.
-                    Nachmeldezettel.aufnehmen(titel.id, ticks: ticks, konto: konto)
-                }
+            folgenwechsel.schliessen { [self] in
+                await self.meldeStopp(client, titel: titel, plan: plan, ticks: ticks, konto: konto)
+                aufHauptfaden { self.nachDemPlayerAuffrischen(titel) }
             }
+        } else {
+            folgenwechsel.schliessen {}
+            aufHauptfaden { self.nachDemPlayerAuffrischen(gespielt) }
         }
         taktBeenden()
         spurwahlSchliessen()
@@ -152,6 +184,9 @@ extension App {
         laufenderTitel = nil
         Discordstand.abraeumen()
         spielerSteuerung = nil
+        spielerWeiter = nil
+        spielerAngebot = nil
+        angebotsebene.neueFolge()
         zeigerZeigen(true)
         abschnitte = []
         // **Ein alter Wecker haelt sonst spaeter eine andere Wiedergabe an.**
@@ -178,14 +213,16 @@ extension App {
             try? await Task.sleep(nanoseconds: 380_000_000)
             aufHauptfaden {
                 defer { losgelassen(dann) }
-                // **Nur aufraeumen, wenn inzwischen kein neuer Film laeuft.**
-                // Der Wecker gehoert zu *dieser* Seite; startet jemand
-                // innerhalb der 380 ms den naechsten Titel, haette er sonst
-                // dessen Medium angehalten und dessen Felder geleert. Dass es
-                // nie auffiel, lag allein daran, dass das Holen des Plans
-                // meist laenger dauert als die Fahrt.
-                guard self.laufenderTitel == nil else { return }
-                self.abspieler.beenden(nurMedium: true)
+                // **Das Medium nur anhalten, wenn inzwischen kein neuer Film
+                // laeuft.** Der Wecker gehoert zu *dieser* Seite; startet
+                // jemand innerhalb der 380 ms den naechsten Titel, haette er
+                // sonst dessen Medium angehalten. **Die alte Seite geht aber
+                // in jedem Fall** — hier stand ein `return`, und kam der neue
+                // Plan schneller als die Fahrt, blieb sie im Stapel liegen
+                // (T2-H1). Die Anzeige haengt dann schon in der neuen Seite.
+                if self.laufenderTitel == nil {
+                    self.abspieler.beenden(nurMedium: true)
+                }
                 if gtk_widget_get_parent(dann.widget) != nil {
                     gtk_stack_remove(OpaquePointer(self.seiten), dann.widget)
                 }
@@ -195,10 +232,67 @@ extension App {
                 }
             }
         }
-        // **Die Startseite holt ihre Reihen neu, wenn der Player zugeht**
-        // (D8) — ohne Frist. Eine zu Ende gesehene Folge stünde sonst weiter
-        // mit Balken in „Weiterschauen".
+    }
+
+    /// **Nach der Endmeldung den neuen Stand zeigen** (D8, d8492ca).
+    ///
+    /// Die Startseite holt ihre Reihen neu — eine zu Ende gesehene Folge
+    /// stuende sonst weiter mit Balken in „Weiterschauen". Liegt unter dem
+    /// Player die Seite des Titels oder seiner Serie, wird sie neu gebaut:
+    /// sie holte ihren Stand nur einmal beim Oeffnen und zeigte die Folge
+    /// weiter als ungesehen. Laeuft inzwischen wieder ein Player, gilt der
+    /// Anlass nicht mehr.
+    func nachDemPlayerAuffrischen(_ gespielt: Item) {
+        guard laufenderTitel == nil else { return }
         startseiteLaden()
+        sehstandVergessen(gespielt)
+        guard offeneUnterseite == nil, let oben = seitenstapel[bereich]?.last,
+              oben.id == gespielt.id || oben.id == gespielt.seriesId else { return }
+        // **Nicht neu bauen, nur den Sehstand nachziehen.** Hier stand
+        // `detailZeigen(oben)` (bafc898): die Seite entstand neu und stand
+        // wieder oben, mit Staffel 1 und ohne Fokus. Jetzt fragen Hauptknopf
+        // und Folgenzeilen selbst nach und zeichnen sich an Ort und Stelle.
+        let vorher = scrollstand()
+        print("[Spieler] Sehstand nach dem Player \(oben.id), Scroll \(Int(vorher))")
+        fflush(nil)
+        kopfAuffrischen?.tun()
+        guard let client, let serie = gespielt.seriesId else { return }
+        // Die Staffel der gespielten Folge und die, die gerade dasteht —
+        // nach einem Weiterschalten koennen es zwei sein.
+        var staffeln: [String] = []
+        for s in [offeneStaffel?.id, gespielt.seasonId] { if let s, !staffeln.contains(s) { staffeln.append(s) } }
+        for staffel in staffeln {
+            Task.detached { [self] in
+                guard let folgen = try? await client.folgen(seriesID: serie, seasonID: staffel)
+                else { return }
+                aufHauptfaden {
+                    self.folgenspeicher[staffel] = folgen
+                    if self.offeneStaffel?.id == staffel { self.staffelfolgen = folgen }
+                    var gezeichnet = 0
+                    for folge in folgen {
+                        guard let zeile = self.sehstandZeilen[folge.id] else { continue }
+                        zeile.auffrischen(folge)
+                        gezeichnet += 1
+                    }
+                    print("[Spieler] Sehstand aufgefrischt: \(gezeichnet) Zeilen, Staffel \(staffel)")
+                    fflush(nil)
+                }
+                // Nach dem Neuzeichnen und Layout nachsehen, nicht im selben Zug.
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                aufHauptfaden {
+                    print("[Spieler] Scroll nach dem Auffrischen \(Int(vorher)) → \(Int(self.scrollstand()))")
+                    fflush(nil)
+                }
+            }
+        }
+    }
+
+    /// Wie weit die offene Detailseite gescrollt ist, in Punkten.
+    func scrollstand() -> Double {
+        guard let detailScroller,
+              let senkrecht = gtk_scrolled_window_get_vadjustment(OpaquePointer(detailScroller))
+        else { return -1 }
+        return gtk_adjustment_get_value(senkrecht)
     }
 
     // MARK: Aufbau
@@ -249,23 +343,32 @@ extension App {
         gtk_overlay_add_overlay(OpaquePointer(ueber), schleier)
 
         gtk_overlay_add_overlay(OpaquePointer(ueber), steuerung)
+        // **Die Einblendung liegt über der Steuerung**, als eigene Ebene: sie
+        // erscheint von selbst, ohne dass die Steuerung aufgehen muss.
+        angebotsebeneBauen(in: ueber)
 
         // **Die Steuerung blendet nach 4 s Ruhe aus** (B1) — nur während der
         // Wiedergabe. Jede Bewegung des Zeigers holt sie zurück.
         // **Zeiger im Fenster: Steuerung da. Zeiger draussen: weg** — so auf
         // dem Mac. Vorher holte auch das Verlassen sie zurueck, was genau
         // verkehrt herum war.
-        beiZeiger(ueber, herein: { [weak self] in self?.steuerungZeigen() },
+        // Zeiger heisst **nebenbei**: die Steuerung kommt, eine laufende Karte
+        // „Nächste Folge" bleibt (Paul, 17.09.2026). Klick, Taste, Knopf
+        // sagen sie ab.
+        beiZeiger(ueber, herein: { [weak self] in self?.steuerungZeigen(durch: .nebenbei) },
                          hinaus: { [weak self] in self?.steuerungVerbergen() })
         // Und jede Bewegung holt sie zurück, nicht nur das Betreten.
-        beiBewegung(ueber) { [weak self] in self?.steuerungZeigen() }
+        beiBewegung(ueber) { [weak self] in self?.steuerungZeigen(durch: .nebenbei) }
         // **Ein Klick daneben schliesst die Wiedergabetafel.** Auf dem Mac
         // liegt dafuer ein durchsichtiger Faenger unter ihr
         // (`PlayerScreen.swift:365`); hier reicht die Steuerungsflaeche
         // selbst, weil die Tafel als eigener Ueberzug darueber liegt und
         // Klicks in ihr gar nicht bis hierher kommen.
+        // Ohne Tafel ist es ein **Klick ins Bild**: die Steuerung bewusst holen,
+        // das sagt eine laufende Karte ab (wie der Mac).
         beiKlick(ueber) { [weak self] in
-            guard let self, self.spurtafel != nil else { return }
+            guard let self else { return }
+            guard self.spurtafel != nil else { self.steuerungZeigen(); return }
             self.spurwahlSchliessen()
         }
         steuerungZeigen()
@@ -358,9 +461,7 @@ extension App {
                                     name: String(format: uebersetzt("%d Sekunden zurück"), wahlen.zurueckSekunden)) {
             [weak self] in
             guard let self else { return }
-            self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
-            self.sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
-            self.letzterSprung = Date()
+            self.springe(um: -Double(self.wahlen.zurueckSekunden))
             self.spielerZurueckZeichen?.stupsen()
             self.sprungZeigen(true)
             self.steuerungZeigen()
@@ -388,9 +489,7 @@ extension App {
                                     name: String(format: uebersetzt("%d Sekunden vor"), wahlen.vorSekunden)) {
             [weak self] in
             guard let self else { return }
-            self.abspieler.springen(Double(self.wahlen.vorSekunden))
-            self.sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
-            self.letzterSprung = Date()
+            self.springe(um: Double(self.wahlen.vorSekunden))
             self.spielerVorZeichen?.stupsen()
             self.sprungZeigen(false)
             self.steuerungZeigen()
@@ -472,11 +571,10 @@ extension App {
 
         // „Nächste Folge" erscheint erst gegen Ende (B5) — als Chip in der
         // Titelzeile, nicht als grosser Knopf. So auf dem Mac.
-        spielerWeiter = chip(uebersetzt("Nächste Folge"), symbol: "media-skip-forward-symbolic")
-        gtk_widget_set_valign(spielerWeiter, GTK_ALIGN_END)
-        gtk_widget_set_visible(spielerWeiter, 0)
-        beiSignal(spielerWeiter, "clicked") { [weak self] in self?.angebotAusfuehren() }
-        anhaengen(kopfzeile, spielerWeiter)
+        let weiter = Angebotsknopf { [weak self] in self?.angebotAusfuehren() }
+        gtk_widget_set_valign(weiter.knopf, GTK_ALIGN_END)
+        spielerWeiter = weiter
+        anhaengen(kopfzeile, weiter.knopf)
         anhaengen(unten, kopfzeile)
 
         // Zeitleiste: Stand links, Balken, Rest rechts.
@@ -557,8 +655,10 @@ extension App {
         // stand eine 500, und der Mac liest dieselbe Groesse aus
         // `Wiedergabetakt.taktlaenge` — zwei Bauplaetze fuer eine Zahl, die
         // in B12 als geteilt festgeschrieben ist.
-        let ms = UInt32(Wiedergabetakt.taktlaenge.components.seconds * 1000
-                        + Wiedergabetakt.taktlaenge.components.attoseconds / 1_000_000_000_000_000)
+        // Er laeuft im Anzeigetakt (250 ms); jeder zweite Aufruf ist der ganze
+        // Takt, dazwischen wird nur die Zeit nachgezogen (Paul, 17.09.2026).
+        let ms = UInt32(Wiedergabetakt.anzeigetakt.components.seconds * 1000
+                        + Wiedergabetakt.anzeigetakt.components.attoseconds / 1_000_000_000_000_000)
         spielertakt = g_timeout_add_full(200, ms, spielerTaktRuf,
                                          Unmanaged.passUnretained(self).toOpaque(), nil)
     }
@@ -571,6 +671,17 @@ extension App {
     /// gefragt und ausgeführt.
     func takten() {
         guard laufenderTitel != nil else { return }
+        // **Dazwischen nur die Zeit**, wie auf iOS: im halben Sekundentakt lief
+        // sie nach dem Abspielen verzoegert an und zaehlte ungleichmaessig.
+        nurZeitTakt.toggle()
+        if nurZeitTakt {
+            if !folgenwechsel.laeuft {
+                Wiedergabetakt.zeitUebernehmen(&spielstand, gemeldet: abspieler.position,
+                                               amSchieben: amRegler, seitStart: seitOeffnen)
+                zeitenZeigen()
+            }
+            return
+        }
         // Das Schild haengt am selben Takt wie alles andere: 500 ms.
         // Schneller sieht man nur Flackern, langsamer verpasst man den
         // Ruckler.
@@ -594,12 +705,11 @@ extension App {
         // derselbe, den Swift `MainActor` nennt. `assumeIsolated` sagt genau
         // das — und prüft es zur Laufzeit, statt es zu behaupten.
         let auftrag = MainActor.assumeIsolated {
-            // **Nach einem Sprung und beim Ziehen darf VLCs Zeit nicht
-            // übernommen werden.** Sonst fällt die Anzeige auf die alte
-            // Stelle zurück, bis der Strom neu steht — die Marke hüpft.
+            // **Nach einem Sprung haelt der Stand die Zielstelle, bis VLC dort
+            // ist** (`spielstand.sprung`, Bug 17.09.2026); beim Ziehen wird VLCs
+            // Zeit gar nicht uebernommen.
             Wiedergabetakt.rechnen(&spielstand, messung: messung,
                                    stelltWiederHer: false,
-                                   sprungLaeuft: Date() < sprungBis,
                                    amSchieben: amRegler,
                                    seitStart: seitOeffnen)
         }
@@ -615,7 +725,7 @@ extension App {
             sanft(auf: schleier, von: 1, nach: 0) { gtk_widget_set_opacity(schleier, $0) }
             spielerLadeschirm = nil
         }
-        if auftrag.spurenAnwenden { spurenVorwaehlen() }
+        if auftrag.spurenAnwenden { spurenVorwaehlen() } else { spurdateienNachfuehren() }
         if auftrag.startMelden { melden(.start); medienstandMelden() }
         if auftrag.fortschrittMelden { melden(.fortschritt) }
 
@@ -646,20 +756,23 @@ extension App {
         // **Waehrend ein Wechsel laeuft, gibt es nichts anzubieten.** Sonst
         // bliebe der Knopf „Naechste Folge" antippbar, waehrend sie schon
         // geholt wird — ein Druck stiesse denselben Wechsel ein zweites Mal an.
-        let angebot: Knopfangebot = wechselt ? .keiner
-            : Abschnittslogik.angebot(position: spielstand.position,
-                                      dauer: spielstand.dauer,
-                                      abschnitte: abschnitte,
-                                      hatNaechsteFolge: laufenderTitel?.seriesId != nil)
-        jetzigesAngebot = angebot
-        gtk_widget_set_visible(spielerWeiter, angebot.sichtbar ? 1 : 0)
-        if angebot.sichtbar {
-            hauptknopfBeschriften(spielerWeiter, angebot.beschriftung,
-                                  symbol: angebot == .naechsteFolge
-                                      ? "media-skip-forward-symbolic"
-                                      : "media-seek-forward-symbolic")
+        // **„Nächste Folge" nur, wenn es eine gibt** (T2-H2): die vorab
+        // geholte, nicht „ist eine Folge" — sonst stand der Knopf auch im
+        // Abspann des Finales, und das Weiterschalten scheiterte jeden Takt.
+        // (Gerechnet in `angebotTakt`.)
+        // **Die Einblendung** (Countdown der Karte) — Rechnung in
+        // `Angebotsebene`. Im Stehen, beim Ziehen und unter dem Schleier
+        // laeuft keine Uhr.
+        if angebotTakt(vergangen: Self.taktSekunden), vorgeholteFolge != nil {
+            print("[Angebot] Countdown abgelaufen bei \(Int(spielstand.position)) s")
+            fflush(nil)
+            naechsteFolge()
         }
-        if wahlen.naechsteAutomatisch,
+        angebotNachfuehren()
+        // Am Ende von selbst weiter — nur mit Karte (Abspann-Abschnitt vom
+        // Server), nicht, wenn sie abgesagt wurde (Paul, 17.09.2026).
+        if angebotsebene.weiterAmEnde,
+           vorgeholteFolge != nil, !folgenwechsel.laeuft,
            Folgenende.weiterschalten(position: spielstand.position,
                                      dauer: spielstand.dauer,
                                      seitOeffnen: Date().timeIntervalSince(seitOeffnen)) {
@@ -670,18 +783,147 @@ extension App {
     private enum Meldung { case start, fortschritt }
 
     private func melden(_ was: Meldung) {
-        guard let client, let plan = laufenderPlan, let titel = laufenderTitel else { return }
+        // **Waehrend eines Wechsels schweigt der Takt** (T2-M3): ab dem Stopp
+        // der alten Folge ginge sonst noch Fortschritt fuer sie hinaus, und
+        // Jellyfin eroeffnete ihre Sitzung neu.
+        guard folgenwechsel.meldungenErlaubt,
+              let client, let plan = laufenderPlan, let titel = laufenderTitel else { return }
         let ticks = Int64(spielstand.position * 10_000_000)
-        let pausiert = !spielstand.laeuft
-        Task.detached {
-            switch was {
-            case .start:
-                try? await client.reportStart(itemID: titel.id, plan: plan, ticks: ticks)
-            case .fortschritt:
-                try? await client.reportProgress(itemID: titel.id, plan: plan,
-                                                 positionTicks: ticks, paused: pausiert)
+        switch was {
+        case .start:
+            meldeStart(client, titel: titel, plan: plan, ticks: ticks)
+        case .fortschritt:
+            meldeFortschritt(client, titel: titel, plan: plan, ticks: ticks,
+                             pausiert: !spielstand.laeuft)
+        }
+    }
+
+    // MARK: Meldungen an den Server — die eine Stelle
+
+    private func meldung(_ art: Meldewarteschlange<Meldeinhalt>.Art, _ client: JellyfinClient,
+                         titel: Item, plan: PlaybackPlan,
+                         ticks: Int64) -> Meldewarteschlange<Meldeinhalt>.Meldung {
+        .init(art: art,
+              schluessel: Stoppsperre.schluessel(itemID: titel.id, playSessionID: plan.playSessionID),
+              nutzlast: Meldeinhalt(client: client, titel: titel, plan: plan, ticks: ticks,
+                                    spuren: spurlage.gemeldet))
+    }
+
+    /// Hier und nur hier geht Start, Fortschritt und Stopp hinaus — in die
+    /// Reihe ``meldungen``, **abgesetzt, nicht abgewartet** (T1-H2): der Takt
+    /// wartet nie auf den Server. Nur das Ende wartet (``meldeStopp``).
+    func meldeStart(_ client: JellyfinClient, titel: Item, plan: PlaybackPlan, ticks: Int64) {
+        meldetitel = (client, titel, plan)
+        gemeldetPausiert = false
+        meldungen.melden(meldung(.start, client, titel: titel, plan: plan, ticks: ticks))
+    }
+
+    func meldeFortschritt(_ client: JellyfinClient, titel: Item, plan: PlaybackPlan,
+                          ticks: Int64, pausiert: Bool) {
+        guard meldungen.melden(meldung(.fortschritt(pausiert: pausiert), client,
+                                       titel: titel, plan: plan, ticks: ticks)) else {
+            print("[Melden] Fortschritt nach Stopp verworfen \(titel.id)")
+            fflush(nil)
+            return
+        }
+        gemeldetPausiert = pausiert
+    }
+
+    /// **libVLC hat angehalten oder laeuft wieder — sofort melden** (T2-N1).
+    ///
+    /// Haengt an VLCs Ereignis (``Abspieler/laufzustand``), nicht am Druck:
+    /// Knopf, Leertaste, Medientaste, Fernbefehl und Schlafwecker gehen alle
+    /// hier durch, und gemeldet wird der Zustand, den VLC wirklich hat —
+    /// nicht der, den der Knopf erwartet.
+    func laufzustandGemeldet(laeuft: Bool) {
+        guard let meldetitel, gemeldetPausiert == laeuft,
+              meldetitel.titel.id == laufenderTitel?.id else { return }
+        let stelle = spielstand.sprung?.ziel ?? abspieler.position
+        print("[Melden] sofort: \(laeuft ? "weiter" : "Pause") bei \(Int(stelle)) s")
+        fflush(nil)
+        meldeFortschritt(meldetitel.client, titel: meldetitel.titel, plan: meldetitel.plan,
+                         ticks: Int64(stelle * 10_000_000), pausiert: !laeuft)
+    }
+
+    /// **Jeder Sprung geht hier durch** — Knoepfe, Pfeiltasten, Regler,
+    /// Ueberspringen und Fernbefehle. Stand und Sprungriegel werden mitgesetzt
+    /// (T2-N2: „Springen auf" vom Dashboard setzte nur VLCs Zeit, und der
+    /// Takt zog die Anzeige zurueck), und die Zielstelle geht sofort hinaus
+    /// (T2-N1).
+    func springe(auf ziel: Double) {
+        let ziel = max(0, ziel)
+        abspieler.setzeZeit(ziel)
+        // Anzeige und Angebot sofort auf dem Ziel; der Takt haelt es, bis VLC
+        // dort ist (Bug 17.09.2026).
+        Wiedergabetakt.gesprungen(&spielstand, ziel: ziel)
+        _ = angebotTakt(vergangen: 0)
+        zeitenZeigen()
+        angebotNachfuehren()
+        letzterSprung = Date()
+        guard let meldetitel, meldetitel.titel.id == laufenderTitel?.id,
+              folgenwechsel.meldungenErlaubt else { return }
+        print("[Melden] sofort: Sprung auf \(Int(ziel)) s")
+        fflush(nil)
+        meldeFortschritt(meldetitel.client, titel: meldetitel.titel, plan: meldetitel.plan,
+                         ticks: Int64(ziel * 10_000_000), pausiert: gemeldetPausiert)
+    }
+
+    /// Relativ springen. Solange ein Sprung unterwegs ist, ist VLCs Zeit noch
+    /// die alte — dann zaehlt die Stelle, zu der schon gesprungen wurde.
+    func springe(um sekunden: Double) {
+        let von = spielstand.sprung?.ziel ?? abspieler.position
+        springe(auf: von + sekunden)
+    }
+
+    /// Angebot und Einblendung an die angezeigte Stelle anpassen — im Takt, und
+    /// mit `vergangen: 0` direkt nach einem Sprung. `true`: Countdown abgelaufen.
+    func angebotTakt(vergangen: Double) -> Bool {
+        let angebot: Knopfangebot = folgenwechsel.laeuft ? .keiner
+            : Abschnittslogik.angebot(position: spielstand.position,
+                                      dauer: spielstand.dauer,
+                                      abschnitte: abschnitte,
+                                      hatNaechsteFolge: vorgeholteFolge != nil)
+        jetzigesAngebot = angebot
+        guard !folgenwechsel.laeuft else { return false }
+        return angebotsebene.takt(
+            angebot: angebot,
+            karteFaellig: Abschnittslogik.karteFaellig(position: spielstand.position,
+                                                       dauer: spielstand.dauer,
+                                                       abschnitte: abschnitte,
+                                                       hatNaechsteFolge: vorgeholteFolge != nil),
+            laeuft: spielstand.laeuft && spielerLadeschirm == nil && !amRegler,
+            vergangen: vergangen,
+            countdown: Abschnittslogik.countdown(position: spielstand.position, dauer: spielstand.dauer))
+    }
+
+    /// Das Ende — **abgewartet**, weil danach die Seiten neu laden (d8492ca).
+    /// Die Reihe schickt es hinter einem noch laufenden Start; doppelt kommt
+    /// es nicht. Bei Fehler oder Fristablauf in die Nachmeldung (H8).
+    func meldeStopp(_ client: JellyfinClient, titel: Item, plan: PlaybackPlan,
+                    ticks: Int64, konto: String) async {
+        let eintrag = meldung(.stopp, client, titel: titel, plan: plan, ticks: ticks)
+        // Sofort, nicht nach der Antwort: Pause oder Sprung in der
+        // Zwischenzeit gehoeren keinem Titel mehr (T1-M9).
+        aufHauptfaden {
+            if let t = self.meldetitel,
+               Stoppsperre.schluessel(itemID: t.titel.id, playSessionID: t.plan.playSessionID)
+                == eintrag.schluessel {
+                self.meldetitel = nil
             }
         }
+        let ergebnis = await meldungen.meldenUndWarten(eintrag)
+        switch ergebnis {
+        case .gesendet:
+            print("[Melden] Stopped \(ticks / 10_000_000) s \(titel.id) session \(plan.playSessionID ?? "nil")")
+        case .verworfen:
+            print("[Melden] Stopped doppelt verworfen \(titel.id) session \(plan.playSessionID ?? "nil")")
+        case .gescheitert, .zeitUeberschritten:
+            // **H8, zweite Haelfte.** Die Stelle ist das, was ein Download
+            // hinterlaesst und der Server nicht hat.
+            Nachmeldezettel.aufnehmen(titel.id, ticks: ticks, konto: konto)
+            print("[Melden] Stopped \(ergebnis) → Nachmeldung \(titel.id)")
+        }
+        fflush(nil)
     }
 
     private func zeitenZeigen() {
@@ -734,7 +976,7 @@ extension App {
         let rat = Stromwacht.rat(
             stillstandSeit: Date().timeIntervalSince(seit),
             netzwechselVor: nil,
-            sprungOffen: Date() < sprungBis,
+            sprungOffen: spielstand.sprung != nil,
             letzterSprungVor: Date().timeIntervalSince(letzterSprung),
             pufferWuchsVor: Date().timeIntervalSince(stromPufferWuchs))
         guard rat == .neuVerbinden else { return }
@@ -747,148 +989,149 @@ extension App {
         abspieler.oeffnen(plan.url, ab: stelle, puffer: wahlen.puffer)
         abspieler.bildfuellend(wahlen.bildfuellend)
         spielstand.spurenGesetzt = false
+        spurlage.neuGeoeffnet()
     }
 
-    /// **Ton- und Untertitelspur werden einmal gesetzt, sobald VLC sie
-    /// kennt** (B8).
-    ///
-    /// **Zwei Sachen waren hier falsch.** Die Untertitelvorwahl und
-    /// „Untertitel automatisch" standen in den Einstellungen, wurden
-    /// gesichert — und nie gelesen. Und der Abgleich lief über
-    /// `localizedCaseInsensitiveContains` auf einen einzigen Namen; VLC
-    /// meldet je nach Datei „German", „Deutsch" oder „ger". Dafür gibt es
-    /// ``Sprache/passt(_:zu:)`` im Paket, das alle Schreibweisen kennt — der
-    /// Mac benutzt es (`VLCPlayer.swift`), ich hatte es übersehen.
-    private func spurenVorwaehlen() {
-        let tonWunsch = wahlen.tonSprache
-        var tonPasst = tonWunsch.isEmpty   // keine Vorgabe, also nichts einzuwenden
-        if !tonWunsch.isEmpty,
-           let treffer = abspieler.tonspuren.first(where: {
-               $0.kennung >= 0 && Sprache.passt($0.name, zu: tonWunsch)
-           }) {
-            abspieler.setzeTonspur(treffer.kennung)
-            tonPasst = true
-        }
-
-        // **„Automatisch" schaltet auch ab, nicht nur ein.**
-        //
-        // Hier stand in beiden Faellen ein blankes `return`, und damit blieb
-        // stehen, was der Container vorgewaehlt hatte: bei einer Datei mit
-        // fest eingeschalteten deutschen Untertiteln liefen die weiter,
-        // obwohl der Ton schon Deutsch war. Der Mac schaltet an derselben
-        // Stelle `deselectAllTextTracks()` (`VLCPlayer.swift:1331-1338`) —
-        // „automatisch" heisst dort ausdruecklich: **nur** wenn der Ton nicht
-        // passt.
-        let uWunsch = wahlen.untertitelSprache
-        let automatisch = wahlen.untertitelAutomatisch
-        if automatisch, tonPasst {
-            abspieler.setzeUntertitel(-1)
-            return
-        }
-        guard !uWunsch.isEmpty else {
-            // Ohne Wunschsprache nichts erzwingen — ausser „automatisch"
-            // steht an, dann ist „kein Untertitel" die Antwort.
-            if automatisch { abspieler.setzeUntertitel(-1) }
-            return
-        }
-        if let treffer = abspieler.untertitelspuren.first(where: {
-            $0.kennung >= 0 && Sprache.passt($0.name, zu: uWunsch)
-        }) {
-            abspieler.setzeUntertitel(treffer.kennung)
-        }
-    }
+    // Ton- und Untertitelwahl beim Start: ``spurenVorwaehlen()`` in `Spurwahl.swift`.
 
     /// Was der Knopf unten rechts gerade tut.
     func angebotAusfuehren() {
+        angebotsebene.gedrueckt()
+        print("[Angebot] ausgeloest: \(jetzigesAngebot.beschriftung) bei \(Int(spielstand.position)) s")
+        fflush(nil)
+        angebotNachfuehren()
         switch jetzigesAngebot {
         case .keiner:
             break
         case let .ueberspringen(nach, _):
-            abspieler.setzeZeit(nach)
-            spielstand.position = nach
-            sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
-        letzterSprung = Date()
-            letzterSprung = Date()
+            springe(auf: nach)
             steuerungZeigen()
         case .naechsteFolge:
             naechsteFolge()
         }
     }
 
-    /// **Der Riegel gegen den doppelten Wechsel.**
+    /// **Der Wechsel zur naechsten Folge — der Ablauf aus dem Paket.**
     ///
-    /// `Folgenende.weiterschalten` bleibt wahr, sobald die Stelle das Ende
-    /// erreicht hat — und der Takt fragt alle 500 ms. Der Wechsel selbst
-    /// braucht zwei Netzabrufe, also lief er hier mehrfach an: jeder Lauf las
-    /// denselben `laufenderTitel`, holte dieselbe nächste Folge, meldete das
-    /// alte Item noch einmal als gestoppt und öffnete den Spieler erneut.
-    /// Der Kommentar unten behauptete „genau einmal" (C4); ohne diesen Riegel
-    /// stimmte das nicht. iOS und macOS haben ihn seit jeher (`wechselt`).
+    /// `Folgenwechsel` haelt den Riegel (ein Wechsel zur Zeit), stoppt die
+    /// alte Sitzung und holt den Plan nebeneinander, startet erst danach und
+    /// wendet nach dem Schliessen nichts mehr an. Hier stand er von Hand:
+    /// Fortschritt, Stopp und Start in drei losen Auftraegen, die in
+    /// beliebiger Reihenfolge ankamen (T2-M3), und ein Erfolg, der den
+    /// geschlossenen Player wieder bespielte (T2-H1). Hier bleibt nur, was
+    /// Linux gehoert: welche Zustaende zur Folge zaehlen (``folgeAnwenden``).
     func naechsteFolge() {
-        guard !wechselt else { return }
-        guard let client, let titel = laufenderTitel, let serie = titel.seriesId else { return }
-        wechselt = true
+        guard let client, let titel = laufenderTitel, let plan = laufenderPlan,
+              let folge = vorgeholteFolge else { return }
+        let wechsel = folgenwechsel
+        guard !wechsel.laeuft else {
+            print("[Wechsel] gesperrt → \(folge.id)")
+            fflush(nil)
+            return
+        }
+        let alt = (titel: titel, plan: plan, gemeldet: spielstand.startGemeldet,
+                   ticks: Int64(spielstand.position * 10_000_000))
         let grenze = wahlen.profilBitrate
+        let konto = benutzerID
+        let angewandt = Merker()
         Task.detached { [self] in
-            guard let naechste = try? await client.folgeNach(itemID: titel.id,
-                                                             seriesID: serie),
-                  let plan = try? await client.playbackPlan(for: naechste.id,
-                                                            profile: .vlc(maxBitrate: grenze))
-            else {
-                aufHauptfaden {
-                    self.wechselt = false
-                    self.melden(uebersetzt("Nächste Folge konnte nicht geladen werden."))
-                }
-                return
-            }
-            aufHauptfaden {
-                // **Beim Folgenwechsel: Ende der alten melden, Start der
-                // neuen. Genau einmal** (C4). `neuerTitel` setzt den Stand
-                // zurück — einschließlich `seitStart` (B7).
-                self.melden(.fortschritt)
-                if let alterPlan = self.laufenderPlan {
-                    let ticks = Int64(self.spielstand.position * 10_000_000)
-                    Task.detached {
-                        try? await client.reportStopped(itemID: titel.id, plan: alterPlan,
-                                                        positionTicks: ticks)
+            let ergebnis = await wechsel.ausfuehren(Folgenwechsel.Schritte<PlaybackPlan>(
+                stoppen: {
+                    // Ein Stopp ohne Start ist keine Sitzung.
+                    guard alt.gemeldet else { return }
+                    await self.meldeStopp(client, titel: alt.titel, plan: alt.plan,
+                                          ticks: alt.ticks, konto: konto)
+                },
+                planen: {
+                    try? await client.playbackPlan(for: folge.id,
+                                                   profile: .vlc(maxBitrate: grenze))
+                },
+                anwenden: { neu in
+                    // **Auf GTKs Faden, und hier noch einmal gefragt.** Der
+                    // Ablauf laeuft abseits; zwischen seinem letzten Blick und
+                    // diesem Auftrag kann der Player zugegangen sein.
+                    aufHauptfadenWarten {
+                        guard self.folgenwechsel === wechsel, wechsel.phase == .startet
+                        else { return }
+                        self.folgeAnwenden(folge, neu)
+                        angewandt.wert = true
                     }
+                },
+                starten: { neu in
+                    guard angewandt.wert else { return }
+                    // Auf GTKs Faden: `meldetitel` gehoert ihm.
+                    aufHauptfadenWarten { self.meldeStart(client, titel: folge, plan: neu, ticks: 0) }
+                },
+                gescheitert: {
+                    aufHauptfaden {
+                        guard self.folgenwechsel === wechsel else { return }
+                        // Die alte Folge laeuft weiter, der Server kennt sie
+                        // aber schon als beendet. Der Takt meldet sie neu an.
+                        self.spielstand.startGemeldet = false
+                        self.melden(uebersetzt("Nächste Folge konnte nicht geladen werden."))
+                    }
+                }))
+            print("[Wechsel] \(ergebnis) → \(folge.id)")
+            fflush(nil)
+            guard ergebnis == .gewechselt else { return }
+            self.nachschlagen(fuer: folge, wechsel: wechsel, client: client)
+        }
+    }
+
+    /// Die neue Folge uebernehmen — **vor** dem Start.
+    private func folgeAnwenden(_ folge: Item, _ plan: PlaybackPlan) {
+        laufenderTitel = folge
+        laufenderPlan = plan
+        spurlageNeu(folge, plan: plan)
+        // Stelle, Spuren, Startmeldung und erstes Bild zurueck; `true`, weil
+        // der Wechsel den Start meldet (C1: sonst erst nach dem Puffern).
+        // `neuerTitel` setzt auch `seitStart` (B7) und `erstesBildDa`.
+        MainActor.assumeIsolated {
+            Wiedergabetakt.neuerTitel(&self.spielstand, startGemeldet: true)
+        }
+        seitOeffnen = Date()
+        // **Nichts zeigt mehr auf die alte Folge** (T1-M4).
+        abschnitte = []
+        vorgeholteFolge = nil
+        angebotsebene.neueFolge()
+        // **Das Tempo überlebt den Folgenwechsel.** Linux legt je Folge einen
+        // neuen libVLC-Spieler an; ohne diese Zeile fängt die nächste Folge
+        // wieder bei 1,0 an, obwohl der Zuschauer 1,25 gewählt hat.
+        let tempo = abspieler.tempo
+        // Die nächste Folge startet **von vorn** (B5).
+        abspieler.oeffnen(plan.url, ab: 0, puffer: wahlen.puffer)
+        // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
+        abspieler.bildfuellend(wahlen.bildfuellend)
+        technikschildSetzen(wahlen.technikschild)
+        abspieler.tempo = tempo
+        medienstandMelden()
+    }
+
+    /// **Abschnitte und naechste Folge zur laufenden Folge nachholen** — nur
+    /// uebernehmen, wenn seither kein Wechsel begonnen hat, der Player offen
+    /// ist und noch diese Folge zeigt (`Folgenwechsel.nachschlagen`, T1-M4).
+    func nachschlagen(fuer item: Item, wechsel: Folgenwechsel, client: JellyfinClient) {
+        let gilt: @Sendable (App) -> Bool = { app in
+            app.folgenwechsel === wechsel && wechsel.phase == .ruht
+                && app.laufenderTitel?.id == item.id
+        }
+        Task.detached { [self] in
+            await wechsel.nachschlagen(holen: { await client.abschnitte(fuer: item.id) }) { marken in
+                aufHauptfaden { if gilt(self) { self.abschnitte = marken } }
+            }
+        }
+        guard let serie = item.seriesId else { return }
+        Task.detached { [self] in
+            await wechsel.nachschlagen(holen: {
+                (try? await client.folgeNach(itemID: item.id, seriesID: serie)) ?? nil
+            }) { folge in
+                aufHauptfaden {
+                    guard gilt(self) else { return }
+                    self.vorgeholteFolge = folge
+                    print("[Wechsel] naechste Folge \(folge?.id ?? "keine") nach \(item.id)")
+                    fflush(nil)
+                    self.medienstandMelden()
                 }
-                self.laufenderTitel = naechste
-                self.laufenderPlan = plan
-                // **Der Start wird hier gemeldet, nicht von der Schleife.**
-                // Titel und Plan sind in diesem Augenblick bekannt, die Stelle
-                // ist null. Ueberliesse man es dem Takt, kaeme die Meldung erst,
-                // wenn ein Bild steht (C1) — also nach der Pufferzeit der neuen
-                // Datei. iOS und macOS melden hier, und `startGemeldet: true`
-                // gehoert dazu: sonst bliebe der Stand auf „noch nicht
-                // gemeldet" und der Takt eroeffnete die Sitzung ein zweites Mal.
-                Task.detached {
-                    try? await client.reportStart(itemID: naechste.id, plan: plan, ticks: 0)
-                }
-                MainActor.assumeIsolated {
-                    Wiedergabetakt.neuerTitel(&self.spielstand, startGemeldet: true)
-                }
-                self.spielstand.erstesBildDa = false
-                self.seitOeffnen = Date()
-                self.abschnitte = []
-                // **Das Tempo überlebt den Folgenwechsel.** Linux legt je
-                // Folge einen neuen libVLC-Spieler an; ohne diese Zeile fängt
-                // die nächste Folge wieder bei 1,0 an, obwohl der Zuschauer
-                // 1,25 gewählt hat. Auf dem Mac bleibt derselbe Spieler
-                // stehen, deshalb stellt sich die Frage dort nicht.
-                let tempo = self.abspieler.tempo
-                // Die nächste Folge startet **von vorn** (B5).
-                self.abspieler.oeffnen(plan.url, ab: 0, puffer: self.wahlen.puffer)
-                // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
-                self.abspieler.bildfuellend(self.wahlen.bildfuellend)
-                self.technikschildSetzen(self.wahlen.technikschild)
-                self.abspieler.tempo = tempo
-                Task.detached { [self] in
-                    let marken = await client.abschnitte(fuer: naechste.id)
-                    aufHauptfaden { self.abschnitte = marken }
-                }
-                // Erst jetzt wieder offen: der Wechsel ist durch.
-                self.wechselt = false
             }
         }
     }
@@ -901,10 +1144,7 @@ extension App {
     func reglerGesetzt(_ anteil: Double) {
         guard spielstand.dauer > 0 else { return }
         let ziel = spielstand.dauer * anteil
-        spielstand.position = ziel
-        abspieler.setzeZeit(ziel)
-        sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
-        letzterSprung = Date()
+        springe(auf: ziel)
         steuerungZeigen()
     }
 
@@ -947,6 +1187,7 @@ extension App {
         gtk_widget_set_opacity(spielerSteuerung, 0)
         spurwahlSchliessen()
         zeigerZeigen(false)
+        angebotNachfuehren()
     }
 
     /// **Der Zeiger geht mit der Steuerung.** Ein Pfeil, der auf einem
@@ -963,11 +1204,15 @@ extension App {
         }
     }
 
-    func steuerungZeigen() {
+    /// `.bewusst` (Klick, Taste, Knopf) sagt eine laufende Karte „Nächste
+    /// Folge" ab, `.nebenbei` (Zeiger) nicht — Regel in `Angebotsebene`.
+    func steuerungZeigen(durch art: Angebotsebene.Oeffnung = .bewusst) {
         // Der Zeiger meldet sich auch noch, während der Player hinausfährt.
         guard spielerSteuerung != nil else { return }
         zeigerZeigen(true)
         gtk_widget_set_opacity(spielerSteuerung, 1)
+        if laufenderTitel != nil { angebotsebene.steuerung(offen: true, durch: art) }
+        angebotNachfuehren()
         steuerungstakt += 1
         let meins = steuerungstakt
         Task.detached { [self] in
@@ -991,6 +1236,7 @@ extension App {
                 // Ueberzug daneben, also nimmt die Deckkraft der Steuerung sie
                 // nicht mit — sie blieb offen ueber einem Bild ohne Bedienung.
                 self.spurwahlSchliessen()
+                self.angebotNachfuehren()
             }
         }
     }
@@ -1183,12 +1429,12 @@ extension App {
         switch b {
         case .ton:
             let jetzt = abspieler.tonspur
-            return abspieler.tonspuren.first { $0.kennung == jetzt }?.name
+            return tonspurnamen().first { $0.kennung == jetzt }?.name
                 ?? uebersetzt("Keine")
         case .untertitel:
             let jetzt = abspieler.untertitelspur
             guard jetzt >= 0 else { return uebersetzt("Aus") }
-            return abspieler.untertitelspuren.first { $0.kennung == jetzt }?.name
+            return untertitelnamen().first { $0.kennung == jetzt }?.name
                 ?? uebersetzt("Aus")
         case .bildformat:
             return uebersetzt(wahlen.bildfuellend ? "Formatfüllend" : "Ganzes Bild")
@@ -1206,27 +1452,25 @@ extension App {
         switch spurbereich {
         case .ton:
             let jetzt = abspieler.tonspur
-            for spur in abspieler.tonspuren {
-                // **„Disable" ist keine Tonspur.** VLC haengt den Eintrag an
-                // jede Liste; fuer Ton gibt es ihn auf dem Mac nicht, und ein
-                // Film ohne Ton ist auch keine Wahl, die jemand trifft.
-                guard spur.kennung >= 0 else { continue }
+            // **„Disable" ist keine Tonspur.** VLC haengt den Eintrag an
+            // jede Liste; `tonspurnamen` laesst ihn weg, wie der Mac.
+            for spur in tonspurnamen() {
                 anhaengen(raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetzt) {
                     [weak self] in
-                    self?.abspieler.setzeTonspur(spur.kennung)
+                    self?.tonspurGewaehlt(spur.kennung)
                     self?.spurtafelBauen()
                 })
             }
         case .untertitel:
             let jetzt = abspieler.untertitelspur
             anhaengen(raum, wahlzeile(uebersetzt("Aus"), gewaehlt: jetzt < 0) { [weak self] in
-                self?.abspieler.setzeUntertitel(-1)
+                self?.untertitelGewaehlt(nil)
                 self?.spurtafelBauen()
             })
-            for spur in abspieler.untertitelspuren where spur.kennung >= 0 {
+            for spur in untertitelnamen() {
                 anhaengen(raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetzt) {
                     [weak self] in
-                    self?.abspieler.setzeUntertitel(spur.kennung)
+                    self?.untertitelGewaehlt(spur.kennung)
                     self?.spurtafelBauen()
                 })
             }
@@ -1369,3 +1613,46 @@ nonisolated(unsafe) let spielerTaktRuf: @convention(c) (gpointer?) -> gboolean =
     Unmanaged<App>.fromOpaque(daten).takeUnretainedValue().takten()
     return 1
 }
+
+/// Ein Wert, den genau ein Faden nach dem anderen anfasst — hier die Frage,
+/// ob `anwenden` wirklich angewandt hat. `aufHauptfadenWarten` sorgt fuer
+/// die Reihenfolge.
+private final class Merker: @unchecked Sendable {
+    var wert = false
+}
+
+/// `aufHauptfaden`, aber wartend: `Folgenwechsel` ruft `anwenden` synchron
+/// und meldet den Start gleich danach. Nie vom Hauptfaden aus rufen.
+private func aufHauptfadenWarten(_ block: @escaping @Sendable () -> Void) {
+    let fertig = DispatchSemaphore(value: 0)
+    aufHauptfaden {
+        block()
+        fertig.signal()
+    }
+    fertig.wait()
+}
+
+/// Was eine Meldung an den Server braucht. Der Client wird beim Einreihen
+/// festgehalten: wechselt danach das Konto, gehoert die Meldung trotzdem dem,
+/// der geschaut hat.
+struct Meldeinhalt: Sendable {
+    let client: JellyfinClient
+    let titel: Item
+    let plan: PlaybackPlan
+    let ticks: Int64
+    /// Die laufenden Spuren als Jellyfin-Index (T3 #8) — aus ``Spurlage``.
+    var spuren = Spurindizes()
+
+    var spurtext: String {
+        "\(spuren.ton.map(String.init) ?? "—")/\(spuren.untertitel.map(String.init) ?? "—")"
+    }
+}
+
+#if DEBUG
+/// Fernsteuerpult `meldungen:haengen|normal` — jede Meldung wartet 60 s, wie
+/// ein Server, der nicht antwortet. Nur zum Messen, dass Zeitleiste und Takt
+/// davon unberuehrt bleiben und die Frist greift.
+enum Meldeprobe {
+    nonisolated(unsafe) static var haengen = false
+}
+#endif

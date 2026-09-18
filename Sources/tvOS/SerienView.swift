@@ -53,14 +53,12 @@ struct SerienView: View {
 
         // Die Staffel, die auch `laden()` waehlen wuerde — sonst stuende
         // beim Wiederkommen die erste vorn statt der zuletzt gesehenen.
-        let gesucht = startStaffelID ?? gemerkt?.weiterMit?.seasonId ?? startFolge?.seasonId
-        // Der Server kann an einer Folge kein `SeasonId` liefern — dann ueber
-        // die Nummer, die immer dasteht. Am Geraet gemessen.
-        let gesuchteNummer = startFolge?.parentIndexNumber ?? gemerkt?.weiterMit?.parentIndexNumber
-        let staffel = gemerkt?.staffeln.first { $0.id == gesucht }
-                   ?? gemerkt?.staffeln.first { $0.indexNumber != nil
-                                                && $0.indexNumber == gesuchteNummer }
-                   ?? gemerkt?.staffeln.first
+        // A10 aus dem Paket: der Hinweis der Folge (Kennung, dann Nummer —
+        // der Server liefert nicht immer eine `SeasonId`) vor dem Stand.
+        let staffel = Staffelwahlregel.waehle(aus: gemerkt?.staffeln ?? [],
+                                              hinweisID: startStaffelID ?? startFolge?.seasonId,
+                                              hinweisNummer: startFolge?.parentIndexNumber,
+                                              stand: gemerkt?.weiterMit)
         _gewaehlteStaffel = State(initialValue: staffel)
 
         let folgen = staffel.flatMap { gemerkt?.folgen[$0.id] } ?? []
@@ -242,6 +240,11 @@ struct SerienView: View {
             await laden()
         }
         .task(id: gewaehlteStaffel?.id) { await folgenLaden() }
+        // **Nach dem Player neu holen.** Er liegt als Ebene über dieser
+        // Seite, sie verschwindet dabei nie, und `.task` oben läuft kein
+        // zweites Mal — Fortschritt und „gesehen" blieben auf dem Stand von
+        // vor dem Abspielen. Siehe `AppModel.wiedergabeBeendet`.
+        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await auffrischen() } }
     }
 
     // MARK: Kopf
@@ -438,13 +441,13 @@ struct SerienView: View {
 
         if gewaehlteStaffel == nil {
             // Über eine Folge gekommen: deren Staffel steht vorn. Sonst die,
-            // in der es weitergeht — und erst dann die erste.
-            let gesucht = startStaffelID ?? weiterMit?.seasonId
-            // Und ueber die Nummer, wenn der Server keine Kennung mitgibt.
-            let nummer = startFolge?.parentIndexNumber ?? weiterMit?.parentIndexNumber
-            gewaehlteStaffel = staffeln.first { $0.id == gesucht }
-                ?? staffeln.first { $0.indexNumber != nil && $0.indexNumber == nummer }
-                ?? staffeln.first
+            // in der es weitergeht — und erst dann die erste (A10, Paket).
+            // Die alte Kopie prüfte die Kennung des Stands vor der Nummer
+            // der Folge; ohne `SeasonId` stand die laufende Staffel da.
+            gewaehlteStaffel = Staffelwahlregel.waehle(aus: staffeln,
+                                                       hinweisID: startStaffelID ?? startFolge?.seasonId,
+                                                       hinweisNummer: startFolge?.parentIndexNumber,
+                                                       stand: weiterMit)
         }
         if let ziel = weiterMit {
             plan = await model.plan(for: ziel.id)

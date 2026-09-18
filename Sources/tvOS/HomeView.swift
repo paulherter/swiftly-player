@@ -60,8 +60,10 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // **Auch beim Zurueckkommen, nicht nur beim Erscheinen.**
         //
-        // `.task` deckt „Player geht zu" ab — die Ansicht erscheint dann neu.
-        // Den Wechsel in den Vordergrund deckt es nicht: wer am Telefon zu
+        // `.task` deckt „Player geht zu" **nicht** ab: der Player liegt als
+        // Ebene über der stehenbleibenden Startseite, sie erscheint nicht neu.
+        // Das haengt an `AppModel.wiedergabeBeendet` (D8). Den Wechsel in den
+        // Vordergrund deckt es auch nicht: wer am Telefon zu
         // Ende schaut und danach den Fernseher einschaltet, sieht die Folge
         // hier weiter unter „Weiterschauen" stehen.
         //
@@ -78,6 +80,7 @@ struct HomeView: View {
         // Beim Kontowechsel bleibt die Phase auf `ready` stehen; ohne das
         // hier stünde weiter der Bestand des vorigen Kontos auf dem Schirm.
         .onChange(of: model.kontowechsel) { _, _ in Task { await laden() } }
+        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await laden() } }
         // **Die Einstellung greift sofort, nicht beim naechsten Oeffnen.**
         // Umschalten aendert, welche Reihen es ueberhaupt gibt — und die
         // stehen erst nach einer neuen Abfrage fest.

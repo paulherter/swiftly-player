@@ -11,32 +11,33 @@ public enum JellyfinError: LocalizedError, Equatable {
     case notAuthenticated
     case http(status: Int, body: String?)
     case decoding(String)
+    /// **Die Anfrage kam nicht durch** — der `NSURLErrorDomain`-Code, etwa
+    /// `-1001` (Zeitüberschreitung) oder `-1004` (kein Server unter der
+    /// Adresse). Vorher stand hier nur `.transport(localizedDescription)`;
+    /// damit war die Ursache Text, und auf Android/Linux der englische Satz
+    /// von curl. ``urlFehlercode`` liest ihn als `URLError.Code`.
+    case netz(code: Int)
+    /// Ein eigener Satz des Pakets, schon für den Nutzer formuliert.
     case transport(String)
     case noPlayableSource
 
-    public var errorDescription: String? {
-        switch self {
-        case .invalidServerURL:
-            return uebersetzt("Die Serveradresse ist ungültig.")
-        case .notAuthenticated:
-            return uebersetzt("Nicht angemeldet.")
-        case .noPlayableSource:
-            return uebersetzt("Der Server nennt keine abspielbare Fassung.")
-        // Der Antwortkörper des Servers bleibt draußen: er kann alles
-        // enthalten, von einer Stapelablaufverfolgung bis zu einer Adresse
-        // mit Zugangsmerkmal, und für den Nutzer sagt er nichts.
-        // Für die Fehlersuche steht er in `.http(status:body:)` weiterhin
-        // bereit — nur eben nicht in dem Text, den die Oberfläche zeigt.
-        case .http(401, _):
-            return uebersetzt("Anmeldung abgelehnt.")
-        case let .http(status, _):
-            return uebersetzt("Server antwortete mit \(status).")
-        case let .decoding(detail):
-            return uebersetzt("Antwort nicht lesbar: \(detail)")
-        case let .transport(detail):
-            return uebersetzt("Verbindung fehlgeschlagen: \(detail)")
-        }
+    /// Aus dem Fehler von `URLSession`: mit Code, wenn es einer ist.
+    init(anfrage fehler: any Error) {
+        let ns = fehler as NSError
+        self = ns.domain == NSURLErrorDomain ? .netz(code: ns.code)
+                                             : .transport(fehler.localizedDescription)
     }
+
+    /// Der `URLError`-Code, wenn die Anfrage nicht durchkam.
+    public var urlFehlercode: URLError.Code? {
+        if case let .netz(code) = self { return URLError.Code(rawValue: code) }
+        return nil
+    }
+
+    /// **Eine Regel für den Text: ``lesbarerFehler(_:)``.** Hier stand eine
+    /// zweite mit eigenen Sätzen („Verbindung fehlgeschlagen: The request
+    /// timed out."), und jede Stelle mit `localizedDescription` zeigte die.
+    public var errorDescription: String? { lesbarerFehler(self) }
 }
 
 /// Angemeldete Sitzung. Wird von der App im Keychain abgelegt.
@@ -62,6 +63,9 @@ public actor JellyfinClient {
     private let deviceID: String
     private let deviceName: String
     private let clientVersion: String
+    /// Der Name, unter dem der Server uns fuehrt. Auf Android mit Zusatz — sonst sieht ein anderes
+    /// Geraet nicht, dass es ein Telefon ist (`Fremdsitzung.geraeteart`).
+    private let programm: String
     private var session: Session?
     private let urlSession: URLSession
 
@@ -76,6 +80,7 @@ public actor JellyfinClient {
         deviceID: String,
         deviceName: String,
         clientVersion: String = Fassungsnummer.ausDemBuendel,
+        programm: String = "Swiftly Player",
         session: Session? = nil,
         urlSession: URLSession = .ortsnetzfaehig
     ) {
@@ -83,6 +88,7 @@ public actor JellyfinClient {
         self.deviceID = deviceID
         self.deviceName = deviceName
         self.clientVersion = clientVersion
+        self.programm = programm
         self.session = session
         self.urlSession = urlSession
     }
@@ -103,7 +109,7 @@ public actor JellyfinClient {
             // vom 07.09.2026 „Swiftly Player", und das ist der Name, den ein
             // Nutzer in seiner Geraeteliste wiedererkennen soll — er sieht
             // ihn in Jellyfin, nicht auf dem Homebildschirm.
-            "Client=\"Swiftly Player\"",
+            "Client=\"\(programm)\"",
             "Device=\"\(deviceName)\"",
             "DeviceId=\"\(deviceID)\"",
             "Version=\"\(clientVersion)\"",
@@ -151,7 +157,7 @@ public actor JellyfinClient {
         do {
             (data, response) = try await urlSession.data(for: req)
         } catch {
-            throw JellyfinError.transport(error.localizedDescription)
+            throw JellyfinError(anfrage: error)
         }
         guard let http = response as? HTTPURLResponse else {
             throw JellyfinError.transport("Keine HTTP-Antwort.")
@@ -189,7 +195,7 @@ public actor JellyfinClient {
     internal func sendIgnoringBody(_ req: URLRequest) async throws {
         let (data, response) = try await { () async throws -> (Data, URLResponse) in
             do { return try await urlSession.data(for: req) }
-            catch { throw JellyfinError.transport(error.localizedDescription) }
+            catch { throw JellyfinError(anfrage: error) }
         }()
         guard let http = response as? HTTPURLResponse else {
             throw JellyfinError.transport("Keine HTTP-Antwort.")
@@ -485,6 +491,28 @@ public actor JellyfinClient {
         return try await send(req, as: ItemsResponse.self).items
     }
 
+    #if DEBUG
+    /// **Nur für Messläufe:** der Wiedergabestand eines Titels als rohes JSON,
+    /// damit ein Lauf ihn danach genau so zurücklegen kann
+    /// (`nutzerdatenZuruecklegen`) — mit Zähler und Datum, nicht nur der Stelle.
+    public func nutzerdatenRoh(itemID: String) async throws -> Data {
+        let s = try requireSession()
+        let req = try request("UserItems/\(itemID)/UserData",
+                              query: [.init(name: "userId", value: s.userID)])
+        let (daten, _) = try await urlSession.data(for: req)
+        return daten
+    }
+
+    public func nutzerdatenZuruecklegen(itemID: String, roh: Data) async throws {
+        let s = try requireSession()
+        var req = try request("UserItems/\(itemID)/UserData", method: "POST",
+                              query: [.init(name: "userId", value: s.userID)])
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = roh
+        try await sendIgnoringBody(req)
+    }
+    #endif
+
     /// Merkliste an- und abschalten.
     public func setzeMerkliste(itemID: String, an: Bool) async throws {
         let s = try requireSession()
@@ -566,10 +594,15 @@ public actor JellyfinClient {
     ///
     /// `adjacentTo` liefert Vorgänger, aktuelle und Nachfolger in einem Zug —
     /// bequemer als selbst über Staffel- und Folgennummern zu rechnen.
+    ///
+    /// **`isMissing=false`** (Audit 16.09., T1-N8): Zeigt der Server fehlende
+    /// Folgen an, war der Nachbar sonst eine Folge ohne Datei, und „Nächste
+    /// Folge" scheiterte am Plan. Jellyfin filtert vor der Nachbarschaft.
     public func folgeNach(itemID: String, seriesID: String) async throws -> Item? {
         let s = try requireSession()
         let req = try request("Shows/\(seriesID)/Episodes", query: [
             .init(name: "userId", value: s.userID),
+            .init(name: "isMissing", value: "false"),
             .init(name: "adjacentTo", value: itemID),
             .init(name: "Fields", value: "Overview"),
         ])
@@ -696,6 +729,15 @@ public actor JellyfinClient {
               (200..<300).contains(http.statusCode) else {
             throw JellyfinError.transport(uebersetzt("Das andere Gerät hat nicht reagiert."))
         }
+    }
+
+    /// Die Wiedergabe-Einstellungen des Kontos, etwa „Nächste Folge
+    /// automatisch" (T3 #15). `nil` bei jedem Fehlschlag: dann gilt, was die
+    /// App ohnehin tut — ein Netzfehler ist kein Grund, etwas umzustellen.
+    public func kontovorgaben() async -> Kontovorgaben? {
+        guard let s = session,
+              let req = try? request("Users/\(s.userID)") else { return nil }
+        return try? await send(req, as: Kontovorgaben.self)
     }
 
     /// Die markierten Abschnitte einer Folge — Vorspann, Rueckblick, Abspann.

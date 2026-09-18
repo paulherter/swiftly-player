@@ -1,0 +1,7 @@
+// Symbol und Manifest des Startprogramms.
+//
+// Kennung 1 beim Symbol: Windows nimmt das mit der kleinsten Kennung als
+// Programmsymbol, und `startprogramm.c` laedt es unter derselben Nummer.
+// Kennung 1 beim Manifest (Typ 24): so findet Windows es beim Start.
+1 ICON "..\\Mittel\\swiftly.ico"
+1 24 "startprogramm.manifest"

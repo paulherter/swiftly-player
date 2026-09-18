@@ -92,6 +92,23 @@ public enum Bildwahl {
     /// **Bei einer Folge das Plakat der Serie.** Das eigene Bild einer Folge
     /// ist ein 16 : 9-Standbild und würde in einer 2 : 3-Kachel bis zur
     /// Unkenntlichkeit beschnitten.
+    /// **Das Kopfbild mit Ersatz** — `kopf`, sonst bei einer Serie das Querbild der Folge, die
+    /// als Naechstes laeuft (oder der ersten), sonst das Plakat in Kopfgroesse.
+    ///
+    /// Stand in `AppModel.kopfbildErsatzSuchen` und damit nur auf Apple. Die Android-Fassade
+    /// sprang vom Hintergrund direkt aufs Plakat — bei einer Serie ohne Hintergrund zeigte sie
+    /// oben das Plakat, das iPhone ein Standbild aus der Folge. Das Holen der Folge bleibt beim
+    /// Aufrufer; hier steht nur, welches Bild gilt.
+    public static func kopfMitErsatz(_ item: Item, folge: Item?, adressen: Bildadresse,
+                                     breite: Int = 1200) -> URL? {
+        if let url = kopf(item, adressen: adressen, breite: breite) { return url }
+        if item.type == "Series", let folge,
+           let url = quer(folge, adressen: adressen, breite: breite)?.url {
+            return url
+        }
+        return hochkant(item, adressen: adressen, maxHoehe: breite)
+    }
+
     public static func hochkant(_ item: Item, adressen: Bildadresse,
                                 maxHoehe: Int = 480) -> URL? {
         let quelle: (id: String, marke: String)?

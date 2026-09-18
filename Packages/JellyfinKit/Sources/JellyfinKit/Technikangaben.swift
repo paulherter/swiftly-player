@@ -47,6 +47,53 @@ public enum Technikangaben {
         }
     }
 
+    /// Codecname aus libVLCs Kennung (`i_codec`), etwa `mp4a` → „AAC".
+    ///
+    /// Die vier Zeichen liegen **niederwertiges Byte zuerst** — am 16.09.2026
+    /// an VLCKit auf dem Mac gemessen, `mp4a` kam so heraus. libVLCs eigener
+    /// `codecName()` schreibt „MPEG AAC Audio", deshalb diese Tabelle.
+    public static func codecname(vlcKennung kennung: UInt32) -> String? {
+        let bytes = [kennung, kennung >> 8, kennung >> 16, kennung >> 24].map { UInt8($0 & 0xFF) }
+        guard let zeichen = String(bytes: bytes, encoding: .ascii)?
+            .lowercased().trimmingCharacters(in: .whitespaces) else { return nil }
+        let roh: String? = switch zeichen {
+        case "mp4a":         "aac"
+        case "a52":          "ac3"
+        case "eac3":         "eac3"
+        case "dts":          "dts"
+        case "trhd":         "truehd"
+        case "mlp":          "mlp"
+        case "flac":         "flac"
+        case "alac":         "alac"
+        case "opus":         "opus"
+        case "mp3":          "mp3"
+        case "vorb":         "vorbis"
+        // Untertitel — für die Gegenprobe in ``Spurzuordnung``.
+        case "subt":         "subrip"
+        case "ssa":          "ass"
+        case "bdpg":         "hdmv_pgs_subtitle"
+        case "spu":          "dvd_subtitle"
+        case "tx3g":         "mov_text"
+        default:             nil
+        }
+        return codecname(roh)
+    }
+
+    /// Eine Tonspur in einer Zeile — „Deutsch · AAC · 5.1".
+    ///
+    /// Für Spuren, die der Spieler selbst meldet. Die Sprache kommt dort je
+    /// nach Datei als „ger", „deu" oder „German"; was `Locale` nicht kennt,
+    /// löst ``Sprache/erkannt(in:)`` auf.
+    public static func tonspurname(sprache roh: String?, codec: String?, kanaele: Int?) -> String? {
+        var sprachwort: String?
+        if let roh, !roh.isEmpty {
+            let gelesen = sprache(roh)
+            sprachwort = gelesen != roh ? gelesen : (Sprache.erkannt(in: roh) ?? roh)
+        }
+        let teile = [sprachwort, codec, kanalwort(kanaele)].compactMap { $0 }
+        return teile.isEmpty ? nil : teile.joined(separator: " · ")
+    }
+
     /// Wie viele Kanaele, in der Schreibweise, die jeder kennt.
     ///
     /// 6 heisst 5.1 und 8 heisst 7.1 — die Zahl der Kanaele ist nicht die

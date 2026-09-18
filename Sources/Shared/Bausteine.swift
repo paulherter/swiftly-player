@@ -85,19 +85,24 @@ struct Lader: View {
             .trim(from: 0, to: 0.22)
             .stroke(Stil.akzent, style: StrokeStyle(lineWidth: staerke, lineCap: .round))
             .frame(width: groesse, height: groesse)
-            .rotationEffect(.degrees(dreht ? 360 : 0))
             // **Schneller dreht sich schneller an.** Bei gleicher Ladezeit
             // wirkt ein flotter Ring kuerzer als ein gemaechlicher — das ist
             // gefuehlte Leistung, nicht gemessene. 0,9 s je Umdrehung war
             // traege; 0,7 s traegt dieselbe Aussage zuegiger. Linear bleibt
             // es, eine Kurve wuerde bei einer Dauerdrehung stocken.
-            .animation(.linear(duration: 0.7).repeatForever(autoreverses: false), value: dreht)
+            //
+            // **Eingegrenzt auf die Drehung** — eine Endlosschleife per
+            // `value:` nahm unter iOS 18 die Rahmen eines gleichzeitigen
+            // Uebergangs mit (siehe `Ladefeld`).
+            .animation(.linear(duration: 0.7).repeatForever(autoreverses: false)) {
+                $0.rotationEffect(.degrees(dreht ? 360 : 0))
+            }
             .background {
                 Circle()
                     .stroke(Stil.akzent.opacity(0.18), lineWidth: staerke)
                     .frame(width: groesse, height: groesse)
             }
-            .onAppear { dreht = true }
+            .task { dreht = true }
     }
 }
 

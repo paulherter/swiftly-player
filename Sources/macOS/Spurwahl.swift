@@ -14,8 +14,10 @@ import VLCKit
 struct Spurwahl: View {
     let tonspuren: [VLCMediaPlayer.Track]
     let untertitel: [VLCMediaPlayer.Track]
+    /// `trackId` der gewählten Spuren — nicht der Name (T1-N4).
     let gewaehlterTon: String?
     let gewaehlterUntertitel: String?
+    let untertitelnamen: [String: String]
     @Binding var tempo: Float
     /// `nil` heißt aus. Werte aus `Schlafzeiten` (VERHALTEN.md B10).
     @Binding var schlafminuten: Int?
@@ -162,8 +164,10 @@ struct Spurwahl: View {
     /// Leiste: ein Blick sagt, was eingestellt ist.
     private func wert(_ b: Bereich) -> String {
         switch b {
-        case .ton:        gewaehlterTon ?? String(localized: "Keine")
-        case .untertitel: gewaehlterUntertitel ?? String(localized: "Aus")
+        case .ton:
+            tonspuren.first { $0.trackId == gewaehlterTon }?.huebscherName
+                ?? String(localized: "Keine")
+        case .untertitel: gewaehlterUntertitel.flatMap { untertitelnamen[$0] } ?? String(localized: "Aus")
         case .bildformat: String(localized: bildfuellend ? "Formatfüllend" : "Ganzes Bild")
         case .tempo:      Tempostufen.beschriftung(tempo)
         case .schlafzeit: schlafminuten.map { "\($0)" } ?? String(localized: "Aus")
@@ -175,8 +179,8 @@ struct Spurwahl: View {
         case .ton:
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(tonspuren, id: \.trackId) { spur in
-                    Wahlzeile(text: spur.trackName,
-                              gewaehlt: spur.trackName == gewaehlterTon) { waehleTon(spur) }
+                    Wahlzeile(text: spur.huebscherName,
+                              gewaehlt: spur.trackId == gewaehlterTon) { waehleTon(spur) }
                 }
             }
         case .untertitel:
@@ -184,8 +188,8 @@ struct Spurwahl: View {
                 Wahlzeile(text: String(localized: "Aus"),
                           gewaehlt: gewaehlterUntertitel == nil) { waehleUntertitel(nil) }
                 ForEach(untertitel, id: \.trackId) { spur in
-                    Wahlzeile(text: spur.trackName,
-                              gewaehlt: spur.trackName == gewaehlterUntertitel) {
+                    Wahlzeile(text: untertitelnamen[spur.trackId] ?? spur.trackName,
+                              gewaehlt: spur.trackId == gewaehlterUntertitel) {
                         waehleUntertitel(spur)
                     }
                 }

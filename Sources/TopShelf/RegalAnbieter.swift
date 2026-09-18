@@ -34,11 +34,14 @@ final class RegalAnbieter: TVTopShelfContentProvider {
                 if let anteil = eintrag.fortschritt {
                     stueck.playbackProgress = anteil
                 }
-                // Beide Wege führen in die App an dieselbe Stelle: der eine
-                // beim Auswählen, der andere beim Drücken der Abspieltaste.
-                let ziel = URL(string: "swiftly://titel/\(eintrag.id)")
-                stueck.displayAction = ziel.map(TVTopShelfAction.init(url:))
-                stueck.playAction = ziel.map(TVTopShelfAction.init(url:))
+                // Auswählen öffnet die Titelseite, die Abspieltaste startet
+                // sofort und setzt fort (Apple HIG, Playing video). Was sich
+                // nicht direkt abspielen lässt — eine Serie —, öffnet die App
+                // auch auf dem zweiten Weg als Seite.
+                stueck.displayAction = URL(string: "swiftly://titel/\(eintrag.id)")
+                    .map(TVTopShelfAction.init(url:))
+                stueck.playAction = URL(string: "swiftly://abspielen/\(eintrag.id)")
+                    .map(TVTopShelfAction.init(url:))
                 return stueck
             }
             let sammlung = TVTopShelfItemCollection(items: eintraege)

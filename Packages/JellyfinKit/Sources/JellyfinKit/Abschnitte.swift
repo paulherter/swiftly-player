@@ -25,25 +25,26 @@ public struct Abschnitt: Sendable, Equatable, Decodable {
         case abspann    = "Outro"
         case vorspann   = "Intro"
 
-        /// Ob man diesen Abschnitt überspringen will.
+        /// Ob man diesen Abschnitt grundsätzlich überspringen will.
         ///
-        /// Der Abspann nicht: dort geht es nicht zurück in die Folge, sondern
-        /// weiter zur nächsten. Und „unbekannt" nicht, weil niemand weiß,
-        /// was dort übersprungen würde.
+        /// „Unbekannt" nicht, weil niemand weiß, was dort übersprungen würde.
+        /// Der Abspann steht hier mit drin, gilt aber nur, wenn danach noch
+        /// etwas kommt. Das entscheidet ``Abschnittslogik``, weil es die
+        /// Dateilänge braucht.
         var ueberspringbar: Bool {
             switch self {
-            case .vorspann, .rueckblick, .vorschau, .werbung: true
-            case .abspann, .unbekannt: false
+            case .vorspann, .rueckblick, .vorschau, .werbung, .abspann: true
+            case .unbekannt: false
             }
         }
 
         public var beschriftung: String {
             switch self {
-            case .vorspann:   uebersetzt("Vorspann überspringen")
+            case .vorspann:   uebersetzt("Intro überspringen")
             case .rueckblick: uebersetzt("Rückblick überspringen")
             case .vorschau:   uebersetzt("Vorschau überspringen")
             case .werbung:    uebersetzt("Werbung überspringen")
-            case .abspann:    uebersetzt("Nächste Folge")
+            case .abspann:    uebersetzt("Abspann überspringen")
             case .unbekannt:  uebersetzt("Überspringen")
             }
         }
@@ -149,14 +150,40 @@ public enum Abschnittslogik {
     /// gleich erreicht ist, ist keiner.
     public static let mindestrest: Double = 1.5
 
+    /// Kürzere Abschnitte bekommen keinen Knopf (Audit Teil 3, #14).
+    ///
+    /// Wie bei Jellyfin Android TV: ein Knopf, der nach zwei Sekunden schon
+    /// wieder weg ist, ist kein Angebot, sondern ein Blitz im Bild.
+    public static let mindestlaenge: Double = 3
+
+    /// Wie nah ein Abspann ans Dateiende reichen muss, um als „bis zum Schluss"
+    /// zu gelten (T3 #2). Die Analyse endet selten auf dem letzten Bild.
+    public static let abspannToleranz: Double = 2
+
+    /// Abschnitte, die für einen Knopf taugen.
+    static func gueltig(_ abschnitte: [Abschnitt]) -> [Abschnitt] {
+        abschnitte.filter { $0.bis - $0.von >= mindestlaenge }
+    }
+
+    /// Reicht der Abspann bis ans Dateiende? Dann ist „Nächste Folge" das
+    /// Angebot. Sonst kommt danach noch eine Szene, und er wird übersprungen.
+    static func reichtAnsEnde(_ abspann: Abschnitt, dauer: Double) -> Bool {
+        // Ohne Dauer lässt sich nichts sagen. Dann lieber wie bisher.
+        guard dauer > 0 else { return true }
+        return abspann.bis >= dauer - abspannToleranz
+    }
+
     public static func angebot(position: Double, dauer: Double,
                                abschnitte: [Abschnitt],
                                hatNaechsteFolge: Bool) -> Knopfangebot {
+        let abschnitte = gueltig(abschnitte)
 
-        // 1. Steht die Stelle in einem überspringbaren Abschnitt, gilt der —
-        //    auch wenn daneben ein Abspann angegeben ist.
+        // 1. Steht die Stelle in einem überspringbaren Abschnitt, gilt der.
+        //    Ein Abspann nur, wenn danach noch etwas kommt: sonst spränge der
+        //    Knopf ans Dateiende, und das ist kein Überspringen.
         if let hier = abschnitte.first(where: {
             $0.art.ueberspringbar && $0.enthaelt(position) && ($0.bis - position) > mindestrest
+                && !($0.art == .abspann && reichtAnsEnde($0, dauer: dauer))
         }) {
             return .ueberspringen(nach: hier.bis, art: hier.art)
         }
@@ -165,13 +192,46 @@ public enum Abschnittslogik {
 
         // 2. Gibt es eine Abspannangabe, gilt sie — und zwar allein.
         //    Nicht zusätzlich die Restzeitregel: zwei Zeitpunkte für einen
-        //    Knopf hieße, dass er zweimal erscheint.
+        //    Knopf hieße, dass er zweimal erscheint. Reicht der Abspann nicht
+        //    bis ans Ende, kommt „Nächste Folge" nach ihm, also nach der Szene
+        //    hinter dem Abspann.
         if let abspann = abschnitte.first(where: { $0.art == .abspann }) {
-            return position >= abspann.von ? .naechsteFolge : .keiner
+            let ab = reichtAnsEnde(abspann, dauer: dauer) ? abspann.von : abspann.bis
+            return position >= ab ? .naechsteFolge : .keiner
         }
 
         // 3. Sonst wie bisher.
         return Folgenende.knopfZeigen(position: position, dauer: dauer)
             ? .naechsteFolge : .keiner
+    }
+
+    /// Ob die Karte „Nächste Folge" von selbst aufgeht (T3 #3).
+    ///
+    /// **Nur mit Abspann-Abschnitt vom Server, der bis ans Ende reicht**
+    /// (Paul, 17.09.2026): dann ab Beginn des Abspanns. Ohne Abspann gibt es
+    /// keine Karte und kein automatisches Weiter — nur den Knopf in der
+    /// Steuerung. Früher ging sie dann in den letzten zehn Sekunden auf; ohne
+    /// Analyse weiß aber niemand, ob dort noch Handlung ist.
+    ///
+    /// Kommt nach dem Abspann noch eine Szene, wird der Abspann übersprungen,
+    /// und die Szene danach bekommt keine Karte: ein Countdown mitten in ihr
+    /// würde sie abschneiden.
+    public static func karteFaellig(position: Double, dauer: Double,
+                                    abschnitte: [Abschnitt],
+                                    hatNaechsteFolge: Bool) -> Bool {
+        // Ohne Dauer ist nichts „am Ende" — vor dem ersten Bild steht sie auf 0.
+        guard dauer > 0,
+              let abspann = gueltig(abschnitte).first(where: { $0.art == .abspann }),
+              reichtAnsEnde(abspann, dauer: dauer), position >= abspann.von
+        else { return false }
+        return angebot(position: position, dauer: dauer, abschnitte: abschnitte,
+                       hatNaechsteFolge: hatNaechsteFolge) == .naechsteFolge
+    }
+
+    /// Wie lange die Füllung der Karte läuft, wenn sie an dieser Stelle aufgeht:
+    /// ``Angebotsebene/countdown``, aber nie über das Dateiende hinaus.
+    public static func countdown(position: Double, dauer: Double) -> Double {
+        guard dauer > 0 else { return Angebotsebene.countdown }
+        return min(Angebotsebene.countdown, max(dauer - position, 1))
     }
 }

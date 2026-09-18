@@ -93,7 +93,7 @@ struct SucheView: View {
                                                                   maxHeight: 600,
                                                                   hochkant: true),
                                              titel: item.name,
-                                             unterzeile: gattungUndJahr(item),
+                                             unterzeile: item.trefferauskunft,
                                              fortschritt: item.userData?
                                                  .playedPercentage.map { $0 / 100 },
                                              marke: Anzeigeregeln.kachelmarke(
@@ -265,23 +265,10 @@ struct SucheView: View {
         .focusSection()
     }
 
-    /// „Serie · 2008" — damit ein Film und eine Serie gleichen Namens
-    /// unterscheidbar sind.
-    ///
-    /// Bisher stand hier das Folgenkuerzel, und es war ausserdem
-    /// abgeschaltet (`mitUnterzeile: false`): unter den Kacheln stand nur
-    /// der Titel, und bei mehreren Treffern derselben Serie sah man
-    /// dasselbe Plakat mehrfach ohne Unterschied.
-    private func gattungUndJahr(_ item: Item) -> String? {
-        var teile: [String] = []
-        switch item.type {
-        case "Movie":  teile.append(String(localized: "Film"))
-        case "Series": teile.append(String(localized: "Serie"))
-        default: break
-        }
-        if let jahr = item.productionYear { teile.append(String(jahr)) }
-        return teile.isEmpty ? nil : teile.joined(separator: " · ")
-    }
+    // Die Unterzeile eines Treffers kommt aus `Item.trefferauskunft` im Paket —
+    // dieselbe Regel wie auf iPhone, iPad, Mac und Android („Film · 2008",
+    // bei Serien mit Staffelzahl). Hier stand vorher eine eigene, schmalere
+    // `gattungUndJahr`: die einzige Plattform mit abweichender Unterzeile.
 
     private func suchen() async {
         let wort = begriff.trimmingCharacters(in: .whitespaces)

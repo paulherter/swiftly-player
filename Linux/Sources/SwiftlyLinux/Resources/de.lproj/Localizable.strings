@@ -35,10 +35,8 @@
 "Code vom Fernseher eingeben" = "Code vom Fernseher eingeben";
 "Danach kommt nichts mehr." = "Danach kommt nichts mehr.";
 "Darstellung" = "Darstellung";
-"Der Code ist abgelaufen. Hol dir einen neuen." = "Der Code ist abgelaufen. Hol dir einen neuen.";
 "Der Code stimmt nicht oder ist abgelaufen." = "Der Code stimmt nicht oder ist abgelaufen.";
 "Der Fortschritt ist zurückgesetzt." = "Der Fortschritt ist zurückgesetzt.";
-"Der Server hat keinen Code gegeben." = "Der Server hat keinen Code gegeben.";
 "Die Anmeldung gilt nicht mehr. Bitte neu anmelden." = "Die Anmeldung gilt nicht mehr. Bitte neu anmelden.";
 "Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da." = "Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da.";
 "Die Wiedergabe hat nicht geklappt — %@ hat keinen Plan geliefert." = "Die Wiedergabe hat nicht geklappt — %@ hat keinen Plan geliefert.";
@@ -314,3 +312,10 @@
 "Staffel laden" = "Staffel laden";
 "%d Folgen werden geladen." = "%d Folgen werden geladen.";
 "Staffeln wählen" = "Staffeln wählen";
+
+/* Stufe 4: Spurwahl und Uebernahmeauswahl */
+"Erzwungen" = "Erzwungen";
+"Datei" = "Datei";
+"Wo weiterschauen?" = "Wo weiterschauen?";
+"Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter." = "Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.";
+"Gerät" = "Gerät";

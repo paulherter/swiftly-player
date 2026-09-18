@@ -30,11 +30,25 @@ final class Abspieler {
     /// Wie die Anzeige das Bild zeigt. Ein `GtkPicture`, sonst nichts.
     var anzeige: Widget! { bildfeld }
 
+    /// **VLC spielt (`true`) oder hat angehalten (`false`)** — aus libVLCs
+    /// Ereignissen `Playing`/`Paused`, auf GTKs Faden. Das Gegenstueck zu
+    /// `VLCPlayerView.laeuftGemeldet` auf Apple: gemeldet wird, was VLC tut,
+    /// nicht was ein Knopf erwartet (Audit 16.09., T2-N1).
+    var laufzustand: ((Bool) -> Void)?
+
     init() {
         // Keine Benutzeroberfläche von VLC, keine eigenen Fenster: wir stellen
         // das Bild selbst dar. `--no-video-title-show` unterdrückt die
         // Einblendung, die VLC sonst über jedes Bild legt.
         var woerter = ["--no-video-title-show", "--quiet"]
+        #if DEBUG
+        // **Zum Pruefen, ob Module fehlen.** Mit `--quiet` schweigt VLC auch
+        // zu „no suitable decoder module"; im Debug-Bau laesst
+        // `SWIFTLY_VLC_MELDUNGEN=1` Fehler und Warnungen nach stderr.
+        if ProcessInfo.processInfo.environment["SWIFTLY_VLC_MELDUNGEN"] == "1" {
+            woerter = ["--no-video-title-show", "--verbose=1"]
+        }
+        #endif
         #if os(Linux)
         // Sagt VLC, dass es Xlib nicht anfassen soll — wir zeichnen selbst.
         // Unter Windows kennt VLC die Angabe nicht und beschwert sich.
@@ -131,6 +145,13 @@ final class Abspieler {
         libvlc_media_release(medium)
         guard let spieler else { return }
         bildbruecke_anhaengen(bruecke, spieler)
+        if let ereignisse = libvlc_media_player_event_manager(spieler) {
+            let ich = Unmanaged.passUnretained(self).toOpaque()
+            libvlc_event_attach(ereignisse, libvlc_event_type_t(libvlc_MediaPlayerPlaying.rawValue),
+                                laufzustandRuf, ich)
+            libvlc_event_attach(ereignisse, libvlc_event_type_t(libvlc_MediaPlayerPaused.rawValue),
+                                laufzustandRuf, ich)
+        }
         libvlc_media_player_play(spieler)
         bildTaktStarten()
     }
@@ -216,6 +237,39 @@ final class Abspieler {
 
     var tonspur: Int32 { spieler.map { libvlc_audio_get_track($0) } ?? -1 }
     var untertitelspur: Int32 { spieler.map { libvlc_video_get_spu($0) } ?? -1 }
+
+    /// Was libVLC über eine Spur weiß, das die Beschreibungsliste nicht
+    /// hergibt: Codec als Fourcc, Sprache, Kanäle.
+    struct Spurangabe { let codec: UInt32; let sprache: String?; let kanaele: Int? }
+
+    /// **Über das Medium, nicht über die Beschreibungsliste.** libVLC 3 kennt
+    /// keine `libvlc_media_player_get_track`-Objekte wie 4; die Angaben stehen
+    /// am Medium, verbunden über dieselbe `i_id`.
+    func spurangaben() -> [Int32: Spurangabe] {
+        guard let spieler, let medium = libvlc_media_player_get_media(spieler) else { return [:] }
+        defer { libvlc_media_release(medium) }
+        var feld: UnsafeMutablePointer<UnsafeMutablePointer<libvlc_media_track_t>?>?
+        let anzahl = libvlc_media_tracks_get(medium, &feld)
+        guard anzahl > 0, let feld else { return [:] }
+        defer { libvlc_media_tracks_release(feld, anzahl) }
+        var angaben: [Int32: Spurangabe] = [:]
+        for i in 0..<Int(anzahl) {
+            guard let spur = feld[i]?.pointee else { continue }
+            let sprache = spur.psz_language.map { String(cString: $0) }.flatMap { $0.isEmpty ? nil : $0 }
+            let kanaele = spur.i_type == libvlc_track_audio ? spur.audio.map { Int($0.pointee.i_channels) } : nil
+            angaben[spur.i_id] = Spurangabe(codec: spur.i_codec, sprache: sprache, kanaele: kanaele)
+        }
+        return angaben
+    }
+
+    /// **Eine Untertiteldatei nachladen, ohne sie einzuschalten.** Gewählt
+    /// wird danach über ``setzeUntertitel(_:)``, wie jede andere Spur.
+    @discardableResult
+    func untertiteldateiAnhaengen(_ adresse: URL) -> Bool {
+        guard let spieler else { return false }
+        return libvlc_media_player_add_slave(spieler, libvlc_media_slave_type_subtitle,
+                                             adresse.absoluteString, false) == 0
+    }
 
     /// Tempostufen kommen aus dem Paket (B9), nicht von hier.
     var tempo: Float {
@@ -317,6 +371,21 @@ final class Abspieler {
         if let bruecke { bildbruecke_frei(bruecke); self.bruecke = nil }
         if let kern { libvlc_release(kern); self.kern = nil }
         if let bildfeld { g_object_unref(bildfeld); self.bildfeld = nil }
+    }
+}
+
+/// libVLCs Ereignis kommt auf VLCs eigenem Faden. **Hier nichts von libVLC
+/// rufen** (das hielte VLCs Ereignisschloss) — nur die Adresse und den
+/// Zustand auf GTKs Faden tragen. Der Abspieler lebt so lange wie die App.
+nonisolated(unsafe) private let laufzustandRuf: @convention(c) (
+    UnsafePointer<libvlc_event_t>?, UnsafeMutableRawPointer?
+) -> Void = { ereignis, daten in
+    guard let ereignis, let daten else { return }
+    let laeuft = ereignis.pointee.type == libvlc_event_type_t(libvlc_MediaPlayerPlaying.rawValue)
+    let adresse = UInt(bitPattern: daten)
+    aufHauptfaden {
+        guard let zeiger = UnsafeMutableRawPointer(bitPattern: adresse) else { return }
+        Unmanaged<Abspieler>.fromOpaque(zeiger).takeUnretainedValue().laufzustand?(laeuft)
     }
 }
 

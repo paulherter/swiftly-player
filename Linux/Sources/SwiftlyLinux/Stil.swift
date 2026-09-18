@@ -507,6 +507,13 @@ enum Stil {
             font-weight: 600;
         }
         button.swiftly-chip.swiftly-aktiv label { color: \(grund); }
+        /* Angebot im Player: Abstand am Inhalt, damit die Countdown-Fuellung
+           bis an den Rand reicht — Weiss 16 %, wie `Chip(fuellung:)` am Mac. */
+        button.swiftly-chip.swiftly-angebot { padding: 0; }
+        /* Akzent als Fortschritt, halb deckend (Paul, 17.09.2026: vorher zu dunkel). */
+        .swiftly-angebotfuellung { background-color: rgba(92,209,194,0.5); }
+        /* Dieselbe Blende wie die Steuerung (`.swiftly-steuerung`). */
+        .swiftly-angebotblende { transition: opacity 180ms ease-out; }
 
         button.swiftly-profil {
             min-height: 40px;

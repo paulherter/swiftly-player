@@ -97,6 +97,23 @@ struct HauptView: View {
         return { bereich = .start }
     }
 
+    /// Startet einen Titel aus dem Top Shelf direkt. `false`, wenn das nicht
+    /// geht — dann öffnet der Aufrufer die Titelseite wie beim Auswählen.
+    ///
+    /// **Nur, was selbst abspielbar ist.** Eine Serie oder Staffel im Regal
+    /// („Zuletzt hinzugefügt") hat keine eine Stelle; dort entscheidet die
+    /// Serienseite, welche Folge dran ist. Läuft schon etwas, wird es nicht
+    /// ersetzt — die App kommt nur nach vorn.
+    private func regalStart(_ titel: Item) async -> Bool {
+        guard abspielen == nil else { return true }
+        guard !["Series", "Season", "BoxSet", "Folder", "CollectionFolder"].contains(titel.type ?? "")
+        else { return false }
+        guard let plan = await model.plan(for: titel.id) else { return false }
+        Protokoll.schreib("[Regal] direkt abspielen: \(titel.name) ab \(Int(titel.fortsetzenAb ?? 0)) s")
+        abspielen = Abspielwunsch(item: titel, plan: plan, startAt: titel.fortsetzenAb ?? 0)
+        return true
+    }
+
     private var anDerWurzel: Bool { pfade[bereich.rawValue].isEmpty && abspielen == nil }
 
     /// Der Druck aufs Abzeichen.
@@ -217,12 +234,19 @@ struct HauptView: View {
                 pfade[i] = NavigationPath()
             }
         }
+        // Top Shelf: `titel` öffnet die Seite (Auswählen), `abspielen`
+        // startet sofort und setzt an der gemerkten Stelle fort (Abspieltaste)
+        // — so erwartet es Apple für Starts aus dem System (HIG, Playing video).
         .onOpenURL { adresse in
-            guard adresse.scheme == "swiftly", adresse.host == "titel" else { return }
+            guard adresse.scheme == "swiftly",
+                  adresse.host == "titel" || adresse.host == "abspielen" else { return }
             let kennung = adresse.lastPathComponent
             guard !kennung.isEmpty else { return }
+            let direkt = adresse.host == "abspielen"
             Task {
+                // Frisch holen: die Stelle im Regal ist so alt wie die Startseite.
                 guard let titel = await model.item(id: kennung) else { return }
+                if direkt, await regalStart(titel) { return }
                 bereich = .start
                 besucht.insert(.start)
                 pfade[Bereich.start.rawValue].append(titel)
@@ -368,6 +392,9 @@ struct HauptView: View {
             }
             besucht.insert(bereich)
         }
+        if argumente.contains("-messlauf") { await messlauf(); return }
+        if argumente.contains("-folgenende") { await folgenendeLauf(); return }
+        if argumente.contains("-spurlauf") { await spurlauf(); return }
         guard let i = argumente.firstIndex(of: "-zeige"), i + 1 < argumente.count
         else { return }
         if model.views.isEmpty { await model.loadViews() }
@@ -377,6 +404,148 @@ struct HauptView: View {
               let erstes = seite.titel.first
         else { return }
         pfade[bereich.rawValue].append(erstes)
+    }
+
+    /// **Messlauf fuer die Server-Meldungen** (Audit 16.09., Stufe 2) — ohne
+    /// Fernbedienung, nur ueber das Protokoll.
+    ///
+    ///     xcrun simctl launch <geraet> de.paulherter.swiftly -messlauf [-meldungenHaengen]
+    ///
+    /// Spielt den ersten Film ab einem Drittel, haelt bei +15 s an, laeuft bei +20 s
+    /// weiter, springt bei +25 s auf 200 s hinter den Anfang, schliesst bei +40 s und
+    /// liest danach die Stelle vom Server. Jede Sekunde schreibt der Takt des
+    /// Players eine `[Takt]`-Zeile — fehlen sie, stand er.
+    /// `-meldungenHaengen` laesst jede Meldung 30 s auf Antwort warten, wie
+    /// ein Server, der nicht antwortet.
+    private func messlauf() async {
+        if model.views.isEmpty { await model.loadViews() }
+        guard let bib = model.views.first(where: { $0.collectionType == "movies" }),
+              let seite = await model.items(in: bib.id),
+              let film = seite.titel.first,
+              let plan = await model.plan(for: film.id)
+        else { Protokoll.schreib("[Messlauf] kein Film"); return }
+        // Ein Drittel hinein: unter Jellyfins Mindestanteil (5 %) verwirft
+        // der Server die Stelle beim Stopp, und der Vergleich zeigte 0.
+        let ab = ((film.runTimeTicks).map { Double($0) / 10_000_000 } ?? 1200) / 3
+        Protokoll.schreib("[Messlauf] oeffne \(film.id) ab \(Int(ab)) s")
+        abspielen = Abspielwunsch(item: film, plan: plan, startAt: ab)
+        // Bis das Bild steht.
+        for _ in 0..<60 where !Spielstand.spielerLaeuft {
+            try? await Task.sleep(for: .seconds(1))
+        }
+        func schritt(_ s: Int, _ befehl: Fernbefehl) async {
+            try? await Task.sleep(for: .seconds(s))
+            Protokoll.schreib("[Messlauf] Befehl \(befehl)")
+            model.fernbefehl?(befehl)
+        }
+        await schritt(15, .pause)
+        await schritt(5, .weiter)
+        await schritt(5, .springenAuf(ab + 200))
+        await schritt(15, .stopp)
+        let vorher = model.wiedergabeBeendet
+        for _ in 0..<40 where model.wiedergabeBeendet == vorher {
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        let stand = await model.item(id: film.id)
+        let ticks = stand?.userData?.playbackPositionTicks ?? -1
+        Protokoll.schreib("[Messlauf] Server-Stelle \(String(format: "%.2f", Double(ticks) / 10_000_000)) s")
+    }
+
+    /// **Probe fuer die Spurwahl** (Audit 16.09., Stufe 4).
+    ///
+    ///     xcrun simctl launch <geraet> de.paulherter.swiftly -spurlauf
+    ///
+    /// Sucht eine Folge mit Nachfolger und mehreren Spuren (eine mit externer
+    /// Untertiteldatei zuerst), waehlt Ton und Untertitel von Hand, schaltet
+    /// auf die naechste Folge und schreibt unter `[Spurlauf]`, `[Spuren]` und
+    /// `[Melden]`, was dort gewaehlt und gemeldet wurde.
+    private func spurlauf() async {
+        if model.views.isEmpty { await model.loadViews() }
+        var mehrere: (Item, PlaybackPlan)?
+        var extern: (Item, PlaybackPlan)?
+        for art in ["tvshows", "movies"] {
+            guard let bib = model.views.first(where: { $0.collectionType == art }),
+                  let seite = await model.items(in: bib.id) else { continue }
+            for titel in seite.titel.prefix(40) {
+                let kandidat = art == "movies" ? [titel]
+                    : Array(await model.folgen(serie: titel.id, staffel: nil).prefix(1))
+                for folge in kandidat {
+                    guard let plan = await model.plan(for: folge.id) else { continue }
+                    let stroeme = plan.quelle?.mediaStreams ?? []
+                    let ton = stroeme.filter { $0.type == "Audio" }.count
+                    let ut = stroeme.filter { $0.type == "Subtitle" }
+                    let ex = ut.filter { $0.isExternal == true }
+                    Protokoll.schreib("[Spurlauf] \(titel.name) · Ton \(ton) · Untertitel \(ut.count) · extern \(ex.count)"
+                        + " · Vorgaben \(plan.quelle?.defaultAudioStreamIndex ?? -9)/\(plan.quelle?.defaultSubtitleStreamIndex ?? -9)"
+                        + (ex.isEmpty ? "" : " · \(ex.map { "\($0.index ?? -1) \($0.codec ?? "") \($0.deliveryUrl ?? "ohne Adresse")" })"))
+                    let weiter = art == "movies" ? false : await model.folgeNach(folge) != nil
+                    if !ex.isEmpty, extern == nil { extern = (folge, plan) }
+                    if weiter, ton >= 2, ut.count >= 2, mehrere == nil { mehrere = (folge, plan) }
+                }
+                if extern != nil, mehrere != nil { break }
+            }
+        }
+        let argumente = ProcessInfo.processInfo.arguments
+        guard let (folge, plan) = argumente.contains("-extern") ? (extern ?? mehrere) : (mehrere ?? extern) else {
+            Protokoll.schreib("[Spurlauf] nichts gefunden"); return
+        }
+        Protokoll.schreib("[Spurlauf] oeffne \(folge.name) \(folge.id)")
+        abspielen = Abspielwunsch(item: folge, plan: plan, startAt: 60)
+        for _ in 0..<60 where !Spielstand.spielerLaeuft { try? await Task.sleep(for: .seconds(1)) }
+        try? await Task.sleep(for: .seconds(6))
+        guard let flaeche = VLCPlayerView.zuletzt else { Protokoll.schreib("[Spurlauf] keine Flaeche"); return }
+        let namen = flaeche.untertitelnamen()
+        Protokoll.schreib("[Spurlauf] Ton \(flaeche.tonspuren.map { "\($0.trackId)=\($0.huebscherName)" })")
+        Protokoll.schreib("[Spurlauf] Untertitel \(flaeche.untertitelspuren.map { "\($0.trackId)=\(namen[$0.trackId] ?? "?")" })")
+        // Handwahl: bei gleichen Namen die zweite, sonst eine Datei, sonst die letzte.
+        let spuren = flaeche.untertitelspuren
+        let doppelt = spuren.enumerated().first { paar in
+            spuren.prefix(paar.offset).contains { $0.trackName == paar.element.trackName }
+        }?.element
+        let datei = spuren.first { Abspielerspur(kennung: $0.trackId, name: "", sprache: nil, codec: nil, kanaele: nil).zusatzkennung != nil }
+        if let ton = flaeche.tonspuren.last { flaeche.waehleTonspur(ton) }
+        if let wahl = (argumente.contains("-extern") ? datei : doppelt) ?? datei ?? doppelt ?? spuren.last {
+            flaeche.waehleUntertitel(wahl)
+        }
+        try? await Task.sleep(for: .seconds(12))
+        Protokoll.schreib("[Spurlauf] Befehl naechste")
+        model.fernbefehl?(.naechste)
+        try? await Task.sleep(for: .seconds(30))
+        if let neu = VLCPlayerView.zuletzt {
+            Protokoll.schreib("[Spurlauf] danach Ton \(neu.gewaehlteTonspur?.trackId ?? "—") Untertitel \(neu.gewaehlterUntertitel.map { neu.untertitelnamen()[$0.trackId] ?? $0.trackId } ?? "aus")")
+        }
+        model.fernbefehl?(.stopp)
+    }
+
+    /// **Probe fuer die Einblendung** (Audit 16.09., Stufe 3).
+    ///
+    ///     xcrun simctl launch <geraet> de.paulherter.swiftly -folgenende [-ab <s>]
+    ///
+    /// Oeffnet die erste Folge mit Nachfolger, ohne `-ab` 25 s vor Schluss,
+    /// mit `-ab` an dieser Sekunde (negativ: vor Schluss). Was die Einblendung
+    /// tut, steht unter `[Angebot]` im Protokoll.
+    private func folgenendeLauf() async {
+        if model.views.isEmpty { await model.loadViews() }
+        let argumente = ProcessInfo.processInfo.arguments
+        let wunsch = argumente.firstIndex(of: "-ab").flatMap { i in
+            i + 1 < argumente.count ? Double(argumente[i + 1]) : nil
+        } ?? -25
+        guard let bib = model.views.first(where: { $0.collectionType == "tvshows" }),
+              let seite = await model.items(in: bib.id) else {
+            Protokoll.schreib("[Probe] keine Serien"); return
+        }
+        for serie in seite.titel.prefix(10) {
+            for folge in await model.folgen(serie: serie.id, staffel: nil).prefix(3) {
+                guard let ticks = folge.runTimeTicks, await model.folgeNach(folge) != nil,
+                      let plan = await model.plan(for: folge.id) else { continue }
+                let dauer = Double(ticks) / 10_000_000
+                let ab = wunsch < 0 ? dauer + wunsch : wunsch
+                Protokoll.schreib("[Probe] oeffne \(folge.id) ab \(Int(ab)) von \(Int(dauer)) s")
+                abspielen = Abspielwunsch(item: folge, plan: plan, startAt: ab)
+                return
+            }
+        }
+        Protokoll.schreib("[Probe] keine Folge mit Nachfolger")
     }
     #endif
 

@@ -201,6 +201,15 @@ struct HauptView: View {
             else if let eine = uebernahme.angebot { hierWeiterschauen(eine) }
         }
         .task { uebernahme.starten(model) }
+        #if DEBUG && os(iOS)
+        .task {
+            guard Sprunglauf.an else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard let wunsch = await Sprunglauf.wunsch(model) else { return }
+            uebernahmeWunsch = wunsch
+            await Sprunglauf.ablauf(model) { uebernahmeWunsch = nil }
+        }
+        #endif
         .onDisappear { uebernahme.beenden() }
         .fullScreenCover(item: $uebernahmeWunsch) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
@@ -548,7 +557,7 @@ struct BibliothekView: View {
                         // dann steht der Nachschub schon, bevor man unten
                         // ankommt.
                         .onAppear {
-                            guard item.id == stand.nachladenAb(spalten: anzahl) else { return }
+                            guard stand.loestNachladenAus(item.id, spalten: anzahl) else { return }
                             Task { await stand.nachladen(model, art: art, bibliothek: gewaehlt) }
                         }
                     }

@@ -27,7 +27,14 @@ struct Wahlen: Codable {
     var profilBitrate: Int {
         Bitratengrenze.fuer(immerDirectPlay: immerDirectPlay, megabit: bitratenGrenze)
     }
-    var naechsteAutomatisch = true
+    /// **Nur gesetzt, wenn jemand den Schalter „Nächste Folge automatisch"
+    /// umgelegt hat** (T3 #15). Sonst gilt die Einstellung des Jellyfin-Kontos,
+    /// Regel in `Weiterschalten`; gelesen wird ``App/naechsteAutomatisch``.
+    ///
+    /// Eigener Schlüssel, weil der alte `naechsteAutomatisch` bei **jedem**
+    /// Sichern mitgeschrieben wurde — ein `true` darin sagt nicht, dass es
+    /// jemand gewählt hat. Ein `false` schon, die Vorgabe war `true`.
+    var naechsteAutomatischGewaehlt: Bool?
     var zurueckSekunden = 10
     var vorSekunden = 30
     var fortschrittAufKacheln = true
@@ -158,7 +165,10 @@ struct Wahlen: Codable {
         // (`Sources/Shared/AppModel.swift:265`) — hier stand weiter `false`,
         // und damit sah eine frische Installation anders aus als dort.
         neuzugaengeGetrennt    = w(.neuzugaengeGetrennt, true)
-        naechsteAutomatisch    = w(.naechsteAutomatisch, true)
+        let alt = (try? decoder.container(keyedBy: AlteSchluessel.self)
+                       .decodeIfPresent(Bool.self, forKey: .naechsteAutomatisch)) ?? nil
+        naechsteAutomatischGewaehlt = w(.naechsteAutomatischGewaehlt, Bool?.none)
+            ?? (alt == false ? false : nil)
         zurueckSekunden        = w(.zurueckSekunden, 10)
         vorSekunden            = w(.vorSekunden, 30)
         fortschrittAufKacheln  = w(.fortschrittAufKacheln, true)
@@ -178,6 +188,9 @@ struct Wahlen: Codable {
         filterJeOrt            = w(.filterJeOrt, [:])
         bibliothekJeGattung    = w(.bibliothekJeGattung, [:])
     }
+
+    /// Schluessel frueherer Fassungen, die nur noch gelesen werden.
+    private enum AlteSchluessel: String, CodingKey { case naechsteAutomatisch }
 
     /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.
     init() {}
