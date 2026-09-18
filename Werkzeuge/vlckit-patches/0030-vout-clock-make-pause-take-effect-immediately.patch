@@ -1,0 +1,94 @@
+From a7d1bfa521b350388818267c5955a4f92e1a8476 Mon Sep 17 00:00:00 2001
+From: Swiftly <accounts@paulherter.de>
+Date: Thu, 3 Sep 2026 02:17:59 +0200
+Subject: [PATCH] vout, clock: make pause take effect immediately
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Two halves of the same problem, measured on macOS.
+
+1. clock: vlc_clock_main_ChangePause() set main_clock->paused and returned
+   without waking anyone. A thread in vlc_clock_Wait() therefore slept until
+   its original deadline — for the video output the presentation date of the
+   next picture, up to 41 ms at 24 fps. The resume path already ends in a
+   broadcast; only the pause path returned early without one.
+
+2. vout: once awake, the display loop set its deadline to
+   now + VOUT_REDISPLAY_DELAY (80 ms), waited it out and displayed the
+   pending picture on the timeout.
+
+Together the image kept advancing for up to ~120 ms after the user pressed
+pause, varying with frame rate and with where the keypress landed between two
+frames. The picture is still displayed in both cases, so the periodic
+redisplay VOUT_REDISPLAY_DELAY exists for is unaffected — only the waiting is
+gone.
+---
+ src/clock/clock.c               | 13 +++++++++++++
+ src/video_output/video_output.c | 26 +++++++++++++++++++++++++-
+ 2 files changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/src/clock/clock.c b/src/clock/clock.c
+index bb137d67f9..006c87a789 100644
+--- a/src/clock/clock.c
++++ b/src/clock/clock.c
+@@ -1058,6 +1058,19 @@ void vlc_clock_main_ChangePause(vlc_clock_main_t *main_clock, vlc_tick_t now,
+     if (paused)
+     {
+         main_clock->pause_date = now;
++        /* Swiftly: wake everyone waiting on this clock.
++         *
++         * Without this, a thread sitting in vlc_clock_Wait() keeps sleeping
++         * until its original deadline — for the video output that is the
++         * presentation date of the next picture, up to 41 ms for 24 fps
++         * content. It only notices the pause once it wakes up on its own, so
++         * the image kept moving after the user asked for a pause, by an
++         * amount that varied with the frame rate and with where the keypress
++         * landed between two frames.
++         *
++         * The resume path below already ends in a broadcast; only the pause
++         * path returned early without one. */
++        vlc_cond_broadcast(&main_clock->cond);
+         return;
+     }
+ 
+diff --git a/src/video_output/video_output.c b/src/video_output/video_output.c
+index 90a0bcd617..1e2a303cec 100644
+--- a/src/video_output/video_output.c
++++ b/src/video_output/video_output.c
+@@ -1493,7 +1493,31 @@ static int RenderPicture(vout_thread_sys_t *sys,
+             {
+                 vlc_tick_t deadline;
+                 if (vlc_clock_IsPaused(sys->clock))
+-                    deadline = max_deadline;
++                {
++                    /* Swiftly: paused — show it now, do not wait.
++                     *
++                     * The original code set the deadline to now +
++                     * VOUT_REDISPLAY_DELAY (80 ms) and waited it out, then
++                     * displayed the picture on the timeout. Pressing pause
++                     * therefore let the image advance one more frame up to
++                     * 80 ms later — at 120 Hz that is up to ten frames, and
++                     * where the keypress lands inside that window decides how
++                     * bad it looks. That is the "it keeps playing after I hit
++                     * pause" our users report.
++                     *
++                     * Measured on macOS, from the click: VLCKit's dispatch
++                     * queue 17-25 ms (patched separately), libvlc's own pause
++                     * path 157-216 us, and then this: up to 80 ms.
++                     *
++                     * Displaying right away still advances by the single
++                     * picture that was already rendered — about 8 ms of
++                     * over-run instead of up to 80. The periodic redisplay
++                     * that VOUT_REDISPLAY_DELAY exists for (window resize and
++                     * friends) is unaffected: the picture is still displayed,
++                     * just without the wait. */
++                    system_pts = vlc_tick_now();
++                    break;
++                }
+                 else
+                 {
+                     assert(!sys->displayed.current->b_force);
+-- 
+2.50.1 (Apple Git-155)
+

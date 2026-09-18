@@ -1,0 +1,560 @@
+name: Swiftly
+options:
+  bundleIdPrefix: de.paulherter
+  # Deutsch ist die Ausgangssprache, Englisch kommt aus dem Katalog.
+  # Beides steht in der Abgabe, und Englisch ist bei der Prüfung ohnehin die
+  # Sprache, in der geprüft wird.
+  developmentLanguage: de
+  deploymentTarget:
+    iOS: "18.0"
+    tvOS: "18.0"
+    macOS: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+
+packages:
+  JellyfinKit:
+    path: Packages/JellyfinKit
+  # Für die Startanimation. Die Vorlage kommt als Lottie aus After Effects;
+  # die Keyframes tragen je eigene Bezier-Anläufe, das von Hand nachzubauen
+  # geht schief. Airbnbs Umsetzung ist die übliche.
+  Lottie:
+    url: https://github.com/airbnb/lottie-ios
+    from: 4.5.0
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    # Damit Xcode die Texte aus dem Swift-Code in den Katalog zieht.
+    SWIFT_EMIT_LOC_STRINGS: "YES"
+    # Muss mit der Version in App Store Connect uebereinstimmen,
+    # sonst laesst sich der Build dort nicht anhaengen.
+    MARKETING_VERSION: "1.0.0"
+    # Muss bei JEDEM Upload hochgezaehlt werden — Apple nimmt dieselbe
+    # Buildnummer je Version kein zweites Mal an (Fehler 90189).
+    CURRENT_PROJECT_VERSION: "9"
+    # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
+    # persönliche Team in das bezahlte umgewandelt, statt ein zweites
+    # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
+    DEVELOPMENT_TEAM: 63L6TSM2Y9
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_STRICT_CONCURRENCY: complete
+
+fileGroups:
+  - Sources/Shared/Localizable.xcstrings
+  - Sources/Shared/InfoPlist.xcstrings
+
+targets:
+  Swiftly-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/Shared
+      - path: Sources/iOS
+    dependencies:
+      - package: JellyfinKit
+      - package: Lottie
+      # VLCKit 4 liefert Picture-in-Picture (VLCPictureInPictureDrawable) —
+      # der Grund für diese App. Lokal eingebunden statt über SwiftPM, weil
+      # VideoLAN den Download auf ~40 KB/s drosselt.
+      # Holen mit: Werkzeuge/vlckit-holen.sh
+      # **Selbst gebaute Fassung** — siehe Werkzeuge/vlckit-patches/README.md.
+      # VLC 4 kann in einer Matroska mit unvollstaendig lesbaren Cues ueber
+      # HTTP nicht vorwaerts springen; Patch 0028 stellt das Verhalten von
+      # VLC 3 wieder her. Gemessen auf tvOS und iOS an derselben Datei.
+      - framework: Vendor/VLCKit-gepatcht.xcframework
+        embed: true
+        codeSign: true
+    info:
+      path: Sources/iOS/Info.plist
+      properties:
+        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        #
+        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
+        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
+        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
+        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
+        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
+        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
+        # pruefen.
+        #
+        # Nicht ueber `options.developmentLanguage`: das ist die
+        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        CFBundleDevelopmentRegion: en
+        CFBundleDisplayName: Swiftly
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        # Ohne Farbe blitzt vor der Startanimation kurz Weiß auf.
+        UILaunchScreen:
+          UIColorName: Startgrund
+        # Alle vier, und zwar zwingend: ohne UIRequiresFullScreen gilt eine
+        # App mit "1,2" als multitaskingfähig, und dann verlangt Apple die
+        # volle Auswahl. Fehlt PortraitUpsideDown, schlägt das schon in der
+        # Upload-Prüfung auf, nicht erst in der Review.
+        #
+        # Das ist nur der äußere Rahmen. Was davon gilt, entscheidet zur
+        # Laufzeit `Orientierung`: auf dem iPhone bleibt es bei Hochformat,
+        # der Player darf drehen. Auf dem iPad gilt der Rahmen unverändert —
+        # eine multitaskingfähige App darf die Drehung nicht erzwingen.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Pflicht für Picture-in-Picture: ohne 'audio' im Hintergrundmodus
+        # beendet iOS die Wiedergabe, sobald das Fenster klein wird.
+        UIBackgroundModes:
+          - audio
+        NSAppTransportSecurity:
+          # **Nur dieser eine Schluessel — und das ist keine Nachlaessigkeit.**
+          #
+          # Hier stand einmal `NSAllowsLocalNetworking` daneben, mit der Begruendung,
+          # es decke das Heimnetz auf dem sichereren Weg ab und der zweite Schluessel
+          # faenge den Rest. Das ist falsch herum: **ab iOS 10 wird
+          # `NSAllowsArbitraryLoads` ignoriert, sobald `NSAllowsLocalNetworking`,
+          # `NSAllowsArbitraryLoadsInWebContent` oder `...ForMedia` im Plist steht.**
+          # Die beiden ergaenzen sich nicht, der zweite schaltet den ersten ab.
+          #
+          # Gekostet hat das einen Nutzer, der seinen Jellyfin ueber Tailscale
+          # erreichte: `http://100.110.192.87:8096`. Tailscale vergibt aus
+          # 100.64.0.0/10, dem CGNAT-Bereich — und der zaehlt fuer ATS **nicht** als
+          # lokales Netz. RFC1918, `.local` und `localhost` schon, CGNAT nicht.
+          # Dieselbe Sperre traf `http://irgendwas.duckdns.org`.
+          #
+          # Ein Client fuer selbst betriebene Server kann die Adresse zur Bauzeit
+          # nicht kennen, also helfen `NSExceptionDomains` nicht. Swiftly draengt
+          # stattdessen im Code zu https: ohne Schema bekommt eine Adresse `https://`
+          # vorgesetzt, ausser sie sieht nach Heimnetz aus (`AppModelURLNormalizer`,
+          # IP-Literale eingeschlossen). Auf http faellt es nur zurueck, wenn https
+          # an der Verbindung scheitert — nie bei einer Fehlerantwort.
+          NSAllowsArbitraryLoads: true
+        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        #
+        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
+        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
+        # Verweigert der Nutzer, meldet URLSession „The Internet connection
+        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
+        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
+        # erklaeren, warum die App das will.
+        #
+        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
+        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
+        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
+        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
+        # Sprachfehler an genau der Stelle wieder, an der er am meisten
+        # stoert.
+        NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
+          on your home network. Without this, the app cannot reach a server at
+          an address like 192.168.1.5.
+        # Sonst fragt App Store Connect bei jedem Upload nach der
+        # Exportbestimmung. Die App verschlüsselt nichts selbst, sie nutzt nur
+        # HTTPS über die Systemschnittstellen — damit ist sie ausgenommen.
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
+        # iPhone und iPad.
+        #
+        # Beide Gründe, die das iPad bisher ausgeschlossen haben, sind
+        # ausgeräumt: PortraitUpsideDown steht oben in den Ausrichtungen, und
+        # die Ansichten lesen ihre Breite, statt drei Spalten fest zu
+        # verdrahten (`Stil.spalten(fuer:)`).
+        #
+        # Bewusst **ohne** UIRequiresFullScreen: die App soll im geteilten
+        # Bildschirm laufen. Der Preis dafür ist genau die Zeile darüber.
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # Ein einziges 1024er Bild, ohne eigene Fassungen für dunkel und
+        # getönt — iOS leitet die dunkle und getönte Darstellung daraus ab.
+        # Reicht für die Abgabe; eigene Fassungen wären eine Verbesserung,
+        # keine Voraussetzung.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Ohne Entitlements verweigert der Keychain das Schreiben (-34018),
+        # und die Anmeldung ginge bei jedem Start verloren.
+        CODE_SIGN_ENTITLEMENTS: Sources/iOS/Swiftly.entitlements
+
+  Swiftly-tvOS:
+    type: application
+    platform: tvOS
+    # Bewusst **nicht** `Sources/Shared` im Ganzen: dort stecken Wischgesten,
+    # die Navileiste unten, Tippflächen und Tastaturtypen, die es auf tvOS
+    # nicht gibt. Geteilt wird nur, was von Entfernung und Eingabeart
+    # unabhängig ist — Zustandshalter, Keychain, Marken, Routen, Farben.
+    # Die Ansichten hat jede Plattform für sich.
+    sources:
+      # **Ein Manifest fuer alle Plattformen.**
+      #
+      # Es lag unter `Sources/iOS` und wurde dort nur mitgenommen, weil das
+      # ganze Verzeichnis eingesammelt wird. tvOS und macOS picken aus
+      # `Shared` einzeln und hatten deshalb gar keins — Apple schickt dafuer
+      # die ITMS-91053-Meldung. Die Angaben sind auf allen dreien dieselben,
+      # also gibt es sie einmal.
+      - path: Sources/Shared/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Sources/Shared/AppModel.swift
+      - path: Sources/Shared/Anmeldemodell.swift
+      - path: Sources/Shared/Abspielwunsch.swift
+      - path: Sources/Shared/Farben.swift
+      - path: Sources/Shared/Keychain.swift
+      - path: Sources/Shared/Marken.swift
+      - path: Sources/Shared/Routen.swift
+      - path: Sources/Shared/Titelhandlung.swift
+      # Container, Codec, Untertitel im Dateiauszug — dieselbe Auskunft
+      # überall (VERHALTEN.md D5).
+      # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
+      # Reihentitel, Plakette, Lader, Profilzeichen — die Bausteine ohne
+      # Plattformmaße. Lagen dreimal da; die Maße gibt jetzt das Ziel als
+      # Parameter mit, siehe `Plakette.fern` und `Lader.fern` in Stil.swift.
+      - path: Sources/Shared/Bausteine.swift
+      - path: Sources/Shared/QuickConnectModell.swift
+      - path: Sources/Shared/Wiedergabezentrale.swift
+      - path: Sources/Shared/Startseitenmodell.swift
+      - path: Sources/Shared/Bibliotheksmodell.swift
+      - path: Sources/Shared/SVGPfad.swift
+      # Die Abspiel-Maschinerie teilen sich beide Plattformen: derselbe
+      # `mkv_trusted`-Kniff, dieselbe Stillstandserkennung. Bild-im-Bild
+      # darin ist mit `#if os(iOS)` ausgeklammert.
+      # Traegt die Ansichtsklasse der Plattform. VLCPlayer haengt daran,
+      # seit es auch einen AppKit-Arm gibt.
+      - path: Sources/Shared/Basisansicht.swift
+      - path: Sources/Shared/VLCPlayer.swift
+      # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
+      - path: Sources/Shared/Uebernahmemodell.swift
+      - path: Sources/Shared/Localizable.xcstrings
+      # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
+      # deutsch kommt hier heraus.
+      - path: Sources/Shared/InfoPlist.xcstrings
+      - path: Sources/Shared/Regalvorschau.swift
+      # Die Startanimation gehört auf beide Plattformen — die Marke soll
+      # überall gleich auffahren. Nur das Quadrat ist auf dem Fernseher
+      # größer.
+      - path: Sources/Shared/Startanimation.swift
+      - path: Sources/Shared/Mittel
+      - path: Sources/tvOS
+    dependencies:
+      - package: JellyfinKit
+      - package: Lottie
+      # Der Top Shelf ist ein eigenes Ziel und wird mit eingebettet.
+      - target: Swiftly-TopShelf
+      # VLCKit 4 trägt tvOS-Scheiben (tvos-arm64 und -simulator, im
+      # XCFramework nachgesehen). Bild-im-Bild gibt es hier nicht, der
+      # Abspieler schon — und mit ihm der `mkv_trusted`-Kniff.
+      # **VERSUCH: selbst gebaute Fassung mit einem Patch am mkv-Sucher.**
+      #
+      # VLC 4 koppelt `index_range()` an `b_fastseekable`, und das ist über
+      # HTTP nie wahr. Damit hat eine Matroska, deren Cues sich nicht
+      # auswerten lassen, gar keinen Weg mehr, nach vorn zu springen: jeder
+      # Sprung landet am Dateianfang und der Demuxer liest sich vorwärts
+      # durch — bei Pauls Folge 30 bis 90 Sekunden. VLC 3 ruft dieselbe
+      # Zeile ohne diesen Vorbehalt, und genau deshalb springt Swiftfin in
+      # derselben Datei sofort.
+      #
+      # Gebaut aus VLCKit 4.0.0-a23, also unserer Fassung, plus dem einen
+      # Patch. Quelle und Bauskript liegen unter /Users/paul/VLC-Bau.
+      #
+      # Zurück auf `VLCKit.xcframework`, falls es sich nicht bewährt.
+      - framework: Vendor/VLCKit-gepatcht.xcframework
+        embed: true
+        codeSign: true
+    info:
+      path: Sources/tvOS/Info.plist
+      properties:
+        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        #
+        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
+        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
+        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
+        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
+        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
+        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
+        # pruefen.
+        #
+        # Nicht ueber `options.developmentLanguage`: das ist die
+        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        CFBundleDevelopmentRegion: en
+        CFBundleDisplayName: Swiftly
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        # **Ohne das faellt die App auf 1 zurueck, der Top Shelf steht auf 2.**
+        # Xcode warnt beim Bauen, App Store Connect weist den Upload ab: die
+        # Buildnummer einer Erweiterung muss die ihrer App sein.
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Dieselbe Begruendung wie auf iOS: die App verschluesselt nichts
+        # selbst, sie nutzt HTTPS ueber die Systemschnittstellen.
+        ITSAppUsesNonExemptEncryption: false
+        # Gehört **hierher**, nicht in die Info.plist: die wird von XcodeGen
+        # aus diesen Angaben erzeugt und bei jedem Lauf überschrieben. Ein
+        # Eintrag von Hand hält genau bis zum nächsten `xcodegen generate` —
+        # genau das ist einmal passiert, und der Top Shelf führte ins Leere.
+        CFBundleURLTypes:
+          - CFBundleURLName: de.paulherter.swiftly
+            CFBundleURLSchemes:
+              - swiftly
+        UIBackgroundModes:
+          - audio
+        NSAppTransportSecurity:
+          # **Nur dieser eine Schluessel — und das ist keine Nachlaessigkeit.**
+          #
+          # Hier stand einmal `NSAllowsLocalNetworking` daneben, mit der Begruendung,
+          # es decke das Heimnetz auf dem sichereren Weg ab und der zweite Schluessel
+          # faenge den Rest. Das ist falsch herum: **ab iOS 10 wird
+          # `NSAllowsArbitraryLoads` ignoriert, sobald `NSAllowsLocalNetworking`,
+          # `NSAllowsArbitraryLoadsInWebContent` oder `...ForMedia` im Plist steht.**
+          # Die beiden ergaenzen sich nicht, der zweite schaltet den ersten ab.
+          #
+          # Gekostet hat das einen Nutzer, der seinen Jellyfin ueber Tailscale
+          # erreichte: `http://100.110.192.87:8096`. Tailscale vergibt aus
+          # 100.64.0.0/10, dem CGNAT-Bereich — und der zaehlt fuer ATS **nicht** als
+          # lokales Netz. RFC1918, `.local` und `localhost` schon, CGNAT nicht.
+          # Dieselbe Sperre traf `http://irgendwas.duckdns.org`.
+          #
+          # Ein Client fuer selbst betriebene Server kann die Adresse zur Bauzeit
+          # nicht kennen, also helfen `NSExceptionDomains` nicht. Swiftly draengt
+          # stattdessen im Code zu https: ohne Schema bekommt eine Adresse `https://`
+          # vorgesetzt, ausser sie sieht nach Heimnetz aus (`AppModelURLNormalizer`,
+          # IP-Literale eingeschlossen). Auf http faellt es nur zurueck, wenn https
+          # an der Verbindung scheitert — nie bei einer Fehlerantwort.
+          NSAllowsArbitraryLoads: true
+        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        #
+        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
+        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
+        # Verweigert der Nutzer, meldet URLSession „The Internet connection
+        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
+        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
+        # erklaeren, warum die App das will.
+        #
+        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
+        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
+        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
+        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
+        # Sprachfehler an genau der Stelle wieder, an der er am meisten
+        # stoert.
+        NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
+          on your home network. Without this, the app cannot reach a server at
+          an address like 192.168.1.5.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
+        # Dieselbe Begründung wie auf iOS: ohne die Zugriffsgruppe verweigert
+        # der Keychain das Schreiben (-34018) und die Anmeldung ginge bei
+        # jedem Start verloren.
+        CODE_SIGN_ENTITLEMENTS: Sources/tvOS/Swiftly.entitlements
+        # tvOS verlangt ein **geschichtetes** Zeichen, kein flaches Bild:
+        # Grundton hinten, Wortmarke vorn, dazwischen rechnet das System die
+        # Parallaxe. Erzeugt aus derselben Vorlage, aus der die App ihre
+        # Wortmarke zeichnet — siehe Werkzeuge/Iconbauer.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  # Die Reihe über dem App-Zeichen auf dem Startbildschirm des Apple TV.
+  #
+  # Eigener Prozess, eigene Berechtigungen: sie liest nur die Liste, die die
+  # App in den geteilten Ordner legt. Kein JellyfinKit, kein VLCKit, keine
+  # Serveranfrage — sie wird bei jedem Fokus auf dem Zeichen aufgerufen und
+  # muss in Sekundenbruchteilen etwas zeigen.
+  Swiftly-TopShelf:
+    type: app-extension
+    platform: tvOS
+    sources:
+      - path: Sources/Shared/Regalvorschau.swift
+      - path: Sources/TopShelf
+    info:
+      path: Sources/TopShelf/Info.plist
+      properties:
+        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        #
+        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
+        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
+        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
+        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
+        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
+        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
+        # pruefen.
+        #
+        # Nicht ueber `options.developmentLanguage`: das ist die
+        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        CFBundleDevelopmentRegion: en
+        CFBundleDisplayName: Swiftly Top Shelf
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # **Auch hier, obwohl die Erweiterung selbst nichts holt.**
+        #
+        # Sie gibt dem System nur Bildadressen (`setImageURL`), geladen wird
+        # ausserhalb. Liegen die Bilder aber auf einem Server, der nur ueber
+        # http erreichbar ist, entscheidet ATS mit — und ein leeres Regal
+        # waere ein Fehler, den niemand einem fehlenden Plist-Schluessel
+        # zuordnet. Es kostet nichts, ihn zu setzen.
+        NSAppTransportSecurity:
+          # Siehe App-Ziel: der zweite Schluessel wuerde den ersten abschalten.
+          NSAllowsArbitraryLoads: true
+        # **Ohne das weist App Store Connect den Upload ab** (Fehler 90502):
+        # eine Erweiterung mit 64-Bit-Scheibe muss `arm64` selbst nennen.
+        # Der App-Zielblock braucht es nicht — dort setzt Xcode den Schluessel
+        # von sich aus. Bei `app-extension` tut es das nicht, und auffallen
+        # kann es erst beim Hochladen: bauen, archivieren und exportieren
+        # laufen alle durch.
+        UIRequiredDeviceCapabilities:
+          - arm64
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.tv-top-shelf
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).RegalAnbieter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.topshelf
+        CODE_SIGN_ENTITLEMENTS: Sources/TopShelf/TopShelf.entitlements
+
+  # Die Mac-Fassung.
+  #
+  # Wie beim Fernseher **nicht** `Sources/Shared` im Ganzen: dort stecken
+  # Wischgesten, die Leiste unten, Tippflächen und Tastaturtypen, die es auf
+  # dem Mac nicht gibt — und `Stil.swift` trägt die iPhone-Maße, die hier
+  # durch `Sources/macOS/Stil.swift` ersetzt sind. Geteilt wird, was von
+  # Eingabeart und Fenstergröße unabhängig ist.
+  Swiftly-macOS:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Shared/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Sources/Shared/AppModel.swift
+      - path: Sources/Shared/Anmeldemodell.swift
+      - path: Sources/Shared/Abspielwunsch.swift
+      # Die Startseite laedt fuer alle Plattformen gleich — und sie muss es,
+      # sonst laeuft es auseinander: die Mac-Fassung hatte sie nachgebaut und
+      # dabei `naechsteFolge(ohne:)` verloren, sodass angefangene Titel
+      # zweimal auf der Seite standen.
+      - path: Sources/Shared/Startseitenmodell.swift
+      - path: Sources/Shared/Bibliotheksmodell.swift
+      - path: Sources/Shared/Farben.swift
+      # Bausteine ohne Plattformmaße — Reihentitel, Plakette, Lader,
+      # Profilzeichen. Lagen dreimal da.
+      - path: Sources/Shared/Bausteine.swift
+      - path: Sources/Shared/Keychain.swift
+      - path: Sources/Shared/Marken.swift
+      - path: Sources/Shared/Routen.swift
+      - path: Sources/Shared/SVGPfad.swift
+      # Was das Mehr-Blatt anbietet — der Inhalt ist auf allen Plattformen
+      # derselbe, nur die Darreichung ist eigen.
+      - path: Sources/Shared/Titelhandlung.swift
+      # Abgeleitete Angaben am Titel — Fortsetzstelle, Kontextzeile.
+      # Container, Codec, Untertitel im Dateiauszug — dieselbe Auskunft
+      # überall (VERHALTEN.md D5).
+      # Welche Bitraten, Sprungweiten und Sprachen zur Wahl stehen.
+      # Now Playing und die Medientasten der Tastatur. Der
+      # AVAudioSession-Teil darin steht unter `#if !os(macOS)` — den Ton
+      # mischt und leitet macOS selbst.
+      - path: Sources/Shared/Wiedergabezentrale.swift
+      # Der Namensgeber für UIView beziehungsweise NSView. Ohne ihn stünde
+      # der Player zweimal da.
+      - path: Sources/Shared/Basisansicht.swift
+      # Die Abspiel-Maschinerie teilen sich alle Plattformen: derselbe
+      # `mkv_trusted`-Kniff, dieselbe Stillstandserkennung. Bild-im-Bild
+      # darin ist mit `#if os(iOS)` ausgeklammert — auf dem Mac trägt es
+      # ohnehin nicht, siehe die Messung in CLAUDE.md.
+      - path: Sources/Shared/VLCPlayer.swift
+      # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
+      - path: Sources/Shared/Uebernahmemodell.swift
+      - path: Sources/Shared/Localizable.xcstrings
+      # Nur fuer die Ortsnetz-Abfrage: englisch steht im Info.plist,
+      # deutsch kommt hier heraus.
+      - path: Sources/Shared/InfoPlist.xcstrings
+      # Die Startanimation und ihre Vorlage. Der Mac lief bis hierher ohne
+      # Vorhang — die Datei war in keinem seiner Pfade.
+      - path: Sources/Shared/Startanimation.swift
+      - path: Sources/Shared/Mittel
+      - path: Sources/macOS
+    dependencies:
+      - package: JellyfinKit
+      # Fuer die Startanimation — dieselbe Vorlage wie iPhone und Fernseher.
+      # Fehlte hier, deshalb lief der Mac ohne Vorhang an.
+      - package: Lottie
+      # Selbst gebaute Fassung — siehe Werkzeuge/vlckit-patches/README.md.
+      - framework: Vendor/VLCKit-gepatcht.xcframework
+        embed: true
+        codeSign: true
+    info:
+      path: Sources/macOS/Info.plist
+      properties:
+        # **Die Rueckfallsprache, nicht die Ausgangssprache.**
+        #
+        # Deutsch bleibt der Schluessel im Katalog. Wessen Geraet aber weder
+        # auf Deutsch noch Englisch steht — Niederlaendisch, Russisch,
+        # Chinesisch —, bekommt genau diesen Wert: Apples letzte
+        # Rueckfallstufe ist CFBundleDevelopmentRegion (QA1828). Stand er auf
+        # `de`, sah die halbe Welt eine deutsche App. Auf Reddit gemeldet,
+        # 03.09.2026 — uns nie aufgefallen, weil wir auf deutschen Geraeten
+        # pruefen.
+        #
+        # Nicht ueber `options.developmentLanguage`: das ist die
+        # Ausgangssprache des Projekts und soll deutsch bleiben.
+        CFBundleDevelopmentRegion: en
+        # **Ohne das weist der Store den Upload ab** (Fehler 90242): eine
+        # Mac-App muss ihre Kategorie im Info.plist tragen, nicht nur im
+        # Store-Eintrag. iOS und tvOS verlangen das nicht — es faellt also
+        # erst beim ersten Mac-Upload auf, so wie das fehlende `arm64` am
+        # Top Shelf erst beim ersten tvOS-Upload.
+        LSApplicationCategoryType: public.app-category.entertainment
+        CFBundleDisplayName: Swiftly
+        # **Das Zeichen zusaetzlich als vollstaendige `.icns`.**
+        #
+        # Nachgesehen: die von Xcode aus dem Katalog erzeugte `AppIcon.icns`
+        # enthaelt nur die 16er und die 128er — 32, 256, 512 und 1024 fehlen.
+        # Der Dock braucht die grossen. Die hier daneben liegende ist mit
+        # `iconutil` aus denselben zehn Bildern gebaut und vollstaendig.
+        CFBundleIconFile: Swiftly
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Ein helles Thema gibt es nicht — die Gestaltung ist auf Dunkel
+        # gebaut, und ohne das setzt macOS die Fensterknöpfe hell.
+        NSRequiresAquaSystemAppearance: false
+        NSAppTransportSecurity:
+          # **Nur dieser eine Schluessel — und das ist keine Nachlaessigkeit.**
+          #
+          # Hier stand einmal `NSAllowsLocalNetworking` daneben, mit der Begruendung,
+          # es decke das Heimnetz auf dem sichereren Weg ab und der zweite Schluessel
+          # faenge den Rest. Das ist falsch herum: **ab iOS 10 wird
+          # `NSAllowsArbitraryLoads` ignoriert, sobald `NSAllowsLocalNetworking`,
+          # `NSAllowsArbitraryLoadsInWebContent` oder `...ForMedia` im Plist steht.**
+          # Die beiden ergaenzen sich nicht, der zweite schaltet den ersten ab.
+          #
+          # Gekostet hat das einen Nutzer, der seinen Jellyfin ueber Tailscale
+          # erreichte: `http://100.110.192.87:8096`. Tailscale vergibt aus
+          # 100.64.0.0/10, dem CGNAT-Bereich — und der zaehlt fuer ATS **nicht** als
+          # lokales Netz. RFC1918, `.local` und `localhost` schon, CGNAT nicht.
+          # Dieselbe Sperre traf `http://irgendwas.duckdns.org`.
+          #
+          # Ein Client fuer selbst betriebene Server kann die Adresse zur Bauzeit
+          # nicht kennen, also helfen `NSExceptionDomains` nicht. Swiftly draengt
+          # stattdessen im Code zu https: ohne Schema bekommt eine Adresse `https://`
+          # vorgesetzt, ausser sie sieht nach Heimnetz aus (`AppModelURLNormalizer`,
+          # IP-Literale eingeschlossen). Auf http faellt es nur zurueck, wenn https
+          # an der Verbindung scheitert — nie bei einer Fehlerantwort.
+          NSAllowsArbitraryLoads: true
+        # **Pflicht seit iOS 14, und ohne sie ist der Fehler nicht zu deuten.**
+        #
+        # Das System fragt um Erlaubnis, bevor eine App Geraete im eigenen Netz
+        # anspricht — auch bei einer direkten IP, nicht nur bei `.local`.
+        # Verweigert der Nutzer, meldet URLSession „The Internet connection
+        # appears to be offline", obwohl das Netz einwandfrei laeuft. Dieser
+        # Satz steht in der Abfrage selbst und ist die einzige Gelegenheit zu
+        # erklaeren, warum die App das will.
+        #
+        # **Englisch als Vorgabe, Deutsch aus `InfoPlist.xcstrings`.** Ein
+        # fest eingetragener Plist-Wert wird nicht uebersetzt — er erscheint
+        # so, wie er hier steht. Da `CFBundleDevelopmentRegion` jetzt `en`
+        # ist, muss auch dieser Satz englisch sein; sonst haetten wir den
+        # Sprachfehler an genau der Stelle wieder, an der er am meisten
+        # stoert.
+        NSLocalNetworkUsageDescription: Swiftly looks for your Jellyfin server
+          on your home network. Without this, the app cannot reach a server at
+          an address like 192.168.1.5.
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
+        # Dieselbe Begründung wie auf iOS und tvOS: ohne die Zugriffsgruppe
+        # verweigert der Keychain das Schreiben (-34018) und die Anmeldung
+        # ginge bei jedem Start verloren.
+        CODE_SIGN_ENTITLEMENTS: Sources/macOS/Swiftly.entitlements
+        # Das Zeichen sitzt **nicht** randfüllend: macOS erwartet Abstand
+        # (824 von 1024), sonst wirkt es im Dock größer als seine Nachbarn.
+        # Auf iOS ist es umgekehrt — deshalb ein eigener Satz.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

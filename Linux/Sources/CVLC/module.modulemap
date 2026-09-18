@@ -1,0 +1,5 @@
+module CVLC [system] {
+    header "shim.h"
+    link "vlc"
+    export *
+}

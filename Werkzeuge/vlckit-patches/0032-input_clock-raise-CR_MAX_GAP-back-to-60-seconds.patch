@@ -1,0 +1,61 @@
+From f238b2d9aeb73c1fbc9dd32280054a58f836fd4a Mon Sep 17 00:00:00 2001
+From: Swiftly <accounts@paulherter.de>
+Date: Thu, 3 Sep 2026 18:14:52 +0200
+Subject: [PATCH] input_clock: raise CR_MAX_GAP back to 60 seconds
+
+The 300 ms threshold treats every timestamp gap in a pace-controlled source
+as a stream discontinuity, because system_diff is near zero when the demuxer
+reads faster than realtime. Measured on tvOS: 5276 clock resets in 72 s on a
+file whose PCR interval is 0.3 to 1.0 s, until the app was killed. The same
+file plays fine on VLC 3, which used 60 s.
+---
+ src/clock/input_clock.c | 33 ++++++++++++++++++++++++++++++++-
+ 1 file changed, 32 insertions(+), 1 deletion(-)
+
+diff --git a/src/clock/input_clock.c b/src/clock/input_clock.c
+index 01d873b..6931660 100644
+--- a/src/clock/input_clock.c
++++ b/src/clock/input_clock.c
+@@ -83,7 +83,38 @@
+  * my dice --Meuuh */
+ #define CR_MEAN_PTS_GAP VLC_TICK_FROM_MS(300)
+ 
+-#define CR_MAX_GAP CR_MEAN_PTS_GAP
++/* Swiftly: back to the pre-4.0 value.
++ *
++ * This used to be 60 seconds. "input_clock: finer discontinuity handling"
++ * lowered it to CR_MEAN_PTS_GAP (300 ms) together with the much better
++ * comparison a few lines below: a large stream_diff is fine as long as
++ * system_diff grew by the same amount.
++ *
++ * That comparison only holds when the source runs at its own pace. When we
++ * control the pace -- a plain file over HTTP -- the demuxer feeds PCRs as
++ * fast as it can read, so system_diff is essentially zero and every gap in
++ * the stream timestamps is larger than the threshold. The clock then resets
++ * its reference on every update.
++ *
++ * Measured on an Apple TV, one episode on a Jellyfin server, VLCKit 4.0.0-a23:
++ *
++ *     clock gap, unexpected stream discontinuity:
++ *         system_diff: 34   stream_diff: 320666
++ *
++ * 5276 of those in 72 seconds, 35 to 70 new clock contexts per second, until
++ * tvOS killed the app for burning the CPU. stream_diff over 2638 samples:
++ * min 303 ms, median 490 ms, max 1001 ms -- every single one just past the
++ * 300 ms threshold. Six other files on the same server, played for hours,
++ * produced none: this file simply carries sparse timestamps.
++ *
++ * The same file plays fine in VLC 3 (via another Jellyfin client on the same
++ * Apple TV), which is what pointed at the threshold in the first place.
++ *
++ * Raising it keeps the improved comparison and restores the tolerance that
++ * made VLC 3 cope. Streams that really are discontinuous still go backwards,
++ * and stream_diff < 0 catches that regardless of this value.
++ */
++#define CR_MAX_GAP VLC_TICK_FROM_SEC(60)
+ 
+ /* Rate (in 1/256) at which we will read faster to try to increase our
+  * internal buffer (if we control the pace of the source).
+-- 
+2.50.1 (Apple Git-155)
+

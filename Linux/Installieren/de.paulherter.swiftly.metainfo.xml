@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>de.paulherter.swiftly</id>
+  <name>Swiftly</name>
+  <summary>Jellyfin client that never transcodes</summary>
+  <summary xml:lang="de">Jellyfin-Client, der niemals transkodiert</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MPL-2.0</project_license>
+  <developer id="de.paulherter">
+    <name>Paul Herter</name>
+  </developer>
+  <description>
+    <p>
+      Swiftly plays everything on your Jellyfin server as Direct Play or
+      Direct Stream. The server never re-encodes, so the picture stays
+      untouched and the machine stays quiet.
+    </p>
+    <p xml:lang="de">
+      Swiftly spielt alles auf deinem Jellyfin-Server als Direct Play oder
+      Direct Stream. Der Server rechnet nie um — das Bild bleibt, wie es ist,
+      und die Kiste bleibt leise.
+    </p>
+  </description>
+  <launchable type="desktop-id">de.paulherter.swiftly.desktop</launchable>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Player</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+</component>

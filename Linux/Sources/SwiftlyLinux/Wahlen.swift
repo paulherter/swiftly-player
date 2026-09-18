@@ -1,0 +1,67 @@
+import Foundation
+
+/// Die Einstellungen des Nutzers, wie sie auf den Apple-Fassungen in
+/// `AppModel` liegen — dort in `@AppStorage`, hier als JSON neben der
+/// Sitzung.
+///
+/// **Die Vorgaben stehen so auf dem Mac** und sind nicht neu gewählt: Direct
+/// Play erzwungen (der Grund für diese App), Bitrate unbegrenzt, nächste
+/// Folge selbsttätig, 10 s zurück und 30 s vor. Welche Werte überhaupt zur
+/// Wahl stehen, steht in `JellyfinKit.Bitrate`, `.Spanne` und `.Sprachwahl` —
+/// nicht hier, sonst böten die Plattformen verschiedene Listen an.
+struct Wahlen: Codable {
+    var immerDirectPlay = true
+    var bitratenGrenze = 0
+    var tonSprache = ""
+    var untertitelSprache = ""
+    var untertitelAutomatisch = false
+    /// **Neue Filme und neue Serien in eigenen Reihen** statt in einer.
+    /// `Startseitenmodell` wertet es aus; die Zeile fehlte auf Linux ganz.
+    var neuzugaengeGetrennt = false
+
+    /// **Was dem Server als Grenze gemeldet wird.**
+    ///
+    /// Eine Milliarde heisst praktisch unbegrenzt — ein Limit löst
+    /// Transkodierung aus, auch wenn Container und Codec passen. Wörtlich
+    /// `AppModel.profilBitrate` vom Mac; die beiden Einstellungen darüber
+    /// waren auf Linux gesetzt, gesichert und ohne jede Wirkung, weil sie
+    /// niemand las.
+    var profilBitrate: Int {
+        immerDirectPlay || bitratenGrenze <= 0 ? 1_000_000_000 : bitratenGrenze * 1_000_000
+    }
+    var naechsteAutomatisch = true
+    var zurueckSekunden = 10
+    var vorSekunden = 30
+    var fortschrittAufKacheln = true
+
+    private static var datei: URL {
+        URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent(".config/swiftly/wahlen.json")
+    }
+
+    static func lesen() -> Wahlen {
+        guard let daten = try? Data(contentsOf: datei),
+              let w = try? JSONDecoder().decode(Wahlen.self, from: daten)
+        else { return Wahlen() }
+        return w
+    }
+
+    func sichern() {
+        let ordner = Self.datei.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
+        guard let daten = try? JSONEncoder().encode(self) else { return }
+        try? daten.write(to: Self.datei, options: .atomic)
+    }
+}
+
+/// Welche Werteliste gerade aufgeklappt ist.
+enum Werteauswahl { case bitrate, ton, untertitel, zurueck, vor }
+
+/// Die Fassung von libVLC, für die Fußzeile der Einstellungen.
+///
+/// Auf den Apple-Fassungen steht dort „VLCKit 4.0.0-a23". Hier liegt kein
+/// VLCKit, sondern libVLC des Systems — der Text nennt deshalb, was wirklich
+/// geladen ist, statt eine Fassung zu behaupten.
+enum VLCFassung {
+    nonisolated(unsafe) static var text: String = "3.x"
+}
