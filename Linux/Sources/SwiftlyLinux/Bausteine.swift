@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import JellyfinKit
 
 /// Die Bausteine, die der Mac hat — in GTK nachgebaut, mit seinen Zahlen.
 ///
@@ -18,16 +19,25 @@ import Foundation
 
 /// Ein Feld wie `Eingabezeile` auf dem Mac: Symbol links, 38 hoch, Ecke 10,
 /// Haarlinie in Weiß 12 %, im Fokus der Akzent. Die Maße stehen im Stilblatt.
-func eingabezeile(symbol: String, platzhalter: String, geheim: Bool = false) -> Widget! {
+///
+/// **`dehnt` sagt, ob das Feld seine Spalte füllt.** Auf dem Mac hat
+/// `Eingabezeile` gar keine eigene Breite (`macOS/RootView.swift:159-193`) —
+/// sie kommt vom Block darum: 360 auf dem Anmeldeschirm, 460 auf den
+/// Formularseiten. Hier standen überall feste 360 mit `ALIGN_CENTER`, und
+/// damit schwebte in einer 460 Punkt breiten Spalte ein schmaler Streifen in
+/// der Mitte.
+func eingabezeile(symbol: String, platzhalter: String, geheim: Bool = false,
+                  dehnt: Bool = false) -> Widget! {
     let feld: Widget! = gtk_entry_new()
     gtk_entry_set_placeholder_text(alsFeld(feld), platzhalter)
     gtk_entry_set_icon_from_icon_name(alsFeld(feld), GTK_ENTRY_ICON_PRIMARY, symbol)
     // Das Symbol soll nicht anklickbar wirken — es ist Beschriftung, kein Knopf.
     gtk_entry_set_icon_activatable(alsFeld(feld), GTK_ENTRY_ICON_PRIMARY, 0)
     if geheim { gtk_entry_set_visibility(alsFeld(feld), 0) }
-    gtk_widget_set_size_request(feld, Int32(Stil.anmeldeBreite), Int32(Stil.feldHoehe))
-    gtk_widget_set_hexpand(feld, 0)
-    gtk_widget_set_halign(feld, GTK_ALIGN_CENTER)
+    gtk_widget_set_size_request(feld, dehnt ? -1 : Int32(Stil.anmeldeBreite),
+                                Int32(Stil.feldHoehe))
+    gtk_widget_set_hexpand(feld, dehnt ? 1 : 0)
+    gtk_widget_set_halign(feld, dehnt ? GTK_ALIGN_FILL : GTK_ALIGN_CENTER)
     return feld
 }
 
@@ -40,8 +50,8 @@ func eingabezeile(symbol: String, platzhalter: String, geheim: Bool = false) -> 
 /// ausschließlich Auswahl.
 ///
 /// Die Breite ist die des Anmeldeblocks. Auf dem Mac fehlt sie noch — der
-/// Knopf zieht sich dort über das ganze Fenster, und Paul hat das ausdrücklich
-/// als Fehler markiert. Hier steht sie von Anfang an richtig.
+/// Knopf zieht sich dort über das ganze Fenster, und Hier steht sie von Anfang
+/// an richtig.
 func hauptknopf(_ text: String, symbol: String = "go-next-symbolic") -> Widget! {
     let knopf: Widget! = gtk_button_new()
     gtk_widget_add_css_class(knopf, "swiftly-haupt")
@@ -182,6 +192,45 @@ func gerahmtesBild(breite: Int, hoehe: Int, stil: String) -> (huelle: Widget, bi
     return (huelle!, bild!)
 }
 
+/// Ein rundes Profilzeichen: Verlauf, darüber das Bild — und **statt** des
+/// Bildes der erste Buchstabe des Namens, wenn keines kommt.
+///
+/// **Der Buchstabe ist Rückfall, nicht Untergrund.** Wortgleich zu
+/// `Sources/Shared/Bausteine.swift`, `Profilzeichen`: läge er immer darunter,
+/// schiene er bei jedem Konto *mit* Bild kurz durch, bis das Bild da ist. Er
+/// wird deshalb erst sichtbar, wenn ``bildLaden`` meldet, dass nichts ankam —
+/// dafür gibt es dessen `fertig`-Rückruf.
+///
+/// Der Verlauf steht im Stilblatt an der übergebenen Klasse; er trägt immer
+/// und fällt nicht auf, wenn ein Bild darüberliegt.
+func profilzeichen(name: String, kante: Int, stil: String,
+                   schriftstil: String) -> (huelle: Widget, bild: Widget, zeichen: Widget) {
+    let (huelle, bild) = gerahmtesBild(breite: kante, hoehe: kante, stil: stil)
+    let zeichen = beschriftung(String(name.prefix(1)).uppercased(), stil: schriftstil)
+    gtk_widget_set_halign(zeichen, GTK_ALIGN_CENTER)
+    gtk_widget_set_valign(zeichen, GTK_ALIGN_CENTER)
+    gtk_widget_set_visible(zeichen, 0)
+    gtk_overlay_add_overlay(OpaquePointer(huelle), zeichen)
+    return (huelle, bild, zeichen!)
+}
+
+/// Lädt das Profilbild und blendet den Buchstaben ein, wenn keines kommt.
+///
+/// Ohne Adresse steht der Buchstabe sofort da — dann ist schon klar, dass
+/// nichts kommt.
+func profilbildLaden(_ teile: (huelle: Widget, bild: Widget, zeichen: Widget),
+                     url: URL?, schluessel: String) {
+    guard let url else {
+        gtk_widget_set_visible(teile.zeichen, 1)
+        return
+    }
+    let kiste = Zeigerkiste(teile.zeichen)
+    bildLaden(teile.bild, url: url, schluessel: schluessel, sofort: true) { kam in
+        guard !kam else { return }
+        gtk_widget_set_visible(kiste.widget, 1)
+    }
+}
+
 /// Legt den Fortschrittsbalken unten **in** die Bildhülle.
 ///
 /// Zwei Lagen, wie auf dem Mac: eine Spur in Weiß 16 % über die ganze Breite
@@ -256,19 +305,49 @@ func fach(_ kind: Widget!, breite: Int, hoehe: Int,
 /// Die halbfette Schrift im aktiven Zustand steht so auf dem Mac und ist
 /// kein Zufall: der Chip wird dadurch minimal breiter, und das ist die
 /// einzige Stelle, an der man die Wahl auch ohne Farbe sieht.
-func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false) -> Widget! {
+/// - Parameter zeichnung: Ein selbst gemaltes Zeichen statt eines Namens aus
+///   dem Zeichensatz — für die Fälle, in denen Adwaita nichts Passendes hat
+///   (siehe ``Reglerzeichen``). Hat Vorrang vor `symbol`.
+func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false,
+          nurSymbol: Bool = false, zeichnung: Widget? = nil) -> Widget! {
     let knopf: Widget! = gtk_button_new()
     gtk_widget_add_css_class(knopf, "swiftly-chip")
     if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
     gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
     // Zeichen und Wort im Abstand 6 — die Masse des Macs (`Chip`).
     let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
-    if let symbol {
+    // **Sonst klebt der Inhalt am linken Rand.**
+    //
+    // Ein Knopf streckt sein Kind auf die volle Breite; die Reihe wird also
+    // so breit wie der Knopf, und das Bild darin sitzt am Anfang, nicht in
+    // der Mitte. Bei einem Knopf mit Wort faellt das nicht auf, weil der
+    // Inhalt die Breite ohnehin ausfuellt — bei einem Zeichen allein schon:
+    // es stand sichtbar links statt mittig. Am Geraet gemeldet.
+    gtk_widget_set_halign(reihe, GTK_ALIGN_CENTER)
+    if let zeichnung {
+        anhaengen(reihe, zeichnung)
+    } else if let symbol {
         let bild: Widget! = gtk_image_new_from_icon_name(symbol)
         gtk_image_set_pixel_size(OpaquePointer(bild), 12)
         anhaengen(reihe, bild)
     }
-    anhaengen(reihe, beschriftung(text))
+    // **Nur das Zeichen, aber weiter in seiner Kapsel.**
+    //
+    // In der Werkzeugleiste des Players sagt das Zeichen genug; eine
+    // Beschriftung daneben macht die Leiste breiter, ohne etwas zu erklaeren.
+    // Der Rahmen bleibt — ein nacktes Zeichen ueber bewegtem Bild sieht aus,
+    // als schwebe es dort zufaellig. Woertlich die Aenderung, die die
+    // Mac-Fassung am 08.09.2026 bekommen hat.
+    //
+    // Verloren geht die Beschriftung nicht: sie wird zum Kurzhinweis unter
+    // dem Zeiger und zu dem, was eine Vorlesehilfe ansagt (E8).
+    if nurSymbol {
+        gtk_widget_add_css_class(knopf, "swiftly-nursymbol")
+        gtk_widget_set_tooltip_text(knopf, text)
+        beschriften(knopf, text)
+    } else {
+        anhaengen(reihe, beschriftung(text))
+    }
     gtk_button_set_child(alsKnopf(knopf), reihe)
     return knopf
 }
@@ -280,16 +359,21 @@ func chip(_ text: String, symbol: String? = nil, aktiv: Bool = false) -> Widget!
 /// Der Fernseher hat sich bewusst gegen Beschriftungen entschieden —
 /// „Merkliste erreicht eigentlich das Merklistensymbol an sich". Aktiv ist er
 /// weiß mit dunkler Schrift, sonst Weiß 14 % (schwebend 22 %).
-func nebenknopf(_ symbol: String, name: String? = nil, aktiv: Bool = false) -> Widget! {
+func nebenknopf(_ symbol: String, name: String? = nil, aktiv: Bool = false,
+                zeichnung: Widget? = nil) -> Widget! {
     let knopf: Widget! = gtk_button_new()
     // E8: ohne Namen ist ein Knopf ohne Beschriftung für eine Vorlesehilfe
     // nur „Taste". Auf dem Mac steht dafür `accessibilityLabel`.
     if let name { beschriften(knopf, name) }
     gtk_widget_add_css_class(knopf, "swiftly-neben")
     if aktiv { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
-    let bild: Widget! = gtk_image_new_from_icon_name(symbol)
-    gtk_image_set_pixel_size(OpaquePointer(bild), 17)
-    gtk_button_set_child(alsKnopf(knopf), bild)
+    if let zeichnung {
+        gtk_button_set_child(alsKnopf(knopf), zeichnung)
+    } else {
+        let bild: Widget! = gtk_image_new_from_icon_name(symbol)
+        gtk_image_set_pixel_size(OpaquePointer(bild), 17)
+        gtk_button_set_child(alsKnopf(knopf), bild)
+    }
     gtk_widget_set_size_request(knopf, Int32(Stil.hauptknopfHoehe),
                                 Int32(Stil.hauptknopfHoehe))
     return knopf
@@ -333,12 +417,19 @@ func reiterknopf(_ text: String, aktiv: Bool) -> Widget! {
 
 /// Eine Gruppe von Zeilen: Haarlinie oben, Haarlinie unten, sonst nichts.
 /// Keine Karten — dieselbe Entscheidung wie auf dem iPhone.
+/// **Eine Karte, keine zwei Striche.**
+///
+/// Auf dem Mac ist jede Zeilengruppe eine gefuellte Flaeche in `Stil.flaeche`
+/// mit `eckeFlaeche` (`macOS/Einstellungszeilen.swift:30`). Hier standen
+/// stattdessen eine Linie darueber und eine darunter, sonst nichts — die
+/// Zeilen lagen nackt auf dem Seitengrund. Damit sah jede Einstellungsseite
+/// anders aus als dieselbe Seite auf dem Mac, und die Gruppen ohne
+/// Ueberschrift sahen ueberhaupt nicht wie Gruppen aus.
 func zeilengruppe() -> (aussen: Widget, raum: Widget) {
     let aussen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-    anhaengen(aussen, trennlinie())
+    gtk_widget_add_css_class(aussen, "swiftly-karte")
     let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
     anhaengen(aussen, raum)
-    anhaengen(aussen, trennlinie())
     return (aussen!, raum!)
 }
 
@@ -346,6 +437,10 @@ func zeilengruppe() -> (aussen: Widget, raum: Widget) {
 func einstellungsgruppe(_ titel: String) -> (aussen: Widget, raum: Widget) {
     let aussen = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
     let kopf = rubrik(titel)
+    // **Nicht dieselbe Rubrik wie in der Seitenleiste** — siehe
+    // `swiftly-gruppenrubrik` im Stilblatt.
+    gtk_widget_remove_css_class(kopf, "swiftly-leise")
+    gtk_widget_add_css_class(kopf, "swiftly-gruppenrubrik")
     gtk_widget_set_margin_start(kopf, 0)
     gtk_widget_set_margin_top(kopf, 26)
     gtk_widget_set_margin_bottom(kopf, 8)
@@ -378,11 +473,18 @@ private func zeilenrumpf(symbol: String, titel: String, unter: String?,
     gtk_widget_set_hexpand(text, 1)
     let t = beschriftung(titel, stil: "swiftly-koerper")
     gtk_label_set_xalign(OpaquePointer(t), 0)
+    gtk_label_set_ellipsize(OpaquePointer(t), PANGO_ELLIPSIZE_END)
     anhaengen(text, t)
     if let unter {
         let u = beschriftung(unter, stil: "swiftly-zweitzeile")
         gtk_widget_add_css_class(u, "swiftly-fuss")
         gtk_label_set_xalign(OpaquePointer(u), 0)
+        // **Die Unterzeile darf kuerzen.** Ohne das bestimmt der laengste Satz
+        // die Naturbreite der ganzen Spalte — „Download titles to this
+        // computer and watch without a connection" zog die Einstellungsseite
+        // ueber den Fensterrand, und die rechte Spalte stand draussen.
+        gtk_label_set_ellipsize(OpaquePointer(u), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(u), 34)
         anhaengen(text, u)
     }
     anhaengen(reihe, text)
@@ -428,6 +530,15 @@ func schalterzeile(symbol: String, titel: String, unter: String? = nil,
     var zustand = an
     let schalter: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(schalter, "swiftly-schalter")
+    // **38 x 22 mit 16er Knauf — und die 46 x 28 waren ein Fehlgriff.**
+    //
+    // Sie standen hier mit Verweis auf `Stil.swift:795`. Diese Zeile gibt es
+    // nur in `Sources/Shared/Stil.swift`, dem iPhone-Blatt: dort ist der
+    // Schalter fuer den Finger gebaut. `Sources/macOS/Stil.swift` ist 295
+    // Zeilen lang und hat gar keine 795. Der Mac hat seinen eigenen
+    // `Schalter` (`Sources/macOS/Einstellungszeilen.swift:128-143`), und der
+    // ist ausdruecklich verkleinert — der Dateikopf dort sagt: „Zeilen sind
+    // 44 statt 52 hoch … Anders ist nur, was mit dem Zeiger zu tun hat."
     gtk_widget_set_size_request(schalter, 38, 22)
     gtk_widget_set_valign(schalter, GTK_ALIGN_CENTER)
     let knauf: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
@@ -516,4 +627,253 @@ func gehalten(_ w: Widget!) -> Zeigerkiste {
 
 func losgelassen(_ kiste: Zeigerkiste) {
     g_object_unref(kiste.widget)
+}
+
+
+/// **Ein Platzhalter in der Form dessen, was kommt** (E17).
+///
+/// Statt eines Laderings, der nur „warte" sagt. Die Seite ist dann leer, nicht
+/// am Warten — und wenn die Daten eintreffen, wechselt nichts die Form.
+func ladefeld(breite: Int, hoehe: Int, schmal: Bool = false) -> Widget! {
+    let feld: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(feld, "swiftly-ladefeld")
+    if schmal { gtk_widget_add_css_class(feld, "swiftly-schmal") }
+    gtk_widget_set_size_request(feld, Int32(breite), Int32(hoehe))
+    gtk_widget_set_halign(feld, GTK_ALIGN_START)
+    gtk_widget_set_valign(feld, GTK_ALIGN_START)
+    return feld
+}
+
+/// Drei Folgenzeilen als Platzhalter — Standbild, Titel, Nebenzeile.
+///
+/// Die Maße sind die des Macs (`SerienView.swift:327`): 160 x 90 für das
+/// Standbild, darüber 220 x 14 und 90 x 11 für die zwei Zeilen.
+func folgenPlatzhalter(rand: Int) -> Widget! {
+    let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
+    gtk_widget_set_margin_start(block, Int32(rand))
+    gtk_widget_set_margin_end(block, Int32(rand))
+    for _ in 0 ..< 3 {
+        let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 16)
+        anhaengen(zeile, ladefeld(breite: 160, hoehe: 90))
+        let texte = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+        gtk_widget_set_valign(texte, GTK_ALIGN_CENTER)
+        anhaengen(texte, ladefeld(breite: 220, hoehe: 14, schmal: true))
+        anhaengen(texte, ladefeld(breite: 90, hoehe: 11, schmal: true))
+        anhaengen(zeile, texte)
+        anhaengen(block, zeile)
+    }
+    return block
+}
+
+/// Ein Raster aus Plakatplatzhaltern — für Reiter, die ein Raster füllen.
+func rasterPlatzhalter(anzahl: Int = 8, rand: Int) -> Widget! {
+    let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(Stil.kachelAbstand))
+    gtk_widget_set_margin_start(reihe, Int32(rand))
+    gtk_widget_set_margin_end(reihe, Int32(rand))
+    for _ in 0 ..< anzahl {
+        anhaengen(reihe, ladefeld(breite: Stil.kachelBreite, hoehe: Stil.kachelHoehe))
+    }
+    // **Abgeschnitten, nicht breiter als die Seite.** Acht Felder sind breiter
+    // als das Fenster; ohne Huelle wuchs die Seite fuer einen Augenblick mit,
+    // und das Kopfbild rutschte beim ersten „Aehnliches" nach rechts.
+    let huelle: Widget! = gtk_scrolled_window_new()
+    gtk_scrolled_window_set_policy(OpaquePointer(huelle), GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
+    gtk_scrolled_window_set_child(OpaquePointer(huelle), reihe)
+    return huelle
+}
+
+
+/// Zwei Reihen als Platzhalter — Überschrift und Kacheln in ihrer Form.
+///
+/// Für die Startseite beim allerersten Laden. Danach bleibt stehen, was da
+/// ist, und wird ersetzt, sobald die neuen Reihen kommen.
+func reihenPlatzhalter(rand: Int) -> Widget! {
+    let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: Int32(Stil.reihenAbstand))
+    for i in 0 ..< 2 {
+        let reihe = stapel(GTK_ORIENTATION_VERTICAL, abstand: 14)
+        let kopf = ladefeld(breite: i == 0 ? 190 : 150, hoehe: 20, schmal: true)
+        gtk_widget_set_margin_start(kopf, Int32(rand))
+        anhaengen(reihe, kopf)
+        let quer = i == 0
+        let kacheln = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: Int32(Stil.kachelAbstand))
+        gtk_widget_set_margin_start(kacheln, Int32(rand))
+        gtk_widget_set_margin_end(kacheln, Int32(rand))
+        for _ in 0 ..< (quer ? 4 : 6) {
+            anhaengen(kacheln, ladefeld(breite: quer ? Stil.querBreite : Stil.kachelBreite,
+                                        hoehe: quer ? Stil.querHoehe : Stil.kachelHoehe))
+        }
+        anhaengen(reihe, kacheln)
+        anhaengen(block, reihe)
+    }
+    return block
+}
+
+
+/// **Die Plakette einer Kachel** (E16) — Haken, offene Folgen oder Staffeln.
+///
+/// Welche Auskunft gilt, entscheidet ``Anzeigeregeln/kachelmarke(art:staffeln:gesehen:offeneFolgen:)``
+/// im Paket: gesehen schlägt alles, offene Folgen schlagen die Staffelzahl,
+/// ein ungesehener Film bekommt nichts — eine Zahl, die immer eins wäre, ist
+/// keine Auskunft. Der **Wortlaut** steht hier, weil er am Katalog hängt.
+func kachelmarkeLegen(_ huelle: Widget!, item: Item) {
+    guard let marke = Anzeigeregeln.kachelmarke(art: item.type,
+                                                staffeln: item.childCount,
+                                                gesehen: item.userData?.played,
+                                                offeneFolgen: item.userData?.unplayedItemCount)
+    else { return }
+
+    let feld: Widget!
+    switch marke {
+    case .gesehen:
+        feld = gtk_image_new_from_icon_name("object-select-symbolic")
+    case .offen(let n):
+        // **„6 offen", nicht „6".** Eine nackte Zahl auf einer Kachel sagt
+        // nicht, was sie zaehlt — der Mac setzt denselben Wortlaut
+        // (`Sources/macOS/Macbausteine.swift:531`, `wortlaut`).
+        feld = beschriftung(String(format: uebersetzt("%lld offen"), n))
+    case .staffeln(let n):
+        feld = beschriftung(n == 1 ? uebersetzt("1 Staffel")
+                                   : String(format: uebersetzt("%lld Staffeln"), n))
+    }
+    gtk_widget_add_css_class(feld, "swiftly-kachelmarke")
+    // Ohne Wort einen Punkt enger — siehe die Klasse im Stilblatt.
+    if case .gesehen = marke { gtk_widget_add_css_class(feld, "swiftly-nurhaken") }
+    gtk_widget_set_halign(feld, GTK_ALIGN_END)
+    gtk_widget_set_valign(feld, GTK_ALIGN_START)
+    gtk_overlay_add_overlay(OpaquePointer(huelle), feld)
+}
+
+
+/// Ein kleiner Pfeil- oder Minusknopf am rechten Rand einer Listenzeile.
+///
+/// **Nicht `insensitive`, wenn er nicht geht** — GTK legt darüber seinen
+/// eigenen Schleier, und der sieht aus wie ein Fehler. Stattdessen halbe
+/// Deckung und ein Rückruf, der nichts tut; dieselbe Lehre wie beim aktiven
+/// Konto im Profil.
+func listenpfeil(_ symbol: String, an: Bool, _ tun: @escaping () -> Void) -> Widget! {
+    let knopf: Widget! = gtk_button_new()
+    gtk_widget_add_css_class(knopf, "swiftly-listenpfeil")
+    gtk_button_set_child(alsKnopf(knopf), gtk_image_new_from_icon_name(symbol))
+    gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
+    if !an { gtk_widget_set_opacity(knopf, 0.3) }
+    beiSignal(knopf, "clicked") { if an { tun() } }
+    return knopf
+}
+
+/// Eine Zeile, die eine von mehreren Möglichkeiten trägt — Haken rechts bei
+/// der gewählten.
+///
+/// **Kein `GtkCheckButton`** (E4): der Haken ist ein Zeichen in Akzent, und
+/// der Akzent steht hier für Auswahl (E2).
+func auswahlzeile(_ text: String, an: Bool, _ tun: @escaping () -> Void) -> Widget! {
+    let knopf: Widget! = gtk_button_new()
+    gtk_widget_add_css_class(knopf, "swiftly-zeilenrumpf")
+    let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+    // **Keine eigenen Raender.** `swiftly-zeilenrumpf` traegt schon 44
+    // Mindesthoehe und 14 seitlich; die 14/10 hier oben drauf machten die
+    // Zeile hoeher als jede andere Zeile derselben Karte.
+    // **Das Zeichen steht links, wie auf dem Mac** — Haken bei der gewaehlten,
+    // leerer Kreis bei den uebrigen, und die gewaehlte Zeile traegt den Akzent
+    // (E2: der Akzent traegt Auswahl).
+    //
+    // **Der leere Kreis wird gemalt.** Hier stand `radio-symbolic`, und das
+    // ist im Adwaita-Satz ein *Kofferradio mit Antenne*. Am Geraet
+    // nachgesehen — es stand tatsaechlich eines in der Zeile. Siehe
+    // ``Kreiszeichen``.
+    let zeichen: Widget!
+    if an {
+        zeichen = gtk_image_new_from_icon_name("object-select-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(zeichen), 15)
+        gtk_widget_add_css_class(zeichen, "swiftly-akzentzeile")
+    } else {
+        let kreis = Kreiszeichen(mass: 15)
+        zeichen = kreis.anzeige
+        // Die Zeichenflaeche haelt ihr Zeichen; ohne diesen Zugriff stirbt
+        // es beim Verlassen des Aufrufs. Derselbe Fall wie bei ``Kulisse``.
+        beiSignal(zeichen, "destroy") { _ = kreis }
+    }
+    gtk_widget_set_size_request(zeichen, 22, -1)
+    gtk_widget_set_valign(zeichen, GTK_ALIGN_CENTER)
+    anhaengen(zeile, zeichen)
+    let l = beschriftung(text, stil: "swiftly-koerper")
+    gtk_label_set_xalign(OpaquePointer(l), 0)
+    gtk_widget_set_hexpand(l, 1)
+    if an { gtk_widget_add_css_class(l, "swiftly-akzentzeile") }
+    anhaengen(zeile, l)
+    gtk_button_set_child(alsKnopf(knopf), zeile)
+    beiSignal(knopf, "clicked", tun)
+    return knopf
+}
+
+/// Der Schalter aus ``schalterzeile(symbol:titel:unter:an:umgeschaltet:)``,
+/// aber ohne Zeile drumherum — für Listen, die schon eine eigene haben.
+///
+/// **„Klein" heisst hier ohne Zeile, nicht kleiner.** Der Mac kennt nur eine
+/// Baugroesse (`Einstellungszeilen.swift:128`); die Reihenliste in der
+/// Darstellung benutzt denselben `Schalter` wie jede andere Zeile.
+func kleinerSchalter(an: Bool, _ umgeschaltet: @escaping (Bool) -> Void) -> Widget! {
+    var zustand = an
+    let schalter: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(schalter, "swiftly-schalter")
+    gtk_widget_set_size_request(schalter, 38, 22)
+    gtk_widget_set_valign(schalter, GTK_ALIGN_CENTER)
+    let knauf: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+    gtk_widget_add_css_class(knauf, "swiftly-knauf")
+    gtk_widget_set_size_request(knauf, 16, 16)
+    gtk_widget_set_valign(knauf, GTK_ALIGN_CENTER)
+    anhaengen(schalter, knauf)
+
+    func anmalen() {
+        if zustand {
+            gtk_widget_add_css_class(schalter, "swiftly-aktiv")
+            gtk_widget_set_halign(knauf, GTK_ALIGN_END)
+        } else {
+            gtk_widget_remove_css_class(schalter, "swiftly-aktiv")
+            gtk_widget_set_halign(knauf, GTK_ALIGN_START)
+        }
+    }
+    anmalen()
+
+    let knopf: Widget! = gtk_button_new()
+    gtk_widget_add_css_class(knopf, "swiftly-blank")
+    gtk_button_set_child(alsKnopf(knopf), schalter)
+    gtk_widget_set_valign(knopf, GTK_ALIGN_CENTER)
+    beiSignal(knopf, "clicked") {
+        zustand.toggle()
+        anmalen()
+        umgeschaltet(zustand)
+    }
+    return knopf
+}
+
+/// **Zwei Spalten, linksbündig — die Anordnung des Macs.**
+///
+/// Wiedergabe, Darstellung und Einstellungen tragen sie alle drei
+/// (`macOS/WiedergabeEinstellungenView.swift:38` und Geschwister). Der
+/// Zwischenraum ist doppelter Seitenrand, damit die Karten zueinander stehen
+/// wie zum Fensterrand, und beide Spalten sind gleich breit — sonst zieht die
+/// vollere die andere auf einen Streifen zusammen.
+///
+/// Hier stand dieselbe Rechnung dreimal nicht: nur die Einstellungsseite war
+/// zweispaltig, Wiedergabe und Darstellung standen einspaltig in einer
+/// schmalen Säule. Drei Seiten, drei Anmutungen — genau die fehlende
+/// Kontinuität.
+func zweispalter(in block: Widget!) -> (links: Widget, rechts: Widget) {
+    let spalten = stapel(GTK_ORIENTATION_HORIZONTAL,
+                         abstand: Int32(Stil.randAbstand * 2))
+    gtk_widget_set_valign(spalten, GTK_ALIGN_START)
+    let links = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+    let rechts = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+    for spalte in [links, rechts] {
+        gtk_widget_set_hexpand(spalte, 1)
+        gtk_widget_set_halign(spalte, GTK_ALIGN_FILL)
+        gtk_widget_set_valign(spalte, GTK_ALIGN_START)
+        gtk_widget_set_size_request(spalte, 300, -1)
+        anhaengen(spalten, spalte)
+    }
+    let gleich = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL)
+    gtk_size_group_add_widget(gleich, links)
+    gtk_size_group_add_widget(gleich, rechts)
+    anhaengen(block, spalten)
+    return (links!, rechts!)
 }

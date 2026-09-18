@@ -29,13 +29,25 @@ struct BibliothekView: View {
 
     /// Blättern, Filtern und Sortieren stehen in `Bibliotheksmodell` —
     /// geteilt mit der iPhone-Fassung.
-    @State private var stand = Bibliotheksmodell()
+    @State private var stand: Bibliotheksmodell
     @State private var sortierwahlOffen = false
     /// Welche Bibliothek dieser Gattung gezeigt wird — nur wenn die Ansicht
     /// ueber die Gattung kam. Kommt sie ueber den Sprungpfad, ist die
     /// Bibliothek benannt und es gibt nichts zu waehlen.
     @State private var gewaehlt: Item?
     @FocusState private var amSortierknopf: Bool
+
+    /// Der Merkname steht beim Anlegen fest — siehe `Bibliotheksmodell`.
+    /// Eine benannte Bibliothek merkt sich ihre eigene Sortierung, eine
+    /// Gattung die ihrer Gattung.
+    init(model: AppModel, art: String? = nil, bibliothek: Item? = nil,
+         filter: [Bibliotheksfilter] = Bibliotheksfilter.allCases) {
+        self.model = model
+        self.art = art
+        self.bibliothek = bibliothek
+        self.filter = filter
+        _stand = State(initialValue: Bibliotheksmodell(merkname: bibliothek?.id ?? art))
+    }
     @Environment(\.tafelOffen) private var tafelOffen
 
     private var spalten: [GridItem] {
@@ -46,7 +58,13 @@ struct BibliothekView: View {
     var body: some View {
         ZStack {
             if stand.laedt {
-                Lader.fern
+                // Kein Ladering: das Raster steht schon in seiner Form und
+                // wird ueberblendet, sobald die Titel da sind.
+                Rasterplatzhalter()
+                    .padding(.horizontal, Stil.randSeite)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.top, Stil.leisteUnten + 90)
+                    .transition(.opacity)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 30) {
@@ -114,7 +132,13 @@ struct BibliothekView: View {
         // Wer die Seite mit offener Tafel verlaesst, liesse die Leiste tot
         // zurueck.
         .onDisappear { tafelOffen.wrappedValue = false }
-        .task(id: stand.kennung) { await laden() }
+        .animation(Stil.einblenden, value: stand.laedt)
+        // **Und der Kontowechsel gehoert in die Kennung.** Er stand nur
+        // hier nicht: `stand.kennung` traegt Bibliothek, Filter und
+        // Sortierung — alles Werte, die sich beim Wechsel nicht aendern.
+        // Die Seite behielt damit die Titel des vorigen Kontos, samt deren
+        // Haken. iPhone und iPad haengen den Zaehler seit je an.
+        .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await laden() }
     }
 
     /// **Je Bereich ein eigener Grundton.**
@@ -254,7 +278,14 @@ struct BibliothekView: View {
                     Kachelinhalt(bild: model.imageURL(for: item, maxHeight: 600,
                                                       hochkant: true),
                                  titel: item.name,
-                                 mitUnterzeile: false)
+                                 fortschritt: item.userData?.playedPercentage
+                                     .map { $0 / 100 },
+                                 mitUnterzeile: false,
+                                 marke: Anzeigeregeln.kachelmarke(
+                                    art: item.type,
+                                    staffeln: item.childCount,
+                                    gesehen: item.userData?.played,
+                                    offeneFolgen: item.userData?.unplayedItemCount))
                 }
                 .buttonStyle(KachelStil())
                 // Nachladen, sobald die drittletzte Reihe auftaucht — dann

@@ -22,7 +22,27 @@ enum Stil {
 
     static let schrift          = Color.white
     static let schriftLeise     = Color.white.opacity(0.62)
-    static let schriftSehrLeise = Color.white.opacity(0.38)
+
+    /// **0,48 und nicht 0,38 — bei 0,38 war es zu blass, um es zu lesen.**
+    ///
+    /// Ausgerechnet, nicht geschaetzt. Weiss mit 0,38 Deckkraft ergibt gegen
+    /// die drei Untergruende dieser App Kontraste von 3,52 (`grund`), 3,58
+    /// (`flaeche`) und 3,54 (`erhoeht`). Gefordert sind fuer Text unter 18 pt
+    /// **4,5** — und dieser Ton traegt genau solchen Text: Nebenzeilen,
+    /// Hinweise, Leerzustaende, quer durch alle sechs Fassungen bei 12 bis
+    /// 13 pt.
+    ///
+    /// 0,46 haette gereicht (4,67 / 4,65 / 4,54), liegt aber auf `erhoeht`
+    /// nur vier Hundertstel ueber der Schwelle — eine Nachkommastelle
+    /// Rundung, und wir waeren wieder darunter. 0,48 traegt mit 4,99 / 4,96 /
+    /// 4,82 und bleibt trotzdem deutlich hinter `schriftLeise` (7,73)
+    /// zurueck: die Abstufung, um die es hier geht, bleibt sichtbar.
+    ///
+    /// Der Ton traegt auch Zeichen und Kreise, die keine 4,5 braeuchten. Die
+    /// werden dadurch eine Spur heller — kein Verlust, und es waere die
+    /// falsche Reihenfolge, achtundachtzig Aufrufstellen einzeln zu sortieren,
+    /// um einem Zeichen sein Grau zu erhalten.
+    static let schriftSehrLeise = Color.white.opacity(0.48)
     static let linie            = Color.white.opacity(0.07)
     static let rand             = Color.white.opacity(0.12)
 
@@ -32,6 +52,33 @@ enum Stil {
     /// Auf tvOS trägt er zusätzlich den Fokusring — das ist dieselbe Regel,
     /// nicht ihre Aufweichung: der Ring zeigt eine Auswahl.
     static let akzent  = Color(red: 0.361, green: 0.820, blue: 0.761)   // #5CD1C2
+
+    /// Trägt, was auf einem **anderen** Gerät passiert: das Angebot
+    /// „hier weiterschauen", die Fernsteuerung. Türkis heißt „hier",
+    /// dieser Ton heißt „woanders".
+    ///
+    /// Vorher trug beides den Akzent. Damit stand das Angebot im Kopf der
+    /// Startseite im selben Ton wie die Fortschrittsbalken zwei Zeilen
+    /// darunter — zwei verschiedene Aussagen in einer Farbe, und keine
+    /// davon war dadurch noch eindeutig.
+    ///
+    /// Der Wert kommt von der Webseite (`Website/DESIGN.md`, `--kuehl`),
+    /// wo er dasselbe trägt: „Resume on this Device".
+    static let kuehl   = Color(red: 0.494, green: 0.608, blue: 1.000)   // #7E9BFF
+
+    /// **Die Mitte des Farbscheins** — zwischen `akzent` und `kuehl`.
+    ///
+    /// Der Schein über der Startseite läuft von Türkis nach Blau. Zwischen
+    /// den beiden gibt es rechnerisch keinen geraden Weg, der gut aussieht:
+    /// linear gemischt kippt er in der Mitte ins Graue. Dieser Ton ist der
+    /// Stützpunkt, der ihn dort hält.
+    ///
+    /// **Er steht hier, weil er sonst zweimal getippt dasteht.** Genau das
+    /// war er: einmal in `Sources/Shared/HomeView.swift`, einmal in
+    /// `Sources/macOS/HomeView.swift` — zwei Zahlenreihen, die niemand mehr
+    /// gemeinsam ändert. Er trägt nichts, was der Akzent trägt; er ist
+    /// Hintergrund, kein Zeichen.
+    static let scheinMitte = Color(red: 0.431, green: 0.706, blue: 0.882)  // #6EB4E1
 
     /// Erscheint ausschließlich, wenn der Server transkodiert.
     static let warnung = Color(red: 0.910, green: 0.514, blue: 0.227)   // #E8833A

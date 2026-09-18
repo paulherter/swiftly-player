@@ -15,50 +15,6 @@ import SwiftUI
 /// Die Folgen sind jetzt ein waagerechter Streifen mit denselben Querkacheln
 /// wie „Weiterschauen", nicht mehr eine senkrechte Liste. `Folgenzeile`
 /// bleibt trotzdem — das Folgenblatt im Player benutzt sie weiter.
-/// **Was einmal geholt wurde, bleibt fuer den Rueckweg liegen.**
-///
-/// Die Serienseite holte bei jedem Oeffnen alles neu: Staffeln, Stand,
-/// Folgen. Solange der Seitenwechsel ueberblendete, hat das niemand gesehen —
-/// die Ueberblendung war laenger als der Abruf. Ohne sie schneidet man hart
-/// hinein und sieht „Laedt…" am Hauptknopf und den Ring, wo die Folgen
-/// stehen. Paul: „die Seite laedt jetzt total immer, anstatt instant smooth
-/// reinzukommen."
-///
-/// Der Abruf ist nicht langsamer geworden, er war nur verdeckt. Die Antwort
-/// ist deshalb nicht, die Ueberblendung zurueckzuholen, sondern beim zweiten
-/// Mal gar nicht erst zu warten.
-///
-/// Absichtlich **nur fuers Bild**, nicht als Wahrheit: beim Erscheinen laeuft
-/// der Abruf trotzdem und schreibt frische Werte darueber. Wer eine Folge als
-/// gesehen markiert und zurueckkommt, sieht den neuen Stand — nur eben ohne
-/// Loch davor.
-@MainActor
-final class Serienspeicher {
-    static let geteilt = Serienspeicher()
-
-    struct Stand {
-        /// Die Serie selbst — fuer den Umweg von einer Folge aus, der sie
-        /// sonst jedes Mal nachholt. Siehe `StaffelZiel`.
-        var serie: Item?
-        var staffeln: [Item] = []
-        var weiterMit: Item?
-        var folgen: [String: [Item]] = [:]   // je Staffel
-    }
-
-    private var bekannt: [String: Stand] = [:]
-    private var reihenfolge: [String] = []
-
-    func stand(_ serie: String) -> Stand? { bekannt[serie] }
-
-    func merken(_ serie: String, _ aendern: (inout Stand) -> Void) {
-        if bekannt[serie] == nil {
-            bekannt[serie] = Stand()
-            reihenfolge.append(serie)
-        }
-        aendern(&bekannt[serie]!)
-        while reihenfolge.count > 12 { bekannt[reihenfolge.removeFirst()] = nil }
-    }
-}
 
 struct SerienView: View {
     let model: AppModel
@@ -91,7 +47,7 @@ struct SerienView: View {
         self.startStaffelID = startStaffelID
         self.startFolge = startFolge
 
-        let gemerkt = Serienspeicher.geteilt.stand(serie.id)
+        let gemerkt = Serienspeicher.geteilt.stand(serie.id, mit: model)
         _staffeln = State(initialValue: gemerkt?.staffeln ?? [])
         _weiterMit = State(initialValue: gemerkt?.weiterMit ?? startFolge)
 
@@ -116,11 +72,10 @@ struct SerienView: View {
     ///
     /// Vorher hing die Ueberblendung an der Ankunft der Daten. Seit die
     /// Zwischenspeicher greifen, kommen die aber schon im ersten Durchgang
-    /// mit, also gab es nichts mehr zu animieren: beim ersten Mal war es
-    /// etwas weich, ab dem zweiten hart. Paul: „ab dem zweiten Mal ist es gar
-    /// nicht mehr smooth." Das war ein Widerspruch in meinem eigenen Aufbau —
-    /// erst instant machen, dann Uebergaenge an Ereignisse haengen, die es
-    /// nicht mehr gibt.
+    /// mit, also gab es nichts mehr zu animieren: beim ersten Mal war es etwas
+    /// weich, ab dem zweiten hart. Das war ein Widerspruch in meinem eigenen
+    /// Aufbau — erst instant machen, dann Uebergaenge an Ereignisse haengen,
+    /// die es nicht mehr gibt.
     ///
     /// Am Erscheinen aufgehaengt, blendet es **jedes Mal** ein, ob die Daten
     /// schon dastehen oder nicht.
@@ -148,14 +103,12 @@ struct SerienView: View {
     @FocusState private var amHauptknopf: Bool
     /// **Wohin der Fokus zurueckkehrt, wenn eine Tafel zugeht.**
     ///
-    /// Er sprang auf den Hauptknopf — den Startfokus der Seite —, obwohl man
-    /// gerade am Mehr-Knopf beziehungsweise an der Staffelpille stand. Paul:
-    /// „aus einer Logik heraus muesste er ja auf den drei Punkten sein, weil
-    /// ich da ja gerade war."
+    /// Er sprang auf den Hauptknopf — den Startfokus der Seite, obwohl man
+    /// gerade am Mehr-Knopf beziehungsweise an der Staffelpille stand.
     ///
     /// Stimmt: eine Tafel ist kein Ortswechsel, sondern etwas, das ueber dem
-    /// Knopf aufklappt (E5). Wer sie schliesst, steht wieder an dem Knopf,
-    /// mit dem er sie geoeffnet hat.
+    /// Knopf aufklappt (E5). Wer sie schliesst, steht wieder an dem Knopf, mit
+    /// dem er sie geoeffnet hat.
     @FocusState private var amMehrknopf: Bool
     @FocusState private var amStaffelpille: Bool
 
@@ -184,7 +137,7 @@ struct SerienView: View {
                     reihenabschnitt {
                         Reihentitel(text: "Besetzung")
                     } inhalt: {
-                        Besetzungsstreifen(model: model, leute: darsteller)
+                        Besetzungsstreifen(model: model, leute: darsteller, herkunft: aktuell.name)
                     }
                     .opacity(eingeblendet ? 1 : 0)
                     .transition(.opacity)
@@ -206,22 +159,20 @@ struct SerienView: View {
         .ignoresSafeArea()
         // **Der Grund der ganzen Seite faerbt sich nach der Kulisse.**
         //
-        // **Nach `ignoresSafeArea`, nicht davor.** Davor bekam er die um
-        // den sicheren Bereich verkleinerte Flaeche — 1760 x 960 statt
-        // 1920 x 1080. Das Netz rechnet in Bruchteilen seiner Flaeche,
-        // sass damit auf der Detailseite anders als auf der Startseite,
-        // und beim Oeffnen sah man den Unterschied als Schrumpfen. Paul:
-        // „die Maske um das Bild wird einmal komplett klein und dann
-        // wieder normal."
+        // **Nach `ignoresSafeArea`, nicht davor.** Davor bekam er die um den
+        // sicheren Bereich verkleinerte Flaeche — 1760 x 960 statt 1920 x
+        // 1080. Das Netz rechnet in Bruchteilen seiner Flaeche, sass damit auf
+        // der Detailseite anders als auf der Startseite, und beim Oeffnen sah
+        // man den Unterschied als Schrumpfen.
         //
-        // Die Startseite hatte es von Anfang an nach `ignoresSafeArea`;
-        // dass die beiden verschieden standen, war der Unterschied.
+        // Die Startseite hatte es von Anfang an nach `ignoresSafeArea`; dass
+        // die beiden verschieden standen, war der Unterschied.
         //
         // An der Seite und nicht am Kopf: sonst endet die Faerbung an dessen
         // Unterkante, und quer ueber dem Schirm steht eine Naht. Siehe
         // `Bildgrund`.
         .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
-                        ?? model.backdropURL(for: aktuell))
+                        ?? model.kopfbildURL(for: aktuell))
         // Die Staffelwahl liegt auf der **Seite**, nicht am Pillenknopf —
         // siehe `Handlungstafel.unterDemReihenkopf`.
         //
@@ -229,9 +180,8 @@ struct SerienView: View {
         //
         // `focusSection` haelt den Fokus nicht fest, es ordnet ihn nur. Ein
         // Druck nach links oder rechts sprang deshalb aus der offenen Tafel
-        // heraus in die Folgen dahinter — die Tafel blieb stehen und ging
-        // erst weg, wenn man die Seite verliess. Paul hat es an der
-        // Staffelauswahl und am Mehr-Blatt gefunden, es ist dieselbe Stelle.
+        // heraus in die Folgen dahinter — die Tafel blieb stehen und ging erst
+        // weg, wenn man die Seite verliess.
         //
         // Gesperrt wird **vor** den Auflagen: die Tafeln haengen danach und
         // bleiben damit selbst bedienbar.
@@ -302,21 +252,16 @@ struct SerienView: View {
     /// Argument, die Folge stehe ja fokussiert in der Reihe darunter. Das
     /// stand gegen die freigegebene Tafel (`Serie-Neu.dc.html`), in der
     /// „Fortsetzen · S2 F4", „Von vorn", „Merkliste" und „Gesehen" im Kopf
-    /// stehen, und gegen A9 und E6 im Verhaltensregister: dieselbe
-    /// Reihenfolge auf jeder Plattform, ein Hauptknopf je Seite. Paul hat
-    /// die Tafel bestaetigt — der Knopf gehoert her.
+    /// stehen, und gegen A9 und E6 im Verhaltensregister: dieselbe Reihenfolge
+    /// auf jeder Plattform, ein Hauptknopf je Seite.
     ///
     /// **Weiss wird er nicht durch einen eigenen Stil, sondern durch den
-    /// Fokus.** `KnopfStil` faerbt die fokussierte Pille weiss, und der
-    /// Fokus faellt beim Oeffnen auf den ersten Knopf der Reihe. So loest
-    /// tvOS E6 — dieselbe Regel wie ueberall hier: Fokus ist weiss.
+    /// Fokus.** `KnopfStil` faerbt die fokussierte Pille weiss, und der Fokus
+    /// faellt beim Oeffnen auf den ersten Knopf der Reihe. So loest tvOS E6 —
+    /// dieselbe Regel wie ueberall hier: Fokus ist weiss.
     private var kopf: some View {
         Detailkopf(model: model, item: aktuell, plan: plan) {
             // **Instant gilt nur fuer das, was schon da war.**
-            //
-            // Paul: „der Button und alles, was vorher nicht da war, muss ja
-            // sowieso eingeblendet werden — instant ergibt nur Sinn fuer die
-            // Sachen, die vorher schon da waren."
             //
             // Das ist die klarere Regel. Titel, Angaben, Beschreibung, Bild
             // und Grund standen auf der Startseite schon: die stehen sofort
@@ -324,8 +269,8 @@ struct SerienView: View {
             // darf kommen, wenn sie etwas zu sagen hat.
             //
             // **Der Hauptknopf ist davon ausgenommen, und zwar zweimal
-            // begruendet.** Eingeblendet sah er falsch aus: die Animation
-            // hing am Wert, also wuchs die Pille sichtbar von „Laedt…" auf
+            // begruendet.** Eingeblendet sah er falsch aus: die Animation hing
+            // am Wert, also wuchs die Pille sichtbar von „Laedt…" auf
             // „Fortsetzen S1 • E3" — ein Schieben nach rechts, keine Blende.
             // Und mit Deckkraft 0 ist er fuer tvOS kein Fokusziel mehr, also
             // ging der Startfokus verloren.
@@ -412,12 +357,11 @@ struct SerienView: View {
         //
         // Waehrend der Ueberblendung sind alte und neue Reihe **beide** im
         // Layout. Untereinander gesetzt steht die neue damit unter der alten
-        // und rutscht erst hoch, wenn die alte draussen ist — Paul: „die
-        // Staffel 2 ist ein paar Zentimeter tiefer als Staffel 1."
+        // und rutscht erst hoch, wenn die alte draussen ist
         //
-        // Im `ZStack` liegen sie uebereinander, also an derselben Stelle.
-        // Die feste Hoehe haelt den Platz auch dann, wenn gerade nichts
-        // dasteht; sonst zoege sich die Seite waehrend des Wechsels zusammen.
+        // Im `ZStack` liegen sie uebereinander, also an derselben Stelle. Die
+        // feste Hoehe haelt den Platz auch dann, wenn gerade nichts dasteht;
+        // sonst zoege sich die Seite waehrend des Wechsels zusammen.
         ZStack(alignment: .topLeading) {
             if laedtFolgen {
                 // Nur damit die Seite nicht zusammenschnurrt, solange nichts
@@ -622,7 +566,8 @@ struct Folgenzeile: View {
                             .padding(.top, 4)
                     }
 
-                    if let text = folge.overview, !text.isEmpty {
+                    // Bereinigt — bei Folgen steht im Rohtext oft `<br>`.
+                    if let text = folge.beschreibung, !text.isEmpty {
                         Text(text)
                             .font(Stil.kachel)
                             .lineSpacing(9)

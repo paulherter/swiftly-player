@@ -24,6 +24,14 @@ final class Startseitenmodell {
     /// merken nichts davon.
     private(set) var neueFilme: [Item] = []
     private(set) var neueSerien: [Item] = []
+    /// Die gewählten Genres als eigene Reihen — nur, wenn keine Chips.
+    private(set) var gattungsreihen: [Gattungsreihe] = []
+
+    struct Gattungsreihe: Identifiable {
+        let name: String
+        let items: [Item]
+        var id: String { name }
+    }
     private(set) var geladen = false
     /// Kein einziger der drei Aufrufe kam durch — dann liegt es am Server,
     /// nicht am leeren Bestand.
@@ -37,12 +45,29 @@ final class Startseitenmodell {
     /// unverändert alt ist.
     private(set) var zuletztGeladen: Date?
 
+    /// Zu welchem Kontostand der Inhalt gehört.
+    private var fuerKonto = 0
+
+    /// **Auch die Genrereihen zählen.** Wer alle festen Reihen ausblendet
+    /// und nur Genres als Reihen zeigt, hat eine volle Startseite — ohne
+    /// diese Zeile stünde der Leerzustand darüber.
     var alleLeer: Bool {
         weiterschauen.isEmpty && naechsteFolge.isEmpty
             && zuletzt.isEmpty && neueFilme.isEmpty && neueSerien.isEmpty
+            && gattungsreihen.allSatisfy { $0.items.isEmpty }
     }
 
     func laden(_ model: AppModel) async {
+        // **Zu welchem Konto dieser Lauf gehört.** Erst beim Übernehmen
+        // unten wird daraus etwas — hier wird nichts geleert.
+        //
+        // Das war mein erster Versuch, und er hat den Fehler nur verschoben:
+        // die Seite vorweg leerzuräumen nimmt sämtliche Kacheln vom Schirm,
+        // und mit ihnen bricht jede laufende Bildladung ab. Gemessen am
+        // Gerät, zwanzigmal in Folge: `NSURLErrorDomain -999`, also
+        // „abgebrochen" — nicht abgelehnt, nicht verfehlt. Auch die Kacheln,
+        // die gleich darauf neu entstanden, gerieten noch in den Abbruch.
+        let diesesKonto = model.kontowechsel
         async let angefangen = model.weiterschauen()
         // **Die Bibliotheken müssen vorher bekannt sein.** Getrennt geholt
         // wird je Bibliothek, und deren Kennung steht erst nach `loadViews`.
@@ -66,20 +91,42 @@ final class Startseitenmodell {
 
         // Nur übernehmen, was auch wirklich geantwortet hat. Sonst räumt ein
         // einzelner Aussetzer die ganze Seite leer — genau das ist passiert.
-        if let a { weiterschauen = a }
-        if let b { naechsteFolge = b }
+        // **Beim Wechsel wird ersetzt, nicht ergänzt.** Sonst bliebe stehen,
+        // was nicht geantwortet hat — und das gehörte dem vorigen Konto.
+        // Ohne Wechsel gilt weiter: ein einzelner Aussetzer darf die Seite
+        // nicht leerräumen.
+        let wechsel = diesesKonto != fuerKonto
+        fuerKonto = diesesKonto
+
+        // **Jede Reihe geht entdoppelt hinein.**
+        //
+        // `ForEach` ordnet seine Zeilen ueber die Kennung zu; bei zwei
+        // gleichen greift ein Tipp daneben. Am 07.09.2026 gemeldet: auf
+        // „Zuletzt hinzugefuegt" oeffnete ein Druck auf eine Serie die
+        // uebernaechste. Bibliothek und Merkliste hatten die Regel je fuer
+        // sich, weil dort geblaettert wird — hier fehlte sie, weil eine Reihe
+        // aus einem einzigen Abruf kommt und ein Abruf nichts doppelt
+        // liefern sollte. Ein Server mit durcheinandergeratener Bibliothek
+        // tut es doch. Die Regel steht jetzt einmal im Paket.
+        if let a { weiterschauen = Listenregeln.ohneDoppelte(a) }
+        else if wechsel { weiterschauen = [] }
+        if let b { naechsteFolge = Listenregeln.ohneDoppelte(b) }
+        else if wechsel { naechsteFolge = [] }
         // **Die nicht gewaehlte Form wird geleert, nicht bloss nicht
         // geholt.** Sonst bliebe die Reihe von vorhin stehen: wer umschaltet,
         // saehe „Zuletzt hinzugefuegt" **und** die beiden neuen. Genau das
         // ist beim ersten Versuch passiert.
         if getrennt {
             zuletzt = []
-            if let d { neueFilme = d }
-            if let e { neueSerien = e }
+            if let d { neueFilme = Listenregeln.ohneDoppelte(d) }
+            else if wechsel { neueFilme = [] }
+            if let e { neueSerien = Listenregeln.ohneDoppelte(e) }
+            else if wechsel { neueSerien = [] }
         } else {
             neueFilme = []
             neueSerien = []
-            if let c { zuletzt = c }
+            if let c { zuletzt = Listenregeln.ohneDoppelte(c) }
+            else if wechsel { zuletzt = [] }
         }
 
         // Ein Abbruch ist kein Ausfall — dieselbe Unterscheidung wie in
@@ -89,6 +136,48 @@ final class Startseitenmodell {
         gestoert = !Task.isCancelled && a == nil && b == nil && !neuesDa
         if !gestoert { zuletztGeladen = Date() }
         geladen = true
+
+        // **Die Serien zu den Folgen im Hintergrund nachziehen.**
+        //
+        // „Weiterschauen" und „Naechste Folge" sind Folgen, keine Serien; ein
+        // Druck darauf fuehrt ueber `StaffelZiel` auf die Serienseite, und die
+        // braucht erst einmal die Serie selbst (A8). Bis sie da war, fuhr eine
+        // leere Seite herein — auf dem Mac gemessene 92 bis 174 ms.
+        //
+        // **Hier statt in jeder Startseite.** Der Mac hatte die Zeile in
+        // seiner `HomeView`, der Fernseher und das iPhone nicht. Sie gehoert
+        // dorthin, wo die Reihen entstehen: dann bekommt jede Plattform sie
+        // dadurch, dass sie dieses Modell benutzt, und keine kann sie
+        // vergessen. Doppelt aufgerufen kostet es nichts — `vorholen` haelt
+        // fest, was schon bekannt ist und was gerade laeuft.
+        //
+        // **`zuletzt` gehoert dazu, und das war beim ersten Anlauf nicht so.**
+        // Die Reihe „Zuletzt hinzugefuegt“ traegt bei einer
+        // Serienbibliothek **Folgen** — daran, dass `zuletztHinzugefuegt`
+        // ueber `seriesId ?? id` entdoppelt, sieht man es. Und sie ist der
+        // Normalfall: `neueSerien` fuellt sich nur bei eingeschaltetem
+        // `neuzugangGetrennt`, und das steht in der Vorgabe aus. Wer nur die
+        // getrennten Reihen vorholt, deckt also genau die Einstellung nicht
+        // ab, die fast jeder hat. Von der Mac-Sitzung gemessen und gemeldet.
+        // **Genres zuletzt, nach den festen Reihen.** Die stehen dann schon;
+        // was hier dazukommt, ist Zugabe und darf sie nicht aufhalten.
+        // Entweder Chips oder Reihen, je nach Einstellung — nie beides.
+        if model.genreChips {
+            // Die Chips sind die Genres aus den Einstellungen; zu laden gibt
+            // es dafür nichts.
+            gattungsreihen = []
+        } else {
+            var reihen: [Gattungsreihe] = []
+            for name in model.startGenres {
+                if let titel = await model.titel(gattung: name), !titel.isEmpty {
+                    reihen.append(Gattungsreihe(name: name, items: titel))
+                }
+            }
+            gattungsreihen = reihen
+        }
+
+        Serienspeicher.geteilt.vorholen(
+            weiterschauen + naechsteFolge + zuletzt + neueSerien, mit: model)
     }
 
     /// Muss beim Zurückkommen in den Vordergrund neu geholt werden?

@@ -5,16 +5,15 @@ import Foundation
 /// Beobachtet, **wohin** der Ton geht — und meldet, wenn das ein AirPlay-Gerät
 /// ist.
 ///
-/// **Warum das der Auslöser ist und kein Knopf.** Paul: „ich geh bei meinem
-/// iPhone oben auf Ziel ändern und änder von iPhone → Apple TV." Das ist der
-/// Weg, den Leute kennen, und er ist einen Griff kürzer als jeder Knopf, den
-/// man in einer Steuerung erst finden muss. Swiftly muss den Wechsel also
-/// nicht anbieten, sondern nur **bemerken** und das Bild hinterherschieben.
+/// **Warum das der Auslöser ist und kein Knopf.** Das ist der Weg, den Leute
+/// kennen, und er ist einen Griff kürzer als jeder Knopf, den man in einer
+/// Steuerung erst finden muss. Swiftly muss den Wechsel also nicht anbieten,
+/// sondern nur **bemerken** und das Bild hinterherschieben.
 ///
 /// **Der Ton wechselt von selbst, das Bild nicht.** Die Systemtonsitzung folgt
-/// dem neuen Ziel ohne unser Zutun — deshalb hörte Paul bisher schon etwas.
-/// Bild überträgt AirPlay nur aus `AVPlayer`; libVLCs Fläche kennt es nicht.
-/// Genau diese Lücke schließt die Meldung hier.
+/// dem neuen Ziel ohne unser Zutun — deshalb hörte Bild überträgt AirPlay nur
+/// aus `AVPlayer`; libVLCs Fläche kennt es nicht. Genau diese Lücke schließt
+/// die Meldung hier.
 ///
 /// Sie hängt an derselben Systemmeldung wie die Bluetooth-Behandlung in
 /// ``Wiedergabezentrale``, ist aber ein eigenes Objekt: dort geht es darum,

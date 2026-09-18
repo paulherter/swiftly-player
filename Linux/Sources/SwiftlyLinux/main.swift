@@ -1,5 +1,6 @@
 import CGtk
 import Foundation
+import JellyfinKit
 
 /// Einstiegspunkt. Alles Weitere steht in ``App``.
 ///
@@ -21,12 +22,49 @@ import Foundation
 _ = g_setenv("PANGOCAIRO_BACKEND", "fc", 0)
 #endif
 
+// **Das Paket bekommt seinen Faden nach draussen**, wie auf den
+// Apple-Fassungen. Der Steuerkanal und die Sitzungsabfrage im Paket
+// scheitern sonst lautlos — genau daran ist am 10.09.2026 eine halbe Nacht
+// vergangen. Hier reicht `print`: das Startskript leitet die Ausgabe
+// ohnehin in `swiftly-linux.log`.
+Spur.schreiben = { text in
+    // **Mit Uhrzeit.** Ohne sie steht im Protokoll zwar, *was* passiert ist,
+    // aber nicht *wann* — und bei einer Leitung, die auf- und abgeht, ist
+    // genau der Abstand die Auskunft. Am 10.09.2026 stand dort zwanzigmal
+    // „Leitung verloren" untereinander, und es war nicht zu sagen, ob das
+    // ueber eine Minute ging oder ueber eine Stunde.
+    let u = DateFormatter()
+    u.dateFormat = "HH:mm:ss"
+    print("\(u.string(from: Date())) [Paket] \(text)")
+    // **Und sofort hinausschreiben.**
+    //
+    // `print` in eine **umgeleitete** Datei ist blockweise gepuffert, nicht
+    // zeilenweise — am Bildschirm faellt das nie auf, in einer Protokolldatei
+    // sofort. Am 10.09.2026 hat das eine Dreiviertelstunde gekostet: solange
+    // eine Diagnose im Sekundentakt lief, war der Puffer schnell voll und
+    // alles stand da; sobald sie leise wurde, kam **gar nichts** mehr an, und
+    // es sah aus, als liefe die Funktion nicht. Sie lief die ganze Zeit.
+    //
+    // Dazu die halb geschriebenen Zeilen, die uns vorher irritiert haben —
+    // `[Paket] [Dis` mitten im Satz: das war ein Puffer, der zwischen zwei
+    // Schreibern geleert wurde.
+    // `fflush(nil)` und nicht `fflush(stdout)`: `stdout` ist eine
+    // veraenderliche globale Variable, und Swift 6 laesst sie aus einem
+    // nebenlaeufigen Zusammenhang nicht zu — „not concurrency-safe because it
+    // involves shared mutable state". Mit `nil` werden alle offenen Stroeme
+    // geleert, und der Name faellt weg.
+    fflush(nil)
+}
+
 nonisolated(unsafe) let app = App()
 
 nonisolated(unsafe) private let starten: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void = { anwendung, _ in
     Stil.anwenden()
     app.aufbauen(anwendung: anwendung!.assumingMemoryBound(to: GtkApplication.self))
     app.kopfzeileEinrichten()
+    // Nur im Debug-Bau: eine Datei sagt der App, wohin sie gehen soll —
+    // damit eine Sitzung nachsehen kann, bevor sie etwas meldet.
+    Fernsteuerpult.lauschen(app)
 }
 
 // **Ohne Sitzungsbus gibt es keine Einmaligkeit.**

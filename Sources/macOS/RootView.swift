@@ -30,6 +30,12 @@ struct RootView: View {
         }
         .background(Fensteranstrich())
         .animation(Stil.zeitSeite, value: model.phase)
+        // **Einmal an der Wurzel, nicht an jeder Kachel.** Welche Kachel
+        // ihren Fortschrittsbalken zeigt, entscheidet eine Einstellung — und
+        // die Aufrufstellen, die `fortschritt:` weiterreichen, sollen nichts
+        // davon wissen muessen. Gelesen wird sie dort, wo der Balken
+        // entsteht. Siehe `EnvironmentValues.fortschrittAufKacheln`.
+        .environment(\.fortschrittAufKacheln, model.fortschrittAufKacheln)
     }
 }
 

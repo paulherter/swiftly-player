@@ -71,24 +71,22 @@ final class Bildton {
         return ergebnis
     }
 
-    /// Auf 32 x 32 heruntergerechnet, dann Punkt fuer Punkt in ein
-    /// Histogramm der Farbtoene.
+    /// Auf 32 x 32 heruntergerechnet, dann Punkt fuer Punkt in ein Histogramm
+    /// der Farbtoene.
     ///
     /// **Ein Mittelwert reicht nicht.** Die erste Fassung mittelte alle Toene
-    /// zu einem einzigen — und ein Bild hat selten nur einen. Paul, an
-    /// Plex-Bildern: "zu wenig Farbe aus dem Bild genommen, es ist irgendwie
-    /// immer nur eine." Stimmt: ein Sonnenuntergang ist orange **und** blau,
-    /// und der Mittelwert davon ist keins von beidem.
+    /// zu einem einzigen — und ein Bild hat selten nur einen. Stimmt: ein
+    /// Sonnenuntergang ist orange **und** blau, und der Mittelwert davon ist
+    /// keins von beidem.
     ///
     /// Deshalb 36 Faecher zu je zehn Grad, gewichtet mit dem Quadrat der
     /// Saettigung mal der Helligkeit. Danach werden die staerksten Gipfel
     /// gezogen, und zwar mit Mindestabstand: zwei Faecher nebeneinander sind
     /// derselbe Ton, kein zweiter.
     ///
-    /// **Fuenf, nicht drei.** Paul: „man kann aus so einem Bild ja meist
-    /// viele Farben kriegen." Stimmt — drei war meine Sparsamkeit, nicht die
-    /// des Bildes. Mehr Toene heissen mehr Bewegung ueber die Flaeche, und
-    /// das ist zugleich das Beste gegen Streifen: je mehr die drei Kanaele
+    /// **Fuenf, nicht drei.** Stimmt — drei war meine Sparsamkeit, nicht die
+    /// des Bildes. Mehr Toene heissen mehr Bewegung ueber die Flaeche, und das
+    /// ist zugleich das Beste gegen Streifen: je mehr die drei Kanaele
     /// unterschiedlich schnell laufen, desto weniger fallen ihre
     /// Quantisierungsgrenzen zusammen.
     nonisolated static func toeneAus(_ daten: Data) -> [Double] {
@@ -239,8 +237,7 @@ extension Bildton {
     /// Zwei Masken uebereinander, eine waagerecht und eine senkrecht, ergeben
     /// zusammen einen **rechteckigen** Abfall. Jede fuer sich kann noch so
     /// weich sein: ihr Produkt zeichnet die zwei Geraden nach, an denen sie
-    /// wirken, und in der Ecke, wo beide halb greifen, wird es doppelt
-    /// dunkel. Paul: „man sieht zwei harte Kanten, die geglaettet wurden."
+    /// wirken, und in der Ecke, wo beide halb greifen, wird es doppelt dunkel.
     /// Genau das — geglaettete Kanten sind immer noch Kanten.
     ///
     /// Ein einziger radialer Abfall hat keine Richtung, in der er wirkt, also
@@ -263,14 +260,13 @@ struct Bildgrund: ViewModifier {
     /// **Der Anfangswert kommt aus dem Gedaechtnis, nicht aus dem Nichts.**
     ///
     /// Jede Seite legt ihren eigenen `Bildgrund` an — die Detailseite also
-    /// einen neuen, wenn sie aufgeht. Stand der auf `[]`, zeichnete er
-    /// zuerst den nackten Grund und fuellte sich erst im naechsten Durchgang.
-    /// Genau das sah Paul: „es ist ja dasselbe Bild, wozu aus- und
-    /// einblenden?"
+    /// einen neuen, wenn sie aufgeht. Stand der auf `[]`, zeichnete er zuerst
+    /// den nackten Grund und fuellte sich erst im naechsten Durchgang. Genau
+    /// das sah
     ///
     /// Das nachtraegliche Setzen ohne Animation kam dafuer zu spaet — der
-    /// leere Durchgang hatte da schon stattgefunden. Ein Ton, der bekannt
-    /// ist, muss deshalb **schon im ersten** Durchgang stehen.
+    /// leere Durchgang hatte da schon stattgefunden. Ein Ton, der bekannt ist,
+    /// muss deshalb **schon im ersten** Durchgang stehen.
     @MainActor init(url: URL?) {
         self.url = url
         _toene = State(initialValue: url.flatMap { Bildton.geteilt.gemerkt(fuer: $0) } ?? [])
@@ -319,10 +315,10 @@ struct Bildgrund: ViewModifier {
     ///
     /// Davor lagen hier ein linearer Grundverlauf und bis zu fuenf radiale
     /// Wolken uebereinander. Jede davon hat Stuetzstellen, an jeder
-    /// Stuetzstelle springt die Steigung, und jeder Sprung liest sich als
-    /// Band — dazu addieren sich fuenf halbdurchsichtige Ebenen zu genau den
-    /// fleckigen Uebergaengen, die Paul gesehen hat. Kein Feinschliff an den
-    /// Zahlen konnte das beheben, weil der Aufbau selbst die Kanten erzeugte.
+    /// Stuetzstelle springt die Steigung, und jeder Sprung liest sich als Band
+    /// — dazu addieren sich fuenf halbdurchsichtige Ebenen zu genau den
+    /// fleckigen Uebergaengen, die Kein Feinschliff an den Zahlen konnte das
+    /// beheben, weil der Aufbau selbst die Kanten erzeugte.
     ///
     /// `MeshGradient` interpoliert stattdessen auf der GPU ueber eine
     /// **Flaeche**: neun Stuetzpunkte, dazwischen eine glatte Lage. Es gibt
@@ -338,14 +334,14 @@ struct Bildgrund: ViewModifier {
         // **Fuenf mal fuenf, nicht drei mal drei.**
         //
         // Neun Stuetzpunkte auf 1920 x 1080 sind neun Farbinseln, und was
-        // dazwischen interpoliert wird, sieht man als Beule — Paul: „etwas
-        // fleckig." Das laesst sich nicht wegdaempfen; solange die Punkte so
-        // weit auseinanderliegen, traegt jeder eine eigene Wolke.
+        // dazwischen interpoliert wird, sieht man als Beule Das laesst sich
+        // nicht wegdaempfen; solange die Punkte so weit auseinanderliegen,
+        // traegt jeder eine eigene Wolke.
         //
-        // 25 Punkte tasten dasselbe Farbfeld dicht genug ab, dass die
-        // Flecken zu einer Flaeche verschmelzen. `farbe(bei:)` ist eine
-        // stetige Funktion des Ortes — je feiner man sie abtastet, desto
-        // glatter das Ergebnis.
+        // 25 Punkte tasten dasselbe Farbfeld dicht genug ab, dass die Flecken
+        // zu einer Flaeche verschmelzen. `farbe(bei:)` ist eine stetige
+        // Funktion des Ortes — je feiner man sie abtastet, desto glatter das
+        // Ergebnis.
         let seite = 5
         var punkte: [SIMD2<Float>] = []
         for zeile in 0 ..< seite {

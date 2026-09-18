@@ -1,0 +1,29 @@
+{
+  "enabledPlugins": {
+    "apple-mail@apple-mail-mcp": true
+  },
+  "extraKnownMarketplaces": {
+    "apple-mail-mcp": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/patrickfreyer/apple-mail-mcp.git"
+      }
+    }
+  },
+  "theme": "dark",
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [{ "type": "command",
+          "command": "sh -c 'h=\"$CLAUDE_PROJECT_DIR/Werkzeuge/haken/fremder-baum.sh\"; [ -x \"$h\" ] && exec \"$h\"; cat >/dev/null'" }] },
+      { "matcher": "Bash",
+        "hooks": [{ "type": "command",
+          "command": "sh -c 'h=\"$CLAUDE_PROJECT_DIR/Werkzeuge/haken/fremder-baum-bash.sh\"; [ -x \"$h\" ] && exec \"$h\"; cat >/dev/null'" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Write",
+        "hooks": [{ "type": "command",
+          "command": "sh -c 'h=\"$CLAUDE_PROJECT_DIR/Werkzeuge/haken/xcodegen-noetig.sh\"; [ -x \"$h\" ] && exec \"$h\"; cat >/dev/null'" }] }
+    ]
+  }
+}

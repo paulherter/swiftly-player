@@ -50,9 +50,7 @@ func reihenabschnitt<Kopf: View, Inhalt: View>(
 /// Ohne sie misst SwiftUI die Reihe an ihrem Inhalt — und der waechst, sobald
 /// eine Kachel fokussiert ist (`fokusLupe` 1,08). Die Reihe wurde damit je
 /// nach Fokus verschieden hoch gemessen, und ihr Abstand zum Reihenkopf
-/// aenderte sich beim Hinein- und Herausgehen. Paul: „gehe ich runter auf die
-/// Folge, geht die ganze Reihe ein Stueck nach unten; gehe ich wieder hoch,
-/// ist der Abstand wieder richtig."
+/// aenderte sich beim Hinein- und Herausgehen.
 ///
 /// Das hat mich heute mehrfach in die Irre gefuehrt: es sah aus wie ein
 /// Unterschied **zwischen Staffeln**, war aber einer zwischen fokussiert und
@@ -83,14 +81,13 @@ func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
     // Sie stand als `padding` am `LazyHStack`, also **innerhalb** der
     // Scrollflaeche. Von dort aus wirkt sie erst, wenn die Flaeche ihren
     // Inhalt wirklich ausmisst — und das tut sie erst, wenn der Fokus
-    // hineingeht. Beim Oeffnen fehlte sie deshalb, und die Kacheln standen
-    // 20 Punkt zu hoch; beim ersten Fokussieren kam sie dazu und alles
-    // rueckte.
+    // hineingeht. Beim Oeffnen fehlte sie deshalb, und die Kacheln standen 20
+    // Punkt zu hoch; beim ersten Fokussieren kam sie dazu und alles rueckte.
     //
-    // An Pauls zwei Bildern gemessen: Reihentitel steht in beiden bei 683,
-    // die Kacheln bei 742 und 762. Die Differenz ist auf den Punkt
-    // `reihenLuft` — deshalb war es nie ein Scrollen und nie das
-    // Section-Verhalten, obwohl beides danach aussah.
+    // An zwei Bildschirmfotos gemessen: Reihentitel steht in beiden bei 683, die
+    // Kacheln bei 742 und 762. Die Differenz ist auf den Punkt `reihenLuft` —
+    // deshalb war es nie ein Scrollen und nie das Section-Verhalten, obwohl
+    // beides danach aussah.
     //
     // Aussen liegt sie im Layout und gilt immer. Beschnitten wird die
     // gewachsene Kachel trotzdem nicht: dafuer sorgt `scrollClipDisabled`.
@@ -170,11 +167,15 @@ func streifen<Inhalt: View>(stand: Binding<String?>? = nil,
 struct Besetzungsstreifen: View {
     let model: AppModel
     let leute: [Person]
+    /// Woher man kommt — steht auf der Personenseite über der Rolle.
+    var herkunft: String? = nil
 
     var body: some View {
         streifen {
             ForEach(leute) { person in
-                Button {} label: {
+                // **Hier stand ein Knopf mit leerer Aktion.** Er sah aus wie
+                // ein Weg und war keiner — gebaut, aber nicht angeschlossen.
+                NavigationLink(value: PersonRoute(person: person, herkunft: herkunft)) {
                     Besetzungskachel(bild: model.personBild(person, maxHeight: 440),
                                      name: person.name, rolle: person.role)
                 }
@@ -205,7 +206,15 @@ struct Titelstreifen: View {
                     NavigationLink(value: item) {
                         Kachelinhalt(bild: model.imageURL(for: item, maxHeight: 600,
                                                           hochkant: true),
-                                     titel: item.name, mitUnterzeile: false)
+                                     titel: item.name,
+                                     fortschritt: item.userData?.playedPercentage
+                                         .map { $0 / 100 },
+                                     mitUnterzeile: false,
+                                     marke: Anzeigeregeln.kachelmarke(
+                                        art: item.type,
+                                        staffeln: item.childCount,
+                                        gesehen: item.userData?.played,
+                                        offeneFolgen: item.userData?.unplayedItemCount))
                     }
                     .buttonStyle(KachelStil())
                 }

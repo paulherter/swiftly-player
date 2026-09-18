@@ -56,7 +56,7 @@ public struct Bildadresse: Sendable {
             werte.append(.init(name: "fillHeight", value: String(hoch)))
         }
         werte.append(.init(name: "quality", value: String(guete)))
-        if let token { werte.append(.init(name: "api_key", value: token)) }
+        if let token { werte.append(.init(name: "ApiKey", value: token)) }
 
         teile?.queryItems = werte
         return teile?.url
@@ -72,7 +72,7 @@ public struct Bildadresse: Sendable {
         werte.append(.init(name: "fillWidth", value: String(kante)))
         werte.append(.init(name: "fillHeight", value: String(kante)))
         werte.append(.init(name: "quality", value: "90"))
-        if let token { werte.append(.init(name: "api_key", value: token)) }
+        if let token { werte.append(.init(name: "ApiKey", value: token)) }
         teile?.queryItems = werte
         return teile?.url
     }

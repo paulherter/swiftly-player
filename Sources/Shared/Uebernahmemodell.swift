@@ -27,19 +27,58 @@ final class Uebernahmemodell {
     /// Was schiefging — für eine Meldung in der Ansicht.
     var fehler: String?
 
+    /// **Jemand hat auf das Abzeichen getippt.**
+    ///
+    /// Das Abzeichen steht seit dem 10.09.2026 in ``Kopfziele`` und damit auf
+    /// jeder Wurzelseite — die Wiedergabe haengt aber an **einer** Stelle,
+    /// in ``HauptView``. Ein Schalter hier ist der kurze Weg dazwischen:
+    /// die Ansicht legt ihn um, wer den Player haelt, raeumt ihn ab. Eine
+    /// Schliessung durch die Umgebung zu reichen waere derselbe Weg mit mehr
+    /// Teilen.
+    var angetippt = false
+
     /// Läuft die Übernahme gerade? Sperrt den Knopf, damit ein zweiter Druck
     /// nicht zwei Wiedergaben startet.
     private(set) var uebernimmt = false
 
     private var takt: Task<Void, Never>?
 
-    /// **Zehn Sekunden.**
+    /// **Fuenf Sekunden.**
     ///
-    /// Der Fortschrittsbericht der anderen Seite kommt in demselben Takt, ein
-    /// schnelleres Fragen erfährt also nichts Neues. Und es ist eine Abfrage,
-    /// die läuft, solange jemand auf der Startseite steht — sie darf den
-    /// Server nicht beschäftigen.
-    static let taktsekunden: Double = 10
+    /// Hier standen zehn, mit der Begruendung, der Fortschrittsbericht der
+    /// anderen Seite komme im selben Takt — schnelleres Fragen erfahre also
+    /// nichts Neues. **Das stimmt fuer die Stelle, es stimmt aber nicht fuer
+    /// den Fall, auf den es ankommt.**
+    ///
+    /// Wonach hier gesucht wird, ist nicht ein neuer Sekundenstand, sondern
+    /// eine Sitzung, die es vorher **gar nicht gab**. Und die meldet sich
+    /// beim Server sofort, wenn drueben jemand auf Abspielen drueckt — nicht
+    /// im Zehnsekundentakt. Die ganze Wartezeit entstand also allein hier.
+    /// Am 10.09.2026 als zu traege gemeldet, und zu Recht.
+    ///
+    /// Es bleibt eine Abfrage, die laeuft, solange jemand auf der Startseite
+    /// steht; deshalb fuenf und nicht eine. Zwei Anfragen je zehn Sekunden
+    /// sind fuer einen Heimserver nichts, zehn waeren eine Sorte Fleiss, die
+    /// niemandem nuetzt.
+    ///
+    /// **Der richtige Weg ist ein zweiter Weg, nicht der Ersatz dieses
+    /// einen.** Jellyfin schickt Sitzungsaenderungen von sich aus ueber den
+    /// Steuerkanal, wenn man sie mit `SessionsStart` bestellt — dann stuende
+    /// das Angebot sofort da. Hier stand zuerst, der Takt koenne dann
+    /// entfallen; die Mac-Sitzung hat das noch in derselben Nacht
+    /// zurechtgerueckt, und sie hat recht: **er wird zum Rueckfall.** Steht
+    /// die Leitung, gilt, was sie meldet; steht sie nicht, fragt der Takt
+    /// weiter.
+    ///
+    /// Sonst taeuscht man eine traege Anzeige gegen eine, die bei einem
+    /// Abriss einfach stehenbleibt — und **das faellt niemandem auf, weil
+    /// nichts fehlschlaegt.** Genau diese Sorte Fehler hat den 10.09. eine
+    /// halbe Nacht gekostet.
+    ///
+    /// Ein Umbau darauf ist erst seit heute ueberhaupt pruefbar: vorher war
+    /// der Steuerkanal stumm, und eine ausbleibende Meldung liess sich nicht
+    /// von „nichts Neues" unterscheiden.
+    static let taktsekunden: Double = 5
 
     func starten(_ model: AppModel) {
         guard takt == nil else { return }
@@ -58,14 +97,46 @@ final class Uebernahmemodell {
     }
 
     private func einmalFragen(_ model: AppModel) async {
+        // **Wer zusieht, fragt nicht.**
+        //
+        // Im Player kommt es aufs Bild an, und der Server haette alle fuenf
+        // Sekunden eine Anfrage mehr zu beantworten. Vorher hing das an der
+        // Startseite (`.task(id: abspielen == nil)`) und galt damit nur fuer
+        // Wiedergaben, die dort begonnen haben. Hier gilt es fuer jede.
+        guard !Spielstand.spielerLaeuft else { return }
         // `model.session` statt `client.currentSession()`: der Client ist ein
         // Aktor, die Sitzung liegt hier ohnehin schon auf dem Hauptakteur.
         guard let client = model.client,
               let benutzer = model.session?.userID else { angebote = []; return }
-        let sitzungen = await client.fremdsitzungen()
+        let sitzungen: [Fremdsitzung]
+        do {
+            sitzungen = try await client.fremdsitzungen()
+        } catch {
+            // **Still nach aussen, laut im Protokoll.** Gefragt wird alle
+            // zehn Sekunden; eine Fehlermeldung auf der Startseite waere
+            // Laerm. Aber der Unterschied zwischen „nichts laeuft" und „die
+            // Frage kam nicht an" muss irgendwo stehen, sonst sucht ihn beim
+            // naechsten Mal wieder jemand von vorn.
+            Protokoll.schreib("[Uebernahme] Abfrage fehlgeschlagen: \(error)")
+            angebote = []
+            return
+        }
         angebote = Uebernahme.angebote(aus: sitzungen,
                                        eigeneGeraeteID: AppModel.deviceID,
                                        eigeneBenutzerID: benutzer)
+        // **Warum nichts angeboten wird, muss ablesbar sein.** Fuenf Gruende
+        // sehen von aussen gleich aus -- das Abzeichen fehlt schlicht. In der
+        // ausgelieferten Fassung faellt das hier heraus.
+        if angebote.isEmpty {
+            let gruende = sitzungen.map { s in
+                let wer = s.geraetename ?? s.programm ?? "?"
+                let warum = Uebernahme.warumNicht(s, eigeneGeraeteID: AppModel.deviceID,
+                                                  eigeneBenutzerID: benutzer) ?? "taugt"
+                return "\(wer): \(warum)"
+            }
+            Protokoll.schreib("[Uebernahme] \(sitzungen.count) Sitzungen, kein Angebot"
+                + (gruende.isEmpty ? "" : " — " + gruende.joined(separator: " · ")))
+        }
     }
 
     /// Das andere Gerät anhalten und hier weitermachen.
@@ -78,13 +149,12 @@ final class Uebernahmemodell {
     /// **Beenden, nicht anhalten.** Pausiert bleibt die Verbindung zum Server
     /// offen, die Sitzung steht weiter in der Übersicht, und auf dem anderen
     /// Gerät liegt noch der Player über allem — man müsste ihn von Hand
-    /// schließen. Paul: „der Stream aufm Handy muss geschlossen werden, nicht
-    /// nur pausiert." Die Stelle ist vorher gelesen, sie geht dabei nicht
+    /// schließen. Die Stelle ist vorher gelesen, sie geht dabei nicht
     /// verloren.
     ///
-    /// - Returns: Titel und Stelle, oder `nil` samt Meldung.
-    /// - Parameter sitzung: Welche übernommen werden soll. Bei mehreren hat
-    ///   die Oberfläche gefragt; bei einer ist es schlicht die eine.
+    /// - Returns: Titel und Stelle, oder `nil` samt Meldung. - Parameter
+    /// sitzung: Welche übernommen werden soll. Bei mehreren hat die Oberfläche
+    /// gefragt; bei einer ist es schlicht die eine.
     func uebernehmen(_ sitzung: Fremdsitzung, model: AppModel) async -> (item: Item, ab: Double)? {
         guard let titel = sitzung.laeuft,
               let client = model.client, !uebernimmt else { return nil }

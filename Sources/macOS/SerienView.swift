@@ -31,6 +31,83 @@ struct SerienView: View {
     @State private var folgen: [Item] = []
     @State private var aehnliche: [Item] = []
     @State private var staffelOffen = false
+    @State private var staffeltafelOffen = false
+    @State private var ladeposten: [Downloadposten] = []
+    /// Was in der Tafel oben steht — „Staffel 5" oder der Name einer Folge.
+    /// Er stand fest auf der Staffel, auch wenn nur eine Folge geladen wurde.
+    @State private var ladetitel = ""
+    /// Wo die Tafel aufgeht. Bei der Staffel unter dem Chip, bei einer Folge
+    /// unter **dieser** Folge — sonst klappt sie irgendwo auf und man sucht,
+    /// worauf sie sich bezieht.
+    @State private var tafelOben: CGFloat?
+
+    // MARK: Downloads
+
+    /// Liegt schon jede Folge dieser Staffel auf der Platte? Dann faellt der
+    /// Chip weg — ein Knopf, der nichts mehr tut, ist schlechter als keiner.
+    private var staffelVollstaendig: Bool {
+        !folgen.isEmpty && folgen.allSatisfy { model.downloads.posten(fuer: $0.id) != nil }
+    }
+
+    /// Ein `Downloadposten` aus einer Folge. **Dieselbe Quelle, die der
+    /// Player naehme** — H2, es ist dieselbe Datei.
+    private func posten(_ folge: Item) -> Downloadposten? {
+        guard let konto = model.session?.userID else { return nil }
+        let quelle = folge.mediaSources?.first
+        return Downloadposten(
+            id: folge.id, konto: konto, art: .folge, titel: folge.name,
+            serie: serie.name, serienId: serie.id,
+            staffel: folge.parentIndexNumber ?? gewaehlt?.indexNumber,
+            folge: folge.indexNumber,
+            laufzeitTicks: folge.runTimeTicks, container: quelle?.container,
+            quelle: quelle?.id, bytes: quelle?.size ?? 0,
+            gesehen: folge.userData?.played ?? false)
+    }
+
+    /// Das Plakat der Serie plus das Querbild jeder Folge, die geladen wird.
+    private var ladebilder: [String: URL] {
+        var karte: [String: URL] = [:]
+        if let plakat = model.plakatURL(itemID: serie.id,
+                                        marke: serie.imageTags?["Primary"]) {
+            karte[serie.id] = plakat
+        }
+        for p in ladeposten {
+            if let f = folgen.first(where: { $0.id == p.id }),
+               let bild = model.imageURL(for: f, maxHeight: 220) {
+                karte[p.id] = bild
+            }
+        }
+        return karte
+    }
+
+    /// **Die ganze Staffel, der Reihe nach.** H4 laesst immer nur einen
+    /// laufen; was schon da ist, kommt nicht noch einmal in die Schlange.
+    /// **Eine einzelne Folge laden** — wie auf dem iPhone seit `beb6a79`.
+    ///
+    /// Die Tafel sitzt an derselben Stelle wie bei einer Staffel: sie
+    /// beantwortet dieselbe Frage, und ein zweiter Ort dafuer waere ein
+    /// zweiter Ort zum Suchen.
+    private func folgeGeklickt(_ folge: Item, unter kante: CGFloat) {
+        ringGeklickt(model.downloads.posten(fuer: folge.id), model.downloads) {
+            guard let p = posten(folge) else { return }
+            ladeposten = [p]
+            // **Der Titel ist die Folge, nicht die Staffel.** Er stand fest
+            // auf `gewaehlt?.name` — in der Tafel las man dann „Staffel 5
+            // laden", waehrend eine einzige Folge in der Schlange stand.
+            ladetitel = folge.name
+            tafelOben = kante
+            withAnimation(Stil.zeitSprung) { staffeltafelOffen = true }
+        }
+    }
+
+    private func staffelLaden() {
+        let offene = folgen.filter { model.downloads.posten(fuer: $0.id) == nil }
+        ladeposten = offene.compactMap { posten($0) }
+        guard !ladeposten.isEmpty else { return }
+        ladetitel = gewaehlt?.name ?? serie.name
+        tafelOben = nil
+        withAnimation(Stil.zeitSprung) { staffeltafelOffen.toggle() }
+    }
     @State private var laedt = true
     /// Ob die Staffeln schon da sind. **Ohne das lief das Laden zweimal:**
     /// `.task(id: gewaehlt?.id)` feuert beim Erscheinen mit `nil` und holte
@@ -54,16 +131,20 @@ struct SerienView: View {
         self.startStaffelNummer = startStaffelNummer
         self.zurueck = zurueck
 
-        let gemerkt = Seriencache.geteilt.stand(serie.id)
+        let gemerkt = Serienspeicher.geteilt.stand(serie.id, mit: model)
         let staffeln = gemerkt?.staffeln ?? []
         _staffeln = State(initialValue: staffeln)
         _staffelnDa = State(initialValue: !staffeln.isEmpty)
 
-        // Dieselbe Staffel, die auch `staffelnLaden()` wählen würde —
-        // einschliesslich des Weges über die Nummer.
+        // **Nur, was mitgekommen ist** (A10). Kommt ein Hinweis, gilt er
+        // sofort — dann steht die richtige Staffel schon im ersten Bild.
+        // Kommt keiner, bleibt die Wahl offen: `staffelnLaden` fragt dann,
+        // in welcher Staffel man steckt, und die gilt. Hier `staffeln.first`
+        // zu nehmen hiesse, Staffel 1 zu zeigen und sie einen Wimpernschlag
+        // später gegen die laufende zu tauschen — genau das Zucken, das die
+        // Regel vermeiden soll.
         let staffel = staffeln.first { $0.id == startStaffelID }
             ?? staffeln.first { $0.indexNumber != nil && $0.indexNumber == startStaffelNummer }
-            ?? staffeln.first
         _gewaehlt = State(initialValue: staffel)
 
         let folgen = staffel.flatMap { gemerkt?.folgen[$0.id] } ?? []
@@ -88,7 +169,8 @@ struct SerienView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Heldenkopf(model: model, titel: serie, stand: kopfstand)
+                Heldenkopf(model: model, titel: serie, stand: kopfstand,
+                           staffel: gewaehlt)
                     // **Der Kopf malt über das, was unter ihm steht.**
                     //
                     // Ohne das liegt das Mehr-Menü hinter Reiterreihe und
@@ -105,6 +187,41 @@ struct SerienView: View {
                     .padding(.top, 20)
             }
             .padding(.bottom, 40)
+            // **Die Ladetafel liegt im Inhalt, nicht auf der Seite.**
+            //
+            // Sie hing als Auflage ueber der ganzen Seite. Zwei Sachen waren
+            // daran falsch: der Fang darunter deckte die Scrollflaeche zu,
+            // also liess sich bei offener Tafel nicht mehr scrollen — und die
+            // Tafel stand fest im Fenster, waehrend die Folge, zu der sie
+            // gehoert, darunter wegwanderte.
+            //
+            // Im Inhalt loest sich beides von selbst: das Rad trifft die
+            // Scrollflaeche, weil der Fang in ihr liegt, und die Tafel geht
+            // mit der Zeile mit, weil sie an derselben Stelle des Inhalts
+            // haengt. Ihr Platz ist dann ein Wert im Inhalt und keiner im
+            // Fenster — deshalb sitzt der benannte Raum hier und nicht
+            // aussen.
+            .coordinateSpace(.named("serienseite"))
+            .overlay(alignment: .topTrailing) {
+                if staffeltafelOffen, !ladeposten.isEmpty {
+                    ZStack(alignment: .topTrailing) {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(Stil.zeitSprung) { staffeltafelOffen = false }
+                            }
+                        Ladetafel(model: model, posten: ladeposten,
+                                  titel: ladetitel,
+                                  bilder: ladebilder,
+                                  offen: $staffeltafelOffen)
+                            // Unter dem Chip — oder unter der Folge, von der
+                            // aus sie geoeffnet wurde.
+                            .padding(.trailing, Stil.randAbstand)
+                            .padding(.top, tafelOben ?? (Stil.heldHoehe + 92))
+                    }
+                    .transition(.opacity)
+                }
+            }
         }
         .scrollIndicators(.never)
         // **Die milchige Leiste am oberen Rand.** macOS 26 legt sie von sich
@@ -133,10 +250,22 @@ struct SerienView: View {
         .overlay(alignment: .top) {
             Detailkopf(titel: serie.name, stand: kopfstand, zurueck: zurueck)
         }
-        .task { await farbe.laden(model.backdropURL(for: serie)) }
+        .task { await farbe.laden(model.kopfbildURL(for: serie)) }
         .task { await staffelnLaden() }
         .task(id: gewaehlt?.id) {
             guard staffelnDa else { return }
+            // **Und nicht, solange keine Staffel gewählt ist.** Seit A10
+            // wählt der `init` ohne Hinweis keine mehr — kamen die Staffeln
+            // dann aus dem Speicher, stand `staffelnDa` sofort auf wahr und
+            // dieser Lauf holte mit `staffel: nil` **alle** Folgen der Serie.
+            // Kurz darauf kam die Wahl, der Lauf wiederholte sich, und die
+            // Liste wurde ein zweites Mal mit anderem Inhalt gebaut — mitten
+            // im Hereinfahren. Genau das, wogegen `staffelnDa` einmal
+            // eingeführt wurde; die Lücke habe ich mit A10 wieder aufgemacht.
+            //
+            // Hat die Serie gar keine Staffeln, ruft `staffelnLaden` das
+            // Laden selbst — dann ist hier nichts zu tun.
+            guard gewaehlt != nil else { return }
             await folgenLaden()
         }
     }
@@ -176,13 +305,42 @@ struct SerienView: View {
         switch reiter {
         case .folgen:
             VStack(alignment: .leading, spacing: 0) {
-                if staffeln.count > 1 {
-                    Staffelwahl(staffeln: staffeln, gewaehlt: $gewaehlt, offen: $staffelOffen)
-                        .padding(.bottom, 18)
+                if staffeln.count > 1 || (model.downloadsAn && !folgen.isEmpty) {
+                    HStack(alignment: .top, spacing: 12) {
+                        if staffeln.count > 1 {
+                            Staffelwahl(staffeln: staffeln, gewaehlt: $gewaehlt,
+                                        offen: $staffelOffen)
+                        }
+                        Spacer(minLength: 0)
+                        // **Neben der Staffelwahl**, dieselbe Höhe, dieselbe
+                        // Form. Ist die Staffel schon vollständig da, steht
+                        // dort nichts mehr statt eines Knopfs, der nichts tut.
+                        if model.downloadsAn, !staffelVollstaendig, !folgen.isEmpty {
+                            Chip(beschriftung: String(localized: "Staffel laden"),
+                                 symbol: "arrow.down", aktiv: false) {
+                                staffelLaden()
+                            }
+                        }
+                    }
+                    .padding(.bottom, 18)
+                    .zIndex(10)
                 }
                 if laedt {
-                    Lader().frame(height: 200)
-                        .transition(.opacity)
+                    // Drei Zeilen in ihrer Form statt eines Rings.
+                    VStack(spacing: 0) {
+                        ForEach(0 ..< 3, id: \.self) { _ in
+                            HStack(spacing: 16) {
+                                Ladefeld().frame(width: 160, height: 90)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Ladefeld(ecke: 3).frame(width: 220, height: 14)
+                                    Ladefeld(ecke: 3).frame(width: 90, height: 11)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 10)
+                        }
+                    }
+                    .transition(.opacity)
                 } else if folgen.isEmpty {
                     Leerzustand(symbol: "tray", titel: "Keine Folgen")
                         .frame(height: 200)
@@ -213,7 +371,9 @@ struct SerienView: View {
                     // trägt deshalb die Zeile selbst, siehe `Folgenzeile`.
                     VStack(spacing: 0) {
                         ForEach(folgen, id: \.id) { folge in
-                            Folgenzeile(model: model, folge: folge)
+                            Folgenzeile(model: model, folge: folge) { kante in
+                                folgeGeklickt(folge, unter: kante)
+                            }
                             if folge.id != folgen.last?.id {
                                 Rectangle().fill(Stil.linie).frame(height: 1)
                             }
@@ -225,7 +385,8 @@ struct SerienView: View {
             }
 
         case .besetzung:
-            Besetzungsreihe(model: model, leute: serie.darsteller)
+            Besetzungsreihe(model: model, leute: serie.darsteller,
+                            herkunft: serie.name)
 
         case .aehnliches:
             if aehnliche.isEmpty {
@@ -242,7 +403,8 @@ struct SerienView: View {
                         Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
-                                         bild: model.imageURL(for: eintrag, hochkant: true))
+                                         bild: model.imageURL(for: eintrag, hochkant: true),
+                                         zeichen: "tv")
                         }
                         .buttonStyle(.plain)
                     }
@@ -254,22 +416,58 @@ struct SerienView: View {
     // MARK: Laden
 
     private func staffelnLaden() async {
-        guard staffeln.isEmpty, !staffelnDa else { return }
+        // **Auch wenn die Staffeln schon dastehen.** Sie koennen aus dem
+        // Speicher kommen, die Wahl aber offen sein — ohne Hinweis trifft der
+        // `init` keine mehr (A10). Dann wird hier nur noch gewaehlt.
+        if staffelnDa, !staffeln.isEmpty {
+            if gewaehlt == nil { gewaehlt = await gewaehlteStaffel(aus: staffeln) }
+            return
+        }
+        guard staffeln.isEmpty else { return }
+
+        // **Nebeneinander, weil sie einander nicht brauchen.** Die Liste
+        // braucht die Staffeln, die Wahl den Stand — und den nur, wenn kein
+        // Hinweis mitkam. Hintereinander lägen die zwei Fristen aufeinander;
+        // dieselbe Rechnung wie beim Folgenwechsel im Player.
+        async let stand: Item? = ohneHinweis ? await model.standInSerie(serie) : nil
         let neue = await model.staffeln(serie)
         // Erst die Wahl, dann die Liste, dann das Zeichen — alles in einem
         // Zug, damit `.task(id:)` nur einen Wechsel sieht.
         //
-        // Die Wahl selbst kommt aus `main`: erst über die Kennung, dann über
-        // die **Nummer**. Am Gerät gemessen liefert der Server an einer Folge
-        // nicht immer eine `SeasonId`; dann greift der Kennungsvergleich ins
-        // Leere und es stünde die erste Staffel vorn.
-        gewaehlt = neue.first { $0.id == startStaffelID }
-            ?? neue.first { $0.indexNumber != nil && $0.indexNumber == startStaffelNummer }
-            ?? neue.first
+        gewaehlt = waehle(aus: neue, stand: await stand)
         staffeln = neue
         staffelnDa = true
-        Seriencache.geteilt.merken(serie.id) { $0.staffeln = neue }
+        Serienspeicher.geteilt.merken(serie.id) { $0.staffeln = neue }
         if neue.isEmpty { await folgenLaden() }
+    }
+
+    /// Welche Staffel dasteht — **A10**, und die Kette ist wörtlich die der
+    /// geteilten Fassung.
+    ///
+    /// Erst der Hinweis, mit dem man gekommen ist: Kennung, dann **Nummer**.
+    /// Die Nummer ist kein Gurt zu viel — am Gerät gemessen liefert der
+    /// Server an einer Folge nicht immer eine `SeasonId`, und dann greift der
+    /// Kennungsvergleich ins Leere.
+    ///
+    /// Kam kein Hinweis — aus der Bibliothek, aus der Suche —, gilt die
+    /// **laufende** Staffel, nicht Staffel 1. Dafür muss gefragt werden, wo
+    /// man in der Serie steht; deshalb wird der Stand nur dann geholt.
+    private var ohneHinweis: Bool { startStaffelID == nil && startStaffelNummer == nil }
+
+    /// Reine Rechnung, ohne Abruf — damit der Aufrufer entscheidet, wann er
+    /// den Stand holt, und ihn nebenher holen kann.
+    private func waehle(aus liste: [Item], stand: Item?) -> Item? {
+        liste.first { $0.id == startStaffelID }
+            ?? liste.first { $0.indexNumber != nil && $0.indexNumber == startStaffelNummer }
+            ?? liste.first { $0.id == stand?.seasonId }
+            ?? liste.first { $0.indexNumber != nil && $0.indexNumber == stand?.parentIndexNumber }
+            ?? liste.first
+    }
+
+    /// Für den Fall, dass die Staffeln schon aus dem Speicher kamen: dann
+    /// gibt es nichts zu parallelisieren, es fehlt nur noch die Wahl.
+    private func gewaehlteStaffel(aus liste: [Item]) async -> Item? {
+        waehle(aus: liste, stand: ohneHinweis ? await model.standInSerie(serie) : nil)
     }
 
     private func folgenLaden() async {
@@ -280,7 +478,7 @@ struct SerienView: View {
         let neue = await model.folgen(serie: serie.id, staffel: gewaehlt?.id)
         folgen = neue
         if let staffel = gewaehlt?.id {
-            Seriencache.geteilt.merken(serie.id) { $0.folgen[staffel] = neue }
+            Serienspeicher.geteilt.merken(serie.id) { $0.folgen[staffel] = neue }
         }
     }
 }
@@ -417,9 +615,14 @@ struct Staffelzeile: View {
 struct Folgenzeile: View {
     let model: AppModel
     let folge: Item
+    /// Was ein Klick auf den Ring tut — mit der Unterkante der Zeile, damit
+    /// die Tafel darunter aufgeht und nicht irgendwo.
+    var ringtipp: ((CGFloat) -> Void)?
 
     @State private var schwebt = false
     @State private var gesehen = false
+    /// Wo die Zeile endet, im Raum der Seite — die Tafel geht darunter auf.
+    @State private var unterkante: CGFloat = 0
     @Environment(Abspielsteuerung.self) private var steuerung
 
     /// 16 : 9 — dasselbe Verhältnis wie die 116 × 65 des iPhones.
@@ -437,9 +640,29 @@ struct Folgenzeile: View {
                 // es für jede Zeile **dasselbe** Bild. Die iPhone-Fassung
                 // nimmt hier `imageURL(for: folge, maxHeight: 220)`, also das
                 // eigene Vorschaubild der Folge.
+                // **Das Vorschaubild traegt den Sehstand** — wie auf dem
+                // iPhone seit `beb6a79`. Es zeigte schon den
+                // Fortschrittsbalken, also „wie weit bin ich"; der Haken ist
+                // dessen Ende. Damit steht der Sehstand an einer Stelle statt
+                // an zweien, und die Spalte rechts gehoert dem Download.
                 Bildflaeche(bild: model.imageURL(for: folge, maxHeight: 220),
                             breite: bildBreite, hoehe: bildHoehe,
-                            fortschritt: fortschritt)
+                            // Ein voller Balken **und** ein Haken waeren
+                            // dieselbe Auskunft zweimal.
+                            fortschritt: gesehen ? nil : fortschritt,
+                            zeichen: "tv")
+                    .opacity(gesehen ? 0.45 : 1)
+                    .overlay(alignment: .topTrailing) {
+                        if gesehen {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(Stil.schrift)
+                                .frame(width: 20, height: 20)
+                                .background(Stil.grund.opacity(0.72), in: Circle())
+                                .padding(6)
+                        }
+                    }
+                    .animation(Stil.einblenden, value: gesehen)
                 if schwebt {
                     Circle()
                         .fill(.black.opacity(0.45))
@@ -456,7 +679,8 @@ struct Folgenzeile: View {
                 HStack(spacing: 8) {
                     Text(verbatim: kopfzeile)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Stil.schrift)
+                        // Gesehenes tritt zurueck, es verschwindet nicht.
+                        .foregroundStyle(gesehen ? Stil.schriftLeise : Stil.schrift)
                         .lineLimit(2)
                     Spacer(minLength: 0)
                     if let sekunden = folge.runtimeSeconds {
@@ -465,7 +689,8 @@ struct Folgenzeile: View {
                             .foregroundStyle(Stil.schriftSehrLeise)
                     }
                 }
-                if let text = folge.overview, !text.isEmpty {
+                // Bereinigt — bei Folgen steht im Rohtext oft `<br>`.
+                if let text = folge.beschreibung, !text.isEmpty {
                     Text(verbatim: text)
                         .font(Stil.zweitzeile)
                         .foregroundStyle(Stil.schriftLeise)
@@ -479,20 +704,27 @@ struct Folgenzeile: View {
             // damit war beim Überfliegen der Liste nicht zu erkennen, wie
             // weit man ist. Zum *Ändern* braucht es den Zeiger, zum *Sehen*
             // nicht.
-            ZStack {
+            // **Rechts steht der Zustand des Downloads, nicht der des
+            // Sehens.** Der Haken als *Auskunft* ist auf das Bild gezogen;
+            // was hier bleibt, ist der Haken als *Handlung* — und der
+            // erscheint wie eh nur unter dem Zeiger. Das ist der eine
+            // erlaubte Unterschied zum iPhone: dort ist die Handlung ein
+            // Wisch, hier das Schweben (VERHALTEN F, Eingabeart).
+            HStack(spacing: 6) {
                 if schwebt {
                     Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
                                  titel: "Gesehen", an: gesehen) {
                         gesehen.toggle()
                         Task { _ = await model.setzeGesehen(folge, an: gesehen) }
                     }
-                } else if gesehen {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Stil.schriftSehrLeise)
+                }
+                if let ringtipp, model.downloadsAn {
+                    Downloadring(posten: model.downloads.posten(fuer: folge.id),
+                                 mass: 24) { ringtipp(unterkante) }
                 }
             }
-            .frame(width: Stil.knopfRund, alignment: .trailing)
+            .frame(width: breiteRechts, alignment: .trailing)
+
         }
         .padding(.vertical, 12)
         // Der Rand des Abschnitts, hier innen — damit die Fläche beim
@@ -508,6 +740,9 @@ struct Folgenzeile: View {
         .frame(height: bildHoehe + 24)
         .background(schwebt ? Stil.schrift.opacity(0.04) : .clear)
         .contentShape(Rectangle())
+        .onGeometryChange(for: CGFloat.self) {
+            $0.frame(in: .named("serienseite")).maxY
+        } action: { unterkante = $0 }
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
         // Eine Folge startet an ihrer eigenen Position — nicht an der der
@@ -526,4 +761,11 @@ struct Folgenzeile: View {
 
     /// Aus `Item.gesehenerAnteil` — siehe die Begründung in `HomeView`.
     private var fortschritt: Double? { folge.gesehenerAnteil }
+
+    /// Platz fuer beide Zeichen, wenn es beide gibt — sonst bleibt die Zeile
+    /// beim Ueberfahren nicht ruhig, sondern rueckt.
+    private var breiteRechts: CGFloat {
+        (ringtipp != nil && model.downloadsAn) ? Stil.knopfRund * 2 + 6
+                                               : Stil.knopfRund
+    }
 }

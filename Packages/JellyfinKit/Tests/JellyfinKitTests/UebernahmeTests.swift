@@ -19,7 +19,7 @@ struct UebernahmeTests {
                          nimmtBefehle: Bool = true, laeuft: Item? = nil,
                          vorSekunden: TimeInterval? = 5) -> Fremdsitzung {
         Fremdsitzung(id: id, benutzerID: benutzer,
-                     geraeteID: geraet, geraetename: "iPhone von Paul",
+                     geraeteID: geraet, geraetename: "iPhone im Wohnzimmer",
                      programm: "Swiftly", nimmtBefehle: nimmtBefehle,
                      laeuft: laeuft, stand: .init(angehalten: false, stelle: 812),
                      letzteRegung: vorSekunden.map { jetzt.addingTimeInterval(-$0) })
@@ -106,10 +106,10 @@ struct UebernahmeTests {
 
     @Test("Die Sitzung eines anderen Kontos wird nie angeboten")
     func fremdesKonto() {
-        // **Der Fehler, den Paul gesehen hat.** `controllableByUserId` gibt
-        // nicht die eigenen Sitzungen zurück, sondern die, die man bedienen
-        // darf — als Administrator den ganzen Haushalt. Im Abzeichen stand
-        // dann, was jemand anders schaut.
+        // **Der Fehler, den ** `controllableByUserId` gibt nicht die eigenen
+        // Sitzungen zurück, sondern die, die man bedienen darf — als
+        // Administrator den ganzen Haushalt. Im Abzeichen stand dann, was
+        // jemand anders schaut.
         #expect(Uebernahme.angebot(aus: [sitzung(benutzer: "koney", laeuft: titel())],
                                    eigeneGeraeteID: "appletv",
                                    eigeneBenutzerID: "paul", jetzt: jetzt) == nil)

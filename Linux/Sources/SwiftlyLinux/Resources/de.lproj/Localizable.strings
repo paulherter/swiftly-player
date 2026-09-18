@@ -15,6 +15,15 @@
 "Als ungesehen markieren" = "Als ungesehen markieren";
 "Andere Schreibweise? Die Suche findet Filme und Serien." = "Andere Schreibweise? Die Suche findet Filme und Serien.";
 "Anderer Server" = "Anderer Server";
+"Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen." = "Ein zweites Jellyfin-Konto auf demselben Server. Beide bleiben angemeldet; oben auf der Profilseite wechselst du zwischen ihnen.";
+"Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist." = "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.";
+"Hinzufügen" = "Hinzufügen";
+"Lieber Name und Passwort" = "Lieber Name und Passwort";
+"Mit Quick Connect anmelden" = "Mit Quick Connect anmelden";
+"Weiteres Konto" = "Weiteres Konto";
+"oder" = "oder";
+"Auf demselben Server" = "Auf demselben Server";
+"Weiteres Konto hinzufügen" = "Weiteres Konto hinzufügen";
 "Angemeldet" = "Angemeldet";
 "Anmelden" = "Anmelden";
 "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an." = "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an.";
@@ -26,7 +35,7 @@
 "Code vom Fernseher eingeben" = "Code vom Fernseher eingeben";
 "Danach kommt nichts mehr." = "Danach kommt nichts mehr.";
 "Darstellung" = "Darstellung";
-"Der Code ist abgelaufen." = "Der Code ist abgelaufen.";
+"Der Code ist abgelaufen. Hol dir einen neuen." = "Der Code ist abgelaufen. Hol dir einen neuen.";
 "Der Code stimmt nicht oder ist abgelaufen." = "Der Code stimmt nicht oder ist abgelaufen.";
 "Der Fortschritt ist zurückgesetzt." = "Der Fortschritt ist zurückgesetzt.";
 "Der Server hat keinen Code gegeben." = "Der Server hat keinen Code gegeben.";
@@ -115,3 +124,193 @@
 "dem Server" = "dem Server";
 "Ähnliches" = "Ähnliches";
 "Übersicht öffnen" = "Übersicht öffnen";
+
+/* Wiedergabemenue: Bildformat (08.09.2026) */
+"Bildformat" = "Bildformat";
+"Formatfüllend" = "Formatfüllend";
+"Ganzes Bild" = "Ganzes Bild";
+"Keine" = "Keine";
+
+/* Technikschild (08.09.2026) */
+"Anzeigen" = "Anzeigen";
+"Beschädigt" = "Beschädigt";
+"Bild" = "Bild";
+"Dekodiert Ø" = "Dekodiert Ø";
+"Demuxer" = "Demuxer";
+"Eingang" = "Eingang";
+"Gezeigt" = "Gezeigt";
+"Lauf" = "Lauf";
+"Sprünge" = "Sprünge";
+"Stelle" = "Stelle";
+"Technikschild" = "Technikschild";
+"Ton weg" = "Ton weg";
+"Verworfen" = "Verworfen";
+"Vorrat" = "Vorrat";
+"Zeigt Ø" = "Zeigt Ø";
+
+/* Merkliste als eigene Seite (08.09.2026) */
+"Merkliste" = "Merkliste";
+
+/* Seerr (08.09.2026) */
+"Adresse" = "Adresse";
+"Verbunden" = "Verbunden";
+"Nicht verbunden" = "Nicht verbunden";
+"Verbindung trennen" = "Verbindung trennen";
+"Diese Adresse ergibt keine." = "Diese Adresse ergibt keine.";
+"Seerr" = "Seerr";
+"Benutzername und Passwort fehlen" = "Benutzername und Passwort fehlen";
+"Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt." = "Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt.";
+"Getrennt" = "Getrennt";
+"Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen." = "Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen.";
+"Keine Verbindung" = "Keine Verbindung";
+
+/* Seerr */
+"%@ anfragen?" = "%@ anfragen?";
+"%@ mit allen Staffeln anfragen?" = "%@ mit allen Staffeln anfragen?";
+"Abbrechen" = "Abbrechen";
+"Anfragen" = "Anfragen";
+"Anfragen über Seerr" = "Anfragen über Seerr";
+"Angefragt" = "Angefragt";
+"Wird angefragt …" = "Wird angefragt …";
+"wartet" = "wartet";
+"angefragt" = "angefragt";
+"teilweise" = "teilweise";
+
+/* Downloads */
+"%d Folgen" = "%d Folgen";
+"%d Titel" = "%d Titel";
+"%d Titel auf diesem Rechner" = "%d Titel auf diesem Rechner";
+"%d Titel liegen auf diesem Rechner (%@). Was soll damit geschehen?" = "%d Titel liegen auf diesem Rechner (%@). Was soll damit geschehen?";
+"%d gesehene Titel könnten weichen (%@)." = "%d gesehene Titel könnten weichen (%@).";
+"Alles entfernen" = "Alles entfernen";
+"Angehalten" = "Angehalten";
+"Anhalten" = "Anhalten";
+"Auf diesem Rechner" = "Auf diesem Rechner";
+"Bearbeiten" = "Bearbeiten";
+"Behalten" = "Behalten";
+"Nicht genug Platz" = "Nicht genug Platz";
+"Der Server antwortete mit %d." = "Der Server antwortete mit %d.";
+"Die Datei ließ sich nicht anlegen." = "Die Datei ließ sich nicht anlegen.";
+"Diese Datei" = "Diese Datei";
+"Downloads" = "Downloads";
+"Entfernen" = "Entfernen";
+"Fehler" = "Fehler";
+"Frei auf diesem Rechner" = "Frei auf diesem Rechner";
+"Laden" = "Laden";
+"Keine Adresse vom Server." = "Keine Adresse vom Server.";
+"Lädt gerade" = "Lädt gerade";
+"Meins" = "Meins";
+"Nichts auf diesem Rechner" = "Nichts auf diesem Rechner";
+"Noch nichts geladen" = "Noch nichts geladen";
+"Nochmal versuchen" = "Nochmal versuchen";
+"Offline" = "Offline";
+"Ohne Netz abspielen" = "Ohne Netz abspielen";
+"Speicher" = "Speicher";
+"Titel auf diesen Rechner laden und ohne Netz sehen" = "Titel auf diesen Rechner laden und ohne Netz sehen";
+"Unbekannt" = "Unbekannt";
+"Vom Rechner entfernen" = "Vom Rechner entfernen";
+"Wartet" = "Wartet";
+"Was du hier ablegst, läuft auch ohne Netz." = "Was du hier ablegst, läuft auch ohne Netz.";
+"Wird geladen." = "Wird geladen.";
+
+/* Seerr-Seite und Downloads */
+"%d Min." = "%d Min.";
+"%d Staffeln anfragen" = "%d Staffeln anfragen";
+"Abwählen" = "Abwählen";
+"Anfragen, was noch nicht da ist" = "Anfragen, was noch nicht da ist";
+"Auf deinem Server" = "Auf deinem Server";
+"Aufklappen" = "Aufklappen";
+"Auswählen" = "Auswählen";
+"Integration" = "Integration";
+"Nicht auf deinem Server" = "Nicht auf deinem Server";
+"Staffel %d" = "Staffel %d";
+"Teilweise vorhanden" = "Teilweise vorhanden";
+"Wartet auf Freigabe" = "Wartet auf Freigabe";
+"Welche Staffeln?" = "Welche Staffeln?";
+"Zuklappen" = "Zuklappen";
+"frei" = "frei";
+"Ähnliche Titel" = "Ähnliche Titel";
+
+/* Seerr-Zugang */
+"Aktiv" = "Aktiv";
+"Sitzung abgelaufen" = "Sitzung abgelaufen";
+"Wird geprüft …" = "Wird geprüft …";
+"Puffer" = "Puffer";
+"Discord" = "Discord";
+"Zeigt im Profil, was gerade läuft" = "Zeigt im Profil, was gerade läuft";
+
+/* Personenseite */
+"Geboren %@" = "Geboren %@";
+"%1$@ in %2$@" = "%1$@ in %2$@";
+"Mehr" = "Mehr";
+"Weniger" = "Weniger";
+"Auf deinem Server gibt es sonst nichts mit %@." = "Auf deinem Server gibt es sonst nichts mit %@.";
+
+/* Kachelplakette (E16) */
+"1 Staffel" = "1 Staffel";
+"%lld Staffeln" = "%lld Staffeln";
+
+/* Suchverlauf */
+"Zuletzt gesucht" = "Zuletzt gesucht";
+"Löschen" = "Löschen";
+"Staffel" = "Staffel";
+"Zuletzt hinzugefügte Filme" = "Zuletzt hinzugefügte Filme";
+"Zuletzt hinzugefügte Serien" = "Zuletzt hinzugefügte Serien";
+
+/* Kontokarte und Serveraufnahme */
+"Server hinzufügen" = "Server hinzufügen";
+"Ein zweiter Jellyfin, eigene Konten" = "Ein zweiter Jellyfin, eigene Konten";
+"Klicken zum Wechseln" = "Klicken zum Wechseln";
+"Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen.";
+"Ein weiteres Konto auf diesem Server. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "Ein weiteres Konto auf diesem Server. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen.";
+"jellyfin.beispiel.de" = "jellyfin.beispiel.de";
+"Weiter" = "Weiter";
+"Prüfe …" = "Prüfe …";
+"Diese Adresse ergibt keinen Server." = "Diese Adresse ergibt keinen Server.";
+
+/* Darstellung: Startseite und Genres */
+"Startseite" = "Startseite";
+"Reihen" = "Reihen";
+"Reihen, ihre Folge und Genres" = "Reihen, ihre Folge und Genres";
+"Mit den Pfeilen umsortieren. Was aus ist, steht nicht auf der Startseite." = "Mit den Pfeilen umsortieren. Was aus ist, steht nicht auf der Startseite.";
+"Genres" = "Genres";
+"Als eigene Reihen" = "Als eigene Reihen";
+"Als Chips über den Reihen" = "Als Chips über den Reihen";
+"Genre hinzufügen" = "Genre hinzufügen";
+"Alle Genres stehen schon auf der Startseite." = "Alle Genres stehen schon auf der Startseite.";
+"Auf deinem Server sind keine Genres hinterlegt." = "Auf deinem Server sind keine Genres hinterlegt.";
+"Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist." = "Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist.";
+"Code kopieren" = "Code kopieren";
+"Code kopiert." = "Code kopiert.";
+"nicht mehr auf dem Server" = "nicht mehr auf dem Server";
+"Filme & Serien" = "Filme & Serien";
+"Allgemein" = "Allgemein";
+"Startseite, Reihen und Genres" = "Startseite, Reihen und Genres";
+"Filme, Serien und Folgen durchsuchen" = "Filme, Serien und Folgen durchsuchen";
+"Kann angefragt werden" = "Kann angefragt werden";
+"Technikschild im Player" = "Technikschild im Player";
+"%lld offen" = "%lld offen";
+"Profil" = "Profil";
+"Neuzugänge" = "Neuzugänge";
+"Neu hinzugefügt" = "Neu hinzugefügt";
+"Nur über WLAN" = "Nur über WLAN";
+"Über Mobilfunk warten Downloads" = "Über Mobilfunk warten Downloads";
+
+/* Leerzustaende der Raster — Wortlaut aus dem Katalog, nicht neu erfunden. */
+"Noch nichts gemerkt" = "Noch nichts gemerkt";
+"Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier." = "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier.";
+"Nichts in diesem Genre" = "Nichts in diesem Genre";
+"Auf deinem Server steht gerade kein Film und keine Serie darin." = "Auf deinem Server steht gerade kein Film und keine Serie darin.";
+"Danach frei" = "Danach frei";
+"Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird." = "Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird.";
+"Film" = "Film";
+"Serie" = "Serie";
+"Wirklich anfragen?" = "Wirklich anfragen?";
+"Läuft ab in %d:%02d" = "Läuft ab in %d:%02d";
+"Titel, Serie, Person" = "Titel, Serie, Person";
+"Kein WLAN" = "Kein WLAN";
+"Mobilfunk" = "Mobilfunk";
+"In die Warteschlange" = "In die Warteschlange";
+"Staffel laden" = "Staffel laden";
+"%d Folgen werden geladen." = "%d Folgen werden geladen.";
+"Staffeln wählen" = "Staffeln wählen";

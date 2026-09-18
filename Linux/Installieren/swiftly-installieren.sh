@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Swiftly for Jellyfin — Installation auf Linux.
+# Swiftly Player — Installation auf Linux.
 #
-#     curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-for-jellyfin/main/Linux/Installieren/swiftly-installieren.sh | bash
+#     curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-player/main/Linux/Installieren/swiftly-installieren.sh | bash
 #
 # **Es wird eine Paketquelle eingetragen, nicht nur installiert.** Ein Bau
 # von Hand ist einmalig — danach weiss kein Paketverwalter, dass es die App
@@ -25,7 +25,7 @@ set -euo pipefail
 main() {
 
 ZWEIG="${SWIFTLY_ZWEIG:-main}"
-HERKUNFT="${SWIFTLY_HERKUNFT:-https://github.com/paulherter/swiftly-for-jellyfin.git}"
+HERKUNFT="${SWIFTLY_HERKUNFT:-https://github.com/paulherter/swiftly-player.git}"
 ARBEIT="${XDG_CACHE_HOME:-$HOME/.cache}/swiftly-jellyfin"
 ZIEL="$HOME/.local"
 # **Nicht `NAME`.** `/etc/os-release` setzt selbst ein `NAME`, und das wird
@@ -33,7 +33,7 @@ ZIEL="$HOME/.local"
 # „CachyOS Linux" und landete in einem Verzeichnis mit Leerzeichen.
 PROGRAMM="swiftly-jellyfin"
 KENNUNG="de.paulherter.swiftly"
-QUELLE_URL="${SWIFTLY_QUELLE:-https://paulherter.github.io/swiftly-for-jellyfin}"
+QUELLE_URL="${SWIFTLY_QUELLE:-https://paulherter.github.io/swiftly-player}"
 # Der Fingerabdruck steht hier fest, nicht nur der Schluesselring: so wird
 # geprueft, dass der heruntergeladene Schluessel auch der erwartete ist.
 FINGERABDRUCK="705D676A71BF0121804A90BAC8589885A042FB8B"
@@ -52,7 +52,7 @@ aus_quelle=0
 [ "${1:-}" = "--aus-quelle" ] && aus_quelle=1
 
 if [ "${1:-}" = "--deinstallieren" ] || [ "${1:-}" = "--entfernen" ]; then
-    sagen "Swiftly for Jellyfin entfernen"
+    sagen "Swiftly Player entfernen"
     rm -rf "$ZIEL/share/$PROGRAMM" "$ZIEL/bin/$PROGRAMM" \
            "$ZIEL/share/applications/$KENNUNG.desktop" \
            "$ZIEL/share/metainfo/$KENNUNG.metainfo.xml" "$ARBEIT"
@@ -88,7 +88,7 @@ done
 Gebraucht werden GTK 4, libVLC, git, ein C++-Uebersetzer und pkg-config.
 Sind die da, laeuft der Rest dieses Skripts mit SWIFTLY_PAKETE_UEBERSPRINGEN=1."
 
-sagen "Swiftly for Jellyfin — Installation"
+sagen "Swiftly Player — Installation"
 leise "${PRETTY_NAME:-$ID}, erkannt als $sippe, $(uname -m)"
 
 if [ "$(uname -m)" != "x86_64" ] && [ "$(uname -m)" != "aarch64" ]; then
@@ -139,7 +139,7 @@ quelle_eintragen() {
         fedora)
             $sudo_ruf tee /etc/yum.repos.d/swiftly.repo >/dev/null <<EOF
 [swiftly]
-name=Swiftly for Jellyfin
+name=Swiftly Player
 baseurl=$QUELLE_URL/rpm
 enabled=1
 gpgcheck=$signiert

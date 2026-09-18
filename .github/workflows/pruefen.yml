@@ -1,0 +1,94 @@
+# Bei jedem Push prüfen, was sonst niemand prüft.
+#
+# **Warum das nötig ist.** 57.968 Zeilen Swift über sechs Plattformen, und
+# jeder Bau-Check lief bisher von Hand auf einer einzigen Maschine. Ein Ziel,
+# das seit Tagen nicht gebaut wurde, bricht dann irgendwann „grundlos" — der
+# häufigste Fall ist eine Zeile in `project.yml`, die wortgleich in mehreren
+# Zielblöcken steht, und ein Suchen-und-Ersetzen, das nur die eigene Hälfte
+# geprüft hat.
+#
+# **Zwei Aufträge, mit Absicht getrennt.** Die Paketprüfung läuft auf Linux
+# in gut einer Minute und fängt das meiste; die Apple-Bauten brauchen eine
+# macOS-Maschine und dauern. Wer nur an der Logik gearbeitet hat, sieht das
+# Ergebnis, ohne auf Xcode zu warten.
+
+name: Prüfen
+
+on:
+  push:
+    branches: [main, ios, ipad, mac, tvos, linux, windows]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # Ein laufender Durchgang je Zweig reicht. Wer zweimal hintereinander
+  # schiebt, will das Ergebnis des zweiten.
+  group: pruefen-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  paket:
+    name: JellyfinKit — Tests
+    runs-on: ubuntu-24.04
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+
+      # **Der Zwischenspeicher spart die halbe Laufzeit.** Ohne ihn lädt
+      # jeder Durchgang die Abhängigkeiten neu.
+      - name: Abhängigkeiten zwischenspeichern
+        uses: actions/cache@v4
+        with:
+          path: Packages/JellyfinKit/.build
+          key: paket-${{ runner.os }}-${{ hashFiles('Packages/JellyfinKit/Package.resolved') }}
+          restore-keys: paket-${{ runner.os }}-
+
+      - name: Tests
+        working-directory: Packages/JellyfinKit
+        run: swift test --enable-code-coverage
+
+  apple:
+    name: iOS, tvOS, macOS — Bau
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XcodeGen
+        run: brew install xcodegen
+
+      # **Das .xcodeproj ist nicht eingecheckt** und wird aus `project.yml`
+      # erzeugt. Ohne diesen Schritt gibt es kein Ziel zu bauen.
+      - name: Projekt erzeugen
+        run: xcodegen generate
+
+      # **Ein voller Bau geht hier nicht, und das ehrlich gesagt.** Das
+      # Linken braucht `Vendor/VLCKit.xcframework` — 2,7 GB, nicht im Repo,
+      # und es bei jedem Durchgang zu holen kostet mehr als es einbringt.
+      #
+      # Was hier trotzdem geprueft wird, ist genau die Klasse Fehler, die ein
+      # fremdes Ziel „grundlos" brechen laesst: ob `project.yml` noch
+      # aufgeht, ob alle drei Schemata existieren und ob jede in einem Ziel
+      # gelistete Quelldatei wirklich da ist. Ein Suchen-und-Ersetzen ueber
+      # mehrere Zielbloecke faellt hier auf, bevor es jemand am eigenen Bau
+      # merkt.
+      - name: Projekt und Schemata pruefen
+        run: |
+          set -euo pipefail
+          xcodebuild -project Swiftly.xcodeproj -list
+          for schema in Swiftly-iOS Swiftly-tvOS Swiftly-macOS; do
+            xcodebuild -project Swiftly.xcodeproj -list | grep -qx "        $schema" \
+              || { echo "Schema fehlt: $schema"; exit 1; }
+          done
+
+      # Jede Datei, die `project.yml` in ein Ziel legt, muss es geben.
+      # Fehlt eine, baut der Auscheck des Nachbarn nicht, und der Fehler
+      # sieht aus wie ein fehlendes Symbol.
+      - name: Quellen vollstaendig?
+        run: |
+          set -euo pipefail
+          fehlt=0
+          while read -r pfad; do
+            [ -e "$pfad" ] || { echo "FEHLT: $pfad"; fehlt=1; }
+          done < <(grep -oE '^[[:space:]]+- (path: )?[A-Za-z0-9_/.-]+\.swift' project.yml \
+                   | sed -E 's/^[[:space:]]+- (path: )?//' | sort -u)
+          exit $fehlt

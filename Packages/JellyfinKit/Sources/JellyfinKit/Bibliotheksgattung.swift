@@ -9,7 +9,7 @@ import Foundation
 /// „Lieblingsserien", „Lieblingsepisoden", „Genres". Die haben keine Plakate.
 ///
 /// Genau so ist es einem Nutzer am 03.09.2026 aufgefallen — sieben leere
-/// Kacheln mit diesen Namen statt seiner Serien. Auf Pauls Server und auf dem
+/// Kacheln mit diesen Namen statt seiner Serien. Auf dem Testserver und auf dem
 /// Prüfserver trat es nicht auf, deshalb war es aus dem Bildschirmfoto
 /// erkennbar und aus keiner Messung.
 ///

@@ -56,7 +56,9 @@ public struct Session: Codable, Sendable, Equatable {
 
 public actor JellyfinClient {
 
-    public let baseURL: URL
+    /// Unveränderlich nach dem Anlegen, also ohne Umweg über den Actor lesbar —
+    /// `AppModel` erkennt daran, ob ein Wechsel auf einen anderen Server geht.
+    public nonisolated let baseURL: URL
     private let deviceID: String
     private let deviceName: String
     private let clientVersion: String
@@ -73,7 +75,7 @@ public actor JellyfinClient {
         baseURL: URL,
         deviceID: String,
         deviceName: String,
-        clientVersion: String = "0.1.0",
+        clientVersion: String = Fassungsnummer.ausDemBuendel,
         session: Session? = nil,
         urlSession: URLSession = .ortsnetzfaehig
     ) {
@@ -95,7 +97,13 @@ public actor JellyfinClient {
 
     private var authorizationHeader: String {
         var parts = [
-            "Client=\"Swiftly\"",
+            // **Der Name, unter dem der Server uns fuehrt.**
+            //
+            // Hier stand „Swiftly". Im Store heisst die App seit der Absage
+            // vom 07.09.2026 „Swiftly Player", und das ist der Name, den ein
+            // Nutzer in seiner Geraeteliste wiedererkennen soll — er sieht
+            // ihn in Jellyfin, nicht auf dem Homebildschirm.
+            "Client=\"Swiftly Player\"",
             "Device=\"\(deviceName)\"",
             "DeviceId=\"\(deviceID)\"",
             "Version=\"\(clientVersion)\"",
@@ -105,6 +113,13 @@ public actor JellyfinClient {
         }
         return "MediaBrowser " + parts.joined(separator: ", ")
     }
+
+    /// Derselbe Ausweis fuer den Steuerkanal.
+    ///
+    /// **Nicht nachgebaut, sondern derselbe.** Ein Kanal, der sich anders
+    /// nennt als die uebrigen Aufrufe, landet auf einer zweiten Sitzung — und
+    /// dann hat die eine die Bedienknoepfe und die andere die Laufzeit.
+    internal var ausweisFuerKanal: String { authorizationHeader }
 
     private func request(
         _ path: String,
@@ -290,7 +305,16 @@ public actor JellyfinClient {
         /// und rekursiv. Auf Servern ohne diese Ordner aendert es nichts —
         /// am Pruefserver nachgemessen, dieselben Titel in derselben
         /// Reihenfolge.
-        includeItemTypes: [String] = []
+        includeItemTypes: [String] = [],
+        /// Genau diese Kennungen, sonst nichts.
+        ///
+        /// **Die Antwort sagt zweierlei.** Was zurueckkommt, traegt den
+        /// Fortschritt (`UserData.Played`); was *nicht* zurueckkommt, gibt
+        /// es auf dem Server nicht mehr. Beides braucht der Abgleich der
+        /// Downloads — H6 und H9 haengen daran.
+        ids: [String] = [],
+        personIDs: [String] = [],
+        gattungen: [String] = []
     ) async throws -> ItemsResponse {
         let s = try requireSession()
         var query: [URLQueryItem] = [
@@ -315,6 +339,18 @@ public actor JellyfinClient {
         }
         if !filters.isEmpty {
             query.append(.init(name: "Filters", value: filters.joined(separator: ",")))
+        }
+        if !ids.isEmpty {
+            query.append(.init(name: "Ids", value: ids.joined(separator: ",")))
+        }
+        if !personIDs.isEmpty {
+            query.append(.init(name: "PersonIds", value: personIDs.joined(separator: ",")))
+        }
+        // **Mit senkrechtem Strich, nicht mit Komma.** Genres dürfen selbst
+        // ein Komma enthalten („Action, Adventure" gibt es), deshalb trennt
+        // Jellyfin diese Liste anders als alle übrigen.
+        if !gattungen.isEmpty {
+            query.append(.init(name: "Genres", value: gattungen.joined(separator: "|")))
         }
         if let istGesehen {
             query.append(.init(name: "IsPlayed", value: istGesehen ? "true" : "false"))
@@ -387,6 +423,22 @@ public actor JellyfinClient {
             .init(name: "userId", value: s.userID),
         ])
         return try await send(req, as: Item.self)
+    }
+
+    /// **Die Genres des Servers**, über Filme und Serien, nach Namen.
+    ///
+    /// Nur Genres, zu denen es wirklich Titel gibt — der Server zählt beim
+    /// Einlesen jede Kennung aus den Metadaten mit, auch solche, die an keinem
+    /// Film mehr hängen.
+    public func gattungen() async throws -> [String] {
+        let s = try requireSession()
+        let req = try request("Genres", query: [
+            .init(name: "userId", value: s.userID),
+            .init(name: "IncludeItemTypes", value: "Movie,Series"),
+            .init(name: "Recursive", value: "true"),
+            .init(name: "SortBy", value: "SortName"),
+        ])
+        return try await send(req, as: ItemsResponse.self).items.map(\.name)
     }
 
     /// Ähnliche Titel.
@@ -606,17 +658,29 @@ public actor JellyfinClient {
     ///
     /// **Ein Fehlschlag ist kein Fehler**, wie bei den Abschnitten: dann gibt
     /// es kein Angebot. Ein Abzeichen ist Zubehoer, keine Zusage.
-    public func fremdsitzungen() async -> [Fremdsitzung] {
-        do {
-            let s = try requireSession()
-            let req = try request("Sessions", query: [
-                .init(name: "controllableByUserId", value: s.userID),
-                .init(name: "activeWithinSeconds", value: "120"),
-            ])
-            return try await send(req, as: [Fremdsitzung].self)
-        } catch {
-            return []
-        }
+    /// **Wirft, statt einen Fehlschlag als „nichts da" auszugeben.**
+    ///
+    /// Hier stand `catch { return [] }`. Damit sah ein abgelaufenes Merkmal,
+    /// ein nicht erreichbarer Server und eine Antwort, die sich nicht lesen
+    /// laesst, von aussen **genauso aus wie „auf keinem anderen Geraet laeuft
+    /// etwas"** — und das ist der Normalfall, den niemand hinterfragt.
+    ///
+    /// Am 10.09.2026 gemeldet: die Uebernahme gehe nicht mehr. Im Protokoll
+    /// stand zehnmal „0 Sitzungen, kein Angebot", und aus dieser Zeile liess
+    /// sich nicht ablesen, ob der Server nichts hatte oder die Frage gar
+    /// nicht ankam. Eine Meldung, die beide Faelle gleich beschreibt,
+    /// beantwortet keine Frage.
+    ///
+    /// Die Ansicht darf weiterhin schweigen, wenn nichts geht — sie fragt
+    /// alle zehn Sekunden, da gehoert keine Fehlermeldung hin. Aber sie soll
+    /// **wissen**, was los war, statt es zu raten.
+    public func fremdsitzungen() async throws -> [Fremdsitzung] {
+        let s = try requireSession()
+        let req = try request("Sessions", query: [
+            .init(name: "controllableByUserId", value: s.userID),
+            .init(name: "activeWithinSeconds", value: "120"),
+        ])
+        return try await send(req, as: [Fremdsitzung].self)
     }
 
     /// Einen Wiedergabebefehl an eine fremde Sitzung schicken.
@@ -667,12 +731,11 @@ public actor JellyfinClient {
         //
         // Waehlt Jellyfin von sich aus eine Untertitelspur, die AVPlayer nicht
         // zeichnen kann — PGS und VOBSUB stehen darum absichtlich nicht im
-        // AirPlay-Profil —, brennt es sie ins Bild. Und Einbrennen heisst: das
+        // AirPlay-Profil, brennt es sie ins Bild. Und Einbrennen heisst: das
         // Video wird neu gerechnet. Am Server nachgemessen, was dann passiert:
         // die Segmente kommen nicht mehr rechtzeitig, AVPlayer bleibt auf
         // `unknown` stehen und meldet `-12889 · No response for map in 3s` —
         // kein Fehler, kein Bild, Schwarzbild ohne Diagnose. Genau das hat
-        // Paul auf dem Fernseher gesehen.
         //
         // Ausdruecklich `-1` und nicht `nil`: `nil` heisst „entscheide du",
         // und genau das soll der Server hier nicht.
@@ -690,8 +753,8 @@ public actor JellyfinClient {
         // fiel der Plan bisher stillschweigend auf die **Originaldatei**
         // zurueck (`/stream?static=true`) — und die reichten wir an AVPlayer
         // weiter, der sie nicht oeffnen kann. Auf dem Fernseher: Schwarzbild.
-        // Am 03.09.2026 auf Pauls Gerät gemessen, genau diese Adresse stand
-        // im Protokoll.
+        // Am 03.09.2026 auf dem Testgerät gemessen, genau diese Adresse stand im
+        // Protokoll.
         //
         // Fuer den VLC-Weg ist derselbe Rueckfall richtig — VLC oeffnet die
         // Datei ja. Hier ist er falsch, also wird hier geprueft.
@@ -728,13 +791,34 @@ public actor JellyfinClient {
 
         var query: [URLQueryItem] = [
             .init(name: "static", value: "true"),
-            .init(name: "api_key", value: s.accessToken),
+            .init(name: "ApiKey", value: s.accessToken),
         ]
         if let mediaSourceID { query.append(.init(name: "mediaSourceId", value: mediaSourceID)) }
         if let playSessionID { query.append(.init(name: "playSessionId", value: playSessionID)) }
         comps.queryItems = query
         guard let url = comps.url else { throw JellyfinError.invalidServerURL }
         return url
+    }
+
+    /// Die Adresse, unter der ein Titel heruntergeladen wird. **H2.**
+    ///
+    /// Es ist dieselbe Adresse wie beim Abspielen — `/stream?static=true`,
+    /// also die unveraenderte Datei von der Platte des Servers. Genau das
+    /// ist die Zusage: was heruntergeladen wird, ist das, was auch gestreamt
+    /// wuerde, Bit fuer Bit. Eine App, die fuer Downloads doch transkodieren
+    /// laesst, bricht sie an der Stelle, an der es am meisten auffaellt.
+    ///
+    /// **Ohne `playSessionId`, und das ist der ganze Unterschied.** Ein
+    /// Download ist keine Wiedergabe: mit einer Sitzungskennung stuende das
+    /// Geraet am Server als „spielt gerade" da, taeuchte in der Fernsteuerung
+    /// auf und wuerde als Uebernahme angeboten — waehrend niemand hinsieht.
+    ///
+    /// **Nicht `/Items/{id}/Download`.** Der Weg gaebe dieselben Bytes,
+    /// verlangt aber das Recht `EnableContentDownloading` am Konto; wer es
+    /// nicht hat, bekaeme eine 403 statt einer Datei. Diese Adresse braucht
+    /// nur das Recht, das ohnehin noetig ist, um den Titel zu sehen.
+    public func downloadURL(itemID: String, mediaSourceID: String?) throws -> URL {
+        try streamURL(itemID: itemID, mediaSourceID: mediaSourceID, playSessionID: nil)
     }
 
     /// Hintergrundbild für die Serienseite. `nil`, wenn keins hinterlegt ist.
@@ -748,7 +832,7 @@ public actor JellyfinClient {
             .init(name: "tag", value: tag),
             .init(name: "maxWidth", value: String(maxWidth)),
             .init(name: "quality", value: "85"),
-            .init(name: "api_key", value: token),
+            .init(name: "ApiKey", value: token),
         ]
         return comps?.url
     }
@@ -764,7 +848,7 @@ public actor JellyfinClient {
             .init(name: "tag", value: tag),
             .init(name: "maxHeight", value: String(maxHeight)),
             .init(name: "quality", value: "90"),
-            .init(name: "api_key", value: token),
+            .init(name: "ApiKey", value: token),
         ]
         return comps?.url
     }

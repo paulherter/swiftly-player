@@ -32,6 +32,17 @@ baum_fuellen() {
     for buendel in "$bau"/*.resources; do
         [ -d "$buendel" ] && cp -r "$buendel" "$w/usr/lib/$PROGRAMM/"
     done
+    # **Die privaten Bibliotheken gehoeren daneben.**
+    #
+    # `librlottie.so` liegt in `~/.local/lib` und ist kein Systempaket; der
+    # Bau legt sie deshalb neben das Programm, damit `$ORIGIN` im Runpath sie
+    # findet. Hier fehlte sie — das Paket war vollstaendig bis auf die eine
+    # Datei, ohne die nichts startet, und das faellt erst auf dem Rechner
+    # eines Nutzers auf, nicht auf der Baumaschine, wo sie ohnehin im Pfad
+    # steht. Am 10.09.2026 beim Paketbau fuer 1.0.2 bemerkt.
+    for lib in "$bau"/*.so; do
+        [ -f "$lib" ] && install -Dm755 "$lib" "$w/usr/lib/$PROGRAMM/$(basename "$lib")"
+    done
     # Startanimation und mitgelieferte Schrift. `Plattform.mitgeliefert`
     # sucht sie neben dem Programm.
     cp -r "$quelle/Linux/Ressourcen" "$w/usr/lib/$PROGRAMM/Ressourcen"
@@ -68,7 +79,7 @@ Architecture: amd64
 Depends: libgtk-4-1 (>= 4.14), libvlc5 | libvlc-bin, vlc-plugin-base, libc6 (>= 2.39)
 Maintainer: Paul Herter <accounts@paulherter.de>
 Installed-Size: $groesse
-Homepage: https://github.com/paulherter/swiftly-for-jellyfin
+Homepage: https://github.com/paulherter/swiftly-player
 Description: Jellyfin client that never transcodes
  Swiftly plays everything on your Jellyfin server as Direct Play or Direct
  Stream. The server never re-encodes, so the picture stays untouched and the
@@ -90,7 +101,7 @@ Version:        $fassung
 Release:        1
 Summary:        Jellyfin client that never transcodes
 License:        MPL-2.0
-URL:            https://github.com/paulherter/swiftly-for-jellyfin
+URL:            https://github.com/paulherter/swiftly-player
 BuildArch:      x86_64
 Requires:       gtk4 >= 4.14
 Requires:       vlc-libs
@@ -111,7 +122,15 @@ machine stays quiet.
 
 %changelog
 EOF
+# **`--buildroot` ausdruecklich, nicht dem Standard ueberlassen.**
+#
+# Neuere `rpm`-Fassungen legen die Bauwurzel unter
+# `%{_builddir}/%{name}-%{version}-build/BUILDROOT` an statt unter
+# `%{_topdir}/BUILDROOT/...`. Das Skript fuellt aber die zweite, und rpmbuild
+# sah dann in die erste: „File not found" fuer jede einzelne Datei, obwohl
+# alle da waren. Mit der Angabe ist es unabhaengig von der Fassung.
 rpmbuild --define "_topdir $rpmbaum" --define "_build_id_links none" \
+    --buildroot "$puffer" \
     -bb "$rpmbaum/SPECS/$PROGRAMM.spec" >/dev/null
 cp "$rpmbaum"/RPMS/x86_64/*.rpm "$raus/"
 rm -rf "$rpmbaum"

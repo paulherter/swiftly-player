@@ -27,6 +27,14 @@ if (-not $Ziel) { $Ziel = Join-Path $hier 'Ablage\Swiftly' }
 function Sag($t) { Write-Host "==> $t" -ForegroundColor Green }
 
 $bau = Join-Path $hier ".build\$Konfiguration"
+# **Unter Windows legt SwiftPM den Kurzpfad nicht immer an** — dann liegt das
+# Ergebnis nur unter `.build\<Ziel>\<Konfiguration>`. `bauen.ps1` sucht dort
+# schon; hier stand nur der Kurzpfad, und das Packen brach mit "Erst bauen" ab.
+if (-not (Test-Path (Join-Path $bau 'SwiftlyWindows.exe'))) {
+    $treffer = Get-ChildItem -Path (Join-Path $hier '.build') -Recurse -Filter 'SwiftlyWindows.exe' -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -like "*\$Konfiguration\*" } | Select-Object -First 1
+    if ($treffer) { $bau = $treffer.DirectoryName }
+}
 if (-not (Test-Path (Join-Path $bau 'SwiftlyWindows.exe'))) {
     throw "Erst bauen: .\bauen.ps1 -Konfiguration $Konfiguration"
 }

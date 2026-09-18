@@ -1,61 +1,6 @@
 import JellyfinKit
 import SwiftUI
 
-// MARK: - Inhalt einer Bibliothek
-
-struct ItemListView: View {
-    @Environment(\.breit) private var breit
-    let model: AppModel
-    let library: Item
-
-    @State private var items: [Item] = []
-    @State private var laedt = true
-
-    private let spalten = [GridItem(.adaptive(minimum: Stil.kachelBreite,
-                                              maximum: Stil.kachelBreite + 30),
-                                    spacing: Stil.kachelAbstand)]
-
-    @Environment(\.dismiss) private var zurueck
-
-    var body: some View {
-        ZStack {
-            Stil.grund.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                Unterseitenkopf(titel: library.name) { zurueck() }
-
-                ScrollView {
-                    LazyVGrid(columns: spalten, alignment: .leading, spacing: 20) {
-                    ForEach(items) { item in
-                        NavigationLink(value: item) {
-                            PosterTile(model: model, item: item)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    }
-                    .padding(.horizontal, Stil.rand(breit: breit))
-                    .padding(.bottom, Stil.randAbstand)
-                }
-                .scrollIndicators(.hidden)
-            }
-
-            if laedt {
-                Lader()
-            } else if items.isEmpty {
-                ContentUnavailableView("Nichts gefunden", systemImage: "tray")
-            }
-        }
-#if os(iOS)
-        .background(WischZurueck())
-        .toolbar(.hidden, for: .navigationBar)
-        #endif
-        .task {
-            items = await model.items(in: library.id)?.titel ?? []
-            laedt = false
-        }
-    }
-}
-
 struct PosterTile: View {
     let model: AppModel
     let item: Item
@@ -88,6 +33,15 @@ struct PosterTile: View {
         return item.productionYear.map(String.init)
     }
 
+    /// **Plakat und Text blenden zusammen ein.**
+    ///
+    /// Das Bild blendet seit dem Umbau von selbst ein, der Titel darunter
+    /// stand sofort da — beim Wechsel der Bibliothek sah man erst die
+    /// Beschriftungen und dann die Plakate hineinlaufen. Die Kachel blendet
+    /// deshalb als Ganzes ein, und das Bild darin bringt seinen eigenen
+    /// weichen Wechsel mit.
+    @State private var da = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             // Feste Breite: feste Höhe. Füllt die Kachel ihre Spalte, folgt
@@ -100,6 +54,20 @@ struct PosterTile: View {
                  fortschritt: item.userData?.playedPercentage.map { $0 / 100 }) {
                 Stil.flaeche.overlay {
                     Image(systemName: "film").foregroundStyle(Stil.schriftSehrLeise)
+                }
+            }
+            // **Drei Zustaende, drei Zeichen.** Balken heisst angefangen,
+            // Haken heisst gesehen, eine Zahl heisst: so viel liegt hier.
+            // Bis hierher gab es nur den Balken — und bei einer Serie sagt
+            // der gar nichts, weil er den Stand der angefangenen Folge zeigt
+            // und nicht den der Serie.
+            .overlay(alignment: .topTrailing) {
+                if let marke = Anzeigeregeln.kachelmarke(
+                    art: item.type,
+                    staffeln: item.childCount,
+                    gesehen: item.userData?.played,
+                    offeneFolgen: item.userData?.unplayedItemCount) {
+                    Kachelplakette(marke: marke)
                 }
             }
 
@@ -124,6 +92,11 @@ struct PosterTile: View {
         // zweizeiligen Titeln rutschten die kürzeren Kacheln dadurch nach
         // unten und die Poster lagen nicht mehr auf einer Linie.
         .frame(maxHeight: .infinity, alignment: .top)
+        .opacity(da ? 1 : 0)
+        .onAppear {
+            guard !da else { return }
+            withAnimation(Stil.einblenden) { da = true }
+        }
         // Eine Aussage je Kachel statt zweier Bruchstücke, und der
         // Fortschritt kommt mit — er ist eine Zeichnung im Bild und fiel für
         // VoiceOver bisher heraus.
@@ -150,6 +123,9 @@ struct ItemDetailView: View {
     @State private var versatz: CGFloat = 0
 
     @State private var plan: PlaybackPlan?
+    /// Der Plan ist beantwortet — mit oder ohne Ergebnis. Siehe `belegzeile`.
+    @State private var planDa = false
+    @State private var ladeblatt = false
     @State private var pruefe = true
     @State private var abspielen: Abspielwunsch?
     @State private var mehrOffen = false
@@ -162,6 +138,21 @@ struct ItemDetailView: View {
 
     private var aktuell: Item { frisch ?? item }
 
+    /// Was von diesem Titel schon auf dem Gerät liegt — `nil` heisst nichts.
+    private var geladen: Downloadposten? { model.downloads.posten(fuer: aktuell.id) }
+
+    /// Der Eintrag, den ein Download bekäme. Die Größe kommt aus derselben
+    /// Quelle, die der Player nähme — **H2**, es ist dieselbe Datei.
+    private var alsPosten: Downloadposten? {
+        guard let konto = model.session?.userID else { return nil }
+        let quelle = plan?.quelle ?? aktuell.mediaSources?.first
+        return Downloadposten(
+            id: aktuell.id, konto: konto, art: .film, titel: aktuell.name,
+            laufzeitTicks: aktuell.runTimeTicks, container: quelle?.container,
+            quelle: quelle?.id, bytes: quelle?.size ?? 0,
+            gesehen: aktuell.userData?.played ?? false)
+    }
+
     private var fortsetzenAb: Double? { aktuell.fortsetzenAb }
 
     var body: some View {
@@ -171,7 +162,7 @@ struct ItemDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if breit {
-                        Heldkopf(bild: model.backdropURL(for: aktuell),
+                        Heldkopf(bild: model.kopfbildURL(for: aktuell),
                                  poster: model.imageURL(for: aktuell, maxHeight: 600,
                                                         hochkant: true),
                                  titel: aktuell.name, nebenzeile: nebenzeile,
@@ -229,6 +220,10 @@ struct ItemDetailView: View {
                     // Frage, die man erst später stellt.
                     dateiauszug
                 }
+                // **Nie breiter als der Schirm.** Wird ein Kind breiter, ist es
+                // sonst die ganze Seite — und eine Seite, die breiter ist als
+                // ihre Scrollfläche, lässt sich seitwärts ziehen.
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 30)
             }
             .scrollIndicators(.hidden)
@@ -238,9 +233,19 @@ struct ItemDetailView: View {
                 versatz = neu
             }
 
-            if mehrOffen, !breit {
+            // Das Blatt haengt an einer leeren Flaeche; ohne `if` gaebe es
+            // auf breiten Fenstern zwei Wege zu denselben Handlungen.
+            if !breit {
                 Handlungsblatt(offen: $mehrOffen, titel: aktuell.name,
                                handlungen: mehrHandlungen)
+                    .zIndex(20)
+            }
+            if let posten = alsPosten {
+                Ladeblatt(offen: $ladeblatt, model: model, posten: [posten],
+                          titel: aktuell.name,
+                          bilder: [aktuell.id: model.plakatURL(
+                              itemID: aktuell.id,
+                              marke: aktuell.imageTags?["Primary"])].compactMapValues { $0 })
                     .zIndex(20)
             }
             if let meldung {
@@ -280,6 +285,7 @@ struct ItemDetailView: View {
             async let extra = model.extras(item)
             frisch = await frischerTitel
             plan = await planung
+            withAnimation(Stil.einblenden) { planDa = true }
             aehnliche = await aehnlich
             extras = await extra
             gemerkt = aktuell.userData?.isFavorite ?? false
@@ -308,7 +314,7 @@ struct ItemDetailView: View {
 
     /// Gleiche Höhe wie auf der Serienseite — vorher waren es 260 gegen 300.
     private var hero: some View {
-        Heldbild(url: model.backdropURL(for: aktuell))
+        Heldbild(url: model.kopfbildURL(for: aktuell))
             .overlay(alignment: .bottom) { Heldauslauf() }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 5) {
@@ -330,11 +336,23 @@ struct ItemDetailView: View {
     /// Zeile darunter.
     private var nebenzeile: String { aktuell.nebenzeile }
 
+    /// **Erst mit dem Plan, dann als Ganzes.** Sterne und FSK sind sofort da,
+    /// die Direct-Play-Marke erst mit dem Wiedergabeplan — und schob sich dann
+    /// links davor und die beiden anderen nach rechts. Jetzt hält die Zeile
+    /// ihren Platz, bleibt aber unsichtbar, bis der Plan da ist, und blendet
+    /// dann auf einmal ein. Kommt kein Plan, blendet sie trotzdem ein — dann
+    /// eben ohne Marke.
     private var belegzeile: some View {
         Belegzeile(direktplay: plan?.isLossless ?? false,
                    hinweis: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
                    bewertung: aktuell.communityRating,
                    freigabe: aktuell.officialRating)
+            // **Feste Höhe, auch leer.** Die Zeile kommt erst mit dem Plan —
+            // und aus der Liste oft ohne Bewertung und Freigabe. Leer hatte sie
+            // keine Höhe, der Knopf darunter saß höher und rutschte nach
+            // unten, sobald sie sich füllte. So hoch wie eine Marke, immer.
+            .frame(minHeight: 26, alignment: .leading)
+            .opacity(planDa ? 1 : 0)
     }
 
     @ViewBuilder
@@ -367,12 +385,13 @@ struct ItemDetailView: View {
     }
 
     private var aktionsreihe: some View {
-        // Schmal verteilen die Spacer die vier Knöpfe über die Zeile; breit
+        // Schmal verteilen die Spacer die Knöpfe über die Zeile; breit
         // stehen sie neben dem Abspielknopf und sollen zusammenbleiben.
-        HStack(spacing: weit ? 4 : 0) {
+        HStack(spacing: 8) {
             Aktionsknopf(symbol: gemerkt ? "bookmark.fill" : "bookmark",
-                         titel: "Merkliste", aktiv: gemerkt) {
+                         titel: "Merkliste", aktiv: gemerkt, dehnt: !weit) {
                 gemerkt.toggle()
+                Stil.ruck(.leicht)
                 // Sofort umschalten, damit der Knopf antwortet — aber
                 // zurückdrehen, wenn der Server nein sagt. Vorher blieb die
                 // Anzeige stehen und log.
@@ -383,11 +402,25 @@ struct ItemDetailView: View {
                     }
                 }
             }
-            if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "film", titel: "Trailer") { trailerStarten() }
-            if !weit { Spacer(minLength: 0) }
+            // **Das fünfte Feld, und nur wenn die Funktion an ist.**
+            //
+            // An zweiter Stelle, nicht am Ende: Merkliste und Download sind
+            // das Paar „für später" und gehören nebeneinander. Fünf Felder
+            // auf 354 Punkt ergeben 62 je Feld — über den 44, die eine
+            // Trefferfläche braucht.
+            //
+            // Wer die Funktion nie einschaltet, sieht die Reihe unverändert
+            // mit ihren vier Feldern; deshalb wächst sie hier statt eine
+            // fünfte Stelle immer freizuhalten.
+            if model.downloadsAn, aktuell.type != "Series" {
+                Downloadfeld(posten: geladen, dehnt: !weit) {
+                    ringGetippt(geladen, model.downloads) { ladeblatt = true }
+                }
+            }
+
+            Aktionsknopf(symbol: "film", titel: "Trailer", dehnt: !weit) { trailerStarten() }
             Aktionsknopf(symbol: gesehen ? "checkmark.circle.fill" : "checkmark.circle",
-                         titel: "Gesehen", aktiv: gesehen) {
+                         titel: "Gesehen", aktiv: gesehen, dehnt: !weit) {
                 gesehen.toggle()
                 Task {
                     if let grund = await model.setzeGesehen(aktuell, an: gesehen) {
@@ -396,16 +429,16 @@ struct ItemDetailView: View {
                     }
                 }
             }
-            if !weit { Spacer(minLength: 0) }
-            Aktionsknopf(symbol: "ellipsis", titel: "Mehr") { withAnimation(.snappy(duration: 0.22)) { mehrOffen = true } }
+            Aktionsknopf(symbol: "ellipsis", titel: "Mehr", dehnt: !weit) { mehrOffen = true }
                 .alsHandlungsanker()
         }
-        .padding(.horizontal, weit ? 0 : 6)
+        // Kein eigener Rand mehr: die vier Felder teilen sich die Zeile und
+        // enden dort, wo der Knopf darüber endet.
     }
 
     @ViewBuilder
     private var beschreibung: some View {
-        if let text = aktuell.overview {
+        if let text = aktuell.beschreibung {
             VStack(alignment: .leading, spacing: 8) {
                 // Einzeilig mit Auslassung, Antippen klappt auf. Der volle
                 // Text war auf dieser Seite zu wuchtig.
@@ -458,11 +491,18 @@ struct ItemDetailView: View {
     private var besetzung: some View {
         let leute = aktuell.darsteller
         if !leute.isEmpty {
-            Abschnitt(titel: "Besetzung", pfeil: true) {
+            // **Jetzt antippbar**, und der Pfeil ist weg: er versprach eine
+            // Gesamtliste, die es nie gab. Ein Tipp öffnet die Person — was es
+            // mit ihr auf dem Server gibt, und mit Seerr, was sich anfragen
+            // lässt. Von einem Tester gemeldet.
+            Abschnitt(titel: "Besetzung") {
                 HStack(spacing: 14) {
                     ForEach(leute.prefix(12)) { person in
-                        Besetzungskachel(bild: model.personBild(person),
-                                         name: person.name, rolle: person.role)
+                        NavigationLink(value: PersonRoute(person: person, herkunft: aktuell.name)) {
+                            Besetzungskachel(bild: model.personBild(person),
+                                             name: person.name, rolle: person.role)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -481,7 +521,10 @@ struct ItemDetailView: View {
                                  breite: 210, hoehe: 118)
                             Text(extra.name)
                                 .font(Stil.kachel).foregroundStyle(Stil.schrift).lineLimit(1)
-                            if let s = extra.runtimeSeconds {
+                            // Ein Extra ohne Laufzeit meldet 0, nicht nichts —
+                            // ohne die Regel stünde dort „0 Min.".
+                            if Anzeigeregeln.laufzeitZeigen(sekunden: extra.runtimeSeconds),
+                               let s = extra.runtimeSeconds {
                                 Text(laufzeit(s)).font(Stil.klein).foregroundStyle(Stil.schriftLeise)
                             }
                         }
@@ -512,6 +555,7 @@ struct ItemDetailView: View {
 
     private func starte(ab: Double) {
         guard let plan else { return }
+        Stil.ruck(.mittel)
         abspielen = Abspielwunsch(item: aktuell, plan: plan, startAt: ab)
     }
 
@@ -527,7 +571,11 @@ struct Abschnitt<Inhalt: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 5) {
-                Text(titel).font(Stil.reihe).foregroundStyle(Stil.schrift)
+                // **Nicht selbst gesetzt.** Der Grad war derselbe, die
+                // Sperrung fehlte — „Weiterschauen" auf der Startseite steht
+                // auf −0,3, „Besetzung" hier stand auf null. Auf der
+                // Seerr-Seite treffen inzwischen beide Formen aufeinander.
+                Reihentitel(text: titel)
                 if pfeil {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
@@ -542,34 +590,12 @@ struct Abschnitt<Inhalt: View>: View {
     }
 }
 
-/// Trennpunkt zwischen Metadaten — steht nur zwischen vorhandenen Angaben.
-struct Trennpunkt: View {
-    var body: some View { Text("·").opacity(0.45) }
-}
-
 extension ItemDetailView {
 
-    /// Erst der Trailer vom Server, dann der verlinkte.
-    ///
-    /// Liegt er als Datei vor, läuft er im eigenen Player — mit Direct Play
-    /// wie alles andere. Sonst bleibt nur die verlinkte Adresse, und die führt
-    /// bei Jellyfin fast immer zu YouTube; die kann nur der Browser öffnen.
     func trailerStarten() {
-        Task {
-            if let film = await model.trailer(zu: aktuell),
-               let plan = await model.plan(for: film.id) {
-                abspielen = Abspielwunsch(item: film, plan: plan, startAt: 0)
-                return
-            }
-            #if os(iOS)
-            if let adresse = aktuell.remoteTrailers?.compactMap(\.url).first,
-               let ziel = URL(string: adresse) {
-                await UIApplication.shared.open(ziel)
-                return
-            }
-            #endif
-            meldung = String(localized: "Für diesen Titel liegt kein Trailer vor.")
-        }
+        Trailerstart.starten(aktuell, model: model,
+                             abspielen: { abspielen = $0 },
+                             melden: { meldung = $0 })
     }
 
     var mehrHandlungen: [Titelhandlung] {

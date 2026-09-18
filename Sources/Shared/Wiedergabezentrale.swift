@@ -23,6 +23,58 @@ import MediaPlayer
 /// 2. **Unterbrechungen.** Kommt ein Anruf, entzieht iOS die Tonsitzung. Ohne
 ///    Zuhören bleibt danach alles stehen, und die Oberfläche behauptet weiter,
 ///    es liefe.
+/// **Der letzte Stand, den ein Player gemeldet hat — Stelle und ob es laeuft.**
+///
+/// Jede Plattform ruft ``Wiedergabezentrale/melden(item:position:dauer:tempo:laeuft:sprungweite:bildURL:)``
+/// bei jeder Zustandsaenderung mit frischen Werten auf, damit der
+/// Sperrbildschirm stimmt. Damit liegt hier bereits, was an einer ganz
+/// anderen Stelle gefehlt hat, und zwar bei allen Fassungen zugleich.
+///
+/// **Wofuer.** Kommt ein Fernbefehl vom Server — jemand drueckt in Jellyfin
+/// auf Pause —, gehorcht die App sofort, meldete es dem Server aber erst
+/// beim naechsten regulaeren Takt. In der Uebersicht lief die Zeit dann noch
+/// fuenf, sechs Sekunden weiter, bevor das Pausezeichen erschien. Um sofort
+/// zu melden, braucht man die **jetzige** Stelle, und die kennt nur der
+/// Player. Ueber diesen Ablagepunkt kennt sie auch der Zustandshalter.
+///
+/// Der Weg ueber eine gemeinsame Ablage statt ueber einen Rueckruf je
+/// Plattform ist Absicht: sonst muesste jede Fassung eine Zeile setzen, und
+/// die eine, die es vergisst, faellt niemandem auf.
+@MainActor
+enum Spielstand {
+    private(set) static var stelle: Double = 0
+    private(set) static var laeuft = false
+    /// Wann das zuletzt geschrieben wurde — damit niemand einen Stand
+    /// verwendet, der aus einer abgeraeumten Wiedergabe stammt.
+    private(set) static var stempel = Date.distantPast
+
+    static func setzen(stelle: Double, laeuft: Bool) {
+        Self.stelle = stelle
+        Self.laeuft = laeuft
+        Self.stempel = Date()
+    }
+
+    /// **Steht hier gerade ein Player im Bild?**
+    ///
+    /// Die Wiedergabe schreibt diesen Stand im Sekundentakt, aus jeder
+    /// Fassung. Wer wissen will, ob zugesehen wird, braucht dafuer also
+    /// keinen eigenen Schalter, den jede Ansicht setzen und zuruecknehmen
+    /// muesste — und genau so einer waere derjenige, den irgendwann jemand
+    /// zu setzen vergisst.
+    ///
+    /// Fuenf Sekunden, nicht dreissig wie bei ``frisch``: dort geht es um
+    /// einen brauchbaren Zahlenwert, hier um „jetzt gerade".
+    static var spielerLaeuft: Bool {
+        Date().timeIntervalSince(stempel) < 5
+    }
+
+    /// `nil`, wenn seit dem letzten Eintrag zu viel Zeit vergangen ist.
+    static var frisch: (stelle: Double, laeuft: Bool)? {
+        guard Date().timeIntervalSince(stempel) < 30 else { return nil }
+        return (stelle, laeuft)
+    }
+}
+
 @MainActor
 final class Wiedergabezentrale {
 
@@ -120,6 +172,21 @@ final class Wiedergabezentrale {
                 // Kommt eine vierte Plattform dazu, soll der Uebersetzer
                 // meckern, nicht der Nutzer.
                 bildURL: URL?) {
+        // Der Weg fuer den Sperrbildschirm ist derselbe wie der fuer die
+        // Sofortmeldung an den Server — hier steht der frischeste Stand, den
+        // es in der App gibt.
+        Spielstand.setzen(stelle: position, laeuft: laeuft)
+        // **Und derselbe Weg traegt die Discord-Anzeige.**
+        //
+        // Aus demselben Grund wie `Spielstand`: hier stehen bei jeder
+        // Zustandsaenderung die frischen Werte, und zwar aus jeder Fassung.
+        // Ob ueberhaupt etwas hinausgeht, entscheidet `Discordanzeiger` —
+        // der Schalter ist aus, bis jemand ihn anlegt.
+        Discordanzeiger.geteilt.melden(
+            titel: item.seriesName ?? item.name,
+            unterzeile: item.seriesName == nil ? nil
+                        : [item.folgenkuerzel, item.name].compactMap { $0 }.joined(separator: " · "),
+            stelle: position, dauer: dauer, laeuft: laeuft)
         var eintrag: [String: Any] = [
             MPMediaItemPropertyTitle: item.name,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
@@ -247,16 +314,16 @@ final class Wiedergabezentrale {
 
     /// **Den Zustand melden, nicht nur die Rate.**
     ///
-    /// Die Rate steht im Eintrag und beschreibt, wie schnell gespielt wird.
-    /// Ob überhaupt gespielt wird, ist eine andere Angabe — und das System
+    /// Die Rate steht im Eintrag und beschreibt, wie schnell gespielt wird. Ob
+    /// überhaupt gespielt wird, ist eine andere Angabe — und das System
     /// entscheidet danach, welchen Befehl es beim Druck auf die
     /// Wiedergabetaste schickt.
     ///
     /// Ohne sie glaubte tvOS durchgehend, es liefe, und schickte jedesmal
-    /// `pauseCommand`. Deshalb hielt der erste Druck an und jeder weitere
-    /// tat nichts: es kam nie `play`, nie `togglePlayPause`, immer nur
-    /// „anhalten". Gefunden hat es Pauls Blick auf die eingebaute Spur —
-    /// dort stand `anhalten · zentrale`, zweimal hintereinander.
+    /// `pauseCommand`. Deshalb hielt der erste Druck an und jeder weitere tat
+    /// nichts: es kam nie `play`, nie `togglePlayPause`, immer nur „anhalten".
+    /// Gefunden hat es der Blick auf die eingebaute Spur — dort stand
+    /// `anhalten · zentrale`, zweimal hintereinander.
     private func zustandMelden(_ laeuft: Bool) {
         MPNowPlayingInfoCenter.default().playbackState = laeuft ? .playing : .paused
     }
@@ -373,16 +440,13 @@ final class Wiedergabezentrale {
     // wenn nebenbei etwas klingelt, es mischt. Es gibt also nichts, worauf
     // gehört werden müsste.
     #if !os(macOS)
-    /// **Wechselt das Ausgabegeraet, muss der Tonausgang neu aufgebaut werden.**
-    ///
-    /// Paul: „die Player Audio laeuft nicht, wenn ich Bluetooth-Kopfhoerer
-    /// drin habe — erst nachdem ich hin und her gewechselt habe, geht er auf
-    /// einmal."
+    /// **Wechselt das Ausgabegeraet, muss der Tonausgang neu aufgebaut
+    /// werden.**
     ///
     /// Genau das ist das Bild eines nicht behandelten Routenwechsels. iOS
     /// meldet ihn, VLCs Tonausgang haengt aber weiter am alten Geraet und
-    /// bleibt stumm, bis irgendein anderer Anlass ihn neu aufbaut — beim
-    /// Hin- und Herwechseln kommt der irgendwann von selbst.
+    /// bleibt stumm, bis irgendein anderer Anlass ihn neu aufbaut — beim Hin-
+    /// und Herwechseln kommt der irgendwann von selbst.
     ///
     /// Wir haben bisher **nur** auf Unterbrechungen gehoert, nicht auf
     /// Routenwechsel. Das sind zwei verschiedene Meldungen: ein Anruf
@@ -470,15 +534,30 @@ final class Wiedergabezentrale {
             // gereicht wäre es ein Datenwettlauf.
             let roh = nachricht.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             let hinweis = nachricht.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
-            MainActor.assumeIsolated { self?.unterbrechung(art: roh, hinweis: hinweis) }
+            // **Den Grund mitschreiben, nicht erraten.** Seit iOS 14.5 sagt
+            // iOS dazu, *warum* unterbrochen wurde. Ohne diese Zahl liesse
+            // sich nicht unterscheiden, ob die Mitteilungszentrale als
+            // Systemhinweis gilt (dann greift die Vorliebe, die beim
+            // Aktivieren gesetzt wird) oder als etwas anderes -- und danach
+            // richtet sich, ob hier ueberhaupt angehalten werden darf.
+            //
+            // Den Schluessel gibt es auf tvOS nicht -- dort faellt die Zahl
+            // weg, und der Rest bleibt gleich.
+            #if os(iOS)
+            let grund = nachricht.userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt
+            #else
+            let grund: UInt? = nil
+            #endif
+            MainActor.assumeIsolated { self?.unterbrechung(art: roh, hinweis: hinweis, grund: grund) }
         }
     }
 
-    private func unterbrechung(art roh: UInt?, hinweis: UInt?) {
+    private func unterbrechung(art roh: UInt?, hinweis: UInt?, grund: UInt?) {
         guard let roh, let art = AVAudioSession.InterruptionType(rawValue: roh) else { return }
 
         switch art {
         case .began:
+            Protokoll.schreib("[Ton] Unterbrechung beginnt · Grund \(grund.map(String.init) ?? "—")")
             liefVorher = (MPNowPlayingInfoCenter.default()
                 .nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0) > 0
             griffe?.anhalten()
@@ -495,7 +574,7 @@ final class Wiedergabezentrale {
             // schliessen. Dreimal derselbe Handgriff, dreimal „pausing" von
             // VLC — beim dritten Mal kam kein „resuming" mehr. Die App zeigte
             // korrekt „angehalten", nur setzte niemand fort, und der
-            // Pausenknopf half auch nicht mehr. Paul musste neu starten.
+            // Pausenknopf half auch nicht mehr.
             //
             // Der Hinweis wird trotzdem mitgeschrieben: fehlt er dauerhaft
             // auch bei Anrufen, waere das ein anderer Fehler.

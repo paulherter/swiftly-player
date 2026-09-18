@@ -33,7 +33,17 @@ struct HomeView: View {
     var body: some View {
         ZStack {
             if !stand.geladen {
-                Lader.fern
+                // **Kein Ladering.** Statt eines Punktes auf drei Meter
+                // Entfernung stehen zwei Reihen in ihrer Form da und werden
+                // ueberblendet, sobald die Titel kommen.
+                VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
+                    Reihenplatzhalter(quer: true)
+                    Reihenplatzhalter()
+                }
+                .padding(.horizontal, Stil.randSeite)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, Stil.leisteUnten + 40)
+                .transition(.opacity)
             } else if stand.gestoert {
                 Leerzustand(symbol: "wifi.exclamationmark",
                             titel: "Der Server antwortet nicht",
@@ -48,7 +58,6 @@ struct HomeView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { await laden() }
         // **Auch beim Zurueckkommen, nicht nur beim Erscheinen.**
         //
         // `.task` deckt „Player geht zu" ab — die Ansicht erscheint dann neu.
@@ -66,6 +75,20 @@ struct HomeView: View {
         //
         // Die Frist von 30 Sekunden steht in `Auffrischung` und ist dort
         // geprüft — ohne sie würde jedes kurze Wegschalten neu laden.
+        // Beim Kontowechsel bleibt die Phase auf `ready` stehen; ohne das
+        // hier stünde weiter der Bestand des vorigen Kontos auf dem Schirm.
+        .onChange(of: model.kontowechsel) { _, _ in Task { await laden() } }
+        // **Die Einstellung greift sofort, nicht beim naechsten Oeffnen.**
+        // Umschalten aendert, welche Reihen es ueberhaupt gibt — und die
+        // stehen erst nach einer neuen Abfrage fest.
+        // **Ein `task`, nicht zwei.** Es traegt beides: den Lauf beim
+        // Erscheinen und den, der faellig wird, wenn jemand die Reihen
+        // umstellt — Umschalten aendert, welche Reihen es ueberhaupt gibt,
+        // und die stehen erst nach einer neuen Abfrage fest. Mit einem
+        // zweiten, schlichten `task` daneben lief beim Oeffnen alles doppelt.
+        .task(id: "\(model.neuzugangGetrennt)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))") {
+            await laden()
+        }
         .onChange(of: phase) { _, neu in
             guard neu == .active, stand.brauchtAuffrischung else { return }
             Task { await laden() }
@@ -101,11 +124,13 @@ struct HomeView: View {
     /// Zwischenspeicher liegen.
     private var kulissenURL: URL? {
         guard let t = imBild else { return nil }
-        return model.querbildURL(for: t, breite: 1600) ?? model.backdropURL(for: t)
+        return model.querbildURL(for: t, breite: 1600) ?? model.kopfbildURL(for: t)
     }
 
     private var alleTitel: [Item] {
         stand.weiterschauen + stand.naechsteFolge + stand.zuletzt
+            + stand.neueFilme + stand.neueSerien
+            + stand.gattungsreihen.flatMap(\.items)
     }
 
     /// Worauf die Seite beim Oeffnen steht: der erste Eintrag aus
@@ -119,6 +144,29 @@ struct HomeView: View {
         case .weiterschauen: stand.weiterschauen
         case .naechsteFolge: stand.naechsteFolge
         case .zuletzt:       stand.zuletzt
+        case .neueFilme:     stand.neueFilme
+        case .neueSerien:    stand.neueSerien
+        case let .gattung(name):
+            stand.gattungsreihen.first { $0.name == name }?.items ?? []
+        }
+    }
+
+    /// Welche festen Reihen es gerade gibt — Reihenfolge und Auswahl kommen
+    /// aus den Einstellungen (Profil → Darstellung).
+    private var festeReihen: [Startreihe] {
+        model.startReihen.filter {
+            !model.startAus.contains($0) && $0.passt(getrennt: model.neuzugangGetrennt)
+        }
+    }
+
+    /// Die Fokuskennung zu einer eingestellten Reihe.
+    private func kennung(_ reihe: Startreihe) -> Reihenkennung {
+        switch reihe {
+        case .weiterschauen: .weiterschauen
+        case .naechsteFolge: .naechsteFolge
+        case .neueFilme:     .neueFilme
+        case .neueSerien:    .neueSerien
+        case .neuzugaenge:   .zuletzt
         }
     }
 
@@ -134,9 +182,16 @@ struct HomeView: View {
 
     /// Dieselbe Kachel als Fokusmarke — samt Reihe, sonst ist sie zweideutig.
     private var startMarke: Kachelmarke? {
-        if let t = stand.weiterschauen.first { return .init(reihe: .weiterschauen, titel: t.id) }
-        if let t = stand.naechsteFolge.first { return .init(reihe: .naechsteFolge, titel: t.id) }
-        if let t = stand.zuletzt.first { return .init(reihe: .zuletzt, titel: t.id) }
+        // **Die erste Reihe, die es gibt — nicht „Weiterschauen".** Wer die
+        // Reihenfolge umstellt oder eine Reihe abschaltet, erwartet den Fokus
+        // oben, und oben steht dann etwas anderes.
+        for reihe in festeReihen {
+            let k = kennung(reihe)
+            if let t = liste(k).first { return .init(reihe: k, titel: t.id) }
+        }
+        for g in stand.gattungsreihen where !g.items.isEmpty {
+            return .init(reihe: .gattung(g.name), titel: g.items[0].id)
+        }
         return nil
     }
 
@@ -198,12 +253,9 @@ struct HomeView: View {
         .ignoresSafeArea()
         // **Derselbe gefaerbte Grund wie auf den Detailseiten.**
         //
-        // Paul: „lass uns den farbigen Background auch auf die Startseite
-        // bringen, dann muss da nichts passieren, keine Ueberblendung."
-        // Genau das ist der Gewinn — beim Oeffnen einer Seite aendert sich
-        // der Hintergrund nicht mehr, weil er schon derselbe war. Es gibt
-        // nichts mehr zu ueberblenden, also auch nichts, was dabei zucken
-        // koennte.
+        // Genau das ist der Gewinn — beim Oeffnen einer Seite aendert sich der
+        // Hintergrund nicht mehr, weil er schon derselbe war. Es gibt nichts
+        // mehr zu ueberblenden, also auch nichts, was dabei zucken koennte.
         //
         // Er haengt am **entprellten** Bild, nicht am Fokus: sonst rechnete
         // beim Durchhalten der Fernbedienung jeder Zwischenschritt einen
@@ -279,29 +331,26 @@ struct HomeView: View {
     private var reihen: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
-                if !stand.weiterschauen.isEmpty {
-                    // **Weiterschauen startet sofort, ohne Zwischenseite.**
-                    // Die anderen beiden fuehren auf die Uebersicht.
-                    // `VERHALTEN.md` A1 bis A3.
-                    abschnitt("Weiterschauen") {
-                        Streifen(model: model, items: stand.weiterschauen,
-                                 reihe: .weiterschauen, quer: true,
-                                 direkt: starte, amTitel: $amTitel,
-                                 vorderste: $vorderste)
-                    }
+                // **Genres als Chips, ganz oben** — wenn eingeschaltet. Ein
+                // Einstieg, kein Inhalt: ein Druck öffnet das Genre.
+                if model.genreChips, !model.startGenres.isEmpty { gattungschips }
+
+                // **Die festen Reihen in der eingestellten Reihenfolge**,
+                // ohne die ausgeblendeten — Profil → Darstellung → Startseite.
+                ForEach(festeReihen) { reihe in
+                    feste(reihe)
                 }
-                if !stand.naechsteFolge.isEmpty {
-                    abschnitt("Nächste Folge") {
-                        Streifen(model: model, items: stand.naechsteFolge,
-                                 reihe: .naechsteFolge, amTitel: $amTitel,
-                                 vorderste: $vorderste)
-                    }
-                }
-                if !stand.zuletzt.isEmpty {
-                    abschnitt("Zuletzt hinzugefügt") {
-                        Streifen(model: model, items: stand.zuletzt,
-                                 reihe: .zuletzt, neuzugang: true,
-                                 amTitel: $amTitel, vorderste: $vorderste)
+
+                // Die gewählten Genres als eigene Reihen, nach den festen.
+                ForEach(stand.gattungsreihen) { gattung in
+                    if !gattung.items.isEmpty {
+                        reihenabschnitt {
+                            Reihentitel(name: gattung.name)
+                        } inhalt: {
+                            Streifen(model: model, items: gattung.items,
+                                     reihe: .gattung(gattung.name),
+                                     amTitel: $amTitel, vorderste: $vorderste)
+                        }
                     }
                 }
             }
@@ -320,26 +369,83 @@ struct HomeView: View {
         // Nachgereicht ging es nicht: `erstenZeigen` setzte nur, solange der
         // Fokus nirgends stand, und tvOS ist schneller als jedes `onAppear`.
         // Genau die Form, vor der CLAUDE.md warnt — gesetzt, aber die
-        // anwendende Stelle laeuft ins Leere. `userInitiated` sticht dabei
-        // die Wahl des Systems; `automatic` waere nur ein Vorschlag.
+        // anwendende Stelle laeuft ins Leere. `userInitiated` sticht dabei die
+        // Wahl des Systems; `automatic` waere nur ein Vorschlag.
         //
         // **Zurueck heisst dorthin, wo man war — nicht nach oben.**
         //
-        // Der Vorgabefokus zeigte auf `startMarke`, also auf die erste
-        // Kachel der ersten Reihe. tvOS wendet ihn nicht nur beim ersten Mal
-        // an, sondern jedes Mal, wenn die Seite wieder erscheint: nach dem
-        // Zurueckgehen sprang der Fokus damit nach oben, und die
-        // Scrollflaeche fuhr hinterher. Paul: „beim Zurueckgehen scrollt er
-        // auf einmal nach oben auf die obere Kategorie."
+        // Der Vorgabefokus zeigte auf `startMarke`, also auf die erste Kachel
+        // der ersten Reihe. tvOS wendet ihn nicht nur beim ersten Mal an,
+        // sondern jedes Mal, wenn die Seite wieder erscheint: nach dem
+        // Zurueckgehen sprang der Fokus damit nach oben, und die Scrollflaeche
+        // fuhr hinterher.
         //
         // `zuletztAmTitel` haelt fest, wo der Fokus wirklich stand — es gibt
-        // ihn schon, weil die Auskunft oben denselben Rueckfall braucht.
-        // Beim ersten Oeffnen ist es leer, dann gilt weiter `startMarke`.
+        // ihn schon, weil die Auskunft oben denselben Rueckfall braucht. Beim
+        // ersten Oeffnen ist es leer, dann gilt weiter `startMarke`.
         .defaultFocus($amTitel, zuletztAmTitel ?? startMarke, priority: .userInitiated)
         // **Hier wird beschnitten, und das ist Absicht.** Die Vergroesserung
         // der Kachel faengt der Streifen mit `reihenLuft` in seinen eigenen
         // Grenzen ab; die senkrechte Flaeche darf deshalb schneiden — und nur
         // so kann keine Kachel je in die Kopfzone hineinragen.
+    }
+
+    /// Eine feste Reihe — derselbe Aufbau wie vorher, nur einzeln abrufbar,
+    /// damit die Reihenfolge aus den Einstellungen gilt.
+    @ViewBuilder
+    private func feste(_ reihe: Startreihe) -> some View {
+        switch reihe {
+        case .weiterschauen:
+            if !stand.weiterschauen.isEmpty {
+                // **Weiterschauen startet sofort, ohne Zwischenseite.** Die
+                // anderen fuehren auf die Uebersicht. `VERHALTEN.md` A1 bis A3.
+                abschnitt("Weiterschauen") {
+                    Streifen(model: model, items: stand.weiterschauen,
+                             reihe: .weiterschauen, quer: true,
+                             direkt: starte, amTitel: $amTitel,
+                             vorderste: $vorderste)
+                }
+            }
+        case .naechsteFolge:
+            if !stand.naechsteFolge.isEmpty {
+                abschnitt("Nächste Folge") {
+                    Streifen(model: model, items: stand.naechsteFolge,
+                             reihe: .naechsteFolge, amTitel: $amTitel,
+                             vorderste: $vorderste)
+                }
+            }
+        case .neueFilme:
+            neuzugangsreihe("Zuletzt hinzugefügte Filme", stand.neueFilme, .neueFilme)
+        case .neueSerien:
+            neuzugangsreihe("Zuletzt hinzugefügte Serien", stand.neueSerien, .neueSerien)
+        case .neuzugaenge:
+            neuzugangsreihe("Zuletzt hinzugefügt", stand.zuletzt, .zuletzt)
+        }
+    }
+
+    @ViewBuilder
+    private func neuzugangsreihe(_ titel: LocalizedStringKey, _ items: [Item],
+                                 _ reihe: Reihenkennung) -> some View {
+        if !items.isEmpty {
+            abschnitt(titel) {
+                Streifen(model: model, items: items, reihe: reihe,
+                         neuzugang: true, amTitel: $amTitel, vorderste: $vorderste)
+            }
+        }
+    }
+
+    /// Deine Genres als Chips — dieselben, die sonst als Reihen stünden.
+    private var gattungschips: some View {
+        streifen {
+            ForEach(model.startGenres, id: \.self) { name in
+                NavigationLink(value: GenreRoute(name: name)) {
+                    // Vom Server, also nicht übersetzt.
+                    Text(verbatim: name)
+                }
+                .buttonStyle(KnopfStil(hoehe: Stil.chipHoehe))
+            }
+        }
+        .padding(.bottom, Stil.reihenAbstand - Stil.reihenLuft)
     }
 
     /// Ein Reihenabschnitt. Die Abstaende stehen in `reihenabschnitt`, das
@@ -442,7 +548,7 @@ struct HomeView: View {
         ZStack {
             if let t = imBild {
                 Kulisse(url: model.querbildURL(for: t, breite: 1600)
-                             ?? model.backdropURL(for: t))
+                             ?? model.kopfbildURL(for: t))
                     .id(t.id)
                     .transition(.opacity)
             }
@@ -530,6 +636,11 @@ struct HomeView: View {
 /// Welche Reihe. Nur zur Unterscheidung, nicht fuer die Anzeige.
 private enum Reihenkennung: Hashable {
     case weiterschauen, naechsteFolge, zuletzt
+    /// Neue Filme und neue Serien einzeln — wenn „Neuzugänge getrennt" an ist.
+    case neueFilme, neueSerien
+    /// Ein gewähltes Genre. Der Name ist die Kennung; zwei Reihen desselben
+    /// Genres gibt es nicht.
+    case gattung(String)
 }
 
 /// Was der Fokus auf der Startseite bezeichnet: **Reihe und Titel**.

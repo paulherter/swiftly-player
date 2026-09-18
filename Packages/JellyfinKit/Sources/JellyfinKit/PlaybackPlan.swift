@@ -35,6 +35,29 @@ public struct PlaybackPlan: Sendable, Equatable {
     }
 }
 
+public extension PlaybackPlan {
+
+    /// Ein Plan für eine Datei, die schon auf dem Gerät liegt — **H8.**
+    ///
+    /// **Ohne den Server.** Das ist der Punkt: liegt die Datei hier, darf die
+    /// Wiedergabe nicht an einem `PlaybackInfo`-Abruf hängen, den es im
+    /// Flugzeug nicht gibt. Genau dafür wurde heruntergeladen.
+    ///
+    /// Die Art ist `directPlay`, und das ist keine Beschönigung: es *ist* die
+    /// unveränderte Originaldatei — dieselbe, die der Server geliefert hätte,
+    /// Bit für Bit. Es gibt keinen Grund, der eine Umrechnung nennen könnte,
+    /// also ist `reasons` leer.
+    ///
+    /// `playSessionID` ist `nil`: ohne Server gibt es keine Sitzung. Was
+    /// gesehen wurde, meldet die App nach, sobald wieder Netz da ist.
+    static func vonDerPlatte(_ datei: URL, container: String?,
+                             mediaSourceID: String? = nil) -> PlaybackPlan {
+        PlaybackPlan(url: datei, method: .directPlay,
+                     mediaSourceID: mediaSourceID, playSessionID: nil,
+                     container: container, reasons: [], quelle: nil)
+    }
+}
+
 /// Der Strom, an dem die Direktwiedergabe scheitert.
 public struct TranscodeReason: Sendable, Equatable {
     public enum Kind: String, Sendable {

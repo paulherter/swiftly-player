@@ -8,25 +8,25 @@ import VLCKit
 /// **Sagt dem Fernseher, mit welcher Bildrate der Film läuft.**
 ///
 /// Das war die Ursache dafür, dass sich die Wiedergabe stockend anfühlte,
-/// obwohl nichts fehlte. Pauls Messung: 4 zu späte Bilder auf 4888, und die
+/// obwohl nichts fehlte. die Messung: 4 zu späte Bilder auf 4888, und die
 /// vier stammten vom Spulen. Es wurde also nichts verworfen und nichts
 /// verpasst — die Bilder kamen nur ungleichmäßig auf den Schirm.
 ///
 /// **Warum.** Ein Film liegt in 23,976 oder 24 Bildern je Sekunde vor, der
 /// Apple TV gibt aber 60 Hz aus. 24 geht in 60 nicht auf, also wird jedes
 /// zweite Bild dreimal und jedes andere zweimal gezeigt — 3:2-Pulldown. Die
-/// Bewegung läuft dadurch abwechselnd zu schnell und zu langsam. Bei
-/// Schwenks sieht man es sofort, bei ruhigen Bildern gar nicht, und kein
-/// Zähler meldet etwas, weil kein Bild verlorengeht.
+/// Bewegung läuft dadurch abwechselnd zu schnell und zu langsam. Bei Schwenks
+/// sieht man es sofort, bei ruhigen Bildern gar nicht, und kein Zähler meldet
+/// etwas, weil kein Bild verlorengeht.
 ///
-/// **Warum es auf dem iPhone nicht auffiel.** Paul: „aufm iPhone fühlt sich
-/// dasselbe halt flüssig an." Sein iPhone hat ProMotion und läuft mit 120 Hz.
-/// 24 geht in 120 glatt fünfmal auf — jedes Bild steht gleich lang. Dieselbe
-/// Datei, derselbe Abspieler, dieselbe Leitung: allein die Ausgabe entscheidet.
+/// **Warum es auf dem iPhone nicht auffiel.** Sein iPhone hat ProMotion und
+/// läuft mit 120 Hz. 24 geht in 120 glatt fünfmal auf — jedes Bild steht
+/// gleich lang. Dieselbe Datei, derselbe Abspieler, dieselbe Leitung: allein
+/// die Ausgabe entscheidet.
 ///
-/// **Warum es bei Netflix nicht auffiel.** Die setzen dasselbe, was hier
-/// jetzt steht. `AVDisplayManager.preferredDisplayCriteria` bittet tvOS, den
-/// Ausgang auf die Bildrate des Inhalts umzustellen — 24p ins Bild bei 24 Hz.
+/// **Warum es bei Netflix nicht auffiel.** Die setzen dasselbe, was hier jetzt
+/// steht. `AVDisplayManager.preferredDisplayCriteria` bittet tvOS, den Ausgang
+/// auf die Bildrate des Inhalts umzustellen — 24p ins Bild bei 24 Hz.
 ///
 /// **Es hängt an einer Einstellung des Geräts.** Ohne „Einstellungen → Video
 /// und Audio → Inhalt anpassen → Bildrate anpassen" bleibt der Wunsch
@@ -66,9 +66,14 @@ enum Bildtakt {
         /// Kein Anzeigeverwalter erreichbar — dann liegt es an uns, nicht am
         /// Gerät.
         case unerreichbar
+        /// In Swiftly abgeschaltet — Einstellungen → Wiedergabe.
+        case inSwiftlyAus
     }
 
     static var stand: Stand {
+        // Der eigene Schalter zuerst: er ist der, den der Zuschauer gerade
+        // umgelegt hat, und seine Auskunft soll er auch zuerst sehen.
+        guard vomNutzerErlaubt else { return .inSwiftlyAus }
         guard let verwalter else { return .unerreichbar }
         return verwalter.isDisplayCriteriaMatchingEnabled ? .bereit : .abgeschaltet
     }
@@ -86,10 +91,9 @@ enum Bildtakt {
     /// **Die einmal gemessene Rate — und der Grund, warum sie gemerkt wird.**
     ///
     /// `rate(von:)` fragt `media.videoTracks`. Das ist keine Ablesung eines
-    /// Feldes: VLCKit baut die Spurliste bei jedem Zugriff neu auf. Im
-    /// halben Sekundentakt aufgerufen — und genau so stand es im
-    /// Wiedergabetakt — greift das dauernd in ein Medium, das gerade
-    /// abspielt. Paul: „jetzt laedt ueberhaupt nichts mehr", dazu
+    /// Feldes: VLCKit baut die Spurliste bei jedem Zugriff neu auf. Im halben
+    /// Sekundentakt aufgerufen — und genau so stand es im Wiedergabetakt —
+    /// greift das dauernd in ein Medium, das gerade abspielt., dazu
     /// Statistikwerte in Trilliardenhoehe, also eine Struktur, die VLC gar
     /// nicht gefuellt hat.
     ///
@@ -185,17 +189,41 @@ enum Bildtakt {
                       umfang: .unbekannt)
     }
 
+    /// **Ob wir ueberhaupt umschalten duerfen.**
+    ///
+    /// Am 08.09.2026 an einem Geraet gemessen: dieselbe Folge laeuft in
+    /// Swiftfin fluessig — und Swiftfin schaltet die Bildrate **nicht** um.
+    /// Bei uns dagegen sah man ein Stocken, waehrend jeder Zaehler auf null
+    /// stand: kein verworfenes Bild, keines zu spaet, nichts beschaedigt.
+    /// Der einzige greifbare Unterschied zwischen beiden Playern war dieser
+    /// Wechsel.
+    ///
+    /// **Also entscheidet es der Zuschauer, nicht wir.** 24 Hz nativ ist auf
+    /// dem Papier das Richtige — jedes Bild steht gleich lang. Auf einem
+    /// Fernseher, dessen Bewegungsverarbeitung bei 60 Hz glaettet, kann es
+    /// trotzdem schlechter aussehen. Das haengt am Geraet und nicht an der
+    /// Datei, und deshalb ist es eine Einstellung und keine Regel.
+    ///
+    /// An bleibt die Vorgabe: fuer die meisten Fernseher ist es richtig.
+    private static var vomNutzerErlaubt: Bool {
+        UserDefaults.standard.object(forKey: "bildrateAnpassen") as? Bool ?? true
+    }
+
     private static func setzen(rate: Double, breite: Int32, hoehe: Int32,
                                codec: CMVideoCodecType,
                                umfang: Farbumfang) -> Double? {
+        guard vomNutzerErlaubt else {
+            log.info("Bildratenanpassung ist in Swiftly abgeschaltet — \(rate, privacy: .public) fps bleibt ungenutzt")
+            return nil
+        }
+
         // **Nicht umschalten, wenn es nichts bringt.**
         //
-        // Jeder Wechsel kostet ein paar Sekunden Schwarzbild — der Grund,
-        // aus dem Paul die Anpassung ueberhaupt abgeschaltet hatte. Geht die
-        // Bildrate im laufenden Modus glatt auf, steht jedes Bild schon jetzt
-        // gleich lang und der Wechsel waere reiner Verlust: 30 in 60 ist
-        // zweimal, 60 in 60 einmal. Krumm sind 24, 23,976, 25, 48 und 50 —
-        // und genau die judern.
+        // Jeder Wechsel kostet ein paar Sekunden Schwarzbild — der Grund, aus
+        // dem Geht die Bildrate im laufenden Modus glatt auf, steht jedes Bild
+        // schon jetzt gleich lang und der Wechsel waere reiner Verlust: 30 in
+        // 60 ist zweimal, 60 in 60 einmal. Krumm sind 24, 23,976, 25, 48 und
+        // 50 — und genau die judern.
         if passt(rate) {
             log.info("\(rate, privacy: .public) fps geht im laufenden Modus auf — kein Wechsel")
             return rate

@@ -97,7 +97,7 @@ public struct AbschnittsAntwort: Sendable, Decodable {
 /// Was der Knopf unten rechts im Player anbietet.
 ///
 /// **Es ist derselbe Knopf.** Gestaltung und Platz kommen vom heutigen
-/// „Nächste Folge"; nur Beschriftung und Zeitpunkt wechseln. Pauls
+/// „Nächste Folge"; nur Beschriftung und Zeitpunkt wechseln. Die
 /// ausdrücklicher Wunsch, und es spart eine zweite Gestaltung.
 public enum Knopfangebot: Sendable, Equatable {
     case keiner

@@ -136,6 +136,22 @@ final class SwiftlyAppDelegate: NSObject, UIApplicationDelegate {
             // .playback + .moviePlayback: Ton läuft weiter, wenn das Fenster
             // schrumpft — sonst wäre Bild-im-Bild stumm.
             try sitzung.setCategory(.playback, mode: .moviePlayback)
+            // **Systemhinweise duerfen den Film nicht anhalten.**
+            //
+            // Die Mitteilungszentrale herunterzuziehen loeste eine
+            // Tonunterbrechung aus, und die hielt die Wiedergabe an --
+            // dreimal derselbe Handgriff, dreimal `pausing` von VLC. Anhalten
+            // soll aber nur, wer die App wirklich verlaesst: ohne
+            // Bild-im-Bild in den Hintergrund, geschlossen, oder Geraet aus.
+            //
+            // `setPrefersNoInterruptionsFromSystemAlerts` ist genau dafuer
+            // da. Apples Dokumentation sagt nicht ausdruecklich, dass die
+            // Mitteilungszentrale darunter faellt -- deshalb wird der Grund
+            // der Unterbrechung zusaetzlich mitgeschrieben, statt es
+            // anzunehmen.
+            if #available(iOS 14.5, tvOS 14.5, *) {
+                try? sitzung.setPrefersNoInterruptionsFromSystemAlerts(true)
+            }
             try sitzung.setActive(true)
             Self.log.info("Tonsitzung aktiv · \(Int(sitzung.sampleRate)) Hz · \(sitzung.outputNumberOfChannels) Kanäle")
         } catch {

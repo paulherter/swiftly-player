@@ -22,6 +22,9 @@ final class QuickConnectModell {
     /// Gesetzt, sobald jemand den Code freigegeben hat. Die Ansicht meldet
     /// damit an.
     private(set) var freigegeben: Anmeldecode?
+    /// Am Server, der gerade hinzugefügt wird — statt an dem, mit dem die App
+    /// verbunden ist. Siehe `ServerAufnahmeView`.
+    var neuerServer = false
 
     /// Zählt hoch, wenn ein neuer Code geholt wird — die alte Warteschleife
     /// sieht daran, dass sie überholt ist, und hört auf.
@@ -35,7 +38,8 @@ final class QuickConnectModell {
         freigegeben = nil
         restsekunden = 300
         do {
-            let neu = try await model.quickConnectStarten()
+            let neu = try await (neuerServer ? model.quickConnectStartenAmNeuenServer()
+                                             : model.quickConnectStarten())
             guard meiner == lauf else { return }
             vorgang = neu
             await warten(auf: neu, lauf: meiner, model: model)
@@ -58,7 +62,9 @@ final class QuickConnectModell {
             restsekunden -= 1
             guard restsekunden % 2 == 0 else { continue }
             do {
-                if try await model.quickConnectFreigegeben(vorgang) {
+                let frei = try await (neuerServer ? model.quickConnectFreigegebenAmNeuenServer(vorgang)
+                                                  : model.quickConnectFreigegeben(vorgang))
+                if frei {
                     guard meiner == lauf else { return }
                     lauf += 1
                     freigegeben = vorgang

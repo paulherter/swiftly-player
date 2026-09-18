@@ -106,3 +106,25 @@ extension JellyfinClient {
                                      an: "Users/AuthenticateWithQuickConnect")
     }
 }
+
+/// **Wie lange auf eine Quick-Connect-Freigabe gewartet wird, und in welchem
+/// Takt.**
+///
+/// Die Zahlen standen dreimal: in `QuickConnectModell` auf Apple und
+/// **zweimal** auf Linux — einmal beim Erstanmelden, einmal beim Hinzufuegen
+/// eines Kontos. Drei Bauplaetze fuer dieselbe Frist laufen auseinander,
+/// sobald jemand an einem dreht.
+public enum Quickconnectfrist {
+
+    /// **Fuenf Minuten.** So lange haelt Jellyfin den Code; laenger zu warten
+    /// hiesse, auf etwas zu warten, das es nicht mehr gibt.
+    public static let sekunden = 300
+
+    /// **Alle zwei Sekunden fragen.** Schneller belastet den Server ohne
+    /// Gewinn — freigegeben wird von Hand, und niemand tippt in unter zwei
+    /// Sekunden einen sechsstelligen Code ab.
+    public static let takt = 2
+
+    /// Wie viele Abfragen daraus folgen.
+    public static var versuche: Int { sekunden / takt }
+}

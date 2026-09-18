@@ -30,6 +30,45 @@ struct Titelhandlung: Identifiable {
     }
 }
 
+/// **Den Trailer starten — an einer Stelle, nicht an zweien.**
+///
+/// Der Rumpf stand wortgleich in `BrowseViews` und in `SeriesView`; der
+/// einzige Unterschied war der Name der Variablen (`aktuell` gegen `serie`).
+/// `doppelte-finden.sh` hat ihn mit 97 Prozent gemeldet.
+///
+/// Ins Paket kann er nicht: er haengt an `AppModel`, `Abspielwunsch`,
+/// `UIApplication` und `String(localized:)`. Also hierher, neben
+/// ``Titelhandlungen`` — die nimmt ihre Rueckrufe schon genauso entgegen.
+@MainActor
+enum Trailerstart {
+
+    /// Erst der Trailer vom Server, dann der verlinkte.
+    ///
+    /// Liegt er als Datei vor, läuft er im eigenen Player — mit Direct Play
+    /// wie alles andere. Sonst bleibt nur die verlinkte Adresse, und die
+    /// führt bei Jellyfin fast immer zu YouTube; die kann nur der Browser
+    /// öffnen.
+    static func starten(_ titel: Item, model: AppModel,
+                        abspielen: @escaping (Abspielwunsch) -> Void,
+                        melden: @escaping (String) -> Void) {
+        Task {
+            if let film = await model.trailer(zu: titel),
+               let plan = await model.plan(for: film.id) {
+                abspielen(Abspielwunsch(item: film, plan: plan, startAt: 0))
+                return
+            }
+            #if os(iOS)
+            if let adresse = titel.remoteTrailers?.compactMap(\.url).first,
+               let ziel = URL(string: adresse) {
+                await UIApplication.shared.open(ziel)
+                return
+            }
+            #endif
+            melden(String(localized: "Für diesen Titel liegt kein Trailer vor."))
+        }
+    }
+}
+
 /// Welche Handlungen ein Titel anbietet.
 ///
 /// Die Listen standen viermal: Film und Serie, je einmal am Telefon und

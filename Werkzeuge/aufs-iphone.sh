@@ -15,25 +15,33 @@ TEAM="${1:-}"
 [ -z "$TEAM" ] && { echo "Kein Team gefunden. In Xcode > Einstellungen > Accounts anmelden."; exit 1; }
 echo "Team: $TEAM"
 
-# devicectl meldet je nach Kopplung "connected" oder "available" — beides
-# heisst erreichbar. Nur auf eines zu filtern hat das Skript still abbrechen
-# lassen (leere UDID + pipefail), ohne eine Zeile Erklaerung.
+# **Zwei Kennungen, und sie sind nicht dieselbe.** `devicectl` fuehrt jedes
+# Geraet unter einer eigenen `identifier`-UUID; `xcodebuild -destination`
+# will die Hardware-UDID (`00008130-…`). Wer die erste weiterreicht, bekommt
+# „Unable to find a destination matching the provided destination specifier".
+#
+# **Und es haengt nicht nur ein Geraet dran.** Der erste Eintrag war hier der
+# Apple TV — gebaut wurde dann fuer den, oder eben gar nicht. Gesucht wird
+# deshalb ausdruecklich nach `platform == iOS`.
+#
 # --json-output muss in eine Datei: auf /dev/stdout mischt sich die
 # Tabellenausgabe darunter und das JSON ist nicht mehr lesbar.
 GERAETE=$(mktemp -t swiftly-geraete)
 trap 'rm -f "$GERAETE"' EXIT
 xcrun devicectl list devices --json-output "$GERAETE" >/dev/null 2>&1 || true
-UDID=$(python3 -c 'import json,sys
+read -r KENNUNG UDID NAME <<<"$(python3 -c 'import json,sys
 for g in json.load(open(sys.argv[1]))["result"]["devices"]:
-    if g.get("connectionProperties",{}).get("tunnelState") != "unavailable":
-        print(g["identifier"]); break' "$GERAETE" 2>/dev/null || true)
+    h = g.get("hardwareProperties", {})
+    if h.get("platform") != "iOS": continue
+    print(g["identifier"], h.get("udid",""), g.get("deviceProperties",{}).get("name",""))
+    break' "$GERAETE" 2>/dev/null || true)"
 
 if [ -z "${UDID:-}" ]; then
-  echo "Kein erreichbares Geraet. Ist das iPhone im selben WLAN und entsperrt?" >&2
+  echo "Kein iPhone gefunden. Ist es im selben WLAN, entsperrt und gekoppelt?" >&2
   xcrun devicectl list devices >&2
   exit 1
 fi
-echo "Geraet: $UDID"
+echo "Geraet: ${NAME:-iPhone} ($UDID)"
 
 xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-iOS \
   -destination "id=$UDID" -derivedDataPath build/DD \
@@ -41,5 +49,5 @@ xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-iOS \
 
 APP=$(find build/DD/Build/Products/Debug-iphoneos -name "Swiftly-iOS.app" -maxdepth 1 | head -1)
 echo "Installiere $APP"
-xcrun devicectl device install app --device "$UDID" "$APP"
+xcrun devicectl device install app --device "$KENNUNG" "$APP"
 echo "Fertig. App auf dem iPhone starten."

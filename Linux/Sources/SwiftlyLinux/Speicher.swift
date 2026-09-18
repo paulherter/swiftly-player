@@ -68,8 +68,162 @@ enum Speicher {
         }
     }
 
+    // MARK: Seerr
+
+    /// **Der Seerr-Zugang liegt neben der Sitzung, nicht im Schluesselbund.**
+    ///
+    /// Auf den Apple-Fassungen geht er in die Keychain, mit der Begruendung:
+    /// „Der Keks ist ein Zugang zu einem Dienst, der Titel anfordern kann."
+    /// Ein Gegenstueck dazu gibt es hier nicht ohne neue Abhaengigkeit
+    /// (libsecret) — also dieselbe Ablage wie die Sitzung, mit denselben
+    /// Rechten: Ordner 0700, Datei 0600. Das ist schwaecher als ein
+    /// Schluesselbund und wird hier ausdruecklich so benannt, statt es als
+    /// gleichwertig auszugeben.
+    private static var seerrdatei: URL { ordner.appendingPathComponent("seerr.json") }
+
+    static func seerrLesen() -> Seerrzugang? {
+        guard let daten = try? Data(contentsOf: seerrdatei) else { return nil }
+        return try? JSONDecoder().decode(Seerrzugang.self, from: daten)
+    }
+
+    static func seerrSchreiben(_ zugang: Seerrzugang?) {
+        guard let zugang else {
+            try? FileManager.default.removeItem(at: seerrdatei)
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                    attributes: nurIch)
+            try JSONEncoder().encode(zugang).write(to: seerrdatei, options: [.atomic])
+            #if !os(Windows)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: seerrdatei.path)
+            #endif
+        } catch {
+            FileHandle.standardError.write(
+                Data("Seerr-Zugang ließ sich nicht sichern: \(error.localizedDescription)\n".utf8))
+        }
+    }
+
     static func loeschen() {
         try? FileManager.default.removeItem(at: datei)
+        try? FileManager.default.removeItem(at: kontendatei)
+    }
+
+    // MARK: Mehrere Konten
+
+    /// Der Kontenbund, wie er auf der Platte liegt.
+    ///
+    /// **Warum der Servername mitkommt.** ``Kontenbund`` trägt Sitzungen, und
+    /// eine ``Session`` kennt nur die Adresse. Der Name des Servers steht
+    /// unten in der Leiste und im Profil, bevor ``serverstandHolen()`` ihn
+    /// nachgeholt hat — ohne ihn stünde dort beim Start für einen Wimpernschlag
+    /// „·" allein.
+    struct Kontenablage: Codable {
+        var bund: Kontenbund
+        var servername: String?
+    }
+
+    // MARK: - Downloads
+
+    /// **Die Liste, nicht die Dateien.** Was geladen wurde, liegt als Film
+    /// oder Folge im Downloadordner; hier steht nur, was es ist und wie weit
+    /// es ist. Beides zusammenzuwerfen waere der Fehler, den ein
+    /// abgebrochener Download sofort sichtbar macht: die Datei ist halb da,
+    /// die Liste weiss es, und nur mit beidem laesst sich fortsetzen.
+    private static var downloaddatei: URL { ordner.appendingPathComponent("downloads.json") }
+
+    /// Wo die geladenen Dateien liegen — neben der Liste, nicht darin.
+    static var downloadordner: URL { ordner.appendingPathComponent("Downloads") }
+
+    static func downloadsLesen() -> [Downloadposten] {
+        guard let daten = try? Data(contentsOf: downloaddatei) else { return [] }
+        return (try? JSONDecoder().decode([Downloadposten].self, from: daten)) ?? []
+    }
+
+    static func downloadsSchreiben(_ posten: [Downloadposten]) {
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                    attributes: nurIch)
+            try JSONEncoder().encode(posten).write(to: downloaddatei, options: [.atomic])
+        } catch {
+            FileHandle.standardError.write(
+                Data("Downloadliste ließ sich nicht sichern: \(error.localizedDescription)\n".utf8))
+        }
+    }
+
+    private static var kontendatei: URL { ordner.appendingPathComponent("konten.json") }
+
+    /// Liest den Bund — und nimmt eine einzelne Sitzung aus der Zeit davor an.
+    ///
+    /// **Die Übernahme steht hier und nicht im Paket**, weil nur diese Seite
+    /// weiß, wo etwas liegt; auf Apple macht es `AppModel.bundLaden()` genauso.
+    /// Die alte `sitzung.json` wird **nicht gelöscht**: wer noch einmal eine
+    /// ältere Fassung startet, soll nicht plötzlich abgemeldet sein.
+    /// Liest den Bund. **Was er bedeutet, steht im Paket** —
+    /// ``Kontenbund/ausAblage(bund:einzelne:)`` kennt die Übernahme aus der
+    /// Zeit vor den Mehrfachkonten und den Rückfall, wenn der Bund unlesbar
+    /// ist. Hier steht nur noch, **wo** die Daten liegen.
+    ///
+    /// Die mittlere Stufe ist eine Altlast von einem einzigen Nachmittag: die
+    /// erste Fassung legte Bund und Servername zusammen in eine Hülle. Sie
+    /// steht hier, damit niemand ein Konto neu anmelden muss; mit dem nächsten
+    /// Schreiben ist sie weg.
+    static func bundLesen() -> Kontenablage? {
+        let kontenDaten = try? Data(contentsOf: kontendatei)
+        if let b = Kontenbund.ausAblage(bund: kontenDaten, einzelne: nil) {
+            return Kontenablage(bund: b, servername: gemerkterServer()?.servername)
+        }
+        if let d = kontenDaten,
+           let huelle = try? JSONDecoder().decode(Kontenablage.self, from: d) {
+            return huelle
+        }
+        // **Die alte Datei traegt deutsche Schluessel, `Session` englische.**
+        //
+        // `Kontenbund.ausAblage(bund:einzelne:)` entschluesselt die einzelne
+        // Ablage als `Session` — die will `accessToken`, `userID`, `userName`.
+        // In `sitzung.json` stehen aber `token`, `benutzerID`, `benutzername`;
+        // drei von vier Schluesseln passen nicht, das Entschluesseln scheitert
+        // still, und die Uebernahme lieferte `nil`. Wirkung: **jeder Nutzer
+        // mit gemerkter Anmeldung stand nach dem Aktualisieren vor dem
+        // Anmeldeschirm** — genau das, was der Kommentar oben ausschliessen
+        // soll. Am 05.09.2026 in der Windows-VM aufgefallen, nachdem die
+        // Sitzung ohne Zutun weg war.
+        //
+        // Deshalb wird hier umgesetzt statt roh weitergereicht: `Abgelegt`
+        // ist das Format dieser Seite, und nur diese Seite kennt es.
+        guard let alt = lesen() else { return nil }
+        let sitzung = Session(accessToken: alt.token, userID: alt.benutzerID,
+                              userName: alt.benutzername, serverURL: alt.serverURL)
+        return Kontenablage(bund: Kontenbund(sitzung), servername: alt.servername)
+    }
+
+    /// Schreibt den Bund — **und daneben weiter die einzelne Sitzung.**
+    ///
+    /// Die alte Datei bleibt auf dem Stand des aktiven Kontos, damit eine
+    /// ältere Fassung der App nach einem Rückschritt nicht vor einem leeren
+    /// Anmeldeschirm steht. Sie kostet ein paar hundert Byte und erspart eine
+    /// Anmeldung.
+    static func bundSchreiben(_ ablage: Kontenablage) {
+        do {
+            try FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                    attributes: nurIch)
+            // **Der reine Bund, keine Hülle.** So liest ihn
+            // ``Kontenbund/ausAblage(bund:einzelne:)`` unmittelbar; der
+            // Servername steht ohnehin im Merkzettel.
+            try JSONEncoder().encode(ablage.bund).write(to: kontendatei, options: [.atomic])
+            #if !os(Windows)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: kontendatei.path)
+            #endif
+        } catch {
+            FileHandle.standardError.write(
+                Data("Konten liessen sich nicht sichern: \(error.localizedDescription)\n".utf8))
+        }
+        let aktiv = ablage.bund.aktives
+        schreiben(.init(serverURL: aktiv.serverURL, token: aktiv.accessToken,
+                        benutzerID: aktiv.userID, benutzername: aktiv.userName,
+                        servername: ablage.servername))
     }
 
     // MARK: Zuletzt verbunden
@@ -99,5 +253,78 @@ enum Speicher {
     static func gemerkterServer() -> Merkzettel? {
         guard let daten = try? Data(contentsOf: merkdatei) else { return nil }
         return try? JSONDecoder().decode(Merkzettel.self, from: daten)
+    }
+}
+
+extension Speicher {
+
+    /// **Was der Server noch nicht weiss** (H8).
+    ///
+    /// Eine Ende-Meldung, die nicht durchkam, ist die eine Auskunft, die
+    /// niemand sonst hat: wo jemand aufgehört hat. Ginge sie verloren, hätte
+    /// der Server den Stand vom Beginn der Fahrt, und zu Hause liefe die
+    /// Folge von vorn los. Genau dafür gibt es Downloads.
+    ///
+    /// Die Regeln liegen als ``Nachmelderegeln`` im Paket und wurden auf
+    /// Linux nie gerufen — `reportStopped` verschluckte seinen Fehlschlag mit
+    /// `try?`. Hier liegt nur die Datei.
+    private static var nachmeldedatei: URL {
+        ordner.appendingPathComponent("nachmeldungen.json")
+    }
+
+    static func nachmeldungenLesen() -> [Nachmeldung] {
+        guard let daten = try? Data(contentsOf: nachmeldedatei) else { return [] }
+        return (try? JSONDecoder().decode([Nachmeldung].self, from: daten)) ?? []
+    }
+
+    static func nachmeldungenSchreiben(_ liste: [Nachmeldung]) {
+        try? FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true,
+                                                 attributes: nurIch)
+        try? JSONEncoder().encode(liste).write(to: nachmeldedatei, options: [.atomic])
+    }
+}
+
+/// **Der Zettel mit dem, was der Server noch nicht weiss** (H8).
+///
+/// Zwei Aufgaben, beide klein: eine gescheiterte Ende-Meldung aufnehmen, und
+/// alles Liegengebliebene abschicken, sobald der Server nachweislich wieder
+/// da ist. Die Regeln — welche Meldung gewinnt, was fällig ist, was danach
+/// wegfällt — stehen als ``Nachmelderegeln`` im Paket; hier steht nur, wann
+/// gerufen wird.
+/// **Nicht auf dem Hauptfaden festgenagelt.** Der Zettel liegt auf der
+/// Platte, nicht in der Oberflaeche; er wird aus einer abgesetzten Aufgabe
+/// heraus beschrieben, genau dann, wenn eine Meldung scheitert.
+enum Nachmeldezettel {
+
+    static func aufnehmen(_ itemID: String, ticks: Int64, konto: String) {
+        guard !konto.isEmpty else { return }
+        let neu = Nachmeldung(itemID: itemID, konto: konto, ticks: ticks)
+        Speicher.nachmeldungenSchreiben(
+            Nachmelderegeln.aufnehmen(neu, in: Speicher.nachmeldungenLesen()))
+    }
+
+    /// Alles Liegengebliebene abschicken.
+    ///
+    /// **Abbrechen, nicht weiterprobieren.** Scheitert eine, ist der Server
+    /// wieder weg; die übrigen scheiterten auch und stünden danach als
+    /// verloren da. Wörtlich `AppModel.nachmeldungenAbschicken()`.
+    static func abschicken(_ client: JellyfinClient, konto: String) async {
+        guard !konto.isEmpty else { return }
+        let offen = Nachmelderegeln.faellig(Speicher.nachmeldungenLesen(), konto: konto)
+        guard !offen.isEmpty else { return }
+        var geschafft: [String] = []
+        for m in offen {
+            // Ein Plan von der Platte reicht: `reportStopped` braucht daraus
+            // nur die Kennungen, und eine Sitzung gab es offline ohnehin nicht.
+            let plan = PlaybackPlan.vonDerPlatte(URL(fileURLWithPath: "/"), container: nil)
+            do {
+                try await client.reportStopped(itemID: m.itemID, plan: plan,
+                                               positionTicks: m.ticks)
+                geschafft.append(m.id)
+            } catch { break }
+        }
+        guard !geschafft.isEmpty else { return }
+        Speicher.nachmeldungenSchreiben(
+            Nachmelderegeln.erledigt(geschafft, in: Speicher.nachmeldungenLesen()))
     }
 }

@@ -35,6 +35,12 @@ struct RootView: View {
                 HauptView(model: model)
             }
         }
+        // **Einmal an der Wurzel, nicht an jeder Kachel.** Welche Kachel
+        // ihren Fortschrittsbalken zeigt, entscheidet eine Einstellung — und
+        // die 33 Aufrufstellen, die `fortschritt:` weiterreichen, sollen
+        // nichts davon wissen muessen. Gelesen wird sie dort, wo der Balken
+        // entsteht. Siehe `EnvironmentValues.fortschrittAufKacheln`.
+        .environment(\.fortschrittAufKacheln, model.fortschrittAufKacheln)
         .overlay {
             #if os(iOS)
             if !gestartet {
@@ -100,13 +106,15 @@ struct ConnectView: View {
                     .padding(.top, 9)
                     .padding(.leading, 2)
 
-                if model.phase == .connecting {
-                    Lader().frame(height: 48).padding(.top, 22)
-                } else {
-                    Button("Verbinden", action: verbinden)
+                // **Der Knopf bleibt stehen und sagt, was laeuft.** Hier
+                // wechselte er gegen einen Ring — die Seite sprang, und
+                // wohin man gedrueckt hatte, war weg.
+                do {
+                    Button(model.phase == .connecting ? "Verbinden…" : "Verbinden",
+                           action: verbinden)
                         .buttonStyle(HauptknopfStil())
                         .padding(.top, 22)
-                        .disabled(adresse.isEmpty)
+                        .disabled(adresse.isEmpty || model.phase == .connecting)
                         .opacity(adresse.isEmpty ? 0.4 : 1)
                 }
 
@@ -185,6 +193,11 @@ struct LoginView: View {
     let model: AppModel
     let serverName: String
     let version: String
+    /// Als Blatt aus dem Profil geoeffnet: derselbe Server, ein weiteres
+    /// Konto. Dann gibt es keinen Weg zu einem anderen Server — und das Blatt
+    /// muss sich selbst schliessen koennen.
+    var weiteresKonto = false
+    var fertig: () -> Void = {}
 
     @State private var benutzer = ""
     @State private var passwort = ""
@@ -208,11 +221,26 @@ struct LoginView: View {
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
-            Button("Anderer Server") { model.signOut() }
+            // Beim Hinzufuegen fuehrt „Anderer Server" ins Leere: `signOut()`
+            // wuerde das gerade angemeldete Konto abmelden. Dort steht
+            // stattdessen der Rueckweg.
+            Button(weiteresKonto ? "Abbrechen" : "Anderer Server") {
+                if weiteresKonto { fertig() } else { model.signOut() }
+            }
                 .buttonStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(Stil.schriftSehrLeise)
                 .padding(.bottom, 22)
+        }
+        // **Wer das Blatt zeigt, schliesst es auch.** Nach dem Hinzufuegen
+        // blieb es sonst stehen und es sah aus, als sei nichts passiert.
+        //
+        // `kontowechsel` steigt genau dann, wenn schon jemand angemeldet war —
+        // also beim Hinzufuegen und nicht bei der ersten Anmeldung. Und **nur
+        // ohne Fehlermeldung**: sonst verschluckt das Schliessen sie.
+        .onChange(of: model.kontowechsel) { _, _ in
+            guard weiteresKonto, model.errorMessage == nil else { return }
+            fertig()
         }
         .task {
             bekannte = await model.oeffentlicheBenutzer()
@@ -274,12 +302,12 @@ struct LoginView: View {
                         platzhalter: "Passwort", geheim: true,
                         abschluss: anmelden)
 
-            if model.isWorking {
-                Lader().frame(height: 48).padding(.top, 10)
-            } else {
-                Button("Anmelden", action: anmelden)
+            // Derselbe Grund wie oben: der Knopf bleibt stehen.
+            do {
+                Button(model.isWorking ? "Anmelden…" : "Anmelden", action: anmelden)
                     .buttonStyle(HauptknopfStil())
                     .padding(.top, 10)
+                    .disabled(model.isWorking)
                     .disabled(benutzer.isEmpty)
                     .opacity(benutzer.isEmpty ? 0.4 : 1)
             }

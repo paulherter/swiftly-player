@@ -37,6 +37,10 @@ typealias Widget = UnsafeMutablePointer<GtkWidget>
 @inline(__always) func alsTafel(_ w: Widget!) -> UnsafeMutablePointer<GtkPopover>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkPopover>.self)
 }
+@inline(__always) func alsHaken(_ w: Widget!) -> UnsafeMutablePointer<GtkCheckButton>! {
+    unsafeBitCast(w, to: UnsafeMutablePointer<GtkCheckButton>?.self)
+}
+
 @inline(__always) func alsSkala(_ w: Widget!) -> UnsafeMutablePointer<GtkScale>! {
     unsafeBitCast(w, to: UnsafeMutablePointer<GtkScale>.self)
 }
@@ -75,19 +79,59 @@ func anhaengen(_ eltern: Widget!, _ kind: Widget!) {
 ///
 /// Deshalb hier: anhängen und im selben Atemzug das Lösen bestellen. Wer eine
 /// Tafel braucht, nimmt diese Funktion und nicht `gtk_popover_new` von Hand.
+/// **Der Anker haelt die Tafel, und wer sie merkt, muss sie vergessen.**
+///
+/// Beim Zerstoeren des Ankers wird die Tafel abgehaengt und damit
+/// freigegeben. Ein Feld, das sie weiter merkt, zeigt danach auf toten
+/// Speicher — und der naechste `gtk_widget_unparent` darauf ist ein
+/// Absturz. Genau so ist die App am 08.09.2026 gestorben, im Kern
+/// nachgelesen: `mehrZeigen`, `gtk_widget_unparent`, SIGSEGV.
+///
+/// Wer die Tafel in einem Feld haelt, nimmt deshalb ``App/tafelOeffnen(an:stil:)``
+/// und nicht diese Funktion allein.
+final class Tafelstand { var da = true }
+
 func tafelAn(_ anker: Widget!, stil: String = "swiftly-mehr",
              lage: GtkPositionType = GTK_POS_BOTTOM) -> Widget! {
     let tafel: Widget! = gtk_popover_new()
     gtk_widget_add_css_class(tafel, stil)
     gtk_popover_set_position(alsTafel(tafel), lage)
     gtk_widget_set_parent(tafel, anker)
-    beiSignal(anker, "destroy") { gtk_widget_unparent(tafel) }
+    // **Nur, wenn es sie noch gibt.** `tafelSchliessen` haengt sie selbst ab
+    // und gibt sie damit frei; ging danach der Anker weg, griff dieser
+    // Rueckruf auf freigegebenen Speicher — Absturz beim Verlassen der Seite.
+    let lebt = Tafelstand()
+    beiSignal(tafel, "destroy") { lebt.da = false }
+    beiSignal(anker, "destroy") { if lebt.da { gtk_widget_unparent(tafel) } }
     return tafel
 }
 
-func leeren(_ box: Widget!) {
-    while let kind = gtk_widget_get_first_child(box) {
-        gtk_box_remove(alsBox(box), kind)
+/// Nimmt alle Kinder aus einem Behälter — **aus jedem, nicht nur aus Boxen.**
+///
+/// **Die Fassung davor hat die App aufgehängt.** Sie rief `gtk_box_remove`,
+/// und der Zeiger wurde dafür blind gecastet. Ist der Behälter keine
+/// `GtkBox`, scheitert der Aufruf an seiner Zusicherung und **entfernt
+/// nichts** — `gtk_widget_get_first_child` liefert daraufhin dasselbe Kind,
+/// und die Schleife läuft ewig. Gemessen am 05.09.2026: der Hauptfaden auf
+/// `R`, ein voller Kern, alle anderen Fäden schlafend, und ein Protokoll, das
+/// mit 58 MB je Sekunde auf 7,7 GB wuchs:
+///
+/// ```
+/// Gtk-CRITICAL **: gtk_box_remove: assertion 'GTK_IS_BOX (box)' failed
+/// ```
+///
+/// Ausgelöst hat es ein `GtkFixed` (die Kreise unten in der Leiste), aber der
+/// Fehler war nicht der Aufrufer — es war diese Schleife: **sie hing am
+/// Vorhandensein eines Kindes statt am Fortschritt.**
+///
+/// Beides ist deshalb geändert. `gtk_widget_unparent` trägt für jedes Widget,
+/// womit der Fehlerfall gar nicht mehr entstehen kann; und die Wache am Ende
+/// bricht ab, falls ein Kind trotzdem einmal hängenbleibt. Lieber ein
+/// Behälter, der nicht ganz leer wird, als eine App, die steht.
+func leeren(_ behaelter: Widget!) {
+    while let kind = gtk_widget_get_first_child(behaelter) {
+        gtk_widget_unparent(kind)
+        guard gtk_widget_get_first_child(behaelter) != kind else { return }
     }
 }
 
@@ -143,12 +187,10 @@ nonisolated(unsafe) let auftragFreigebenOeffentlich: @convention(c) (gpointer?, 
 /// mitgibt, schiebt die Nutzdaten eine Stelle weiter — und dann liest der
 /// Rückruf dessen Wert als Zeiger.
 ///
-/// Genau so ist die App am 04.09.2026 abgestürzt, als Paul den Blätterpfeil
-/// gedrückt hat: `edge-reached` reicht die erreichte Kante als zweites
-/// Argument, also stand dort eine 0 bis 3 statt einer Adresse.
-/// „Bad pointer dereference at 0x8". Wer ein Signal mit Argumenten braucht,
-/// schreibt einen eigenen Rückruf mit passender Form — siehe ``beiZeiger``
-/// für „enter", das x und y mitbringt.
+/// Genau so ist die App am 04.09.2026 abgestürzt, als „Bad pointer dereference
+/// at 0x8". Wer ein Signal mit Argumenten braucht, schreibt einen eigenen
+/// Rückruf mit passender Form — siehe ``beiZeiger`` für „enter", das x und y
+/// mitbringt.
 func beiSignal(_ ziel: Widget!, _ name: String, _ block: @escaping () -> Void) {
     let auftrag = Unmanaged.passRetained(Auftrag(block)).toOpaque()
     g_signal_connect_data(UnsafeMutableRawPointer(ziel), name,
@@ -218,13 +260,12 @@ func aufHauptfaden(_ block: @escaping @Sendable () -> Void) {
 
 /// **Ein Sprung sieht kaputt aus, auch wenn er richtig ist.**
 ///
-/// Auf dem Mac blättert die Reihe mit `easeInOut` über 280 ms. GTK bewegt
-/// eine `GtkAdjustment` nicht von selbst — der Wert wird gesetzt, und zwar
-/// sofort. Diese Hülle setzt ihn stattdessen bei jedem Bild neu.
+/// Auf dem Mac blättert die Reihe mit `easeInOut` über 280 ms. GTK bewegt eine
+/// `GtkAdjustment` nicht von selbst — der Wert wird gesetzt, und zwar sofort.
+/// Diese Hülle setzt ihn stattdessen bei jedem Bild neu.
 ///
 /// **Am Bildtakt, nicht an einem Zeitgeber.** Hier stand `g_timeout_add` mit
-/// 16 ms — das sind 62 Bilder je Sekunde, und zwar auf jedem Schirm. Paul
-/// sieht auf 144 Hz sofort, dass sich alles nach 60 anfühlt.
+/// 16 ms — das sind 62 Bilder je Sekunde, und zwar auf jedem Schirm.
 /// `gtk_widget_add_tick_callback` hängt am Bildtakt des Fensters und läuft
 /// damit so schnell wie der Schirm.
 private final class Bewegung {
@@ -738,4 +779,63 @@ func beschriften(_ ziel: Widget!, _ name: String) {
     name.withCString { g_value_set_string(&wert, $0) }
     gtk_accessible_update_property_value(OpaquePointer(ziel), 1, &eigenschaft, &wert)
     g_value_unset(&wert)
+}
+
+
+/// Legt Text in die Zwischenablage.
+///
+/// GTK4 fragt die Ablage über die Anzeige des Widgets ab — es gibt keine
+/// globale. Deshalb muss ein Widget mit, das gerade im Fenster hängt.
+func inZwischenablage(_ text: String, an widget: Widget!) {
+    guard let anzeige = gtk_widget_get_display(widget) else { return }
+    let ablage = gdk_display_get_clipboard(anzeige)
+    gdk_clipboard_set_text(ablage, text)
+}
+
+@inline(__always) func alsStapel(_ w: Widget!) -> OpaquePointer! {
+    OpaquePointer(w)
+}
+
+/// Der `GtkRevealer` — für Listen, die im Seitenfluss auf- und zuklappen.
+@inline(__always) func alsAufklapp(_ w: Widget!) -> OpaquePointer! {
+    OpaquePointer(w)
+}
+
+/// **Wann jemand ein Bedienelement anfasst und wieder loslässt.**
+///
+/// Für den Zeitregler: solange die Maus darauf steht, darf die Steuerung
+/// nicht ausblenden und die Stelle nicht vom Server überschrieben werden
+/// (B1, B4). Auf dem Mac liefert `Zeitregler` dafür `amRegler`; hier gibt es
+/// nichts Vergleichbares, also die Geste selbst — **`pressed` und
+/// `released` an derselben**, damit beide dasselbe Drücken meinen.
+func beiGriff(_ ziel: Widget!, _ block: @escaping (Bool) -> Void) {
+    let geste = gtk_gesture_click_new()
+    let runter = Unmanaged.passRetained(Auftrag { block(true) }).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(geste), "pressed",
+                          unsafeBitCast(auftragAlsKlick, to: GCallback.self),
+                          runter, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+    let hoch = Unmanaged.passRetained(Auftrag { block(false) }).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(geste), "released",
+                          unsafeBitCast(auftragAlsKlick, to: GCallback.self),
+                          hoch, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
+    // **Die Geste horcht mit, sie fängt nicht ab.** Ohne diese Phase bekäme
+    // der Regler selbst den Druck nicht mehr und liesse sich nicht ziehen.
+    gtk_event_controller_set_propagation_phase(geste, GTK_PHASE_CAPTURE)
+    gtk_widget_add_controller(ziel, geste)
+}
+
+/// **Eine Adresse im Standardbrowser öffnen.**
+///
+/// Für den Fall, dass der Server keinen Trailer hat und nur ein Verweis ins
+/// Netz bleibt — der Mac nimmt dafür `NSWorkspace.shared.open`
+/// (`Sources/macOS/DetailView.swift:620`).
+///
+/// `g_app_info_launch_default_for_uri` statt `GtkUriLauncher`: der Launcher
+/// ist asynchron und will ein Elternfenster, hier genügt der Aufruf. Ein
+/// Fehlschlag ist still — wer keinen Browser hat, dem sagt eine Meldung
+/// darüber auch nichts.
+func imBrowser(_ ziel: URL) {
+    var fehler: UnsafeMutablePointer<GError>?
+    _ = g_app_info_launch_default_for_uri(ziel.absoluteString, nil, &fehler)
+    if let fehler { g_error_free(fehler) }
 }

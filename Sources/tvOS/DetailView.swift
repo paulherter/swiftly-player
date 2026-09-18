@@ -48,7 +48,7 @@ struct Detailkopf<Knoepfe: View>: View {
     private var rumpf: some View {
         ZStack(alignment: .topLeading) {
             Kulisse(url: model.querbildURL(for: item, breite: 1600)
-                         ?? model.backdropURL(for: item))
+                         ?? model.kopfbildURL(for: item))
                 .frame(maxWidth: .infinity, alignment: .trailing)
 
             // **Derselbe Kopfschatten wie auf der Startseite.**
@@ -131,10 +131,9 @@ struct Detailkopf<Knoepfe: View>: View {
 
 /// Der Merklistenknopf — **nur das Symbol, ohne Beschriftung.**
 ///
-/// Paul: „Merkliste erreicht eigentlich das Merklistensymbol an sich, da
-/// brauchen wir gar nicht den Text dran." Stimmt: das Lesezeichen ist eines
-/// der wenigen Symbole, die für sich stehen, und gefüllt gegen leer sagt den
-/// Zustand mit. Fünf beschriftete Pillen waren zu viel für eine Reihe.
+/// Stimmt: das Lesezeichen ist eines der wenigen Symbole, die für sich stehen,
+/// und gefüllt gegen leer sagt den Zustand mit. Fünf beschriftete Pillen waren
+/// zu viel für eine Reihe.
 ///
 /// „Gesehen" ist ganz aus der Reihe heraus und steht in der Handlungstafel —
 /// siehe `gesehenHandlung`. Damit bleiben vier Ziele: Fortsetzen, Von vorn,
@@ -218,25 +217,22 @@ struct DetailView: View {
     ///
     /// Vorher hing die Ueberblendung an der Ankunft der Daten. Seit die
     /// Zwischenspeicher greifen, kommen die aber schon im ersten Durchgang
-    /// mit, also gab es nichts mehr zu animieren: beim ersten Mal war es
-    /// etwas weich, ab dem zweiten hart. Paul: „ab dem zweiten Mal ist es gar
-    /// nicht mehr smooth." Das war ein Widerspruch in meinem eigenen Aufbau —
-    /// erst instant machen, dann Uebergaenge an Ereignisse haengen, die es
-    /// nicht mehr gibt.
+    /// mit, also gab es nichts mehr zu animieren: beim ersten Mal war es etwas
+    /// weich, ab dem zweiten hart. Das war ein Widerspruch in meinem eigenen
+    /// Aufbau — erst instant machen, dann Uebergaenge an Ereignisse haengen,
+    /// die es nicht mehr gibt.
     ///
     /// Am Erscheinen aufgehaengt, blendet es **jedes Mal** ein, ob die Daten
     /// schon dastehen oder nicht.
     @State private var eingeblendet = false
     /// **Wohin der Fokus zurueckkehrt, wenn eine Tafel zugeht.**
     ///
-    /// Er sprang auf den Hauptknopf — den Startfokus der Seite —, obwohl man
-    /// gerade am Mehr-Knopf beziehungsweise an der Staffelpille stand. Paul:
-    /// „aus einer Logik heraus muesste er ja auf den drei Punkten sein, weil
-    /// ich da ja gerade war."
+    /// Er sprang auf den Hauptknopf — den Startfokus der Seite, obwohl man
+    /// gerade am Mehr-Knopf beziehungsweise an der Staffelpille stand.
     ///
     /// Stimmt: eine Tafel ist kein Ortswechsel, sondern etwas, das ueber dem
-    /// Knopf aufklappt (E5). Wer sie schliesst, steht wieder an dem Knopf,
-    /// mit dem er sie geoeffnet hat.
+    /// Knopf aufklappt (E5). Wer sie schliesst, steht wieder an dem Knopf, mit
+    /// dem er sie geoeffnet hat.
     @FocusState private var amMehrknopf: Bool
     /// **Der Startfokus gehoert auf den Hauptknopf.**
     ///
@@ -287,7 +283,7 @@ struct DetailView: View {
                     reihenabschnitt {
                         Reihentitel(text: "Besetzung")
                     } inhalt: {
-                        Besetzungsstreifen(model: model, leute: darsteller)
+                        Besetzungsstreifen(model: model, leute: darsteller, herkunft: item.name)
                     }
                     .opacity(eingeblendet ? 1 : 0)
                     .transition(.opacity)
@@ -311,29 +307,26 @@ struct DetailView: View {
         .ignoresSafeArea()
         // **Der Grund der ganzen Seite faerbt sich nach der Kulisse.**
         //
-        // **Nach `ignoresSafeArea`, nicht davor.** Davor bekam er die um
-        // den sicheren Bereich verkleinerte Flaeche — 1760 x 960 statt
-        // 1920 x 1080. Das Netz rechnet in Bruchteilen seiner Flaeche,
-        // sass damit auf der Detailseite anders als auf der Startseite,
-        // und beim Oeffnen sah man den Unterschied als Schrumpfen. Paul:
-        // „die Maske um das Bild wird einmal komplett klein und dann
-        // wieder normal."
+        // **Nach `ignoresSafeArea`, nicht davor.** Davor bekam er die um den
+        // sicheren Bereich verkleinerte Flaeche — 1760 x 960 statt 1920 x
+        // 1080. Das Netz rechnet in Bruchteilen seiner Flaeche, sass damit auf
+        // der Detailseite anders als auf der Startseite, und beim Oeffnen sah
+        // man den Unterschied als Schrumpfen.
         //
-        // Die Startseite hatte es von Anfang an nach `ignoresSafeArea`;
-        // dass die beiden verschieden standen, war der Unterschied.
+        // Die Startseite hatte es von Anfang an nach `ignoresSafeArea`; dass
+        // die beiden verschieden standen, war der Unterschied.
         //
         // An der Seite und nicht am Kopf: sonst endet die Faerbung an dessen
         // Unterkante, und quer ueber dem Schirm steht eine Naht. Siehe
         // `Bildgrund`.
         .bildgrund(url: model.querbildURL(for: aktuell, breite: 1600)
-                        ?? model.backdropURL(for: aktuell))
+                        ?? model.kopfbildURL(for: aktuell))
         // **Solange eine Tafel offen ist, ist der Rest kein Fokusziel.**
         //
         // `focusSection` haelt den Fokus nicht fest, es ordnet ihn nur. Ein
         // Druck nach links oder rechts sprang deshalb aus der offenen Tafel
-        // heraus in die Folgen dahinter — die Tafel blieb stehen und ging
-        // erst weg, wenn man die Seite verliess. Paul hat es an der
-        // Staffelauswahl und am Mehr-Blatt gefunden, es ist dieselbe Stelle.
+        // heraus in die Folgen dahinter — die Tafel blieb stehen und ging erst
+        // weg, wenn man die Seite verliess.
         //
         // Gesperrt wird **vor** den Auflagen: die Tafeln haengen danach und
         // bleiben damit selbst bedienbar.
@@ -402,15 +395,15 @@ struct DetailView: View {
 
     /// Kulisse, Text und Knopfreihe.
     ///
-    /// **Ein einziger beschrifteter Knopf, der Rest sind Symbole.** Paul:
-    /// „Der einzige echte Button ist Fortsetzen." Das ist auch E6 — ein
-    /// Hauptknopf je Seite —, hier nur konsequenter gelesen als vorher: was
-    /// nicht der Hauptknopf ist, muss sich auch nicht wie einer ausbreiten.
+    /// **Ein einziger beschrifteter Knopf, der Rest sind Symbole.** Das ist
+    /// auch E6 — ein Hauptknopf je Seite, hier nur konsequenter gelesen als
+    /// vorher: was nicht der Hauptknopf ist, muss sich auch nicht wie einer
+    /// ausbreiten.
     ///
     /// Fuenf beschriftete Pillen waren rund 1400 Punkt breit und lasen sich
     /// wie fuenf gleichwertige Angebote. Jetzt traegt „Fortsetzen"
-    /// beziehungsweise „Abspielen" den Text, daneben stehen drei
-    /// quadratische Symbole: zurueck, Merkliste, Mehr.
+    /// beziehungsweise „Abspielen" den Text, daneben stehen drei quadratische
+    /// Symbole: zurueck, Merkliste, Mehr.
     ///
     /// Jedes davon nennt VoiceOver seinen Namen ausdruecklich — ein
     /// Symbolknopf erbt keine Beschriftung (E8).

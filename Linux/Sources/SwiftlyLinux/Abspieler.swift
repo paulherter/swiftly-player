@@ -68,11 +68,11 @@ final class Abspieler {
         bildfeld = gtk_picture_new()
         // **Das Bildfeld überlebt seine Seite.** Es wird einmal angelegt und
         // bei jedem Öffnen in eine neue Player-Seite gehängt; wird die alte
-        // Seite aus dem Stapel genommen, verliert es seinen Eltern — und
-        // damit seine letzte Referenz. Beim zweiten Öffnen läge dann ein
+        // Seite aus dem Stapel genommen, verliert es seinen Eltern — und damit
+        // seine letzte Referenz. Beim zweiten Öffnen läge dann ein
         // freigegebener Zeiger in `anzeige`, und GObject stirbt daran mit
         // einer Adresse, die nach Zufall aussieht. Genau so ist die App
-        // abgestürzt, als Paul nach einem Fehlversuch eine Folge wählte.
+        // abgestürzt, als
         g_object_ref_sink(bildfeld)
         gtk_picture_set_content_fit(OpaquePointer(bildfeld), GTK_CONTENT_FIT_CONTAIN)
         gtk_widget_set_hexpand(bildfeld, 1)
@@ -83,7 +83,13 @@ final class Abspieler {
 
     // MARK: Steuern
 
-    func oeffnen(_ url: URL, ab: Double) {
+    /// **Der Puffer als Pflichtangabe, nicht als Vorgabewert.**
+    ///
+    /// Auf dem Fernseher ist genau diese Falle einmal aufgegangen: die Stufe
+    /// wurde beim Oeffnen gesetzt und beim Folgenwechsel vergessen, und die
+    /// naechste Folge lief still mit der alten. Ohne Standardwert kann keine
+    /// der drei Aufrufstellen sie auslassen — der Uebersetzer fragt nach.
+    func oeffnen(_ url: URL, ab: Double, puffer: Pufferstufe) {
         beenden(nurMedium: true)
         guard let kern, let bruecke else { return }
         guard let medium = libvlc_media_new_location(kern, url.absoluteString) else { return }
@@ -91,6 +97,36 @@ final class Abspieler {
         // so macht es die iOS-Fassung (`:start-time`), und der Grund steht
         // dort: ein Sprung nach dem Start baut den Strom ein zweites Mal auf.
         if ab > 1 { libvlc_media_add_option(medium, ":start-time=\(Int(ab))") }
+
+        // **Zwei Optionen vom Netzweg, wortgleich von der Apple-Fassung.**
+        //
+        // `prefetch-buffer-size` haelt in der Vorgabe 16 MiB voraus — bei den
+        // Bitraten hier gut drei Minuten Inhalt. Auf dem iPhone ist daran
+        // nachgemessen worden, dass es am Vorrat *nicht* lag (211 Sekunden
+        // gefuellt). Seit dem 10.09.2026 ist es waehlbar: fuer eine Leitung,
+        // die *schwankt*, fehlte am Vorrat nichts — fuer eine, die auch mal
+        // *ganz weg* ist, schon. Die Stufen stehen im Paket, damit hier und
+        // auf den Apple-Fassungen dieselben drei Zahlen gelten.
+        //
+        // `http-reconnect` faengt den Abriss nach einer laengeren Pause auf.
+        // Am 08.09.2026 zweimal mitgeschrieben: 25 Sekunden pausiert, und
+        // beim Fortsetzen raeumt der Server den untaetigen Strom ab; ohne
+        // die Option behandelt VLC das als Stromende und baut alles neu auf.
+        // Solange die Verbindung haelt, aendert sie nichts.
+        //
+        // Beide sind in dem libVLC 3 vorhanden, das hier laeuft — in
+        // `libprefetch_plugin.so` und `libhttp_plugin.so` nachgesehen, nicht
+        // aus der Dokumentation der Fassung 4 uebernommen.
+        if !url.isFileURL {
+            libvlc_media_add_option(medium, ":prefetch-buffer-size=\(puffer.prefetchKiB)")
+            libvlc_media_add_option(medium, ":http-reconnect")
+            // **Nur ab der zweiten Stufe.** Bei `normal` bliebe hier VLCs
+            // eigener Standardwert stehen; ihn ausdruecklich noch einmal zu
+            // setzen sieht nach Absicht aus und aendert nichts.
+            if let vorlauf = puffer.netzvorlaufMillisekunden {
+                libvlc_media_add_option(medium, ":network-caching=\(vorlauf)")
+            }
+        }
         spieler = libvlc_media_player_new_from_media(medium)
         libvlc_media_release(medium)
         guard let spieler else { return }
@@ -187,7 +223,57 @@ final class Abspieler {
         set { spieler.map { libvlc_media_player_set_rate($0, newValue) } }
     }
 
+    // MARK: Zaehlwerk
+
+    /// **VLCs Zaehler, roh — gerechnet wird im Paket.**
+    ///
+    /// `libvlc_media_get_stats` fuehrt dieselben Summen, die VLCKit auf den
+    /// Apple-Fassungen liefert; die Rechnung darueber liegt in
+    /// ``JellyfinKit/Zaehlwerk`` und ist damit nur einmal da.
+    ///
+    /// Das Medium wird ueber den Spieler geholt und danach wieder
+    /// freigegeben: `libvlc_media_player_get_media` erhoeht den Zaehler, und
+    /// ohne das Gegenstueck bliebe bei jedem Abruf eine Referenz stehen — im
+    /// Halbsekundentakt waere das ein Leck, das niemandem auffiele.
+    var zaehlwerte: Zaehlwerk.Rohwerte? {
+        guard let spieler, let medium = libvlc_media_player_get_media(spieler) else { return nil }
+        defer { libvlc_media_release(medium) }
+        var s = libvlc_media_stats_t()
+        guard libvlc_media_get_stats(medium, &s) != 0 else { return nil }
+        // Die Felder sind vorzeichenbehaftet; negativ waere Schrott, und der
+        // Riegel dagegen steht im Paket. Hier wird nur nicht unter null
+        // gerechnet.
+        func u(_ v: Int32) -> UInt64 { v > 0 ? UInt64(v) : 0 }
+        func u(_ v: UInt64) -> UInt64 { v }
+        return Zaehlwerk.Rohwerte(
+            gelesen: u(s.i_read_bytes), entpackt: u(s.i_demux_read_bytes),
+            gezeigt: u(s.i_displayed_pictures), verworfen: u(s.i_lost_pictures),
+            zuSpaet: 0,
+            videoBloecke: u(s.i_decoded_video), tonBloecke: u(s.i_decoded_audio),
+            tonGespielt: u(s.i_played_abuffers), tonVerloren: u(s.i_lost_abuffers),
+            beschaedigt: u(s.i_demux_corrupted), spruenge: u(s.i_demux_discontinuity))
+    }
+
     // MARK: Bild
+
+    /// **Ganzes Bild oder formatfuellend — und warum es hier anders geht als
+    /// auf den Apple-Fassungen.**
+    ///
+    /// Dort setzt VLCKit `videoFitMode`, weil VLC dort selbst zeichnet. Hier
+    /// zeichnet VLC gar nicht: die Einzelbilder kommen ueber `bildbruecke`
+    /// als Textur herein und werden von einem `GtkPicture` eingepasst.
+    /// `libvlc_video_set_crop_geometry` griffe also ins Leere.
+    ///
+    /// Das richtige Mittel ist deshalb GTKs eigenes: `CONTAIN` legt das ganze
+    /// Bild hinein und laesst Balken stehen, `COVER` fuellt und schneidet ab.
+    /// Beides ohne Verzerren — `FILL` waere genau die Streckung, die es auf
+    /// keiner Plattform geben soll.
+    func bildfuellend(_ an: Bool) {
+        guard let bildfeld else { return }
+        gtk_picture_set_content_fit(OpaquePointer(bildfeld),
+                                    an ? GTK_CONTENT_FIT_COVER : GTK_CONTENT_FIT_CONTAIN)
+    }
+
 
     /// **Jedes Einzelbild einmal abholen, nicht öfter.** Der Taktgeber von GTK
     /// schlägt im Rhythmus des Bildschirms; kam seit dem letzten Mal nichts

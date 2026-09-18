@@ -25,11 +25,10 @@ struct KnopfStil: ButtonStyle {
     var nurSymbol = false
     /// **Niedriger, wo der Knopf nicht die Hauptsache ist.**
     ///
-    /// Die Staffelpille steht neben einem Reihentitel, nicht in der
-    /// Knopfreihe des Kopfes. Mit den vollen 76 wirkte sie dort wuchtig —
-    /// Paul: „ist jetzt etwas riesig." Die Farben und das Fokusverhalten
-    /// bleiben trotzdem dieselben; genau die waren der Grund, sie ueberhaupt
-    /// auf diesen Stil zu ziehen.
+    /// Die Staffelpille steht neben einem Reihentitel, nicht in der Knopfreihe
+    /// des Kopfes. Mit den vollen 76 wirkte sie dort wuchtig Die Farben und
+    /// das Fokusverhalten bleiben trotzdem dieselben; genau die waren der
+    /// Grund, sie ueberhaupt auf diesen Stil zu ziehen.
     var hoehe: CGFloat = Stil.knopfHoehe
 
     func makeBody(configuration: Configuration) -> some View {
@@ -191,17 +190,58 @@ struct ChipStil: ButtonStyle {
                 .frame(height: Stil.chipHoehe)
                 .background(flaeche, in: Capsule())
                 .overlay {
-                    Capsule().strokeBorder(an ? Stil.akzent : Stil.rand, lineWidth: 2)
+                    Capsule().strokeBorder(an ? Stil.schrift : Stil.rand, lineWidth: 2)
                 }
                 .scaleEffect(fokus ? 1.06 : 1)
                 .animation(Stil.fokusAnimation, value: fokus)
         }
 
-        /// Auswahl ist Akzent, Fokus ist die ruhige Fläche — und beides
-        /// zusammen bleibt Akzent, weil die Auswahl die stärkere Aussage ist.
+        /// **Auswahl ist Weiss, nicht Akzent** — wie auf Mac und iPad.
+        ///
+        /// Hier war sie der Akzent, und damit sah dieselbe Chipreihe auf dem
+        /// Fernseher anders aus als ueberall sonst.
+        ///
+        /// Es passt auch besser zur Regel: der Akzent traegt Zustand, und
+        /// „dieser Filter gilt gerade" ist eine Auswahl, keine Auszeichnung.
+        /// Fokus bleibt die ruhige Flaeche, und beides zusammen bleibt Weiss,
+        /// weil die Auswahl die staerkere Aussage ist.
         private var flaeche: Color {
-            if an { return Stil.akzent }
+            if an { return Stil.schrift }
             return fokus ? Stil.fokusflaeche : Stil.erhoeht
+        }
+    }
+}
+
+/// **Eine Zeile in der Einstellungsleiste des Players.**
+///
+/// Wie `ChipStil`, nur ueber die volle Breite und mit eckigen Ecken statt
+/// einer Kapsel: die Leiste ist eine Liste, keine Reihe von Marken. Auswahl
+/// ist wieder Weiss, Fokus die ruhige Flaeche -- dieselbe Regel wie ueberall,
+/// damit die Leiste sich nicht wie ein Fremdkoerper liest.
+struct LeistenStil: ButtonStyle {
+    let an: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        Inhalt(configuration: configuration, an: an)
+    }
+
+    private struct Inhalt: View {
+        let configuration: ButtonStyleConfiguration
+        let an: Bool
+        @Environment(\.isFocused) private var fokus
+
+        var body: some View {
+            configuration.label
+                .accessibilityAddTraits(an ? [.isButton, .isSelected] : .isButton)
+                .foregroundStyle(an ? Stil.grund : Stil.schrift)
+                .background(flaeche, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .scaleEffect(fokus ? 1.03 : 1)
+                .animation(Stil.fokusAnimation, value: fokus)
+        }
+
+        private var flaeche: Color {
+            if an { return Stil.schrift }
+            return fokus ? Stil.fokusflaeche : .clear
         }
     }
 }
@@ -256,6 +296,12 @@ struct Kachelinhalt: View {
     /// Im Gitter trägt die Kachel nur ihren Titel; die Nebenzeile wäre dort
     /// eine Zeile Rauschen mal vierzehn.
     var mitUnterzeile = true
+    /// Was oben rechts steht: gesehen, offene Folgen, Staffelzahl.
+    ///
+    /// **Drei Zustaende, drei Zeichen** (GESTALTUNG, Abschnitt H). Bis
+    /// hierher gab es nur den Balken — und bei einer Serie sagt der gar
+    /// nichts, weil er den Stand der angefangenen *Folge* zeigt.
+    var marke: Kachelmarke?
 
     private var breite: CGFloat { quer ? Stil.querBreite : Stil.posterBreite }
     private var hoehe: CGFloat { quer ? Stil.querHoehe : Stil.posterHoehe }
@@ -263,6 +309,9 @@ struct Kachelinhalt: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Bild(url: bild, breite: breite, hoehe: hoehe, fortschritt: fortschritt)
+                .overlay(alignment: .topTrailing) {
+                    if let marke { Kachelplakette(marke: marke) }
+                }
 
             Text(titel)
                 .font(Stil.kachel)
@@ -291,8 +340,19 @@ struct Kachelinhalt: View {
     }
 
     private var beschriftung: String {
-        guard mitUnterzeile, let unterzeile else { return titel }
-        return "\(titel), \(unterzeile)"
+        var teile = [titel]
+        if mitUnterzeile, let unterzeile { teile.append(unterzeile) }
+        // Die Marke ist eine Zeichnung im Bild und fiele fuer die
+        // Sprachausgabe sonst heraus — dieselbe Ueberlegung wie beim Balken.
+        if let marke {
+            switch marke {
+            case .gesehen: teile.append(String(localized: "gesehen"))
+            case .offen(let n): teile.append(String(localized: "\(n) offen"))
+            case .staffeln(let n): teile.append(n == 1 ? String(localized: "1 Staffel")
+                                                       : String(localized: "\(n) Staffeln"))
+            }
+        }
+        return teile.joined(separator: ", ")
     }
 
     /// Der Balken in Worten. Erst ab einem Prozent — darunter hat noch
@@ -308,15 +368,16 @@ struct Kachelinhalt: View {
 /// Die vier Bereiche — oben, nicht unten. Auf tvOS führt die Navigation oben,
 /// und eine Leiste am unteren Rand wäre unerreichbar weit vom Blick weg.
 enum Bereich: Int, CaseIterable, Identifiable {
-    case start, filme, serien, suche
+    case start, filme, serien, merkliste, suche
     var id: Int { rawValue }
 
     var name: LocalizedStringKey {
         switch self {
-        case .start:  "Start"
-        case .filme:  "Filme"
-        case .serien: "Serien"
-        case .suche:  "Suche"
+        case .start:     "Start"
+        case .filme:     "Filme"
+        case .serien:    "Serien"
+        case .merkliste: "Merkliste"
+        case .suche:     "Suche"
         }
     }
 }
@@ -384,7 +445,7 @@ struct Kopfleiste: View {
 
                 Button(action: aufsProfil) {
                     Profilzeichen(name: model.session?.userName ?? "?",
-                                  bild: model.benutzerbildURL(groesse: 180),
+                                  bild: model.benutzerbildURL(),
                                   groesse: 60)
                 }
                 .buttonStyle(ProfilStil())
@@ -413,55 +474,102 @@ struct Kopfleiste: View {
 /// allein wirft die Frage auf, was es tut; wer es dann drückt, hält
 /// versehentlich seinen Film auf dem anderen Gerät an. Der Text sagt, was
 /// passiert, bevor es passiert.
+///
+/// **In Ruhe eine Zeile, der Titel kommt im Fokus dazu.** Zwei Zeilen in 22
+/// und 18 Punkt standen neben Reitern in 31 — über dem Titelbild ging die
+/// zweite darin unter. „Hier weiterschauen" sagt schon in Ruhe, was ein Druck
+/// tut; welcher Titel es ist, steht da, bevor man drückt: im Fokus.
 struct Uebernahmeabzeichen: View {
     let sitzung: Fremdsitzung
     var aktion: () -> Void
 
     var body: some View {
-        Button(action: aktion) {
+        Button(action: aktion) { Inhalt(sitzung: sitzung) }
+            .buttonStyle(AbzeichenStil(anderesGeraet: true))
+            .accessibilityLabel(Text("Hier weiterschauen"))
+            .accessibilityValue(Text(sitzung.titelzeile))
+    }
+
+    private struct Inhalt: View {
+        let sitzung: Fremdsitzung
+        @Environment(\.isFocused) private var fokus
+
+        var body: some View {
             HStack(spacing: 14) {
                 Image(systemName: sitzung.geraetezeichen)
-                    .font(.system(size: 24, weight: .medium))
+                    .font(.system(size: 26, weight: .medium))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Hier weiterschauen")
-                        .font(.system(size: 22, weight: .semibold))
-                    // Der Titel in der zweiten Zeile: er ist die Auskunft,
-                    // die man wirklich braucht, und er darf umbrechen —
-                    // Serverdaten, also `String` und nicht `LocalizedStringKey`.
-                    Text(sitzung.titelzeile)
-                        .font(.system(size: 18))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .font(.system(size: 27, weight: .semibold))
+                    if fokus {
+                        // Serverdaten, also `String` und nicht `LocalizedStringKey`.
+                        Text(sitzung.titelzeile)
+                            .font(.system(size: 21))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
-            .padding(.horizontal, 24)
-            .frame(height: 60)
+            .padding(.horizontal, 28)
+            .frame(height: fokus ? 76 : 64)
         }
-        .buttonStyle(AbzeichenStil())
-        .accessibilityLabel(Text("Hier weiterschauen"))
-        .accessibilityValue(Text(sitzung.titelzeile))
     }
 }
 
-/// Derselbe Ruhe-zu-Fokus-Sprung wie überall auf dem Fernseher: gewählt ist
-/// Akzent, fokussiert die helle Fläche.
+/// Derselbe Ruhe-zu-Fokus-Sprung wie überall auf dem Fernseher: in Ruhe eine
+/// ruhige Fläche, im Fokus die helle.
+///
+/// **Kühl, wenn es von einem anderen Gerät kommt.** Das Abzeichen stand grau
+/// da, im selben Ton wie „Abbrechen" — dabei sagt es als einziges „woanders
+/// läuft etwas". Seit dem 10.09.2026 trägt das auf allen Fassungen
+/// `Stil.kuehl`.
+///
+/// **Deckend, nicht durchsichtig.** Zuerst lag die Tönung direkt auf dem, was
+/// darunter war — auf dunklem Grund stimmte das, über dem Titelbild der
+/// Startseite schien das Bild durch, und die Schrift ging darin unter. Jetzt
+/// liegt dieselbe Tönung auf dem Seitengrund: kein neuer Farbwert, aber eine
+/// Fläche, die über jedem Bild gleich aussieht.
+///
+/// Rund, als Kapsel. Am 11.09.2026 so entschieden, nachdem eine Runde lang
+/// die Ecke des Knopfes daran war.
 struct AbzeichenStil: ButtonStyle {
+    var anderesGeraet = false
+
     func makeBody(configuration: Configuration) -> some View {
-        Inhalt(configuration: configuration)
+        Inhalt(configuration: configuration, anderesGeraet: anderesGeraet)
     }
 
     private struct Inhalt: View {
         let configuration: Configuration
+        let anderesGeraet: Bool
         @Environment(\.isFocused) private var fokus
 
         var body: some View {
             configuration.label
-                .foregroundStyle(fokus ? Stil.grund : .white)
-                .background(fokus ? AnyShapeStyle(.white)
-                                  : AnyShapeStyle(Stil.erhoeht), in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(fokus ? 0 : 0.18)))
+                .foregroundStyle(vordergrund)
+                .background { grund }
+                .overlay {
+                    Capsule().strokeBorder(.white.opacity(fokus || anderesGeraet ? 0 : 0.18))
+                }
                 .scaleEffect(fokus ? 1.06 : 1)
                 .animation(.easeOut(duration: 0.16), value: fokus)
+        }
+
+        private var vordergrund: Color {
+            if fokus { return Stil.grund }
+            return anderesGeraet ? Stil.kuehl : .white
+        }
+
+        @ViewBuilder
+        private var grund: some View {
+            if fokus {
+                Capsule().fill(.white)
+            } else if anderesGeraet {
+                Capsule().fill(Stil.kuehl.opacity(0.18))
+                    .background(Stil.grund, in: Capsule())
+            } else {
+                Capsule().fill(Stil.erhoeht)
+            }
         }
     }
 }
@@ -650,11 +758,6 @@ struct Mehrknopf: View {
 
 /// **Der Kopfblock — einmal, für Startseite und Detailseite.**
 ///
-/// Paul: „Auf dem Startscreen soll der Titel, die Beschreibung und der
-/// Bereich mit Jahr, Länge, Sterne, Age genauso übernommen werden auf der
-/// Detailseite. Der ganze Header-Bereich soll identisch sein, der einzige
-/// Unterschied ist, dass Buttons dazukommen."
-///
 /// Deshalb steht er hier und nicht zweimal. Vorher hatte jede Seite ihren
 /// eigenen Aufbau, und die beiden waren bereits auseinander: die Detailseite
 /// führte zusätzlich die Genres, die Startseite dafür die Restzeit. Genau so
@@ -665,11 +768,11 @@ struct Mehrknopf: View {
 /// stehen keine Genres — nur die Detailseite holt den vollen Titel. „Auf
 /// beiden dasselbe" heißt hier also zwangsläufig „ohne".
 ///
-/// **Die Höhe ist fest, der Inhalt nicht.** `Stil.auskunftHoehe` gilt, ob
-/// eine Beschreibung da ist oder nicht und ob der Titel kurz oder lang ist.
-/// Nur so steht die Knopfreihe darunter auf jeder Detailseite an derselben
-/// Stelle — und nur so bleibt der Text beim Öffnen einer Seite liegen,
-/// statt zu springen.
+/// **Die Höhe ist fest, der Inhalt nicht.** `Stil.auskunftHoehe` gilt, ob eine
+/// Beschreibung da ist oder nicht und ob der Titel kurz oder lang ist. Nur so
+/// steht die Knopfreihe darunter auf jeder Detailseite an derselben Stelle —
+/// und nur so bleibt der Text beim Öffnen einer Seite liegen, statt zu
+/// springen.
 struct Kopfauskunft<Schluss: View>: View {
     let item: Item
     /// Bei Folgen steht der Folgentitel unter dem Serientitel. Er kostet
@@ -714,13 +817,17 @@ struct Kopfauskunft<Schluss: View>: View {
             .frame(height: 34)
             .padding(.top, 14)
 
-            Text(item.overview ?? "")
+            // **Der bereinigte Text, nicht der rohe.** Jellyfin gibt
+            // Beschreibungen aus, wie sie beim Anbieter standen — mit `<br>`,
+            // `<p>` und `&amp;`. Auf drei Meter Entfernung stand das wörtlich
+            // im Bild.
+            Text(item.beschreibung ?? "")
                 .font(.system(size: 29))
                 .lineSpacing(Stil.beschreibungLuft)
                 .foregroundStyle(Stil.schrift.opacity(0.62))
                 // **Immer drei Zeilen**, auch wenn der Folgentitel darueber
                 // steht. Vorher waren es dort zwei, damit der Block seine
-                // feste Hoehe hielt — Paul will drei.
+                // feste Hoehe hielt
                 .lineLimit(zweitzeile == nil ? 3 : 2)
                 .padding(.top, 22)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -786,25 +893,23 @@ struct Restzeitmarke: View {
 /// die Deckkraft der ganzen Ebene, den Fokusring eingeschlossen — das sieht
 /// wie ein Fehler aus, nicht wie ein Verlauf.
 ///
-/// **Fuer die Kulisse gilt das nicht mehr, und sie maskiert inzwischen.**
-/// Sie ist kein Bedienelement und hat keinen Ring; der Satz oben stammt von
-/// den Kacheln. Der Grund fuer den Wechsel steht unten am `mask`.
+/// **Fuer die Kulisse gilt das nicht mehr, und sie maskiert inzwischen.** Sie
+/// ist kein Bedienelement und hat keinen Ring; der Satz oben stammt von den
+/// Kacheln. Der Grund fuer den Wechsel steht unten am `mask`.
 ///
 /// Nicht beschnitten: das Bild darf nach unten ueberragen, sein eigener
 /// Verlauf beendet es. Beschnitten entstand die harte Kante, die als heller
-/// Streifen quer ueber dem Schirm stand.
-/// **Die schon gezeigten Kulissen, entschluesselt.**
+/// Streifen quer ueber dem Schirm stand. **Die schon gezeigten Kulissen,
+/// entschluesselt.**
 ///
 /// `AsyncImage` faengt in jeder neuen Ansicht von vorn an: es fragt den
-/// Zwischenspeicher, entschluesselt und zeigt erst danach. Auf der
-/// Detailseite ist das ein neues `AsyncImage` fuer dasselbe Bild, das eben
-/// noch auf der Startseite stand — und dazwischen zeigt es nichts. Paul:
-/// „reingehen laedt aber das Bild neu, dann ist es kurz weg und spawnt
-/// wieder."
+/// Zwischenspeicher, entschluesselt und zeigt erst danach. Auf der Detailseite
+/// ist das ein neues `AsyncImage` fuer dasselbe Bild, das eben noch auf der
+/// Startseite stand — und dazwischen zeigt es nichts.
 ///
 /// Der Netz-Zwischenspeicher hilft dagegen nicht: er spart den Abruf, nicht
-/// das Entschluesseln, und beides passiert asynchron. Was schon einmal auf
-/// dem Schirm stand, muss deshalb **hier** liegen, fertig zum Zeichnen.
+/// das Entschluesseln, und beides passiert asynchron. Was schon einmal auf dem
+/// Schirm stand, muss deshalb **hier** liegen, fertig zum Zeichnen.
 ///
 /// Gedeckelt, weil ein Kulissenbild in Fernsehergroesse einige Megabyte
 /// belegt: die letzten acht reichen fuer den Weg Startseite → Detailseite →
@@ -868,10 +973,9 @@ struct Kulisse: View {
 ///
 /// Sie stand zweimal, und die beiden waren verschieden: hier maskiert, dort
 /// mit Verlaeufen aus `Stil.grund` uebermalt. Beim Wechsel von der Startseite
-/// auf eine Detailseite blendete SwiftUI die eine Fassung in die andere —
-/// und mitten in der Ueberblendung standen sichtbar harte Kanten, weil die
-/// alte Fassung welche hatte. Paul: „beim Ueberblenden ist das Bild kurz
-/// komplett hart, ueberall harte Kanten."
+/// auf eine Detailseite blendete SwiftUI die eine Fassung in die andere — und
+/// mitten in der Ueberblendung standen sichtbar harte Kanten, weil die alte
+/// Fassung welche hatte.
 ///
 /// Jetzt ist es auf beiden Seiten dasselbe Bild mit derselben Blende. Eine
 /// Ueberblendung zwischen zwei gleichen Dingen sieht man nicht.
@@ -893,43 +997,41 @@ struct Kulissenblende: ViewModifier {
         content
             // **Die urspruengliche Kurve, nur als Maske statt als Anstrich.**
             //
-            // Paul, nach vier Umbauten: „ganz am Anfang war es um Meilen
-            // besser." Stimmt — und das Gute daran war nie die Technik,
-            // sondern die Kurve. Sie ist hier unveraendert uebernommen.
+            // Stimmt — und das Gute daran war nie die Technik, sondern die
+            // Kurve. Sie ist hier unveraendert uebernommen.
             //
             // Uebersetzt: die alte Fassung malte `Stil.grund` mit der
             // Deckkraft `o` **ueber** das Bild. Sichtbar blieb also `1 − o`.
             // Genau diese Werte stehen jetzt als Maske da:
             //
-            //     waagerecht   o 1,00 / 0,78 / 0,16 / 0     bei 0 / 0,26 / 0,62 / 1
-            //     sichtbar       0    / 0,22 / 0,84 / 1
+            // waagerecht   o 1,00 / 0,78 / 0,16 / 0     bei 0 / 0,26 / 0,62 /
+            // 1 sichtbar       0    / 0,22 / 0,84 / 1
             //
-            //     senkrecht    die unteren 320 von 700, also ab 0,543
-            //     o 0 / 0,75 / 1,00  →  sichtbar 1 / 0,25 / 0
+            // senkrecht    die unteren 320 von 700, also ab 0,543 o 0 / 0,75 /
+            // 1,00  →  sichtbar 1 / 0,25 / 0
             //
             // **Der einzige Unterschied ist, worin es ausblendet.** Anstrich
             // endet in undurchsichtigem #0B0B0D und setzt damit voraus, dass
-            // der Hintergrund genau das ist — sobald er sich faerbt, steht
-            // die uebermalte Flaeche als Fleck darin. Das war die harte
-            // senkrechte Naht. Eine Maske endet in Transparenz, und was
-            // dahinterliegt kommt durch, welche Farbe es auch hat.
+            // der Hintergrund genau das ist — sobald er sich faerbt, steht die
+            // uebermalte Flaeche als Fleck darin. Das war die harte senkrechte
+            // Naht. Eine Maske endet in Transparenz, und was dahinterliegt
+            // kommt durch, welche Farbe es auch hat.
             //
             // Alles, was ich dazwischen versucht habe — laengere Rampen, ein
             // Kreis in der Ecke, das Minimum zweier Rampen — hat die Kurve
             // veraendert, statt nur ihre Technik. Deshalb war jede Fassung
             // schlechter als diese.
             //
-            // **Dieselben Anker, mehr Stuetzstellen.** Paul: „ein bisschen
-            // weniger hart, dann haben wir's." Das Harte waren nicht die
-            // Werte, sondern ihre Zahl: zwischen 0,26 und 0,62 sprang die
+            // **Dieselben Anker, mehr Stuetzstellen.** Das Harte waren nicht
+            // die Werte, sondern ihre Zahl: zwischen 0,26 und 0,62 sprang die
             // Sichtbarkeit von 22 auf 84 Prozent, und an beiden Punkten
             // knickte die Steigung. Ein Knick liest sich als Kante.
             //
             // Die vier Anker der urspruenglichen Fassung stehen unveraendert
-            // (0 / 0,22 / 0,84 / 1 und 1 / 0,25 / 0); dazwischen liegen
-            // jetzt Zwischenpunkte, die den Uebergang tragen, statt ihn in
-            // einem Zug zu nehmen. Die Kurve bleibt dieselbe, sie hat nur
-            // keine Ecken mehr.
+            // (0 / 0,22 / 0,84 / 1 und 1 / 0,25 / 0); dazwischen liegen jetzt
+            // Zwischenpunkte, die den Uebergang tragen, statt ihn in einem Zug
+            // zu nehmen. Die Kurve bleibt dieselbe, sie hat nur keine Ecken
+            // mehr.
             .mask {
                 LinearGradient(stops: [
                     .init(color: .white.opacity(0.00), location: 0),
@@ -963,10 +1065,9 @@ extension View {
 
 /// **Ein leiser Schatten unter der Kopfleiste.**
 ///
-/// Seit die Startseite denselben gefaerbten Grund traegt wie eine
-/// Detailseite, ist ihr alter Kopfverlauf weg — und damit stand die Leiste
-/// auf hellen Motiven im Bild. Paul: „ein leichter Schatten oben ueber dem
-/// Profilbild, damit man das noch normal sieht."
+/// Seit die Startseite denselben gefaerbten Grund traegt wie eine Detailseite,
+/// ist ihr alter Kopfverlauf weg — und damit stand die Leiste auf hellen
+/// Motiven im Bild.
 ///
 /// **Deutlich weniger als der alte Verlauf.** Der begann bei 72 Prozent und
 /// lief ueber 588 Punkte aus; er hat die halbe Kopfzone eingegraut und war
@@ -988,13 +1089,12 @@ struct Kopfschatten: View {
             //
             // Es sitzt ganz rechts oben, also genau dort, wo die Kulisse am
             // hellsten ist — der gleichmaessige Streifen reicht dort nicht,
-            // und das runde Bild lag plan auf dem Motiv. Paul: „ein Schatten,
-            // riesig muss der dahin."
+            // und das runde Bild lag plan auf dem Motiv.
             //
-            // Riesig ist hier das Mittel, nicht die Uebertreibung: ein
-            // kleiner Schatten waere als Scheibe hinter dem Zeichen zu
-            // erkennen. Bei 520 Punkt Reichweite sieht man ihn nicht mehr als
-            // Form, sondern nur, dass es dort ruhiger ist.
+            // Riesig ist hier das Mittel, nicht die Uebertreibung: ein kleiner
+            // Schatten waere als Scheibe hinter dem Zeichen zu erkennen. Bei
+            // 520 Punkt Reichweite sieht man ihn nicht mehr als Form, sondern
+            // nur, dass es dort ruhiger ist.
             RadialGradient(gradient: fleck,
                            center: UnitPoint(x: 0.945, y: 0.02),
                            startRadius: 0, endRadius: 520)
@@ -1048,10 +1148,8 @@ struct Staffelpille: View {
         // **Derselbe Stil wie die Knoepfe im Kopf.**
         //
         // Sie trug einen eigenen: andere Flaeche, anderer Rand, andere
-        // Rundung. Paul: „farblich ganz anders als die Buttons oben, sonst
-        // sieht's aus wie etwas, was nicht dazugehoert." Stimmt — und es
-        // **ist** dasselbe: ein Knopf, der etwas aufklappt, wie der
-        // Mehr-Knopf daneben.
+        // Rundung. Stimmt — und es **ist** dasselbe: ein Knopf, der etwas
+        // aufklappt, wie der Mehr-Knopf daneben.
         .buttonStyle(KnopfStil(hoehe: 60))
         .accessibilityLabel(Text("Staffel wählen, \(name)"))
     }
@@ -1118,7 +1216,10 @@ struct TVUebernahmeauswahl: View {
                             .frame(height: 88)
                             .frame(maxWidth: 760)
                         }
-                        .buttonStyle(AbzeichenStil())
+                        // Jede Zeile ist ein anderes Gerät — also kühl wie das
+                        // Abzeichen, das hierher geführt hat. „Abbrechen"
+                        // darunter bleibt grau.
+                        .buttonStyle(AbzeichenStil(anderesGeraet: true))
                     }
                 }
                 .focusSection()
@@ -1130,5 +1231,136 @@ struct TVUebernahmeauswahl: View {
         }
         // Menü schließt, wie überall auf dem Fernseher.
         .onExitCommand(perform: abbrechen)
+    }
+}
+
+
+// MARK: - Platzhalter statt Ladering
+
+/// Eine Flaeche in der Form dessen, was gleich kommt.
+///
+/// **Warum kein drehender Ring.** Ein Ring sagt „warte"; ein Platzhalter
+/// sagt, *was* kommt und wie viel — die Seite steht schon, sie ist nur noch
+/// leer. Auf drei Meter Entfernung zaehlt das doppelt: ein Ring ist dort ein
+/// Punkt, ein Raster ist eine Ankuendigung. GESTALTUNG, Abschnitt G.
+struct Ladefeld: View {
+    var ecke: CGFloat = Stil.eckeKachel
+    @State private var hell = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: ecke)
+            .fill(Stil.flaeche)
+            .opacity(hell ? 1 : 0.5)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    hell = true
+                }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Ein Plakat mit zwei Textzeilen darunter, alles als Platzhalter.
+struct Kachelplatzhalter: View {
+    var quer = false
+
+    private var breite: CGFloat { quer ? Stil.querBreite : Stil.posterBreite }
+    private var hoehe: CGFloat { quer ? Stil.querHoehe : Stil.posterHoehe }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Ladefeld().frame(width: breite, height: hoehe)
+            Ladefeld(ecke: 4).frame(width: breite * 0.8, height: 20).padding(.top, 14)
+            Ladefeld(ecke: 4).frame(width: breite * 0.4, height: 16).padding(.top, 6)
+        }
+        .frame(width: breite, alignment: .leading)
+    }
+}
+
+/// Ein Raster aus Plakat-Platzhaltern, so breit wie das echte.
+struct Rasterplatzhalter: View {
+    var spalten: Int = Stil.gitterSpalten
+    var reihen: Int = 2
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Stil.kachelAbstand),
+                                 count: max(spalten, 1)),
+                  alignment: .leading, spacing: Stil.reihenAbstand) {
+            ForEach(0 ..< (max(spalten, 1) * reihen), id: \.self) { _ in
+                Kachelplatzhalter()
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Laedt")
+    }
+}
+
+/// Eine Reihe aus Plakat-Platzhaltern, fuer die Startseite.
+struct Reihenplatzhalter: View {
+    var quer = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Ladefeld(ecke: 6).frame(width: 300, height: 30)
+            HStack(spacing: Stil.kachelAbstand) {
+                ForEach(0 ..< 5, id: \.self) { _ in Kachelplatzhalter(quer: quer) }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Laedt")
+    }
+}
+
+/// Wie viele Titel in dieser Bibliothek liegen.
+///
+/// **Eine Angabe, keine Handlung** — leise Schrift, kein Kasten.
+struct Zaehlmarke: View {
+    let anzahl: Int
+
+    var body: some View {
+        Text(verbatim: anzahl.formatted())
+            .font(Stil.klein)
+            .monospacedDigit()
+            .foregroundStyle(Stil.schriftSehrLeise)
+            .accessibilityLabel(Text("\(anzahl) Titel"))
+    }
+}
+
+/// Die Plakette oben rechts auf einer Kachel.
+///
+/// **In Weiss auf Dunkel, nicht in Akzent** — auf dem Fernseher traegt der
+/// Akzent zusaetzlich den Fokusring, und eine zweite Akzentflaeche daneben
+/// nimmt ihm seine Aussage. Welche Auskunft draufsteht, entscheidet
+/// `Anzeigeregeln.kachelmarke` im Paket.
+struct Kachelplakette: View {
+    let marke: Kachelmarke
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if marke == .gesehen {
+                Image(systemName: "checkmark").font(.system(size: 15, weight: .bold))
+            }
+            if let text = wortlaut {
+                Text(verbatim: text).font(.system(size: 17, weight: .semibold))
+            }
+        }
+        .foregroundStyle(Stil.schrift)
+        .padding(.horizontal, wortlaut == nil ? 9 : 11)
+        .padding(.vertical, 5)
+        .background {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Stil.grund.opacity(0.78))
+                .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(Stil.rand) }
+        }
+        .padding(10)
+    }
+
+    private var wortlaut: String? {
+        switch marke {
+        case .gesehen: nil
+        case .offen(let n): String(localized: "\(n) offen")
+        case .staffeln(let n): n == 1 ? String(localized: "1 Staffel")
+                                      : String(localized: "\(n) Staffeln")
+        }
     }
 }

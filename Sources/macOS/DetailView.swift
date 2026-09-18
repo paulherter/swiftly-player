@@ -64,6 +64,15 @@ struct StaffelZiel: View {
     /// S6E1" oben und Staffel 5 in der Folgenliste. Dasselbe Muster wie bei
     /// der Fortsetzstelle in `HomeView.starte`, und dieselbe Abhilfe.
     @State private var frischeStaffelID: String?
+    @State private var frischeStaffelnummer: Int?
+    /// **Und die Nummer mit.**
+    ///
+    /// Hier stand nur die Kennung; die Nummer kam weiter von der Kachel. Das
+    /// reicht nicht: am Geraet gemessen liefert der Server an einer Folge
+    /// nicht immer eine `SeasonId` (steht so in A10), und dann traegt allein
+    /// die Nummer den Vergleich — die veraltete. Genau die Fehlerform, die
+    /// A10 als behoben beschreibt, nur eine Stufe weiter unten. Linux frischt
+    /// beides auf, iPhone und Mac frischten nur die Kennung auf.
 
     /// **Was vorgeholt ist, steht sofort** — dann gibt es die leere Seite gar
     /// nicht erst. Nachgereicht käme der Wert zu spät: der leere Durchgang
@@ -72,7 +81,7 @@ struct StaffelZiel: View {
         self.model = model
         self.folge = folge
         self.zurueck = zurueck
-        _serie = State(initialValue: Seriencache.geteilt.serie(fuer: folge))
+        _serie = State(initialValue: Serienspeicher.geteilt.serie(fuer: folge, mit: model))
     }
 
     var body: some View {
@@ -80,10 +89,11 @@ struct StaffelZiel: View {
             if let serie {
                 SerienView(model: model, serie: serie,
                            startStaffelID: frischeStaffelID ?? folge.seasonId,
-                           startStaffelNummer: folge.parentIndexNumber,
+                           startStaffelNummer: frischeStaffelnummer ?? folge.parentIndexNumber,
                            zurueck: zurueck)
             } else {
-                Lader()
+                // Kein Ring: die Seite kommt gleich von selbst.
+                Color.clear
             }
         }
         .task {
@@ -91,10 +101,12 @@ struct StaffelZiel: View {
             async let frisch = model.item(id: folge.id)
             if serie == nil {
                 let geholt = await model.item(id: id)
-                if let geholt { Seriencache.geteilt.merken(geholt) }
+                if let geholt { Serienspeicher.geteilt.merken(geholt) }
                 serie = geholt
             }
-            frischeStaffelID = await frisch?.seasonId
+            let f = await frisch
+            frischeStaffelID = f?.seasonId
+            frischeStaffelnummer = f?.parentIndexNumber
         }
     }
 }
@@ -127,7 +139,8 @@ struct FilmView: View {
                 VStack(alignment: .leading, spacing: 26) {
                     // Die Beschreibung steht im Kopf, wie auf dem Apple TV —
                     // hier stünde sie ein zweites Mal.
-                    Besetzungsreihe(model: model, leute: film.darsteller)
+                    Besetzungsreihe(model: model, leute: film.darsteller,
+                                    herkunft: film.name)
                     // Extras und Ähnliches fehlten auf meiner Filmseite ganz.
                     // Reihenfolge wie auf iOS (A9).
                     Titelreihe(titel: "Extras", eintraege: extras, model: model)
@@ -177,7 +190,7 @@ struct FilmView: View {
         .overlay(alignment: .top) {
             Detailkopf(titel: film.name, stand: kopfstand, zurueck: zurueck)
         }
-        .task { await farbe.laden(model.backdropURL(for: film)) }
+        .task { await farbe.laden(model.kopfbildURL(for: film)) }
         .task {
             async let a = model.extras(film)
             async let b = model.aehnliche(film)
@@ -206,7 +219,14 @@ struct Titelreihe: View {
                         Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
                             Posterkachel(titel: eintrag.name,
                                          zweitzeile: eintrag.productionYear.map { "\($0)" },
-                                         bild: model.imageURL(for: eintrag, hochkant: true))
+                                         bild: model.imageURL(for: eintrag, hochkant: true),
+                                         fortschritt: eintrag.userData?.playedPercentage.map { $0 / 100 },
+                                         marke: Anzeigeregeln.kachelmarke(
+                                         art: eintrag.type,
+                                         staffeln: eintrag.childCount,
+                                         gesehen: eintrag.userData?.played,
+                                         offeneFolgen: eintrag.userData?.unplayedItemCount),
+                                         zeichen: eintrag.type == "Series" ? "tv" : "film")
                         }
                         .buttonStyle(.plain)
                     }
@@ -232,6 +252,16 @@ struct Heldenkopf: View {
     let titel: Item
     /// Wo die Seite steht — nur fürs Mitziehen des Bildes gebraucht.
     let stand: Kopfstand
+    /// **Welche Staffel gerade offen ist** — für „Staffel als gesehen" in der
+    /// Mehr-Liste.
+    ///
+    /// Hier stand an der Aufrufstelle fest `staffel: nil`, und damit fehlte
+    /// der Eintrag auf dem Mac als einziger Plattform: iPhone
+    /// (`Shared/SeriesView.swift:950`) und Fernseher
+    /// (`tvOS/SerienView.swift:477`) reichen ihn durch, und Linux hat ihn
+    /// ebenfalls. Der Kopf weiss die Staffel nicht von selbst — sie steht
+    /// eine Ebene tiefer in `SerienView` —, also kommt sie von dort.
+    var staffel: Item? = nil
 
     /// **Wie weit über den oberen Rand hinausgezogen wurde.**
     ///
@@ -249,16 +279,56 @@ struct Heldenkopf: View {
     @State private var merkliste = false
     @State private var gesehen = false
     @State private var mehrOffen = false
+    @State private var ladetafelOffen = false
     @State private var meldung: String?
     @Environment(Abspielsteuerung.self) private var steuerung
+
+    // MARK: Downloads
+
+    /// Was von diesem Titel schon auf der Platte liegt — `nil` heisst nichts.
+    private var geladen: Downloadposten? { model.downloads.posten(fuer: titel.id) }
+
+    /// Gefuellt heisst geladen, und es bleibt ein Pfeil: der Haken gehoert
+    /// der Frage „hab ich das gesehen".
+    private var ladezeichen: String {
+        switch geladen?.stand {
+        case nil:          "arrow.down"
+        case .fertig:      "arrow.down.circle.fill"
+        case .fehler:      "exclamationmark.circle"
+        default:           "arrow.down.circle"
+        }
+    }
+
+    /// Der Eintrag, den ein Download bekaeme. Die Groesse kommt aus derselben
+    /// Quelle, die der Player naehme — **H2**, es ist dieselbe Datei.
+    private var alsPosten: Downloadposten? {
+        guard let konto = model.session?.userID else { return nil }
+        let quelle = plan?.quelle ?? titel.mediaSources?.first
+        return Downloadposten(
+            id: titel.id, konto: konto, art: .film, titel: titel.name,
+            laufzeitTicks: titel.runTimeTicks, container: quelle?.container,
+            quelle: quelle?.id, bytes: quelle?.size ?? 0,
+            gesehen: titel.userData?.played ?? false)
+    }
+
+    private var ladebilder: [String: URL] {
+        guard let plakat = model.plakatURL(itemID: titel.id,
+                                           marke: titel.imageTags?["Primary"])
+        else { return [:] }
+        return [titel.id: plakat]
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             // **Rechts, nicht über die volle Breite** — wie auf dem Apple TV.
             // Das Bild ragt nach unten über die Kopfzone hinaus; seine eigene
             // Maske beendet es, deshalb wird nicht beschnitten.
+            // **Zuletzt irgendein Bild, nie gar keins.** `kopfbildURL`
+            // sucht bei einer Serie ohne Hintergrund das Standbild der
+            // nächsten Folge und bei allem anderen das Plakat — quer
+            // beschnitten ist besser als ein leerer Kopf.
             Kulisse(url: model.querbildURL(for: titel, breite: 1600)
-                         ?? model.backdropURL(for: titel),
+                         ?? model.kopfbildURL(for: titel),
                     hoehe: Stil.heldHoehe * 1.62)
                 // **An der Unterkante festhalten, nicht an der oberen.**
                 //
@@ -352,7 +422,10 @@ struct Heldenkopf: View {
                 .clipped()
                 .offset(y: 54)
 
-            Text(verbatim: titel.overview ?? "")
+            // **Der bereinigte Text, nicht der rohe.** Jellyfin gibt
+            // Beschreibungen aus, wie sie beim Anbieter standen — mit
+            // `<br>`, `<p>` und `&amp;`. Im Kopf stand das wörtlich da.
+            Text(verbatim: titel.beschreibung ?? "")
                 .font(Stil.koerper)
                 .lineSpacing(3)
                 .foregroundStyle(Stil.schrift.opacity(0.62))
@@ -384,8 +457,26 @@ struct Heldenkopf: View {
                 }
                 .foregroundStyle(Stil.schriftLeise)
             }
-            if let freigabe = titel.officialRating { Plakette(text: freigabe) }
+            // **Ecke 8, nicht der Standardwert 3.** Dieselbe Rechnung wie auf
+            // dem iPhone: die Skala steht bei 10/12/16, und eine Marke mit 3
+            // sitzt hier neben Dingen mit 10 — sie war das eckigste Element
+            // der Seite.
+            if let freigabe = titel.officialRating {
+                Plakette(text: freigabe, rundung: 8)
+            }
             if let plan {
+                // **Der Beleg ist eine Marke, kein loser Text.**
+                //
+                // Er stand als Zeichen und Wort nackt auf dem Grund, direkt
+                // neben der umrandeten Freigabe-Plakette: zwei verschiedene
+                // Formen fuer zwei Angaben, die gleich viel wiegen. Jetzt
+                // tragen beide dieselbe Ecke und lesen sich als Paar; welche
+                // Auskunft es ist, sagt die Farbe.
+                //
+                // Fuenfzehn Prozent Toenung, keine Fuellung — der weisse
+                // Abspielknopf bleibt der einzige gefuellte Gegenstand der
+                // Seite. Ab etwa einem Drittel wird daraus ein zweiter Knopf.
+                let farbe = plan.isLossless ? Stil.akzent : Stil.warnung
                 HStack(spacing: 6) {
                     Image(systemName: plan.isLossless
                           ? "checkmark" : "exclamationmark.triangle.fill")
@@ -394,7 +485,14 @@ struct Heldenkopf: View {
                          ? String(localized: "Direct Play") : plan.method.rawValue)
                         .font(.system(size: 13, weight: .medium))
                 }
-                .foregroundStyle(plan.isLossless ? Stil.akzent : Stil.warnung)
+                .foregroundStyle(farbe)
+                // Links enger als rechts: das Zeichen ist schmaler als seine
+                // Zeichenzelle, sonst sitzt das Wort sichtbar aus der Mitte.
+                .padding(.leading, 8)
+                .padding(.trailing, 10)
+                .padding(.vertical, 4)
+                .background(farbe.opacity(0.15),
+                            in: RoundedRectangle(cornerRadius: 8))
             }
             Spacer(minLength: 0)
         }
@@ -433,6 +531,42 @@ struct Heldenkopf: View {
                     if let grund = await model.setzeMerkliste(titel, an: merkliste) {
                         merkliste.toggle()
                         melde(grund)
+                    }
+                }
+            }
+
+            // **Der Ladeknopf, und nur wenn die Funktion an ist.**
+            //
+            // Auf dem iPhone ist es das fünfte Feld einer Reihe; hier stehen
+            // beschriftete Nebenknöpfe nebeneinander, also ist es einer mehr.
+            // Er steht **nach** der Merkliste — die beiden sind das Paar
+            // „für später" und gehören zusammen.
+            if model.downloadsAn, titel.type != "Series" {
+                Nebenknopf(symbol: ladezeichen, titel: "Laden",
+                           aktiv: geladen != nil) {
+                    ringGeklickt(geladen, model.downloads) {
+                        withAnimation(Stil.zeitSprung) { ladetafelOffen.toggle() }
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if ladetafelOffen, let p = alsPosten {
+                        Ladetafel(model: model, posten: [p], titel: titel.name,
+                                  bilder: ladebilder, offen: $ladetafelOffen)
+                            .offset(y: Stil.hauptknopfHoehe + 8)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .zIndex(30)
+                    }
+                }
+                // Ein Klick daneben schliesst — dieselbe Erwartung wie beim
+                // Mehr-Menue. Der Fang liegt unter der Tafel, nicht darueber.
+                .background {
+                    if ladetafelOffen {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .frame(width: 4000, height: 4000)
+                            .onTapGesture {
+                                withAnimation(Stil.zeitSprung) { ladetafelOffen = false }
+                            }
                     }
                 }
             }
@@ -486,7 +620,7 @@ struct Heldenkopf: View {
         ]
         if titel.type == "Series" {
             liste += Titelhandlungen.fuerSerie(
-                titel, stand: spielbarerTitel, staffel: nil, model: model,
+                titel, stand: spielbarerTitel, staffel: staffel, model: model,
                 folgeStarten: { folge, ab in steuerung.starte(folge, ab: ab) },
                 melden: { melde($0) }, auffrischen: { await auffrischen() })
         } else {
@@ -529,22 +663,17 @@ struct Heldenkopf: View {
 
 // MARK: - Bausteine der Detailseiten
 
-struct Beschreibung: View {
-    let text: String?
-    var body: some View {
-        if let text, !text.isEmpty {
-            Text(verbatim: text)
-                .font(Stil.koerper)
-                .lineSpacing(3)
-                .foregroundStyle(Stil.schrift.opacity(0.86))
-                .frame(maxWidth: 900, alignment: .leading)
-        }
-    }
-}
+// **Hier stand `Beschreibung`** — ein Textblock, den niemand rief. Die
+// Beschreibung steht seit dem Umbau im Kopf, wie auf dem Apple TV; der
+// Baustein blieb stehen und wurde bei jeder Aenderung mitgelesen.
 
 struct Besetzungsreihe: View {
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.bereich) private var bereich
     let model: AppModel
     let leute: [Person]
+    /// Woher man kommt — steht auf der Personenseite über der Rolle.
+    var herkunft: String? = nil
 
     var body: some View {
         if !leute.isEmpty {
@@ -554,8 +683,15 @@ struct Besetzungsreihe: View {
                     .foregroundStyle(Stil.schrift)
                 Blätterreihe(rand: 0, breiteJeStueck: 84 + 18, bildHoehe: 84) {
                     ForEach(leute, id: \.id) { person in
-                        Kopfbild(name: person.name, rolle: person.role,
-                                 bild: model.personBild(person))
+                        // **Ein Kopf ist jetzt ein Weg.** Ein Tester tippte
+                        // die Besetzung an und landete nirgends.
+                        Button {
+                            navigator.oeffne(.person(person, herkunft: herkunft), in: bereich)
+                        } label: {
+                            Kopfbild(name: person.name, rolle: person.role,
+                                     bild: model.personBild(person))
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -599,7 +735,7 @@ struct Kopfbild: View {
 /// Ganz unten: was für eine Datei das eigentlich ist. Sie beantwortet eine
 /// Frage, die man erst später stellt.
 ///
-/// Die Texte kommen aus `Dateiangaben` in `Sources/Shared` — Container,
+/// Die Texte kommen aus `Dateiangaben` im Paket — Container,
 /// Codec und Untertitel sind auf allen Plattformen dieselbe Auskunft. Meine
 /// erste Fassung stellte sie selbst zusammen und ließ Codec und Untertitel
 /// weg.
@@ -619,11 +755,17 @@ struct Dateizeile: View {
 
     private var angaben: [String] {
         var zeilen: [String] = []
-        if let behaelter = Dateiangaben.container(quelle) { zeilen.append(behaelter) }
+        // Die Größe hängt an „MKV · 10,3 GB"; einzeln steht sie nur, wenn
+        // der Server keinen Container nennt. Vorher stand sie zweimal da —
+        // unbemerkt, weil sie mit einem führenden „ · " getarnt war.
+        if let behaelter = Dateiangaben.container(quelle) {
+            zeilen.append(behaelter)
+        } else {
+            zeilen.append(Dateiangaben.groesse(quelle))
+        }
         if let spur = Dateiangaben.videospur(quelle) {
             zeilen.append(Dateiangaben.video(spur, quelle))
         }
-        zeilen.append(Dateiangaben.groesse(quelle))
         let ut = Dateiangaben.untertitel(Dateiangaben.untertitelspuren(quelle))
         if !ut.isEmpty { zeilen.append(ut) }
         return zeilen.filter { !$0.isEmpty }

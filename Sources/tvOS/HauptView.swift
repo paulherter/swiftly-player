@@ -52,8 +52,21 @@ struct HauptView: View {
 
     @State private var bereich: Bereich = .start
     @State private var besucht: Set<Bereich> = [.start]
-    @State private var pfade = [NavigationPath(), NavigationPath(),
-                                NavigationPath(), NavigationPath()]
+    /// **Einer je Bereich — abgeleitet, nicht abgezaehlt.**
+    ///
+    /// Hier standen vier feste Eintraege. Seit die Merkliste dazugekommen
+    /// ist, gibt es fuenf Bereiche, und `suche` traegt den Rohwert 4: jeder
+    /// Zugriff auf `pfade[bereich.rawValue]` lief ins Leere. Die App stuerzte
+    /// beim Klick auf „Suche" ab — `Array._checkSubscript`, sauber im Bericht.
+    ///
+    /// Auf dem iPhone steht daneben der Kommentar, `allCases.count` sei
+    /// verlockend, aber gefaehrlich: es wachse still mit, ohne dass jemand
+    /// die Stelle ansieht. Das stimmt — und wiegt trotzdem leichter als ein
+    /// Absturz. Still mitwachsen heisst hier: es funktioniert. Nicht
+    /// mitwachsen heisst: es bricht, und zwar erst beim Antippen des
+    /// letzten Reiters.
+    @State private var pfade = Array(repeating: NavigationPath(),
+                                     count: Bereich.allCases.count)
 
     /// **Der Player gehoert hierher, nicht in die Seite.**
     ///
@@ -72,6 +85,13 @@ struct HauptView: View {
     /// `nil` heisst: Menue nicht anfassen, durchfallen lassen — auf Start,
     /// auf Unterseiten und im Player.
     private var zurueckAufStart: (() -> Void)? {
+        // **Ist eine Tafel offen, gehoert Menue ihr.**
+        //
+        // Zurueck heisst erst „diese Auswahl geht zu" und dann erst „ich gehe
+        // weg" Die Tafel hat ihr eigenes `onExitCommand`; sie bekommt es aber
+        // nur, wenn diese Behandlung hier den Befehl nicht vorher abfaengt.
+        // `nil` laesst ihn durch.
+        guard !tafelOffen else { return nil }
         guard bereich != .start, pfade[bereich.rawValue].isEmpty,
               abspielen == nil else { return nil }
         return { bereich = .start }
@@ -103,11 +123,10 @@ struct HauptView: View {
     ///
     /// Abgeleitet koennte sie nicht ausblenden: der Pfad wird ohne Animation
     /// gesetzt (siehe die Bindung in `stapel`), und was daran haengt, springt
-    /// mit. Paul: „oben die Leiste, da ist alles weg — Profilbild weg, Logo
-    /// weg, Start, Filme, Serien, Suche. Das muss ausgeblendet werden."
+    /// mit.
     ///
-    /// Als eigener Zustand, in einem `onChange` gesetzt, laeuft der Wechsel
-    /// in einer **neuen** Transaktion — und die darf animieren.
+    /// Als eigener Zustand, in einem `onChange` gesetzt, laeuft der Wechsel in
+    /// einer **neuen** Transaktion — und die darf animieren.
     @State private var leisteDa = true
     @State private var tafelOffen = false
     /// Was auf einem anderen Gerät läuft.
@@ -128,18 +147,17 @@ struct HauptView: View {
             // **Der Player ist ein Geschwister, kein Kind.**
             //
             // Vorher lag `.disabled` in der Kette **vor** `.overlay`. Damit
-            // erbte der Player die Sperre: er war zu sehen, aber tot —
-            // nichts darin fokussierbar, jeder Tastendruck unbehandelt, und
-            // Menue fiel durch, was tvOS als Ausstieg las. Er verschwand also
-            // beim ersten Druck, und keine Reparatur im Player konnte je
-            // greifen, weil keine von ihnen zum Zuge kam.
+            // erbte der Player die Sperre: er war zu sehen, aber tot — nichts
+            // darin fokussierbar, jeder Tastendruck unbehandelt, und Menue
+            // fiel durch, was tvOS als Ausstieg las. Er verschwand also beim
+            // ersten Druck, und keine Reparatur im Player konnte je greifen,
+            // weil keine von ihnen zum Zuge kam.
             //
             // **Auch beim Auswahlblatt sperren, nicht nur beim Player.**
             //
-            // Sonst bleibt alles dahinter fokussierbar: Paul kam mit dem Ring
-            // nach oben und unten an die Reiter und Kacheln hinter dem Blatt.
-            // Sichtbar verdeckt heisst auf dem Fernseher nicht unerreichbar —
-            // der Fokusmotor sucht geometrisch und kennt keine Ebenen.
+            // Sonst bleibt alles dahinter fokussierbar: Sichtbar verdeckt
+            // heisst auf dem Fernseher nicht unerreichbar — der Fokusmotor
+            // sucht geometrisch und kennt keine Ebenen.
             rahmen
                 .disabled(abspielen != nil || auswahlOffen)
 
@@ -162,6 +180,16 @@ struct HauptView: View {
         .animation(.easeInOut(duration: 0.2), value: abspielen?.id)
         .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
         .task { await model.fernsteuerungStarten() }
+        // **Einmal je Start, und ohne Antwort passiert nichts.**
+        //
+        // `Downloadposten.gesehen` und `nochAufDemServer` wurden nie
+        // gesetzt: der Ausweg bei Platzmangel bot deshalb immer eine leere
+        // Liste an, und der Hinweis „gibt es nicht mehr" stand an keiner
+        // Zeile, obwohl die Ansicht ihn zeichnet. Beides beantwortet eine
+        // einzige Abfrage — was zurueckkommt, traegt den Fortschritt, was
+        // fehlt, ist fort. `HauptView` ist je Plattform eigen, deshalb
+        // braucht jede ihren eigenen Aufruf.
+        .task { await model.downloadsNachziehen() }
         // **Nur solange nichts läuft.** Im Player wäre die Abfrage sinnlos —
         // die Leiste ist weg, und der Server hätte alle zehn Sekunden eine
         // Anfrage mehr zu beantworten, während es aufs Bild ankommt.
@@ -174,6 +202,21 @@ struct HauptView: View {
         #endif
         .onDisappear { Task { await model.fernsteuerungBeenden() } }
         .onChange(of: bereich) { _, neu in besucht.insert(neu) }
+        // **VERHALTEN G4: der Seitenstapel wird beim Kontowechsel geleert.**
+        //
+        // Er stand hier nicht. iPhone und iPad leeren ihre `pfade`, der Mac
+        // ruft `navigator.alleLeeren()` — nur der Fernseher behielt, was
+        // offen war. Ein Stapel gehoert aber zu einem Konto: eine
+        // Detailseite haengt an `.task(id: titel.id)`, eine Serienseite an
+        // der Staffel, und **keine** dieser Kennungen aendert sich beim
+        // Wechsel. Ohne das Leeren staenden dort Haken und
+        // Fortschrittsbalken des vorigen Kontos, und ein Druck auf
+        // Abspielen setzte an dessen Stelle an und meldete sie dem neuen.
+        .onChange(of: model.kontowechsel) { _, _ in
+            for i in pfade.indices where !pfade[i].isEmpty {
+                pfade[i] = NavigationPath()
+            }
+        }
         .onOpenURL { adresse in
             guard adresse.scheme == "swiftly", adresse.host == "titel" else { return }
             let kennung = adresse.lastPathComponent
@@ -223,8 +266,8 @@ struct HauptView: View {
             // **Auf der Startseite braucht es ihn nicht mehr.**
             //
             // Er stammt aus der Zeit, als die Reihen bis unter die Leiste
-            // liefen. Heute beginnen sie erst bei 560 und werden beschnitten
-            // — es kommt nichts mehr hinauf, was abgedunkelt werden muesste.
+            // liefen. Heute beginnen sie erst bei 560 und werden beschnitten —
+            // es kommt nichts mehr hinauf, was abgedunkelt werden muesste.
             // Uebrig blieb nur sein eigener Abfall, und der faellt auf einem
             // hellen Querbild als Kante auf.
             //
@@ -238,9 +281,9 @@ struct HauptView: View {
             // Startseite hatte dafuer einen eigenen, weicheren unter ihrer
             // Schrift.
             //
-            // Auch der ist weg: sie zeigt jetzt denselben gefaerbten Grund
-            // wie eine Detailseite, und der Verlauf war das Letzte, was sie
-            // anders aussehen liess. Paul: „es soll identisch aussehen."
+            // Auch der ist weg: sie zeigt jetzt denselben gefaerbten Grund wie
+            // eine Detailseite, und der Verlauf war das Letzte, was sie anders
+            // aussehen liess.
             //
             // Auf den uebrigen Bereichen bleibt er — dort scrollen Kacheln
             // unter die Leiste, und ohne ihn stossen sie hell dagegen.
@@ -344,36 +387,31 @@ struct HauptView: View {
     private func stapel(_ b: Bereich) -> some View {
         // **Kein Ueberblenden beim Seitenwechsel — an der Bindung.**
         //
-        // Paul: beim Oeffnen eines Titels blendet alles um, Bild, Verlauf
-        // und Texte, obwohl der halbe Schirm auf beiden Seiten derselbe ist.
-        //
         // Es ist keine einzelne Ebene mehr — Kopfblock, Kulissenblende,
         // gefaerbter Grund und Kopfschatten sind inzwischen wirklich
         // dieselben. Es ist SwiftUIs eigener Uebergang: er blendet die neue
-        // Seite ueber die alte, **und beide aendern dabei ihre Deckkraft**.
-        // In der Mitte liegt keine von beiden voll auf, also sackt die
-        // Helligkeit ab. Das sieht man auch bei deckungsgleichen Inhalten:
-        // es blendet nicht zwischen zwei Bildern, es blendet beide gegen den
-        // Grund.
+        // Seite ueber die alte, **und beide aendern dabei ihre Deckkraft**. In
+        // der Mitte liegt keine von beiden voll auf, also sackt die Helligkeit
+        // ab. Das sieht man auch bei deckungsgleichen Inhalten: es blendet
+        // nicht zwischen zwei Bildern, es blendet beide gegen den Grund.
         //
         // **Am Aufrufort war es zu weit aussen.** Ein `transaction` auf der
         // Ansicht, die den Stapel enthaelt, erreicht die Animation nicht, die
         // der Stapel intern fuer seinen Wechsel fuehrt. Die Bindung ist die
         // engste Stelle, durch die jeder Wechsel muss — die Kacheln mit ihren
-        // `NavigationLink`, die Menue-Taste zurueck, die Tiefenverweise.
-        // Wer sie setzt, setzt sie ohne Animation.
+        // `NavigationLink`, die Menue-Taste zurueck, die Tiefenverweise. Wer
+        // sie setzt, setzt sie ohne Animation.
         let pfad = Binding<NavigationPath>(
             get: { pfade[b.rawValue] },
             set: { neu in
                 // **Und zusaetzlich auf UIKit-Ebene.**
                 //
                 // Die SwiftUI-Transaktion allein reicht nicht: der
-                // `NavigationStack` fuehrt seinen Wechsel auf tvOS ueber
-                // einen UIKit-Navigationscontroller, und der sieht sie nicht.
-                // Man erkennt es am Text — weisse Schrift wird waehrend des
-                // Wechsels kurz **grau**, und das ist nichts anderes als
-                // halbe Deckkraft ueber dunklem Grund. Genau das hat Paul
-                // beschrieben, nachdem die Transaktion schon drin war.
+                // `NavigationStack` fuehrt seinen Wechsel auf tvOS ueber einen
+                // UIKit-Navigationscontroller, und der sieht sie nicht. Man
+                // erkennt es am Text — weisse Schrift wird waehrend des
+                // Wechsels kurz **grau**, und das ist nichts anderes als halbe
+                // Deckkraft ueber dunklem Grund. Genau das hat
                 //
                 // Fuer einen Durchlauf abgeschaltet und im naechsten wieder
                 // an: laenger waere gefaehrlich, denn daran haengen auch die
@@ -395,6 +433,8 @@ struct HauptView: View {
                 case .serien:
                     BibliothekView(model: model, art: "tvshows",
                                    filter: [.alle, .angefangen, .merkliste])
+                case .merkliste:
+                    MerklisteView(model: model)
                 case .suche:
                     SucheView(model: model, aktiv: bereich == .suche)
                 }
@@ -413,6 +453,9 @@ extension View {
         self
             .navigationDestination(for: LibraryRoute.self) { route in
                 BibliothekView(model: model, bibliothek: route.item)
+            }
+            .navigationDestination(for: Seerrtreffer.self) { treffer in
+                SeerrDetailView(model: model, treffer: treffer)
             }
             // Dieselbe Weiche wie auf dem iPhone: eine Serie führt auf die
             // Serienseite, eine einzelne Folge auf die Staffel, in der sie
@@ -433,6 +476,12 @@ extension View {
             }
             .navigationDestination(for: ProfilRoute.self) { _ in
                 ProfilView(model: model)
+            }
+            .navigationDestination(for: PersonRoute.self) { route in
+                PersonView(model: model, route: route)
+            }
+            .navigationDestination(for: GenreRoute.self) { route in
+                GenreView(model: model, name: route.name)
             }
     }
 }
@@ -463,30 +512,28 @@ struct StaffelZiel: View {
     /// **Die Serie steht sofort, wenn sie schon einmal geholt wurde.**
     ///
     /// Sonst zeigte diese Ansicht bei jedem Oeffnen einer Folge zuerst einen
-    /// Ring auf schwarzem Grund und tauschte ihn danach gegen die
-    /// Serienseite. Solange der Seitenwechsel ueberblendete, lag das darunter
-    /// — ohne ihn ist es das Erste, was man sieht. Paul: „jetzt ist immer
-    /// kurz Blackscreen mit Ladebalken, bevor sich die Seite oeffnet."
+    /// Ring auf schwarzem Grund und tauschte ihn danach gegen die Serienseite.
+    /// Solange der Seitenwechsel ueberblendete, lag das darunter — ohne ihn
+    /// ist es das Erste, was man sieht.
     @MainActor init(model: AppModel, folge: Item) {
         self.model = model
         self.folge = folge
         _serie = State(initialValue:
-            folge.seriesId.flatMap { Serienspeicher.geteilt.stand($0)?.serie }
+            folge.seriesId.flatMap { Serienspeicher.geteilt.stand($0, mit: model)?.serie }
             ?? StaffelZiel.vorlaeufig(zu: folge))
     }
 
     /// **Eine vorlaeufige Serie aus dem, was die Folge ohnehin traegt.**
     ///
-    /// Paul: „das Bild ist doch schon auf der Startseite, was laedt der da?"
     /// Nicht das Bild — die **Serie**. Ein Listeneintrag einer Folge traegt
     /// nur `seriesId` und `seriesName`, und `SerienView` braucht ein `Item`.
     /// Dafuer lief ein Abruf beim Server, und der war die Wartezeit.
     ///
     /// Gebraucht wird davon beim Aufmachen fast nichts: `id` fuer alle
-    /// weiteren Abrufe, `name` fuer die Ueberschrift, `type` fuer die
-    /// Weichen. Das Kulissenbild ist ohnehin dasselbe — `querbildURL` baut es
-    /// aus `seriesId ?? id`, fuer Folge und Serie also aus derselben Kennung,
-    /// und es liegt schon entschluesselt bereit.
+    /// weiteren Abrufe, `name` fuer die Ueberschrift, `type` fuer die Weichen.
+    /// Das Kulissenbild ist ohnehin dasselbe — `querbildURL` baut es aus
+    /// `seriesId ?? id`, fuer Folge und Serie also aus derselben Kennung, und
+    /// es liegt schon entschluesselt bereit.
     ///
     /// Alles Weitere — Beschreibung, Bewertung, Staffelzahl — holt
     /// `SerienView.laden()` sich selbst nach und schreibt es ueber diesen
@@ -520,10 +567,12 @@ struct StaffelZiel: View {
                 // Folge steht schon bereit, also steht er auch hier, und der
                 // Uebergang auf die Serienseite ist damit nur noch der
                 // Inhalt, nicht der ganze Schirm.
-                Lader.fern
+                // Kein Ring: der gefaerbte Grund steht schon, die Seite
+                // kommt gleich von selbst.
+                Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .bildgrund(url: model.querbildURL(for: folge, breite: 1600)
-                                    ?? model.backdropURL(for: folge))
+                                    ?? model.kopfbildURL(for: folge))
             }
         }
         .task {

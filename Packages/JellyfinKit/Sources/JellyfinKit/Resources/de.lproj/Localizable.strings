@@ -76,3 +76,17 @@
 "Unter dieser Adresse ist kein Server erreichbar." = "Unter dieser Adresse ist kein Server erreichbar.";
 "Der Server hat mit %lld geantwortet." = "Der Server hat mit %lld geantwortet.";
 "Die Antwort des Servers war unverständlich. (%@)" = "Die Antwort des Servers war unverständlich. (%@)";
+"unbekannt" = "unbekannt";
+"Normal" = "Normal";
+"Schlechte Verbindung" = "Schlechte Verbindung";
+"Sehr schlechte Verbindung" = "Sehr schlechte Verbindung";
+
+/* Merkgattung und Wiedergabeplan — standen im Code, aber in keinem Katalog:
+   auf Linux erschien die Gattungspille der Merkliste deshalb auch in der
+   englischen Fassung auf Deutsch. */
+"Filme" = "Filme";
+"Serien" = "Serien";
+"Filme & Serien" = "Filme & Serien";
+"Transkodiert" = "Transkodiert";
+"Direct Play" = "Direct Play";
+"Direct Stream" = "Direct Stream";
