@@ -363,10 +363,10 @@ struct PlayerSettingsSheet: View {
     private var wurzelinhalt: some View {
         VStack(alignment: .leading, spacing: 12) {
             gruppe {
-                navzeile("speaker.wave.2.fill", "Ton", tonJetzt ?? String(localized: "Keine"), ziel: .ton) { hinein(.ton) }
+                navzeile("speaker.wave.2.fill", "Ton", tonAnzeige, ziel: .ton) { hinein(.ton) }
                 trenner
                 navzeile("captions.bubble.fill", "Untertitel",
-                         untertitelJetzt ?? String(localized: "Aus"), ziel: .untertitel) { hinein(.untertitel) }
+                         untertitelAnzeige, ziel: .untertitel) { hinein(.untertitel) }
                 trenner
                 navzeile("aspectratio", "Bildformat",
                          String(localized: bildfuellend ? "Formatfüllend" : "Ganzes Bild"), ziel: .bildformat) { hinein(.bildformat) }
@@ -398,9 +398,9 @@ struct PlayerSettingsSheet: View {
                 let spuren = surface?.tonspuren ?? []
                 ForEach(Array(spuren.enumerated()), id: \.element.trackId) { paar in
                     if paar.offset > 0 { trenner }
-                    auswahlzeile(paar.element.trackName,
-                                 gewaehlt: tonJetzt == paar.element.trackName) {
-                        tonWahl = paar.element.trackName
+                    auswahlzeile(paar.element.huebscherName,
+                                 gewaehlt: tonJetzt == paar.element.trackId) {
+                        tonWahl = paar.element.trackId
                         surface?.waehleTonspur(paar.element)
                     }
                 }
@@ -417,10 +417,12 @@ struct PlayerSettingsSheet: View {
                     untertitelWahl = .some(nil)
                     surface?.waehleUntertitel(nil)
                 }
+                let namen = surface?.untertitelnamen() ?? [:]
                 ForEach(surface?.untertitelspuren ?? [], id: \.trackId) { spur in
                     trenner
-                    auswahlzeile(spur.trackName, gewaehlt: untertitelJetzt == spur.trackName) {
-                        untertitelWahl = .some(spur.trackName)
+                    auswahlzeile(namen[spur.trackId] ?? spur.trackName,
+                                 gewaehlt: untertitelJetzt == spur.trackId) {
+                        untertitelWahl = .some(spur.trackId)
                         surface?.waehleUntertitel(spur)
                     }
                 }
@@ -602,14 +604,25 @@ struct PlayerSettingsSheet: View {
     }
 
     /// Die eigene Wahl hat Vorrang; erst wenn keine getroffen wurde, zählt
-    /// das, was VLC meldet.
+    /// das, was VLC meldet. **Über `trackId`, nicht den Namen** — zwei Spuren
+    /// namens „Deutsch" trugen sonst beide den Haken (T1-N4).
     private var untertitelJetzt: String? {
         if let untertitelWahl { return untertitelWahl }
-        return surface?.gewaehlterUntertitel?.trackName
+        return surface?.gewaehlterUntertitel?.trackId
+    }
+
+    private var untertitelAnzeige: String {
+        guard let untertitelJetzt else { return String(localized: "Aus") }
+        return surface?.untertitelnamen()[untertitelJetzt] ?? String(localized: "Aus")
+    }
+
+    private var tonAnzeige: String {
+        (surface?.tonspuren ?? []).first { $0.trackId == tonJetzt }?.huebscherName
+            ?? String(localized: "Keine")
     }
 
     private var tonJetzt: String? {
-        tonWahl ?? surface?.gewaehlteTonspur?.trackName
+        tonWahl ?? surface?.gewaehlteTonspur?.trackId
     }
 
     /// Kleiner gesperrter Titel über einer Spalte.

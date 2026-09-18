@@ -75,7 +75,7 @@ extension JellyfinClient {
         }
         guard http.statusCode == 200 else {
             if http.statusCode == 503 {
-                throw JellyfinError.transport("Der Server hat Quick Connect abgeschaltet.")
+                throw JellyfinError.transport(uebersetzt("Der Server hat Quick Connect abgeschaltet."))
             }
             throw JellyfinError.http(status: http.statusCode,
                                      body: String(data: daten.prefix(200), encoding: .utf8))
@@ -87,16 +87,34 @@ extension JellyfinClient {
     /// Ob der Code inzwischen freigegeben wurde.
     ///
     /// Antwortet der Server mit 404, ist der Vorgang abgelaufen — das ist ein
-    /// eigener Fall, keine Fehlermeldung: dann holt man sich einen neuen Code.
+    /// eigener Fall (``Quickconnectabgelaufen``), keine Netzstoerung: dann
+    /// holt man sich einen neuen Code. Wer nachfragt, nimmt
+    /// ``quickConnectNachfragen(_:)`` — dort ist die Unterscheidung schon getroffen.
     public func quickConnectFreigegeben(_ vorgang: Anmeldecode) async throws -> Bool {
         struct Antwort: Decodable { let Authenticated: Bool }
         let req = try rohAnfrage("QuickConnect/Connect", method: "GET",
                                  query: [.init(name: "secret", value: vorgang.geheimnis)])
         let (daten, antwort) = try await rohSitzung.data(for: req)
         guard let http = antwort as? HTTPURLResponse else { return false }
-        if http.statusCode == 404 { throw JellyfinError.transport("Der Code ist abgelaufen.") }
+        if http.statusCode == 404 { throw Quickconnectabgelaufen() }
         guard http.statusCode == 200 else { return false }
         return (try? JSONDecoder().decode(Antwort.self, from: daten))?.Authenticated ?? false
+    }
+
+    /// **Einmal nachfragen, ohne dass ein Netzfehler das Warten beendet.**
+    ///
+    /// Beim Warten wechselt der Nutzer fast immer die App — er tippt den Code
+    /// ja im Browser ein. Android und iOS legen die App dann schlafen; die
+    /// laufende Abfrage bricht ab („Software caused connection abort",
+    /// Zeitueberschreitung, Namensaufloesung). Das sagt nichts ueber den Code.
+    /// Vorher beendete genau so ein Fehler das Warten und stand roh auf dem
+    /// Schirm, obwohl der Code noch galt.
+    public func quickConnectNachfragen(_ vorgang: Anmeldecode) async -> Quickconnectstand {
+        do {
+            return try await quickConnectFreigegeben(vorgang) ? .freigegeben : .offen
+        } catch {
+            return Quickconnectstand(fehler: error)
+        }
     }
 
     /// Holt sich das Zugangsmerkmal, nachdem der Code freigegeben wurde.
@@ -127,4 +145,35 @@ public enum Quickconnectfrist {
 
     /// Wie viele Abfragen daraus folgen.
     public static var versuche: Int { sekunden / takt }
+
+    /// **Was am Ende der Frist dasteht.** Scheiterte schon die letzte
+    /// Abfrage, lag es nicht am Code, sondern an der Verbindung — dann sagt
+    /// die Meldung das auch.
+    public static func schlusstext(letzte: Quickconnectstand) -> String {
+        letzte == .gescheitert ? uebersetzt("Der Server hat nicht geantwortet.")
+                               : uebersetzt("Der Code ist abgelaufen. Hol dir einen neuen.")
+    }
+}
+
+/// Der Server kennt den Quick-Connect-Vorgang nicht mehr (404).
+public struct Quickconnectabgelaufen: LocalizedError, Equatable, Sendable {
+    public init() {}
+    public var errorDescription: String? {
+        uebersetzt("Der Code ist abgelaufen. Hol dir einen neuen.")
+    }
+}
+
+/// **Das Ergebnis einer Nachfrage beim Warten auf die Freigabe.**
+///
+/// Nur `freigegeben` und `abgelaufen` beenden das Warten. `gescheitert` heisst:
+/// diese eine Abfrage kam nicht durch — weiter fragen, der Code gilt noch.
+public enum Quickconnectstand: String, Sendable, Equatable {
+    case offen, freigegeben, abgelaufen, gescheitert
+
+    public init(fehler: any Error) {
+        self = fehler is Quickconnectabgelaufen ? .abgelaufen : .gescheitert
+    }
+
+    /// Ob das Warten hier endet.
+    public var beendetWarten: Bool { self == .freigegeben || self == .abgelaufen }
 }

@@ -56,6 +56,8 @@ final class App: @unchecked Sendable {
     var kontoCode = ""
     var kontoFehler = ""
     var kontoCodelauf: Task<Void, Never>?
+    /// Das Warten auf die Quick-Connect-Freigabe auf der Anmeldeseite.
+    private var schnelllauf: Task<Void, Never>?
     /// Die Felder der Seite. **Als Felder der Klasse, nicht als Argumente über
     /// die Fadengrenze** — ein `Widget` ist ein roher Zeiger und damit nicht
     /// `Sendable`; angefasst wird es ohnehin nur auf GTKs Hauptfaden.
@@ -233,11 +235,14 @@ final class App: @unchecked Sendable {
         }
         // **Der zuletzt benutzte Server steht schon im Feld.** Nach dem
         // Abmelden war es leer, und man tippte die Adresse von Hand.
-        if Speicher.bundLesen() == nil, let merk = Speicher.gemerkterServer() {
+        let abgelegt = Speicher.bundLesen()
+        Startstufe.melden("einstellungen")
+        if abgelegt == nil, let merk = Speicher.gemerkterServer() {
             gtk_editable_set_text(OpaquePointer(serverfeld), merk.serverURL.absoluteString)
             serverstandZeigen(merk.servername.map { String(format: uebersetzt("Zuletzt: %@"), $0) } ?? "")
         }
         gtk_window_present(alsFenster(fenster))
+        Startstufe.melden("bereit")
         // **Erst jetzt gibt es eine Fensterfläche.** Vorher hat das Fenster
         // kein Gegenstück im Fenstersystem, und ohne das lassen sich die
         // Medientasten nicht anmelden. Auf Linux tut die Zeile nichts — dort
@@ -249,7 +254,8 @@ final class App: @unchecked Sendable {
         // Gemerkte Sitzung: gleich weiter zur Startseite, ohne Nachfragen.
         // **Der Bund, nicht die einzelne Sitzung** — sonst stuende nach einem
         // Neustart nur noch ein Konto im Streifen.
-        if let ablage = Speicher.bundLesen() {
+        if let ablage = abgelegt {
+            Startstufe.melden("server")
             bund = ablage.bund
             sitzungEinsetzen(ablage.bund.aktives, servername: ablage.servername)
         }
@@ -420,32 +426,54 @@ final class App: @unchecked Sendable {
     /// bis er freigegeben oder abgebrochen wird.
     private func schnellanmeldung() {
         guard let c = anmeldeclient else { return }
-        Task.detached { [self] in
-            guard let vorgang = try? await c.quickConnectStarten() else {
-                aufHauptfaden { self.anmeldestandZeigen(uebersetzt("Der Server hat keinen Code gegeben.")) }
+        schnelllauf?.cancel()
+        // **Gehalten und beim Verlassen abgebrochen** (Zurück, Abmelden,
+        // andere Anmeldung). Vorher lief `Task.detached` fünf Minuten weiter,
+        // und eine späte Freigabe meldete einen plötzlich an.
+        schnelllauf = Task.detached { [self] in
+            let vorgang: Anmeldecode
+            do { vorgang = try await c.quickConnectStarten() } catch {
+                // Den Grund nennen — etwa „Quick Connect abgeschaltet" —,
+                // nicht pauschal „kein Code".
+                if Task.isCancelled { return }
+                let text = lesbarerFehler(error)
+                aufHauptfaden { self.anmeldestandZeigen(text) }
                 return
             }
+            if Task.isCancelled { return }
             aufHauptfaden {
                 self.anmeldestandZeigen(String(format: uebersetzt("Code %@ — auf einem angemeldeten Gerät freigeben"), vorgang.code))
             }
-            // Frist und Takt stehen im Paket (``Quickconnectfrist``) — sie
-            // standen hier und in `kontoCodeHolen` zweimal derselbe Wert.
-            for _ in 0..<Quickconnectfrist.versuche {
-                try? await Task.sleep(nanoseconds: UInt64(Quickconnectfrist.takt) * 1_000_000_000)
-                guard (try? await c.quickConnectFreigegeben(vorgang)) == true else { continue }
-                guard let sitzung = try? await c.anmeldenMitQuickConnect(vorgang) else { break }
-                aufHauptfaden {
-                    // Adresse, Name und Kennung stehen jetzt alle in der
-                    // Sitzung selbst — `serverURL` wird hier nicht mehr
-                    // gebraucht.
-                    let servername = gtk_label_get_text(OpaquePointer(self.serverzeile))
-                        .map { String(cString: $0) }
-                    self.anmeldestandZeigen("")
-                    self.sitzungAufnehmen(sitzung, servername: servername)
+            // Frist, Takt und der Umgang mit Netzfehlern: ``Quickconnectwarten``
+            // im Paket, wie auf Apple und Android.
+            for await ereignis in c.quickConnectWarten(vorgang) {
+                if Task.isCancelled { return }
+                switch ereignis {
+                case .rest: continue
+                case let .ende(letzte):
+                    let text = Quickconnectfrist.schlusstext(letzte: letzte)
+                    aufHauptfaden { self.anmeldestandZeigen(text) }
+                    return
+                case .freigegeben:
+                    do {
+                        let sitzung = try await c.anmeldenMitQuickConnect(vorgang)
+                        if Task.isCancelled { return }
+                        aufHauptfaden {
+                            // Adresse, Name und Kennung stehen jetzt alle in der
+                            // Sitzung selbst — `serverURL` wird hier nicht mehr
+                            // gebraucht.
+                            let servername = gtk_label_get_text(OpaquePointer(self.serverzeile))
+                                .map { String(cString: $0) }
+                            self.anmeldestandZeigen("")
+                            self.sitzungAufnehmen(sitzung, servername: servername)
+                        }
+                    } catch {
+                        let text = lesbarerFehler(error)
+                        aufHauptfaden { self.anmeldestandZeigen(text) }
+                    }
+                    return
                 }
-                return
             }
-            aufHauptfaden { self.anmeldestandZeigen(uebersetzt("Der Code ist abgelaufen. Hol dir einen neuen.")) }
         }
     }
 
@@ -525,6 +553,8 @@ final class App: @unchecked Sendable {
         }
         beiSignal(zurueckknopf, "clicked") { [weak self] in
             guard let self else { return }
+            self.schnelllauf?.cancel()
+            self.schnelllauf = nil
             gtk_stack_set_visible_child_name(OpaquePointer(self.anmeldeschritte), "server")
         }
         return mitte
@@ -692,6 +722,10 @@ final class App: @unchecked Sendable {
         // Seiten leiteten es vorher aus `bund != nil` her — und die Regel, dass
         // ein anderer Server *kein* Wechsel ist, sondern ein Neuanfang, stand
         // damit zweimal da.
+        // Angemeldet ist angemeldet — ein noch wartender Code darf danach
+        // nicht ein zweites Mal anmelden.
+        schnelllauf?.cancel()
+        schnelllauf = nil
         let (neuer, warAngemeldet) = Kontenbund.aufnehmen(sitzung, in: bund)
         bund = neuer
         bundSichern(servername: servername)
@@ -915,42 +949,53 @@ final class App: @unchecked Sendable {
             let c = JellyfinClient(baseURL: url, deviceID: Geraet.kennung,
                                    deviceName: Geraet.name,
                                    clientVersion: Geraet.fassung)
-            guard let vorgang = try? await c.quickConnectStarten() else {
-                aufHauptfaden { self.kontoFehlerZeigen(uebersetzt("Der Server hat keinen Code gegeben.")) }
+            let vorgang: Anmeldecode
+            do { vorgang = try await c.quickConnectStarten() } catch {
+                if Task.isCancelled { return }
+                let text = lesbarerFehler(error)
+                aufHauptfaden { self.kontoFehlerZeigen(text) }
                 return
             }
+            if Task.isCancelled { return }
             aufHauptfaden {
                 self.kontoCode = vorgang.code
                 gtk_label_set_text(OpaquePointer(self.kontoCodefeld), vorgang.code)
             }
-            // Frist und Takt: ``Quickconnectfrist`` im Paket.
-            for versuch in 0..<Quickconnectfrist.versuche {
-                // **Die Restzeit wird sekundenweise gezeigt**, nicht im
-                // Zwei-Sekunden-Takt der Abfrage: eine Uhr, die zweimal
-                // dieselbe Zahl zeigt und dann zwei ueberspringt, sieht
-                // kaputt aus. Also je Runde zwei Schritte à einer Sekunde.
-                for _ in 0..<Quickconnectfrist.takt {
-                    let rest = Quickconnectfrist.sekunden
-                        - versuch * Quickconnectfrist.takt
-                    aufHauptfaden { self.kontoRestZeigen(rest) }
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    if Task.isCancelled { return }
+            // Frist, Takt, Netzfehler: ``Quickconnectwarten`` im Paket. Die
+            // Restzeit kommt sekundenweise, nicht im Takt der Abfrage.
+            for await ereignis in c.quickConnectWarten(vorgang) {
+                if Task.isCancelled { return }
+                switch ereignis {
+                case let .rest(sekunden):
+                    aufHauptfaden { self.kontoRestZeigen(sekunden) }
+                case let .ende(letzte):
+                    let text = Quickconnectfrist.schlusstext(letzte: letzte)
+                    aufHauptfaden {
+                        self.kontoRestZeigen(nil)
+                        self.kontoFehlerZeigen(text)
+                    }
+                    return
+                case .freigegeben:
+                    do {
+                        let sitzung = try await c.anmeldenMitQuickConnect(vorgang)
+                        if Task.isCancelled { return }
+                        aufHauptfaden {
+                            self.kontoCode = ""
+                            self.kontoFehler = ""
+                            self.kontoPerCode = false
+                            self.kontoCodelauf = nil
+                            self.sitzungAufnehmen(sitzung, servername: servername)
+                            self.unterseiteOeffnen(.profil, schub: .ohne)
+                        }
+                    } catch {
+                        let text = lesbarerFehler(error)
+                        aufHauptfaden {
+                            self.kontoRestZeigen(nil)
+                            self.kontoFehlerZeigen(text)
+                        }
+                    }
+                    return
                 }
-                guard (try? await c.quickConnectFreigegeben(vorgang)) == true else { continue }
-                guard let sitzung = try? await c.anmeldenMitQuickConnect(vorgang) else { break }
-                aufHauptfaden {
-                    self.kontoCode = ""
-                    self.kontoFehler = ""
-                    self.kontoPerCode = false
-                    self.kontoCodelauf = nil
-                    self.sitzungAufnehmen(sitzung, servername: servername)
-                    self.unterseiteOeffnen(.profil, schub: .ohne)
-                }
-                return
-            }
-            aufHauptfaden {
-                self.kontoRestZeigen(nil)
-                self.kontoFehlerZeigen(uebersetzt("Der Code ist abgelaufen. Hol dir einen neuen."))
             }
         }
     }
@@ -989,11 +1034,20 @@ final class App: @unchecked Sendable {
         let token = sitzung.accessToken
         let benutzerID = sitzung.userID
         let benutzername = sitzung.userName
+        // **Mit Fassung.** Ohne `clientVersion` greift der Standard
+        // `Fassungsnummer.ausDemBuendel` — ein Buendel gibt es hier nicht, und
+        // im Jellyfin-Dashboard stand „Swiftly Player unbekannt". Das ist der
+        // Weg bei jedem Start mit gespeicherter Sitzung.
         let c = JellyfinClient(baseURL: serverURL,
                                deviceID: Geraet.kennung,
-                               deviceName: Geraet.name)
+                               deviceName: Geraet.name,
+                               clientVersion: Geraet.fassung)
+        print("[Sitzung] Client-Fassung \(Geraet.fassung)")
+        fflush(nil)
         adressen = Bildadresse(basis: serverURL, token: token)
         self.benutzerID = benutzerID
+        // Die Vorgabe des vorigen Kontos gilt nicht fuer dieses.
+        naechsteAutomatischKonto = nil
         // **Die Downloads gehoeren dem Konto** (H11). Zwei Konten auf einem
         // Server tragen dieselben Kennungen; ohne das Konto kaeme der
         // Fortschritt des einen an den Titel des anderen.
@@ -1011,6 +1065,7 @@ final class App: @unchecked Sendable {
             aufHauptfaden {
                 self.client = c
                 self.downloads.anmelden(client: c, konto: benutzerID)
+                self.kontovorgabenHolen(c)
                 // **H6/H9: was der Server inzwischen sagt.** Auf Apple laeuft
                 // derselbe Abgleich bei jedem Erscheinen der Hauptansicht.
                 self.downloads.nachziehen()
@@ -1240,6 +1295,17 @@ final class App: @unchecked Sendable {
     /// dort gewählt ist. Die Mehr-Liste braucht beides — ohne sie liesse sich
     /// „Folge von vorn" und „Staffel als gesehen" nicht anbieten.
     var offenesZiel: Spielziel?
+    /// **Sehstand an Ort und Stelle auffrischen** (nach dem Player). Jede
+    /// Folgenzeile und der Hauptknopf legen hier ab, wie sie sich neu
+    /// zeichnen; die Marke verhindert, dass das Abraeumen einer alten Seite
+    /// den Eintrag der neuen loescht.
+    var sehstandZeilen: [String: (marke: Int, auffrischen: (Item) -> Void)] = [:]
+    var kopfAuffrischen: (marke: Int, tun: () -> Void)?
+    var sehstandMarken = 0
+    /// Die Scrollflaeche der offenen Detailseite — fuers Protokoll, damit sich
+    /// belegen laesst, dass sie nach dem Player stehen bleibt.
+    var detailScroller: Widget?
+    func naechsteSehstandMarke() -> Int { sehstandMarken += 1; return sehstandMarken }
     var offeneStaffel: Item?
     /// Die Hinweiszeile der Detailseite.
     var hinweisfeld: Widget!
@@ -1314,16 +1380,76 @@ final class App: @unchecked Sendable {
     var medienleiste: Medienleiste?
     private var uebernahmezeile: Widget!
     private var uebernahmetitel: Widget!
+    /// Bis wann ein Fehler in der Uebernahmezeile stehen bleibt (N7).
+    private var uebernahmefehlerBis = Date.distantPast
     private var uebernahmezeichen: Widget!
     private var uebernahmeangebote: [Fremdsitzung] = []
     private var uebernahmelauf: Task<Void, Never>?
     /// Vorspann- und Abspannmarken des laufenden Titels, vom Server.
     var abschnitte: [Abschnitt] = []
     var jetzigesAngebot: Knopfangebot = .keiner
-    /// **Läuft gerade ein Folgenwechsel?** Siehe ``naechsteFolge()`` — ohne
-    /// diesen Riegel lief er mehrfach an, weil `Folgenende.weiterschalten`
-    /// jeden Takt wahr bleibt, während der Wechsel zwei Netzabrufe braucht.
-    var wechselt = false
+    /// **„Intro überspringen" und „Nächste Folge" über dem Bild**, ohne dass
+    /// die Steuerung aufgehen muss (Stufe 3). Was wann steht, sagt das Paket.
+    var angebotsebene = Angebotsebene()
+    /// `EnableNextEpisodeAutoPlay` des Kontos. Nicht gespeichert: kommt bei
+    /// jeder Anmeldung frisch, ein anderes Konto hat eine andere.
+    var naechsteAutomatischKonto: Bool?
+    /// **Der Folgenwechsel des offenen Players** — der Ablauf aus dem Paket,
+    /// derselbe wie auf iOS, tvOS und macOS (Audit 16.09.2026, T2-H1/M3).
+    /// Er haelt den Riegel (ein Wechsel zur Zeit), und `schliessen` bricht
+    /// einen laufenden ab. Jedes Oeffnen bekommt einen frischen: ein alter
+    /// Wechsel, dessen Player zu ist, erkennt sich daran, dass er nicht mehr
+    /// hier steht.
+    var folgenwechsel = Folgenwechsel()
+    /// **Die naechste Folge, vorab geholt** (T2-H2). Nur wenn sie da ist,
+    /// gibt es den Knopf, die Medientaste und das Weiterschalten — vorher
+    /// galt jede Folge als eine mit Nachfolger, auch das Finale.
+    var vorgeholteFolge: Item?
+    /// **Die eine Reihe fuer Start, Fortschritt und Stopp** — dieselbe wie
+    /// `AppModel.meldungen` auf Apple (Audit 16.09.2026, Stufe 2). Reihenfolge,
+    /// Zusammenfassen, 6 s Frist je Meldung und die Stoppsperre je PlaySession
+    /// stehen im Paket; hier steht nur, was gesendet wird. Die eigene
+    /// `Stoppsperre` aus `bafc898` ist darin aufgegangen.
+    let meldungen = Meldewarteschlange<Meldeinhalt> { meldung in
+        let inhalt = meldung.nutzlast
+        let client = inhalt.client, titel = inhalt.titel, plan = inhalt.plan
+        #if DEBUG
+        // Fernsteuerpult `meldungen:haengen`: ein Server, der nicht antwortet.
+        if Meldeprobe.haengen { try await Task.sleep(nanoseconds: 60_000_000_000) }
+        #endif
+        switch meldung.art {
+        case .start:
+            // **Die Faehigkeiten vor jedem Start** (T2-N3), wie Apple und
+            // Android: nach einem Neustart des Servers war das Geraet sonst bis
+            // zum Neustart der App nicht steuerbar. Scheitert es, geht der
+            // Start trotzdem — ausser die Frist hat abgebrochen.
+            do { try await client.faehigkeitenMelden() } catch {
+                try Task.checkCancellation()
+                print("[Uebernahme] Faehigkeiten nicht gemeldet")
+            }
+            try await client.reportStart(itemID: titel.id, plan: plan, ticks: inhalt.ticks,
+                                         spuren: inhalt.spuren)
+            print("[Melden] Start \(inhalt.ticks / 10_000_000) s \(titel.id) session \(plan.playSessionID ?? "nil")"
+                  + " Spuren \(inhalt.spurtext)")
+        case let .fortschritt(pausiert):
+            try await client.reportProgress(itemID: titel.id, plan: plan,
+                                            positionTicks: inhalt.ticks, paused: pausiert,
+                                            spuren: inhalt.spuren)
+            print("[Melden] Progress \(inhalt.ticks / 10_000_000) s pausiert \(pausiert) \(titel.id)"
+                  + " Spuren \(inhalt.spurtext)")
+        case .stopp:
+            try await client.reportStopped(itemID: titel.id, plan: plan,
+                                           positionTicks: inhalt.ticks)
+        }
+        fflush(nil)
+    }
+    /// Was dem Server gerade als laufend bekannt ist — gesetzt mit dem Start,
+    /// geloescht mit dem Stopp. Pause, Weiter und Sprung melden daran, ohne
+    /// den Player zu fragen; vor dem Start und nach dem Stopp gibt es nichts.
+    var meldetitel: (client: JellyfinClient, titel: Item, plan: PlaybackPlan)?
+    /// Was zuletzt als Laufzustand hinausging — libVLCs Ereignis meldet so
+    /// nur einmal je Wechsel.
+    var gemeldetPausiert = false
     /// Ob der Nutzer auf der offenen Detailseite schon etwas gewählt hat.
     /// Die zuletzt aufgeklappte Tafel des Mehr-Knopfs. Sie wird beim nächsten
     /// Klick gelöst — sonst hängen sie sich am Knopf auf.
@@ -1399,9 +1525,16 @@ final class App: @unchecked Sendable {
     /// an, und ``App`` entsteht als globale Referenz — also **bevor**
     /// `g_application_run` GTK hochgefahren hat. Ein Widget vor `gtk_init`
     /// ist ein Absturz in libgtk, ohne eine Zeile eigenen Codes im Rückweg.
-    lazy var abspieler = Abspieler()
+    lazy var abspieler: Abspieler = {
+        let neu = Abspieler()
+        // Pause und Weiter gehen ueber VLCs Ereignis an den Server (T2-N1).
+        neu.laufzustand = { [weak self] laeuft in self?.laufzustandGemeldet(laeuft: laeuft) }
+        return neu
+    }()
     var laufenderTitel: Item?
     var laufenderPlan: PlaybackPlan?
+    /// Ton, Untertitel und nachgeladene Dateien des laufenden Titels — ``Spurlage``.
+    let spurlage = Spurlage()
     var spielstand = Wiedergabetakt.Stand()
     var seitOeffnen = Date()
     var spielertakt: guint = 0
@@ -1413,17 +1546,22 @@ final class App: @unchecked Sendable {
     /// Zaehlt die Spielerseiten. Siehe ``spielerOeffnen(_:ab:)``.
     var spielerZaehler = 0
     var spielerAbspielzeichen: Abspielzeichen?
-    var spielerWeiter: Widget!
+    var spielerWeiter: Angebotsknopf?
+    /// Derselbe Knopf als eigene Ebene über dem Bild, bei zugeklappter Steuerung.
+    var spielerAngebot: Angebotsknopf?
     var spielerSpurknopf: Widget!
     /// Hält das gemalte Reglerzeichen des Wiedergabe-Chips am Leben, solange
     /// die Spielerseite steht.
     var spielerReglerzeichen: Reglerzeichen?
     var spielerVollknopf: Widget!
     var spielerLadeschirm: Widget!
-    /// Bis wann VLCs Zeit nicht übernommen wird — nach jedem Sprung.
-    var sprungBis = Date.distantPast
     /// Ob gerade am Zeitregler gezogen wird.
     var amRegler = false
+    /// Wechselt jeden Aufruf: `takten` zieht abwechselnd nur die Zeit nach
+    /// und rechnet den ganzen Takt.
+    var nurZeitTakt = false
+    /// Die Füllung der Karte „Nächste Folge" als durchgehende Bewegung.
+    var angebotsuhr = Fuellungsuhr()
     var spielerWarnung: Widget!
     var spielerWarntext: Widget!
     /// Die beiden Kreispfeile. Sie tragen die Sprungweite als Zahl und
@@ -1649,17 +1787,13 @@ final class App: @unchecked Sendable {
                 steuerungZeigen()
                 return true
             case 0xFF51:                                   // Pfeil links
-                abspieler.springen(-Double(wahlen.zurueckSekunden))
-                sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
-                letzterSprung = Date()
+                springe(um: -Double(wahlen.zurueckSekunden))
                 spielerZurueckZeichen?.stupsen()
                 sprungZeigen(true)
                 steuerungZeigen()
                 return true
             case 0xFF53:                                   // Pfeil rechts
-                abspieler.springen(Double(wahlen.vorSekunden))
-                sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
-                letzterSprung = Date()
+                springe(um: Double(wahlen.vorSekunden))
                 spielerVorZeichen?.stupsen()
                 sprungZeigen(false)
                 steuerungZeigen()
@@ -1667,13 +1801,25 @@ final class App: @unchecked Sendable {
             case 0xFFC8:                                   // F11
                 vollbildUmschalten()
                 return true
+            case 0xFF0D, 0xFF8D:                           // Eingabe, Ziffernblock
+                // **Steht die Einblendung da, löst Eingabe sie aus** — ohne
+                // Fokus, wie am Mac (`PlayerScreen`, `.keyboardShortcut(.return)`).
+                // Sonst geht die Taste weiter an den fokussierten Knopf.
+                guard angebotImBild else { return false }
+                angebotAusfuehren()
+                return true
             case 0xFF1B:                                   // Escape
-                // **Erst die Tafel, dann das Vollbild, dann der Player.**
-                // Der Mac prueft die offene Spurwahl vor allem anderen
-                // (`PlayerScreen.fluchttaste()`, `:659`); hier uebersprang
-                // Escape sie und schloss gleich den ganzen Player.
+                // **Erst die Tafel, dann die Einblendung, dann das Vollbild,
+                // dann der Player.** Der Mac prueft die offene Spurwahl vor
+                // allem anderen (`PlayerScreen.fluchttaste()`); die
+                // Einblendung schliesst nur sich, der Film laeuft weiter.
                 if spurtafel != nil {
                     spurwahlSchliessen()
+                } else if angebotImBild {
+                    angebotsebene.schliessen()
+                    angebotNachfuehren()
+                    print("[Angebot] geschlossen (Escape), weiter abgesagt: \(angebotsebene.weiterAbgesagt)")
+                    fflush(nil)
                 } else if gtk_window_is_fullscreen(alsFenster(fenster)) != 0 {
                     gtk_window_unfullscreen(alsFenster(fenster))
                 } else {
@@ -1865,7 +2011,7 @@ final class App: @unchecked Sendable {
         anhaengen(reihe, text)
 
         gtk_button_set_child(alsKnopf(knopf), reihe)
-        beiSignal(knopf, "clicked") { [weak self] in self?.uebernehmen() }
+        beiSignal(knopf, "clicked") { [weak self] in self?.uebernahmeGedrueckt() }
         beschriften(knopf, uebersetzt("Wiedergabe übernehmen"))
         return knopf
     }
@@ -1933,6 +2079,9 @@ final class App: @unchecked Sendable {
         guard let zeile = uebernahmezeile else { return }
         // **Nicht, während hier selbst etwas läuft.** Dann wäre das Angebot
         // eine Einladung, sich selbst zu unterbrechen.
+        // Ein Fehler steht ein paar Sekunden in der Zeile; der naechste
+        // Takt soll ihn nicht sofort ueberschreiben (N7).
+        guard Date() >= uebernahmefehlerBis else { return }
         guard laufenderTitel == nil, let erste = uebernahmeangebote.first,
               let titel = erste.laeuft else {
             gtk_widget_set_visible(zeile, 0)
@@ -1953,17 +2102,89 @@ final class App: @unchecked Sendable {
     /// Sitzung steht weiter in der Übersicht, und auf dem anderen Gerät liegt
     /// der Player noch über allem. Die Stelle ist vorher gelesen, sie geht
     /// dabei nicht verloren.
-    private func uebernehmen() {
-        guard let client, let sitzung = uebernahmeangebote.first,
-              let titel = sitzung.laeuft else { return }
+    ///
+    /// **Bei mehreren Geraeten wird gefragt, nicht geraten** (N7). Vorher nahm
+    /// die Zeile immer das erste; wie der Mac (`HauptView.abzeichenGedrueckt`,
+    /// `Uebernahmeauswahl`) steht die Auswahl dort, wo geklickt wurde.
+    private func uebernahmeGedrueckt() {
+        let angebote = uebernahmeangebote.filter { $0.laeuft != nil }
+        if angebote.count > 1 {
+            uebernahmeauswahlZeigen(angebote)
+        } else if let eine = angebote.first {
+            uebernehmen(eine)
+        }
+    }
+
+    #if DEBUG
+    /// Fernsteuerpult `uebernahme` — siehe dort.
+    func uebernahmeprobe(_ wahl: Int?) {
+        let folge = letzteStartreihe.first
+        uebernahmeangebote = ["Probe-Telefon", "Probe-Fernseher"].enumerated().map { i, name in
+            Fremdsitzung(id: "probe-\(i)", geraeteID: "probe-\(i)", geraetename: name,
+                         programm: "Swiftly", nimmtBefehle: true, laeuft: folge,
+                         stand: nil)
+        }
+        uebernahmefehlerBis = .distantPast
+        uebernahmeZeigen()
+        if let wahl, uebernahmeangebote.indices.contains(wahl - 1) {
+            uebernehmen(uebernahmeangebote[wahl - 1])
+        } else {
+            uebernahmeGedrueckt()
+        }
+    }
+    #endif
+
+    private func uebernahmeauswahlZeigen(_ angebote: [Fremdsitzung]) {
+        let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+        gtk_widget_set_size_request(liste, 300, -1)
+        let kopf = beschriftung(uebersetzt("Wo weiterschauen?"), stil: "swiftly-kacheltitel")
+        gtk_label_set_xalign(OpaquePointer(kopf), 0)
+        gtk_widget_set_margin_start(kopf, 10)
+        gtk_widget_set_margin_top(kopf, 6)
+        anhaengen(liste, kopf)
+        let hinweis = beschriftung(
+            uebersetzt("Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter."),
+            stil: "swiftly-uebernahmezeile", umbruch: true)
+        gtk_label_set_xalign(OpaquePointer(hinweis), 0)
+        gtk_widget_set_margin_start(hinweis, 10)
+        gtk_widget_set_margin_end(hinweis, 10)
+        gtk_widget_set_margin_bottom(hinweis, 6)
+        anhaengen(liste, hinweis)
+
+        let tafel = tafelOeffnen(an: uebernahmezeile)
+        gtk_popover_set_child(alsTafel(tafel), liste)
+        for sitzung in angebote {
+            let geraet = sitzung.geraetename ?? uebersetzt("Gerät")
+            let stelle = Spielzeit.text(sitzung.stand?.stelle ?? 0)
+            anhaengen(liste, handlungszeile(geraetezeichen(sitzung.geraeteart),
+                                            "\(geraet) · \(sitzung.titelzeile) · \(stelle)") {
+                [weak self] in
+                gtk_popover_popdown(alsTafel(tafel))
+                self?.uebernehmen(sitzung)
+            })
+        }
+        print("[Uebernahme] Auswahl mit \(angebote.count) Geraeten")
+        fflush(nil)
+        gtk_popover_popup(alsTafel(tafel))
+    }
+
+    private func uebernehmen(_ sitzung: Fremdsitzung) {
+        guard let client, let titel = sitzung.laeuft else { return }
         let ab = sitzung.stand?.stelle ?? 0
         gtk_widget_set_visible(uebernahmezeile, 0)
         Task.detached { [self] in
             do { try await client.fremdbefehl(.beenden, an: sitzung.id) }
             catch {
+                let text = lesbarerFehler(error)
+                print("[Uebernahme] Beenden auf \(sitzung.geraetename ?? sitzung.id) gescheitert: \(text)")
+                fflush(nil)
                 aufHauptfaden {
+                    // **Dort, wo geklickt wurde** (N7). Vorher ging der Satz in
+                    // ein Feld des Anmeldeschirms, das hier niemand sieht.
                     self.uebernahmeangebote = []
-                    self.anmeldestandZeigen(lesbarerFehler(error))
+                    self.uebernahmefehlerBis = Date().addingTimeInterval(6)
+                    gtk_label_set_text(OpaquePointer(self.uebernahmetitel), text)
+                    gtk_widget_set_visible(self.uebernahmezeile, 1)
                 }
                 return
             }
@@ -2752,8 +2973,9 @@ final class App: @unchecked Sendable {
                                   dauer: spielstand.dauer,
                                   stelle: spielstand.position,
                                   bild: plakat?.absoluteString ?? "")
-        // „Weiter" ist nur aktiv, wenn es eine naechste Folge gibt.
-        medienleiste?.naechsteMelden(titel.type == "Episode")
+        // „Weiter" ist nur aktiv, wenn es eine naechste Folge gibt — die
+        // vorab geholte, nicht „ist eine Folge" (T2-H2).
+        medienleiste?.naechsteMelden(vorgeholteFolge != nil)
     }
 
     /// Was ein anderes Geraet hier ausloest. Dieselben Griffe wie am Knopf.
@@ -2768,9 +2990,10 @@ final class App: @unchecked Sendable {
         case .weiter:   abspieler.abspielen()
         case .umschalten: abspieler.umschalten()
         case .stopp:    spielerSchliessen()
-        case let .springenAuf(stelle): abspieler.setzeZeit(stelle)
-        case .vor:      abspieler.springen(Double(wahlen.vorSekunden))
-        case .zurueck:  abspieler.springen(-Double(wahlen.zurueckSekunden))
+        // Ueber `springe`: Stand und Sprungriegel mit (T2-N2), Meldung sofort.
+        case let .springenAuf(stelle): springe(auf: stelle)
+        case .vor:      springe(um: Double(wahlen.vorSekunden))
+        case .zurueck:  springe(um: -Double(wahlen.zurueckSekunden))
         case .naechste: naechsteFolge()
         case .vorige:   break
         }
@@ -2828,6 +3051,8 @@ final class App: @unchecked Sendable {
         offeneUnterseite = nil
         leeren(reihenstapel)
         gtk_editable_set_text(OpaquePointer(passwortfeld), "")
+        schnelllauf?.cancel()
+        schnelllauf = nil
         anmeldestandZeigen("")
         serverstandZeigen("")
         kopfzeileZeigen(false)
@@ -3120,49 +3345,24 @@ final class App: @unchecked Sendable {
             // Seite blieb leer.
             do { _ = try await client.resumeItems(limit: 1) }
             catch { aufHauptfaden { self.sitzungPruefen(error) } }
-            async let weiter = try? await client.resumeItems(limit: 20)
-            async let naechste = try? await client.nextUp(limit: 20)
-            // **Getrennt heisst getrennt gefragt, nicht nachtraeglich
-            // gesiebt.** Bis zum 13.09.2026 holte Linux die gemischte Reihe
-            // und filterte sie danach nach `type`. Damit zeigte "Zuletzt
-            // hinzugefuegte Filme" nur, was zufaellig in den obersten zwanzig
-            // der Mischung lag — bei einem Server, auf dem gerade eine Serie
-            // nach der anderen ankommt, war die Filmreihe leer, obwohl Filme
-            // dazugekommen waren. Der Mac fragt je Bibliothek einzeln
-            // (`Startseitenmodell.swift:73-79`); hier jetzt auch.
             let filmBib = gewaehlteBibliothek[.filme] ?? bibliotheken(fuer: .filme).first?.id
             let serienBib = gewaehlteBibliothek[.serien] ?? bibliotheken(fuer: .serien).first?.id
-            async let neu = getrennt ? nil : await client.zuletztHinzugefuegt()
-            async let neuFilme = getrennt
-                ? await client.zuletztHinzugefuegt(in: filmBib) : nil
-            async let neuSerien = getrennt
-                ? await client.zuletztHinzugefuegt(in: serienBib) : nil
-
-            // **Jede Reihe hat ihre eigene Kachelform, und das ist keine
-            // Geschmacksfrage.** A2 im Register: „Nächste Folge öffnet die
-            // Übersicht, sie startet nicht. Nur ‚Weiterschauen' springt
-            // direkt in die Wiedergabe." Waagerecht ist deshalb allein
-            // „Weiterschauen" — auf iPhone, Fernseher und Mac genauso.
-            let neuzugaenge = await neu ?? []
-            let filme = await neuFilme ?? []
-            let serien = await neuSerien ?? []
-            // **Neue Filme und neue Serien getrennt, wenn gewünscht.** Eine
-            // gemischte Reihe ist die Vorgabe; wer viel neu bekommt, will sie
-            // auseinander. Die Zeile fehlte auf Linux ganz.
-            // **Die feste Reihenfolge kam aus dem Code, jetzt aus den
-            // Einstellungen.** Welche Reihen, in welcher Folge, und welche
-            // ausgeblendet sind — `Startreihenfolge` im Paket rechnet es aus,
-            // damit dieselbe Ablage auf jeder Plattform dasselbe ergibt.
-            // **Jede Reihe geht entdoppelt hinein** (`Listenregeln`). Der
-            // Server liefert denselben Titel gelegentlich zweimal; auf Apple
-            // beschwert sich `ForEach` ueber die doppelte Kennung, auf GTK
-            // stuende die Kachel schlicht zweimal in der Reihe.
+            // **Eine Regel fuer alle Plattformen** — `Startseitenlader` im Paket.
+            //
+            // Hier stand bis zum 15.09.2026 eine eigene Abschrift von
+            // `Startseitenmodell.laden`, und sie war schon auseinandergelaufen: „Nächste
+            // Folge" behielt die Titel, die schon in „Weiterschauen" standen. Jetzt holt
+            // das Paket die Reihen fuer Apple, Linux/Windows und Android gleich; hier
+            // wird nur noch angeordnet und angezeigt.
+            let startseite = await Startseitenlader.laden(von: client, .init(
+                getrennt: getrennt, filmBibliothek: filmBib, serienBibliothek: serienBib,
+                gattungen: alsChips ? nil : gattungen))
             let inhalt: [Startreihe: (Reihenart, [Item])] = [
-                .weiterschauen: (.weiterschauen, Listenregeln.ohneDoppelte(await weiter ?? [])),
-                .naechsteFolge: (.naechste, Listenregeln.ohneDoppelte(await naechste ?? [])),
-                .neuzugaenge:   (.neu, Listenregeln.ohneDoppelte(neuzugaenge)),
-                .neueFilme:     (.neu, Listenregeln.ohneDoppelte(filme)),
-                .neueSerien:    (.neu, Listenregeln.ohneDoppelte(serien)),
+                .weiterschauen: (.weiterschauen, startseite.weiterschauen ?? []),
+                .naechsteFolge: (.naechste, startseite.naechsteFolge ?? []),
+                .neuzugaenge:   (.neu, startseite.zuletzt ?? []),
+                .neueFilme:     (.neu, startseite.neueFilme ?? []),
+                .neueSerien:    (.neu, startseite.neueSerien ?? []),
             ]
             var gesammelt: [(String, Reihenart, [Item])] = Startreihenfolge
                 .sichtbar(abgelegt: reihenfolge, aus: Set(ausgeblendet), getrennt: getrennt)
@@ -3170,19 +3370,7 @@ final class App: @unchecked Sendable {
                     guard let (art, items) = inhalt[r], !items.isEmpty else { return nil }
                     return (uebersetzt(r.reihentitel), art, items)
                 }
-
-            // **Die Genres als eigene Reihen, nach den festen** — nur wenn
-            // sie nicht als Chips oben stehen. Ihre Namen kommen vom Server
-            // und laufen deshalb **nie** durch die Übersetzung (E7).
-            if !alsChips {
-                for name in gattungen {
-                    guard let treffer = await client.titel(gattung: name), !treffer.isEmpty
-                    else { continue }
-                    gesammelt.append((name, .neu, Listenregeln.ohneDoppelte(treffer)))
-                }
-            }
-            // Ab hier unveraenderlich — sonst faengt der Sprung auf den
-            // Hauptfaden eine `var` ein, und Swift 6 laesst das nicht zu.
+            gesammelt += startseite.gattungsreihen.map { ($0.name, .neu, $0.items) }
             let reihen = gesammelt
 
             aufHauptfaden {
@@ -3706,13 +3894,11 @@ final class App: @unchecked Sendable {
         }
 
         // Der Fortschrittsbalken liegt **in** der Bildhülle, unten, wie auf
-        // dem Mac. Nur bei „Weiterschauen" — sonst stünde er unter Titeln,
-        // die noch gar nicht angefangen wurden.
-        // **Der Balken auf der Querkachel steht immer.** Er ist keine
-        // Zierde, sondern die Auskunft, wo man stehengeblieben ist — der Mac
-        // zeichnet ihn unabhängig von der Einstellung. Die Einstellung meint
-        // die hochkanten Kacheln.
-        if quer, let anteil = item.gesehenerAnteil {
+        // dem Mac — auf jeder Kachel mit gesehenem Anteil, quer wie
+        // hochkant, und nur, wenn „Fortschritt auf Kacheln" an ist (M8,
+        // `macOS/Macbausteine.swift`, `Bildflaeche`). Hier stand vorher, der
+        // Mac zeichne ihn auf der Querkachel immer; das stimmt nicht mehr.
+        if wahlen.fortschrittAufKacheln, let anteil = item.gesehenerAnteil {
             balkenLegen(kaefig, breite: breite, anteil: anteil)
         }
         // **Die Plakette gehört auf jede hochkante Kachel** (E16) — Haken,
@@ -3777,6 +3963,10 @@ final class App: @unchecked Sendable {
         // Bibliotheksraster stand keine Auskunft, ob ein Titel gesehen ist
         // oder wie viele Folgen offen sind.
         kachelmarkeLegen(kaefig, item: item)
+        // Angefangene Titel in Bibliothek, Genre und Suche (M8), wie der Mac.
+        if wahlen.fortschrittAufKacheln, let anteil = item.gesehenerAnteil {
+            balkenLegen(kaefig, breite: Stil.kachelBreite, anteil: anteil)
+        }
         // Jeder Suchtreffer und jede Kachel im Raster führt auf die Seite,
         // keiner startet (A7b).
         let kachel = kachelhuelle(bild: kaefig, breite: Stil.kachelBreite,

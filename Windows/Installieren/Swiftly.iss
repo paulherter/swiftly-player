@@ -8,9 +8,15 @@
 ; **Ohne Zertifikat.** Der Installer ist nicht signiert; Windows zeigt beim
 ; ersten Start eine SmartScreen-Warnung. Das laesst sich nur mit einem
 ; gekauften Zertifikat abstellen, nicht durch etwas im Skript.
+;
+; **Verknuepfungen zeigen auf das Startprogramm** (`{app}\Swiftly.exe`), nicht
+; auf `{app}\bin\Swiftly.exe`. Beim ersten Start prueft der Defender die
+; unsignierten DLLs der App, und bis dahin stand gemessen 23 s lang nichts auf
+; dem Schirm. Das Startprogramm zeigt in der Zeit ein Ladefenster; siehe
+; `Windows\Startprogramm\startprogramm.c`.
 
 #define Name "Swiftly"
-#define Fassung "1.0.2"
+#define Fassung "1.0.3"
 #define Herausgeber "Paul Herter"
 #define Netz "https://github.com/paulherter/swiftly-player"
 #define Programm "Swiftly.exe"
@@ -29,7 +35,7 @@ LicenseFile=..\..\LICENSE
 OutputDir=..\Ablage
 OutputBaseFilename=Swiftly-{#Fassung}-Setup
 SetupIconFile=..\Mittel\swiftly.ico
-UninstallDisplayIcon={app}\bin\{#Programm}
+UninstallDisplayIcon={app}\{#Programm}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -49,9 +55,14 @@ Name: "desktopsymbol"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: 
 [Files]
 Source: "..\Ablage\Swiftly\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+; Eine Aktualisierung ueber 1.0.2 liess sonst die DLLs liegen, die `packen.ps1`
+; jetzt weglaesst - geladen wuerden sie nicht, aber der Ordner bliebe voll.
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\bin\*.dll"
+
 [Icons]
-Name: "{group}\{#Name}"; Filename: "{app}\bin\{#Programm}"
-Name: "{autodesktop}\{#Name}"; Filename: "{app}\bin\{#Programm}"; Tasks: desktopsymbol
+Name: "{group}\{#Name}"; Filename: "{app}\{#Programm}"; WorkingDir: "{app}"
+Name: "{autodesktop}\{#Name}"; Filename: "{app}\{#Programm}"; WorkingDir: "{app}"; Tasks: desktopsymbol
 
 [Run]
-Filename: "{app}\bin\{#Programm}"; Description: "{cm:LaunchProgram,{#Name}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#Programm}"; Description: "{cm:LaunchProgram,{#Name}}"; Flags: nowait postinstall skipifsilent

@@ -212,6 +212,45 @@ struct ChipStil: ButtonStyle {
     }
 }
 
+/// **Eine Kapsel, die etwas aufklappt** — Bibliothek und Sortierung in der
+/// Chipreihe der Bibliothek.
+///
+/// Dieselbe Form wie `ChipStil`, damit die Reihe eine Form hat. Was sie vom
+/// nicht gewaehlten Filter unterscheidet: halbfette Schrift und der Pfeil.
+/// Der Pfeil gehoert deshalb in den Stil und nicht in jedes Etikett.
+///
+/// Der Pfeil traegt Deckkraft, keine eigene Farbe — er folgt der Schrift.
+/// Mit fester Farbe verschwand er im Sortierknopf auf der weissen
+/// Fokusflaeche.
+struct KapselStil: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Inhalt(configuration: configuration)
+    }
+
+    private struct Inhalt: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isFocused) private var fokus
+
+        var body: some View {
+            HStack(spacing: 10) {
+                configuration.label
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 18, weight: .bold))
+                    .opacity(0.6)
+            }
+            .font(.system(size: 23, weight: .semibold))
+            .foregroundStyle(Stil.schrift)
+            .padding(.horizontal, 22)
+            .frame(height: Stil.chipHoehe)
+            .background(fokus ? Stil.fokusflaeche : Stil.erhoeht, in: Capsule())
+            .overlay { Capsule().strokeBorder(Stil.rand, lineWidth: 2) }
+            .scaleEffect(configuration.isPressed ? 0.97 : (fokus ? 1.06 : 1))
+            .animation(Stil.fokusAnimation, value: fokus)
+        }
+    }
+}
+
 /// **Eine Zeile in der Einstellungsleiste des Players.**
 ///
 /// Wie `ChipStil`, nur ueber die volle Breite und mit eckigen Ecken statt
@@ -679,7 +718,7 @@ struct Handlungstafel: View {
                     HStack(spacing: 22) {
                         Image(systemName: paar.element.symbol)
                             .frame(width: 38)
-                        Text(paar.element.text)
+                        paar.element.beschriftung
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(paar.element.warnend ? Stil.warnung : Stil.schrift)
@@ -1140,9 +1179,12 @@ struct Staffelpille: View {
             HStack(spacing: 14) {
                 Text(name)
                     .font(.system(size: 27, weight: .semibold))
+                // Deckkraft statt fester Farbe: der Pfeil erbt die Schrift
+                // des Knopfs. Fest halbweiss verschwand er auf der weissen
+                // Fokusflaeche.
                 Image(systemName: "chevron.down")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Stil.schrift.opacity(0.6))
+                    .opacity(0.6)
             }
         }
         // **Derselbe Stil wie die Knoepfe im Kopf.**

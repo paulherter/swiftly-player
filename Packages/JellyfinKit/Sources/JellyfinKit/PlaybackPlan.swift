@@ -50,7 +50,7 @@ public extension PlaybackPlan {
     ///
     /// `playSessionID` ist `nil`: ohne Server gibt es keine Sitzung. Was
     /// gesehen wurde, meldet die App nach, sobald wieder Netz da ist.
-    static func vonDerPlatte(_ datei: URL, container: String?,
+    public static func vonDerPlatte(_ datei: URL, container: String?,
                              mediaSourceID: String? = nil) -> PlaybackPlan {
         PlaybackPlan(url: datei, method: .directPlay,
                      mediaSourceID: mediaSourceID, playSessionID: nil,

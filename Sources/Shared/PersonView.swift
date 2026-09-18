@@ -171,8 +171,10 @@ struct PersonView: View {
                     .lineSpacing(3)
                     .foregroundStyle(Stil.schriftLeise)
                     .lineLimit(ganzeBiografie ? nil : 4)
-                Button(ganzeBiografie ? "Weniger" : "Mehr") {
+                Button {
                     withAnimation(.easeInOut(duration: 0.2)) { ganzeBiografie.toggle() }
+                } label: {
+                    Text(ganzeBiografie ? LocalizedStringKey("Weniger") : LocalizedStringKey("Mehr"))
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 14, weight: .semibold))

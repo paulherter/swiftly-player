@@ -252,6 +252,10 @@ struct SerienView: View {
         }
         .task { await farbe.laden(model.kopfbildURL(for: serie)) }
         .task { await staffelnLaden() }
+        // Nach dem Player die Folgen neu holen: er liegt als Ebene über der
+        // Seite, `.task(id:)` unten läuft dabei nicht neu. Siehe
+        // `AppModel.wiedergabeBeendet`.
+        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await folgenLaden() } }
         .task(id: gewaehlt?.id) {
             guard staffelnDa else { return }
             // **Und nicht, solange keine Staffel gewählt ist.** Seit A10
@@ -452,16 +456,15 @@ struct SerienView: View {
     /// Kam kein Hinweis — aus der Bibliothek, aus der Suche —, gilt die
     /// **laufende** Staffel, nicht Staffel 1. Dafür muss gefragt werden, wo
     /// man in der Serie steht; deshalb wird der Stand nur dann geholt.
-    private var ohneHinweis: Bool { startStaffelID == nil && startStaffelNummer == nil }
+    private var ohneHinweis: Bool {
+        Staffelwahlregel.brauchtStand(hinweisID: startStaffelID, hinweisNummer: startStaffelNummer)
+    }
 
-    /// Reine Rechnung, ohne Abruf — damit der Aufrufer entscheidet, wann er
-    /// den Stand holt, und ihn nebenher holen kann.
+    /// Die Rechnung selbst liegt im Paket (`Staffelwahlregel`), wie auf allen
+    /// Plattformen.
     private func waehle(aus liste: [Item], stand: Item?) -> Item? {
-        liste.first { $0.id == startStaffelID }
-            ?? liste.first { $0.indexNumber != nil && $0.indexNumber == startStaffelNummer }
-            ?? liste.first { $0.id == stand?.seasonId }
-            ?? liste.first { $0.indexNumber != nil && $0.indexNumber == stand?.parentIndexNumber }
-            ?? liste.first
+        Staffelwahlregel.waehle(aus: liste, hinweisID: startStaffelID,
+                                hinweisNummer: startStaffelNummer, stand: stand)
     }
 
     /// Für den Fall, dass die Staffeln schon aus dem Speicher kamen: dann
@@ -748,7 +751,9 @@ struct Folgenzeile: View {
         // Eine Folge startet an ihrer eigenen Position — nicht an der der
         // Serie. Wörtlich aus der iPhone-Fassung.
         .onTapGesture { steuerung.starte(folge) }
-        .task { gesehen = folge.istGesehen }
+        // An den Stand gebunden, nicht nur ans Erscheinen: nach dem Player
+        // kommt dieselbe Folge mit neuem Stand zurück.
+        .task(id: folge.istGesehen) { gesehen = folge.istGesehen }
     }
 
     private var kopfzeile: String {

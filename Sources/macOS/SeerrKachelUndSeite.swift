@@ -513,7 +513,7 @@ struct SeerrDetailView: View {
             angefragt = true
             stand = .wartetAufFreigabe
         } catch {
-            fehler = error.localizedDescription
+            fehler = lesbarerFehler(error)
         }
     }
 }

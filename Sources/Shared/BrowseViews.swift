@@ -120,7 +120,13 @@ struct ItemDetailView: View {
     @Environment(\.weit) private var weit
 
     /// Wie weit gescrollt wurde — der Kopf blendet danach ein.
-    @State private var versatz: CGFloat = 0
+    ///
+    /// **Nicht als `@State` hier.** Jeder Scrollschritt baute sonst den ganzen
+    /// `body` neu: Kopfbild mit `GeometryReader`, Belegzeile, Knopfreihe, drei
+    /// Reihen, Dateiauszug. Auf der Filmseite stockte das Scrollen sichtbar, auf
+    /// der leichteren Serienseite nicht. Jetzt liest nur `Detailkopfleser` den Wert
+    /// — dieselbe Behebung wie `Scrollweg` auf der Startseite.
+    @State private var weg = Scrollweg()
 
     @State private var plan: PlaybackPlan?
     /// Der Plan ist beantwortet — mit oder ohne Ergebnis. Siehe `belegzeile`.
@@ -230,7 +236,7 @@ struct ItemDetailView: View {
             .coordinateSpace(.named("blatt"))
             .ignoresSafeArea(edges: .top)
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, neu in
-                versatz = neu
+                weg.setzen(neu)
             }
 
             // Das Blatt haengt an einer leeren Flaeche; ohne `if` gaebe es
@@ -253,7 +259,7 @@ struct ItemDetailView: View {
                     .zIndex(21)
             }
 
-            Detailkopf(titel: aktuell.name, versatz: versatz) { zurueck() }
+            Detailkopfleser(titel: aktuell.name, weg: weg) { zurueck() }
         }
 
         // Breit hängt die Tafel am Knopf statt am unteren Bildrand. Der
@@ -278,6 +284,7 @@ struct ItemDetailView: View {
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
         #endif
+        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await auffrischen() } }
         .task {
             async let frischerTitel = model.item(id: item.id)
             async let planung = model.plan(for: item.id)

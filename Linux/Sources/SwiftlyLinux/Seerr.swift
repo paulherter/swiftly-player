@@ -120,7 +120,7 @@ extension App {
                         }
                         return
                     } catch {
-                        letzter = error.localizedDescription
+                        letzter = lesbarerFehler(error)
                     }
                 }
                 // **Erst festhalten, dann hinueberreichen.** Eine
@@ -428,7 +428,7 @@ extension App {
                 try await client.anfragen(art: t.art, id: t.id, staffeln: nil)
                 aufHauptfaden { self.seerrSagen(uebersetzt("Angefragt")) }
             } catch {
-                let meldung = error.localizedDescription
+                let meldung = lesbarerFehler(error)
                 aufHauptfaden { self.seerrSagen(meldung) }
             }
         }

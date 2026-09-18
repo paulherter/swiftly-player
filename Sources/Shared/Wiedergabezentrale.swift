@@ -158,6 +158,9 @@ final class Wiedergabezentrale {
         titelbild = nil
         titelbildFuer = nil
         griffe = nil
+        // Sonst stand in Discord nach dem Schließen weiter „schaut …" mit
+        // abgelaufenem Zähler, bis die App beendet wurde (Audit 16.09., T1-N2).
+        Discordanzeiger.geteilt.abraeumen()
     }
 
     // MARK: - Was auf dem Sperrbildschirm steht
@@ -422,9 +425,12 @@ final class Wiedergabezentrale {
 
         zentrale.nextTrackCommand.removeTarget(nil)
         zentrale.nextTrackCommand.isEnabled = griffe?.naechste != nil
+        // **Wie die übrigen über den Hauptlauf** (Audit 16.09., T1-M10). Hier
+        // lief `naechste` direkt auf dem Faden des Systems — der Folgenwechsel
+        // setzt SwiftUI-Zustand. Ob es eine nächste Folge gibt, sagt schon
+        // `isEnabled`; nachgesehen wird trotzdem, aber erst auf dem Hauptlauf.
         zentrale.nextTrackCommand.addTarget { [weak self] _ in
-            guard let naechste = self?.griffe?.naechste else { return .noSuchContent }
-            naechste()
+            Task { @MainActor in self?.griffe?.naechste?() }
             return .success
         }
 

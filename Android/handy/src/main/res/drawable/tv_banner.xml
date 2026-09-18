@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Banner fuer den Fernseh-Starter: Grund und ein Abspielzeichen im Akzent. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp"
+    android:viewportWidth="320" android:viewportHeight="180">
+    <path android:fillColor="#0B0B0D" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#5CD1C2" android:pathData="M142,64 L182,90 L142,116 Z" />
+</vector>

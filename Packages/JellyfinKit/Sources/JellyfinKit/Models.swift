@@ -420,6 +420,11 @@ public struct MediaSource: Codable, Sendable, Identifiable, Equatable {
     public let supportsTranscoding: Bool?
     public let transcodingUrl: String?
     public let mediaStreams: [MediaStream]?
+    /// Welche Ton- und Untertitelspur der Server nach dem Nutzerprofil wählen
+    /// würde (Tonsprache, Untertitelmodus, Untertitelsprache). Untertitel
+    /// `-1` heißt „keine". Siehe ``Spurregel``.
+    public var defaultAudioStreamIndex: Int?
+    public var defaultSubtitleStreamIndex: Int?
 
     /// Bildhöhe der Videospur — für „2160p".
     public var hoehe: Int? {
@@ -436,6 +441,8 @@ public struct MediaSource: Codable, Sendable, Identifiable, Equatable {
         case supportsTranscoding = "SupportsTranscoding"
         case transcodingUrl = "TranscodingUrl"
         case mediaStreams = "MediaStreams"
+        case defaultAudioStreamIndex = "DefaultAudioStreamIndex"
+        case defaultSubtitleStreamIndex = "DefaultSubtitleStreamIndex"
     }
 
     /// Wie der Server diese Quelle ausliefern würde. Das ist die Zahl, auf die
@@ -500,10 +507,14 @@ public struct MediaStream: Codable, Sendable, Equatable {
                 channels: Int?, isDefault: Bool?, index: Int?, height: Int?, width: Int?,
                 realFrameRate: Double? = nil, averageFrameRate: Double? = nil,
                 videoRangeType: Farbumfang? = nil,
-                colorTransfer: String? = nil, colorPrimaries: String? = nil) {
+                colorTransfer: String? = nil, colorPrimaries: String? = nil,
+                isForced: Bool? = nil, isExternal: Bool? = nil,
+                title: String? = nil, deliveryUrl: String? = nil) {
+        self.title = title; self.deliveryUrl = deliveryUrl
         self.codec = codec; self.type = type; self.language = language
         self.displayTitle = displayTitle; self.channels = channels
         self.isDefault = isDefault; self.index = index
+        self.isForced = isForced; self.isExternal = isExternal
         self.height = height; self.width = width
         self.videoRangeTypeRoh = videoRangeType?.rawValue
         self.colorTransfer = colorTransfer
@@ -518,6 +529,20 @@ public struct MediaStream: Codable, Sendable, Equatable {
     public let displayTitle: String?
     public let channels: Int?
     public let isDefault: Bool?
+    /// Erzwungene Untertitel — nur die Stellen, die im Ton fremdsprachig
+    /// sind. Nur der Server weiß das: VLC kennt kein solches Merkmal an der
+    /// Spur. Siehe ``Untertitelwahl``.
+    public let isForced: Bool?
+    /// Eine Untertiteldatei neben dem Film statt einer Spur darin. Die sieht
+    /// der Abspieler bei Direct Play nicht, sie darf also beim Abzählen nicht
+    /// mitzählen.
+    public let isExternal: Bool?
+    /// Der Spurtitel aus der Datei („Forced", „SDH", „Kommentar") — anders
+    /// als `DisplayTitle` ohne vom Server angehängte Wörter.
+    public let title: String?
+    /// Wo der Server eine externe Untertiteldatei ausliefert, serverrelativ.
+    /// Kommt nur, wenn das Geräteprofil `External` für das Format meldet.
+    public let deliveryUrl: String?
     public let index: Int?
     public let height: Int?
     public let width: Int?
@@ -591,6 +616,10 @@ public struct MediaStream: Codable, Sendable, Equatable {
         case displayTitle = "DisplayTitle"
         case channels = "Channels"
         case isDefault = "IsDefault"
+        case isForced = "IsForced"
+        case isExternal = "IsExternal"
+        case title = "Title"
+        case deliveryUrl = "DeliveryUrl"
         case index = "Index"
         case realFrameRateRoh = "RealFrameRate"
         case averageFrameRateRoh = "AverageFrameRate"

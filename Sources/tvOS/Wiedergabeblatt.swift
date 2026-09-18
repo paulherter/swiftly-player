@@ -186,8 +186,10 @@ struct Wiedergabeblatt: View {
     /// Was gerade gilt -- neben dem Namen in der Leiste.
     private func wert(_ k: Kategorie) -> String {
         switch k {
-        case .untertitel: untertitelJetzt ?? String(localized: "Aus")
-        case .ton:        tonJetzt ?? String(localized: "Keine")
+        case .untertitel: untertitelJetzt.flatMap { flaeche.untertitelnamen()[$0] } ?? String(localized: "Aus")
+        case .ton:
+            flaeche.tonspuren.first { $0.trackId == tonJetzt }?.huebscherName
+                ?? String(localized: "Keine")
         case .bild:       String(localized: bildfuellend ? "Formatfüllend" : "Ganzes Bild")
         case .tempo:      Tempostufen.beschriftung(tempo)
         case .schlafzeit: schlafminuten.map { "\($0)" } ?? String(localized: "Aus")
@@ -217,20 +219,22 @@ struct Wiedergabeblatt: View {
                     // greift auf ein totes Objekt zu. Genau daraus wurde
                     // „beide angehakt und kein Weg zurück". Steht so seit
                     // Langem in `PlayerSettings` der iPhone-Fassung.
+                    let namen = flaeche.untertitelnamen()
                     ForEach(flaeche.untertitelspuren, id: \.trackId) { spur in
-                        Wahlkarte(name: spur.trackName,
-                                  marke: format(spur.trackName),
-                                  an: untertitelJetzt == spur.trackName) {
-                            untertitelWahl = .some(spur.trackName)
+                        let name = namen[spur.trackId] ?? spur.trackName
+                        Wahlkarte(name: name,
+                                  marke: name == spur.trackName ? format(spur.trackName) : nil,
+                                  an: untertitelJetzt == spur.trackId) {
+                            untertitelWahl = .some(spur.trackId)
                             flaeche.waehleUntertitel(spur)
                         }
                     }
 
                 case .ton:
                     ForEach(flaeche.tonspuren, id: \.trackId) { spur in
-                        Wahlkarte(name: spur.trackName, marke: nil,
-                                  an: tonJetzt == spur.trackName) {
-                            tonWahl = spur.trackName
+                        Wahlkarte(name: spur.huebscherName, marke: nil,
+                                  an: tonJetzt == spur.trackId) {
+                            tonWahl = spur.trackId
                             flaeche.waehleTonspur(spur)
                         }
                     }
@@ -464,11 +468,13 @@ struct Wiedergabeblatt: View {
 
     private var untertitelJetzt: String? {
         if let wahl = untertitelWahl { return wahl }
-        return flaeche.gewaehlterUntertitel?.trackName
+        return flaeche.gewaehlterUntertitel?.trackId
     }
 
+    /// Über `trackId`, nicht den Namen — gleiche Namen trugen sonst beide
+    /// den Haken (T1-N4).
     private var tonJetzt: String? {
-        tonWahl ?? flaeche.gewaehlteTonspur?.trackName
+        tonWahl ?? flaeche.gewaehlteTonspur?.trackId
     }
 
     /// Ausgeschrieben statt gerechnet — eine erste Fassung schnitt Nullen per

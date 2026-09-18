@@ -630,6 +630,6 @@ final class Downloadmelder: NSObject, URLSessionDownloadDelegate, @unchecked Sen
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let fehler = error as NSError?, let t = teile(task) else { return }
         let daten = fehler.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
-        aufFehler(t.id, fehler.localizedDescription, daten)
+        aufFehler(t.id, lesbarerFehler(fehler), daten)
     }
 }

@@ -32,10 +32,8 @@
 "Code vom Fernseher eingeben" = "Enter the code from your TV";
 "Danach kommt nichts mehr." = "That's the last one.";
 "Darstellung" = "Appearance";
-"Der Code ist abgelaufen. Hol dir einen neuen." = "The code has expired. Get a new one.";
 "Der Code stimmt nicht oder ist abgelaufen." = "That code is wrong or has expired.";
 "Der Fortschritt ist zurückgesetzt." = "Progress has been reset.";
-"Der Server hat keinen Code gegeben." = "The server did not give a code.";
 "Die Anmeldung gilt nicht mehr. Bitte neu anmelden." = "Your sign-in is no longer valid. Please sign in again.";
 "Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da." = "The bitrate only applies when Direct Play is not enforced — otherwise it would sit there without any effect.";
 "Die Wiedergabe hat nicht geklappt — %@ hat keinen Plan geliefert." = "Playback failed — %@ did not return a plan.";
@@ -311,3 +309,10 @@
 "Staffel laden" = "Download season";
 "%d Folgen werden geladen." = "%d episodes are downloading.";
 "Staffeln wählen" = "Choose seasons";
+
+/* Stufe 4: Spurwahl und Uebernahmeauswahl */
+"Erzwungen" = "Forced";
+"Datei" = "File";
+"Wo weiterschauen?" = "Where do you want to continue?";
+"Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter." = "The device you pick will close, and playback continues here at the same spot.";
+"Gerät" = "Device";

@@ -20,19 +20,33 @@ public enum Sprache {
     ]
 
     /// Passt der Spurname zur gewünschten Sprache?
+    public static func passt(_ spurname: String, zu sprache: String) -> Bool {
+        !sprache.isEmpty && erkannt(in: spurname) == sprache
+    }
+
+    /// Der erkannte Anzeigename („Deutsch"), wenn eine der hinterlegten
+    /// Sprachen im Text steckt — sonst `nil`, statt geraten.
     ///
     /// Wortweise, nicht als Teilzeichenkette. Mit `contains` galt „Slovenian"
     /// als Englisch, weil dort „en" vorkommt — und „Armenian" ebenso. Kurze
     /// Formen wie „en" oder „ger" sind Sprachkürzel und stehen im Spurnamen
     /// immer für sich; lange Formen wie „deutsch" dürfen auch in einem
     /// zusammengesetzten Namen stecken („Deutsch (Kommentar)").
-    public static func passt(_ spurname: String, zu sprache: String) -> Bool {
-        guard !sprache.isEmpty,
-              let eintrag = alle.first(where: { $0.name == sprache }) else { return false }
-        let klein = spurname.lowercased()
+    public static func erkannt(in text: String) -> String? {
+        guard !text.isEmpty else { return nil }
+        let klein = text.lowercased()
         let woerter = Set(klein.split(whereSeparator: { !$0.isLetter }).map(String.init))
-        return eintrag.formen.contains { form in
-            woerter.contains(form) || (form.count > 3 && klein.contains(form))
-        }
+        return alle.first { eintrag in
+            eintrag.formen.contains { form in
+                woerter.contains(form) || (form.count > 3 && klein.contains(form))
+            }
+        }?.name
+    }
+
+    /// Steht im Spurnamen, dass nur die fremdsprachigen Stellen untertitelt
+    /// sind? Nur für Spuren, zu denen der Server nichts weiß.
+    public static func klingtErzwungen(_ name: String) -> Bool {
+        let klein = name.lowercased()
+        return ["forced", "erzwungen"].contains { klein.contains($0) }
     }
 }

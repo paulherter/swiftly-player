@@ -123,6 +123,11 @@ public extension Fremdsitzung {
 
     var geraeteart: Geraeteart {
         let name = (geraetename ?? "").lowercased()
+        // **Android zuerst nach dem Programm.** Ein Android-Telefon heisst „Pixel 10 Pro" — darin
+        // steht nichts, woran der Name es erkennt, und auf dem iPhone erschien es als Fernseher.
+        let app = (programm ?? "").lowercased()
+        if app.contains("android tv") { return .fernseher }
+        if app.contains("android") { return .telefon }
         if name.contains("ipad") { return .tablet }
         if name.contains("mac") || name.contains("pc") || name.contains("linux") {
             return .rechner
@@ -176,6 +181,26 @@ public enum Uebernahme {
             .sorted { links, rechts in
                 (links.letzteRegung ?? .distantPast) > (rechts.letzteRegung ?? .distantPast)
             }
+    }
+
+    /// Wo hier weitergeschaut wird (Audit 16.09., T1-N5).
+    ///
+    /// Die Stelle aus der Sitzungsabfrage hinkt bis zu zehn Sekunden nach —
+    /// so oft meldet das andere Gerät Fortschritt. Beim Beenden meldet es
+    /// aber seinen Stopp mit der genauen Stelle, und der Server legt sie am
+    /// Titel ab. Die gilt, sobald sie sich gegenüber vorher geändert hat und
+    /// nicht hinter der Sitzungsstelle liegt — Jellyfin setzt sie nahe Anfang
+    /// und Ende auf null, und dann ist die Sitzungsstelle die bessere.
+    ///
+    /// - Parameters:
+    ///   - sitzung: Stelle aus der frischesten Sitzungsabfrage, in Sekunden.
+    ///   - gespeichertVorher: `PlaybackPositionTicks` des Titels vor dem Beenden.
+    ///   - gespeichertNachher: dasselbe danach, `nil`, wenn nichts ankam.
+    public static func startstelle(sitzung: Double, gespeichertVorher: Int64?,
+                                   gespeichertNachher: Int64?) -> Double {
+        guard let nachher = gespeichertNachher, nachher != gespeichertVorher else { return sitzung }
+        let sekunden = Double(nachher) / 10_000_000
+        return sekunden >= sitzung - 1 ? sekunden : sitzung
     }
 
     /// Die eine, wenn es nur eine gibt — sonst die jüngste.

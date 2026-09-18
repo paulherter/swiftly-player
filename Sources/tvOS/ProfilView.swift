@@ -441,11 +441,13 @@ struct ProfilView: View {
         case .konto:
             // **„Weiteres Konto hinzufügen" steht als Plus in der Kontokarte**,
             // dort wo die Konten stehen. An seiner Stelle der zweite Server,
-            // wie auf den anderen Fassungen — entworfen, damit die Zeile nicht
-            // ein zweites Mal entworfen wird. Dahinter liegt noch nichts,
-            // deshalb eine Anzeige und kein Knopf: auf dem Fernseher ist eine
-            // fokussierbare Zeile ohne Wirkung eine Falle.
-            Anzeigezeile(titel: "Server hinzufügen", wert: String(localized: "Kommt später"))
+            // wie auf den anderen Fassungen.
+            //
+            // Hier stand bis zum 15.09.2026 „Kommt später" als blosse Anzeige —
+            // geschrieben, bevor es mehrere Server gab, und nie nachgezogen, als
+            // „Server hinzufügen" im Bereich Server am 12.09. zu funktionieren
+            // begann. Jetzt derselbe Weg wie dort.
+            Handlungszeile(titel: "Server hinzufügen") { serverAufnehmen = true }
             Trennlinie()
             // **Trifft nur das aktive Konto.** Sind noch andere da, schaltet
             // die App auf das nächste um; erst beim letzten geht es zurück

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import JellyfinKit
 
@@ -14,6 +15,30 @@ struct TechnikangabenTests {
         #expect(Technikangaben.codecname("wasauchimmer") == "WASAUCHIMMER")
         #expect(Technikangaben.codecname("") == nil)
         #expect(Technikangaben.codecname(nil) == nil)
+    }
+
+    @Test("libVLC-Kennungen werden zu denselben Codecnamen")
+    func vlcKennungen() {
+        func kennung(_ s: String) -> UInt32 {
+            s.utf8.enumerated().reduce(0) { $0 | UInt32($1.element) << (8 * UInt32($1.offset)) }
+        }
+        #expect(Technikangaben.codecname(vlcKennung: kennung("mp4a")) == "AAC")
+        #expect(Technikangaben.codecname(vlcKennung: kennung("a52 ")) == "AC-3")
+        #expect(Technikangaben.codecname(vlcKennung: kennung("dts ")) == "DTS")
+        #expect(Technikangaben.codecname(vlcKennung: kennung("trhd")) == "TrueHD")
+        #expect(Technikangaben.codecname(vlcKennung: kennung("xxxx")) == nil)
+        #expect(Technikangaben.codecname(vlcKennung: 0) == nil)
+    }
+
+    @Test("Tonspurname: Sprache aus Kürzel oder Wort, Codec, Kanäle")
+    func tonspurname() {
+        let deutsch = Locale.current.localizedString(forLanguageCode: "deu") ?? "Deutsch"
+        #expect(Technikangaben.tonspurname(sprache: "deu", codec: "AAC", kanaele: 6) == "\(deutsch) · AAC · 5.1")
+        #expect(Technikangaben.tonspurname(sprache: "German", codec: "DTS", kanaele: 2) == "Deutsch · DTS · Stereo")
+        #expect(Technikangaben.tonspurname(sprache: nil, codec: "AAC", kanaele: 2) == "AAC · Stereo")
+        #expect(Technikangaben.tonspurname(sprache: "", codec: nil, kanaele: 0) == nil)
+        #expect(Technikangaben.tonspurname(sprache: "ger", codec: nil, kanaele: nil)?.isEmpty == false)
+        #expect(Technikangaben.tonspurname(sprache: "ger", codec: nil, kanaele: nil) != "ger")
     }
 
     @Test("Sechs Kanaele heissen 5.1, nicht sechs")

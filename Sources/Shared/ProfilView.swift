@@ -267,15 +267,10 @@ struct QuickConnectView: View {
                 zurueck()
             } catch {
                 geschafft = false
-                // **`lesbar` und nicht `localizedDescription`.**
-                //
-                // Bei einem `JellyfinError` liefert `localizedDescription`
-                // den Typnamen — „The operation couldn't be completed
-                // (JellyfinKit.JellyfinError error 2)". `AppModel.lesbar`
-                // gibt es genau dafuer, und `Anmeldemodell` sagt im
-                // Kommentar daneben, warum. Die Mac-Fassung machte es
-                // richtig, diese hier nicht; von der macOS-Sitzung im
-                // Tiefendurchgang gefunden.
+                // **`lesbar` und nicht `localizedDescription`.** Seit
+                // `JellyfinError.errorDescription` selbst über
+                // `lesbarerFehler` geht, zeigen beide dasselbe; `lesbar`
+                // deckt aber auch Fehler ab, die nicht aus dem Paket kommen.
                 meldung = model.lesbar(error)
             }
         }
@@ -540,12 +535,19 @@ private struct Kontokarte: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Stil.schriftSehrLeise)
                     .lineLimit(1)
-                if aktiv, let fassung = model.serverVersion {
-                    Text(verbatim: "Jellyfin \(fassung)")
+                // **Die Zeile steht immer, auch ohne Fassung.** Die kommt
+                // erst mit der Antwort des Servers — nach einem Kaltstart
+                // oder einem Serverwechsel also spät. Wurde die Zeile erst
+                // dann gezeichnet, wuchs der Textblock, und Name und Adresse
+                // sprangen nach oben (derselbe Fehler wie auf Android).
+                if aktiv {
+                    Text(verbatim: "Jellyfin \(model.serverVersion ?? "")")
                         .font(.system(size: 12))
                         .foregroundStyle(Stil.schriftSehrLeise)
                         .lineLimit(1)
-                } else if !aktiv {
+                        .opacity(model.serverVersion == nil ? 0 : 1)
+                        .accessibilityHidden(model.serverVersion == nil)
+                } else {
                     Text("Antippen zum Wechseln")
                         .font(.system(size: 12))
                         .foregroundStyle(Stil.schriftSehrLeise)

@@ -556,12 +556,19 @@ private struct Kontokarte: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Stil.schrift.opacity(0.45))
                     .lineLimit(1)
-                if aktiv, let fassung = model.serverVersion {
-                    Text(verbatim: "Jellyfin \(fassung)")
+                // **Die Zeile steht immer, auch ohne Fassung.** Die kommt
+                // erst mit der Antwort des Servers — nach einem Kaltstart
+                // oder einem Serverwechsel also spät. Wurde die Zeile erst
+                // dann gezeichnet, wuchs der Textblock, und Name und Adresse
+                // sprangen nach oben (derselbe Fehler wie auf Android).
+                if aktiv {
+                    Text(verbatim: "Jellyfin \(model.serverVersion ?? "")")
                         .font(.system(size: 12))
                         .foregroundStyle(Stil.schrift.opacity(0.45))
                         .lineLimit(1)
-                } else if !aktiv {
+                        .opacity(model.serverVersion == nil ? 0 : 1)
+                        .accessibilityHidden(model.serverVersion == nil)
+                } else {
                     Text("Klicken zum Wechseln")
                         .font(.system(size: 12))
                         .foregroundStyle(Stil.schrift.opacity(0.45))

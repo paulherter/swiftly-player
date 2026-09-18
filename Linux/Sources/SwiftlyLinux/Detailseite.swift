@@ -71,8 +71,12 @@ extension App {
 
     /// Startet einen Titel. **Nur „Weiterschauen" nimmt diesen Weg** (A1);
     /// alles andere öffnet erst die Übersicht (A2, A3, A7b).
+    ///
+    /// **Ohne `ab` gilt die Stelle vom Server, frisch geholt** (M5, wie
+    /// iOS `HomeView.starte`): die Stelle in der Kachel ist oft veraltet —
+    /// wer auf dem Handy weitergeschaut hat, saehe sonst ein Stueck doppelt.
     func starte(_ item: Item, ab: Double? = nil) {
-        spielerOeffnen(item, ab: ab ?? item.fortsetzenAb ?? 0)
+        spielerOeffnen(item, ab: ab ?? item.fortsetzenAb ?? 0, stelleFrisch: ab == nil)
     }
 
     // MARK: - Aufbau
@@ -128,6 +132,10 @@ extension App {
 
         let scroller = seitenscroller()
         gtk_scrolled_window_set_child(OpaquePointer(scroller), seite)
+        detailScroller = scroller
+        beiSignal(scroller, "destroy") { [weak self] in
+            if self?.detailScroller == scroller { self?.detailScroller = nil }
+        }
 
         // **Der Zurückweg gehört in den Inhalt, nicht in die Systemleiste**
         // (E9). Er schwebt über der Seite, damit er beim Blättern stehen
@@ -611,9 +619,14 @@ extension App {
         }
         anhaengen(reihe, vorn)
 
-        if titel.type == "Series", let client {
+        // **Nach dem Player nur dieses Ziel neu fragen**, nicht die Seite
+        // neu bauen — sonst springt sie nach oben (``nachDemPlayerAuffrischen``).
+        // Bei einem Film ist das der Titel selbst mit seiner neuen Stelle.
+        let zielHolen: () -> Void = { [weak self] in
+            guard let self, let client = self.client else { return }
             let knopfKiste = gehalten(haupt)
             let vornKiste = gehalten(vorn)
+            let serie = titel.type == "Series"
             Task.detached {
                 // **`standInSerie`, nicht `naechsteFolgeDerSerie`** (A4): „der
                 // Hauptknopf startet dort, wo der Server sagt — angefangene
@@ -623,7 +636,8 @@ extension App {
                 // immer gesperrt: ausgegraut, waehrend jede Folge darunter
                 // sich abspielen liess. Der Rueckfall liegt seit dem
                 // 13.09.2026 im Paket.
-                let folge = await client.standInSerie(titel.id)
+                let folge = serie ? await client.standInSerie(titel.id)
+                                  : try? await client.item(id: titel.id)
                 aufHauptfaden {
                     defer { losgelassen(knopfKiste); losgelassen(vornKiste) }
                     guard let folge else { return }
@@ -635,6 +649,12 @@ extension App {
                     gtk_widget_set_visible(vornKiste.widget, weiter ? 1 : 0)
                 }
             }
+        }
+        if titel.type == "Series" { zielHolen() }
+        let marke = naechsteSehstandMarke()
+        kopfAuffrischen = (marke, zielHolen)
+        beiSignal(haupt, "destroy") { [weak self] in
+            if self?.kopfAuffrischen?.marke == marke { self?.kopfAuffrischen = nil }
         }
 
         // **Merkliste schaltet sofort um, ohne Rückfrage** (D6). Der Zustand

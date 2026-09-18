@@ -149,33 +149,70 @@ final class Uebernahmemodell {
     /// **Beenden, nicht anhalten.** Pausiert bleibt die Verbindung zum Server
     /// offen, die Sitzung steht weiter in der Übersicht, und auf dem anderen
     /// Gerät liegt noch der Player über allem — man müsste ihn von Hand
-    /// schließen. Die Stelle ist vorher gelesen, sie geht dabei nicht
-    /// verloren.
+    /// schließen.
     ///
-    /// - Returns: Titel und Stelle, oder `nil` samt Meldung. - Parameter
-    /// sitzung: Welche übernommen werden soll. Bei mehreren hat die Oberfläche
-    /// gefragt; bei einer ist es schlicht die eine.
-    func uebernehmen(_ sitzung: Fremdsitzung, model: AppModel) async -> (item: Item, ab: Double)? {
+    /// **Erst prüfen, ob hier etwas startet, dann drüben beenden** (Audit
+    /// 16.09., T1-M7). Umgekehrt hielt der Fernseher an, und scheiterte
+    /// danach der Plan, lief nirgends mehr etwas — ohne Meldung.
+    ///
+    /// **Die Stelle nach dem Beenden** (T1-N5): die Sitzungsabfrage hinkt bis
+    /// zu zehn Sekunden nach. Das andere Gerät meldet beim Beenden seine
+    /// genaue Stelle; die wird kurz abgewartet (`Uebernahme.startstelle`).
+    ///
+    /// - Returns: Titel, Stelle und Plan, oder `nil` samt Meldung. -
+    /// Parameter sitzung: Welche übernommen werden soll. Bei mehreren hat die
+    /// Oberfläche gefragt; bei einer ist es schlicht die eine.
+    func uebernehmen(_ sitzung: Fremdsitzung,
+                     model: AppModel) async -> (item: Item, ab: Double, plan: PlaybackPlan)? {
         guard let titel = sitzung.laeuft,
               let client = model.client, !uebernimmt else { return nil }
         uebernimmt = true
         defer { uebernimmt = false }
 
+        async let planAbruf = model.plan(for: titel.id)
+        async let gespeichertAbruf = model.item(id: titel.id)
+        async let sitzungenAbruf = try? client.fremdsitzungen()
+        guard let plan = await planAbruf else {
+            let wo = model.serverName ?? String(localized: "dem Server")
+            fehlerZeigen(String(localized: "Die Wiedergabe hat nicht geklappt — \(wo) hat keinen Plan geliefert."),
+                         model: model)
+            return nil
+        }
+        let vorher = await gespeichertAbruf?.userData?.playbackPositionTicks
+        // Die frischeste Stelle, die die Sitzung kennt — die aus dem Abzeichen
+        // kann eine Abfrage alt sein.
+        let frisch = await sitzungenAbruf?.first { $0.id == sitzung.id }?.stand?.stelle
+        let sitzungsstelle = frisch ?? sitzung.stand?.stelle ?? 0
+
         do {
             try await client.fremdbefehl(.beenden, an: sitzung.id)
         } catch {
-            fehler = error.localizedDescription
+            fehlerZeigen(lesbarerFehler(error), model: model)
             return nil
         }
 
-        // Die Stelle vom anderen Gerät, nicht vom Server-Fortschritt: sie ist
-        // sekundengenau und die Meldung ans Konto hinkt bis zu zehn Sekunden
-        // nach. Sie stammt aus der Abfrage **vor** dem Beenden — was das
-        // andere Gerät beim Schließen meldet, kommt hier zu spät an.
-        let ab = sitzung.stand?.stelle ?? 0
+        // Auf den Stopp des anderen Geräts warten, höchstens anderthalb
+        // Sekunden. Kommt nichts, gilt die Sitzungsstelle.
+        var nachher: Int64?
+        for _ in 0..<6 {
+            try? await Task.sleep(for: .milliseconds(250))
+            let jetzt = await model.item(id: titel.id)?.userData?.playbackPositionTicks
+            if jetzt != vorher { nachher = jetzt; break }
+        }
+        let ab = Uebernahme.startstelle(sitzung: sitzungsstelle, gespeichertVorher: vorher,
+                                        gespeichertNachher: nachher)
+        Protokoll.schreib("[Uebernahme] Sitzung \(Int(sitzungsstelle)) s, nach Stopp "
+            + "\(nachher.map { String(Int(Double($0) / 10_000_000)) } ?? "—") s → ab \(Int(ab)) s")
         // Damit das Abzeichen nicht noch einen Takt lang stehenbleibt.
         angebote = []
-        return (titel, ab)
+        return (titel, ab, plan)
+    }
+
+    /// Bisher landete `fehler` nirgends — die Ansichten lesen ihn nicht.
+    /// `errorMessage` zeigen sie an.
+    private func fehlerZeigen(_ text: String, model: AppModel) {
+        fehler = text
+        model.errorMessage = text
     }
 
     /// Dasselbe, aber gleich als fertiger ``Abspielwunsch``.
@@ -186,13 +223,8 @@ final class Uebernahmemodell {
     /// Nachmittag, beim Übertragen der Übernahme von einer Plattform auf die
     /// andere. Byte für Byte identisch ist genau der Fall, vor dem CLAUDE.md
     /// warnt; die tvOS-Sitzung hat ihn im Tiefendurchgang gefunden.
-    ///
-    /// **macOS benutzt es nicht, und das ist richtig so.** Dort startet die
-    /// Wiedergabe über ``Abspielsteuerung``, die den Plan selbst holt — ein
-    /// echter Unterschied im Aufbau, keine Abweichung aus Versehen.
     func wunsch(fuer sitzung: Fremdsitzung, model: AppModel) async -> Abspielwunsch? {
-        guard let (titel, ab) = await uebernehmen(sitzung, model: model),
-              let plan = await model.plan(for: titel.id) else { return nil }
+        guard let (titel, ab, plan) = await uebernehmen(sitzung, model: model) else { return nil }
         return Abspielwunsch(item: titel, plan: plan, startAt: ab)
     }
 }

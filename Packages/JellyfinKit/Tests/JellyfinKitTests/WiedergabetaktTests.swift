@@ -24,12 +24,135 @@ struct WiedergabetaktTests {
 
     private func takt(_ stand: inout Wiedergabetakt.Stand,
                       _ m: Wiedergabetakt.Messung,
-                      stelltWiederHer: Bool = false, sprungLaeuft: Bool = false,
+                      stelltWiederHer: Bool = false,
                       amSchieben: Bool = false,
-                      seitStart: Date = Date()) -> Wiedergabetakt.Auftrag {
+                      seitStart: Date = Date(),
+                      jetzt: Date = Date()) -> Wiedergabetakt.Auftrag {
         Wiedergabetakt.rechnen(&stand, messung: m, stelltWiederHer: stelltWiederHer,
-                               sprungLaeuft: sprungLaeuft, amSchieben: amSchieben,
-                               seitStart: seitStart)
+                               amSchieben: amSchieben,
+                               seitStart: seitStart, jetzt: jetzt)
+    }
+
+    // MARK: - Sprünge (Bug 17.09.2026)
+
+    /// Ein laufender Titel, eine Minute nach dem Öffnen.
+    private func laufend(bei stelle: Double) -> (Wiedergabetakt.Stand, Date) {
+        var s = Wiedergabetakt.Stand()
+        let start = Date().addingTimeInterval(-60)
+        _ = takt(&s, messung(position: stelle), seitStart: start)
+        return (s, start)
+    }
+
+    @Test("Ein Sprung setzt die Anzeige sofort aufs Ziel")
+    func sprungSofort() {
+        var (s, _) = laufend(bei: 300)
+        Wiedergabetakt.gesprungen(&s, ziel: Wiedergabetakt.ziel(um: 30, stand: s))
+        #expect(s.position == 330)
+    }
+
+    @Test("Solange VLC noch die alte Zeit meldet, bleibt die Anzeige auf dem Ziel")
+    func sprungHaelt() {
+        var (s, start) = laufend(bei: 300)
+        let jetzt = Date()
+        Wiedergabetakt.gesprungen(&s, ziel: 330, jetzt: jetzt)
+        for i in 1...8 {
+            _ = takt(&s, messung(position: 300 + Double(i) * 0.5), seitStart: start,
+                     jetzt: jetzt.addingTimeInterval(Double(i) * 0.5))
+            #expect(s.position == 330)
+        }
+    }
+
+    @Test("VLC kommt an: ab da sofort VLCs Zeit, auch ein Schlüsselbild vor dem Ziel")
+    func sprungUebergabe() {
+        var (s, start) = laufend(bei: 300)
+        let jetzt = Date()
+        Wiedergabetakt.gesprungen(&s, ziel: 330, jetzt: jetzt)
+        _ = takt(&s, messung(position: 329), seitStart: start, jetzt: jetzt.addingTimeInterval(0.5))
+        #expect(s.position == 329)
+        #expect(s.sprung == nil)
+        _ = takt(&s, messung(position: 329.5), seitStart: start, jetzt: jetzt.addingTimeInterval(1))
+        #expect(s.position == 329.5)
+    }
+
+    @Test("Die Anzeige ist VLCs Zeit: nach Abspielen, nach einem Sprung, nach Pause — nichts hochgerechnet")
+    func zeitfolge() {
+        var (s, start) = laufend(bei: 100)
+        var jetzt = Date()
+        func schritt(_ vlc: Double) -> Double {
+            jetzt = jetzt.addingTimeInterval(0.25)
+            Wiedergabetakt.zeitUebernehmen(&s, gemeldet: vlc, amSchieben: false,
+                                           seitStart: start, jetzt: jetzt)
+            return s.position
+        }
+        // Abspielen: jede Meldung erscheint so, wie sie kommt.
+        let spielen = [100.0, 100.25, 100.5, 100.75, 101, 101.25]
+        #expect(spielen.map(schritt) == spielen)
+        // Sprung vor: Ziel, solange VLC noch die alte Zeit hat, dann VLC.
+        Wiedergabetakt.gesprungen(&s, ziel: 131.25, jetzt: jetzt)
+        let nachSprung = [101.25, 101.25, 130.9, 131.1, 131.35, 131.6].map(schritt)
+        #expect(nachSprung == [131.25, 131.25, 130.9, 131.1, 131.35, 131.6])
+        // Pause: VLC steht, die Anzeige auch.
+        let pause = [131.7, 131.7, 131.7, 131.7].map(schritt)
+        #expect(pause == [131.7, 131.7, 131.7, 131.7])
+    }
+
+    @Test("Mehrmals schnell vor: jeder Sprung zählt vom letzten Ziel")
+    func sprungSerie() {
+        var (s, start) = laufend(bei: 300)
+        let jetzt = Date()
+        Wiedergabetakt.gesprungen(&s, ziel: Wiedergabetakt.ziel(um: 30, stand: s), jetzt: jetzt)
+        _ = takt(&s, messung(position: 300.5), seitStart: start, jetzt: jetzt.addingTimeInterval(0.5))
+        Wiedergabetakt.gesprungen(&s, ziel: Wiedergabetakt.ziel(um: 30, stand: s), jetzt: jetzt)
+        #expect(s.position == 360)
+    }
+
+    @Test("Überspringen, gleich danach 30 s vor: vom Ziel des Überspringens, ohne Rückfall")
+    func sprungNachUeberspringen() {
+        var (s, start) = laufend(bei: 60)
+        let jetzt = Date()
+        Wiedergabetakt.gesprungen(&s, ziel: 551, jetzt: jetzt)
+        // VLC meldet noch die alte Stelle, dann schon gleich den zweiten Sprung.
+        _ = takt(&s, messung(position: 60.2), seitStart: start, jetzt: jetzt.addingTimeInterval(0.25))
+        Wiedergabetakt.gesprungen(&s, ziel: Wiedergabetakt.ziel(um: 30, stand: s),
+                                  jetzt: jetzt.addingTimeInterval(0.3))
+        #expect(s.position == 581)
+        _ = takt(&s, messung(position: 60.4), seitStart: start, jetzt: jetzt.addingTimeInterval(0.5))
+        #expect(s.position == 581, "nicht zurück auf das Ziel des Überspringens")
+        _ = takt(&s, messung(position: 551.1), seitStart: start, jetzt: jetzt.addingTimeInterval(0.75))
+        #expect(s.position == 581, "auch nicht, wenn VLC dort kurz vorbeikommt")
+        _ = takt(&s, messung(position: 580.6), seitStart: start, jetzt: jetzt.addingTimeInterval(1))
+        #expect(s.position == 580.6)
+        #expect(s.sprung == nil)
+    }
+
+    @Test("Kommt VLC nie an, gilt nach dem Deckel wieder seine Zeit")
+    func sprungDeckel() {
+        var (s, start) = laufend(bei: 300)
+        let jetzt = Date()
+        Wiedergabetakt.gesprungen(&s, ziel: 900, jetzt: jetzt)
+        _ = takt(&s, messung(position: 305), seitStart: start,
+                 jetzt: jetzt.addingTimeInterval(Wiedergabetakt.sprungdeckel - 0.5))
+        #expect(s.position == 900)
+        _ = takt(&s, messung(position: 306), seitStart: start,
+                 jetzt: jetzt.addingTimeInterval(Wiedergabetakt.sprungdeckel))
+        #expect(s.position == 306)
+    }
+
+    @Test("Kein Sprung hinter das Ende oder vor den Anfang")
+    func sprungGrenzen() {
+        var (s, _) = laufend(bei: 3590)
+        Wiedergabetakt.gesprungen(&s, ziel: 3620)
+        #expect(s.position == 3600)
+        Wiedergabetakt.gesprungen(&s, ziel: -10)
+        #expect(s.position == 0)
+    }
+
+    @Test("Ein Folgenwechsel vergisst den offenen Sprung")
+    func sprungWechsel() {
+        var (s, _) = laufend(bei: 300)
+        Wiedergabetakt.gesprungen(&s, ziel: 330)
+        Wiedergabetakt.neuerTitel(&s, startGemeldet: true)
+        #expect(s.sprung == nil)
     }
 
     @Test("Solange VLC einstellt, bleibt der Ladeschirm und nichts wird gemeldet")
@@ -113,6 +236,8 @@ struct WiedergabetaktTests {
                                      seitMeldung: 4)
         Wiedergabetakt.neuerTitel(&s, startGemeldet: false)
         #expect(s.position == 0)
+        // Der Ladeschirm kommt zurück (Audit 16.09., T1-M3).
+        #expect(!s.erstesBildDa)
         #expect(!s.spurenGesetzt)
         #expect(s.seitMeldung == 0)
         #expect(takt(&s, messung(position: 2)).startMelden)
@@ -124,6 +249,92 @@ struct WiedergabetaktTests {
                                      spurenGesetzt: true, startGemeldet: true)
         Wiedergabetakt.neuerTitel(&s, startGemeldet: true)
         #expect(!takt(&s, messung(position: 2)).startMelden)
+    }
+
+    /// Gemessen 17.09., tvOS-Simulator: nach dem Wechsel von 75 s ging
+    /// `Progress 76 s` für die neue Folge hinaus. VLC hielt Bildausgabe und
+    /// Uhr der alten Folge, der Takt nahm beides für die neue.
+    @Test("Nach dem Wechsel zählt die alte Bildausgabe nicht, die alte Zeit wird nie gemeldet")
+    func wechselAlteUhr() {
+        var s = Wiedergabetakt.Stand(position: 75, erstesBildDa: true,
+                                     spurenGesetzt: true, startGemeldet: true, seitMeldung: 6)
+        Wiedergabetakt.neuerTitel(&s, startGemeldet: true)
+        let seitStart = Date()
+        // VLC: alte Uhr, alte Bildausgabe, vom neuen Medium noch kein Bild.
+        let alt = Zeitannahme.bildGehoertDemMedium(bildausgabe: true, gezeigteBilder: 0,
+                                                    nachWechsel: true)
+        #expect(!alt)
+        for _ in 0..<8 {
+            let a = takt(&s, messung(position: 75.4, zeigtBild: alt), seitStart: seitStart)
+            #expect(!a.fortschrittMelden)
+            #expect(!a.ladeschirmWeg)
+        }
+        #expect(s.position == 0)
+        // Erstes Bild der neuen Folge: ihre Zeit gilt sofort.
+        let neu = Zeitannahme.bildGehoertDemMedium(bildausgabe: true, gezeigteBilder: 3,
+                                                    nachWechsel: true)
+        _ = takt(&s, messung(position: 2, zeigtBild: neu), seitStart: seitStart)
+        #expect(s.position == 2)
+    }
+
+    /// Gemessen 17.09.: mit dem ersten Bild der neuen Folge meldete VLC
+    /// 6130 s, Sekunden später die echte Zeit.
+    @Test("Nach dem Wechsel gilt keine Zeit, die noch nicht gespielt sein kann")
+    func wechselUnsinnszeit() {
+        var s = Wiedergabetakt.Stand(position: 75, erstesBildDa: true,
+                                     spurenGesetzt: true, startGemeldet: true)
+        Wiedergabetakt.neuerTitel(&s, startGemeldet: true)
+        let seitStart = Date().addingTimeInterval(-2)
+        let a = takt(&s, messung(position: 6130), seitStart: seitStart)
+        #expect(s.position == 0)
+        #expect(a.fortschrittMelden)   // Spuren nachmelden — mit 0, nicht 6130
+        _ = takt(&s, messung(position: 76), seitStart: seitStart)
+        #expect(s.position == 0)
+        _ = takt(&s, messung(position: 2.5), seitStart: seitStart)
+        #expect(s.position == 2.5)
+        // Einmal angekommen, gilt wieder jeder Sprung.
+        _ = takt(&s, messung(position: 900), seitStart: seitStart)
+        #expect(s.position == 900)
+    }
+
+    @Test("Beim Öffnen an späterer Stelle gilt die Wechselsperre nicht")
+    func oeffnenOhneWechselsperre() {
+        var s = Wiedergabetakt.Stand(position: 1200)
+        _ = takt(&s, messung(position: 1201))
+        #expect(s.position == 1201)
+    }
+
+    @Test("Beim ersten Öffnen gilt die Bildausgabe ohne gezähltes Bild")
+    func erstesOeffnenBildausgabe() {
+        #expect(Zeitannahme.bildGehoertDemMedium(bildausgabe: true, gezeigteBilder: 0,
+                                                 nachWechsel: false))
+        #expect(!Zeitannahme.bildGehoertDemMedium(bildausgabe: false, gezeigteBilder: 9,
+                                                  nachWechsel: true))
+    }
+
+    /// Der Start beim Wechsel geht vor der Spurwahl hinaus, ohne Indizes.
+    /// Die erste Meldung danach trägt sie — und kommt gleich.
+    @Test("Nach dem Wechsel meldet der Takt die Spuren sofort, nicht erst nach zehn Sekunden")
+    func wechselSpurenSofort() {
+        var s = Wiedergabetakt.Stand(position: 75, erstesBildDa: true,
+                                     spurenGesetzt: true, startGemeldet: true)
+        Wiedergabetakt.neuerTitel(&s, startGemeldet: true)
+        let a = takt(&s, messung(position: 1))
+        #expect(a.spurenAnwenden)
+        #expect(a.fortschrittMelden)
+        #expect(!a.startMelden)
+        // Danach wieder im gewohnten Abstand.
+        let b = takt(&s, messung(position: 1.5))
+        #expect(!b.fortschrittMelden)
+    }
+
+    @Test("Beim Öffnen trägt der Start die Spuren, kein Fortschritt hinterher")
+    func oeffnenKeinExtraFortschritt() {
+        var s = Wiedergabetakt.Stand()
+        let a = takt(&s, messung(position: 1))
+        #expect(a.startMelden)
+        #expect(!a.fortschrittMelden)
+        #expect(!takt(&s, messung(position: 1.5)).fortschrittMelden)
     }
 }
 

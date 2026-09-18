@@ -109,7 +109,7 @@ final class Seerrmodell {
                 guard (error as? URLError) != nil else { break }
             }
         }
-        fehler = letzter?.localizedDescription
+        fehler = letzter.map(lesbarerFehler)
     }
 
     /// Trennen. Nur unsere Seite — bei Seerr selbst bleibt alles, wie es ist.

@@ -8,7 +8,7 @@ nicht nur auf einem Rechner.
 |---|---|
 | Grundlage | VLCKit **4.0.0-a23** |
 | VLC-Stand | der von VLCKit gepinnte `TESTEDHASH` |
-| Patches | `0028-mkv-…`, `0030-vout-clock-…`, `0031-ios-…`, `0032-input_clock-…`, `VLCKit-pause-ohne-warteschlange.patch` |
+| Patches | `0028-mkv-…`, `0030-vout-clock-…`, `0031-ios-…`, `0032-input_clock-…`, `0033-avcodec-…`, `0034-input-…`, `VLCKit-pause-ohne-warteschlange.patch` |
 
 ## Wofür
 

@@ -141,9 +141,41 @@ Der Installer legt Startmenü-Eintrag, wahlweise Desktop-Symbol und eine
 Deinstallation an; ohne Adminrechte installiert er in den eigenen Ordner, mit
 in „Programme".
 
-**Er ist nicht signiert.** Windows zeigt beim ersten Start eine
+**Er ist nicht signiert.** Windows zeigt beim Öffnen des Installers eine
 SmartScreen-Warnung. Das lässt sich nur mit einem gekauften Zertifikat
-abstellen, nicht durch etwas im Skript.
+abstellen, nicht durch etwas im Skript — und nicht im Ladefenster erklären,
+das gibt es da noch nicht. Deshalb steht dieser Text in jeder
+Release-Beschreibung:
+
+> Windows may show "Windows protected your PC" because the installer isn't
+> code-signed. Click **More info**, then **Run anyway**. The first launch
+> after installing can take up to a minute while Windows checks the app; a
+> small window shows what's happening in the meantime.
+
+## Startprogramm und Protokoll
+
+Verknüpfungen zeigen auf `Swiftly.exe` im Installationsordner, nicht auf
+`bin\Swiftly.exe`. Das ist das **Startprogramm** (`Startprogramm/`, reines
+Win32 in C, nur Systembibliotheken): Beim ersten Start einer neuen Fassung
+prüft der Defender jede unbekannte DLL, bevor in der App eine Zeile läuft —
+gemessen 23 s ohne jedes Fenster. Das Startprogramm steht sofort, zeigt, was
+gerade passiert, und geht zu, sobald die App ein Fenster hat. Endet die App
+vorher oder kommt nach zwei Minuten kein Fenster, bleibt es offen und bietet
+„Protokoll öffnen" an.
+
+Das Protokoll liegt unter `%APPDATA%\Swiftly\swiftly.log`, die vom letzten
+Start daneben als `swiftly.alt.log`. Hinein kommt alles, was die App auf
+stdout und stderr schreibt (auch GLib-Warnungen), dazu die Zeilen `[Start]`
+des Startprogramms und `[Stufe]` der App. Über 16 MB wird es gekürzt. Wer
+`bin\Swiftly.exe` direkt startet, bekommt kein Protokoll.
+
+**Eine neue Stufe** meldet die App mit `Startstufe.melden("name")`; einen Text
+dazu trägt man in `stufen[]` in `startprogramm.c` ein. Ohne Eintrag zeigt das
+Fenster den Namen roh.
+
+**`packen.ps1` lässt DLLs weg, die niemand einbindet** — ausgehend von
+`bin\Swiftly.exe`, `bin\plugins` und `lib` über alle Importe. Bei 1.0.2 waren
+es 50 von 101.
 
 ## Was noch fehlt
 

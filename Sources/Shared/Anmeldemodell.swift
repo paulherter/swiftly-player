@@ -62,9 +62,10 @@ extension AppModel {
         return try await client.quickConnectStarten()
     }
 
-    func quickConnectFreigegeben(_ vorgang: Anmeldecode) async throws -> Bool {
-        guard let client else { return false }
-        return try await client.quickConnectFreigegeben(vorgang)
+    /// Eine Nachfrage, die nie wirft — siehe `Quickconnectwarten` im Paket.
+    func quickConnectNachfragen(_ vorgang: Anmeldecode) async -> Quickconnectstand {
+        guard let client else { return .gescheitert }
+        return await client.quickConnectNachfragen(vorgang)
     }
 
     func anmeldenMitQuickConnect(_ vorgang: Anmeldecode) async {

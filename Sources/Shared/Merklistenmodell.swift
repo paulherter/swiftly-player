@@ -49,15 +49,24 @@ final class Merklistenmodell {
     var kennung: String { "\(gattung ?? "-")|\(sortierung.rawValue)" }
     var nochMehrDa: Bool { Listenregeln.nochMehrDa(geladen: items.count, gesamt: gesamt) }
 
-    func nachladenAb(spalten: Int) -> String? {
-        Listenregeln.nachladenAb(items, spalten: spalten)
+    func loestNachladenAus(_ id: String, spalten: Int) -> Bool {
+        Listenregeln.imNachladebereich(id, in: items, spalten: spalten)
     }
+
+    /// Dieselbe Unterscheidung wie in `Bibliotheksmodell`: gleiche Liste
+    /// wird aufgefrischt, nicht auf die erste Seite gekürzt.
+    private var geladenFuer: String?
 
     func laden(_ model: AppModel) async {
         laedt = items.isEmpty
         if let seite = await model.gemerkte(art: gattung, sortierung: sortierung, ab: 0) {
             // Dieselbe Regel wie auf der Startseite — siehe `Listenregeln`.
-            items = Listenregeln.ohneDoppelte(seite.titel)
+            let fuer = "\(kennung)|\(model.kontowechsel)"
+            items = geladenFuer == fuer
+                ? Listenregeln.auffrischen(seite.titel, in: items,
+                                           gesamtVorher: gesamt, gesamtJetzt: seite.gesamt)
+                : Listenregeln.ohneDoppelte(seite.titel)
+            geladenFuer = fuer
             gesamt = seite.gesamt
         }
         laedt = false
@@ -67,12 +76,13 @@ final class Merklistenmodell {
         guard nochMehrDa, !laedtNach, !laedt else { return }
         laedtNach = true
         defer { laedtNach = false }
+        let vorher = geladenFuer
         guard let seite = await model.gemerkte(art: gattung, sortierung: sortierung,
-                                               ab: items.count) else { return }
+                                               ab: items.count),
+              geladenFuer == vorher else { return }
         // Nur wirklich Neues anhängen: der Server kann eine Seite doppelt
         // liefern, und `ForEach` beschwert sich über die doppelte Kennung.
-        let bekannt = Set(items.map(\.id))
-        items += seite.titel.filter { !bekannt.contains($0.id) }
+        items = Listenregeln.anhaengen(seite.titel, an: items)
         gesamt = seite.gesamt
     }
 }

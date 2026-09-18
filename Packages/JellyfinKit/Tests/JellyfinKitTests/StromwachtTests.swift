@@ -71,4 +71,18 @@ struct StromwachtTests {
         #expect(rat(stillstand: 0) == .nochNicht)
         #expect(rat(stillstand: 0, wechsel: 1) == .nochNicht)
     }
+
+    @Test("Ohne je ein Bild kein Bildstillstand — Titel ohne Bildspur baut nie neu auf")
+    func ohneBildKeinStillstand() {
+        #expect(Stromwacht.bilderStehen(vorher: nil, jetzt: 0) == nil)
+        #expect(Stromwacht.bilderStehen(vorher: 0, jetzt: 0) == nil)
+        #expect(Stromwacht.bilderStehen(vorher: 120, jetzt: 120) == true)
+        #expect(Stromwacht.bilderStehen(vorher: 120, jetzt: 121) == false)
+    }
+
+    @Test("Byte-Zuwachs läuft nie unter null")
+    func zuwachsOhneUnterlauf() {
+        #expect(Stromwacht.zuwachs(500, seit: 200) == 300)
+        #expect(Stromwacht.zuwachs(100, seit: 90_000) == 0)
+    }
 }

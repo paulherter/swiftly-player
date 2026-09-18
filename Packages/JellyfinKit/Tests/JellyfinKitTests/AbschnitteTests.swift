@@ -131,13 +131,101 @@ struct AbschnittslogikTests {
 
     // MARK: - Abspann
 
-    @Test("Mit Abspannangabe gilt sie und nicht die Restzeit")
+    @Test("Mit Abspannangabe bis zum Ende gilt sie und nicht die Restzeit")
     func abspannGilt() {
+        let bisEnde = Abschnitt(art: .abspann, von: 1320, bis: 1499)
         // 1200 von 1500 wäre nach Restzeitregel noch nichts, nach Abspann auch nicht.
-        #expect(Abschnittslogik.angebot(position: 1200, dauer: 1500, abschnitte: [abspann],
+        #expect(Abschnittslogik.angebot(position: 1200, dauer: 1500, abschnitte: [bisEnde],
                                         hatNaechsteFolge: true) == .keiner)
-        #expect(Abschnittslogik.angebot(position: 1320, dauer: 1500, abschnitte: [abspann],
+        #expect(Abschnittslogik.angebot(position: 1320, dauer: 1500, abschnitte: [bisEnde],
                                         hatNaechsteFolge: true) == .naechsteFolge)
+    }
+
+    @Test("Abspann vor dem Dateiende wird übersprungen, danach kommt „Nächste Folge“")
+    func abspannMitSzeneDanach() {
+        // `abspann` endet 120 s vor Schluss: dahinter liegt noch eine Szene.
+        #expect(Abschnittslogik.angebot(position: 1330, dauer: 1500, abschnitte: [abspann],
+                                        hatNaechsteFolge: true)
+                == .ueberspringen(nach: 1380, art: .abspann))
+        #expect(Abschnittslogik.angebot(position: 1330, dauer: 1500, abschnitte: [abspann],
+                                        hatNaechsteFolge: false)
+                == .ueberspringen(nach: 1380, art: .abspann),
+                "auch in der letzten Folge will man zur Szene danach")
+        #expect(Abschnittslogik.angebot(position: 1400, dauer: 1500, abschnitte: [abspann],
+                                        hatNaechsteFolge: true) == .naechsteFolge)
+        #expect(!Abschnittslogik.karteFaellig(position: 1400, dauer: 1500, abschnitte: [abspann],
+                                              hatNaechsteFolge: true),
+                "die Szene nach dem Abspann bekommt keine Karte ins Bild")
+        #expect(!Abschnittslogik.karteFaellig(position: 1491, dauer: 1500, abschnitte: [abspann],
+                                              hatNaechsteFolge: true),
+                "auch nicht kurz vor Schluss — sonst schnitte der Countdown sie ab")
+    }
+
+    @Test("Toleranz am Dateiende: zwei Sekunden davor zählt noch als bis zum Ende")
+    func abspannToleranz() {
+        let knapp = Abschnitt(art: .abspann, von: 1400, bis: 1498)
+        let davor = Abschnitt(art: .abspann, von: 1400, bis: 1497)
+        #expect(Abschnittslogik.angebot(position: 1410, dauer: 1500, abschnitte: [knapp],
+                                        hatNaechsteFolge: true) == .naechsteFolge)
+        #expect(Abschnittslogik.angebot(position: 1410, dauer: 1500, abschnitte: [davor],
+                                        hatNaechsteFolge: true)
+                == .ueberspringen(nach: 1497, art: .abspann))
+    }
+
+    @Test("Abspann bis zum Ende ohne nächste Folge: kein Knopf")
+    func abspannBisEndeLetzteFolge() {
+        let bisEnde = Abschnitt(art: .abspann, von: 1320, bis: 1500)
+        #expect(Abschnittslogik.angebot(position: 1330, dauer: 1500, abschnitte: [bisEnde],
+                                        hatNaechsteFolge: false) == .keiner)
+    }
+
+    // MARK: - Mindestlänge und Karte
+
+    @Test("Abschnitte unter drei Sekunden bekommen keinen Knopf")
+    func mindestlaenge() {
+        let kurz = Abschnitt(art: .vorspann, von: 10, bis: 12.9)
+        let genug = Abschnitt(art: .vorspann, von: 10, bis: 13)
+        #expect(Abschnittslogik.angebot(position: 10, dauer: 1500, abschnitte: [kurz],
+                                        hatNaechsteFolge: false) == .keiner)
+        #expect(Abschnittslogik.angebot(position: 10, dauer: 1500, abschnitte: [genug],
+                                        hatNaechsteFolge: false)
+                == .ueberspringen(nach: 13, art: .vorspann))
+    }
+
+    @Test("Ein zu kurzer Abspann zählt nicht — dann gilt die Restzeitregel")
+    func kurzerAbspann() {
+        let kurz = Abschnitt(art: .abspann, von: 1498, bis: 1500)
+        #expect(Abschnittslogik.angebot(position: 1400, dauer: 1500, abschnitte: [kurz],
+                                        hatNaechsteFolge: true) == .naechsteFolge)
+    }
+
+    @Test("Ohne Abspann-Abschnitt nie eine Karte, nur der Knopf in der Steuerung")
+    func karteOhneAbschnitte() {
+        #expect(Abschnittslogik.angebot(position: 1400, dauer: 1500, abschnitte: [],
+                                        hatNaechsteFolge: true) == .naechsteFolge)
+        #expect(!Abschnittslogik.karteFaellig(position: 1400, dauer: 1500, abschnitte: [],
+                                              hatNaechsteFolge: true))
+        #expect(!Abschnittslogik.karteFaellig(position: 1499, dauer: 1500, abschnitte: [],
+                                              hatNaechsteFolge: true))
+        let intro = Abschnitt(art: .vorspann, von: 10, bis: 60)
+        #expect(!Abschnittslogik.karteFaellig(position: 1499, dauer: 1500, abschnitte: [intro],
+                                              hatNaechsteFolge: true))
+    }
+
+    @Test("Die Füllung dauert sieben Sekunden, aber nie über das Dateiende hinaus")
+    func countdownLaenge() {
+        #expect(Abschnittslogik.countdown(position: 1320, dauer: 1500) == 7)
+        #expect(Abschnittslogik.countdown(position: 1496, dauer: 1500) == 4)
+        #expect(Abschnittslogik.countdown(position: 1500, dauer: 1500) == 1)
+    }
+
+    @Test("Mit Abspann bis zum Ende kommt die Karte mit dem Abspann")
+    func karteMitAbspann() {
+        let bisEnde = Abschnitt(art: .abspann, von: 1320, bis: 1500)
+        #expect(!Abschnittslogik.karteFaellig(position: 1319, dauer: 1500, abschnitte: [bisEnde],
+                                              hatNaechsteFolge: true))
+        #expect(Abschnittslogik.karteFaellig(position: 1320, dauer: 1500, abschnitte: [bisEnde],
+                                             hatNaechsteFolge: true))
     }
 
     @Test("Ein früher Abspann zeigt den Knopf früher als die Restzeitregel")

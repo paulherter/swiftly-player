@@ -16,7 +16,7 @@ public extension JellyfinClient {
         Double(ticks) / 10_000_000
     }
 
-    private struct ProgressBody: Encodable {
+    internal struct ProgressBody: Encodable {
         let ItemId: String
         let PlaySessionId: String?
         let PositionTicks: Int64
@@ -27,20 +27,26 @@ public extension JellyfinClient {
         /// es hält die Wiedergabe sonst für nicht spulbar und verwirft den
         /// Fortschritt. Der Standardwert ist false.
         let CanSeek: Bool
+        /// Die laufenden Spuren als Jellyfin-Index (T3 #8). Fehlen sie,
+        /// bleiben sie weg — der Server merkt sich sonst „keine".
+        var AudioStreamIndex: Int? = nil
+        var SubtitleStreamIndex: Int? = nil
     }
 
     /// Wiedergabe hat begonnen.
-    func reportStart(itemID: String, plan: PlaybackPlan, ticks: Int64 = 0) async throws {
+    func reportStart(itemID: String, plan: PlaybackPlan, ticks: Int64 = 0,
+                     spuren: Spurindizes = .init()) async throws {
         try await postSession("Sessions/Playing", itemID: itemID, plan: plan,
-                              positionTicks: ticks, paused: false)
+                              positionTicks: ticks, paused: false, spuren: spuren)
     }
 
     /// Zwischenstand. Sinnvoll etwa alle zehn Sekunden und bei jeder
     /// Zustandsänderung.
     func reportProgress(itemID: String, plan: PlaybackPlan,
-                        positionTicks: Int64, paused: Bool) async throws {
+                        positionTicks: Int64, paused: Bool,
+                        spuren: Spurindizes = .init()) async throws {
         try await postSession("Sessions/Playing/Progress", itemID: itemID, plan: plan,
-                              positionTicks: positionTicks, paused: paused)
+                              positionTicks: positionTicks, paused: paused, spuren: spuren)
     }
 
     /// Wiedergabe beendet. Muss auch beim Verlassen der Ansicht kommen,
@@ -51,18 +57,27 @@ public extension JellyfinClient {
     }
 
     private func postSession(_ path: String, itemID: String, plan: PlaybackPlan,
-                             positionTicks: Int64, paused: Bool) async throws {
+                             positionTicks: Int64, paused: Bool,
+                             spuren: Spurindizes = .init()) async throws {
         _ = try requireSessionForReporting()
-        let body = ProgressBody(
+        let body = Self.meldekoerper(itemID: itemID, plan: plan, positionTicks: positionTicks,
+                                     paused: paused, spuren: spuren)
+        let req = try requestForReporting(path, body: body)
+        _ = try await sendIgnoringBody(req)
+    }
+
+    internal static func meldekoerper(itemID: String, plan: PlaybackPlan, positionTicks: Int64,
+                             paused: Bool, spuren: Spurindizes) -> ProgressBody {
+        ProgressBody(
             ItemId: itemID,
             PlaySessionId: plan.playSessionID,
             PositionTicks: positionTicks,
             IsPaused: paused,
             MediaSourceId: plan.mediaSourceID,
             PlayMethod: plan.method.wireName,
-            CanSeek: true
+            CanSeek: true,
+            AudioStreamIndex: spuren.ton,
+            SubtitleStreamIndex: spuren.untertitel
         )
-        let req = try requestForReporting(path, body: body)
-        _ = try await sendIgnoringBody(req)
     }
 }

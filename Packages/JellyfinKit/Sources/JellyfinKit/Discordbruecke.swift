@@ -181,6 +181,20 @@ public actor Discordbruecke {
 }
 
 
+#elseif os(Android)
+
+/// **Auf Android gibt es nichts, womit zu sprechen waere.** Discord zeigt
+/// „schaut …" nur ueber seine Desktop-App, und die hat auf dem Telefon und dem
+/// Fernseher keine Steckdose. Dieselbe Schnittstelle, ohne Wirkung — sonst
+/// scheitert das Paket schon beim Uebersetzen an `socket` und `sockaddr_un`,
+/// die Bionic unter `Glibc` nicht anbietet (gemessen 14.09.2026, erster
+/// Android-Bau).
+public actor Discordbruecke {
+    public init(anwendung: String) {}
+    public func zeigen(_ anzeige: Discordanzeige?) {}
+    public func schliessen() {}
+}
+
 #else
 
 public actor Discordbruecke {

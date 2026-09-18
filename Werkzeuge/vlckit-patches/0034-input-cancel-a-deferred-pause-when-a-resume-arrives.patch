@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Swiftly <accounts@paulherter.de>
+Date: Tue, 15 Sep 2026 23:56:00 +0200
+Subject: [PATCH] input: cancel a deferred pause when a newer resume arrives during buffering
+
+Patch 0013 leaves the input in PLAYING_S until buffering completes, so the
+old state-only resume guard could ignore the command and pause afterward.
+Resume the demux without unpausing clocks that never paused.
+
+("Patch 0013" is SwiftVLC's numbering. The deferred pause itself,
+b_pause_after_buffering, is already part of the VLC tree VLCKit pins.)
+
+Origin: SwiftVLC (harflabs), scripts/patches/0044-resume-deferred-pause.patch
+SwiftVLC is MIT-licensed; this patch modifies VLC and is under VLC's
+LGPL-2.1-or-later. Taken over unchanged into Swiftly's VLCKit build.
+---
+ src/input/input.c | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/src/input/input.c b/src/input/input.c
+index a9fcf5db99..a651f9deed 100644
+--- a/src/input/input.c
++++ b/src/input/input.c
+@@ -1779,6 +1779,9 @@ static void ControlPause(input_thread_t *p_input, vlc_tick_t i_control_date,
+ 
+ static void ControlUnpause( input_thread_t *p_input, vlc_tick_t i_control_date )
+ {
++    /* A failed resume must not leave a deferred pause able to replace ERROR. */
++    input_priv(p_input)->b_pause_after_buffering = false;
++
+     if( input_priv(p_input)->master->b_can_pause )
+     {
+         demux_t *p_demux = input_priv(p_input)->master->p_demux;
+@@ -1791,7 +1794,11 @@ static void ControlUnpause( input_thread_t *p_input, vlc_tick_t i_control_date )
+         }
+     }
+ 
+-    input_priv(p_input)->b_pause_after_buffering = false;
++    /* A deferred pause only stopped the demux; clocks and decoders never
++     * paused, and the input still reports PLAYING_S. Resume the demux above
++     * without sending a duplicate state or unpausing running clocks. */
++    if (input_priv(p_input)->i_state == PLAYING_S)
++        return;
+ 
+     /* Switch to play */
+     input_ChangeState( p_input, PLAYING_S, i_control_date );
+@@ -2145,7 +2152,9 @@ static bool Control( input_thread_t *p_input,
+             switch( param.val.i_int )
+             {
+                 case PLAYING_S:
+-                    if( priv->i_state == PAUSE_S )
++                    if( priv->i_state == PAUSE_S
++                     || (priv->i_state == PLAYING_S
++                      && priv->b_pause_after_buffering) )
+                     {
+                         ResetFramePrevious( p_input );
+                         priv->next_frame_need_data = false;
+-- 
+2.50.1
+

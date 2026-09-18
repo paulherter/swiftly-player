@@ -1,5 +1,6 @@
 import AVFoundation
 import AVKit
+import CryptoKit
 import OSLog
 import JellyfinKit
 import Network
@@ -127,7 +128,52 @@ final class VLCPlayerView: Basisansicht {
     /// Swiftfin hat kein PiP — und Swiftfin springt schnell.
     static var pipAbgeschaltet = false
 
-    let player = VLCMediaPlayer()
+    /// **Eine eigene Bibliothek, damit VLC keine Bilder vorab wegwirft.**
+    ///
+    /// DVD-Rips ruckelten auf Apple TV und iPhone, 4K-HEVC nicht; beim
+    /// Kollegen alle DVD-Rips, also auch progressive. Paul am Geraet:
+    /// dekodiert Ø 22,6–25,4, gezeigt Ø 22,6–23,7, verworfen bis 298.
+    ///
+    /// **Der Ausgabeweg, im tvOS-Simulator protokolliert** (dessen VLCKit ist
+    /// wie am Geraet mit TARGET_OS_IPHONE gebaut): `samplebufferdisplay`
+    /// nimmt nur `CVPX_BGRA` (VLCSampleBufferDisplay.m, CreateCVPXConverter).
+    /// Software-Bilder laufen deshalb `I420 -> swscale -> BGRA -> cvpx`, jedes
+    /// Bild auf der CPU. HEVC kommt von VideoToolbox schon als CVPixelBuffer.
+    /// Der Mac nimmt einen anderen Weg (`vout_macosx`, OpenGL) und zeigt
+    /// davon nichts.
+    ///
+    /// **Verworfen wird vor dem Zeichnen, nach einer Schaetzung.** Der vout
+    /// nimmt den *Hoechstwert* von Filter- und Renderdauer
+    /// (video_output.c, IsPictureLateToStaticFilter) und wirft ein Bild weg,
+    /// wenn es danach zu spaet kaeme. Eine einzige Zeitspitze im Wandler
+    /// kostet so ganze Bilder, obwohl die CPU nicht ausgelastet ist.
+    ///
+    /// Gemessen am 15.09.2026 gegen 33e3c0e, tvOS-Simulator, Prozess auf
+    /// Hintergrund gedrosselt, nachgebaute Dateien (MPEG-2 720×576 5 Mbit/s,
+    /// AC-3 5.1, VobSub, MKV), je 25 s, Deinterlace `bob`:
+    ///
+    ///     Einstellung                          gezeigt/s   verloren
+    ///     Vorgabe, interlaced (2 Laeufe)       12,4–12,8   311
+    ///     Vorgabe, progressiv (2 Laeufe)       14,0–16,4   211–284
+    ///     --no-drop-late-frames, interlaced    24,9–25,3   0
+    ///     --no-drop-late-frames, progressiv    24,0–24,9   0
+    ///     :no-drop-late-frames (Medium)        11,2        344
+    ///     --no-skip-frames allein              15,5        230
+    ///     --swscale-mode=0                     15,2        246
+    ///
+    /// Ungedrosselt laeuft alles mit 25/s. **Als Medienoption wirkt es
+    /// nicht:** der vout haengt am Player und erbt von der Bibliothek, nicht
+    /// vom Eingang. `initWithOptions:` haengt an VLCKits Vorgaben an
+    /// (VLCLibrary.m:169), es geht also nichts verloren. Android setzt die
+    /// Option in `Spielwerk` seit jeher.
+    ///
+    /// Was es kostet: ein wirklich zu spaetes Bild wird kurz spaet gezeigt
+    /// statt weggelassen. Bei VideoToolbox-Material tritt das kaum ein.
+    /// Quellen: code.videolan.org/videolan/vlc/-/merge_requests/3436
+    /// (samplebufferdisplay), VLC-Quelltext im Baubaum.
+    static let bibliothek = VLCLibrary(options: ["--no-drop-late-frames"])
+
+    let player = VLCMediaPlayer(library: VLCPlayerView.bibliothek)
 
     #if os(iOS)
     fileprivate lazy var controller = MediaController(player: player)
@@ -157,7 +203,7 @@ final class VLCPlayerView: Basisansicht {
         // schrieb, wo tvOS nichts schreiben laesst: ein Werkzeug, das lautlos
         // ins Leere laeuft, sieht aus wie eines, das nichts zu melden hat.
         #if DEBUG
-        VLCLibrary.shared().loggers = [Dateiprotokoll()]
+        VLCPlayerView.bibliothek.loggers = [Dateiprotokoll()]
         #endif
 
         // Muss die View selbst sein: VLC prüft die Zeichenfläche auf
@@ -184,6 +230,9 @@ final class VLCPlayerView: Basisansicht {
         melder.zustandWechsel = { [weak self] zustand in
             Task { @MainActor in self?.zustandGewechselt(zustand) }
         }
+        melder.untertitelHinzu = { [weak self] in
+            Task { @MainActor in self?.offenenUntertitelSetzen() }
+        }
         netzwache.start(queue: DispatchQueue(label: "de.paulherter.swiftly.netz"))
     }
 
@@ -209,6 +258,11 @@ final class VLCPlayerView: Basisansicht {
     /// Vom Benutzer beendet. Ohne das wuerde das Schliessen des Players
     /// selbst als Abriss gelten und den Strom wieder aufmachen.
     private var absichtlichBeendet = false
+    /// `stop()` ist endgueltig: die Flaeche wird danach abgeraeumt. Getrennt
+    /// von `absichtlichBeendet`, weil `play` jenes zuruecksetzt. Ein spaeter
+    /// Folgenwechsel spielte sonst auf der abgeraeumten Flaeche weiter —
+    /// Ton ohne Bild (Audit 16.09.2026, T1-H3).
+    private var endgueltigGestoppt = false
     /// Solange gesetzt, hat der frisch aufgebaute Strom seine Stelle noch
     /// nicht erreicht. Bis dahin darf seine Zeit die gute Stelle nicht
     /// ueberschreiben — sonst merkt sich der Wachhund die Sekunden, die der
@@ -343,7 +397,20 @@ final class VLCPlayerView: Basisansicht {
 
 
     /// Ob VLC schon ein Bild ausgibt. Davor ist die Flaeche schwarz.
-    var zeigtBild: Bool { player.hasVideoOut }
+    ///
+    /// Nach einem Folgenwechsel erst, wenn das **neue** Medium ein Bild
+    /// gezeigt hat — bis dahin gehoeren Bildausgabe und Uhr noch der alten
+    /// Folge (`Zeitannahme.bildGehoertDemMedium`).
+    var zeigtBild: Bool {
+        let bilder = mediumGewechselt ? (player.media?.statistics.displayedPictures ?? 0) : 0
+        let gilt = Zeitannahme.bildGehoertDemMedium(bildausgabe: player.hasVideoOut,
+                                                    gezeigteBilder: bilder,
+                                                    nachWechsel: mediumGewechselt)
+        if gilt, mediumGewechselt { mediumGewechselt = false }
+        return gilt
+    }
+    /// `play` auf eine Flaeche, die schon ein Medium hatte.
+    private var mediumGewechselt = false
 
     /// Die letzte Stelle, an der die Wiedergabe nachweislich lief.
     ///
@@ -653,9 +720,9 @@ final class VLCPlayerView: Basisansicht {
             letzteBilder = stat.displayedPictures
             letzteBytes = stat.demuxReadBytes
         }
-        guard let vorherBilder = letzteBilder, let vorherBytes = letzteBytes else { return }
-
-        guard stat.displayedPictures == vorherBilder else {
+        guard let vorherBytes = letzteBytes,
+              Stromwacht.bilderStehen(vorher: letzteBilder, jetzt: stat.displayedPictures) == true
+        else {
             bilderStehenSeit = nil
             return
         }
@@ -665,7 +732,7 @@ final class VLCPlayerView: Basisansicht {
         // Zeile zu schreiben, macht die Datei unlesbar und verdeckt genau
         // den Moment, um den es geht.
 
-        let bytes = stat.demuxReadBytes - vorherBytes
+        let bytes = Stromwacht.zuwachs(stat.demuxReadBytes, seit: vorherBytes)
         Protokoll.schreib("[Bild] Uhr bei \(jetzt / 1000) s laeuft, aber kein neues Bild"
             + " (gezeigt \(stat.displayedPictures), verloren \(stat.lostPictures),"
             + " neue Bytes \(bytes)) → \(bytes > 0 ? "Daten kommen an, Ausgabe steht" : "es kommt nichts mehr")")
@@ -845,7 +912,12 @@ final class VLCPlayerView: Basisansicht {
     /// die Optionen haengen am Medium, und das entsteht erst dort.
     var puffer: Pufferstufe = .normal
 
-    func play(url: URL, abSekunden: Double = 0, container: String? = nil) {
+    func play(url: URL, abSekunden: Double = 0, container: String? = nil,
+              untertitel: [Untertiteldatei] = []) {
+        guard !endgueltigGestoppt else {
+            Protokoll.schreib("[Player] play nach stop verworfen")
+            return
+        }
         // Die Sitzung wird beim App-Start eingerichtet. Hier nur prüfen und
         // notfalls nachziehen — mit sichtbarem Fehler statt stillem try?.
         //
@@ -901,8 +973,16 @@ final class VLCPlayerView: Basisansicht {
             + ", könnte \(sitzung.maximumOutputNumberOfChannels)")
         #endif
 
+        #if DEBUG
+        Self.zuletzt = self
+        #endif
+        mediumGewechselt = player.media != nil
         letzteAdresse = url
         letzterContainer = container
+        untertiteldateien = untertitel
+        spurQuelle = nil
+        offenerUntertitel = nil
+        spurindizesMelden(Spurindizes())
         letzteGutePosition = abSekunden
         absichtlichBeendet = false
         offenesZiel = nil
@@ -920,6 +1000,11 @@ final class VLCPlayerView: Basisansicht {
 
     /// Der eigentliche Aufbau — auch der Weg zurueck nach einem Netzwechsel.
     private func oeffnen(url: URL, abSekunden: Double, container: String?) {
+        // **Die Bildzaehlung gehoert dem Medium.** Ueberlebte sie den Aufbau,
+        // verglich `bildfluss` die neue Zaehlung mit der alten (T1-M5).
+        letzteBilder = nil
+        letzteBytes = nil
+        bilderStehenSeit = nil
         guard let medium = VLCMedia(url: url) else {
             Self.log.error("Medium ließ sich nicht öffnen: \(url.ohneGeheimnis, privacy: .public)")
             return
@@ -1018,6 +1103,40 @@ final class VLCPlayerView: Basisansicht {
             medium.addOption(":http-reconnect")
         }
 
+        // **Entflechten: `bob` statt `x` — und nur, wo VLC Halbbilder erkennt.**
+        //
+        // DVD-Rips (MPEG-2, 720×576, interlaced) ruckelten auf Apple TV und
+        // iPhone, 4K-HEVC nicht. VLC 4 entflechtet von selbst (`deinterlace`
+        // -1), sobald ein Bild als interlaced markiert ist, und `auto` heisst
+        // im Filter **`x`** (deinterlace.c, SetFilterMethod), nicht yadif2x.
+        // Das laeuft auf der CPU nach dem Dekoder. MPEG-2 selbst geht in
+        // unserem VLCKit immer ueber avcodec: `libmpeg2` ist nicht gebaut,
+        // VideoToolbox hat MPEG-2 abgeschaltet (decoder.c, `#if 0`).
+        //
+        // Gemessen am 15.09.2026 gegen 61784e2 auf dem Mac (M1 Max, derselbe Bau,
+        // nachgebaute Datei: MPEG-2 TFF 5 Mbit/s, AC-3 5.1, VobSub, MKV), je
+        // 30 s, auf die Effizienzkerne gedrosselt (`taskpolicy -c background`):
+        //
+        //     Modus          dekodiert  gezeigt  verloren
+        //     x (Vorgabe)    24,7/s     12,9–13,2   346–352
+        //     bob            24,8/s     15,0        295
+        //     linear         24,7/s     14,7        301
+        //     aus            24,8–25,0  13,9–16,8   243–335
+        //     x ohne VobSub  25,1/s     12,7        371
+        //
+        // Der Dekoder haelt immer Schritt; verloren geht es dahinter. Der
+        // Untertitel kostet nichts Messbares. `x` ist das teuerste der
+        // Verfahren, `bob` holt etwa den Abstand zu „aus" zurueck, ohne
+        // Kammbilder stehen zu lassen. Ungedrosselt liegen alle Varianten bei
+        // 25/s und 8–15 % eines Kerns — der Mac zeigt den Unterschied nur mit
+        // Bremse, und ein Teil des Verlusts liegt auch mit „aus" noch in der
+        // Ausgabe.
+        //
+        // **Warum pauschal gesetzt:** der Modus greift nur, wenn VLC ein Bild
+        // als interlaced erkennt. HEVC/4K ist progressiv und nimmt den Filter
+        // nie — dort aendert sich nichts.
+        medium.addOption(":deinterlace-mode=bob")
+
         // **Am Vorrat lag es nicht -- nachgemessen, nicht vermutet.**
         //
         // Hier stand kurz `:network-caching=10000`, weil VLCs Voreinstellung
@@ -1087,6 +1206,13 @@ final class VLCPlayerView: Basisansicht {
         melder.neuBeginnen()
         Protokoll.schreib("[VLC] Öffne \(url.lastPathComponent), Startposition \(Int(abSekunden)) s"
             + (pausiertStarten ? " (pausiert, Sprung im Stillstand)" : ""))
+        // **Externe Untertitel** (T1-H4): VLC sucht über HTTP keine
+        // Nachbardateien, der Server nennt sie aber. Vorrang 0, damit VLC
+        // keine davon selbst einschaltet — das entscheidet `Spurregel`.
+        for datei in untertiteldateien {
+            let gehaengt = medium.addSlave(VLCMediaSlave(url: datei.adresse, type: .subtitle, priority: 0))
+            Protokoll.schreib("[Spuren] Datei \(datei.index) angehängt \(gehaengt), Merkmal \(datei.merkmal ?? "—")")
+        }
         player.media = medium
         player.play()
         refreshPiPState()
@@ -1209,6 +1335,12 @@ final class VLCPlayerView: Basisansicht {
     /// verlangen. Der Abspielknopf hängt daran; siehe `zustandGewechselt`.
     var laeuftGemeldet: ((Bool) -> Void)?
 
+    /// Wird bei jedem Sprung von aussen gerufen, mit der Zielstelle — damit
+    /// der Server ihn sofort erfaehrt (Audit 16.09., T1-N1), egal ueber welchen
+    /// der vielen Wege gesprungen wurde. Das interne Nachfassen eines Sprungs
+    /// meldet nicht.
+    var sprungGemeldet: ((Double) -> Void)?
+
     func pause()  { player.pause(); refreshPiPState() }
 
     /// **Wie das Bild in die Flaeche gelegt wird -- ganz oder formatfuellend.**
@@ -1232,6 +1364,7 @@ final class VLCPlayerView: Basisansicht {
     func resume() { player.play();  refreshPiPState() }
     func stop() {
         absichtlichBeendet = true
+        endgueltigGestoppt = true
         tonZurueckhalten(false)
         wachhund?.invalidate()
         wachhund = nil
@@ -1306,57 +1439,215 @@ final class VLCPlayerView: Basisansicht {
         #endif
     }
 
-    /// Wählt Ton- und Untertitelspur nach den Voreinstellungen.
+    // MARK: Spurwahl (Audit 16.09., Stufe 4)
+
+    /// Serie oder Film, für den eine Handwahl gemerkt wird. Setzt
+    /// ``wendeSprachenAn(ton:untertitel:automatisch:quelle:titel:)`` bei jedem
+    /// Start und Folgenwechsel.
+    private var spurTitel: String?
+    /// Die Server-Angaben zur laufenden Datei — `MediaStream`s und Vorgaben.
+    private var spurQuelle: MediaSource?
+    /// Untertiteldateien, die am Medium hängen. Vor `play(url:)` gesetzt,
+    /// und nach einem Neuaufbau wieder angehängt.
+    private var untertiteldateien: [Untertiteldatei] = []
+    /// Eine gewählte Untertiteldatei, deren Spur VLC noch nicht meldet.
+    private var offenerUntertitel: Int?
+    private var gemeldeteSpuren = Spurindizes()
+
+    /// Die laufenden Spuren als Jellyfin-Index, bei jeder Änderung — für
+    /// Start- und Fortschrittsmeldung (T3 #8).
+    var spurenGemeldet: ((Spurindizes) -> Void)?
+
+    #if DEBUG
+    /// Fuer die Probe `-spurlauf` (tvOS), sonst unbenutzt.
+    static weak var zuletzt: VLCPlayerView?
+    #endif
+
+    /// MD5 der Adresse als Hex — so benennt libVLC die Spuren einer
+    /// nachgeladenen Datei (siehe ``Abspielerspur/zusatzkennung``).
+    static func untertitelmerkmal(_ adresse: URL) -> String {
+        Insecure.MD5.hash(data: Data(adresse.absoluteString.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func abspielerspur(_ spur: VLCMediaPlayer.Track) -> Abspielerspur {
+        Abspielerspur(kennung: spur.trackId, name: spur.trackName, sprache: spur.language,
+                      codec: Technikangaben.codecname(vlcKennung: spur.codec),
+                      kanaele: spur.audio.map { Int($0.channelsNumber) })
+    }
+
+    private func zuordnung(ton: [VLCMediaPlayer.Track], untertitel: [VLCMediaPlayer.Track]) -> Spurzuordnung {
+        Spurzuordnung.bilden(ton: ton.map(Self.abspielerspur),
+                             untertitel: untertitel.map(Self.abspielerspur),
+                             stroeme: spurQuelle?.mediaStreams ?? [],
+                             dateien: untertiteldateien)
+    }
+
+    /// Wählt Ton- und Untertitelspur nach ``Spurregel``: Handwahl je Serie,
+    /// Einstellungen, Server-Vorgaben, erzwungene Untertitel.
     ///
-    /// Verglichen wird über den Spurnamen, weil VLC keine Sprachkennung
-    /// herausgibt — je nach Datei steht dort „German", „Deutsch" oder „ger".
-    /// Findet sich nichts, bleibt es bei dem, was die Datei vorgibt: eine
-    /// falsche Spur wäre schlimmer als keine Wahl.
-    func wendeSprachenAn(ton: String, untertitel: String, automatisch: Bool) {
-        var tonPasst = false
-        if !ton.isEmpty,
-           let treffer = player.audioTracks.first(where: {
-               Sprache.passt($0.trackName, zu: ton)
-           }) {
-            treffer.isSelectedExclusively = true
-            tonPasst = true
-        } else if !ton.isEmpty {
-            // Kein Treffer heißt: der Ton läuft nicht in der Wunschsprache.
-            tonPasst = false
+    /// Entschieden wird über Jellyfins Index; wo die Spur in VLC liegt, sagt
+    /// ``Spurzuordnung``. Vorher ging beides über den Spurnamen (T1-N4), und
+    /// der Ton wurde gar nicht gemerkt (T1-M1).
+    func wendeSprachenAn(ton: String, untertitel: String, automatisch: Bool,
+                         quelle: MediaSource?, titel: String?) {
+        spurTitel = titel
+        spurQuelle = quelle
+        let stroeme = quelle?.mediaStreams ?? []
+        let tonspuren = player.audioTracks
+        let utspuren = player.textTracks
+        let z = zuordnung(ton: tonspuren, untertitel: utspuren)
+        let gedaechtnis = Spurgedaechtnis()
+
+        var tonIndex = Spurregel.ton(stroeme: stroeme,
+                                     gemerkt: titel.flatMap { gedaechtnis.ton(fuer: $0) },
+                                     wunschsprache: ton,
+                                     serverVorgabe: quelle?.defaultAudioStreamIndex)
+        if let gesucht = tonIndex, let position = z.tonposition(index: gesucht) {
+            tonspuren[position].isSelectedExclusively = true
         } else {
-            tonPasst = true   // keine Vorgabe, also nichts einzuwenden
+            // Nicht zuzuordnen: der alte Weg über den Namen, sonst die Datei.
+            if !ton.isEmpty, let treffer = tonspuren.first(where: { Sprache.passt($0.trackName, zu: ton) }) {
+                treffer.isSelectedExclusively = true
+            }
+            tonIndex = tonspuren.firstIndex(where: \.isSelected).flatMap { z.ton[$0] }
         }
 
-        // „Automatisch" heißt: nur einschalten, wenn der Ton nicht passt.
-        if automatisch, tonPasst {
-            deselectAllTextTracks()
+        let wahl = Spurregel.untertitel(stroeme: stroeme,
+                                        gemerkt: titel.flatMap { gedaechtnis.untertitel(fuer: $0) },
+                                        serverVorgabe: quelle?.defaultSubtitleStreamIndex,
+                                        automatisch: automatisch, tonindex: tonIndex,
+                                        tonwunsch: ton, wunschsprache: untertitel)
+        Protokoll.schreib("[Spuren] Ton \(tonIndex.map(String.init) ?? "Datei") · Untertitel \(wahl)"
+            + " · Vorgaben \(quelle?.defaultAudioStreamIndex.map(String.init) ?? "—")/"
+            + "\(quelle?.defaultSubtitleStreamIndex.map(String.init) ?? "—")"
+            + " · Zuordnung Ton \(z.ton) Untertitel \(z.untertitel)"
+            + " · Kennungen \(utspuren.map(\.trackId))")
+        untertitelSetzen(wahl, spuren: utspuren, zuordnung: z)
+        spurindizesMelden(Spurindizes(ton: tonIndex, untertitel: untertitelindex(wahl)))
+    }
+
+    private func untertitelindex(_ wahl: Spurregel.Untertitel) -> Int {
+        if case .strom(let index) = wahl { return index }
+        return -1
+    }
+
+    private func untertitelSetzen(_ wahl: Spurregel.Untertitel, spuren: [VLCMediaPlayer.Track],
+                                  zuordnung z: Spurzuordnung) {
+        offenerUntertitel = nil
+        guard case .strom(let index) = wahl else {
+            // Aktiv abschalten: die Datei bringt oft eine eigene Vorauswahl mit.
+            player.deselectAllTextTracks()
             return
         }
-        guard !untertitel.isEmpty else {
-            if !automatisch { return }   // ohne Wunschsprache nichts erzwingen
-            deselectAllTextTracks()
-            return
-        }
-        if let treffer = player.textTracks.first(where: {
-            Sprache.passt($0.trackName, zu: untertitel)
-        }) {
-            treffer.isSelectedExclusively = true
+        if let position = z.untertitelposition(index: index) {
+            spuren[position].isSelectedExclusively = true
+        } else {
+            player.deselectAllTextTracks()
+            if untertiteldateien.contains(where: { $0.index == index }) {
+                // Die Datei ist angehängt, aber noch nicht gelesen.
+                offenerUntertitel = index
+                Protokoll.schreib("[Spuren] Untertiteldatei \(index) noch nicht da, wartet")
+            } else {
+                Protokoll.schreib("[Spuren] Untertitel \(index) nicht zuzuordnen, bleibt aus")
+            }
         }
     }
 
-    private func deselectAllTextTracks() {
-        player.textTracks.forEach { $0.isSelected = false }
+    /// VLC meldet eine neue Untertitelspur — vielleicht die gewählte Datei.
+    func offenenUntertitelSetzen() {
+        guard let index = offenerUntertitel else { return }
+        let spuren = player.textTracks
+        let z = zuordnung(ton: player.audioTracks, untertitel: spuren)
+        guard let position = z.untertitelposition(index: index) else { return }
+        offenerUntertitel = nil
+        spuren[position].isSelectedExclusively = true
+        Protokoll.schreib("[Spuren] Untertiteldatei \(index) nachgereicht")
+        spurindizesMelden(Spurindizes(ton: gemeldeteSpuren.ton, untertitel: index))
     }
 
+    private func spurindizesMelden(_ neu: Spurindizes) {
+        guard neu != gemeldeteSpuren else { return }
+        gemeldeteSpuren = neu
+        spurenGemeldet?(neu)
+    }
+
+    /// Von Hand gewählt: gilt sofort und für die ganze Serie (T1-M1).
     func waehleTonspur(_ spur: VLCMediaPlayer.Track) {
         spur.isSelectedExclusively = true
+        let spuren = player.audioTracks
+        let z = zuordnung(ton: spuren, untertitel: [])
+        let position = spuren.firstIndex { $0.trackId == spur.trackId }
+        let index = position.flatMap { z.ton[$0] }
+        if let spurTitel {
+            let stroeme = spurQuelle?.mediaStreams ?? []
+            let abdruck = index.flatMap { i in stroeme.first { $0.type == "Audio" && $0.index == i } }
+                .map { Spurabdruck(strom: $0, in: stroeme, name: spur.trackName) }
+                ?? Spurabdruck(spur: Self.abspielerspur(spur))
+            Spurgedaechtnis().merkeTon(abdruck, fuer: spurTitel)
+            Protokoll.schreib("[Spuren] Ton von Hand: \(index.map(String.init) ?? "?") \(abdruck)")
+        }
+        spurindizesMelden(Spurindizes(ton: index, untertitel: gemeldeteSpuren.untertitel))
     }
 
     /// `nil` schaltet Untertitel ab.
+    ///
+    /// Hier — und nur hier — wird die Wahl für die Serie gemerkt: die Tafel
+    /// ist der einzige Weg, auf dem ein Mensch die Untertitelspur anfasst.
     func waehleUntertitel(_ spur: VLCMediaPlayer.Track?) {
-        if let spur { spur.isSelectedExclusively = true }
-        else { player.deselectAllTextTracks() }
+        offenerUntertitel = nil
+        guard let spur else {
+            if let spurTitel { Spurgedaechtnis().merkeUntertitel(.aus, fuer: spurTitel) }
+            player.deselectAllTextTracks()
+            Protokoll.schreib("[Spuren] Untertitel von Hand: aus")
+            spurindizesMelden(Spurindizes(ton: gemeldeteSpuren.ton, untertitel: -1))
+            return
+        }
+        spur.isSelectedExclusively = true
+        let spuren = player.textTracks
+        let z = zuordnung(ton: [], untertitel: spuren)
+        let index = spuren.firstIndex { $0.trackId == spur.trackId }.flatMap { z.untertitel[$0] }
+        if let spurTitel {
+            let stroeme = spurQuelle?.mediaStreams ?? []
+            let abdruck = index.flatMap { i in stroeme.first { $0.type == "Subtitle" && $0.index == i } }
+                .map { Spurabdruck(strom: $0, in: stroeme, name: spur.trackName) }
+                ?? Spurabdruck(spur: Self.abspielerspur(spur))
+            Spurgedaechtnis().merkeUntertitel(.spur(abdruck), fuer: spurTitel)
+            Protokoll.schreib("[Spuren] Untertitel von Hand: \(index.map(String.init) ?? "?") \(abdruck)")
+        }
+        spurindizesMelden(Spurindizes(ton: gemeldeteSpuren.ton, untertitel: index))
     }
+
+    /// Namen für die Untertitelliste, je `trackId`.
+    ///
+    /// VLCs Spurname, außer der Server weiß mehr: eine nachgeladene Datei
+    /// heißt bei VLC nur „Track 1", und zwei Spuren namens „Deutsch" sind
+    /// nicht auseinanderzuhalten (T1-N4). Dann Sprache, Format und ob sie
+    /// erzwungen oder eine eigene Datei ist.
+    func untertitelnamen() -> [String: String] {
+        let spuren = player.textTracks
+        let z = zuordnung(ton: [], untertitel: spuren)
+        let stroeme = spurQuelle?.mediaStreams ?? []
+        var namen: [String: String] = [:]
+        for (position, spur) in spuren.enumerated() {
+            let doppelt = spuren.filter { $0.trackName == spur.trackName }.count > 1
+            guard let index = z.untertitel[position],
+                  let strom = stroeme.first(where: { $0.type == "Subtitle" && $0.index == index }),
+                  doppelt || strom.isExternal == true else {
+                namen[spur.trackId] = spur.trackName
+                continue
+            }
+            let teile: [String?] = [
+                strom.sprachname ?? spur.trackName,
+                Technikangaben.codecname(strom.codec),
+                strom.isForced == true ? String(localized: "Erzwungen") : nil,
+                strom.isExternal == true ? String(localized: "Datei") : nil,
+            ]
+            namen[spur.trackId] = teile.compactMap { $0 }.joined(separator: " · ")
+        }
+        return namen
+    }
+
 
     /// 1.0 ist normal. VLC nimmt Werte zwischen 0,25 und 4.
     var tempo: Float {
@@ -1406,6 +1697,7 @@ final class VLCPlayerView: Basisansicht {
         sprungAusloesen(auf: seconds, ueberZeit: zeitsetzenBesser)
         sprungBeobachten(ziel: seconds)
         refreshPiPState()
+        sprungGemeldet?(seconds)
     }
 
     private func sprungAusloesen(auf sekunden: Double, ueberZeit: Bool) {
@@ -1429,12 +1721,51 @@ final class VLCPlayerView: Basisansicht {
     }
 
 
+    /// Relativ springen.
+    ///
+    /// **Ist der vorige Sprung noch unterwegs, zählt sein Ziel** (Paul,
+    /// 17.09.2026, iPhone): „Intro überspringen", gleich danach „30 s vor" —
+    /// und die Wiedergabe sprang zurück an das Ende des Intros. Zwei Gründe:
+    /// `jump(withOffset:)` rechnet von VLCs eigener, noch alter Zeit, und
+    /// `sprungNachmessen` wachte weiter über das **alte** Ziel, sah die
+    /// Wiedergabe 30 s daneben und sprang „zur Rettung" dorthin zurück. Jetzt
+    /// springt ein Sprung auf einen offenen absolut vom offenen Ziel aus, und
+    /// nachgemessen wird das neue Ziel.
     func jump(seconds: Int32) {
         melder.sprungJetzt()
+        if let offen = offenesZiel {
+            let ziel = max(offen + Double(seconds), 0)
+            Protokoll.schreib("[VLC] Sprung um \(seconds) s vom offenen Ziel \(Int(offen)) s")
+            sprungAusloesen(auf: ziel, ueberZeit: zeitsetzenBesser)
+            sprungBeobachten(ziel: ziel)
+            refreshPiPState()
+            sprungGemeldet?(ziel)
+            return
+        }
         let zeile = "[VLC] Sprung um \(seconds) s von \(Int(positionSeconds)) s"
         Self.log.info("\(zeile, privacy: .public)")
+        let ziel = positionSeconds + Double(seconds)
         player.jump(withOffset: seconds * 1000, completion: {})
         refreshPiPState()
+        sprungGemeldet?(ziel)
+    }
+}
+
+extension VLCMediaPlayer.Track {
+    /// „Deutsch · AAC · 5.1" statt VLCs rohem Spurnamen.
+    ///
+    /// **Bewusst nicht über Jellyfins `MediaStream`-Liste**, obwohl die schon
+    /// hübsch formatiert ist: die Position in VLCs Spurliste müsste dafür zur
+    /// Position in Jellyfins Liste passen, und ein Fehltreffer zeigte eine
+    /// falsche Sprache — schlimmer als der rohe Name. Alles kommt von der Spur.
+    /// Identität und Vergleich bleiben bei `trackName`.
+    var huebscherName: String {
+        let libvlcName = codecName()
+        return Technikangaben.tonspurname(
+            sprache: language,
+            codec: Technikangaben.codecname(vlcKennung: codec) ?? (libvlcName.isEmpty ? nil : libvlcName),
+            kanaele: audio.map { Int($0.channelsNumber) }
+        ) ?? trackName
     }
 }
 
@@ -1578,6 +1909,13 @@ final class Zustandsmelder: NSObject, VLCMediaPlayerDelegate, @unchecked Sendabl
     /// Wird beim ersten Übergang nach Playing gerufen.
     var beginntZuSpielen: (() -> Void)?
     var zustandWechsel: ((VLCMediaPlayerState) -> Void)?
+    /// Eine Untertitelspur ist dazugekommen — etwa eine nachgeladene Datei.
+    var untertitelHinzu: (() -> Void)?
+
+    func mediaPlayerTrackAdded(_ trackId: String, with trackType: VLCMedia.TrackType) {
+        guard trackType == .text else { return }
+        untertitelHinzu?()
+    }
     private var hatGespielt = false
 
     /// Vor einem neuen Aufbau: sonst bliebe die Startposition ungesetzt, weil

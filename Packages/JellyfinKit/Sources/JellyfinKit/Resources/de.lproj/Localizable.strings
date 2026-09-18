@@ -26,12 +26,7 @@
 "Mono" = "Mono";
 "Staffel %lld" = "Staffel %lld";
 "Folge %lld" = "Folge %lld";
-"Die Serveradresse ist ungültig." = "Die Serveradresse ist ungültig.";
 "Nicht angemeldet." = "Nicht angemeldet.";
-"Anmeldung abgelehnt." = "Anmeldung abgelehnt.";
-"Server antwortete mit %lld." = "Server antwortete mit %lld.";
-"Antwort nicht lesbar: %@" = "Antwort nicht lesbar: %@";
-"Verbindung fehlgeschlagen: %@" = "Verbindung fehlgeschlagen: %@";
 "Das andere Gerät hat nicht reagiert." = "Das andere Gerät hat nicht reagiert.";
 
 /* AirPlay und Abschnitte */
@@ -39,7 +34,8 @@
 "Der Ton liegt als %@ vor. Apple-Geräte nehmen das über AirPlay nicht an." = "Der Ton liegt als %@ vor. Apple-Geräte nehmen das über AirPlay nicht an.";
 "Die Datei liegt als %@ vor. Für AirPlay müsste der Server sie umpacken — er bietet das nicht an. In den Servereinstellungen unter „Wiedergabe“ muss Transkodierung erlaubt sein." = "Die Datei liegt als %@ vor. Für AirPlay müsste der Server sie umpacken — er bietet das nicht an. In den Servereinstellungen unter „Wiedergabe“ muss Transkodierung erlaubt sein.";
 "Über Bildschirmsynchronisierung im Kontrollzentrum läuft der Film trotzdem auf dem Fernseher." = "Über Bildschirmsynchronisierung im Kontrollzentrum läuft der Film trotzdem auf dem Fernseher.";
-"Vorspann überspringen" = "Vorspann überspringen";
+"Intro überspringen" = "Intro überspringen";
+"Abspann überspringen" = "Abspann überspringen";
 "Rückblick überspringen" = "Rückblick überspringen";
 "Vorschau überspringen" = "Vorschau überspringen";
 "Werbung überspringen" = "Werbung überspringen";
@@ -75,7 +71,7 @@
 "Der Server hat nicht geantwortet." = "Der Server hat nicht geantwortet.";
 "Unter dieser Adresse ist kein Server erreichbar." = "Unter dieser Adresse ist kein Server erreichbar.";
 "Der Server hat mit %lld geantwortet." = "Der Server hat mit %lld geantwortet.";
-"Die Antwort des Servers war unverständlich. (%@)" = "Die Antwort des Servers war unverständlich. (%@)";
+"Die Antwort des Servers war unverständlich." = "Die Antwort des Servers war unverständlich.";
 "unbekannt" = "unbekannt";
 "Normal" = "Normal";
 "Schlechte Verbindung" = "Schlechte Verbindung";
@@ -90,3 +86,9 @@
 "Transkodiert" = "Transkodiert";
 "Direct Play" = "Direct Play";
 "Direct Stream" = "Direct Stream";
+
+/* Quick Connect */
+"Die Verbindung zum Server ist abgebrochen." = "Die Verbindung zum Server ist abgebrochen.";
+"Der Code ist abgelaufen. Hol dir einen neuen." = "Der Code ist abgelaufen. Hol dir einen neuen.";
+"Der Code ist abgelaufen oder falsch." = "Der Code ist abgelaufen oder falsch.";
+"Der Server hat Quick Connect abgeschaltet." = "Der Server hat Quick Connect abgeschaltet.";

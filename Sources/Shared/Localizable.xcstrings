@@ -137,6 +137,23 @@
         }
       }
     },
+    "%@ in %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ in %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ in %@"
+          }
+        }
+      }
+    },
     "%@ ist als gesehen vermerkt.": {
       "extractionState": "manual",
       "localizations": {
@@ -651,9 +668,21 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld results"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld result"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld results"
+                }
+              }
+            }
           }
         }
       }
@@ -1428,6 +1457,23 @@
         }
       }
     },
+    "Auf deinem Server gibt es sonst nichts mit %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf deinem Server gibt es sonst nichts mit %@."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There is nothing else with %@ on your server."
+          }
+        }
+      }
+    },
     "Auf deinem Server steht gerade kein Film und keine Serie darin.": {
       "extractionState": "manual",
       "localizations": {
@@ -1797,6 +1843,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Library"
+          }
+        }
+      }
+    },
+    "Bibliothek, %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bibliothek, %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Library, %@"
           }
         }
       }
@@ -2851,6 +2913,23 @@
         }
       }
     },
+    "Erzwungen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erzwungen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forced"
+          }
+        }
+      }
+    },
     "Erneut versuchen": {
       "extractionState": "manual",
       "localizations": {
@@ -3134,6 +3213,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Episodes"
+          }
+        }
+      }
+    },
+    "Form": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Form"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layout"
           }
         }
       }
@@ -6028,6 +6123,23 @@
         }
       }
     },
+    "Startet in %lld Sekunden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Startet in %lld Sekunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starts in %lld seconds"
+          }
+        }
+      }
+    },
     "Startseite": {
       "extractionState": "manual",
       "localizations": {
@@ -7103,6 +7215,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Which seasons?"
+          }
+        }
+      }
+    },
+    "Weniger": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weniger"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Less"
+          }
+        }
+      }
+    },
+    "Dieses Video wird im Bild-im-Bild wiedergegeben.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Video wird im Bild-im-Bild wiedergegeben."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This video is playing in Picture in Picture."
           }
         }
       }

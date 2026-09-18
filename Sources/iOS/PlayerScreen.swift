@@ -72,6 +72,21 @@ struct PlayerScreen: View {
         schleierDa && !zeigeEinstellungen
     }
 
+    /// **Der Angebotsknopf unten rechts** — eine Regel, egal ob die Steuerung
+    /// offen ist (Paul, 17.09.2026): Überspringen steht, solange der Abschnitt
+    /// läuft; die Karte „Nächste Folge" steht bei geschlossener Steuerung
+    /// (`Angebotsebene.anzeige`), bei offener steht dort der normale Knopf.
+    private var angebotDa: Bool {
+        guard angebot.sichtbar, bildFrei, !zeigeEinstellungen, !imKleinenFenster,
+              airplayPlan == nil, !wechselt else { return false }
+        return ebene.anzeige.sichtbar || (steuerungDa && angebot == .naechsteFolge)
+    }
+
+    private var countdownAnteil: Double? {
+        if case let .karte(anteil) = ebene.anzeige { return anteil }
+        return nil
+    }
+
     /// **Die Abdunklung bleibt unter dem Wiedergabemenue stehen.**
     ///
     /// Sie hing frueher mit an `!zeigeEinstellungen`, war unter dem Blatt also
@@ -117,9 +132,14 @@ struct PlayerScreen: View {
     @State private var taktZurueck = 0
     @State private var taktVor = 0
     @State private var ausblendMarke = 0
-    /// Nach einem Sprung kurz nicht überschreiben, sonst springt der Regler
-    /// auf den alten Wert zurück, bevor VLC nachgezogen hat.
-    @State private var sprungBis: Date?
+    /// Ein Sprung, bei dem VLC noch nicht angekommen ist — bis dahin zeigt die
+    /// Zeitleiste das Ziel. Die Regel steht in `Wiedergabetakt.Sprung`.
+    @State private var sprung: Wiedergabetakt.Sprung?
+    /// Der erste Tipp eines möglichen Doppeltipps schaltet erst, wenn kein
+    /// zweiter kommt — siehe `tippen(richtung:)`.
+    @State private var tippAufgabe: Task<Void, Never>?
+    /// Die Füllung der Karte als durchgehende Bewegung (`Fuellungsuhr`).
+    @State private var fuellungsuhr = Fuellungsuhr()
     @State private var zuletztGeschoben: Date?
 
     @State private var zeigeEinstellungen = false
@@ -137,7 +157,12 @@ struct PlayerScreen: View {
     // `JellyfinKit.` ausgeschrieben: `Abschnitt` heisst in
     // `BrowseViews.swift` schon eine Ansicht, und die hiess zuerst so.
     @State private var abschnitte: [JellyfinKit.Abschnitt] = []
+    /// „Intro überspringen" und „Nächste Folge" über dem Bild, ohne dass die
+    /// Steuerung aufgehen muss. Was wann gilt, steht in `Angebotsebene`.
+    @State private var ebene = Angebotsebene()
+    /// Spiegelt den Riegel von `folgenwechsel` für die Ansicht.
     @State private var wechselt = false
+    @State private var folgenwechsel = Folgenwechsel()
     /// Sperrbildschirm, Kontrollzentrum, Kopfhörertasten und Anrufe.
     @State private var zentrale = Wiedergabezentrale()
 
@@ -252,6 +277,7 @@ struct PlayerScreen: View {
 
             VideoSurfaceHost(url: plan.url, startAt: startAt, container: plan.container,
                              puffer: model.pufferstufe,
+                             untertitel: model.untertiteldateien(plan),
                              pipAvailable: $pipAvailable) {
                 surface = $0
                 $0.onWiederherstellung = { stelltWiederHer = $0 }
@@ -267,7 +293,15 @@ struct PlayerScreen: View {
                 //
                 // An VLCs eigener Meldung sind Knopf und Bild im selben Moment
                 // still. Uebernommen aus der Mac-Fassung (`b5db900`), wo
-                $0.laeuftGemeldet = { laeuft = $0 }
+                // Dem Server im selben Moment (T1-N1) — `model` hier
+                // festgehalten, der Rueckruf lebt laenger als diese Ansicht.
+                let melder = model
+                $0.laeuftGemeldet = { [weak flaeche = $0] an in
+                    laeuft = an
+                    melder.laufzustandGemeldet(laeuft: an, sekunden: flaeche?.positionSeconds ?? 0)
+                }
+                $0.sprungGemeldet = { ziel in melder.sprungGemeldet(ziel: ziel) }
+                $0.spurenGemeldet = { spuren in melder.spurenGewaehlt(spuren) }
             }
             // Nach der Rückkehr aus Bild-im-Bild meldete die Fläche noch die
             // Größe des kleinen Fensters. Der Stapel richtete sich danach und
@@ -350,6 +384,35 @@ struct PlayerScreen: View {
             .animation(steuerungDa ? .snappy(duration: 0.18, extraBounce: 0)
                                    : .smooth(duration: 0.34),
                        value: steuerungDa)
+
+            // **Die Einblendung — und derselbe Knopf bei offener Steuerung.**
+            // Ein Tipp darauf führt aus; ein Tipp daneben öffnet wie immer die
+            // Steuerung. Beide stehen an genau dieser einen Stelle (Paul,
+            // 17.09.2026): vorher lag der Knopf bei offener Steuerung in der
+            // Titelzeile, zehn Punkt höher, und sprang beim Aufblenden. Der Fuß
+            // hält ihm dafür nur den Platz frei. Öffnen und Schließen der
+            // Steuerung lassen ihn stehen; er kommt und geht mit denselben
+            // Kurven wie die Steuerung.
+            if angebotDa {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        Angebotsknopf(angebot: angebot,
+                                      fuellung: countdownAnteil == nil ? nil : fuellungsuhr,
+                                      rest: ebene.countdownRest,
+                                      aktion: angebotAusfuehren)
+                            // VoiceOver: Wischen mit zwei Fingern (Z) sagt ab.
+                            .accessibilityAction(.escape) { _ = ebene.schliessen() }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 18 + 44)
+                .ignoresSafeArea(edges: .vertical)
+                .transition(.asymmetric(
+                    insertion: .opacity.animation(.snappy(duration: 0.18, extraBounce: 0)),
+                    removal: .opacity.animation(.smooth(duration: 0.34))))
+            }
 
             if let sprungAnzeige { sprungRueckmeldung(sprungAnzeige) }
             if wechselt { Lader() }
@@ -474,7 +537,8 @@ struct PlayerScreen: View {
 
         // Auch die Griffe erneuern: sonst rechnet `umschalten` weiter mit
         // dem Stand von vorhin.
-        .onChange(of: laeuft) { _, _ in ausblendMarke += 1; zentraleUebernehmen() }
+        // Pause hält auch die Füllung der Karte sofort an, nicht erst im Takt.
+        .onChange(of: laeuft) { _, _ in ausblendMarke += 1; zentraleUebernehmen(); fuellungStellen() }
         // **Nach dem Schliessen faengt die Uhr von vorn an.**
         //
         // Der Riegel oben (`!zeigeEinstellungen`) haelt die Steuerung
@@ -483,6 +547,14 @@ struct PlayerScreen: View {
         // wegzunehmen, und ohne neue Marke laeuft keine zweite an: die
         // Steuerung waere nach dem Schliessen dauerhaft stehen geblieben.
         .onChange(of: zeigeEinstellungen) { _, offen in if !offen { ausblendMarke += 1 } }
+        // Die Einblendung hört auf die gewollte Steuerung, nicht auf die
+        // sichtbare: beim Öffnen steht sie schon auf „an", bevor das Bild da
+        // ist, und ihr erstes Ausblenden ist kein Blick in die Steuerung, der
+        // „Rückblick überspringen" wegschicken dürfte.
+        .onChange(of: steuerungSichtbar, initial: true) { _, offen in
+            ebene.steuerung(offen: offen)
+            fuellungStellen()
+        }
         .onChange(of: tempo) { _, neu in surface?.tempo = neu }
         .onChange(of: schlafminuten) { _, neu in schlafzeitSetzen(neu) }
         .onChange(of: querformatFest) { _, fest in
@@ -555,18 +627,19 @@ struct PlayerScreen: View {
             for: UIApplication.didEnterBackgroundNotification)) { _ in
             Protokoll.schreib("[Lebenslage] didEnterBackground · Zustand \(Lagewort.jetzt)"
                 + " · PiP \(imKleinenFenster) · laeuft \(laeuft) → weiterlaufen lassen")
+            // Den Stand jetzt melden (T3 #5): wird die App doch eingefroren,
+            // steht am Server sonst bis zu zehn Sekunden alte Stelle.
+            if startGemeldet, !wechselt {
+                model.hintergrundMelden(item: item, plan: plan, seconds: position, paused: !laeuft)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(
             for: UIApplication.willEnterForegroundNotification)) { _ in
             Protokoll.schreib("[Lebenslage] willEnterForeground · Zustand \(Lagewort.jetzt)")
         }
         .task { await beobachten() }
-        .task {
-            naechsteFolge = await model.folgeNach(item)
-            abschnitte = await model.abschnitte(fuer: item.id)
-            // Erst jetzt steht fest, ob es einen „Weiter"-Knopf geben darf.
-            zentraleUebernehmen()
-        }
+        // Erst danach steht fest, ob es einen „Weiter"-Knopf geben darf.
+        .task { await nachschlagen(fuer: item) }
         .onChange(of: dauer) { _, _ in zentraleMelden() }
         .onAppear {
             // **Vor** dem Anfordern fragen: danach steht die Lage schon quer.
@@ -610,9 +683,16 @@ struct PlayerScreen: View {
                 // null, und wer die beiden Zeilen einmal tauscht, verliert
                 // genau das, worum es bei „Weiterschauen" geht.
                 let stelle = position
+                model.fertigGeschaut(position: stelle, dauer: dauer)
                 surface?.stop()
                 zentrale.abgeben()
-                Task { await model.reportStopped(item: item, plan: plan, seconds: stelle) }
+                // Ueber den Wechsel: laeuft gerade einer, bricht er ab, und ist
+                // der Start der neuen Folge unterwegs, geht der Stopp danach.
+                let laufend = (item: item, plan: plan)
+                folgenwechsel.schliessen {
+                    await model.reportStopped(item: laufend.item, plan: laufend.plan,
+                                              seconds: stelle)
+                }
             }
             Orientierung.shared.playerGeschlossen()
         }
@@ -650,10 +730,13 @@ struct PlayerScreen: View {
     ///
     /// Nicht ueber `onTapGesture(count: 2)` plus `onTapGesture` — dabei muss
     /// der einfache Tipp erst warten, bis der doppelte durchgefallen ist
-    /// (`require(toFail:)`), und diese knappe Drittelsekunde ist genau das,
-    /// was sich zaeh anfuehlt. Player, die sich flott anfuehlen, warten
-    /// nicht: sie schalten beim ersten Tipp sofort und nehmen die Schaltung
-    /// zurueck, wenn kurz darauf der zweite kommt. Genau das steht hier.
+    /// (`require(toFail:)`), und diese knappe Drittelsekunde fuehlt sich zaeh an.
+    ///
+    /// **Eine Zeit lang schaltete der erste Tipp sofort** und der zweite nahm
+    /// es zurueck. Das sah man: bei jedem Doppeltipp ging die ganze Steuerung
+    /// einmal auf und wieder zu (Paul, 17.09.2026). Jetzt wartet der Einzeltipp
+    /// `doppeltipp` lang — kuerzer als die Systemerkennung — und ein Doppeltipp
+    /// laesst die Steuerung, wie sie war.
     private func flaeche(richtung: Int) -> some View {
         Color.clear
             .contentShape(Rectangle())
@@ -663,19 +746,29 @@ struct PlayerScreen: View {
     private func tippen(richtung: Int) {
         let jetzt = Date()
         if let vorher = letzterTipp, letzteSeite == richtung,
-           jetzt.timeIntervalSince(vorher) < 0.3 {
+           jetzt.timeIntervalSince(vorher) < Self.doppeltipp {
             letzterTipp = nil
-            // Die Schaltung des ersten Tipps zuruecknehmen: ein Doppeltipp
-            // spult, er soll die Steuerung nicht nebenbei umlegen.
-            steuerungSichtbar.toggle()
+            // Der erste Tipp hat noch nicht geschaltet — und soll es auch
+            // nicht: ein Doppeltipp spult, die Steuerung bleibt, wie sie war.
+            tippAufgabe?.cancel()
+            tippAufgabe = nil
             if steuerungSichtbar { ausblendenVerschieben() }
             spulen(Int32(richtung < 0 ? -model.zurueckSekunden : model.vorSekunden))
             return
         }
         letzterTipp = jetzt
         letzteSeite = richtung
-        steuerungUmschalten()
+        tippAufgabe?.cancel()
+        tippAufgabe = Task {
+            try? await Task.sleep(for: .seconds(Self.doppeltipp))
+            guard !Task.isCancelled else { return }
+            tippAufgabe = nil
+            steuerungUmschalten()
+        }
     }
+
+    /// Wie lange ein Tipp auf seinen zweiten wartet.
+    private static let doppeltipp: Double = 0.26
 
     // MARK: - Kopf, Mitte, Fuß
 
@@ -742,7 +835,11 @@ struct PlayerScreen: View {
 
                 Spacer(minLength: 0)
 
-                Angebotsknopf(angebot: angebot, aktion: angebotAusfuehren)
+                // Nur der Platz: der Knopf selbst liegt in der Einblendung
+                // darüber, an derselben Stelle wie ohne Steuerung.
+                Angebotsknopf(angebot: angebot, aktion: {})
+                    .hidden()
+                    .accessibilityHidden(true)
             }
             .foregroundStyle(.white)
 
@@ -756,8 +853,7 @@ struct PlayerScreen: View {
                     // stehen und die Zeitanzeige würde nie mehr nachgeführt.
                     amSchieben = false
                     surface?.seek(toSeconds: position)
-                    sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
-                    meldeFortschritt()
+                    gesprungen(auf: position)
                     ausblendenVerschieben()
                 }
             }
@@ -842,16 +938,15 @@ struct PlayerScreen: View {
 
     /// Der Druck darauf.
     private func angebotAusfuehren() {
+        ebene.gedrueckt()
         switch angebot {
         case .keiner:
             break
         case let .ueberspringen(nach, _):
             // Wie ein Sprung von Hand: Stelle setzen, springen, und die
             // Anzeige kurz nicht überschreiben lassen.
-            position = nach
             surface?.seek(toSeconds: nach)
-            sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
-            meldeFortschritt()
+            gesprungen(auf: nach)
             ausblendenVerschieben()
         case .naechsteFolge:
             if let naechsteFolge { zurNaechstenFolge(naechsteFolge) }
@@ -876,9 +971,8 @@ struct PlayerScreen: View {
             surface?.stop()
             dismiss()
         case let .springenAuf(sekunden):
-            position = sekunden
             surface?.seek(toSeconds: sekunden)
-            sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+            gesprungen(auf: sekunden)
         case .vor:
             spulen(Int32(model.vorSekunden))
         case .zurueck:
@@ -903,7 +997,7 @@ struct PlayerScreen: View {
         steuerungSichtbar = true
         zentrale.standNachziehen(position: position, laeuft: an, tempo: tempo)
         ausblendenVerschieben()
-        meldeFortschritt()
+        // Gemeldet wird an VLCs Rueckmeldung (`laeuftGemeldet`), nicht hier.
     }
 
     private func spielenUmschalten() {
@@ -913,12 +1007,17 @@ struct PlayerScreen: View {
         steuerungSichtbar = true
         zentrale.standNachziehen(position: position, laeuft: laeuft, tempo: tempo)
         ausblendenVerschieben()
-        meldeFortschritt()
+        // Hier stand `meldeFortschritt()` und las `laeuft` vor VLCs
+        // Rueckmeldung: Pause ging als „laeuft" hinaus (T1-N1). Gemeldet wird
+        // jetzt an `laeuftGemeldet`.
     }
 
     private func spulen(_ sekunden: Int32) {
+        // Das Ziel vor dem Sprung ausrechnen: von einem noch offenen Ziel aus,
+        // nicht von der Stelle, an der VLC gerade noch steht.
+        let ziel = Wiedergabetakt.ziel(um: Double(sekunden), stand: anzeigestand)
         surface?.jump(seconds: sekunden)
-        sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+        gesprungen(auf: ziel)
         if sekunden < 0 { taktZurueck += 1 } else { taktVor += 1 }
         sprungAnzeige = (sekunden < 0 ? -1 : 1, Int(abs(sekunden)))
         Task {
@@ -926,97 +1025,143 @@ struct PlayerScreen: View {
             sprungAnzeige = nil
         }
         if steuerungSichtbar { ausblendenVerschieben() }
-        meldeFortschritt()
+        // Gemeldet ueber `sprungGemeldet`, mit der Zielstelle statt der alten.
+    }
+
+    /// Was die Zeitleiste gerade zeigt, als Stand für die geteilten Regeln.
+    private var anzeigestand: Wiedergabetakt.Stand {
+        var stand = Wiedergabetakt.Stand(position: position, dauer: dauer)
+        stand.sprung = sprung
+        return stand
+    }
+
+    /// **Jeder Sprung, egal über welchen Weg:** Zeitleiste und Knopf stehen
+    /// sofort auf dem Ziel, nicht erst, wenn VLC nachzieht (Bug 17.09.2026).
+    /// Der Takt übergibt an VLCs Zeit, sobald VLC dort ist.
+    private func gesprungen(auf ziel: Double) {
+        var stand = anzeigestand
+        Wiedergabetakt.gesprungen(&stand, ziel: ziel)
+        position = stand.position
+        sprung = stand.sprung
+        angebotNachziehen(vergangen: 0)
+        #if DEBUG
+        if Sprunglauf.an { Protokoll.schreib("[Sprung] Anzeige \(String(format: "%.1f", position)) · Angebot \(angebot)") }
+        #endif
+    }
+
+    /// Die Einblendung an die angezeigte Stelle anpassen. Mit `vergangen: 0`
+    /// direkt nach einem Sprung, sonst einmal je Takt.
+    ///
+    /// - Returns: `true`, wenn der Countdown jetzt abgelaufen ist.
+    @discardableResult
+    private func angebotNachziehen(vergangen: Double) -> Bool {
+        guard !wechselt else { return false }
+        let fertig = ebene.takt(angebot: angebot,
+                                karteFaellig: Abschnittslogik.karteFaellig(position: position, dauer: dauer,
+                                                                           abschnitte: abschnitte,
+                                                                           hatNaechsteFolge: naechsteFolge != nil),
+                                laeuft: laeuft && bildFrei && !amSchieben,
+                                vergangen: vergangen,
+                                countdown: Abschnittslogik.countdown(position: position, dauer: dauer))
+        fuellungStellen()
+        return fertig
+    }
+
+    private func fuellungStellen() {
+        fuellungsuhr.stellen(anteil: countdownAnteil, laeuft: laeuft && bildFrei && !amSchieben,
+                             laenge: ebene.countdownLaenge)
     }
 
     /// Wechselt im laufenden Player zur nächsten Folge, statt zurück in die
     /// Übersicht zu springen.
+    ///
+    /// **Der Ablauf steht im Paket** (`Folgenwechsel`): Riegel, Stopp und Plan
+    /// nebeneinander, Abbruch beim Schließen, Stopp genau einmal. Er stand
+    /// dreimal von Hand hier, auf dem Fernseher und auf dem Mac, und lief
+    /// auseinander (Audit 16.09.2026, T1-H1/H3/M2/M4/M6). Hier bleibt, was nur
+    /// diese Ansicht weiß: welche ihrer Zustände zur Folge gehören.
     private func zurNaechstenFolge(_ folge: Item) {
+        guard !wechselt else { return }
         wechselt = true
+        model.fertigGeschaut(position: position, dauer: dauer)
+        let alt = (item: item, plan: plan, stelle: position)
         Task {
-            // **Nebeneinander, nicht nacheinander.** Beides sind Abrufe, und
-            // sie brauchen einander nicht: die Abmeldung der alten Folge hoert
-            // der Server, den Plan der neuen gibt er heraus. Hintereinander
-            // gerechnet liegt die zweite Frist hinter der ersten — bei totem
-            // Netz gemessen (Mac-Sitzung): 20,9 s plus 21,0 s. Nebeneinander
-            // ist es die laengere von beiden.
-            //
-            // Die **Reihenfolge** Stopp vor Start bleibt gewahrt:
-            // `reportStart` steht unten hinter `await gestoppt`. Nur das
-            // Warten liegt parallel.
-            async let gestoppt: Void = model.reportStopped(item: item, plan: plan,
-                                                           seconds: position)
-            async let geplant = model.plan(for: folge.id)
-            await gestoppt
-            guard let neuerPlan = await geplant else {
-                hinweis = String(localized: "Nächste Folge konnte nicht geladen werden.")
-                wechselt = false
-                return
-            }
-            item = folge
-            plan = neuerPlan
-            position = 0
-            // Eine neue Folge fängt eine eigene Zeitrechnung an. Bliebe die
-            // alte stehen, wären Notbremse und Frischefenster für den neuen
-            // Titel sofort abgelaufen — auf dem Fernseher hat genau das eine
-            // Folge übersprungen.
-            seitStart = Date()
-            // Den Ladeschirm zurückholen. Sonst übernimmt die Schleife im
-            // nächsten Takt noch die Zeit der **alten** Folge — ein Vorwärts-
-            // sprung, den `Zeitannahme` nicht sperrt, weil nur Rücksprünge
-            // gesperrt sind. Der Balken zuckte ans Ende, und beim
-            // selbsttätigen Weiterschalten löste es gleich noch einmal aus.
-            erstesBildDa = false
-            spurenGesetzt = false
-            titelwechsel += 1
-            surface?.puffer = model.pufferstufe
-            surface?.play(url: neuerPlan.url, abSekunden: 0, container: neuerPlan.container)
-            // Hier gemeldet, nicht von der Schleife: Titel und Plan sind in
-            // diesem Augenblick bekannt, die Stelle ist null. Der Stand muss
-            // es erfahren, sonst meldet die Schleife gleich noch einmal.
-            await model.reportStart(item: folge, plan: neuerPlan, seconds: 0)
-            startGemeldet = true
+            let ergebnis = await folgenwechsel.ausfuehren(.init(
+                stoppen: { await model.reportStopped(item: alt.item, plan: alt.plan,
+                                                     seconds: alt.stelle) },
+                planen: { await model.plan(for: folge.id) },
+                anwenden: { neuerPlan in folgeAnwenden(folge, neuerPlan) },
+                starten: { neuerPlan in await model.reportStart(item: folge, plan: neuerPlan,
+                                                           seconds: 0) },
+                gescheitert: {
+                    hinweis = String(localized: "Nächste Folge konnte nicht geladen werden.")
+                    // Die alte Folge laeuft weiter, der Server kennt sie aber
+                    // schon als beendet. Die Schleife meldet sie neu an.
+                    startGemeldet = false
+                }))
+            Protokoll.schreib("[Wechsel] \(ergebnis) → \(folge.id)")
 
             // **Hier ist der Wechsel fertig, also faellt hier der Riegel.**
             //
-            // Er stand bisher noch ueber den zwei Abrufen darunter, und das
-            // war der Fehler — nicht die Abrufe. Ein Riegel gilt fuer das, was
-            // er schuetzt: dass nicht zweimal gewechselt wird, waehrend der
-            // Wechsel laeuft. Ab hier laeuft er nicht mehr; Bild, Plan und
-            // Meldung an den Server stehen.
-            //
-            // Solange er lag, gab `angebot` `.keiner` zurueck — **keine
-            // Knoepfe** —, und darueber lag `if wechselt { Lader() }`, also
-            // ein Ladekringel ueber dem stehenden Bild. Dazu wurde weder Start
-            // noch Fortschritt gemeldet und das selbsttaetige Weiterschalten
-            // war gesperrt. Genau die drei Beobachtungen aus dem Test: Bild steht, keine
-            // Taste reagiert, und die Uhr laeuft trotzdem weiter, weil die
-            // Taktschleife unabhaengig davon tickt.
-            //
-            // Unbegrenzt ist die Wartezeit dabei **nicht** —
-            // `Netzsitzung.ortsnetzfaehig` setzt `timeoutIntervalForResource`
-            // auf 20 s, und das begrenzt den ganzen Vorgang einschliesslich
-            // des Wartens auf eine Verbindung. Es braucht auch keine
-            // Unendlichkeit: vier Abrufe hintereinander sind rund 84 Sekunden,
-            // mit WLAN und ohne. So lange sieht ein stehendes Bild mit
-            // laufender Uhr aus wie „haengt", nicht wie „laedt".
+            // Solange er lag, gab `angebot` `.keiner` zurueck, darueber lag
+            // `if wechselt { Lader() }`, und die Schleife schwieg. Er darf
+            // nicht ueber dem Nachschlag unten liegen: kommt der spaet, stuende
+            // das Bild mit laufender Uhr und ohne Tasten da.
             wechselt = false
+            guard ergebnis == .gewechselt else { return }
             steuerungSichtbar = true
             ausblendenVerschieben()
-
-            // Nachschlag, und zwar ohne Riegel: `folgeNach` fuellt den Knopf
-            // „naechste Folge", `abschnitte` die Sprungmarken. Kommen sie
-            // spaeter oder gar nicht, fehlt ein Knopf und ein paar Marken.
-            // Dafuer darf keine Taste stehenbleiben.
-            naechsteFolge = await model.folgeNach(folge)
-            // **Die neue Folge hat eigene Abschnitte.** Ohne das trüge sie
-            // die des Vorgängers, und der Knopf erschiene an dessen Stellen.
-            abschnitte = await model.abschnitte(fuer: folge.id)
-            // **Bleibt hinten.** Die Zentrale traegt den Befehl „naechste
-            // Folge", und der braucht `naechsteFolge` — vorgezogen zeigte er
-            // auf die Folge, die gerade laeuft.
-            zentraleUebernehmen()
+            await nachschlagen(fuer: folge)
         }
+    }
+
+    /// Die neue Folge übernehmen — alles, was der alten gehörte, zurück.
+    private func folgeAnwenden(_ folge: Item, _ neuerPlan: PlaybackPlan) {
+        item = folge
+        plan = neuerPlan
+        // Die geteilte Regel setzt Stelle, Spuren, Startmeldung und das erste
+        // Bild zurueck. Ohne den Ladeschirm uebernaehme die Schleife im
+        // naechsten Takt noch die Zeit der **alten** Folge — der Balken
+        // zuckte ans Ende, und das Weiterschalten loeste gleich noch einmal
+        // aus. `startGemeldet: true`, weil der Wechsel den Start meldet.
+        var stand = Wiedergabetakt.Stand(position: position, dauer: dauer, laeuft: laeuft,
+                                         erstesBildDa: erstesBildDa,
+                                         spurenGesetzt: spurenGesetzt,
+                                         startGemeldet: startGemeldet)
+        Wiedergabetakt.neuerTitel(&stand, startGemeldet: true)
+        position = stand.position
+        sprung = stand.sprung
+        erstesBildDa = stand.erstesBildDa
+        spurenGesetzt = stand.spurenGesetzt
+        startGemeldet = stand.startGemeldet
+        titelwechsel += 1
+        // Eine neue Folge fängt eine eigene Zeitrechnung an. Bliebe die alte
+        // stehen, wären Notbremse und Frischefenster sofort abgelaufen — auf
+        // dem Fernseher hat genau das eine Folge übersprungen.
+        seitStart = Date()
+        // **Nichts zeigt mehr auf die alte Folge** (T1-M4): „Nächste Folge"
+        // hielt sonst bis zum Nachschlag die Folge, die jetzt läuft, und der
+        // Vorspann-Knopf sprang an die Stellen der vorigen.
+        naechsteFolge = nil
+        abschnitte = []
+        ebene.neueFolge()
+        zentraleUebernehmen()
+        surface?.puffer = model.pufferstufe
+        surface?.play(url: neuerPlan.url, abSekunden: 0, container: neuerPlan.container,
+                      untertitel: model.untertiteldateien(neuerPlan))
+    }
+
+    /// Nächste Folge und Abschnitte zum laufenden Titel — beim Öffnen und
+    /// nach jedem Wechsel. Ein Ergebnis, das zu spät für seinen Titel kommt,
+    /// verwirft `Folgenwechsel.nachschlagen`.
+    private func nachschlagen(fuer titel: Item) async {
+        await folgenwechsel.nachschlagen(holen: { await model.folgeNach(titel) },
+                                         uebernehmen: { naechsteFolge = $0 })
+        await folgenwechsel.nachschlagen(holen: { await model.abschnitte(fuer: titel.id) },
+                                         uebernehmen: { abschnitte = $0 })
+        // **Bleibt hinten.** Die Zentrale traegt den Befehl „naechste Folge",
+        // und der braucht `naechsteFolge`.
+        zentraleUebernehmen()
     }
 
     // MARK: - Auf den Fernseher und zurueck
@@ -1112,10 +1257,28 @@ struct PlayerScreen: View {
         var stand = Wiedergabetakt.Stand()
         var letzterWechsel = titelwechsel
         var takte = 0
+        var nurZeit = false
 
         while !Task.isCancelled {
-            try? await Task.sleep(for: Wiedergabetakt.taktlaenge)
+            try? await Task.sleep(for: Wiedergabetakt.anzeigetakt)
             guard let surface else { continue }
+
+            // **Dazwischen nur die Zeit** (Paul, 17.09.2026): im halben
+            // Sekundentakt lief sie nach dem Abspielen verzögert an und zählte
+            // ungleichmäßig. Dieselben Sperren wie im ganzen Takt.
+            nurZeit.toggle()
+            if nurZeit {
+                guard !wechselt else { continue }
+                stand.position = position
+                stand.sprung = sprung
+                stand.erstesBildDa = erstesBildDa
+                Wiedergabetakt.zeitUebernehmen(&stand,
+                                               gemeldet: stelltWiederHer ? surface.guteStelle : surface.positionSeconds,
+                                               amSchieben: amSchieben, seitStart: seitStart)
+                position = stand.position
+                sprung = stand.sprung
+                continue
+            }
 
             // Sicherung: bleibt das Schieben trotzdem hängen, nach drei
             // Sekunden ohne Bewegung selbst zurücksetzen.
@@ -1127,6 +1290,7 @@ struct PlayerScreen: View {
             // Den Stand der Ansicht übernehmen: sie ändert `position`, während
             // der Finger am Regler liegt.
             stand.position = position
+            stand.sprung = sprung
             stand.dauer = dauer
             stand.laeuft = laeuft
             stand.erstesBildDa = erstesBildDa
@@ -1143,23 +1307,10 @@ struct PlayerScreen: View {
                 Wiedergabetakt.neuerTitel(&stand, startGemeldet: true)
             }
 
-            // **Angekommen heisst angekommen — nicht „zwei Sekunden sind um".**
-            //
-            // Der Riegel nach einem Sprung stand auf einer festen Frist. Ist
-            // VLC frueher da, bleibt die Zeit trotzdem stehen; braucht es
-            // laenger, faellt der Riegel zu frueh und die Anzeige springt auf
-            // die alte Stelle zurueck. Gemessen wird deshalb, ob VLC dort
-            // ist, wo wir hinwollten — die Frist ist nur noch der Deckel fuer
-            // den Fall, dass ein Sprung gar nicht ankommt.
-            //
-            // Von tvOS uebernommen, wo es seit Langem so laeuft. Die
-            // tvOS-Sitzung hat den Unterschied im Tiefendurchgang gefunden:
-            // die drei Plattformen hatten nicht verschiedene Zahlen, sondern
-            // verschiedene Verfahren.
-            if sprungBis != nil, abs(surface.positionSeconds - position) < Zeitannahme.sprungAngekommen {
-                sprungBis = nil
-            }
-
+            // **Angekommen heisst angekommen.** Ob VLC am Ziel eines Sprungs
+            // steht, entscheidet `Wiedergabetakt` anhand von `stand.sprung` —
+            // frueher hielt hier ein Riegel die Anzeige zwei Sekunden fest,
+            // auch dann, wenn VLC laengst da war (Bug 17.09.2026).
             let auftrag = Wiedergabetakt.rechnen(
                 &stand,
                 messung: .init(dauer: surface.durationSeconds,
@@ -1181,11 +1332,11 @@ struct PlayerScreen: View {
                                // kuerzt ihn weg, sobald er nichts mehr traegt.
                                hatTonspuren: spurenGesetzt || !surface.tonspuren.isEmpty),
                 stelltWiederHer: stelltWiederHer,
-                sprungLaeuft: sprungBis.map { Date() < $0 } ?? false,
                 amSchieben: amSchieben,
                 seitStart: seitStart)
 
             position = stand.position
+            sprung = stand.sprung
             dauer = stand.dauer
             laeuft = stand.laeuft
             spurenGesetzt = stand.spurenGesetzt
@@ -1198,7 +1349,9 @@ struct PlayerScreen: View {
             if auftrag.spurenAnwenden {
                 surface.wendeSprachenAn(ton: model.tonSprache,
                                         untertitel: model.untertitelSprache,
-                                        automatisch: model.untertitelAutomatisch)
+                                        automatisch: model.untertitelAutomatisch,
+                                        quelle: plan.quelle,
+                                        titel: Spurgedaechtnis.titel(fuer: item))
             }
             if auftrag.spurenAnwenden { surface.kanaeleNachmessen() }
             // Waehrend des Wechsels schweigen. Sonst geht ein Fortschritt
@@ -1208,7 +1361,7 @@ struct PlayerScreen: View {
                 // Die tatsaechliche Stelle, nicht das Ziel: seit der Start erst
                 // gemeldet wird, wenn ein Bild steht, liegt das Einsteuern
                 // dazwischen. Bei grossen Dateien sind das bis zu 25 Sekunden.
-                await model.reportStart(item: item, plan: plan, seconds: stand.position)
+                model.reportStart(item: item, plan: plan, seconds: stand.position)
             }
             if auftrag.fortschrittMelden, !wechselt {
                 meldeFortschritt()
@@ -1217,8 +1370,21 @@ struct PlayerScreen: View {
                 #endif
             }
 
-            // Am Ende von selbst weiter, wenn gewünscht.
-            if model.naechsteAutomatisch, let folge = naechsteFolge, !wechselt,
+            // **Die Einblendung** (Countdown der Karte). Im Stehen hält er an.
+            if angebotNachziehen(vergangen: Wiedergabetakt.taktlaenge / .seconds(1)),
+               let folge = naechsteFolge {
+                Protokoll.schreib("[Angebot] Countdown abgelaufen")
+                zurNaechstenFolge(folge)
+            }
+            #if DEBUG
+            if Sprunglauf.an { sprungtaktSchreiben(vlc: surface.positionSeconds) }
+            #endif
+
+            // Am Ende von selbst weiter — nur mit Karte (Abspann-Abschnitt vom
+            // Server), und nicht, wenn sie abgesagt wurde. Der Schalter
+            // „Nächste Folge automatisch" spielt dafür keine Rolle mehr
+            // (Paul, 17.09.2026).
+            if ebene.weiterAmEnde, let folge = naechsteFolge, !wechselt,
                Folgenende.weiterschalten(position: position, dauer: dauer,
                                          seitOeffnen: Date().timeIntervalSince(seitStart)) {
                 zurNaechstenFolge(folge)
@@ -1231,6 +1397,14 @@ struct PlayerScreen: View {
             }
         }
     }
+
+    #if DEBUG
+    /// Eine Zeile je Takt für den `Sprunglauf`.
+    private func sprungtaktSchreiben(vlc: Double) {
+        Protokoll.schreib("[Sprungtakt] Anzeige \(String(format: "%.1f", position))"
+            + " · VLC \(String(format: "%.1f", vlc)) · Angebot \(angebot) · Ebene \(ebene.anzeige)")
+    }
+    #endif
 
     /// Meldet dem System, was läuft, und nimmt seine Befehle entgegen.
     private func zentraleUebernehmen() {
@@ -1252,7 +1426,7 @@ struct PlayerScreen: View {
             abspielen:   { surface?.resume(); laufzustand(true) },
             anhalten:    { surface?.pause();  laufzustand(false) },
             umschalten:  { spielenUmschalten() },
-            springenAuf: { ziel in surface?.seek(toSeconds: ziel); position = ziel },
+            springenAuf: { ziel in surface?.seek(toSeconds: ziel); gesprungen(auf: ziel) },
             vor:         { spulen(Int32(model.vorSekunden)) },
             zurueck:     { spulen(Int32(-model.zurueckSekunden)) },
             naechste:    naechsteFolge.map { folge in { zurNaechstenFolge(folge) } }))
@@ -1267,11 +1441,9 @@ struct PlayerScreen: View {
     }
 
 
+    /// Setzt nur ab; die Reihe im Modell sendet (T1-H2).
     private func meldeFortschritt() {
-        Task {
-            await model.reportProgress(item: item, plan: plan,
-                                       seconds: position, paused: !laeuft)
-        }
+        model.reportProgress(item: item, plan: plan, seconds: position, paused: !laeuft)
     }
 
     private func zeit(_ sekunden: Double) -> String { Spielzeit.text(sekunden) }
@@ -1306,6 +1478,8 @@ struct VideoSurfaceHost: UIViewRepresentable {
     /// Wird durchgereicht statt hier geholt: diese Ansicht kennt das Modell
     /// nicht, und sie soll es auch nicht kennen.
     let puffer: Pufferstufe
+    /// Externe Untertitel, ebenfalls vor `play` (T1-H4).
+    var untertitel: [Untertiteldatei] = []
     @Binding var pipAvailable: Bool
     let onCreate: (VLCPlayerView) -> Void
 
@@ -1315,7 +1489,7 @@ struct VideoSurfaceHost: UIViewRepresentable {
         // Vor dem Start setzen, nicht danach: die Optionen haengen am Medium,
         // und das entsteht in `play`.
         view.puffer = puffer
-        view.play(url: url, abSekunden: startAt, container: container)
+        view.play(url: url, abSekunden: startAt, container: container, untertitel: untertitel)
         DispatchQueue.main.async { onCreate(view) }
         return view
     }
@@ -1398,6 +1572,11 @@ private struct Zeitzeile: View {
 /// er hat gar keine gespeicherten Werte.
 private struct Angebotsknopf: View {
     let angebot: Knopfangebot
+    /// Countdown bis zur nächsten Folge — als Füllung von links, aus der Uhr
+    /// gerechnet und bei jedem Bild nachgezogen, nicht im Takt.
+    var fuellung: Fuellungsuhr? = nil
+    /// Sekunden bis zum Wechsel, für VoiceOver.
+    var rest: Int = 0
     let aktion: () -> Void
 
     var body: some View {
@@ -1414,12 +1593,35 @@ private struct Angebotsknopf: View {
                 .font(.system(size: 14, weight: .semibold))
                 .padding(.horizontal, 15)
                 .frame(height: 34)
-                .background(.white.opacity(0.16), in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.24)))
+                .background {
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Stil.schrift.opacity(0.16))
+                        if let fuellung {
+                            // **Durchgehend statt im Takt** (Paul, 17.09.2026):
+                            // im halben Sekundentakt nachgezogen ruckelte sie am
+                            // Anfang und gegen Ende. **In Akzentfarbe**, weil sie
+                            // Fortschritt ist (GESTALTUNG A); halb deckend, damit
+                            // die weiße Schrift darüber lesbar bleibt — voll
+                            // deckend läge sie bei knapp 2:1.
+                            TimelineView(.animation) { zeit in
+                                GeometryReader { g in
+                                    Rectangle()
+                                        .fill(Stil.akzent.opacity(0.5))
+                                        .frame(width: g.size.width * fuellung.anteil(jetzt: zeit.date))
+                                }
+                            }
+                        }
+                    }
+                    .clipShape(Capsule())
+                }
+                .overlay(Capsule().strokeBorder(Stil.schrift.opacity(0.24)))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(Stil.schrift)
             .fixedSize()
-            .transition(.opacity)
+            .accessibilityLabel(Text(verbatim: angebot.beschriftung))
+            .accessibilityValue(fuellung.map {
+                _ in Text("Startet in \(rest) Sekunden")
+            } ?? Text(verbatim: ""))
         }
     }
 }

@@ -184,6 +184,36 @@ try {
     }
 } finally { Pop-Location }
 
+# --------------------------------------------------------- Startprogramm
+#
+# **Das Ladefenster vor der App.** Beim ersten Start einer neuen Fassung
+# prueft der Defender jede unbekannte DLL, bevor `Swiftly.exe` eine Zeile
+# unseres Codes ausfuehrt - gemessen 23 s ohne jedes Fenster. Das
+# Startprogramm haengt nur an Systembibliotheken und steht sofort; was es
+# tut, steht in `Startprogramm\startprogramm.c`.
+#
+# `/MT` bindet die C-Laufzeit ein: `vcruntime140.dll` liegt auf einem frischen
+# Windows nicht sicher da, und genau dort soll das Fenster stehen.
+Sag 'Startprogramm'
+$sp = Join-Path $hier 'Startprogramm'
+$spZiel = Join-Path $hier '.build\startprogramm'
+New-Item -ItemType Directory -Force -Path $spZiel | Out-Null
+& rc.exe /nologo /fo (Join-Path $spZiel 'startprogramm.res') (Join-Path $sp 'startprogramm.rc') | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "rc.exe fuer das Startprogramm fehlgeschlagen ($LASTEXITCODE)" }
+$vorher = $ErrorActionPreference
+$ErrorActionPreference = 'SilentlyContinue'
+& cl.exe /nologo /O1 /W4 /MT /utf-8 /DUNICODE /D_UNICODE `
+    "/Fo$spZiel\" "/Fe$spZiel\Swiftly.exe" (Join-Path $sp 'startprogramm.c') `
+    (Join-Path $spZiel 'startprogramm.res') `
+    /link /SUBSYSTEM:WINDOWS /MANIFEST:NO user32.lib gdi32.lib comctl32.lib shell32.lib ole32.lib 2>&1 |
+    Tee-Object -FilePath (Join-Path $spZiel 'bau.log') | Out-Null
+$ErrorActionPreference = $vorher
+if ($LASTEXITCODE -ne 0) {
+    Get-Content (Join-Path $spZiel 'bau.log') | Select-Object -Last 15
+    throw "Startprogramm fehlgeschlagen ($LASTEXITCODE)"
+}
+Select-String -Path (Join-Path $spZiel 'bau.log') -Pattern 'warning' | ForEach-Object { $_.Line.Trim() }
+
 # --------------------------------------------------------------- Starter
 #
 # **Warum ein Starter und keine DLLs neben dem Programm.**

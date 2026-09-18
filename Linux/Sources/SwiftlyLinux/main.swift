@@ -22,6 +22,12 @@ import JellyfinKit
 _ = g_setenv("PANGOCAIRO_BACKEND", "fc", 0)
 #endif
 
+// **Die erste Zeile, die zaehlt.** Bis hierher hat Windows alle DLLs geladen
+// (und beim ersten Start vom Defender pruefen lassen). Der Abstand zwischen
+// "[Start] App gestartet" und dieser Zeile im Protokoll ist genau diese
+// Pruefung.
+Startstufe.melden("programm")
+
 // **Das Paket bekommt seinen Faden nach draussen**, wie auf den
 // Apple-Fassungen. Der Steuerkanal und die Sitzungsabfrage im Paket
 // scheitern sonst lautlos — genau daran ist am 10.09.2026 eine halbe Nacht
@@ -59,6 +65,7 @@ Spur.schreiben = { text in
 nonisolated(unsafe) let app = App()
 
 nonisolated(unsafe) private let starten: @convention(c) (UnsafeMutableRawPointer?, gpointer?) -> Void = { anwendung, _ in
+    Startstufe.melden("oberflaeche")
     Stil.anwenden()
     app.aufbauen(anwendung: anwendung!.assumingMemoryBound(to: GtkApplication.self))
     app.kopfzeileEinrichten()
