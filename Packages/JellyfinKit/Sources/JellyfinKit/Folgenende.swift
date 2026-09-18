@@ -43,14 +43,13 @@ public enum Folgenende {
     /// weiter.** Gemessen am 04.09.2026: eine Folge wurde mit
     /// `:start-time=3721` geoeffnet, VLC meldete die Position augenblicklich
     /// als 3721 s — die Laenge dagegen war in denselben Millisekunden noch
-    /// nicht verlaesslich. `position >= dauer - 1` war damit wahr, 629 ms
-    /// nach dem Oeffnen lief die naechste Folge, und Paul hat dreimal
-    /// dieselbe Folge nicht zu sehen bekommen.
+    /// nicht verlaesslich. `position >= dauer - 1` war damit wahr, 629 ms nach
+    /// dem Oeffnen lief die naechste Folge, und
     ///
     /// Die Frist ist auch ohne Startsprung richtig: eine Folge, die gerade
-    /// erst aufgeht, ist nicht zu Ende. Kein Zuschauer verliert etwas,
-    /// niemand merkt die Verzoegerung — und der Fall, den sie verhindert,
-    /// kostet die ganze Folge.
+    /// erst aufgeht, ist nicht zu Ende. Kein Zuschauer verliert etwas, niemand
+    /// merkt die Verzoegerung — und der Fall, den sie verhindert, kostet die
+    /// ganze Folge.
     public static let anlaufruhe: Double = 5
 
     /// Ob von selbst zur naechsten Folge gewechselt wird.

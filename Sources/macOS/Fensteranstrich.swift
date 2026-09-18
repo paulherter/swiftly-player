@@ -63,10 +63,9 @@ struct Fensteranstrich: NSViewRepresentable {
         //
         // Dort blendet macOS die Titelleiste selbst ein und aus, sobald der
         // Zeiger an den oberen Rand geht. Greift man ihr während dieser
-        // Bewegung in die Ansichten — `isHidden` auf ihre Materialflächen,
-        // ein neuer Stilrahmen —, gerät das ganze System für einen Moment
-        // ins Stocken. Paul: „sobald die ein/aus animiert wird im Fullscreen
-        // bugt ganz macOS für die 1 Sekunde, das hat sonst keine App."
+        // Bewegung in die Ansichten — `isHidden` auf ihre Materialflächen, ein
+        // neuer Stilrahmen, gerät das ganze System für einen Moment ins
+        // Stocken.
         //
         // Im Vollbild gibt es auch nichts abzustellen: die Leiste ist dann
         // ohnehin nicht da.

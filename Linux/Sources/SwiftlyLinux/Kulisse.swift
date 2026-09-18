@@ -65,13 +65,27 @@ final class Kulisse: @unchecked Sendable {
     /// nicht die Rettung, sondern der erste Zugriff daneben. Gemessen am
     /// 05.09.2026, als eine Serienseite verlassen wurde, bevor ihr Bild da
     /// war.
-    private var lebt = true
+    /// **Ob die Zeichenflaeche noch steht.** Nicht privat: der Bannertakt der
+    /// Personenseite fragt sie, bevor er ein neues Bild setzt oder weiter
+    /// wartet — ein Takt, der auf ein abgeraeumtes GTK-Objekt zeigt, ist ein
+    /// Absturz.
+    private(set) var lebt = true
 
-    init() {
+    /// **Ueber die volle Breite malen statt rechtsbuendig auf 62 %.**
+    ///
+    /// Die 62 % sind die Komposition der *Detailseite*: links steht Text auf
+    /// dunklem Grund, rechts das Bild. Auf der **Personenseite** gibt es
+    /// diesen Text nicht — dort steht unten links ein runder Kopf, und Apple
+    /// fuellt das Banner ueber die ganze Breite (`Heldbild`). Mit der
+    /// Detailseiten-Rechnung blieben die linken 38 % leer, und darueber war
+    /// nichts: genau der „Riesen-Headspace", den Paul gemeldet hat.
+    var vollBreit = false
+
+    init(hoehe: Int = Stil.heldHoehe) {
         let feld: Widget! = gtk_drawing_area_new()
         gtk_widget_add_css_class(feld, "swiftly-blank")
         gtk_widget_set_hexpand(feld, 1)
-        gtk_widget_set_size_request(feld, -1, Int32(Stil.heldHoehe))
+        gtk_widget_set_size_request(feld, -1, Int32(hoehe))
         anzeige = feld!
         gtk_drawing_area_set_draw_func(alsZeichen(feld), kulisseMalen,
                                        Unmanaged.passUnretained(self).toOpaque(), nil)
@@ -149,9 +163,24 @@ final class Kulisse: @unchecked Sendable {
     ]
 
     fileprivate func malen(_ cr: OpaquePointer, _ w: Double, _ h: Double) {
-        guard flaeche != nil, breite > 0, hoehe > 0, w > 0, h > 0 else { return }
+        // **Eine unglaubwuerdige Zuteilung wird nicht nachgerechnet — aber
+        // gemalt wird trotzdem.**
+        //
+        // Beim Umbau des Inhalts teilt GTK der Flaeche kurz eine Breite von
+        // wenigen Punkten zu. Rechnete man die nach, waere das Bild fuer
+        // diesen Zug in Briefmarkengroesse da und im naechsten wieder
+        // richtig — dasselbe Zucken. Unter 80 Punkt Breite bleibt deshalb
+        // stehen, was steht.
+        //
+        // **Hier stand ein `guard`, der auch das Malen abbrach**, und genau
+        // das war das gemeldete Flackern beim ersten Wechsel auf einen
+        // Reiter: die fertige Flaeche lag im Speicher, und der Zug malte sie
+        // nicht. Jetzt betrifft die Bedingung nur noch die Neurechnung.
         let teiler = max(gtk_widget_get_scale_factor(anzeige), 1)
-        if fertig == nil || fertigBreite != Int(w) || fertigHoehe != Int(h)
+        let glaubwuerdig = flaeche != nil && breite > 0 && hoehe > 0
+                           && w >= 80 && h >= 40
+        if glaubwuerdig,
+           fertig == nil || fertigBreite != Int(w) || fertigHoehe != Int(h)
             || fertigTeiler != teiler {
             fertigRechnen(w, h, teiler)
         }
@@ -168,18 +197,32 @@ final class Kulisse: @unchecked Sendable {
     }
 
     /// Rechnet das maskierte Bild einmal in eine eigene Fläche.
+    ///
+    /// **Die alte Flaeche bleibt stehen, bis die neue fertig ist.**
+    ///
+    /// Hier stand `fertigLoesen()` als erste Zeile. Schlug danach irgendetwas
+    /// fehl — und beim Umbau des Inhalts teilt GTK die Zeichenflaeche fuer
+    /// einen Zug mit einer unbrauchbaren Groesse zu —, war `fertig` gleich
+    /// `nil`, und ``malen(_:_:_:)`` stieg ohne einen Strich wieder aus. Von
+    /// aussen sieht das aus, als verschwaende das Kopfbild kurz und kaeme dann
+    /// zurueck: genau das Zucken beim Wechsel zwischen Folgen, Besetzung und
+    /// Aehnlichem. Auf dem Mac gibt es das nicht, weil dort das Bild eine
+    /// Ansicht ist und keine Flaeche, die jemand wegwirft.
     private func fertigRechnen(_ w: Double, _ h: Double, _ teiler: Int32) {
         guard let flaeche else { return }
-        fertigLoesen()
         guard let ziel = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
                                                     Int32(w) * teiler,
                                                     Int32(h) * teiler),
               let cr = cairo_create(ziel) else { return }
+        // Ab hier steht die neue Flaeche; erst jetzt darf die alte weg.
+        fertigLoesen()
         defer { cairo_destroy(cr) }
         cairo_scale(cr, Double(teiler), Double(teiler))
 
         // **`max(breite * 0,62, 520)` — die Rechnung des Macs**, rechtsbündig.
-        let bb = max(w * 0.62, 520)
+        // Auf der Personenseite dagegen ueber die volle Breite, siehe
+        // ``vollBreit``.
+        let bb = vollBreit ? w : max(w * 0.62, 520)
         let x0 = w - bb
 
         // Füllend einpassen: die grössere der beiden Streckungen gewinnt,

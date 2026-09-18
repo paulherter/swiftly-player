@@ -14,8 +14,17 @@ struct SucheView: View {
 
     @State private var begriff = ""
     @State private var treffer: [Item] = []
+    /// Was Seerr kennt und der eigene Server nicht — leer, wenn nichts
+    /// angebunden ist.
+    @State private var seerrtreffer: [Seerrtreffer] = []
     @State private var laeuft = false
     @State private var gesucht = false
+    /// **Was zuletzt gesucht wurde** — dieselbe Liste wie auf dem iPhone, die
+    /// Regel steht in `Suchverlauf`. Mit der Fernbedienung ist jedes getippte
+    /// Wort teuer; eines, das man nicht noch einmal tippen muss, ist hier mehr
+    /// wert als auf dem Telefon.
+    @AppStorage(Suchverlauf.schluessel) private var letzteRoh = ""
+    private var letzte: [String] { Suchverlauf.liste(letzteRoh) }
     @FocusState private var amFeld: Bool
 
     private var spalten: [GridItem] {
@@ -31,6 +40,7 @@ struct SucheView: View {
                 HStack(alignment: .center, spacing: 40) {
                     Eingabefeld(platzhalter: "Titel, Serie, Person", text: $begriff,
                                 aussen: $amFeld) {
+                        letzteRoh = Suchverlauf.merken(begriff, in: letzteRoh)
                         Task { await suchen() }
                     }
                     .frame(width: 1000)
@@ -45,25 +55,35 @@ struct SucheView: View {
                 }
                 .padding(.horizontal, Stil.randSeite)
 
-                if laeuft {
-                    Lader.fern.frame(maxWidth: .infinity).padding(.top, 80)
-                } else if treffer.isEmpty && gesucht {
+                if laeuft, treffer.isEmpty {
+                    // Kein Ring: das Raster steht in seiner Form. Sind schon
+                    // Treffer da, bleiben die stehen, statt einem Ring zu
+                    // weichen.
+                    Rasterplatzhalter(reihen: 1)
+                        .padding(.horizontal, Stil.randSeite)
+                        .padding(.top, 40)
+                        .transition(.opacity)
+                } else if treffer.isEmpty && gesucht, !laeuft {
                     Leerzustand(symbol: "magnifyingglass",
                                 titel: "Nichts gefunden",
                                 hinweis: "Versuch es mit einem anderen Wort.")
                         .frame(height: 460)
                 } else if !gesucht {
-                    // **Ein Satz statt schwarzer Stille.**
-                    //
-                    // Vor der ersten Eingabe stand hier gar nichts — ein
-                    // schwarzer Schirm mit einem leuchtenden Feld. Ein
-                    // Vorschlagsregal waere Platzfuellerei; ein Satz sagt,
-                    // was das Feld annimmt und ab wann es sucht.
-                    Text("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.")
-                        .font(Stil.koerper)
-                        .foregroundStyle(Stil.schriftSehrLeise)
-                        .padding(.horizontal, Stil.randSeite)
-                        .padding(.top, 10)
+                    if letzte.isEmpty {
+                        // **Ein Satz statt schwarzer Stille.**
+                        //
+                        // Vor der ersten Eingabe stand hier gar nichts — ein
+                        // schwarzer Schirm mit einem leuchtenden Feld. Ein
+                        // Vorschlagsregal waere Platzfuellerei; ein Satz sagt,
+                        // was das Feld annimmt und ab wann es sucht.
+                        Text("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.")
+                            .font(Stil.koerper)
+                            .foregroundStyle(Stil.schriftSehrLeise)
+                            .padding(.horizontal, Stil.randSeite)
+                            .padding(.top, 10)
+                    } else {
+                        zuletzt
+                    }
                 } else if !treffer.isEmpty {
                     LazyVGrid(columns: spalten, alignment: .leading,
                               spacing: Stil.gitterZeile) {
@@ -73,9 +93,38 @@ struct SucheView: View {
                                                                   maxHeight: 600,
                                                                   hochkant: true),
                                              titel: item.name,
-                                             unterzeile: gattungUndJahr(item))
+                                             unterzeile: gattungUndJahr(item),
+                                             fortschritt: item.userData?
+                                                 .playedPercentage.map { $0 / 100 },
+                                             marke: Anzeigeregeln.kachelmarke(
+                                                art: item.type,
+                                                staffeln: item.childCount,
+                                                gesehen: item.userData?.played,
+                                                offeneFolgen: item.userData?
+                                                    .unplayedItemCount))
                             }
                             .buttonStyle(KachelStil())
+                        }
+                    }
+                    .padding(.horizontal, Stil.randSeite)
+                    .scrollClipDisabled()
+                }
+
+                if !seerrtreffer.isEmpty {
+                    HStack(alignment: .firstTextBaseline, spacing: 20) {
+                        Text("Kann angefragt werden")
+                            .font(Stil.reihe)
+                            .foregroundStyle(Stil.schrift)
+                        Zaehlmarke(anzahl: seerrtreffer.count)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, Stil.randSeite)
+
+                    LazyVGrid(columns: spalten, alignment: .leading,
+                              spacing: Stil.gitterZeile) {
+                        ForEach(seerrtreffer) { t in
+                            NavigationLink(value: t) { Seerrkachel(treffer: t) }
+                                .buttonStyle(KachelStil())
                         }
                     }
                     .padding(.horizontal, Stil.randSeite)
@@ -153,7 +202,67 @@ struct SucheView: View {
         }
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
         // damit `randSeite` nicht darauf sitzt und sich verdoppelt.
+        // **Gemerkt wird, wer mit Treffern das Feld verlässt.** Hier wird schon
+        // beim Tippen gesucht; ein Abschicken wie auf dem iPhone kommt oft gar
+        // nicht vor — man tippt, sieht die Treffer und geht hinunter. Genau das
+        // ist der Moment, in dem gesucht *wurde*. „Ga", „Gam" unterwegs zählen
+        // nicht.
+        .onChange(of: amFeld) { _, imFeld in
+            guard !imFeld, !treffer.isEmpty else { return }
+            letzteRoh = Suchverlauf.merken(begriff, in: letzteRoh)
+        }
         .ignoresSafeArea(edges: .horizontal)
+    }
+
+    /// **Wonach zuletzt gesucht wurde** — eine Karte unter dem Feld, eine Zeile
+    /// je Begriff, wie auf dem iPhone.
+    ///
+    /// Ein Druck füllt das Feld; gesucht wird dann von selbst, wie beim Tippen.
+    ///
+    /// **„Verlauf löschen" ist die letzte Zeile, nicht ein Knopf rechts über
+    /// der Karte wie auf dem iPhone.** Dort läge er unmittelbar unter dem
+    /// rechten Ende des Feldes, und der Fokusmotor sucht geometrisch: ein Druck
+    /// nach unten landete zuerst auf „Löschen" statt auf dem ersten Begriff —
+    /// und ein zweiter Druck hätte die Liste geleert.
+    private var zuletzt: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Gruppentitel(text: "Zuletzt gesucht")
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(letzte, id: \.self) { wort in
+                    Button {
+                        letzteRoh = Suchverlauf.merken(wort, in: letzteRoh)
+                        begriff = wort
+                    } label: {
+                        HStack(spacing: 22) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 26, weight: .medium))
+                                .foregroundStyle(Stil.schriftSehrLeise)
+                                .frame(width: 34)
+                            // Getippt, also kein Katalogtext.
+                            Text(verbatim: wort)
+                                .lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(ZeilenStil())
+                    Trennlinie()
+                }
+                Button { letzteRoh = "" } label: {
+                    HStack(spacing: 22) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 26, weight: .medium))
+                            .frame(width: 34)
+                        Text("Verlauf löschen")
+                    }
+                    .foregroundStyle(Stil.schriftSehrLeise)
+                }
+                .buttonStyle(ZeilenStil())
+            }
+            .padding(10)
+            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeKachel))
+        }
+        .frame(width: 1000, alignment: .leading)
+        .padding(.horizontal, Stil.randSeite)
+        .focusSection()
     }
 
     /// „Serie · 2008" — damit ein Film und eine Serie gleichen Namens
@@ -176,9 +285,28 @@ struct SucheView: View {
 
     private func suchen() async {
         let wort = begriff.trimmingCharacters(in: .whitespaces)
-        guard !wort.isEmpty else { return }
+        // **Dieselbe Schwelle wie ueberall.** Hier stand `!wort.isEmpty` —
+        // ein einzelner Buchstabe loeste also eine Abfrage ueber die halbe
+        // Bibliothek aus, waehrend die Zeile darueber „Ab zwei Zeichen wird
+        // gesucht" behauptete. Die Regel steht in `Anzeigeregeln`.
+        guard Anzeigeregeln.suchbegriffTaugt(wort) else { return }
         laeuft = treffer.isEmpty
-        treffer = await model.suche(wort)
+        // **Nebeneinander, nicht nacheinander.** Seerr ist eine Zugabe;
+        // kommt von dort nichts oder kommt es spaet, steht trotzdem sofort
+        // da, was der eigene Server hat.
+        async let eigene = model.suche(wort)
+        async let fremde = model.seerr.suchen(wort)
+        let (a, b) = await (eigene, fremde)
+        // **Doppelte Kennungen raus, bevor sie in ein `ForEach` gehen.**
+        //
+        // Am 07.09.2026 gemeldet: ein Druck auf eine Serie oeffnete die
+        // uebernaechste. `ForEach` ordnet ueber die Kennung zu, und der
+        // Server liefert denselben Titel gelegentlich zweimal. Die
+        // iPhone-Fassung faengt das ab; hier fehlte der Schutz.
+        treffer = Listenregeln.ohneDoppelte(a)
+        // Was schon auf dem Server liegt, gehoert in den oberen Block —
+        // sonst staende derselbe Titel zweimal auf der Seite.
+        seerrtreffer = b.filter { !$0.stand.schonDa }
         gesucht = true
         laeuft = false
     }

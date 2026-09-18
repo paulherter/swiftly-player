@@ -19,6 +19,18 @@ struct PlayerScreen: View {
     @State private var plan: PlaybackPlan
 
     @State private var surface: VLCPlayerView?
+    /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
+    @AppStorage("technikschild") private var technikschild = false
+    @State private var spielwerte: Spielwerte?
+    /// Zaehlt mit, wie oft CoreAnimation uns tatsaechlich ruft -- laeuft
+    /// nur, solange das Schild an ist.
+    @State private var schirmtakt = Schirmtakt()
+    /// Formatfuellend statt ganzes Bild. Bleibt ueber Folgen hinweg stehen --
+    /// wer einmal die Balken weghaben will, will das meist auch danach.
+    @AppStorage("bildfuellend") private var bildfuellend = false
+    /// Verhindert, dass eine einzige Zieh-Geste mehrfach umschaltet.
+    @State private var zoomSchonGeschaltet = false
+
     @State private var pipAvailable = false
     @State private var stelltWiederHer = false
     /// Läuft gerade im kleinen Fenster.
@@ -65,8 +77,7 @@ struct PlayerScreen: View {
     /// Sie hing frueher mit an `!zeigeEinstellungen`, war unter dem Blatt also
     /// gar nicht da — und musste beim Schliessen erst wieder hochfahren. In
     /// dem Fenster sah man ungedaempftes Video, heller als vorher *und*
-    /// nachher. Paul: „der Player ist erst nicht da und blendet sich dann erst
-    /// selber rein. Der muesste aber die ganze Zeit dableiben."
+    /// nachher.
     ///
     /// Sichtbar aendert das nichts, solange das Blatt offen ist: es deckt mit
     /// 0,97 ohnehin alles darunter ab. Kopf, Fuss und Mittelsteuerung weichen
@@ -80,7 +91,7 @@ struct PlayerScreen: View {
     /// Seit der Player pausiert oeffnet und sofort springt, kommt das erste
     /// Bild bei rund +0,9 s. Die Drehung ins Querformat dauert 300 ms und
     /// beginnt erst mit `onAppear`; vorher hat die erste Sekunde vom
-    /// Filmanfang sie kaschiert. Paul sah das Bild dadurch kurz im Hochformat.
+    /// Filmanfang sie kaschiert.
     ///
     /// `drehungFertig` kommt aus `Drehhorcher`, also vom Uebergangskoordinator
     /// — dem einzigen Signal, das das **Ende** der Drehung meldet. Geometrie
@@ -100,6 +111,7 @@ struct PlayerScreen: View {
     /// Die Stelle, an der VLC abgegeben hat.
     @State private var airplayAb: Double = 0
     @State private var sprungAnzeige: (richtung: Int, sekunden: Int)?
+
     /// Zaehlen die Ausloesungen je Richtung. Der Knopf dreht sich dadurch
     /// bei jedem Druck ein Stueck weiter, statt nur einmal.
     @State private var taktZurueck = 0
@@ -163,13 +175,42 @@ struct PlayerScreen: View {
     /// Bewusst schwarz: ein Szenenbild darunter war unruhig, weil es kurz
     /// aufblitzt und sofort wieder weg ist.
     private var startschleier: some View {
-        ZStack {
-            Color.black
-            Lader()
+        ZStack(alignment: .top) {
+            ZStack {
+                Color.black
+                Lader()
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
+            // **Schließen geht auch, bevor das Bild da ist.** Die Steuerung
+            // erscheint erst mit dem ersten Bild; bis dahin lag hier nur der
+            // Schleier, und wer es sich anders überlegte, musste warten, bis
+            // der Strom stand. Von einem Tester gemeldet.
+            //
+            // Derselbe Knopf an derselben Stelle wie im Kopf der Steuerung —
+            // gleicher Rand, gleicher Abstand oben, waagerecht im sicheren
+            // Bereich. Sobald sie erscheint, liegt ihrer genau darüber.
+            // **Erst, wenn die Lage steht.** Die Drehung ins Querformat läuft
+            // beim Öffnen noch; davor lag der Knopf oben links im
+            // Hochformat — bei der Uhr — und sprang dann an seinen Platz.
+            // Jetzt blendet er dort ein, wo er bleibt.
+            if !drehungErwartet || drehungFertig {
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        knopf("chevron.down", beschriftung: "Player schließen") { dismiss() }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 18 + (imFenster ? Fensterknoepfe.hoehe : 0))
+                    Spacer(minLength: 0)
+                }
+                .ignoresSafeArea(edges: .vertical)
+                .transition(.opacity)
+            }
         }
-        .ignoresSafeArea()
+        .animation(.easeOut(duration: 0.2), value: drehungFertig)
         .transition(.opacity)
-        .allowsHitTesting(false)
     }
 
     /// Was im großen Bild steht, während nebenan im kleinen Fenster läuft.
@@ -210,6 +251,7 @@ struct PlayerScreen: View {
             Color.black.ignoresSafeArea()
 
             VideoSurfaceHost(url: plan.url, startAt: startAt, container: plan.container,
+                             puffer: model.pufferstufe,
                              pipAvailable: $pipAvailable) {
                 surface = $0
                 $0.onWiederherstellung = { stelltWiederHer = $0 }
@@ -218,14 +260,13 @@ struct PlayerScreen: View {
                 //
                 // Am Takt hing er bis zu einer halben Sekunde nach. Im Klick
                 // gesetzt ist er zu frueh: das Bild braucht noch seine Zeit,
-                // und ein Knopf, der vor dem Bild umspringt, sieht aus wie
-                // ein Player, der nicht reagiert. Gemessen auf dem Mac,
-                // dreimal: Klick bis VLC „angehalten" meldet 17–25 ms, bis
-                // die Filmzeit wirklich steht 26–36 ms.
+                // und ein Knopf, der vor dem Bild umspringt, sieht aus wie ein
+                // Player, der nicht reagiert. Gemessen auf dem Mac, dreimal:
+                // Klick bis VLC „angehalten" meldet 17–25 ms, bis die Filmzeit
+                // wirklich steht 26–36 ms.
                 //
-                // An VLCs eigener Meldung sind Knopf und Bild im selben
-                // Moment still. Uebernommen aus der Mac-Fassung (`b5db900`),
-                // wo Paul es bestaetigt hat.
+                // An VLCs eigener Meldung sind Knopf und Bild im selben Moment
+                // still. Uebernommen aus der Mac-Fassung (`b5db900`), wo
                 $0.laeuftGemeldet = { laeuft = $0 }
             }
             // Nach der Rückkehr aus Bild-im-Bild meldete die Fläche noch die
@@ -267,8 +308,8 @@ struct PlayerScreen: View {
             // `schleierDa`. Dieselben Kurven wie die Steuerung.
             schleier
                 .opacity(schleierDa ? 1 : 0)
-                .animation(schleierDa ? .easeOut(duration: 0.18)
-                                      : .easeInOut(duration: 0.34),
+                .animation(schleierDa ? .snappy(duration: 0.18, extraBounce: 0)
+                                      : .smooth(duration: 0.34),
                            value: schleierDa)
 
             Group {
@@ -302,8 +343,12 @@ struct PlayerScreen: View {
             // darf sich Zeit lassen.
             .opacity(steuerungDa ? 1 : 0)
             .allowsHitTesting(steuerungDa)
-            .animation(steuerungDa ? .easeOut(duration: 0.18)
-                                   : .easeInOut(duration: 0.34),
+            // **Federn, damit ein zweiter Tipp nicht warten muss.** Die
+            // Asymmetrie bleibt — schnell auf, gemaechlich zu —, aber eine
+            // feste Dauer laesst sich nicht umlenken: wer zweimal kurz
+            // hintereinander tippt, sah die Blende von vorn beginnen.
+            .animation(steuerungDa ? .snappy(duration: 0.18, extraBounce: 0)
+                                   : .smooth(duration: 0.34),
                        value: steuerungDa)
 
             if let sprungAnzeige { sprungRueckmeldung(sprungAnzeige) }
@@ -326,7 +371,7 @@ struct PlayerScreen: View {
             // gilt. Dauerhaft montiert wuerde er sonst bei jedem Takt
             // `surface?.tonspuren` und `?.untertitelspuren` lesen, und die
             // gehen direkt in VLCKit — rund acht Aufrufe je Sekunde, dauerhaft.
-            PlayerSettingsSheet(surface: surface, offen: $zeigeEinstellungen,
+            PlayerSettingsSheet(surface: surface, plan: plan, offen: $zeigeEinstellungen,
                                 tempo: $tempo, schlafminuten: $schlafminuten,
                                 querformatFest: $querformatFest)
                 .opacity(zeigeEinstellungen ? 1 : 0)
@@ -361,6 +406,37 @@ struct PlayerScreen: View {
                 .ignoresSafeArea()
                 .transition(.opacity)
                 .zIndex(10)
+            }
+        }
+        // **Das Technikschild.** Es liegt ueber allem und nimmt nichts an:
+        // eine Auskunft, kein Bedienteil. Angeschaltet wird es in den
+        // Wiedergabe-Einstellungen; wer es nicht sucht, sieht es nie.
+        .overlay(alignment: .topLeading) {
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte, flaeche: surface,
+                              schirmHertz: schirmtakt.hertz)
+                    .padding(.leading, Stil.randAbstand)
+                    .padding(.top, 12)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Stil.einblenden, value: technikschild)
+        // Zwei Sekunden sind schnell genug, um einem Ruckler zuzusehen, und
+        // langsam genug, dass die Zahlen lesbar stehenbleiben.
+        .task(id: technikschild) {
+            guard technikschild else { schirmtakt.anhalten(); return }
+            // Nur mitzaehlen, solange jemand hinsieht: ein vergessener
+            // Zaehler auf dem Hauptlauf waere selbst die Last, die er messen
+            // soll.
+            schirmtakt.starten()
+            defer { schirmtakt.anhalten() }
+            while !Task.isCancelled {
+                // Die Rate entsteht aus der Differenz zum letzten Mal —
+                // siehe `Spielwerte`.
+                spielwerte = Spielwerte(surface?.statistik, stelle: surface?.positionSeconds ?? 0,
+                                        laeuft: surface?.isPlaying ?? false, vorher: spielwerte)
+                try? await Task.sleep(for: .seconds(2))
             }
         }
         .animation(.easeInOut(duration: 0.2), value: airplayPlan?.url)
@@ -399,38 +475,90 @@ struct PlayerScreen: View {
         // Auch die Griffe erneuern: sonst rechnet `umschalten` weiter mit
         // dem Stand von vorhin.
         .onChange(of: laeuft) { _, _ in ausblendMarke += 1; zentraleUebernehmen() }
+        // **Nach dem Schliessen faengt die Uhr von vorn an.**
+        //
+        // Der Riegel oben (`!zeigeEinstellungen`) haelt die Steuerung
+        // richtigerweise offen, solange die Tafel steht -- aber er sitzt
+        // *nach* dem Schlafen. Die Aufgabe endet damit, ohne etwas
+        // wegzunehmen, und ohne neue Marke laeuft keine zweite an: die
+        // Steuerung waere nach dem Schliessen dauerhaft stehen geblieben.
+        .onChange(of: zeigeEinstellungen) { _, offen in if !offen { ausblendMarke += 1 } }
         .onChange(of: tempo) { _, neu in surface?.tempo = neu }
         .onChange(of: schlafminuten) { _, neu in schlafzeitSetzen(neu) }
         .onChange(of: querformatFest) { _, fest in
             Orientierung.shared.playerGeoeffnet(querformatFest: fest)
         }
-        .onChange(of: lebenslage) { _, neu in
-            // **Nur messen, nichts richten.** Siehe `geometrieNachmessen`.
-            if neu == .active { geometrieNachmessen(anlass: "aktiv") }
-
-            // **Im Hintergrund anhalten — ausser es laeuft anderswo weiter.**
-            //
-            // Die App erklaert `UIBackgroundModes: audio`; ohne sie gaebe es
-            // kein Bild-im-Bild und keinen Sperrbildschirm. Der Preis ist,
-            // dass ein weggewischtes Video unbemerkt weiterlaeuft: der
-            // Fortschritt zieht davon, und beim Zurueckkommen steht die Folge
-            // womoeglich als gesehen da. Swiftfin hatte das zweimal
-            // (#871, spaeter als Rueckfall #2175).
-            //
-            // Die Regel steht in `Hintergrundregel` im Paket, mit Tests und
-            // mit den beiden Ausnahmen, um die es dabei geht.
-            if neu == .background,
-               Hintergrundregel.anhalten(imKleinenFenster: imKleinenFenster,
-                                         aufAnderemGeraet: airplayPlan != nil,
-                                         laeuft: laeuft) {
-                Protokoll.schreib("[Lebenslage] Hintergrund ohne PiP/AirPlay → anhalten")
-                surface?.pause()
-                laeuft = false
-                meldeFortschritt()
-            }
+        // **Zusammen- und Auseinanderziehen wechselt das Bildformat.**
+        //
+        // Zwei Zustaende, wie bei Netflix und Apples eigener Videoapp: das
+        // ganze Bild mit Balken, oder formatfuellend mit Beschnitt. Ein
+        // dritter waere nur eine Streckung, und die will niemand.
+        //
+        // **Ohne Beschriftung.** Hier stand ein eingeblendetes Wort, das
+        // sagte, was gerade gilt. Es kam bei jedem Griff, stand im Bild und
+        // musste weggetippt werden -- was passiert, sieht man ohnehin.
+        //
+        // **Und ohne mitziehende Animation.** Ein Versuch, das Bild waehrend
+        // der Geste per `scaleEffect` mitlaufen zu lassen, hat es
+        // verschlechtert: der Zoom lief nicht mehr voll durch, und das
+        // `clipped()` dazu sass ausserhalb von `ignoresSafeArea` und
+        // beschnitt das Bild am sicheren Bereich statt am Bildschirmrand.
+        // Zurueckgenommen -- ein harter, richtiger Wechsel ist besser als
+        // ein weicher, der danebenliegt.
+        //
+        // `simultaneousGesture`, damit Tippen und Spulen darunter weiter
+        // treffen. Der Riegel ist noetig, weil `onChanged` waehrend einer
+        // Geste dutzendfach feuert: ohne ihn haette ein einziges
+        // Auseinanderziehen zwischen beiden Zustaenden geflackert.
+        .simultaneousGesture(
+            MagnifyGesture(minimumScaleDelta: 0.05)
+                .onChanged { wert in
+                    guard !zoomSchonGeschaltet, !imKleinenFenster else { return }
+                    if wert.magnification > 1.15, !bildfuellend {
+                        zoomSchonGeschaltet = true
+                        bildfuellend = true
+                        surface?.bildfuellend(true)
+                    } else if wert.magnification < 0.85, bildfuellend {
+                        zoomSchonGeschaltet = true
+                        bildfuellend = false
+                        surface?.bildfuellend(false)
+                    }
+                }
+                .onEnded { _ in zoomSchonGeschaltet = false }
+        )
+        // Beim Oeffnen und beim Folgenwechsel den gemerkten Zustand anlegen.
+        .onChange(of: surface == nil) { _, _ in surface?.bildfuellend(bildfuellend) }
+        // **Im Hintergrund laeuft weiter.** Das ist eine Entscheidung, keine
+        // Unterlassung.
+        //
+        // Hier stand eine Regel, die beim Wechsel in den Hintergrund anhielt
+        // -- gegen den Fall, dass eine weggewischte Folge unbemerkt
+        // durchlaeuft und danach als gesehen dasteht (jellyfin/Swiftfin#871,
+        // Rueckfall #2175). Sie hat einen echten Fehler erzeugt: iOS schickt
+        // die App auch dann in den Hintergrund, wenn nur die
+        // Mitteilungszentrale heruntergezogen wird, und zwar durch **genau
+        // dieselbe** Folge von Meldungen wie bei einem Wisch auf den
+        // Homescreen (am 08.09.2026 mitgeschrieben: willResignActive →
+        // scenePhase inactive → didEnterBackground). Kein Signal trennt die
+        // beiden Faelle. Jeder Blick auf eine Mitteilung hielt den Film an,
+        // und er lief auch nicht von selbst wieder los.
+        //
+        // Andere Clients erlauben schlicht die Hintergrundwiedergabe, und die
+        // App erklaert `UIBackgroundModes: audio` ohnehin -- ohne sie gaebe
+        // es kein Bild-im-Bild und keinen Sperrbildschirm. Also laeuft es
+        // weiter, und der Fortschritt wird wie sonst im Takt gemeldet.
+        //
+        // Die Lebenslage wird weiter mitgeschrieben: das kostet in der
+        // ausgelieferten Fassung nichts (`Protokoll.schreib` faellt dort
+        // heraus) und hat genau diesen Fehler gefunden.
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.didEnterBackgroundNotification)) { _ in
+            Protokoll.schreib("[Lebenslage] didEnterBackground · Zustand \(Lagewort.jetzt)"
+                + " · PiP \(imKleinenFenster) · laeuft \(laeuft) → weiterlaufen lassen")
         }
-        .onChange(of: imKleinenFenster) { _, klein in
-            if !klein { geometrieNachmessen(anlass: "aus PiP zurueck") }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.willEnterForegroundNotification)) { _ in
+            Protokoll.schreib("[Lebenslage] willEnterForeground · Zustand \(Lagewort.jetzt)")
         }
         .task { await beobachten() }
         .task {
@@ -492,20 +620,7 @@ struct PlayerScreen: View {
 
     // MARK: - Schleier
 
-    /// Abdunkeln plus Verlauf oben und unten. Ohne das sind weiße Symbole
-    /// über hellen Szenen nicht zu erkennen.
-    private var schleier: some View {
-        ZStack {
-            Color.black.opacity(0.28)
-            LinearGradient(colors: [.black.opacity(0.6), .clear],
-                           startPoint: .top, endPoint: .center)
-            LinearGradient(colors: [.clear, .black.opacity(0.7)],
-                           startPoint: .center, endPoint: .bottom)
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .transition(.opacity)
-    }
+    private var schleier: some View { Playerschleier() }
 
     // MARK: - Tippflächen
 
@@ -627,51 +742,25 @@ struct PlayerScreen: View {
 
                 Spacer(minLength: 0)
 
-                if angebot.sichtbar {
-                    Button(action: angebotAusfuehren) {
-                        // Serverdaten sind hier nicht im Spiel, aber die
-                        // Beschriftung entsteht als `String` im Paket —
-                        // deshalb `Text(verbatim:)` statt `Label(_:)`, sonst
-                        // würde sie ein zweites Mal nachgeschlagen.
-                        HStack(spacing: 6) {
-                            Image(systemName: angebot.zeichen)
-                            Text(verbatim: angebot.beschriftung)
-                        }
-                        .font(.system(size: 14, weight: .semibold))
-                        .padding(.horizontal, 15)
-                        .frame(height: 34)
-                        .background(.white.opacity(0.16), in: Capsule())
-                        .overlay(Capsule().strokeBorder(.white.opacity(0.24)))
-                    }
-                    .foregroundStyle(.white)
-                    .fixedSize()
-                    .transition(.opacity)
-                }
+                Angebotsknopf(angebot: angebot, aktion: angebotAusfuehren)
             }
             .foregroundStyle(.white)
 
-            HStack(spacing: 12) {
-                Text(zeit(position))
-                Zeitregler(wert: $position, bis: max(dauer, 1)) { schiebt in
-                    if schiebt {
-                        amSchieben = true
-                        zuletztGeschoben = Date()
-                        ausblendMarke += 1
-                    } else {
-                        // Ausdrücklich zurücksetzen: sonst bliebe amSchieben
-                        // stehen und die Zeitanzeige würde nie mehr
-                        // nachgeführt.
-                        amSchieben = false
-                        surface?.seek(toSeconds: position)
-                        sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
-                        meldeFortschritt()
-                        ausblendenVerschieben()
-                    }
+            Zeitzeile(position: $position, dauer: dauer) { schiebt in
+                if schiebt {
+                    amSchieben = true
+                    zuletztGeschoben = Date()
+                    ausblendMarke += 1
+                } else {
+                    // Ausdrücklich zurücksetzen: sonst bliebe amSchieben
+                    // stehen und die Zeitanzeige würde nie mehr nachgeführt.
+                    amSchieben = false
+                    surface?.seek(toSeconds: position)
+                    sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+                    meldeFortschritt()
+                    ausblendenVerschieben()
                 }
-                Text("−" + zeit(max(dauer - position, 0)))
             }
-            .font(.system(size: 13).monospacedDigit())
-            .foregroundStyle(.white.opacity(0.9))
 
             if let hinweis {
                 Text(hinweis)
@@ -845,8 +934,21 @@ struct PlayerScreen: View {
     private func zurNaechstenFolge(_ folge: Item) {
         wechselt = true
         Task {
-            await model.reportStopped(item: item, plan: plan, seconds: position)
-            guard let neuerPlan = await model.plan(for: folge.id) else {
+            // **Nebeneinander, nicht nacheinander.** Beides sind Abrufe, und
+            // sie brauchen einander nicht: die Abmeldung der alten Folge hoert
+            // der Server, den Plan der neuen gibt er heraus. Hintereinander
+            // gerechnet liegt die zweite Frist hinter der ersten — bei totem
+            // Netz gemessen (Mac-Sitzung): 20,9 s plus 21,0 s. Nebeneinander
+            // ist es die laengere von beiden.
+            //
+            // Die **Reihenfolge** Stopp vor Start bleibt gewahrt:
+            // `reportStart` steht unten hinter `await gestoppt`. Nur das
+            // Warten liegt parallel.
+            async let gestoppt: Void = model.reportStopped(item: item, plan: plan,
+                                                           seconds: position)
+            async let geplant = model.plan(for: folge.id)
+            await gestoppt
+            guard let neuerPlan = await geplant else {
                 hinweis = String(localized: "Nächste Folge konnte nicht geladen werden.")
                 wechselt = false
                 return
@@ -867,20 +969,53 @@ struct PlayerScreen: View {
             erstesBildDa = false
             spurenGesetzt = false
             titelwechsel += 1
+            surface?.puffer = model.pufferstufe
             surface?.play(url: neuerPlan.url, abSekunden: 0, container: neuerPlan.container)
             // Hier gemeldet, nicht von der Schleife: Titel und Plan sind in
             // diesem Augenblick bekannt, die Stelle ist null. Der Stand muss
             // es erfahren, sonst meldet die Schleife gleich noch einmal.
             await model.reportStart(item: folge, plan: neuerPlan, seconds: 0)
             startGemeldet = true
+
+            // **Hier ist der Wechsel fertig, also faellt hier der Riegel.**
+            //
+            // Er stand bisher noch ueber den zwei Abrufen darunter, und das
+            // war der Fehler — nicht die Abrufe. Ein Riegel gilt fuer das, was
+            // er schuetzt: dass nicht zweimal gewechselt wird, waehrend der
+            // Wechsel laeuft. Ab hier laeuft er nicht mehr; Bild, Plan und
+            // Meldung an den Server stehen.
+            //
+            // Solange er lag, gab `angebot` `.keiner` zurueck — **keine
+            // Knoepfe** —, und darueber lag `if wechselt { Lader() }`, also
+            // ein Ladekringel ueber dem stehenden Bild. Dazu wurde weder Start
+            // noch Fortschritt gemeldet und das selbsttaetige Weiterschalten
+            // war gesperrt. Genau die drei Beobachtungen aus dem Test: Bild steht, keine
+            // Taste reagiert, und die Uhr laeuft trotzdem weiter, weil die
+            // Taktschleife unabhaengig davon tickt.
+            //
+            // Unbegrenzt ist die Wartezeit dabei **nicht** —
+            // `Netzsitzung.ortsnetzfaehig` setzt `timeoutIntervalForResource`
+            // auf 20 s, und das begrenzt den ganzen Vorgang einschliesslich
+            // des Wartens auf eine Verbindung. Es braucht auch keine
+            // Unendlichkeit: vier Abrufe hintereinander sind rund 84 Sekunden,
+            // mit WLAN und ohne. So lange sieht ein stehendes Bild mit
+            // laufender Uhr aus wie „haengt", nicht wie „laedt".
+            wechselt = false
+            steuerungSichtbar = true
+            ausblendenVerschieben()
+
+            // Nachschlag, und zwar ohne Riegel: `folgeNach` fuellt den Knopf
+            // „naechste Folge", `abschnitte` die Sprungmarken. Kommen sie
+            // spaeter oder gar nicht, fehlt ein Knopf und ein paar Marken.
+            // Dafuer darf keine Taste stehenbleiben.
             naechsteFolge = await model.folgeNach(folge)
             // **Die neue Folge hat eigene Abschnitte.** Ohne das trüge sie
             // die des Vorgängers, und der Knopf erschiene an dessen Stellen.
             abschnitte = await model.abschnitte(fuer: folge.id)
+            // **Bleibt hinten.** Die Zentrale traegt den Befehl „naechste
+            // Folge", und der braucht `naechsteFolge` — vorgezogen zeigte er
+            // auf die Folge, die gerade laeuft.
             zentraleUebernehmen()
-            wechselt = false
-            steuerungSichtbar = true
-            ausblendenVerschieben()
         }
     }
 
@@ -1033,7 +1168,18 @@ struct PlayerScreen: View {
                                zeigtBild: surface.zeigtBild,
                                stelltEin: surface.stelltEin,
                                laeuft: surface.isPlaying,
-                               hatTonspuren: !surface.tonspuren.isEmpty),
+                               // **Die Spurliste nur lesen, solange sie
+                               // gebraucht wird.** `Wiedergabetakt` fragt
+                               // `hatTonspuren` allein, bis die Spuren gesetzt
+                               // sind; danach ist der Wert unbenutzt. Gelesen
+                               // wurde er trotzdem -- zweimal je Sekunde, den
+                               // ganzen Film lang. `player.audioTracks` baut die
+                               // Liste jedes Mal neu auf, unter der Sperre des
+                               // laufenden Players. Genau der Dauergriff, vor
+                               // dem der Kommentar an `Bildtakt.nochNachzumessen`
+                               // ein paar Zeilen weiter oben warnt; das `||`
+                               // kuerzt ihn weg, sobald er nichts mehr traegt.
+                               hatTonspuren: spurenGesetzt || !surface.tonspuren.isEmpty),
                 stelltWiederHer: stelltWiederHer,
                 sprungLaeuft: sprungBis.map { Date() < $0 } ?? false,
                 amSchieben: amSchieben,
@@ -1120,6 +1266,7 @@ struct PlayerScreen: View {
                         bildURL: model.sperrbildURL(for: item))
     }
 
+
     private func meldeFortschritt() {
         Task {
             await model.reportProgress(item: item, plan: plan,
@@ -1129,45 +1276,6 @@ struct PlayerScreen: View {
 
     private func zeit(_ sekunden: Double) -> String { Spielzeit.text(sekunden) }
 
-    /// **Messung, kein Eingriff.**
-    ///
-    /// Paul: nach `PiP starten → Kontrollzentrum auf → zu → im PiP-Fenster auf
-    /// Vollbild` ist die ganze Oberflaeche rund zwei Sekunden lang zu gross,
-    /// nur die Haelfte ist zu sehen, dann springt sie zurueck.
-    ///
-    /// Zwei Erklaerungen kommen in Frage, und sie sind am Protokoll zu
-    /// **unterscheiden** — genau dafuer steht das hier:
-    ///
-    /// - **Drehmaske.** `Orientierung` wird nur in `onAppear`, `onDisappear`
-    ///   und bei geaenderter Querformatsperre gerufen; nichts setzt sie neu,
-    ///   wenn die App aus dem Hintergrund zurueckkommt, und das
-    ///   Kontrollzentrum schickt sie dorthin. Dann stuende `erlaubt` auf
-    ///   `.portrait`, waehrend die Szene quer liegt.
-    /// - **Geometrie.** Die Szene meldet noch die Groesse des kleinen
-    ///   Fensters. Das ist der Zwilling eines schon behobenen Fehlers — damals
-    ///   traf es die Videoflaeche, hier waere es eine Ebene hoeher. Dann
-    ///   wiche `fensterbreite` von der Fensterbreite der Szene ab.
-    ///
-    /// Ein einzelner Wert beim Umschalten reicht nicht: der Fehler dauert
-    /// zwei Sekunden, der Augenblick des Wechsels liegt davor. Also drei
-    /// Sekunden lang alle 250 ms.
-    private func geometrieNachmessen(anlass: String) {
-        Task { @MainActor in
-            for schritt in 0..<12 {
-                let szene = UIApplication.shared.connectedScenes
-                    .compactMap { $0 as? UIWindowScene }.first
-                let fenster = szene?.keyWindow?.bounds.size ?? .zero
-                let lage = szene?.interfaceOrientation.rawValue ?? -1
-                let maske = Orientierung.shared.erlaubt.rawValue
-                Protokoll.schreib("[Geometrie] \(anlass) +\(schritt * 250) ms"
-                    + " · Fenster \(Int(fenster.width))x\(Int(fenster.height))"
-                    + " · Ansicht \(Int(fensterbreite))"
-                    + " · Lage \(lage) · Maske \(maske)"
-                    + " · PiP \(imKleinenFenster)")
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
-    }
 }
 
 /// Rueckmeldung beim Doppeltipp — dieselbe Drehung wie auf den Knoepfen,
@@ -1195,12 +1303,18 @@ struct VideoSurfaceHost: UIViewRepresentable {
     let url: URL
     let startAt: Double
     let container: String?
+    /// Wird durchgereicht statt hier geholt: diese Ansicht kennt das Modell
+    /// nicht, und sie soll es auch nicht kennen.
+    let puffer: Pufferstufe
     @Binding var pipAvailable: Bool
     let onCreate: (VLCPlayerView) -> Void
 
     func makeUIView(context: Context) -> VLCPlayerView {
         let view = VLCPlayerView()
         view.onPiPAvailable = { pipAvailable = $0 }
+        // Vor dem Start setzen, nicht danach: die Optionen haengen am Medium,
+        // und das entsteht in `play`.
+        view.puffer = puffer
         view.play(url: url, abSekunden: startAt, container: container)
         DispatchQueue.main.async { onCreate(view) }
         return view
@@ -1214,5 +1328,98 @@ struct VideoSurfaceHost: UIViewRepresentable {
     /// die 'surface' zeigt, nicht zwingend jede, die SwiftUI angelegt hat.
     static func dismantleUIView(_ view: VLCPlayerView, coordinator: ()) {
         MainActor.assumeIsolated { view.stop() }
+    }
+}
+
+
+/// **Abdunkeln plus Verlauf oben und unten — ohne eine einzige Eingabe.**
+///
+/// Ohne den Schleier sind weisse Symbole ueber hellen Szenen nicht zu
+/// erkennen.
+///
+/// Als berechnete Eigenschaft stand er im `body` von `PlayerScreen` und wurde
+/// damit bei **jedem** Takt neu gerechnet — zweimal je Sekunde, mitsamt drei
+/// Verlaeufen, waehrend VLC Bilder liefert. Als eigener Typ **ohne
+/// gespeicherte Werte** vergleicht SwiftUI die Eingaben, findet keine, die
+/// sich geaendert haetten, und laesst `body` aus.
+private struct Playerschleier: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.28)
+            LinearGradient(colors: [.black.opacity(0.6), .clear],
+                           startPoint: .top, endPoint: .center)
+            LinearGradient(colors: [.clear, .black.opacity(0.7)],
+                           startPoint: .center, endPoint: .bottom)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .transition(.opacity)
+    }
+}
+
+/// **Zeitanzeige, Regler und Restzeit — der einzige Teil, den der Takt angeht.**
+///
+/// `Wiedergabetakt.taktlaenge` ist 500 ms, und jeder Takt schreibt `position`.
+/// Stand das hier im `body` von `PlayerScreen`, zog jeder Takt den ganzen Baum
+/// hindurch: Kopf, Mittelsteuerung, Tippflaechen, Gesten. Als eigener Typ ist
+/// die Zeit auf diese drei Zeilen begrenzt.
+private struct Zeitzeile: View {
+    @Binding var position: Double
+    let dauer: Double
+    /// `true` beim Anfassen, `false` beim Loslassen.
+    let schiebt: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(Spielzeit.text(position))
+            Zeitregler(wert: $position, bis: max(dauer, 1), beimSchieben: schiebt)
+            Text("−" + Spielzeit.text(max(dauer - position, 0)))
+        }
+        .font(.system(size: 13).monospacedDigit())
+        .foregroundStyle(.white.opacity(0.9))
+    }
+}
+
+/// **„Vorspann ueberspringen" / „Naechste Folge" — derselbe Knopf.**
+///
+/// Eigener Typ, weil `angebot` aus `position` und `dauer` gerechnet wird und
+/// sich damit bei jedem Takt neu ergibt.
+///
+/// **Uebersprungen wird er dadurch nicht.** `Knopfangebot` ist zwar
+/// `Equatable`, der Abschluss `aktion` aber nicht — und SwiftUI vergleicht
+/// die Ansicht Feld fuer Feld. Ein Funktionsfeld laesst sich nicht
+/// vergleichen, also wird neu gezeichnet. Der Gewinn hier ist, dass die
+/// Arbeit auf diesen Knopf begrenzt bleibt statt im `body` des Players zu
+/// stehen; wer sie wirklich sparen will, muesste `aktion` durch etwas
+/// Vergleichbares ersetzen. Dasselbe gilt fuer `Zeitzeile` — die soll bei
+/// jedem Takt neu, das ist ihre Aufgabe.
+///
+/// **Der Einzige, der wirklich uebersprungen wird, ist `Playerschleier`:**
+/// er hat gar keine gespeicherten Werte.
+private struct Angebotsknopf: View {
+    let angebot: Knopfangebot
+    let aktion: () -> Void
+
+    var body: some View {
+        if angebot.sichtbar {
+            Button(action: aktion) {
+                // Serverdaten sind hier nicht im Spiel, aber die Beschriftung
+                // entsteht als `String` im Paket — deshalb `Text(verbatim:)`
+                // statt `Label(_:)`, sonst wuerde sie ein zweites Mal
+                // nachgeschlagen.
+                HStack(spacing: 6) {
+                    Image(systemName: angebot.zeichen)
+                    Text(verbatim: angebot.beschriftung)
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .padding(.horizontal, 15)
+                .frame(height: 34)
+                .background(.white.opacity(0.16), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.24)))
+            }
+            .foregroundStyle(.white)
+            .fixedSize()
+            .transition(.opacity)
+        }
     }
 }

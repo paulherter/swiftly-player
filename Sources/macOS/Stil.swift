@@ -20,6 +20,22 @@ extension Stil {
     static let fensterMinBreite: CGFloat = 900
     static let fensterMinHoehe: CGFloat = 560
 
+    /// **So breit wird eine Einstellungsseite hoechstens.**
+    ///
+    /// Die Seiten sind die des iPads: zwei Spalten, linksbuendig am Inhalt,
+    /// nicht in der Mitte des Fensters. Dort zieht die Grenze das Geraet —
+    /// 1366 Punkt im Querformat des groessten. Ein Fenster hat keine solche
+    /// Grenze; ohne sie stuenden auf einem grossen Schirm zwei Karten zu je
+    /// neunhundert Punkt nebeneinander, in denen der Schalter eine
+    /// Handbreit vom Titel entfernt laege.
+    static let einstellungBreite: CGFloat = 1366
+
+    /// **Lesemass fuer eine einspaltige Unterseite.** Derselbe Wert wie in
+    /// der iPhone- und iPad-Fassung (`Stil.lesebreite`): eine Zeile aus
+    /// Symbol, Titel und einem Wert rechts, ueber die halbe Fensterbreite
+    /// gezogen, laesst zwischen beiden Enden nichts als Luft.
+    static let lesebreite: CGFloat = 700
+
     /// Platz für die Fensterampel — **nur in der Seitenleiste.**
     ///
     /// Die drei Punkte sitzen oben links im Fenster, also über der
@@ -61,9 +77,18 @@ extension Stil {
 
     // MARK: Maße
 
-    static let ecke: CGFloat = 6
-    static let eckeKachel: CGFloat = 8
-    static let eckeFeld: CGFloat = 10
+    /// **Die Eckenskala.** Dieselbe Regel wie auf dem iPhone (GESTALTUNG,
+    /// Abschnitt B): je grösser die Fläche, desto runder — und Knopf und
+    /// Kachel teilen sich die kleinste Stufe, weil beides kleine Gegenstände
+    /// sind. Am 07.09.2026 gemeinsam um vier Punkte angehoben; vorher waren
+    /// Knopf 6 und Plakat 8, und zwei Punkte Unterschied zwischen zwei
+    /// Dingen, die nebeneinander stehen, liest man nicht als Rangfolge,
+    /// sondern als Versehen.
+    static let ecke: CGFloat = 10
+    static let eckeKachel: CGFloat = 10
+    static let eckeFeld: CGFloat = 12
+    /// Was eine eigene Fläche ist: Blätter, Tafeln, Auskunftskästen.
+    static let eckeFlaeche: CGFloat = 16
     static let randAbstand: CGFloat = 24
     static let kachelAbstand: CGFloat = 12
     static let reihenAbstand: CGFloat = 28
@@ -147,12 +172,17 @@ extension Stil {
     /// Sprung, auch wenn nichts ruckelt.
     static let zeitEinblenden = Animation.easeOut(duration: 0.25)
 
+    /// Wie Inhalt erscheint, wenn er angekommen ist — dieselbe Kurve wie auf
+    /// dem iPhone. **Nichts erscheint hart** (E18): Bilder blenden ein,
+    /// Inhalt loest Platzhalter ab.
+    static let einblenden = Animation.easeInOut(duration: 0.28)
+
     // MARK: Der Wechsel in der Leiste — „Fade Through"
     //
-    // **Nachgelesen, nicht ausgedacht.** Der Übergang hat einen Namen und
-    // eine veröffentlichte Vorschrift: das Ausgehende blendet in 100 ms aus,
-    // **danach** blendet das Eingehende in 200 ms ein und wächst dabei von
-    // 92 % auf 100 %. Nacheinander, nicht überlappend.
+    // **Nachgelesen, nicht ausgedacht.** Der Übergang hat einen Namen und eine
+    // veröffentlichte Vorschrift: das Ausgehende blendet in 100 ms aus,
+    // **danach** blendet das Eingehende in 200 ms ein und wächst dabei von 92
+    // % auf 100 %. Nacheinander, nicht überlappend.
     //
     // Die 92 % sind ausdrücklich so gewählt und nicht kleiner: der Übergang
     // soll die Aufmerksamkeit nicht auf sich ziehen. Genau deshalb sieht man
@@ -164,9 +194,9 @@ extension Stil {
     //
     // Zur Einordnung: eine macOS-Seitenleiste schaltet sonst ohne Blende um
     // (Finder, Mail, Systemeinstellungen). Das hier ist eine bewusste
-    // Abweichung, Pauls Entscheidung — und sie trägt erst, seit die Stände
-    // der Bereiche liegen bleiben. Solange jeder Wechsel neu geladen hat,
-    // hätte eine Blende die Wartezeit nur verlängert.
+    // Abweichung, eine bewusste Entscheidung — und sie trägt erst, seit die Stände der
+    // Bereiche liegen bleiben. Solange jeder Wechsel neu geladen hat, hätte
+    // eine Blende die Wartezeit nur verlängert.
 
     /// Das Alte geht. Nur blenden, nicht schrumpfen.
     ///
@@ -184,29 +214,25 @@ extension Stil {
     //
     // Die Vorschrift lässt das Eingehende von 92 % wachsen. Eine Skalierung
     // verschiebt aber jeden Punkt proportional zu seinem Abstand vom
-    // Mittelpunkt — auf einem Telefon sind das an der Kante wenige Punkte,
-    // in einem Fenster von 1500 Punkt Breite bei nur einem Prozent schon
-    // acht, und ein Fenster ist breiter als hoch. Die Verschiebung ist damit
+    // Mittelpunkt — auf einem Telefon sind das an der Kante wenige Punkte, in
+    // einem Fenster von 1500 Punkt Breite bei nur einem Prozent schon acht,
+    // und ein Fenster ist breiter als hoch. Die Verschiebung ist damit
     // seitlich am grössten, also genau dort, wo die Kachelreihen enden.
     //
-    // Paul hat es an der untersten Reihe gesehen: „die zoomt rein und bewegt
-    // sich von rechts nach links". Sie tat es. Das ist keine Einstellungs-
-    // frage — es folgt aus der Skalierung selbst und lässt sich nur
-    // verkleinern, nicht abstellen.
+    // Sie tat es. Das ist keine Einstellungs- frage — es folgt aus der
+    // Skalierung selbst und lässt sich nur verkleinern, nicht abstellen.
     //
     // Deshalb Unschärfe statt Skalierung: sie gibt dieselbe Tiefe und
     // verschiebt nichts.
     //
-    // `.blurReplace`, Apples fertiger Übergang dafür, war ebenfalls zu
-    // kräftig — er bringt seine eigene Skalierung mit und lässt sich nicht
-    // dosieren. Deshalb hier von Hand, mit drei Zahlen, die einzeln
-    // einstellbar sind.
+    // `.blurReplace`, Apples fertiger Übergang dafür, war ebenfalls zu kräftig
+    // — er bringt seine eigene Skalierung mit und lässt sich nicht dosieren.
+    // Deshalb hier von Hand, mit drei Zahlen, die einzeln einstellbar sind.
 
     /// Wie weich das Neue anfängt. Das ist der Anteil, den man sehen soll.
-    /// Paul hat den Wert am laufenden Bild eingestellt; 14, 5 und 3 waren
-    /// alle zu viel. Unschärfe fällt in einem grossen Fenster deutlich mehr
-    /// auf als auf einem Telefon — sie trifft ja jeden Text auf der ganzen
-    /// Fläche gleichzeitig.
+    /// Unschärfe fällt in einem grossen Fenster deutlich mehr auf als auf
+    /// einem Telefon — sie trifft ja jeden Text auf der ganzen Fläche
+    /// gleichzeitig.
     static let bereichUnschaerfe: CGFloat = 0.8
     /// Und wie wenig es dabei wächst. Der Weg hierher, alles am laufenden
     /// Bild: 92 % (Vorschrift, viel zu viel), 98, 99, 99,5 — und 99,8 war

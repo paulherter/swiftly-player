@@ -26,16 +26,20 @@ struct WiedergabeEinstellungenView: View {
     @State private var gezeigteListe: Liste? = .ton
 
     private enum Liste: String, Identifiable {
-        case bitrate, ton, untertitel, zurueck, vor
+        case bitrate, ton, untertitel, zurueck, vor, puffer
         var id: String { rawValue }
     }
 
     var body: some View {
         ZStack(alignment: .top) {
             Stil.grund.ignoresSafeArea()
-            ScrollView { inhalt }
-                .scrollIndicators(.hidden)
-            Seitenpfeil { zurueck() }
+            VStack(spacing: 0) {
+                // Titel neben dem Pfeil, nicht darunter — siehe
+                // `EinstellungenView`.
+                Unterseitenkopf(titel: String(localized: "Wiedergabe")) { zurueck() }
+                ScrollView { inhalt }
+                    .scrollIndicators(.hidden)
+            }
             blatt
         }
         #if os(iOS)
@@ -46,13 +50,6 @@ struct WiedergabeEinstellungenView: View {
 
     private var inhalt: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Wiedergabe")
-                .font(Stil.titel)
-                .tracking(-0.6)
-                .foregroundStyle(Stil.schrift)
-                .padding(.horizontal, Stil.randAbstand)
-                .padding(.top, 52)
-
             Text("Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen.")
                 .font(Stil.koerper)
                 .lineSpacing(3)
@@ -61,7 +58,11 @@ struct WiedergabeEinstellungenView: View {
                 .padding(.top, 8)
 
             if breit {
-                HStack(alignment: .top, spacing: 56) {
+                // **Null, seit die Gruppen Karten sind.** Jede Karte traegt links
+                // und rechts schon `Stil.rand` — bei 56 dazwischen standen
+                // 112 Punkt zwischen zwei Karten, und dafuer sind sie zu
+                // schmal. Den Abstand tragen jetzt die Karten selbst.
+                HStack(alignment: .top, spacing: 0) {
                     VStack(alignment: .leading, spacing: 0) {
                         qualitaet
                         sprache
@@ -93,7 +94,7 @@ struct WiedergabeEinstellungenView: View {
                       unter: Text("Nie umwandeln lassen — der Grund für diese App"),
                       an: Binding(get: { model.immerDirectPlay },
                                   set: { model.immerDirectPlay = $0 }))
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "chart.bar", titel: Text("Höchste Bitrate"),
                       wert: Bitrate.text(model.bitratenGrenze),
                       gedimmt: model.immerDirectPlay, aktion: waehlen)
@@ -105,11 +106,11 @@ struct WiedergabeEinstellungenView: View {
             Wertzeile(symbol: "speaker.wave.2", titel: Text("Ton"),
                       wert: model.tonSprache.isEmpty ? String(localized: "Wie die Datei") : model.tonSprache,
                       aktion: { oeffne(.ton) })
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "captions.bubble", titel: Text("Untertitel"),
                       wert: model.untertitelSprache.isEmpty ? String(localized: "Aus") : model.untertitelSprache,
                       aktion: { oeffne(.untertitel) })
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wahlzeile(symbol: "text.alignleft", titel: Text("Untertitel automatisch"),
                       unter: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
                       an: Binding(get: { model.untertitelAutomatisch },
@@ -117,26 +118,60 @@ struct WiedergabeEinstellungenView: View {
         }
     }
 
+    @AppStorage("technikschild") private var technikschild = false
+
     private var verhalten: some View {
         Einstellungsgruppe(titel: "Verhalten") {
             Wahlzeile(symbol: "forward.end.fill", titel: Text("Nächste Folge automatisch"),
                       an: Binding(get: { model.naechsteAutomatisch },
                                   set: { model.naechsteAutomatisch = $0 }))
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            // **Der Schalter fuer das Technikschild.**
+            //
+            // Er steht hier bei „Verhalten" und nicht bei den Bildregeln: er
+            // aendert nichts an der Wiedergabe, er zeigt nur, was sie tut.
+            // Aus, bis ihn jemand sucht — wie bei Downloads und Seerr.
+            Wahlzeile(symbol: "waveform.badge.magnifyingglass",
+                      titel: Text("Technikschild im Player"),
+                      an: $technikschild)
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                       wert: "\(model.zurueckSekunden) s",
                       aktion: { oeffne(.zurueck) })
-            Trennlinie().padding(.leading, Stil.trennEinzug(breit: breit))
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "goforward", titel: Text("Vorspulen"),
                       wert: "\(model.vorSekunden) s",
                       aktion: { oeffne(.vor) })
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            // **Steht bei „Verhalten", nicht bei der Qualitaet.** Sie aendert
+            // nichts am Bild — nur, wie viel Vorrat der Player haelt, bevor
+            // eine wackelige Leitung durchschlaegt.
+            Wertzeile(symbol: "wifi.exclamationmark", titel: Text("Puffer"),
+                      wert: model.pufferstufe.name,
+                      aktion: { oeffne(.puffer) })
         }
     }
 
-    /// Blatt öffnen: erst den Inhalt setzen, dann in einer Bewegung zeigen.
+    /// Blatt öffnen: erst den Inhalt setzen, **dann** zeigen — und zwar in
+    /// zwei Durchgängen, nicht in einem.
+    ///
+    /// **Sonst misst sich die Karte, während sie schon fährt.** Beide Zeilen
+    /// standen hier untereinander und landeten damit in derselben
+    /// Aktualisierung: die Karte bekam ihren Inhalt und ihre Bewegung
+    /// gleichzeitig. Ihre Höhe ist aber das, woran die Bewegung hängt — beim
+    /// **ersten** Öffnen war sie null (es gab noch keinen Inhalt), und dann
+    /// stand die Rubrik schon an ihrem Platz, während der Rest hineinfuhr.
+    ///
+    /// Danach fiel es nicht mehr auf, weil der vorige Inhalt stehen bleibt und
+    /// die Höhe schon ungefähr stimmte. Beim Wechsel von einer langen auf eine
+    /// kurze Liste wäre es wiedergekommen.
+    ///
+    /// Der `Task` schiebt das Zeigen um einen Durchgang: dazwischen wird die
+    /// Karte einmal mit ihrem neuen Inhalt gemessen — geschlossen und
+    /// unsichtbar. Das kostet einen Bildaufbau und nichts sonst.
     private func oeffne(_ liste: Liste) {
         gezeigteListe = liste
-        withAnimation(Stil.blattbewegung) { offeneListe = liste }
+        Task { @MainActor in offeneListe = liste }
     }
 
     /// Schließen — und der Inhalt bleibt stehen, dauerhaft.
@@ -147,45 +182,114 @@ struct WiedergabeEinstellungenView: View {
     /// also draußen, sobald die Bewegung durch ist — abzuräumen gibt es
     /// nichts. Was bleibt, ist eine Liste im Speicher, und die kostet nichts.
     private func schliesseBlatt() {
-        withAnimation(Stil.blattbewegung) { offeneListe = nil }
+        offeneListe = nil
     }
 
-    @ViewBuilder
+    /// **Ein Blatt, nicht fünf.**
+    ///
+    /// Hier stand ein `switch` über `gezeigteListe`, und jeder Fall baute ein
+    /// eigenes `Auswahlblatt` — mit eigener Gattung (`Bitrate`, `Sprachwahl`,
+    /// `Spanne`). Für SwiftUI sind das **verschiedene Ansichten**: beim
+    /// Wechsel wird die alte ausgehängt und eine neue eingehängt, und die
+    /// kommt mit `offen == true` zur Welt. Die Karte sitzt dann sofort an
+    /// ihrem Platz, und das Auffahren fällt aus.
+    ///
+    /// Zu sehen war es genau dann, wenn man schnell genug war: schliessen,
+    /// sofort das nächste antippen — dann fuhr nichts mehr hoch. War man
+    /// langsam, stimmte es zufällig, weil die alte Ansicht schon draussen war
+    /// und der Unterschied nicht auffiel.
+    ///
+    /// Dieselbe Regel wie „nie in ein `if offen`", nur als `switch`. Deshalb
+    /// jetzt **ein** Blatt über einer gemeinsamen Zeile: die Kennung bleibt,
+    /// es wechselt nur der Inhalt.
     private var blatt: some View {
+        Auswahlblatt(offen: Binding(get: { offeneListe != nil },
+                                    set: { if !$0 { schliesseBlatt() } }),
+                     titel: blatttitel,
+                     eintraege: blatteintraege,
+                     beschriftung: { $0.text },
+                     istGewaehlt: { $0.gewaehlt },
+                     waehlen: { $0.tun() })
+    }
+
+    private var blatttitel: LocalizedStringKey {
         switch gezeigteListe {
-        case .bitrate:
-            auswahl("Höchste Bitrate", Bitrate.stufen, { Bitrate.text($0.wert) },
-                    { $0.wert == model.bitratenGrenze }, { model.bitratenGrenze = $0.wert })
-        case .ton:
-            auswahl("Ton", Sprachwahl.alle, { $0.name },
-                    { $0.name == model.tonSprache }, { model.tonSprache = $0.wert })
-        case .untertitel:
-            auswahl("Untertitel", Sprachwahl.alle(aus: String(localized: "Aus")), { $0.name },
-                    { $0.name == model.untertitelSprache }, { model.untertitelSprache = $0.wert })
-        case .zurueck:
-            auswahl("Zurückspulen", Spanne.stufen, { "\($0.wert) s" },
-                    { $0.wert == model.zurueckSekunden }, { model.zurueckSekunden = $0.wert })
-        case .vor:
-            auswahl("Vorspulen", Spanne.stufen, { "\($0.wert) s" },
-                    { $0.wert == model.vorSekunden }, { model.vorSekunden = $0.wert })
-        case nil:
-            EmptyView()
+        case .bitrate:    "Höchste Bitrate"
+        case .ton:        "Ton"
+        case .untertitel: "Untertitel"
+        case .zurueck:    "Zurückspulen"
+        case .vor:        "Vorspulen"
+        case .puffer:     "Puffer"
+        case nil:         ""
         }
     }
 
-    private func auswahl<E: Identifiable>(_ titel: LocalizedStringKey, _ eintraege: [E],
-                                          _ text: @escaping (E) -> String,
-                                          _ gewaehlt: @escaping (E) -> Bool,
-                                          _ waehlen: @escaping (E) -> Void) -> some View {
-        Auswahlblatt(offen: Binding(get: { offeneListe != nil },
-                                    set: { if !$0 { schliesseBlatt() } }),
-                     titel: titel, eintraege: eintraege,
-                     beschriftung: text, istGewaehlt: gewaehlt, waehlen: waehlen)
+    private var blatteintraege: [Auswahleintrag] {
+        switch gezeigteListe {
+        case .bitrate:
+            Bitrate.stufen.map { stufe in
+                Auswahleintrag(id: "b\(stufe.wert)", text: Bitrate.text(stufe.wert),
+                               gewaehlt: stufe.wert == model.bitratenGrenze) {
+                    model.bitratenGrenze = stufe.wert
+                }
+            }
+        case .puffer:
+            Pufferstufe.allCases.map { stufe in
+                Auswahleintrag(id: stufe.rawValue, text: stufe.name,
+                               gewaehlt: stufe == model.pufferstufe) {
+                    model.pufferstufe = stufe
+                }
+            }
+        case .ton:
+            Sprachwahl.alle.map { wahl in
+                Auswahleintrag(id: "t\(wahl.wert)", text: wahl.name,
+                               gewaehlt: wahl.name == model.tonSprache) {
+                    model.tonSprache = wahl.wert
+                }
+            }
+        case .untertitel:
+            Sprachwahl.alle(aus: String(localized: "Aus")).map { wahl in
+                Auswahleintrag(id: "u\(wahl.wert)", text: wahl.name,
+                               gewaehlt: wahl.name == model.untertitelSprache) {
+                    model.untertitelSprache = wahl.wert
+                }
+            }
+        case .zurueck:
+            Spanne.stufen.map { stufe in
+                Auswahleintrag(id: "z\(stufe.wert)", text: "\(stufe.wert) s",
+                               gewaehlt: stufe.wert == model.zurueckSekunden) {
+                    model.zurueckSekunden = stufe.wert
+                }
+            }
+        case .vor:
+            Spanne.stufen.map { stufe in
+                Auswahleintrag(id: "v\(stufe.wert)", text: "\(stufe.wert) s",
+                               gewaehlt: stufe.wert == model.vorSekunden) {
+                    model.vorSekunden = stufe.wert
+                }
+            }
+        case nil:
+            []
+        }
     }
+
 
 
 }
 
+
+/// Eine Zeile in einem Auswahlblatt, unabhaengig davon, was sie waehlt.
+///
+/// **Damit es nur ein Blatt gibt.** Die fuenf Listen fuehren verschiedene
+/// Gattungen; ohne eine gemeinsame Zeile waeren es fuenf verschiedene
+/// Ansichten, und jeder Wechsel haenge die eine aus und die andere ein —
+/// siehe `blatt`.
+struct Auswahleintrag: Identifiable {
+    let id: String
+    let text: String
+    let gewaehlt: Bool
+    let tun: () -> Void
+}
 
 // MARK: - Zeilen
 
@@ -276,3 +380,4 @@ struct Zeilenaufbau<Rechts: View>: View {
         .contentShape(Rectangle())
     }
 }
+

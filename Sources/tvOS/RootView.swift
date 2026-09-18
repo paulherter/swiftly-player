@@ -32,6 +32,12 @@ struct RootView: View {
             }
         }
         .animation(.default, value: model.phase)
+        // **Einmal an der Wurzel, nicht an jeder Kachel.** Welche Kachel
+        // ihren Fortschrittsbalken zeigt, entscheidet eine Einstellung — und
+        // die Aufrufstellen, die `fortschritt:` weiterreichen, sollen nichts
+        // davon wissen muessen. Gelesen wird sie dort, wo der Balken
+        // entsteht. Siehe `EnvironmentValues.fortschrittAufKacheln`.
+        .environment(\.fortschrittAufKacheln, model.fortschrittAufKacheln)
         // Ein helles Thema gibt es nicht — die Gestaltung ist auf Dunkel
         // gebaut. Auf tvOS ohnehin die Regel.
         .preferredColorScheme(.dark)
@@ -92,22 +98,21 @@ struct Eingabefeld: View {
             // Das echte Feld liegt hinter der gestylten Beschriftung und war
             // mit 2 Prozent Deckkraft „versteckt". Auf einem Fernseher sieht
             // man das: weisse Schrift in Systemgroesse, blass unter dem
-            // eigenen Text — Paul hat es als Schimmern gemeldet, groesser als
-            // das, was er getippt hat.
+            // eigenen Text
             //
             // Ganz auf null wollte es niemand setzen, vermutlich aus Sorge um
-            // den Fokus. Das ist auch nicht noetig: die Ansicht bleibt voll
-            // da und fokussierbar, nur ihre Schrift ist durchsichtig. Der
+            // den Fokus. Das ist auch nicht noetig: die Ansicht bleibt voll da
+            // und fokussierbar, nur ihre Schrift ist durchsichtig. Der
             // sichtbare Text kommt ohnehin aus `beschriftung`.
             //
             // **Beides zusammen, nicht eins von beidem.**
             //
             // Das echte Feld liegt hinter der gestylten Beschriftung. Es war
             // mit 2 Prozent Deckkraft versteckt — dabei blieb seine weisse
-            // Schrift in Systemgroesse als Schimmern sichtbar. Nur die
-            // Schrift durchsichtig zu machen und die Ebene voll zu lassen war
-            // die andere Haelfte des Fehlers: dann sieht man den Hintergrund,
-            // den tvOS dem Feld selbst gibt, als Pille im Feld.
+            // Schrift in Systemgroesse als Schimmern sichtbar. Nur die Schrift
+            // durchsichtig zu machen und die Ebene voll zu lassen war die
+            // andere Haelfte des Fehlers: dann sieht man den Hintergrund, den
+            // tvOS dem Feld selbst gibt, als Pille im Feld.
             //
             // Also beides: die Ebene fast unsichtbar **und** die Schrift
             // durchsichtig. Fokussierbar bleibt sie, und der sichtbare Text
@@ -179,14 +184,16 @@ struct ServerView: View {
                 .frame(width: 760, alignment: .leading)
                 .padding(.top, 12)
 
-            Button("Verbinden", action: verbinden)
+            Button(model.phase == .connecting ? "Verbinden…" : "Verbinden",
+                   action: verbinden)
                 .buttonStyle(KnopfStil())
                 .disabled(adresse.isEmpty || model.phase == .connecting)
                 .padding(.top, 36)
 
-            if model.phase == .connecting {
-                Lader.fern.padding(.top, 40)
-            } else if let fehler = model.errorMessage {
+            // **Kein Ring, der den Knopf ersetzt.** Er behaelt seinen Platz
+            // und sagt es in der Beschriftung — sonst springt die Seite, und
+            // wohin man gedrueckt hatte, ist weg. GESTALTUNG, Abschnitt G.
+            if let fehler = model.errorMessage, model.phase != .connecting {
                 Text(fehler)
                     .font(Stil.koerper)
                     .foregroundStyle(Stil.warnung)
@@ -242,14 +249,12 @@ struct AnmeldeView: View {
             .frame(width: 760)
             .padding(.top, 44)
 
-            Button("Anmelden", action: anmelden)
+            Button(model.isWorking ? "Anmelden…" : "Anmelden", action: anmelden)
                 .buttonStyle(KnopfStil())
                 .disabled(benutzer.isEmpty || model.isWorking)
                 .padding(.top, 36)
 
-            if model.isWorking {
-                Lader.fern.padding(.top, 40)
-            } else if let fehler = model.errorMessage {
+            if let fehler = model.errorMessage, !model.isWorking {
                 Text(fehler)
                     .font(Stil.koerper)
                     .foregroundStyle(Stil.warnung)

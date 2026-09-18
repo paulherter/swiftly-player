@@ -1,18 +1,57 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    "NSLocalNetworkUsageDescription" : {
-      "comment" : "Der Satz in der Ortsnetz-Abfrage des Systems. Englisch ist die Vorgabe im Info.plist; hier steht nur die deutsche Fassung.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Swiftly sucht deinen Jellyfin-Server im heimischen Netz. Ohne diese Erlaubnis findet die App einen Server unter einer Adresse wie 192.168.1.5 nicht."
+  "sourceLanguage": "de",
+  "strings": {
+    "CFBundleDisplayName": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly"
+          }
+        }
+      }
+    },
+    "CFBundleName": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly"
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly sucht deinen Jellyfin-Server im heimischen Netz. Ohne diese Erlaubnis findet die App einen Server unter einer Adresse wie 192.168.1.5 nicht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly looks for your Jellyfin server on your home network. Without this, the app cannot reach a server at an address like 192.168.1.5."
           }
         }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

@@ -16,7 +16,12 @@ import SwiftUI
 /// dort war der Daumen die Grenze, hier die Fensterhöhe.
 struct Seitenleistenzeile: View {
     let symbol: String
-    let beschriftung: LocalizedStringKey
+    var beschriftung: LocalizedStringKey = ""
+    /// Für Zeilen, deren Text vom Server kommt — der Name einer Bibliothek
+    /// ist keine Beschriftung aus dem Katalog. Als `LocalizedStringKey`
+    /// übergeben, würde „Filme" als Schlüssel nachgeschlagen und ein
+    /// englischer Nutzer bekäme dort etwas anderes zu lesen.
+    var name: String?
     let aktiv: Bool
     let auswahl: () -> Void
 
@@ -28,8 +33,11 @@ struct Seitenleistenzeile: View {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .medium))
                     .frame(width: 17)
-                Text(beschriftung)
-                    .font(Stil.koerper.weight(.medium))
+                Group {
+                    if let name { Text(verbatim: name) } else { Text(beschriftung) }
+                }
+                .font(Stil.koerper.weight(.medium))
+                .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
@@ -79,6 +87,17 @@ struct Seitenleistenrubrik: View {
 struct Chip: View {
     let beschriftung: String
     var symbol: String?
+    /// **Nur das Zeichen, aber weiter in seiner Kapsel.**
+    ///
+    /// In der Werkzeugleiste des Players sagt das Zeichen genug -- es ist
+    /// dasselbe wie auf iPhone und iPad, und eine Beschriftung daneben macht
+    /// die Leiste breiter, ohne etwas zu erklaeren. Der Rahmen bleibt: ein
+    /// nacktes Zeichen ueber bewegtem Bild sieht aus, als schwebe es dort
+    /// zufaellig, und auf einem Rechner erwartet man einen Knopf.
+    ///
+    /// Die Beschriftung bleibt trotzdem gesetzt -- sie wird zum Kurzhinweis
+    /// unter dem Zeiger und zu dem, was VoiceOver vorliest.
+    var nurSymbol = false
     let aktiv: Bool
     let auswahl: () -> Void
 
@@ -90,10 +109,12 @@ struct Chip: View {
                 if let symbol {
                     Image(systemName: symbol).font(.system(size: 12, weight: .semibold))
                 }
-                Text(beschriftung).font(.system(size: 13, weight: aktiv ? .semibold : .regular))
+                if !nurSymbol {
+                    Text(beschriftung).font(.system(size: 13, weight: aktiv ? .semibold : .regular))
+                }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 28)
+            .padding(.horizontal, nurSymbol ? 0 : 12)
+            .frame(width: nurSymbol ? 34 : nil, height: 28)
             .foregroundStyle(aktiv ? Stil.grund : (schwebt ? Stil.schrift : Stil.schriftLeise))
             .background(aktiv ? Stil.schrift : (schwebt ? Stil.schrift.opacity(0.06) : .clear),
                         in: Capsule())
@@ -101,6 +122,8 @@ struct Chip: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .help(beschriftung)
+        .accessibilityLabel(beschriftung)
         .onHover { schwebt = $0 }
         .animation(Stil.zeitUmschalten, value: aktiv)
         .animation(Stil.zeitSchweben, value: schwebt)
@@ -199,22 +222,38 @@ struct Posterkachel: View {
     let zweitzeile: String?
     let bild: URL?
     var fortschritt: Double?
+    /// Was oben rechts steht: gesehen, offene Folgen, Staffelzahl.
+    ///
+    /// **Drei Zustände, drei Zeichen** (GESTALTUNG, Abschnitt H). Bis hierher
+    /// gab es nur den Balken — und bei einer Serie sagt der gar nichts, weil
+    /// er den Stand der angefangenen *Folge* zeigt und nicht den der Serie.
+    /// Welche Auskunft gilt, entscheidet `Anzeigeregeln.kachelmarke`.
+    var marke: Kachelmarke?
+    /// Zeichen für den Fall, dass der Server kein Bild hat.
+    var zeichen: String?
     var auswahl: (() -> Void)?
     /// `nil`, wenn es keine Übersicht dazu gibt (A6).
     var uebersicht: (() -> Void)?
-    /// Wird beim Überfahren gerufen — siehe `Seriencache.vorholen(_:mit:)`.
+    /// Wird beim Überfahren gerufen — siehe `Serienspeicher.vorholen(_:mit:)`.
     var vorholen: (() -> Void)?
 
     @State private var schwebt = false {
         didSet { if schwebt, !oldValue { vorholen?() } }
     }
+    /// Plakat und Text blenden **zusammen** ein. Das Bild blendet von selbst
+    /// ein, der Titel stünde sofort da — beim Wechsel sähe man erst die
+    /// Beschriftungen und dann die Plakate hineinlaufen.
+    @State private var da = false
 
     var body: some View {
         Kachelhuelle(auswahl: auswahl, schwebt: $schwebt,
                      name: [titel, zweitzeile].compactMap { $0 }.joined(separator: ", ")) {
             VStack(alignment: .leading, spacing: 8) {
                 Bildflaeche(bild: bild, breite: Stil.kachelBreite, hoehe: Stil.kachelHoehe,
-                            fortschritt: fortschritt)
+                            fortschritt: fortschritt, zeichen: zeichen)
+                    .overlay(alignment: .topTrailing) {
+                        if let marke { Kachelplakette(marke: marke) }
+                    }
                     .scaleEffect(schwebt ? 1.04 : 1)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -232,6 +271,11 @@ struct Posterkachel: View {
             }
             .frame(width: Stil.kachelBreite, alignment: .leading)
         }
+        .opacity(da ? 1 : 0)
+        .onAppear {
+            guard !da else { return }
+            withAnimation(Stil.einblenden) { da = true }
+        }
         .kontextmenue(uebersicht)
     }
 }
@@ -245,9 +289,11 @@ struct Querkachel: View {
     let zweitzeile: String?
     let bild: URL?
     var fortschritt: Double?
+    /// Zeichen für den Fall, dass der Server kein Bild hat.
+    var zeichen: String?
     var auswahl: (() -> Void)?
     var uebersicht: (() -> Void)?
-    /// Wird beim Überfahren gerufen — siehe `Seriencache.vorholen(_:mit:)`.
+    /// Wird beim Überfahren gerufen — siehe `Serienspeicher.vorholen(_:mit:)`.
     var vorholen: (() -> Void)?
 
     @State private var schwebt = false {
@@ -259,7 +305,7 @@ struct Querkachel: View {
                      name: [titel, zweitzeile].compactMap { $0 }.joined(separator: ", ")) {
             VStack(alignment: .leading, spacing: 8) {
                 Bildflaeche(bild: bild, breite: Stil.querBreite, hoehe: Stil.querHoehe,
-                            fortschritt: fortschritt)
+                            fortschritt: fortschritt, zeichen: zeichen)
                     .scaleEffect(schwebt ? 1.04 : 1)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -330,11 +376,16 @@ struct Bildflaeche: View {
     let hoehe: CGFloat
     var fortschritt: Double?
 
+    /// Einstellungen → Darstellung. Siehe `EnvironmentValues.fortschrittAufKacheln`.
+    @Environment(\.fortschrittAufKacheln) private var balkenZeigen
+    /// Zeichen für den Fall, dass der Server kein Bild hat.
+    var zeichen: String?
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Stil.flaeche
-            Netzbild(url: bild)
-            if let fortschritt, fortschritt > 0 {
+            Netzbild(url: bild, zeichen: zeichen)
+            if let fortschritt, fortschritt > 0, balkenZeigen {
                 GeometryReader { raum in
                     ZStack(alignment: .leading) {
                         Rectangle().fill(Stil.schrift.opacity(0.16))
@@ -347,6 +398,140 @@ struct Bildflaeche: View {
         }
         .frame(width: breite, height: hoehe)
         .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel))
+    }
+}
+
+// MARK: - Platzhalter statt Ladering
+
+/// Eine Fläche in der Form dessen, was gleich kommt.
+///
+/// **Warum kein drehender Ring.** Ein Ring sagt „warte"; ein Platzhalter
+/// sagt, *was* kommt und wie viel — die Seite steht schon, sie ist nur noch
+/// leer. GESTALTUNG, Abschnitt G.
+///
+/// Das Pulsieren läuft über `.opacity` mit `repeatForever`: das übernimmt
+/// Core Animation und rechnet auf dem Renderserver weiter, ohne dass SwiftUI
+/// je Bild etwas neu bauen muss.
+struct Ladefeld: View {
+    var ecke: CGFloat = Stil.eckeKachel
+    @State private var hell = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: ecke)
+            .fill(Stil.flaeche)
+            .opacity(hell ? 1 : 0.5)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    hell = true
+                }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Ein Plakat mit zwei Textzeilen darunter, alles als Platzhalter.
+struct Kachelplatzhalter: View {
+    var breite: CGFloat = Stil.kachelBreite
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Ladefeld()
+                .frame(width: breite, height: breite * 1.5)
+            Ladefeld(ecke: 3).frame(width: breite, height: 12)
+            Ladefeld(ecke: 3).frame(width: 48, height: 10)
+        }
+    }
+}
+
+/// Ein Raster aus Plakat-Platzhaltern.
+struct Rasterplatzhalter: View {
+    let spalten: Int
+    var reihen: Int = 3
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Stil.kachelAbstand),
+                                 count: max(spalten, 1)),
+                  alignment: .leading, spacing: 24) {
+            ForEach(0 ..< (max(spalten, 1) * reihen), id: \.self) { _ in
+                Kachelplatzhalter(breite: Stil.kachelBreite)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lädt")
+    }
+}
+
+/// Eine Reihe aus Plakat-Platzhaltern, für die Startseite.
+struct Reihenplatzhalter: View {
+    var quer = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Ladefeld(ecke: 4).frame(width: 168, height: 20)
+            HStack(spacing: Stil.kachelAbstand) {
+                ForEach(0 ..< 5, id: \.self) { _ in
+                    Ladefeld()
+                        .frame(width: quer ? Stil.kachelBreite * 2 : Stil.kachelBreite,
+                               height: quer ? Stil.kachelBreite * 1.125 : Stil.kachelBreite * 1.5)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lädt")
+    }
+}
+
+/// Wie viele Titel in dieser Bibliothek liegen.
+///
+/// **Eine Angabe, keine Handlung** — also leise Schrift und kein Kasten. Sie
+/// beantwortet „bin ich hier durch?"; ohne sie scrollt man ins Ungewisse.
+struct Zaehlmarke: View {
+    let anzahl: Int
+
+    var body: some View {
+        Text(verbatim: anzahl.formatted())
+            .font(.system(size: 13, weight: .medium))
+            .monospacedDigit()
+            .foregroundStyle(Stil.schriftSehrLeise)
+            .accessibilityLabel(Text("\(anzahl) Titel"))
+    }
+}
+
+/// Die Plakette oben rechts auf einer Kachel.
+///
+/// **In Weiss auf Dunkel, nicht in Akzent** — der Akzent trägt Fortschritt
+/// und Auswahl; eine Plakette ist eine Angabe. Welche Auskunft draufsteht,
+/// entscheidet `Anzeigeregeln.kachelmarke` im Paket.
+struct Kachelplakette: View {
+    let marke: Kachelmarke
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if marke == .gesehen {
+                Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+            }
+            if let text = wortlaut {
+                Text(verbatim: text).font(.system(size: 11, weight: .semibold))
+            }
+        }
+        .foregroundStyle(Stil.schrift)
+        .padding(.horizontal, wortlaut == nil ? 6 : 7)
+        .padding(.vertical, 3)
+        .background {
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Stil.grund.opacity(0.78))
+                .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(Stil.rand) }
+        }
+        .padding(7)
+    }
+
+    private var wortlaut: String? {
+        switch marke {
+        case .gesehen: nil
+        case .offen(let n): String(localized: "\(n) offen")
+        case .staffeln(let n): n == 1 ? String(localized: "1 Staffel")
+                                      : String(localized: "\(n) Staffeln")
+        }
     }
 }
 
@@ -623,9 +808,18 @@ struct Detailkopf: View {
                 //
                 // Steht sie erst ab einem Hauch Sichtbarkeit in der Ansicht,
                 // kostet das Scrollen im Heldenbild gar nichts.
-                if staerke > 0.01 {
-                    Leistenglas(staerke: staerke)
-                }
+                //
+                // **Und seit dem 07.09.2026 gar nicht mehr.** Apples
+                // Materialien tragen alle eine helle Schicht — auch das
+                // duennste. Ueber unserem Grund und bunten Plakaten wird
+                // daraus ein grauer Block, heller als die Seite; beim Federn
+                // blitzt er obendrein auf, weil die Staerke ueber eine Maske
+                // geregelt wird, die je Bild neu gerechnet wird. Auf dem
+                // iPhone war beides zu sehen, hier gilt dieselbe Physik.
+                //
+                // Eine Flaeche kann nicht aufblitzen, ist genau so dunkel wie
+                // die Seite und kostet nichts. GESTALTUNG, Abschnitt D.
+                Stil.grund.opacity(staerke)
             }
             .ignoresSafeArea(edges: .top)
         }
@@ -781,9 +975,13 @@ struct Uebernahmezeile: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            // **`kuehl`, nicht `akzent`.** Der Akzent sagt „hier laeuft was"
+            // und steht als Balken auf jeder angefangenen Kachel; diese Zeile
+            // sagt „woanders laeuft was". Zwei Aussagen, also zwei Farben —
+            // im selben Ton war der Unterschied nicht zu sehen.
             Image(systemName: sitzung.geraetezeichen)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Stil.akzent)
+                .foregroundStyle(Stil.kuehl)
                 .frame(width: 26)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Hier weiterschauen")
@@ -799,10 +997,10 @@ struct Uebernahmezeile: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 40)
-        .background(schwebt ? Stil.akzent.opacity(0.12) : Stil.akzent.opacity(0.06),
+        .background(schwebt ? Stil.kuehl.opacity(0.12) : Stil.kuehl.opacity(0.06),
                     in: RoundedRectangle(cornerRadius: Stil.ecke))
         .overlay(RoundedRectangle(cornerRadius: Stil.ecke)
-            .strokeBorder(Stil.akzent.opacity(schwebt ? 0.35 : 0.18)))
+            .strokeBorder(Stil.kuehl.opacity(schwebt ? 0.35 : 0.18)))
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
     }

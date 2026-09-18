@@ -2,9 +2,16 @@ import CGtk
 import Foundation
 import JellyfinKit
 
-/// **Der Player sieht überall gleich aus** (E10): Schließen oben links,
-/// Einstellungen oben rechts, Titel und Folge unten links, Zeitleiste
-/// darunter, die drei Knöpfe mittig. Bild-im-Bild entfällt — wie auf dem Mac,
+/// **Der Player sieht überall gleich aus** (E10): oben rechts die beiden
+/// Werkzeuge — Wiedergabe und Schließen, in dieser Reihenfolge —, Titel und
+/// Folge unten links, Zeitleiste darunter, die drei Knöpfe mittig.
+///
+/// Hier stand „Schließen oben links, Einstellungen oben rechts". Das war die
+/// gespiegelte Fassung von E10: die Fensterampel sitzt auf GTK rechts, also
+/// sollte der Schließweg ihr links ausweichen. Am 13.09.2026 hat Paul es am
+/// Bild verglichen und anders entschieden — die Ampel sitzt in der
+/// Titelzeile, die Werkzeuge gut fünfzig Punkt tiefer, sie stoßen gar nicht
+/// aneinander. Das Register ist nachgezogen. Bild-im-Bild entfällt — wie auf dem Mac,
 /// wo VLCKit es nicht trägt; hier gibt es unter Wayland kein Gegenstück.
 ///
 /// Was der Player tut und was der Server erfährt, entscheidet nicht diese
@@ -24,8 +31,15 @@ extension App {
     /// Das ist die eine Abweichung, die sich nicht wegräumen lässt, ohne die
     /// Fensterknöpfe zu verlieren; sie steht in derselben Reihe wie die
     /// schmale Kopfzeile über der Seitenleiste (VERHALTEN.md F).
-    func spielerOeffnen(_ item: Item, ab: Double) {
-        guard let client else { return }
+    /// **`ausDatei` ist der Weg ohne Server.**
+    ///
+    /// Ein Download soll auch dann laufen, wenn der Server aus ist — das ist
+    /// der ganze Zweck. Der Plan aus `/PlaybackInfo` faellt dann weg, und mit
+    /// ihm die Meldungen an den Server: es gibt niemanden, dem man melden
+    /// koennte. Alles Uebrige — Steuerung, Sprungzeichen, Technikschild — ist
+    /// derselbe Weg.
+    func spielerOeffnen(_ item: Item, ab: Double, ausDatei datei: URL? = nil) {
+        guard client != nil || datei != nil else { return }
         spielerSchliessen(melden: true)
 
         laufenderTitel = item
@@ -33,7 +47,13 @@ extension App {
         seitOeffnen = Date()
 
         let seite = spielerSeiteBauen(item)
-        gtk_stack_add_named(OpaquePointer(seiten), seite, "spieler")
+        // **Jede Spielerseite bekommt ihren eigenen Namen.** Alle „spieler" zu
+        // nennen ging nur, solange die vorige beim Schliessen sofort aus dem
+        // Stapel flog — und genau das nahm ihr die Abfahrt nach unten. Mit
+        // einem laufenden Zaehler koennen alte und neue Seite fuer die Dauer
+        // der Fahrt nebeneinander liegen, ohne sich den Namen zu streiten.
+        spielerZaehler += 1
+        gtk_stack_add_named(OpaquePointer(seiten), seite, "spieler-\(spielerZaehler)")
         // **Aufsteigen — die dritte der drei Bewegungen** (so auf dem Mac,
         // `HauptView.swift:160`). Von unten herauf und wieder hinunter;
         // genau deshalb zeigt der Winkel oben rechts nach unten.
@@ -45,11 +65,24 @@ extension App {
                                       GTK_STACK_TRANSITION_TYPE_OVER_UP)
         gtk_stack_set_transition_duration(OpaquePointer(seiten), 350)
         Schubsperre.fuer(0.35)
-        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "spieler")
+        gtk_stack_set_visible_child_name(OpaquePointer(seiten), "spieler-\(spielerZaehler)")
 
         // **Erst den Plan holen, dann öffnen.** Die Adresse steht nicht in
         // `Item`; sie kommt aus `/PlaybackInfo`, und dort entscheidet sich
         // zugleich, ob der Server transkodiert. Ohne Plan kein Bild.
+        // **Aus der Datei geht es sofort los.** Kein Plan, keine Abschnitte,
+        // keine Meldung — es gibt keinen Server, der davon wuesste.
+        if let datei {
+            laufenderPlan = nil
+            abspieler.oeffnen(datei, ab: ab, puffer: wahlen.puffer)
+            abspieler.bildfuellend(wahlen.bildfuellend)
+            technikschildSetzen(wahlen.technikschild)
+            spielstand.position = ab
+            taktStarten()
+            return
+        }
+        guard let client else { return }
+
         // **Die Grenze vor dem Faden ablesen.** `wahlen` gehört dem
         // Hauptfaden; im abgesetzten Auftrag darf sie nicht angefasst werden.
         let grenze = wahlen.profilBitrate
@@ -76,7 +109,10 @@ extension App {
                 }
                 self.laufenderPlan = plan
                 self.warnungZeigen(plan)
-                self.abspieler.oeffnen(plan.url, ab: ab)
+                self.abspieler.oeffnen(plan.url, ab: ab, puffer: self.wahlen.puffer)
+                // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
+                self.abspieler.bildfuellend(self.wahlen.bildfuellend)
+                self.technikschildSetzen(self.wahlen.technikschild)
                 self.spielstand.position = ab
                 self.taktStarten()
             }
@@ -93,17 +129,28 @@ extension App {
         if melden, spielstand.startGemeldet,
            let client, let plan = laufenderPlan, let titel = laufenderTitel {
             let ticks = Int64(spielstand.position * 10_000_000)
+            let konto = benutzerID
             Task.detached {
-                try? await client.reportStopped(itemID: titel.id, plan: plan,
-                                                positionTicks: ticks)
+                do {
+                    try await client.reportStopped(itemID: titel.id, plan: plan,
+                                                   positionTicks: ticks)
+                } catch {
+                    // **H8, zweite Haelfte.** Hier stand `try?` — der
+                    // Fehlschlag verschwand, und mit ihm die Stelle. Genau
+                    // die ist das, was ein Download hinterlaesst und der
+                    // Server nicht hat.
+                    Nachmeldezettel.aufnehmen(titel.id, ticks: ticks, konto: konto)
+                }
             }
         }
         taktBeenden()
         spurwahlSchliessen()
+        technikschildSetzen(false)
         // **Erst den Titel löschen, dann aufräumen.** Alles, was den Zeiger
         // versteckt, hängt daran; solange er steht, kann ein später
         // eintreffendes Ereignis die Aufräumarbeit wieder umstossen.
         laufenderTitel = nil
+        Discordstand.abraeumen()
         spielerSteuerung = nil
         zeigerZeigen(true)
         abschnitte = []
@@ -131,17 +178,22 @@ extension App {
             try? await Task.sleep(nanoseconds: 380_000_000)
             aufHauptfaden {
                 defer { losgelassen(dann) }
+                // **Nur aufraeumen, wenn inzwischen kein neuer Film laeuft.**
+                // Der Wecker gehoert zu *dieser* Seite; startet jemand
+                // innerhalb der 380 ms den naechsten Titel, haette er sonst
+                // dessen Medium angehalten und dessen Felder geleert. Dass es
+                // nie auffiel, lag allein daran, dass das Holen des Plans
+                // meist laenger dauert als die Fahrt.
+                guard self.laufenderTitel == nil else { return }
                 self.abspieler.beenden(nurMedium: true)
-                if let seite = gtk_stack_get_child_by_name(OpaquePointer(self.seiten), "spieler"),
-                   seite == dann.widget {
-                    gtk_stack_remove(OpaquePointer(self.seiten), seite)
+                if gtk_widget_get_parent(dann.widget) != nil {
+                    gtk_stack_remove(OpaquePointer(self.seiten), dann.widget)
                 }
-                self.spielerRahmen = nil
-                self.spielerSteuerung = nil
+                if self.spielerRahmen == dann.widget {
+                    self.spielerRahmen = nil
+                    self.spielerSteuerung = nil
+                }
             }
-        }
-        if let seite = gtk_stack_get_child_by_name(OpaquePointer(seiten), "spieler") {
-            gtk_stack_remove(OpaquePointer(seiten), seite)
         }
         // **Die Startseite holt ihre Reihen neu, wenn der Player zugeht**
         // (D8) — ohne Frist. Eine zu Ende gesehene Folge stünde sonst weiter
@@ -207,6 +259,15 @@ extension App {
                          hinaus: { [weak self] in self?.steuerungVerbergen() })
         // Und jede Bewegung holt sie zurück, nicht nur das Betreten.
         beiBewegung(ueber) { [weak self] in self?.steuerungZeigen() }
+        // **Ein Klick daneben schliesst die Wiedergabetafel.** Auf dem Mac
+        // liegt dafuer ein durchsichtiger Faenger unter ihr
+        // (`PlayerScreen.swift:365`); hier reicht die Steuerungsflaeche
+        // selbst, weil die Tafel als eigener Ueberzug darueber liegt und
+        // Klicks in ihr gar nicht bis hierher kommen.
+        beiKlick(ueber) { [weak self] in
+            guard let self, self.spurtafel != nil else { return }
+            self.spurwahlSchliessen()
+        }
         steuerungZeigen()
         return ueber
     }
@@ -227,36 +288,44 @@ extension App {
         gtk_widget_set_margin_end(oben, 22)
         gtk_widget_set_margin_start(oben, 16)
 
-        // **Links der Weg hinaus, rechts die Werkzeuge.**
+        // **Beide Knoepfe rechts oben, wie auf dem Mac.**
         //
-        // Auf dem Mac steht links nichts, weil dort die Fensterampel sitzt
-        // und zwei Schliesser an derselben Ecke verwirren. Unter Wayland
-        // gehört die Titelzeile dem Fenster und liegt **über** dem Player,
-        // nicht daneben — die Verwechslung gibt es hier nicht, und der Platz
-        // links ist frei. Er ist der bessere: der Zurückweg gehört nach links
-        // (E9), und rechts wird es sonst eng, weil hier ein Knopf mehr steht
-        // als auf dem Mac.
-        let zu = chip(uebersetzt("Schließen"), symbol: "pan-down-symbolic")
-        beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
-        anhaengen(oben, zu)
-
+        // Hier stand der Schliessweg links, mit der Begruendung aus E10: auf
+        // GTK sitzt die Fensterampel rechts, also gehe unser Schliesser nach
+        // links. Am Bild nebeneinander gehalten stimmt das Ergebnis trotzdem
+        // nicht — die Titelzeile liegt unter Wayland **ueber** dem Player und
+        // nicht daneben, die Verwechslung, gegen die die Regel geschrieben
+        // wurde, gibt es hier gar nicht. Von Paul am 13.09.2026 so
+        // entschieden; E10 gehoert entsprechend nachgezogen.
+        //
+        // **Und nur noch zwei.** Der Mac hat Spurwahl und Schliessen; das
+        // Vollbild braucht auf einem Fenster keinen eigenen Knopf, das kann
+        // der Fensterverwalter. Es steht weiter in der Wiedergabetafel.
         anhaengen(oben, luftQuer())
 
-        let spuren = chip(uebersetzt("Ton und Untertitel"), symbol: "media-view-subtitles-symbolic")
+        // Die Tafel traegt mehr als Ton und Untertitel — seit sie die Form der
+        // Mac-Fassung hat, stehen dort auch Bildformat, Tempo, Schlafzeit und
+        // das Technikschild.
+        // **Gezeichnet, nicht gesucht.** `media-eq-symbolic` gibt es im
+        // Adwaita-Satz nicht — GTK zeigte dafuer das Ersatzbild. Der Mac
+        // nimmt `slider.horizontal.3`; ``Reglerzeichen`` malt es.
+        let regler = Reglerzeichen(mass: 13)
+        spielerReglerzeichen = regler
+        let spuren = chip(uebersetzt("Wiedergabe"), nurSymbol: true,
+                          zeichnung: regler.anzeige)
         spielerSpurknopf = spuren
         beiSignal(spuren, "clicked") { [weak self] in self?.spurwahlZeigen() }
         anhaengen(oben, spuren)
 
-        // **Vollbild braucht kein Wort.** Das Zeichen ist eindeutig, und
-        // neben zwei beschrifteten Chips wäre ein dritter zu viel Text für
-        // eine Sache, die man einmal drückt und dann vergisst.
-        let voll = nebenknopf("view-fullscreen-symbolic", name: uebersetzt("Vollbild"))
-        gtk_widget_add_css_class(voll, "swiftly-vollknopf")
-        gtk_widget_set_size_request(voll, 28, 28)
-        gtk_widget_set_valign(voll, GTK_ALIGN_CENTER)
-        spielerVollknopf = voll
-        beiSignal(voll, "clicked") { [weak self] in self?.vollbildUmschalten() }
-        anhaengen(oben, voll)
+        // Der Winkel zeigt nach unten, weil der Player von unten aufsteigt und
+        // wieder dorthin verschwindet.
+        // `chevron.down` auf dem Mac (`PlayerScreen.swift:431`) — ein Winkel,
+        // kein Pfeil. Der Winkel heisst hier `pan-down-symbolic`;
+        // `go-down-symbolic` ist der ausgefuellte Pfeil und sagt „herunter-
+        // laden".
+        let zu = chip(uebersetzt("Schließen"), symbol: "pan-down-symbolic", nurSymbol: true)
+        beiSignal(zu, "clicked") { [weak self] in self?.spielerSchliessen() }
+        anhaengen(oben, zu)
         return oben
     }
 
@@ -291,6 +360,7 @@ extension App {
             guard let self else { return }
             self.abspieler.springen(-Double(self.wahlen.zurueckSekunden))
             self.sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+            self.letzterSprung = Date()
             self.spielerZurueckZeichen?.stupsen()
             self.sprungZeigen(true)
             self.steuerungZeigen()
@@ -320,6 +390,7 @@ extension App {
             guard let self else { return }
             self.abspieler.springen(Double(self.wahlen.vorSekunden))
             self.sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+            self.letzterSprung = Date()
             self.spielerVorZeichen?.stupsen()
             self.sprungZeigen(false)
             self.steuerungZeigen()
@@ -417,6 +488,18 @@ extension App {
         gtk_widget_set_size_request(spielerZeit, 52, -1)
         gtk_label_set_xalign(OpaquePointer(spielerZeit), 0)
         anhaengen(leiste, spielerZeit)
+        // **Die eine Stelle, an der ein Systemsteuerelement steht** (E4).
+        //
+        // Der Mac zeichnet die Zeitleiste selbst (`Zeitregler`, mit
+        // `DragGesture` statt `Slider`). Hier ist es ein `GtkScale`, per
+        // Stilblatt bis auf Spurhoehe (4), Knaufgroesse (13/15) und
+        // Schattierung auf dieselbe Optik gebracht, ohne Wert und ohne
+        // Systemfarben. Der Grund ist nicht Aufwand, sondern die Eingabe:
+        // ein Regler ist das eine Bedienelement, das mit der Tastatur
+        // erreichbar sein muss (E8), und `GtkScale` bringt Pfeiltasten,
+        // Bild-auf/ab und die Ansage der Position mit. Von Hand gezeichnet
+        // waere das noch einmal so viel Code — und die Vorlesehilfe saehe
+        // eine Flaeche.
         spielerRegler = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.001)
         gtk_scale_set_draw_value(alsSkala(spielerRegler), 0)
         gtk_widget_add_css_class(spielerRegler, "swiftly-regler")
@@ -432,6 +515,17 @@ extension App {
                               unsafeBitCast(reglerGezogen, to: GCallback.self),
                               Unmanaged.passUnretained(self).toOpaque(),
                               nil, GConnectFlags(rawValue: 0))
+        // **`amRegler` wurde nie gesetzt.** Das Feld stand da, wurde gelesen
+        // — als `amSchieben` in `Wiedergabetakt.rechnen` — und war immer
+        // `false`. Zwei Folgen: die Steuerung blendete nach vier Sekunden
+        // aus, **waehrend** jemand den Regler zog (B1 nimmt das Schieben
+        // ausdruecklich aus), und die Stelle des Servers ueberschrieb die
+        // gezogene (B4). Der Mac bindet dafuer `Zeitregler.amRegler`
+        // (`PlayerScreen.swift:707`, `:872`); hier gibt es dafuer die Geste.
+        beiGriff(spielerRegler) { [weak self] gedrueckt in
+            self?.amRegler = gedrueckt
+            if gedrueckt { self?.steuerungZeigen() }
+        }
         anhaengen(leiste, spielerRegler)
         spielerRest = beschriftung("−0:00", stil: "swiftly-spielerzeit")
         gtk_widget_set_size_request(spielerRest, 58, -1)
@@ -455,11 +549,17 @@ extension App {
         gtk_label_set_text(OpaquePointer(feld), text)
     }
 
-    // MARK: Der Takt — 500 ms (B12)
+    // MARK: Der Takt (B12)
 
     private func taktStarten() {
         taktBeenden()
-        spielertakt = g_timeout_add_full(200, 500, spielerTaktRuf,
+        // **Die Zahl kommt aus dem Paket**, nicht aus dieser Datei. Hier
+        // stand eine 500, und der Mac liest dieselbe Groesse aus
+        // `Wiedergabetakt.taktlaenge` — zwei Bauplaetze fuer eine Zahl, die
+        // in B12 als geteilt festgeschrieben ist.
+        let ms = UInt32(Wiedergabetakt.taktlaenge.components.seconds * 1000
+                        + Wiedergabetakt.taktlaenge.components.attoseconds / 1_000_000_000_000_000)
+        spielertakt = g_timeout_add_full(200, ms, spielerTaktRuf,
                                          Unmanaged.passUnretained(self).toOpaque(), nil)
     }
 
@@ -471,6 +571,10 @@ extension App {
     /// gefragt und ausgeführt.
     func takten() {
         guard laufenderTitel != nil else { return }
+        // Das Schild haengt am selben Takt wie alles andere: 500 ms.
+        // Schneller sieht man nur Flackern, langsamer verpasst man den
+        // Ruckler.
+        MainActor.assumeIsolated { technikschildNachfuehren() }
         let messung = Wiedergabetakt.Messung(
             dauer: abspieler.dauer,
             position: abspieler.position,
@@ -478,7 +582,12 @@ extension App {
             zeigtBild: abspieler.zeigtBild,
             stelltEin: abspieler.stelltEin,
             laeuft: abspieler.laeuft,
-            hatTonspuren: abspieler.hatTonspuren)
+            // **Die Spurliste nur lesen, solange sie gebraucht wird.**
+            // `hatTonspuren` baut bei jedem Aufruf die ganze VLC-Liste neu auf
+            // und laeuft sie ab — zweimal je Sekunde, den ganzen Film lang.
+            // Steht die Spur schon, kuerzt das `||` den Griff weg. Wortgleich
+            // auf iOS und macOS.
+            hatTonspuren: spielstand.spurenGesetzt || abspieler.hatTonspuren)
 
         // **`Wiedergabetakt` ist `@MainActor`, dieser Rückruf nicht.**
         // GTKs Taktgeber läuft auf dem Hauptfaden des Prozesses, und das ist
@@ -496,6 +605,7 @@ extension App {
         }
 
         zeitenZeigen()
+        MainActor.assumeIsolated { stromPruefen() }
 
         // **Bis das erste Bild steht, deckt ein Schleier.** Ohne ihn sieht man
         // den Aufbau des Stroms — Klötzchen, ein Ruck, manchmal ein grüner
@@ -509,6 +619,23 @@ extension App {
         if auftrag.startMelden { melden(.start); medienstandMelden() }
         if auftrag.fortschrittMelden { melden(.fortschritt) }
 
+        // **Und derselbe Takt traegt die Discord-Anzeige.**
+        //
+        // Auf den Apple-Fassungen haengt sie an der Wiedergabezentrale, weil
+        // dort ohnehin bei jeder Zustandsaenderung die frischen Werte stehen.
+        // Die gibt es hier nicht — hier ist es dieser Takt, und er kennt
+        // dieselben drei Zahlen. Ob ueberhaupt etwas hinausgeht, entscheidet
+        // `Discordstand`; der Schalter ist aus, bis jemand ihn anlegt.
+        if let titel = laufenderTitel {
+            Discordstand.melden(
+                titel: titel.seriesName ?? titel.name,
+                unterzeile: titel.seriesName == nil ? nil
+                            : [titel.folgenkuerzel, titel.name]
+                                .compactMap { $0 }.joined(separator: " · "),
+                stelle: spielstand.position, dauer: spielstand.dauer,
+                laeuft: spielstand.laeuft, erlaubt: wahlen.discordAnzeigen)
+        }
+
         // B5: der Knopf. B6: das selbsttätige Weiterschalten — deutlich enger
         // gefasst, und frühestens `anlaufruhe` Sekunden nach dem Öffnen.
         //
@@ -516,10 +643,14 @@ extension App {
         // einem überspringbaren Abschnitt, heisst er „Vorspann überspringen"
         // und springt an dessen Ende — dieselbe Entscheidung wie auf allen
         // anderen Plattformen, sie liegt in `Abschnittslogik`.
-        let angebot = Abschnittslogik.angebot(position: spielstand.position,
-                                              dauer: spielstand.dauer,
-                                              abschnitte: abschnitte,
-                                              hatNaechsteFolge: laufenderTitel?.seriesId != nil)
+        // **Waehrend ein Wechsel laeuft, gibt es nichts anzubieten.** Sonst
+        // bliebe der Knopf „Naechste Folge" antippbar, waehrend sie schon
+        // geholt wird — ein Druck stiesse denselben Wechsel ein zweites Mal an.
+        let angebot: Knopfangebot = wechselt ? .keiner
+            : Abschnittslogik.angebot(position: spielstand.position,
+                                      dauer: spielstand.dauer,
+                                      abschnitte: abschnitte,
+                                      hatNaechsteFolge: laufenderTitel?.seriesId != nil)
         jetzigesAngebot = angebot
         gtk_widget_set_visible(spielerWeiter, angebot.sichtbar ? 1 : 0)
         if angebot.sichtbar {
@@ -564,6 +695,60 @@ extension App {
         spielerAbspielzeichen?.setzen(spielstand.laeuft)
     }
 
+    /// **Steht der Strom, wird er neu aufgebaut** — die fünf Schwellen dafür
+    /// liegen als ``Stromwacht`` im Paket, mit Tests, und wurden auf Linux nie
+    /// gerufen.
+    ///
+    /// **Warum das nötig ist, obwohl libVLC `http-reconnect` kann.** Das
+    /// greift, wenn die Verbindung *abbricht*. Der Fall, den die Wacht meint,
+    /// ist der andere: die Verbindung steht, es kommt nur nichts mehr — ein
+    /// Server, der mitten im Strom aufhört zu liefern. Dann wartet libVLC
+    /// beliebig lange, und auf dem Bild steht ein Standbild.
+    ///
+    /// **Die Wacht ist eine Bremse und darf selbst keinen Hänger erzeugen.**
+    /// Deshalb entscheidet nicht diese Datei, sondern das Paket: ein Sprung
+    /// unterwegs, ein wachsender Puffer oder ein frischer Netzwechsel sind je
+    /// ein Grund zu warten. Die Zahlen stehen dort je Konstante begründet.
+    private func stromPruefen() {
+        guard let plan = laufenderPlan, plan.url.isFileURL == false,
+              spielstand.laeuft, spielstand.startGemeldet else {
+            stromStehtSeit = nil
+            return
+        }
+        let jetzt = abspieler.position
+        if abs(jetzt - stromLetzteStelle) > 0.05 {
+            stromLetzteStelle = jetzt
+            stromStehtSeit = nil
+            return
+        }
+        // Wächst der Puffer, lebt der Strom — dann ist es der Server, der
+        // langsam ist, und dem reisst man nichts ab.
+        let gelesen = abspieler.zaehlwerte?.gelesen ?? 0
+        if gelesen > stromGelesen {
+            stromGelesen = gelesen
+            stromPufferWuchs = Date()
+        }
+        let seit = stromStehtSeit ?? Date()
+        stromStehtSeit = seit
+
+        let rat = Stromwacht.rat(
+            stillstandSeit: Date().timeIntervalSince(seit),
+            netzwechselVor: nil,
+            sprungOffen: Date() < sprungBis,
+            letzterSprungVor: Date().timeIntervalSince(letzterSprung),
+            pufferWuchsVor: Date().timeIntervalSince(stromPufferWuchs))
+        guard rat == .neuVerbinden else { return }
+
+        // **An derselben Stelle wieder auf.** `oeffnen` baut den Strom neu
+        // auf, ohne die Seite anzufassen — die Steuerung, das Technikschild
+        // und der Takt laufen weiter.
+        stromStehtSeit = nil
+        let stelle = spielstand.position
+        abspieler.oeffnen(plan.url, ab: stelle, puffer: wahlen.puffer)
+        abspieler.bildfuellend(wahlen.bildfuellend)
+        spielstand.spurenGesetzt = false
+    }
+
     /// **Ton- und Untertitelspur werden einmal gesetzt, sobald VLC sie
     /// kennt** (B8).
     ///
@@ -576,20 +761,35 @@ extension App {
     /// Mac benutzt es (`VLCPlayer.swift`), ich hatte es übersehen.
     private func spurenVorwaehlen() {
         let tonWunsch = wahlen.tonSprache
+        var tonPasst = tonWunsch.isEmpty   // keine Vorgabe, also nichts einzuwenden
         if !tonWunsch.isEmpty,
            let treffer = abspieler.tonspuren.first(where: {
                $0.kennung >= 0 && Sprache.passt($0.name, zu: tonWunsch)
            }) {
             abspieler.setzeTonspur(treffer.kennung)
+            tonPasst = true
         }
 
-        // „Automatisch" heisst: Untertitel nur, wenn der Ton nicht in der
-        // gewünschten Sprache läuft. Sonst gilt die feste Vorwahl.
+        // **„Automatisch" schaltet auch ab, nicht nur ein.**
+        //
+        // Hier stand in beiden Faellen ein blankes `return`, und damit blieb
+        // stehen, was der Container vorgewaehlt hatte: bei einer Datei mit
+        // fest eingeschalteten deutschen Untertiteln liefen die weiter,
+        // obwohl der Ton schon Deutsch war. Der Mac schaltet an derselben
+        // Stelle `deselectAllTextTracks()` (`VLCPlayer.swift:1331-1338`) —
+        // „automatisch" heisst dort ausdruecklich: **nur** wenn der Ton nicht
+        // passt.
         let uWunsch = wahlen.untertitelSprache
-        guard !uWunsch.isEmpty else { return }
-        if wahlen.untertitelAutomatisch, !tonWunsch.isEmpty {
-            let tonLaeuft = abspieler.tonspuren.first { $0.kennung == abspieler.tonspur }
-            if let tonLaeuft, Sprache.passt(tonLaeuft.name, zu: tonWunsch) { return }
+        let automatisch = wahlen.untertitelAutomatisch
+        if automatisch, tonPasst {
+            abspieler.setzeUntertitel(-1)
+            return
+        }
+        guard !uWunsch.isEmpty else {
+            // Ohne Wunschsprache nichts erzwingen — ausser „automatisch"
+            // steht an, dann ist „kein Untertitel" die Antwort.
+            if automatisch { abspieler.setzeUntertitel(-1) }
+            return
         }
         if let treffer = abspieler.untertitelspuren.first(where: {
             $0.kennung >= 0 && Sprache.passt($0.name, zu: uWunsch)
@@ -607,14 +807,27 @@ extension App {
             abspieler.setzeZeit(nach)
             spielstand.position = nach
             sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+        letzterSprung = Date()
+            letzterSprung = Date()
             steuerungZeigen()
         case .naechsteFolge:
             naechsteFolge()
         }
     }
 
+    /// **Der Riegel gegen den doppelten Wechsel.**
+    ///
+    /// `Folgenende.weiterschalten` bleibt wahr, sobald die Stelle das Ende
+    /// erreicht hat — und der Takt fragt alle 500 ms. Der Wechsel selbst
+    /// braucht zwei Netzabrufe, also lief er hier mehrfach an: jeder Lauf las
+    /// denselben `laufenderTitel`, holte dieselbe nächste Folge, meldete das
+    /// alte Item noch einmal als gestoppt und öffnete den Spieler erneut.
+    /// Der Kommentar unten behauptete „genau einmal" (C4); ohne diesen Riegel
+    /// stimmte das nicht. iOS und macOS haben ihn seit jeher (`wechselt`).
     func naechsteFolge() {
+        guard !wechselt else { return }
         guard let client, let titel = laufenderTitel, let serie = titel.seriesId else { return }
+        wechselt = true
         let grenze = wahlen.profilBitrate
         Task.detached { [self] in
             guard let naechste = try? await client.folgeNach(itemID: titel.id,
@@ -622,7 +835,10 @@ extension App {
                   let plan = try? await client.playbackPlan(for: naechste.id,
                                                             profile: .vlc(maxBitrate: grenze))
             else {
-                aufHauptfaden { self.melden(uebersetzt("Nächste Folge konnte nicht geladen werden.")) }
+                aufHauptfaden {
+                    self.wechselt = false
+                    self.melden(uebersetzt("Nächste Folge konnte nicht geladen werden."))
+                }
                 return
             }
             aufHauptfaden {
@@ -639,8 +855,18 @@ extension App {
                 }
                 self.laufenderTitel = naechste
                 self.laufenderPlan = plan
+                // **Der Start wird hier gemeldet, nicht von der Schleife.**
+                // Titel und Plan sind in diesem Augenblick bekannt, die Stelle
+                // ist null. Ueberliesse man es dem Takt, kaeme die Meldung erst,
+                // wenn ein Bild steht (C1) — also nach der Pufferzeit der neuen
+                // Datei. iOS und macOS melden hier, und `startGemeldet: true`
+                // gehoert dazu: sonst bliebe der Stand auf „noch nicht
+                // gemeldet" und der Takt eroeffnete die Sitzung ein zweites Mal.
+                Task.detached {
+                    try? await client.reportStart(itemID: naechste.id, plan: plan, ticks: 0)
+                }
                 MainActor.assumeIsolated {
-                    Wiedergabetakt.neuerTitel(&self.spielstand, startGemeldet: false)
+                    Wiedergabetakt.neuerTitel(&self.spielstand, startGemeldet: true)
                 }
                 self.spielstand.erstesBildDa = false
                 self.seitOeffnen = Date()
@@ -652,12 +878,17 @@ extension App {
                 // stehen, deshalb stellt sich die Frage dort nicht.
                 let tempo = self.abspieler.tempo
                 // Die nächste Folge startet **von vorn** (B5).
-                self.abspieler.oeffnen(plan.url, ab: 0)
+                self.abspieler.oeffnen(plan.url, ab: 0, puffer: self.wahlen.puffer)
+                // Was einmal gewaehlt wurde, gilt auch fuer die naechste Folge.
+                self.abspieler.bildfuellend(self.wahlen.bildfuellend)
+                self.technikschildSetzen(self.wahlen.technikschild)
                 self.abspieler.tempo = tempo
                 Task.detached { [self] in
                     let marken = await client.abschnitte(fuer: naechste.id)
                     aufHauptfaden { self.abschnitte = marken }
                 }
+                // Erst jetzt wieder offen: der Wechsel ist durch.
+                self.wechselt = false
             }
         }
     }
@@ -673,6 +904,7 @@ extension App {
         spielstand.position = ziel
         abspieler.setzeZeit(ziel)
         sprungBis = Date().addingTimeInterval(Zeitannahme.sprungriegel)
+        letzterSprung = Date()
         steuerungZeigen()
     }
 
@@ -707,8 +939,10 @@ extension App {
         // **Eine offene Tafel hält die Steuerung.** Wer gerade eine Tonspur
         // sucht, hat den Zeiger stillstehen — das ist kein Grund, ihm die
         // Liste unter der Hand wegzunehmen.
+        // **Und nicht, waehrend jemand den Regler zieht** (B1). Der Mac
+        // nimmt `amRegler` an derselben Stelle aus (`PlayerScreen.swift:257`).
         guard laufenderTitel != nil, spielerSteuerung != nil,
-              spurtafel == nil, spielstand.laeuft else { return }
+              spurtafel == nil, spielstand.laeuft, !amRegler else { return }
         steuerungstakt += 1
         gtk_widget_set_opacity(spielerSteuerung, 0)
         spurwahlSchliessen()
@@ -745,8 +979,11 @@ extension App {
                 // **Der Player kann in den vier Sekunden zugegangen sein.**
                 // Dann steht in `spielerSteuerung` ein abgeräumtes Widget,
                 // und GTK meldet „assertion GTK_IS_WIDGET failed".
+                // **Nicht, waehrend jemand den Regler zieht** (B1: „nur bei
+                // Wiedergabe, nicht beim Schieben"). Der Mac prueft an
+                // derselben Stelle `!amRegler` (`PlayerScreen.swift:707`).
                 guard self.laufenderTitel != nil, self.spielerSteuerung != nil,
-                      self.spurtafel == nil,
+                      self.spurtafel == nil, !self.amRegler,
                       self.steuerungstakt == meins, self.spielstand.laeuft else { return }
                 gtk_widget_set_opacity(self.spielerSteuerung, 0)
                 self.zeigerZeigen(false)
@@ -769,111 +1006,287 @@ extension App {
     ///
     /// „Bild" aus der iPhone-Fassung fehlt mit Absicht: dort steht die Wahl
     /// zwischen fester und freier Ausrichtung, und ein Fenster hat keine (F).
-    private func spurwahlZeigen() {
+    /// **Links waehlen, rechts sehen** — die Form der Mac-Fassung.
+    ///
+    /// Vorher stand alles gleichzeitig ausgeklappt untereinander: jede
+    /// Tonspur, jeder Untertitel, Tempo, Schlafzeit. Bei einer Datei mit acht
+    /// Spuren ist das eine Rolle, in der man den eingestellten Stand suchen
+    /// muss. Jetzt traegt die Leiste links den **aktuellen Wert** neben dem
+    /// Namen, und rechts steht nur, was zum gewaehlten Bereich gehoert.
+    ///
+    /// Die Tafel klappt weiter **unter dem Knopf** auf, aus dem sie stammt
+    /// (E5) — kleine Entscheidungen erscheinen dort, wo sie ausgeloest wurden.
+    func spurwahlZeigen() {
         steuerungZeigen()
-        if let alt = spurtafel {
-            // **Ein Überzug wird über den Überzug entfernt**, nicht über
-            // `gtk_widget_unparent` — der lässt GTKs Buchführung stehen.
-            gtk_overlay_remove_overlay(OpaquePointer(spielerRahmen), alt)
-            spurtafel = nil
+        if spurtafel != nil {
+            // **Ein Ueberzug wird ueber den Ueberzug entfernt**, nicht ueber
+            // `gtk_widget_unparent` — der laesst GTKs Buchfuehrung stehen.
+            spurwahlSchliessen()
             return
         }
-        let tafel = stapel(GTK_ORIENTATION_VERTICAL, abstand: 22)
-        raender(tafel, 20)
+        spurbereich = .ton
+        spurtafelBauen()
+    }
 
-        let ton = abspieler.tonspuren
-        if !ton.isEmpty {
-            let g = spurgruppe(uebersetzt("Ton"), "audio-volume-high-symbolic")
-            let jetzt = abspieler.tonspur
-            for spur in ton {
-                // **„Disable" ist keine Tonspur.** VLC hängt den Eintrag an
-                // jede Liste; für Ton gibt es ihn auf dem Mac nicht, und ein
-                // Film ohne Ton ist auch keine Wahl, die jemand trifft.
-                guard spur.kennung >= 0 else { continue }
-                anhaengen(g.raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetzt) {
-                    [weak self] in
-                    self?.abspieler.setzeTonspur(spur.kennung)
-                    self?.spurwahlSchliessen()
-                })
-            }
-            anhaengen(tafel, g.aussen)
+    /// Baut die Tafel neu auf. Wird auch beim Bereichswechsel gerufen: GTK
+    /// hat kein „Inhalt tauschen" wie SwiftUI, und eine Tafel mit zwei
+    /// Spalten neu zu bauen kostet weniger als ein Ausraeumen von Hand --
+    /// genau die Sorte Schleife, die in `Fallen/` steht.
+    private func spurtafelBauen() {
+        if let alt = spurtafel, spielerRahmen != nil {
+            gtk_overlay_remove_overlay(OpaquePointer(spielerRahmen), alt)
+            spurtafel = nil
         }
 
-        let u = spurgruppe(uebersetzt("Untertitel"), "media-view-subtitles-symbolic")
-        let jetztU = abspieler.untertitelspur
-        anhaengen(u.raum, wahlzeile(uebersetzt("Aus"), gewaehlt: jetztU < 0) { [weak self] in
-            self?.abspieler.setzeUntertitel(-1)
-            self?.spurwahlSchliessen()
+        let spalten = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
+
+        // --- Leiste links ------------------------------------------------
+        // 260 breit, Innenrand 10, Zeilenabstand 4 — `Spurwahl.swift:105,154`.
+        let leiste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 4)
+        gtk_widget_add_css_class(leiste, "swiftly-spurleiste")
+        raender(leiste, 10)
+        gtk_widget_set_size_request(leiste, 260, -1)
+        gtk_widget_set_valign(leiste, GTK_ALIGN_FILL)
+        // **Das Technikschild steht abgesetzt, und es ist ein Schalter.**
+        //
+        // Auf dem Mac trennt eine Haarlinie es von den fuenf Waehlern darueber
+        // und es traegt einen Schalter statt eines Wertes
+        // (`macOS/PlayerScreen.swift`, Wiedergabetafel). Hier stand es als
+        // sechste Wahlzeile mit dem Wert „Aus" — eine Zeile, die aussieht als
+        // klappe sie etwas auf, und dann nur umschaltet.
+        for b in Spurbereich.allCases where b != .technik {
+            anhaengen(leiste, leistenzeile(b))
+        }
+        let tstrich: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_add_css_class(tstrich, "swiftly-trennlinie")
+        gtk_widget_set_size_request(tstrich, -1, 1)
+        gtk_widget_set_margin_top(tstrich, 8)
+        gtk_widget_set_margin_bottom(tstrich, 8)
+        anhaengen(leiste, tstrich)
+
+        // Dieselbe Zeile wie die fuenf darueber, nur mit Schalter statt Wert
+        // (`Spurwahl.swift:133-147`).
+        let tzeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        // Ein Kasten, kein Knopf — die Klassenregel greift nur auf `button`,
+        // also stehen Hoehe und seitlicher Rand hier.
+        gtk_widget_set_size_request(tzeile, -1, 40)
+        gtk_widget_set_margin_start(tzeile, 12)
+        gtk_widget_set_margin_end(tzeile, 12)
+        let tbild: Widget! = gtk_image_new_from_icon_name(Spurbereich.technik.symbol)
+        gtk_image_set_pixel_size(OpaquePointer(tbild), 13)
+        gtk_widget_set_size_request(tbild, 18, -1)
+        gtk_widget_add_css_class(tbild, "swiftly-spurzeichen")
+        anhaengen(tzeile, tbild)
+        let tl = beschriftung(Spurbereich.technik.titel, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(tl), 0)
+        gtk_widget_set_hexpand(tl, 1)
+        anhaengen(tzeile, tl)
+        anhaengen(tzeile, kleinerSchalter(an: wahlen.technikschild) { [weak self] an in
+            guard let self else { return }
+            self.wahlen.technikschild = an
+            self.wahlen.sichern()
+            self.technikschildSetzen(an)
         })
-        for spur in abspieler.untertitelspuren where spur.kennung >= 0 {
-            anhaengen(u.raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetztU) {
-                [weak self] in
-                self?.abspieler.setzeUntertitel(spur.kennung)
-                self?.spurwahlSchliessen()
-            })
-        }
-        anhaengen(tafel, u.aussen)
+        anhaengen(leiste, tzeile)
+        anhaengen(spalten, leiste)
 
-        let t = spurgruppe(uebersetzt("Tempo"), "preferences-system-symbolic")
-        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        let jetztTempo = abspieler.tempo
-        for wert in Tempostufen.werte {
-            let c = chip(Tempostufen.beschriftung(wert), aktiv: abs(jetztTempo - wert) < 0.01)
-            beiSignal(c, "clicked") { [weak self] in
-                self?.abspieler.tempo = wert
-                self?.spurwahlSchliessen()
-            }
-            anhaengen(reihe, c)
-        }
-        anhaengen(t.raum, reihe)
-        anhaengen(tafel, t.aussen)
+        // **Doch ein Strich.** `Spurwahl.swift:79` setzt zwischen die Spalten
+        // `Stil.linie.frame(width: 1)`. Hier stand das Gegenteil als
+        // Kommentar — geschrieben, ohne die Vorlage aufzuschlagen.
+        let spaltenstrich: Widget! = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0)
+        gtk_widget_add_css_class(spaltenstrich, "swiftly-trennlinie")
+        gtk_widget_set_size_request(spaltenstrich, 1, -1)
+        anhaengen(spalten, spaltenstrich)
 
-        let sz = spurgruppe(uebersetzt("Schlafzeit"), "weather-clear-night-symbolic")
-        let szReihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
-        let aus = chip(uebersetzt("Aus"), aktiv: schlafminuten == nil)
-        beiSignal(aus, "clicked") { [weak self] in
-            self?.schlafminuten = nil
-            self?.spurwahlSchliessen()
-        }
-        anhaengen(szReihe, aus)
-        for minuten in Schlafzeiten.werte {
-            let c = chip("\(minuten)", aktiv: schlafminuten == minuten)
-            beiSignal(c, "clicked") { [weak self] in
-                self?.schlafzeitSetzen(minuten)
-                self?.spurwahlSchliessen()
-            }
-            anhaengen(szReihe, c)
-        }
-        anhaengen(sz.raum, szReihe)
-        anhaengen(tafel, sz.aussen)
+        // --- Auswahl rechts ----------------------------------------------
+        // Innenrand 18 — `Spurwahl.swift:81`.
+        let rechts = stapel(GTK_ORIENTATION_VERTICAL, abstand: 8)
+        raender(rechts, 18)
+        gtk_widget_set_hexpand(rechts, 1)
+        // **Ohne Rubrik.** Welcher Bereich gemeint ist, sagt die
+        // hervorgehobene Zeile links — die Ueberschrift daneben wiederholt sie
+        // nur. Auf dem Mac steht dort keine.
+        let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        anhaengen(rechts, raum)
+        auswahlFuellen(raum)
 
         // **Eine Tonspurliste kann lang sein — vierzig Untertitel sind
-        // normal.** Ohne Scroller wächst die Tafel über den Bildschirmrand
-        // hinaus, und was unten steht, ist nicht erreichbar. Der Scroller
-        // trägt die Höhengrenze, nicht die Tafel: so bleibt sie bei kurzen
-        // Listen so hoch wie ihr Inhalt.
+        // normal.** Der Scroller traegt die Hoehengrenze, nicht die Tafel: so
+        // bleibt sie bei kurzen Listen so hoch wie ihr Inhalt.
         let rolle: Widget! = gtk_scrolled_window_new()
+        // **`EXTERNAL`, nicht `AUTOMATIC`** (E4): scrollen ja, Leiste nein.
+        // Das war die einzige Scrollflaeche der App mit einem echten
+        // Systembalken — bei einem Titel mit vierzig Untertiteln stand er da.
+        // Der Mac setzt an derselben Stelle `.scrollIndicators(.never)`
+        // (`Spurwahl.swift:86`).
         gtk_scrolled_window_set_policy(OpaquePointer(rolle),
-                                       GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
+                                       GTK_POLICY_NEVER, GTK_POLICY_EXTERNAL)
         gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(rolle), 1)
-        gtk_scrolled_window_set_max_content_height(OpaquePointer(rolle), 520)
-        gtk_scrolled_window_set_child(OpaquePointer(rolle), tafel)
+        gtk_scrolled_window_set_max_content_height(OpaquePointer(rolle), 420)
+        gtk_scrolled_window_set_child(OpaquePointer(rolle), rechts)
         weichesScrollen(rolle)
+        gtk_widget_set_hexpand(rolle, 1)
+        anhaengen(spalten, rolle)
 
         let rahmen: Widget! = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
         gtk_widget_add_css_class(rahmen, "swiftly-tafel")
-        anhaengen(rahmen, rolle)
-        gtk_widget_set_size_request(rahmen, 320, -1)
+        anhaengen(rahmen, spalten)
+        // 660 breit — `Spurwahl.swift:88`.
+        gtk_widget_set_size_request(rahmen, 660, -1)
         gtk_widget_set_halign(rahmen, GTK_ALIGN_END)
         gtk_widget_set_valign(rahmen, GTK_ALIGN_START)
-        // Die Tafel klappt **unter dem Knopf** auf, aus dem sie stammt (E5).
-        // 18 oben plus 28 Knopfhöhe plus 18 Abstand — der Versatz vom Mac.
+        // 18 oben plus 28 Knopfhoehe plus 18 Abstand — der Versatz vom Mac.
         gtk_widget_set_margin_top(rahmen, 64)
         gtk_widget_set_margin_end(rahmen, 22)
         gtk_widget_set_margin_bottom(rahmen, 22)
 
         spurtafel = rahmen
         gtk_overlay_add_overlay(OpaquePointer(spielerRahmen), rahmen)
+    }
+
+    /// Eine Zeile der Leiste: Zeichen, Name und der Stand.
+    /// **Eine eigene Klasse, nicht `swiftly-wertzeile`.** Die traegt 48
+    /// Punkt Einzug links, weil sie in den Einstellungen unter einem Symbol
+    /// beginnt, das es hier nicht gibt — in der Tafel stand der Text dadurch
+    /// eine halbe Spaltenbreite von seinem Zeichen entfernt.
+    private func leistenzeile(_ b: Spurbereich) -> Widget! {
+        let knopf: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(knopf, "swiftly-spurzeile")
+        if b == spurbereich { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
+        // Abstand 10, Zeichen in 18 Punkt Spalte — `Spurwahl.swift:110-114`.
+        let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 10)
+        let bild: Widget! = gtk_image_new_from_icon_name(b.symbol)
+        gtk_image_set_pixel_size(OpaquePointer(bild), 13)
+        gtk_widget_set_size_request(bild, 18, -1)
+        anhaengen(reihe, bild)
+        let l = beschriftung(b.titel, stil: "swiftly-koerper")
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        anhaengen(reihe, l)
+        let fueller = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
+        gtk_widget_set_hexpand(fueller, 1)
+        anhaengen(reihe, fueller)
+        let w = beschriftung(spurwert(b), stil: "swiftly-leise")
+        gtk_label_set_ellipsize(OpaquePointer(w), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(w), 18)
+        anhaengen(reihe, w)
+        gtk_button_set_child(alsKnopf(knopf), reihe)
+        beiSignal(knopf, "clicked") { [weak self] in
+            guard let self, self.spurbereich != b else { return }
+            self.spurbereich = b
+            self.spurtafelBauen()
+        }
+        return knopf
+    }
+
+    /// **Der Stand neben dem Namen — das ist der ganze Punkt der Leiste.**
+    private func spurwert(_ b: Spurbereich) -> String {
+        switch b {
+        case .ton:
+            let jetzt = abspieler.tonspur
+            return abspieler.tonspuren.first { $0.kennung == jetzt }?.name
+                ?? uebersetzt("Keine")
+        case .untertitel:
+            let jetzt = abspieler.untertitelspur
+            guard jetzt >= 0 else { return uebersetzt("Aus") }
+            return abspieler.untertitelspuren.first { $0.kennung == jetzt }?.name
+                ?? uebersetzt("Aus")
+        case .bildformat:
+            return uebersetzt(wahlen.bildfuellend ? "Formatfüllend" : "Ganzes Bild")
+        case .tempo:
+            return Tempostufen.beschriftung(abspieler.tempo)
+        case .schlafzeit:
+            return schlafminuten.map { "\($0)" } ?? uebersetzt("Aus")
+        case .technik:
+            return uebersetzt(wahlen.technikschild ? "An" : "Aus")
+        }
+    }
+
+    /// Was rechts steht — nur der gewaehlte Bereich.
+    private func auswahlFuellen(_ raum: Widget!) {
+        switch spurbereich {
+        case .ton:
+            let jetzt = abspieler.tonspur
+            for spur in abspieler.tonspuren {
+                // **„Disable" ist keine Tonspur.** VLC haengt den Eintrag an
+                // jede Liste; fuer Ton gibt es ihn auf dem Mac nicht, und ein
+                // Film ohne Ton ist auch keine Wahl, die jemand trifft.
+                guard spur.kennung >= 0 else { continue }
+                anhaengen(raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetzt) {
+                    [weak self] in
+                    self?.abspieler.setzeTonspur(spur.kennung)
+                    self?.spurtafelBauen()
+                })
+            }
+        case .untertitel:
+            let jetzt = abspieler.untertitelspur
+            anhaengen(raum, wahlzeile(uebersetzt("Aus"), gewaehlt: jetzt < 0) { [weak self] in
+                self?.abspieler.setzeUntertitel(-1)
+                self?.spurtafelBauen()
+            })
+            for spur in abspieler.untertitelspuren where spur.kennung >= 0 {
+                anhaengen(raum, wahlzeile(spur.name, gewaehlt: spur.kennung == jetzt) {
+                    [weak self] in
+                    self?.abspieler.setzeUntertitel(spur.kennung)
+                    self?.spurtafelBauen()
+                })
+            }
+        case .bildformat:
+            anhaengen(raum, wahlzeile(uebersetzt("Ganzes Bild"),
+                                      gewaehlt: !wahlen.bildfuellend) { [weak self] in
+                guard let self else { return }
+                self.wahlen.bildfuellend = false
+                self.wahlen.sichern()
+                self.abspieler.bildfuellend(false)
+                self.spurtafelBauen()
+            })
+            anhaengen(raum, wahlzeile(uebersetzt("Formatfüllend"),
+                                      gewaehlt: wahlen.bildfuellend) { [weak self] in
+                guard let self else { return }
+                self.wahlen.bildfuellend = true
+                self.wahlen.sichern()
+                self.abspieler.bildfuellend(true)
+                self.spurtafelBauen()
+            })
+        case .tempo:
+            let jetzt = abspieler.tempo
+            for wert in Tempostufen.werte {
+                anhaengen(raum, wahlzeile(Tempostufen.beschriftung(wert),
+                                          gewaehlt: abs(jetzt - wert) < 0.01) { [weak self] in
+                    self?.abspieler.tempo = wert
+                    self?.spurtafelBauen()
+                })
+            }
+        case .schlafzeit:
+            anhaengen(raum, wahlzeile(uebersetzt("Aus"),
+                                      gewaehlt: schlafminuten == nil) { [weak self] in
+                self?.schlafminuten = nil
+                self?.spurtafelBauen()
+            })
+            for minuten in Schlafzeiten.werte {
+                anhaengen(raum, wahlzeile("\(minuten)",
+                                          gewaehlt: schlafminuten == minuten) { [weak self] in
+                    self?.schlafzeitSetzen(minuten)
+                    self?.spurtafelBauen()
+                })
+            }
+        case .technik:
+            anhaengen(raum, wahlzeile(uebersetzt("Anzeigen"),
+                                      gewaehlt: wahlen.technikschild) { [weak self] in
+                guard let self else { return }
+                self.wahlen.technikschild = true
+                self.wahlen.sichern()
+                self.technikschildSetzen(true)
+                self.spurtafelBauen()
+            })
+            anhaengen(raum, wahlzeile(uebersetzt("Aus"),
+                                      gewaehlt: !wahlen.technikschild) { [weak self] in
+                guard let self else { return }
+                self.wahlen.technikschild = false
+                self.wahlen.sichern()
+                self.technikschildSetzen(false)
+                self.spurtafelBauen()
+            })
+        }
     }
 
     func spurwahlSchliessen() {

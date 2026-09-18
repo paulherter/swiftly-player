@@ -25,3 +25,33 @@ public extension URL {
         return teile.url?.absoluteString ?? absoluteString
     }
 }
+
+/// **Unter welchem Namen ein Bild gemerkt wird** — G3, Kehrseite.
+///
+/// Jede Bildadresse trägt `ApiKey`. Nimmt man sie roh als Schlüssel, heisst
+/// dasselbe Plakat nach einem Kontowechsel plötzlich anders: der ganze
+/// Speicher ist auf einen Schlag kalt, jede Kachel wird neu geholt, und die
+/// alten Einträge liegen weiter, bis sie hinten herausfallen. Bei zwei Konten
+/// ist das die Hälfte des Platzes.
+///
+/// **Ein Bild gehört keinem Konto.** Der Server gibt es unter derselben
+/// Kennung heraus, und Jellyfins `tag` bleibt im Schlüssel — eine geänderte
+/// Fassung fällt also weiterhin auf. Geholt wird mit dem vollen Weg, gemerkt
+/// ohne das Merkmal.
+///
+/// Das ist die andere Hälfte von G3: beim `Serienspeicher` gehört das Konto
+/// in den Schlüssel, weil ein `Item` den Sehstand trägt. Ein Bild trägt keinen.
+public enum Bildschluessel {
+
+    public static func fuer(_ url: URL) -> String {
+        guard var teile = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let werte = teile.queryItems, werte.contains(where: { merkmal($0.name) })
+        else { return url.absoluteString }
+        teile.queryItems = werte.filter { !merkmal($0.name) }
+        return (teile.url ?? url).absoluteString
+    }
+
+    private static func merkmal(_ name: String) -> Bool {
+        name == "ApiKey" || name == "api_key"
+    }
+}

@@ -17,7 +17,12 @@ param(
     [string]$Vlc = 'C:\Werkzeuge\vlcsdk',
     [string]$VlcLaufzeit = 'C:\Werkzeuge\vlc\vlc-3.0.21',
     [string]$SwiftLaufzeit = 'C:\Swift\Runtimes\6.2.1\usr\bin',
-    [string]$Rlottie = 'C:\Werkzeuge\rlottie'
+    [string]$Rlottie = 'C:\Werkzeuge\rlottie',
+    # **Symbole zum Nachschlagen von Abstuerzen.** Ohne das entsteht keine
+    # PDB, und ein Versatz aus dem Ereignisprotokoll laesst sich nicht in
+    # einen Funktionsnamen aufloesen — genau daran ist die Suche nach dem
+    # Startabsturz am 05.09.2026 zuerst gescheitert.
+    [switch]$Symbole
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,10 +112,18 @@ $ccFlaggen += @('-Xcc', '-DRLOTTIE_BUILD')
 # entstandene `.res` wird wie eine Bibliothek dazugebunden.
 $res = Join-Path $hier 'Mittel\swiftly.res'
 & rc.exe /nologo /fo $res (Join-Path $hier 'Mittel\swiftly.rc') | Out-Null
-if (Test-Path $res) { $binderFlaggen += @('-Xlinker', $res) }
 
+# **Erst die Liste, dann anhaengen.** Hier stand das Anhaengen der `.res`
+# *vor* dieser Zuweisung — sie hat es jedesmal weggeworfen, und das
+# Programmsymbol war in keinem Bau drin.
 $binderFlaggen = @('-Xlinker', "/LIBPATH:$Gtk\lib", '-Xlinker', "/LIBPATH:$Vlc\lib",
                    '-Xlinker', "/LIBPATH:$Rlottie\lib")
+if (Test-Path $res) { $binderFlaggen += @('-Xlinker', $res) }
+
+if ($Symbole) {
+    $ccFlaggen += @('-Xswiftc', '-g', '-Xswiftc', '-debug-info-format=codeview')
+    $binderFlaggen += @('-Xlinker', '/DEBUG')
+}
 
 # **Kein Konsolenfenster im ausgelieferten Bau.** Swift baut sonst ein
 # Konsolenprogramm, und beim Doppelklick stuende ein schwarzes Fenster daneben.
@@ -121,6 +134,23 @@ if ($Konfiguration -eq 'release') {
 
 # ---------------------------------------------------------------- Bauen
 
+# **Eine laufende App haelt ihre eigene .exe fest.**
+#
+# Windows sperrt das Programm, solange es laeuft; der Binder scheitert dann
+# mit `failed to write output ... permission denied`, und das liest sich wie
+# ein Rechteproblem am Verzeichnis. Es ist keines -- es ist die vorige
+# Fassung, die noch offen ist. Am 08.09.2026 genau daran haengengeblieben.
+$laeuft = Get-Process -Name 'SwiftlyWindows' -ErrorAction SilentlyContinue
+if ($laeuft) {
+    Sag "laufende Fassung beenden ($($laeuft.Count))"
+    $laeuft | Stop-Process -Force
+    # `Stop-Process` kehrt zurueck, bevor das Handle wirklich zu ist.
+    for ($i = 0; $i -lt 40; $i++) {
+        if (-not (Get-Process -Name 'SwiftlyWindows' -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 100
+    }
+}
+
 Sag "Bauen ($Konfiguration)"
 Push-Location $hier
 try {
@@ -128,8 +158,24 @@ try {
     # sonst nur im Fenster, und wer den Bau aus einem Skript ruft, sieht sie
     # nicht.
     $protokoll = Join-Path $hier 'bau.log'
+    # **Eine Warnung von swift.exe darf den Bau nicht abbrechen.**
+    #
+    # Am 08.09.2026 gefunden, und die Kette war unangenehm indirekt: ohne
+    # Entwicklermodus laesst Windows keine Symlinks zu, also kann SwiftPM
+    # `.build\debug` nicht anlegen und schreibt eine *Warnung* nach stderr
+    # (Win32Error 1314). `$ErrorActionPreference = 'Stop'` macht aus jeder
+    # stderr-Zeile eines fremden Programms einen abbrechenden Fehler -- das
+    # Skript endete also direkt nach dem Bau, schrieb den Starter nie und
+    # startete nichts. Es sah aus, als startete die App nicht; in Wahrheit
+    # wurde sie nie aufgerufen.
+    #
+    # `SilentlyContinue` gilt nur fuer diesen einen Aufruf. Ob der Bau
+    # geklappt hat, sagt `$LASTEXITCODE` -- und der wird gleich geprueft.
+    $vorher = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
     & swift build -c $Konfiguration @ccFlaggen @binderFlaggen 2>&1 |
         Tee-Object -FilePath $protokoll
+    $ErrorActionPreference = $vorher
     if ($LASTEXITCODE -ne 0) {
         Write-Host "--- Fehler aus $protokoll ---" -ForegroundColor Red
         Select-String -Path $protokoll -Pattern 'error:' |
@@ -152,7 +198,25 @@ try {
 # Verzeichnis. Dazu die Swift-Laufzeit — ohne sie meldet Windows nur
 # „Foundation.dll was not found", was nach einem Fehler im Programm aussieht.
 
+# **Der bequeme Pfad ist nicht immer da.** `.build\debug` ist ein Symlink,
+# den SwiftPM anlegt -- und ohne Entwicklermodus darf es das unter Windows
+# nicht (Win32Error 1314). Dann liegt das Ergebnis nur unter dem vollen
+# Dreiklang, und ein Skript, das stur auf `.build\debug` zeigt, findet
+# nichts und sagt nicht warum.
 $bau = Join-Path $hier ".build\$Konfiguration"
+if (-not (Test-Path (Join-Path $bau 'SwiftlyWindows.exe'))) {
+    $treffer = Get-ChildItem -Path (Join-Path $hier '.build') -Recurse `
+        -Filter 'SwiftlyWindows.exe' -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -like "*\$Konfiguration\*" } |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($treffer) {
+        $bau = $treffer.DirectoryName
+        Sag "ohne Symlink gebaut, Ergebnis unter $bau"
+    } else {
+        throw "SwiftlyWindows.exe nicht gefunden -- weder unter .build\$Konfiguration noch darunter."
+    }
+}
+
 Sag 'Starter schreiben'
 $starter = @"
 @echo off

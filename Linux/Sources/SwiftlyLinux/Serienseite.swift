@@ -26,45 +26,105 @@ extension App {
         // Folgenzeile nur bis 24 vor die Kante — auf dem Mac läuft sie über
         // die ganze Breite. Den Rand tragen die Zeilen selbst, als
         // Innenabstand, damit ihr Grund darunter durchläuft.
-        let inhaltraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
 
         var gewaehlt: Reiter = .folgen
         var reiterknoepfe: [Widget?] = []
 
+        // **Linksbuendig mit 26 Abstand** — `Reiterreihe` auf dem Mac
+        // (`SerienView.swift:495`): `HStack(spacing: 26)` und ein `Spacer`
+        // dahinter, die Knoepfe ohne `maxWidth`.
+        //
+        // Hier stand das am 13.09.2026 schon richtig. Ich habe es auf Drittel
+        // umgebaut, weil ich einen Bildschirmabzug des Macs falsch gelesen
+        // hatte — und damit den Unterschied erst erzeugt, den ich beheben
+        // wollte. Der Quelltext ist die Vorlage; ein Abzug, der ihm
+        // widerspricht, wird nachgelesen, nicht nachgebaut.
         let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 26)
         gtk_widget_set_margin_start(zeile, Int32(Stil.randAbstand))
         gtk_widget_set_margin_end(zeile, Int32(Stil.randAbstand))
         for fall in Reiter.allCases {
             let knopf = reiterknopf(fall.beschriftung, aktiv: fall == gewaehlt)
             reiterknoepfe.append(knopf)
+            // **Nur umschalten, nicht selbst anmalen.** Die Hervorhebung
+            // stand hier und lief damit nur ueber den Klick; wer den Reiter
+            // anders wechselt — das Fernsteuerpult, spaeter eine Taste —,
+            // sah den Inhalt umspringen und den Strich unter „Folgen"
+            // stehenbleiben. Sie gehoert dorthin, wo umgeschaltet wird.
             beiSignal(knopf, "clicked") { [weak self] in
-                guard let self else { return }
-                gewaehlt = fall
-                for (i, f) in Reiter.allCases.enumerated() {
-                    guard let k = reiterknoepfe[i] else { continue }
-                    if f == fall { gtk_widget_add_css_class(k, "swiftly-aktiv") }
-                    else { gtk_widget_remove_css_class(k, "swiftly-aktiv") }
-                }
-                self.reiterInhalt(fall, serie: serie, in: inhaltraum)
+                self?.reiterZeigen?(fall)
             }
             anhaengen(zeile, knopf)
         }
         anhaengen(reiterraum, zeile)
-        // **Ohne Haarlinie darunter.** Auf dem Mac läuft sie über die volle
-        // Breite; Paul wollte sie weg, weil sie über den Inhalt hinausreicht
-        // und nichts trennt, was nicht der Akzentstrich schon zeigt. Das ist
-        // eine bewusste Abweichung — zurück ist es eine Zeile.
+        // **Die Haarlinie über die volle Breite**, wie auf dem Mac
+        // (`SerienView.swift:504`). Hier stand sie einmal nicht, mit dem
+        // Vermerk, das sei „eine bewusste Abweichung — zurück ist es eine
+        // Zeile". Aufwand ist keiner der drei Gründe, die Abschnitt F
+        // zulässt; hier ist die Zeile.
+        let reiterlinie: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+        gtk_widget_add_css_class(reiterlinie, "swiftly-trennlinie")
+        gtk_widget_set_size_request(reiterlinie, -1, 1)
+        anhaengen(reiterraum, reiterlinie)
 
         anhaengen(unten, reiterraum)
-        anhaengen(unten, inhaltraum)
-        reiterInhalt(.folgen, serie: serie, in: inhaltraum)
+
+        // **Ein Stapel, kein Abriss.**
+        //
+        // Vorher raeumte jeder Reiterwechsel `inhaltraum` leer und baute ihn
+        // neu. Damit aendert sich die Hoehe des ganzen Scrollinhalts in einem
+        // Zug — von einer langen Folgenliste auf eine kurze Besetzungsreihe —,
+        // GTK teilt die Seite neu zu, und die Zeichenflaeche der Kulisse geht
+        // durch eine Zwischengroesse. Von aussen: das Kopfbild verschwindet
+        // kurz und kommt wieder. Genau das hat Paul zweimal gemeldet.
+        //
+        // Ein `GtkStack` haelt die drei Seiten nebeneinander und blendet
+        // zwischen ihnen um; oben aendert sich nichts. Nebenbei faellt damit
+        // das Neuladen weg: „Besetzung" und „Aehnliches" holten bisher bei
+        // jedem Wechsel neu, obwohl sie schon dastanden.
+        let reiterstapel: Widget! = gtk_stack_new()
+        // Sonst malt ihn die `stack`-Regel im Stilblatt deckend in `grund`
+        // und schneidet den auslaufenden Seitenton ab.
+        gtk_widget_add_css_class(reiterstapel, "swiftly-reiterstapel")
+        gtk_stack_set_transition_type(alsStapel(reiterstapel),
+                                      GTK_STACK_TRANSITION_TYPE_NONE)
+        gtk_stack_set_transition_duration(alsStapel(reiterstapel),
+                                          UInt32(Stil.zeitBlende * 1000))
+        // **Gleich hoch bleiben.** Ohne das nimmt der Stapel die Hoehe der
+        // sichtbaren Seite, und die Seite springt beim Wechsel doch wieder.
+        gtk_stack_set_vhomogeneous(alsStapel(reiterstapel), 0)
+        anhaengen(unten, reiterstapel)
+
+        var gebaut: Set<String> = []
+        let zeigen: (Reiter) -> Void = { [weak self] fall in
+            guard let self else { return }
+            gewaehlt = fall
+            for (i, f) in Reiter.allCases.enumerated() {
+                guard let k = reiterknoepfe[i] else { continue }
+                if f == fall { gtk_widget_add_css_class(k, "swiftly-aktiv") }
+                else { gtk_widget_remove_css_class(k, "swiftly-aktiv") }
+            }
+            let name = String(describing: fall)
+            if !gebaut.contains(name) {
+                gebaut.insert(name)
+                let raum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 18)
+                gtk_stack_add_named(alsStapel(reiterstapel), raum, name)
+                self.reiterInhalt(fall, serie: serie, in: raum)
+            }
+            gtk_stack_set_visible_child_name(alsStapel(reiterstapel), name)
+        }
+        reiterZeigen = zeigen
+        zeigen(.folgen)
+        // Damit das Fernsteuerpult den Reiter wechseln kann, ohne zu klicken.
+        reiterWaehlen = zeigen
     }
 
     private func reiterInhalt(_ was: Reiter, serie: Item, in raum: Widget!) {
         leeren(raum)
         switch was {
         case .folgen:
-            anhaengen(raum, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
+            // **Kein Ladering und kein „Lade …"** (E17), sondern drei
+            // Folgenzeilen in ihrer Form.
+            anhaengen(raum, folgenPlatzhalter(rand: Stil.randAbstand))
             staffelnLaden(serie, in: raum)
         case .besetzung:
             if serie.darsteller.isEmpty {
@@ -72,10 +132,10 @@ extension App {
                 gtk_widget_set_margin_start(leer, Int32(Stil.randAbstand))
                 anhaengen(raum, leer)
             } else {
-                anhaengen(raum, besetzungsreihe(serie.darsteller))
+                anhaengen(raum, besetzungsreihe(serie.darsteller, herkunft: serie.name))
             }
         case .aehnliches:
-            anhaengen(raum, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
+            anhaengen(raum, rasterPlatzhalter(rand: Stil.randAbstand))
             aehnlicheNachladen(serie, in: raum, leeren: true, alsRaster: true)
         }
     }
@@ -84,107 +144,221 @@ extension App {
 
     private func staffelnLaden(_ serie: Item, in raum: Widget!) {
         guard let client else { return }
+        let id = startStaffel
+        let nummer = startStaffelNummer
+        // **Der Stand nur, wenn kein Hinweis kam** (A10). Ein Abruf, den
+        // niemand liest, kostet auf jeder Serienseite eine Anfrage.
+        let brauchtStand = Staffelwahlregel.brauchtStand(hinweisID: id, hinweisNummer: nummer)
+
         // **Schon geholt heisst: sofort da.** Kein Lader, kein Sprung.
-        if let schon = staffelspeicher[serie.id], !schon.isEmpty {
-            staffelnZeigen(schon, serie: serie, in: raum)
+        if let schon = staffelspeicher[serie.id], !schon.isEmpty, !brauchtStand {
+            staffelnZeigen(schon, serie: serie, in: raum,
+                           gewaehlt: Staffelwahlregel.waehle(aus: schon, hinweisID: id,
+                                                             hinweisNummer: nummer))
             return
         }
         let kiste = gehalten(raum)
         Task.detached { [self] in
-            let staffeln = (try? await client.staffeln(seriesID: serie.id)) ?? []
+            // Beides nebenher: der Stand haengt nicht an den Staffeln.
+            async let staffelnRoh = try? await client.staffeln(seriesID: serie.id)
+            async let standRoh = brauchtStand ? await client.standInSerie(serie.id) : nil
+            let staffeln = await staffelnRoh ?? []
+            let stand = await standRoh
+            let gewaehlt = Staffelwahlregel.waehle(aus: staffeln, hinweisID: id,
+                                                   hinweisNummer: nummer, stand: stand)
             aufHauptfaden {
                 defer { losgelassen(kiste) }
                 self.staffelspeicher[serie.id] = staffeln
-                self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget)
+                self.staffelnZeigen(staffeln, serie: serie, in: kiste.widget,
+                                    gewaehlt: gewaehlt)
             }
         }
     }
 
-    private func staffelnZeigen(_ staffeln: [Item], serie: Item, in raum: Widget!) {
+    private func staffelnZeigen(_ staffeln: [Item], serie: Item, in raum: Widget!,
+                                gewaehlt: Item?) {
         leeren(raum)
         guard !staffeln.isEmpty else {
             anhaengen(raum, beschriftung(uebersetzt("Keine Staffeln gefunden."), stil: "swiftly-koerper"))
             return
         }
-        // Mit welcher Staffel geöffnet wird: der über eine Folge gewählten,
-        // sonst der ersten.
+        // **Welche Staffel dasteht, entscheidet der Weg auf die Seite** (A10).
+        // Die Rechnung liegt im Paket (`Staffelwahlregel`), damit sie auf
+        // jeder Plattform dieselbe Antwort gibt; hier stand vorher nur ein
+        // Kennungsvergleich mit Rückfall auf `staffeln[0]`, also Staffel 1 —
+        // während der Hauptknopf daneben „Weiterschauen S6E1" sagte.
         let wahl = Staffelwahl()
-        wahl.jetzt = staffeln.first { $0.id == startStaffel } ?? staffeln[0]
+        wahl.jetzt = gewaehlt ?? staffeln[0]
         offeneStaffel = wahl.jetzt
 
+        // **Mit Winkel, und der zeigt den Zustand.** Auf dem Mac trägt der
+        // Chip `chevron.down`, offen `chevron.up` (`SerienView.swift:548`);
+        // hier stand ein nacktes Textlabel, dem man nicht ansieht, dass es
+        // etwas aufklappt.
         let pille: Widget! = gtk_button_new()
         gtk_widget_add_css_class(pille, "swiftly-chip")
         gtk_widget_set_halign(pille, GTK_ALIGN_START)
-        gtk_button_set_label(alsKnopf(pille), wahl.jetzt?.name ?? "")
+        let pilleninhalt = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 6)
+        let pillentext = beschriftung(wahl.jetzt?.name ?? uebersetzt("Staffel"))
+        // Ein Winkel, kein Pfeil — `chevron.down` auf dem Mac.
+        let pillenwinkel: Widget! = gtk_image_new_from_icon_name("pan-down-symbolic")
+        anhaengen(pilleninhalt, pillentext)
+        anhaengen(pilleninhalt, pillenwinkel)
+        gtk_button_set_child(alsKnopf(pille), pilleninhalt)
         // Nur bei mehr als einer Staffel ist eine Wahl zu treffen.
         // **Bei einer Staffel gibt es nichts zu waehlen.** Der Mac blendet
         // die Pille dann ganz aus; ausgegraut stehen zu lassen sieht aus wie
         // ein Knopf, der klemmt.
-        gtk_widget_set_visible(pille, staffeln.count > 1 ? 1 : 0)
+        // Die Beschriftung bleibt auch bei einer Staffel stehen — nur der
+        // Winkel faellt weg, weil es nichts zu waehlen gibt.
+        gtk_widget_set_visible(pille, staffeln.isEmpty ? 0 : 1)
+        gtk_widget_set_visible(pillenwinkel, staffeln.count > 1 ? 1 : 0)
 
         let folgenraum = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
+
+        // **Kein Blatt, sondern eine Liste an Ort und Stelle.**
+        //
+        // Hier stand ein `GtkPopover`, und der Kommentar daneben behauptete,
+        // der Mac zeige dort ein Blatt. Er zeigt keines: `Staffelwahl`
+        // (`Sources/macOS/SerienView.swift:541`) klappt die Liste **im
+        // Seitenfluss** unter dem Chip auf, und der Doc-Kommentar sagt
+        // ausdrücklich, warum — „ein `Menu` wäre hier das Naheliegende und
+        // genau deshalb falsch: es bringt Systemmaße, Systemecken und ein
+        // Systemmaterial mit". Ein GTK-Popover bringt genau dieselben drei
+        // Dinge mit. Dass alles darunter mitwandert, ist kein Nebeneffekt,
+        // sondern das Verhalten der Vorlage.
+        //
+        // 220 breit, Innenrand 4 senkrecht, `erhoeht` mit `eckeFeld` und
+        // einer Haarlinie — alles aus `SerienView.swift:554–566`.
+        let wahlblock = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_set_halign(wahlblock, GTK_ALIGN_START)
+        anhaengen(wahlblock, pille)
+
+        let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
+        gtk_widget_add_css_class(liste, "swiftly-staffelliste")
+        gtk_widget_set_size_request(liste, 220, -1)
+        gtk_widget_set_halign(liste, GTK_ALIGN_START)
+
+        // Der Mac fährt sie mit `Stil.zeitSprung` (snappy, 0,22 s) von oben
+        // herein und blendet sie dabei ein; ein `GtkRevealer` mit
+        // `SLIDE_DOWN` ist das nächstliegende Gegenstück.
+        let aufklapp: Widget! = gtk_revealer_new()
+        gtk_revealer_set_transition_type(alsAufklapp(aufklapp),
+                                         GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN)
+        gtk_revealer_set_transition_duration(alsAufklapp(aufklapp), 220)
+        gtk_revealer_set_child(alsAufklapp(aufklapp), liste)
+        gtk_widget_set_margin_top(aufklapp, 8)
+        gtk_widget_set_halign(aufklapp, GTK_ALIGN_START)
+        anhaengen(wahlblock, aufklapp)
 
         // **Einmal angelegt, nicht bei jedem Klick.** Vorher entstand hier je
         // Klick eine neue Tafel, die am Knopf hängenblieb; beim Verlassen der
         // Seite meldete GTK „Finalizing GtkButton, but it still has children
         // left" und ließ einen Zeiger stehen. Genau daran ist die App beim
         // Öffnen einer Serie gestorben.
-        let liste = stapel(GTK_ORIENTATION_VERTICAL, abstand: 0)
-        gtk_widget_set_size_request(liste, 200, -1)
-        let tafel = tafelAn(pille)
-        gtk_popover_set_child(alsTafel(tafel), liste)
-
-        // **Eine Tafel, kein aufklappender Kasten in der Seite.** Auf dem Mac
-        // erscheint die Staffelliste als Blatt über der Pille — dieselbe
-        // Form wie beim Mehr-Knopf, und dieselbe Regel: kleine
-        // Entscheidungen erscheinen dort, wo sie ausgelöst wurden (E5). Mein
-        // erster Versuch schob sie als Liste in den Seitenfluss und verschob
-        // dabei alles darunter.
-        beiSignal(pille, "clicked") { [weak self] in
-            guard let self else { return }
-            leeren(liste)
-            for staffel in staffeln {
-                let gewaehlt = staffel.id == wahl.jetzt?.id
-                anhaengen(liste, self.staffelzeile(staffel.name, gewaehlt: gewaehlt) {
-                    [weak self] in
-                    wahl.jetzt = staffel
-                    self?.offeneStaffel = staffel
-                    self?.detailBeruehrt = true
-                    gtk_button_set_label(alsKnopf(pille), staffel.name)
-                    gtk_popover_popdown(alsTafel(tafel))
-                    self?.folgenLaden(serie: serie, staffel: staffel, in: folgenraum)
-                })
+        var zeilen: [String: Widget?] = [:]
+        for staffel in staffeln {
+            let zeile = staffelzeile(staffel.name,
+                                     gewaehlt: staffel.id == wahl.jetzt?.id) { [weak self] in
+                guard let self else { return }
+                wahl.jetzt = staffel
+                self.offeneStaffel = staffel
+                self.detailBeruehrt = true
+                gtk_label_set_text(OpaquePointer(pillentext), staffel.name)
+                for (kennung, w) in zeilen {
+                    self.staffelzeileMalen(w, gewaehlt: kennung == staffel.id)
+                }
+                gtk_revealer_set_reveal_child(alsAufklapp(aufklapp), 0)
+                gtk_image_set_from_icon_name(OpaquePointer(pillenwinkel), "pan-down-symbolic")
+                self.folgenLaden(serie: serie, staffel: staffel, in: folgenraum)
             }
-            gtk_popover_popup(alsTafel(tafel))
+            zeilen[staffel.id] = zeile
+            anhaengen(liste, zeile)
         }
 
-        gtk_widget_set_margin_start(pille, Int32(Stil.randAbstand))
-        anhaengen(raum, pille)
+        beiSignal(pille, "clicked") {
+            guard staffeln.count > 1 else { return }
+            let offen = gtk_revealer_get_reveal_child(alsAufklapp(aufklapp)) == 0
+            gtk_revealer_set_reveal_child(alsAufklapp(aufklapp), offen ? 1 : 0)
+            gtk_image_set_from_icon_name(OpaquePointer(pillenwinkel),
+                                         offen ? "pan-up-symbolic" : "pan-down-symbolic")
+        }
+
+        // **„Staffel laden" steht daneben** (`SerienView.swift:317-322`):
+        // dieselbe Hoehe, dieselbe Form, rechts vom Wahlchip. Er fehlte auf
+        // Linux ganz — wer eine Staffel mitnehmen wollte, musste jede Folge
+        // einzeln anstossen. Ist sie schon vollstaendig da, steht dort
+        // nichts: ein Knopf, der nichts mehr tut, ist schlechter als keiner.
+        let wahlreihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 12)
+        gtk_widget_set_margin_start(wahlreihe, Int32(Stil.randAbstand))
+        gtk_widget_set_margin_end(wahlreihe, Int32(Stil.randAbstand))
+        // 18 unter der Wahl, wie `SerienView.swift:324`.
+        gtk_widget_set_margin_bottom(wahlreihe, 18)
+        anhaengen(wahlreihe, wahlblock)
+        anhaengen(wahlreihe, luftQuer())
+        if downloadsAn {
+            let laden = chip(uebersetzt("Staffel laden"), symbol: "folder-download-symbolic")
+            gtk_widget_set_valign(laden, GTK_ALIGN_START)
+            gtk_widget_set_visible(laden, 0)
+            staffelladeknopf = laden
+            beiSignal(laden, "clicked") { [weak self] in
+                guard let self else { return }
+                self.staffelLaden(self.staffelfolgen)
+                self.staffelladeknopfMalen()
+            }
+            anhaengen(wahlreihe, laden)
+        }
+        anhaengen(raum, wahlreihe)
         anhaengen(raum, folgenraum)
         if let jetzt = wahl.jetzt {
             folgenLaden(serie: serie, staffel: jetzt, in: folgenraum)
         }
     }
 
-    /// Eine Zeile in der Staffeltafel — Name links, Haken bei der gewählten.
+    /// **Ist die Staffel schon vollstaendig da, faellt der Chip weg** — so
+    /// auf dem Mac (`SerienView.swift:46-50`, `staffelVollstaendig`).
+    func staffelladeknopfMalen() {
+        guard let knopf = staffelladeknopf else { return }
+        let offen = staffelfolgen.contains { downloads.posten(fuer: $0.id) == nil }
+        gtk_widget_set_visible(knopf, (downloadsAn && !staffelfolgen.isEmpty && offen) ? 1 : 0)
+    }
+
+    /// Eine Zeile in der Staffelliste — Name links, Haken bei der gewählten.
+    ///
+    /// **Der Haken steht immer da und wird nur ausgeblendet.** Er kam bisher
+    /// erst beim Bauen dazu; seit die Liste einmal entsteht und nicht bei
+    /// jedem Klick, muss die Wahl umziehen können, ohne dass die Zeile neu
+    /// gebaut wird — sonst zeigt die Liste beim zweiten Öffnen zwei Haken.
     private func staffelzeile(_ text: String, gewaehlt: Bool,
                               _ auswahl: @escaping () -> Void) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-handlung")
+        gtk_widget_add_css_class(knopf, "swiftly-staffelzeile")
         if gewaehlt { gtk_widget_add_css_class(knopf, "swiftly-aktiv") }
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
         let l = beschriftung(text, stil: "swiftly-koerper")
         gtk_label_set_xalign(OpaquePointer(l), 0)
         gtk_widget_set_hexpand(l, 1)
         anhaengen(reihe, l)
-        if gewaehlt {
-            let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-            gtk_image_set_pixel_size(OpaquePointer(haken), 13)
-            anhaengen(reihe, haken)
-        }
+        // 12 fett, wie `Staffelzeile` auf dem Mac (`SerienView.swift:592`).
+        let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(haken), 12)
+        gtk_widget_set_visible(haken, gewaehlt ? 1 : 0)
+        anhaengen(reihe, haken)
         gtk_button_set_child(alsKnopf(knopf), reihe)
         beiSignal(knopf, "clicked", auswahl)
         return knopf
+    }
+
+    /// Setzt die Wahl auf einer bestehenden Zeile um — Akzent an, Haken an.
+    private func staffelzeileMalen(_ zeile: Widget?, gewaehlt: Bool) {
+        guard let zeile else { return }
+        if gewaehlt { gtk_widget_add_css_class(zeile, "swiftly-aktiv") }
+        else        { gtk_widget_remove_css_class(zeile, "swiftly-aktiv") }
+        // Knopf → Reihe → (Beschriftung, Haken). Der Haken ist das letzte Kind.
+        guard let reihe = gtk_button_get_child(alsKnopf(zeile)),
+              let haken = gtk_widget_get_last_child(reihe) else { return }
+        gtk_widget_set_visible(haken, gewaehlt ? 1 : 0)
     }
 
     private func folgenLaden(serie: Item, staffel: Item, in raum: Widget!) {
@@ -194,7 +368,7 @@ extension App {
             return
         }
         leeren(raum)
-        anhaengen(raum, beschriftung(uebersetzt("Lade …"), stil: "swiftly-koerper"))
+        anhaengen(raum, folgenPlatzhalter(rand: Stil.randAbstand))
         let kiste = gehalten(raum)
         Task.detached { [self] in
             let folgen = (try? await client.folgen(seriesID: serie.id,
@@ -210,6 +384,9 @@ extension App {
     /// Zeigt eine Folgenliste — aus dem Netz oder aus dem Speicher.
     private func folgenZeigen(_ folgen: [Item], in raum: Widget!) {
         leeren(raum)
+        // Der Chip „Staffel laden" braucht die Liste, die er laden soll.
+        staffelfolgen = folgen
+        staffelladeknopfMalen()
         guard !folgen.isEmpty else {
             // **Leer ist eine Auskunft, kein leerer Kasten.** Sonst steht
             // dort nichts und man hält es für einen Fehler.
@@ -243,15 +420,35 @@ extension App {
         if let adressen, let marke = folge.imageTags?["Primary"],
            let url = adressen.bauen(itemID: folge.id, marke: marke,
                                     mass: .hoechstensHoch(220)) {
-            bildLaden(bild, url: url, schluessel: url.absoluteString)
+            bildLaden(bild, url: url, schluessel: Bildschluessel.fuer(url))
         } else {
             zeichenLegen(huelle, serie: true)
         }
-        if wahlen.fortschrittAufKacheln, let anteil = folge.gesehenerAnteil {
+        // **Das Vorschaubild traegt den Sehstand**, nicht die Spalte rechts.
+        // Es zeigte schon den Fortschrittsbalken — „wie weit bin ich" —, und
+        // der Haken ist dessen Ende. Damit steht der Sehstand an einer Stelle
+        // statt an zweien, und rechts bleibt Platz fuer den Download. Auf dem
+        // Mac seit jeher so (`SerienView.swift:642`), auf dem iPhone seit
+        // `beb6a79`; auf Linux stand der Haken ganz rechts am Zeilenende.
+        //
+        // **Ein voller Balken und ein Haken waeren dieselbe Auskunft
+        // zweimal** — deshalb der Balken nur, solange nicht gesehen.
+        if wahlen.fortschrittAufKacheln, !folge.istGesehen,
+           let anteil = folge.gesehenerAnteil {
             balkenLegen(huelle, breite: 160, anteil: anteil)
         }
+        // Gesehenes tritt zurueck, es verschwindet nicht: 0,45 wie auf dem Mac.
+        gtk_widget_set_opacity(huelle, folge.istGesehen ? 0.45 : 1)
+
+        let bildhaken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(bildhaken), 10)
+        gtk_widget_add_css_class(bildhaken, "swiftly-folgenhaken")
+        gtk_widget_set_halign(bildhaken, GTK_ALIGN_END)
+        gtk_widget_set_valign(bildhaken, GTK_ALIGN_START)
+        gtk_widget_set_visible(bildhaken, folge.istGesehen ? 1 : 0)
+        gtk_overlay_add_overlay(OpaquePointer(huelle), bildhaken)
         // **Ein Abspielzeichen über dem Bild, wenn der Zeiger da ist** — der
-        // Mac hat es (`SerienView.swift:443`). Ohne es sieht ein Standbild
+        // Mac hat es (`SerienView.swift:665-674`). Ohne es sieht ein Standbild
         // nicht danach aus, als ließe es sich anklicken.
         let kreis: Widget! = gtk_image_new_from_icon_name("media-playback-start-symbolic")
         gtk_image_set_pixel_size(OpaquePointer(kreis), 16)
@@ -280,7 +477,7 @@ extension App {
         }
         anhaengen(text, kopf)
 
-        if let inhalt = folge.overview, !inhalt.isEmpty {
+        if let inhalt = folge.beschreibung, !inhalt.isEmpty {
             let z = beschriftung(inhalt, stil: "swiftly-zweitzeile", umbruch: true)
             gtk_widget_add_css_class(z, "dim-label")
             gtk_label_set_xalign(OpaquePointer(z), 0)
@@ -304,13 +501,9 @@ extension App {
         gtk_widget_set_valign(platz, GTK_ALIGN_START)
         gtk_widget_set_margin_top(platz, 2)
 
-        let ruhig: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(ruhig), 12)
-        gtk_widget_add_css_class(ruhig, "swiftly-leise")
-        gtk_widget_set_halign(ruhig, GTK_ALIGN_END)
-        gtk_widget_set_hexpand(ruhig, 1)
-        gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
-        anhaengen(platz, ruhig)
+        // **Der stille Haken steht jetzt auf dem Bild, nicht hier.** Diese
+        // Spalte traegt nur noch den Umschaltknopf, der beim Schweben kommt.
+        let ruhig = bildhaken
 
         let knopf = nebenknopf("object-select-symbolic", aktiv: gesehen)
         gtk_widget_add_css_class(knopf, "swiftly-hakenknopf")
@@ -321,6 +514,8 @@ extension App {
             gesehen.toggle()
             knopfzustand(knopf, aktiv: gesehen, symbol: "object-select-symbolic")
             gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
+            // Das Bild tritt mit zurueck — dieselbe Auskunft, dieselbe Stelle.
+            gtk_widget_set_opacity(huelle, gesehen ? 0.45 : 1)
             let neu = gesehen
             // **Der Zustand des Knopfes ist die Antwort** (D6) — aber nur,
             // solange sie stimmt. Lehnt der Server ab, geht der Haken zurück
@@ -330,7 +525,11 @@ extension App {
             let knopfkiste = gehalten(knopf)
             let hakenkiste = gehalten(ruhig)
             Task.detached { [self] in
-                do { try await client.setzeGesehen(itemID: folge.id, an: neu) }
+                do {
+                    try await client.setzeGesehen(itemID: folge.id, an: neu)
+                    // Der gemerkte Stand dieser Staffel ist ab jetzt falsch.
+                    aufHauptfaden { self.sehstandVergessen(folge) }
+                }
                 catch {
                     aufHauptfaden {
                         knopfzustand(knopfkiste.widget, aktiv: !neu,
@@ -345,12 +544,39 @@ extension App {
         anhaengen(platz, knopf)
         anhaengen(zeile, platz)
 
+        // **H1 und „Download je Folge".** Auf dem Mac steht neben dem
+        // Gesehen-Knopf ein Downloadring je Folge, sobald Downloads an sind
+        // — und der Grund steht in der Aenderungsliste: eine Anime-Staffel
+        // hat ueber hundert Folgen, und eine ganze Staffel zu laden ist
+        // selten das, was gemeint war. Hier fehlte er ganz; die Serienseite
+        // hatte gar keinen Ladeknopf, weil der in der Knopfreihe nur bei
+        // Filmen steht.
+        var ladeknopf: Widget!
+        if downloadsAn {
+            ladeknopf = nebenknopf(ladeknopfsymbol(downloads.posten(fuer: folge.id)),
+                                   name: uebersetzt("Laden"),
+                                   aktiv: downloads.posten(fuer: folge.id)?.stand == .fertig)
+            gtk_widget_set_size_request(ladeknopf, 34, 34)
+            gtk_widget_set_valign(ladeknopf, GTK_ALIGN_START)
+            gtk_widget_set_margin_top(ladeknopf, 2)
+            // **Er steht immer da**, nicht erst beim Ueberfahren. Auf dem Mac
+            // traegt jede Folgenzeile ihren Pfeil sichtbar; versteckt findet
+            // ihn nur, wer weiss, dass er da ist.
+            beiSignal(ladeknopf, "clicked") { [weak self] in
+                self?.ladetafelZeigen(folge, an: ladeknopf)
+            }
+            anhaengen(zeile, ladeknopf)
+        }
+
         beiZeiger(zeile, herein: {
             gtk_widget_add_css_class(zeile, "swiftly-schwebt")
             gtk_widget_set_visible(knopf, 1)
             gtk_widget_set_visible(ruhig, 0)
             gtk_widget_set_visible(kreis, 1)
         }, hinaus: {
+            // Der Ladeknopf bleibt stehen. Er wurde hier versteckt — und
+            // sobald seine Tafel aufging, verliess der Zeiger die Zeile, der
+            // Knopf verschwand und nahm die Tafel mit. Das war „nichts passiert".
             gtk_widget_remove_css_class(zeile, "swiftly-schwebt")
             gtk_widget_set_visible(knopf, 0)
             gtk_widget_set_visible(ruhig, gesehen ? 1 : 0)
@@ -364,7 +590,8 @@ extension App {
 
     // MARK: Besetzung und Ähnliches
 
-    func besetzungsreihe(_ leute: [Person], rand: Int = Stil.randAbstand) -> Widget! {
+    func besetzungsreihe(_ leute: [Person], herkunft: String? = nil,
+                         rand: Int = Stil.randAbstand) -> Widget! {
         let block = stapel(GTK_ORIENTATION_VERTICAL, abstand: 14)
         let titel = beschriftung(uebersetzt("Besetzung"), stil: "swiftly-listentitel")
         gtk_label_set_xalign(OpaquePointer(titel), 0)
@@ -377,14 +604,14 @@ extension App {
         let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 18)
         gtk_widget_set_margin_start(reihe, Int32(rand))
         gtk_widget_set_margin_end(reihe, Int32(rand))
-        for person in leute { anhaengen(reihe, kopfbild(person)) }
+        for person in leute { anhaengen(reihe, kopfbild(person, herkunft: herkunft)) }
         gtk_scrolled_window_set_child(OpaquePointer(scroller), reihe)
         anhaengen(block, scroller)
         return block
     }
 
     /// Ein Kopf: 84 rund, darunter Name und Rolle.
-    private func kopfbild(_ person: Person) -> Widget! {
+    private func kopfbild(_ person: Person, herkunft: String?) -> Widget! {
         // **Ein Knopf, damit `:hover` greift.** GTK führt den Zustand nur auf
         // Bedienelementen; auf einer schlichten Box wüchse das Bild nie.
         // Dieselbe Hülle wie bei den Kacheln.
@@ -402,7 +629,7 @@ extension App {
         if let adressen, let marke = person.primaryImageTag,
            let url = adressen.bauen(itemID: person.id, marke: marke,
                                     mass: .hoechstensHoch(200)) {
-            bildLaden(bild, url: url, schluessel: url.absoluteString)
+            bildLaden(bild, url: url, schluessel: Bildschluessel.fuer(url))
         } else {
             zeichenLegen(huelle, serie: false)
         }
@@ -422,12 +649,19 @@ extension App {
             anhaengen(kachel, r)
         }
         gtk_button_set_child(alsKnopf(huelleKnopf), kachel)
+        // **Bis zum 12.09.2026 hing hier nichts.** Der Knopf war gebaut, hob
+        // sich beim Überfahren und tat nichts — dieselbe Form, die auf tvOS
+        // ein Tester gemeldet hat. Die Herkunft geht mit, damit die
+        // Personenseite „Rolle in Titel" sagen kann.
+        beiSignal(huelleKnopf, "clicked") { [weak self] in
+            self?.oeffnePerson(person, herkunft: herkunft)
+        }
         return huelleKnopf
     }
 
     /// **Auf der Serienseite ein Raster, auf der Filmseite eine Reihe.**
     ///
-    /// Auf dem Mac ist das derselbe Unterschied (`SerienView.swift:236` gegen
+    /// Auf dem Mac ist das derselbe Unterschied (`SerienView.swift:390-411` gegen
     /// `DetailView`): unter einem Reiter, den man ausdrücklich gewählt hat,
     /// steht alles auf einmal da; eine Reihe, durch die man erst blättern
     /// muss, wäre dort ein Weg im Weg. Auf der Filmseite läuft „Ähnliches"
@@ -445,8 +679,18 @@ extension App {
                 if leeren_ { leeren(ziel) }
                 guard !treffer.isEmpty else {
                     if leeren_ {
-                        anhaengen(ziel, beschriftung(uebersetzt("Nichts Ähnliches gefunden."),
-                                                     stil: "swiftly-koerper"))
+                        // Mittig, mit Zeichen — wie jeder andere Leerzustand.
+                        // Hier stand eine Textzeile oben links.
+                        //
+                        // **`mail-inbox-symbolic`, nicht `mail-archive`.**
+                        // Der Mac nimmt `tray` (`SerienView.swift:392`), und
+                        // den Ablagekorb hat unter Breeze nur der Posteingang;
+                        // `mail-archive-symbolic` gibt es dort gar nicht, GTK
+                        // zeigte dafuer das Ersatzbild mit rotem
+                        // Verbotszeichen. Am Bild gefunden.
+                        anhaengen(ziel, self.leerzustand("mail-inbox-symbolic",
+                                                         uebersetzt("Nichts Ähnliches gefunden."),
+                                                         nil))
                     }
                     return
                 }

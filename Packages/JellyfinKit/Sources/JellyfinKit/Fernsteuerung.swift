@@ -47,11 +47,45 @@ public actor Fernsteuerung {
     /// Wartezeit vor dem nächsten Versuch und wird bei Erfolg zurückgesetzt.
     private var abrisse = 0
 
-    public init(basis: URL, token: String, geraeteID: String,
-                sitzung: URLSession = .shared) {
+    /// Der vollstaendige `Authorization`-Wert, wortgleich mit dem, den alle
+    /// uebrigen Aufrufe tragen. Warum das noetig ist, steht bei ``starten``.
+    private let ausweis: String
+
+    /// **Eine eigene Sitzung ohne Zeitgrenze — nicht `URLSession.shared`.**
+    ///
+    /// Am 10.09.2026 an zwei Rechnern gemessen: auf Linux riss der Kanal nach
+    /// **exakt 120 Sekunden** ab, auf dem Mac stand er nach 349 Sekunden
+    /// unveraendert. Derselbe Wortlaut, derselbe Takt, derselbe Server — nur
+    /// eine andere Foundation.
+    ///
+    /// 120 ist das Doppelte der Vorgabe von `timeoutIntervalForRequest`.
+    /// Eine Dauerverbindung ist keine Anfrage mit Antwort; Apples Foundation
+    /// nimmt die Grenze fuer einen WebSocket deshalb nicht ernst,
+    /// swift-corelibs-foundation offenbar schon. Und weil der Abriss **auf**
+    /// das vierte Lebenszeichen fiel und nicht dazwischen, ist es eine
+    /// Grenze, die beim Senden zuschlaegt — nicht eine, die im Leerlauf
+    /// ablaeuft.
+    ///
+    /// Also eine eigene Sitzung, deren Grenzen so weit stehen, dass sie
+    /// nichts mehr bedeuten. Wer hier `.shared` einsetzt, holt den Fehler
+    /// zurueck, und zwar nur auf einer Plattform.
+    public static let dauersitzung: URLSession = {
+        let k = URLSessionConfiguration.default
+        k.timeoutIntervalForRequest = 86_400
+        k.timeoutIntervalForResource = 86_400
+        // `waitsForConnectivity` gibt es auf swift-corelibs-foundation nur
+        // lesend — der Bau auf cachy hat es gefunden. Es war ohnehin
+        // Beiwerk: der Wiederaufbau nach einem Abriss steht schon in
+        // `neuVerbinden`.
+        return URLSession(configuration: k)
+    }()
+
+    public init(basis: URL, token: String, geraeteID: String, ausweis: String,
+                sitzung: URLSession = Fernsteuerung.dauersitzung) {
         self.basis = basis
         self.token = token
         self.geraeteID = geraeteID
+        self.ausweis = ausweis
         self.sitzung = sitzung
     }
 
@@ -63,13 +97,42 @@ public actor Fernsteuerung {
         var teile = URLComponents(url: basis.appendingPathComponent("socket"),
                                   resolvingAgainstBaseURL: false)
         teile?.scheme = basis.scheme == "http" ? "ws" : "wss"
+        // **`ApiKey`, nicht `api_key`.**
+        //
+        // Jellyfin 12 liefert mit `EnableLegacyAuthorization=false` aus und
+        // hat die alte Schreibweise damit abgeschafft — zusammen mit
+        // `X-Emby-Token`, `X-MediaBrowser-Token` und `X-Emby-Authorization`.
+        // `ApiKey` gibt es seit 10.8 und in 12, es traegt also **beide**
+        // Serverstaende und ist kein Bruch fuer aeltere Anlagen.
         teile?.queryItems = [
-            URLQueryItem(name: "api_key", value: token),
+            URLQueryItem(name: "ApiKey", value: token),
             URLQueryItem(name: "deviceId", value: geraeteID),
         ]
-        guard let url = teile?.url else { return }
+        guard let url = teile?.url else {
+            Spur.sag("[Fernsteuerung] Adresse liess sich nicht bauen")
+            return
+        }
 
-        let neu = sitzung.webSocketTask(with: url)
+        // **Der Kanal muss sich genauso ausweisen wie alle anderen Aufrufe.**
+        //
+        // Er trug bisher nur Merkmal und Geraetekennung in der Adresse, ohne
+        // Clientnamen. Jellyfin schluesselt eine Sitzung aber nach **Name und
+        // Geraet** zusammen — ohne Namen landet der Kanal irgendwo, nur nicht
+        // zwingend an der Sitzung, die gerade spielt.
+        //
+        // Am 10.09.2026 am Geraet zu sehen: die Bedienknoepfe erschienen und
+        // verschwanden im Sekundentakt, und sobald sie da waren, stand eine
+        // voellig andere Laufzeit daneben. Es waren **zwei** Sitzungen
+        // desselben Geraets — an der einen hing der Kanal, an der anderen die
+        // Fortschrittsmeldungen. Sichtbar wurde es erst durch die Umbenennung
+        // von „Swiftly" auf „Swiftly Player"; angelegt war die Falle vorher.
+        //
+        // Die Abfragewerte bleiben zusaetzlich stehen: aeltere Server lesen
+        // die Anmeldung des Kanals von dort, neuere aus der Kopfzeile.
+        Spur.sag("[Fernsteuerung] verbinde …")
+        var anfrage = URLRequest(url: url)
+        anfrage.setValue(ausweis, forHTTPHeaderField: "Authorization")
+        let neu = sitzung.webSocketTask(with: anfrage)
         neu.resume()
         aufgabe = neu
         lauschen()
@@ -93,7 +156,50 @@ public actor Fernsteuerung {
         starten(bei: weitergabe)
     }
 
+    /// **Warum die Leitung wegging, nicht nur dass sie wegging.**
+    ///
+    /// Der blosse Fehler reicht nicht. Ein abgelehnter Handschlag kommt hier
+    /// als derselbe unscheinbare Netzfehler an wie ein Server, den es nicht
+    /// mehr gibt — und genau diese Ununterscheidbarkeit hat am 10.09.2026
+    /// Stunden gekostet. Zwei Angaben trennen die Faelle sofort:
+    ///
+    /// * Der **HTTP-Status** der Antwort auf den Upgrade. 401 heisst
+    ///   „Anmeldung abgelehnt" und nichts anderes; genau das waere bei der
+    ///   Umstellung von `api_key` auf `ApiKey` dagestanden.
+    /// * Der **Schliesscode** samt Grund, wenn die Gegenstelle die Leitung
+    ///   ordentlich beendet hat statt sie fallen zu lassen.
+    ///
+    /// Steht beides nicht zur Verfuegung, bleibt der Fehler — dann ist es
+    /// wirklich das Netz.
+    private func abrissMelden(_ fehler: Error) {
+        var teile = ["[Fernsteuerung] Leitung verloren"]
+        if let http = aufgabe?.response as? HTTPURLResponse {
+            teile.append("HTTP \(http.statusCode)")
+        }
+        if let code = aufgabe?.closeCode, code != .invalid {
+            var satz = "Schliesscode \(code.rawValue)"
+            if let grund = aufgabe?.closeReason,
+               let text = String(data: grund, encoding: .utf8), !text.isEmpty {
+                satz += " (\(text))"
+            }
+            teile.append(satz)
+        }
+        teile.append("\(fehler)")
+        Spur.sag(teile.joined(separator: " · "))
+    }
+
+    /// Sagt einmal je Verbindung, dass wirklich etwas ankommt. Ein
+    /// aufgebauter Socket beweist noch nichts — der Server kann ihn
+    /// annehmen und danach schweigen.
+    private var stehtSchon = false
+    private func ersteAntwortMelden() {
+        guard !stehtSchon else { return }
+        stehtSchon = true
+        Spur.sag("[Fernsteuerung] Leitung steht, erste Nachricht da")
+    }
+
     public func beenden() {
+        stehtSchon = false
         weitergabe = nil          // sperrt den Wiederaufbau
         abrisse = 0
         lauscher?.cancel(); lauscher = nil
@@ -113,9 +219,16 @@ public actor Fernsteuerung {
                     }
                     // Es kam etwas an, die Leitung steht: die Zählung der
                     // Abrisse beginnt beim nächsten Mal wieder bei null.
+                    await self.ersteAntwortMelden()
                     await self.zaehlungZuruecksetzen()
                 } catch {
                     guard !Task.isCancelled else { return }
+                    // **Der stillste Punkt der ganzen App, bis heute.** Hier
+                    // endete jeder Fehlschlag ohne eine Zeile: falsche
+                    // Anmeldung, Server weg, Gegenstelle lehnt ab — von
+                    // aussen alles dasselbe, naemlich „die Uebernahme geht
+                    // halt nicht".
+                    await self.abrissMelden(error)
                     await self.leitungVerloren()
                     return
                 }
@@ -138,17 +251,62 @@ public actor Fernsteuerung {
     private func schlagen() {
         herzschlag = Task { [weak self] in
             while !Task.isCancelled {
+                // **Dreissig Sekunden, und sie helfen auf Linux nichts.**
+                //
+                // Am 10.09.2026 mit einem Versuch getrennt, weil die Zahlen
+                // es nicht hergaben: der Abriss fiel dort jedes Mal auf das
+                // vierte Lebenszeichen, und vier mal dreissig sind genau die
+                // 120 Sekunden, nach denen er kam. „Nach zwei Minuten" und
+                // „nach vier Nachrichten" waren nicht zu unterscheiden.
+                //
+                // Mit 45 Sekunden waren sie es: die Leitung fiel weiter nach
+                // **exakt 120 Sekunden**, nun schon nach zwei Lebenszeichen.
+                // Es ist also die Zeit. Der Takt geht deshalb zurueck auf
+                // dreissig — er war nie die Ursache.
                 try? await Task.sleep(for: .seconds(30))
                 // `try?` verschluckt den Abbruch; ohne diese Zeile ginge nach
                 // dem Beenden noch ein Lebenszeichen hinaus.
                 guard !Task.isCancelled, let self else { return }
+                Spur.sag("[Fernsteuerung] Lebenszeichen")
                 await self.senden(#"{"MessageType":"KeepAlive"}"#)
             }
         }
     }
 
+    /// **Die `async`-Form, nicht die mit Rueckrufblock.**
+    ///
+    /// `send(_:completionHandler:)` gibt es in swift-corelibs-foundation erst
+    /// ab einer neueren Fassung; unter Swift 6.0 auf Linux bricht die
+    /// Uebersetzung mit „extra trailing closure passed in call". Auf dem
+    /// Entwicklungsrechner faellt das nicht auf, weil dort 6.3 laeuft — der
+    /// Bau-Durchgang hat es beim ersten Lauf gefunden.
+    ///
+    /// `send(_:) async throws` gibt es auf beiden Seiten und auf Apple
+    /// ebenfalls. Das Ergebnis wird verworfen wie zuvor: ein
+    /// Lebenszeichen, das nicht ankommt, wird nicht nachgereicht — die
+    /// Gegenstelle merkt den Abriss an der ausbleibenden Antwort.
     private func senden(_ text: String) {
-        aufgabe?.send(.string(text)) { _ in }
+        guard let aufgabe else {
+            Spur.sag("[Fernsteuerung] nichts zu senden — keine Leitung")
+            return
+        }
+        // **`try?` hat hier den Fehler verschluckt.**
+        //
+        // Am 10.09.2026 riss die Leitung auf Linux nach **exakt zwei
+        // Minuten** ab, mit Schliesscode 1002. Zwei Minuten sind das Doppelte
+        // von Jellyfins Lebenszeichen-Grenze — der Server wirft weg, wer sich
+        // nicht meldet. Unser Lebenszeichen geht alle 30 Sekunden hinaus und
+        // haette reichen muessen; ob es je ankam, war aber nicht zu sehen,
+        // weil der Fehlschlag hier lautlos endete.
+        //
+        // Fuenfte stumme Stelle an einem Tag. Sie sagt jetzt Bescheid.
+        Task {
+            do {
+                try await aufgabe.send(.string(text))
+            } catch {
+                Spur.sag("[Fernsteuerung] senden fehlgeschlagen: \(error)")
+            }
+        }
     }
 
     private func verarbeiten(_ text: String) {
@@ -200,9 +358,27 @@ extension JellyfinClient {
             let SupportsMediaControl: Bool
             let SupportsPersistentIdentifier: Bool
         }
+        // **Jeder Name hier muss `GeneralCommandType` des Servers treffen —
+        // ein einziger Tippfehler wirft die ganze Meldung weg.**
+        //
+        // Hier stand `Playstate`. Der Server kennt `PlayState`, mit grossem
+        // S. Ein ungueltiger Wert in der Liste laesst den Koerper nicht mehr
+        // lesen, der Aufruf scheitert, und **keine** Faehigkeit wird
+        // eingetragen — nicht etwa nur die eine.
+        //
+        // Was das anrichtet, sieht man der Stelle nicht an: die Sitzung
+        // erscheint in Jellyfin weiter, nur ohne Knoepfe zum Pausieren und
+        // Stoppen. Und `Sessions?controllableByUserId=…` liefert sie nicht
+        // mehr, also sieht kein anderes Geraet sie — die Uebernahme fiel
+        // damit ganz aus, in beide Richtungen zugleich.
+        //
+        // Am 10.09.2026 gegen `/api-docs/openapi.json` des eigenen Servers
+        // geprueft, Wert fuer Wert. Das ist die Quelle, wenn hier etwas
+        // dazukommt — nicht das Gedaechtnis und nicht ein Beispiel aus dem
+        // Netz. `PlayableMediaTypes` traegt `MediaType`, ebenso geprueft.
         let koerper = Faehigkeiten(
             PlayableMediaTypes: ["Video", "Audio"],
-            SupportedCommands: ["Play", "Playstate", "PlayNext", "PlayMediaSource",
+            SupportedCommands: ["Play", "PlayState", "PlayNext", "PlayMediaSource",
                                 "DisplayMessage", "SetAudioStreamIndex",
                                 "SetSubtitleStreamIndex", "Mute", "Unmute",
                                 "ToggleMute", "SetVolume"],
@@ -223,6 +399,7 @@ extension JellyfinClient {
     /// Eine Fernsteuerung für die laufende Anmeldung.
     public func fernsteuerung() throws -> Fernsteuerung {
         let s = try requireSessionForReporting()
-        return Fernsteuerung(basis: s.serverURL, token: s.accessToken, geraeteID: geraeteKennung)
+        return Fernsteuerung(basis: s.serverURL, token: s.accessToken,
+                             geraeteID: geraeteKennung, ausweis: ausweisFuerKanal)
     }
 }

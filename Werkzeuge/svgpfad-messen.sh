@@ -11,7 +11,7 @@
 set -e
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
-GERAET=00008110-0018142C0189401E     # Paul's TV, aus `xctrace list devices`
+GERAET=00008110-0018142C0189401E     # Apple TV im Wohnzimmer, aus `xctrace list devices`
 APP=de.paulherter.swiftly
 ZIEL="${TMPDIR:-/tmp}/svgpfad-$(date +%H%M%S).trace"
 

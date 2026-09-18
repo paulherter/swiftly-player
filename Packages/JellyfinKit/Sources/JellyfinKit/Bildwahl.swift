@@ -40,7 +40,7 @@ public enum Bildwahl {
         }
 
         let kette: [(URL, String)?] = [
-            // 1 · Der Hintergrund der Serie — Pauls Wunsch, „eine Art Cover".
+            // 1 · Der Hintergrund der Serie — der Wunsch nach einer Art Cover.
             versuch("Serienhintergrund",
                     item.parentBackdropItemId ?? item.seriesId,
                     .hintergrund, item.parentBackdropImageTags?.first),
@@ -62,6 +62,29 @@ public enum Bildwahl {
         ]
 
         return kette.compactMap { $0 }.first.map { (url: $0.0, quelle: $0.1) }
+    }
+
+    /// **Das Bild für den Kopf einer Seite — nur, was wirklich quer liegt.**
+    ///
+    /// Eigener Hintergrund, der der Serie, dann die Vorschaubilder. Kommt
+    /// nichts heraus, sucht die App weiter (Folge, dann Plakat) — das braucht
+    /// eine Abfrage und steht deshalb nicht hier. Seit dem 11.09.2026: vorher
+    /// nahm der Kopf nur den eigenen Hintergrund, und eine Serie ohne ihn
+    /// stand mit leerem Kopf da.
+    public static func kopf(_ item: Item, adressen: Bildadresse, breite: Int = 1200) -> URL? {
+        let mass = Bildmass.hoechstensBreit(breite)
+        let kette: [(String?, Bildart, String?)] = [
+            (item.id, .hintergrund, item.backdropImageTags?.first),
+            (item.parentBackdropItemId ?? item.seriesId, .hintergrund, item.parentBackdropImageTags?.first),
+            (item.id, .vorschau, item.imageTags?["Thumb"]),
+            (item.parentThumbItemId ?? item.seriesId, .vorschau, item.parentThumbImageTag),
+        ]
+        for (id, art, marke) in kette {
+            if let id, let marke, let url = adressen.bauen(itemID: id, art: art, marke: marke, mass: mass) {
+                return url
+            }
+        }
+        return nil
     }
 
     /// Das hochkante Plakat einer 2 : 3-Kachel.

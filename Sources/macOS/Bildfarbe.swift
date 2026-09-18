@@ -25,8 +25,13 @@ final class Bildfarbe {
 
     func laden(_ url: URL?) async {
         guard let url, url != geladen else { return }
-        geladen = url
+        // **Erst merken, wenn es geklappt hat.** Hier stand `geladen = url`
+        // vor dem Abruf. Scheitert der — ein Aussetzer genügt —, galt die
+        // Adresse trotzdem als erledigt und wurde nie wieder versucht: der
+        // Kopf behielt den Ton der vorigen Seite. Dieselbe Klasse Fehler wie
+        // ein Zustand, der gesetzt wird, bevor die Sache geglückt ist.
         guard let (daten, _) = try? await URLSession.shared.data(from: url) else { return }
+        geladen = url
         // Dekodieren und rechnen abseits des Hauptlaufs.
         let gerechnet = await Task.detached(priority: .utility) {
             Self.tonwerte(aus: daten)

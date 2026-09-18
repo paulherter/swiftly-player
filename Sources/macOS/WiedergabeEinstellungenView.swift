@@ -16,7 +16,7 @@ struct WiedergabeEinstellungenView: View {
 
     @State private var offeneListe: Liste?
 
-    enum Liste { case bitrate, ton, untertitel, zurueck, vor }
+    enum Liste { case bitrate, ton, untertitel, zurueck, vor, puffer }
 
     var body: some View {
         ScrollView {
@@ -30,19 +30,33 @@ struct WiedergabeEinstellungenView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 14)
 
-                qualitaet
+                // **Zwei Spalten, linksbuendig — die Anordnung des iPads.**
+                // Links, was den Ton angeht: Qualitaet und Sprache. Rechts
+                // allein das Verhalten. Zwischenraum ist doppelter
+                // Seitenrand, damit die Karten zueinander stehen wie zum
+                // Fensterrand.
+                HStack(alignment: .top, spacing: Stil.randAbstand * 2) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        qualitaet
+                        sprache
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    verhalten
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
+                // **Steht unter beiden Spalten, nicht zwischen zwei Karten.**
+                // Die Fussnote gehoert zur Bitrate, aber in einer Spalte
+                // zwischen Qualitaet und Sprache haette sie die linke Karte
+                // auseinandergerissen und die rechte um ihre Hoehe versetzt.
                 Text("Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da.")
                     .font(.system(size: 12))
                     .foregroundStyle(Stil.schrift.opacity(0.4))
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 10)
-
-                sprache
-                verhalten
+                    .padding(.top, 14)
             }
-            .frame(maxWidth: 560, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: Stil.einstellungBreite, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Stil.randAbstand)
             .padding(.top, Stil.inhaltOben)
             .padding(.bottom, 40)
@@ -108,12 +122,23 @@ struct WiedergabeEinstellungenView: View {
         }
     }
 
+    @AppStorage("technikschild") private var technikschild = false
+
     private var verhalten: some View {
         Einstellungsgruppe(titel: "Verhalten") {
             Schalterzeile(symbol: "forward.end.fill",
                           titel: Text("Nächste Folge automatisch"),
                           an: Binding(get: { model.naechsteAutomatisch },
                                       set: { model.naechsteAutomatisch = $0 }))
+            Trennstrich().padding(.leading, 48)
+            // **Der Schalter fuer das Technikschild.**
+            //
+            // Er steht hier bei „Verhalten" und nicht bei den Bildregeln: er
+            // aendert nichts an der Wiedergabe, er zeigt nur, was sie tut.
+            // Aus, bis ihn jemand sucht — wie bei Downloads und Seerr.
+            Schalterzeile(symbol: "waveform.badge.magnifyingglass",
+                          titel: Text("Technikschild im Player"),
+                          an: $technikschild)
             Trennstrich().padding(.leading, 48)
             Wertezeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                        wert: "\(model.zurueckSekunden) s", pfeil: true,
@@ -132,8 +157,23 @@ struct WiedergabeEinstellungenView: View {
                            istGewaehlt: { $0.wert == model.vorSekunden },
                            waehlen: { model.vorSekunden = $0.wert; schliessen() })
             }
+            Trennstrich().padding(.leading, 48)
+            // **Steht bei „Verhalten", nicht bei der Qualität.** Sie ändert
+            // nichts am Bild — nur, wie viel Vorrat der Player hält, bevor
+            // eine wackelige Leitung durchschlägt. Dieselbe Stelle wie auf
+            // dem iPhone.
+            Wertezeile(symbol: "wifi.exclamationmark", titel: Text("Puffer"),
+                       wert: model.pufferstufe.name, pfeil: true,
+                       aktion: { umschalten(.puffer) })
+            if offeneListe == .puffer {
+                Werteliste(eintraege: Pufferstufe.allCases,
+                           beschriftung: { $0.name },
+                           istGewaehlt: { $0 == model.pufferstufe },
+                           waehlen: { model.pufferstufe = $0; schliessen() })
+            }
         }
     }
+
 
     private func umschalten(_ liste: Liste) {
         withAnimation(Stil.zeitSprung) {

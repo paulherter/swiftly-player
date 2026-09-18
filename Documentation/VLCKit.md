@@ -1,6 +1,6 @@
 # 🎬 VLCKit
 
-Swiftly for Jellyfin ships a VLCKit built with its own patches. The official
+Swiftly Player ships a VLCKit built with its own patches. The official
 build fetched by `Werkzeuge/vlckit-holen.sh` does not have them, and two of
 the problems below are bad enough that the app is not usable without the fix.
 

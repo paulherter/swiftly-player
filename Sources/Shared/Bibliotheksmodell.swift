@@ -21,20 +21,69 @@ final class Bibliotheksmodell {
     private(set) var gestoert = false
     private var laedtNach = false
 
-    var sortierung: Sortierung = .name
-    var filter: Bibliotheksfilter = .alle
+    /// Zu welchem Konto gehört, was hier steht.
+    ///
+    /// **Das Regal überlebt den Kontowechsel, die Ansicht darüber nicht
+    /// unbedingt.** Auf dem Mac hängt `BibliothekView` an `.task(id:)` mit
+    /// Sortierung und Filter — beim Wechsel ändert sich davon nichts, also
+    /// lud niemand neu, und die Sammlung des vorigen Kontos stand bis zum
+    /// Neustart da. Von der Mac-Sitzung gefunden und dort in der Ansicht
+    /// behoben; hier steht die Hälfte, die alle Plattformen teilen.
+    private var fuerKonto = 0
+
+    /// Gehört, was hier steht, noch zum angemeldeten Konto?
+    ///
+    /// Die Antwort ist für jede Plattform dieselbe, das Nachladen nicht: auf
+    /// Apple hängt eine Ansicht an `.task(id:)`, auf Linux und Windows gibt
+    /// es kein `onChange` und der Zähler wird von Hand verglichen. Deshalb
+    /// steht hier die Frage und nicht der Auslöser.
+    func veraltet(_ model: AppModel) -> Bool { fuerKonto != model.kontowechsel }
+
+    /// **Sortierung und Filter ueberleben den Neustart.**
+    ///
+    /// Ein Nutzer am 07.09.2026: „ich sortiere nach zuletzt, weil es
+    /// praktisch ist. Verlasse ich die App und komme wieder, bin ich zurueck
+    /// beim Standard." Er hat recht, und es ist keine Kleinigkeit: eine
+    /// Sortierung ist keine Handlung, sondern eine Einstellung — man trifft
+    /// sie einmal und erwartet sie danach vorzufinden.
+    ///
+    /// Gemerkt wird **je Ort**, nicht global: Filme nach Jahr und Serien
+    /// nach zuletzt hinzugefuegt ist eine sinnvolle Kombination, und ein
+    /// gemeinsamer Wert wuerde sie gegeneinander ausspielen. `merkname`
+    /// unterscheidet sie; ohne Namen wird nichts gemerkt.
+    var sortierung: Sortierung = .name { didSet { sichern() } }
+    var filter: Bibliotheksfilter = .alle { didSet { sichern() } }
+
+    /// Unter welchem Namen die beiden liegenbleiben — `nil` heisst: gar nicht.
+    private let merkname: String?
+
+    init(merkname: String? = nil) {
+        self.merkname = merkname
+        guard let merkname else { return }
+        let ablage = UserDefaults.standard
+        if let roh = ablage.string(forKey: "sortierung.\(merkname)"),
+           let wert = Sortierung(rawValue: roh) { sortierung = wert }
+        if let roh = ablage.string(forKey: "filter.\(merkname)"),
+           let wert = Bibliotheksfilter(rawValue: roh) { filter = wert }
+    }
+
+    private func sichern() {
+        guard let merkname else { return }
+        let ablage = UserDefaults.standard
+        ablage.set(sortierung.rawValue, forKey: "sortierung.\(merkname)")
+        ablage.set(filter.rawValue, forKey: "filter.\(merkname)")
+    }
 
     /// Wechselt eines davon, wird neu geladen.
     var kennung: String { "\(sortierung.rawValue)|\(filter.rawValue)" }
 
     /// Ob es hinter dem, was schon dasteht, noch etwas gibt.
-    var nochMehrDa: Bool { items.count < gesamt }
+    var nochMehrDa: Bool { Listenregeln.nochMehrDa(geladen: items.count, gesamt: gesamt) }
 
     /// Ab welchem Eintrag nachgeladen wird — die drittletzte Reihe, damit der
     /// Nachschub steht, bevor man unten ankommt.
     func nachladenAb(spalten: Int) -> String? {
-        guard !items.isEmpty else { return nil }
-        return items[max(0, items.count - 3 * spalten)].id
+        Listenregeln.nachladenAb(items, spalten: spalten)
     }
 
     /// Welche Bibliothek gemeint ist — genannt oder über die Gattung gesucht.
@@ -52,6 +101,7 @@ final class Bibliotheksmodell {
     func laden(_ model: AppModel, art: String? = nil, bibliothek: Item? = nil) async {
         laedt = items.isEmpty
         gestoert = false
+        fuerKonto = model.kontowechsel
         guard let bib = await quelle(model, art: art, bibliothek: bibliothek) else {
             // Zwei Faelle sehen hier gleich aus: ein Server ohne Bibliothek
             // dieser Gattung, und einer, der gar nicht geantwortet hat.
@@ -81,6 +131,11 @@ final class Bibliotheksmodell {
     }
 
     func nachladen(_ model: AppModel, art: String? = nil, bibliothek: Item? = nil) async {
+        // **Nach einem Kontowechsel wird nicht angehängt.** Was dasteht,
+        // gehört dem vorigen Konto; die zweite Seite käme vom neuen, und
+        // beides zusammen ergäbe eine Sammlung, die es nirgends gibt. Wer
+        // nachlädt, ohne vorher neu geladen zu haben, bekommt hier nichts.
+        guard !veraltet(model) else { return }
         guard nochMehrDa, !laedtNach, !laedt else { return }
         guard let bib = await quelle(model, art: art, bibliothek: bibliothek) else { return }
         laedtNach = true

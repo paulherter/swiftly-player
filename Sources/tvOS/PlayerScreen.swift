@@ -34,6 +34,9 @@ struct PlayerScreen: View {
     @State private var plan: PlaybackPlan
 
     @State private var flaeche: VLCPlayerView?
+    /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
+    @AppStorage("technikschild") private var technikschild = false
+    @State private var spielwerte: Spielwerte?
     @State private var position: Double
     /// Wann der Player geöffnet wurde — `Zeitannahme` braucht es, um
     /// Aufbauzucken von echter Bewegung zu unterscheiden.
@@ -103,8 +106,7 @@ struct PlayerScreen: View {
     /// beides: `wischBeginn` blendet die Steuerung ein, damit ist
     /// `steuerungDa` im selben Zug wahr, und die Bewegung desselben Fingers
     /// lief schon auf die Zeitleiste. Man wollte nur sehen, wo man ist, und
-    /// stand danach woanders. Paul: „der Player zum Skippen soll sich ja erst
-    /// angesprochen fühlen, wenn das Menü da ist und man dann scrollt."
+    /// stand danach woanders.
     @State private var wischNurGeoeffnet = false
     @State private var naechste: Item?
     /// Nach einem Sprung kurz nicht überschreiben, sonst zieht die Anzeige
@@ -123,7 +125,7 @@ struct PlayerScreen: View {
 
     /// **Ob gerade etwas laedt, obwohl laufen sollte.**
     ///
-    /// Drei Faelle, die Paul alle drei erwischt hat und die vorher gleich
+    /// Drei Faelle, die alle drei aufgetreten sind und die vorher gleich
     /// aussahen — naemlich nach nichts: nach einem Sprung baut VLC den Strom
     /// neu auf; nach der Rueckkehr aus dem Hintergrund steht das Bild,
     /// waehrend der Ton schon laeuft; und bei einem Aussetzer der Leitung
@@ -199,8 +201,13 @@ struct PlayerScreen: View {
                 .onTapGesture { steuerungWecken() }
 
             VideoFlaeche(url: startPlan.url, startAt: startAt,
-                         container: startPlan.container) { neu in
+                         container: startPlan.container,
+                         puffer: model.pufferstufe) { neu in
                 flaeche = neu
+                // Was im Blatt unter „Bild" gewaehlt wurde, gilt auch fuer
+                // die naechste Folge -- derselbe Schluessel wie die Geste
+                // auf dem iPhone.
+                neu.bildfuellend(UserDefaults.standard.bool(forKey: "bildfuellend"))
                 neu.onWiederherstellung = { stelltWiederHer = $0 }
                 // **Der Knopf haengt an VLCs Meldung, nicht am Druck.**
                 //
@@ -226,10 +233,9 @@ struct PlayerScreen: View {
             // Der Moduswechsel gehoert hierher und **nicht** an
             // `erstesBildDa`: der Wert sagt „VLC liefert Bilder" und wird von
             // der geteilten Taktlogik gelesen — unter anderem, um `laeuft`
-            // gegen VLC gleichzurichten. Wer ihn zum Anzeigeschalter
-            // umwidmet, haelt bei einem haengenden Wechsel auch den
-            // Gleichrichter an. Genau daran kann Pauls verdrehter
-            // Pausezustand gelegen haben.
+            // gegen VLC gleichzurichten. Wer ihn zum Anzeigeschalter umwidmet,
+            // haelt bei einem haengenden Wechsel auch den Gleichrichter an.
+            // Genau daran kann der verdrehte Pausezustand gelegen haben.
             if !erstesBildDa || Bildtakt.schaltetUm {
                 ZStack {
                     Color.black
@@ -247,17 +253,16 @@ struct PlayerScreen: View {
             if erstesBildDa {
                 // **Dieselbe Stelle, dieselbe Groesse wie das Pausezeichen.**
                 //
-                // Pauls Vorschlag, und er ist richtig: „man koennte es genau
+                // Der richtige Weg: man koennte es genau
                 // dahin machen, wo der Pauseknopf ist, sodass es so aussieht
                 // wie, als wuerde es an exakt derselben Stelle laden." Zwei
                 // Zustandsauskuenfte ueber dieselbe Sache gehoeren an
                 // denselben Platz — sonst sucht das Auge zweimal.
                 if stockt {
                     // **Ohne Teller.** Der Ring bringt seine Form selbst mit;
-                    // ein Kreis um einen Kreis sieht aus wie ein Versehen.
-                    // Das Pausezeichen braucht ihn, weil zwei Striche auf
-                    // hellen Szenen sonst verschwinden. Paul: „warum ist die
-                    // da? Die ist ganz komisch."
+                    // ein Kreis um einen Kreis sieht aus wie ein Versehen. Das
+                    // Pausezeichen braucht ihn, weil zwei Striche auf hellen
+                    // Szenen sonst verschwinden.
                     zeichenmitte(teller: false) { Lader(groesse: 86, staerke: 7) }
                 } else if !laeuft {
                     zeichenmitte {
@@ -285,6 +290,31 @@ struct PlayerScreen: View {
                 .transition(.opacity)
             }
         }
+        // **Das Technikschild.** Es liegt ueber allem, nimmt aber weder Fokus
+        // noch Eingaben — auf dem Fernseher waere ein fokussierbares Schild
+        // ein Ziel, das die Fernbedienung anfahren kann und das dann nichts
+        // tut. Angeschaltet wird es im Wiedergabeblatt.
+        .overlay(alignment: .topLeading) {
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte, flaeche: flaeche, fern: true)
+                    .padding(.leading, Stil.randSeite)
+                    .padding(.top, Stil.randOben)
+                    .allowsHitTesting(false)
+                    .focusable(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Stil.einblenden, value: technikschild)
+        .task(id: technikschild) {
+            guard technikschild else { return }
+            while !Task.isCancelled {
+                // Die Rate entsteht aus der Differenz zum letzten Mal —
+                // siehe `Spielwerte`.
+                spielwerte = Spielwerte(flaeche?.statistik, stelle: flaeche?.positionSeconds ?? 0,
+                                        laeuft: flaeche?.isPlaying ?? false, vorher: spielwerte)
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .ignoresSafeArea()
         // **Der Fokus kommt nicht von selbst.**
         //
@@ -310,25 +340,23 @@ struct PlayerScreen: View {
         }
         // **Nach dem Anhalten den Fokus zurueckholen.**
         //
-        // Paul: „dann geht nix mehr" — kein Klick, keine Richtung, nichts.
-        // Das ist kein Play/Pause-Fehler, sondern ein Fokusverlust: ohne
-        // fokussiertes Element nimmt tvOS ueberhaupt keine Eingabe mehr an,
-        // und der Player steht als Standbild da. Dieselbe Lehre wie heute
-        // Morgen — der Fokus kommt nicht von selbst, er muss gelegt werden.
+        // kein Klick, keine Richtung, nichts. Das ist kein Play/Pause-Fehler,
+        // sondern ein Fokusverlust: ohne fokussiertes Element nimmt tvOS
+        // ueberhaupt keine Eingabe mehr an, und der Player steht als Standbild
+        // da. Dieselbe Lehre wie heute Morgen — der Fokus kommt nicht von
+        // selbst, er muss gelegt werden.
         .onChange(of: laeuft) { _, _ in
             guard !blattOffen, !folgenOffen else { return }
             fokus = .leiste
             // **Und noch einmal einen Takt spaeter.**
             //
-            // Der Beweis kam von Paul: oeffnet man das Blatt und schliesst
-            // es wieder, laesst sich danach abspielen. Genau das macht
-            // `steuerungWecken` — es legt den Fokus zurueck auf die Leiste.
-            // Ohne Fokus nimmt tvOS keine Eingabe entgegen, und der Player
-            // steht als Standbild da.
+            // Der Beweis kam von Genau das macht `steuerungWecken` — es legt
+            // den Fokus zurueck auf die Leiste. Ohne Fokus nimmt tvOS keine
+            // Eingabe entgegen, und der Player steht als Standbild da.
             //
-            // Die Zuweisung oben allein reicht nicht: SwiftUI raeumt den
-            // Fokus im selben Durchlauf noch auf und wirft sie weg. Deshalb
-            // danach noch einmal, wenn sich alles gesetzt hat.
+            // Die Zuweisung oben allein reicht nicht: SwiftUI raeumt den Fokus
+            // im selben Durchlauf noch auf und wirft sie weg. Deshalb danach
+            // noch einmal, wenn sich alles gesetzt hat.
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(80))
                 guard !blattOffen, !folgenOffen else { return }
@@ -416,16 +444,31 @@ struct PlayerScreen: View {
             guard !Task.isCancelled, !blattOffen, !folgenOffen else { return }
             steuerungSichtbar = false
         }
+
+        // **Der Ausblender muss neu anlaufen, wenn VLC den Stand meldet.**
+        //
+        // Die Wippe befiehlt nur; `laeuft` setzt erst der Rueckruf 17-25 ms
+        // spaeter (siehe `setzen`). `zeigen` stoesst die Aufgabe oben aber
+        // sofort an — die liest dann noch den Stand von *vor* dem Druck und
+        // faellt bei „fortsetzen" ueber `guard laeuft` heraus. Danach ruehrt
+        // sich nichts mehr: die Marke aendert sich nur in `zeigen`, und die
+        // Steuerung blieb stehen, bis
+        //
+        // iOS hatte die Zeile von Anfang an (`iOS/PlayerScreen.swift:401`),
+        // tvOS nie — beim Ableiten uebersehen. Dort steht
+        // `zentraleUebernehmen()` daneben; das braucht tvOS nicht, weil
+        // `anhaltenOderWeiter` aus `schaltwerk` liest und nicht aus der
+        // festgehaltenen Ansicht.
+        .onChange(of: laeuft) { _, _ in ausblendMarke += 1 }
     }
 
     /// **Das Zeichen fuer „steht" gehoert in die Mitte, nicht an den Rand.**
     ///
     /// Erster Anlauf war ein kleines Dreieck/Doppelstrich links vor der
-    /// verstrichenen Zeit — dort, wo der Systemplayer es hat. Paul: „die
-    /// Anzeige links ob es laeuft oder nicht find ich Quark." Er hat recht:
-    /// am Fernseher sitzt man drei Meter weg und sieht auf das Bild, nicht
-    /// auf die Leiste. Ein Standbild sieht aus wie eine ruhige Einstellung,
-    /// und die Antwort darauf muss dort stehen, wo man hinschaut.
+    /// verstrichenen Zeit — dort, wo der Systemplayer es hat. Er hat recht: am
+    /// Fernseher sitzt man drei Meter weg und sieht auf das Bild, nicht auf
+    /// die Leiste. Ein Standbild sieht aus wie eine ruhige Einstellung, und
+    /// die Antwort darauf muss dort stehen, wo man hinschaut.
     ///
     /// Es bleibt stehen, solange es steht — es ist kein Hinweis auf einen
     /// Tastendruck, sondern eine Zustandsauskunft.
@@ -629,15 +672,13 @@ struct PlayerScreen: View {
     /// das nicht auf. Laufen sie auseinander, ist es der Grund, warum man es
     /// nicht mehr geradeziehen kann: das Telefon schickt „Pause", wir schalten
     /// auf Wiedergabe, und je oefter man drueckt, desto verdrehter wird es.
-    /// Paul: „Wenn ich jetzt wieder auf abspielen gehe, ist auf einmal auf
-    /// Pause. Also hier geht gar nix mehr."
     ///
-    /// Ein ausdruecklicher Befehl setzt deshalb einen Zustand; nur die
-    /// Wippe auf der Fernbedienung schaltet um.
+    /// Ein ausdruecklicher Befehl setzt deshalb einen Zustand; nur die Wippe
+    /// auf der Fernbedienung schaltet um.
     ///
-    /// `sofortAnzeigen` trennt Befehl von Anzeige: ein ausdrueckliches
-    /// „spiel ab" oder „halt an" von aussen sagt, was gelten soll, und darf
-    /// den Zustand setzen. Die Wippe sagt nur „das andere" — dort wartet die
+    /// `sofortAnzeigen` trennt Befehl von Anzeige: ein ausdrueckliches „spiel
+    /// ab" oder „halt an" von aussen sagt, was gelten soll, und darf den
+    /// Zustand setzen. Die Wippe sagt nur „das andere" — dort wartet die
     /// Anzeige auf VLCs Meldung.
     private func setzen(laeuft soll: Bool, sofortAnzeigen: Bool = true) {
         guard let flaeche else { return }
@@ -872,11 +913,11 @@ struct PlayerScreen: View {
 
         // **Der Finger liegt beim Klick noch auf der Flaeche.**
         //
-        // Auf der Fernbedienung ist der mittlere Knopf die Flaeche selbst:
-        // wer klickt, drueckt sie herunter, und dabei rutscht sie ein Stueck.
-        // Diese Nachzuckung kam als `changed` herein, setzte eine neue Marke
-        // — und die Leiste blieb im Spulzustand stehen, mit eingefrorenen
-        // Zeiten, bis man den Player verliess. Genau das hat Paul gemeldet.
+        // Auf der Fernbedienung ist der mittlere Knopf die Flaeche selbst: wer
+        // klickt, drueckt sie herunter, und dabei rutscht sie ein Stueck.
+        // Diese Nachzuckung kam als `changed` herein, setzte eine neue Marke —
+        // und die Leiste blieb im Spulzustand stehen, mit eingefrorenen
+        // Zeiten, bis man den Player verliess. Genau das hat
         //
         // Ein neuer Wisch faengt bei `began` wieder an; bis dahin ist er
         // entwaffnet.
@@ -890,11 +931,10 @@ struct PlayerScreen: View {
         // **Nie zwei Spruenge uebereinander.**
         //
         // `seek(toSeconds:)` rechnet den Abstand aus VLCs **eigener** Zeit.
-        // Solange der vorige Sprung nicht gelandet ist, steht die noch auf
-        // der alten Stelle — der zweite rechnete von dort und landete zu
-        // weit. Danach zog VLC sich wieder zurecht: erst lief es, dann
-        // sprang ein Stueck, dann lief es weiter. Auch das hat Paul
-        // beschrieben.
+        // Solange der vorige Sprung nicht gelandet ist, steht die noch auf der
+        // alten Stelle — der zweite rechnete von dort und landete zu weit.
+        // Danach zog VLC sich wieder zurecht: erst lief es, dann sprang ein
+        // Stueck, dann lief es weiter. Auch das hat
         if sprungBis != nil {
             spulAufgabe = Task {
                 // **Warten, bis der vorige angekommen ist — nicht eine Frist
@@ -965,6 +1005,10 @@ struct PlayerScreen: View {
             // drei auf fuenf.
             seitStart = Date()
 
+            // **Auch hier, sonst behaelt die naechste Folge die Stufe vom
+            // Oeffnen.** Wer waehrend einer Folge umstellt, meint die
+            // naechste mit — und `play` liest den Wert beim Aufsetzen.
+            flaeche?.puffer = model.pufferstufe
             flaeche?.play(url: neuerPlan.url, abSekunden: 0, container: neuerPlan.container)
             await model.reportStart(item: folge, plan: neuerPlan, seconds: 0)
 
@@ -1043,8 +1087,8 @@ struct PlayerScreen: View {
             // Der Riegel nach einem Sprung stand auf einer festen Frist. Ist
             // VLC frueher da, bleibt die Zeit trotzdem stehen; braucht es
             // laenger, faellt der Riegel zu frueh und die Anzeige springt auf
-            // die alte Stelle zurueck. Beides hat Paul gesehen. Gemessen wird
-            // jetzt, ob VLC dort ist, wo wir hinwollten.
+            // die alte Stelle zurueck. Beides hat Gemessen wird jetzt, ob VLC
+            // dort ist, wo wir hinwollten.
             if sprungBis != nil, abs(flaeche.positionSeconds - position) < Zeitannahme.sprungAngekommen {
                 sprungBis = nil
             }
@@ -1068,7 +1112,18 @@ struct PlayerScreen: View {
                                zeigtBild: flaeche.zeigtBild,
                                stelltEin: flaeche.stelltEin,
                                laeuft: flaeche.isPlaying,
-                               hatTonspuren: !flaeche.tonspuren.isEmpty),
+                               // **Die Spurliste nur lesen, solange sie
+                               // gebraucht wird.** `Wiedergabetakt` fragt
+                               // `hatTonspuren` allein, bis die Spuren gesetzt
+                               // sind; danach ist der Wert unbenutzt. Gelesen
+                               // wurde er trotzdem -- zweimal je Sekunde, den
+                               // ganzen Film lang. `player.audioTracks` baut die
+                               // Liste jedes Mal neu auf, unter der Sperre des
+                               // laufenden Players. Genau der Dauergriff, vor
+                               // dem der Kommentar an `Bildtakt.nochNachzumessen`
+                               // ein paar Zeilen weiter oben warnt; das `||`
+                               // kuerzt ihn weg, sobald er nichts mehr traegt.
+                               hatTonspuren: spurenGesetzt || !flaeche.tonspuren.isEmpty),
                 stelltWiederHer: stelltWiederHer,
                 sprungLaeuft: sprungBis.map { Date() < $0 } ?? false,
                 // Am Fernseher liegt kein Finger am Regler.
@@ -1106,12 +1161,12 @@ struct PlayerScreen: View {
 
             // **Im Stehen den Fokus halten.**
             //
-            // Genau das bewirkt Pauls Umweg ueber die Einstellungen: das
-            // Blatt geht zu, und dabei legt `steuerungWecken` den Fokus
-            // zurueck auf die Leiste — danach laesst sich wieder abspielen.
-            // Einmalig beim Umschalten reichte das nicht; SwiftUI raeumt den
-            // Fokus danach noch auf. Solange angehalten ist und kein Blatt
-            // offen steht, wird er deshalb in jedem Takt neu gesetzt.
+            // Genau das bewirkt der Umweg ueber die Einstellungen: das Blatt
+            // geht zu, und dabei legt `steuerungWecken` den Fokus zurueck auf
+            // die Leiste — danach laesst sich wieder abspielen. Einmalig beim
+            // Umschalten reichte das nicht; SwiftUI raeumt den Fokus danach
+            // noch auf. Solange angehalten ist und kein Blatt offen steht,
+            // wird er deshalb in jedem Takt neu gesetzt.
             //
             // Nur im Stehen: waehrend der Wiedergabe soll der Fokus auf die
             // Knoepfe oben wandern duerfen. Und nur, wenn er **nirgends**
@@ -1279,11 +1334,15 @@ struct VideoFlaeche: UIViewRepresentable {
     let url: URL
     let startAt: Double
     let container: String?
+    /// **Vor `play`, nicht danach.** Die Stufe geht als Startoption an
+    /// libvlc; nachtraeglich gesetzt gilt sie erst beim naechsten Oeffnen.
+    let puffer: Pufferstufe
     /// Wo im Titel der gelieferte Strom beginnt — siehe `PlaybackPlan`.
     let angelegt: (VLCPlayerView) -> Void
 
     func makeUIView(context: Context) -> VLCPlayerView {
         let view = VLCPlayerView()
+        view.puffer = puffer
         view.play(url: url, abSekunden: startAt, container: container)
         DispatchQueue.main.async { angelegt(view) }
         return view
@@ -1315,12 +1374,10 @@ final class Schaltwerk {
     /// schon das Richtige — „nach `laeuft` richten, nicht nach VLC" —, der
     /// Code tat das Gegenteil.
     ///
-    /// Die Folge hat Paul beschrieben: „Jetzt ist es pausiert, aber das
-    /// Pausesymbol ist weg. Wenn ich jetzt wieder auf abspielen gehe, ist auf
-    /// einmal auf Pause." `isPlaying` hinkt dem Befehl nach; wer danach
-    /// fragt, waehlt die Richtung nach einem Stand, den es nicht mehr gibt,
-    /// und schaltet zurueck, was er eben geschaltet hat. Baut VLC gerade
-    /// seine Bildausgabe wieder auf, dauert das Nachhinken Sekunden statt
+    /// Die Folge hat `isPlaying` hinkt dem Befehl nach; wer danach fragt,
+    /// waehlt die Richtung nach einem Stand, den es nicht mehr gibt, und
+    /// schaltet zurueck, was er eben geschaltet hat. Baut VLC gerade seine
+    /// Bildausgabe wieder auf, dauert das Nachhinken Sekunden statt
     /// Millisekunden — dann laeuft es endgueltig auseinander.
     ///
     /// Hier und nicht in der Ansicht, weil die Fernsteuerung aus

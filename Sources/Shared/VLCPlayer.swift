@@ -235,8 +235,8 @@ final class VLCPlayerView: Basisansicht {
         // **Der stille Ausgang.** Gibt es den Tonausgang beim Oeffnen noch
         // nicht, faellt der Rueckhalt hier lautlos aus — und der Zuschauer
         // hoert genau die Sekunde vom Anfang, die er nicht hoeren soll.
-        // Paul hat das am 04.09.2026 wieder gemeldet, obwohl der Rueckhalt
-        // gebaut ist; ob es dieser Ausgang ist, sagt nur eine Messung.
+        // 09.2026 wieder gemeldet, obwohl der Rueckhalt gebaut ist; ob es
+        // dieser Ausgang ist, sagt nur eine Messung.
         guard let ton = player.audio else {
             Protokoll.schreib("[Ton] Rueckhalt(\(zurueck)) ohne Tonausgang — wirkungslos")
             return
@@ -250,8 +250,7 @@ final class VLCPlayerView: Basisansicht {
             // gar nicht und `volume` steht auf 0 oder -1. Gemerkt und spaeter
             // „wiederhergestellt" hiess damit: dauerhaft stumm.
             //
-            // Paul am Geraet: „ich hoere die erste Sekunde, dann geht er an
-            // die richtige Stelle und ich hoere nix mehr." Genau das.
+            // Genau das.
             let jetzt = ton.volume
             lautstaerkeVorher = jetzt > 0 ? jetzt : 100
             ton.volume = 0
@@ -411,33 +410,30 @@ final class VLCPlayerView: Basisansicht {
         // **Der Knopf folgt der Maschine, nicht der Uhr.**
         //
         // Der Zustand des Abspielknopfes hing bisher am Takt, und der schlägt
-        // alle 500 ms (`Wiedergabetakt.taktlaenge`). Der Knopf sprang also
-        // bis zu einer halben Sekunde nach dem Druck um.
+        // alle 500 ms (`Wiedergabetakt.taktlaenge`). Der Knopf sprang also bis
+        // zu einer halben Sekunde nach dem Druck um.
         //
         // Setzt man ihn stattdessen sofort im Klick, ist er zu **früh**: das
         // Bild braucht noch seine Zeit. Am Mac gemessen, dreimal:
         //
-        //     Klick → VLC meldet „angehalten"   17–25 ms
-        //     Klick → Filmzeit steht wirklich   26–36 ms
+        // Klick → VLC meldet „angehalten"   17–25 ms Klick → Filmzeit steht
+        // wirklich   26–36 ms
         //
         // Alle Geräte hier laufen mit **120 Hz**, ein Bild ist also 8,3 ms —
         // das sind drei bis vier Bilder, nicht ein bis zwei. (Hier stand
         // zuerst die Rechnung für 60 Hz; sie hat den Abstand halbiert und
         // damit kleiner aussehen lassen, als er ist.) Das ist der Abstand, den
-        // Paul auf allen drei Plattformen sieht — auf dem Mac hat er ihn
-        // zuerst benannt, auf iOS und tvOS hat es ihn „die ganze Zeit
-        // gestört".
         //
         // Also weder das eine noch das andere: der Knopf hängt an genau der
-        // Meldung, mit der die Maschine selbst umschaltet. Dann sind Knopf
-        // und Bild im selben Moment still, und der Abstand verschwindet —
-        // nicht, weil er kleiner wird, sondern weil es keine zwei Zeitpunkte
-        // mehr gibt.
+        // Meldung, mit der die Maschine selbst umschaltet. Dann sind Knopf und
+        // Bild im selben Moment still, und der Abstand verschwindet — nicht,
+        // weil er kleiner wird, sondern weil es keine zwei Zeitpunkte mehr
+        // gibt.
         //
         // Warum nicht schneller: Jellyfin Media Player und Jellium haben das
         // Problem nicht, aber beide setzen auf **libmpv**, nicht auf libvlc —
-        // andere Ausgabewarteschlange. Das ist kein Kniff zum Übernehmen,
-        // das ist ein anderer Motor.
+        // andere Ausgabewarteschlange. Das ist kein Kniff zum Übernehmen, das
+        // ist ein anderer Motor.
         switch zustand {
         case .playing:  laeuftGemeldet?(true)
         case .paused:   laeuftGemeldet?(false)
@@ -557,6 +553,24 @@ final class VLCPlayerView: Basisansicht {
             bildfluss(jetzt: jetzt)
             letzteBekannteZeit = jetzt
             stehtSeit = nil
+            // **Die Uhr laeuft — aber kommt auch ein Bild?** Ohne diese
+            // Zeilen endete die Pruefung hier, und ein Strom, dessen Uhr
+            // weiterlaeuft, galt fuer immer als gesund. Dieselben Schwellen
+            // wie unten: `Stromwacht` haelt sie an einer Stelle, und eine
+            // falsche davon kostet den Zuschauer zehn Sekunden Film.
+            if let seit = bilderStehenSeit {
+                let dauer = Date().timeIntervalSince(seit)
+                if case .neuVerbinden = Stromwacht.rat(
+                    stillstandSeit: dauer,
+                    netzwechselVor: netzwechselSeit.map { Date().timeIntervalSince($0) },
+                    sprungOffen: offenesZiel != nil,
+                    letzterSprungVor: Date().timeIntervalSince(letzterSprungbefehl),
+                    pufferWuchsVor: melder.pufferWuchsVor) {
+                    bilderStehenSeit = nil
+                    neuVerbinden(grund: "kein neues Bild seit \(Int(dauer)) s, Uhr laeuft weiter")
+                    return
+                }
+            }
             let laenge = laengeSekunden
             // Nur mitschreiben, was plausibel ist: nach einem Abriss stuende
             // hier sonst das Filmende drin.
@@ -602,25 +616,37 @@ final class VLCPlayerView: Basisansicht {
     /// nichts.**
     ///
     /// Die Absicherung darueber schlaegt an, wenn die *Zeit* stehen bleibt.
-    /// Paul hat am 04.09.2026 den umgekehrten Fall gemeldet: App lag lange
-    /// im Hintergrund, Player auf Pause; zurueck in der App lief es eine
-    /// halbe Minute, dann Standbild — und die Zeit lief weiter. Fuer
-    /// `Stromwacht` ist das ein gesunder Strom, denn `jetzt` aendert sich
-    /// jede Sekunde. Sie ist fuer genau diesen Fehler blind, und zwar
-    /// bauartbedingt.
+    /// 09.2026 den umgekehrten Fall gemeldet: App lag lange im Hintergrund,
+    /// Player auf Pause; zurueck in der App lief es eine halbe Minute, dann
+    /// Standbild — und die Zeit lief weiter. Fuer `Stromwacht` ist das ein
+    /// gesunder Strom, denn `jetzt` aendert sich jede Sekunde. Sie ist fuer
+    /// genau diesen Fehler blind, und zwar bauartbedingt.
     ///
     /// Deshalb hier die zweite Groesse. VLC fuehrt sie selbst mit:
     /// `displayedPictures` sind die gezeigten Bilder, `demuxReadBytes` das,
-    /// was ueberhaupt vom Server ankommt. Die beiden zusammen trennen die
-    /// zwei Erklaerungen, die sich sonst nicht unterscheiden lassen:
+    /// was ueberhaupt vom Server ankommt. Die beiden zusammen trennen die zwei
+    /// Erklaerungen, die sich sonst nicht unterscheiden lassen:
     ///
     /// - Bytes wachsen, Bilder nicht → die Daten kommen, die Ausgabe ist tot.
     /// - Beide stehen → es kommt nichts mehr, die Verbindung ist weg.
     ///
-    /// **Noch wird nur mitgeschrieben, nicht eingegriffen.** Welche der
-    /// beiden es ist, weiss niemand, und eine Bremse auf Verdacht hat in
-    /// dieser Datei schon einmal den Haenger erzeugt, den sie beheben
-    /// sollte — siehe `Stromwacht`. Erst messen.
+    /// **Noch wird nur mitgeschrieben, nicht eingegriffen.** Welche der beiden
+    /// es ist, weiss niemand, und eine Bremse auf Verdacht hat in dieser Datei
+    /// schon einmal den Haenger erzeugt, den sie beheben sollte — siehe
+    /// `Stromwacht`. Erst messen. Seit wann kein neues Bild mehr ausgegeben
+    /// wurde.
+    ///
+    /// **Der zweite Fuehler, und der bessere.** Die Wacht darueber vergleicht
+    /// `player.time`; laeuft die Uhr, gilt der Strom als lebendig. Am
+    /// 05.09.2026 lief sie bei Auf dem Geraet gemessen: `displayedPictures`
+    /// **76 Sekunden lang** eingefroren auf 15925, Zuwachs von
+    /// `demuxReadBytes` durchgehend 0, die Uhr lief in derselben Zeit von 6388
+    /// auf 6464 s im Gleichtakt mit der Wanduhr.
+    ///
+    /// Der Fuehler war die ganze Zeit da — `bildfluss` hat ihn gelesen und
+    /// **nur ins Protokoll geschrieben**. Jetzt wirkt er.
+    private var bilderStehenSeit: Date?
+
     private func bildfluss(jetzt: Int32) {
         guard let stat = player.media?.statistics else { return }
         defer {
@@ -629,10 +655,15 @@ final class VLCPlayerView: Basisansicht {
         }
         guard let vorherBilder = letzteBilder, let vorherBytes = letzteBytes else { return }
 
+        guard stat.displayedPictures == vorherBilder else {
+            bilderStehenSeit = nil
+            return
+        }
+        bilderStehenSeit = bilderStehenSeit ?? Date()
+
         // Nur der auffaellige Fall kommt ins Protokoll. Jede Sekunde eine
         // Zeile zu schreiben, macht die Datei unlesbar und verdeckt genau
         // den Moment, um den es geht.
-        guard stat.displayedPictures == vorherBilder else { return }
 
         let bytes = stat.demuxReadBytes - vorherBytes
         Protokoll.schreib("[Bild] Uhr bei \(jetzt / 1000) s laeuft, aber kein neues Bild"
@@ -680,24 +711,23 @@ final class VLCPlayerView: Basisansicht {
     /// wieder ausgebaut.
     ///
     /// **Der neue Grund ist ein anderer und ein besserer.** Die gemerkte
-    /// Stelle kann am Dateiende liegen: eine Folge laeuft durch, die App
-    /// merkt sich 3707 s, und beim naechsten Oeffnen steht genau dort die
-    /// Startposition. Mit ':start-time' meldet VLC dann sofort `end of
-    /// stream` — gemessen, 141 ms nach dem Oeffnen —, die Folgenende-
-    /// Erkennung greift und die App springt in die naechste Folge. Paul
-    /// wollte weiterschauen und landete in Folge zwei.
+    /// Stelle kann am Dateiende liegen: eine Folge laeuft durch, die App merkt
+    /// sich 3707 s, und beim naechsten Oeffnen steht genau dort die
+    /// Startposition. Mit ':start-time' meldet VLC dann sofort `end of stream`
+    /// — gemessen, 141 ms nach dem Oeffnen, die Folgenende- Erkennung greift
+    /// und die App springt in die naechste Folge.
     ///
     /// Der Weg ueber den nachtraeglichen Sprung hat den Fehler nicht: dort
     /// laeuft der Strom erst an, und ein Sprung ans eigene Ende ist harmlos.
     ///
     /// Wer es erneut versucht, braucht **vorher** die Laufzeit und einen
-    /// Abstand zum Ende — und die Laufzeit steht beim Oeffnen noch nicht
-    /// fest. Das ist der eigentliche Aufwand, nicht die Option.
+    /// Abstand zum Ende — und die Laufzeit steht beim Oeffnen noch nicht fest.
+    /// Das ist der eigentliche Aufwand, nicht die Option.
     ///
     /// Haengt bewusst **nicht** allein am Zustandswechsel nach Playing. Baut
     /// man den Strom neu auf, waehrend VLC schon spielt, bleibt es intern bei
-    /// Playing — es kommt kein Uebergang, der Rueckruf feuert nie und der
-    /// neue Strom laeuft ab Sekunde 0. Genau daran ist die Rettung nach dem
+    /// Playing — es kommt kein Uebergang, der Rueckruf feuert nie und der neue
+    /// Strom laeuft ab Sekunde 0. Genau daran ist die Rettung nach dem
     /// Netzwechsel gescheitert. Der Wachhund ruft deshalb ebenfalls hier an.
     private func startpositionSetzen() {
         // Der pausierte Start hat Vorrang; dieser Weg ist nur noch der
@@ -811,6 +841,10 @@ final class VLCPlayerView: Basisansicht {
     /// HTTPS dauert ein Sprung länger als die Wartezeit, die Position las sich
     /// noch als alt, es wurde erneut gesprungen — und der Demuxer kam nie zur
     /// Ruhe. Von vorn gestartete Titel liefen deshalb, fortgesetzte nicht.
+    /// Wieviel Vorrat der naechste Start haelt. Vor `play(url:)` setzen —
+    /// die Optionen haengen am Medium, und das entsteht erst dort.
+    var puffer: Pufferstufe = .normal
+
     func play(url: URL, abSekunden: Double = 0, container: String? = nil) {
         // Die Sitzung wird beim App-Start eingerichtet. Hier nur prüfen und
         // notfalls nachziehen — mit sichtbarem Fehler statt stillem try?.
@@ -824,6 +858,22 @@ final class VLCPlayerView: Basisansicht {
         if sitzung.sampleRate < 1 {
             do {
                 try sitzung.setCategory(.playback, mode: .moviePlayback)
+            // **Systemhinweise duerfen den Film nicht anhalten.**
+            //
+            // Die Mitteilungszentrale herunterzuziehen loeste eine
+            // Tonunterbrechung aus, und die hielt die Wiedergabe an --
+            // dreimal derselbe Handgriff, dreimal `pausing` von VLC. Anhalten
+            // soll aber nur, wer die App wirklich verlaesst: ohne
+            // Bild-im-Bild in den Hintergrund, geschlossen, oder Geraet aus.
+            //
+            // `setPrefersNoInterruptionsFromSystemAlerts` ist genau dafuer
+            // da. Apples Dokumentation sagt nicht ausdruecklich, dass die
+            // Mitteilungszentrale darunter faellt -- deshalb wird der Grund
+            // der Unterbrechung zusaetzlich mitgeschrieben, statt es
+            // anzunehmen.
+            if #available(iOS 14.5, tvOS 14.5, *) {
+                try? sitzung.setPrefersNoInterruptionsFromSystemAlerts(true)
+            }
                 try sitzung.setActive(true)
                 Protokoll.schreib("[Audio] nachgezogen · \(Int(sitzung.sampleRate)) Hz")
             } catch {
@@ -941,7 +991,46 @@ final class VLCPlayerView: Basisansicht {
         // Groesse null laedt er trotzdem, nur eben ohne Puffer — schlechter
         // als vorher. `STREAM_CAN_FASTSEEK` bleibt aus, und damit bleibt der
         // Bereichs-Scan der Matroska unerreichbar. Zurueck auf 16 MiB.
-        medium.addOption(":prefetch-buffer-size=16384")
+        // **Die Stufe kommt aus den Einstellungen, die Zahlen aus dem Paket.**
+        // 16 MiB bleibt die Vorgabe; wer eine wackelige Leitung hat, stellt
+        // hoeher und bezahlt es mit laengerem Anlaufen nach jedem Sprung.
+        medium.addOption(":prefetch-buffer-size=\(puffer.prefetchKiB)")
+        if let vorlauf = puffer.netzvorlaufMillisekunden, url.isFileURL == false {
+            // Nur bei erhoehter Stufe gesetzt — siehe die Messung weiter unten,
+            // warum das im Normalfall nichts bringt und Spruenge verteuert.
+            medium.addOption(":network-caching=\(vorlauf)")
+        }
+
+        // **Nach einer laengeren Pause ist die Verbindung weg.**
+        //
+        // Am 08.09.2026 zweimal mitgeschrieben: 25 Sekunden pausiert, und
+        // beim Fortsetzen steht `local stream N error: Cancellation (0x8)`
+        // im Protokoll -- der Server hat den untaetigen Strom abgeraeumt.
+        // VLC baut daraufhin alles neu auf (PCR zuruecksetzen, neu suchen,
+        // puffern), und weil iOS im Hintergrund zusaetzlich die
+        // Dekodersitzung entwertet hatte (`kVTInvalidSessionErr`), dauert
+        // das rund zwei Sekunden.
+        //
+        // `http-reconnect` laesst VLC den Abriss selbst auffangen, statt ihn
+        // als Stromende zu behandeln. Es aendert nichts, solange die
+        // Verbindung haelt.
+        if url.isFileURL == false {
+            medium.addOption(":http-reconnect")
+        }
+
+        // **Am Vorrat lag es nicht -- nachgemessen, nicht vermutet.**
+        //
+        // Hier stand kurz `:network-caching=10000`, weil VLCs Voreinstellung
+        // von 1000 ms duenn aussah und ein anderer Client elf Sekunden Vorrat
+        // anzeigt. Die Messung am Geraet hat das erledigt: gelesen minus
+        // entpackt ergab **211 Sekunden**. Der `prefetch`-Filter oben haelt
+        // 16 MiB, und das sind bei dieser Bitrate dreieinhalb Minuten Inhalt.
+        // Der Zeitvorlauf haette daran nichts geaendert, aber jeden Sprung
+        // teurer gemacht.
+        //
+        // Was „Eingang 0 kbit/s" beim stehenden Bild wirklich hiess: nicht
+        // „es kommt nichts", sondern „es muss gerade nichts kommen". Der
+        // Engpass liegt hinter dem Demuxer, nicht davor.
 
 
         // **Die Entscheidung muss ablesbar sein.**
@@ -1121,6 +1210,25 @@ final class VLCPlayerView: Basisansicht {
     var laeuftGemeldet: ((Bool) -> Void)?
 
     func pause()  { player.pause(); refreshPiPState() }
+
+    /// **Wie das Bild in die Flaeche gelegt wird -- ganz oder formatfuellend.**
+    ///
+    /// `Smaller` legt das ganze Bild hinein und laesst Balken stehen, `Larger`
+    /// fuellt die Flaeche und schneidet ab. Beides ohne Verzerren; ein
+    /// dritter Zustand waere nur eine falsche Streckung, deshalb gibt es
+    /// zwei.
+    ///
+    /// Nicht ueber `videoAspectRatio`: das setzt ein Seitenverhaeltnis und
+    /// zieht das Bild darauf, statt es zu beschneiden. Gesichter werden dabei
+    /// breit, und genau das will niemand.
+    func bildfuellend(_ an: Bool) {
+        player.videoFitMode = an ? .larger : .smaller
+    }
+
+    /// Die Bildgroesse des Stroms in Pixeln, `zero` bevor das erste Bild da
+    /// ist. Wird gebraucht, um auszurechnen, wie weit zwischen „ganz hinein"
+    /// und „ganz ausfuellen" liegt.
+    var videoSize: CGSize { player.videoSize }
     func resume() { player.play();  refreshPiPState() }
     func stop() {
         absichtlichBeendet = true
@@ -1378,7 +1486,21 @@ final class Zeichenflaeche: Basisansicht {
 /// beantwortet, wo die Wartezeit herkommt: Zugriffsschicht, Demuxer, Puffer,
 /// Decoder — dazu alles, was VLC selbst als Fehler oder Warnung einstuft.
 final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
-    var level: VLCLogLevel = .debug
+    /// **Die Stufe ist selbst eine Last, kein blosser Filter.**
+    ///
+    /// Auf `debug` meldet VLC waehrend der Wiedergabe hunderte Zeilen je
+    /// Sekunde, und jede laeuft hier durch `print`, eine Sperre und einen
+    /// Dateischreibvorgang. Wer damit misst, wie gleichmaessig Bilder auf
+    /// den Schirm kommen, misst zu einem guten Teil sich selbst — am
+    /// 08.09.2026 sind so vier Messungen am Apple TV entstanden, deren
+    /// Ruckeln womoeglich vom Protokollieren stammte.
+    ///
+    /// `warning` laesst genau das durch, was zur Ausgabe etwas sagt: VLC
+    /// stuft verspaetete Bilder und Uhrabweichungen als Warnung ein. Fuer
+    /// die Demuxer-Suche, die `debug` braucht, reicht ein gesetzter
+    /// Schluessel — dann darf es auch langsam sein.
+    var level: VLCLogLevel = UserDefaults.standard.bool(forKey: "vlcAusfuehrlich")
+        ? .debug : .info
 
     /// **Nach Inhalt sieben, nicht nach Modul.**
     ///
@@ -1395,9 +1517,24 @@ final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
     /// er sagt nichts, was die Bereichsanfragen nicht schon sagen.
     private static let flut = ["frame of", "window update", "setting:", "headers:"]
 
+    /// **Was auf `info` trotzdem durchkommt.**
+    ///
+    /// Die Stufe steht auf `info`, weil genau dort die eine Zeile faellt, die
+    /// sagt, *womit* dekodiert wird -- „using video decoder module ...".
+    /// Ohne sie ist nicht zu entscheiden, ob HEVC ueber VideoToolbox laeuft
+    /// oder auf der CPU, und beide Faelle sehen von aussen gleich aus.
+    /// Geschrieben wird deshalb nur, was diese Frage beantwortet, dazu alles
+    /// ab Warnung -- der Rest wird verworfen, bevor er eine Sperre oder die
+    /// Platte sieht.
+    private static let gesucht = ["decoder module", "using video", "using audio",
+                                  "videotoolbox", "hardware", "vout display",
+                                  "picture is too late", "clock"]
+
     func handleMessage(_ nachricht: String, logLevel: VLCLogLevel, context: VLCLogContext?) {
         let text = nachricht.lowercased()
         guard !Self.flut.contains(where: { text.contains($0) }) else { return }
+        let wichtig = logLevel == .error || logLevel == .warning
+        guard wichtig || Self.gesucht.contains(where: { text.contains($0) }) else { return }
         let modul = context?.module ?? "?"
         Protokoll.schreib("[vlc/\(modul)] \(nachricht)")
     }

@@ -154,7 +154,7 @@ der so etwas auffällt.
 
 `0032-input_clock-raise-CR_MAX_GAP-back-to-60-seconds.patch`
 
-Eine Folge auf Pauls Server hat die App auf dem Apple TV nach rund zwei
+Eine Folge auf dem Testserver hat die App auf dem Apple TV nach rund zwei
 Minuten umgebracht. Kein Absturz — das Geraet hatte keinen Bericht —, sondern
 verbrannter Prozessor.
 

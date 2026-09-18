@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Maße, Schriftgrößen und Bausteine für den Fernseher.
@@ -88,25 +89,23 @@ extension Stil {
 
     /// **Um so viel steht eine Detailseite tiefer als die Startseite.**
     ///
-    /// Die Startseite setzt ihren Textblock bei 196 an, `Film-Neu.dc.html`
-    /// den der Detailseite bei 140 — weil ueber der Startseite die
-    /// Kopfleiste steht und ueber der Detailseite nichts. Auf dem Schirm ist
-    /// das aber dieselbe Auskunft zum selben Film, und beim Druecken sprang
-    /// sie um diese 56 nach oben. Paul: „das gesamte Ding ausser dem
-    /// Hintergrund muss ein Stueck niedriger, wie als waer oben noch die
-    /// Swiftly-Leiste drin."
+    /// Die Startseite setzt ihren Textblock bei 196 an, `Film-Neu.dc.html` den
+    /// der Detailseite bei 140 — weil ueber der Startseite die Kopfleiste
+    /// steht und ueber der Detailseite nichts. Auf dem Schirm ist das aber
+    /// dieselbe Auskunft zum selben Film, und beim Druecken sprang sie um
+    /// diese 56 nach oben.
     ///
     /// Genau das ist es: die Leiste wird nicht gezeichnet, ihr Platz aber
-    /// freigehalten. **Der Hintergrund wandert nicht mit** — die Kulisse
-    /// steht im selben Stapel und behaelt ihre Lage.
+    /// freigehalten. **Der Hintergrund wandert nicht mit** — die Kulisse steht
+    /// im selben Stapel und behaelt ihre Lage.
     ///
     /// Verschoben wird der ganze Block, nicht die Abstaende darin. Deshalb
     /// waechst auch die Kopfzone um denselben Betrag, und die Tafelmasse
     /// gelten unveraendert weiter:
     ///
-    ///     196 + 68 + 14 + 34 + 22 + 80 + 36 + 76 = 526   Block endet
-    ///     566 + 24                               = 590   Reihentitel
-    ///     590 − 526                              =  64   wie in der Tafel
+    /// 196 + 68 + 14 + 34 + 22 + 80 + 36 + 76 = 526   Block endet 566 + 24
+    /// = 590   Reihentitel 590 − 526                              =  64   wie
+    /// in der Tafel
     static let kopfversatzDetail: CGFloat = 56
 
     /// Zeilenhoehe und Zeilenabstand der Beschreibung.
@@ -130,24 +129,17 @@ extension Stil {
 
     /// **Feste Hoehe des Kopfblocks — Titel, Angabenzeile, Beschreibung.**
     ///
-    ///     Titel           68
-    ///     + 14 Angaben    34
-    ///     + 22 Beschr.   127
-    ///     = 265
+    /// Titel           68 + 14 Angaben    34 + 22 Beschr.   127 = 265
     ///
     /// Fest, damit nichts darunter vom Inhalt abhaengt: ein Film ohne
     /// Beschreibung, ein langer Titel, eine Folge mit Zweitzeile — der Block
     /// ist immer gleich hoch, also steht die Knopfreihe immer an derselben
-    /// Stelle.
-    /// **Wo das oberste Element jeder Seite endet.**
+    /// Stelle. **Wo das oberste Element jeder Seite endet.**
     ///
-    /// Paul: „geh mal auf jede Seite und guck, wo das oberste Element endet —
-    /// das muss ueberall dasselbe sein, sonst haben wir kein konsistentes
-    /// Design." Stimmt, und es war es nicht:
+    /// Stimmt, und es war es nicht:
     ///
-    ///     Start, Detail   Titel 68 ab 196   endet 264
-    ///     Bibliothek      Chips 48 ab 190   endet 238
-    ///     Suche           Feld  76 ab 190   endet 266
+    /// Start, Detail   Titel 68 ab 196   endet 264 Bibliothek      Chips 48 ab
+    /// 190   endet 238 Suche           Feld  76 ab 190   endet 266
     ///
     /// Ich hatte die **Anfaenge** auf 190 gelegt. Bei verschieden hohen
     /// Elementen richtet das nichts aus — sichtbar ist die Unterkante, weil
@@ -164,11 +156,10 @@ extension Stil {
     ///
     /// Drei Zeilen sind richtig, solange der Titel allein oben steht. Kommt
     /// bei einer Folge der Folgentitel dazu, kostet er 54 Punkt — und die
-    /// dritte Zeile lief dann in den Reihentitel darunter. Paul: „drei Zeilen
-    /// vielleicht manchmal etwas too much."
+    /// dritte Zeile lief dann in den Reihentitel darunter.
     ///
-    ///     ohne  68      + 14 + 34 + 22 + 127 = 265
-    ///     mit   68 + 54 + 14 + 34 + 22 +  81 = 273
+    /// ohne  68      + 14 + 34 + 22 + 127 = 265 mit   68 + 54 + 14 + 34 + 22 +
+    /// 81 = 273
     ///
     /// Der Block waechst also nur um acht statt um 54: der Folgentitel nimmt
     /// sich seinen Platz groesstenteils von der Beschreibung, nicht von der
@@ -196,15 +187,15 @@ extension Stil {
 
     /// Der Abstand unter der Knopfreihe — 64 aus `Film-Neu.dc.html`.
     ///
-    /// Einmal auf 36 gekuerzt, weil ich glaubte, die erste Reihe rage 26
-    /// Punkt ueber den Schirm hinaus. **Sie tut es nicht.** An Pauls Bild mit
-    /// der Kachelbreite als Massstab nachgemessen endet sie samt Beschriftung
-    /// bei rund 1005 — 75 Punkt Luft. Die Rechnung davor stand auf zwei
-    /// geschaetzten Werten (Reihentitel 46, Beschriftung 122), und beide
-    /// waren zu gross.
+    /// Einmal auf 36 gekuerzt, weil ich glaubte, die erste Reihe rage 26 Punkt
+    /// ueber den Schirm hinaus. **Sie tut es nicht.** An dem Bildschirmfoto mit der
+    /// Kachelbreite als Massstab nachgemessen endet sie samt Beschriftung bei
+    /// rund 1005 — 75 Punkt Luft. Die Rechnung davor stand auf zwei
+    /// geschaetzten Werten (Reihentitel 46, Beschriftung 122), und beide waren
+    /// zu gross.
     ///
-    /// Die Zahl aus der Tafel gilt also weiter. Was beim Fokussieren
-    /// passiert, kommt nicht von der Hoehe.
+    /// Die Zahl aus der Tafel gilt also weiter. Was beim Fokussieren passiert,
+    /// kommt nicht von der Hoehe.
     static let abstandUnterDerKnopfreihe: CGFloat = 64
 
     /// Senkrechte Luft im waagerechten Streifen.
@@ -277,6 +268,11 @@ extension Stil {
     /// träge genug.
     static let fokusAnimation = Animation.easeOut(duration: 0.14)
 
+    /// Wie Inhalt erscheint, wenn er angekommen ist — dieselbe Kurve wie auf
+    /// dem iPhone. **Nichts erscheint hart** (E18): Bilder blenden ein,
+    /// Inhalt loest Platzhalter ab.
+    static let einblenden = Animation.easeInOut(duration: 0.28)
+
     // MARK: Seitenwechsel
 
     /// Überblenden zwischen zwei Bereichen.
@@ -315,21 +311,54 @@ struct Bild: View {
     /// Fortschritt am unteren Rand, innerhalb der Maske.
     var fortschritt: Double? = nil
 
+    /// Profil → Darstellung. Siehe `EnvironmentValues.fortschrittAufKacheln`.
+    @Environment(\.fortschrittAufKacheln) private var balkenZeigen
+
+    /// **Ein abgebrochener Abruf ist kein Fehlschlag — er ist einen zweiten
+    /// Versuch wert.**
+    ///
+    /// `AsyncImage` bricht ab, sobald seine Kachel vom Schirm geht, und
+    /// bleibt danach im Fehlerzustand stehen: kommt dieselbe Kachel zurück,
+    /// versucht es von sich aus nichts mehr. Beim Kontowechsel geht die halbe
+    /// Seite kurz durch die Hände des Fokusmotors, und dann trifft es viele
+    /// Kacheln auf einmal. Am Gerät gemessen, zwanzigmal in Folge:
+    ///
+    ///     NSURLErrorDomain -999
+    ///
+    /// Das heißt „abgebrochen" — nicht abgelehnt, nicht verfehlt. Derselbe
+    /// Aufruf von außen kam mit HTTP 200 und 158 KB zurück. Deshalb hier ein
+    /// neuer Anlauf statt einer grauen Fläche; höchstens zwei, damit ein
+    /// echter Ausfall nicht in eine Schleife läuft.
+    @State private var anlauf = 0
+
     var body: some View {
         Color.clear
             .frame(width: breite, height: hoehe)
             .frame(maxWidth: breite == nil ? .infinity : nil)
             .overlay {
-                AsyncImage(url: url) { phase in
+                // Die `transaction` blendet den Wechsel der Lagen weich;
+                // ohne sie schaltet `AsyncImage` hart um. **Nichts erscheint
+                // hart** — GESTALTUNG, Abschnitt E.
+                AsyncImage(url: url,
+                           transaction: Transaction(animation: Stil.einblenden)) { phase in
                     if case let .success(bild) = phase {
                         bild.resizable().aspectRatio(contentMode: .fill)
+                            .transition(.opacity)
                     } else {
-                        Stil.flaeche
+                        Stil.flaeche.onAppear {
+                            guard case let .failure(f) = phase,
+                                  (f as NSError).code == NSURLErrorCancelled,
+                                  anlauf < 2 else { return }
+                            anlauf += 1
+                        }
                     }
                 }
+                .id(anlauf)
             }
+            // Eine neue Adresse heißt ein frischer Anlauf.
+            .onChange(of: url) { _, _ in anlauf = 0 }
             .overlay(alignment: .bottom) {
-                if let fortschritt {
+                if let fortschritt, balkenZeigen {
                     Fortschrittsbalken(anteil: fortschritt)
                 }
             }
@@ -426,20 +455,40 @@ struct Belegzeile: View {
     @ViewBuilder
     private var beleg: some View {
         if direktplay {
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 24, weight: .heavy))
-                Text("Direct Play").font(.system(size: 27, weight: .medium))
-            }
-            .foregroundStyle(Stil.akzent)
+            marke("checkmark", Text("Direct Play"), farbe: Stil.akzent, gewicht: .heavy)
         } else if let hinweis {
-            HStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 24))
-                Text(hinweis).font(.system(size: 27, weight: .medium))
-            }
-            .foregroundStyle(Stil.warnung)
+            marke("exclamationmark.triangle.fill", Text(hinweis),
+                  farbe: Stil.warnung, gewicht: .regular)
         }
+    }
+
+    /// Die Huelle, in der beide Belege stecken.
+    ///
+    /// **Warum eine Marke und kein loser Text.** Zeichen und Wort standen
+    /// nackt auf dem Grund, und daneben liegt die Freigabe als umrandete
+    /// Plakette — zwei verschiedene Formen fuer zwei Angaben, die gleich viel
+    /// wiegen. Jetzt tragen beide dieselbe Ecke und lesen sich als Paar;
+    /// welche Auskunft es ist, sagt die Farbe.
+    ///
+    /// **Rundung 6, dieselbe wie `Plakette.fern`** — nicht `Stil.ecke`. Es
+    /// geht hier nicht um die Groesse der Flaeche, sondern darum, dass die
+    /// beiden Nachbarn gleich aussehen.
+    ///
+    /// Fuenfzehn Prozent Toenung, keine Fuellung: der weisse Fokus bleibt
+    /// die einzige gefuellte Flaeche des Bildschirms.
+    private func marke(_ symbol: String, _ wort: Text,
+                       farbe: Color, gewicht: Font.Weight) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 24, weight: gewicht))
+            wort.font(.system(size: 27, weight: .medium))
+        }
+        .foregroundStyle(farbe)
+        // Links enger als rechts: das Zeichen ist schmaler als seine
+        // Zeichenzelle, sonst sitzt das Wort sichtbar aus der Mitte.
+        .padding(.leading, 16)
+        .padding(.trailing, 20)
+        .padding(.vertical, 8)
+        .background(farbe.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
     }
 }
 
@@ -625,47 +674,6 @@ struct Hinweisstreifen: View {
 }
 
 // MARK: - Umbrechende Reihe
-
-/// Reihe, die umbricht, wenn die Breite nicht reicht.
-///
-/// `HStack` bricht nie um, und ein Gitter bräuchte feste Spalten — für
-/// verschieden breite Chips ist beides falsch.
-struct FlussReihe: Layout {
-    var abstand: CGFloat = 14
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews,
-                      cache: inout ()) -> CGSize {
-        let breite = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, zeilenhoehe: CGFloat = 0
-        for teil in subviews {
-            let mass = teil.sizeThatFits(.unspecified)
-            if x + mass.width > breite, x > 0 {
-                x = 0
-                y += zeilenhoehe + abstand
-                zeilenhoehe = 0
-            }
-            x += mass.width + abstand
-            zeilenhoehe = max(zeilenhoehe, mass.height)
-        }
-        return CGSize(width: breite, height: y + zeilenhoehe)
-    }
-
-    func placeSubviews(in rahmen: CGRect, proposal: ProposedViewSize,
-                       subviews: Subviews, cache: inout ()) {
-        var x = rahmen.minX, y = rahmen.minY, zeilenhoehe: CGFloat = 0
-        for teil in subviews {
-            let mass = teil.sizeThatFits(.unspecified)
-            if x + mass.width > rahmen.maxX, x > rahmen.minX {
-                x = rahmen.minX
-                y += zeilenhoehe + abstand
-                zeilenhoehe = 0
-            }
-            teil.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(mass))
-            x += mass.width + abstand
-            zeilenhoehe = max(zeilenhoehe, mass.height)
-        }
-    }
-}
 
 /// Rubrik über einer Gruppe von Zeilen.
 struct Gruppentitel: View {
