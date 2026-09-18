@@ -178,7 +178,7 @@ struct HomeView: View {
         // **Nach der Endmeldung, nicht beim Zumachen.** Beim Zumachen ist sie
         // noch unterwegs; die Abfrage bekam den Stand des letzten Takts.
         // Siehe `AppModel.wiedergabeBeendet`.
-        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await auffrischen() } }
+        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await auffrischen() } }
     }
 
     /// Eine feste Reihe — derselbe Aufbau wie vorher, nur einzeln abrufbar,

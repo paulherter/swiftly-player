@@ -1,4 +1,8 @@
 import Foundation
+#if canImport(FoundationNetworking)
+// Auf Linux (auch der CI) liegen URLSession und HTTPCookie hier.
+import FoundationNetworking
+#endif
 import Testing
 @testable import JellyfinKit
 
@@ -403,4 +407,26 @@ struct SeerrAdresseTests {
     func leer() {
         #expect(Seerr.adressen(aus: "   ").isEmpty)
     }
+}
+
+// MARK: - Sitzung im Keksspeicher
+
+/// **Der Fall vom 17.09.:** Abmelden warf nur den gespeicherten Zugang weg,
+/// der Keks blieb im Speicher der Verbindung. Seerr (express-session) stellt
+/// dann keine neue Sitzung aus — die Anmeldung meldete „keine Sitzung
+/// mitgegeben", obwohl sie gelungen war.
+@Test func keksKommtAuchAusDemSpeicher() throws {
+    let adresse = URL(string: "https://seerr.example.de")!
+    let k = URLSessionConfiguration.ephemeral
+    let sitzung = URLSession(configuration: k)
+    let keks = HTTPCookie(properties: [
+        .domain: "seerr.example.de", .path: "/",
+        .name: "connect.sid", .value: "s%3Aabc123",
+    ])!
+    k.httpCookieStorage?.setCookie(keks)
+
+    #expect(Seerr.keksAusSpeicher(fuer: adresse, sitzung: sitzung) == "connect.sid=s%3Aabc123")
+
+    Seerr.kekseVergessen(fuer: adresse, sitzung: sitzung)
+    #expect(Seerr.keksAusSpeicher(fuer: adresse, sitzung: sitzung) == nil)
 }

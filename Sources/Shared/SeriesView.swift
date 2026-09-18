@@ -254,7 +254,7 @@ struct SeriesDetailView: View {
         // **Nach dem Player neu holen**, und zwar erst, wenn die Endmeldung
         // durch ist — siehe `AppModel.wiedergabeBeendet`. Sonst blieben
         // Fortschritt und „gesehen" auf dem Stand von vor dem Abspielen.
-        .onChange(of: model.wiedergabeBeendet) { _, _ in
+        .onChange(of: model.seitenAuffrischen) { _, _ in
             Task { await laden(); await folgenLaden() }
         }
         // **Die mitgebrachte Staffel kann nachtraeglich eintreffen.**
@@ -455,6 +455,7 @@ struct SeriesDetailView: View {
                         gesehen.toggle()
                         meldung = grund
                     }
+                    // Nachgeladen wird ueber `model.seitenAuffrischen`.
                 }
             }
             Aktionsknopf(symbol: "ellipsis", titel: "Mehr", dehnt: !weit) { mehrOffen = true }
@@ -515,7 +516,7 @@ struct SeriesDetailView: View {
                         // ist — und ist die Staffel schon vollständig da,
                         // steht dort nichts mehr statt eines Knopfs, der
                         // nichts tut.
-                        if model.downloadsAn, !staffelVollstaendig, !folgen.isEmpty {
+                        if model.downloadKnopfZeigen, !staffelVollstaendig, !folgen.isEmpty {
                             Chipknopf {
                                 HStack(spacing: 6) {
                                     Image(systemName: "arrow.down")
@@ -742,8 +743,9 @@ struct Folgenzeile: View {
 
     private var gesehen: Bool { folge.userData?.played ?? false }
     private var geladen: Downloadposten? { model.downloads.posten(fuer: folge.id) }
-    /// Die Spalte gibt es nur mit dem Schalter — H1.
-    private var mitSpalte: Bool { ringtipp != nil && model.downloadsAn }
+    /// Die Spalte gibt es nur mit dem Schalter — H1 — und nur, wenn das
+    /// Konto laden darf (``Downloadrecht``).
+    private var mitSpalte: Bool { ringtipp != nil && model.downloadKnopfZeigen }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -825,7 +827,7 @@ struct Folgenzeile: View {
         var text = folge.restzeitText ?? "\(Int(gesamt / 60)) min"
         // **Die Größe erst, wenn sie eine Rolle spielt.** Ohne Downloads ist
         // sie eine Zahl ohne Frage dahinter.
-        if model.downloadsAn, let bytes = folge.mediaSources?.first?.size, bytes > 0 {
+        if model.downloadKnopfZeigen, let bytes = folge.mediaSources?.first?.size, bytes > 0 {
             text += " · " + Downloadregeln.groesse(bytes)
         }
         return text
@@ -889,7 +891,7 @@ struct SeasonView: View {
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
         #endif
-        .task(id: model.wiedergabeBeendet) {
+        .task(id: model.seitenAuffrischen) {
             folgen = await model.folgen(serie: serie.id, staffel: staffel.id)
             laedt = false
         }

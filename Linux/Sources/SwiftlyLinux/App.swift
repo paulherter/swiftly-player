@@ -1048,6 +1048,7 @@ final class App: @unchecked Sendable {
         self.benutzerID = benutzerID
         // Die Vorgabe des vorigen Kontos gilt nicht fuer dieses.
         naechsteAutomatischKonto = nil
+        downloadrecht = .unbekannt
         // **Die Downloads gehoeren dem Konto** (H11). Zwei Konten auf einem
         // Server tragen dieselben Kennungen; ohne das Konto kaeme der
         // Fortschritt des einen an den Titel des anderen.
@@ -1323,6 +1324,17 @@ final class App: @unchecked Sendable {
     /// Detailseite fragen oft danach.
     var downloadsAn: Bool { wahlen.downloadsAn }
 
+    /// **Ob ein Ladeknopf erscheint** — der Schalter *und* das Recht am
+    /// Konto, entschieden im Paket (`Downloadrecht`, wie
+    /// `AppModel.downloadKnopfZeigen` auf Apple).
+    ///
+    /// Die Leiste und die Zeile in den Einstellungen bleiben bei
+    /// `downloadsAn`: was auf der Platte liegt, muss erreichbar bleiben,
+    /// auch wenn das Konto heute nichts mehr laden darf.
+    var downloadKnopfZeigen: Bool {
+        Downloadrecht.anbieten(recht: downloadrecht, funktionAn: downloadsAn)
+    }
+
     /// Was auf dieser Maschine liegt. Die Regeln stehen im Paket, der
     /// Ladevorgang in `Downloadverwaltung`; hier haengt nur die Oberflaeche
     /// daran.
@@ -1394,6 +1406,9 @@ final class App: @unchecked Sendable {
     /// `EnableNextEpisodeAutoPlay` des Kontos. Nicht gespeichert: kommt bei
     /// jeder Anmeldung frisch, ein anderes Konto hat eine andere.
     var naechsteAutomatischKonto: Bool?
+    /// `Policy.EnableContentDownloading` des Kontos, aus derselben Antwort.
+    /// `.unbekannt` heisst erlaubt — ein Netzfehler nimmt nichts weg.
+    var downloadrecht: Downloadrecht = .unbekannt
     /// **Der Folgenwechsel des offenen Players** — der Ablauf aus dem Paket,
     /// derselbe wie auf iOS, tvOS und macOS (Audit 16.09.2026, T2-H1/M3).
     /// Er haelt den Riegel (ein Wechsel zur Zeit), und `schliessen` bricht

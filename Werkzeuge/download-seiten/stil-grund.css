@@ -1,0 +1,220 @@
+
+
+@font-face { font-family: "Figtree"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url(/schrift/figtree-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Figtree"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url(/schrift/figtree-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+/* Farben und Leiste wie index.html. Die Startseite kennt nur dunkel,
+   also auch der Blog. */
+:root {
+  --grund: #0B0B0D; --tief: #08080A; --flaeche: #161619; --erhoeht: #1E1E22;
+  --akzent: #5CD1C2; --kuehl: #7E9BFF; --warm: #E8833A; --marke: #2FDBC0;
+  --schrift: #FFFFFF; --leise: rgba(255,255,255,.64); --sehr-leise: rgba(255,255,255,.40);
+  --linie: rgba(255,255,255,.07); --rand: rgba(255,255,255,.13);
+  --schriftart: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --bahn: 1240px; --lesen: 700px; --seitenrand: clamp(24px, 4vw, 40px);
+  --raus: cubic-bezier(.23, 1, .32, 1);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scrollbar-color: #2f2f33 var(--grund); }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--grund); color: var(--schrift); font-family: var(--schriftart);
+  font-size: 18px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+img { max-width: 100%; height: auto; }
+a { color: inherit; text-decoration: none; }
+p { margin: 0; }
+::selection { background: rgba(92,209,194,.32); color: var(--schrift); }
+:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 4px; }
+.nur-fuer-leser { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.bahn { width: 100%; max-width: calc(var(--bahn) + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand); }
+.lesebahn { width: 100%; max-width: calc(var(--lesen) + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand); }
+
+/* Leiste */
+.leiste { position: absolute; top: 10px; left: 0; right: 0; z-index: 60; display: flex; justify-content: center;
+  padding-inline: var(--seitenrand); pointer-events: none; }
+.leiste__kapsel { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 24px;
+  border-radius: 999px; border: 1px solid var(--rand); background: rgba(22,22,25,.72);
+  backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 12px 30px rgba(0,0,0,.45); }
+.leiste__marke { display: flex; align-items: center; min-height: 44px; margin-right: 6px; }
+.leiste__marke img { height: 21px; width: auto; }
+.leiste__punkt { padding: 10px 18px; border-radius: 999px; font-size: 14.5px; font-weight: 500; color: var(--leise);
+  transition: color 160ms var(--raus), background-color 160ms var(--raus); }
+.leiste__punkt[aria-current] { color: var(--schrift); }
+.knopf { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 999px;
+  background: var(--schrift); color: var(--grund); font-family: inherit; font-weight: 600; line-height: 1.2;
+  cursor: pointer; transition: transform 160ms var(--raus), background-color 160ms var(--raus); }
+/* Druck, Hover und Fokus stehen am Ende unter "Verhalten": eine Regel fuer alles. */
+.knopf--leiste { padding: 11px 22px; font-size: 14.5px; }
+.knopf--gross { padding: 17px 30px; font-size: 16.5px; }
+.knopf--leise { padding: 10px 21px; font-size: 14.5px; background: transparent; color: var(--schrift);
+  box-shadow: inset 0 0 0 1px var(--rand); }
+.leiste__burger { display: none; }
+.menue { display: none; position: fixed; z-index: 55; left: 20px; right: 20px; top: 12px; padding: 78px 0 22px;
+  border-radius: 30px; border: 1px solid var(--rand); background: rgba(22,22,25,.92);
+  backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: 0 12px 30px rgba(0,0,0,.5); transform-origin: top center; opacity: 0;
+  transform: scaleY(.86) translateY(-10px); pointer-events: none;
+  transition: opacity 220ms var(--raus), transform 320ms var(--raus); }
+.menue[data-offen] { opacity: 1; transform: none; pointer-events: auto; }
+.menue a { display: block; padding: 15px 20px; color: var(--leise); font-size: 19px; font-weight: 500; }
+.menue a[aria-current] { color: var(--schrift); }
+.menue .knopf { display: flex; width: calc(100% - 40px); margin: 14px 20px 0; color: var(--grund); }
+
+/* Kopf der Seite. Licht wie die Aurora der Startseite, schwaecher:
+   hier soll gelesen werden. Liegt unter dem Text (DESIGN.md 2). */
+main { position: relative; padding: 140px 0 110px; }
+.schein { position: absolute; left: 0; right: 0; top: -10px; height: 560px; z-index: 0; pointer-events: none; opacity: .55;
+  background:
+    radial-gradient(ellipse 30% 46% at 50.7% 30%, rgba(92,209,194,.40), rgba(92,209,194,.16) 62%, rgba(92,209,194,0) 100%),
+    radial-gradient(ellipse 26% 42% at 27% 40%, rgba(126,155,255,.34), rgba(126,155,255,.13) 62%, rgba(126,155,255,0) 100%),
+    radial-gradient(ellipse 28% 42% at 80% 38%, rgba(232,131,58,.28), rgba(232,131,58,.11) 62%, rgba(232,131,58,0) 100%); }
+main > :not(.schein) { position: relative; z-index: 6; }
+.pfad { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 22px; padding: 0; list-style: none;
+  font-size: 14.5px; color: var(--sehr-leise); }
+.pfad a { color: var(--leise); transition: color 160ms var(--raus); }
+.pfad li + li::before { content: "/"; margin-right: 8px; color: var(--sehr-leise); }
+.seitenkopf h1 { font-size: clamp(36px, 4.4vw, 60px); font-weight: 600; line-height: 1.04; letter-spacing: -.03em;
+  margin: 0; text-wrap: balance; }
+.seitenkopf .unter { margin-top: 18px; color: var(--leise); font-size: clamp(17px, 1.4vw, 20px); line-height: 1.5; text-wrap: pretty; }
+.seitenkopf--mitte { text-align: center; }
+.seitenkopf--mitte .pfad { justify-content: center; }
+.seitenkopf--mitte h1 { font-size: clamp(38px, 5.55vw, 80px); line-height: 1.02; }
+.seitenkopf--mitte .unter { max-width: 620px; margin-inline: auto; text-wrap: balance; }
+.angaben { margin-top: 22px; color: var(--sehr-leise); font-size: 14.5px; }
+.angaben span + span::before { content: "·"; margin: 0 8px; }
+.geplant { display: inline-block; margin: 0 0 18px; padding: 6px 14px; border-radius: 999px; font-size: 13px;
+  font-weight: 600; color: var(--warm); background: color-mix(in srgb, var(--warm) 10%, var(--flaeche));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warm) 30%, transparent); }
+
+/* FAQ: wie "Common questions" auf der Startseite, als details, damit es ohne
+   Skript geht (DESIGN.md 9). Die erste Antwort steht offen. */
+.fragen__blatt { margin-top: 28px; border-radius: 32px; background: var(--flaeche); border: 1px solid var(--linie); overflow: hidden; }
+.frage + .frage { border-top: 1px solid var(--linie); }
+.frage__knopf { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 32px;
+  cursor: pointer; list-style: none; transition: background-color 160ms var(--raus); }
+.frage__knopf::-webkit-details-marker { display: none; }
+.text .frage__knopf h3 { margin: 0; font-size: clamp(16px, 1.4vw, 19px); line-height: 1.3; letter-spacing: -.014em; }
+.frage__pfeil { flex: none; width: 20px; height: 20px; color: var(--sehr-leise); transition: transform 280ms var(--raus), color 160ms var(--raus); }
+.frage[open] .frage__pfeil { transform: rotate(90deg); color: var(--leise); }
+.frage__antwort { padding: 0 32px 27px; font-size: clamp(15px, 1.2vw, 16.5px); line-height: 1.55; }
+.frage__antwort > * + * { margin-top: 12px; }
+
+/* Fuss wie index.html */
+.fuss { padding-block: 0 43px; }
+.fuss__linie { height: 1px; background: var(--linie); }
+.fuss__raster { display: grid; grid-template-columns: minmax(0,440px) minmax(0,280px) minmax(0,280px) minmax(0,240px);
+  row-gap: 40px; padding-block: 64px 73px; }
+.fuss__marke { max-width: 360px; }
+.fuss__marke img { height: 21px; width: auto; }
+.fuss__marke p { margin-top: 14px; color: var(--leise); font-size: 15px; line-height: 1.55; }
+.fuss__spalte h2 { margin: 0; font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: .13em;
+  color: var(--sehr-leise); text-transform: uppercase; }
+.fuss__spalte ul { margin: 16px 0 0; padding: 0; list-style: none; font-size: 15px; line-height: 1.4; }
+.fuss__spalte li + li { margin-top: 11px; }
+.fuss__spalte a { color: var(--leise); transition: color 160ms var(--raus); }
+.fuss__klein { padding-top: 28px; max-width: 880px; color: var(--sehr-leise); font-size: 13px; line-height: 1.6; }
+
+@media (hover: hover) and (pointer: fine) {
+  .leiste__punkt:hover { color: var(--schrift); background: rgba(255,255,255,.06); }
+  .knopf--leise:hover { background: rgba(255,255,255,.06); }
+  .fuss__spalte a:hover, .pfad a:hover, .zurueck:hover { color: var(--schrift); }
+  .text a:hover { text-decoration-color: currentColor; }
+  .frage__knopf:hover { background: rgba(255,255,255,.03); }
+  .text .weg + .weg:hover { background: color-mix(in srgb, var(--farbe) 17%, var(--erhoeht));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--farbe) 45%, transparent), 0 14px 30px rgba(0,0,0,.5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .knopf, .menue, .karte, .weg { transition-property: opacity, color, background-color, border-color, box-shadow; }
+  .menue { transform: none; }
+  .frage__pfeil { transition: none; }
+}
+
+@media (max-width: 900px) {
+  .leiste { position: fixed; top: 12px; padding-inline: 20px; }
+  .leiste__kapsel { width: 100%; justify-content: space-between; padding: 8px 8px 8px 20px; }
+  .leiste__punkt, .knopf--leiste.nur-desktop { display: none; }
+  .leiste__burger { display: grid; align-content: center; justify-items: start; width: 44px; height: 44px;
+    border: 0; padding: 0 0 0 12px; background: none; cursor: pointer; }
+  .leiste__burger span { display: block; width: 20px; height: 2px; border-radius: 1px; background: var(--schrift);
+    transform-origin: left center; transition: transform 280ms var(--raus), opacity 180ms var(--raus); }
+  .leiste__burger span + span { margin-top: 5px; }
+  .leiste__burger span:nth-child(3) { transform: scaleX(.65); }
+  .leiste__burger[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .leiste__burger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+  .leiste__burger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+  .menue { display: block; }
+  main { padding: 112px 0 84px; }
+  .schein { top: 38px; height: 420px; }
+  .seitenkopf h1 { font-size: 36px; line-height: 1.06; }
+  .seitenkopf--mitte h1 { font-size: 46px; line-height: 1; }
+  .seitenkopf .unter { font-size: 17px; }
+  .text { margin-top: 36px; font-size: 17px; line-height: 1.65; }
+  .text h2 { margin-top: 52px; font-size: 27px; line-height: 1.1; }
+  .text h3 { font-size: 20px; }
+  .text pre { font-size: 14px; }
+  .tabelle table { font-size: 14px; }
+  .tabelle th, .tabelle td { padding: 11px 14px; }
+  .kurz { padding: 22px; border-radius: 24px; }
+  .fragen__blatt { border-radius: 24px; }
+  .frage__knopf { padding: 18px; }
+  .text .frage__knopf h3 { font-size: 15.5px; }
+  .frage__antwort { padding: 0 18px 20px; font-size: 16px; }
+  .swiftly { padding: 22px 20px 20px; border-radius: 24px; }
+  .wege { grid-template-columns: 1fr; }
+  .wege > :last-child:nth-child(odd) { width: auto; justify-self: stretch; }
+  .karten--raster { grid-template-columns: 1fr; margin-top: 40px; }
+  .karte { padding: 22px 22px 24px; border-radius: 24px; }
+  .fuss__raster { grid-template-columns: 1fr 1fr; padding-block: 48px 40px; }
+  .fuss__marke { grid-column: 1 / -1; }
+  .fuss__spalte:last-child { grid-column: 1 / -1; }
+  .fuss__klein { font-size: 11.5px; padding-top: 20px; }
+  .fuss { padding-bottom: 18px; }
+}
+/* ---------------------------------------------------------------
+   Android-Seite. Mobil zuerst: die meisten kommen vom Handy.
+   Schritte als Blaetter, je ein weisser Knopf ueber die volle
+   Breite (Tippflaeche 58 hoch). Alle drei gleich, weil der Leser
+   oft mitten einsteigt (Gruppe schon beigetreten).
+   --------------------------------------------------------------- */
+.seite { width: 100%; max-width: calc(760px + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand); }
+.schritte { display: grid; gap: 14px; margin: 44px 0 0; padding: 0; list-style: none; }
+.schritt { display: grid; grid-template-columns: auto 1fr; column-gap: 18px; padding: 24px 22px 22px;
+  border-radius: 24px; background: var(--flaeche); border: 1px solid var(--linie); }
+.schritt__zahl { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%;
+  font-size: 20px; font-weight: 700; color: var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 32%, transparent); }
+.schritt h2 { margin: 8px 0 0; font-size: 22px; font-weight: 600; line-height: 1.2; letter-spacing: -.02em; }
+.schritt p { grid-column: 1 / -1; margin-top: 12px; color: var(--leise); font-size: 16.5px; line-height: 1.5; }
+.schritt p strong { color: var(--schrift); font-weight: 600; }
+.schritt .knopf { grid-column: 1 / -1; margin-top: 18px; min-height: 58px; width: 100%; padding: 16px 24px; font-size: 17px; }
+.hinweis { margin-top: 28px; padding: 22px 22px 24px; border-radius: 24px; color: var(--leise); font-size: 16px; line-height: 1.55;
+  background: color-mix(in srgb, var(--warm) 8%, var(--flaeche));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warm) 28%, transparent); }
+.hinweis h2 { margin: 0; font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: .13em; text-transform: uppercase; color: var(--warm); }
+.hinweis ul { margin: 14px 0 0; padding-left: 1.2em; }
+.hinweis li + li { margin-top: 10px; }
+.hinweis li::marker { color: var(--sehr-leise); }
+.hinweis strong { color: var(--schrift); font-weight: 600; }
+.abschnitt { margin-top: 64px; }
+.abschnitt > h2 { margin: 0; font-size: 27px; font-weight: 600; line-height: 1.1; letter-spacing: -.03em; }
+.abschnitt > p { margin-top: 14px; color: var(--leise); font-size: 17px; line-height: 1.6; }
+.abschnitt a:not(.knopf), .frage__antwort a { color: var(--akzent); text-decoration: underline;
+  text-decoration-color: rgba(92,209,194,.35); text-underline-offset: 3px; }
+.frage__knopf h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; letter-spacing: -.014em; }
+.frage__antwort { color: var(--leise); }
+.hilfe { margin-top: 64px; text-align: center; }
+.hilfe p { color: var(--leise); font-size: 17px; }
+.hilfe .knopf { margin-top: 18px; min-height: 52px; padding-inline: 26px; }
+@media (min-width: 901px) {
+  .schritt { padding: 30px 32px 30px; border-radius: 32px; column-gap: 22px; }
+  .schritt h2 { font-size: 26px; margin-top: 6px; }
+  .schritt p { grid-column: 2; font-size: 17px; }
+  .schritt .knopf { grid-column: 2; width: auto; justify-self: start; }
+  .hinweis { padding: 28px 32px; border-radius: 32px; }
+  .abschnitt > h2 { font-size: 34px; }
+  .frage__knopf h3 { font-size: 18px; }
+}

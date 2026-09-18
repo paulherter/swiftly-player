@@ -79,12 +79,14 @@ struct EinstellungenView: View {
                 HStack(alignment: .top, spacing: 0) {
                     VStack(alignment: .leading, spacing: 0) { offline; integration }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    server.frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 0) { server; gemeinschaft }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
                 offline
                 integration
                 server
+                gemeinschaft
             }
 
             // **Nicht getippt.** Hier stand „Swiftly 1.0" — eine Zahl, die
@@ -178,7 +180,30 @@ struct EinstellungenView: View {
         }
     }
 
+    /// **Bewerten, Discord, Fehler melden — immer da, nie aufdringlich.**
+    ///
+    /// Ganz unten, nach allem, was das Gerät betrifft: wer hier ankommt,
+    /// sucht es. Von selbst kommt die App nur zweimal darauf zu, nach dem
+    /// dritten und dem fünften zu Ende geschauten Titel (`Gemeinschaft`).
+    private var gemeinschaft: some View {
+        Einstellungsgruppe(titel: "Swiftly") {
+            Wertzeile(symbol: "star", titel: Text("Swiftly bewerten"),
+                      unter: Text("Im App Store"),
+                      aktion: { oeffnen(Gemeinschaft.appStoreBewertung) })
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Wertzeile(symbol: "bubble.left.and.bubble.right", titel: Text("Discord beitreten"),
+                      unter: Text("Fragen stellen und sagen, was fehlt"),
+                      aktion: { oeffnen(Gemeinschaft.discord) })
+            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Wertzeile(symbol: "ladybug", titel: Text("Fehler melden"),
+                      unter: Text("Auf GitHub, deine Fassung steht schon drin"),
+                      aktion: { oeffnen(Fassung.fehlerMelden) })
+        }
+    }
+
     // MARK: Kleinkram
+
+    @Environment(\.openURL) private var oeffnen
 
 
 

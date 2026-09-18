@@ -190,6 +190,10 @@ extension App {
         anhaengen(g.raum, wertezeile(symbol: "window-close-symbolic",
                                      titel: uebersetzt("Verbindung trennen")) { [weak self] in
             guard let self else { return }
+            // Erst den Keks der Verbindung, dann den Zugang: sonst bleibt die
+            // Sitzung gueltig und der naechste Anmeldeversuch bekommt keine
+            // neue (`Seerr.kekseVergessen`).
+            if let adresse = self.seerrzugang?.adresse { Seerr.kekseVergessen(fuer: adresse) }
             self.seerrzugang = nil
             self.seerrclient = nil
             self.seerrGilt = nil

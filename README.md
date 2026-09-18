@@ -31,6 +31,8 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 &nbsp;
 [![Bugs and feedback on Discord](https://img.shields.io/badge/Discord-1E1E22?style=for-the-badge&logo=discord&logoColor=5CD1C2)](https://discord.gg/MeGwfv3UwN)
 
+<sub>[Release feed (Atom)](https://github.com/paulherter/swiftly-player/releases.atom)</sub>
+
 <br>
 
 </div>
@@ -143,6 +145,8 @@ the question, and the app simply respects the answer.
 - **Several libraries** of the same kind, and the app remembers which one you
   were in.
 - **Search** across your libraries, with the season and episode you meant.
+- **Request through Seerr** — ask for a movie or show that is missing,
+  without leaving the app.
 - **Top Shelf**<sup>1</sup>: what you were watching sits above the app icon on
   the Apple TV home screen, before you even open it.
 
@@ -155,6 +159,8 @@ the question, and the app simply respects the answer.
 - **Media keys**<sup>3</sup> work, and a small window stays on top while you
   do something else.
 - **Quick Connect**, so you never type a password on a television remote.
+- **Downloads**, with the quality you choose, for watching without a
+  connection.
 
 ### 🔒 Yours
 

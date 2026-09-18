@@ -1,0 +1,78 @@
+
+/* =====================================================================
+   Verhalten, 17.09. Paul: "Jeder Knopf hat eine andere Animation ...
+   such dir die beste aus und mach bei allen dieselbe."
+
+   Vorbild ist die ruhigste der vorhandenen Varianten, der Kartenhover:
+   zwei Pixel anheben, ein Schatten dahinter, fertig. Raus sind der harte
+   Sprung auf 104,5 Prozent am Download-Knopf, die Welle nach aussen und
+   das Huepfen per Skript. Eine Flaeche, die beim Zeigen groesser wird,
+   verrueckt den Text darin, und drei Varianten nebeneinander sehen nach
+   Zufall aus statt nach System.
+
+   Alles steht in Variablen: eine Dauer, eine Kurve, eine Hebung, ein
+   Druck, eine Aufhellung, ein Fokusring. Keine Komponente erfindet
+   eigene Werte. Zwei Staerken, weil eine Zeile im Fuss sich nicht wie
+   ein Knopf anheben darf: Flaechen heben sich, Zeilen hellen auf.
+   ===================================================================== */
+:root {
+  --dauer: 170ms;
+  --kurve: cubic-bezier(.23, 1, .32, 1);
+  --hebung: -2px;
+  --druck: .985;
+  --aufhellen: rgba(255,255,255,.06);
+  --schatten-hoch: 0 12px 26px rgba(0,0,0,.45);
+}
+.knopf, .weg-gross, .weg-klein, .karte, .kopieren, .laden, .weg,
+.reiter button, .frage__knopf, .mitmachen__liste a, .leiste__punkt, .leiste__marke,
+.menue a, .fuss__spalte a, .pfad a, .zurueck, .alle-wege, .text a, .frage__link,
+.schritt .knopf, .hilfe .knopf, .download .knopf {
+  transition: transform var(--dauer) var(--kurve), background-color var(--dauer) var(--kurve),
+              box-shadow var(--dauer) var(--kurve), color var(--dauer) var(--kurve),
+              border-color var(--dauer) var(--kurve), text-decoration-color var(--dauer) var(--kurve);
+}
+@media (hover: hover) and (pointer: fine) {
+  /* Flaechen: anheben. */
+  .knopf:hover, .weg-gross:hover, .karte:hover, .kopieren:hover, .laden:hover, .weg:hover,
+  .schritt .knopf:hover, .hilfe .knopf:hover, .download .knopf:hover {
+    transform: translateY(var(--hebung));
+    box-shadow: var(--schatten-hoch);
+  }
+  .weg-klein:hover {
+    transform: translateY(var(--hebung));
+    box-shadow: inset 0 0 0 1px var(--rand), var(--schatten-hoch);
+  }
+  /* Der Hauptweg behaelt seinen Akzentring, sonst blinkt er beim Zeigen weg. */
+  .weg-gross:hover, .knoepfe > :first-child:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 55%, transparent), var(--schatten-hoch);
+  }
+  .laden:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 40%, transparent), var(--schatten-hoch); }
+  .karte:hover { border-color: var(--rand); }
+  .kopieren:hover { color: var(--schrift); box-shadow: inset 0 0 0 1px var(--rand), var(--schatten-hoch); }
+  /* Zeilen und Verweise: aufhellen. */
+  .reiter button:hover, .frage__knopf:hover, .mitmachen__liste a:hover, .leiste__punkt:hover {
+    background: var(--aufhellen);
+    color: var(--schrift);
+  }
+  .menue a:hover, .fuss__spalte a:hover, .pfad a:hover, .zurueck:hover, .alle-wege:hover { color: var(--schrift); }
+  .text a:hover, .frage__link:hover, .hinweis a:hover, .abschnitt a:not(.knopf):hover,
+  .frage__antwort a:hover { text-decoration-color: currentColor; }
+}
+/* Der Druck: ein Wert fuer jedes anfassbare Element. */
+.knopf:active, .weg-gross:active, .weg-klein:active, .karte:active, .kopieren:active,
+.reiter button:active, .laden:active, .weg:active { transform: scale(var(--druck)); }
+.mitmachen__liste a:active, .frage__knopf:active { background: rgba(255,255,255,.09); }
+/* Ein Fokusring fuer alles. */
+:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 6px; }
+.knopf:focus-visible, .weg-gross:focus-visible, .weg-klein:focus-visible, .laden:focus-visible,
+.weg:focus-visible, .reiter button:focus-visible, .kopieren:focus-visible { border-radius: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  /* Weniger, nicht nichts: Farbe bleibt, Bewegung geht. */
+  .knopf, .weg-gross, .weg-klein, .karte, .kopieren, .laden, .weg, .reiter button,
+  .frage__knopf, .mitmachen__liste a, .leiste__punkt, .menue a, .fuss__spalte a, .pfad a, .text a {
+    transition-property: color, background-color, box-shadow, border-color, text-decoration-color;
+  }
+  .knopf:hover, .weg-gross:hover, .weg-klein:hover, .karte:hover, .kopieren:hover, .laden:hover,
+  .weg:hover, .knopf:active, .weg-gross:active, .weg-klein:active, .karte:active,
+  .kopieren:active, .laden:active, .weg:active, .reiter button:active { transform: none; }
+}

@@ -1,0 +1,19 @@
+pkgbase = swiftly-player-bin
+	pkgdesc = Jellyfin client that never transcodes (prebuilt binary)
+	pkgver = 1.0.3
+	pkgrel = 1
+	url = https://github.com/paulherter/swiftly-player
+	arch = x86_64
+	license = MPL-2.0
+	options = !strip
+	options = !debug
+	depends = gtk4
+	depends = vlc
+	depends = glibc
+	depends = gcc-libs
+	provides = swiftly-jellyfin
+	conflicts = swiftly-jellyfin
+	source = https://github.com/paulherter/swiftly-player/releases/download/v1.0.3/swiftly-jellyfin-1.0.3-x86_64.tar.gz
+	sha256sums = 3f1f9704af4529b8a4e5126b6a3ce1d506f6519bcf47251a2bbad235b0df1eee
+
+pkgname = swiftly-player-bin

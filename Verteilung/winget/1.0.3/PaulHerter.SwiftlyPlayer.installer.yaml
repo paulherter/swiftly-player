@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+#
+# Kein Scope gesetzt: Swiftly.iss hat PrivilegesRequiredOverridesAllowed=dialog,
+# nicht "commandline" - der Installer laesst den Nutzer im Fenster zwischen
+# eigenem Ordner und Program Files waehlen, nimmt dafuer aber /CURRENTUSER und
+# /ALLUSERS auf der Befehlszeile nicht an. Ein stiller Lauf (winget) faellt
+# damit auf Inno Setups Grundeinstellung zurueck (admin, Program Files).
+
+PackageIdentifier: PaulHerter.SwiftlyPlayer
+PackageVersion: 1.0.3
+Platform:
+- Windows.Desktop
+InstallerType: inno
+InstallerSwitches:
+  Silent: /VERYSILENT /NORESTART
+  SilentWithProgress: /SILENT /NORESTART
+UpgradeBehavior: install
+ReleaseDate: 2026-09-17
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/paulherter/swiftly-player/releases/download/v1.0.3/Swiftly-1.0.3-Setup.exe
+  InstallerSha256: D8640B1D9106F9E0E0A172D958580F91B14E3B2EBF7E922211EA7B450F13B905
+ManifestType: installer
+ManifestVersion: 1.12.0

@@ -997,12 +997,23 @@ public final class Kern: @unchecked Sendable {
         return Weiterschalten.gilt(eigeneWahl: lesen(wahl), konto: lesen(konto))
     }
 
-    /// `EnableNextEpisodeAutoPlay` des geltenden Kontos: `"1"`, `"0"`, oder leer, wenn der Server
-    /// nichts sagt. Wirft nie — ohne Antwort bleibt es bei der eigenen Wahl bzw. „an".
-    public func kontoNaechsteAutomatisch() async -> String {
-        guard let c = client, let wert = await c.kontovorgaben()?.naechsteFolgeAutomatisch else { return "" }
-        protokoll("Konto: Naechste Folge automatisch \(wert)")
-        return wert ? "1" : "0"
+    /// Was das geltende Konto vorgibt, **aus einer Anfrage**: `"<naechste>|<download>"` —
+    /// `EnableNextEpisodeAutoPlay` und `EnableContentDownloading`, je `"1"`, `"0"` oder leer,
+    /// wenn der Server nichts sagt. Wirft nie; ohne Antwort kommt `"|"`, und dann bleibt es bei
+    /// der eigenen Wahl bzw. „an" und beim Recht `unbekannt`, also erlaubt.
+    public func kontovorgaben() async -> String {
+        func text(_ wert: Bool?) -> String { wert.map { $0 ? "1" : "0" } ?? "" }
+        guard let c = client, let v = await c.kontovorgaben() else { return "|" }
+        protokoll("Konto: Naechste Folge automatisch \(text(v.naechsteFolgeAutomatisch)), Downloads \(v.downloadrecht.rawValue)")
+        return "\(text(v.naechsteFolgeAutomatisch))|\(text(v.downloadsErlaubt))"
+    }
+
+    /// **Ob ein Ladeknopf erscheint** — der Schalter H1 *und* das Recht am Konto. Die Entscheidung
+    /// liegt im Paket (`Downloadrecht.anbieten`), damit Kotlin keine zweite Liste fuehrt.
+    /// `recht` ist `"1"`, `"0"` oder leer, wie ``kontovorgaben()`` es liefert.
+    public static func downloadKnopfZeigen(recht: String, funktionAn: Bool) -> Bool {
+        Downloadrecht.anbieten(recht: .vomServer(recht.isEmpty ? nil : recht == "1"),
+                               funktionAn: funktionAn)
     }
 
     /// **VLC hat angehalten oder laeuft wieder — sofort melden** (Audit T1-N1), wie
@@ -1577,6 +1588,27 @@ public final class Kern: @unchecked Sendable {
         Bewertungsfrage.faellig(fertig: fertig, zuletztGefragt: zuletztGefragt.isEmpty ? nil : zuletztGefragt, fassung: fassung)
     }
 
+    /// `Gemeinschaft.anstoss` — nach einem zu Ende geschauten Titel: „bewertung", „discord" oder "".
+    /// `zuletztGefragt` leer heisst: noch nie gefragt.
+    public static func gemeinschaftAnstoss(fertig: Int, zuletztGefragt: String, fassung: String,
+                                           discordGezeigt: Bool, bewertungMoeglich: Bool) -> String {
+        Gemeinschaft.anstoss(fertig: fertig, bewertungZuletzt: zuletztGefragt.isEmpty ? nil : zuletztGefragt,
+                             fassung: fassung, discordGezeigt: discordGezeigt,
+                             bewertungMoeglich: bewertungMoeglich)?.rawValue ?? ""
+    }
+
+    /// Die Adressen aus `Gemeinschaft`: „discord", „discordKurz", „play", „fehlerKurz",
+    /// sonst das GitHub-Issue mit Fassung und Plattform.
+    public static func gemeinschaftAdresse(art: String, fassung: String, plattform: String) -> String {
+        switch art {
+        case "discord": Gemeinschaft.discord.absoluteString
+        case "discordKurz": Gemeinschaft.discordKurz
+        case "play": Gemeinschaft.playStore.absoluteString
+        case "fehlerKurz": Gemeinschaft.fehlerKurz
+        default: Gemeinschaft.fehlerMelden(fassung: fassung, plattform: plattform).absoluteString
+        }
+    }
+
     /// `Auffrischung.faelligBeiRueckkehr` — neu laden, wenn der letzte Stand aelter als 30 s ist.
     /// `zuletztMs` in Millisekunden seit 1970, 0 heisst: noch nie geladen.
     public static func auffrischungFaellig(zuletztMs: Int64) -> Bool {
@@ -1706,6 +1738,16 @@ public final class Kern: @unchecked Sendable {
         Downloadregeln.darfLaden(imWLAN: imWLAN, nurUeberWLAN: nurUeberWLAN)
     }
 
+    /// **Der Satz zu einem HTTP-Status, den der Download bekommen hat.**
+    ///
+    /// Der Download selbst laeuft auf Android in Kotlin, weil er anhalten und fortsetzen koennen
+    /// muss; die Worte kommen trotzdem von hier. Sonst stuende in Kotlin eine zweite Satzliste
+    /// neben `lesbarerFehler` — und bis dahin stand auf der Downloadseite woertlich „HTTP 404",
+    /// egal in welcher Sprache das Geraet lief.
+    public static func downloadFehlertext(status: Int) -> String {
+        lesbarerFehler(JellyfinError.http(status: status, body: nil))
+    }
+
     public static func downloadPlatz(bytes: Int64, frei: Int64, liste: String) -> String {
         let p = Downloadregeln.platz(fuer: bytes, frei: frei, vorhanden: postenLesen(liste))
         return kodiert(Platzantwort(reicht: p.reicht, freiDanach: p.freiDanach, entbehrlich: p.entbehrlich.map(\.id),
@@ -1804,7 +1846,16 @@ public final class Kern: @unchecked Sendable {
         sperre.lock(); _seerr = z.map { SeerrClient(zugang: $0) }; sperre.unlock()
     }
 
-    public func seerrTrennen() { sperre.lock(); _seerr = nil; sperre.unlock() }
+    /// Auch der Keks der Verbindung geht weg, nicht nur der gemerkte Zugang:
+    /// eine noch gueltige Sitzung im Speicher laesst Seerr beim naechsten
+    /// Anmelden keine neue ausstellen (`Seerr.kekseVergessen`).
+    public func seerrTrennen() {
+        sperre.lock()
+        let adresse = _seerr?.adresse
+        _seerr = nil
+        sperre.unlock()
+        if let adresse { Seerr.kekseVergessen(fuer: adresse) }
+    }
 
     /// Verbindet mit Jellyfins eigenem Namen und Passwort. **Ein zweites Schema nur, wenn es geraten
     /// war** (`Seerr.adressen`) — und nur nach einem Netzfehler, nie nach einem falschen Passwort.

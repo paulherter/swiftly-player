@@ -734,7 +734,7 @@ struct Handlungstafel: View {
         //
         // Beschnitten, damit die oberste und unterste Zeile in der Rundung
         // der Tafel enden statt darueber hinauszustehen.
-        .frame(width: 620)
+        .frame(width: Self.breite)
         .clipShape(RoundedRectangle(cornerRadius: Stil.ecke + 8))
         .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke + 8))
         .overlay(RoundedRectangle(cornerRadius: Stil.ecke + 8).strokeBorder(Stil.rand))
@@ -744,39 +744,93 @@ struct Handlungstafel: View {
         .onExitCommand { offen = false }
     }
 
-    /// Wo die Tafel sitzt: links unter der Knopfreihe des Detailkopfs.
+    /// **Die Breite steht fest, die Stelle nicht.**
     ///
-    /// **Fester Platz statt Auflage am Knopf.** Erster Anlauf hing sie als
-    /// `overlay` am Mehr-Knopf und schob sich mit einer Ausrichtungshilfe
-    /// nach oben. Sie klappte trotzdem nach unten auf und lief rechts aus
-    /// dem Bild — der Knopf steht ganz rechts, die Tafel ist breiter als er,
-    /// und über den sicheren Bereich hinaus zeichnet niemand mehr.
-    ///
-    /// Von der Bildkante gerechnet, aus dem Aufbau des Kopfes: 140 oben +
-    /// Titel 68 + 14 + Angaben 34 + 22 + Beschreibung 80 + 36 + Knopfhöhe 76
-    /// = 470, plus 16 Luft. Alle Werte aus `Film-Neu.dc.html`.
-    ///
-    /// Dazu der Versatz, um den die ganze Seite tiefer steht.
-    ///
-    /// Vorher 486, gerechnet auf einen Textblock, der bei 140 ansetzte. Der
-    /// beginnt jetzt bei 196 — dieselbe Zeile wie auf der Startseite —, und
-    /// die Tafel muss mitwandern, sonst klappt sie mitten in die Knöpfe.
-    ///
-    /// Vorher waren es 210 **von unten**, gerechnet auf einen Kopf, der den
-    /// ganzen Schirm füllte. Der ist 510 hoch — von unten gerechnet läge die
-    /// Tafel jetzt mitten im Text.
-    static let unterDerKnopfreihe: CGFloat = 486 + Stil.kopfversatzDetail
+    /// Drei bis fuenf Zeilen mit Symbol und Text brauchen sie; schmaler
+    /// brechen die laengeren Beschriftungen. Die Platzierung rechnet damit,
+    /// deshalb steht sie hier und nicht als Zahl im `frame`.
+    static let breite: CGFloat = 620
 
-    /// Und hier sitzt die Staffelwahl: unter dem Reihenkopf der ersten Reihe.
+    /// Luft zwischen Ausloeser und Tafel.
+    static let luft: CGFloat = 16
+
+    /// **An welcher Kante die Tafel unter ihrem Ausloeser haengt.**
     ///
-    /// Kopfzone 510 + Luft ueber dem Titel 24 + Titelzeile 46 + 20 Abstand.
+    /// Sie richtet sich an dessen linker Kante aus. Steht er so weit rechts,
+    /// dass die Tafel hinauslaeufe, richtet sie sich an seiner rechten —
+    /// genau das tut auch ein Menue auf dem Mac. Zum Schluss in die Flaeche
+    /// geklemmt: auf dem Fernseher ist deren Rand der titelsichere Bereich,
+    /// und darueber hinaus zeichnet niemand.
+    static func links(ausloeser: CGRect, in flaeche: CGSize) -> CGFloat {
+        let links = ausloeser.minX + breite <= flaeche.width
+            ? ausloeser.minX
+            : ausloeser.maxX - breite
+        return min(max(0, links), max(0, flaeche.width - breite))
+    }
+}
+
+// MARK: - Tafeln haengen an ihrem Ausloeser
+
+/// Wo die Ausloeser einer Seite stehen — gemessen, nicht gerechnet.
+///
+/// **Das war der Fehler, und er steckte an fuenf Stellen gleich.** Jede Tafel
+/// hing als `.overlay(alignment:)` an der ganzen Seite, mit einem von Hand
+/// gerechneten Abstand: `Stil.randSeite` zur Seite, `Stil.erstesEnde + 16`
+/// oder `unterDerKnopfreihe` nach unten. Beide Zahlen sind von der
+/// **Bildkante** gedacht — einer Auflage liegt aber der **sichere Bereich**
+/// zugrunde, auf tvOS 80 Punkt zur Seite und 60 nach oben. Jede Tafel stand
+/// damit um genau diesen Rand versetzt: auf der Filmseite die
+/// Bibliothekswahl 80 Punkt zu weit rechts und 60 zu tief, die Sortierung
+/// 80 Punkt zu weit links. Am 17.09. von Paul am Fernseher gemeldet, im
+/// Simulator nachgemessen (Knopf 76…266, Tafel 160…779).
+///
+/// Dass eine gerechnete Zahl irgendwann nicht mehr stimmt, stand schon in
+/// `macOS/BibliothekView`: dort sass der `Rasterplatzhalter` als Auflage mit
+/// festem Abstand und legte sich ueber die Chipreihe, sobald die Kopfzone
+/// eine Zeile hoeher wurde. Die Lehre ist dieselbe — **die Stelle wird
+/// gemessen.**
+///
+/// `Anchor<CGRect>` traegt das Rechteck des Ausloesers bis zu der Ansicht
+/// hinauf, an der die Auflage haengt, und `GeometryProxy` rechnet es dort in
+/// deren eigenes Koordinatensystem. Damit ist es gleichgueltig, welcher
+/// sichere Bereich wo abgeschaltet ist.
+struct Tafelanker: PreferenceKey {
+    static let defaultValue: [String: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout [String: Anchor<CGRect>],
+                       nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue()) { _, neu in neu }
+    }
+}
+
+extension View {
+    /// Dieser Knopf oeffnet eine Tafel — merkt sich, wo er steht.
+    func tafelausloeser(_ name: String) -> some View {
+        anchorPreference(key: Tafelanker.self, value: .bounds) { [name: $0] }
+    }
+
+    /// Legt `inhalt` unter den Ausloeser `name` — auf die **Seite**, nicht auf
+    /// den Knopf.
     ///
-    /// **Nicht als Auflage am Pillenknopf.** Der steht im `Section`-Kopf, und
-    /// der Streifen darunter gehoert demselben Abschnitt — er zeichnet nach
-    /// dem Kopf und damit ueber ihn. Die Tafel lag hinter den Kacheln und sah
-    /// aus wie ein leeres graues Rechteck. Eine Auflage auf der **Seite**
-    /// liegt dagegen ueber der ganzen Scrollflaeche.
-    static var unterDemReihenkopf: CGFloat { Stil.heldenHoehe + 24 + 46 + 20 }
+    /// Auf den Knopf gelegt lag die Tafel schon einmal hinter den Kacheln:
+    /// eine Auflage erbt die Zeichenreihenfolge dessen, worauf sie liegt, und
+    /// der Streifen unter einem `Section`-Kopf zeichnet nach ihm. Auf der
+    /// Seite liegt sie ueber der ganzen Scrollflaeche — nur ihre **Stelle**
+    /// kommt jetzt vom Knopf.
+    func tafel<Inhalt: View>(unter name: String?,
+                             @ViewBuilder inhalt: @escaping () -> Inhalt) -> some View {
+        overlayPreferenceValue(Tafelanker.self) { anker in
+            GeometryReader { flaeche in
+                if let name, let bereich = anker[name] {
+                    let ausloeser = flaeche[bereich]
+                    inhalt()
+                        .offset(x: Handlungstafel.links(ausloeser: ausloeser,
+                                                        in: flaeche.size),
+                                y: ausloeser.maxY + Handlungstafel.luft)
+                }
+            }
+        }
+    }
 }
 
 /// Der Mehr-Knopf. Die Tafel dazu legt die Seite selbst auf ihren Kopf —

@@ -70,6 +70,33 @@ foreach ($m in @('fontconfig','locale','themes','mime')) {
 Sag 'Swift-Laufzeit'
 Copy-Item "$SwiftLaufzeit\*.dll" "$Ziel\bin" -Force
 
+# **Das Ressourcenbuendel, ohne das die App nicht startet.**
+#
+# SwiftPM legt Bilder und Uebersetzungen nicht in die .exe, sondern in einen
+# Ordner `<Ziel>_<Ziel>.resources` daneben. Bundle.module sucht ihn neben dem
+# Programm - und faellt sonst auf den Bauordner zurueck, der nur auf einem
+# Entwicklungsrechner existiert. Genau daran starb die 1.0.3 bei einem Tester:
+#   could not load resource bundle: from C:/Program Files/Swiftly/bin/...
+#   Exitcode 0xC000001D, letzte Stufe: oberflaeche
+# Bei uns lief sie, weil in der Testmaschine der Bauordner lag. Deshalb wird
+# er jetzt mitkopiert - und das Schnueren bricht ab, wenn er fehlt, statt ein
+# Paket auszuliefern, das auf jedem sauberen Rechner abstuerzt.
+Sag 'Ressourcenbuendel'
+# **Alle, nicht nur das eigene.** Jedes SwiftPM-Ziel mit Ressourcen bringt ein
+# eigenes Buendel mit - JellyfinKit auch (seine Uebersetzungen). Der erste
+# Anlauf kopierte nur SwiftlyWindows_SwiftlyWindows.resources; die Probe ohne
+# Bauordner starb dann eine Zeile spaeter an JellyfinKit_JellyfinKit.resources.
+$pflicht = 'SwiftlyWindows_SwiftlyWindows.resources', 'JellyfinKit_JellyfinKit.resources'
+foreach ($name in $pflicht) {
+    if (-not (Test-Path (Join-Path $bau $name))) {
+        throw "Ressourcenbuendel fehlt: $name - erst bauen.ps1 laufen lassen."
+    }
+}
+Get-ChildItem $bau -Directory -Filter '*.resources' | ForEach-Object {
+    Copy-Item $_.FullName "$Ziel\bin" -Recurse -Force
+    Sag ('  ' + $_.Name)
+}
+
 Sag 'libVLC samt Modulen'
 Copy-Item "$VlcLaufzeit\libvlc.dll","$VlcLaufzeit\libvlccore.dll" "$Ziel\bin" -Force
 Copy-Item "$VlcLaufzeit\plugins" "$Ziel\bin" -Recurse -Force

@@ -80,7 +80,7 @@ struct HomeView: View {
         // Beim Kontowechsel bleibt die Phase auf `ready` stehen; ohne das
         // hier stünde weiter der Bestand des vorigen Kontos auf dem Schirm.
         .onChange(of: model.kontowechsel) { _, _ in Task { await laden() } }
-        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await laden() } }
+        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await laden() } }
         // **Die Einstellung greift sofort, nicht beim naechsten Oeffnen.**
         // Umschalten aendert, welche Reihen es ueberhaupt gibt — und die
         // stehen erst nach einer neuen Abfrage fest.

@@ -48,6 +48,14 @@ class MainActivity : ComponentActivity() {
                     verwalter.launchReview(this@MainActivity, auftrag)
                 }
             }
+            // Der einmalige Discord-Hinweis — dieselbe Wartezeit, dasselbe „erst nach dem Player".
+            androidx.compose.runtime.LaunchedEffect(app.discordHinweisFaellig.value, app.spiel.value == null) {
+                if (!app.discordHinweisFaellig.value || app.spiel.value != null) return@LaunchedEffect
+                app.discordHinweisFaellig.value = false
+                kotlinx.coroutines.delay(1500)
+                if (app.spiel.value != null) { app.discordHinweisFaellig.value = true; return@LaunchedEffect }
+                discordHinweisZeigen(app, this@MainActivity)
+            }
             // Abgemeldet: zurueck zur Serverwahl.
             androidx.compose.runtime.LaunchedEffect(app.abgemeldet.intValue) { if (app.abgemeldet.intValue > 0) phase = Phase.Server }
             // Einmal je Start, nicht je Drehung — deshalb gemerkt.

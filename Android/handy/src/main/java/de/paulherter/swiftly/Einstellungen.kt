@@ -98,6 +98,19 @@ class Einstellungen(ablage: Ablage) {
     var genreChips by Merkwert(a, "genreChips", bool("genreChips", false), jaNein)
     /** H1: aus, bis jemand es will. */
     var downloadsAn by Merkwert(a, "downloadsAn", bool("downloadsAn", false), jaNein)
+    /**
+     * `Policy.EnableContentDownloading` des geltenden Kontos, `"1"`/`"0"`/leer — nicht gespeichert,
+     * kommt je Start und Kontowechsel frisch (`SwiftlyAnwendung.kontovorgabenHolen`).
+     */
+    var downloadrechtKonto by mutableStateOf("")
+    /**
+     * Ob ein Ladeknopf erscheint: Schalter **und** Recht am Konto. Regel im Paket
+     * (`Downloadrecht.anbieten`), wie `AppModel.downloadKnopfZeigen` auf iOS. Der Reiter
+     * „Downloads" und diese Zeile in den Einstellungen bleiben an `downloadsAn` — was auf dem
+     * Telefon liegt, muss erreichbar bleiben, auch ohne Recht.
+     */
+    val downloadKnopfZeigen: Boolean
+        get() = Kern.downloadKnopfZeigen(downloadrechtKonto, downloadsAn)
     /** H5: Originaldateien sind gross — ueber Mobilfunk wird gewartet. */
     var nurUeberWLAN by Merkwert(a, "nurUeberWLAN", bool("nurUeberWLAN", true), jaNein)
     var pufferstufe by Merkwert(a, "pufferstufe", a.merkwert("pufferstufe") ?: "normal") { it }

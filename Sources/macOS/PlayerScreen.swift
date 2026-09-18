@@ -31,6 +31,9 @@ struct PlayerScreen: View {
     /// Spiegelt den Riegel von `folgenwechsel` für die Ansicht.
     @State private var wechselt = false
     @State private var folgenwechsel = Folgenwechsel()
+    /// Welcher Titel schon als zu Ende geschaut gezählt ist. `beenden` und
+    /// das Verschwinden kommen beide — gezählt wird einmal.
+    @State private var gezaehlt: String?
     @State private var hinweis: String?
     @State private var flaeche: VLCPlayerView?
     /// Zaehlt nur, solange das Schild an ist — siehe `Technikschild`.
@@ -316,6 +319,7 @@ struct PlayerScreen: View {
             fuellungStellen()
         }
         .onAppear {
+            model.playerOffen = true
             zentraleUebernehmen()
             // **Auch die Fernsteuerung, nicht nur der Sperrbildschirm.**
             //
@@ -349,9 +353,11 @@ struct PlayerScreen: View {
             // ein laufender Wechsel darf danach nichts mehr anwenden, und der
             // Server erfährt das Ende trotzdem (Audit T1-N6). Kam `beenden`
             // vorher, zählt dessen Aufruf; dieser tut dann nichts.
+            zaehlen(bei: stand.position)
             folgenwechsel.schliessen(stoppen: stoppMeldung(bei: stand.position))
             // Der Zeiger gehört zurück, sobald der Player weg ist.
             NSCursor.unhide()
+            model.playerOffen = false
         }
         .task { await mitlaufen() }
         // Tastenkürzel. Sie stehen zusätzlich in der Menüleiste, damit man sie
@@ -750,10 +756,19 @@ struct PlayerScreen: View {
         }
     }
 
+    /// Zu Ende geschaut? Zählt für Bewertung und Discord-Hinweis
+    /// (`AppModel.fertigGeschaut`) — je Titel einmal.
+    private func zaehlen(bei stelle: Double) {
+        guard gezaehlt != titel.id else { return }
+        gezaehlt = titel.id
+        model.fertigGeschaut(position: stelle, dauer: stand.dauer)
+    }
+
     private func beenden() {
         // **Vor** dem Anhalten ablesen — danach steht die Zeit auf null und
         // „Weiterschauen" verlöre die Stelle.
         let stelle = stand.position
+        zaehlen(bei: stelle)
 
         // Zuerst die OpenGL-Fläche weg, sonst bleibt sie als schwarzes
         // Rechteck liegen, während die Seite darüber hinunterfährt.
@@ -880,6 +895,7 @@ struct PlayerScreen: View {
     private func zurNaechstenFolge(_ folge: Item) {
         guard !wechselt else { return }
         wechselt = true
+        zaehlen(bei: stand.position)
         let alt = (item: titel, plan: plan, stelle: stand.position)
         Task {
             let ergebnis = await folgenwechsel.ausfuehren(.init(

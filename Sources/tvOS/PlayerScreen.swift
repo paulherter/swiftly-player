@@ -1,3 +1,4 @@
+import GameController
 import JellyfinKit
 import SwiftUI
 import VLCKit
@@ -111,6 +112,15 @@ struct PlayerScreen: View {
     /// Woher die Marke kommt. Eine erwischte Marke wartet auf den mittleren
     /// Knopf; eine ertippte springt von selbst, sobald das Tippen ruht.
     @State private var markeVomWisch = false
+    /// Lief der Film, bevor das Schrubben ihn angehalten hat? Dann laeuft er
+    /// nach dem Bestaetigen oder Verwerfen weiter — wie im Systemplayer.
+    @State private var liefVorDemSchrubben = false
+    /// Das Nachlaufen der Marke nach einem schnellen Wisch.
+    @State private var ausrollen: Task<Void, Never>?
+    /// Halten links/rechts auf dem Klickring: laeuft, solange gehalten wird.
+    @State private var abtastAufgabe: Task<Void, Never>?
+    @State private var tastet = false
+    @State private var klickring = Klickring()
     /// Dieser Wisch hat die Steuerung geholt — und tut sonst nichts.
     ///
     /// **Der Wisch, der das Menü öffnet, spult nicht mit.** Vorher tat er
@@ -505,22 +515,30 @@ struct PlayerScreen: View {
         .onChange(of: schlafminuten) { _, neu in schlafzeitSetzen(neu) }
         .animation(.easeInOut(duration: 0.2), value: blattOffen)
         .onAppear {
+            model.playerOffen = true
             model.fernbefehl = ausfuehren
             // **Vor dem ersten Bild, nicht danach.** Der Server kennt die
             // Bildrate schon; der Fernseher kann also gleichzeitig mit dem
             // Aufbau des Stroms umschalten, statt hinterher. Was er nicht
             // sagt, holt der Takt spaeter aus VLCs Spuren nach.
             Bildtakt.anpassen(laut: plan.quelle.flatMap(Dateiangaben.videospur))
+            klickring.beobachten(beginnt: haltenBeginnt, endet: haltenEndet)
         }
         .onDisappear {
+            klickring.loesen()
+            abtastAufgabe?.cancel()
             // Der Ausgang gehoert wieder der Oberflaeche, die auf 60 Hz
             // gezeichnet ist.
             Bildtakt.loesen()
             schlafAufgabe?.cancel()
             spulAufgabe?.cancel()
             model.fernbefehl = nil
+            // Vor `stop()`: `position` ist der Stand der Ansicht, aber wer die
+            // Zeilen tauscht, soll nicht über VLCs Null stolpern.
+            model.fertigGeschaut(position: position, dauer: dauer)
             flaeche?.stop()
             zentrale.abgeben()
+            model.playerOffen = false
             // Ueber den Wechsel: laeuft gerade einer, bricht er ab, und ist
             // der Start der neuen Folge unterwegs, geht der Stopp danach.
             let laufend = (item: item, plan: plan, stelle: position)
@@ -536,7 +554,9 @@ struct PlayerScreen: View {
             // Im Stehen nichts wegnehmen: wer angehalten hat, schaut gerade
             // nicht aufs Bild, sondern will wissen, wo er ist.
             guard steuerungSichtbar, laeuft else { return }
-            try? await Task.sleep(for: .seconds(4))
+            // 8 s statt 4: die Leiste verschwand spuerbar schneller als bei
+            // anderen Apple-TV-Clients (Swiftfin 10 s, 18.09.2026).
+            try? await Task.sleep(for: .seconds(8))
             guard !Task.isCancelled, !blattOffen, !folgenOffen else { return }
             // Eine Marke, die niemand mehr sieht, ist keine Absicht mehr.
             // Bliebe sie stehen, zeigte die Leiste beim naechsten Einblenden
@@ -839,7 +859,7 @@ struct PlayerScreen: View {
         schaltwerk.zuletzt = Date()
         // Anhalten/Weiter heisst „hier", nicht „dorthin" — die Marke wird
         // verworfen, nicht bestaetigt. Bestaetigen bleibt der mittlere Knopf.
-        markeVerwerfen()
+        markeVerwerfen(fortsetzen: false)
 
         if soll { flaeche.resume() } else { flaeche.pause() }
         if sofortAnzeigen { laeuftSetzen(soll) }
@@ -947,7 +967,7 @@ struct PlayerScreen: View {
     ///    kurz nach einem Wisch bleibt der Schritt darum aus, sonst spulte
     ///    jeder Wisch zweimal.
     private func springen(_ sekunden: Double) {
-        guard dauer > 0 else { return }
+        guard dauer > 0, !tastet else { return }
         guard steuerungDa else { zeigen(); return }
         guard !wischt, Date().timeIntervalSince(wischEnde) > 0.35 else { return }
 
@@ -980,6 +1000,54 @@ struct PlayerScreen: View {
         }
     }
 
+    // MARK: - Halten
+
+    /// **Halten links/rechts spult in Stufen**, wie im Systemplayer.
+    ///
+    /// Vorher sammelte Halten nur Einzelsprünge. Jetzt: nach einer halben
+    /// Sekunde hält der Film an, die Marke läuft los — 10, dann 30, dann 90
+    /// Sekunden Film je Sekunde, alle zwei Sekunden eine Stufe schneller.
+    /// Loslassen springt dorthin und lässt weiterlaufen, Menü verwirft.
+    ///
+    /// **Die Marke, nicht die Abspielrate.** Apple spielt beim Vorspulen
+    /// schneller ab; VLC kann das rückwärts gar nicht und bei 4K-HEVC im
+    /// Direct Play vorwärts nur ruckelnd. So verhalten sich beide Richtungen
+    /// gleich und der Decoder bleibt in Ruhe.
+    private func haltenBeginnt(_ richtung: Int) {
+        guard dauer > 0, !blattOffen, !folgenOffen else { return }
+        abtastAufgabe?.cancel()
+        abtastAufgabe = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            tastet = true
+            spulAufgabe?.cancel()
+            spulAufgabe = nil
+            ausrollen?.cancel()
+            if !liefVorDemSchrubben, schaltwerk.laeuft, let flaeche {
+                flaeche.pause()
+                laeuftSetzen(false)
+                liefVorDemSchrubben = true
+            }
+            markeVomWisch = true
+            if spulziel == nil { spulzielSetzen(sprung?.ziel ?? position) }
+            let beginn = Date()
+            while !Task.isCancelled {
+                let t = Date().timeIntervalSince(beginn)
+                let tempo: Double = t < 2 ? 10 : (t < 4 ? 30 : 90)
+                spulzielSetzen((spulziel ?? position) + Double(richtung) * tempo * 0.1)
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    private func haltenEndet() {
+        abtastAufgabe?.cancel()
+        abtastAufgabe = nil
+        guard tastet else { return }
+        tastet = false
+        if let ziel = spulziel { sprungAusfuehren(ziel) }
+    }
+
     // MARK: - Wischen
 
     /// Der Finger auf der Flaeche setzt eine Marke, der mittlere Knopf
@@ -1010,22 +1078,51 @@ struct PlayerScreen: View {
 
         spulAufgabe?.cancel()
         spulAufgabe = nil
+        ausrollen?.cancel()
+        // **Schrubben haelt an, wie im Systemplayer.** Vorher lief der Film
+        // weiter, waehrend die Leiste schon ganz woanders stand: Bild und
+        // Ton sagten das eine, die Marke das andere (Paul, 18.09.2026 —
+        // Vergleich mit Apples Player und Swiftfin, die beide anhalten).
+        if !markeVomWisch, schaltwerk.laeuft, let flaeche {
+            flaeche.pause()
+            laeuftSetzen(false)
+            liefVorDemSchrubben = true
+        }
         markeVomWisch = true
+        markeSchieben(weg: weg, tempo: tempo)
+    }
 
+    /// Die Marke um einen Fingerweg verschieben. Das Tempo des Fingers
+    /// entscheidet, quadratisch gewichtet (siehe `gewischt`).
+    private func markeSchieben(weg: CGFloat, tempo: CGFloat) {
         let fein = 0.10
         let grob = max(dauer / 1600, fein)
         let anteil = min(Double(abs(tempo)) / 3000, 1)
         let takt = fein + (grob - fein) * anteil * anteil
-
         spulzielSetzen((spulziel ?? position) + Double(weg) * takt)
     }
 
     /// Auch dann, wenn der Klick das Wischen schon entwaffnet hat: `wischEnde`
     /// haelt die Schrittbefehle zurueck, die derselbe Wisch ausgeloest hat.
-    private func wischSchluss() {
+    private func wischSchluss(tempo: CGFloat) {
+        let rollt = wischt && markeVomWisch && spulziel != nil && abs(tempo) > 600
         wischt = false
         wischEnde = Date()
         wischNurGeoeffnet = false
+        guard rollt else { return }
+        // **Nach einem schnellen Wisch laeuft die Marke nach und bremst ab**
+        // — wie bei Apple und Swiftfin (dort x0,78 alle 30 ms). Ohne das blieb
+        // sie genau unter dem Finger stehen und wirkte hart.
+        ausrollen?.cancel()
+        ausrollen = Task {
+            var v = tempo
+            while !Task.isCancelled, abs(v) > 60, spulziel != nil {
+                try? await Task.sleep(for: .milliseconds(30))
+                guard !Task.isCancelled, spulziel != nil else { return }
+                markeSchieben(weg: v * 0.03, tempo: v)
+                v *= 0.78
+            }
+        }
     }
 
     /// Der mittlere Knopf.
@@ -1058,11 +1155,19 @@ struct PlayerScreen: View {
     /// (1.0.3, „Avatar", 7:24 nach 20 Minuten). VLC und `Zeitannahme` waren
     /// unschuldig: gegen einen Server, der ruhende Verbindungen nach 25 s
     /// schliesst, lief `time` nach der Pause lueckenlos weiter (16.09.2026).
-    private func markeVerwerfen() {
+    private func markeVerwerfen(fortsetzen: Bool = true) {
         spulAufgabe?.cancel()
         spulAufgabe = nil
+        ausrollen?.cancel()
+        ausrollen = nil
         spulziel = nil
         markeVomWisch = false
+        // Verworfen heisst: zurueck an die alte Stelle und weiter wie vorher.
+        if fortsetzen, liefVorDemSchrubben, let flaeche {
+            flaeche.resume()
+            laeuftSetzen(true)
+        }
+        liefVorDemSchrubben = false
     }
 
     /// Ziel setzen, anzeigen, Steuerung wachhalten — ohne zu springen.
@@ -1077,11 +1182,26 @@ struct PlayerScreen: View {
         guard let flaeche else { return }
 
         let vorher = sprung?.ziel ?? position
+        // **Vor `gesprungen` festhalten, ob der vorige noch unterwegs ist.**
+        // `gesprungen` traegt den neuen Sprung als offen ein; wurde danach
+        // gefragt, war immer einer offen — der eigene. Jeder Sprung wartete
+        // dann auf sich selbst, bis der Deckel nach 3 s griff: die Zeit stand
+        // sofort am Ziel, das Bild lief weiter und sprang erst Sekunden
+        // spaeter (Paul, Apple TV, 18.09.2026).
+        let vorigesZiel = sprung?.ziel
         gesprungen(auf: ziel)
         spulziel = nil
         markeVomWisch = false
         spulAufgabe?.cancel()
         spulAufgabe = nil
+        ausrollen?.cancel()
+        ausrollen = nil
+        // Bestaetigt: springen und, wenn er vorher lief, weiterlaufen.
+        if liefVorDemSchrubben {
+            liefVorDemSchrubben = false
+            flaeche.resume()
+            laeuftSetzen(true)
+        }
 
         // **Der Finger liegt beim Klick noch auf der Flaeche.**
         //
@@ -1107,16 +1227,17 @@ struct PlayerScreen: View {
         // alten Stelle — der zweite rechnete von dort und landete zu weit.
         // Danach zog VLC sich wieder zurecht: erst lief es, dann sprang ein
         // Stueck, dann lief es weiter. Auch das hat
-        if sprung != nil {
+        if let vorigesZiel {
             spulAufgabe = Task {
                 // **Warten, bis der vorige angekommen ist — nicht eine Frist
-                // absitzen.** Der Takt loescht `sprung`, sobald VLC dort
-                // steht; meist ist das viel frueher als jede feste Zahl. Der
-                // Deckel ist nur dafuer da, dass ein Sprung, der nie ankommt,
-                // den naechsten nicht verschluckt.
+                // absitzen.** Gemessen an VLCs eigener Zeit, nicht an
+                // `sprung`: den hat `gesprungen` oben schon auf das neue Ziel
+                // gesetzt. Der Deckel ist nur dafuer da, dass ein Sprung, der
+                // nie ankommt, den naechsten nicht verschluckt.
                 let deckel = Date().addingTimeInterval(3)
-                while !Task.isCancelled, sprung != nil, Date() < deckel {
-                    try? await Task.sleep(for: .milliseconds(120))
+                while !Task.isCancelled, Date() < deckel,
+                      abs(flaeche.positionSeconds - vorigesZiel) > 2 {
+                    try? await Task.sleep(for: .milliseconds(80))
                 }
                 guard !Task.isCancelled else { return }
                 gesprungen(auf: ziel)
@@ -1186,6 +1307,7 @@ struct PlayerScreen: View {
         // Folgenliste und waehlt die naechste Folge, nahm die Marke mit
         // hinueber. Dieselbe Sorte Rest wie am 16.09. an der Wiedergabetaste.
         markeVerwerfen()
+        model.fertigGeschaut(position: position, dauer: dauer)
         let alt = (item: item, plan: plan, stelle: position)
         Task {
             let ergebnis = await folgenwechsel.ausfuehren(.init(
@@ -1284,8 +1406,8 @@ struct PlayerScreen: View {
     private func ausfuehren(_ befehl: Fernbefehl) {
         guard let flaeche else { return }
         switch befehl {
-        case .pause:      markeVerwerfen(); flaeche.pause();  laeuftSetzen(false); zeigen()
-        case .weiter:     markeVerwerfen(); flaeche.resume(); laeuftSetzen(true);  zeigen()
+        case .pause:      markeVerwerfen(fortsetzen: false); flaeche.pause();  laeuftSetzen(false); zeigen()
+        case .weiter:     markeVerwerfen(fortsetzen: false); flaeche.resume(); laeuftSetzen(true);  zeigen()
         case .umschalten: anhaltenOderWeiter()
         case .stopp:      verlassen()
         case .vor:        springen(Double(model.vorSekunden))
@@ -1723,7 +1845,7 @@ struct Wischfeld: UIViewRepresentable {
     let beginnt: () -> Void
     /// Weg seit dem letzten Ruf und das Tempo, beides in Punkten.
     let bewegt: (CGFloat, CGFloat) -> Void
-    let endet: () -> Void
+    let endet: (CGFloat) -> Void
 
     func makeUIView(context: Context) -> Traeger {
         let traeger = Traeger()
@@ -1780,8 +1902,10 @@ struct Wischfeld: UIViewRepresentable {
                 let weg = x - letzte
                 letzte = x
                 eltern.bewegt(weg, erkenner.velocity(in: nil).x)
-            case .ended, .cancelled, .failed:
-                eltern.endet()
+            case .ended:
+                eltern.endet(erkenner.velocity(in: nil).x)
+            case .cancelled, .failed:
+                eltern.endet(0)
             default:
                 break
             }
@@ -1791,6 +1915,68 @@ struct Wischfeld: UIViewRepresentable {
         func gestureRecognizer(_ erkenner: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith anderer: UIGestureRecognizer) -> Bool {
             true
+        }
+    }
+}
+
+/// Liest den Klickring der Siri Remote direkt — gedrückt **und** losgelassen.
+///
+/// SwiftUIs `onMoveCommand` meldet nur einzelne Schritte; ob jemand hält,
+/// erfährt es nicht. Über GameController kommt der Druck samt Stelle auf der
+/// Fläche: links außen, rechts außen, oder Mitte (die bleibt dem Fokus).
+@MainActor
+final class Klickring {
+    private var beginnt: ((Int) -> Void)?
+    private var endet: (() -> Void)?
+    private var beobachter: NSObjectProtocol?
+    private var gehalten = false
+
+    func beobachten(beginnt: @escaping (Int) -> Void, endet: @escaping () -> Void) {
+        self.beginnt = beginnt
+        self.endet = endet
+        allesEinrichten()
+        beobachter = NotificationCenter.default.addObserver(
+            forName: .GCControllerDidConnect, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Nicht das Geraet aus der Nachricht weiterreichen — das kreuzt
+            // die Aktorgrenze. Einfach alle neu einrichten; das ist billig
+            // und idempotent.
+            MainActor.assumeIsolated { self?.allesEinrichten() }
+        }
+    }
+
+    func loesen() {
+        if let beobachter { NotificationCenter.default.removeObserver(beobachter) }
+        beobachter = nil
+        for c in GCController.controllers() {
+            c.microGamepad?.buttonA.pressedChangedHandler = nil
+            c.microGamepad?.reportsAbsoluteDpadValues = false
+        }
+        beginnt = nil
+        endet = nil
+    }
+
+    private func allesEinrichten() {
+        GCController.controllers().forEach(einrichten)
+    }
+
+    private func einrichten(_ c: GCController) {
+        guard let pad = c.microGamepad else { return }
+        pad.reportsAbsoluteDpadValues = true
+        pad.buttonA.pressedChangedHandler = { [weak self, weak pad] _, _, gedrueckt in
+            let x = pad?.dpad.xAxis.value ?? 0
+            DispatchQueue.main.async { self?.gedrueckt(x: x, an: gedrueckt) }
+        }
+    }
+
+    private func gedrueckt(x: Float, an: Bool) {
+        if an {
+            guard abs(x) > 0.5 else { return }
+            gehalten = true
+            beginnt?(x < 0 ? -1 : 1)
+        } else if gehalten {
+            gehalten = false
+            endet?()
         }
     }
 }

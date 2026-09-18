@@ -4888,6 +4888,23 @@
         }
       }
     },
+    "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your server asks for two-factor confirmation. Approve this device in your browser or sign in with an app password."
+          }
+        }
+      }
+    },
     "Nicht angemeldet.": {
       "extractionState": "manual",
       "localizations": {
@@ -6692,7 +6709,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No server is reachable at that address."
+            "value": "No server is reachable at this address."
           }
         }
       }
@@ -8449,6 +8466,193 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open overview"
+          }
+        }
+      }
+    },
+    "Swiftly bewerten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly bewerten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rate Swiftly"
+          }
+        }
+      }
+    },
+    "Im App Store": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im App Store"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On the App Store"
+          }
+        }
+      }
+    },
+    "Im Play Store": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Play Store"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On Google Play"
+          }
+        }
+      }
+    },
+    "Discord beitreten": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discord beitreten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Join the Discord"
+          }
+        }
+      }
+    },
+    "Fragen stellen und sagen, was fehlt": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fragen stellen und sagen, was fehlt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask questions and tell me what's missing"
+          }
+        }
+      }
+    },
+    "Fehler melden": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fehler melden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report a bug"
+          }
+        }
+      }
+    },
+    "Auf GitHub, deine Fassung steht schon drin": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf GitHub, deine Fassung steht schon drin"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On GitHub, with your version already filled in"
+          }
+        }
+      }
+    },
+    "Swiftly hat einen Discord": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly hat einen Discord"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swiftly has a Discord"
+          }
+        }
+      }
+    },
+    "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask questions and report bugs there. New builds show up there first, too."
+          }
+        }
+      }
+    },
+    "Scann den Code mit dem Handy, dann landest du direkt beim Bewerten im App Store.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scann den Code mit dem Handy, dann landest du direkt beim Bewerten im App Store."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the code with your phone to go straight to the review page on the App Store."
+          }
+        }
+      }
+    },
+    "Scann den Code mit dem Handy. Deine Fassung steht im Issue schon drin.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scann den Code mit dem Handy. Deine Fassung steht im Issue schon drin."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the code with your phone. Your version is already filled in on the issue."
           }
         }
       }

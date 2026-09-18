@@ -90,3 +90,12 @@
 "Der Code ist abgelaufen. Hol dir einen neuen." = "The code has expired. Get a new one.";
 "Der Code ist abgelaufen oder falsch." = "The code has expired or is wrong.";
 "Der Server hat Quick Connect abgeschaltet." = "Quick Connect is turned off on this server.";
+
+/* Zertifikat und Verbindung — was auf den curl-Plattformen als Code -1 ankommt. */
+"Dem Zertifikat des Servers wird nicht vertraut." = "The server's certificate is not trusted.";
+"Das Zertifikat des Servers ist abgelaufen." = "The server's certificate has expired.";
+"Das Zertifikat des Servers gilt noch nicht." = "The server's certificate is not valid yet.";
+"Das Zertifikat des Servers gehört zu einer anderen Adresse." = "The server's certificate belongs to a different address.";
+"Die verschlüsselte Verbindung kam nicht zustande." = "The encrypted connection could not be established.";
+"Die Verbindung zum Server hat nicht geklappt." = "The connection to the server failed.";
+"Dein Server will eine Zwei-Faktor-Bestätigung. Gib dieses Gerät im Browser frei oder melde dich mit einem App-Passwort an." = "Your server asks for two-factor confirmation. Approve this device in your browser or sign in with an app password.";

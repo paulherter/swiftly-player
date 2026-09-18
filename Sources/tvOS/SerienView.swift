@@ -124,6 +124,7 @@ struct SerienView: View {
                         if staffeln.count > 1, let staffel = gewaehlteStaffel {
                             Staffelpille(name: staffel.name, offen: $staffelwahlOffen)
                                 .focused($amStaffelpille)
+                                .tafelausloeser("staffel")
                         }
                     }
                 } inhalt: {
@@ -184,25 +185,18 @@ struct SerienView: View {
         // Gesperrt wird **vor** den Auflagen: die Tafeln haengen danach und
         // bleiben damit selbst bedienbar.
         .disabled(mehrOffen || staffelwahlOffen)
-        .overlay(alignment: .topLeading) {
-            if staffelwahlOffen {
-                Handlungstafel(handlungen: staffelhandlungen, offen: $staffelwahlOffen)
-                    .padding(.leading, Stil.randSeite)
-                    .padding(.top, Handlungstafel.unterDemReihenkopf)
-                    .transition(.opacity)
-            }
+        // Beide unter ihrem Knopf, an seiner Kante — siehe `Tafelanker`.
+        // Vorher `unterDemReihenkopf` und `unterDerKnopfreihe`: zwei aus dem
+        // Seitenaufbau gerechnete Zahlen, die vom sicheren Rand um 80/60
+        // verschoben landeten und bei jeder Zeile mehr im Kopf neu haetten
+        // stimmen muessen.
+        .tafel(unter: staffelwahlOffen ? "staffel" : nil) {
+            Handlungstafel(handlungen: staffelhandlungen, offen: $staffelwahlOffen)
+                .transition(.opacity)
         }
-        // Das Mehr-Blatt an derselben Stelle wie auf der Filmseite. Es hing
-        // vorher am Knopf und klappte nach oben auf, weil die Knopfreihe
-        // unter den Folgen stand; jetzt steht sie wieder im Kopf, also gilt
-        // wieder der feste Platz (VERHALTEN.md D7).
-        .overlay(alignment: .topLeading) {
-            if mehrOffen {
-                Handlungstafel(handlungen: mehrHandlungen, offen: $mehrOffen)
-                    .padding(.leading, Stil.randSeite)
-                    .padding(.top, Handlungstafel.unterDerKnopfreihe)
-                    .transition(.opacity)
-            }
+        .tafel(unter: mehrOffen ? "mehr" : nil) {
+            Handlungstafel(handlungen: mehrHandlungen, offen: $mehrOffen)
+                .transition(.opacity)
         }
         .animation(.easeInOut(duration: 0.18), value: mehrOffen)
         .animation(.easeInOut(duration: 0.18), value: staffelwahlOffen)
@@ -244,7 +238,7 @@ struct SerienView: View {
         // Seite, sie verschwindet dabei nie, und `.task` oben läuft kein
         // zweites Mal — Fortschritt und „gesehen" blieben auf dem Stand von
         // vor dem Abspielen. Siehe `AppModel.wiedergabeBeendet`.
-        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await auffrischen() } }
+        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await auffrischen() } }
     }
 
     // MARK: Kopf
@@ -332,6 +326,7 @@ struct SerienView: View {
 
                 Mehrknopf(offen: $mehrOffen)
                     .focused($amMehrknopf)
+                    .tafelausloeser("mehr")
             }
             .opacity(eingeblendet ? 1 : 0)
         }

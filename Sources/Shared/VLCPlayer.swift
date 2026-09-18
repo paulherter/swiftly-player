@@ -614,6 +614,7 @@ final class VLCPlayerView: Basisansicht {
         if stelltWiederHer, jetzt > 0 {
             stelltWiederHer = false
             Protokoll.schreib("[Netz] wiederhergestellt bei \(Int(stelle)) s")
+            spurenWiederSetzen()
         }
 
         if jetzt != letzteBekannteZeit {
@@ -758,6 +759,12 @@ final class VLCPlayerView: Basisansicht {
         stehtSeit = nil
         letzteBekannteZeit = -1
         stelltWiederHer = true
+        // **Die laufende Spurwahl mitnehmen.** Ein neu geoeffneter Strom
+        // bringt VLCs eigene Voreinstellung mit - meist die Untertitelspur mit
+        // „Standard"-Markierung aus der MKV. Ohne das gingen abgeschaltete
+        // Untertitel nach einem kurzen Abriss von selbst wieder an (Paul,
+        // 18.09.2026: Caddy neu gestartet, Apple TV).
+        spurenNachAufbau = gemeldeteSpuren
         Protokoll.schreib("[Netz] \(grund) → Strom neu aufbauen bei \(Int(letzteGutePosition)) s")
         // Der Versatz bleibt: dieselbe Adresse liefert wieder ab derselben
         // Stelle, gesprungen wird nur der Rest.
@@ -1361,7 +1368,27 @@ final class VLCPlayerView: Basisansicht {
     /// ist. Wird gebraucht, um auszurechnen, wie weit zwischen „ganz hinein"
     /// und „ganz ausfuellen" liegt.
     var videoSize: CGSize { player.videoSize }
-    func resume() { player.play();  refreshPiPState() }
+    /// **Vor dem Weiterspielen die Tonsitzung aktivieren.**
+    ///
+    /// Nach einer Unterbrechung (Wecker, Stoppuhr, Anruf) ist sie inaktiv.
+    /// Die automatische Fortsetzung in `Wiedergabezentrale` zog sie schon
+    /// nach — der Abspielknopf nicht. Kam kein automatisches Ende der
+    /// Unterbrechung (ein Wecker meldet es oft gar nicht), drückte man selbst,
+    /// und VLC startete den Ton auf der inaktiven Sitzung: ein paar Sekunden
+    /// Stille, dann setzte er verspätet ein (Paul, 17.09.2026, Stoppuhr).
+    /// `setActive(true)` auf einer schon aktiven Sitzung kostet nichts.
+    func resume() {
+        #if os(iOS) || os(tvOS)
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            Protokoll.schreib("[Ton] Sitzung vor dem Weiterspielen nicht aktivierbar: "
+                + error.localizedDescription)
+        }
+        #endif
+        player.play()
+        refreshPiPState()
+    }
     func stop() {
         absichtlichBeendet = true
         endgueltigGestoppt = true
@@ -1453,6 +1480,31 @@ final class VLCPlayerView: Basisansicht {
     /// Eine gewählte Untertiteldatei, deren Spur VLC noch nicht meldet.
     private var offenerUntertitel: Int?
     private var gemeldeteSpuren = Spurindizes()
+    /// Die Spurwahl vor einem Neuaufbau, bis der neue Strom laeuft.
+    private var spurenNachAufbau: Spurindizes?
+
+    /// Nach einem Neuaufbau die Spurwahl von vorher wieder setzen.
+    ///
+    /// Die Spuren sind erst da, wenn der Strom laeuft; deshalb hier und nicht
+    /// in `neuVerbinden`. Untertitel `nil` heisst „aus", nicht „egal" - genau
+    /// der Fall, der vorher verloren ging.
+    private func spurenWiederSetzen() {
+        guard let vorher = spurenNachAufbau else { return }
+        spurenNachAufbau = nil
+        let ton = player.audioTracks, text = player.textTracks
+        let z = zuordnung(ton: ton, untertitel: text)
+        if let index = vorher.ton, let position = z.tonposition(index: index), position < ton.count {
+            ton[position].isSelectedExclusively = true
+        }
+        if let index = vorher.untertitel, let position = z.untertitelposition(index: index),
+           position < text.count {
+            text[position].isSelectedExclusively = true
+        } else if vorher.untertitel == nil {
+            player.deselectAllTextTracks()
+        }
+        Protokoll.schreib("[Spuren] nach Neuaufbau wieder gesetzt: Ton \(vorher.ton.map(String.init) ?? "—"), "
+            + "Untertitel \(vorher.untertitel.map(String.init) ?? "aus")")
+    }
 
     /// Die laufenden Spuren als Jellyfin-Index, bei jeder Änderung — für
     /// Start- und Fortschrittsmeldung (T3 #8).

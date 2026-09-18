@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
@@ -299,6 +300,24 @@ fun EinstellungenSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: 
                               prueft = false
                           }
                       } })
+        }
+        // Vorlage: `EinstellungenView.gemeinschaft` — bewerten, Discord, Fehler melden. Die Adressen
+        // kommen aus dem Paket. **Play-Eintrag statt In-App-Abfrage:** die kommt von selbst nach dem
+        // dritten Titel; eine Zeile, die sie ausloest, zeigte im geschlossenen Test oft gar nichts,
+        // weil Google die Abfrage drosselt und nicht meldet, ob sie erschien.
+        val kontext = androidx.compose.ui.platform.LocalContext.current
+        Einstellungsgruppe("Swiftly") {
+            Wertzeile(Icons.Filled.StarOutline, uebersetzt("Swiftly bewerten"), uebersetzt("Im Play Store")) {
+                app.adresseOeffnen(kontext, app.gemeinschaftAdresse("play"))
+            }
+            Trennlinie()
+            Wertzeile(Icons.AutoMirrored.Filled.Chat, uebersetzt("Discord beitreten"), uebersetzt("Fragen stellen und sagen, was fehlt")) {
+                app.adresseOeffnen(kontext, app.gemeinschaftAdresse("discord"))
+            }
+            Trennlinie()
+            Wertzeile(Icons.Filled.BugReport, uebersetzt("Fehler melden"), uebersetzt("Auf GitHub, deine Fassung steht schon drin")) {
+                app.adresseOeffnen(kontext, app.gemeinschaftAdresse("fehler"))
+            }
         }
         Text("${SwiftlyAnwendung.FASSUNGSZEILE} · libVLC 3.6.3", style = TextStyle(fontSize = 12.sp), color = Color.White.copy(alpha = 0.3f),
              modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 26.dp))

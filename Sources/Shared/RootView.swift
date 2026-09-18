@@ -11,6 +11,8 @@ struct RootView: View {
     /// `Bewertungsfrage` im Paket; Apple zeigt sie höchstens dreimal im Jahr.
     @Environment(\.requestReview) private var bewerten
     #endif
+    /// Der einmalige Hinweis auf den Discord, nach dem fünften Titel.
+    @State private var discordBlatt = false
 
     /// Nur hier gelesen. Die Ansichten fragen `\.breit` ab, damit die Regel
     /// an einer Stelle steht und nicht in jeder Ansicht neu.
@@ -51,15 +53,30 @@ struct RootView: View {
         // **Erst nach dem Player, und mit einem Atemzug Abstand.** Die Frage
         // kommt, wenn jemand gerade etwas zu Ende geschaut hat — nicht mitten
         // in der Wiedergabe und nicht beim Start.
-        .onChange(of: model.bewertungFaellig) { _, jetzt in
+        //
+        // **Erst wenn der Player zu ist.** Der Wechsel zur nächsten Folge
+        // zählt den Titel, während der Player offen bleibt — vorher kam die
+        // Abfrage dann 1,5 s später über die laufende Folge.
+        .onChange(of: model.bewertungFaellig && !model.playerOffen) { _, jetzt in
             guard jetzt else { return }
             model.bewertungFaellig = false
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
+                guard !model.playerOffen else { model.bewertungFaellig = true; return }
                 bewerten()
             }
         }
         #endif
+        .onChange(of: model.discordHinweisFaellig && !model.playerOffen) { _, jetzt in
+            guard jetzt else { return }
+            model.discordHinweisFaellig = false
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !model.playerOffen else { model.discordHinweisFaellig = true; return }
+                discordBlatt = true
+            }
+        }
+        .overlay { Discordhinweis(offen: $discordBlatt) }
         .overlay {
             #if os(iOS)
             if !gestartet {

@@ -131,6 +131,61 @@ final class Downloadverwaltung {
         posten.first { $0.id == id }
     }
 
+    // MARK: Untertitel für offline
+
+    /// Wo die externen Untertitel zu einer geladenen Datei liegen.
+    ///
+    /// **Ein eigener Ordner, nicht daneben.** VLC lädt Untertitel, deren
+    /// Name mit dem der Datei beginnt, von selbst mit — dann stünde dieselbe
+    /// Spur doppelt in der Liste, einmal von VLC und einmal von uns.
+    nonisolated static func untertitelordner(zur datei: URL) -> URL {
+        datei.deletingLastPathComponent()
+            .appendingPathComponent(datei.lastPathComponent + ".untertitel", isDirectory: true)
+    }
+
+    /// Die geladenen Untertitel einer Datei von der Platte, zum Anhängen.
+    /// Dateiname ist `<Jellyfin-Index>.<Endung>`.
+    nonisolated static func untertitel(zur datei: URL, merkmal: (URL) -> String?) -> [Untertiteldatei] {
+        let ordner = untertitelordner(zur: datei)
+        let namen = (try? FileManager.default.contentsOfDirectory(atPath: ordner.path)) ?? []
+        return namen.sorted().compactMap { name in
+            guard let index = Int(name.split(separator: ".").first ?? "") else { return nil }
+            let weg = ordner.appendingPathComponent(name)
+            return Untertiteldatei(index: index, adresse: weg, merkmal: merkmal(weg))
+        }
+    }
+
+    /// **Externe Untertitel mitnehmen**, sobald der Film selbst da ist.
+    ///
+    /// Eingebettete Untertitel stecken in der Datei und reisen ohnehin mit;
+    /// externe (.srt, .ass neben dem Film auf dem Server) holte der Player
+    /// bisher nur über das Netz — offline standen sie nicht zur Wahl
+    /// (Wunsch aus dem Discord, „Add more subtitle options").
+    private func untertitelHolen(_ p: Downloadposten) {
+        guard let client else { return }
+        let datei = Self.ordner().appendingPathComponent(p.dateiname)
+        Task {
+            guard let plan = try? await client.playbackPlan(for: p.id),
+                  let sitzung = await client.currentSession() else { return }
+            let dateien = Untertiteldatei.aus(stroeme: plan.quelle?.mediaStreams ?? [],
+                                              server: sitzung.serverURL,
+                                              schluessel: sitzung.accessToken)
+            guard !dateien.isEmpty else { return }
+            let ziel = Self.untertitelordner(zur: datei)
+            try? FileManager.default.createDirectory(at: ziel, withIntermediateDirectories: true)
+            var geladen = 0
+            for d in dateien {
+                guard let (daten, antwort) = try? await URLSession.shared.data(from: d.adresse),
+                      (antwort as? HTTPURLResponse)?.statusCode == 200, !daten.isEmpty else { continue }
+                let endung = d.adresse.pathExtension.isEmpty ? "srt" : d.adresse.pathExtension
+                if (try? daten.write(to: ziel.appendingPathComponent("\(d.index).\(endung)"))) != nil {
+                    geladen += 1
+                }
+            }
+            Protokoll.schreib("[Download] Untertitel für \(p.id): \(geladen) von \(dateien.count)")
+        }
+    }
+
     // MARK: Konto
 
     /// **H11.** Nach dem Anmelden gilt, was diesem Konto gehört — und nur das.
@@ -299,8 +354,9 @@ final class Downloadverwaltung {
         if let aufgabe = aufgaben[id] { aufgabe.cancel(); aufgaben[id] = nil }
         fortsetzdaten[id] = nil
         if let p = posten.first(where: { $0.id == id }) {
-            try? FileManager.default.removeItem(
-                at: Self.ordner().appendingPathComponent(p.dateiname))
+            let datei = Self.ordner().appendingPathComponent(p.dateiname)
+            try? FileManager.default.removeItem(at: datei)
+            try? FileManager.default.removeItem(at: Self.untertitelordner(zur: datei))
             // Das eigene Bild geht immer mit.
             try? FileManager.default.removeItem(at: Self.bildweg(p.konto, p.id))
             // Das Serienplakat teilen sich alle Folgen — es geht erst mit der
@@ -446,6 +502,7 @@ final class Downloadverwaltung {
         if gelungen {
             posten[i].stand = .fertig
             posten[i].geladen = posten[i].bytes
+            untertitelHolen(posten[i])
         } else {
             posten[i].stand = .fehler
             posten[i].grund = String(localized: "Die Datei liess sich nicht ablegen.")
@@ -621,7 +678,9 @@ final class Downloadmelder: NSObject, URLSessionDownloadDelegate, @unchecked Sen
         // abgelaufene Anmeldung mit 401 und einem Rumpf — und der landete
         // hier als „fertige Datei" von 40 Byte.
         if let http = downloadTask.response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            aufFehler(t.id, "HTTP \(http.statusCode)", nil)
+            // Der Satz kommt aus `lesbarerFehler`, nicht aus dem Code: sonst stuende
+            // hier woertlich „HTTP 401" auf dem Schirm.
+            aufFehler(t.id, lesbarerFehler(JellyfinError.http(status: http.statusCode, body: nil)), nil)
             return
         }
         aufFertig(t.id, Fertigmeldung(temp: location, name: t.name))

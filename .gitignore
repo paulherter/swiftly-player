@@ -72,3 +72,4 @@ Jellyfin-Theme
 
 # Arbeitsordner eines Skills — Zwischenstaende, kein Code.
 .impeccable
+__pycache__/

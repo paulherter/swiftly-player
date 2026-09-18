@@ -1,0 +1,17 @@
+
+/* ---------------------------------------------------------------
+   Skizzen (Paul, 17.09.). Selbst gezeichnet, kein Screenshot:
+   fremde Oberflaechen abzubilden ist nicht erlaubt, und eine
+   vereinfachte Zeichnung zeigt ohnehin deutlicher, wo zu druecken
+   ist. Aufbau immer gleich: ein Fensterrahmen, graue Platzhalter
+   statt Text, und genau EIN Ziel in Tuerkis, an dem der Zeiger
+   steht. Kein fremdes Logo in der Zeichnung.
+   --------------------------------------------------------------- */
+.skizze { grid-column: 1 / -1; margin: 18px 0 0; padding: 10px; border-radius: 18px;
+  background: var(--tief); border: 1px solid var(--linie); }
+.skizze svg { display: block; width: 100%; height: auto; }
+.skizze text { font-family: var(--schriftart); font-size: 11px; fill: var(--leise); }
+.skizze .titel { font-size: 12.5px; font-weight: 600; fill: var(--schrift); }
+.skizze .ziel { font-size: 11.5px; font-weight: 600; fill: var(--schrift); }
+.skizze figcaption { margin: 10px 4px 2px; color: var(--sehr-leise); font-size: 13.5px; line-height: 1.45; }
+@media (min-width: 901px) { .skizze { grid-column: 2; } }
