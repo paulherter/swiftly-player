@@ -55,6 +55,12 @@ final class AppModel {
     /// Steht auf `true`, sobald nach einem fertig geschauten Titel die Frage
     /// nach einer Bewertung dran ist. Die Wurzel fragt und setzt zurück.
     var bewertungFaellig = false
+    /// Dasselbe für den einmaligen Hinweis auf den Discord (`Gemeinschaft`).
+    var discordHinweisFaellig = false
+    /// Ob gerade ein Player offen ist. **Beide Anstöße warten darauf**: der
+    /// Wechsel zur nächsten Folge zählt einen Titel, während der Player
+    /// weiterläuft — und eine Frage über dem Bild wäre das Schlechteste.
+    var playerOffen = false
 
     /// „Zuletzt hinzugefügt" getrennt nach Filmen und Serien.
     ///
@@ -116,6 +122,22 @@ final class AppModel {
             }
         }
     }
+    /// `Policy.EnableContentDownloading` des Kontos, als ``Downloadrecht``.
+    /// Nicht gespeichert: kommt bei jedem Start frisch, und ein anderes Konto
+    /// hat ein anderes Recht.
+    private(set) var downloadrecht: Downloadrecht = .unbekannt
+
+    /// **Ob ein Ladeknopf ueberhaupt erscheint** — der Schalter oben *und*
+    /// das Recht am Konto, entschieden im Paket.
+    ///
+    /// Nicht `downloadsAn` an den Knopfstellen: der Reiter unten und die
+    /// Zeile in den Einstellungen haengen weiter am Schalter allein, sonst
+    /// kaeme jemand, der das Recht heute verliert, nicht mehr an die Dateien,
+    /// die er gestern geladen hat — auch nicht, um sie zu loeschen.
+    var downloadKnopfZeigen: Bool {
+        Downloadrecht.anbieten(recht: downloadrecht, funktionAn: downloadsAn)
+    }
+
     /// **H5.** An bei der ersten Aktivierung — bei Originaldateien ist alles
     /// andere unfreundlich.
     var nurUeberWLAN: Bool {
@@ -230,6 +252,13 @@ final class AppModel {
     /// angekommen ist, und bekommt den Stand des letzten Takts — bis zu zehn
     /// Sekunden zu früh. Seiten mit Fortschritt hängen ihr Auffrischen hier an.
     private(set) var wiedergabeBeendet = 0
+    /// Ein Sehstand wurde von Hand geaendert (Folge, Staffel, Serie).
+    private(set) var sehstandGeaendert = 0
+    /// **Worauf Seiten mit Sehstand hoeren.** Beides aendert, was dort steht:
+    /// eine zu Ende geschaute Folge und ein Haken von Hand. Vorher hoerten
+    /// sie nur auf das Erste — wer eine ganze Serie abhakte, sah die Folgen
+    /// darunter weiter offen, bis er die Seite neu oeffnete (Paul, 18.09.2026).
+    var seitenAuffrischen: Int { wiedergabeBeendet + sehstandGeaendert }
 
     /// **Die Quelle der Wahrheit dafür, wer angemeldet ist.**
     ///
@@ -687,8 +716,14 @@ final class AppModel {
         defer { isWorking = false }
         // Nebenher und ohne Fehlermeldung: kommt nichts, bleibt es wie es war.
         Task {
-            naechsteAutomatischKonto = await client.kontovorgaben()?.naechsteFolgeAutomatisch
-            Protokoll.schreib("[Konto] Nächste Folge automatisch: \(String(describing: naechsteAutomatischKonto))")
+            let vorgaben = await client.kontovorgaben()
+            naechsteAutomatischKonto = vorgaben?.naechsteFolgeAutomatisch
+            // Ohne Antwort `.unbekannt`, also erlaubt: ein Netzfehler nimmt
+            // niemandem etwas weg. Den harten Riegel haelt ohnehin
+            // `JellyfinClient.downloadURL`, und der merkt sich den letzten
+            // bekannten Stand.
+            downloadrecht = vorgaben?.downloadrecht ?? .unbekannt
+            Protokoll.schreib("[Konto] Nächste Folge automatisch: \(String(describing: naechsteAutomatischKonto)), Downloads: \(downloadrecht.rawValue)")
         }
         do {
             views = try await client.userViews()
@@ -822,9 +857,13 @@ final class AppModel {
     /// Zugangsmerkmal nicht an — was nur solange gutging, wie der Server
     /// Bilder auch unangemeldet herausgibt.
     /// Externe Untertiteldateien eines Plans, mit voller Adresse — der
-    /// Player hängt sie beim Öffnen an (T1-H4). Von der Platte keine.
+    /// Player hängt sie beim Öffnen an (T1-H4). Von der Platte die, die beim
+    /// Herunterladen mitgekommen sind.
     func untertiteldateien(_ plan: PlaybackPlan) -> [Untertiteldatei] {
-        guard let session, !plan.url.isFileURL else { return [] }
+        if plan.url.isFileURL {
+            return Downloadverwaltung.untertitel(zur: plan.url, merkmal: VLCPlayerView.untertitelmerkmal)
+        }
+        guard let session else { return [] }
         return Untertiteldatei.aus(stroeme: plan.quelle?.mediaStreams ?? [],
                                    server: session.serverURL, schluessel: session.accessToken,
                                    merkmal: VLCPlayerView.untertitelmerkmal)
@@ -903,6 +942,7 @@ final class AppModel {
             // Bei einer Folge und bei einer Staffel ist die Serie betroffen,
             // bei einer Serie sie selbst.
             Serienspeicher.geteilt.vergessen(item.seriesId ?? item.id)
+            sehstandGeaendert += 1
             return nil
         } catch { return lesbar(error) }
     }
@@ -1356,20 +1396,37 @@ final class AppModel {
         gemeldetPausiert = paused
     }
 
-    /// Zählt einen fertig geschauten Titel und meldet, wenn die Frage nach
-    /// einer Bewertung dran ist — höchstens einmal je Fassung
-    /// (``Bewertungsfrage``).
+    /// Zählt einen fertig geschauten Titel und meldet, ob danach die Frage
+    /// nach einer Bewertung oder der Hinweis auf den Discord dran ist —
+    /// höchstens eins davon (``Gemeinschaft/anstoss``).
     func fertigGeschaut(position: Double, dauer: Double) {
         guard Bewertungsfrage.zaehltAlsFertig(position: position, dauer: dauer) else { return }
         let ablage = UserDefaults.standard
         let fertig = ablage.integer(forKey: "bewertungFertig") + 1
         ablage.set(fertig, forKey: "bewertungFertig")
         let fassung = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        guard Bewertungsfrage.faellig(fertig: fertig,
-                                      zuletztGefragt: ablage.string(forKey: "bewertungFassung"),
-                                      fassung: fassung) else { return }
-        ablage.set(fassung, forKey: "bewertungFassung")
-        bewertungFaellig = true
+        #if os(tvOS)
+        // tvOS hat keine Bewertungsabfrage — `requestReview` gibt es dort nicht.
+        let bewertungMoeglich = false
+        #else
+        let bewertungMoeglich = true
+        #endif
+        switch Gemeinschaft.anstoss(fertig: fertig,
+                                    bewertungZuletzt: ablage.string(forKey: "bewertungFassung"),
+                                    fassung: fassung,
+                                    discordGezeigt: ablage.bool(forKey: "discordHinweisGezeigt"),
+                                    bewertungMoeglich: bewertungMoeglich) {
+        case .bewertung:
+            ablage.set(fassung, forKey: "bewertungFassung")
+            bewertungFaellig = true
+        case .discord:
+            // Gleich als gezeigt merken: stürzt die App vorher ab oder wird
+            // sie geschlossen, kommt der Hinweis lieber nie als zweimal.
+            ablage.set(true, forKey: "discordHinweisGezeigt")
+            discordHinweisFaellig = true
+        case nil:
+            break
+        }
     }
 
     /// Das Ende — **abgewartet**, weil danach die Seiten neu laden (d8492ca).

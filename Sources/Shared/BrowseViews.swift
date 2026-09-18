@@ -284,7 +284,7 @@ struct ItemDetailView: View {
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
         #endif
-        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await auffrischen() } }
+        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await auffrischen() } }
         .task {
             async let frischerTitel = model.item(id: item.id)
             async let planung = model.plan(for: item.id)
@@ -419,7 +419,7 @@ struct ItemDetailView: View {
             // Wer die Funktion nie einschaltet, sieht die Reihe unverändert
             // mit ihren vier Feldern; deshalb wächst sie hier statt eine
             // fünfte Stelle immer freizuhalten.
-            if model.downloadsAn, aktuell.type != "Series" {
+            if model.downloadKnopfZeigen, aktuell.type != "Series" {
                 Downloadfeld(posten: geladen, dehnt: !weit) {
                     ringGetippt(geladen, model.downloads) { ladeblatt = true }
                 }

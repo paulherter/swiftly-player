@@ -1,4 +1,7 @@
 import Foundation
+#if os(tvOS)
+import TVServices
+#endif
 
 /// Was auf dem Top Shelf steht — die Reihe über dem App-Zeichen auf dem
 /// Startbildschirm des Apple TV.
@@ -50,6 +53,11 @@ enum Regal {
 
     static func schreiben(_ vorschau: Regalvorschau) {
         guard var datei, let daten = try? JSONEncoder().encode(vorschau) else { return }
+        // Nur bei echter Aenderung weitermachen: die Bescheidgabe unten laesst
+        // tvOS die Erweiterung neu befragen, und das muss nicht bei jedem
+        // Oeffnen der Startseite sein.
+        let vorher = try? Data(contentsOf: datei)
+        guard vorher != daten else { return }
         try? daten.write(to: datei, options: .atomic)
         // **Nicht in die Sicherung.**
         //
@@ -67,6 +75,23 @@ enum Regal {
         var werte = URLResourceValues()
         werte.isExcludedFromBackup = true
         try? datei.setResourceValues(werte)
+        bescheidGeben()
+    }
+
+    /// **Dem System sagen, dass sich das Regal geaendert hat.**
+    ///
+    /// Ohne diese Zeile schrieb die App die Datei, und niemand fragte danach:
+    /// tvOS befragt die Erweiterung von sich aus nur selten und merkt sich die
+    /// letzte Antwort. Fiel die erste Frage in die Zeit, bevor ueberhaupt
+    /// Daten dalagen, blieb der Startbildschirm bei „leer" stehen — und zwar
+    /// dauerhaft, bis irgendwann zufaellig neu gefragt wurde. Genau so sah es
+    /// bei Paul aus: meistens nur das Zeichen, manchmal das richtige Regal
+    /// (17.09.2026).
+    private static func bescheidGeben() {
+        #if os(tvOS)
+        NotificationCenter.default.post(name: NSNotification.Name.TVTopShelfItemsDidChange,
+                                        object: nil)
+        #endif
     }
 
     /// **Beim Abmelden zu leeren ist Pflicht, nicht Kosmetik.**
@@ -78,6 +103,9 @@ enum Regal {
     static func leeren() {
         guard let datei else { return }
         try? FileManager.default.removeItem(at: datei)
+        // Auch das Leeren muss ankommen: sonst zeigt der Startbildschirm nach
+        // dem Abmelden weiter die Titel des vorigen Kontos.
+        bescheidGeben()
     }
 
     static func lesen() -> Regalvorschau? {

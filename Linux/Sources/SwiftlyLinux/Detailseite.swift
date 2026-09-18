@@ -715,10 +715,11 @@ extension App {
         beiSignal(merkzeichen.anzeige, "destroy") { _ = merkzeichen }
         anhaengen(reihe, merk)
 
-        // **H1: der Ladeknopf gibt es nur mit dem Schalter.** Wer Downloads
-        // nicht eingeschaltet hat, sieht hier nichts davon — dieselbe Regel
-        // wie bei Seerr.
-        if downloadsAn, titel.type != "Series" {
+        // **H1: den Ladeknopf gibt es nur mit dem Schalter** — und nur,
+        // wenn das Konto laden darf (`Downloadrecht`). Wer Downloads nicht
+        // eingeschaltet hat, sieht hier nichts davon, dieselbe Regel wie bei
+        // Seerr.
+        if downloadKnopfZeigen, titel.type != "Series" {
             let stand = downloads.posten(fuer: titel.id)
             let symbol = ladeknopfsymbol(stand)
             let laden = nebenknopf(symbol, name: uebersetzt("Laden"),

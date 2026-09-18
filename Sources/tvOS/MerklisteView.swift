@@ -84,13 +84,12 @@ struct MerklisteView: View {
         // Hinter der offenen Tafel ist nichts fokussierbar — wie in der
         // Bibliothek; sonst steigt der Fokus aus der Tafel heraus.
         .disabled(sortierwahlOffen)
-        .overlay(alignment: .topTrailing) {
-            if sortierwahlOffen {
-                Handlungstafel(handlungen: sortierhandlungen, offen: $sortierwahlOffen)
-                    .padding(.trailing, Stil.randSeite)
-                    .padding(.top, Stil.erstesEnde + 16)
-                    .transition(.opacity)
-            }
+        // Unter ihrem Knopf, an seiner Kante — siehe `Tafelanker`. Vorher
+        // feste Abstaende von der Kante, und damit um den sicheren Rand
+        // daneben; dieselbe Stelle wie auf der Filmseite.
+        .tafel(unter: sortierwahlOffen ? "sortierung" : nil) {
+            Handlungstafel(handlungen: sortierhandlungen, offen: $sortierwahlOffen)
+                .transition(.opacity)
         }
         .animation(.easeInOut(duration: 0.18), value: sortierwahlOffen)
         // Die Seite schaltet sich selbst ab, die Kopfleiste gehoert ihr aber
@@ -138,6 +137,7 @@ struct MerklisteView: View {
             }
             .buttonStyle(KnopfStil(hoehe: Stil.chipHoehe))
             .focused($amSortierknopf)
+            .tafelausloeser("sortierung")
             .accessibilityLabel(Text("Sortierung, \(stand.sortierung.beschriftung)"))
         }
         .focusSection()

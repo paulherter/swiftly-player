@@ -133,17 +133,23 @@ extension App {
                             konto: naechsteAutomatischKonto)
     }
 
-    /// `EnableNextEpisodeAutoPlay` nebenher holen, ohne Fehlermeldung: kommt
-    /// nichts, bleibt es bei der eigenen Wahl oder „an".
+    /// `EnableNextEpisodeAutoPlay` und das Downloadrecht nebenher holen, ohne
+    /// Fehlermeldung: kommt nichts, bleibt es bei der eigenen Wahl oder „an"
+    /// und beim Recht `.unbekannt`, also erlaubt. **Eine Anfrage fuer beides.**
     func kontovorgabenHolen(_ c: JellyfinClient) {
         Task.detached { [self] in
-            let konto = await c.kontovorgaben()?.naechsteFolgeAutomatisch
+            let vorgaben = await c.kontovorgaben()
+            let konto = vorgaben?.naechsteFolgeAutomatisch
+            let recht = vorgaben?.downloadrecht ?? .unbekannt
             aufHauptfaden {
                 // Inzwischen ein anderes Konto: dessen Vorgabe kommt selbst.
                 guard self.client === c else { return }
                 self.naechsteAutomatischKonto = konto
-                print("[Konto] Nächste Folge automatisch: \(konto.map { String($0) } ?? "nil"), gilt \(self.naechsteAutomatisch)")
+                self.downloadrecht = recht
+                print("[Konto] Nächste Folge automatisch: \(konto.map { String($0) } ?? "nil"), gilt \(self.naechsteAutomatisch), Downloads: \(recht.rawValue)")
                 fflush(nil)
+                // Die offene Seite hat den Knopf vielleicht schon gebaut.
+                self.staffelladeknopfMalen()
             }
         }
     }

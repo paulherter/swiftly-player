@@ -40,7 +40,12 @@ struct BibliothekView: View {
     @State private var gewaehlt: Item?
     @FocusState private var amAusloeser: Tafel?
 
-    private enum Tafel: Hashable { case bibliothek, sortierung }
+    private enum Tafel: Hashable {
+        case bibliothek, sortierung
+
+        /// Der Name des Knopfs, an dem die Tafel haengt — siehe `Tafelanker`.
+        var ausloeser: String { self == .bibliothek ? "bibliothek" : "sortierung" }
+    }
     /// Welche Kachel den Fokus hat, und welche ihn zuletzt hatte — wie
     /// `zuletztAmTitel` in `HomeView`. `amTitel` wird `nil`, sobald eine
     /// Detailseite öffnet; `zuletztAmTitel` behält den Titel.
@@ -129,32 +134,20 @@ struct BibliothekView: View {
         // Hinter der offenen Tafel ist nichts fokussierbar — siehe die
         // Detailseiten, dort war es derselbe Fehler.
         .disabled(offeneTafel != nil)
-        // **Rechts, unter ihrem Ausloeser** — nicht links am Rand.
+        // **Unter ihrem Ausloeser, an seiner Kante** — siehe `Tafelanker`.
         //
-        // Sie hing an `.topLeading`, der Sortierknopf steht aber ganz rechts.
-        // Die Tafel klappte also quer ueber die Seite auf und hatte mit dem
-        // Knopf, der sie geoeffnet hatte, nichts mehr zu tun. Auf den
-        // Detailseiten stimmte es, weil dort der Mehr-Knopf links sitzt.
-        //
-        // Die Kante ist die Bildkante, nicht der Inhaltsrand: der waagerechte
-        // sichere Bereich ist oben abgeschaltet, damit `randSeite` nicht
-        // doppelt zaehlt.
-        .overlay(alignment: .topTrailing) {
-            if offeneTafel == .sortierung {
-                Handlungstafel(handlungen: sortierhandlungen, offen: tafelBindung)
-                    .padding(.trailing, Stil.randSeite)
-                    .padding(.top, Stil.erstesEnde + 16)
-                    .transition(.opacity)
-            }
-        }
-        // Die Bibliothekskapsel steht vorn links — ihre Tafel also auch.
-        .overlay(alignment: .topLeading) {
-            if offeneTafel == .bibliothek {
-                Handlungstafel(handlungen: bibliothekshandlungen, offen: tafelBindung)
-                    .padding(.leading, Stil.randSeite)
-                    .padding(.top, Stil.erstesEnde + 16)
-                    .transition(.opacity)
-            }
+        // Hier standen zwei Auflagen mit festen Abstaenden: `Stil.randSeite`
+        // zur Seite, `Stil.erstesEnde + 16` nach unten. Beide Zahlen sind von
+        // der **Bildkante** gedacht, eine Auflage rechnet aber vom sicheren
+        // Bereich — 80 Punkt zur Seite, 60 nach oben. Gemessen im Simulator:
+        // der Knopf „Videothek" steht bei 76…266, seine Tafel stand bei
+        // 160…779 und 76 Punkt zu tief; die Sortiertafel endete bei 1760,
+        // ihr Knopf bei 1842. Beides genau um den sicheren Rand daneben.
+        .tafel(unter: offeneTafel?.ausloeser) {
+            Handlungstafel(handlungen: offeneTafel == .sortierung
+                                       ? sortierhandlungen : bibliothekshandlungen,
+                           offen: tafelBindung)
+                .transition(.opacity)
         }
         .animation(.easeInOut(duration: 0.18), value: offeneTafel)
         // Die Seite schaltet sich selbst ab, die Kopfleiste gehoert ihr aber
@@ -282,6 +275,7 @@ struct BibliothekView: View {
                 }
                 .buttonStyle(KapselStil())
                 .focused($amAusloeser, equals: .bibliothek)
+                .tafelausloeser(Tafel.bibliothek.ausloeser)
                 .accessibilityLabel(Text("Bibliothek, \(gewaehlt?.name ?? "")"))
 
                 // Senkrechter Strich statt Abstand: Wahl und Filter
@@ -311,6 +305,7 @@ struct BibliothekView: View {
             }
             .buttonStyle(KapselStil())
             .focused($amAusloeser, equals: .sortierung)
+            .tafelausloeser(Tafel.sortierung.ausloeser)
             .accessibilityLabel(Text("Sortierung, \(stand.sortierung.beschriftung)"))
         }
         .focusSection()

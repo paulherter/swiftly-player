@@ -48,7 +48,7 @@ struct DetailView: View {
         .task { if voll == nil { voll = await model.item(id: item.id) } }
         // Nach dem Player den Titel neu holen — er liegt als Ebene darüber,
         // `.task` läuft nicht neu. Siehe `AppModel.wiedergabeBeendet`.
-        .onChange(of: model.wiedergabeBeendet) { _, _ in
+        .onChange(of: model.seitenAuffrischen) { _, _ in
             Task { if let neu = await model.item(id: item.id) { voll = neu } }
         }
     }
@@ -359,7 +359,7 @@ struct Heldenkopf: View {
         }
         .frame(height: Stil.heldHoehe, alignment: .topLeading)
         // Auch am Stand: nach dem Player kommt derselbe Titel frisch zurück.
-        .task(id: "\(titel.id)|\(titel.istGesehen)|\(model.wiedergabeBeendet)") {
+        .task(id: "\(titel.id)|\(titel.istGesehen)|\(model.seitenAuffrischen)") {
             merkliste = titel.userData?.isFavorite ?? false
             gesehen = titel.istGesehen
             if titel.type == "Series" {
@@ -547,7 +547,7 @@ struct Heldenkopf: View {
             // beschriftete Nebenknöpfe nebeneinander, also ist es einer mehr.
             // Er steht **nach** der Merkliste — die beiden sind das Paar
             // „für später" und gehören zusammen.
-            if model.downloadsAn, titel.type != "Series" {
+            if model.downloadKnopfZeigen, titel.type != "Series" {
                 Nebenknopf(symbol: ladezeichen, titel: "Laden",
                            aktiv: geladen != nil) {
                     ringGeklickt(geladen, model.downloads) {

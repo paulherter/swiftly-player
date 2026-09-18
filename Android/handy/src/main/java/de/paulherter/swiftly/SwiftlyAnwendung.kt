@@ -79,18 +79,44 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     /** Nach einem fertig geschauten Titel steht die Bewertungsfrage an — die Hauptaktivitaet fragt und setzt zurueck. */
     val bewertungFaellig = androidx.compose.runtime.mutableStateOf(false)
 
+    /** Dasselbe fuer den einmaligen Hinweis auf den Discord (`Gemeinschaft` im Paket). */
+    val discordHinweisFaellig = androidx.compose.runtime.mutableStateOf(false)
+
+    /** Die Adressen aus dem Paket — getippt stehen sie nur dort. */
+    fun gemeinschaftAdresse(art: String): String = Kern.gemeinschaftAdresse(art, FASSUNGSZEILE + " · libVLC 3.6.3",
+        (if (istFernseher) "Android TV " else "Android ") + android.os.Build.VERSION.RELEASE)
+
+    /** Oeffnet eine Adresse im Browser. Auf einem Fernseher ohne Browser passiert nichts — dort steht sie zum Abtippen. */
+    fun adresseOeffnen(context: android.content.Context, adresse: String) {
+        runCatching {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(adresse))
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
     /**
-     * Vorlage: `AppModel.fertigGeschaut`. **Die Regel steht im Paket** (`Bewertungsfrage`): ab 90 %
-     * eines Titels ueber einer Minute zaehlt er, ab dem dritten wird gefragt — einmal je Fassung.
-     * Dieselben Schluessel wie in `UserDefaults` auf iOS.
+     * Vorlage: `AppModel.fertigGeschaut`. **Die Regel steht im Paket** (`Gemeinschaft.anstoss`): ab 90 %
+     * eines Titels ueber einer Minute zaehlt er; beim dritten wird nach einer Bewertung gefragt (einmal
+     * je Fassung), beim fuenften einmal auf den Discord hingewiesen — nie beides zugleich.
+     * Dieselben Schluessel wie in `UserDefaults` auf iOS. Der Fernseher fragt nicht nach einer
+     * Bewertung: dort gibt es keine Abfrage, wie auf tvOS.
      */
     fun fertigGeschaut(position: Double, dauer: Double) {
         if (!Kern.bewertungZaehlt(position, dauer)) return
         val fertig = (ablage.merkwert("bewertungFertig")?.toIntOrNull() ?: 0) + 1
         ablage.merken("bewertungFertig", fertig.toString())
-        if (!Kern.bewertungFaellig(fertig.toLong(), ablage.merkwert("bewertungFassung").orEmpty(), BuildConfigFassung)) return
-        ablage.merken("bewertungFassung", BuildConfigFassung)
-        bewertungFaellig.value = true
+        when (Kern.gemeinschaftAnstoss(fertig.toLong(), ablage.merkwert("bewertungFassung").orEmpty(), BuildConfigFassung,
+                                       ablage.merkwert("discordHinweisGezeigt") == "1", !istFernseher)) {
+            "bewertung" -> {
+                ablage.merken("bewertungFassung", BuildConfigFassung)
+                bewertungFaellig.value = true
+            }
+            "discord" -> {
+                // Gleich als gezeigt merken — lieber nie als zweimal.
+                ablage.merken("discordHinweisGezeigt", "1")
+                discordHinweisFaellig.value = true
+            }
+        }
     }
 
     /** Laeuft der Player gerade im kleinen Fenster? Dann zeigt die App darunter, wo der Film ist. */
@@ -294,15 +320,21 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     }
 
     /**
-     * `EnableNextEpisodeAutoPlay` des geltenden Kontos (T3 #15) — wer „Nächste Folge automatisch" nie
-     * umgelegt hat, folgt dem Server, wie `AppModel` auf iOS. Nebenher, ohne Fehlermeldung.
+     * Was das geltende Konto vorgibt — `EnableNextEpisodeAutoPlay` (T3 #15) und das Downloadrecht
+     * `EnableContentDownloading`. Wer „Nächste Folge automatisch" nie umgelegt hat, folgt dem
+     * Server, wie `AppModel` auf iOS; ohne Recht verschwinden die Ladeknoepfe. **Eine Anfrage fuer
+     * beides**, nebenher und ohne Fehlermeldung: kommt nichts, bleibt es bei der eigenen Wahl und
+     * beim Recht „unbekannt", also erlaubt.
      */
     fun kontovorgabenHolen() {
         einstellungen.naechsteAutomatischKonto = ""
+        einstellungen.downloadrechtKonto = ""
         lauf.launch {
-            einstellungen.naechsteAutomatischKonto = runCatching {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.kontoNaechsteAutomatisch().await() }
-            }.getOrDefault("")
+            val beides = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.kontovorgaben().await() }
+            }.getOrDefault("|").split("|")
+            einstellungen.naechsteAutomatischKonto = beides.getOrElse(0) { "" }
+            einstellungen.downloadrechtKonto = beides.getOrElse(1) { "" }
         }
     }
 

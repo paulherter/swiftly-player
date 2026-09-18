@@ -588,6 +588,29 @@ extension App {
         anhaengen(s.raum, pruefzeile)
         anhaengen(rechts, s.aussen)
 
+        // Vorlage: `EinstellungenView.gemeinschaft` auf dem Mac — unter dem
+        // Server. **Ohne „bewerten":** es gibt keinen Store, in dem eine
+        // Bewertung landen koennte. Die Adressen stehen im Paket.
+        let g = einstellungsgruppe("Swiftly")
+        anhaengen(g.raum, wertezeile(symbol: "user-available-symbolic",
+                                     titel: uebersetzt("Discord beitreten"),
+                                     unter: uebersetzt("Fragen stellen und sagen, was fehlt"),
+                                     auswahl: { imBrowser(Gemeinschaft.discord) }))
+        anhaengen(g.raum, zeilenstrich())
+        anhaengen(g.raum, wertezeile(symbol: "dialog-warning-symbolic",
+                                     titel: uebersetzt("Fehler melden"),
+                                     unter: uebersetzt("Auf GitHub, deine Fassung steht schon drin"),
+                                     auswahl: {
+            #if os(Windows)
+            let system = "Windows"
+            #else
+            let system = "Linux"
+            #endif
+            imBrowser(Gemeinschaft.fehlerMelden(fassung: "\(Fassung.voll) · libVLC \(VLCFassung.text)",
+                                                plattform: system))
+        }))
+        anhaengen(rechts, g.aussen)
+
         let fuss = beschriftung("\(Fassung.voll) · libVLC \(VLCFassung.text)",
                                 stil: "swiftly-zweitzeile")
         gtk_widget_add_css_class(fuss, "swiftly-fuss")

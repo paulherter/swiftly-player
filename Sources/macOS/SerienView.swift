@@ -255,7 +255,7 @@ struct SerienView: View {
         // Nach dem Player die Folgen neu holen: er liegt als Ebene über der
         // Seite, `.task(id:)` unten läuft dabei nicht neu. Siehe
         // `AppModel.wiedergabeBeendet`.
-        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await folgenLaden() } }
+        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await folgenLaden() } }
         .task(id: gewaehlt?.id) {
             guard staffelnDa else { return }
             // **Und nicht, solange keine Staffel gewählt ist.** Seit A10
@@ -309,7 +309,7 @@ struct SerienView: View {
         switch reiter {
         case .folgen:
             VStack(alignment: .leading, spacing: 0) {
-                if staffeln.count > 1 || (model.downloadsAn && !folgen.isEmpty) {
+                if staffeln.count > 1 || (model.downloadKnopfZeigen && !folgen.isEmpty) {
                     HStack(alignment: .top, spacing: 12) {
                         if staffeln.count > 1 {
                             Staffelwahl(staffeln: staffeln, gewaehlt: $gewaehlt,
@@ -319,7 +319,7 @@ struct SerienView: View {
                         // **Neben der Staffelwahl**, dieselbe Höhe, dieselbe
                         // Form. Ist die Staffel schon vollständig da, steht
                         // dort nichts mehr statt eines Knopfs, der nichts tut.
-                        if model.downloadsAn, !staffelVollstaendig, !folgen.isEmpty {
+                        if model.downloadKnopfZeigen, !staffelVollstaendig, !folgen.isEmpty {
                             Chip(beschriftung: String(localized: "Staffel laden"),
                                  symbol: "arrow.down", aktiv: false) {
                                 staffelLaden()
@@ -721,7 +721,7 @@ struct Folgenzeile: View {
                         Task { _ = await model.setzeGesehen(folge, an: gesehen) }
                     }
                 }
-                if let ringtipp, model.downloadsAn {
+                if let ringtipp, model.downloadKnopfZeigen {
                     Downloadring(posten: model.downloads.posten(fuer: folge.id),
                                  mass: 24) { ringtipp(unterkante) }
                 }
@@ -770,7 +770,7 @@ struct Folgenzeile: View {
     /// Platz fuer beide Zeichen, wenn es beide gibt — sonst bleibt die Zeile
     /// beim Ueberfahren nicht ruhig, sondern rueckt.
     private var breiteRechts: CGFloat {
-        (ringtipp != nil && model.downloadsAn) ? Stil.knopfRund * 2 + 6
-                                               : Stil.knopfRund
+        (ringtipp != nil && model.downloadKnopfZeigen) ? Stil.knopfRund * 2 + 6
+                                                       : Stil.knopfRund
     }
 }

@@ -642,6 +642,7 @@ struct PlayerScreen: View {
         .task { await nachschlagen(fuer: item) }
         .onChange(of: dauer) { _, _ in zentraleMelden() }
         .onAppear {
+            model.playerOffen = true
             // **Vor** dem Anfordern fragen: danach steht die Lage schon quer.
             drehungErwartet = Orientierung.drehungErwartet(querformatFest: querformatFest)
             drehungAngefordert = Date()
@@ -695,6 +696,7 @@ struct PlayerScreen: View {
                 }
             }
             Orientierung.shared.playerGeschlossen()
+            model.playerOffen = false
         }
     }
 
@@ -732,11 +734,17 @@ struct PlayerScreen: View {
     /// der einfache Tipp erst warten, bis der doppelte durchgefallen ist
     /// (`require(toFail:)`), und diese knappe Drittelsekunde fuehlt sich zaeh an.
     ///
-    /// **Eine Zeit lang schaltete der erste Tipp sofort** und der zweite nahm
-    /// es zurueck. Das sah man: bei jedem Doppeltipp ging die ganze Steuerung
-    /// einmal auf und wieder zu (Paul, 17.09.2026). Jetzt wartet der Einzeltipp
-    /// `doppeltipp` lang — kuerzer als die Systemerkennung — und ein Doppeltipp
-    /// laesst die Steuerung, wie sie war.
+    /// **Zwei Fassungen waren schlechter als diese.** Zuerst schaltete der
+    /// erste Tipp sofort und der zweite nahm es zurueck — dabei ging bei jedem
+    /// Doppeltipp die Steuerung einmal auf und wieder zu. Dann wartete der
+    /// Einzeltipp `doppeltipp` lang: kein Flackern mehr, aber der Player fuehlte
+    /// sich traege an, weil auf den Fingerdruck eine Viertelsekunde nichts
+    /// geschah (beides Paul, 17.09.2026).
+    ///
+    /// **Jetzt schaltet der erste Tipp sofort und nichts wird zurueckgenommen.**
+    /// Der zweite Tipp spult und laesst die Steuerung so, wie der erste sie
+    /// gestellt hat. Damit ist die Oberflaeche sofort da, und trotzdem wippt
+    /// nichts: sie geht auf **oder** zu, nie beides hintereinander.
     private func flaeche(richtung: Int) -> some View {
         Color.clear
             .contentShape(Rectangle())
@@ -748,23 +756,15 @@ struct PlayerScreen: View {
         if let vorher = letzterTipp, letzteSeite == richtung,
            jetzt.timeIntervalSince(vorher) < Self.doppeltipp {
             letzterTipp = nil
-            // Der erste Tipp hat noch nicht geschaltet — und soll es auch
-            // nicht: ein Doppeltipp spult, die Steuerung bleibt, wie sie war.
-            tippAufgabe?.cancel()
-            tippAufgabe = nil
+            // Der erste Tipp hat schon geschaltet. Das bleibt so — was
+            // einmal dasteht, wird nicht wieder weggenommen.
             if steuerungSichtbar { ausblendenVerschieben() }
             spulen(Int32(richtung < 0 ? -model.zurueckSekunden : model.vorSekunden))
             return
         }
         letzterTipp = jetzt
         letzteSeite = richtung
-        tippAufgabe?.cancel()
-        tippAufgabe = Task {
-            try? await Task.sleep(for: .seconds(Self.doppeltipp))
-            guard !Task.isCancelled else { return }
-            tippAufgabe = nil
-            steuerungUmschalten()
-        }
+        steuerungUmschalten()
     }
 
     /// Wie lange ein Tipp auf seinen zweiten wartet.

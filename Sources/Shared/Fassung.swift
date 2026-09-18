@@ -1,4 +1,8 @@
 import Foundation
+import JellyfinKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // **Eigene Datei, damit der Fernseher sie auch bekommt.**
 //
@@ -54,4 +58,19 @@ enum Fassung {
     /// die Einstellungen sagen, woraus sie besteht. Wer einen Fehler meldet,
     /// wird zu den Einstellungen geschickt, nicht ins Profil.
     static var mitUnterbau: String { zeile + " · " + abspieler }
+
+    /// Ein neues Issue auf GitHub, Fassung und System schon eingetragen.
+    /// Die Adresse und was hineindarf, steht im Paket (`Gemeinschaft`).
+    static var fehlerMelden: URL {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        #if os(tvOS)
+        let system = "tvOS"
+        #elseif os(macOS)
+        let system = "macOS"
+        #else
+        let system = UIDevice.current.userInterfaceIdiom == .pad ? "iPadOS" : "iOS"
+        #endif
+        return Gemeinschaft.fehlerMelden(fassung: mitUnterbau,
+                                         plattform: "\(system) \(v.majorVersion).\(v.minorVersion).\(v.patchVersion)")
+    }
 }

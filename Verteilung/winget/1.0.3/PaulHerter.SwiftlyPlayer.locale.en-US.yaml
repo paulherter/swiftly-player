@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: PaulHerter.SwiftlyPlayer
+PackageVersion: 1.0.3
+PackageLocale: en-US
+Publisher: Paul Herter
+PublisherUrl: https://github.com/paulherter/swiftly-player
+PublisherSupportUrl: https://github.com/paulherter/swiftly-player/issues
+Author: Paul Herter
+PackageName: Swiftly Player
+PackageUrl: https://swiftlyplayer.com
+License: MPL-2.0
+LicenseUrl: https://github.com/paulherter/swiftly-player/blob/main/LICENSE
+ShortDescription: A native Jellyfin client that never transcodes. Every file plays as Direct Play or Direct Stream.
+Description: |-
+  Swiftly Player is a client for your own Jellyfin server. It opens, finds your library, and plays, built to avoid ever making the server transcode, so the picture stays untouched and the machine stays quiet. The same app also runs on iPhone, iPad, Apple TV, Mac, Android, Android TV and Linux.
+Moniker: swiftly-player
+Tags:
+- jellyfin
+- jellyfin-client
+- media-player
+- direct-play
+- self-hosted
+ReleaseNotesUrl: https://github.com/paulherter/swiftly-player/releases/tag/v1.0.3
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0

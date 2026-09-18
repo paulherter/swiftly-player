@@ -238,13 +238,9 @@ struct SeerrDetailView: View {
         .defaultFocus($amKnopf, true, priority: .userInitiated)
         .onChange(of: staffelnOffen) { _, offen in if !offen { amKnopf = true } }
         .disabled(staffelnOffen)
-        .overlay(alignment: .topLeading) {
-            if staffelnOffen {
-                staffeltafel
-                    .padding(.leading, Stil.randSeite)
-                    .padding(.top, Handlungstafel.unterDerKnopfreihe)
-                    .transition(.opacity)
-            }
+        // Unter dem Anfrageknopf, an seiner Kante — siehe `Tafelanker`.
+        .tafel(unter: staffelnOffen ? "staffeln" : nil) {
+            staffeltafel.transition(.opacity)
         }
         .animation(Stil.fokusAnimation, value: staffelnOffen)
         .task { detail = await model.seerr.detail(treffer) }
@@ -360,6 +356,7 @@ struct SeerrDetailView: View {
                 Button(knopftext) { gedrueckt() }
                     .buttonStyle(KnopfStil())
                     .focused($amKnopf)
+                    .tafelausloeser("staffeln")
                 if let fehler {
                     Text(verbatim: fehler).font(Stil.klein).foregroundStyle(Stil.warnung)
                 }

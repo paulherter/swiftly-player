@@ -6,9 +6,34 @@ import Foundation
 import FoundationNetworking
 #endif
 
+/// **Woran das Zertifikat des Servers scheiterte.**
+///
+/// Fünf Fälle statt eines, weil die Antwort darauf, was zu tun ist, jedes Mal
+/// eine andere ist: eine abgelaufene Bescheinigung erneuert der Serverbetreiber,
+/// eine falsche Adresse heisst, dass ein anderer Server antwortet.
+public enum Zertifikatsgrund: String, Sendable, Equatable, CaseIterable {
+    /// Selbst ausgestellt, oder die ausstellende Stelle ist unbekannt.
+    case nichtVertraut
+    /// Die Gültigkeit ist vorbei.
+    case abgelaufen
+    /// Die Gültigkeit fängt erst später an — meist geht die Uhr falsch.
+    case giltNochNicht
+    /// Gültig, aber für einen anderen Namen ausgestellt.
+    case andereAdresse
+    /// TLS kam nicht zustande, und der Grund steht nirgends.
+    case sonst
+}
+
 public enum JellyfinError: LocalizedError, Equatable {
     case invalidServerURL
     case notAuthenticated
+    /// **Name und Passwort stimmen, der Server will noch eine Bestätigung.**
+    /// Zwei-Faktor-Plugins wie JellyfinSecurity antworten dann mit 401 und
+    /// legen ein gültiges `AccessToken` in den Rumpf; ein falsches Passwort
+    /// ergibt 401 ohne Token. Ohne diesen Fall hieß beides „Benutzername
+    /// oder Passwort stimmt nicht" — und wer 2FA hat, suchte den Fehler an
+    /// der falschen Stelle (Discord, 18.09.2026).
+    case zweiFaktor
     case http(status: Int, body: String?)
     case decoding(String)
     /// **Die Anfrage kam nicht durch** — der `NSURLErrorDomain`-Code, etwa
@@ -17,6 +42,12 @@ public enum JellyfinError: LocalizedError, Equatable {
     /// damit war die Ursache Text, und auf Android/Linux der englische Satz
     /// von curl. ``urlFehlercode`` liest ihn als `URLError.Code`.
     case netz(code: Int)
+    /// **Am Zertifikat des Servers lag es**, und woran genau. Eigener Fall,
+    /// weil die Ursache nicht überall am Code hängt: auf Apple gibt es Codes
+    /// dafür, auf den curl-Plattformen kommt jeder TLS-Fehler als `-1` an.
+    /// Eingeordnet wird deshalb an dieser einen Stelle — siehe
+    /// ``zertifikatsgrund(code:text:)``.
+    case zertifikat(Zertifikatsgrund)
     /// Ein eigener Satz des Pakets, schon für den Nutzer formuliert.
     case transport(String)
     case noPlayableSource
@@ -24,11 +55,22 @@ public enum JellyfinError: LocalizedError, Equatable {
     /// Aus dem Fehler von `URLSession`: mit Code, wenn es einer ist.
     init(anfrage fehler: any Error) {
         let ns = fehler as NSError
-        self = ns.domain == NSURLErrorDomain ? .netz(code: ns.code)
-                                             : .transport(fehler.localizedDescription)
+        guard ns.domain == NSURLErrorDomain else {
+            self = .transport(fehler.localizedDescription)
+            return
+        }
+        // **Vor dem Code fragen, ob es das Zertifikat war.** Auf den
+        // curl-Plattformen wäre es sonst `.netz(code: -1)`, und `-1` sagt
+        // nichts; der Satz von curl ist dann schon weg.
+        if let grund = zertifikatsgrund(code: ns.code, text: fehler.localizedDescription) {
+            self = .zertifikat(grund)
+        } else {
+            self = .netz(code: ns.code)
+        }
     }
 
-    /// Der `URLError`-Code, wenn die Anfrage nicht durchkam.
+    /// Der `URLError`-Code, wenn die Anfrage nicht durchkam. Bei
+    /// ``zertifikat(_:)`` gibt es keinen, der etwas aussagt.
     public var urlFehlercode: URLError.Code? {
         if case let .netz(code) = self { return URLError.Code(rawValue: code) }
         return nil
@@ -67,6 +109,10 @@ public actor JellyfinClient {
     /// Geraet nicht, dass es ein Telefon ist (`Fremdsitzung.geraeteart`).
     private let programm: String
     private var session: Session?
+    /// Was der Server zum Herunterladen sagt — ``Downloadrecht``. Steht auf
+    /// `.unbekannt`, bis ``kontovorgaben()`` einmal durchkam, und ein
+    /// `.unbekannt` sperrt nichts.
+    private var downloadrechtStand: Downloadrecht = .unbekannt
     private let urlSession: URLSession
 
     private let decoder: JSONDecoder = {
@@ -93,8 +139,19 @@ public actor JellyfinClient {
         self.urlSession = urlSession
     }
 
-    public func setSession(_ session: Session?) { self.session = session }
+    public func setSession(_ session: Session?) {
+        self.session = session
+        // **Das Recht haengt am Konto.** Bliebe es ueber einen Wechsel
+        // stehen, truege das neue Konto die Erlaubnis des alten — in beide
+        // Richtungen falsch. Bis ``kontovorgaben()`` fuer das neue Konto
+        // antwortet, gilt `.unbekannt`, also erlaubt.
+        self.downloadrechtStand = .unbekannt
+    }
     public func currentSession() -> Session? { session }
+
+    /// Der letzte bekannte Stand des Rechts `EnableContentDownloading`.
+    /// Fuer die Oberflaechen, die nicht selbst ``kontovorgaben()`` halten.
+    public func downloadrecht() -> Downloadrecht { downloadrechtStand }
 
     // MARK: - Authorization-Header
     //
@@ -241,7 +298,12 @@ public actor JellyfinClient {
         }
         let req = try request("Users/AuthenticateByName", method: "POST",
                               body: Body(Username: username, Pw: password))
-        let result = try await send(req, as: AuthenticationResult.self)
+        let result: AuthenticationResult
+        do {
+            result = try await send(req, as: AuthenticationResult.self)
+        } catch let JellyfinError.http(status, rumpf) {
+            throw JellyfinError.anmeldefehler(status: status, rumpf: rumpf)
+        }
         let newSession = Session(accessToken: result.accessToken,
                                  userID: result.user.id,
                                  userName: result.user.name,
@@ -731,13 +793,21 @@ public actor JellyfinClient {
         }
     }
 
-    /// Die Wiedergabe-Einstellungen des Kontos, etwa „Nächste Folge
-    /// automatisch" (T3 #15). `nil` bei jedem Fehlschlag: dann gilt, was die
-    /// App ohnehin tut — ein Netzfehler ist kein Grund, etwas umzustellen.
+    /// Die Einstellungen und Rechte des Kontos: „Nächste Folge automatisch"
+    /// (T3 #15) und `EnableContentDownloading` (``Downloadrecht``). `nil` bei
+    /// jedem Fehlschlag: dann gilt, was die App ohnehin tut — ein Netzfehler
+    /// ist kein Grund, etwas umzustellen.
+    ///
+    /// **Hier merkt sich der Client das Downloadrecht**, damit
+    /// ``downloadURL(itemID:mediaSourceID:)`` es nicht als Parameter braucht.
+    /// Nur bei einer Antwort, nie bei einem Fehlschlag: sonst hebt die erste
+    /// Zeitüberschreitung eine Sperre auf, die der Betreiber gesetzt hat.
     public func kontovorgaben() async -> Kontovorgaben? {
         guard let s = session,
-              let req = try? request("Users/\(s.userID)") else { return nil }
-        return try? await send(req, as: Kontovorgaben.self)
+              let req = try? request("Users/\(s.userID)"),
+              let vorgaben = try? await send(req, as: Kontovorgaben.self) else { return nil }
+        downloadrechtStand = vorgaben.downloadrecht
+        return vorgaben
     }
 
     /// Die markierten Abschnitte einer Folge — Vorspann, Rueckblick, Abspann.
@@ -857,10 +927,26 @@ public actor JellyfinClient {
     ///
     /// **Nicht `/Items/{id}/Download`.** Der Weg gaebe dieselben Bytes,
     /// verlangt aber das Recht `EnableContentDownloading` am Konto; wer es
-    /// nicht hat, bekaeme eine 403 statt einer Datei. Diese Adresse braucht
-    /// nur das Recht, das ohnehin noetig ist, um den Titel zu sehen.
+    /// nicht hat, bekaeme eine 403 statt einer Datei.
+    ///
+    /// **Und genau daraus wurde ein Loch.** Gemessen am 17.09.2026 traegt von
+    /// 409 Operationen des Servers nur `GET /Items/{itemId}/Download` die
+    /// Berechtigung `Download`; `/Videos/{id}/stream` traegt keine. Diese
+    /// Adresse kam also auch dann an die Datei, wenn der Betreiber „Allow
+    /// media downloading" abgewaehlt hatte. Der Umweg bleibt — er ist wegen
+    /// der Zusage „keine Transkodierung" richtig —, aber das Recht wird jetzt
+    /// gelesen: ``Downloadrecht`` aus ``kontovorgaben()``.
+    ///
+    /// **Der Riegel sitzt hier**, nicht nur in der Oberflaeche. Die
+    /// Oberflaeche zeigt den Knopf gar nicht (``Downloadrecht/anbieten(recht:funktionAn:)``);
+    /// diese Stelle faengt jeden anderen Weg — eine wieder aufgenommene
+    /// Schlange, eine Staffel aus dem Speicher, eine kuenftige Plattform.
+    /// Die 403 ist dieselbe Antwort, die der Server gaebe.
     public func downloadURL(itemID: String, mediaSourceID: String?) throws -> URL {
-        try streamURL(itemID: itemID, mediaSourceID: mediaSourceID, playSessionID: nil)
+        guard downloadrechtStand.darfLaden else {
+            throw JellyfinError.http(status: 403, body: "EnableContentDownloading")
+        }
+        return try streamURL(itemID: itemID, mediaSourceID: mediaSourceID, playSessionID: nil)
     }
 
     /// Hintergrundbild für die Serienseite. `nil`, wenn keins hinterlegt ist.
@@ -903,4 +989,16 @@ private struct AnyEncodable: Encodable {
         encode = { try wrapped.encode(to: $0) }
     }
     func encode(to encoder: Encoder) throws { try encode(encoder) }
+}
+
+extension JellyfinError {
+    /// Eine fehlgeschlagene Anmeldung einordnen: 401 **mit** Token heißt,
+    /// das Passwort war richtig und ein Zwei-Faktor-Plugin will bestätigt
+    /// werden — siehe ``zweiFaktor``. Alles andere bleibt, was es war.
+    static func anmeldefehler(status: Int, rumpf: String?) -> JellyfinError {
+        if status == 401, let rumpf, rumpf.contains("\"AccessToken\"") {
+            return .zweiFaktor
+        }
+        return .http(status: status, body: rumpf)
+    }
 }

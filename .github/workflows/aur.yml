@@ -1,0 +1,52 @@
+# Aktualisiert das AUR-Paket swiftly-player-bin bei jeder Veroeffentlichung.
+#
+# Das Paket selbst muss einmal von Hand im AUR angelegt werden (siehe
+# Verteilung/EINRICHTEN.md) - danach schreibt dieser Lauf pkgver und die
+# Pruefsumme des Release-Tarballs neu und stoesst sie ins AUR-Git.
+
+name: AUR
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      fassung:
+        description: 'Fassung, z. B. 1.0.4'
+        required: true
+        default: '1.0.3'
+
+jobs:
+  veroeffentlichen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fassung bestimmen
+        id: f
+        run: |
+          if [ -n "${{ github.event.inputs.fassung }}" ]; then
+            echo "wert=${{ github.event.inputs.fassung }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "wert=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: PKGBUILD mit der neuen Fassung fuellen
+        run: |
+          mkdir -p aur-arbeit
+          sed "s/^pkgver=.*/pkgver=${{ steps.f.outputs.wert }}/" \
+            Verteilung/aur/swiftly-player-bin/PKGBUILD > aur-arbeit/PKGBUILD
+
+      # updpkgsums laedt den neuen Tarball und schreibt die Pruefsumme selbst
+      # in die Kopie unter aur-arbeit - die Vorlage im Repository bleibt
+      # unberuehrt und zeigt weiter den Stand der Ersteinrichtung.
+      - name: Ins AUR stellen
+        uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+        with:
+          pkgname: swiftly-player-bin
+          pkgbuild: ./aur-arbeit/PKGBUILD
+          updpkgsums: true
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "swiftly-player-bin ${{ steps.f.outputs.wert }}"

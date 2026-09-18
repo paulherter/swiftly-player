@@ -1,4 +1,5 @@
 import JellyfinKit
+import StoreKit
 import SwiftUI
 
 /// Dieselben drei Zustände wie auf iPhone und Fernseher, aus demselben
@@ -11,6 +12,9 @@ import SwiftUI
 struct RootView: View {
     @State private var model = AppModel()
     @State private var vorhangDa = true
+    /// Apples Bewertungsabfrage — wann, entscheidet `Gemeinschaft.anstoss`.
+    @Environment(\.requestReview) private var bewerten
+    @State private var discordHinweis = false
 
     var body: some View {
         ZStack {
@@ -36,6 +40,77 @@ struct RootView: View {
         // davon wissen muessen. Gelesen wird sie dort, wo der Balken
         // entsteht. Siehe `EnvironmentValues.fortschrittAufKacheln`.
         .environment(\.fortschrittAufKacheln, model.fortschrittAufKacheln)
+        // **Erst wenn der Player zu ist, mit einem Atemzug Abstand** — wie
+        // auf dem iPhone. Der Folgenwechsel zählt bei offenem Player.
+        .onChange(of: model.bewertungFaellig && !model.playerOffen) { _, jetzt in
+            guard jetzt else { return }
+            model.bewertungFaellig = false
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !model.playerOffen else { model.bewertungFaellig = true; return }
+                bewerten()
+            }
+        }
+        .onChange(of: model.discordHinweisFaellig && !model.playerOffen) { _, jetzt in
+            guard jetzt else { return }
+            model.discordHinweisFaellig = false
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !model.playerOffen else { model.discordHinweisFaellig = true; return }
+                withAnimation(Stil.zeitSprung) { discordHinweis = true }
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if discordHinweis {
+                Discordhinweis { withAnimation(Stil.zeitSprung) { discordHinweis = false } }
+                    .padding(Stil.randAbstand)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
+    }
+}
+
+/// **Einmal je Installation: Swiftly hat einen Discord.**
+///
+/// Nach dem fünften zu Ende geschauten Titel (`Gemeinschaft.anstoss`), wenn
+/// der Player zu ist. Eine Karte unten rechts statt eines Fensters: sie
+/// verdeckt nichts, und ein Klick auf das Kreuz nimmt sie für immer weg.
+struct Discordhinweis: View {
+    let schliessen: () -> Void
+    @Environment(\.openURL) private var oeffnen
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Swiftly hat einen Discord")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Stil.schrift)
+                Spacer(minLength: 8)
+                Button(action: schliessen) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Stil.schriftLeise)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Schließen"))
+            }
+            Text("Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.")
+                .font(Stil.zweitzeile)
+                .foregroundStyle(Stil.schriftLeise)
+                .fixedSize(horizontal: false, vertical: true)
+            Hauptknopf(beschriftung: "Discord beitreten", symbol: "bubble.left.and.bubble.right") {
+                oeffnen(Gemeinschaft.discord)
+                schliessen()
+            }
+            .padding(.top, 4)
+        }
+        .padding(16)
+        .frame(width: 320, alignment: .leading)
+        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
+        .overlay(RoundedRectangle(cornerRadius: Stil.eckeFlaeche).strokeBorder(Stil.rand, lineWidth: 1))
+        .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
     }
 }
 

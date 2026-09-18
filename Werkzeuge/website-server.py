@@ -100,5 +100,8 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8788
     ordner = sys.argv[2] if len(sys.argv) > 2 else "Website"
-    ThreadingHTTPServer(("127.0.0.1", port),
+    # Standard nur dieser Mac. "0.0.0.0" als drittes Argument macht die Seite
+    # im WLAN erreichbar, etwa zum Testen auf dem Handy.
+    host = sys.argv[3] if len(sys.argv) > 3 else "127.0.0.1"
+    ThreadingHTTPServer((host, port),
         lambda *a, **k: Handler(*a, directory=ordner, **k)).serve_forever()

@@ -50,6 +50,16 @@ class TvAktivitaet : ComponentActivity() {
                     // Nach einem Kontowechsel frisch — G4: die Stapel gehoeren dem vorigen Konto.
                     Phase.Start -> key(app.kontowechsel.intValue) { TvHaupt(app) }
                 }
+                // Der einmalige Discord-Hinweis, erst wenn der Player zu ist — wie `RootView` auf tvOS.
+                var discordHinweis by remember { mutableStateOf(false) }
+                LaunchedEffect(app.discordHinweisFaellig.value, app.spiel.value == null) {
+                    if (!app.discordHinweisFaellig.value || app.spiel.value != null) return@LaunchedEffect
+                    app.discordHinweisFaellig.value = false
+                    kotlinx.coroutines.delay(1500)
+                    if (app.spiel.value != null) { app.discordHinweisFaellig.value = true; return@LaunchedEffect }
+                    discordHinweis = true
+                }
+                if (discordHinweis) TvDiscordhinweis(app.gemeinschaftAdresse("discordKurz")) { discordHinweis = false }
                 AnimatedVisibility(!gestartet, enter = EnterTransition.None, exit = fadeOut(tween(450, easing = Bewegung.weich))) {
                     Startvorhang { gestartet = true }
                 }

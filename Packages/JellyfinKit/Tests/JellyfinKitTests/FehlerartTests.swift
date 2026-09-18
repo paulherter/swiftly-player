@@ -52,6 +52,85 @@ import Testing
         #expect(!text.isEmpty)
     }
 
+    // MARK: Zertifikat
+
+    /// **Der Fehler, der den Fall gebracht hat.** Auf Android kam
+    /// `self-signed.badssl.com` als `NSURLErrorDomain` Code `-1` an, und die
+    /// App sagte „Die Verbindung zum Server ist abgebrochen." — die Verbindung
+    /// war nie da. Geprüft wird die Aussage: der Satz darf nicht derselbe sein
+    /// wie der für eine wirklich abgebrochene Verbindung (`-1005`).
+    @Test(arguments: [
+        "SSL certificate problem: self signed certificate",
+        "SSL certificate problem: certificate has expired",
+        "SSL: no alternative certificate subject name matches target hostname 'x.de'",
+        "SSL certificate problem: self signed certificate in certificate chain",
+    ])
+    func curlTLSFehlerIstNichtAbgebrochen(text: String) {
+        let fehler = NSError(domain: NSURLErrorDomain, code: -1,
+                             userInfo: [NSLocalizedDescriptionKey: text])
+        let abgebrochen = lesbarerFehler(JellyfinError.netz(code: URLError.Code.networkConnectionLost.rawValue))
+        #expect(lesbarerFehler(fehler) != abgebrochen)
+        if case .zertifikat = JellyfinError(anfrage: fehler) {} else {
+            Issue.record("kein Zertifikatsfall für \(text)")
+        }
+    }
+
+    /// Der englische Satz von curl erreicht den Nutzer nicht.
+    @Test func curlSatzErreichtDenNutzerNicht() {
+        let fehler = NSError(domain: NSURLErrorDomain, code: -1,
+                             userInfo: [NSLocalizedDescriptionKey: "SSL certificate problem: self signed certificate"])
+        #expect(!lesbarerFehler(fehler).contains("SSL"))
+    }
+
+    /// Jede Ursache hat einen eigenen Satz — vier Gründe, vier Aussagen.
+    @Test func jederGrundSagtEtwasAnderes() {
+        let saetze = Zertifikatsgrund.allCases.map { lesbarerFehler(JellyfinError.zertifikat($0)) }
+        #expect(Set(saetze).count == Zertifikatsgrund.allCases.count)
+        #expect(!saetze.contains { $0.isEmpty })
+    }
+
+    /// Aus dem Satz von curl (die Plattformen ohne eigene Codes) …
+    @Test(arguments: [
+        ("SSL certificate problem: self signed certificate", Zertifikatsgrund.nichtVertraut),
+        ("SSL certificate problem: self signed certificate in certificate chain", .nichtVertraut),
+        ("SSL certificate problem: unable to get local issuer certificate", .nichtVertraut),
+        ("SSL certificate problem: certificate has expired", .abgelaufen),
+        ("SSL certificate problem: certificate is not yet valid", .giltNochNicht),
+        ("SSL: no alternative certificate subject name matches target hostname 'x.de'", .andereAdresse),
+        ("SSL connect error", .sonst),
+    ])
+    func grundAusDemSatz(text: String, erwartet: Zertifikatsgrund) {
+        #expect(zertifikatsgrund(code: -1, text: text) == erwartet)
+    }
+
+    /// … und aus dem Code (Apple).
+    @Test(arguments: [
+        (URLError.Code.serverCertificateUntrusted, Zertifikatsgrund.nichtVertraut),
+        (.serverCertificateHasUnknownRoot, .nichtVertraut),
+        (.serverCertificateHasBadDate, .abgelaufen),
+        (.serverCertificateNotYetValid, .giltNochNicht),
+        (.secureConnectionFailed, .sonst),
+    ])
+    func grundAusDemCode(code: URLError.Code, erwartet: Zertifikatsgrund) {
+        #expect(zertifikatsgrund(code: code.rawValue, text: "") == erwartet)
+    }
+
+    /// Was nicht von TLS redet, wird auch nicht dazu gemacht.
+    @Test(arguments: [-1001, -1003, -1004, -1005, -1009])
+    func netzfehlerBleibtNetzfehler(code: Int) {
+        #expect(zertifikatsgrund(code: code, text: "The request timed out.") == nil)
+        #expect(JellyfinError(anfrage: NSError(domain: NSURLErrorDomain, code: code)) == .netz(code: code))
+    }
+
+    /// **Der unbekannte Rest behauptet keine Ursache.** Bleibt ein Code übrig,
+    /// zu dem es keinen Fall gibt, darf der Satz nicht der für die
+    /// abgebrochene Verbindung sein — sonst steht wieder etwas Falsches da.
+    @Test func unbekannterCodeBehauptetNichts() {
+        let abgebrochen = lesbarerFehler(JellyfinError.netz(code: URLError.Code.networkConnectionLost.rawValue))
+        #expect(lesbarerFehler(JellyfinError.netz(code: -1)) != abgebrochen)
+        #expect(lesbarerFehler(JellyfinError.netz(code: -9999)) != abgebrochen)
+    }
+
     @Test func antwortkoerperErreichtDenNutzerNicht() {
         let text = lesbarerFehler(JellyfinError.http(status: 500, body: "Stapel geheim"))
         #expect(!text.contains("geheim"))
@@ -149,4 +228,21 @@ import Testing
         #expect(Quickconnectwarten.restSekunden(.zero) == 0)
         #expect(Quickconnectwarten.restSekunden(.milliseconds(-5)) == 0)
     }
+}
+
+// MARK: - Zwei-Faktor
+
+/// **401 mit Token ist kein falsches Passwort.** Zwei-Faktor-Plugins wie
+/// JellyfinSecurity legen das gültige Token in den Rumpf und warten auf die
+/// Bestätigung; ohne diese Unterscheidung stand dort „Benutzername oder
+/// Passwort stimmt nicht" (Discord, 18.09.2026).
+@Test func zweiFaktorWirdErkannt() {
+    let rumpf = #"{"User":{"Name":"paul"},"AccessToken":"abc123","ServerId":"x"}"#
+    #expect(JellyfinError.anmeldefehler(status: 401, rumpf: rumpf) == .zweiFaktor)
+    #expect(JellyfinError.anmeldefehler(status: 401, rumpf: nil) == .http(status: 401, body: nil))
+    #expect(JellyfinError.anmeldefehler(status: 401, rumpf: "Error processing request.")
+            == .http(status: 401, body: "Error processing request."))
+    #expect(JellyfinError.anmeldefehler(status: 500, rumpf: rumpf) == .http(status: 500, body: rumpf))
+    #expect(lesbarerFehler(JellyfinError.zweiFaktor).contains("Zwei-Faktor")
+            || lesbarerFehler(JellyfinError.zweiFaktor).contains("two-factor"))
 }

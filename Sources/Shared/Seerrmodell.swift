@@ -114,6 +114,10 @@ final class Seerrmodell {
 
     /// Trennen. Nur unsere Seite — bei Seerr selbst bleibt alles, wie es ist.
     func trennen() {
+        // Auch den Keks der Verbindung, nicht nur den gespeicherten Zugang:
+        // eine noch gültige Sitzung im Speicher lässt Seerr beim nächsten
+        // Anmelden keine neue ausstellen (siehe `Seerr.kekseVergessen`).
+        if let adresse = zugang?.adresse { Seerr.kekseVergessen(fuer: adresse) }
         Keychain.delete(key: schluessel)
         zugang = nil
         traegt = false

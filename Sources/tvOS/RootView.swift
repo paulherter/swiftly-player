@@ -10,6 +10,8 @@ struct RootView: View {
     @State private var model = AppModel()
     /// Der Vorhang liegt über allem, bis die Animation durch ist.
     @State private var gestartet = false
+    /// Der einmalige Hinweis auf den Discord, nach dem fünften Titel.
+    @State private var discordHinweis = false
 
     var body: some View {
         ZStack {
@@ -42,6 +44,21 @@ struct RootView: View {
         // gebaut. Auf tvOS ohnehin die Regel.
         .preferredColorScheme(.dark)
         .tint(Stil.akzent)
+        // **Erst wenn der Player zu ist.** Eine Bewertungsabfrage gibt es auf
+        // tvOS nicht; der Hinweis auf den Discord kommt einmal, als Code zum
+        // Abfotografieren — Zurück nimmt ihn weg, für immer.
+        .onChange(of: model.discordHinweisFaellig && !model.playerOffen) { _, jetzt in
+            guard jetzt else { return }
+            model.discordHinweisFaellig = false
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !model.playerOffen else { model.discordHinweisFaellig = true; return }
+                discordHinweis = true
+            }
+        }
+        .fullScreenCover(isPresented: $discordHinweis) {
+            Codeblatt(ziel: .discord) { discordHinweis = false }
+        }
     }
 }
 

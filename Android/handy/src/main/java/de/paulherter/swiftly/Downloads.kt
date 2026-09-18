@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.os.StatFs
 import android.os.SystemClock
 import androidx.compose.runtime.mutableStateOf
+import de.paulherter.swiftly.gemeinsam.uebersetzt
 import de.paulherter.swiftly.kern.Kern
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -73,6 +74,7 @@ data class Downloadposten(
     }
 }
 
+/** Die Nachricht ist schon der Satz fuer den Schirm — nie ein Code, nie ein Typname. */
 private class Ladefehler(grund: String) : Exception(grund)
 
 /**
@@ -260,7 +262,7 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
         try {
             val code = v.responseCode
             // Eine Fehlerseite ist keine fertige Datei.
-            if (code !in 200..299) throw Ladefehler("HTTP $code")
+            if (code !in 200..299) throw Ladefehler(Kern.downloadFehlertext(code.toLong()))
             val anhaengen = code == 206
             var geladen = if (anhaengen) schon else 0L
             val gesamt = if (p.bytes > 0) p.bytes else v.contentLengthLong.takeIf { it > 0 }?.plus(geladen) ?: 0L
@@ -285,7 +287,7 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
                 }
             }
             coroutineContext.ensureActive()
-            if (!teil.renameTo(File(ordner, p.dateiname))) throw Ladefehler("Datei")
+            if (!teil.renameTo(File(ordner, p.dateiname))) throw Ladefehler(uebersetzt("Die Datei liess sich nicht ablegen."))
             return geladen
         } finally { v.disconnect() }
     }

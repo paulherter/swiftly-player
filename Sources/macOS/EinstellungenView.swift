@@ -43,8 +43,11 @@ struct EinstellungenView: View {
                         integration
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    server
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 0) {
+                        server
+                        gemeinschaft
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 Text(verbatim: Fassung.mitUnterbau)
@@ -202,6 +205,26 @@ struct EinstellungenView: View {
                        aktion: pruefe ? nil : { pruefen() })
         }
     }
+
+    /// Bewerten, Discord, Fehler melden — wie auf dem iPhone, unter dem
+    /// Server. Die Adressen stehen im Paket (`Gemeinschaft`).
+    private var gemeinschaft: some View {
+        Einstellungsgruppe(titel: "Swiftly") {
+            Wertezeile(symbol: "star", titel: Text("Swiftly bewerten"),
+                       unter: Text("Im App Store"),
+                       aktion: { oeffnen(Gemeinschaft.appStoreBewertung) })
+            Trennstrich().padding(.leading, 48)
+            Wertezeile(symbol: "bubble.left.and.bubble.right", titel: Text("Discord beitreten"),
+                       unter: Text("Fragen stellen und sagen, was fehlt"),
+                       aktion: { oeffnen(Gemeinschaft.discord) })
+            Trennstrich().padding(.leading, 48)
+            Wertezeile(symbol: "ladybug", titel: Text("Fehler melden"),
+                       unter: Text("Auf GitHub, deine Fassung steht schon drin"),
+                       aktion: { oeffnen(Fassung.fehlerMelden) })
+        }
+    }
+
+    @Environment(\.openURL) private var oeffnen
 
     private func pruefen() {
         pruefe = true

@@ -354,6 +354,27 @@ public enum Seerr {
         return nil
     }
 
+    /// Den Sitzungskeks aus dem Keksspeicher der Verbindung holen.
+    static func keksAusSpeicher(fuer adresse: URL, sitzung: URLSession) -> String? {
+        guard let speicher = sitzung.configuration.httpCookieStorage,
+              let kekse = speicher.cookies(for: adresse) else { return nil }
+        guard let treffer = kekse.first(where: { $0.name.contains("sid") && !$0.value.isEmpty })
+        else { return nil }
+        return "\(treffer.name)=\(treffer.value)"
+    }
+
+    /// Beim Abmelden: die Kekse dieser Adresse aus der Verbindung nehmen.
+    ///
+    /// **Sonst bleibt die Sitzung am Leben, die niemand mehr sehen kann.** Der
+    /// gespeicherte Zugang ist weg, der Keks im Speicher nicht — und der
+    /// nächste Anmeldeversuch bekommt deshalb keine neue Sitzung.
+    public static func kekseVergessen(fuer adresse: URL,
+                                      sitzung: URLSession = .ortsnetzfaehig) {
+        guard let speicher = sitzung.configuration.httpCookieStorage,
+              let kekse = speicher.cookies(for: adresse) else { return }
+        for keks in kekse { speicher.deleteCookie(keks) }
+    }
+
     /// Was beim Anfragen an Seerr geht.
     ///
     /// **Bei einem Film gibt es keine Staffeln, und dann darf das Feld auch
@@ -426,6 +447,12 @@ public enum Seerr {
 /// steht oben in ``Seerr`` und ist ohne Netz geprüft.
 public actor SeerrClient {
     private let zugang: Seerrzugang
+
+    /// Die Adresse, an der dieser Zugang haengt — fuers Abmelden gebraucht,
+    /// damit die Kekse derselben Adresse mitgehen. **`nonisolated`**, weil `zugang`
+    /// ein `let` auf ein `Sendable` ist und das Abmelden auf Android aus einer
+    /// nicht-async Funktion kommt, die nicht warten kann.
+    public nonisolated var adresse: URL { zugang.adresse }
     private let sitzung: URLSession
 
     public init(zugang: Seerrzugang, sitzung: URLSession = .ortsnetzfaehig) {
@@ -445,6 +472,15 @@ public actor SeerrClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(
             withJSONObject: ["username": benutzer, "password": passwort])
+        // **Kein alter Keks bei der Anmeldung.** Seerr benutzt
+        // express-session: liegt ein noch gültiger Keks der Verbindung bei,
+        // bleibt die alte Sitzung gültig und der Server schickt **kein**
+        // `Set-Cookie` — die Anmeldung sah dann aus wie „Seerr hat keine
+        // Sitzung mitgegeben", obwohl sie gelungen war. Genau so lief es bei
+        // Paul am 17.09.: abmelden in der App warf nur unseren gespeicherten
+        // Keks weg, der im Keksspeicher der Verbindung blieb liegen, und
+        // danach ging keine Anmeldung mehr.
+        req.httpShouldHandleCookies = false
 
         let (daten, antwort) = try await sitzung.data(for: req)
         guard let http = antwort as? HTTPURLResponse else {
@@ -462,12 +498,20 @@ public actor SeerrClient {
         }
         // **Der Keks ist der Zugang.** Ohne ihn wäre die Anmeldung zwar
         // gelungen, aber der nächste Aufruf stünde wieder davor.
-        guard let kopf = http.value(forHTTPHeaderField: "Set-Cookie"),
-              let keks = Seerr.keks(ausKopf: kopf) else {
+        //
+        // Der Rückfall auf den Keksspeicher ist die zweite Hälfte desselben
+        // Falls: hat die Verbindung den Keks schon geschluckt (oder hängt eine
+        // Weiterleitung davor), steht er dort und nicht mehr im Kopf. Eine
+        // gültige Sitzung wegzuwerfen, nur weil sie an der anderen Stelle
+        // liegt, wäre der teuerste Fehler von beiden.
+        let keks = http.value(forHTTPHeaderField: "Set-Cookie").flatMap(Seerr.keks(ausKopf:))
+            ?? Seerr.keksAusSpeicher(fuer: adresse, sitzung: sitzung)
+        guard let keks else {
             throw JellyfinError.transport("Seerr hat keine Sitzung mitgegeben.")
         }
         return Seerrzugang(adresse: adresse, keks: keks)
     }
+
 
     private func anfrage(_ pfad: String, methode: String = "GET",
                          abfrage: [URLQueryItem] = [], rumpf: Data? = nil) throws -> URLRequest {

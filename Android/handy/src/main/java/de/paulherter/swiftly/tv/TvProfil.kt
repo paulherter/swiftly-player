@@ -55,7 +55,7 @@ import org.json.JSONObject
  *  ("PLAYBACK" &c.) sind derselbe Wortlaut, nicht eine zweite Beschriftung. */
 private enum class Abteil(val titel: String) {
     Wiedergabe("Wiedergabe"), Sprachen("Sprachen"), Darstellung("Darstellung"),
-    Integration("Integration"), Server("Server"), Konto("Konto"),
+    Integration("Integration"), Server("Server"), Konto("Konto"), Swiftly("Swiftly"),
 }
 
 @Composable
@@ -86,6 +86,7 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     val links = ersterFokus()
     val rechts = remember { FocusRequester() }
     val lauf = rememberCoroutineScope()
+    val kontext = androidx.compose.ui.platform.LocalContext.current
     BackHandler(enabled = !linksImFokus) { runCatching { links.requestFocus() } }
 
     var bildrateAnpassen by remember { mutableStateOf(app.ablage.merkwert("bildrateAnpassen") != "0") }
@@ -268,6 +269,19 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                             }
                             Trennlinie()
                             TvHandlung(uebersetzt("Abmelden")) { app.abmelden() }
+                        }
+                        Abteil.Swiftly -> {
+                            // Vorlage: das Abteil „Swiftly" auf tvOS. Dort QR-Codes; hier die Adressen zum
+                            // Abtippen — ein QR-Bild braeuchte eine eigene Bibliothek. Bewerten oeffnet den
+                            // Play Store, den es auf Android TV gibt; der Rest braucht einen Browser, den es
+                            // meist nicht gibt.
+                            TvHandlung(uebersetzt("Swiftly bewerten"), modifier = erste) {
+                                app.adresseOeffnen(kontext, app.gemeinschaftAdresse("play"))
+                            }
+                            Trennlinie()
+                            TvAnzeige(uebersetzt("Discord beitreten"), app.gemeinschaftAdresse("discordKurz"))
+                            Trennlinie()
+                            TvAnzeige(uebersetzt("Fehler melden"), app.gemeinschaftAdresse("fehlerKurz"))
                         }
                     }
                 }

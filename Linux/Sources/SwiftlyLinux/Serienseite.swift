@@ -296,6 +296,9 @@ extension App {
         gtk_widget_set_margin_bottom(wahlreihe, 18)
         anhaengen(wahlreihe, wahlblock)
         anhaengen(wahlreihe, luftQuer())
+        // **Gebaut wird er am Schalter, gezeigt am Recht.** Das Recht kommt
+        // nebenher vom Server; ist die Seite schon offen, wenn die Antwort
+        // eintrifft, blendet `staffelladeknopfMalen` ihn nachtraeglich aus.
         if downloadsAn {
             let laden = chip(uebersetzt("Staffel laden"), symbol: "folder-download-symbolic")
             gtk_widget_set_valign(laden, GTK_ALIGN_START)
@@ -320,7 +323,7 @@ extension App {
     func staffelladeknopfMalen() {
         guard let knopf = staffelladeknopf else { return }
         let offen = staffelfolgen.contains { downloads.posten(fuer: $0.id) == nil }
-        gtk_widget_set_visible(knopf, (downloadsAn && !staffelfolgen.isEmpty && offen) ? 1 : 0)
+        gtk_widget_set_visible(knopf, (downloadKnopfZeigen && !staffelfolgen.isEmpty && offen) ? 1 : 0)
     }
 
     /// Eine Zeile in der Staffelliste — Name links, Haken bei der gewählten.
@@ -553,7 +556,7 @@ extension App {
         // hatte gar keinen Ladeknopf, weil der in der Knopfreihe nur bei
         // Filmen steht.
         var ladeknopf: Widget!
-        if downloadsAn {
+        if downloadKnopfZeigen {
             ladeknopf = nebenknopf(ladeknopfsymbol(downloads.posten(fuer: folge.id)),
                                    name: uebersetzt("Laden"),
                                    aktiv: downloads.posten(fuer: folge.id)?.stand == .fertig)

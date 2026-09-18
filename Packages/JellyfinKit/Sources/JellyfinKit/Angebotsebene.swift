@@ -269,25 +269,48 @@ public enum Weiterschalten {
     }
 }
 
-/// Was vom Jellyfin-Konto für die Wiedergabe zählt — aus `GET /Users/{id}`,
-/// Feld `Configuration`.
+/// Was vom Jellyfin-Konto zählt — aus `GET /Users/{id}`, aus den Feldern
+/// `Configuration` (was der Nutzer für sich eingestellt hat) und `Policy`
+/// (was der Betreiber ihm erlaubt). **Zwei Blöcke, eine Anfrage:** die App
+/// holt diese Antwort ohnehin bei jedem Start.
 public struct Kontovorgaben: Sendable, Equatable, Decodable {
     public let naechsteFolgeAutomatisch: Bool?
+    /// `Policy.EnableContentDownloading`. `nil`, wenn der Server nichts sagt —
+    /// dann gilt ``Downloadrecht/unbekannt``, also erlaubt.
+    public let downloadsErlaubt: Bool?
 
-    public init(naechsteFolgeAutomatisch: Bool?) {
+    public init(naechsteFolgeAutomatisch: Bool?, downloadsErlaubt: Bool? = nil) {
         self.naechsteFolgeAutomatisch = naechsteFolgeAutomatisch
+        self.downloadsErlaubt = downloadsErlaubt
     }
 
-    enum AussenSchluessel: String, CodingKey { case configuration = "Configuration" }
+    /// Die Entscheidung liegt im ``Downloadrecht``, nicht in einem `Bool?`,
+    /// das jede Plattform anders auslegt.
+    public var downloadrecht: Downloadrecht { .vomServer(downloadsErlaubt) }
+
+    enum AussenSchluessel: String, CodingKey {
+        case configuration = "Configuration"
+        case policy = "Policy"
+    }
     enum Schluessel: String, CodingKey { case naechste = "EnableNextEpisodeAutoPlay" }
+    enum Rechteschluessel: String, CodingKey { case download = "EnableContentDownloading" }
 
     public init(from decoder: any Decoder) throws {
         let aussen = try decoder.container(keyedBy: AussenSchluessel.self)
-        guard aussen.contains(.configuration) else {
+        // **Jeder Block für sich.** Vorher stieg der Dekodierer bei fehlendem
+        // `Configuration` sofort aus; mit zwei Blöcken hätte das den Riegel
+        // mitgenommen, obwohl `Policy` daneben stand.
+        if aussen.contains(.configuration) {
+            let c = try aussen.nestedContainer(keyedBy: Schluessel.self, forKey: .configuration)
+            naechsteFolgeAutomatisch = try c.decodeIfPresent(Bool.self, forKey: .naechste)
+        } else {
             naechsteFolgeAutomatisch = nil
-            return
         }
-        let c = try aussen.nestedContainer(keyedBy: Schluessel.self, forKey: .configuration)
-        naechsteFolgeAutomatisch = try c.decodeIfPresent(Bool.self, forKey: .naechste)
+        if aussen.contains(.policy) {
+            let p = try aussen.nestedContainer(keyedBy: Rechteschluessel.self, forKey: .policy)
+            downloadsErlaubt = try p.decodeIfPresent(Bool.self, forKey: .download)
+        } else {
+            downloadsErlaubt = nil
+        }
     }
 }

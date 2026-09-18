@@ -333,13 +333,14 @@ struct DetailView: View {
         .defaultFocus($amHauptknopf, true, priority: .userInitiated)
         .onChange(of: mehrOffen) { _, offen in if !offen { amMehrknopf = true } }
         .disabled(mehrOffen)
-        .overlay(alignment: .topLeading) {
-            if mehrOffen {
-                Handlungstafel(handlungen: mehrHandlungen, offen: $mehrOffen)
-                    .padding(.leading, Stil.randSeite)
-                    .padding(.top, Handlungstafel.unterDerKnopfreihe)
-                    .transition(.opacity)
-            }
+        // Unter dem Mehr-Knopf, an seiner Kante — siehe `Tafelanker`. Vorher
+        // `unterDerKnopfreihe`: aus dem Kopfaufbau gerechnet und um den
+        // sicheren Rand daneben. Der Knopf steht ganz rechts, die Tafel ist
+        // breiter als er — `Handlungstafel.links` klemmt sie deshalb an seine
+        // rechte Kante statt sie aus dem Bild laufen zu lassen.
+        .tafel(unter: mehrOffen ? "mehr" : nil) {
+            Handlungstafel(handlungen: mehrHandlungen, offen: $mehrOffen)
+                .transition(.opacity)
         }
         .animation(.easeInOut(duration: 0.18), value: mehrOffen)
         .overlay(alignment: .top) {
@@ -350,7 +351,7 @@ struct DetailView: View {
         }
         // Nach dem Player neu holen — er liegt als Ebene darüber, `.task`
         // läuft kein zweites Mal. Siehe `AppModel.wiedergabeBeendet`.
-        .onChange(of: model.wiedergabeBeendet) { _, _ in Task { await auffrischen() } }
+        .onChange(of: model.seitenAuffrischen) { _, _ in Task { await auffrischen() } }
         .task {
             withAnimation(.easeOut(duration: 0.3)) { eingeblendet = true }
             async let frischerTitel = model.item(id: item.id)
@@ -443,6 +444,7 @@ struct DetailView: View {
 
                 Mehrknopf(offen: $mehrOffen)
                     .focused($amMehrknopf)
+                    .tafelausloeser("mehr")
             }
         }
     }

@@ -26,6 +26,7 @@ struct ProfilView: View {
     /// Seerr anbinden — als eigene Seite ueber allem: drei Felder und eine
     /// Bildschirmtastatur brauchen den Platz, den eine Zeile nicht hat.
     @State private var seerrOffen = false
+    @State private var gemeinschaftsziel: Gemeinschaftsziel?
 
     /// **Erst ansehen, dann hineingehen.** Wandert der Fokus links durch die
     /// Bereiche, zeigt die rechte Seite den jeweiligen schon — gedimmt, damit
@@ -72,7 +73,7 @@ struct ProfilView: View {
     }
 
     enum Bereichswahl: String, CaseIterable, Identifiable {
-        case wiedergabe, sprachen, darstellung, integration, server, konto
+        case wiedergabe, sprachen, darstellung, integration, server, konto, gemeinschaft
         var id: String { rawValue }
         var name: LocalizedStringKey {
             switch self {
@@ -82,6 +83,7 @@ struct ProfilView: View {
             case .integration: "Integration"
             case .server:      "Server"
             case .konto:       "Konto"
+            case .gemeinschaft: "Swiftly"
             }
         }
     }
@@ -160,8 +162,28 @@ struct ProfilView: View {
                             // **Auf einer Karte, wie auf iPhone, iPad und Mac.**
                             // Flach auf dem Grund war das die letzte Liste der
                             // App aus der Zeit vor den Karten.
+                            // **Beschnitten auf die Karte, sonst stehen die
+                            // Namen vor ihrem Kasten.**
+                            //
+                            // Klappt eine Wertzeile auf, wachsen Karte und
+                            // Liste in 0,28 s auf ihre neue Hoehe — die
+                            // eingefuegten Namen sind aber sofort voll da,
+                            // mit ihrer eigenen, unanimierten Hoehe. Ohne
+                            // Maske zeichnen sie ueber den unteren Rand der
+                            // noch kleinen Karte hinaus und stehen einen
+                            // Wimpernschlag auf dem nackten Grund.
+                            //
+                            // Der Beschnitt haengt an derselben Flaeche wie
+                            // die Fuellung, also an derselben wachsenden
+                            // Hoehe: der Inhalt geht mit dem Kasten auf. Am
+                            // 17.09. von Paul am Fernseher gemeldet.
+                            //
+                            // Vor der Fuellung, nicht danach — sonst wuerde
+                            // der Beschnitt auch die Fuellung wegschneiden,
+                            // und die Karte haette keinen Grund mehr.
                             VStack(alignment: .leading, spacing: 0) { zeilen }
                                 .padding(10)
+                                .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel))
                                 .background(Stil.flaeche,
                                             in: RoundedRectangle(cornerRadius: Stil.eckeKachel))
                         }
@@ -214,6 +236,9 @@ struct ProfilView: View {
         }
         .fullScreenCover(isPresented: $seerrOffen) {
             SeerrAnbindenView(model: model, seerr: model.seerr) { seerrOffen = false }
+        }
+        .fullScreenCover(item: $gemeinschaftsziel) { ziel in
+            Codeblatt(ziel: ziel) { gemeinschaftsziel = nil }
         }
     }
 
@@ -418,6 +443,15 @@ struct ProfilView: View {
                 seerrOffen = true
             }
             .focused($rechts, equals: .oben)
+
+        case .gemeinschaft:
+            // **Als Code, nicht als Link** — der Fernseher hat keinen Browser.
+            Handlungszeile(titel: "Swiftly bewerten") { gemeinschaftsziel = .bewerten }
+                .focused($rechts, equals: .oben)
+            Trennlinie()
+            Handlungszeile(titel: "Discord beitreten") { gemeinschaftsziel = .discord }
+            Trennlinie()
+            Handlungszeile(titel: "Fehler melden") { gemeinschaftsziel = .fehler }
 
         case .server:
             Anzeigezeile(titel: "Adresse", wert: model.serverName ?? "—")

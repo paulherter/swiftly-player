@@ -307,7 +307,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                                 s?.id?.let { id -> bereich.launch { folgenLaden(id, neu) } }
                             }
                         }
-                        if (app.einstellungen.downloadsAn && folgen.isNotEmpty()) {
+                        if (app.einstellungen.downloadKnopfZeigen && folgen.isNotEmpty()) {
                             StaffelLaden(app, folgen.map { it.id }, s?.staffeln?.firstOrNull { it.id == staffel }?.name ?: s?.name.orEmpty(),
                                          Modifier.align(Alignment.CenterEnd).padding(end = Stil.randAbstand))
                         }
@@ -318,7 +318,7 @@ fun SerienSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zuru
                             key(f.id) {
                                 Wischzeile(if (f.gesehen) Icons.Filled.Undo else Icons.Filled.Check,
                                            uebersetzt(if (f.gesehen) "Ungesehen" else "Gesehen"), tun = { folgeUmschalten(f) }) {
-                                    Folgenzeile(f, if (app.einstellungen.downloadsAn) folgenring(app, f.id, f.titel) else null) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
+                                    Folgenzeile(f, if (app.einstellungen.downloadKnopfZeigen) folgenring(app, f.id, f.titel) else null) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
                                 }
                             }
                         }

@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import de.paulherter.swiftly.Kachelplakette
 import de.paulherter.swiftly.gemeinsam.Stil
+import de.paulherter.swiftly.gemeinsam.uebersetzt
 
 /**
  * Vorlage: `Sources/tvOS/Stil.swift`. **Punkte halbiert zu dp** — tvOS rechnet auf 1920 Punkt,
@@ -429,5 +431,27 @@ fun TvHinweisstreifen(text: String, modifier: Modifier = Modifier, schliessen: (
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Filled.Warning, contentDescription = null, tint = Stil.warnung, modifier = Modifier.size(13.dp))
         Text(text, style = TvStil.kachel, color = Stil.warnung, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * Vorlage: der Discord-Hinweis auf tvOS (`Codeblatt(ziel: .discord)`) — **einmal je Installation**,
+ * nach dem fuenften zu Ende geschauten Titel (`Gemeinschaft.anstoss`). Statt des QR-Codes die
+ * Einladung zum Abtippen: ein QR-Bild braeuchte hier eine eigene Bibliothek. Zurueck schliesst.
+ */
+@Composable
+fun TvDiscordhinweis(einladung: String, schliessen: () -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = schliessen)
+    val fokus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { fokus.requestFocus() } }
+    Box(Modifier.fillMaxSize().background(Stil.grund), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(uebersetzt("Swiftly hat einen Discord"), style = TvStil.titelGross, color = Stil.schrift)
+            Text(uebersetzt("Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst."),
+                 style = TvStil.koerper.copy(textAlign = TextAlign.Center), color = Stil.schriftLeise,
+                 modifier = Modifier.widthIn(max = 550.dp).padding(top = 8.dp))
+            Text(einladung, style = TvStil.titelGross, color = Stil.schrift, modifier = Modifier.padding(top = 36.dp))
+            TvKnopf(uebersetzt("Zurück"), modifier = Modifier.padding(top = 36.dp).focusRequester(fokus), tun = schliessen)
+        }
     }
 }
