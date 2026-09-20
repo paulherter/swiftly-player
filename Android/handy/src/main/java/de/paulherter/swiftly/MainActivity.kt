@@ -34,6 +34,12 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         val app = application as SwiftlyAnwendung
+        // **Auf dem Telefon bleibt die App hochkant**, nur der Player ist quer (Vorlage `Orientierung` auf
+        // dem iPhone: `.portrait`, der Player erlaubt sich das Querformat selbst). Sonst lag die App nach dem
+        // Schliessen quer, wenn das Telefon gerade quer gehalten wurde. Tablets drehen frei, wie das iPad.
+        if (resources.configuration.smallestScreenWidthDp < 600 && !app.istFernseher) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
         setContent {
             var phase by remember { mutableStateOf<Phase>(if (app.sitzungWiederherstellen()) Phase.Start else Phase.Server) }
             // **Erst nach dem Player, mit einem Atemzug Abstand** — wie `RootView`: die Frage kommt,

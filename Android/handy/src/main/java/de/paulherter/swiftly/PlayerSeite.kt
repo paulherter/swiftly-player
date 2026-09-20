@@ -1,6 +1,37 @@
 package de.paulherter.swiftly
 
 import android.app.Activity
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.composed
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.flow.first
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
@@ -47,6 +78,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -97,7 +129,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import de.paulherter.swiftly.kern.Kern
-import android.content.pm.PackageManager
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -119,6 +150,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontFamily
 import java.util.Locale
 import kotlin.math.roundToInt
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.graphics.asImageBitmap
+import android.content.res.Configuration
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.Image
 
 /** Was abgespielt werden soll und ab wo — `Abspielwunsch` auf iOS. `ab == null` heisst: von vorn. */
 data class Abspielwunsch(val id: String, val ab: Double?)
@@ -127,7 +166,12 @@ data class Abspielwunsch(val id: String, val ab: Double?)
 data class Spielplan(val url: String, val lossless: Boolean, val methode: String, val titel: String,
                      val untertitel: String, val naechste: Boolean,
                      val serie: String? = null, val kuerzel: String? = null, val bild: String? = null,
-                     val dateizeile: String? = null)
+                     val dateizeile: String? = null,
+                     // Fuer den Kopf des Players (Vorlage iOS `titelzeile`/`metatext`) und die Folgenebene.
+                     val itemId: String = "", val episode: Boolean = false, val serieId: String? = null,
+                     val staffelId: String? = null,
+                     val kopfzeile: String = "", val staffelNr: Int? = null, val folgeNr: Int? = null,
+                     val nebenzeile: String? = null)
 
 /** Handwahl je Serie oder Film — dieselben Schluessel wie `Spurgedaechtnis` im Paket. */
 private const val TON_JE_TITEL = "tonJeTitel"
@@ -138,7 +182,52 @@ internal fun spielplanLesen(json: String) = JSONObject(json).let { o ->
               o.optString("untertitel"), o.optBoolean("naechste"),
               o.optString("serie").takeIf { !o.isNull("serie") }, o.optString("kuerzel").takeIf { !o.isNull("kuerzel") },
               o.optString("bild").takeIf { !o.isNull("bild") },
-              o.optString("dateizeile").takeIf { !o.isNull("dateizeile") })
+              o.optString("dateizeile").takeIf { !o.isNull("dateizeile") },
+              o.optString("itemId"), o.optBoolean("episode"), o.optString("serieId").takeIf { !o.isNull("serieId") },
+              o.optString("staffelId").takeIf { !o.isNull("staffelId") },
+              o.optString("kopfzeile"),
+              if (o.isNull("staffelNr")) null else o.optInt("staffelNr"),
+              if (o.isNull("folgeNr")) null else o.optInt("folgeNr"),
+              o.optString("nebenzeile").takeIf { !o.isNull("nebenzeile") })
+}
+
+/** Trickplay-Angaben zur laufenden Wiedergabe — Rechnung wie `Trickplay` im Paket (Vorlage iOS). */
+data class Trickplayangabe(val breite: Int, val hoehe: Int, val kachelnBreit: Int, val kachelnHoch: Int,
+                           val anzahl: Int, val intervall: Int) {
+    data class Kachel(val blatt: Int, val x: Int, val y: Int, val breite: Int, val hoehe: Int)
+
+    /** n = ms / Intervall, Blatt = n / (Spalten × Zeilen) — siehe `Trickplay.kachel(sekunden:)`. */
+    fun kachel(sekunden: Double): Kachel? {
+        val jeBlatt = kachelnBreit * kachelnHoch
+        if (intervall <= 0 || jeBlatt <= 0 || anzahl <= 0 || breite <= 0 || hoehe <= 0 || !sekunden.isFinite()) return null
+        val ms = maxOf(sekunden, 0.0) * 1000
+        val n = minOf((ms / intervall).toInt(), anzahl - 1)
+        val platz = n % jeBlatt
+        return Kachel(n / jeBlatt, (platz % kachelnBreit) * breite, (platz / kachelnBreit) * hoehe, breite, hoehe)
+    }
+}
+
+private fun trickplayangabeLesen(json: String): Trickplayangabe? = JSONObject(json).let { o ->
+    if (!o.has("breite")) return null
+    Trickplayangabe(o.getInt("breite"), o.getInt("hoehe"), o.getInt("kachelnBreit"), o.getInt("kachelnHoch"),
+                    o.getInt("anzahl"), o.getInt("intervall"))
+}
+
+/**
+ * Staffeln und die Folgen der laufenden Staffel in den Speicher der Serienseite — Vorlage
+ * `FolgenEbene.vorladen` auf iOS. Steht die Folgenebene beim Oeffnen schon parat, statt erst
+ * nachzuladen. Dieselben Speicher wie `SerienSeite.kt` (`app.serienSpeicher`/`app.folgenSpeicher`),
+ * damit ein Sprung von hier auf die Serienseite nichts doppelt holt.
+ */
+internal suspend fun folgenVorladen(app: SwiftlyAnwendung, serieId: String, staffelId: String?) {
+    try {
+        val serie = serieLesen(withContext(Dispatchers.IO) { app.kern.serie(serieId).await() })
+        app.serienSpeicher[serieId] = serie
+        if (serie.staffeln.isEmpty()) return
+        val staffel = serie.staffeln.firstOrNull { it.id == staffelId } ?: serie.staffeln.firstOrNull { it.id == serie.gewaehlt } ?: serie.staffeln.first()
+        val folgen = folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(serieId, staffel.id).await() })
+        app.folgenSpeicher[staffel.id] = folgen
+    } catch (e: CancellationException) { throw e } catch (_: Exception) {}
 }
 
 /** 1:23:45 oder 23:45 — Ziffern gleich breit, damit die Zeile beim Laufen nicht zittert. Auch von `tv/TvPlayer.kt` benutzt. */
@@ -148,14 +237,6 @@ internal fun zeitText(sekunden: Double): String {
     val m = (s % 3600) / 60
     val r = s % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, r) else "%d:%02d".format(m, r)
-}
-
-/** Das Spulzeichen zur eingestellten Spanne — fuer 15 und 60 gibt es kein eigenes. */
-private fun spulzeichen(zurueck: Boolean, sekunden: Int): ImageVector = when (sekunden) {
-    5 -> if (zurueck) Icons.Filled.Replay5 else Icons.Filled.Forward5
-    10 -> if (zurueck) Icons.Filled.Replay10 else Icons.Filled.Forward10
-    30 -> if (zurueck) Icons.Filled.Replay30 else Icons.Filled.Forward30
-    else -> if (zurueck) Icons.Filled.Replay else Icons.Filled.FastForward
 }
 
 /** Auch von `tv/TvPlayer.kt` benutzt (Tempokarten im Wiedergabeblatt-Gegenstueck). */
@@ -231,8 +312,54 @@ class Spielwerk(
     var wechselt by mutableStateOf(false); private set
     var tempo by mutableFloatStateOf(1f); private set
     var schlafzeit by mutableIntStateOf(0); private set
-    /** Waehrend am Regler gezogen wird, ueberschreibt der Takt die Stelle nicht — nur das Telefon kennt das. */
-    var amSchieben = false
+    /**
+     * Waehrend am Regler gezogen wird, ueberschreibt der Takt die Stelle nicht — nur das Telefon kennt das.
+     * **Beobachtbar**: Symbole und Mitte weichen beim Spulen. Als einfaches Feld sah Compose die Aenderung
+     * nicht — sie verschwanden erst, wenn zufaellig der Takt neu zeichnete, und kamen ebenso zufaellig wieder.
+     */
+    var amSchieben by mutableStateOf(false)
+
+    // MARK: Trickplay — Vorschau beim Spulen, Vorlage `Trickplaybilder` im Paket.
+    var trickplayAngabe by mutableStateOf<Trickplayangabe?>(null); private set
+    /** Entschluesselte Kachelblaetter, hoechstens sechs — wie auf iOS wird nur eine Handvoll behalten. */
+    private val trickplayBlaetter = LinkedHashMap<Int, android.graphics.Bitmap>()
+    private val trickplayUnterwegs = mutableSetOf<Int>()
+    /** Zaehlt eintreffende Blaetter hoch, damit die Vorschau neu zeichnet. */
+    var trickplayStand by mutableIntStateOf(0); private set
+
+    suspend fun trickplayLaden() {
+        trickplayAngabe = null
+        trickplayBlaetter.clear()
+        trickplayUnterwegs.clear()
+        val gelesen = trickplayangabeLesen(withContext(Dispatchers.IO) { app.kern.trickplayAngabe().await() })
+        trickplayAngabe = gelesen
+    }
+
+    /** Das Bild zur Stelle, ausgeschnitten aus seinem Blatt — `null`, solange das Blatt noch unterwegs ist. */
+    fun trickplayBild(sekunden: Double): android.graphics.Bitmap? {
+        @Suppress("UNUSED_EXPRESSION") trickplayStand
+        val angabe = trickplayAngabe ?: return null
+        val kachel = angabe.kachel(sekunden) ?: return null
+        val blatt = trickplayBlaetter[kachel.blatt] ?: run { trickplayAnfordern(kachel.blatt, angabe); return null }
+        return runCatching { android.graphics.Bitmap.createBitmap(blatt, kachel.x, kachel.y, kachel.breite, kachel.hoehe) }.getOrNull()
+    }
+
+    private fun trickplayAnfordern(nummer: Int, angabe: Trickplayangabe) {
+        if (!trickplayUnterwegs.add(nummer)) return
+        lauf.launch {
+            val adresse = withContext(Dispatchers.IO) { app.kern.trickplayAdresse(angabe.breite.toLong(), nummer.toLong()).await() }
+            val bild = if (adresse.isEmpty()) null else runCatching {
+                (SingletonImageLoader.get(kontext).execute(ImageRequest.Builder(kontext).data(adresse).allowHardware(false).build())
+                    as? SuccessResult)?.image?.toBitmap()
+            }.getOrNull()
+            trickplayUnterwegs.remove(nummer)
+            if (bild != null) {
+                trickplayBlaetter[nummer] = bild
+                if (trickplayBlaetter.size > 6) trickplayBlaetter.remove(trickplayBlaetter.keys.first())
+                trickplayStand++
+            }
+        }
+    }
 
     private val zeigtBild = booleanArrayOf(false)
     private val ende = booleanArrayOf(false)
@@ -335,6 +462,7 @@ class Spielwerk(
 
     fun starte(neu: Spielplan, ab: Double?) {
         plan = neu
+        lauf.launch { trickplayLaden() }
         bildFrei = false
         zeigtBild[0] = false
         puffert = false
@@ -433,6 +561,43 @@ class Spielwerk(
      * nur mit einer freien Kennung statt der vorgemerkten naechsten Folge.
      */
     suspend fun wechsleZu(id: String) = wechsle(id, "Die Folge konnte nicht geladen werden.")
+
+    /**
+     * **Qualität geändert — derselbe Titel, an derselben Stelle neu geladen.** Vorlage: die
+     * Qualitätswahl im Player auf iOS/tvOS/macOS. Anders als `wechsle`: kein anderer Titel, und
+     * die Stelle bleibt die Fortsetzstelle statt null.
+     */
+    suspend fun qualitaetWechseln() {
+        if (wechselt || beendet[0]) return
+        wechselt = true
+        val stelle = (spieler.time / 1000.0).coerceAtLeast(0.0)
+        try {
+            val antwort = JSONObject(withContext(Dispatchers.IO) { app.kern.qualitaetWechseln(stelle).await() })
+            antwort.feldText("nachmeldung")?.let { app.nachmeldungAblegen(it) }
+            app.protokollSchreiben()
+            when (antwort.optString("ergebnis")) {
+                "gewechselt" -> {
+                    val neu = antwort.feldText("spielplan")
+                    if (neu != null && !beendet[0]) {
+                        val neuerPlan = spielplanLesen(neu)
+                        // Grenze gewählt, aber es läuft das Original: entweder reicht die Datei
+                        // schon, oder der Server wandelt nicht um. Sagen statt schweigen.
+                        if (!app.einstellungen.immerDirectPlay && neuerPlan.methode == "Direct Play") {
+                            hinweis = uebersetzt("Läuft in Originalqualität. Der Server wandelt nichts um.")
+                        }
+                        spieler.stop()
+                        starte(neuerPlan, stelle)
+                    }
+                }
+                "gescheitert" -> hinweis = fehlertext(kontext, Exception(antwort.feldText("fehler")
+                    ?: uebersetzt("Nächste Folge konnte nicht geladen werden.")))
+            }
+        } catch (e: CancellationException) { throw e } catch (e: Exception) {
+            hinweis = fehlertext(kontext, e)
+        } finally {
+            wechselt = false
+        }
+    }
 
     /**
      * **Der Ablauf steht im Paket** (`Folgenwechsel`, ueber `Kern.folgeWechseln`): Riegel, Stopp und
@@ -771,27 +936,11 @@ class Spielwerk(
 @Composable
 fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: Boolean, bildImBild: () -> Boolean, schliessen: () -> Unit) {
     val kontext = LocalContext.current
-    val aktivitaet = remember(kontext) { kontext.aktivitaet() }
     val lauf = rememberCoroutineScope()
     val ruck = rememberRuck()
-
-    // Querformat, ohne Systemleisten, und der Bildschirm bleibt an — solange der Player offen ist.
-    DisposableEffect(aktivitaet) {
-        val fenster = aktivitaet?.window
-        val vorher = aktivitaet?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        // „Querformat im Player sperren" — sonst darf das Telefon auch hochkant.
-        aktivitaet?.requestedOrientation = if (app.einstellungen.querformatFest) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                           else ActivityInfo.SCREEN_ORIENTATION_FULL_USER
-        val leisten = fenster?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        leisten?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        leisten?.hide(WindowInsetsCompat.Type.systemBars())
-        fenster?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        onDispose {
-            leisten?.show(WindowInsetsCompat.Type.systemBars())
-            fenster?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            aktivitaet?.requestedOrientation = vorher
-        }
-    }
+    // Querformat, versteckte Systemleisten und „Bildschirm bleibt an" stellt `PlayerAktivitaet` ein, bevor das
+    // erste Bild steht (Vorlage `Playerrahmen` auf iOS). Hier gesetzt, drehte der Player erst nach dem Oeffnen
+    // ins Querformat, beim Schliessen noch einmal zurueck, und die Leisten blitzten beim Abbau auf.
 
     val werk = remember { Spielwerk(app, kontext, lauf, ruck) }
     // **Die Videoflaeche wieder anhaengen**, wenn Android sie beim Wechsel in den Hintergrund
@@ -811,9 +960,21 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     }
     var sichtbar by remember { mutableStateOf(true) }
     var beruehrt by remember { mutableIntStateOf(0) }
-    var sprungblase by remember { mutableStateOf<String?>(null) }
-    /** Die Einstellungskarte oben rechts (`PlayerSettingsSheet`) — auf dem Fernseher bleibt die Tafel. */
-    var tafelOffen by remember { mutableStateOf(false) }
+    var sprung by remember { mutableStateOf<Sprung?>(null) }
+    var taktZurueck by remember { mutableIntStateOf(0) }
+    var taktVor by remember { mutableIntStateOf(0) }
+    /**
+     * **Eine der drei Ebenen** — Audio & Untertitel, Folgen, Einstellungen (Vorlage `Playerebene`
+     * auf iOS). Vollbild ueber dem Video, die Steuerung darunter weicht.
+     */
+    var offeneEbene by remember { mutableStateOf<String?>(null) }
+    /** Die zuletzt geoeffnete Ebene — bleibt beim Schliessen stehen, damit der Titel auch waehrend der Ausblende der Folgen ueber ihnen liegt (iOS c496f53). */
+    var zuletztGeoeffnet by remember { mutableStateOf<String?>(null) }
+    val konfiguration = LocalConfiguration.current
+    val hochkant = konfiguration.orientation == Configuration.ORIENTATION_PORTRAIT
+    // iOS `schmal`: Fenster unter 500 breit — hochkant auf dem Telefon.
+    val schmal = konfiguration.screenWidthDp < 500
+    val rand = playerRand(hochkant)
 
     DisposableEffect(werk) {
         werk.installiereEreignisListener()
@@ -826,14 +987,24 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     }
     // Titel, Serie, Folge, Laenge und das Standbild; das Bild kommt nach, der Rest steht sofort.
     LaunchedEffect(werk.plan, werk.dauer > 0) { werk.metadatenAktualisieren() }
-    val kannKlein = remember { kontext.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }
 
     // Technikschild: die festen Zeilen einmal je Titel, die gezaehlten alle zwei Sekunden — schnell genug,
     // um einem Ruckler zuzusehen, langsam genug, dass die Zahlen lesbar stehen. Laeuft nur, solange es
     // sichtbar ist: ein vergessener Zaehler waere selbst die Last, die er misst.
     LaunchedEffect(app.einstellungen.technikschild, werk.plan) { werk.technikschildTakt(app.einstellungen.technikschild) }
 
-    BackHandler { werk.beenden(schliessen) }
+    // Serie und laufende Staffel vorladen, sobald der Player eine Folge zeigt — die Folgenebene
+    // steht damit beim ersten Oeffnen schon da (Vorlage `FolgenEbene.vorladen` auf iOS).
+    LaunchedEffect(werk.plan?.itemId) {
+        val p = werk.plan
+        if (p != null && p.episode && p.serieId != null) folgenVorladen(app, p.serieId, p.staffelId)
+    }
+
+    val ebeneOeffnen: (String) -> Unit = { welche -> beruehrt++; zuletztGeoeffnet = welche; offeneEbene = welche }
+    val ebeneSchliessen: () -> Unit = { offeneEbene = null; sichtbar = true; beruehrt++ }
+
+    BackHandler(enabled = offeneEbene != null) { ebeneSchliessen() }
+    BackHandler(enabled = offeneEbene == null) { werk.beenden(schliessen) }
 
     // Oeffnen, dann der Takt.
     LaunchedEffect(wunsch) { werk.oeffnenUndTakt(wunsch, schliessen) }
@@ -842,48 +1013,68 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
     // Die Einblendung hoert auf die gewollte Steuerung (Vorlage `onChange(of: steuerungSichtbar)` auf iOS):
     // beim Oeffnen steht sie schon auf „an", ihr erstes Ausblenden schickt „Rückblick überspringen" nicht weg.
     LaunchedEffect(sichtbar) { werk.steuerungGeaendert(sichtbar) }
-    LaunchedEffect(sichtbar, werk.laeuft, werk.amSchieben, blattOffen, beruehrt) {
-        if (sichtbar && werk.laeuft && !werk.amSchieben && !blattOffen) { delay(4000); sichtbar = false }
+    // Im Stehen nichts wegnehmen, beim Spulen nicht, und nicht, solange eine Ebene offen ist (iOS `!ebeneOffen`).
+    LaunchedEffect(sichtbar, werk.laeuft, werk.amSchieben, blattOffen, beruehrt, offeneEbene) {
+        if (sichtbar && werk.laeuft && !werk.amSchieben && !blattOffen && offeneEbene == null) { delay(4000); sichtbar = false }
     }
     LaunchedEffect(werk.hinweis) { if (werk.hinweis != null) { delay(5000); werk.hinweis = null } }
-    LaunchedEffect(sprungblase) { if (sprungblase != null) { delay(700); sprungblase = null } }
+    LaunchedEffect(sprung) { if (sprung != null) { delay(700); sprung = null } }
 
-    val deckung by animateFloatAsState(
-        if (sichtbar || !werk.bildFrei) 1f else 0f,
-        if (sichtbar || !werk.bildFrei) tween(180, easing = Bewegung.weich) else tween(340, easing = Bewegung.weich),
-        label = "steuerung")
-    // Nur beim Ueberschreiten neu komponieren — die Deckkraft selbst liest die Grafikebene.
-    val steuerungDa by remember { derivedStateOf { deckung > 0.01f } }
+    /** Vorlage `spulen` auf iOS: Knopf und Doppeltipp springen gleich, beide mit Rueckmeldung am Rand. */
+    val spulen: (Int) -> Unit = { richtung ->
+        val sekunden = if (richtung < 0) werk.zurueckS else werk.vorS
+        werk.springe(werk.position + richtung * sekunden.toDouble())
+        if (richtung < 0) taktZurueck++ else taktVor++
+        sprung = Sprung(richtung, sekunden, if (richtung < 0) taktZurueck else taktVor)
+        if (sichtbar) beruehrt++
+    }
+
+    // **Wann was zu sehen ist** — dieselben drei Fragen wie auf iOS:
+    // `schleierDa` (Steuerung gewollt, Bild steht, nicht im kleinen Fenster), `steuerungDa` (dazu keine
+    // Ebene offen) und der stehende Titel (Steuerung oder Folgenebene). Vor dem ersten Bild keine
+    // Steuerung — sonst lag sie ueber dem Ladeschirm, und beim Folgenwechsel tauchte der Titel auf und ab.
+    val ebeneOffen = offeneEbene != null
+    val schleierDa = sichtbar && werk.bildFrei && !imKleinenFenster
+    val steuerungDa = schleierDa && !ebeneOffen
+    val titelDa = (steuerungDa || offeneEbene == "folgen") && !imKleinenFenster
+    val schleierDeckung by animateFloatAsState(if (schleierDa) 1f else 0f, blendkurve(schleierDa, false), label = "schleier")
+    val steuerungDeckung by animateFloatAsState(if (steuerungDa) 1f else 0f, blendkurve(steuerungDa, ebeneOffen), label = "steuerung")
+    val titelDeckung by animateFloatAsState(if (titelDa) 1f else 0f, blendkurve(titelDa, ebeneOffen), label = "titel")
+
+    val plan = werk.plan
+    val hatFolgen = plan?.episode == true && plan.serieId != null
+    val titel = plan?.kopfzeile?.takeIf { it.isNotEmpty() } ?: plan?.titel.orEmpty()
+    val meta = plan?.let {
+        if (it.episode && it.staffelNr != null && it.folgeNr != null) uebersetzt("Staffel %lld · Folge %lld", it.staffelNr, it.folgeNr)
+        else if (it.episode) it.untertitel.takeIf { u -> u.isNotEmpty() }
+        else it.nebenzeile?.takeIf { n -> n.isNotEmpty() }
+    }
+    // iOS `unten = -10`: die Trefferflaeche der Leiste ragt etwas in den sicheren Bereich, die sichtbare
+    // Leiste sitzt so knapp ueber dem Gestenbalken (iOS cb6af09).
+    val fussUnten = (rand.unten + Playermass.unten).coerceAtLeast(0.dp)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { flaeche[0] = it; werk.spieler.attachViews(it, null, true, false) } },
                     modifier = Modifier.fillMaxSize())
 
-        // Gesten ueber dem Bild, unter der Steuerung.
+        // **Tippflaechen** — ueber dem Bild, unter der Steuerung. Vorlage `tippflaechen` + `tippen(richtung:)`:
+        // **der erste Tipp schaltet sofort, nichts wird zurueckgenommen** (Paul, 17.09.2026). Ein zweiter auf
+        // derselben Seite binnen 260 ms spult und laesst die Steuerung, wie der erste sie gestellt hat.
         Box(Modifier.fillMaxSize()
             .pointerInput(Unit) {
                 var letzter = 0L
-                // **Der Einzeltipp wartet 260 ms auf einen zweiten** (Paul, 17.09.2026, iPhone): schaltete er
-                // sofort und nahm der zweite es zurueck, ging bei jedem Doppeltipp die Steuerung einmal auf
-                // und zu. Vorlage `tippen(richtung:)` in `Sources/iOS/PlayerScreen.swift`.
-                var schalter: kotlinx.coroutines.Job? = null
+                var letzteSeite = 0
                 detectTapGestures(onTap = { stelle ->
+                    val seite = if (stelle.x < size.width / 2) -1 else 1
                     val jetzt = SystemClock.elapsedRealtime()
-                    if (jetzt - letzter < 260) {
-                        schalter?.cancel()
-                        val links = stelle.x < size.width / 2
-                        werk.springe(werk.position + if (links) -werk.zurueckS.toDouble() else werk.vorS.toDouble())
-                        sprungblase = if (links) "−${werk.zurueckS}" else "+${werk.vorS}"
-                        if (sichtbar) beruehrt++
+                    if (jetzt - letzter < 260 && seite == letzteSeite) {
                         letzter = 0L
+                        spulen(seite)
                     } else {
                         letzter = jetzt
-                        schalter?.cancel()
-                        schalter = lauf.launch {
-                            delay(260)
-                            sichtbar = !sichtbar
-                            beruehrt++
-                        }
+                        letzteSeite = seite
+                        sichtbar = !sichtbar
+                        beruehrt++
                     }
                 })
             }
@@ -901,181 +1092,387 @@ fun PlayerSeite(app: SwiftlyAnwendung, wunsch: Abspielwunsch, imKleinenFenster: 
                         }
                     } while (ereignis.changes.any { it.pressed })
                 }
-            })
+            }) {
+            // Wo der Pause-Knopf sitzt, haelt ein Tipp auch dann an, wenn er ausgeblendet ist. Liegt unter der
+            // Steuerung: ist die sichtbar, faengt der echte Knopf den Tipp ab.
+            if (werk.bildFrei && !imKleinenFenster) Box(Modifier.align(Alignment.Center).size(108.dp, 132.dp).antippen { werk.umschalten() })
+        }
 
-        if (!werk.bildFrei) {
-            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                if (werk.hinweis == null) CircularProgressIndicator(color = Stil.schrift, strokeWidth = 2.5.dp, modifier = Modifier.size(30.dp))
+        // **Startschleier** — schwarz, bis VLC das erste Bild hat; Schliessen geht schon vorher, an der Stelle
+        // des X der Steuerung (Vorlage `startschleier`). Geht mit 0,3 s easeOut, wie `erstesBildDa` auf iOS.
+        AnimatedVisibility(!werk.bildFrei, enter = EnterTransition.None, exit = fadeOut(tween(300, easing = EaseOut))) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                val h = werk.hinweis
+                if (h == null) Lader(Modifier.align(Alignment.Center))
+                else Text(h, style = TextStyle(fontSize = 15.sp, textAlign = TextAlign.Center), color = Stil.schriftLeise,
+                          modifier = Modifier.align(Alignment.Center).padding(horizontal = 48.dp))
+                Row(Modifier.fillMaxWidth().padding(start = rand.seite, end = rand.seite, top = rand.oben)
+                        .padding(horizontal = Playermass.seite).padding(top = Playermass.oben),
+                    horizontalArrangement = Arrangement.End) {
+                    Symbolknopf(R.drawable.player_x, uebersetzt("Player schließen")) { werk.beenden(schliessen) }
+                }
             }
         }
 
-        // Waehrend des Folgenwechsels laeuft die alte Folge weiter — der Ring sagt, dass etwas kommt.
-        if (werk.bildFrei && werk.wechselt) {
-            Box(Modifier.align(Alignment.Center)) {
-                CircularProgressIndicator(color = Stil.schrift, strokeWidth = 2.5.dp, modifier = Modifier.size(30.dp))
-            }
-        }
+        // `Playerschleier` — flach, reines Schwarz 42 % (iOS d75c1c7: `Stil.grund` hob HDR-Video an).
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = schleierDeckung.coerceIn(0f, 1f) }.background(Color.Black.copy(alpha = 0.42f)))
 
-        sprungblase?.let { text ->
-            Box(Modifier.align(if (text.startsWith("+")) Alignment.CenterEnd else Alignment.CenterStart).padding(horizontal = 96.dp)
-                    .size(72.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)),
-                contentAlignment = Alignment.Center) {
-                Text(text, style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"), color = Stil.schrift)
-            }
-        }
+        // **Die Steuerung bleibt stehen und blendet nur ihre Deckkraft** — Vorlage `.opacity(steuerungDa ? 1 : 0)`
+        // statt `if`. Vorher wurde sie bei jedem Tipp ein- und ausgehaengt; der Titel darueber sprang hart,
+        // waehrend der Rest noch blendete. Ausgeblendet nimmt sie keinen Tipp an.
+        val aktiv = steuerungDa
+        val symboleDa = aktiv && !werk.amSchieben
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = steuerungDeckung.coerceIn(0f, 1f) }) {
+            // **Mitte des Bildschirms, nicht des sicheren Bereichs** (iOS cb6af09): quer ist unten mehr frei als oben.
+            // Beim Spulen zaehlt nur die Leiste — die Mitte weicht.
+            Mittelsteuerung(werk.laeuft, werk.zurueckS, werk.vorS, taktZurueck, taktVor, schmal, symboleDa,
+                Modifier.align(Alignment.Center).graphicsLayer { alpha = if (werk.amSchieben) 0f else 1f },
+                zurueck = { spulen(-1) }, umschalten = { werk.umschalten() }, vor = { spulen(1) })
 
-        if (app.einstellungen.technikschild && !imKleinenFenster && werk.technikFest.isNotEmpty()) {
-            Technikschild(werk.technikFest, werk.technikLive, werk.position, werk.dauer,
-                Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout).padding(start = 18.dp, top = 70.dp))
-        }
-
-        // Ausgeblendet haelt die Mitte trotzdem an.
-        if (werk.bildFrei && !steuerungDa && !imKleinenFenster) Box(Modifier.align(Alignment.Center).size(108.dp, 132.dp).antippen { werk.umschalten() })
-
-        // Im kleinen Fenster nur das Bild — die Steuerung bringt das System mit.
-        if (steuerungDa && !imKleinenFenster && !tafelOffen) Box(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }) {
-            // `Playerschleier` — ohne ihn verschwinden weisse Zeichen ueber hellen Szenen.
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
-            Box(Modifier.fillMaxWidth().height(140.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent))))
-            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(180.dp)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)))))
-
-            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.displayCutout).padding(horizontal = 16.dp).padding(top = 18.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Rundknopf(Icons.Filled.KeyboardArrowDown, uebersetzt("Player schließen"), 32.dp) { werk.beenden(schliessen) }
+            Column(Modifier.fillMaxSize().padding(start = rand.seite, end = rand.seite, top = rand.oben, bottom = fussUnten)) {
+                // **Kopf:** Titel-Platzhalter (gezeigt wird `stehenderTitel` darueber), darunter leise die
+                // Metazeile; rechts nur Symbole — beim Spulen weichen sie, der Titel bleibt.
+                Row(Modifier.fillMaxWidth().padding(horizontal = Playermass.seite).padding(top = Playermass.oben),
+                    verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(titel, style = titelStil, maxLines = 1, modifier = Modifier.alpha(0f).clearAndSetSemantics {})
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            meta?.let { Text(it, style = metaStil, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                              modifier = Modifier.weight(1f, fill = false)) }
+                            if (plan != null && !plan.lossless) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(painterResource(R.drawable.player_warnung), contentDescription = null, tint = Stil.warnung)
+                                Text(plan.methode, style = metaStil, color = Stil.warnung, maxLines = 1)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Symbolreihe(hatFolgen, symboleDa, Modifier.graphicsLayer { alpha = if (werk.amSchieben) 0f else 1f },
+                                ebeneOeffnen) { werk.beenden(schliessen) }
+                }
+                werk.hinweis?.let {
+                    Text(it, style = TextStyle(fontSize = 11.sp, textAlign = TextAlign.Center), color = Color.White.copy(alpha = 0.85f),
+                         modifier = Modifier.fillMaxWidth().padding(horizontal = Playermass.seite).padding(top = 10.dp))
+                }
                 Spacer(Modifier.weight(1f))
-                // Gedimmt, nicht weg, wenn das Geraet es nicht kann.
-                Rundknopf(Icons.Filled.PictureInPictureAlt, uebersetzt("Bild im Bild"), 24.dp, deckkraft = if (kannKlein) 1f else 0.4f) {
-                    if (kannKlein) bildImBild()
+                // **Die Leiste ueber die volle Breite**, Zeit links, Restzeit rechts (Vorlage `fuss`).
+                Box(Modifier.fillMaxWidth().height(Playermass.leiste).padding(horizontal = Playermass.seite)) {
+                    Zeitzeile(werk.position, werk.dauer, werk.amSchieben, aktiv, { werk.trickplayBild(it) },
+                              { werk.amSchieben = it; beruehrt++ }) { werk.springe(it) }
                 }
-                Rundknopf(Icons.Filled.Tune, uebersetzt("Wiedergabeeinstellungen"), 24.dp) { tafelOffen = true }
-            }
-
-            // Mittig, nicht oben oder unten angeklebt — so bleibt sie in beiden Lagen mit dem Daumen erreichbar.
-            if (werk.bildFrei) Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(56.dp),
-                              verticalAlignment = Alignment.CenterVertically) {
-                Rundknopf(spulzeichen(true, werk.zurueckS), uebersetzt("%lld Sekunden zurück", werk.zurueckS), 46.dp) { werk.springe(werk.position - werk.zurueckS) }
-                Rundknopf(if (werk.laeuft) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                          uebersetzt(if (werk.laeuft) "Anhalten" else "Abspielen"), 78.dp) { werk.umschalten() }
-                Rundknopf(spulzeichen(false, werk.vorS), uebersetzt("%lld Sekunden vor", werk.vorS), 46.dp) { werk.springe(werk.position + werk.vorS) }
-            }
-
-            werk.hinweis?.let {
-                Text(it, style = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center), color = Stil.schrift,
-                     modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp, start = 48.dp, end = 48.dp))
-            }
-
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.displayCutout)
-                       .padding(horizontal = 24.dp).padding(bottom = 18.dp)) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(werk.plan?.titel.orEmpty(), style = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.SemiBold),
-                             color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            werk.plan?.untertitel?.takeIf { it.isNotEmpty() }?.let {
-                                Text(it, style = TextStyle(fontSize = 14.sp), color = Stil.schriftLeise, maxLines = 1)
-                            }
-                            val p = werk.plan
-                            if (p != null && !p.lossless) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Warning, contentDescription = null, tint = Stil.warnung, modifier = Modifier.size(13.dp))
-                                Text(p.methode, style = TextStyle(fontSize = 14.sp), color = Stil.warnung)
-                            }
-                        }
-                    }
-                    // Nur der Platz: die Pille selbst steht in der Einblendung darueber, an derselben
-                    // Stelle wie ohne Steuerung (Vorlage iOS, Paul 17.09.2026).
-                    if (werk.angebotArt != "keiner" && werk.angebotText.isNotEmpty()) {
-                        Box(Modifier.alpha(0f).clearAndSetSemantics {}) {
-                            Angebotspille(werk.angebotArt, werk.angebotText, null, null, werk) {}
-                        }
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                Zeitzeile(werk.position, werk.dauer, { werk.amSchieben = it; beruehrt++ }) { werk.springe(it) }
             }
         }
 
-        // **Der Angebotsknopf** — „Intro überspringen" / „Nächste Folge", wie bei Netflix (Vorlage `angebotDa` in
-        // `Sources/iOS/PlayerScreen.swift`). Unten rechts, **an einer Stelle, egal ob die Steuerung offen ist**:
-        // Ueberspringen, solange der Abschnitt laeuft; die Karte bei geschlossener Steuerung, bei offener der normale
-        // Knopf „Nächste Folge". Ein Tipp fuehrt aus, das Kreuz daneben oder Zurueck schliesst nur die Einblendung.
-        val karteDa = werk.einblendung != "nichts" && werk.bildFrei && !steuerungDa && !tafelOffen && !blattOffen
-            && !imKleinenFenster && !werk.wechselt
-        val angebotDa = werk.angebotArt != "keiner" && werk.angebotText.isNotEmpty() && werk.bildFrei && !tafelOffen
-            && !blattOffen && !imKleinenFenster && !werk.wechselt
+        // **Der Angebotsknopf** — „Intro überspringen" / „Nächste Folge" (Vorlage `angebotDa` in
+        // `Sources/iOS/PlayerScreen.swift`). **An einer Stelle, egal ob die Steuerung offen ist**: rechts direkt
+        // ueber der Leiste, mit denselben Massen wie der Fuss. Weg beim Spulen oder waehrend eine Ebene offen ist.
+        // Absagen: Zurueck (iOS: Wischen mit zwei Fingern) — kein eigenes X, wie auf iOS.
+        val karteDa = werk.einblendung != "nichts" && werk.bildFrei && !steuerungDa && offeneEbene == null && !blattOffen
+            && !imKleinenFenster && !werk.wechselt && !werk.amSchieben
+        val angebotDa = werk.angebotArt != "keiner" && werk.angebotText.isNotEmpty() && werk.bildFrei && offeneEbene == null
+            && !blattOffen && !imKleinenFenster && !werk.wechselt && !werk.amSchieben
             && (werk.einblendung != "nichts" || (steuerungDa && werk.angebotArt == "naechste"))
         BackHandler(enabled = karteDa) { werk.angebotSchliessen() }
-        // Dieselben Kurven wie die Steuerung (`deckung`: 180 ms auf, 340 ms zu), Paul 17.09.2026.
-        androidx.compose.animation.AnimatedVisibility(visible = angebotDa, modifier = Modifier.align(Alignment.BottomEnd),
-            enter = fadeIn(tween(180, easing = Bewegung.weich)), exit = fadeOut(tween(340, easing = Bewegung.weich))) {
-            Row(Modifier.windowInsetsPadding(WindowInsets.displayCutout)
-                    .padding(horizontal = 24.dp).padding(bottom = 18.dp + 44.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (werk.einblendung != "nichts") Box(Modifier.size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f))
-                        .antippen { werk.angebotSchliessen() }
-                        .semantics { contentDescription = uebersetzt(if (werk.einblendung == "karte") "Abbrechen" else "Schließen"); role = Role.Button },
-                    contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Close, contentDescription = null, tint = Stil.schrift, modifier = Modifier.size(20.dp))
-                }
+        Box(Modifier.fillMaxSize().padding(start = rand.seite, end = rand.seite, bottom = fussUnten + Playermass.leiste + Playermass.ueberLeiste)
+                .padding(horizontal = Playermass.seite),
+            contentAlignment = Alignment.BottomEnd) {
+            AnimatedVisibility(visible = angebotDa, enter = fadeIn(aufblenden), exit = fadeOut(zublenden)) {
                 Angebotspille(werk.angebotArt, werk.angebotText, werk.countdown.takeIf { werk.einblendung == "karte" },
-                                      werk.countdownRest.takeIf { werk.einblendung == "karte" }, werk) {
+                              werk.countdownRest.takeIf { werk.einblendung == "karte" }, werk) {
                     werk.angebotAusfuehren()
                 }
             }
         }
 
-        // **Die Karte liegt ueber allem**, das Bild laeuft darunter weiter — nur zurueckgenommen.
-        if (!imKleinenFenster) {
-            BackHandler(enabled = tafelOffen) { tafelOffen = false; sichtbar = true; beruehrt++ }
-            Wiedergabetafel(
-                offen = tafelOffen, schliessen = { tafelOffen = false; sichtbar = true; beruehrt++ },
-                auslieferung = werk.technikFest.firstOrNull()?.first,
-                tonspuren = { werk.spurliste(ton = true) },
-                ton = { werk.spieler.audioTrack }, tonWaehlen = { werk.tonVonHand(it) },
-                untertitel = { werk.spurliste(ton = false) },
-                spur = { werk.spieler.spuTrack }, spurWaehlen = { werk.untertitelVonHand(it) },
-                bildfuellend = werk.bildfuellend, bildWaehlen = { werk.bildfuellendSetzen(it) },
-                tempo = werk.tempo, tempoWaehlen = { werk.tempoSetzen(it) },
-                schlafzeit = werk.schlafzeit, schlafWaehlen = { werk.schlafzeitSetzen(it) },
-                technik = app.einstellungen.technikschild, technikSetzen = { app.einstellungen.technikschild = it },
-                querformat = app.einstellungen.querformatFest, querformatSetzen = {
-                    app.einstellungen.querformatFest = it
-                    aktivitaet?.requestedOrientation = if (it) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_FULL_USER
-                })
+        // Rueckmeldung beim Spulen — dieselbe Drehung wie auf den Knoepfen (Vorlage `sprungRueckmeldung`).
+        val gemerkterSprung = remember { arrayOfNulls<Sprung>(1) }
+        sprung?.let { gemerkterSprung[0] = it }
+        AnimatedVisibility(sprung != null, enter = fadeIn(tween(150, easing = EaseInOut)), exit = fadeOut(tween(150, easing = EaseInOut))) {
+            gemerkterSprung[0]?.let { s ->
+                Box(Modifier.fillMaxSize().padding(horizontal = rand.seite).padding(horizontal = 44.dp),
+                    contentAlignment = if (s.richtung < 0) Alignment.CenterStart else Alignment.CenterEnd) {
+                    key(s.richtung, s.takt) { Sprungmarke(s.richtung, s.sekunden) }
+                }
+            }
         }
+
+        // Waehrend des Folgenwechsels laeuft die alte Folge weiter — der Ring sagt, dass etwas kommt.
+        if (werk.bildFrei && werk.wechselt) Lader(Modifier.align(Alignment.Center))
+
+        // **Das Technikschild.** Ueber der Steuerung, aber unter den Ebenen (Vorlage: `zIndex(4)`).
+        if (app.einstellungen.technikschild && !imKleinenFenster && werk.technikFest.isNotEmpty()) {
+            Technikschild(werk.technikFest, werk.technikLive, werk.position, werk.dauer,
+                Modifier.align(Alignment.TopStart).zIndex(4f).padding(start = rand.seite + Stil.randAbstand, top = rand.oben + 12.dp))
+        }
+
+        // **Die drei Ebenen** — Vollbild ueber dem Video, blenden 0,2 s easeOut; die Steuerung darunter weicht
+        // im selben Takt (`blendkurve`, iOS cb6af09).
+        AnimatedContent(targetState = if (imKleinenFenster) null else offeneEbene, modifier = Modifier.fillMaxSize().zIndex(5f),
+            transitionSpec = { fadeIn(ebenenKurve) togetherWith fadeOut(ebenenKurve) }, label = "ebene") { ebene ->
+            when (ebene) {
+                "spuren" -> SpurenEbene(werk, rand, hochkant, ebeneSchliessen)
+                "einstellungen" -> EinstellungenEbene(app, werk, rand, hochkant, ebeneSchliessen)
+                "folgen" -> {
+                    val p = werk.plan
+                    if (p != null && p.serieId != null) FolgenEbene(app, p.serieId, p.itemId, p.staffelId, titel, rand,
+                        schliessen = ebeneSchliessen,
+                        starten = { id -> ebeneSchliessen(); if (id != p.itemId) lauf.launch { werk.wechsleZu(id) } })
+                }
+                else -> Box(Modifier.fillMaxSize())
+            }
+        }
+
+        // **Der stehende Titel** (Vorlage `stehenderTitel`). Bei der Folgenebene liegt er ueber ihr und bleibt
+        // stehen — auch waehrend ihrer Ausblende (`zuletztGeoeffnet`). Bei den anderen Ebenen liegt er darunter
+        // und verschwindet zusammen mit der Metazeile (iOS e77b86a, c496f53). Eine Zeile, gekuerzt mit „…".
+        Row(Modifier.fillMaxWidth().zIndex(if (zuletztGeoeffnet == "folgen") 6f else 3f)
+                .padding(start = rand.seite, end = rand.seite, top = rand.oben)
+                .padding(horizontal = Playermass.seite).padding(top = Playermass.oben)
+                .graphicsLayer { alpha = titelDeckung.coerceIn(0f, 1f) }) {
+            Text(titel, style = titelStil, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                 modifier = Modifier.weight(1f))
+            // Platz der Symbolreihe, damit der Titel genauso breit wird wie im Kopf.
+            Spacer(Modifier.width(12.dp + symbolreihenBreite(hatFolgen)))
+        }
+    }
 }
+
+// MARK: Masse und Kurven — Vorlage `Playermass` in `Sources/iOS/PlayerEbenen.swift` (iPhone-Werte).
+
+/** Alle Masse des Players an einer Stelle — geteilt mit den Ebenen, damit deren X genau auf dem X des Players liegt. */
+private object Playermass {
+    /** Rand links und rechts, innerhalb des sicheren Bereichs — `Stil.rand(breit: false)`. */
+    val seite = Stil.randAbstand
+    val oben = 16.dp
+    /** Ueber dem sicheren Bereich unten; negativ: die Trefferflaeche ragt hinein (iOS cb6af09). */
+    val unten = (-10).dp
+    /** Trefferflaeche der Symbolknoepfe. */
+    val knopf = 44.dp
+    /** Abstand der Ueberspringen-Pille ueber der Leiste. */
+    val ueberLeiste = 20.dp
+    /** Hoehe der Zeitzeile — die Trefferflaeche des Reglers. */
+    val leiste = 44.dp
+}
+
+private val titelStil = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.Bold)
+private val metaStil = TextStyle(fontSize = 14.sp)
+
+/**
+ * **Der sichere Bereich des Players** — was auf iOS nach `.ignoresSafeArea(edges: mass.obenUebergehen)` bleibt.
+ * Waagerecht die Aussparung, **auf beiden Seiten gleich** (quer ist der sichere Bereich des iPhones symmetrisch;
+ * nur eine Seite eingerueckt stand der Kopf schief). Oben nur hochkant, unten der Gestenbalken.
+ *
+ * Immer die Werte **ohne Sichtbarkeit**: die Systemleisten sind im Player versteckt und kommen beim Wischen
+ * kurz herein. Mit den sichtbaren Werten sprangen Kopf und Leiste dabei jedes Mal.
+ */
+private data class Rand(val seite: Dp, val oben: Dp, val unten: Dp)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun playerRand(hochkant: Boolean): Rand {
+    val dichte = LocalDensity.current
+    val richtung = LocalLayoutDirection.current
+    val aussparung = WindowInsets.displayCutout
+    val seite = maxOf(aussparung.getLeft(dichte, richtung), aussparung.getRight(dichte, richtung))
+    val oben = if (hochkant) maxOf(aussparung.getTop(dichte), WindowInsets.statusBarsIgnoringVisibility.getTop(dichte)) else 0
+    val unten = WindowInsets.navigationBarsIgnoringVisibility.getBottom(dichte)
+    return with(dichte) { Rand(seite.toDp(), oben.toDp(), unten.toDp()) }
+}
+
+/** `.snappy(duration: 0.18, extraBounce: 0)` — eine Feder (Antwortzeit 0,18 s, bounce 0,15): ein zweiter Tipp muss nicht warten. */
+private val aufblenden: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.85f, stiffness = 1218f, visibilityThreshold = 0.001f)
+/** `.smooth(duration: 0.34)` — gemaechlich, ohne Nachfedern. */
+private val zublenden: FiniteAnimationSpec<Float> = spring(dampingRatio = 1f, stiffness = 341f, visibilityThreshold = 0.001f)
+/** `PlayerScreen.ebenenKurve` — `.easeOut(duration: 0.2)`: die Ebenen und, waehrend eine aufgeht, die Steuerung. */
+private val ebenenKurve: FiniteAnimationSpec<Float> = tween(200, easing = EaseOut)
+
+/** `PlayerScreen.kurve(da:ebene:)` — schnell auf, gemaechlich zu; nimmt eine Ebene den Platz ein, im Takt der Ebene. */
+private fun blendkurve(da: Boolean, ebene: Boolean) = if (da) aufblenden else if (ebene) ebenenKurve else zublenden
+
+/** Ein Sprung zum Anzeigen: Richtung, Sekunden und ein Takt, damit zwei Spruenge hintereinander neu drehen. */
+private data class Sprung(val richtung: Int, val sekunden: Int, val takt: Int)
+
+// MARK: Bausteine
+
+/**
+ * **Druecken wie ein iOS-Knopf** — keine Welle, kein Schatten: das Zeichen wird beim Aufsetzen blass und
+ * blendet beim Loslassen zurueck. Ausgeblendet (`aktiv == false`) nimmt der Knopf keinen Tipp an; der geht
+ * dann an die Tippflaechen darunter (iOS `allowsHitTesting`).
+ */
+private fun Modifier.symboldruck(aktiv: Boolean, beschreibung: String, tun: () -> Unit): Modifier = composed {
+    val quelle = remember { MutableInteractionSource() }
+    val gedrueckt by quelle.collectIsPressedAsState()
+    val deckung by animateFloatAsState(if (gedrueckt) 0.35f else 1f,
+        if (gedrueckt) snap() else tween(200, easing = EaseOut), label = "druck")
+    val klick = if (aktiv) Modifier.clickable(interactionSource = quelle, indication = null, role = Role.Button, onClick = tun)
+                    .semantics { contentDescription = beschreibung }
+                else Modifier
+    this.then(klick).graphicsLayer { alpha = deckung }
+}
+
+/**
+ * `.symbolEffect(.bounce, options: .speed(1.7))` — spielt einmal ab und kehrt von selbst in die Ruhelage
+ * zurueck. Kurz groesser, dann federnd zurueck.
+ */
+private fun Modifier.huepfen(takt: Int): Modifier = composed {
+    val skala = remember { Animatable(1f) }
+    LaunchedEffect(takt) {
+        if (takt == 0) return@LaunchedEffect
+        skala.animateTo(1.16f, tween(80, easing = EaseOut))
+        skala.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 700f))
+    }
+    graphicsLayer { scaleX = skala.value; scaleY = skala.value }
+}
+
+/** Einer der Symbolknoepfe oben rechts — im Player wie auf den Ebenen (`Symbolknopf`): 44 Trefferflaeche, weiss. */
+@Composable
+private fun Symbolknopf(@DrawableRes symbol: Int, beschreibung: String, aktiv: Boolean = true, tun: () -> Unit) {
+    Box(Modifier.size(Playermass.knopf).symboldruck(aktiv, beschreibung, tun), contentAlignment = Alignment.Center) {
+        // Die Groesse steht im Zeichen selbst (Glyphengroesse des SF-Symbols bei 19 pt).
+        Icon(painterResource(symbol), contentDescription = null, tint = Color.White)
+    }
+}
+
+/** Die Knoepfe oben rechts — Abstand 2 wie `symbolreihe` auf dem iPhone. */
+@Composable
+private fun Symbolreihe(hatFolgen: Boolean, aktiv: Boolean, modifier: Modifier, oeffnen: (String) -> Unit, schliessen: () -> Unit) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Symbolknopf(R.drawable.player_untertitel, uebersetzt("Audio & Untertitel"), aktiv) { oeffnen("spuren") }
+        if (hatFolgen) Symbolknopf(R.drawable.player_folgen, uebersetzt("Folgen"), aktiv) { oeffnen("folgen") }
+        Symbolknopf(R.drawable.player_regler, uebersetzt("Einstellungen"), aktiv) { oeffnen("einstellungen") }
+        Symbolknopf(R.drawable.player_x, uebersetzt("Player schließen"), aktiv) { schliessen() }
+    }
+}
+
+private fun symbolreihenBreite(hatFolgen: Boolean): Dp {
+    val anzahl = if (hatFolgen) 4 else 3
+    return Playermass.knopf * anzahl + 2.dp * (anzahl - 1)
+}
+
+/**
+ * Mittig im Bild — Vorlage `mittelsteuerung`: Kante 46 (schmal 40) fuer die Spulknoepfe, 78 (60) fuer
+ * Pause, Abstand 52 (34). Vorwaerts und rueckwaerts dasselbe Zeichen, gespiegelt, mit der Spanne darin.
+ */
+@Composable
+private fun Mittelsteuerung(laeuft: Boolean, zurueckS: Int, vorS: Int, taktZurueck: Int, taktVor: Int, schmal: Boolean,
+                            aktiv: Boolean, modifier: Modifier, zurueck: () -> Unit, umschalten: () -> Unit, vor: () -> Unit) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(if (schmal) 34.dp else 52.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Spulknopf(true, zurueckS, taktZurueck, schmal, aktiv, uebersetzt("%lld Sekunden zurück", zurueckS), zurueck)
+        Pauseknopf(laeuft, schmal, aktiv, umschalten)
+        Spulknopf(false, vorS, taktVor, schmal, aktiv, uebersetzt("%lld Sekunden vor", vorS), vor)
+    }
 }
 
 @Composable
-private fun Rundknopf(symbol: ImageVector, beschreibung: String, groesse: Dp, deckkraft: Float = 1f, tun: () -> Unit) {
-    Box(Modifier.size(if (groesse < 44.dp) 44.dp else groesse).graphicsLayer { alpha = deckkraft }.antippen(tun), contentAlignment = Alignment.Center) {
-        Icon(symbol, contentDescription = beschreibung, tint = Color.White, modifier = Modifier.size(groesse))
+private fun Spulknopf(zurueck: Boolean, sekunden: Int, takt: Int, schmal: Boolean, aktiv: Boolean, beschreibung: String, tun: () -> Unit) {
+    // `gobackward.10` bei 30 pt (schmal 24): der Kreis so gross wie die Schrift, die Zahl gut ein Drittel davon.
+    val glyphe = if (schmal) 24.dp else 30.dp
+    val ziffer = with(LocalDensity.current) { (glyphe * 0.37f).toSp() }
+    Box(Modifier.size(if (schmal) 40.dp else 46.dp).symboldruck(aktiv, beschreibung, tun), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(glyphe).huepfen(takt), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.player_zurueck), contentDescription = null, tint = Color.White,
+                 modifier = Modifier.fillMaxSize().graphicsLayer { if (!zurueck) scaleX = -1f })
+            // Der Kreis sitzt 4 % unter der Mitte des Zeichens (Pfeilspitze oben).
+            Text("$sekunden", style = TextStyle(fontSize = ziffer, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum",
+                                                letterSpacing = (-0.2).sp),
+                 color = Color.White, maxLines = 1, modifier = Modifier.offset(y = glyphe * 0.04f))
+        }
+    }
+}
+
+/** `pause.fill` / `play.fill` bei 48 pt (schmal 36) — Austausch ohne Vorbeischieben (`.replace.offUp`): muss sofort umspringen. */
+@Composable
+private fun Pauseknopf(laeuft: Boolean, schmal: Boolean, aktiv: Boolean, tun: () -> Unit) {
+    val skala = if (schmal) 0.75f else 1f
+    Box(Modifier.size(if (schmal) 60.dp else 78.dp).symboldruck(aktiv, uebersetzt(if (laeuft) "Anhalten" else "Abspielen"), tun),
+        contentAlignment = Alignment.Center) {
+        AnimatedContent(laeuft, contentAlignment = Alignment.Center, label = "pause",
+            transitionSpec = {
+                (fadeIn(tween(90)) + scaleIn(spring(dampingRatio = 0.8f, stiffness = 900f), initialScale = 0.5f)) togetherWith
+                    (fadeOut(tween(60)) + scaleOut(tween(60), targetScale = 0.5f)) using SizeTransform(clip = false)
+            }) { an ->
+            if (an) Icon(painterResource(R.drawable.player_pause), contentDescription = null, tint = Color.White,
+                         modifier = Modifier.size(29.dp * skala, 35.dp * skala))
+            else Icon(painterResource(R.drawable.player_play), contentDescription = null, tint = Color.White,
+                      modifier = Modifier.size(31.dp * skala, 35.dp * skala))
+        }
+    }
+}
+
+/** Rueckmeldung beim Spulen (Vorlage `Sprungmarke`): 108 rund, schwarz 45 %, Zeichen 32, darunter „10 s". */
+@Composable
+private fun Sprungmarke(richtung: Int, sekunden: Int) {
+    var gedreht by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { gedreht = 1 }
+    Column(Modifier.size(108.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)),
+        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(painterResource(R.drawable.player_zurueck), contentDescription = null, tint = Color.White,
+             modifier = Modifier.size(32.dp).huepfen(gedreht).graphicsLayer { if (richtung > 0) scaleX = -1f })
+        Text(uebersetzt("%lld s", sekunden), style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = Color.White)
+    }
+}
+
+/** Vorlage `Lader`: ein Bogen in Akzentfarbe, 0,7 s je Umdrehung, linear. */
+@Composable
+private fun Lader(modifier: Modifier = Modifier, groesse: Dp = 34.dp, staerke: Dp = 3.dp) {
+    val drehung by rememberInfiniteTransition(label = "lader")
+        .animateFloat(0f, 360f, infiniteRepeatable(tween(700, easing = LinearEasing)), label = "drehung")
+    Canvas(modifier.size(groesse).graphicsLayer { rotationZ = drehung }) {
+        val s = staerke.toPx()
+        drawArc(Stil.akzent, 0f, 0.22f * 360f, useCenter = false, topLeft = Offset(s / 2, s / 2),
+                size = Size(size.width - s, size.height - s), style = Stroke(s, cap = StrokeCap.Round))
     }
 }
 
 /**
- * Vorlage: `Zeitzeile` + `Zeitregler` — vergangen, Regler, verbleibend mit Minus. Beim Schieben
- * wird die Spur 6 statt 3 dick und der Knauf 18 statt 13 (`Stil.umschalten`); gesprungen wird
- * erst beim Loslassen.
+ * Vorlage: `Zeitzeile` + `Zeitregler` auf iOS. Zeit links, Restzeit rechts, 13 mit gleich breiten Ziffern,
+ * leise. **Im Stehen nur der Strich** (4 dick), **beim Spulen 6 und ein Griff in Akzentfarbe** — die einzige
+ * Akzentstelle im Player; der gespielte Teil bleibt weiss. Darueber, nur beim Spulen, die Trickplay-Vorschau
+ * mit Zeit, knapp ueber der Trefferflaeche und ueber dem Griff.
  */
 @Composable
-private fun Zeitzeile(position: Double, dauer: Double, schieben: (Boolean) -> Unit, springen: (Double) -> Unit) {
+private fun Zeitzeile(position: Double, dauer: Double, amSchieben: Boolean, aktiv: Boolean,
+                      vorschau: (Double) -> android.graphics.Bitmap?,
+                      schieben: (Boolean) -> Unit, springen: (Double) -> Unit) {
     var ziel by remember { mutableStateOf<Double?>(null) }
     val gezeigt = ziel ?: position
     val ziffern = TextStyle(fontSize = 13.sp, fontFeatureSettings = "tnum")
-    // Feste Masse, skaliert in der Grafikebene — Spur 3 → 6, Knauf 13 → 18, ohne Layout je Bild.
-    val gross by animateFloatAsState(if (ziel != null) 1f else 0f, Bewegung.umschalten(), label = "regler")
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(zeitText(gezeigt), style = ziffern, color = Stil.schrift)
-        BoxWithConstraints(Modifier.weight(1f).height(32.dp)
-            .pointerInput(dauer) {
-                detectHorizontalDragGestures(
-                    onDragStart = { o -> ziel = (o.x / size.width).coerceIn(0f, 1f).toDouble() * dauer; schieben(true) },
-                    onDragEnd = { ziel?.let(springen); ziel = null; schieben(false) },
-                    onDragCancel = { ziel = null; schieben(false) },
-                    onHorizontalDrag = { aenderung, _ -> ziel = (aenderung.position.x / size.width).coerceIn(0f, 1f).toDouble() * dauer })
-            }
-            .pointerInput(dauer) { detectTapGestures { o -> springen((o.x / size.width).coerceIn(0f, 1f).toDouble() * dauer) } }
+    val dicke by animateDpAsState(if (amSchieben) 6.dp else 4.dp, Bewegung.umschalten(), label = "spur")
+    val griffSkala by animateFloatAsState(if (amSchieben) 1f else 0.4f, Bewegung.umschalten(), label = "griffSkala")
+    val griffDeckung by animateFloatAsState(if (amSchieben) 1f else 0f, Bewegung.umschalten(), label = "griffDeckung")
+    val laenge by rememberUpdatedState(dauer)
+    val schiebenJetzt by rememberUpdatedState(schieben)
+    val springenJetzt by rememberUpdatedState(springen)
+    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text(zeitText(gezeigt), style = ziffern, color = Stil.schriftLeise)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()
+            // **Greift sofort, ohne Schwelle** — wie `DragGesture(minimumDistance: 0)`: schon das Aufsetzen
+            // macht die Leiste dick, zeigt den Griff und stellt die Stelle. Loslassen springt.
+            .then(if (aktiv) Modifier.pointerInput(Unit) {
+                awaitEachGesture {
+                    val runter = awaitFirstDown()
+                    runter.consume()
+                    fun stelle(x: Float) = (x / size.width).coerceIn(0f, 1f).toDouble() * laenge
+                    ziel = stelle(runter.position.x)
+                    schiebenJetzt(true)
+                    // Auch bei Abbruch (Leiste ausgeblendet, zweiter Finger) nicht im Spulen haengen bleiben.
+                    var losgelassen = false
+                    try {
+                        while (true) {
+                            val ereignis = awaitPointerEvent()
+                            val finger = ereignis.changes.firstOrNull { it.id == runter.id } ?: break
+                            if (!finger.pressed) break
+                            ziel = stelle(finger.position.x)
+                            finger.consume()
+                        }
+                        losgelassen = true
+                    } finally {
+                        if (losgelassen) ziel?.let { springenJetzt(it) }
+                        ziel = null
+                        schiebenJetzt(false)
+                    }
+                }
+            } else Modifier)
             // TalkBack liest die Stelle vor und kann sie verstellen — wie `accessibilityAdjustableAction`.
             .semantics {
                 stateDescription = zeitText(gezeigt) + " / " + zeitText(dauer)
@@ -1084,46 +1481,292 @@ private fun Zeitzeile(position: Double, dauer: Double, schieben: (Boolean) -> Un
             },
             contentAlignment = Alignment.CenterStart) {
             val anteil = if (dauer > 0) (gezeigt / dauer).toFloat().coerceIn(0f, 1f) else 0f
-            val spur = Modifier.height(6.dp).graphicsLayer { scaleY = 0.5f + 0.5f * gross }.clip(CircleShape)
-            Box(Modifier.fillMaxWidth().then(spur).background(Color.White.copy(alpha = 0.25f)))
-            Box(Modifier.fillMaxWidth(anteil).then(spur).background(Color.White))
-            Box(Modifier.offset(x = maxWidth * anteil - 9.dp).size(18.dp)
-                .graphicsLayer { val m = (13f + 5f * gross) / 18f; scaleX = m; scaleY = m }.clip(CircleShape).background(Color.White))
+            val breite = maxWidth
+            val spur = Modifier.height(dicke).clip(CircleShape)
+            Box(Modifier.fillMaxWidth().then(spur).background(Color.White.copy(alpha = 0.28f)))
+            Box(Modifier.width(breite * anteil).then(spur).background(Color.White))
+            Box(Modifier.offset(x = breite * anteil - 9.dp).size(18.dp)
+                .graphicsLayer { scaleX = griffSkala; scaleY = griffSkala; alpha = griffDeckung }
+                .clip(CircleShape).background(Stil.akzent))
+            if (amSchieben) {
+                val bild = vorschau(gezeigt)
+                // Unterkante 2 ueber der Trefferflaeche, waagerecht ueber dem Griff; am Rand bleibt der Kasten
+                // ganz auf der Leiste stehen.
+                Column(Modifier.align(Alignment.TopStart).layout { messbar, _ ->
+                        val p = messbar.measure(Constraints())
+                        layout(0, 0) {
+                            val gesamt = breite.roundToPx()
+                            val halb = p.width / 2
+                            val x = (gesamt * anteil).roundToInt().coerceIn(halb, maxOf(gesamt - halb, halb)) - halb
+                            p.place(x, -p.height - 2.dp.roundToPx())
+                        }
+                    },
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    bild?.let {
+                        Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(160.dp, 90.dp).clip(RoundedCornerShape(Stil.ecke))
+                                .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(Stil.ecke)))
+                    }
+                    Text(zeitText(gezeigt), style = ziffern.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                }
+            }
         }
-        Text("−" + zeitText((dauer - gezeigt).coerceAtLeast(0.0)), style = ziffern, color = Stil.schrift)
+        Text("−" + zeitText((dauer - gezeigt).coerceAtLeast(0.0)), style = ziffern, color = Stil.schriftLeise)
+    }
+}
+
+// MARK: Die drei Ebenen — Vorlage `PlayerEbenen.swift` auf iOS.
+
+/**
+ * **Grund jeder Ebene:** reines Schwarz, nimmt jeden Tipp an (tut nichts damit), damit darunter nichts spult.
+ *
+ * **Ohne Weichzeichner.** iOS legt `.ultraThinMaterial` unter 72 % Schwarz. VLC zeichnet hier in eine
+ * `SurfaceView` (`attachViews(…, useTextureView = false)`); deren Bild setzt das System getrennt zusammen,
+ * ein `RenderEffect` auf der Ansicht erreicht es nicht — der Weichzeichner, der dort stand, lief ins Leere.
+ * Ersatz: etwas mehr Schwarz, damit das scharfe Bild darunter so ruhig wirkt wie das weiche auf iOS.
+ */
+@Composable
+private fun Ebenengrund() {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.8f)).pointerInput(Unit) { detectTapGestures { } })
+}
+
+/** Kopfzeile einer Ebene: links, was die Ebene dort zeigt, rechts das X — genau auf dem X des Players. */
+@Composable
+private fun Ebenenkopf(schliessen: () -> Unit, links: @Composable () -> Unit = {}) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = Playermass.seite).padding(top = Playermass.oben), verticalAlignment = Alignment.Top) {
+        Box(Modifier.weight(1f)) { links() }
+        Spacer(Modifier.width(12.dp))
+        Symbolknopf(R.drawable.player_x, uebersetzt("Schließen"), tun = schliessen)
     }
 }
 
 /**
- * Vorlage: `Technikschild` — oben links, unter dem Kopf, nie antippbar. Fast deckend statt
- * durchscheinend: lesbar ueber bewegtem Bild geht vor. Die Schwellen sind die von iOS: Bildrate
- * mehr als zwei unter Soll, Lauf unter 97 %, Vorrat unter zwei Sekunden, jeder Verlust.
- * „zu spät" fehlt — libVLC fuer Android zaehlt verspaetete Bilder nicht; eine Null waere gelogen.
- *
- * Nicht `private`: `tv/TvPlayer.kt` zeigt dasselbe Schild an derselben Stelle.
+ * Spalten nebeneinander, **mittig**, unter der Zeile des X (`oben + knopf + 6`). Je Spalte hoechstens 210,
+ * Abstand 40 (hochkant 16) — reicht die Breite nicht, werden alle gleich schmaler.
  */
+@Composable
+private fun Spaltenreihe(rand: Rand, hochkant: Boolean, anzahl: Int, inhalt: @Composable (Dp) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(start = rand.seite, end = rand.seite, top = rand.oben, bottom = rand.unten)
+            .padding(horizontal = Playermass.seite).padding(top = Playermass.oben + Playermass.knopf + 6.dp)) {
+        val abstand = if (hochkant) 16.dp else 40.dp
+        val breite = minOf(210.dp, (maxWidth - abstand * (anzahl - 1)) / anzahl)
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(abstand, Alignment.CenterHorizontally)) { inhalt(breite) }
+    }
+}
+
+/** Eine Spalte mit fester Ueberschrift; nur die Zeilen darunter scrollen, jede Spalte fuer sich. */
+@Composable
+private fun Wahlspalte(titel: String, breite: Dp, inhalt: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.width(breite).fillMaxHeight()) {
+        Text(titel, style = titelStil, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
+             modifier = Modifier.padding(horizontal = 10.dp).padding(bottom = 8.dp).semantics { heading() })
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 12.dp),
+               verticalArrangement = Arrangement.spacedBy(2.dp), content = inhalt)
+    }
+}
+
+/** Haken und Name — gewaehlt weiss und halbfett, sonst 62 % Weiss (Vorlage `Ebenenzeile`). */
+@Composable
+private fun Ebenenzeile(text: String, gewaehlt: Boolean, tun: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(Stil.eckeFeld)).druckzeile(tun)
+            .semantics { selected = gewaehlt }.padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
+            Icon(painterResource(R.drawable.player_haken), contentDescription = null, tint = Stil.schrift,
+                 modifier = Modifier.size(13.dp).alpha(if (gewaehlt) 1f else 0f))
+        }
+        Text(text, style = TextStyle(fontSize = 15.sp, fontWeight = if (gewaehlt) FontWeight.SemiBold else FontWeight.Normal),
+             color = if (gewaehlt) Stil.schrift else Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Audio & Untertitel — zwei Spalten, jede scrollt fuer sich. */
+@Composable
+private fun SpurenEbene(werk: Spielwerk, rand: Rand, hochkant: Boolean, schliessen: () -> Unit) {
+    var tonWahl by remember { mutableIntStateOf(werk.spieler.audioTrack) }
+    var utWahl by remember { mutableIntStateOf(werk.spieler.spuTrack) }
+    val ton = remember { werk.spurliste(ton = true) }
+    val ut = remember { werk.spurliste(ton = false) }
+    Box(Modifier.fillMaxSize()) {
+        Ebenengrund()
+        Spaltenreihe(rand, hochkant, 2) { breite ->
+            Wahlspalte(uebersetzt("Audio"), breite) {
+                ton.forEach { (id, name) -> Ebenenzeile(name, id == tonWahl) { tonWahl = id; werk.tonVonHand(id) } }
+            }
+            Wahlspalte(uebersetzt("Untertitel"), breite) {
+                Ebenenzeile(uebersetzt("Aus"), utWahl == -1) { utWahl = -1; werk.untertitelVonHand(-1) }
+                ut.forEach { (id, name) -> Ebenenzeile(name, id == utWahl) { utWahl = id; werk.untertitelVonHand(id) } }
+            }
+        }
+        Box(Modifier.padding(start = rand.seite, end = rand.seite, top = rand.oben)) { Ebenenkopf(schliessen) }
+    }
+}
+
+/** Bild / Schlafzeit / Technikschild / Qualität — wie auf iOS, ohne Tempo. */
+@Composable
+private fun EinstellungenEbene(app: SwiftlyAnwendung, werk: Spielwerk, rand: Rand, hochkant: Boolean, schliessen: () -> Unit) {
+    val e = app.einstellungen
+    // Nur bei Wiedergabe vom Server, und nur, wenn das Konto umwandeln darf.
+    val qualitaetZeigen = e.umwandelnErlaubt && werk.plan?.url?.startsWith("file") != true
+    val lauf = rememberCoroutineScope()
+    Box(Modifier.fillMaxSize()) {
+        Ebenengrund()
+        Spaltenreihe(rand, hochkant, if (qualitaetZeigen) 4 else 3) { breite ->
+            Wahlspalte(uebersetzt("Bild"), breite) {
+                Ebenenzeile(uebersetzt("Original"), !werk.bildfuellend) { werk.bildfuellendSetzen(false) }
+                Ebenenzeile(uebersetzt("Füllen"), werk.bildfuellend) { werk.bildfuellendSetzen(true) }
+            }
+            Wahlspalte(uebersetzt("Schlafzeit"), breite) {
+                Ebenenzeile(uebersetzt("Aus"), werk.schlafzeit == 0) { werk.schlafzeitSetzen(0) }
+                listOf(15, 30, 45, 60, 90).forEach { m ->
+                    Ebenenzeile(uebersetzt("%lld Min.", m), werk.schlafzeit == m) { werk.schlafzeitSetzen(m) }
+                }
+            }
+            Wahlspalte(uebersetzt("Technikschild"), breite) {
+                Ebenenzeile(uebersetzt("Aus"), !app.einstellungen.technikschild) { app.einstellungen.technikschild = false }
+                Ebenenzeile(uebersetzt("An"), app.einstellungen.technikschild) { app.einstellungen.technikschild = true }
+            }
+            // **Qualität: Direct Play oder eine Obergrenze.** Eine Obergrenze heißt,
+            // der Server darf umwandeln — Direct Play ist dann aus. Gilt wie die
+            // Einstellung in der App und lädt den Film an derselben Stelle neu.
+            if (qualitaetZeigen) {
+                val bitraten = remember { wahlenLesen(Kern.bitratenstufen()) }
+                // `-1`: Direct Play. Sonst eine Bitratengrenze, `0` heißt unbegrenzt.
+                fun waehlen(megabit: Int) {
+                    val vorher = e.immerDirectPlay to e.bitratenGrenze
+                    if (megabit < 0) e.immerDirectPlay = true
+                    else { e.immerDirectPlay = false; e.bitratenGrenze = megabit }
+                    if (vorher == (e.immerDirectPlay to e.bitratenGrenze)) return
+                    app.qualitaetMelden()
+                    schliessen()
+                    lauf.launch { werk.qualitaetWechseln() }
+                }
+                Wahlspalte(uebersetzt("Qualität"), breite) {
+                    Ebenenzeile(uebersetzt("Direct Play"), e.immerDirectPlay) { waehlen(-1) }
+                    bitraten.forEach { b ->
+                        val wert = b.wert.toIntOrNull() ?: 0
+                        Ebenenzeile(b.text, !e.immerDirectPlay && e.bitratenGrenze == wert) { waehlen(wert) }
+                    }
+                }
+            }
+        }
+        Box(Modifier.padding(start = rand.seite, end = rand.seite, top = rand.oben)) { Ebenenkopf(schliessen) }
+    }
+}
+
 /**
- * **Der Angebotsknopf** — in der Steuerung und in der Einblendung derselbe (`Angebotsknopf` auf iOS).
- * `anteil` (0…1): der Countdown zur naechsten Folge, als Fuellung von links. TalkBack liest Beschriftung
- * und, waehrend des Countdowns, die Sekunden bis zum Start.
+ * Die Folgen der Serie — dieselben Zeilen wie auf der Serienseite (`Folgenzeile`, `Staffelkopf`).
+ * Der Titel steht genau dort, wo er im Player stand (`stehenderTitel`, blendet nicht mit); an Stelle der
+ * Metazeile sitzt die Staffelwahl. Liste vorgeladen (`folgenVorladen`) — beim Oeffnen steht sie schon da,
+ * mit der laufenden Folge in der Mitte; nur beim Staffelwechsel blendet sie neu ein.
+ */
+@Composable
+private fun FolgenEbene(app: SwiftlyAnwendung, serieId: String, laufendeId: String, staffelId: String?, titel: String, rand: Rand,
+                        schliessen: () -> Unit, starten: (String) -> Unit) {
+    // Vorlage `passendeStaffel(zu:)`: die Staffel der laufenden Folge, nicht die zuletzt auf der Serienseite gewaehlte.
+    fun passend(liste: List<Staffel>, gemerkt: String?) =
+        liste.firstOrNull { it.id == staffelId }?.id ?: liste.firstOrNull { it.id == gemerkt }?.id ?: liste.firstOrNull()?.id
+    val vorgeladen = remember(serieId) { app.serienSpeicher[serieId] }
+    var staffeln by remember(serieId) { mutableStateOf(vorgeladen?.staffeln.orEmpty()) }
+    var gewaehlt by remember(serieId) { mutableStateOf(vorgeladen?.let { passend(it.staffeln, it.gewaehlt) }) }
+    var folgen by remember(serieId) { mutableStateOf(gewaehlt?.let { app.folgenSpeicher[it] }.orEmpty()) }
+    var staffellisteOffen by remember { mutableStateOf(false) }
+    var staffelGewechselt by remember { mutableStateOf(false) }
+    val einblenden = remember { Animatable(1f) }
+    val lauf = rememberCoroutineScope()
+    // Schon im ersten Bild ungefaehr dort, wo die laufende Folge steht — danach genau mittig.
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (folgen.indexOfFirst { it.id == laufendeId } - 1).coerceAtLeast(0))
+
+    LaunchedEffect(serieId) {
+        try {
+            val s = serieLesen(withContext(Dispatchers.IO) { app.kern.serie(serieId).await() })
+            app.serienSpeicher[serieId] = s
+            staffeln = s.staffeln
+            if (gewaehlt == null || staffeln.none { it.id == gewaehlt }) gewaehlt = passend(staffeln, s.gewaehlt)
+            val g = gewaehlt ?: return@LaunchedEffect
+            if (folgen.isEmpty()) app.folgenSpeicher[g]?.let { folgen = it }
+            val f = folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(serieId, g).await() })
+            if (gewaehlt == g) { folgen = f; app.folgenSpeicher[g] = f }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+    }
+
+    // **Die laufende Folge in Sicht, mittig** (Vorlage `scrollTo(item.id, anchor: .center)`).
+    LaunchedEffect(folgen) {
+        if (staffelGewechselt) {
+            // Die neue Staffel blendet ein, statt hart dazustehen (`easeOut(duration: 0.25)`).
+            staffelGewechselt = false
+            einblenden.snapTo(0f)
+            launch { einblenden.animateTo(1f, tween(250, easing = EaseOut)) }
+        }
+        val index = folgen.indexOfFirst { it.id == laufendeId }
+        if (index < 0) return@LaunchedEffect
+        listState.scrollToItem(index)
+        val eintrag = snapshotFlow { listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } }.first { it != null }
+            ?: return@LaunchedEffect
+        val info = listState.layoutInfo
+        listState.scrollBy(-((info.viewportEndOffset - info.viewportStartOffset) / 2f - eintrag.size / 2f))
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Ebenengrund()
+        Column(Modifier.fillMaxSize().padding(start = rand.seite, end = rand.seite, top = rand.oben)) {
+            // Die aufgeklappte Staffelliste liegt ueber den Folgen.
+            Box(Modifier.zIndex(1f)) {
+                Ebenenkopf(schliessen) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        // Platzhalter: der Titel selbst steht im Player (`stehenderTitel`) und blendet nicht mit.
+                        Text(titel, style = titelStil, maxLines = 1, modifier = Modifier.alpha(0f).clearAndSetSemantics {})
+                        if (staffeln.isNotEmpty()) Staffelkopf(staffeln, gewaehlt, staffellisteOffen, { staffellisteOffen = it }, kompakt = true) { neu ->
+                            if (neu != gewaehlt) {
+                                gewaehlt = neu
+                                staffelGewechselt = true
+                                app.folgenSpeicher[neu]?.let { folgen = it }
+                                lauf.launch {
+                                    try {
+                                        val f = folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(serieId, neu).await() })
+                                        if (gewaehlt == neu) { folgen = f; app.folgenSpeicher[neu] = f }
+                                    } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 12.dp + rand.unten),
+                       modifier = Modifier.weight(1f).padding(top = 10.dp).graphicsLayer { alpha = einblenden.value }) {
+                itemsIndexed(folgen, key = { _, f -> f.id }) { i, f ->
+                    if (i > 0) Box(Modifier.padding(start = Stil.randAbstand).fillMaxWidth().height(1.dp).background(Stil.linie))
+                    Box(Modifier.background(if (f.id == laufendeId) Color.White.copy(alpha = 0.08f) else Color.Transparent)
+                            .semantics { selected = f.id == laufendeId }) {
+                        Folgenzeile(f) { starten(f.id) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * **Der Angebotsknopf** — in der Steuerung und in der Einblendung derselbe (`Angebotsknopf` auf iOS):
+ * weisse Pille, Ecke 12, 40 hoch, Ueberspringen-Zeichen und fette 15. `anteil` (0…1): der Countdown zur
+ * naechsten Folge als Fuellung von links — **dunkel auf Weiss**, nicht in Akzentfarbe: die gehoert im Player
+ * allein dem Griff der Leiste beim Spulen. TalkBack liest Beschriftung und, waehrend des Countdowns, die
+ * Sekunden bis zum Start.
  */
 @Composable
 fun Angebotspille(art: String, text: String, anteil: Double?, sekunden: Int?, werk: Spielwerk, aktion: () -> Unit) {
     val fuellung = durchgehendeFuellung(anteil, werk.laeuft, werk.countdownLaenge)
-    Row(Modifier.clip(CircleShape)
+    Row(Modifier.height(40.dp).clip(RoundedCornerShape(Stil.eckeFeld))
             .background(Color.White)
-            // Akzent als Fortschritt (Paul, 17.09.2026: vorher zu dunkel); die dunkle Schrift bleibt darauf lesbar.
-            .drawBehind { if (anteil != null) drawRect(Stil.akzent, size = size.copy(width = size.width * fuellung)) }
-            .antippen(aktion)
+            .drawBehind { if (anteil != null) drawRect(Stil.grund.copy(alpha = 0.16f), size = size.copy(width = size.width * fuellung)) }
+            .symboldruck(true, text, aktion)
             .semantics(mergeDescendants = true) {
-                role = Role.Button
                 if (sekunden != null) stateDescription = uebersetzt("Startet in %lld Sekunden", sekunden)
             }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (art == "naechste") Icons.Filled.SkipNext else Icons.Filled.FastForward,
-             contentDescription = null, tint = Stil.grund, modifier = Modifier.size(18.dp))
-        Text(text, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), color = Stil.grund)
+            .padding(horizontal = 18.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(R.drawable.player_ueberspringen), contentDescription = null, tint = Stil.grund)
+        Text(text, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold), color = Stil.grund, maxLines = 1)
     }
 }
 
@@ -1147,6 +1790,14 @@ fun durchgehendeFuellung(anteil: Double?, laeuft: Boolean, laenge: Double): Floa
     return wert.value
 }
 
+/**
+ * Vorlage: `Technikschild` — oben links, unter dem Kopf, nie antippbar. Fast deckend statt
+ * durchscheinend: lesbar ueber bewegtem Bild geht vor. Die Schwellen sind die von iOS: Bildrate
+ * mehr als zwei unter Soll, Lauf unter 97 %, Vorrat unter zwei Sekunden, jeder Verlust.
+ * „zu spät" fehlt — libVLC fuer Android zaehlt verspaetete Bilder nicht; eine Null waere gelogen.
+ *
+ * Nicht `private`: `tv/TvPlayer.kt` zeigt dasselbe Schild an derselben Stelle.
+ */
 @Composable
 fun Technikschild(fest: List<Pair<String, String>>, live: JSONObject?, position: Double, dauer: Double, modifier: Modifier) {
     val schrift = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace)
@@ -1183,178 +1834,3 @@ fun Technikschild(fest: List<Pair<String, String>>, live: JSONObject?, position:
     }
 }
 
-private val tafelFeder = spring(dampingRatio = 0.86f, stiffness = 322f, visibilityThreshold = IntOffset.VisibilityThreshold)
-
-/**
- * Vorlage: `PlayerSettingsSheet` in `Sources/iOS/PlayerSettings.swift`.
- *
- * - **Eine Karte oben rechts, kein Blatt von unten.** Der Film laeuft weiter; man stellt ein,
- *   waehrend man schaut — also bleibt er sichtbar, nur zurueckgenommen (55 % Grund).
- * - **Eine Ebene tief**: Ton und Untertitel greift man mitten im Film, sie sollen nicht hinter
- *   zwei Ebenen liegen. Eine Wahl greift sofort, **die Liste bleibt offen** — Spuren vergleicht man.
- * - Die Karte legt sich an ihren Inhalt an, statt sich auszudehnen; wird er zu hoch, scrollt sie.
- * - Ein- und Ausblenden als reine Deckkraft (180 ms), der Wechsel der Ebene als Schub mit der
- *   Blattfeder — die Richtung zeigt, ob es hinein oder zurueck geht.
- * - Die eigene Wahl gilt vor VLCs Auskunft: VLC zieht die Auswahl erst einen Takt spaeter nach.
- */
-@Composable
-private fun Wiedergabetafel(
-    offen: Boolean, schliessen: () -> Unit, auslieferung: String?,
-    tonspuren: () -> List<Pair<Int, String>>, ton: () -> Int, tonWaehlen: (Int) -> Unit,
-    untertitel: () -> List<Pair<Int, String>>, spur: () -> Int, spurWaehlen: (Int) -> Unit,
-    bildfuellend: Boolean, bildWaehlen: (Boolean) -> Unit,
-    tempo: Float, tempoWaehlen: (Float) -> Unit,
-    schlafzeit: Int, schlafWaehlen: (Int) -> Unit,
-    technik: Boolean, technikSetzen: (Boolean) -> Unit,
-    querformat: Boolean, querformatSetzen: (Boolean) -> Unit,
-) {
-    val deckung by animateFloatAsState(if (offen) 1f else 0f, tween(180, easing = EaseInOut), label = "tafel")
-    if (deckung < 0.01f && !offen) return
-    var ebene by remember { mutableStateOf("wurzel") }
-    LaunchedEffect(offen) { if (offen) ebene = "wurzel" }
-    val spurenTon = remember(offen, ebene) { tonspuren() }
-    val spurenText = remember(offen, ebene) { untertitel() }
-    var tonWahl by remember(offen) { mutableIntStateOf(ton()) }
-    var spurWahl by remember(offen) { mutableIntStateOf(spur()) }
-    val form = RoundedCornerShape(Stil.eckeFlaeche)
-
-    BoxWithConstraints(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }) {
-        val hoechstens = maxHeight - 60.dp
-        Box(Modifier.fillMaxSize().background(Stil.grund.copy(alpha = 0.55f)).antippen(schliessen))
-        Box(Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.safeDrawing).padding(14.dp)
-                .width(356.dp).shadow(24.dp, form, ambientColor = Color.Black, spotColor = Color.Black)
-                .clip(form).background(Stil.flaeche).border(1.dp, Stil.rand, form)
-                .pointerInput(Unit) { detectTapGestures { } }) {
-            AnimatedContent(ebene, label = "ebene", transitionSpec = {
-                val hinein = if (targetState != "wurzel") 1 else -1
-                (slideInHorizontally(tafelFeder) { it * hinein } + fadeIn(tween(150))) togetherWith
-                    (slideOutHorizontally(tafelFeder) { -it * hinein } + fadeOut(tween(150))) using SizeTransform(clip = true)
-            }) { e ->
-                Column(Modifier.heightIn(max = hoechstens).verticalScroll(rememberScrollState()).padding(bottom = 12.dp)) {
-                    if (e == "wurzel") {
-                        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(uebersetzt("Wiedergabe"), style = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift)
-                                auslieferung?.let { Text(it, style = TextStyle(fontSize = 12.sp), color = Stil.schriftSehrLeise, maxLines = 1) }
-                            }
-                            Box(Modifier.size(28.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.1f)).antippen(schliessen), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Filled.Close, contentDescription = uebersetzt("Schließen"), tint = Stil.schrift, modifier = Modifier.size(14.dp))
-                            }
-                        }
-                        Tafelgruppe {
-                            Navzeile(Icons.AutoMirrored.Filled.VolumeUp, uebersetzt("Ton"), spurenTon.firstOrNull { it.first == tonWahl }?.second ?: uebersetzt("Keine")) { ebene = "ton" }
-                            Tafeltrenner()
-                            Navzeile(Icons.Filled.ClosedCaption, uebersetzt("Untertitel"), spurenText.firstOrNull { it.first == spurWahl }?.second ?: uebersetzt("Aus")) { ebene = "untertitel" }
-                            Tafeltrenner()
-                            Navzeile(Icons.Filled.AspectRatio, uebersetzt("Bildformat"), uebersetzt(if (bildfuellend) "Formatfüllend" else "Ganzes Bild")) { ebene = "bild" }
-                            Tafeltrenner()
-                            Navzeile(Icons.Filled.Speed, uebersetzt("Tempo"), tempoText(tempo)) { ebene = "tempo" }
-                            Tafeltrenner()
-                            Navzeile(Icons.Filled.Bedtime, uebersetzt("Schlafzeit"), if (schlafzeit == 0) uebersetzt("Aus") else "$schlafzeit") { ebene = "schlaf" }
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        Tafelgruppe {
-                            Schalterzeile(Icons.Filled.BarChart, uebersetzt("Technikschild"), technik, technikSetzen)
-                            Tafeltrenner()
-                            Schalterzeile(Icons.Filled.ScreenLockRotation, uebersetzt("Querformat fest"), querformat, querformatSetzen)
-                        }
-                    } else {
-                        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Row(Modifier.antippen { ebene = "wurzel" }.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(22.dp))
-                                Text(uebersetzt("Wiedergabe"), style = TextStyle(fontSize = 16.sp), color = Stil.akzent)
-                            }
-                            Spacer(Modifier.weight(1f))
-                            Text(uebersetzt(when (e) { "ton" -> "Ton"; "untertitel" -> "Untertitel"; "bild" -> "Bildformat"; "tempo" -> "Tempo"; else -> "Schlafzeit" }),
-                                 style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift)
-                        }
-                        when (e) {
-                            "ton" -> {
-                                Spaltentitel(uebersetzt("In dieser Datei"))
-                                Tafelgruppe { spurenTon.forEachIndexed { i, (id, name) ->
-                                    if (i > 0) Tafeltrenner(0.dp)
-                                    Auswahlzeile(name, id == tonWahl) { tonWahl = id; tonWaehlen(id) }
-                                } }
-                            }
-                            "untertitel" -> {
-                                Spaltentitel(uebersetzt("In dieser Datei"))
-                                Tafelgruppe {
-                                    Auswahlzeile(uebersetzt("Aus"), spurWahl == -1) { spurWahl = -1; spurWaehlen(-1) }
-                                    spurenText.forEach { (id, name) -> Tafeltrenner(0.dp); Auswahlzeile(name, id == spurWahl) { spurWahl = id; spurWaehlen(id) } }
-                                }
-                            }
-                            "bild" -> {
-                                Tafelgruppe {
-                                    Auswahlzeile(uebersetzt("Ganzes Bild"), !bildfuellend) { bildWaehlen(false) }
-                                    Tafeltrenner(0.dp)
-                                    Auswahlzeile(uebersetzt("Formatfüllend"), bildfuellend) { bildWaehlen(true) }
-                                }
-                                Text(uebersetzt("Formatfüllend schneidet links und rechts ab, damit keine Balken bleiben. Geht auch mit zwei Fingern im Bild."),
-                                     style = TextStyle(fontSize = 12.sp, lineHeight = 16.sp), color = Stil.schriftSehrLeise,
-                                     modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp))
-                            }
-                            "tempo" -> Tafelgruppe {
-                                listOf(0.75f, 1f, 1.25f, 1.5f, 2f).forEachIndexed { i, w ->
-                                    if (i > 0) Tafeltrenner(0.dp)
-                                    Auswahlzeile(tempoText(w), w == tempo) { tempoWaehlen(w) }
-                                }
-                            }
-                            else -> Tafelgruppe {
-                                Auswahlzeile(uebersetzt("Aus"), schlafzeit == 0) { schlafWaehlen(0) }
-                                listOf(15, 30, 45, 60, 90).forEach { m -> Tafeltrenner(0.dp); Auswahlzeile("$m", m == schlafzeit) { schlafWaehlen(m) } }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun Tafelgruppe(inhalt: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.padding(horizontal = 12.dp).fillMaxWidth().clip(RoundedCornerShape(Stil.eckeFeld)).background(Stil.erhoeht), content = inhalt)
-}
-
-@Composable
-private fun Tafeltrenner(einzug: Dp = 46.dp) {
-    Box(Modifier.padding(start = einzug).fillMaxWidth().height(1.dp).background(Stil.linie))
-}
-
-@Composable
-private fun Spaltentitel(text: String) {
-    Text(text.uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.2.sp),
-         color = Color.White.copy(alpha = 0.4f), modifier = Modifier.padding(start = 28.dp, top = 6.dp, bottom = 6.dp))
-}
-
-@Composable
-private fun Navzeile(symbol: ImageVector, titel: String, wert: String, tun: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(44.dp).druckzeile(tun).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(symbol, contentDescription = null, tint = Stil.schrift, modifier = Modifier.width(22.dp).height(18.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(titel, style = TextStyle(fontSize = 16.sp), color = Stil.schrift, modifier = Modifier.weight(1f))
-        Text(wert, style = TextStyle(fontSize = 15.sp), color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis,
-             modifier = Modifier.widthIn(max = 150.dp).padding(start = 8.dp))
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.padding(start = 4.dp).size(16.dp))
-    }
-}
-
-/** Nur der Schalter nimmt den Tipp, nicht die Zeile — wie auf iOS. */
-@Composable
-private fun Schalterzeile(symbol: ImageVector, titel: String, an: Boolean, setzen: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(symbol, contentDescription = null, tint = Stil.schrift, modifier = Modifier.width(22.dp).height(18.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(titel, style = TextStyle(fontSize = 16.sp), color = Stil.schrift, modifier = Modifier.weight(1f))
-        Schalter(an, setzen)
-    }
-}
-
-/** Gewaehlt im Akzent mit Haken dahinter — keine Kreise, keine Kaestchen. */
-@Composable
-private fun Auswahlzeile(text: String, gewaehlt: Boolean, tun: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).druckzeile(tun).padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, style = TextStyle(fontSize = 16.sp), color = if (gewaehlt) Stil.akzent else Stil.schrift, modifier = Modifier.weight(1f))
-        if (gewaehlt) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(15.dp))
-    }
-}

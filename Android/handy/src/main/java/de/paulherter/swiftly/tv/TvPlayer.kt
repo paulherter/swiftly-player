@@ -1,42 +1,62 @@
 package de.paulherter.swiftly.tv
 
-import android.app.Activity
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.runtime.withFrameNanos
+import android.os.SystemClock
+import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
-import androidx.compose.ui.focus.focusProperties
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -45,30 +65,41 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import coil3.compose.AsyncImage
+import androidx.compose.ui.zIndex
 import de.paulherter.swiftly.Abspielwunsch
-import de.paulherter.swiftly.Belegzeile
 import de.paulherter.swiftly.Folge
-import de.paulherter.swiftly.Ladefeld
-import de.paulherter.swiftly.Ruck
+import de.paulherter.swiftly.R
+import de.paulherter.swiftly.Spielplan
 import de.paulherter.swiftly.Spielwerk
+import de.paulherter.swiftly.Staffel
 import de.paulherter.swiftly.SwiftlyAnwendung
 import de.paulherter.swiftly.Technikschild
+import de.paulherter.swiftly.Wahl
 import de.paulherter.swiftly.aktivitaet
 import de.paulherter.swiftly.folgenLesen
+import de.paulherter.swiftly.folgenVorladen
 import de.paulherter.swiftly.gemeinsam.Bewegung
 import de.paulherter.swiftly.gemeinsam.Stil
 import de.paulherter.swiftly.gemeinsam.uebersetzt
-import de.paulherter.swiftly.rememberRuck
+import de.paulherter.swiftly.kern.Kern
+import de.paulherter.swiftly.serieLesen
+import de.paulherter.swiftly.wahlenLesen
 import de.paulherter.swiftly.zeitText
-import de.paulherter.swiftly.tempoText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -78,37 +109,34 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
- * Vorlage: `PlayerScreen` in `Sources/tvOS/PlayerScreen.swift`.
+ * Vorlage: `PlayerScreen` und `PlayerEbenen` in `Sources/tvOS/`.
  *
  * Die Wiedergabe-Mechanik (VLC, Takt, Meldungen, Mediensitzung) steckt in `Spielwerk`
- * (`Sources/PlayerSeite.kt`) — dieselbe Klasse, die auch der Telefon-Player benutzt. Hier steht nur,
+ * (`PlayerSeite.kt`) — dieselbe Klasse, die auch der Telefon-Player benutzt. Hier steht nur,
  * was am Fernseher anders ist: kein Finger, sondern die Fernbedienung.
  *
- * **Fernbedienung** (schon so auf Android TV eingefuehrt, Stand `Notizen/Android/PLAN.md` Phase 4):
- * OK haelt an oder bestaetigt eine gesammelte Sprungmarke sofort; links/rechts sammeln 350 ms lang,
- * bevor **einmal** gesprungen wird — VLC baut bei jedem Sprung den Strom neu auf, und ein Sprung je
- * Druck liess ihn hoerbar durch die Datei rauschen (dieselbe Begruendung wie tvOS' `springen`).
- * Oben zeigt die Steuerung, oder — wenn sie schon da ist — das Angebot (Vorspann/naechste Folge) oder,
- * wenn kein Angebot ansteht, die Wiedergabeeinstellungen. Zurueck bricht zuerst das Spulen ab, dann
- * die Einstellungstafel, erst dann verlaesst es den Player (`onExitCommand`-Reihenfolge aus der Vorlage).
+ * **Gestaltung wie tvOS:** flache Abdunklung in reinem Schwarz, oben links Titel und Metazeile,
+ * oben rechts nur Symbolknoepfe (Audio & Untertitel, Folgen, Einstellungen), unten die Leiste.
+ * Kein Schliessen-Knopf, kein Pausezeichen in der Mitte, keine Sprungknoepfe: bedient wird mit dem
+ * Steuerkreuz, Zurueck schliesst.
  *
- * **Bewusst weggelassen:** Bild-im-Bild (tvOS hat es auch nicht, siehe Vorlage-Kommentar dort),
- * das Wischfeld zum Spulen (B2a) — die meisten Android-TV-Fernbedienungen haben keine Wischflaeche,
- * anders als die Siri Remote — und die Folgenliste (`Folgenblatt`, eigene Vorlage-Datei ausserhalb
- * dieser Zuteilung): die Fusszeile bietet weiterhin „naechste Folge"/„Vorspann ueberspringen" direkt an.
+ * **Fernbedienung:** OK haelt an oder bestaetigt eine gesammelte Sprungmarke; links/rechts sammeln
+ * 350 ms lang, bevor **einmal** gesprungen wird — VLC baut bei jedem Sprung den Strom neu auf.
+ * Hoch fuehrt zu den Symbolen oben (steht die Ueberspringen-Pille da, zuerst zu ihr).
+ * Zurueck: Sprungmarke verwerfen → Ebene zu → Steuerung aus → Einblendung zu → Player zu.
  */
 @Composable
 fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Unit) {
     val kontext = LocalContext.current
     val aktivitaet = remember(kontext) { kontext.aktivitaet() }
     val lauf = rememberCoroutineScope()
-    val ruck = rememberRuck()
 
     // Der Player laeuft in einer eigenen Activity (`PlayerAktivitaet`) — ein `Fokusmerker.letzter`
-    // von der vorigen Seite (z. B. die Kachel, die den Player geoeffnet hat) gehoert zu einer
-    // fremden Komposition und darf hier keine Tafel treffen wollen.
+    // von der vorigen Seite gehoert zu einer fremden Komposition. Den Rueckweg nach dem Player
+    // haelt `Fokusmerker.vorDemPlayer` (gesetzt in `TvHaupt`).
     LaunchedEffect(Unit) { Fokusmerker.letzter = null }
 
     val werk = remember { Spielwerk(app, kontext, lauf) }
@@ -137,10 +165,14 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     LaunchedEffect(werk.plan, werk.dauer > 0) { werk.metadatenAktualisieren() }
     LaunchedEffect(app.einstellungen.technikschild, werk.plan) { werk.technikschildTakt(app.einstellungen.technikschild) }
     LaunchedEffect(wunsch) { werk.oeffnenUndTakt(wunsch, schliessen) }
+    // Staffeln und laufende Staffel vorladen — die Folgenebene steht beim Oeffnen schon da
+    // (Vorlage `FolgenEbene.vorladen` auf tvOS).
+    LaunchedEffect(werk.plan?.itemId) {
+        val p = werk.plan
+        if (p != null && p.episode && p.serieId != null) folgenVorladen(app, p.serieId, p.staffelId)
+    }
 
-    // **Bildtakt vor dem ersten Bild anstossen, dann in Ruhe lassen.** Die Rate wird einmal aus VLCs
-    // Videotrack gemessen (`TvBildtakt.rate`) und bleibt ueber einen Folgenwechsel hinweg gemerkt —
-    // genau wie `Bildtakt.gemessen` auf tvOS, das `wechsleZu` bewusst nicht zuruecksetzt.
+    // **Bildtakt vor dem ersten Bild anstossen, dann in Ruhe lassen** — siehe `TvBildtakt`.
     val bildrateErlaubt = remember { app.ablage.merkwert("bildrateAnpassen") != "0" }
     LaunchedEffect(Unit) {
         while (isActive && TvBildtakt.nochNachzumessen()) {
@@ -154,27 +186,37 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
 
     var sichtbar by remember { mutableStateOf(true) }
     var beruehrt by remember { mutableIntStateOf(0) }
-    var tafelOffen by remember { mutableStateOf(false) }
-    // Vorlage: `Folgenblatt` — die Folgen der laufenden Staffel, aus dem Player heraus.
-    var folgenOffen by remember { mutableStateOf(false) }
+    /** `spuren`, `folgen` oder `einstellungen` — Vorlage `Playerebene`. */
+    var offeneEbene by remember { mutableStateOf<String?>(null) }
+    val ebeneOffen = offeneEbene != null
 
-    // Die Einblendung hoert auf die gewollte Steuerung (Vorlage `onChange(of: steuerungSichtbar)` auf iOS):
-    // beim Oeffnen steht sie schon auf „an", ihr erstes Ausblenden schickt „Rückblick überspringen" nicht weg.
     LaunchedEffect(sichtbar) { werk.steuerungGeaendert(sichtbar) }
-    LaunchedEffect(sichtbar, werk.laeuft, tafelOffen, folgenOffen, beruehrt) {
-        if (sichtbar && werk.laeuft && !tafelOffen && !folgenOffen) { delay(4000); sichtbar = false }
+    LaunchedEffect(sichtbar, werk.laeuft, offeneEbene, beruehrt) {
+        if (sichtbar && werk.laeuft && offeneEbene == null) { delay(4000); sichtbar = false }
     }
     LaunchedEffect(werk.hinweis) { if (werk.hinweis != null) { delay(5000); werk.hinweis = null } }
 
     fun zeigen() { sichtbar = true; beruehrt++ }
 
+    // **Die Wiedergabetaste schaltet gegen den gewollten Stand**, nicht gegen VLCs Meldung (Vorlage
+    // `Schaltwerk` auf tvOS). Die Meldung kommt erst nach dem Befehl; wer schnell zweimal drueckte,
+    // schaltete sonst gegen den alten Stand, und der zweite Druck ging verloren. VLCs Meldung wird
+    // erst eine Sekunde nach dem letzten Befehl zum gewollten Stand — dann ist sie etwas, das VLC
+    // von selbst getan hat (Ende, Schlafzeit).
+    val gewollt = remember { booleanArrayOf(false) }
+    val zuletztBefohlen = remember { longArrayOf(0L) }
+    LaunchedEffect(werk.laeuft) {
+        if (SystemClock.elapsedRealtime() - zuletztBefohlen[0] > 1000) gewollt[0] = werk.laeuft
+    }
+
     // Spulen: sammeln, **einmal** springen — Vorlage `PlayerScreen.springen` (tvOS).
     var spulziel by remember { mutableStateOf<Double?>(null) }
     val letzterSchritt = remember { longArrayOf(0L) }
     var sammler by remember { mutableStateOf<Job?>(null) }
+    fun markeVerwerfen() { sammler?.cancel(); spulziel = null }
     fun spulen(um: Int) {
         if (!sichtbar) { zeigen(); return }
-        val jetzt = android.os.SystemClock.elapsedRealtime()
+        val jetzt = SystemClock.elapsedRealtime()
         val seitLetztem = jetzt - letzterSchritt[0]
         letzterSchritt[0] = jetzt
         zeigen()
@@ -185,113 +227,166 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
         sammler = lauf.launch { delay(350); spulziel?.let { werk.springe(it) }; spulziel = null }
     }
 
-    // **Zurueck bricht zuerst das Spulen ab, dann die Tafel, dann die Folgenliste, dann erst der
-    // Player** — dieselbe Reihenfolge wie `onExitCommand` in der Vorlage. `BackHandler`s wirken
-    // zuletzt-deklariert-zuerst.
-    val fernbedienung = remember { FocusRequester() }
-    // **Erst den Fokus in Sicherheit, dann das Blatt entfernen.** Verschwindet die fokussierte Zeile
-    // mit dem Blatt, faellt der Fokus auf den ersten fokussierbaren Knoten, und das Zurueckholen
-    // danach ist ein sichtbarer Sprung. Das Folgenblatt liegt ueber den Knoepfen — dessen Ausloeser
-    // steht noch da und bekommt den Fokus direkt. Die Wiedergabetafel blendet die Knoepfe aus
-    // (`steuerungDa`), ihr Ausloeser ist erst nach dem Schliessen wieder da: bis dahin haelt die
-    // Fernbedienungsflaeche den Fokus (sie zeichnet keinen), der Effekt unten gibt ihn dann weiter.
-    //
-    // **Beide Blaetter sind geschlossene Fokusgruppen** (`exit = Cancel`, wie `TvTafel`): Oben aus der
-    // ersten Folge suchte Compose vorher im ganzen Player und fand den Einstellungsknopf oben rechts
-    // *hinter* dem Blatt — er steht genau dort, wo im Blatt „Fertig" steht. Vorlage: auf tvOS ist das
-    // Blatt eine eigene Auflage, dahinter ist nichts fokussierbar. `blattAusgang` gibt den Ausgang nur
-    // fuer das programmatische Zurueckgeben frei (Compose fragt `exit` auch bei `requestFocus`).
-    val blattAusgang = remember { booleanArrayOf(false) }
-    fun tafelZu() { blattAusgang[0] = true; runCatching { fernbedienung.requestFocus() }; tafelOffen = false; zeigen() }
-    fun folgenZu() { blattAusgang[0] = true; Fokusmerker.zurueckgeben(fernbedienung); folgenOffen = false; zeigen() }
-    BackHandler(enabled = spulziel != null) { sammler?.cancel(); spulziel = null }
-    BackHandler(enabled = tafelOffen) { tafelZu() }
-    BackHandler(enabled = folgenOffen) { folgenZu() }
-    BackHandler { werk.beenden(schliessen) }
+    fun laufenSetzen(soll: Boolean, quelle: String) {
+        gewollt[0] = soll
+        zuletztBefohlen[0] = SystemClock.elapsedRealtime()
+        // Anhalten/Weiter heisst „hier", nicht „dorthin" — eine Marke wird verworfen.
+        markeVerwerfen()
+        if (soll) werk.spieler.play() else werk.spieler.pause()
+        Log.i("Swiftly", "[Taste] $quelle: ${if (soll) "abspielen" else "anhalten"}")
+        zeigen()
+    }
+    fun umschalten(quelle: String) = laufenSetzen(!gewollt[0], quelle)
 
-    // **Die Einblendung** — „Intro überspringen"/„Nächste Folge" ohne Steuerung (Vorlage `karteDa` und
-    // `angebotsebene` in `Sources/tvOS/PlayerScreen.swift`). Solange sie steht, liegt der Fokus auf ihr:
-    // OK loest aus, Zurueck schliesst nur sie (und sagt einen Countdown ab), eine Richtungstaste schliesst
-    // sie und holt die Steuerung. Danach geht der Fokus an die Fernbedienungsflaeche, nicht an einen Knopf
-    // — sonst oeffnete der naechste Klick etwas, statt anzuhalten (Plezy #1890).
-    val zielSichtbarFrueh = sichtbar && werk.bildFrei
-    val karteDa = werk.einblendung != "nichts" && werk.bildFrei && !zielSichtbarFrueh && !tafelOffen && !folgenOffen && !werk.wechselt
+    val fernbedienung = remember { FocusRequester() }
+    val knopfSpuren = remember { FocusRequester() }
+    val knopfFolgen = remember { FocusRequester() }
+    val knopfEinstellungen = remember { FocusRequester() }
     val angebotFokus = remember { FocusRequester() }
-    BackHandler(enabled = karteDa) { werk.angebotSchliessen() }
-    LaunchedEffect(karteDa) {
-        if (karteDa) {
-            // Zweimal, wie auf tvOS: die erste Anforderung faellt in den Durchlauf, der den Knopf erst einhaengt.
-            runCatching { angebotFokus.requestFocus() }
-            delay(80)
-            runCatching { angebotFokus.requestFocus() }
-            android.util.Log.i("Swiftly", "Angebot: ein (${werk.einblendung}), Fokus auf dem Knopf")
-        } else if (!tafelOffen && !folgenOffen) {
-            runCatching { fernbedienung.requestFocus() }
+    /** Hoch bei ausgeblendeter Steuerung: der Knopf haengt erst noch ein, er holt sich den Fokus selbst. */
+    val obenWunsch = remember { booleanArrayOf(false) }
+    /** Gibt den gesperrten Ausgang der Ebene fuer das Zuruecklegen des Fokus frei. */
+    val ebenenAusgang = remember { booleanArrayOf(false) }
+
+    val plan = werk.plan
+    val hatFolgen = plan?.episode == true && plan.serieId != null
+    val titel = plan?.kopfzeile?.takeIf { it.isNotEmpty() } ?: plan?.titel.orEmpty()
+    val meta = plan?.let {
+        if (it.episode && it.staffelNr != null && it.folgeNr != null) uebersetzt("Staffel %lld · Folge %lld", it.staffelNr, it.folgeNr)
+        else if (it.episode) it.untertitel.takeIf { u -> u.isNotEmpty() }
+        else it.nebenzeile?.takeIf { n -> n.isNotEmpty() }
+    }
+
+    // **Vor dem ersten Bild keine Steuerung, nur der Lader** (`steuerungDa` auf tvOS: `erstesBildDa`).
+    val steuerungZiel = sichtbar && werk.bildFrei && !ebeneOffen
+    val deckung by animateFloatAsState(
+        if (steuerungZiel) 1f else 0f,
+        if (steuerungZiel) tween(180, easing = Bewegung.weich) else tween(340, easing = Bewegung.weich),
+        label = "steuerung")
+    // Unter einer offenen Ebene bleibt die Steuerung eingehaengt (unsichtbar): der Knopf, der die
+    // Ebene geoeffnet hat, muss den Fokus beim Schliessen annehmen koennen, **bevor** die Ebene weggeht.
+    val werkzeugeDa = deckung > 0.01f || ebeneOffen
+    val titelZiel = steuerungZiel || offeneEbene == "folgen"
+    val titelDeckung by animateFloatAsState(if (titelZiel) 1f else 0f, tween(200), label = "titel")
+
+    fun nachOben() {
+        val schonDa = deckung > 0.01f
+        zeigen()
+        if (schonDa) runCatching { knopfSpuren.requestFocus() } else obenWunsch[0] = true
+    }
+
+    fun ebeneOeffnen(welche: String) {
+        Log.i("Swiftly", "[Ebene] auf $welche")
+        ebenenAusgang[0] = false
+        offeneEbene = welche
+        beruehrt++
+    }
+    // **Zurueck an den Knopf, der die Ebene geoeffnet hat** — erst der Fokus, dann die Ebene weg.
+    fun ebeneSchliessen() {
+        val war = offeneEbene ?: return
+        Log.i("Swiftly", "[Ebene] zu $war")
+        ebenenAusgang[0] = true
+        val ziel = when (war) { "spuren" -> knopfSpuren; "folgen" -> if (hatFolgen) knopfFolgen else fernbedienung; else -> knopfEinstellungen }
+        if (runCatching { ziel.requestFocus() }.isFailure) runCatching { fernbedienung.requestFocus() }
+        offeneEbene = null
+        zeigen()
+        // Solange die Ebene steht, sind die Knoepfe darunter gesperrt — der Wunsch oben greift
+        // nicht. Zwei Bilder spaeter, wenn die Steuerung wieder da ist, noch einmal.
+        lauf.launch {
+            repeat(2) { withFrameNanos { } }
+            runCatching { ziel.requestFocus() }
         }
     }
 
-    val knopfOben = remember { FocusRequester() }
-    // **Nur die Zeitleiste selbst deutet Tasten.** `onKeyEvent` am aeusseren Kasten bekommt auch,
-    // was ein fokussierter Knopf oben rechts nicht verbraucht — Links wurde dort zum Spulen, und der
-    // Fokus konnte nie vom Einstellungs- zum Folgenknopf wechseln.
+    // **Die Einblendung** ohne Steuerung (Vorlage `karteDa`/`angebotsebene`): solange sie steht,
+    // liegt der Fokus auf ihr. Danach an die Fernbedienungsflaeche, nicht an einen Knopf (Plezy #1890).
+    val karteDa = werk.einblendung != "nichts" && werk.bildFrei && !steuerungZiel && !ebeneOffen && !werk.wechselt
+    LaunchedEffect(karteDa) {
+        if (karteDa) {
+            runCatching { angebotFokus.requestFocus() }
+            delay(80)
+            runCatching { angebotFokus.requestFocus() }
+            Log.i("Swiftly", "Angebot: ein (${werk.einblendung}), Fokus auf dem Knopf")
+        } else if (!steuerungZiel && !ebeneOffen) {
+            runCatching { fernbedienung.requestFocus() }
+        }
+    }
+    // **Der Fokus geht mit der Steuerung**, statt mit ihr zu verschwinden (Vorlage `onChange(of: steuerungDa)`):
+    // auf einem ausblendenden Knopf oeffnete OK sonst eine unsichtbare Ebene.
+    LaunchedEffect(steuerungZiel) {
+        if (!steuerungZiel && !ebeneOffen && !karteDa) runCatching { fernbedienung.requestFocus() }
+    }
+
+    // Beim Spulen weicht die Pille der Vorschau ueber der Leiste (Vorlage `angebotDa`).
+    val angebotDa = werk.angebotArt != "keiner" && werk.angebotText.isNotEmpty() && werk.bildFrei && !ebeneOffen
+        && !werk.wechselt && spulziel == null
+        && (werk.einblendung != "nichts" || (steuerungZiel && werk.angebotArt == "naechste"))
+
+    // Verschwindet die Pille unter dem Fokus (gedrueckt, Abschnitt vorbei, Spulen), geht er an die
+    // Flaeche — sonst stuende er im Nichts.
+    var pilleHatFokus by remember { mutableStateOf(false) }
+    LaunchedEffect(angebotDa) { if (!angebotDa && pilleHatFokus) runCatching { fernbedienung.requestFocus() } }
+
+    // **Zurueck** — dieselbe Reihenfolge wie `onExitCommand` auf tvOS. Die Staffelwahl in der
+    // Folgenebene haengt sich spaeter ein und kommt deshalb zuerst dran.
+    BackHandler {
+        when {
+            spulziel != null -> markeVerwerfen()
+            offeneEbene != null -> ebeneSchliessen()
+            steuerungZiel -> {
+                runCatching { fernbedienung.requestFocus() }
+                sichtbar = false
+                Log.i("Swiftly", "[Zurück] Steuerung aus")
+            }
+            karteDa -> { werk.angebotSchliessen(); Log.i("Swiftly", "[Angebot] Zurück schließt") }
+            else -> werk.beenden(schliessen)
+        }
+    }
+
+    // **Nur die Leiste deutet Richtungen.** `onKeyEvent` am aeusseren Kasten bekommt auch, was ein
+    // fokussierter Knopf oben rechts nicht verbraucht.
     var leisteFokus by remember { mutableStateOf(false) }
     fun taste(e: KeyEvent): Boolean {
-        if (tafelOffen || folgenOffen || !leisteFokus) return false
+        if (ebeneOffen || !leisteFokus) return false
         if (e.type != KeyEventType.KeyDown) return false
         when (e.key) {
-            Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.MediaPlayPause, Key.Spacebar -> {
-                zeigen()
+            Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Spacebar -> {
+                if (e.nativeKeyEvent.repeatCount > 0) return true
                 val ziel = spulziel
-                if (ziel != null) { sammler?.cancel(); spulziel = null; werk.springe(ziel) } else werk.umschalten()
+                if (ziel != null) { zeigen(); markeVerwerfen(); werk.springe(ziel) } else umschalten("Klick")
             }
-            Key.MediaPlay -> if (!werk.spieler.isPlaying) werk.umschalten()
-            Key.MediaPause -> if (werk.spieler.isPlaying) werk.umschalten()
             Key.DirectionLeft -> spulen(-werk.zurueckS)
             Key.DirectionRight -> spulen(werk.vorS)
             Key.MediaRewind -> spulen(-werk.zurueckS)
             Key.MediaFastForward -> spulen(werk.vorS)
             Key.MediaNext -> if (werk.plan?.naechste == true) lauf.launch { werk.naechsteFolge() }
-            // **Oben fuehrt zu den Knoepfen, nicht in die Einstellungen.** Vorlage: `PlayerScreen`
-            // — „der Fokus liegt auf der Zeitleiste … nach oben kommt man zu den Knoepfen". Vorher
-            // oeffnete Oben sofort die Tafel, und die beiden Knoepfe oben rechts waren mit der
-            // Fernbedienung gar nicht erreichbar. Steht ein Angebot, hat es weiter Vorrang.
-            Key.DirectionUp -> if (!sichtbar) zeigen() else if (!werk.angebotAusfuehren()) {
-                zeigen(); lauf.launch { delay(30); runCatching { knopfOben.requestFocus() } }
-            }
-            Key.Menu -> { tafelOffen = true; zeigen() }
+            // **Hoch fuehrt direkt zu den Symbolen** — auch beim ersten Druck, wenn die Steuerung
+            // noch aus ist (tvOS 5a5f3cd). Steht die Pille ueber der Leiste, liegt sie dazwischen.
+            Key.DirectionUp -> if (sichtbar && angebotDa) runCatching { angebotFokus.requestFocus() } else nachOben()
+            Key.Menu -> if (werk.bildFrei) ebeneOeffnen("einstellungen")
             Key.DirectionDown -> { sichtbar = !sichtbar; beruehrt++ }
             else -> return false
         }
         return true
     }
 
-    // Fokus zurueck an den Knopf, der die Tafel/das Blatt geoeffnet hat (siehe `Fokusmerker` in
-    // TvStil.kt) — kam die Oeffnung stattdessen von der Fernbedienung (Oben/Menue ohne Knopfklick),
-    // ist nichts gemerkt und es bleibt bei der bisherigen Fassung: zurueck auf die Fernbedienungsflaeche.
-    //
-    // **Ohne Zeitverzug:** der Effekt startet nach dem Anwenden der Komposition, in der die Tafel zu
-    // ging — die Knoepfe oben (`steuerungDa`) sind dann schon wieder angebunden.
-    LaunchedEffect(tafelOffen, folgenOffen) {
-        if (!tafelOffen && !folgenOffen) Fokusmerker.zurueckfordern(fernbedienung)
-        else blattAusgang[0] = false
+    // **Die Wiedergabetaste gilt ueberall im Player** (`onPlayPauseCommand`), auch auf einem Knopf
+    // oder in einer Ebene. Gehaltene Tasten wiederholen nicht.
+    fun wiedergabetaste(e: KeyEvent): Boolean {
+        val k = e.key
+        if (k != Key.MediaPlayPause && k != Key.MediaPlay && k != Key.MediaPause) return false
+        if (e.type != KeyEventType.KeyDown || e.nativeKeyEvent.repeatCount > 0) return true
+        when (k) {
+            Key.MediaPlay -> laufenSetzen(true, "Abspieltaste")
+            Key.MediaPause -> laufenSetzen(false, "Pausetaste")
+            else -> umschalten("Wiedergabetaste")
+        }
+        return true
     }
 
-    // **Vor dem ersten Bild keine Steuerung, nur der Lader.** Vorlage: `PlayerScreen.steuerungDa`
-    // auf tvOS — dort `steuerungSichtbar && erstesBildDa`; das Gegenstueck zu `erstesBildDa` ist
-    // hier `werk.bildFrei` (`Spielwerk`, gesetzt bei `ladeschirmWeg`). Anders als beim Handy-Player
-    // (`PlayerSeite.kt`), der bewusst schon vor `bildFrei` die volle Steuerung zeigt, blieb hier
-    // die Zeitleiste sonst auf 0 stehen und sprang sichtbar an die richtige Stelle, sobald VLC sie
-    // meldete — auf dem Fernseher sitzt man weiter weg und sieht den Sprung deutlicher.
-    val zielSichtbar = sichtbar && werk.bildFrei
-    val deckung by animateFloatAsState(
-        if (zielSichtbar) 1f else 0f,
-        if (zielSichtbar) tween(180, easing = Bewegung.weich) else tween(340, easing = Bewegung.weich),
-        label = "steuerung")
-    val steuerungDa by remember { derivedStateOf { deckung > 0.01f && !tafelOffen } }
-    // Verschwinden die Knoepfe mit der Steuerung, darf der Fokus nicht ins Leere fallen.
-    LaunchedEffect(steuerungDa) { if (!steuerungDa && !tafelOffen && !folgenOffen) runCatching { fernbedienung.requestFocus() } }
-
-    Box(Modifier.fillMaxSize().background(Color.Black)
+    CompositionLocalProvider(LocalInnerhalbTafel provides true) {
+    Box(Modifier.fillMaxSize().background(Color.Black).onPreviewKeyEvent { wiedergabetaste(it) }) {
+    Box(Modifier.fillMaxSize()
             .focusRequester(fernbedienung).onFocusChanged { leisteFokus = it.isFocused }.focusable().onKeyEvent { taste(it) }) {
         AndroidView(factory = { ctx -> org.videolan.libvlc.util.VLCVideoLayout(ctx).also { flaeche[0] = it; werk.spieler.attachViews(it, null, true, false) } },
                     modifier = Modifier.fillMaxSize())
@@ -302,23 +397,93 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
             }
         }
 
-        // **Das Zeichen fuer „steht"/„laedt" gehoert in die Mitte** — auf drei Metern Entfernung
-        // sieht man aufs Bild, nicht auf die Leiste, und ein Standbild sieht sonst aus wie eine
-        // ruhige Einstellung. Vorlage: `stockt` in `PlayerScreen.swift` — ohne Teller, der Ring
-        // bringt seine Form selbst mit.
-        // Auch waehrend des Folgenwechsels: die alte Folge laeuft weiter, bis die neue da ist.
+        // **Nur noch der Ring, kein Pausezeichen** — angehalten zeigt die Leiste (Vorlage tvOS).
         if (werk.bildFrei && (werk.wechselt || (werk.laeuft && werk.puffert))) {
             Box(Modifier.align(Alignment.Center)) { TvLader(groesse = 64.dp) }
-        } else if (werk.bildFrei && !werk.laeuft) {
-            Box(Modifier.align(Alignment.Center).size(95.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.42f)),
-                contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Pause, contentDescription = null, tint = Stil.schrift, modifier = Modifier.size(38.dp))
+        }
+
+        if (werkzeugeDa) {
+            // **Reines Schwarz, 42 %** — ohne Verlaeufe (Vorlage `schleier`).
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }.background(Color.Black.copy(alpha = 0.42f)))
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = deckung }
+                    .padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben)) {
+                val spult = spulziel != null
+                // Links Platz fuer den Titel (den zeichnet `stehender Titel`) und darunter die Metazeile.
+                Row(Modifier.fillMaxWidth().align(Alignment.TopStart), verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(TvPlayermass.titelAbstand)) {
+                        Text(titel, style = TvPlayermass.titel, maxLines = 1, modifier = Modifier.alpha(0f))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            meta?.let { Text(it, style = TvPlayermass.meta, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            if (plan != null && !plan.lossless && plan.methode.isNotEmpty()) {
+                                Icon(painterResource(R.drawable.player_warnung), contentDescription = null, tint = Stil.warnung, modifier = Modifier.size(15.dp))
+                                Text(plan.methode, style = TvPlayermass.meta, color = Stil.warnung, maxLines = 1)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.width(24.dp))
+                    // Audio & Untertitel, Folgen (nur bei Folgen), Einstellungen. Beim Spulen weichen sie.
+                    Row(Modifier.alpha(if (spult) 0f else 1f)
+                            .onPreviewKeyEvent { e ->
+                                if (e.type == KeyEventType.KeyDown) zeigen()
+                                when (e.key) {
+                                    Key.DirectionDown -> { if (e.type == KeyEventType.KeyDown) runCatching { fernbedienung.requestFocus() }; true }
+                                    Key.DirectionUp -> true
+                                    else -> false
+                                }
+                            },
+                        horizontalArrangement = Arrangement.spacedBy(TvPlayermass.knopfAbstand)) {
+                        TvSymbolknopf(R.drawable.player_untertitel, uebersetzt("Audio & Untertitel"), !spult, knopfSpuren) { ebeneOeffnen("spuren") }
+                        if (hatFolgen) TvSymbolknopf(R.drawable.player_folgen, uebersetzt("Folgen"), !spult, knopfFolgen) { ebeneOeffnen("folgen") }
+                        TvSymbolknopf(R.drawable.player_regler, uebersetzt("Einstellungen"), !spult, knopfEinstellungen) { ebeneOeffnen("einstellungen") }
+                        LaunchedEffect(Unit) {
+                            if (obenWunsch[0]) {
+                                obenWunsch[0] = false
+                                repeat(5) { if (runCatching { knopfSpuren.requestFocus() }.isSuccess) return@LaunchedEffect; delay(30) }
+                            }
+                        }
+                    }
+                }
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = uebersetzt("Abspielstelle")
+                            stateDescription = zeitText(werk.position) + " / " + zeitText(werk.dauer)
+                        }) {
+                    TvZeitleiste(werk.position, werk.dauer, spulziel, werk.laeuft) { werk.trickplayBild(it) }
+                }
             }
         }
 
-        if (app.einstellungen.technikschild && werk.technikFest.isNotEmpty()) {
-            Technikschild(werk.technikFest, werk.technikLive, werk.position, werk.dauer,
-                Modifier.align(Alignment.TopStart).padding(start = TvStil.randSeite, top = TvStil.randOben))
+        // **Der Angebotsknopf**, rechts direkt ueber der Leiste — mit und ohne Steuerung an derselben Stelle.
+        AnimatedVisibility(visible = angebotDa, modifier = Modifier.align(Alignment.BottomEnd),
+            enter = fadeIn(tween(180, easing = Bewegung.weich)),
+            exit = fadeOut(tween(340, easing = Bewegung.weich))) {
+            Box(Modifier.padding(end = TvStil.randSeite, bottom = TvStil.randOben + TvPlayermass.leiste + TvPlayermass.ueberLeiste)
+                    .onFocusChanged { pilleHatFokus = it.hasFocus }
+                    .onPreviewKeyEvent { e ->
+                        val richtung = e.key == Key.DirectionUp || e.key == Key.DirectionDown || e.key == Key.DirectionLeft || e.key == Key.DirectionRight
+                        if (!richtung) return@onPreviewKeyEvent false
+                        if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent true
+                        if (!steuerungZiel) {
+                            // Ohne Steuerung holt jede Richtung sie. Eine Karte ist damit abgesagt, ein
+                            // Ueberspringen-Knopf bleibt stehen.
+                            Log.i("Swiftly", "Angebot: Richtungstaste holt die Steuerung")
+                            zeigen()
+                        } else when (e.key) {
+                            Key.DirectionUp -> runCatching { knopfSpuren.requestFocus() }
+                            Key.DirectionDown -> runCatching { fernbedienung.requestFocus() }
+                            else -> {}
+                        }
+                        true
+                    }) {
+                TvAngebotspille(werk.angebotText,
+                    anteil = werk.countdown.takeIf { werk.einblendung == "karte" },
+                    sekunden = werk.countdownRest.takeIf { werk.einblendung == "karte" },
+                    laeuft = werk.laeuft, laenge = werk.countdownLaenge,
+                    modifier = Modifier.focusRequester(angebotFokus)) {
+                    Log.i("Swiftly", "Angebot: gedrückt (${werk.angebotArt})")
+                    werk.angebotAusfuehren()
+                }
+            }
         }
 
         werk.hinweis?.let {
@@ -326,95 +491,72 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                  modifier = Modifier.align(Alignment.TopCenter).padding(top = 90.dp, start = 96.dp, end = 96.dp))
         }
 
-        if (steuerungDa) Box(Modifier.fillMaxSize().alpha(deckung)) {
-            // Schleier — Abdunkeln plus Verlauf, sonst verschwinden helle Zeichen ueber hellen Szenen.
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
-            Box(Modifier.fillMaxWidth().height(210.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.62f), Color.Transparent))))
-            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(260.dp)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.82f)))))
+        // **Das Technikschild** — ueber der Steuerung, unter den Ebenen. Nimmt keinen Fokus.
+        if (app.einstellungen.technikschild && werk.technikFest.isNotEmpty()) {
+            Technikschild(werk.technikFest, werk.technikLive, werk.position, werk.dauer,
+                Modifier.align(Alignment.TopStart).padding(start = TvStil.randSeite, top = TvStil.randOben))
+        }
 
-            // Werkzeuge oben rechts — Folgenliste nur, wenn es eine naechste Folge gibt (Vorlage:
-            // `if naechste != nil` in `PlayerScreen.werkzeuge`), dahinter die Einstellungen.
-            // Unten fuehrt von den Knoepfen zurueck auf die Zeitleiste; jeder Tastendruck hier haelt
-            // die Steuerung wach, sonst verschwaende der fokussierte Knopf unter dem Finger.
-            Row(Modifier.align(Alignment.TopEnd).padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben)
-                    .onPreviewKeyEvent { e ->
-                        if (e.type == KeyEventType.KeyDown) zeigen()
-                        if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown) { runCatching { fernbedienung.requestFocus() }; true } else false
-                    },
-                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (werk.plan?.naechste == true) {
-                    TvKnopf(text = null, symbol = Icons.Filled.PlaylistPlay) { folgenOffen = true; zeigen() }
-                }
-                TvKnopf(text = null, symbol = Icons.Filled.Tune, modifier = Modifier.focusRequester(knopfOben)) { tafelOffen = true; zeigen() }
-            }
-
-            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben),
-                   verticalArrangement = Arrangement.spacedBy(11.dp)) {
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(werk.plan?.titel.orEmpty(), style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold),
-                             color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        werk.plan?.untertitel?.takeIf { it.isNotEmpty() }?.let {
-                            Text(it, style = TvStil.koerper, color = Color.White.copy(alpha = 0.68f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // **Die drei Ebenen** — Vollbild ueber dem Bild, geschlossene Fokusgruppe: der Fokus bleibt
+        // drin, bis Zurueck sie schliesst.
+        var zuletztEbene by remember { mutableStateOf("spuren") }
+        LaunchedEffect(offeneEbene) { offeneEbene?.let { zuletztEbene = it } }
+        AnimatedVisibility(visible = ebeneOffen, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
+            @OptIn(ExperimentalComposeUiApi::class)
+            Box(Modifier.fillMaxSize()
+                    .focusProperties { exit = { if (ebenenAusgang[0]) FocusRequester.Default else FocusRequester.Cancel } }
+                    .focusGroup()) {
+                // **Kein Weichzeichner:** VLC zeichnet in eine `SurfaceView`, die das System getrennt
+                // zusammensetzt — ein `RenderEffect` erreicht sie nicht (dieselbe Lage wie am Handy,
+                // `Ebenengrund` in PlayerSeite.kt). Ersatz: reines Schwarz, 80 %.
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.8f)))
+                when (offeneEbene ?: zuletztEbene) {
+                    "spuren" -> TvSpurenEbene(werk)
+                    "einstellungen" -> TvEinstellungsEbene(werk, app, ebeneSchliessen = { ebeneSchliessen() })
+                    "folgen" -> plan?.takeIf { hatFolgen }?.let { p ->
+                        TvFolgenEbene(app, p, titel) { f ->
+                            ebeneSchliessen()
+                            // Die laufende Folge waehlen heisst: weiterschauen.
+                            if (f.id != p.itemId) lauf.launch { werk.wechsleZu(f.id) }
                         }
                     }
-                    // Die Pille steht nicht hier, sondern in der Einblendung darunter, an derselben Stelle wie
-                    // ohne Steuerung (Vorlage tvOS `angebotsebene`, Paul 17.09.2026). Der Platz bleibt frei.
-                    if (werk.angebotArt != "keiner" && werk.angebotText.isNotEmpty()) Spacer(Modifier.width(260.dp))
                 }
-                TvZeitleiste(position = werk.position, dauer = werk.dauer, marke = spulziel)
             }
         }
 
-        // Dieselben Kurven wie die Steuerung (`deckung`: 180 ms auf, 340 ms zu), Paul 17.09.2026.
-        // **An einer Stelle, egal ob die Steuerung offen ist** (Vorlage tvOS `angebotDa`): dasselbe Geruest wie der
-        // Fuss — Knopfzeile, 11 dp, unsichtbare Zeitleiste —, damit die Pille genau dort liegt.
-        val angebotDa = werk.angebotArt != "keiner" && werk.angebotText.isNotEmpty() && werk.bildFrei && !tafelOffen
-            && !folgenOffen && !werk.wechselt
-            && (werk.einblendung != "nichts" || (zielSichtbarFrueh && werk.angebotArt == "naechste"))
-        androidx.compose.animation.AnimatedVisibility(visible = angebotDa, modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth(),
-            enter = androidx.compose.animation.fadeIn(tween(180, easing = Bewegung.weich)),
-            exit = androidx.compose.animation.fadeOut(tween(340, easing = Bewegung.weich))) {
-          Column(Modifier.fillMaxWidth().padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben),
-                 verticalArrangement = Arrangement.spacedBy(11.dp)) {
-            Box(Modifier.fillMaxWidth().wrapContentWidth(Alignment.End)
-                    .onPreviewKeyEvent { e ->
-                        val richtung = e.key == Key.DirectionUp || e.key == Key.DirectionDown || e.key == Key.DirectionLeft || e.key == Key.DirectionRight
-                        // Bei offener Steuerung wandert der Fokus wie gewohnt.
-                        if (!richtung || zielSichtbarFrueh) return@onPreviewKeyEvent false
-                        // Die Richtung holt die Steuerung. Eine Karte ist damit abgesagt (Kern `steuerungGeaendert`),
-                        // ein Ueberspringen-Knopf bleibt und steht nach dem Schliessen wieder hier (Paul, 17.09.2026).
-                        if (e.type == KeyEventType.KeyDown) {
-                            android.util.Log.i("Swiftly", "Angebot: Richtungstaste holt die Steuerung")
-                            zeigen()
-                        }
-                        true
-                    }) {
-                TvPille(werk.angebotText, symbol = if (werk.angebotArt == "naechste") Icons.Filled.SkipNext else Icons.Filled.FastForward,
-                        anteil = werk.countdown.takeIf { werk.einblendung == "karte" },
-                        sekunden = werk.countdownRest.takeIf { werk.einblendung == "karte" },
-                        laeuft = werk.laeuft, laenge = werk.countdownLaenge,
-                        modifier = Modifier.focusRequester(angebotFokus)) {
-                    // Kein Rueckweg hierher merken: die Einblendung ist gleich weg.
-                    Fokusmerker.letzter = null
-                    android.util.Log.i("Swiftly", "Angebot: gedrueckt (${werk.angebotArt})")
-                    werk.angebotAusfuehren()
-                }
-            }
-            Box(Modifier.alpha(0f).clearAndSetSemantics {}) { TvZeitleiste(position = 0.0, dauer = 1.0, marke = null) }
-          }
-        }
-
-        TvWiedergabeblatt(offen = tafelOffen, schliessen = { tafelZu() }, werk = werk, app = app, ausgang = { blattAusgang[0] })
-
-        if (folgenOffen) {
-            TvFolgenblatt(app, schliessen = { folgenZu() }, ausgang = { blattAusgang[0] }) { id ->
-                folgenZu()
-                lauf.launch { werk.wechsleZu(id) }
+        // **Der Titel oben links, eine Ebene ueber allem** — bei offener Folgenebene bleibt er stehen.
+        if (titelDeckung > 0.01f) {
+            Row(Modifier.fillMaxWidth().graphicsLayer { alpha = titelDeckung }
+                    .padding(horizontal = TvStil.randSeite).padding(top = TvStil.randOben)) {
+                Text(titel, style = TvPlayermass.titel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                     modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(24.dp + TvPlayermass.symbolreihe(if (hatFolgen) 3 else 2)))
             }
         }
     }
+    }
+    }
+}
+
+/**
+ * Masse des Players auf dem Fernseher — `Playermass` in `Sources/tvOS/PlayerEbenen.swift`, halbiert
+ * (tvOS rechnet in 1920 Punkten Breite, Android TV in 960 dp).
+ */
+private object TvPlayermass {
+    val titel = TextStyle(fontSize = 28.5.sp, fontWeight = FontWeight.Bold)
+    val meta = TextStyle(fontSize = 15.5.sp)
+    val zeit = 14.sp
+    val vorschauZeit = 16.sp
+    val leisteGrund = Color.White.copy(alpha = 0.28f)
+    val titelAbstand = 3.dp
+    val knopf = 44.dp
+    val knopfAbstand = 10.dp
+    val ueberLeiste = 20.dp
+    val leiste = 20.dp
+    val spalte = 250.dp
+    val spaltenAbstand = 57.dp
+    val spaltenOben = 76.dp
+    fun symbolreihe(anzahl: Int) = knopf * anzahl + knopfAbstand * (anzahl - 1)
 }
 
 /** Ladering fuers Fernsehbild — groesser als am Telefon, auf drei Metern Entfernung gelesen. */
@@ -423,322 +565,398 @@ private fun TvLader(groesse: androidx.compose.ui.unit.Dp) {
     androidx.compose.material3.CircularProgressIndicator(color = Stil.schrift, strokeWidth = 3.dp, modifier = Modifier.size(groesse))
 }
 
-/**
- * Die Pille fuer „Nächste Folge"/„Intro überspringen" — heller Grund, wie am Telefon und auf tvOS.
- * `anteil` (0…1): der Countdown als Fuellung von links (`PillenStil` auf tvOS); TalkBack liest dann
- * die Sekunden bis zum Start.
- */
+/** Einer der Symbolknoepfe oben rechts: ruhend nur das Zeichen, fokussiert die weisse Flaeche (`SymbolknopfStil`). */
 @Composable
-private fun TvPille(text: String, symbol: ImageVector, anteil: Double? = null, sekunden: Int? = null,
-                    laeuft: Boolean = true, laenge: Double = 7.0,
-                    modifier: Modifier = Modifier, tun: () -> Unit) {
-    val fuellung = de.paulherter.swiftly.durchgehendeFuellung(anteil, laeuft, laenge)
-    Fokusflaeche(modifier = modifier.semantics(mergeDescendants = true) {
-        if (sekunden != null) stateDescription = uebersetzt("Startet in %lld Sekunden", sekunden)
-    }, lupe = 1.05f, tun = tun) { fokus ->
-        Row(Modifier.height(46.dp).clip(CircleShape)
-                .background(if (fokus) Color.White else Color.White.copy(alpha = 0.16f))
-                .drawBehind {
-                    // Akzent als Fortschritt, halb deckend (Paul, 17.09.2026: vorher zu dunkel).
-                    if (anteil != null) drawRect(Stil.akzent.copy(alpha = if (fokus) 0.6f else 0.5f),
-                                                 size = size.copy(width = size.width * fuellung))
-                }
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(symbol, contentDescription = null, tint = if (fokus) Stil.grund else Stil.schrift, modifier = Modifier.size(16.dp))
-            Text(text, style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold), color = if (fokus) Stil.grund else Stil.schrift, maxLines = 1)
+private fun TvSymbolknopf(@DrawableRes symbol: Int, beschreibung: String, aktiv: Boolean, fokus: FocusRequester, tun: () -> Unit) {
+    Fokusflaeche(Modifier.focusRequester(fokus).focusProperties { canFocus = aktiv }
+            .semantics { contentDescription = beschreibung }, lupe = 1.04f, tun = tun) { hat ->
+        Box(Modifier.size(TvPlayermass.knopf).clip(RoundedCornerShape(TvStil.ecke))
+                .background(if (hat) Color.White else Color.Transparent), contentAlignment = Alignment.Center) {
+            // Die Groesse steht im Zeichen selbst (Glyphe bei 19 — tvOS 38 pt, halbiert).
+            Icon(painterResource(symbol), contentDescription = null, tint = if (hat) Stil.grund else Stil.schrift)
         }
     }
 }
 
 /**
- * Zeiten links und rechts, Leiste mit rundem Kopf dazwischen — Vorlage `Zeitleiste` in
- * `Sources/tvOS/PlayerScreen.swift`. Anders als dort **kein eigenes Fokusziel**: die Fernbedienung
- * wird global ausgewertet (siehe Dateikopf), die Leiste zeichnet nur den Stand.
+ * **Die Ueberspringen-Pille: weiss, dunkle Schrift** (`PillenStil` auf tvOS). Der Countdown fuellt sie
+ * dunkel von links — die Akzentfarbe gehoert im Player allein dem Griff der Leiste.
  */
 @Composable
-private fun TvZeitleiste(position: Double, dauer: Double, marke: Double?) {
+private fun TvAngebotspille(text: String, anteil: Double?, sekunden: Int?, laeuft: Boolean, laenge: Double,
+                            modifier: Modifier = Modifier, tun: () -> Unit) {
+    val fuellung = de.paulherter.swiftly.durchgehendeFuellung(anteil, laeuft, laenge)
+    val form = RoundedCornerShape(TvStil.ecke)
+    Fokusflaeche(modifier = modifier.semantics(mergeDescendants = true) {
+        if (sekunden != null) stateDescription = uebersetzt("Startet in %lld Sekunden", sekunden)
+    }, lupe = 1.08f, tun = tun) { fokus ->
+        Row(Modifier.height(36.dp).shadow(if (fokus) 13.dp else 6.dp, form).clip(form).background(Stil.schrift)
+                .drawBehind {
+                    if (anteil != null) drawRect(Stil.grund.copy(alpha = 0.16f), size = size.copy(width = size.width * fuellung))
+                }
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Icon(painterResource(R.drawable.player_ueberspringen), contentDescription = null, tint = Stil.grund, modifier = Modifier.size(15.dp))
+            Text(text, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold), color = Stil.grund, maxLines = 1)
+        }
+    }
+}
+
+/**
+ * Zeit, Leiste, Restzeit — Vorlage `Zeitleiste` in `Sources/tvOS/PlayerScreen.swift`. **Kein eigenes
+ * Fokusziel**: die Fernbedienung wird an der Flaeche ausgewertet, die Leiste zeichnet nur den Stand.
+ * Angehalten steht das Pausezeichen vor der Zeit. Beim Spulen wird die Leiste dicker, der Griff
+ * erscheint in Akzentfarbe, darueber das Trickplay-Bild mit der Zielzeit (ohne Trickplay nur die Zeit).
+ */
+@Composable
+private fun TvZeitleiste(position: Double, dauer: Double, marke: Double?, laeuft: Boolean,
+                         vorschau: (Double) -> android.graphics.Bitmap?) {
     val spult = marke != null
     val gezeigt = marke ?: position
     fun anteil(s: Double): Float = if (dauer > 0) (s / dauer).coerceIn(0.0, 1.0).toFloat() else 0f
-    val balkenHoehe by animateDpAsState(if (spult) 8.dp else 4.dp, label = "balken")
-    val kopf by animateDpAsState(if (spult) 19.dp else 13.dp, label = "kopf")
-    val farbe = if (spult) Stil.akzent else Color.White.copy(alpha = 0.9f)
-    val ziffern = TextStyle(fontSize = 13.sp, fontFeatureSettings = "tnum")
+    val balken by animateDpAsState(if (spult) 6.dp else 4.dp, tween(180), label = "balken")
+    val griffSkala by animateFloatAsState(if (spult) 1f else 0.4f, tween(180), label = "griffSkala")
+    val griffDeckung by animateFloatAsState(if (spult) 1f else 0f, tween(180), label = "griffDeckung")
+    val ziffern = TextStyle(fontSize = TvPlayermass.zeit, fontFeatureSettings = "tnum")
 
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-        Text(zeitText(gezeigt), style = ziffern, color = farbe)
-        BoxWithConstraints(Modifier.weight(1f).height(20.dp)) {
+    Row(Modifier.fillMaxWidth().height(TvPlayermass.leiste), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AnimatedVisibility(visible = !laeuft, enter = fadeIn(tween(180)) + expandHorizontally(tween(180)),
+                               exit = fadeOut(tween(180)) + shrinkHorizontally(tween(180))) {
+                Icon(painterResource(R.drawable.player_pause), contentDescription = null, tint = Stil.schrift,
+                     modifier = Modifier.padding(end = 8.dp).size(10.dp, 12.dp))
+            }
+            Text(zeitText(position), style = ziffern, color = Stil.schriftLeise)
+        }
+        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
             val breite = maxWidth
             val stand = anteil(position)
             val ziel = anteil(gezeigt)
-            Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().height(balkenHoehe).clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.24f)))
-            Box(Modifier.align(Alignment.CenterStart).width(breite * minOf(stand, ziel)).height(balkenHoehe).clip(CircleShape)
-                    .background(Stil.akzent))
+            Box(Modifier.fillMaxWidth().height(balken).clip(CircleShape).background(TvPlayermass.leisteGrund))
+            // Bis zur wirklichen Stelle: das ist gesehen.
+            Box(Modifier.width(breite * minOf(stand, ziel)).height(balken).clip(CircleShape).background(Stil.schrift))
             // Die Strecke zwischen Stand und Ziel — wie weit das Spulen von hier entfernt landet.
-            if (spult) Box(Modifier.align(Alignment.CenterStart)
-                    .offset(x = breite * minOf(stand, ziel)).width(breite * abs(ziel - stand)).height(balkenHoehe)
+            if (spult) Box(Modifier.offset(x = breite * minOf(stand, ziel)).width(breite * abs(ziel - stand)).height(balken)
                     .clip(CircleShape).background(Color.White.copy(alpha = 0.55f)))
-            Box(Modifier.align(Alignment.CenterStart).offset(x = breite * ziel - kopf / 2).size(kopf).clip(CircleShape)
-                    .background(if (spult) Stil.akzent else Color.White))
-        }
-        Text("−" + zeitText((dauer - gezeigt).coerceAtLeast(0.0)), style = ziffern, color = farbe)
-    }
-}
-
-/**
- * Vorlage: `Folgenblatt` in `Sources/tvOS/Folgenblatt.swift` — die Folgen der laufenden Staffel,
- * aus dem Player heraus. Serie und Staffel muss Kotlin nicht mitbringen: `Kern.wiedergabeFolgen()`
- * liest sie am geladenen Titel selbst (derselbe Grundsatz wie beim Rest der Fassade — fertige
- * Antworten statt Einzelteile). Datenform und Zeile sind die der Serienseite (`Folge`,
- * `folgenLesen` aus `SerienSeite.kt`), keine zweite Auffassung von „eine Folge".
- */
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-@Composable
-private fun TvFolgenblatt(app: SwiftlyAnwendung, schliessen: () -> Unit, ausgang: () -> Boolean, waehlen: (String) -> Unit) {
-    var folgen by remember { mutableStateOf<List<Folge>>(emptyList()) }
-    var laedt by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
-        folgen = try {
-            folgenLesen(withContext(Dispatchers.IO) { app.kern.wiedergabeFolgen().await() })
-        } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
-        laedt = false
-    }
-    val erste = remember { FocusRequester() }
-    LaunchedEffect(laedt) { if (!laedt) { delay(30); runCatching { erste.requestFocus() } } }
-
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.9f))) {
-        // Innerhalb des Blatts: eine gewaehlte Folge zaehlt nicht als eigener Ausloeser fuer
-        // `Fokusmerker`, sonst ginge der Fokus beim naechsten Oeffnen nicht mehr zum Knopf zurueck,
-        // der dieses Blatt aufgemacht hat (siehe `LocalInnerhalbTafel` in TvStil.kt).
-        CompositionLocalProvider(LocalInnerhalbTafel provides true) {
-            // Geschlossene Fokusgruppe — siehe `blattAusgang` in `TvPlayer`. Oben aus der ersten Folge
-            // erreicht so „Fertig" statt der Knoepfe dahinter.
-            Column(Modifier.fillMaxSize().padding(horizontal = TvStil.randSeite, vertical = TvStil.randOben)
-                       .focusProperties { exit = { if (ausgang()) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(uebersetzt("Folgen"), style = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift, modifier = Modifier.weight(1f))
-                    TvKnopf(uebersetzt("Fertig")) { schliessen() }
-                }
-                Spacer(Modifier.height(28.dp))
-                when {
-                    // Vorlage: `Folgenblatt.swift:38-41` — drei `Ladefeld`-Zeilen in Form der
-                    // Folgenzeile (Vorschaubild, Titel, Laenge) statt eines Rings.
-                    laedt -> Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        repeat(4) {
-                            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                                Ladefeld(Modifier.size(TvStil.querBreite, TvStil.querHoehe), TvStil.eckeKachel)
-                                Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Ladefeld(Modifier.fillMaxWidth(0.5f).height(17.dp), 4.dp)
-                                    Ladefeld(Modifier.width(80.dp).height(13.dp), 4.dp)
-                                }
-                            }
+            Box(Modifier.offset(x = breite * ziel - 9.dp).size(18.dp)
+                    .graphicsLayer { scaleX = griffSkala; scaleY = griffSkala; alpha = griffDeckung }
+                    .shadow(5.dp, CircleShape).background(Stil.akzent, CircleShape))
+            if (spult) {
+                val bild = vorschau(gezeigt)
+                // Unterkante knapp ueber der Leiste, waagerecht ueber dem Griff; am Rand bleibt der Kasten
+                // ganz auf der Leiste stehen.
+                Column(Modifier.align(Alignment.TopStart).layout { messbar, _ ->
+                        val p = messbar.measure(Constraints())
+                        layout(0, 0) {
+                            val gesamt = breite.roundToPx()
+                            val halb = p.width / 2
+                            val x = (gesamt * ziel).roundToInt().coerceIn(halb, maxOf(gesamt - halb, halb)) - halb
+                            p.place(x, -p.height - 4.dp.roundToPx())
                         }
+                    },
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    bild?.let {
+                        Image(it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(200.dp, 112.5.dp).clip(RoundedCornerShape(TvStil.ecke))
+                                .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(TvStil.ecke)))
                     }
-                    else -> LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        itemsIndexed(folgen, key = { _, f -> f.id }) { i, f ->
-                            TvFolgenzeile(f, modifier = if (i == 0) Modifier.focusRequester(erste) else Modifier) { waehlen(f.id) }
-                        }
-                    }
+                    Text(zeitText(gezeigt), style = TextStyle(fontSize = TvPlayermass.vorschauZeit, fontWeight = FontWeight.Bold,
+                         fontFeatureSettings = "tnum"), color = Stil.schrift)
                 }
             }
         }
+        Text("−" + zeitText((dauer - position).coerceAtLeast(0.0)), style = ziffern, color = Stil.schriftLeise)
     }
-    BackHandler(onBack = schliessen)
 }
 
-/** Eine Zeile im Folgenblatt — Vorlage `Folgenzeile` in `Sources/tvOS/SerienView.swift`: Vorschaubild
- *  links, Titel und Laenge rechts, ein leiser Haken bei gesehenen Folgen. */
+// MARK: Ebenen — Vorlage `PlayerEbenen.swift` (tvOS).
+
+/** Fokus in eine Ebene legen: die erste Anforderung faellt oft in den Durchlauf, der das Ziel erst einhaengt. */
+private suspend fun fokusLegen(ziel: FocusRequester) {
+    repeat(6) { if (runCatching { ziel.requestFocus() }.isSuccess) return; delay(30) }
+}
+
+/** Spalten nebeneinander, mittig; unten enden sie am Bildrand, was darueber hinausgeht, scrollt. */
 @Composable
-private fun TvFolgenzeile(folge: Folge, modifier: Modifier = Modifier, tun: () -> Unit) {
-    Fokusflaeche(modifier.fillMaxWidth(), lupe = 1f, tun = tun) { fokus ->
+private fun Spaltenreihe(inhalt: @Composable RowScope.() -> Unit) {
+    Row(Modifier.fillMaxSize().padding(top = TvPlayermass.spaltenOben),
+        horizontalArrangement = Arrangement.spacedBy(TvPlayermass.spaltenAbstand, Alignment.CenterHorizontally), content = inhalt)
+}
+
+/** Feste Ueberschrift, nur die Zeilen darunter scrollen — per Fokus, jede Spalte fuer sich. */
+@Composable
+private fun Wahlspalte(titel: String, liste: LazyListState, inhalt: LazyListScope.() -> Unit) {
+    Column(Modifier.width(TvPlayermass.spalte).fillMaxHeight()) {
+        Text(titel, style = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold), color = Stil.schrift, maxLines = 1,
+             modifier = Modifier.padding(start = 13.dp, bottom = 11.dp).semantics { heading() })
+        LazyColumn(Modifier.weight(1f).focusGroup(), state = liste, verticalArrangement = Arrangement.spacedBy(2.dp),
+                   contentPadding = PaddingValues(bottom = TvStil.randOben), content = inhalt)
+    }
+}
+
+/** Haken und Name. Gewaehlt weiss und halbfett, sonst leise; Fokus ist die ruhige Flaeche von `FolgenStil`. */
+@Composable
+private fun Ebenenzeile(text: String, gewaehlt: Boolean, modifier: Modifier = Modifier, tun: () -> Unit) {
+    Fokusflaeche(modifier.fillMaxWidth().semantics { selected = gewaehlt }, lupe = 1f, tun = tun) { fokus ->
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvStil.eckeKachel))
                 .background(if (fokus) TvStil.fokusflaeche else Color.Transparent)
-                .padding(12.dp),
-            verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Box(Modifier.size(TvStil.querBreite, TvStil.querHoehe).clip(RoundedCornerShape(TvStil.eckeKachel)).background(Stil.flaeche)) {
-                AsyncImage(model = folge.bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                folge.fortschritt?.takeIf { it > 0 }?.let { a ->
-                    Box(Modifier.align(Alignment.BottomStart).padding(8.dp).fillMaxWidth().height(3.dp).clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.25f))) {
-                        Box(Modifier.fillMaxWidth(a.toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(Stil.akzent))
-                    }
-                }
+                .padding(horizontal = 13.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            val farbe = if (gewaehlt || fokus) Stil.schrift else Stil.schriftLeise
+            Box(Modifier.width(21.dp), contentAlignment = Alignment.Center) {
+                if (gewaehlt) Icon(painterResource(R.drawable.player_haken), contentDescription = null, tint = farbe, modifier = Modifier.size(15.dp))
             }
-            Column(Modifier.weight(1f).padding(top = 4.dp)) {
-                Text(folge.titel, style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift,
-                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                folge.unterzeile?.let { Text(it, style = TvStil.klein, color = Stil.schriftSehrLeise, modifier = Modifier.padding(top = 5.dp)) }
-            }
-            if (folge.gesehen) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.schriftSehrLeise,
-                                    modifier = Modifier.padding(top = 6.dp).size(18.dp))
+            // Spurnamen kommen aus der Datei — woertlich.
+            Text(text, style = TextStyle(fontSize = 18.sp, fontWeight = if (gewaehlt) FontWeight.SemiBold else FontWeight.Normal),
+                 color = farbe, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 /**
- * Vorlage: `Wiedergabeblatt` in `Sources/tvOS/Wiedergabeblatt.swift` — eine Achse statt zwei: links
- * die Kategorien (senkrecht), rechts die Karten dazu. Anders als das Telefon-Blatt (`Wiedergabetafel`
- * in `PlayerSeite.kt`, eine verschachtelte Ebene) stehen hier beide Spalten gleichzeitig da — genauso,
- * wie es die Vorlage begruendet: „Apples eigener Abspieler macht es so."
- *
- * Nicht uebernommen: der Technik-Auszug mit Bitrate/Bildflaeche/Ausgangzeile (`Wertfeld`,
- * `flaechenzeile` etc.) — das ist die Fehlersuche-Auskunft fuer Apples AVDisplayManager-Eigenheiten
- * und hat auf Android keine Entsprechung; das Technikschild deckt dieselbe Absicht ab.
+ * Audio & Untertitel — zwei Spalten, jede scrollt fuer sich. Die eigene Wahl steht sofort, unabhaengig
+ * von VLC, das die Auswahl erst einen Takt spaeter nachzieht. Beim Oeffnen auf der gewaehlten Tonspur.
  */
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-private fun TvWiedergabeblatt(offen: Boolean, schliessen: () -> Unit, werk: Spielwerk, app: SwiftlyAnwendung, ausgang: () -> Boolean) {
-    if (!offen) return
-    var kategorie by remember(offen) { mutableStateOf(Kategorie.UNTERTITEL) }
-    val erste = remember { FocusRequester() }
-    LaunchedEffect(offen) { delay(30); runCatching { erste.requestFocus() } }
-
-    // Lesbare Namen aus dem Kern (Stufe 4) — „Deutsch · AAC · 5.1" statt „Track 1 - [German]".
-    val tonspuren = remember(offen) { werk.spurliste(ton = true) }
-    val untertitelspuren = remember(offen) { werk.spurliste(ton = false) }
-
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
-        // 560 pt auf tvOS, halbiert — vorher 420 dp, das schob den ganzen Inhalt zu weit nach oben.
-        Box(Modifier.fillMaxWidth().height(280.dp).align(Alignment.BottomCenter)
-                .background(Brush.verticalGradient(listOf(Stil.grund.copy(alpha = 0f), Stil.grund.copy(alpha = 0.9f), Stil.grund))))
-
-        // Innerhalb der Tafel: eine gewaehlte Kategorie oder ein gewaehlter Wert zaehlt nicht als
-        // eigener Ausloeser fuer `Fokusmerker`, sonst ginge der Fokus beim Schliessen nicht mehr
-        // zum „Einstellungen"-Knopf zurueck, der diese Tafel geoeffnet hat (siehe `LocalInnerhalbTafel`
-        // in TvStil.kt).
-        CompositionLocalProvider(LocalInnerhalbTafel provides true) {
-        // Dasselbe Muster wie das Folgenblatt: geschlossene Fokusgruppe, Ausgang nur programmatisch.
-        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth()
-                   .padding(horizontal = TvStil.randSeite).padding(bottom = TvStil.randOben)
-                   .focusProperties { exit = { if (ausgang()) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup()) {
-            // Vorlage: der Beleg steht neben dem Titel, nicht als Fusszeile unter allem —
-            // derselbe Baustein wie auf der Titelseite (`Belegzeile`), keine zweite Fassung.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(werk.plan?.titel.orEmpty(), style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
-                     color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.weight(1f))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Belegzeile(werk.plan != null, werk.plan != null, werk.plan?.lossless == true, werk.plan?.methode, null, null)
-                    werk.plan?.dateizeile?.let {
-                        Text("· $it", style = TextStyle(fontSize = 14.5.sp), color = Stil.schriftSehrLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-            Spacer(Modifier.height(18.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(30.dp)) {
-                Column(Modifier.width(230.dp)) {
-                    // Derselbe Wortlaut wie tvOS' `spaltenmarke("Einstellungen")` — nicht „Wiedergabe".
-                    Spaltenmarke(uebersetzt("Einstellungen"))
-                    Kategorie.entries.forEachIndexed { i, k ->
-                        Leistenzeile(k, k == kategorie, werk, app,
-                            modifier = if (i == 0) Modifier.focusRequester(erste) else Modifier) { kategorie = k }
-                    }
-                }
-                Column(Modifier.weight(1f)) {
-                    Spaltenmarke(uebersetzt(kategorie.beschriftung))
-                    Column(Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Karten(kategorie, werk, app, tonspuren, untertitelspuren)
-                    }
-                }
-            }
-        }
-        }
-    }
-    BackHandler(onBack = schliessen)
-}
-
-private enum class Kategorie(val beschriftung: String, val symbol: ImageVector) {
-    UNTERTITEL("Untertitel", Icons.Filled.ClosedCaption),
-    TON("Ton", Icons.AutoMirrored.Filled.VolumeUp),
-    BILD("Bild", Icons.Filled.AspectRatio),
-    TEMPO("Tempo", Icons.Filled.Speed),
-    SCHLAFZEIT("Schlafzeit", Icons.Filled.Bedtime),
-    TECHNIK("Technikschild", Icons.Filled.BarChart),
-}
-
-@Composable
-private fun Spaltenmarke(text: String) {
-    Text(text.uppercase(), style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.2.sp),
-         color = Stil.schriftSehrLeise, modifier = Modifier.padding(bottom = 6.dp))
-}
-
-/** Die Zeile traegt Namen und Stand zugleich — ein Blick sagt, was eingestellt ist. */
-@Composable
-private fun Leistenzeile(k: Kategorie, an: Boolean, werk: Spielwerk, app: SwiftlyAnwendung, modifier: Modifier = Modifier, tun: () -> Unit) {
+private fun TvSpurenEbene(werk: Spielwerk) {
     val ton = remember { werk.spurliste(ton = true) }
-    val spuren = remember { werk.spurliste(ton = false) }
-    val wert = when (k) {
-        Kategorie.UNTERTITEL -> spuren.firstOrNull { it.first == werk.spieler.spuTrack }?.second ?: uebersetzt("Aus")
-        Kategorie.TON -> ton.firstOrNull { it.first == werk.spieler.audioTrack }?.second ?: uebersetzt("Keine")
-        Kategorie.BILD -> uebersetzt(if (werk.bildfuellend) "Formatfüllend" else "Ganzes Bild")
-        Kategorie.TEMPO -> tempoText(werk.tempo)
-        Kategorie.SCHLAFZEIT -> if (werk.schlafzeit == 0) uebersetzt("Aus") else "${werk.schlafzeit}"
-        Kategorie.TECHNIK -> uebersetzt(if (app.einstellungen.technikschild) "An" else "Aus")
-    }
-    // Vorlage: `LeistenStil` — die **gewaehlte** Kategorie traegt Weiss/dunkle Schrift, unabhaengig
-    // vom Fokus; nur der Fokus einer *nicht* gewaehlten Zeile bekommt die ruhige Flaeche. Vorher
-    // stand hier nur `fokus`, und die gewaehlte Kategorie sah aus wie jede andere Zeile mit
-    // fluechtigem Fokus — grau statt weiss.
-    Fokusflaeche(modifier.fillMaxWidth(), lupe = 1f, tun = tun) { fokus ->
-        val farbe = if (an) Stil.grund else Stil.schrift
-        // Halbiert aus tvOS' 62 pt Zeilenhoehe — 50 dp liess das ganze Blatt zu hoch wirken.
-        Row(Modifier.fillMaxWidth().height(31.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(TvStil.ecke))
-                .background(when { an -> Color.White; fokus -> TvStil.fokusflaeche; else -> Color.Transparent })
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Icon(k.symbol, contentDescription = null, tint = farbe, modifier = Modifier.size(19.dp))
-            Text(uebersetzt(k.beschriftung), style = TextStyle(fontSize = 15.5.sp, fontWeight = if (an) FontWeight.SemiBold else FontWeight.Normal),
-                 color = farbe, modifier = Modifier.weight(1f))
-            Text(wert, style = TextStyle(fontSize = 13.5.sp), color = if (an) farbe.copy(alpha = 0.6f) else Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val untertitel = remember { werk.spurliste(ton = false) }
+    var tonWahl by remember { mutableIntStateOf(werk.spieler.audioTrack) }
+    var utWahl by remember { mutableIntStateOf(werk.spieler.spuTrack) }
+    val tonStart = remember { ton.indexOfFirst { it.first == tonWahl } }
+    // Zeile 0 ist „Aus".
+    val utStart = remember { untertitel.indexOfFirst { it.first == utWahl } + 1 }
+    val start = remember { FocusRequester() }
+    val tonListe = rememberLazyListState((tonStart - 2).coerceAtLeast(0))
+    val utListe = rememberLazyListState((utStart - 2).coerceAtLeast(0))
+    LaunchedEffect(Unit) { fokusLegen(start) }
+
+    Spaltenreihe {
+        Wahlspalte(uebersetzt("Audio"), tonListe) {
+            itemsIndexed(ton, key = { _, s -> "t${s.first}" }) { i, (id, name) ->
+                Ebenenzeile(name, tonWahl == id, if (i == tonStart) Modifier.focusRequester(start) else Modifier) {
+                    tonWahl = id; werk.tonVonHand(id)
+                }
+            }
+        }
+        Wahlspalte(uebersetzt("Untertitel"), utListe) {
+            item(key = "aus") {
+                Ebenenzeile(uebersetzt("Aus"), utWahl == -1, if (tonStart < 0 && utStart == 0) Modifier.focusRequester(start) else Modifier) {
+                    utWahl = -1; werk.untertitelVonHand(-1)
+                }
+            }
+            itemsIndexed(untertitel, key = { _, s -> "u${s.first}" }) { i, (id, name) ->
+                Ebenenzeile(name, utWahl == id, if (tonStart < 0 && utStart == i + 1) Modifier.focusRequester(start) else Modifier) {
+                    utWahl = id; werk.untertitelVonHand(id)
+                }
+            }
         }
     }
 }
 
+/** Einstellungen — Bild, Schlafzeit, Technikschild, Qualität (Vorlage `EinstellungsEbene`). Fokus auf dem gewaehlten Bild. */
 @Composable
-private fun Karten(kategorie: Kategorie, werk: Spielwerk, app: SwiftlyAnwendung,
-                    tonspuren: List<Pair<Int, String>>,
-                    untertitelspuren: List<Pair<Int, String>>) {
-    when (kategorie) {
-        Kategorie.UNTERTITEL -> {
-            // Von Hand, auch „Aus": gilt fuer die ganze Serie (Stufe 4, T1-M1).
-            Wahlkarte(uebersetzt("Aus"), werk.spieler.spuTrack == -1) { werk.untertitelVonHand(-1) }
-            untertitelspuren.forEach { (id, name) -> Wahlkarte(name, werk.spieler.spuTrack == id) { werk.untertitelVonHand(id) } }
+private fun TvEinstellungsEbene(werk: Spielwerk, app: SwiftlyAnwendung, ebeneSchliessen: () -> Unit) {
+    val e = app.einstellungen
+    val start = remember { FocusRequester() }
+    val fuellendAmStart = remember { werk.bildfuellend }
+    LaunchedEffect(Unit) { fokusLegen(start) }
+    // Nur bei Wiedergabe vom Server, und nur, wenn das Konto umwandeln darf.
+    val qualitaetZeigen = e.umwandelnErlaubt && werk.plan?.url?.startsWith("file") != true
+    val lauf = rememberCoroutineScope()
+    Spaltenreihe {
+        // Zwei Bildformate wie auf dem iPhone: das ganze Bild und formatfuellend.
+        Wahlspalte(uebersetzt("Bild"), rememberLazyListState()) {
+            item(key = "b0") {
+                Ebenenzeile(uebersetzt("Original"), !werk.bildfuellend, if (!fuellendAmStart) Modifier.focusRequester(start) else Modifier) {
+                    werk.bildfuellendSetzen(false)
+                }
+            }
+            item(key = "b1") {
+                Ebenenzeile(uebersetzt("Füllen"), werk.bildfuellend, if (fuellendAmStart) Modifier.focusRequester(start) else Modifier) {
+                    werk.bildfuellendSetzen(true)
+                }
+            }
         }
-        Kategorie.TON -> tonspuren.forEach { (id, name) -> Wahlkarte(name, werk.spieler.audioTrack == id) { werk.tonVonHand(id) } }
-        Kategorie.TEMPO -> listOf(0.75f, 1f, 1.25f, 1.5f, 2f).forEach { stufe ->
-            Wahlkarte(tempoText(stufe), abs(werk.tempo - stufe) < 0.01f) { werk.tempoSetzen(stufe) }
+        Wahlspalte(uebersetzt("Schlafzeit"), rememberLazyListState()) {
+            item(key = "aus") { Ebenenzeile(uebersetzt("Aus"), werk.schlafzeit == 0) { werk.schlafzeitSetzen(0) } }
+            // `Schlafzeiten.werte` im Paket.
+            listOf(15, 30, 45, 60, 90).forEach { m ->
+                item(key = "m$m") { Ebenenzeile(uebersetzt("%lld Min.", m), werk.schlafzeit == m) { werk.schlafzeitSetzen(m) } }
+            }
         }
-        Kategorie.SCHLAFZEIT -> {
-            Wahlkarte(uebersetzt("Aus"), werk.schlafzeit == 0) { werk.schlafzeitSetzen(0) }
-            listOf(15, 30, 45, 60, 90).forEach { m -> Wahlkarte(uebersetzt("%lld Minuten", m), werk.schlafzeit == m) { werk.schlafzeitSetzen(m) } }
+        Wahlspalte(uebersetzt("Technikschild"), rememberLazyListState()) {
+            item(key = "aus") { Ebenenzeile(uebersetzt("Aus"), !app.einstellungen.technikschild) { app.einstellungen.technikschild = false } }
+            item(key = "an") { Ebenenzeile(uebersetzt("An"), app.einstellungen.technikschild) { app.einstellungen.technikschild = true } }
         }
-        Kategorie.BILD -> {
-            Wahlkarte(uebersetzt("Ganzes Bild"), !werk.bildfuellend) { werk.bildfuellendSetzen(false) }
-            Wahlkarte(uebersetzt("Formatfüllend"), werk.bildfuellend) { werk.bildfuellendSetzen(true) }
-        }
-        // Nur an/aus — der Auszug selbst steht oben links ueber dem laufenden Film (`Technikschild`).
-        Kategorie.TECHNIK -> {
-            Wahlkarte(uebersetzt("An"), app.einstellungen.technikschild) { app.einstellungen.technikschild = true }
-            Wahlkarte(uebersetzt("Aus"), !app.einstellungen.technikschild) { app.einstellungen.technikschild = false }
+        // **Qualität: Direct Play oder eine Obergrenze.** Eine Obergrenze heißt,
+        // der Server darf umwandeln — Direct Play ist dann aus. Gilt wie die
+        // Einstellung in der App und lädt den Film an derselben Stelle neu.
+        if (qualitaetZeigen) {
+            val bitraten = remember { wahlenLesen(Kern.bitratenstufen()) }
+            // `-1`: Direct Play. Sonst eine Bitratengrenze, `0` heißt unbegrenzt.
+            fun waehlen(megabit: Int) {
+                val vorher = e.immerDirectPlay to e.bitratenGrenze
+                if (megabit < 0) e.immerDirectPlay = true
+                else { e.immerDirectPlay = false; e.bitratenGrenze = megabit }
+                if (vorher == (e.immerDirectPlay to e.bitratenGrenze)) return
+                app.qualitaetMelden()
+                ebeneSchliessen()
+                lauf.launch { werk.qualitaetWechseln() }
+            }
+            Wahlspalte(uebersetzt("Qualität"), rememberLazyListState()) {
+                item(key = "direct") { Ebenenzeile(uebersetzt("Direct Play"), e.immerDirectPlay) { waehlen(-1) } }
+                bitraten.forEach { b ->
+                    val wert = b.wert.toIntOrNull() ?: 0
+                    item(key = "b$wert") {
+                        Ebenenzeile(b.text, !e.immerDirectPlay && e.bitratenGrenze == wert) { waehlen(wert) }
+                    }
+                }
+            }
         }
     }
 }
 
-/** Eine Karte in der Werte-Reihe — Vorlage `Wahlkarte` in `Sources/tvOS/Wiedergabeblatt.swift`. */
+/**
+ * Die Folgen der Serie — dieselbe Kachelreihe wie auf der Serienseite (`TvFolgenkachel`). Der Titel
+ * steht genau dort, wo er im Bild stand (hier nur Platzhalter, den Titel zeichnet der Player); an
+ * Stelle der Metazeile die Staffelpille, darunter mit deutlichem Abstand die Kacheln. **Beim Oeffnen
+ * steht die Reihe schon da** (vorgeladen) und der Fokus liegt auf der laufenden Folge.
+ */
+@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
-private fun Wahlkarte(name: String, an: Boolean, tun: () -> Unit) {
-    Fokusflaeche(Modifier.fillMaxWidth(), lupe = 1.02f, tun = tun) { fokus ->
-        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp)
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(TvStil.ecke))
-                .background(if (fokus) TvStil.fokusflaeche else Stil.flaeche)
-                .padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Text(name, style = TextStyle(fontSize = 15.sp, fontWeight = if (an) FontWeight.SemiBold else FontWeight.Medium),
-                 color = if (an) Stil.akzent else Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            if (an) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(17.dp))
+private fun TvFolgenEbene(app: SwiftlyAnwendung, plan: Spielplan, titel: String, starten: (Folge) -> Unit) {
+    val serieId = plan.serieId ?: return
+    val laufendeId = plan.itemId
+    // Vorlage `passendeStaffel(zu:)`: die Staffel der laufenden Folge.
+    fun passend(liste: List<Staffel>, gemerkt: String?) =
+        liste.firstOrNull { it.id == plan.staffelId }?.id ?: liste.firstOrNull { it.id == gemerkt }?.id ?: liste.firstOrNull()?.id
+    val vorgeladen = remember(serieId) { app.serienSpeicher[serieId] }
+    var staffeln by remember(serieId) { mutableStateOf(vorgeladen?.staffeln.orEmpty()) }
+    var gewaehlt by remember(serieId) { mutableStateOf(vorgeladen?.let { passend(it.staffeln, it.gewaehlt) }) }
+    var folgen by remember(serieId) { mutableStateOf(gewaehlt?.let { app.folgenSpeicher[it] }.orEmpty()) }
+    val lauf = rememberCoroutineScope()
+    val einblenden = remember { Animatable(1f) }
+    val streifen = rememberLazyListState(folgen.indexOfFirst { it.id == laufendeId }.coerceAtLeast(0))
+    val laufende = remember { FocusRequester() }
+    val pille = remember { FocusRequester() }
+    // **Beim Oeffnen ohne Rutschen.** Die Reihe stand bei der laufenden Folge am linken Rand;
+    // der erste Fokus schob sie animiert auf den Drehpunkt (30 %) — sie rutschte von links herein.
+    // Bis der erste Fokus liegt, springt die Reihe deshalb ohne Bewegung dorthin.
+    var sofort by remember { mutableStateOf(true) }
+    val fokusGelegt = remember { booleanArrayOf(false) }
+    val pilleFokus = remember { booleanArrayOf(false) }
+
+    // **Die Staffelwahl, Eintraege einmal beim Oeffnen gebaut** — aus dem Takt heraus neu gebaut,
+    // wurden die Zeilen ersetzt und der Fokus sprang (tvOS 78a81e0).
+    var wahl by remember { mutableStateOf<List<Staffel>?>(null) }
+    val wahlAusgang = remember { booleanArrayOf(false) }
+    fun wahlZu() { wahlAusgang[0] = true; runCatching { pille.requestFocus() }; wahl = null }
+    BackHandler(enabled = wahl != null) { wahlZu() }
+
+    LaunchedEffect(serieId) {
+        try {
+            val s = serieLesen(withContext(Dispatchers.IO) { app.kern.serie(serieId).await() })
+            app.serienSpeicher[serieId] = s
+            staffeln = s.staffeln
+            if (gewaehlt == null || staffeln.none { it.id == gewaehlt }) gewaehlt = passend(staffeln, s.gewaehlt)
+            val g = gewaehlt ?: return@LaunchedEffect
+            if (folgen.isEmpty()) app.folgenSpeicher[g]?.let { folgen = it }
+            val f = folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(serieId, g).await() })
+            // Wer inzwischen eine andere Staffel gewaehlt hat, bekommt deren Folgen.
+            if (gewaehlt == g) { folgen = f; app.folgenSpeicher[g] = f }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+    }
+
+    // Fokus auf die laufende Folge, sobald die Reihe steht — einmal, und nicht, wenn er schon auf der Pille liegt.
+    LaunchedEffect(folgen.isNotEmpty()) {
+        if (folgen.isEmpty() || fokusGelegt[0] || pilleFokus[0]) return@LaunchedEffect
+        fokusGelegt[0] = true
+        val i = folgen.indexOfFirst { it.id == laufendeId }
+        if (i >= 0 && streifen.layoutInfo.visibleItemsInfo.none { it.index == i }) streifen.scrollToItem(i)
+        fokusLegen(laufende)
+        // Erst nach dem ersten Fokus wieder mit Bewegung nachfuehren.
+        repeat(2) { withFrameNanos { } }
+        sofort = false
+    }
+    // Ohne Folgen haelt die Pille den Fokus — sonst bliebe er auf dem unsichtbaren Knopf dahinter.
+    LaunchedEffect(Unit) {
+        delay(300)
+        if (!fokusGelegt[0] && !pilleFokus[0]) runCatching { pille.requestFocus() }
+    }
+
+    fun staffelWaehlen(s: Staffel) {
+        wahlZu()
+        if (s.id == gewaehlt) return
+        gewaehlt = s.id
+        lauf.launch {
+            einblenden.snapTo(0f)
+            val gemerkt = app.folgenSpeicher[s.id]
+            if (gemerkt != null) folgen = gemerkt
+            try {
+                val f = if (gemerkt != null) gemerkt else folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(serieId, s.id).await() })
+                if (gewaehlt == s.id) { folgen = f; app.folgenSpeicher[s.id] = f }
+            } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            streifen.scrollToItem(folgen.indexOfFirst { it.id == laufendeId }.coerceAtLeast(0))
+            einblenden.animateTo(1f, tween(250, easing = EaseOut))
+            // Frisch vom Server, falls der Speicher alt war.
+            if (gemerkt != null) try {
+                val f = folgenLesen(withContext(Dispatchers.IO) { app.kern.folgen(serieId, s.id).await() })
+                if (gewaehlt == s.id) { folgen = f; app.folgenSpeicher[s.id] = f }
+            } catch (e: CancellationException) { throw e } catch (_: Exception) {}
         }
     }
+
+    Column(Modifier.fillMaxSize().padding(top = TvStil.randOben)) {
+        Column(Modifier.padding(horizontal = TvStil.randSeite).zIndex(1f), verticalArrangement = Arrangement.spacedBy(TvPlayermass.titelAbstand)) {
+            // Platzhalter: der Titel selbst steht im Player und blendet nicht mit.
+            Text(titel, style = TvPlayermass.titel, maxLines = 1, modifier = Modifier.alpha(0f))
+            if (staffeln.isNotEmpty()) Box {
+                TvKnopf(staffeln.firstOrNull { it.id == gewaehlt }?.name ?: uebersetzt("Staffel"), Icons.Filled.KeyboardArrowDown,
+                        Modifier.focusRequester(pille), hoehe = 30.dp, fokusGeaendert = { pilleFokus[0] = it }) {
+                    if (wahl != null) wahlZu() else { wahlAusgang[0] = false; wahl = staffeln }
+                }
+                wahl?.let { eintraege ->
+                    val erste = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { fokusLegen(erste) }
+                    // Unter der Pille, ohne die Reihe darunter zu verschieben.
+                    Column(Modifier.layout { m, c ->
+                                val p = m.measure(c.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity, maxWidth = Constraints.Infinity))
+                                layout(0, 0) { p.place(0, 36.dp.roundToPx()) }
+                            }
+                            .width(260.dp).heightIn(max = 330.dp).clip(RoundedCornerShape(10.dp)).background(Stil.erhoeht)
+                            .verticalScroll(rememberScrollState()).padding(vertical = 6.dp)
+                            .focusProperties { exit = { if (wahlAusgang[0]) FocusRequester.Default else FocusRequester.Cancel } }
+                            .focusGroup()) {
+                        val start = eintraege.indexOfFirst { it.id == gewaehlt }.coerceAtLeast(0)
+                        eintraege.forEachIndexed { i, s ->
+                            TvZeile(s.name, if (s.id == gewaehlt) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                                    modifier = if (i == start) Modifier.focusRequester(erste) else Modifier) { staffelWaehlen(s) }
+                        }
+                    }
+                }
+            }
+        }
+        // Deutlich Luft zur Staffelpille — sonst klebte die Reihe daran.
+        if (folgen.isNotEmpty()) CompositionLocalProvider(LocalBringIntoViewSpec provides if (sofort) TvReiheOhneBewegung else TvReihenBringIntoView) {
+            val start = folgen.indexOfFirst { it.id == laufendeId }.coerceAtLeast(0)
+            LazyRow(Modifier.padding(top = 22.dp).graphicsLayer { alpha = einblenden.value }, state = streifen,
+                    contentPadding = PaddingValues(horizontal = TvStil.randSeite, vertical = TvStil.reihenLuft),
+                    horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand)) {
+                itemsIndexed(folgen, key = { _, f -> f.id }) { i, f ->
+                    TvFolgenkachel(f, if (i == start) Modifier.focusRequester(laufende) else Modifier) { starten(f) }
+                }
+            }
+        }
+    }
+}
+
+/** Wie `TvReihenBringIntoView`, nur ohne Bewegung — fuer den ersten Fokus beim Oeffnen. */
+@OptIn(ExperimentalFoundationApi::class)
+@Suppress("DEPRECATION")
+private object TvReiheOhneBewegung : BringIntoViewSpec {
+    override val scrollAnimationSpec: AnimationSpec<Float> = snap()
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+        TvReihenBringIntoView.calculateScrollDistance(offset, size, containerSize)
 }

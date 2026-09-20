@@ -230,8 +230,7 @@ struct Titelstreifen: View {
 /// Reihe wie jede andere — dieselbe Querkachel wie „Weiterschauen" auf der
 /// Startseite, damit es keine dritte Kachelform gibt.
 ///
-/// `Folgenzeile` bleibt bestehen: das Folgenblatt im Player benutzt sie
-/// weiter, und dort ist die Liste richtig — sie liegt ueber dem laufenden Bild.
+/// Dieselbe Reihe steht in der Folgenebene des Players (`FolgenEbene`).
 struct Folgenstreifen: View {
     let model: AppModel
     let folgen: [Item]
@@ -278,7 +277,11 @@ struct Folgenstreifen: View {
                                  titel: kopfzeile(folge),
                                  unterzeile: dauerzeile(folge),
                                  quer: true,
-                                 fortschritt: folge.gesehenerAnteil)
+                                 // Ein voller Balken **und** ein Haken wären
+                                 // dieselbe Auskunft zweimal.
+                                 fortschritt: folge.istGesehen ? nil : folge.gesehenerAnteil,
+                                 marke: folge.istGesehen ? .gesehen : nil,
+                                 gesehen: folge.istGesehen)
                 }
                 .buttonStyle(KachelStil())
                 .focused($amFolge, equals: folge.id)
@@ -297,11 +300,8 @@ struct Folgenstreifen: View {
         if let sekunden = folge.runtimeSeconds, sekunden > 0 {
             teile.append(String(localized: "\(Int(sekunden / 60)) Min"))
         }
-        if let rest = folge.restzeitText {
-            teile.append(rest)
-        } else if folge.istGesehen {
-            teile.append(String(localized: "Gesehen"))
-        }
+        // „Gesehen" steht als Haken im Bild, nicht als Wort.
+        if let rest = folge.restzeitText { teile.append(rest) }
         return teile.isEmpty ? nil : teile.joined(separator: " · ")
     }
 }

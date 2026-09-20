@@ -1046,9 +1046,14 @@ final class App: @unchecked Sendable {
         fflush(nil)
         adressen = Bildadresse(basis: serverURL, token: token)
         self.benutzerID = benutzerID
+        // **Direct Play und Bitratengrenze gehören zum Server** (wie
+        // `AppModel.serverSchluessel` auf Apple) — ein Server wandelt
+        // vielleicht um, der andere nicht.
+        wahlen.aktiverServer = serverURL.absoluteString
         // Die Vorgabe des vorigen Kontos gilt nicht fuer dieses.
         naechsteAutomatischKonto = nil
         downloadrecht = .unbekannt
+        umwandelnErlaubt = true
         // **Die Downloads gehoeren dem Konto** (H11). Zwei Konten auf einem
         // Server tragen dieselben Kennungen; ohne das Konto kaeme der
         // Fortschritt des einen an den Titel des anderen.
@@ -1252,7 +1257,7 @@ final class App: @unchecked Sendable {
         // `GenreView.swift:56-60`
         case .gattung:
             return ("tag-symbolic", uebersetzt("Nichts in diesem Genre"),
-                    uebersetzt("Auf deinem Server steht gerade kein Film und keine Serie darin."))
+                    uebersetzt("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."))
         default: return nil
         }
     }
@@ -1409,6 +1414,10 @@ final class App: @unchecked Sendable {
     /// `Policy.EnableContentDownloading` des Kontos, aus derselben Antwort.
     /// `.unbekannt` heisst erlaubt — ein Netzfehler nimmt nichts weg.
     var downloadrecht: Downloadrecht = .unbekannt
+    /// `Policy.EnableVideoPlaybackTranscoding` des Kontos, aus derselben
+    /// Antwort. Ohne Antwort: erlaubt — dann bleibt die Qualitätswahl im
+    /// Player, wie `AppModel.umwandelnErlaubt` auf Apple.
+    var umwandelnErlaubt = true
     /// **Der Folgenwechsel des offenen Players** — der Ablauf aus dem Paket,
     /// derselbe wie auf iOS, tvOS und macOS (Audit 16.09.2026, T2-H1/M3).
     /// Er haelt den Riegel (ein Wechsel zur Zeit), und `schliessen` bricht
@@ -1548,6 +1557,8 @@ final class App: @unchecked Sendable {
     }()
     var laufenderTitel: Item?
     var laufenderPlan: PlaybackPlan?
+    /// Der nächste Plan kommt aus einer Qualitätswahl — für den Hinweis.
+    var qualitaetGewechselt = false
     /// Ton, Untertitel und nachgeladene Dateien des laufenden Titels — ``Spurlage``.
     let spurlage = Spurlage()
     var spielstand = Wiedergabetakt.Stand()
@@ -1560,7 +1571,7 @@ final class App: @unchecked Sendable {
     var spielerRegler: Widget!
     /// Zaehlt die Spielerseiten. Siehe ``spielerOeffnen(_:ab:)``.
     var spielerZaehler = 0
-    var spielerAbspielzeichen: Abspielzeichen?
+    var spielerAbspielzeichen: Playerzeichen?
     var spielerWeiter: Angebotsknopf?
     /// Derselbe Knopf als eigene Ebene über dem Bild, bei zugeklappter Steuerung.
     var spielerAngebot: Angebotsknopf?
@@ -1581,16 +1592,69 @@ final class App: @unchecked Sendable {
     var spielerWarntext: Widget!
     /// Die beiden Kreispfeile. Sie tragen die Sprungweite als Zahl und
     /// müssen sie nachziehen, wenn sie sich in den Einstellungen ändert.
-    var spielerZurueckZeichen: Sprungzeichen?
-    var spielerVorZeichen: Sprungzeichen?
+    var spielerZurueckZeichen: Playerzeichen?
+    var spielerVorZeichen: Playerzeichen?
     /// Die Sprunganzeige am Bildrand.
-    var spielerSprungLinks: Sprungzeichen?
-    var spielerSprungRechts: Sprungzeichen?
+    var spielerSprungLinks: Sprungmarke?
+    var spielerSprungRechts: Sprungmarke?
     var sprungtakt = 0
     var spielerRahmen: Widget!
-    var spurtafel: Widget!
-    /// Welcher Bereich im Wiedergabemenue gerade links gewaehlt ist.
-    var spurbereich: Spurbereich = .ton
+    /// Eine der drei Ebenen über dem Bild — Audio & Untertitel, Einstellungen,
+    /// Folgen — oder `nil`, wenn keine offen ist. Wörtlich `offeneEbene` auf
+    /// dem Mac (`PlayerScreen.swift`), nur als GTK-Widget statt als Zustand:
+    /// hier wird bei jedem Öffnen neu gebaut, es gibt kein Umschalten ohne
+    /// Neubau (GTK kennt SwiftUIs `switch` über den Inhalt nicht).
+    var offeneEbene: Widget!
+    var offeneEbeneArt: Playerebene?
+    /// **Der Titel, unabhängig von der Steuerung** (Mac: `stehenderTitel`).
+    ///
+    /// Anders als auf dem Mac kein zweites, sich überlagerndes Widget: ein
+    /// einziges, das nie abgeräumt wird, solange der Player offen ist — genau
+    /// das verhindert das Flackern beim Öffnen der Folgenebene, ohne dass es
+    /// zwei Kopien geben muss.
+    var spielerTitelstand: Widget!
+    var spielerTitelzeile: Widget!
+    /// Der unsichtbare Titel im Kopf der Steuerung, der der Metazeile ihren
+    /// Platz unter dem stehenden Titel gibt.
+    var spielerTitelplatz: Widget!
+    /// Unter dem Titel: die Metazeile („Staffel 1 · Folge 3"), oder — wenn die
+    /// Folgenebene offen ist — die Staffelwahl an ihrer Stelle.
+    var spielerMetazeile: Widget!
+    var spielerStaffelwahl: Widget!
+    /// Die Folgenliste der offenen Folgenebene und ihr Scroller — als
+    /// Feld, nicht als lokale Variable: ein `Task.detached`, das später
+    /// zurückkommt, darf kein GTK-Widget in seinem Abschluss tragen (Swift 6
+    /// verlangt `Sendable`, und ein `Widget` ist es nicht). Über `self` (das
+    /// als `@unchecked Sendable` gilt) geht derselbe Weg unfallfrei.
+    var spielerFolgenListe: Widget!
+    var spielerFolgenScroller: Widget!
+    /// Das Zeichen im Vollbild-Symbolknopf — getauscht, wenn sich der
+    /// Vollbildstand ändert (``vollbildUmschalten()``).
+    var spielerVollbildbild: Playerzeichen?
+    /// Ob die Steuerung gerade gezeigt sein soll — der Zustand, nicht die
+    /// Deckkraft: die ist während einer Blende ein Zwischenwert.
+    var steuerungOffen = false
+    /// Die drei Knöpfe der Mitte und die Symbolreihe oben rechts — beim
+    /// Ziehen am Regler weichen beide der Vorschau (Mac: `amRegler`).
+    var spielerMitte: Widget!
+    var spielerSymbolreihe: Widget!
+    /// Der Knopf, der eine Ebene geöffnet hat — dorthin geht der Fokus
+    /// zurück, wenn sie schliesst.
+    var spielerEbenenknoepfe: [Playerebene: Widget] = [:]
+    /// Die Folge, zu der die Folgenliste scrollt, sobald sie ausgelegt ist.
+    var spielerFolgenZiel: Widget!
+    /// Das X der offenen Ebene — bekommt beim Öffnen den Fokus.
+    var spielerEbenenX: Widget!
+    /// Die Staffel, deren Folgen gerade geladen werden; eine spätere Antwort
+    /// für eine andere Staffel wird verworfen.
+    var spielerFolgenStaffel: String?
+    /// Trickplay-Vorschau am Zeitregler — `nil`, solange kein Server-Blatt
+    /// geladen ist oder der Zeiger nicht über der Leiste steht.
+    var spielerTrickplay: Trickplaybilder?
+    var spielerVorschau: Widget!
+    var spielerVorschaubild: Widget!
+    var spielerVorschauzeit: Widget!
+    var spielerVorschauhuelle: Widget!
     /// Das Technikschild ueber dem Film — `nil`, wenn es aus ist.
     var technikschild: Widget!
     /// Der letzte Stand der Zaehler; die naechste Messung rechnet daraus.
@@ -1795,19 +1859,24 @@ final class App: @unchecked Sendable {
         // den wir führen — dort schliesst Escape gleich.
         if laufenderTitel != nil, !strg {
             switch wert {
-            case 0x020:                                    // Leertaste
+            // **Bei offener Ebene gehören die Tasten ihr** — dieselbe Regel
+            // wie auf dem Mac (`PlayerScreen.fluchttaste`-Umgebung): Space und
+            // Pfeile sollen nicht die Wiedergabe steuern, während eine
+            // Vollbild-Ebene offen ist. Escape bleibt davon unberührt, siehe
+            // unten.
+            case 0x020 where offeneEbene == nil:           // Leertaste
                 abspieler.umschalten()
                 spielstand.laeuft.toggle()
                 spielerAbspielzeichen?.setzen(spielstand.laeuft)
                 steuerungZeigen()
                 return true
-            case 0xFF51:                                   // Pfeil links
+            case 0xFF51 where offeneEbene == nil:          // Pfeil links
                 springe(um: -Double(wahlen.zurueckSekunden))
                 spielerZurueckZeichen?.stupsen()
                 sprungZeigen(true)
                 steuerungZeigen()
                 return true
-            case 0xFF53:                                   // Pfeil rechts
+            case 0xFF53 where offeneEbene == nil:          // Pfeil rechts
                 springe(um: Double(wahlen.vorSekunden))
                 spielerVorZeichen?.stupsen()
                 sprungZeigen(false)
@@ -1828,8 +1897,8 @@ final class App: @unchecked Sendable {
                 // dann der Player.** Der Mac prueft die offene Spurwahl vor
                 // allem anderen (`PlayerScreen.fluchttaste()`); die
                 // Einblendung schliesst nur sich, der Film laeuft weiter.
-                if spurtafel != nil {
-                    spurwahlSchliessen()
+                if offeneEbene != nil {
+                    ebeneSchliessen()
                 } else if angebotImBild {
                     angebotsebene.schliessen()
                     angebotNachfuehren()
@@ -2158,7 +2227,7 @@ final class App: @unchecked Sendable {
         gtk_widget_set_margin_top(kopf, 6)
         anhaengen(liste, kopf)
         let hinweis = beschriftung(
-            uebersetzt("Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter."),
+            uebersetzt("Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter."),
             stil: "swiftly-uebernahmezeile", umbruch: true)
         gtk_label_set_xalign(OpaquePointer(hinweis), 0)
         gtk_widget_set_margin_start(hinweis, 10)

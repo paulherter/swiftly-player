@@ -188,7 +188,7 @@ fun QuickConnectAnmeldung(app: SwiftlyAnwendung, neuerServer: Boolean, zurueck: 
                 Text(uebersetzt("So gehts").uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
                      color = Stil.schriftSehrLeise, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
                 listOf("Jellyfin im Browser öffnen und anmelden", "Oben rechts aufs Profil, dann Quick Connect",
-                       "Code eintippen — hier gehts dann von allein weiter").forEachIndexed { i, schritt ->
+                       "Code eingeben, dann geht es hier von selbst weiter").forEachIndexed { i, schritt ->
                     Row(Modifier.padding(top = 10.dp)) {
                         Text("${i + 1}", style = TextStyle(fontSize = 14.sp), color = Stil.schriftSehrLeise, modifier = Modifier.width(20.dp))
                         Text(uebersetzt(schritt), style = TextStyle(fontSize = 14.sp, lineHeight = 19.sp), color = Stil.schriftLeise)
@@ -257,7 +257,7 @@ fun ServerAufnahmeSeite(app: SwiftlyAnwendung, voreingestellt: String?, zurueck:
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Stil.randAbstand).widthIn(max = Stil.formularbreite),
                verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (s == null) {
-                Text(if (voreingestellt == null) uebersetzt("Die Adresse eines weiteren Jellyfin-Servers. Seine Konten kommen neben die, die du schon hast; auf der Profilseite wechselst du zwischen ihnen.")
+                Text(if (voreingestellt == null) uebersetzt("Die Adresse eines weiteren Jellyfin-Servers. Du bleibst bei beiden angemeldet und wechselst auf der Profilseite zwischen ihnen.")
                      else runCatching { java.net.URI(voreingestellt).host }.getOrNull() ?: voreingestellt,
                      style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise)
                 if (voreingestellt == null || fehler != null) {

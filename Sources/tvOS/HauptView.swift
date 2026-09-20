@@ -190,11 +190,17 @@ struct HauptView: View {
                 PlayerScreen(model: model, item: wunsch.item, plan: wunsch.plan,
                              startAt: wunsch.startAt) { abspielen = nil }
                 .transition(.opacity)
+                // **Ohne feste Ebene blendete er nicht aus.** Ein Kind im
+                // ZStack ohne `zIndex` rutscht beim Entfernen hinter seine
+                // Geschwister — die Blende lief unsichtbar hinter der
+                // Startseite, der Player schien „zack“ weg.
+                .zIndex(10)
             }
         }
         .environment(\.abspielwunsch, $abspielen)
         .environment(\.tafelOffen, $tafelOffen)
-        .animation(.easeInOut(duration: 0.2), value: abspielen?.id)
+        // Dieselbe Blende wie auf iPhone und Mac.
+        .animation(.easeInOut(duration: 0.3), value: abspielen?.id)
         .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
         .task { await model.fernsteuerungStarten() }
         // **Einmal je Start, und ohne Antwort passiert nichts.**

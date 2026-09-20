@@ -48,6 +48,15 @@ export PKG_CONFIG_PATH="${umg_lokal}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONF
 umgebung_soname_flicken() {
     local gesucht="$1" vorhanden="$2"
     [ -e "${umg_flick}/${gesucht}" ] && return 0
+    # **Nur, wenn der gesuchte Name wirklich fehlt.** Sonst schiebt sich der
+    # Verweis vor die echte Bibliothek — `~/.swift-compat` steht vorn in
+    # `LD_LIBRARY_PATH`. Bei ncurses waere das egal, die Breitzeichen-Fassung
+    # hat dasselbe ABI; bei libxml2 nicht: 2.16 traegt einen neuen Sonamen,
+    # *weil* sich etwas geaendert hat. Auf cachy liegen am 20.09.2026 beide
+    # da, und ein Verweis haette die falsche gewonnen.
+    for ort in /usr/lib /usr/lib64 /lib/x86_64-linux-gnu; do
+        [ -e "${ort}/${gesucht}" ] && return 0
+    done
     for ort in /usr/lib /usr/lib64 /lib/x86_64-linux-gnu; do
         if [ -e "${ort}/${vorhanden}" ]; then
             mkdir -p "${umg_flick}"
@@ -59,8 +68,20 @@ umgebung_soname_flicken() {
     return 1
 }
 
-umgebung_soname_flicken libncurses.so.6  libncursesw.so.6
-umgebung_soname_flicken libncurses++.so.6 libncurses++w.so.6
+# **`|| true` dahinter, weil diese Datei eingebunden wird.** Wo ein Soname gar
+# nicht fehlt — auf Ubuntu etwa —, gibt die Funktion 1 zurueck; in einem
+# Aufrufer mit `set -e` riss das den ganzen Lauf mit. Ein nicht gefundener
+# Verweis ist hier kein Fehler, sondern der Normalfall.
+umgebung_soname_flicken libncurses.so.6   libncursesw.so.6   || true
+umgebung_soname_flicken libncurses++.so.6 libncurses++w.so.6 || true
+# **libxml2 nur als Notnagel.** Arch geht auf libxml2 2.16; wo 2.13 schon
+# weg ist, fehlt der Toolchain von swift.org ihr `libxml2.so.2`, und sie
+# startet gar nicht. Der neue Soname bedeutet einen ABI-Bruch — das ist also
+# kein gleichwertiger Ersatz, sondern die Wahl zwischen einem Uebersetzer,
+# der vielleicht stolpert, und keinem. Ein Tester auf CachyOS hat am
+# 20.09.2026 genau das mit `sudo ln -sf` nach /usr/lib getan; hier geht es
+# ohne Passwort und nur dann, wenn `libxml2.so.2` wirklich nirgends liegt.
+umgebung_soname_flicken libxml2.so.2      libxml2.so.16      || true
 
 # --- 3. Nachsehen, bevor gebaut wird ------------------------------------
 #

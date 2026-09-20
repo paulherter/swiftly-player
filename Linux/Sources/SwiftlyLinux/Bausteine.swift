@@ -500,13 +500,21 @@ private func zeilenrumpf(symbol: String, titel: String, unter: String?,
 /// Eine Zeile mit Wert rechts und optionalem Pfeil.
 func wertezeile(symbol: String, titel: String, unter: String? = nil,
                 wert: String? = nil, akzent: Bool = false, pfeil: Bool = false,
-                auswahl: (() -> Void)? = nil) -> Widget! {
+                haken: Bool = false, auswahl: (() -> Void)? = nil) -> Widget! {
     let rechts = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
     gtk_widget_set_valign(rechts, GTK_ALIGN_CENTER)
     if let wert, !wert.isEmpty {
         let w = beschriftung(wert, stil: "swiftly-kacheltitel")
         gtk_widget_add_css_class(w, "dim-label")
         anhaengen(rechts, w)
+    }
+    // Haken statt Pfeil — fuer eine Wahl unter mehreren, siehe die Genre-Form
+    // in `Einstellungsseiten.swift`.
+    if haken {
+        let h: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(h), 15)
+        gtk_widget_add_css_class(h, "swiftly-akzentzeile")
+        anhaengen(rechts, h)
     }
     if pfeil {
         let p: Widget! = gtk_image_new_from_icon_name("go-next-symbolic")

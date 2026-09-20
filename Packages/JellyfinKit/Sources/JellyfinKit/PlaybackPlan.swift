@@ -104,7 +104,12 @@ public extension PlaybackPlan {
     ) throws -> PlaybackPlan? {
 
         guard let source = besteQuelle(response.mediaSources) else { return nil }
-        let method = source.deliveryMethod
+        // **Ohne Adresse zum Umwandeln läuft die Originaldatei — dann heißt es
+        // auch so.** Verlangt eine Bitratengrenze Umwandeln, hat der Server
+        // das Transcoding aber aus, nennt er keine `TranscodingUrl`; gespielt
+        // wird unten die Rohdatei. Stand hier trotzdem `.transcode`, zeigte
+        // die App „transkodiert", während Jellyfin richtig „Direct Play" sah.
+        let method: DeliveryMethod = source.transcodingUrl == nil ? .directPlay : source.deliveryMethod
 
         // **Die Adresse des Servers gilt, sobald es eine gibt.**
         //

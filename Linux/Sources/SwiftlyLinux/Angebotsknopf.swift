@@ -27,18 +27,28 @@ final class Angebotsknopf {
     private var takt: guint = 0
 
     init(_ ausloesen: @escaping () -> Void) {
-        knopf = chip(uebersetzt("Nächste Folge"), symbol: "media-skip-forward-symbolic")
+        // **Weiss, dunkle Schrift** — wörtlich die Pille vom Mac
+        // (`PlayerScreen.swift:1326`): „die Akzentfarbe gehört im Player
+        // allein dem Griff der Leiste beim Ziehen". `aktiv: true` ist hier
+        // kein Auswahlzustand, sondern die feste Grundfarbe dieses Chips.
+        knopf = chip(uebersetzt("Nächste Folge"), symbol: "media-skip-forward-symbolic", aktiv: true)
         // **Die Füllung reicht bis an den Rand**, also sitzt der seitliche
         // Abstand am Inhalt statt am Knopf; die Kapsel schneidet sie rund.
         gtk_widget_add_css_class(knopf, "swiftly-angebot")
         gtk_widget_set_overflow(knopf, GTK_OVERFLOW_HIDDEN)
         guard let reihe = gtk_widget_get_first_child(knopf) else { return }
-        bild = gtk_widget_get_first_child(reihe)
+        // **Das eigene Zeichen** statt des Systemsymbols (Mac:
+        // `forward.end.fill`), dunkel auf der weissen Fläche.
+        if let alt = gtk_widget_get_first_child(reihe) { gtk_box_remove(alsBox(reihe), alt) }
+        let zeichen = Playerzeichen("weiter", groesse: 16, farbe: (0.043, 0.043, 0.051, 1))
+        gtk_box_prepend(alsBox(reihe), zeichen.anzeige)
+        bild = zeichen.anzeige
         text = gtk_widget_get_last_child(reihe)
         g_object_ref(UnsafeMutableRawPointer(reihe))
         gtk_button_set_child(alsKnopf(knopf), nil)
-        gtk_widget_set_margin_start(reihe, 12)
-        gtk_widget_set_margin_end(reihe, 12)
+        gtk_widget_set_margin_start(reihe, 18)
+        gtk_widget_set_margin_end(reihe, 18)
+        gtk_box_set_spacing(alsBox(reihe), 8)
 
         innen = gtk_overlay_new()
         let grund = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 0)
@@ -82,11 +92,6 @@ final class Angebotsknopf {
         if angebot.sichtbar, angebot != gezeigt {
             gezeigt = angebot
             gtk_label_set_text(OpaquePointer(text), angebot.beschriftung)
-            // Linux-Namen statt SF Symbols, Unterschied wie `Knopfangebot.zeichen`:
-            // weiter *in* der Folge gegen weiter *aus* ihr heraus.
-            gtk_image_set_from_icon_name(OpaquePointer(bild), angebot == .naechsteFolge
-                                         ? "media-skip-forward-symbolic"
-                                         : "media-seek-forward-symbolic")
             beschriften(knopf, angebot.beschriftung)
         }
         uhr = neu
@@ -141,11 +146,13 @@ extension App {
             let vorgaben = await c.kontovorgaben()
             let konto = vorgaben?.naechsteFolgeAutomatisch
             let recht = vorgaben?.downloadrecht ?? .unbekannt
+            let umwandeln = vorgaben?.umwandelnErlaubt ?? true
             aufHauptfaden {
                 // Inzwischen ein anderes Konto: dessen Vorgabe kommt selbst.
                 guard self.client === c else { return }
                 self.naechsteAutomatischKonto = konto
                 self.downloadrecht = recht
+                self.umwandelnErlaubt = umwandeln
                 print("[Konto] Nächste Folge automatisch: \(konto.map { String($0) } ?? "nil"), gilt \(self.naechsteAutomatisch), Downloads: \(recht.rawValue)")
                 fflush(nil)
                 // Die offene Seite hat den Knopf vielleicht schon gebaut.
@@ -156,9 +163,10 @@ extension App {
 
     /// Die Steuerung ist zu sehen. Sie blendet über die Deckkraft aus, nicht
     /// über die Sichtbarkeit — sie bleibt dabei ausgelegt.
+    /// Der Zustand, nicht die Deckkraft — die ist während einer Blende ein
+    /// Zwischenwert.
     private var steuerungDa: Bool {
-        guard let s = spielerSteuerung else { return false }
-        return gtk_widget_get_opacity(s) > 0.5
+        spielerSteuerung != nil && steuerungOffen && offeneEbeneArt == nil
     }
 
     /// **Der Angebotsknopf steht, an einer Stelle, egal ob die Steuerung offen
@@ -167,7 +175,7 @@ extension App {
     /// normale Knopf „Nächste Folge". Der Knopf im Fuß hält nur den Platz.
     var angebotDa: Bool {
         guard laufenderTitel != nil, jetzigesAngebot.sichtbar, spielerLadeschirm == nil,
-              spurtafel == nil, !folgenwechsel.laeuft else { return false }
+              offeneEbene == nil, !folgenwechsel.laeuft else { return false }
         return angebotsebene.anzeige.sichtbar || (steuerungDa && jetzigesAngebot == .naechsteFolge)
     }
 
@@ -175,7 +183,7 @@ extension App {
     /// Tasten (Mac: `karteDa`).
     var angebotImBild: Bool {
         guard laufenderTitel != nil, spielerLadeschirm == nil,
-              spurtafel == nil, !folgenwechsel.laeuft else { return false }
+              offeneEbene == nil, !folgenwechsel.laeuft else { return false }
         // Die Karte steht auch über einer nur durch den Zeiger geöffneten Steuerung.
         if case .karte = angebotsebene.anzeige { return true }
         return angebotsebene.anzeige.sichtbar && !steuerungDa

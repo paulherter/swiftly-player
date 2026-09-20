@@ -12,6 +12,7 @@
         android:label="Swiftly"
         android:banner="@drawable/tv_banner"
         android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/netz_vertrauen"
         android:enableOnBackInvokedCallback="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <!-- configChanges wie beim Player: eine Drehung baut die Aktivitaet nicht neu. Compose
@@ -27,11 +28,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- In der Aufgabe der App: der Player liegt oben drauf und faehrt beim Schliessen hinunter.
+        <!-- In der Aufgabe der App: der Player liegt oben drauf und blendet beim Schliessen aus.
              Fuer das kleine Fenster loest Android ihn von selbst in eine eigene Aufgabe. -->
         <activity
             android:name=".PlayerAktivitaet"
             android:exported="false"
+            android:screenOrientation="sensorLandscape"
             android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"

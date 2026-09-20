@@ -310,6 +310,27 @@ struct HomeView: View {
             startfokusGesetzt = true
             amTitel = marke
         }
+        // **Der Fokus kehrt aus dem Player nicht von selbst zurueck.**
+        //
+        // `abspielen` liegt im Rahmen als Geschwister, nicht als Kind — die
+        // Startseite bleibt beim Abspielen durchgehend eingehaengt, nur
+        // `disabled`. `disabled` setzt `amTitel` dabei auf `nil` zurueck (die
+        // Kachel kann waehrenddessen keinen Fokus halten), und beim Entfernen
+        // des Players fragt tvOS nicht erneut nach `defaultFocus` — das tut es
+        // nur bei der **ersten** Auswertung eines Fokusbereichs, und dieser
+        // besteht seit dem Start der Seite ununterbrochen. Ohne diese Zeile
+        // sucht der Fokusmotor deshalb neu und landet geometrisch ganz oben,
+        // am ersten Reiter der Kopfleiste.
+        //
+        // Die Zuweisung wirkt genau wie ein Tastendruck: `amTitel` gesetzt,
+        // solange die Kachel wieder fokussierbar ist, holt sich der Fokus
+        // dorthin zurueck — das ist derselbe Weg, den `.focused(_:equals:)`
+        // auch sonst nimmt.
+        .onChange(of: abspielen.wrappedValue == nil) { vorher, geschlossen in
+            guard geschlossen, vorher == false, amTitel == nil, let ziel = zuletztAmTitel
+            else { return }
+            amTitel = ziel
+        }
     }
 
     /// Die Reihen — jede ein `Section`, nichts selbstgebautes.
@@ -631,6 +652,7 @@ struct HomeView: View {
                                   eintraege: eintraege(stand.zuletzt, quer: false)))
         }
         Regal.schreiben(Regalvorschau(rubriken: rubriken))
+        Protokoll.schreib("[Regal] \(rubriken.count) Rubriken, \(rubriken.map(\.eintraege.count)) Eintraege · \(Regal.befund())")
     }
 }
 

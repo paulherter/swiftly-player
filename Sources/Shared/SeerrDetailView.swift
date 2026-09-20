@@ -426,8 +426,17 @@ struct SeerrDetailView: View {
             // **Nie leer.** `nil` bedeutet bei Seerr „alle Staffeln", und das
             // ist der Fall, den niemand versehentlich ausloesen soll — wer
             // nur nachsieht, welche es gibt, fragt sonst die ganze Serie an.
-            guard !gewaehlt.isEmpty else { return }
-            let staffeln = Array(gewaehlt).sorted()
+            //
+            // **Nur für Serien.** Ein Film hat keine Staffeln, `gewaehlt` ist
+            // dort immer leer — der Wächter warf ihn stillschweigend hinaus,
+            // und der Druck auf „Anfragen" tat gar nichts.
+            let staffeln: [Int]?
+            if treffer.istSerie {
+                guard !gewaehlt.isEmpty else { return }
+                staffeln = Array(gewaehlt).sorted()
+            } else {
+                staffeln = nil
+            }
             try await model.seerr.anfragen(treffer, staffeln: staffeln)
             angefragt = true
             stand = .wartetAufFreigabe

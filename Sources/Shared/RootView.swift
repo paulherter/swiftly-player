@@ -135,7 +135,7 @@ struct ConnectView: View {
                             abschluss: verbinden)
                     .padding(.top, 18)
 
-                Text("Ohne https:// — das ergänzen wir.")
+                Text("https:// kannst du weglassen.")
                     .font(Stil.klein)
                     .foregroundStyle(Stil.schriftSehrLeise)
                     .frame(maxWidth: .infinity, alignment: .leading)

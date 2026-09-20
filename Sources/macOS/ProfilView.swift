@@ -13,6 +13,7 @@ struct ProfilView: View {
     let zurueck: () -> Void
     @Environment(Navigator.self) private var navigator
     @Environment(\.bereich) private var bereich
+    @Environment(\.openURL) private var oeffnen
 
     var body: some View {
         ScrollView {
@@ -107,6 +108,24 @@ struct ProfilView: View {
                     // Zustandshalter, nicht hier.
                     Wertezeile(symbol: "rectangle.portrait.and.arrow.right",
                                titel: Text("Abmelden")) { model.signOut() }
+                }
+
+                Color.clear.frame(height: 18)
+
+                // **Bewerten, Discord, Fehler melden — ganz unten.** Stand in
+                // den Einstellungen und wurde dort kaum gesehen.
+                Zeilengruppe {
+                    Wertezeile(symbol: "star", titel: Text("Swiftly bewerten"),
+                               unter: Text("Im App Store"),
+                               aktion: { oeffnen(Gemeinschaft.appStoreBewertung) })
+                    Trennstrich().padding(.leading, 48)
+                    Wertezeile(symbol: "bubble.left.and.bubble.right", titel: Text("Discord beitreten"),
+                               unter: Text("Fragen stellen und sagen, was fehlt"),
+                               aktion: { oeffnen(Gemeinschaft.discord) })
+                    Trennstrich().padding(.leading, 48)
+                    Wertezeile(symbol: "ladybug", titel: Text("Fehler melden"),
+                               unter: Text("Auf GitHub, deine App-Version ist schon eingetragen"),
+                               aktion: { oeffnen(Fassung.fehlerMelden) })
                 }
 
                 // **Nicht getippt.** Hier stand „Swiftly 1.0" — seit der

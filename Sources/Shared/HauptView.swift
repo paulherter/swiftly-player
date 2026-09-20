@@ -211,7 +211,7 @@ struct HauptView: View {
         }
         #endif
         .onDisappear { uebernahme.beenden() }
-        .fullScreenCover(item: $uebernahmeWunsch) { wunsch in
+        .playerCover(item: $uebernahmeWunsch) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }

@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -87,6 +88,27 @@ fun ProfilSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -> U
             // Betrifft nur das geltende Konto; bleiben andere, gilt danach das naechste.
             Profilzeile(Icons.AutoMirrored.Filled.Logout, uebersetzt("Abmelden")) { app.abmelden() }
         }
+        Spacer(Modifier.height(18.dp))
+        // **Bewerten, Discord, Fehler melden — ganz unten.** Stand in den
+        // Einstellungen und wurde dort kaum gesehen. Die Adressen kommen aus
+        // dem Paket. **Play-Eintrag statt In-App-Abfrage:** die kommt von
+        // selbst nach dem dritten Titel; eine Zeile, die sie ausloest, zeigte
+        // im geschlossenen Test oft gar nichts, weil Google die Abfrage
+        // drosselt und nicht meldet, ob sie erschien.
+        val kontext = androidx.compose.ui.platform.LocalContext.current
+        Karte {
+            Profilzeile(Icons.Filled.StarOutline, uebersetzt("Swiftly bewerten"), uebersetzt("Im Play Store")) {
+                app.adresseOeffnen(kontext, app.gemeinschaftAdresse("play"))
+            }
+            Trennlinie()
+            Profilzeile(Icons.AutoMirrored.Filled.Chat, uebersetzt("Discord beitreten"), uebersetzt("Fragen stellen und sagen, was fehlt")) {
+                app.adresseOeffnen(kontext, app.gemeinschaftAdresse("discord"))
+            }
+            Trennlinie()
+            Profilzeile(Icons.Filled.BugReport, uebersetzt("Fehler melden"), uebersetzt("Auf GitHub, deine App-Version ist schon eingetragen")) {
+                app.adresseOeffnen(kontext, app.gemeinschaftAdresse("fehler"))
+            }
+        }
         Text(SwiftlyAnwendung.FASSUNGSZEILE, style = TextStyle(fontSize = 12.sp), color = Color.White.copy(alpha = 0.3f),
              modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 26.dp))
     }
@@ -146,16 +168,18 @@ fun WiedergabeEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
     fun sekundenwahl(): List<Wahl> = sekunden.map { Wahl(it.toString(), uebersetzt("%lld s", it)) }
 
     Einstellungsseite(uebersetzt("Wiedergabe"), zurueck) {
-        Text(uebersetzt("Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen."),
-             style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise, modifier = Modifier.padding(horizontal = Stil.randAbstand))
+        // Wandelt der Server nicht um, ist nichts zu wählen: Direct Play steht
+        // fest an, die Bitrate ist gesperrt.
+        val frei = e.umwandelnErlaubt
+        val directPlay = e.immerDirectPlay || !frei
 
         Einstellungsgruppe(uebersetzt("Qualität")) {
-            Wahlzeile(Icons.Filled.PlayArrow, uebersetzt("Immer Direct Play"), uebersetzt("Nie umwandeln lassen — der Grund für diese App"),
-                      e.immerDirectPlay) { e.immerDirectPlay = it; app.qualitaetMelden() }
+            Wahlzeile(Icons.Filled.PlayArrow, uebersetzt("Immer Direct Play"), uebersetzt("Der Server wandelt nie um, es läuft immer die Originaldatei"),
+                      directPlay, gesperrt = !frei) { e.immerDirectPlay = it; app.qualitaetMelden() }
             Trennlinie()
             // Gedimmt, solange Direct Play erzwungen ist — dort griffe sie nicht.
             Wertzeile(Icons.Filled.BarChart, uebersetzt("Höchste Bitrate"),
-                      wert = bitraten.firstOrNull { it.wert == e.bitratenGrenze.toString() }?.text, gedimmt = e.immerDirectPlay) {
+                      wert = bitraten.firstOrNull { it.wert == e.bitratenGrenze.toString() }?.text, gedimmt = directPlay) {
                 blatt(uebersetzt("Höchste Bitrate"), bitraten, e.bitratenGrenze.toString()) { e.bitratenGrenze = it.toInt(); app.qualitaetMelden() }
             }
         }
@@ -176,8 +200,8 @@ fun WiedergabeEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
         Einstellungsgruppe(uebersetzt("Verhalten")) {
             Wahlzeile(Icons.Filled.SkipNext, uebersetzt("Nächste Folge automatisch"), an = e.naechsteAutomatisch) { e.naechsteAutomatisch = it }
             Trennlinie()
-            Wahlzeile(Icons.Filled.Insights, uebersetzt("Technikschild im Player"),
-                      uebersetzt("Zeigt Bildrate, Vorrat und verworfene Bilder über dem Film."), e.technikschild) { e.technikschild = it }
+            Wahlzeile(Icons.Filled.Insights, uebersetzt("Technische Daten im Player"),
+                      uebersetzt("Zeigt Bildrate, Puffer und ausgelassene Bilder über dem Film."), e.technikschild) { e.technikschild = it }
             Trennlinie()
             Wertzeile(Icons.Filled.Replay, uebersetzt("Zurückspulen"), wert = uebersetzt("%lld s", e.zurueckSekunden)) {
                 blatt(uebersetzt("Zurückspulen"), sekundenwahl(), e.zurueckSekunden.toString()) { e.zurueckSekunden = it.toInt() }
@@ -192,7 +216,6 @@ fun WiedergabeEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
                 blatt(uebersetzt("Puffer"), puffer, e.pufferstufe) { e.pufferstufe = it }
             }
         }
-        Fusszeile(uebersetzt("Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da."))
     }
 }
 
@@ -230,9 +253,9 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
 
         Einstellungsgruppe(uebersetzt("Genres")) {
             // Eine Liste, zwei Formen.
-            Darstellungsform(uebersetzt("Als eigene Reihen"), !e.genreChips) { e.genreChips = false }
+            Darstellungsform(Icons.Filled.ViewAgenda, uebersetzt("Als eigene Reihen"), !e.genreChips) { e.genreChips = false }
             Trennlinie()
-            Darstellungsform(uebersetzt("Als Chips über den Reihen"), e.genreChips) { e.genreChips = true }
+            Darstellungsform(Icons.Filled.ViewCarousel, uebersetzt("Als Chips über den Reihen"), e.genreChips) { e.genreChips = true }
             if (e.startGenres.isNotEmpty()) Trennlinie()
             Umsortierbar(e.startGenres, { it }, verschieben = { g, schritt ->
                 val liste = e.startGenres.toMutableList()
@@ -259,10 +282,9 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
 }
 
 @Composable
-private fun Darstellungsform(titel: String, gewaehlt: Boolean, waehlen: () -> Unit) {
-    Row(Modifier.fillMaxWidth().druckzeile(waehlen).padding(horizontal = Stil.randAbstand, vertical = 15.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Text(titel, style = TextStyle(fontSize = 15.sp), color = Stil.schrift, modifier = Modifier.weight(1f))
+private fun Darstellungsform(symbol: ImageVector, titel: String, gewaehlt: Boolean, waehlen: () -> Unit) {
+    // Wie die Zeilen darüber: Symbol, Titel, Haken — nicht kleiner.
+    Zeilenaufbau(symbol, titel, null, Stil.schrift, Modifier.druckzeile(waehlen)) {
         if (gewaehlt) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(16.dp))
     }
 }
@@ -300,24 +322,6 @@ fun EinstellungenSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: 
                               prueft = false
                           }
                       } })
-        }
-        // Vorlage: `EinstellungenView.gemeinschaft` — bewerten, Discord, Fehler melden. Die Adressen
-        // kommen aus dem Paket. **Play-Eintrag statt In-App-Abfrage:** die kommt von selbst nach dem
-        // dritten Titel; eine Zeile, die sie ausloest, zeigte im geschlossenen Test oft gar nichts,
-        // weil Google die Abfrage drosselt und nicht meldet, ob sie erschien.
-        val kontext = androidx.compose.ui.platform.LocalContext.current
-        Einstellungsgruppe("Swiftly") {
-            Wertzeile(Icons.Filled.StarOutline, uebersetzt("Swiftly bewerten"), uebersetzt("Im Play Store")) {
-                app.adresseOeffnen(kontext, app.gemeinschaftAdresse("play"))
-            }
-            Trennlinie()
-            Wertzeile(Icons.AutoMirrored.Filled.Chat, uebersetzt("Discord beitreten"), uebersetzt("Fragen stellen und sagen, was fehlt")) {
-                app.adresseOeffnen(kontext, app.gemeinschaftAdresse("discord"))
-            }
-            Trennlinie()
-            Wertzeile(Icons.Filled.BugReport, uebersetzt("Fehler melden"), uebersetzt("Auf GitHub, deine Fassung steht schon drin")) {
-                app.adresseOeffnen(kontext, app.gemeinschaftAdresse("fehler"))
-            }
         }
         Text("${SwiftlyAnwendung.FASSUNGSZEILE} · libVLC 3.6.3", style = TextStyle(fontSize = 12.sp), color = Color.White.copy(alpha = 0.3f),
              modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 26.dp))

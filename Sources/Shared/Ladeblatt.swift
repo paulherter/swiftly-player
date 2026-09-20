@@ -56,7 +56,7 @@ struct Ladeblatt: View {
             angabe("externaldrive", "Danach frei", Downloadregeln.groesse(auskunft.freiDanach))
             knopf("Laden", gefuellt: true) { starten() }
             // **Erklärt die Zahl, statt sich zu entschuldigen.**
-            hinweis("Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird.")
+            hinweis("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")
         }
     }
 

@@ -826,6 +826,48 @@ public actor JellyfinClient {
         }
     }
 
+    /// Trickplay-Angaben zur laufenden Quelle — `nil`, wenn der Server keine
+    /// hat (vor 10.9, oder nicht erzeugt). Siehe ``Trickplay``.
+    public func trickplay(itemID: String, mediaSourceID: String?, ziel: Int = 320) async -> Trickplay? {
+        do {
+            let s = try requireSession()
+            let req = try request("Items/\(itemID)", query: [
+                .init(name: "userId", value: s.userID),
+                .init(name: "Fields", value: "Trickplay"),
+            ])
+            return try await send(req, as: TrickplayAntwort.self)
+                .fuer(quelle: mediaSourceID, ziel: ziel)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Adresse eines Kachelblatts. Angemeldet wie die übrigen Bildabrufe,
+    /// über `ApiKey`.
+    public func trickplayURL(itemID: String, mediaSourceID: String?, breite: Int, blatt: Int) -> URL? {
+        guard let token = session?.accessToken else { return nil }
+        var comps = URLComponents(
+            url: baseURL.appendingPathComponent("Videos/\(itemID)/Trickplay/\(breite)/\(blatt).jpg"),
+            resolvingAgainstBaseURL: false
+        )
+        var abfrage: [URLQueryItem] = []
+        if let mediaSourceID { abfrage.append(.init(name: "MediaSourceId", value: mediaSourceID)) }
+        abfrage.append(.init(name: "ApiKey", value: token))
+        comps?.queryItems = abfrage
+        return comps?.url
+    }
+
+    /// Ein Kachelblatt als rohe JPEG-Daten — über dieselbe Sitzung wie alle
+    /// anderen Abrufe. `nil` bei jedem Fehler: dann bleibt es bei der Zeit.
+    public func trickplayBlatt(itemID: String, mediaSourceID: String?, breite: Int, blatt: Int) async -> Data? {
+        guard let url = trickplayURL(itemID: itemID, mediaSourceID: mediaSourceID,
+                                     breite: breite, blatt: blatt),
+              let (daten, antwort) = try? await urlSession.data(for: URLRequest(url: url)),
+              let http = antwort as? HTTPURLResponse, (200..<300).contains(http.statusCode)
+        else { return nil }
+        return daten
+    }
+
     /// Was AirPlay fuer diesen Titel hergibt.
     ///
     /// **Die Pruefung kommt vor der Anfrage, nicht danach.** Die Stroeme der

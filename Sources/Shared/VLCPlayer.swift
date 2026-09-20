@@ -885,7 +885,7 @@ final class VLCPlayerView: Basisansicht {
         if !AVPictureInPictureController.isPictureInPictureSupported() {
             // Trifft im Simulator immer zu: AVKit meldet dort
             // isPictureInPictureSupported = NO. Nur echte Geräte können PiP.
-            return String(localized: "Dieses Gerät unterstützt kein Bild-im-Bild. Der Simulator kann es grundsätzlich nicht — auf dem iPhone geht es.")
+            return String(localized: "Dieses Gerät kann kein Bild-im-Bild. Im Simulator geht es nie, auf dem iPhone schon.")
         }
         if pipWindow == nil { return String(localized: "Bild-im-Bild wird vorbereitet…") }
         return nil

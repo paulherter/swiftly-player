@@ -25,6 +25,8 @@ struct ProfilView: View {
     /// sind — aus dem Plus auf dessen Karte.
     @State private var kontoAufServer: URL?
 
+    @Environment(\.openURL) private var oeffnen
+
     var body: some View {
         ZStack {
             Stil.grund.ignoresSafeArea()
@@ -66,6 +68,7 @@ struct ProfilView: View {
 
                     Color.clear.frame(height: 18)
 
+
                     gruppe {
                         // **Jetzt mit Unterbau.** Hier stand, die Form sei
                         // entworfen und der Unterbau fehle — das galt bis zum
@@ -86,6 +89,28 @@ struct ProfilView: View {
                         Profilzeile(symbol: "rectangle.portrait.and.arrow.right",
                                     titel: "Abmelden", letzte: true) { model.signOut() }
                     }
+
+
+                    Color.clear.frame(height: 18)
+
+                    // **Bewerten, Discord, Fehler melden — ganz unten.** In den
+                    // Einstellungen stand es ganz unten und wurde kaum gesehen.
+                    gruppe {
+                        Profilzeile(symbol: "star", titel: "Swiftly bewerten",
+                                    unter: "Im App Store") {
+                            oeffnen(Gemeinschaft.appStoreBewertung)
+                        }
+                        Profilzeile(symbol: "bubble.left.and.bubble.right", titel: "Discord beitreten",
+                                    unter: "Fragen stellen und sagen, was fehlt") {
+                            oeffnen(Gemeinschaft.discord)
+                        }
+                        Profilzeile(symbol: "ladybug", titel: "Fehler melden",
+                                    unter: "Auf GitHub, deine App-Version ist schon eingetragen",
+                                    letzte: true) {
+                            oeffnen(Fassung.fehlerMelden)
+                        }
+                    }
+
 
                     Text(verbatim: Fassung.zeile)
                         .font(.system(size: 12))

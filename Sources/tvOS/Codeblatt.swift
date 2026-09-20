@@ -23,7 +23,7 @@ enum Gemeinschaftsziel: String, Identifiable {
         switch self {
         case .bewerten: "Scann den Code mit dem Handy, dann landest du direkt beim Bewerten im App Store."
         case .discord:  "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst."
-        case .fehler:   "Scann den Code mit dem Handy. Deine Fassung steht im Issue schon drin."
+        case .fehler:   "Scann den Code mit dem Handy. Deine App-Version steht dann schon im Issue."
         }
     }
 

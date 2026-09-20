@@ -55,7 +55,7 @@ struct GenreView: View {
 
                 if !laedt, items.isEmpty {
                     Leerzustand(symbol: "tag", titel: "Nichts in diesem Genre",
-                                text: "Auf deinem Server steht gerade kein Film und keine Serie darin.")
+                                text: "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.")
                         .padding(.top, 80)
                 }
             }

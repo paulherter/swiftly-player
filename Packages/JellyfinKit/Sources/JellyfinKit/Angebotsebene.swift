@@ -278,10 +278,15 @@ public struct Kontovorgaben: Sendable, Equatable, Decodable {
     /// `Policy.EnableContentDownloading`. `nil`, wenn der Server nichts sagt —
     /// dann gilt ``Downloadrecht/unbekannt``, also erlaubt.
     public let downloadsErlaubt: Bool?
+    /// `Policy.EnableVideoPlaybackTranscoding` — darf der Server für dieses
+    /// Konto Video umwandeln? `nil`, wenn er nichts sagt.
+    public let umwandelnErlaubt: Bool?
 
-    public init(naechsteFolgeAutomatisch: Bool?, downloadsErlaubt: Bool? = nil) {
+    public init(naechsteFolgeAutomatisch: Bool?, downloadsErlaubt: Bool? = nil,
+                umwandelnErlaubt: Bool? = nil) {
         self.naechsteFolgeAutomatisch = naechsteFolgeAutomatisch
         self.downloadsErlaubt = downloadsErlaubt
+        self.umwandelnErlaubt = umwandelnErlaubt
     }
 
     /// Die Entscheidung liegt im ``Downloadrecht``, nicht in einem `Bool?`,
@@ -293,7 +298,10 @@ public struct Kontovorgaben: Sendable, Equatable, Decodable {
         case policy = "Policy"
     }
     enum Schluessel: String, CodingKey { case naechste = "EnableNextEpisodeAutoPlay" }
-    enum Rechteschluessel: String, CodingKey { case download = "EnableContentDownloading" }
+    enum Rechteschluessel: String, CodingKey {
+        case download = "EnableContentDownloading"
+        case umwandeln = "EnableVideoPlaybackTranscoding"
+    }
 
     public init(from decoder: any Decoder) throws {
         let aussen = try decoder.container(keyedBy: AussenSchluessel.self)
@@ -309,8 +317,10 @@ public struct Kontovorgaben: Sendable, Equatable, Decodable {
         if aussen.contains(.policy) {
             let p = try aussen.nestedContainer(keyedBy: Rechteschluessel.self, forKey: .policy)
             downloadsErlaubt = try p.decodeIfPresent(Bool.self, forKey: .download)
+            umwandelnErlaubt = try p.decodeIfPresent(Bool.self, forKey: .umwandeln)
         } else {
             downloadsErlaubt = nil
+            umwandelnErlaubt = nil
         }
     }
 }

@@ -193,6 +193,28 @@ fun Fokusflaeche(modifier: Modifier = Modifier, lupe: Float = TvStil.fokusLupe, 
  */
 object Fokusmerker {
     var letzter: FocusRequester? = null
+        set(wert) { field = wert; gesetztUm = android.os.SystemClock.elapsedRealtime() }
+    private var gesetztUm = 0L
+
+    /**
+     * **Der Ausloeser des Players** — Kachel, Folge oder Knopf, von dem aus gestartet wurde (Vorlage
+     * tvOS 57d3219). Der Player laeuft in einer eigenen Aktivitaet und raeumt `letzter` dort weg;
+     * `TvHaupt` merkt ihn deshalb hier, bevor er startet, und legt den Fokus nach dem Schliessen
+     * zurueck. Nur ein frischer Klick zaehlt — ein Start ohne Klick (Watch Next, Fernsteuerung)
+     * haette sonst einen alten Knopf einer anderen Seite getroffen.
+     */
+    var vorDemPlayer: FocusRequester? = null
+
+    fun playerStartet() {
+        vorDemPlayer = letzter.takeIf { android.os.SystemClock.elapsedRealtime() - gesetztUm < 3000 }
+    }
+
+    fun playerZu() {
+        val ziel = vorDemPlayer ?: return
+        vorDemPlayer = null
+        val traf = runCatching { ziel.requestFocus() }.isSuccess
+        android.util.Log.i("Swiftly", "[Fokus] nach dem Player ${if (traf) "zurück am Auslöser" else "Auslöser nicht mehr da"}")
+    }
 
     /** Fordert den gemerkten Ausloeser zurueck, sonst `ersatz` (falls angegeben) — danach
      *  vergessen, damit ein spaeteres Schliessen ohne neuen Ausloeser nicht denselben Knopf trifft. */
@@ -346,7 +368,8 @@ fun TvZeile(text: String, symbol: ImageVector? = null, rechts: String? = null, h
 @Composable
 fun TvKachel(bild: String?, titel: String, unterzeile: String?, quer: Boolean = false, fortschritt: Double? = null,
              marke: String? = null, markenzahl: Int = 0,
-             modifier: Modifier = Modifier, deckkraft: Float = 1f, fokusGeaendert: (Boolean) -> Unit = {}, tun: () -> Unit) {
+             modifier: Modifier = Modifier, deckkraft: Float = 1f, titelLeise: Boolean = false,
+             fokusGeaendert: (Boolean) -> Unit = {}, tun: () -> Unit) {
     val breite = if (quer) TvStil.querBreite else TvStil.posterBreite
     Column(modifier.width(breite)) {
         Fokusflaeche(fokusGeaendert = fokusGeaendert, tun = tun) {
@@ -370,7 +393,7 @@ fun TvKachel(bild: String?, titel: String, unterzeile: String?, quer: Boolean = 
                 marke?.let { Kachelplakette(it, markenzahl, Modifier.align(Alignment.TopEnd)) }
             }
         }
-        Text(titel, style = TvStil.kachel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
+        Text(titel, style = TvStil.kachel, color = if (titelLeise) Stil.schriftLeise else Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
         unterzeile?.let { Text(it, style = TvStil.klein, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp)) }
     }
 }

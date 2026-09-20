@@ -26,13 +26,16 @@ final class Orientierung {
     private(set) var erlaubt: UIInterfaceOrientationMask = Stil.amPad
         ? .all : .portrait
 
-    func setzen(_ maske: UIInterfaceOrientationMask) {
+    /// `anfordern: false`, wenn ein Übergang die Drehung selbst mitnimmt
+    /// (`Playerrahmen`) — dann nur die Maske setzen.
+    func setzen(_ maske: UIInterfaceOrientationMask, anfordern: Bool = true) {
         // Auf dem iPad bleibt `erlaubt` auf `.all` stehen. Würde hier die
         // Maske trotzdem gesetzt, meldete der App-Delegate sie an iOS
         // zurück — und die App wäre nicht mehr multitaskingfähig.
         guard Self.querformatSperreMoeglich else { return }
 
         erlaubt = maske
+        guard anfordern else { return }
         guard let szene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene }).first else { return }
         szene.requestGeometryUpdate(.iOS(interfaceOrientations: maske))
@@ -41,12 +44,19 @@ final class Orientierung {
     }
 
     /// Player offen: darf drehen.
-    func playerGeoeffnet(querformatFest: Bool) {
-        setzen(querformatFest ? .landscape : [.portrait, .landscape])
+    func playerGeoeffnet(querformatFest: Bool, anfordern: Bool = true) {
+        setzen(querformatFest ? .landscape : [.portrait, .landscape], anfordern: anfordern)
     }
 
     /// Zurück zur App: wieder hochkant.
-    func playerGeschlossen() { setzen(.portrait) }
+    func playerGeschlossen(anfordern: Bool = true) { setzen(.portrait, anfordern: anfordern) }
+
+    /// Steht die Szene gerade quer? Nur auf dem iPhone von Belang.
+    static var szeneQuer: Bool {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }.first?
+            .interfaceOrientation.isLandscape ?? false
+    }
 
     /// Ob sich die Sperre überhaupt anbieten lässt. Auf dem iPad nicht — ein
     /// Schalter ohne Wirkung ist schlechter als keiner.

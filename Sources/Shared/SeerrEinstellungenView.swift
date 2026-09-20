@@ -39,7 +39,7 @@ struct SeerrEinstellungenView: View {
 
     private var inhalt: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen.")
+            Text("Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen.")
                 .font(Stil.koerper)
                 .foregroundStyle(Stil.schriftLeise)
                 .fixedSize(horizontal: false, vertical: true)
@@ -116,7 +116,7 @@ struct SeerrEinstellungenView: View {
                     .padding(.top, 20)
             }
 
-            Text("Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt.")
+            Text("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr.")
                 .font(Stil.klein)
                 .foregroundStyle(Stil.schriftSehrLeise)
                 .fixedSize(horizontal: false, vertical: true)

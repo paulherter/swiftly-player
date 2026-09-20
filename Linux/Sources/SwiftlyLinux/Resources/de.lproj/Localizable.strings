@@ -27,7 +27,10 @@
 "Angemeldet" = "Angemeldet";
 "Anmelden" = "Anmelden";
 "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an." = "Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an.";
+"An" = "An";
 "Aus" = "Aus";
+"Audio" = "Audio";
+"Audio & Untertitel" = "Audio & Untertitel";
 "Benutzername" = "Benutzername";
 "Besetzung" = "Besetzung";
 "Bibliotheken" = "Bibliotheken";
@@ -38,8 +41,8 @@
 "Der Code stimmt nicht oder ist abgelaufen." = "Der Code stimmt nicht oder ist abgelaufen.";
 "Der Fortschritt ist zurückgesetzt." = "Der Fortschritt ist zurückgesetzt.";
 "Die Anmeldung gilt nicht mehr. Bitte neu anmelden." = "Die Anmeldung gilt nicht mehr. Bitte neu anmelden.";
-"Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da." = "Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da.";
-"Die Wiedergabe hat nicht geklappt — %@ hat keinen Plan geliefert." = "Die Wiedergabe hat nicht geklappt — %@ hat keinen Plan geliefert.";
+"Die höchste Bitrate kannst du nur einstellen, wenn „Immer Direct Play“ aus ist." = "Die höchste Bitrate kannst du nur einstellen, wenn „Immer Direct Play“ aus ist.";
+"Die Wiedergabe hat nicht geklappt. Von %@ kamen keine Daten zum Abspielen." = "Die Wiedergabe hat nicht geklappt. Von %@ kamen keine Daten zum Abspielen.";
 "Einstellungen" = "Einstellungen";
 "Erreichbar" = "Erreichbar";
 "Extras" = "Extras";
@@ -53,10 +56,11 @@
 "Freigeben" = "Freigeben";
 "Freigegeben. Das andere Gerät meldet sich jetzt an." = "Freigegeben. Das andere Gerät meldet sich jetzt an.";
 "Für diesen Titel liegt kein Trailer vor." = "Für diesen Titel liegt kein Trailer vor.";
-"Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen." = "Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen.";
+"Gilt für jeden Film und jede Folge, die du startest. Im Player kannst du es für den laufenden Titel ändern." = "Gilt für jeden Film und jede Folge, die du startest. Im Player kannst du es für den laufenden Titel ändern.";
 "Hier ist noch nichts" = "Hier ist noch nichts";
 "Hier weiterschauen" = "Hier weiterschauen";
 "Höchste Bitrate" = "Höchste Bitrate";
+"Direct Play" = "Direct Play";
 "Immer Direct Play" = "Immer Direct Play";
 "Keine Besetzung hinterlegt." = "Keine Besetzung hinterlegt.";
 "Keine Folgen" = "Keine Folgen";
@@ -75,7 +79,7 @@
 "Nicht erreichbar" = "Nicht erreichbar";
 "Nichts gefunden" = "Nichts gefunden";
 "Nichts Ähnliches gefunden." = "Nichts Ähnliches gefunden.";
-"Nie umwandeln lassen — der Grund für diese App" = "Nie umwandeln lassen — der Grund für diese App";
+"Der Server wandelt nie um, es läuft immer die Originaldatei" = "Der Server wandelt nie um, es läuft immer die Originaldatei";
 "Nur wenn der Ton nicht in der gewählten Sprache läuft" = "Nur wenn der Ton nicht in der gewählten Sprache läuft";
 "Nächste Folge" = "Nächste Folge";
 "Nächste Folge abspielen" = "Nächste Folge abspielen";
@@ -86,6 +90,7 @@
 "Quick Connect" = "Quick Connect";
 "Schlafzeit" = "Schlafzeit";
 "Schlafzeit abgelaufen." = "Schlafzeit abgelaufen.";
+"Player schließen" = "Player schließen";
 "Schließen" = "Schließen";
 "Serien" = "Serien";
 "Server" = "Server";
@@ -109,6 +114,7 @@
 "Verbindung prüfen" = "Verbindung prüfen";
 "Verhalten" = "Verhalten";
 "Vollbild" = "Vollbild";
+"Vollbild verlassen" = "Vollbild verlassen";
 "Von vorn abspielen" = "Von vorn abspielen";
 "Vorspulen" = "Vorspulen";
 "Weiterschauen" = "Weiterschauen";
@@ -126,7 +132,9 @@
 /* Wiedergabemenue: Bildformat (08.09.2026) */
 "Bildformat" = "Bildformat";
 "Formatfüllend" = "Formatfüllend";
+"Füllen" = "Füllen";
 "Ganzes Bild" = "Ganzes Bild";
+"Original" = "Original";
 "Keine" = "Keine";
 
 /* Technikschild (08.09.2026) */
@@ -154,12 +162,12 @@
 "Verbunden" = "Verbunden";
 "Nicht verbunden" = "Nicht verbunden";
 "Verbindung trennen" = "Verbindung trennen";
-"Diese Adresse ergibt keine." = "Diese Adresse ergibt keine.";
+"Das ist keine gültige Adresse." = "Das ist keine gültige Adresse.";
 "Seerr" = "Seerr";
 "Benutzername und Passwort fehlen" = "Benutzername und Passwort fehlen";
-"Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt." = "Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt.";
+"Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr." = "Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr.";
 "Getrennt" = "Getrennt";
-"Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen." = "Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen.";
+"Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen." = "Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen.";
 "Keine Verbindung" = "Keine Verbindung";
 
 /* Seerr */
@@ -204,7 +212,7 @@
 "Offline" = "Offline";
 "Ohne Netz abspielen" = "Ohne Netz abspielen";
 "Speicher" = "Speicher";
-"Titel auf diesen Rechner laden und ohne Netz sehen" = "Titel auf diesen Rechner laden und ohne Netz sehen";
+"Titel auf diesen Rechner laden und offline schauen" = "Titel auf diesen Rechner laden und offline schauen";
 "Unbekannt" = "Unbekannt";
 "Vom Rechner entfernen" = "Vom Rechner entfernen";
 "Wartet" = "Wartet";
@@ -222,6 +230,7 @@
 "Integration" = "Integration";
 "Nicht auf deinem Server" = "Nicht auf deinem Server";
 "Staffel %d" = "Staffel %d";
+"Staffel %d · Folge %d" = "Staffel %d · Folge %d";
 "Teilweise vorhanden" = "Teilweise vorhanden";
 "Wartet auf Freigabe" = "Wartet auf Freigabe";
 "Welche Staffeln?" = "Welche Staffeln?";
@@ -277,7 +286,7 @@
 "Genre hinzufügen" = "Genre hinzufügen";
 "Alle Genres stehen schon auf der Startseite." = "Alle Genres stehen schon auf der Startseite.";
 "Auf deinem Server sind keine Genres hinterlegt." = "Auf deinem Server sind keine Genres hinterlegt.";
-"Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist." = "Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist.";
+"Die Genres kommen von deinem Server. Als Reihen bekommt jedes Genre unten auf der Startseite eine eigene Reihe, die neuesten Titel zuerst. Als Chips stehen die Genres oben als kleine Knöpfe, ein Klick öffnet das Genre. Wählst du keins aus, bleibt die Startseite, wie sie ist." = "Die Genres kommen von deinem Server. Als Reihen bekommt jedes Genre unten auf der Startseite eine eigene Reihe, die neuesten Titel zuerst. Als Chips stehen die Genres oben als kleine Knöpfe, ein Klick öffnet das Genre. Wählst du keins aus, bleibt die Startseite, wie sie ist.";
 "Code kopieren" = "Code kopieren";
 "Code kopiert." = "Code kopiert.";
 "nicht mehr auf dem Server" = "nicht mehr auf dem Server";
@@ -286,25 +295,26 @@
 "Startseite, Reihen und Genres" = "Startseite, Reihen und Genres";
 "Filme, Serien und Folgen durchsuchen" = "Filme, Serien und Folgen durchsuchen";
 "Kann angefragt werden" = "Kann angefragt werden";
-"Technikschild im Player" = "Technikschild im Player";
+"Technische Daten im Player" = "Technische Daten im Player";
 "%lld offen" = "%lld offen";
 "Profil" = "Profil";
 "Neuzugänge" = "Neuzugänge";
 "Neu hinzugefügt" = "Neu hinzugefügt";
 "Nur über WLAN" = "Nur über WLAN";
-"Über Mobilfunk warten Downloads" = "Über Mobilfunk warten Downloads";
+"Downloads warten, bis du im WLAN bist" = "Downloads warten, bis du im WLAN bist";
 
 /* Leerzustaende der Raster — Wortlaut aus dem Katalog, nicht neu erfunden. */
 "Noch nichts gemerkt" = "Noch nichts gemerkt";
 "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier." = "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier.";
 "Nichts in diesem Genre" = "Nichts in diesem Genre";
-"Auf deinem Server steht gerade kein Film und keine Serie darin." = "Auf deinem Server steht gerade kein Film und keine Serie darin.";
+"In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien." = "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.";
 "Danach frei" = "Danach frei";
-"Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird." = "Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird.";
+"Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen." = "Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.";
 "Film" = "Film";
 "Serie" = "Serie";
 "Wirklich anfragen?" = "Wirklich anfragen?";
 "Läuft ab in %d:%02d" = "Läuft ab in %d:%02d";
+"Läuft in Originalqualität. Der Server wandelt nichts um." = "Läuft in Originalqualität. Der Server wandelt nichts um.";
 "Titel, Serie, Person" = "Titel, Serie, Person";
 "Kein WLAN" = "Kein WLAN";
 "Mobilfunk" = "Mobilfunk";
@@ -317,9 +327,9 @@
 "Erzwungen" = "Erzwungen";
 "Datei" = "Datei";
 "Wo weiterschauen?" = "Wo weiterschauen?";
-"Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter." = "Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.";
+"Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter." = "Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter.";
 "Gerät" = "Gerät";
 "Discord beitreten" = "Discord beitreten";
 "Fragen stellen und sagen, was fehlt" = "Fragen stellen und sagen, was fehlt";
 "Fehler melden" = "Fehler melden";
-"Auf GitHub, deine Fassung steht schon drin" = "Auf GitHub, deine Fassung steht schon drin";
+"Auf GitHub, deine App-Version ist schon eingetragen" = "Auf GitHub, deine App-Version ist schon eingetragen";

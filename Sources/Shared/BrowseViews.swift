@@ -279,7 +279,7 @@ struct ItemDetailView: View {
         #if os(iOS)
         .background(WischZurueck())
         .toolbar(.hidden, for: .navigationBar)
-        .fullScreenCover(item: $abspielen) { wunsch in
+        .playerCover(item: $abspielen) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }

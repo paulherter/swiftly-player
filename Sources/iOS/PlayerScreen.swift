@@ -13,6 +13,8 @@ struct PlayerScreen: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var lebenslage
+    /// `.regular` heißt auf dem iPhone: hochkant.
+    @Environment(\.verticalSizeClass) private var hoehenklasse
 
     // Laufender Titel — ändert sich, wenn zur nächsten Folge gewechselt wird.
     @State private var item: Item
@@ -54,6 +56,9 @@ struct PlayerScreen: View {
     /// Stand ueber `Wiedergabetakt.neuerTitel` zurueck — von Hand ginge es
     /// auch, aber dann staende die Regel wieder an zwei Stellen.
     @State private var titelwechsel = 0
+    /// Startstelle einer Folge aus der Folgenliste, bis die Schleife den
+    /// Wechsel übernommen hat.
+    @State private var startNachWechsel: Double?
     @State private var hinweis: String?
 
     @State private var position: Double = 0
@@ -69,15 +74,19 @@ struct PlayerScreen: View {
     /// Und nicht auf dem Fernseher: dort steuert `AVPlayerViewController`, und
     /// zwei Steuerungen uebereinander wuerden sich gegenseitig treffen.
     private var steuerungDa: Bool {
-        schleierDa && !zeigeEinstellungen
+        schleierDa && !ebeneOffen
     }
+
+    /// Eine der drei Ebenen — Audio & Untertitel, Folgen, Einstellungen.
+    private var ebeneOffen: Bool { offeneEbene != nil }
 
     /// **Der Angebotsknopf unten rechts** — eine Regel, egal ob die Steuerung
     /// offen ist (Paul, 17.09.2026): Überspringen steht, solange der Abschnitt
     /// läuft; die Karte „Nächste Folge" steht bei geschlossener Steuerung
     /// (`Angebotsebene.anzeige`), bei offener steht dort der normale Knopf.
     private var angebotDa: Bool {
-        guard angebot.sichtbar, bildFrei, !zeigeEinstellungen, !imKleinenFenster,
+        // Beim Spulen weicht sie der Vorschau über der Leiste.
+        guard angebot.sichtbar, bildFrei, !ebeneOffen, !imKleinenFenster, !amSchieben,
               airplayPlan == nil, !wechselt else { return false }
         return ebene.anzeige.sichtbar || (steuerungDa && angebot == .naechsteFolge)
     }
@@ -142,8 +151,17 @@ struct PlayerScreen: View {
     @State private var fuellungsuhr = Fuellungsuhr()
     @State private var zuletztGeschoben: Date?
 
-    @State private var zeigeEinstellungen = false
+    @State private var offeneEbene: Playerebene?
+    /// Die zuletzt geöffnete Ebene — bleibt beim Schließen stehen, damit der
+    /// Titel auch während der Ausblende der Folgen über ihnen liegt.
+    @State private var zuletztGeoeffnet: Playerebene?
+    /// Der nächste Plan kommt aus einer Qualitätswahl — für den Hinweis.
+    @State private var qualitaetGewechselt = false
+    /// Kein Knopf mehr dafür im Player; bleibt für Sperrbildschirm und
+    /// Kontrollzentrum, die ein Tempo gemeldet haben wollen.
     @State private var tempo: Float = 1.0
+    /// Vorschaubilder beim Spulen (Jellyfin-Trickplay).
+    @State private var trickplay = Trickplaybilder()
     @State private var schlafminuten: Int?
     @State private var schlafAufgabe: Task<Void, Never>?
     /// Kommt aus den Einstellungen, nicht mehr aus dem Player.
@@ -223,14 +241,15 @@ struct PlayerScreen: View {
             if !drehungErwartet || drehungFertig {
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
-                        knopf("chevron.down", beschriftung: "Player schließen") { dismiss() }
                         Spacer(minLength: 0)
+                        Symbolknopf(symbol: "xmark", beschriftung: "Player schließen",
+                                    mass: mass) { schliessen() }
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.top, 18 + (imFenster ? Fensterknoepfe.hoehe : 0))
+                    .padding(.horizontal, mass.seite)
+                    .padding(.top, mass.oben)
                     Spacer(minLength: 0)
                 }
-                .ignoresSafeArea(edges: .vertical)
+                .ignoresSafeArea(edges: mass.obenUebergehen)
                 .transition(.opacity)
             }
         }
@@ -350,20 +369,28 @@ struct PlayerScreen: View {
                 // Eigene Ebene statt zwischen Kopf und Fuss gestapelt: der
                 // Fuss ist hoeher als der Kopf, dadurch lag die Mitte
                 // zwischen beiden sichtbar ueber der Bildmitte.
+                // Beim Spulen zählt nur die Leiste — die Mitte weicht.
                 mittelsteuerung
+                    .opacity(amSchieben ? 0 : 1)
+                    .allowsHitTesting(!amSchieben)
+                    // **Mitte des Bildschirms, nicht des sicheren Bereichs.**
+                    // Quer ist der sichere Bereich unten 21 pt höher als oben;
+                    // die Knöpfe saßen dadurch ein Stück über der Bildmitte.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
                 VStack(spacing: 0) {
                     kopf
                     Spacer(minLength: 0)
                     fuss
                 }
-                // Oben und unten denselben Abstand zur Bildkante.
+                // **Unten im sicheren Bereich, oben nicht.**
                 //
-                // Vorher lag der Fuß im sicheren Bereich und bekam die rund
-                // 21 Punkt des Home-Indikators obendrauf, während oben im
-                // Querformat gar nichts freigehalten wird — der Fuß saß also
-                // sichtbar höher. Waagerecht bleibt der sichere Bereich
-                // dagegen wichtig, dort sitzt die Aussparung.
-                .ignoresSafeArea(edges: .vertical)
+                // Die Leiste lag vorher außerhalb davon, auf Höhe des
+                // Home-Indikators, und wurde beim Greifen mit ihm verwechselt.
+                // Jetzt sitzt sie `mass.unten` darüber. Oben hält das Querformat
+                // ohnehin nichts frei; waagerecht bleibt der sichere Bereich
+                // wichtig, dort sitzt die Aussparung.
+                .ignoresSafeArea(edges: mass.obenUebergehen)
             }
             // Nicht ein- und aushaengen, sondern nur aufblenden.
             //
@@ -381,9 +408,7 @@ struct PlayerScreen: View {
             // Asymmetrie bleibt — schnell auf, gemaechlich zu —, aber eine
             // feste Dauer laesst sich nicht umlenken: wer zweimal kurz
             // hintereinander tippt, sah die Blende von vorn beginnen.
-            .animation(steuerungDa ? .snappy(duration: 0.18, extraBounce: 0)
-                                   : .smooth(duration: 0.34),
-                       value: steuerungDa)
+            .animation(Self.kurve(da: steuerungDa, ebene: ebeneOffen), value: steuerungDa)
 
             // **Die Einblendung — und derselbe Knopf bei offener Steuerung.**
             // Ein Tipp darauf führt aus; ein Tipp daneben öffnet wie immer die
@@ -393,6 +418,10 @@ struct PlayerScreen: View {
             // hält ihm dafür nur den Platz frei. Öffnen und Schließen der
             // Steuerung lassen ihn stehen; er kommt und geht mit denselben
             // Kurven wie die Steuerung.
+            //
+            // Rechtsbündig direkt über der Leiste, mit denselben Maßen wie der
+            // Fuß — so überlappt er sie nie, ob die Steuerung offen ist oder
+            // nicht.
             if angebotDa {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
@@ -406,9 +435,9 @@ struct PlayerScreen: View {
                             .accessibilityAction(.escape) { _ = ebene.schliessen() }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 18 + 44)
-                .ignoresSafeArea(edges: .vertical)
+                .padding(.horizontal, mass.seite)
+                .padding(.bottom, mass.unten + mass.leiste + mass.ueberLeiste)
+                .ignoresSafeArea(edges: mass.obenUebergehen)
                 .transition(.asymmetric(
                     insertion: .opacity.animation(.snappy(duration: 0.18, extraBounce: 0)),
                     removal: .opacity.animation(.smooth(duration: 0.34))))
@@ -417,28 +446,37 @@ struct PlayerScreen: View {
             if let sprungAnzeige { sprungRueckmeldung(sprungAnzeige) }
             if wechselt { Lader() }
 
-            // **Nicht ein- und aushaengen, sondern nur aufblenden** — dasselbe
-            // Muster wie bei der Steuerung darueber, und aus demselben Grund.
+            // **Die drei Ebenen.** Vollbild über dem Video, die Steuerung
+            // darunter weicht (`steuerungDa`), der Ausblend-Zeitgeber ruht.
             //
-            // Gemessen im Simulator an gerenderten Bildpunkten, Zeiten
-            // zehnfach gedehnt, mittlere Leuchtdichte ueber weissem Grund
-            // (Ruhewert 0,610):
-            //
-            //     mit `if` + `.transition`   0,178 → 0,918 → 0,823 → … → 0,610
-            //     montiert, aufgeblendet     0,168 → 0,109 → 0,187 → … → 0,610
-            //
-            // Die `.transition(.opacity)` lief gar nicht: zwischen 0,178 und
-            // 0,918 liegt kein Zwischenwert, das Blatt war schlagartig weg.
-            //
-            // Den Inhalt traegt `PlayerSettingsSheet` nur, solange `offen`
-            // gilt. Dauerhaft montiert wuerde er sonst bei jedem Takt
-            // `surface?.tonspuren` und `?.untertitelspuren` lesen, und die
-            // gehen direkt in VLCKit — rund acht Aufrufe je Sekunde, dauerhaft.
-            PlayerSettingsSheet(surface: surface, plan: plan, offen: $zeigeEinstellungen,
-                                tempo: $tempo, schlafminuten: $schlafminuten,
-                                querformatFest: $querformatFest)
-                .opacity(zeigeEinstellungen ? 1 : 0)
-                .allowsHitTesting(zeigeEinstellungen)
+            // Montiert nur, solange eine offen ist: die Spurspalten lesen
+            // `surface?.tonspuren` und `?.untertitelspuren` direkt aus
+            // VLCKit, und dauerhaft montiert wäre das bei jedem Takt.
+            // **Das Technikschild.** Eine Auskunft, kein Bedienteil: es nimmt
+            // nichts an. Über der Steuerung, aber **unter den Ebenen** — wer
+            // Folgen oder Einstellungen aufmacht, will die sehen, nicht das Schild.
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte, flaeche: surface,
+                              schirmHertz: schirmtakt.hertz)
+                    .padding(.leading, Stil.randAbstand)
+                    .padding(.top, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                    .zIndex(4)
+            }
+
+            if let offeneEbene {
+                ebenenansicht(offeneEbene)
+                    .transition(.opacity)
+                    .zIndex(5)
+            }
+
+            // Über den Ebenen nur bei den Folgen — dort bleibt er stehen.
+            // Sonst unter ihnen, damit er mit der Metazeile zusammen unter
+            // dem Weichzeichner verschwindet, nicht erst danach.
+            stehenderTitel
+                .zIndex(zuletztGeoeffnet == .folgen ? 6 : 3)
 
             // **Ueber allem, weil es alles ersetzt.** Solange der Fernseher
             // dran ist, ist die VLC-Flaeche darunter nur noch Hintergrund;
@@ -454,7 +492,7 @@ struct PlayerScreen: View {
                     },
                     beendet: {
                         if let naechsteFolge { zurNaechstenFolge(naechsteFolge) }
-                        else { dismiss() }
+                        else { schliessen() }
                     },
                     fehler: { text in
                         // **Zurueck aufs Geraet, nicht schwarz stehenbleiben.**
@@ -462,26 +500,13 @@ struct PlayerScreen: View {
                         // Schwarzbild auf dem Fernseher das Schlechteste von
                         // allem: der Film laeuft nirgends. Also weiter auf dem
                         // Telefon, mit Ansage.
-                        hinweis = String(localized: "Der Fernseher nimmt diesen Film nicht an (\(text)). Läuft weiter auf dem iPhone.")
+                        hinweis = String(localized: "Der Fernseher kann diesen Film nicht abspielen (\(text)). Er läuft auf dem iPhone weiter.")
                         airplayUmschalten(false)
                     }
                 )
                 .ignoresSafeArea()
                 .transition(.opacity)
                 .zIndex(10)
-            }
-        }
-        // **Das Technikschild.** Es liegt ueber allem und nimmt nichts an:
-        // eine Auskunft, kein Bedienteil. Angeschaltet wird es in den
-        // Wiedergabe-Einstellungen; wer es nicht sucht, sieht es nie.
-        .overlay(alignment: .topLeading) {
-            if technikschild {
-                Technikschild(plan: plan, werte: spielwerte, flaeche: surface,
-                              schirmHertz: schirmtakt.hertz)
-                    .padding(.leading, Stil.randAbstand)
-                    .padding(.top, 12)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
             }
         }
         .animation(Stil.einblenden, value: technikschild)
@@ -529,11 +554,11 @@ struct PlayerScreen: View {
             // nicht aufs Bild, sondern will die Steuerung sehen.
             guard steuerungSichtbar, laeuft else { return }
             try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, !amSchieben, !zeigeEinstellungen else { return }
+            guard !Task.isCancelled, !amSchieben, !ebeneOffen else { return }
             steuerungSichtbar = false
         }
         .animation(.easeInOut(duration: 0.15), value: sprungAnzeige?.richtung)
-        .animation(.easeInOut(duration: 0.18), value: zeigeEinstellungen)
+        .animation(Self.ebenenKurve, value: offeneEbene)
 
         // Auch die Griffe erneuern: sonst rechnet `umschalten` weiter mit
         // dem Stand von vorhin.
@@ -541,12 +566,12 @@ struct PlayerScreen: View {
         .onChange(of: laeuft) { _, _ in ausblendMarke += 1; zentraleUebernehmen(); fuellungStellen() }
         // **Nach dem Schliessen faengt die Uhr von vorn an.**
         //
-        // Der Riegel oben (`!zeigeEinstellungen`) haelt die Steuerung
+        // Der Riegel oben (`!ebeneOffen`) haelt die Steuerung
         // richtigerweise offen, solange die Tafel steht -- aber er sitzt
         // *nach* dem Schlafen. Die Aufgabe endet damit, ohne etwas
         // wegzunehmen, und ohne neue Marke laeuft keine zweite an: die
         // Steuerung waere nach dem Schliessen dauerhaft stehen geblieben.
-        .onChange(of: zeigeEinstellungen) { _, offen in if !offen { ausblendMarke += 1 } }
+        .onChange(of: ebeneOffen) { _, offen in if !offen { ausblendMarke += 1 } }
         // Die Einblendung hört auf die gewollte Steuerung, nicht auf die
         // sichtbare: beim Öffnen steht sie schon auf „an", bevor das Bild da
         // ist, und ihr erstes Ausblenden ist kein Blick in die Steuerung, der
@@ -585,7 +610,7 @@ struct PlayerScreen: View {
         .simultaneousGesture(
             MagnifyGesture(minimumScaleDelta: 0.05)
                 .onChanged { wert in
-                    guard !zoomSchonGeschaltet, !imKleinenFenster else { return }
+                    guard !zoomSchonGeschaltet, !imKleinenFenster, !ebeneOffen else { return }
                     if wert.magnification > 1.15, !bildfuellend {
                         zoomSchonGeschaltet = true
                         bildfuellend = true
@@ -638,17 +663,25 @@ struct PlayerScreen: View {
             Protokoll.schreib("[Lebenslage] willEnterForeground · Zustand \(Lagewort.jetzt)")
         }
         .task { await beobachten() }
+        // Je Titel einmal nachsehen, ob der Server Vorschaubilder hat.
+        .task(id: item.id) { await trickplay.laden(model: model, item: item, plan: plan) }
+        .task(id: item.id) {
+            if item.type == "Episode" { await FolgenEbene.vorladen(model: model, item: item) }
+        }
         // Erst danach steht fest, ob es einen „Weiter"-Knopf geben darf.
         .task { await nachschlagen(fuer: item) }
         .onChange(of: dauer) { _, _ in zentraleMelden() }
         .onAppear {
             model.playerOffen = true
             // **Vor** dem Anfordern fragen: danach steht die Lage schon quer.
-            drehungErwartet = Orientierung.drehungErwartet(querformatFest: querformatFest)
+            // Im eigenen Rahmen dreht UIKit schon beim Zeigen mit — der
+            // Player erscheint gleich quer, zu warten gibt es nichts.
+            let imRahmen = Playerrahmen.aktiv != nil
+            drehungErwartet = !imRahmen && Orientierung.drehungErwartet(querformatFest: querformatFest)
             drehungAngefordert = Date()
             Protokoll.schreib("[Drehung] angeordnet · erwartet=\(drehungErwartet)"
-                + " · Sperre=\(querformatFest)")
-            Orientierung.shared.playerGeoeffnet(querformatFest: querformatFest)
+                + " · Sperre=\(querformatFest) · Rahmen=\(imRahmen)")
+            Orientierung.shared.playerGeoeffnet(querformatFest: querformatFest, anfordern: !imRahmen)
         }
         // **Notausgang.** Bleibt der Uebergang aus — Drehsperre im
         // Kontrollzentrum, abgelehnte Anfrage, ein Fall, den wir nicht kennen —,
@@ -695,8 +728,34 @@ struct PlayerScreen: View {
                                               seconds: stelle)
                 }
             }
-            Orientierung.shared.playerGeschlossen()
+            // Im eigenen Rahmen hat der Übergang schon zurückgedreht.
+            Orientierung.shared.playerGeschlossen(anfordern: Playerrahmen.aktiv == nil)
             model.playerOffen = false
+        }
+    }
+
+    /// **Eine Blende für Ebene und Steuerung.** Öffnet eine Ebene, blendet
+    /// die Steuerung darunter im **selben Takt** aus, in dem der
+    /// Weichzeichner einblendet. Vorher lief sie mit ihrer gemächlichen
+    /// Ausblende (0,34 s) weiter, während die Ebene nach 0,2 s stand — Teile
+    /// schimmerten verspätet durch den Weichzeichner.
+    static let ebenenKurve = Animation.easeOut(duration: 0.2)
+
+    /// Aufblenden federnd und schnell, Ausblenden gemächlich — außer eine
+    /// Ebene nimmt ihren Platz ein, dann im Takt der Ebene.
+    static func kurve(da: Bool, ebene: Bool) -> Animation {
+        if da { return .snappy(duration: 0.18, extraBounce: 0) }
+        return ebene ? ebenenKurve : .smooth(duration: 0.34)
+    }
+
+    /// Auf dem iPhone schließt der eigene Rahmen (`Playerrahmen`) — dort
+    /// dreht UIKit im selben Übergang zurück ins Hochformat.
+    private func schliessen() {
+        if let rahmen = Playerrahmen.aktiv {
+            rahmen.schliessen()
+        } else {
+            Orientierung.shared.playerGeschlossen()
+            dismiss()
         }
     }
 
@@ -772,21 +831,156 @@ struct PlayerScreen: View {
 
     // MARK: - Kopf, Mitte, Fuß
 
-    private var kopf: some View {
-        HStack(spacing: 0) {
-            knopf("chevron.down", beschriftung: "Player schließen") { dismiss() }
-            Spacer(minLength: 0)
-            knopf("pip.enter", gedimmt: !pipAvailable, beschriftung: "Bild im Bild") {
-                if let grund = surface?.pipUnavailableReason { hinweis = grund }
-                else { surface?.startPiP() }
+    /// Maße für iPhone und iPad — geteilt mit den Ebenen, damit deren X
+    /// genau auf dem X des Players liegt.
+    private var mass: Playermass {
+        Playermass(pad: Stil.amPad, imFenster: imFenster,
+                   hochkant: !Stil.amPad && hoehenklasse == .regular)
+    }
+
+    /// Bei einer Folge die Serie, sonst der Titel selbst.
+    private var titelzeile: String {
+        if item.type == "Episode", let serie = item.seriesName, !serie.isEmpty { return serie }
+        return item.name
+    }
+
+    /// „Staffel 1 · Folge 3" — beim Film Jahr, Laufzeit und Genre.
+    private var metatext: String? {
+        if item.type == "Episode" {
+            if let staffel = item.parentIndexNumber, let folge = item.indexNumber {
+                return String(localized: "Staffel \(staffel) · Folge \(folge)")
             }
-            knopf("slider.horizontal.3", beschriftung: "Wiedergabeeinstellungen") {
-                ausblendMarke += 1
-                zeigeEinstellungen = true
+            return item.kontextzeile
+        }
+        let zeile = item.nebenzeile
+        return zeile.isEmpty ? nil : zeile
+    }
+
+    /// Nur Folgen einer Serie haben eine Folgenliste.
+    private var hatFolgen: Bool { item.type == "Episode" && item.seriesId != nil }
+
+    /// **Oben links der Titel, oben rechts nur Symbole.**
+    ///
+    /// Kein Bild-im-Bild-Knopf mehr: das kleine Fenster startet beim
+    /// Hochwischen von selbst. Kein Tempo, keine Auskunft — beides stand im
+    /// alten Wiedergabemenü und fällt mit ihm weg. Beim Spulen bleibt nur der
+    /// Titel; die Symbole weichen der Vorschau.
+    /// Die Knöpfe oben rechts — auch als unsichtbarer Platzhalter in
+    /// `stehenderTitel`, damit der Titel dort genauso breit wird.
+    private var symbolreihe: some View {
+        HStack(spacing: mass.pad ? 6 : 2) {
+            Symbolknopf(symbol: "captions.bubble", beschriftung: "Audio & Untertitel",
+                        mass: mass) { ebeneOeffnen(.spuren) }
+            if hatFolgen {
+                Symbolknopf(symbol: "rectangle.stack", beschriftung: "Folgen",
+                            mass: mass) { ebeneOeffnen(.folgen) }
+            }
+            Symbolknopf(symbol: "slider.horizontal.3", beschriftung: "Einstellungen",
+                        mass: mass) { ebeneOeffnen(.einstellungen) }
+            Symbolknopf(symbol: "xmark", beschriftung: "Player schließen",
+                        mass: mass) { schliessen() }
+        }
+    }
+
+    /// **Der Titel oben links, eine Ebene über allem.** Bei offener
+    /// Folgenebene bleibt er genau hier stehen; läge er im Kopf, blendete er
+    /// mit der Steuerung aus und in der Ebene wieder ein — er flackerte.
+    private var stehenderTitel: some View {
+        let da = steuerungDa || offeneEbene == .folgen
+        return HStack(alignment: .top, spacing: 12) {
+            Text(verbatim: titelzeile)
+                .font(.system(size: mass.titel, weight: .bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            symbolreihe
+                .hidden()
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, mass.seite)
+        .padding(.top, mass.oben)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .ignoresSafeArea(edges: mass.obenUebergehen)
+        .allowsHitTesting(false)
+        .opacity(da ? 1 : 0)
+        .animation(Self.kurve(da: da, ebene: ebeneOffen), value: da)
+    }
+
+    private var kopf: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                // Nur Platzhalter: gezeigt wird der Titel von
+                // `stehenderTitel`, der bei offener Folgenebene stehen bleibt.
+                Text(verbatim: titelzeile)
+                    .font(.system(size: mass.titel, weight: .bold))
+                    .lineLimit(1)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+                HStack(spacing: 6) {
+                    if let metatext { Text(verbatim: metatext) }
+                    if !plan.isLossless {
+                        Label(plan.method.rawValue, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Stil.warnung)
+                    }
+                }
+                .font(.system(size: mass.meta))
+                .foregroundStyle(Stil.schriftLeise)
+                .lineLimit(1)
+            }
+            .foregroundStyle(.white)
+
+            Spacer(minLength: 0)
+
+            symbolreihe
+            .opacity(amSchieben ? 0 : 1)
+            .allowsHitTesting(!amSchieben)
+        }
+        .padding(.horizontal, mass.seite)
+        .padding(.top, mass.oben)
+        .overlay(alignment: .bottom) {
+            // Unter der Kopfzeile, mittig: dort kommt sie weder der Leiste
+            // noch dem Überspringen-Knopf in die Quere.
+            if let hinweis {
+                Text(hinweis)
+                    .font(.caption2).foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, mass.seite)
+                    .offset(y: 22)
+                    .task {
+                        try? await Task.sleep(for: .seconds(5))
+                        self.hinweis = nil
+                    }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 18 + (imFenster ? Fensterknoepfe.hoehe : 0))
+    }
+
+    private func ebeneOeffnen(_ ziel: Playerebene) {
+        ausblendMarke += 1
+        zuletztGeoeffnet = ziel
+        offeneEbene = ziel
+    }
+
+    private func ebeneSchliessen() {
+        offeneEbene = nil
+    }
+
+    @ViewBuilder
+    private func ebenenansicht(_ welche: Playerebene) -> some View {
+        switch welche {
+        case .spuren:
+            SpurenEbene(surface: surface, mass: mass, schliessen: ebeneSchliessen)
+        case .einstellungen:
+            EinstellungsEbene(surface: surface, mass: mass, schlafminuten: $schlafminuten,
+                              qualitaet: qualitaetswahl, schliessen: ebeneSchliessen)
+        case .folgen:
+            FolgenEbene(model: model, item: item, titel: titelzeile, mass: mass,
+                        schliessen: ebeneSchliessen) { folge in
+                ebeneSchliessen()
+                // Die laufende Folge antippen heißt: weiterschauen.
+                guard folge.id != item.id else { return }
+                zurNaechstenFolge(folge, ab: folge.fortsetzenAb ?? 0)
+            }
+        }
     }
 
     /// Mittig im Bild, nicht am unteren Rand — so ist der Daumen in beiden
@@ -811,65 +1005,28 @@ struct PlayerScreen: View {
         }
     }
 
+    /// Nur die Leiste, über die volle Breite: links die verstrichene Zeit,
+    /// rechts die Restzeit. Der Titel steht jetzt oben.
     private var fuss: some View {
-        VStack(alignment: .leading, spacing: 10) {
-
-            // Titel unten, nicht oben: dort steht er im Entwurf, und er
-            // gehoert zur Zeitleiste, nicht zu den Werkzeugen.
-            HStack(alignment: .bottom, spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name)
-                        .font(.system(size: 19, weight: .semibold))
-                        .lineLimit(1)
-                    HStack(spacing: 6) {
-                        if let kontext = item.kontextzeile { Text(kontext) }
-                        if !plan.isLossless {
-                            Label(plan.method.rawValue, systemImage: "exclamationmark.triangle.fill")
-                                .foregroundStyle(Stil.warnung)
-                        }
-                    }
-                    .font(.system(size: 14))
-                    .foregroundStyle(.white.opacity(0.68))
-                    .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                // Nur der Platz: der Knopf selbst liegt in der Einblendung
-                // darüber, an derselben Stelle wie ohne Steuerung.
-                Angebotsknopf(angebot: angebot, aktion: {})
-                    .hidden()
-                    .accessibilityHidden(true)
-            }
-            .foregroundStyle(.white)
-
-            Zeitzeile(position: $position, dauer: dauer) { schiebt in
-                if schiebt {
-                    amSchieben = true
-                    zuletztGeschoben = Date()
-                    ausblendMarke += 1
-                } else {
-                    // Ausdrücklich zurücksetzen: sonst bliebe amSchieben
-                    // stehen und die Zeitanzeige würde nie mehr nachgeführt.
-                    amSchieben = false
-                    surface?.seek(toSeconds: position)
-                    gesprungen(auf: position)
-                    ausblendenVerschieben()
-                }
-            }
-
-            if let hinweis {
-                Text(hinweis)
-                    .font(.caption2).foregroundStyle(.white.opacity(0.85))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .task {
-                        try? await Task.sleep(for: .seconds(5))
-                        self.hinweis = nil
-                    }
+        Zeitzeile(position: $position, dauer: dauer, amSchieben: amSchieben,
+                  schrift: mass.zeit, pad: mass.pad,
+                  vorschau: { trickplay.bild(bei: $0, model: model) }) { schiebt in
+            if schiebt {
+                amSchieben = true
+                zuletztGeschoben = Date()
+                ausblendMarke += 1
+            } else {
+                // Ausdrücklich zurücksetzen: sonst bliebe amSchieben
+                // stehen und die Zeitanzeige würde nie mehr nachgeführt.
+                amSchieben = false
+                surface?.seek(toSeconds: position)
+                gesprungen(auf: position)
+                ausblendenVerschieben()
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 18)
+        .frame(height: mass.leiste)
+        .padding(.horizontal, mass.seite)
+        .padding(.bottom, mass.unten)
     }
 
     private func knopf(_ symbol: String, gross: Bool = false, riesig: Bool = false,
@@ -969,7 +1126,7 @@ struct PlayerScreen: View {
             withAnimation(Stil.umschalten) { laeuft.toggle() }
         case .stopp:
             surface?.stop()
-            dismiss()
+            schliessen()
         case let .springenAuf(sekunden):
             surface?.seek(toSeconds: sekunden)
             gesprungen(auf: sekunden)
@@ -1080,7 +1237,29 @@ struct PlayerScreen: View {
     /// dreimal von Hand hier, auf dem Fernseher und auf dem Mac, und lief
     /// auseinander (Audit 16.09.2026, T1-H1/H3/M2/M4/M6). Hier bleibt, was nur
     /// diese Ansicht weiß: welche ihrer Zustände zur Folge gehören.
-    private func zurNaechstenFolge(_ folge: Item) {
+    /// - Parameter ab: Startstelle — aus der Folgenliste die Fortsetzstelle,
+    ///   beim Weiterschalten immer der Anfang.
+    /// Direct Play oder Obergrenze — nur, wenn vom Server gespielt wird.
+    private var qualitaetswahl: Qualitaetswahl? {
+        guard model.downloads.datei(fuer: item.id) == nil, model.umwandelnErlaubt else { return nil }
+        return Qualitaetswahl(directPlay: model.immerDirectPlay, grenze: model.bitratenGrenze) { wert in
+            let vorher = (model.immerDirectPlay, model.bitratenGrenze)
+            if let wert {
+                model.immerDirectPlay = false
+                model.bitratenGrenze = wert
+            } else {
+                model.immerDirectPlay = true
+            }
+            guard vorher != (model.immerDirectPlay, model.bitratenGrenze) else { return }
+            Protokoll.schreib("[Qualität] \(model.immerDirectPlay ? "Direct Play" : "\(model.bitratenGrenze) Mbit/s") — neu laden bei \(Int(position)) s")
+            // Derselbe Weg wie beim Folgenwechsel: neuer Plan, gleiche Stelle.
+            ebeneSchliessen()
+            qualitaetGewechselt = true
+            zurNaechstenFolge(item, ab: position)
+        }
+    }
+
+    private func zurNaechstenFolge(_ folge: Item, ab: Double = 0) {
         guard !wechselt else { return }
         wechselt = true
         model.fertigGeschaut(position: position, dauer: dauer)
@@ -1090,9 +1269,9 @@ struct PlayerScreen: View {
                 stoppen: { await model.reportStopped(item: alt.item, plan: alt.plan,
                                                      seconds: alt.stelle) },
                 planen: { await model.plan(for: folge.id) },
-                anwenden: { neuerPlan in folgeAnwenden(folge, neuerPlan) },
+                anwenden: { neuerPlan in folgeAnwenden(folge, neuerPlan, ab: ab) },
                 starten: { neuerPlan in await model.reportStart(item: folge, plan: neuerPlan,
-                                                           seconds: 0) },
+                                                           seconds: ab) },
                 gescheitert: {
                     hinweis = String(localized: "Nächste Folge konnte nicht geladen werden.")
                     // Die alte Folge laeuft weiter, der Server kennt sie aber
@@ -1116,9 +1295,17 @@ struct PlayerScreen: View {
     }
 
     /// Die neue Folge übernehmen — alles, was der alten gehörte, zurück.
-    private func folgeAnwenden(_ folge: Item, _ neuerPlan: PlaybackPlan) {
+    private func folgeAnwenden(_ folge: Item, _ neuerPlan: PlaybackPlan, ab: Double = 0) {
         item = folge
         plan = neuerPlan
+        // Grenze gewählt, aber es läuft das Original: entweder reicht die Datei
+        // schon, oder der Server wandelt nicht um. Sagen statt schweigen.
+        if qualitaetGewechselt {
+            qualitaetGewechselt = false
+            if !model.immerDirectPlay, neuerPlan.method == .directPlay {
+                hinweis = String(localized: "Läuft in Originalqualität. Der Server wandelt nichts um.")
+            }
+        }
         // Die geteilte Regel setzt Stelle, Spuren, Startmeldung und das erste
         // Bild zurueck. Ohne den Ladeschirm uebernaehme die Schleife im
         // naechsten Takt noch die Zeit der **alten** Folge — der Balken
@@ -1134,6 +1321,15 @@ struct PlayerScreen: View {
         erstesBildDa = stand.erstesBildDa
         spurenGesetzt = stand.spurenGesetzt
         startGemeldet = stand.startGemeldet
+        // **Mitten in der Folge anfangen ist ein Sprung.** Die Anzeige steht
+        // gleich auf der Startstelle und hält sie, bis VLC dort ist — sonst
+        // nähme sie die Zeit der alten Folge oder die Wechselsperre hielte
+        // sie auf null. Die Schleife setzt dasselbe nach ihrem Neuanfang.
+        if ab > 0 {
+            position = ab
+            sprung = Wiedergabetakt.Sprung(ziel: ab)
+            startNachWechsel = ab
+        }
         titelwechsel += 1
         // Eine neue Folge fängt eine eigene Zeitrechnung an. Bliebe die alte
         // stehen, wären Notbremse und Frischefenster sofort abgelaufen — auf
@@ -1147,7 +1343,7 @@ struct PlayerScreen: View {
         ebene.neueFolge()
         zentraleUebernehmen()
         surface?.puffer = model.pufferstufe
-        surface?.play(url: neuerPlan.url, abSekunden: 0, container: neuerPlan.container,
+        surface?.play(url: neuerPlan.url, abSekunden: ab, container: neuerPlan.container,
                       untertitel: model.untertiteldateien(neuerPlan))
     }
 
@@ -1305,6 +1501,13 @@ struct PlayerScreen: View {
                 letzterWechsel = titelwechsel
                 // `true`, weil der Wechsel den Start selbst gemeldet hat.
                 Wiedergabetakt.neuerTitel(&stand, startGemeldet: true)
+                // Aus der Folgenliste mitten in eine Folge: siehe `folgeAnwenden`.
+                if let ab = startNachWechsel {
+                    startNachWechsel = nil
+                    stand.nachWechsel = false
+                    stand.position = ab
+                    stand.sprung = Wiedergabetakt.Sprung(ziel: ab)
+                }
             }
 
             // **Angekommen heisst angekommen.** Ob VLC am Ziel eines Sprungs
@@ -1518,13 +1721,11 @@ struct VideoSurfaceHost: UIViewRepresentable {
 /// sich geaendert haetten, und laesst `body` aus.
 private struct Playerschleier: View {
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.28)
-            LinearGradient(colors: [.black.opacity(0.6), .clear],
-                           startPoint: .top, endPoint: .center)
-            LinearGradient(colors: [.clear, .black.opacity(0.7)],
-                           startPoint: .center, endPoint: .bottom)
-        }
+        // **Flach, ohne Verläufe** — rgba(11,11,13,.42) wie im Entwurf.
+        // **Reines Schwarz, nicht `Stil.grund`.** Über HDR-Video wird
+        // #0B0B0D als SDR-Farbe hochgerechnet und hebt dunkle Szenen an —
+        // die Steuerung machte das Bild heller statt dunkler. Wie auf tvOS.
+        Color.black.opacity(0.42)
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .transition(.opacity)
@@ -1540,17 +1741,59 @@ private struct Playerschleier: View {
 private struct Zeitzeile: View {
     @Binding var position: Double
     let dauer: Double
+    let amSchieben: Bool
+    let schrift: CGFloat
+    let pad: Bool
+    /// Das Trickplay-Bild zur Stelle, oder `nil`.
+    let vorschau: (Double) -> CGImage?
     /// `true` beim Anfassen, `false` beim Loslassen.
     let schiebt: (Bool) -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             Text(Spielzeit.text(position))
             Zeitregler(wert: $position, bis: max(dauer, 1), beimSchieben: schiebt)
+                .overlay(alignment: .topLeading) {
+                    if amSchieben { vorschauKasten }
+                }
             Text("−" + Spielzeit.text(max(dauer - position, 0)))
         }
-        .font(.system(size: 13).monospacedDigit())
-        .foregroundStyle(.white.opacity(0.9))
+        .font(.system(size: schrift).monospacedDigit())
+        .foregroundStyle(Stil.schriftLeise)
+    }
+
+    /// **Über dem Griff: Vorschaubild, darunter die Zeit.** Ohne Trickplay
+    /// am Server nur die Zeit — kein leerer Kasten.
+    private var vorschauKasten: some View {
+        GeometryReader { g in
+            let bild = vorschau(position)
+            let breite: CGFloat = pad ? 200 : 160
+            let hoehe = breite * 9 / 16
+            let anteil = dauer > 0 ? min(max(position / dauer, 0), 1) : 0
+            // Am Rand bleibt der Kasten ganz auf der Leiste stehen.
+            let halb = (bild == nil ? 40 : breite / 2)
+            let x = min(max(g.size.width * anteil, halb), max(g.size.width - halb, halb))
+            VStack(spacing: 6) {
+                if let bild {
+                    Image(decorative: bild, scale: 1)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: breite, height: hoehe)
+                        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke))
+                        .overlay(RoundedRectangle(cornerRadius: Stil.ecke)
+                            .strokeBorder(.white.opacity(0.35), lineWidth: 1))
+                }
+                Text(Spielzeit.text(position))
+                    .font(.system(size: schrift, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.white)
+            }
+            .fixedSize()
+            // Unterkante knapp über der Trefferfläche — die Leiste selbst
+            // liegt in deren Mitte.
+            .position(x: x, y: -((bild == nil ? 0 : hoehe + 6) + schrift) / 2 - 2)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -1571,6 +1814,8 @@ private struct Zeitzeile: View {
 /// **Der Einzige, der wirklich uebersprungen wird, ist `Playerschleier`:**
 /// er hat gar keine gespeicherten Werte.
 private struct Angebotsknopf: View {
+    /// Schrift auf der weißen Pille — der Grund des Players, #0B0B0D.
+    private static let dunkel = Stil.grund
     let angebot: Knopfangebot
     /// Countdown bis zur nächsten Folge — als Füllung von links, aus der Uhr
     /// gerechnet und bei jedem Bild nachgezogen, nicht im Takt.
@@ -1586,37 +1831,38 @@ private struct Angebotsknopf: View {
                 // entsteht als `String` im Paket — deshalb `Text(verbatim:)`
                 // statt `Label(_:)`, sonst wuerde sie ein zweites Mal
                 // nachgeschlagen.
-                HStack(spacing: 6) {
-                    Image(systemName: angebot.zeichen)
+                // **Weiße Pille mit dem Überspringen-Zeichen** (Dreieck und
+                // Strich) — für beide Angebote, wie im Entwurf.
+                HStack(spacing: 8) {
+                    Image(systemName: "forward.end.fill")
                     Text(verbatim: angebot.beschriftung)
                 }
-                .font(.system(size: 14, weight: .semibold))
-                .padding(.horizontal, 15)
-                .frame(height: 34)
+                .font(.system(size: 15, weight: .bold))
+                .padding(.horizontal, 18)
+                .frame(height: 40)
                 .background {
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Stil.schrift.opacity(0.16))
+                        RoundedRectangle(cornerRadius: Stil.eckeFeld).fill(.white)
                         if let fuellung {
                             // **Durchgehend statt im Takt** (Paul, 17.09.2026):
                             // im halben Sekundentakt nachgezogen ruckelte sie am
-                            // Anfang und gegen Ende. **In Akzentfarbe**, weil sie
-                            // Fortschritt ist (GESTALTUNG A); halb deckend, damit
-                            // die weiße Schrift darüber lesbar bleibt — voll
-                            // deckend läge sie bei knapp 2:1.
+                            // Anfang und gegen Ende. **Dunkel auf Weiß**, nicht in
+                            // Akzentfarbe: die gehört im Player allein dem Griff
+                            // der Leiste beim Spulen.
                             TimelineView(.animation) { zeit in
                                 GeometryReader { g in
                                     Rectangle()
-                                        .fill(Stil.akzent.opacity(0.5))
+                                        .fill(Self.dunkel.opacity(0.16))
                                         .frame(width: g.size.width * fuellung.anteil(jetzt: zeit.date))
                                 }
                             }
                         }
                     }
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld))
                 }
-                .overlay(Capsule().strokeBorder(Stil.schrift.opacity(0.24)))
             }
-            .foregroundStyle(Stil.schrift)
+            .buttonStyle(.plain)
+            .foregroundStyle(Self.dunkel)
             .fixedSize()
             .accessibilityLabel(Text(verbatim: angebot.beschriftung))
             .accessibilityValue(fuellung.map {

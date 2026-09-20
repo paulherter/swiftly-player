@@ -195,7 +195,7 @@ struct ServerView: View {
                 .frame(width: 760)
                 .padding(.top, 28)
 
-            Text("Ohne https:// — das ergänzen wir.")
+            Text("https:// kannst du weglassen.")
                 .font(Stil.klein)
                 .foregroundStyle(Stil.schriftSehrLeise)
                 .frame(width: 760, alignment: .leading)

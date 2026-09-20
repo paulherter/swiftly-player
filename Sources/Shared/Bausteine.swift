@@ -240,7 +240,7 @@ struct Uebernahmeauswahl: View {
                 VStack(spacing: 6) {
                     Text("Wo weiterschauen?")
                         .font(.headline)
-                    Text("Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.")
+                    Text("Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

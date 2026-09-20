@@ -37,7 +37,7 @@ final class Abspielsteuerung {
                 // Der Fehler nennt den Server, nicht nur „ging nicht" — sonst
                 // weiß man bei mehreren Servern nicht, welcher gemeint ist.
                 let wo = model.serverName ?? String(localized: "dem Server")
-                fehler = String(localized: "Die Wiedergabe hat nicht geklappt — \(wo) hat keinen Plan geliefert.")
+                fehler = String(localized: "Die Wiedergabe hat nicht geklappt. Von \(wo) kamen keine Daten zum Abspielen.")
                 return
             }
             let frischer = await frisch

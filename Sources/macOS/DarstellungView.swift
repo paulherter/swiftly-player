@@ -123,9 +123,9 @@ struct DarstellungView: View {
     private var genres: some View {
         VStack(alignment: .leading, spacing: 0) {
             Einstellungsgruppe(titel: "Genres") {
-                form("Als eigene Reihen", an: !model.genreChips) { model.genreChips = false }
+                form("Als eigene Reihen", symbol: "rectangle.grid.1x2", an: !model.genreChips) { model.genreChips = false }
                 Trennstrich().padding(.leading, 48)
-                form("Als Chips über den Reihen", an: model.genreChips) { model.genreChips = true }
+                form("Als Chips über den Reihen", symbol: "capsule", an: model.genreChips) { model.genreChips = true }
 
                 ForEach(model.startGenres, id: \.self) { name in
                     Trennstrich().padding(.leading, 48)
@@ -146,7 +146,6 @@ struct DarstellungView: View {
                 }
                 .buttonStyle(.plain)
             }
-            Fusszeile(text: "Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist.")
         }
     }
 
@@ -161,14 +160,11 @@ struct DarstellungView: View {
         }
     }
 
-    private func form(_ titel: LocalizedStringKey, an: Bool,
+    /// Wie die Zeilen darüber: Symbol, Titel, Haken — nicht kleiner.
+    private func form(_ titel: LocalizedStringKey, symbol: String, an: Bool,
                       waehlen: @escaping () -> Void) -> some View {
-        Button(action: waehlen) {
-            Wertezeile(symbol: an ? "checkmark" : "circle", titel: Text(titel),
-                       akzent: an, schwebbar: true)
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(an ? .isSelected : [])
+        Wertezeile(symbol: symbol, titel: Text(titel), aktion: waehlen, haken: an)
+            .accessibilityAddTraits(an ? .isSelected : [])
     }
 
 }

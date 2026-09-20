@@ -86,16 +86,26 @@ Sag 'Ressourcenbuendel'
 # eigenes Buendel mit - JellyfinKit auch (seine Uebersetzungen). Der erste
 # Anlauf kopierte nur SwiftlyWindows_SwiftlyWindows.resources; die Probe ohne
 # Bauordner starb dann eine Zeile spaeter an JellyfinKit_JellyfinKit.resources.
-$pflicht = 'SwiftlyWindows_SwiftlyWindows.resources', 'JellyfinKit_JellyfinKit.resources'
+# **Und der Name haengt an der Toolchain.** Bis Swift 6.3 heisst ein Buendel
+# <Ziel>_<Ziel>.resources, ab 6.4 <Ziel>_<Ziel>.bundle; der erzeugte
+# Bundle.module-Zugriff sucht genau den Namen, unter dem gebaut wurde. Auf
+# Linux hat derselbe feste Name am 20.09.2026 ein pacman-Paket ganz ohne
+# Buendel ausgeliefert - hier haette er wenigstens geworfen statt zu schweigen,
+# aber gebaut haette danach trotzdem niemand mehr. Also beide Namen.
+$pflicht = 'SwiftlyWindows_SwiftlyWindows', 'JellyfinKit_JellyfinKit'
 foreach ($name in $pflicht) {
-    if (-not (Test-Path (Join-Path $bau $name))) {
+    $da = @('.resources', '.bundle') | Where-Object { Test-Path (Join-Path $bau ($name + $_)) }
+    if (-not $da) {
         throw "Ressourcenbuendel fehlt: $name - erst bauen.ps1 laufen lassen."
     }
 }
-Get-ChildItem $bau -Directory -Filter '*.resources' | ForEach-Object {
+$kopiert = 0
+Get-ChildItem $bau -Directory | Where-Object { $_.Name -match '\.(resources|bundle)$' } | ForEach-Object {
     Copy-Item $_.FullName "$Ziel\bin" -Recurse -Force
     Sag ('  ' + $_.Name)
+    $kopiert++
 }
+if ($kopiert -eq 0) { throw "Kein Ressourcenbuendel in $bau" }
 
 Sag 'libVLC samt Modulen'
 Copy-Item "$VlcLaufzeit\libvlc.dll","$VlcLaufzeit\libvlccore.dll" "$Ziel\bin" -Force

@@ -79,14 +79,13 @@ struct EinstellungenView: View {
                 HStack(alignment: .top, spacing: 0) {
                     VStack(alignment: .leading, spacing: 0) { offline; integration }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 0) { server; gemeinschaft }
+                    VStack(alignment: .leading, spacing: 0) { server }
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
                 offline
                 integration
                 server
-                gemeinschaft
             }
 
             // **Nicht getippt.** Hier stand „Swiftly 1.0" — eine Zahl, die
@@ -120,7 +119,7 @@ struct EinstellungenView: View {
         Einstellungsgruppe(titel: "Offline") {
             Wahlzeile(symbol: "arrow.down.circle",
                       titel: Text("Downloads"),
-                      unter: Text("Titel aufs Gerät laden und ohne Netz sehen"),
+                      unter: Text("Titel aufs Gerät laden und offline schauen"),
                       an: Binding(get: { model.downloadsAn },
                                   set: { an in
                                       if an { model.downloadsAn = true }
@@ -134,7 +133,7 @@ struct EinstellungenView: View {
                 Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
                 Wahlzeile(symbol: "wifi",
                           titel: Text("Nur über WLAN"),
-                          unter: Text("Über Mobilfunk warten Downloads"),
+                          unter: Text("Downloads warten, bis du im WLAN bist"),
                           an: Binding(get: { model.nurUeberWLAN },
                                       set: { model.nurUeberWLAN = $0 }))
                 Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
@@ -196,7 +195,7 @@ struct EinstellungenView: View {
                       aktion: { oeffnen(Gemeinschaft.discord) })
             Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "ladybug", titel: Text("Fehler melden"),
-                      unter: Text("Auf GitHub, deine Fassung steht schon drin"),
+                      unter: Text("Auf GitHub, deine App-Version ist schon eingetragen"),
                       aktion: { oeffnen(Fassung.fehlerMelden) })
         }
     }

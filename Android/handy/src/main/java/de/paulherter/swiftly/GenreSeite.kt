@@ -75,7 +75,7 @@ fun GenreSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
             }
             if (titel?.isEmpty() == true) {
                 Leerzustand(Icons.Filled.Tag, uebersetzt("Nichts in diesem Genre"),
-                            uebersetzt("Auf deinem Server steht gerade kein Film und keine Serie darin."))
+                            uebersetzt("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."))
             }
         }
     }

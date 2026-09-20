@@ -375,18 +375,24 @@ private fun Reiter(titel: List<String>, gewaehlt: Int, waehlen: (Int) -> Unit) {
  * waechst von oben links, 200 breit, 44 unter der Pille, und liegt ueber den Folgen.
  */
 @Composable
-private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boolean, setzeOffen: (Boolean) -> Unit, waehlen: (String) -> Unit) {
+internal fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boolean, setzeOffen: (Boolean) -> Unit,
+                         kompakt: Boolean = false, waehlen: (String) -> Unit) {
     val mehrere = staffeln.size > 1
     val drehung by animateFloatAsState(if (offen) 180f else 0f, Bewegung.sprung(), label = "pfeil")
     // **Ein Tipp auf die Pille schliesst die offene Liste nur.** Er kam doppelt an: erst schloss das
     // Popup sie als Tipp daneben, dann oeffnete die Pille sie im selben Zug wieder — auf iOS behoben.
     val geschlossenUm = remember { longArrayOf(0L) }
-    Box(Modifier.fillMaxWidth().zIndex(10f).padding(start = Stil.randAbstand, top = 14.dp, bottom = 14.dp)) {
-        Row(Modifier.height(36.dp).antippen { if (mehrere && android.os.SystemClock.uptimeMillis() - geschlossenUm[0] > 300) setzeOffen(!offen) },
+    // **Kompakt** in der Folgenebene des Players (Vorlage `Aufklappliste(schrift: meta + 1, hoehe: 28)`):
+    // an Stelle der Metazeile, ohne eigenen Rand — den gibt der Ebenenkopf.
+    Box(if (kompakt) Modifier.zIndex(10f) else Modifier.fillMaxWidth().zIndex(10f).padding(start = Stil.randAbstand, top = 14.dp, bottom = 14.dp)) {
+        Row(Modifier.height(if (kompakt) 28.dp else 36.dp).antippen { if (mehrere && android.os.SystemClock.uptimeMillis() - geschlossenUm[0] > 300) setzeOffen(!offen) },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(staffeln.firstOrNull { it.id == gewaehlt }?.name ?: uebersetzt("Staffel"),
-                 style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift)
-            if (mehrere) Icon(Icons.Filled.KeyboardArrowDown, contentDescription = uebersetzt("Öffnet die Auswahl"),
+                 style = if (kompakt) TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold) else Stil.reihe.copy(letterSpacing = (-0.3).sp),
+                 color = Stil.schrift)
+            if (mehrere && kompakt) Icon(androidx.compose.ui.res.painterResource(R.drawable.player_pfeil), contentDescription = uebersetzt("Öffnet die Auswahl"),
+                                         tint = Stil.schriftLeise, modifier = Modifier.graphicsLayer { rotationZ = drehung })
+            else if (mehrere) Icon(Icons.Filled.KeyboardArrowDown, contentDescription = uebersetzt("Öffnet die Auswahl"),
                               tint = Stil.schriftLeise, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = drehung })
         }
         // **Ueber den Folgen, nicht zwischen ihnen.** Als Kind dieser Kopfzeile wuchs sie mit auf —
@@ -399,7 +405,7 @@ private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boole
             val dichte = LocalDensity.current
             // 16 Rand im Popup, damit der Schatten Platz hat; die Liste selbst sitzt 44 unter der Pille.
             val rand = with(dichte) { 16.dp.roundToPx() }
-            val unten = with(dichte) { 44.dp.roundToPx() }
+            val unten = with(dichte) { (if (kompakt) 34.dp else 44.dp).roundToPx() }
             Popup(offset = IntOffset(-rand, unten - rand), onDismissRequest = { geschlossenUm[0] = android.os.SystemClock.uptimeMillis(); setzeOffen(false) },
                   properties = PopupProperties(focusable = false)) {
                 AnimatedVisibility(zustand, Modifier.padding(16.dp),
@@ -431,7 +437,7 @@ private fun Staffelkopf(staffeln: List<Staffel>, gewaehlt: String?, offen: Boole
  * Balken und Haken zugleich waeren dieselbe Auskunft zweimal.
  */
 @Composable
-private fun Folgenzeile(f: Folge, ende: (@Composable () -> Unit)? = null, tun: () -> Unit) {
+internal fun Folgenzeile(f: Folge, ende: (@Composable () -> Unit)? = null, tun: () -> Unit) {
     Row(Modifier.fillMaxWidth().druckzeile(tun).padding(horizontal = Stil.randAbstand, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(116.dp, 65.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche)) {

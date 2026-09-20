@@ -27,8 +27,28 @@ final class Abspieler {
     private var bildfeld: Widget!
     private var takt: guint = 0
 
+    /// **Wie viele Bilder die Bruecke seit dem Oeffnen hergegeben hat.**
+    /// Nur zum Messen: ohne diese Zahl laesst sich „das Bild bleibt schwarz"
+    /// nicht von „das Bild kommt, wird aber nicht gezeichnet" unterscheiden.
+    private(set) var geholteBilder = 0
+
+    /// **Wie oft GTKs Taktgeber den Abspieler ueberhaupt gefragt hat.**
+    /// Steht diese Zahl still, liegt es nicht an VLC, sondern daran, dass
+    /// das Bildfeld keinen Takt mehr bekommt.
+    private(set) var takte = 0
+
     /// Wie die Anzeige das Bild zeigt. Ein `GtkPicture`, sonst nichts.
     var anzeige: Widget! { bildfeld }
+
+    /// Zum Messen: haengt das Bildfeld im Fenster, hat es einen Taktgeber,
+    /// und ist der Rueckruf angemeldet?
+    var taktlage: String {
+        guard let bildfeld else { return "kein Bildfeld" }
+        let gemappt = gtk_widget_get_mapped(bildfeld) != 0
+        let uhr = gtk_widget_get_frame_clock(bildfeld) != nil
+        let eltern = gtk_widget_get_parent(bildfeld) != nil
+        return "mapped=\(gemappt ? 1 : 0) uhr=\(uhr ? 1 : 0) eltern=\(eltern ? 1 : 0) id=\(takt)"
+    }
 
     /// **VLC spielt (`true`) oder hat angehalten (`false`)** — aus libVLCs
     /// Ereignissen `Playing`/`Paused`, auf GTKs Faden. Das Gegenstueck zu
@@ -91,6 +111,16 @@ final class Abspieler {
         gtk_picture_set_content_fit(OpaquePointer(bildfeld), GTK_CONTENT_FIT_CONTAIN)
         gtk_widget_set_hexpand(bildfeld, 1)
         gtk_widget_set_vexpand(bildfeld, 1)
+        // **Und noch einmal, sobald das Bildfeld wieder im Fenster haengt.**
+        // ``oeffnen(_:ab:puffer:)`` meldet den Takt an, aber es ist nicht
+        // gesagt, dass das Umhaengen davor liegt: wer eine Seite baut,
+        // waehrend schon gespielt wird, kaeme sonst wieder ohne Takt heraus.
+        // Nur wenn ueberhaupt ein Spieler laeuft — sonst liesse ein Takt
+        // ohne Bild GTK jeden Frame umsonst zeichnen.
+        beiSignal(bildfeld, "map") { [weak self] in
+            guard let self, self.spieler != nil else { return }
+            self.bildTaktStarten()
+        }
     }
 
     deinit { beenden() }
@@ -105,6 +135,8 @@ final class Abspieler {
     /// der drei Aufrufstellen sie auslassen — der Uebersetzer fragt nach.
     func oeffnen(_ url: URL, ab: Double, puffer: Pufferstufe) {
         beenden(nurMedium: true)
+        geholteBilder = 0
+        takte = 0
         guard let kern, let bruecke else { return }
         guard let medium = libvlc_media_new_location(kern, url.absoluteString) else { return }
         // **Die Stelle als Option, nicht als Sprung nach dem Start.** Genau
@@ -332,18 +364,37 @@ final class Abspieler {
     /// **Jedes Einzelbild einmal abholen, nicht öfter.** Der Taktgeber von GTK
     /// schlägt im Rhythmus des Bildschirms; kam seit dem letzten Mal nichts
     /// Neues, gibt die Brücke `false` zurück und es passiert nichts.
+    /// **Bei jedem Oeffnen neu anmelden, nicht nur beim ersten.**
+    ///
+    /// Der Takt haengt am Bildfeld, und das Bildfeld zieht beim naechsten
+    /// Titel auf die neue Spielerseite um. Hier stand
+    /// `guard takt == 0 else { return }` — solange das Widget seinen
+    /// Taktgeber ueber den Umzug rettet, faellt das nicht auf; tut es das
+    /// nicht, bleibt es fuer immer ohne. Das ist kein Zustand, auf den sich
+    /// bauen laesst, also wird der Rueckruf jedes Mal frisch angemeldet.
+    ///
+    /// **Die Ursache vom 20.09.2026 war das nicht** — dort verlor das Bild
+    /// seinen Eltern ganz (siehe ``Spieler/spielerSeiteBauen``), und ohne
+    /// Fenster nuetzt auch ein frischer Rueckruf nichts. Die Zeile bleibt
+    /// als das, was sie ist: eine Annahme weniger.
     private func bildTaktStarten() {
-        guard takt == 0 else { return }
+        if takt != 0, let bildfeld {
+            gtk_widget_remove_tick_callback(bildfeld, takt)
+            takt = 0
+        }
+        guard let bildfeld else { return }
         takt = gtk_widget_add_tick_callback(bildfeld, bildTakt,
                                             Unmanaged.passUnretained(self).toOpaque(), nil)
     }
 
     fileprivate func bildHolen() {
+        takte += 1
         guard let bruecke else { return }
         var daten: UnsafePointer<UInt8>?
         var breite: UInt32 = 0, hoehe: UInt32 = 0, zeilentakt: UInt32 = 0
         guard bildbruecke_holen(bruecke, &daten, &breite, &hoehe, &zeilentakt),
               let daten, breite > 0, hoehe > 0 else { return }
+        geholteBilder += 1
 
         let laenge = Int(zeilentakt) * Int(hoehe)
         guard let bytes = g_bytes_new(daten, gsize(laenge)) else { return }

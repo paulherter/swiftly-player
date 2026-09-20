@@ -109,7 +109,7 @@ fun TvSeerrSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Stil.grund), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 480.dp)) {
             Text("Seerr", style = TvStil.titelGross, color = Stil.schrift)
-            Text(uebersetzt("Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen."),
+            Text(uebersetzt("Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen."),
                  style = TvStil.koerper, color = Stil.schriftLeise, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp))
             if (verbunden) {
                 Text(app.seerrAdresse().orEmpty(), style = TvStil.koerper, color = Stil.schrift, modifier = Modifier.padding(top = 26.dp))
@@ -129,7 +129,7 @@ fun TvSeerrSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
                 fehler?.let {
                     Text(it, style = TvStil.klein, color = Stil.warnung, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
                 }
-                Text(uebersetzt("Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt."),
+                Text(uebersetzt("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr."),
                      style = TvStil.klein, color = Stil.schriftSehrLeise, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp))
             }
         }

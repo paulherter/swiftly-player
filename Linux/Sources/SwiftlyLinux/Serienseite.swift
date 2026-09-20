@@ -332,7 +332,9 @@ extension App {
     /// erst beim Bauen dazu; seit die Liste einmal entsteht und nicht bei
     /// jedem Klick, muss die Wahl umziehen können, ohne dass die Zeile neu
     /// gebaut wird — sonst zeigt die Liste beim zweiten Öffnen zwei Haken.
-    private func staffelzeile(_ text: String, gewaehlt: Bool,
+    /// Internal: die Player-Folgenebene (`PlayerEbenen.swift`) baut ihre
+    /// Staffelliste aus derselben Zeile — wörtlich, nicht nachgebaut.
+    func staffelzeile(_ text: String, gewaehlt: Bool,
                               _ auswahl: @escaping () -> Void) -> Widget! {
         let knopf: Widget! = gtk_button_new()
         gtk_widget_add_css_class(knopf, "swiftly-handlung")
@@ -354,7 +356,7 @@ extension App {
     }
 
     /// Setzt die Wahl auf einer bestehenden Zeile um — Akzent an, Haken an.
-    private func staffelzeileMalen(_ zeile: Widget?, gewaehlt: Bool) {
+    func staffelzeileMalen(_ zeile: Widget?, gewaehlt: Bool) {
         guard let zeile else { return }
         if gewaehlt { gtk_widget_add_css_class(zeile, "swiftly-aktiv") }
         else        { gtk_widget_remove_css_class(zeile, "swiftly-aktiv") }
@@ -410,13 +412,25 @@ extension App {
     /// **Das Bild der Folge, nicht das der Serie.** `Bildwahl.quer` nimmt
     /// absichtlich den Hintergrund der Serie — richtig für „Weiterschauen",
     /// falsch hier: in einer Folgenliste stünde in jeder Zeile dasselbe Bild.
-    private func folgenzeile(_ folge: Item) -> Widget! {
+    /// Internal: die Player-Folgenebene (`PlayerEbenen.swift`) baut ihre
+    /// Liste aus derselben Zeile — wörtlich, nicht nachgebaut.
+    ///
+    /// - Parameter laeuft: Markiert die Zeile wie die laufende Folge in der
+    ///   Player-Folgenebene (`.swiftly-aktiv`, Weiss zu 8 %).
+    /// - Parameter aktion: Ohne Angabe startet ein Klick den Titel frisch
+    ///   (`starte`, wie auf der Serienseite). Die Player-Folgenebene übergibt
+    ///   stattdessen den Wechsel im laufenden Player (`wechsleZu`), sonst
+    ///   führte ein Klick dort zu einem Player, der sich einmal schliesst und
+    ///   neu öffnet, statt nur die Folge zu tauschen.
+    func folgenzeile(_ folge: Item, laeuft: Bool = false,
+                     aktion: ((Item) -> Void)? = nil) -> Widget! {
         // **Kein Knopf, eine Geste.** Die Zeile trägt selbst einen Knopf —
         // den Haken zum Umschalten —, und ein Knopf im Knopf ist in GTK kein
         // sicherer Bau. Auf dem Mac steht dort aus demselben Grund
         // `.onTapGesture`.
         let zeile = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 18)
         gtk_widget_add_css_class(zeile, "swiftly-folgenzeile")
+        if laeuft { gtk_widget_add_css_class(zeile, "swiftly-aktiv") }
 
         let (huelle, bild) = gerahmtesBild(breite: 160, hoehe: 90, stil: "swiftly-plakat")
         gtk_widget_set_valign(huelle, GTK_ALIGN_START)
@@ -613,8 +627,11 @@ extension App {
             gtk_widget_set_visible(kreis, 0)
         })
 
-        // **Eine Folge aus der Liste startet an ihrer eigenen Stelle** (A5).
-        beiKlick(zeile) { [weak self] in self?.starte(aktuell) }
+        // **Eine Folge aus der Liste startet an ihrer eigenen Stelle** (A5) —
+        // oder, in der Player-Folgenebene, wechselt der laufende Player zu ihr.
+        beiKlick(zeile) { [weak self] in
+            if let aktion { aktion(aktuell) } else { self?.starte(aktuell) }
+        }
         return zeile
     }
 

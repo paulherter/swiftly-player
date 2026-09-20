@@ -1103,6 +1103,10 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
     let istGewaehlt: (Eintrag) -> Bool
     let waehlen: (Eintrag) -> Void
     @Binding var offen: Bool
+    /// Im Player sitzt sie an Stelle der Metazeile unter dem Titel — dort
+    /// kleiner, sonst dieselbe Wahl.
+    var schrift: Font = Stil.reihe
+    var hoehe: CGFloat = 36
 
     var body: some View {
         Button {
@@ -1121,7 +1125,7 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
             // nachgesehenen Streaming-Apps machen es genauso.
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text(beschriftung)
-                    .font(Stil.reihe)
+                    .font(schrift)
                     .tracking(-0.3)
                     .foregroundStyle(Stil.schrift)
                 if eintraege.count > 1 {
@@ -1132,7 +1136,7 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
                 }
             }
             // Die Trefferfläche bleibt, auch ohne Fläche darunter.
-            .frame(height: 36)
+            .frame(height: hoehe)
             .contentShape(Rectangle())
         }
         .accessibilityLabel(beschriftung)
@@ -1176,7 +1180,7 @@ struct Aufklappliste<Eintrag: Identifiable>: View {
                 .background(Stil.flaeche,
                             in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
                 .shadow(color: .black.opacity(0.6), radius: 16, y: 8)
-                .offset(y: 44)
+                .offset(y: hoehe + 8)
                 .zIndex(10)
                 // **Sie waechst aus ihrem Ausloeser.** Vorher stand sie
                 // schlagartig da — kein Uebergang, kein Ursprung. Eine Liste
@@ -1209,7 +1213,7 @@ extension Stil {
 }
 
 
-/// Zeitregler im Player: 3-px-Balken mit kleinem runden Griff.
+/// Zeitregler im Player: 4-pt-Balken, beim Spulen 6 pt mit Griff.
 ///
 /// Eigener Baustein statt Slider. Apples Regler bringt einen grossen
 /// Schattengriff und eine eigene Spurhoehe mit — neben dem uebrigen Player
@@ -1241,13 +1245,19 @@ struct Zeitregler: View {
     }
 
     var body: some View {
-        let dicke: CGFloat = amSchieben ? 6 : 3
-        let griff: CGFloat = amSchieben ? 18 : 13
+        // **Im Stehen nur der Strich, beim Spulen Griff in Akzentfarbe.** So
+        // steht es im Entwurf des Players: vier Punkt ohne Griff, beim
+        // Anfassen sechs Punkt und ein Griff — die einzige Stelle im Player,
+        // an der die Akzentfarbe auftaucht.
+        let dicke: CGFloat = amSchieben ? 6 : 4
+        let griff: CGFloat = 18
 
         ZStack(alignment: .leading) {
-            Capsule().fill(.white.opacity(0.24)).frame(height: dicke)
+            Capsule().fill(.white.opacity(0.28)).frame(height: dicke)
             Capsule().fill(.white).frame(width: breite * anteil, height: dicke)
-            Circle().fill(.white).frame(width: griff, height: griff)
+            Circle().fill(Stil.akzent).frame(width: griff, height: griff)
+                .scaleEffect(amSchieben ? 1 : 0.4)
+                .opacity(amSchieben ? 1 : 0)
                 .offset(x: breite * anteil - griff / 2)
         }
         .animation(Stil.umschalten, value: amSchieben)

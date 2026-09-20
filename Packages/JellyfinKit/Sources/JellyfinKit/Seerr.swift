@@ -522,6 +522,9 @@ public actor SeerrClient {
         var req = URLRequest(url: url)
         req.httpMethod = methode
         req.setValue(zugang.keks, forHTTPHeaderField: "Cookie")
+        // Der Keks kommt nur von uns — nicht aus dem gemeinsamen Speicher
+        // (wie beim Anmelden).
+        req.httpShouldHandleCookies = false
         if let rumpf {
             req.httpBody = rumpf
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")

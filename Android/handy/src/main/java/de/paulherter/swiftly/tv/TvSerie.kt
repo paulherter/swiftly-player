@@ -134,11 +134,11 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                     TvKnopf(serie?.knopftext?.ifEmpty { null } ?: uebersetzt("Lädt…"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
                         val st = serie?.stand
                         if (st != null && serie?.planDa == true) app.spiel.value = Abspielwunsch(st.id, st.ab)
-                        else if (st != null) meldung = uebersetzt("Der Server nennt keine Quelle für diese Folge.")
+                        else if (st != null) meldung = uebersetzt("Der Server hat keine Datei zu dieser Folge.")
                     }
                     serie?.stand?.takeIf { it.fortsetzen }?.let { st -> TvKnopf(null, Icons.Filled.Replay) {
                         if (serie?.planDa == true) app.spiel.value = Abspielwunsch(st.id, null)
-                        else meldung = uebersetzt("Der Server nennt keine Quelle für diese Folge.")
+                        else meldung = uebersetzt("Der Server hat keine Datei zu dieser Folge.")
                     } }
                     TvKnopf(null, if (serie?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
                         val alt = serie ?: return@TvKnopf
@@ -176,7 +176,7 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                                     }
                                     "vonvorn" -> alt.stand?.let { st ->
                                         if (serie?.planDa == true) app.spiel.value = Abspielwunsch(st.id, null)
-                                        else meldung = uebersetzt("Der Server nennt keine Quelle für diese Folge.")
+                                        else meldung = uebersetzt("Der Server hat keine Datei zu dieser Folge.")
                                     }
                                     // Vorlage: `Titelhandlungen.fuerSerie` — ohne naechste Folge wird gemeldet.
                                     "naechste" -> alt.stand?.let { st ->
@@ -229,16 +229,7 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                             LazyRow(state = streifen, contentPadding = PaddingValues(start = TvStil.randSeite, end = TvStil.randSeite, top = TvStil.titelAbstand, bottom = TvStil.reihenLuft),
                                     horizontalArrangement = Arrangement.spacedBy(TvStil.kachelAbstand)) {
                                 items(folgen, key = { it.id }) { f ->
-                                    // **Dasselbe Katalogformat wie tvOS** (`Folgenstreifen.kopfzeile`/
-                                    // `dauerzeile`): „F2 · Titel", darunter „24 min" und bei einer gesehenen
-                                    // Folge „Gesehen" dahinter. `titel`/`unterzeile` bleiben fuers Telefon
-                                    // unveraendert — die rohen Teile kommen eigens aus `Kern.folgen`.
-                                    val titel = f.nummer?.let { "F$it · ${f.name}" } ?: f.name
-                                    val unterzeile = buildList {
-                                        f.laufzeitMin?.let { add(uebersetzt("%lld Min", it)) }
-                                        if (f.restzeit != null) add(f.restzeit) else if (f.gesehen) add(uebersetzt("Gesehen"))
-                                    }.joinToString(" · ").ifEmpty { null }
-                                    TvKachel(f.bild, titel, unterzeile, quer = true, fortschritt = f.fortschritt) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
+                                    TvFolgenkachel(f) { app.spiel.value = Abspielwunsch(f.id, f.ab) }
                                 }
                             }
                         }
@@ -257,4 +248,24 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
             TvHinweisstreifen(text, Modifier.align(Alignment.TopCenter).padding(top = 74.dp)) { meldung = null }
         }
     }
+}
+
+/**
+ * Eine Folge im Streifen — Serienseite und Folgenebene des Players teilen sie (Vorlage
+ * `Folgenstreifen` auf tvOS). **Dasselbe Katalogformat wie tvOS** (`kopfzeile`/`dauerzeile`):
+ * „F2 · Titel", darunter die Laufzeit und eine Restzeit. **Gesehen steht als Haken im Bild, nicht
+ * als Wort** — Bild abgedunkelt, Titel leise; ein voller Balken und ein Haken waeren dieselbe
+ * Auskunft zweimal (tvOS 78a81e0). `titel`/`unterzeile` bleiben fuers Telefon unveraendert — die
+ * rohen Teile kommen eigens aus `Kern.folgen`.
+ */
+@Composable
+fun TvFolgenkachel(f: Folge, modifier: Modifier = Modifier, tun: () -> Unit) {
+    val titel = f.nummer?.let { "F$it · ${f.name}" } ?: f.name
+    val unterzeile = buildList {
+        f.laufzeitMin?.let { add(uebersetzt("%lld Min", it)) }
+        f.restzeit?.let { add(it) }
+    }.joinToString(" · ").ifEmpty { null }
+    TvKachel(f.bild, titel, unterzeile, quer = true, fortschritt = if (f.gesehen) null else f.fortschritt,
+             marke = if (f.gesehen) "gesehen" else null, modifier = modifier,
+             deckkraft = if (f.gesehen) 0.45f else 1f, titelLeise = f.gesehen, tun = tun)
 }

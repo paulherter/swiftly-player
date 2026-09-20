@@ -29,7 +29,7 @@ struct SeerrAnbindenView: View {
                     .font(Stil.titelGross)
                     .foregroundStyle(Stil.schrift)
 
-                Text("Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen.")
+                Text("Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen.")
                     .font(Stil.koerper)
                     .foregroundStyle(Stil.schriftLeise)
                     .frame(width: 900, alignment: .leading)
@@ -96,7 +96,7 @@ struct SeerrAnbindenView: View {
                 .buttonStyle(KnopfStil())
             }
 
-            Text("Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt.")
+            Text("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr.")
                 .font(Stil.klein)
                 .foregroundStyle(Stil.schriftSehrLeise)
         }
@@ -550,8 +550,15 @@ struct SeerrDetailView: View {
             // **Nie leer.** `nil` bedeutet bei Seerr „alle Staffeln", und das
             // ist der Fall, den niemand versehentlich ausloesen soll — wer
             // nur nachsieht, welche es gibt, fragt sonst die ganze Serie an.
-            guard !gewaehlt.isEmpty else { return }
-            let staffeln = Array(gewaehlt).sorted()
+            // **Nur für Serien.** Ein Film hat keine Staffeln, `gewaehlt` ist
+            // dort leer — die Anfrage wurde stillschweigend verworfen.
+            let staffeln: [Int]?
+            if treffer.istSerie {
+                guard !gewaehlt.isEmpty else { return }
+                staffeln = Array(gewaehlt).sorted()
+            } else {
+                staffeln = nil
+            }
             try await model.seerr.anfragen(treffer, staffeln: staffeln)
             angefragt = true
             stand = .wartetAufFreigabe

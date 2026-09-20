@@ -30,7 +30,7 @@ extension App {
         anhaengen(block, seerrKopf())
 
         let hinweis = beschriftung(
-            uebersetzt("Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen."),
+            uebersetzt("Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen."),
             stil: "swiftly-zweitzeile", umbruch: true)
         gtk_label_set_xalign(OpaquePointer(hinweis), 0)
         gtk_widget_set_margin_bottom(hinweis, 18)
@@ -65,7 +65,7 @@ extension App {
         // dafuer ausstellt. Woertlich die Zusage der Apple-Fassung, und sie
         // steht dort wie hier sichtbar auf der Seite, nicht nur im Quelltext.
         let zusage = beschriftung(
-            uebersetzt("Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt."),
+            uebersetzt("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr."),
             stil: "swiftly-zweitzeile", umbruch: true)
         gtk_label_set_xalign(OpaquePointer(zusage), 0)
         gtk_widget_add_css_class(zusage, "dim-label")
@@ -95,7 +95,7 @@ extension App {
             // wie auf den Apple-Fassungen, im Paket und dort getestet.
             let adressen = Seerr.adressen(aus: roh)
             guard !adressen.isEmpty else {
-                self.seerrStandZeigen(standKiste, uebersetzt("Diese Adresse ergibt keine."))
+                self.seerrStandZeigen(standKiste, uebersetzt("Das ist keine gültige Adresse."))
                 return
             }
             guard !b.isEmpty, !pw.isEmpty else {

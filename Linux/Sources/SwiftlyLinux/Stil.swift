@@ -507,11 +507,24 @@ enum Stil {
             font-weight: 600;
         }
         button.swiftly-chip.swiftly-aktiv label { color: \(grund); }
+        /* Das Symbol der Angebotspille (Überspringen/Nächste Folge) ist Teil
+           der weissen Fläche, nicht der leisen Grundfarbe — sonst verschwindet
+           es fast auf hellem Grund. */
+        button.swiftly-chip.swiftly-aktiv image { color: \(grund); }
         /* Angebot im Player: Abstand am Inhalt, damit die Countdown-Fuellung
            bis an den Rand reicht — Weiss 16 %, wie `Chip(fuellung:)` am Mac. */
-        button.swiftly-chip.swiftly-angebot { padding: 0; }
-        /* Akzent als Fortschritt, halb deckend (Paul, 17.09.2026: vorher zu dunkel). */
-        .swiftly-angebotfuellung { background-color: rgba(92,209,194,0.5); }
+        /* Die Pille selbst, wörtlich der Mac (`Angebotsknopf`): 40 hoch,
+           Ecke `eckeFeld`, 15 fett, weiss mit dunkler Schrift. */
+        button.swiftly-chip.swiftly-angebot {
+            padding: 0;
+            min-height: 40px;
+            border-radius: \(eckeFeld)px;
+        }
+        button.swiftly-chip.swiftly-angebot label { font-size: 15px; font-weight: 700; }
+        /* Der Countdown als dunkle Füllung, 16 % — wie am Mac
+           (`Self.dunkel.opacity(0.16)`): der Akzent gehört im Player allein
+           dem Griff der Leiste beim Ziehen. */
+        .swiftly-angebotfuellung { background-color: rgba(11,11,13,0.16); }
         /* Dieselbe Blende wie die Steuerung (`.swiftly-steuerung`). */
         .swiftly-angebotblende { transition: opacity 180ms ease-out; }
 
@@ -925,6 +938,10 @@ enum Stil {
         }
         /* Weiss zu vier Prozent — der Wert vom Mac. */
         .swiftly-folgenzeile.swiftly-schwebt { background-color: rgba(255,255,255,0.04); }
+        /* **Die laufende Folge in der Player-Folgenebene** — Weiss zu acht
+           Prozent, wörtlich `.background(Color.white.opacity(0.08))` vom Mac
+           (`PlayerEbenen.swift:356`). */
+        .swiftly-folgenzeile.swiftly-aktiv { background-color: rgba(255,255,255,0.08); }
         /* **Eine Haarlinie zwischen den Folgen** — der Mac hat sie
            (`SerienView.swift:217`). Ohne sie fliessen zwei Zeilen mit langer
            Beschreibung ineinander. */
@@ -1151,15 +1168,11 @@ enum Stil {
            die Leiste unten sah entsprechend wuchtig aus. Zwei Anstriche mit
            `background-size` treffen die Werte genau, egal wie hoch das
            Fenster ist. */
-        .swiftly-steuerung {
-            background-image:
-                linear-gradient(to bottom, rgba(0,0,0,0.60), rgba(0,0,0,0)),
-                linear-gradient(to top, rgba(0,0,0,0.70), rgba(0,0,0,0));
-            background-size: 100% 150px, 100% 230px;
-            background-position: top, bottom;
-            background-repeat: no-repeat;
-            transition: opacity 180ms ease-out;
-        }
+        /* **Flache Abdunklung, kein Verlauf** — Schwarz 42 % über dem ganzen
+           Bild, wie `Playerschleier` auf iOS und der Mac-Player. Keine
+           CSS-Transition: die Blende läuft im Code (`blenden`), mit den
+           Mac-Zeiten 0,18 s ein und 0,34 s aus. */
+        .swiftly-steuerung { background-color: rgba(0,0,0,0.42); }
         /* **Die Knöpfe der Mitte tragen keine Fläche.** Auf dem Mac steht
            dort nur das Zeichen (`buttonStyle(.plain)`), darunter das
            Tastenkürzel. Die runden Flächen, die hier standen, waren meine
@@ -1174,9 +1187,10 @@ enum Stil {
             min-width: 0;
             min-height: 0;
         }
-        button.swiftly-spieltaste image { color: \(schrift); }
-        /* Der Zeiger hebt das Zeichen an, statt einen Kasten zu malen. */
-        button.swiftly-spieltaste:hover label { color: \(schriftLeise); }
+        /* Der Zeiger hebt das Zeichen an, statt einen Kasten zu malen —
+           `scaleEffect(1.06)` am Mac. */
+        button.swiftly-spieltaste { transition: transform 150ms ease-out; }
+        button.swiftly-spieltaste:hover { transform: scale(1.06); }
         /* Der Vollbildknopf: so gross wie ein Chip hoch ist, rund, leise. */
         button.swiftly-vollknopf {
             /* Wie bei den Zeichenkapseln daneben: der Radius steht ueber der
@@ -1201,12 +1215,13 @@ enum Stil {
 
         /* Titel und Zeiten unten. 19 halbfett, darunter 14 auf 68 %, und
            die Zeiten 13 mit gleich breiten Ziffern — die Masse des Macs. */
-        .swiftly-spielertitel { font-size: 19px; font-weight: 600; color: \(schrift); }
-        .swiftly-spielerzeile { font-size: 14px; color: rgba(255,255,255,0.68); }
+        /* 22 halbfett, wie `mass.titel` auf dem Mac (`Playermass.titel`). */
+        .swiftly-spielertitel { font-size: 22px; font-weight: 700; color: \(schrift); }
+        .swiftly-spielerzeile { font-size: 14px; color: \(schriftLeise); }
         .swiftly-spielerzeit {
             font-size: 13px;
             font-feature-settings: "tnum";
-            color: rgba(255,255,255,0.68);
+            color: \(schriftLeise);
         }
         .swiftly-warnung label, .swiftly-warnung image { color: \(warnung); }
 
@@ -1221,62 +1236,65 @@ enum Stil {
            Dieselbe Falle wie bei `scrollbar slider` ein paar Zeilen weiter
            oben, und dieselbe Abhilfe: **wer eine Mindestgrösse überschreibt,
            muss Rand und Innenabstand mit überschreiben.** */
+        /* **Der Zeitregler wie am Mac** (`Zeitregler`): 32 hohe
+           Trefferfläche, Spur 4 dick (6 beim Ziehen), Grund Weiss 28 %,
+           gespielter Teil Weiss. **Kein Griff, solange nicht gezogen wird;**
+           beim Ziehen ein Kreis von 18 im Akzent — die einzige Stelle im
+           Player, an der er steht.
+
+           Breeze legt Ränder auf `slider` und `trough`; wer eine Mindestgrösse
+           überschreibt, muss Rand und Innenabstand mit überschreiben, sonst
+           malt es seinen eigenen Regler. Die Spur wird über ihren Rand auf 4
+           gehalten, nicht über `min-height` — sie bekäme sonst die volle Höhe. */
         scale.swiftly-regler {
-            min-height: 14px;
+            min-height: 32px;
             padding: 0;
             margin: 0;
         }
-        /* **Die Spur wird mit Rand auf 4 gehalten, nicht mit `min-height`.**
-           `min-height` ist ein Mindestmass — der Knoten `trough` bekommt
-           trotzdem die volle Höhe der Skala und malt seinen Grund über
-           vierzehn Punkt. Genau das war die zu dicke Leiste. Fünf Punkt Rand
-           oben und unten lassen ihm rechnerisch vier. */
         scale.swiftly-regler trough {
             min-height: 4px;
-            margin: 5px 0;
+            margin: 14px 0;
             padding: 0;
             border: none;
             background-image: none;
-            background-color: rgba(255,255,255,0.18);
+            background-color: rgba(255,255,255,0.28);
             border-radius: 2px;
             box-shadow: none;
+        }
+        scale.swiftly-regler.swiftly-regler-ziehen trough {
+            min-height: 6px;
+            margin: 13px 0;
+            border-radius: 3px;
         }
         scale.swiftly-regler highlight {
             margin: 0;
             padding: 0;
             border: none;
             background-image: none;
-            background-color: \(akzent);
+            background-color: \(schrift);
             border-radius: 2px;
             box-shadow: none;
         }
-        /* **Der Griff ragt aus der Spur heraus, er weitet sie nicht.**
-           Der Griff ist ein Kind der Spur; ohne negativen Rand zieht er sie
-           auf seine dreizehn Punkt auf, und dann malt sie ihren Grund ueber
-           die ganze Hoehe — das war die zu dicke Leiste, auch nachdem die
-           Warnung weg war. −5 oben und unten lassen der Spur ihre vier.
-           Genau so macht es Adwaita selbst. */
-        scale.swiftly-regler slider {
-            min-width: 13px;
-            min-height: 13px;
-            margin: -5px 0;
+        scale.swiftly-regler slider,
+        scale.swiftly-regler:hover slider {
+            min-width: 0;
+            min-height: 0;
+            margin: 0;
             padding: 0;
             border: none;
             background-image: none;
-            background-color: \(schrift);
-            border-radius: 7px;
-            /* Der Griff liegt über dem Bild und braucht eine Kante, sonst
-               verschwindet er auf einer hellen Stelle — auf dem Mac ist es
-               derselbe Schatten. */
-            box-shadow: 0 1px 5px rgba(0,0,0,0.55);
+            background-color: transparent;
+            box-shadow: none;
+            outline: none;
         }
-        scale.swiftly-regler:hover slider {
-            min-width: 15px;
-            min-height: 15px;
+        scale.swiftly-regler.swiftly-regler-ziehen slider {
+            min-width: 18px;
+            min-height: 18px;
             margin: -6px 0;
+            border-radius: 9px;
+            background-color: \(akzent);
         }
 
-        /* Die Spurtafel über dem Bild: 320 breit, erhoeht, Ecke 10. */
         /* **Das Technikschild.** Feste Zeichenbreite, damit die Zahlen
            untereinander stehen und nicht bei jedem Takt springen — dieselbe
            Begruendung wie auf den Apple-Fassungen. Deckend genug, um ueber
@@ -1312,52 +1330,66 @@ enum Stil {
             border-radius: \(ecke)px;
             padding: 10px 14px;
         }
-        /* **Die Wiedergabetafel — Zahl fuer Zahl aus `macOS/Spurwahl.swift`.**
-
-           Hier stand `erhoeht` mit `eckeFlaeche` (16), mit Verweis auf
-           `Handlungstafel` — das ist die iPad-Fassung eines anderen Menues.
-           Die Vorlage dieser Tafel ist `Spurwahl` (`:93-100`): `Stil.flaeche`,
-           `Stil.eckeFeld` (12), Haarlinie, Schatten 22 bei y 10, 0,45. */
-        .swiftly-tafel {
-            background-color: \(flaeche);
-            border: 1px solid \(rand);
-            border-radius: \(eckeFeld)px;
-            /* Sie liegt ueber bewegtem Bild und braucht eine Kante. */
-            box-shadow: 0 10px 22px rgba(0,0,0,0.45);
-        }
-        /* **Die Leiste links steht auf halbem Grund** — `Spurwahl.swift:155`
-           setzt `Stil.grund.opacity(0.5)` hinter sie. Ohne das sind beide
-           Spalten dieselbe Flaeche und die Tafel liest sich als ein Block.
-           Die Kante dazwischen ist eine Haarlinie, keine Fuge (`:79`); der
-           Kommentar, der hier einmal das Gegenteil behauptete, hat den
-           Quelltext nicht gelesen. */
-        .swiftly-spurleiste { background-color: rgba(11,11,13,0.5); }
-        button.swiftly-spurzeile {
-            min-height: 40px;
-            padding: 0 12px;
-            border-radius: 8px;
-            /* `background`, nicht nur die Farbe: unter Windows gilt das helle
-               Standardthema, und dessen Knopfverlauf lag weiss unter der
-               Schrift. */
+        /* **Die drei Ebenen über dem Bild** (Audio & Untertitel,
+           Einstellungen, Folgen) — wörtlich `Sources/macOS/PlayerEbenen.swift`.
+           Sie haben die alte Wiedergabetafel (Leiste links, Auswahl rechts)
+           ersetzt; deren Klassen (`swiftly-tafel`, `swiftly-spurleiste`,
+           `swiftly-spurzeile`) sind mit ihr gegangen. */
+        /* 72 % Abdunklung wie auf dem Mac (`Ebenengrund`, rgba(11,11,13,.72)).
+           Kein Weichzeichner: GTKs CSS kennt kein `backdrop-filter`. */
+        .swiftly-ebenengrund { background-color: rgba(0,0,0,0.78); }
+        /* Symbolknöpfe oben rechts, im Player wie auf den Ebenen — 38 × 38,
+           durchsichtig, beim Überfahren eine leise weisse Flaeche. Anders als
+           `.swiftly-chip`: kein Rahmen, kein Kapselgrund — diese Knöpfe
+           stehen nicht in einer Leiste mit Text. */
+        button.swiftly-symbolknopf {
             background: none;
-            box-shadow: none;
             border: none;
+            box-shadow: none;
+            padding: 0;
+            border-radius: \(eckeFeld)px;
+        }
+        button.swiftly-symbolknopf image { color: \(schrift); }
+        button.swiftly-symbolknopf:hover { background-color: rgba(255,255,255,0.12); }
+        /* Spaltentitel einer Ebene — 18 fett, weiss, wörtlich `Wahlspalte`. */
+        .swiftly-spaltentitel { font-size: 18px; font-weight: 700; color: \(schrift); }
+        /* Eine Zeile einer Ebenenspalte — leise Schrift, gewaehlt weiss
+           halbfett (Klasse `swiftly-gewaehlt` am Knopf),
+           mit einer leisen Flaeche beim Ueberfahren, die es auf iOS ohne
+           Zeiger nicht braucht. */
+        button.swiftly-ebenenzeile {
+            background: none;
+            border: none;
+            box-shadow: none;
+            min-height: 0;
+            padding: 7px 10px;
+            border-radius: \(eckeFeld)px;
+        }
+        button.swiftly-ebenenzeile:hover { background-color: rgba(255,255,255,0.06); }
+        button.swiftly-ebenenzeile label { font-size: 15px; font-weight: 400; color: \(schriftLeise); }
+        button.swiftly-ebenenzeile.swiftly-gewaehlt label { font-weight: 600; color: \(schrift); }
+        /* Die Sprungmarke: 108 rund, Schwarz 45 %, „10 s" darunter
+           (Mac: `Sprungmarke`). */
+        .swiftly-sprungmarke {
+            background-color: rgba(0,0,0,0.45);
+            border-radius: 54px;
+        }
+        .swiftly-sprungtext { font-size: 13px; font-weight: 500; color: \(schrift); }
+        /* Trickplay-Vorschau über dem Griff — Bild gerundet mit heller Kante,
+           wörtlich `vorschauKasten` vom Mac (`PlayerScreen.swift:1292`). */
+        .swiftly-vorschaubild {
+            border-radius: \(ecke)px;
+            border: 1px solid rgba(255,255,255,0.35);
+        }
+        .swiftly-vorschauzeit {
+            font-size: 13px;
+            font-weight: 700;
+            font-feature-settings: "tnum";
             color: \(schrift);
         }
-        button.swiftly-spurzeile label { color: \(schrift); }
-        button.swiftly-spurzeile label:first-child { font-size: 14px; }
-        button.swiftly-spurzeile:hover { background-color: rgba(255,255,255,0.06); }
-        /* **Eine getoente Flaeche, nicht nur Akzentschrift.** Der Mac legt
-           `akzent.opacity(0.14)` mit Ecke 8 unter die gewaehlte Zeile
-           (`Spurwahl.swift:124`). */
-        button.swiftly-spurzeile.swiftly-aktiv {
-            background-color: alpha(\(akzent), 0.14);
-        }
-        button.swiftly-spurzeile.swiftly-aktiv label,
-        button.swiftly-spurzeile.swiftly-aktiv image { color: \(akzent); }
-        button.swiftly-spurzeile image, .swiftly-spurzeichen { color: \(akzent); }
         /* **Die gewaehlte Zeile traegt den Akzent**, nicht eine Flaeche —
-           so auf dem Mac (`Spurwahl.Wahlzeile`). */
+           so auf dem Mac (`Spurwahl.Wahlzeile`). Ausserhalb des Players
+           (Einstellungsseiten) gilt sie weiter. */
         button.swiftly-wertzeile.swiftly-aktiv label,
         button.swiftly-wertzeile.swiftly-aktiv image { color: \(akzent); }
 

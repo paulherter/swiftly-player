@@ -10,9 +10,51 @@ import JellyfinKit
 /// Folge selbsttätig, 10 s zurück und 30 s vor. Welche Werte überhaupt zur
 /// Wahl stehen, steht in `JellyfinKit.Bitrate`, `.Spanne` und `.Sprachwahl` —
 /// nicht hier, sonst böten die Plattformen verschiedene Listen an.
+/// Direct Play und Bitratengrenze eines Servers — Schlüssel `serverURL.absoluteString`.
+/// Wie `AppModel.serverSchluessel` auf Apple: ein Server wandelt vielleicht um, der
+/// andere nicht, also gehört die Wahl zum Server, nicht zum Gerät.
+struct WiedergabeJeServer: Codable {
+    var immerDirectPlay: Bool
+    var bitratenGrenze: Int
+}
+
 struct Wahlen: Codable {
-    var immerDirectPlay = true
-    var bitratenGrenze = 0
+    /// Die geräteweite Wahl — solange kein Server eine eigene hat (Feld
+    /// `wiedergabeJeServer`, unten). Neue Nutzer sehen weiterhin nur die
+    /// einfachen zwei Felder; deshalb bleiben die Namen und Vorgaben stehen.
+    private var immerDirectPlayGeraet = true
+    private var bitratenGrenzeGeraet = 0
+    /// Direct Play und Bitratengrenze je Server, wie auf Apple (`AppModel`)
+    /// und Android. Nicht `CodingKeys`-geführt über die alten Feldnamen, damit
+    /// eine Datei von vor dieser Änderung weiterhin liest.
+    var wiedergabeJeServer: [String: WiedergabeJeServer] = [:]
+    /// Welcher Server gerade gilt — kommt von der Sitzung (`App.bund`), nicht
+    /// gesichert: bei jedem Start setzt `App` ihn frisch, bevor der Player
+    /// oder die Einstellungsseite ihn braucht.
+    var aktiverServer: String = ""
+
+    /// **Je Server.** Ein Server wandelt vielleicht um, der andere nicht.
+    var immerDirectPlay: Bool {
+        get { wiedergabeJeServer[aktiverServer]?.immerDirectPlay ?? immerDirectPlayGeraet }
+        set {
+            guard !aktiverServer.isEmpty else { immerDirectPlayGeraet = newValue; return }
+            var w = wiedergabeJeServer[aktiverServer]
+                ?? WiedergabeJeServer(immerDirectPlay: immerDirectPlayGeraet, bitratenGrenze: bitratenGrenzeGeraet)
+            w.immerDirectPlay = newValue
+            wiedergabeJeServer[aktiverServer] = w
+        }
+    }
+    /// **Je Server.** Greift nur, wenn Direct Play für diesen Server nicht erzwungen wird.
+    var bitratenGrenze: Int {
+        get { wiedergabeJeServer[aktiverServer]?.bitratenGrenze ?? bitratenGrenzeGeraet }
+        set {
+            guard !aktiverServer.isEmpty else { bitratenGrenzeGeraet = newValue; return }
+            var w = wiedergabeJeServer[aktiverServer]
+                ?? WiedergabeJeServer(immerDirectPlay: immerDirectPlayGeraet, bitratenGrenze: bitratenGrenzeGeraet)
+            w.bitratenGrenze = newValue
+            wiedergabeJeServer[aktiverServer] = w
+        }
+    }
     var tonSprache = ""
     var untertitelSprache = ""
     var untertitelAutomatisch = false
@@ -156,8 +198,10 @@ struct Wahlen: Codable {
         func w<T: Decodable>(_ s: CodingKeys, _ vorgabe: T) -> T {
             (try? k.decodeIfPresent(T.self, forKey: s)) .flatMap { $0 } ?? vorgabe
         }
-        immerDirectPlay        = w(.immerDirectPlay, true)
-        bitratenGrenze         = w(.bitratenGrenze, 0)
+        immerDirectPlayGeraet  = w(.immerDirectPlayGeraet, true)
+        bitratenGrenzeGeraet   = w(.bitratenGrenzeGeraet, 0)
+        wiedergabeJeServer     = w(.wiedergabeJeServer, [:])
+        aktiverServer          = ""
         tonSprache             = w(.tonSprache, "")
         untertitelSprache      = w(.untertitelSprache, "")
         untertitelAutomatisch  = w(.untertitelAutomatisch, false)
@@ -192,6 +236,53 @@ struct Wahlen: Codable {
     /// Schluessel frueherer Fassungen, die nur noch gelesen werden.
     private enum AlteSchluessel: String, CodingKey { case naechsteAutomatisch }
 
+    /// **Von Hand, wegen der beiden umbenannten Felder.** `immerDirectPlay` und
+    /// `bitratenGrenze` heißen jetzt geräteweit `…Geraet` (echte Wahl je Server
+    /// liegt in `wiedergabeJeServer`) — eine Datei von vor dieser Änderung soll
+    /// trotzdem weiter unter den alten Schlüsseln lesen und schreiben.
+    /// `aktiverServer` steht bewusst nicht hier: er kommt von der Sitzung, nicht
+    /// von der Platte.
+    enum CodingKeys: String, CodingKey {
+        case immerDirectPlayGeraet = "immerDirectPlay"
+        case bitratenGrenzeGeraet = "bitratenGrenze"
+        case wiedergabeJeServer
+        case tonSprache, untertitelSprache, untertitelAutomatisch, neuzugaengeGetrennt,
+             naechsteAutomatischGewaehlt, zurueckSekunden, vorSekunden, fortschrittAufKacheln,
+             bildfuellend, technikschild, downloadsAn, nurUeberWLAN, pufferstufe,
+             discordAnzeigen, suchverlauf, merkgattung, startReihen, startAus, startGenres,
+             genreChips, sortierungJeOrt, filterJeOrt, bibliothekJeGattung
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(immerDirectPlayGeraet, forKey: .immerDirectPlayGeraet)
+        try c.encode(bitratenGrenzeGeraet, forKey: .bitratenGrenzeGeraet)
+        try c.encode(wiedergabeJeServer, forKey: .wiedergabeJeServer)
+        try c.encode(tonSprache, forKey: .tonSprache)
+        try c.encode(untertitelSprache, forKey: .untertitelSprache)
+        try c.encode(untertitelAutomatisch, forKey: .untertitelAutomatisch)
+        try c.encode(neuzugaengeGetrennt, forKey: .neuzugaengeGetrennt)
+        try c.encode(naechsteAutomatischGewaehlt, forKey: .naechsteAutomatischGewaehlt)
+        try c.encode(zurueckSekunden, forKey: .zurueckSekunden)
+        try c.encode(vorSekunden, forKey: .vorSekunden)
+        try c.encode(fortschrittAufKacheln, forKey: .fortschrittAufKacheln)
+        try c.encode(bildfuellend, forKey: .bildfuellend)
+        try c.encode(technikschild, forKey: .technikschild)
+        try c.encode(downloadsAn, forKey: .downloadsAn)
+        try c.encode(nurUeberWLAN, forKey: .nurUeberWLAN)
+        try c.encode(pufferstufe, forKey: .pufferstufe)
+        try c.encode(discordAnzeigen, forKey: .discordAnzeigen)
+        try c.encode(suchverlauf, forKey: .suchverlauf)
+        try c.encode(merkgattung, forKey: .merkgattung)
+        try c.encode(startReihen, forKey: .startReihen)
+        try c.encode(startAus, forKey: .startAus)
+        try c.encode(startGenres, forKey: .startGenres)
+        try c.encode(genreChips, forKey: .genreChips)
+        try c.encode(sortierungJeOrt, forKey: .sortierungJeOrt)
+        try c.encode(filterJeOrt, forKey: .filterJeOrt)
+        try c.encode(bibliothekJeGattung, forKey: .bibliothekJeGattung)
+    }
+
     /// **Der leere Anfang.** Ohne Datei gilt, was oben an den Feldern steht.
     init() {}
 
@@ -218,50 +309,12 @@ struct Wahlen: Codable {
 /// Welche Werteliste gerade aufgeklappt ist.
 enum Werteauswahl { case bitrate, puffer, ton, untertitel, zurueck, vor }
 
-/// **Welcher Bereich im Wiedergabemenue links gewaehlt ist.**
-///
-/// Die Reihenfolge ist die der Mac-Fassung: erst die Spuren, dann Bild und
-/// Tempo, zuletzt die Schlafzeit. `Technikschild` fehlt hier noch — es gibt
-/// das Schild auf Linux und Windows bisher nicht.
-enum Spurbereich: CaseIterable {
-    case ton, untertitel, bildformat, tempo, schlafzeit, technik
-
-    var titel: String {
-        switch self {
-        case .ton:        return uebersetzt("Ton")
-        case .untertitel: return uebersetzt("Untertitel")
-        case .bildformat: return uebersetzt("Bildformat")
-        case .tempo:      return uebersetzt("Tempo")
-        case .schlafzeit: return uebersetzt("Schlafzeit")
-        case .technik:    return uebersetzt("Technikschild")
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .ton:        return "audio-volume-high-symbolic"
-        case .untertitel: return "media-view-subtitles-symbolic"
-        case .bildformat: return "view-fullscreen-symbolic"
-        // Nicht mehr `preferences-system` — das traegt jetzt der Knopf,
-        // der die Tafel oeffnet, und ein Zeichen soll eine Sache meinen.
-        case .tempo:      return "media-seek-forward-symbolic"
-        case .schlafzeit: return "weather-clear-night-symbolic"
-        // **Der Zeichensatz auf diesem Rechner ist Breeze, nicht Adwaita.**
-        //
-        // Am 13.09.2026 nachgemessen: `gsettings get
-        // org.gnome.desktop.interface icon-theme` sagt `breeze-dark`. Hier
-        // standen nacheinander `utilities-system-monitor-symbolic` und
-        // `preferences-system-details-symbolic` — beide kennt Breeze nicht,
-        // und Adwaitas `legacy`-Ordner faengt GTK4 nicht ab. Zu sehen war das
-        // Ersatzbild „fehlendes Bild" mit rotem Verbotszeichen.
-        //
-        // Der Mac nimmt `waveform.badge.magnifyingglass`. Was Breeze **hat**
-        // und dasselbe meint, ist das Zahnrad der Systemeinstellungen; es
-        // steht in den Einstellungen an derselben Zeile.
-        case .technik:    return "preferences-system-symbolic"
-        }
-    }
-}
+// `Spurbereich` (die Leiste-links/Auswahl-rechts-Tafel des Wiedergabemenüs)
+// ist mit der neuen Player-Gestaltung entfallen — an ihre Stelle treten die
+// drei Ebenen in `PlayerEbenen.swift` (Audio & Untertitel, Einstellungen,
+// Folgen), wörtlich nach `Sources/macOS/PlayerEbenen.swift`. Tempo gibt es
+// dort nicht mehr, wie auf dem Mac: „kein Tempo — stand im alten
+// Wiedergabemenü und fällt mit ihm weg".
 
 /// Die Fassung von libVLC, für die Fußzeile der Einstellungen.
 ///

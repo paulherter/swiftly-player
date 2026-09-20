@@ -315,11 +315,11 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                     // Vorlage: `DetailView.starte` — ohne Plan wird gemeldet statt schweigend nichts zu tun.
                     TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
                         if (titel?.planDa == true) app.spiel.value = Abspielwunsch(ziel.id, titel.fortsetzenAb)
-                        else meldung = uebersetzt("Der Server nennt keine Quelle für diesen Titel.")
+                        else meldung = uebersetzt("Der Server hat keine Datei zu diesem Titel.")
                     }
                     if (titel?.fortsetzenAb != null) TvKnopf(null, Icons.Filled.Replay) {
                         if (titel.planDa) app.spiel.value = Abspielwunsch(ziel.id, null)
-                        else meldung = uebersetzt("Der Server nennt keine Quelle für diesen Titel.")
+                        else meldung = uebersetzt("Der Server hat keine Datei zu diesem Titel.")
                     }
                     TvKnopf(null, if (titel?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
                         val an = !(titel?.gemerkt ?: false)
@@ -516,7 +516,7 @@ fun TvGenre(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                      modifier = Modifier.padding(top = 48.dp, bottom = TvStil.titelAbstand))
                 if (liste != null && liste.isEmpty()) {
                     TvLeer(uebersetzt("Nichts in diesem Genre"),
-                           uebersetzt("Auf deinem Server steht gerade kein Film und keine Serie darin."),
+                           uebersetzt("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."),
                            symbol = Icons.Filled.Tag)
                 }
             }

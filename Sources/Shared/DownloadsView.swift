@@ -439,14 +439,14 @@ struct DownloadsView: View {
                 // stattdessen, **wo** der Anfang ist.
                 Leerzustand(symbol: "arrow.down.circle",
                             kopfzeile: "Noch nichts geladen",
-                            text: "Auf jeder Film- und Serienseite gibt es ein Feld zum Laden. Geladene Titel laufen auch ohne Netz — in voller Qualität, weil Swiftly nie umrechnet.")
+                            text: "Auf jeder Film- und Serienseite kannst du den Titel laden. Geladene Titel laufen auch ohne Internet, in Originalqualität.")
                     // Das Wann zum Wie aus `Leerzustand`.
                     .animation(Stil.einblenden, value: verwaltung.posten.isEmpty)
             }
         }
         .safeAreaInset(edge: .bottom) { if bearbeiten { loeschleiste } }
         #if os(iOS)
-        .fullScreenCover(item: $abspielen) { wunsch in
+        .playerCover(item: $abspielen) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }
@@ -702,7 +702,7 @@ struct DownloadserieView: View {
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
-        .fullScreenCover(item: $abspielen) { wunsch in
+        .playerCover(item: $abspielen) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }

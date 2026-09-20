@@ -191,7 +191,7 @@ private fun Ladeinhalt(app: SwiftlyAnwendung, neue: List<Downloadposten>, bilder
                 neue.singleOrNull()?.container?.let { Blattzeile(uebersetzt("Qualität"), it.uppercase()) }
                 Blattzeile(uebersetzt("Danach frei"), groesse(platz.getLong("freiDanach")))
                 Knopfreihe { Spielknopf(Icons.Filled.ArrowDownward, uebersetzt("Laden"), true, haupt = true) { schliessen(); laden() } }
-                Blatthinweis(uebersetzt("Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird."))
+                Blatthinweis(uebersetzt("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen."))
             }
         }
     }
@@ -285,7 +285,7 @@ fun DownloadsSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
         Box(Modifier.weight(1f)) {
             if (alle.isEmpty()) {
                 Leerzustand(Icons.Outlined.ArrowCircleDown, uebersetzt("Noch nichts geladen"),
-                    uebersetzt("Auf jeder Film- und Serienseite gibt es ein Feld zum Laden. Geladene Titel laufen auch ohne Netz — in voller Qualität, weil Swiftly nie umrechnet."))
+                    uebersetzt("Auf jeder Film- und Serienseite kannst du den Titel laden. Geladene Titel laufen auch ohne Internet, in Originalqualität."))
             } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = if (bearbeiten) 90.dp else 24.dp)) {
                 if (laufend.isNotEmpty()) {
                     item(key = "kopf-laufend") {
@@ -411,7 +411,7 @@ fun OfflineGruppe(app: SwiftlyAnwendung) {
     val e = app.einstellungen
     val v = app.downloads
     Einstellungsgruppe(uebersetzt("Offline")) {
-        Wahlzeile(Icons.Outlined.ArrowCircleDown, uebersetzt("Downloads"), uebersetzt("Titel aufs Gerät laden und ohne Netz sehen"), e.downloadsAn) { an ->
+        Wahlzeile(Icons.Outlined.ArrowCircleDown, uebersetzt("Downloads"), uebersetzt("Titel aufs Gerät laden und offline schauen"), e.downloadsAn) { an ->
             val anzahl = v.posten.value.size
             if (!an && anzahl > 0) {
                 app.blatt.value = Blattwunsch(uebersetzt("%lld Titel bleiben auf dem Gerät", anzahl),
@@ -424,7 +424,7 @@ fun OfflineGruppe(app: SwiftlyAnwendung) {
         }
         if (e.downloadsAn) {
             Trennlinie()
-            Wahlzeile(Icons.Filled.Wifi, uebersetzt("Nur über WLAN"), uebersetzt("Über Mobilfunk warten Downloads"), e.nurUeberWLAN) {
+            Wahlzeile(Icons.Filled.Wifi, uebersetzt("Nur über WLAN"), uebersetzt("Downloads warten, bis du im WLAN bist"), e.nurUeberWLAN) {
                 e.nurUeberWLAN = it
                 v.takt()
             }

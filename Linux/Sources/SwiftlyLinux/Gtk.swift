@@ -346,6 +346,53 @@ func beiZeiger(_ ziel: Widget!, herein: @escaping () -> Void, hinaus: @escaping 
     gtk_widget_add_controller(ziel, horcher)
 }
 
+/// Meldet **wo** der Zeiger über einem Widget steht — jede Bewegung, ohne
+/// Schwelle, und das Verlassen. Für die Trickplay-Vorschau am Zeitregler: sie
+/// soll dem Zeiger folgen, nicht nur wissen, dass er da ist (``beiZeiger`` und
+/// ``beiBewegung`` reichen dafür nicht).
+final class Ortswache {
+    let bewegt: (Double, Double) -> Void
+    let verlassen: () -> Void
+    init(bewegt: @escaping (Double, Double) -> Void, verlassen: @escaping () -> Void) {
+        self.bewegt = bewegt
+        self.verlassen = verlassen
+    }
+}
+
+nonisolated(unsafe) private let wacheAlsOrt: @convention(c) (
+    UnsafeMutableRawPointer?, Double, Double, gpointer?
+) -> Void = { _, x, y, daten in
+    guard let daten else { return }
+    Unmanaged<Ortswache>.fromOpaque(daten).takeUnretainedValue().bewegt(x, y)
+}
+
+nonisolated(unsafe) private let wacheAlsVerlassen: @convention(c) (
+    UnsafeMutableRawPointer?, gpointer?
+) -> Void = { _, daten in
+    guard let daten else { return }
+    Unmanaged<Ortswache>.fromOpaque(daten).takeUnretainedValue().verlassen()
+}
+
+nonisolated(unsafe) private let ortswacheFreigeben: @convention(c) (
+    gpointer?, UnsafeMutablePointer<_GClosure>?
+) -> Void = { daten, _ in
+    guard let daten else { return }
+    Unmanaged<Ortswache>.fromOpaque(daten).release()
+}
+
+func beiMausOrt(_ ziel: Widget!, bewegt: @escaping (Double, Double) -> Void,
+                verlassen: @escaping () -> Void) {
+    let horcher = gtk_event_controller_motion_new()
+    let wache = Unmanaged.passRetained(Ortswache(bewegt: bewegt, verlassen: verlassen)).toOpaque()
+    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "motion",
+                          unsafeBitCast(wacheAlsOrt, to: GCallback.self),
+                          wache, nil, GConnectFlags(rawValue: 0))
+    g_signal_connect_data(UnsafeMutableRawPointer(horcher), "leave",
+                          unsafeBitCast(wacheAlsVerlassen, to: GCallback.self),
+                          wache, ortswacheFreigeben, GConnectFlags(rawValue: 0))
+    gtk_widget_add_controller(ziel, horcher)
+}
+
 // MARK: - Weiches Scrollen
 
 /// **GTK scrollt am Mausrad in Sprüngen.** Ein Rastpunkt, ein Satz — das ist
@@ -809,20 +856,24 @@ func inZwischenablage(_ text: String, an widget: Widget!) {
 /// nichts Vergleichbares, also die Geste selbst — **`pressed` und
 /// `released` an derselben**, damit beide dasselbe Drücken meinen.
 func beiGriff(_ ziel: Widget!, _ block: @escaping (Bool) -> Void) {
-    let geste = gtk_gesture_click_new()
+    // **Eine Zieh-Geste, keine Klick-Geste.** `GtkGestureClick` meldet kein
+    // `released`, sobald der Zeiger über die Ziehschwelle wandert — beim
+    // Spulen also nie. `amRegler` blieb dann hängen: die Steuerung blendete
+    // nicht mehr aus, und der Griff blieb im Akzent. `drag-begin` und
+    // `drag-end` kommen immer paarweise.
+    let geste = gtk_gesture_drag_new()
     let runter = Unmanaged.passRetained(Auftrag { block(true) }).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(geste), "pressed",
-                          unsafeBitCast(auftragAlsKlick, to: GCallback.self),
+    g_signal_connect_data(UnsafeMutableRawPointer(geste), "drag-begin",
+                          unsafeBitCast(auftragAlsBewegungOeffentlich, to: GCallback.self),
                           runter, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
     let hoch = Unmanaged.passRetained(Auftrag { block(false) }).toOpaque()
-    g_signal_connect_data(UnsafeMutableRawPointer(geste), "released",
-                          unsafeBitCast(auftragAlsKlick, to: GCallback.self),
+    g_signal_connect_data(UnsafeMutableRawPointer(geste), "drag-end",
+                          unsafeBitCast(auftragAlsBewegungOeffentlich, to: GCallback.self),
                           hoch, auftragFreigebenOeffentlich, GConnectFlags(rawValue: 0))
-    // **Die Geste horcht mit, sie fängt nicht ab.** Ohne diese Phase bekäme
-    // der Regler selbst den Druck nicht mehr und liesse sich nicht ziehen.
     gtk_event_controller_set_propagation_phase(geste, GTK_PHASE_CAPTURE)
     gtk_widget_add_controller(ziel, geste)
 }
+
 
 /// **Eine Adresse im Standardbrowser öffnen.**
 ///
