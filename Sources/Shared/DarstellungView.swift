@@ -131,8 +131,8 @@ struct DarstellungView: View {
     /// Schalter, und niemand verstand, warum.
     private var genres: some View {
         Section {
-            form("Als eigene Reihen", an: !model.genreChips) { model.genreChips = false }
-            form("Als Chips über den Reihen", an: model.genreChips) { model.genreChips = true }
+            form("Als eigene Reihen", symbol: "rectangle.grid.1x2", an: !model.genreChips) { model.genreChips = false }
+            form("Als Chips über den Reihen", symbol: "capsule", an: model.genreChips) { model.genreChips = true }
 
             ForEach(model.startGenres, id: \.self) { name in
                 // Vom Server, also nicht übersetzt.
@@ -155,18 +155,13 @@ struct DarstellungView: View {
             .deleteDisabled(true)
         } header: {
             Rubrik(text: "Genres")
-        } footer: {
-            Fusszeile(text: "Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Tipp öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist.")
         }
     }
 
-    private func form(_ titel: LocalizedStringKey, an: Bool, waehlen: @escaping () -> Void) -> some View {
+    /// Wie die Zeilen darüber: Symbol, Titel, Haken — nicht kleiner.
+    private func form(_ titel: LocalizedStringKey, symbol: String, an: Bool, waehlen: @escaping () -> Void) -> some View {
         Button(action: waehlen) {
-            HStack {
-                Text(titel)
-                    .font(.system(size: 15))
-                    .foregroundStyle(Stil.schrift)
-                Spacer(minLength: 8)
+            Zeilenaufbau(symbol: symbol, titel: Text(titel), unter: nil, gedimmt: false) {
                 if an {
                     Image(systemName: "checkmark")
                         .font(.system(size: 14, weight: .semibold))
@@ -176,7 +171,7 @@ struct DarstellungView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowBackground(Stil.flaeche)
+        .zeile()
         .deleteDisabled(true)
         .accessibilityAddTraits(an ? .isSelected : [])
     }

@@ -1053,7 +1053,7 @@ extension App {
             self?.ladenAnstossen(titel, quelle: quelle, bytes: bytes)
         })
         if auskunft.reicht {
-            anhaengen(liste, ladehinweis(uebersetzt("Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird.")))
+            anhaengen(liste, ladehinweis(uebersetzt("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")))
         }
         gtk_popover_popup(alsTafel(tafel))
     }

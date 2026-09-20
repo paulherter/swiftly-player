@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  **Auch eigenen Wurzelzertifikaten vertrauen.**
+
+  Ab Android 7 vertrauen Apps nur noch dem Systemspeicher, nicht den
+  Zertifikaten, die der Nutzer selbst eingetragen hat. Wer seinen Jellyfin
+  hinter einer eigenen Zertifizierungsstelle betreibt — nicht im Internet,
+  also ohne Let's Encrypt —, sah deshalb „Dem Zertifikat des Servers wird
+  nicht vertraut", obwohl der Browser auf demselben Telefon einwandfrei
+  aufmachte. Gemeldet am 20.09.2026 von einem Tester.
+
+  `user` steht hier bewusst: eingetragen hat es der Besitzer des Geräts
+  selbst, und ohne diesen Eintrag ist ein eigener Server nicht erreichbar.
+  Klartext bleibt getrennt davon erlaubt (Manifest), für Server ohne TLS.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

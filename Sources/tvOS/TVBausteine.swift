@@ -341,6 +341,9 @@ struct Kachelinhalt: View {
     /// hierher gab es nur den Balken — und bei einer Serie sagt der gar
     /// nichts, weil er den Stand der angefangenen *Folge* zeigt.
     var marke: Kachelmarke?
+    /// **Gesehen: Bild abgedunkelt, Titel leise** — dieselbe Bildsprache wie
+    /// die Folgenzeile auf dem iPhone. Der Haken kommt über `marke`.
+    var gesehen = false
 
     private var breite: CGFloat { quer ? Stil.querBreite : Stil.posterBreite }
     private var hoehe: CGFloat { quer ? Stil.querHoehe : Stil.posterHoehe }
@@ -348,13 +351,14 @@ struct Kachelinhalt: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Bild(url: bild, breite: breite, hoehe: hoehe, fortschritt: fortschritt)
+                .opacity(gesehen ? 0.45 : 1)
                 .overlay(alignment: .topTrailing) {
                     if let marke { Kachelplakette(marke: marke) }
                 }
 
             Text(titel)
                 .font(Stil.kachel)
-                .foregroundStyle(Stil.schrift)
+                .foregroundStyle(gesehen ? Stil.schriftLeise : Stil.schrift)
                 .lineLimit(1)
                 .padding(.top, 14)
 
@@ -1282,7 +1286,7 @@ struct TVUebernahmeauswahl: View {
                 VStack(spacing: 10) {
                     Text("Wo weiterschauen?")
                         .font(.system(size: 42, weight: .semibold))
-                    Text("Auf dem gewählten Gerät wird geschlossen, hier läuft es an derselben Stelle weiter.")
+                    Text("Auf dem anderen Gerät hört die Wiedergabe auf. Hier läuft sie an derselben Stelle weiter.")
                         .font(.system(size: 22))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

@@ -13,8 +13,7 @@ import SwiftUI
 /// „Folgen" nichts Fokussierbares stand.
 ///
 /// Die Folgen sind jetzt ein waagerechter Streifen mit denselben Querkacheln
-/// wie „Weiterschauen", nicht mehr eine senkrechte Liste. `Folgenzeile`
-/// bleibt trotzdem — das Folgenblatt im Player benutzt sie weiter.
+/// wie „Weiterschauen", nicht mehr eine senkrechte Liste.
 
 struct SerienView: View {
     let model: AppModel
@@ -109,6 +108,16 @@ struct SerienView: View {
     /// dem er sie geoeffnet hat.
     @FocusState private var amMehrknopf: Bool
     @FocusState private var amStaffelpille: Bool
+    /// **Wohin der Fokus zurueckkehrt, wenn der Player zugeht.**
+    ///
+    /// Derselbe Grund wie bei `amMehrknopf`/`amStaffelpille`: der Player liegt
+    /// im Rahmen als Geschwister, die Seite bleibt beim Abspielen durchgehend
+    /// eingehaengt, nur `disabled` — das setzt die drei Fokusvariablen dabei
+    /// auf leer zurueck. Ohne diese Erinnerung sucht sich tvOS beim Entfernen
+    /// des Players geometrisch etwas aus und landet oben am ersten Reiter der
+    /// Kopfleiste, statt an der Folge oder dem Knopf, der ihn geoeffnet hat.
+    private enum Fokusziel: Equatable { case hauptknopf, mehrknopf, folge(String) }
+    @State private var zuletztFokus: Fokusziel = .hauptknopf
 
     private var aktuell: Item { frisch ?? serie }
     private var darsteller: [Person] { (aktuell.people ?? []).filter(\.istDarsteller) }
@@ -225,6 +234,20 @@ struct SerienView: View {
         .defaultFocus($amHauptknopf, true, priority: .userInitiated)
         .onChange(of: mehrOffen) { _, offen in if !offen { amMehrknopf = true } }
         .onChange(of: staffelwahlOffen) { _, offen in if !offen { amStaffelpille = true } }
+        .onChange(of: amHauptknopf) { _, an in if an { zuletztFokus = .hauptknopf } }
+        .onChange(of: amMehrknopf) { _, an in if an { zuletztFokus = .mehrknopf } }
+        .onChange(of: amFolge) { _, jetzt in if let jetzt { zuletztFokus = .folge(jetzt) } }
+        // Siehe `zuletztFokus`: der Player hinterlaesst denselben leeren
+        // Fokus wie eine offene Tafel oder Staffelwahl, nur eine Ebene hoeher
+        // — dieselbe Zuweisung holt ihn zurueck.
+        .onChange(of: abspielen.wrappedValue == nil) { vorher, geschlossen in
+            guard geschlossen, vorher == false else { return }
+            switch zuletztFokus {
+            case .hauptknopf: amHauptknopf = true
+            case .mehrknopf: amMehrknopf = true
+            case .folge(let id): amFolge = id
+            }
+        }
         .task {
             // Erst den Fokus setzen, dann aufblenden: ein Knopf mit
             // Deckkraft 0 ist fuer tvOS kein Ziel, und der Startfokus ginge
@@ -514,7 +537,7 @@ struct SerienView: View {
             defer { bereitet = false }
             let ziel = await model.item(id: folge.id) ?? folge
             guard let plan = await model.plan(for: ziel.id) else {
-                meldung = String(localized: "Der Server nennt keine Quelle für diese Folge.")
+                meldung = String(localized: "Der Server hat keine Datei zu dieser Folge.")
                 return
             }
             abspielen.wrappedValue = Abspielwunsch(item: ziel, plan: plan,
@@ -523,87 +546,7 @@ struct SerienView: View {
     }
 }
 
-// MARK: - Eine Folge in der Liste
-
-/// Vorschaubild links, Titel, Laufzeit und zwei Zeilen Beschreibung rechts —
-/// derselbe Aufbau wie auf dem iPhone, nur in Fernsehmaßen.
-///
-/// Steht seit dem neuen Entwurf **nur noch im Folgenblatt** des Players: dort
-/// liegt die Liste über dem laufenden Bild, und eine senkrechte Liste ist
-/// dafür richtig. Auf der Serienseite sind die Folgen jetzt ein waagerechter
-/// Streifen — siehe `Folgenstreifen`.
-struct Folgenzeile: View {
-    let model: AppModel
-    let folge: Item
-    let aktion: () -> Void
-
-    var body: some View {
-        Button(action: aktion) {
-            HStack(alignment: .top, spacing: 34) {
-                // `querbildURL` baut die Adresse aus `seriesId ?? id` — bei
-                // einer Folge ist `seriesId` gesetzt, also kam für jede Folge
-                // derselbe Serienhintergrund heraus. `imageURL` ohne
-                // `hochkant` löst dagegen über `imageTags["Primary"]` das
-                // eigene Vorschaubild der Folge auf; genau so macht es die
-                // iPhone-Fassung. Nur wenn eine Folge keines hat, tritt der
-                // Serienhintergrund als Rückfall ein.
-                Bild(url: model.imageURL(for: folge, maxHeight: 360)
-                          ?? model.querbildURL(for: folge, breite: 640),
-                     breite: 320, hoehe: 180, ecke: Stil.ecke,
-                     fortschritt: fortschritt)
-
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(kopfzeile)
-                        .font(.system(size: 31, weight: .semibold))
-                        .lineLimit(1)
-
-                    if let sekunden = folge.runtimeSeconds {
-                        Text("\(Int(sekunden / 60)) Min")
-                            .font(Stil.klein)
-                            .foregroundStyle(Stil.schriftSehrLeise)
-                            .padding(.top, 4)
-                    }
-
-                    // Bereinigt — bei Folgen steht im Rohtext oft `<br>`.
-                    if let text = folge.beschreibung, !text.isEmpty {
-                        Text(text)
-                            .font(Stil.kachel)
-                            .lineSpacing(9)
-                            .foregroundStyle(Stil.schriftLeise)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .padding(.top, 12)
-                    }
-                }
-                .padding(.top, 6)
-
-                Spacer(minLength: 0)
-
-                // Gesehene Folgen tragen einen leisen Haken am rechten Rand
-                // — genau wie auf dem iPhone. Ohne den sieht man der Liste
-                // nicht an, wo man stehengeblieben ist.
-                if folge.istGesehen {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(Stil.schriftSehrLeise)
-                        .padding(.top, 12)
-                }
-            }
-            .padding(.vertical, 20)
-            .padding(.horizontal, 26)
-        }
-        .buttonStyle(FolgenStil())
-    }
-
-    private var kopfzeile: String {
-        if let nummer = folge.indexNumber { return "F\(nummer) · \(folge.name)" }
-        return folge.name
-    }
-
-    private var fortschritt: Double? { folge.gesehenerAnteil }
-}
-
-/// Fokus auf einer Folgenzeile: eine ruhige Fläche.
+/// Fokus auf einer Zeile: eine ruhige Fläche — in den Ebenen des Players.
 ///
 /// Anders als bei Kacheln, wo nur die Größe spricht — eine Zeile ist kein
 /// Bild, sie kann nicht heller werden. Dieselbe Fläche wie ein ruhender Chip.

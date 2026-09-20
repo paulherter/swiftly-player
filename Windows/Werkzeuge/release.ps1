@@ -12,8 +12,12 @@ if ($LASTEXITCODE -ne 0) { Notiz "BAU FEHLGESCHLAGEN $LASTEXITCODE" }
 
 Notiz "== Packen =="
 .\Installieren\packen.ps1
-$buendel = ".\Ablage\Swiftly\bin\SwiftlyWindows_SwiftlyWindows.resources"
-Notiz ("Buendel in der Ablage: " + (Test-Path $buendel))
+# Der Name haengt an der Toolchain: bis Swift 6.3 .resources, ab 6.4 .bundle.
+$buendel = @('.resources', '.bundle') |
+    ForEach-Object { ".\Ablage\Swiftly\bin\SwiftlyWindows_SwiftlyWindows$_" } |
+    Where-Object { Test-Path $_ }
+if ($buendel) { Notiz ("Buendel in der Ablage: " + ($buendel -join ', ')) }
+else { Notiz "Buendel in der Ablage: KEINS" }
 
 # Die eigentliche Probe: den Bauordner wegnehmen, damit Bundle.module nicht
 # darauf zurueckfallen kann - genau das hat den Fehler bisher verdeckt.

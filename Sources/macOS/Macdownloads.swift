@@ -172,7 +172,7 @@ struct Ladetafel: View {
                 angabe("externaldrive", "Danach frei",
                        Downloadregeln.groesse(auskunft.freiDanach))
                 knopf("Laden") { starten() }
-                hinweis("Swiftly lädt die Originaldatei — dieselbe Qualität wie beim Streamen, weil nie umgerechnet wird.")
+                hinweis("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")
                 abbrechen
             }
         }
@@ -312,7 +312,7 @@ struct DownloadsView: View {
             if verwaltung.posten.isEmpty {
                 Leerzustand(symbol: "arrow.down.circle",
                             titel: "Noch nichts geladen",
-                            text: "Auf jeder Film- und Serienseite gibt es einen Knopf zum Laden. Geladene Titel laufen auch ohne Netz — in voller Qualität, weil Swiftly nie umrechnet.")
+                            text: "Auf jeder Film- und Serienseite gibt es einen Knopf zum Laden. Geladene Titel laufen auch ohne Internet, in Originalqualität.")
             }
         }
     }

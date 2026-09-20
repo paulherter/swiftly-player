@@ -655,6 +655,25 @@ public final class Kern: @unchecked Sendable {
         return Self.kodiert(Planantwort(lossless: p.isLossless, methode: p.method.rawValue))
     }
 
+    /// **Trickplay-Vorschau beim Spulen** — Vorlage `Trickplaybilder`/`Trickplay` (Paket). Anders als
+    /// dort holt Kotlin die Kachelblaetter selbst per Coil (ganz normale Bilder); hier steht nur die
+    /// Rechnung: ob es welche gibt, ihr Raster, und die Adresse eines Blatts. Leer ohne laufende
+    /// Wiedergabe oder ohne Trickplay am Server.
+    public func trickplayAngabe() async -> String {
+        guard let c = client, let w = sperreLesen({ _wiedergabe }),
+              let t = await c.trickplay(itemID: w.item.id, mediaSourceID: w.plan.mediaSourceID)
+        else { return "{}" }
+        return Self.kodiert(Trickplayantwort(breite: t.breite, hoehe: t.hoehe, kachelnBreit: t.kachelnBreit,
+                                             kachelnHoch: t.kachelnHoch, anzahl: t.anzahl, intervall: t.intervall))
+    }
+
+    /// Die Adresse eines Kachelblatts — leer ohne laufende Wiedergabe.
+    public func trickplayAdresse(breite: Int, blatt: Int) async -> String {
+        guard let c = client, let w = sperreLesen({ _wiedergabe }) else { return "" }
+        return await c.trickplayURL(itemID: w.item.id, mediaSourceID: w.plan.mediaSourceID,
+                                    breite: breite, blatt: blatt)?.absoluteString ?? ""
+    }
+
     // MARK: Konto und Server
 
     /// Name und Fassung des Servers — fuer Profil und Einstellungen.
@@ -834,6 +853,11 @@ public final class Kern: @unchecked Sendable {
     private func spielplanantwort(_ w: Wiedergabe) throws -> String {
         let a = adressen
         let item = w.item, plan = w.plan
+        let istFolge = item.type == "Episode"
+        // **`kopfzeile`/`staffelNr`/`folgeNr`/`nebenzeile` fuer den Kopf des Players** — Vorlage
+        // `titelzeile`/`metatext` in `Sources/iOS/PlayerScreen.swift`. Uebersetzt wird erst in Kotlin
+        // (`uebersetzt(...)`), hier gehen nur die Rohwerte hinueber — wie ueberall in dieser Fassade.
+        let kopfzeile = (istFolge && !(item.seriesName ?? "").isEmpty) ? item.seriesName! : item.name
         return try json(Spielplanantwort(
             url: plan.url.absoluteString, lossless: plan.isLossless, methode: plan.method.rawValue,
             titel: item.name,
@@ -848,7 +872,11 @@ public final class Kern: @unchecked Sendable {
             bild: { () -> String? in
                 let u: URL? = a?.bauen(itemID: item.id, marke: item.imageTags?["Primary"], mass: .hoechstensHoch(600))
                 return u?.absoluteString
-            }()))
+            }(),
+            itemId: item.id, episode: istFolge, serieId: item.seriesId, staffelId: item.seasonId,
+            kopfzeile: kopfzeile, staffelNr: istFolge ? item.parentIndexNumber : nil,
+            folgeNr: istFolge ? item.indexNumber : nil,
+            nebenzeile: istFolge ? nil : (item.nebenzeile.isEmpty ? nil : item.nebenzeile)))
     }
     /// „MKV · 1080p · H.264 · German · AAC · Stereo" — Vorlage: `dateizeile` in
     /// `Sources/tvOS/Wiedergabeblatt.swift`. Einmal hier, damit Kotlin sie nicht selbst aus
@@ -997,15 +1025,16 @@ public final class Kern: @unchecked Sendable {
         return Weiterschalten.gilt(eigeneWahl: lesen(wahl), konto: lesen(konto))
     }
 
-    /// Was das geltende Konto vorgibt, **aus einer Anfrage**: `"<naechste>|<download>"` —
-    /// `EnableNextEpisodeAutoPlay` und `EnableContentDownloading`, je `"1"`, `"0"` oder leer,
-    /// wenn der Server nichts sagt. Wirft nie; ohne Antwort kommt `"|"`, und dann bleibt es bei
-    /// der eigenen Wahl bzw. „an" und beim Recht `unbekannt`, also erlaubt.
+    /// Was das geltende Konto vorgibt, **aus einer Anfrage**: `"<naechste>|<download>|<umwandeln>"`
+    /// — `EnableNextEpisodeAutoPlay`, `EnableContentDownloading` und
+    /// `EnableVideoPlaybackTranscoding`, je `"1"`, `"0"` oder leer, wenn der Server nichts sagt.
+    /// Wirft nie; ohne Antwort kommt `"||"`, und dann bleibt es bei der eigenen Wahl bzw. „an"
+    /// und beim Recht `unbekannt`, also erlaubt.
     public func kontovorgaben() async -> String {
         func text(_ wert: Bool?) -> String { wert.map { $0 ? "1" : "0" } ?? "" }
-        guard let c = client, let v = await c.kontovorgaben() else { return "|" }
+        guard let c = client, let v = await c.kontovorgaben() else { return "||" }
         protokoll("Konto: Naechste Folge automatisch \(text(v.naechsteFolgeAutomatisch)), Downloads \(v.downloadrecht.rawValue)")
-        return "\(text(v.naechsteFolgeAutomatisch))|\(text(v.downloadsErlaubt))"
+        return "\(text(v.naechsteFolgeAutomatisch))|\(text(v.downloadsErlaubt))|\(text(v.umwandelnErlaubt))"
     }
 
     /// **Ob ein Ladeknopf erscheint** — der Schalter H1 *und* das Recht am Konto. Die Entscheidung
@@ -1254,6 +1283,49 @@ public final class Kern: @unchecked Sendable {
     /// Antwort: `ergebnis` (`gewechselt`, `gesperrt`, `abgebrochen`, `gescheitert`), bei `gewechselt`
     /// der `spielplan`, bei `gescheitert` der lesbare `fehler`, und eine `nachmeldung`, wenn der Stopp
     /// der alten Folge nicht ankam.
+    /// **Qualität gewechselt — derselbe Titel, neu geplant, an derselben Stelle.** Vorlage: die
+    /// Qualitätswahl im Player auf iOS/tvOS/macOS (`PlayerScreen.qualitaetswahl`). Anders als
+    /// ``folgeWechseln(id:position:)`` bleibt es beim **laufenden** Titel — nur der Plan ist neu,
+    /// weil `wiedergabeWahlen` vorher die Bitratengrenze gesetzt hat — und die Stelle ist die
+    /// Fortsetzstelle, nicht null. Antwort wie dort.
+    public func qualitaetWechseln(position: Double) async -> String {
+        sperre.lock(); let wechsel = _folgenwechsel; let alt = _wiedergabe; sperre.unlock()
+        guard let alt else { return Self.kodiert(Wechselantwort(ergebnis: "gescheitert")) }
+        let ablage = Wechselablage()
+        let ergebnis = await wechsel.ausfuehren(Folgenwechsel.Schritte<Wiedergabe>(
+            stoppen: { [self] in ablage.setzen(nachmeldung: await stoppMelden(alt, stelle: position)) },
+            planen: { [self] in
+                do { return try await wiedergabeHolen(id: alt.item.id) } catch {
+                    ablage.setzen(fehler: kernFehlertext(error))
+                    return nil
+                }
+            },
+            anwenden: { [self] neu in
+                var neu = neu
+                Wiedergabetakt.neuerTitel(&neu.stand, startGemeldet: true)
+                if position > 0 { Wiedergabetakt.gesprungen(&neu.stand, ziel: position) }
+                sperre.lock(); _wiedergabe = neu; sperre.unlock()
+                ablage.setzen(spielplan: try? spielplanantwort(neu))
+            },
+            starten: { [self] neu in startMelden(neu, sekunden: position) },
+            gescheitert: { [self] in
+                sperre.lock()
+                if let w = _wiedergabe, Self.schluessel(w) == Self.schluessel(alt) { _wiedergabe?.stand.startGemeldet = false }
+                sperre.unlock()
+            }))
+        protokoll("Qualität \(ergebnis) → \(alt.item.id) bei \(Int(position)) s")
+        var antwort = Wechselantwort(ergebnis: "\(ergebnis)")
+        antwort.nachmeldung = ablage.nachmeldung
+        switch ergebnis {
+        case .gewechselt:
+            antwort.spielplan = ablage.spielplan
+        case .gescheitert:
+            antwort.fehler = ablage.fehler ?? kernFehlertext(URLError(.resourceUnavailable))
+        case .gesperrt, .abgebrochen: break
+        }
+        return Self.kodiert(antwort)
+    }
+
     public func folgeWechseln(id: String, position: Double) async -> String {
         sperre.lock(); let wechsel = _folgenwechsel; let alt = _wiedergabe; sperre.unlock()
         guard let alt else { return Self.kodiert(Wechselantwort(ergebnis: "gescheitert")) }
@@ -1798,11 +1870,17 @@ public final class Kern: @unchecked Sendable {
         let item = p.alsItem
         let w = Wiedergabe(item: item, plan: plan, abschnitte: [], naechste: nil)
         sperre.lock(); _wiedergabe = w; _folgenwechsel = Folgenwechsel(); sperre.unlock()
+        let istFolge = item.type == "Episode"
+        let kopfzeile = (istFolge && !(item.seriesName ?? "").isEmpty) ? item.seriesName! : item.name
         return try json(Spielplanantwort(
             url: plan.url.absoluteString, lossless: plan.isLossless, methode: plan.method.rawValue,
             titel: item.name, untertitel: item.kontextzeile ?? "",
             naechste: false, dateizeile: dateizeile(plan), serie: item.seriesName, kuerzel: item.folgenkuerzel,
-            bild: bild.isEmpty ? nil : bild))
+            bild: bild.isEmpty ? nil : bild,
+            itemId: item.id, episode: istFolge, serieId: item.seriesId, staffelId: item.seasonId,
+            kopfzeile: kopfzeile, staffelNr: istFolge ? item.parentIndexNumber : nil,
+            folgeNr: istFolge ? item.indexNumber : nil,
+            nebenzeile: istFolge ? nil : (item.nebenzeile.isEmpty ? nil : item.nebenzeile)))
     }
 
     // MARK: Nachmeldungen
@@ -2150,6 +2228,15 @@ struct Spielplanantwort: Encodable {
     /// „MKV · 1080p · H.264 · German · AAC · Stereo" — fuer den Beleg im Wiedergabeblatt.
     let dateizeile: String?
     let serie, kuerzel, bild: String?
+    /// Fuer den Kopf des neuen Players (Vorlage iOS) und die Folgenebene.
+    let itemId: String
+    let episode: Bool
+    let serieId, staffelId: String?
+    /// Serie bei einer Folge, sonst der Titel selbst — `titelzeile` auf iOS.
+    let kopfzeile: String
+    let staffelNr, folgeNr: Int?
+    /// Jahr · Laufzeit · Genre, nur beim Film — `metatext`/`item.nebenzeile` auf iOS.
+    let nebenzeile: String?
 }
 struct Wechselantwort: Encodable {
     let ergebnis: String
@@ -2258,6 +2345,7 @@ struct Platzantwort: Encodable {
 }
 struct Downloadgruppenantwort: Encodable { let id, titel: String; let bytes: Int64; let serienId: String?; let folgen: [String] }
 struct Planantwort: Encodable { let lossless: Bool; let methode: String }
+struct Trickplayantwort: Encodable { let breite, hoehe, kachelnBreit, kachelnHoch, anzahl, intervall: Int }
 struct Angebotantwort: Encodable { let id, itemID: String; let geraet: String?; let art, titelzeile: String; let stelle: Double; let stelleText: String }
 
 struct Fernbefehlantwort: Encodable { let art: String; let wert: Double? }

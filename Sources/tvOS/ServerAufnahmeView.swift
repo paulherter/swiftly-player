@@ -88,7 +88,7 @@ struct ServerAufnahmeView: View {
                         inhalt: .URL, abschluss: pruefen)
                 .frame(width: 760)
 
-            Text("Ohne https:// — das ergänzen wir.")
+            Text("https:// kannst du weglassen.")
                 .font(Stil.klein)
                 .foregroundStyle(Stil.schriftSehrLeise)
 

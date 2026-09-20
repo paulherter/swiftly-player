@@ -29,8 +29,29 @@ baum_fuellen() {
     local w="$1"
     install -Dm755 "$bau/SwiftlyLinux" "$w/usr/lib/$PROGRAMM/$PROGRAMM"
     strip "$w/usr/lib/$PROGRAMM/$PROGRAMM" 2>/dev/null || true
-    for buendel in "$bau"/*.resources; do
-        [ -d "$buendel" ] && cp -r "$buendel" "$w/usr/lib/$PROGRAMM/"
+    # **Beide Namen, und ohne Buendel kein Paket.** Bis Swift 6.3 legt SwiftPM
+    # ein Buendel als `<Ziel>_<Ziel>.resources` ab, ab 6.4 als
+    # `<Ziel>_<Ziel>.bundle` — der erzeugte `Bundle.module`-Zugriff sucht
+    # genau den Namen, unter dem gebaut wurde. Hier stand `*.resources` fest,
+    # und `[ -d ] && cp` schwieg, wenn das Muster nichts traf: die
+    # Paketstrecke zog auf `swiftly install --use latest` eine 6.4, schnuerte
+    # ein Paket ganz ohne Buendel und meldete Erfolg. Die 1.0.3 starb beim
+    # Start an „unable to find bundle named SwiftlyLinux_SwiftlyLinux" —
+    # gemeldet am 20.09.2026 von einem Tester auf CachyOS.
+    local anzahl=0 z
+    for buendel in "$bau"/*.resources "$bau"/*.bundle; do
+        [ -d "$buendel" ] || continue
+        cp -r "$buendel" "$w/usr/lib/$PROGRAMM/"
+        anzahl=$((anzahl + 1))
+    done
+    [ "$anzahl" -gt 0 ] || { echo "Kein Ressourcenbuendel in $bau" >&2; return 1; }
+    # JellyfinKits Buendel traegt `de.lproj` und `en.lproj`, also die
+    # Uebersetzungen des Pakets; fehlt es, stirbt die App eine Ebene spaeter
+    # in `Textkatalog.bundle(bundle:sprache:)`.
+    for z in SwiftlyLinux JellyfinKit; do
+        [ -d "$w/usr/lib/$PROGRAMM/${z}_${z}.resources" ] ||
+        [ -d "$w/usr/lib/$PROGRAMM/${z}_${z}.bundle" ] ||
+            { echo "Ressourcenbuendel fehlt: ${z}_${z} — nachsehen in $bau" >&2; return 1; }
     done
     # **Die privaten Bibliotheken gehoeren daneben.**
     #

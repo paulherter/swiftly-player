@@ -84,7 +84,7 @@ fun TvServerAufnahme(app: SwiftlyAnwendung, voreingestellt: String?, zurueck: ()
                      style = TvStil.koerper, color = Stil.schriftLeise, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
                 TvFeld(adresse, { adresse = it }, "tv.example.de", Modifier.padding(top = 22.dp).fillMaxWidth().focusRequester(feld),
                        imeAction = ImeAction.Go, tastaturAktion = { pruefen() })
-                Text(uebersetzt("Ohne https:// — das ergänzen wir."), style = TvStil.klein, color = Stil.schriftSehrLeise,
+                Text(uebersetzt("https:// kannst du weglassen."), style = TvStil.klein, color = Stil.schriftSehrLeise,
                      modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                 TvKnopf(uebersetzt(if (pruefe) "Verbinden…" else "Weiter"), freigegeben = adresse.isNotBlank() && !pruefe,
                         modifier = Modifier.padding(top = 20.dp)) { pruefen() }

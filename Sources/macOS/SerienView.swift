@@ -621,6 +621,17 @@ struct Folgenzeile: View {
     /// Was ein Klick auf den Ring tut — mit der Unterkante der Zeile, damit
     /// die Tafel darunter aufgeht und nicht irgendwo.
     var ringtipp: ((CGFloat) -> Void)?
+    /// **Was ein Klick auf die Zeile selbst tut — wenn gesetzt, statt
+    /// `Abspielsteuerung.starte`.**
+    ///
+    /// Auf der Serienseite öffnet ein Klick den Player neu (`steuerung.starte`
+    /// setzt `Abspielsteuerung.wunsch`, und der Player liest seinen Anfang nur
+    /// beim Erststart). Innerhalb eines schon laufenden Players — die
+    /// Folgenebene — muss der Wechsel dagegen **im selben Player** passieren,
+    /// über `zurNaechstenFolge`; sonst bliebe der Player bei `wunsch`
+    /// unverändert stehen, weil `PlayerScreen` seine `@State`-Werte nur beim
+    /// Erststellen aus `wunsch` liest.
+    var aktion: ((Item) -> Void)?
 
     @State private var schwebt = false
     @State private var gesehen = false
@@ -750,7 +761,7 @@ struct Folgenzeile: View {
         .animation(Stil.zeitSchweben, value: schwebt)
         // Eine Folge startet an ihrer eigenen Position — nicht an der der
         // Serie. Wörtlich aus der iPhone-Fassung.
-        .onTapGesture { steuerung.starte(folge) }
+        .onTapGesture { if let aktion { aktion(folge) } else { steuerung.starte(folge) } }
         // An den Stand gebunden, nicht nur ans Erscheinen: nach dem Player
         // kommt dieselbe Folge mit neuem Stand zurück.
         .task(id: folge.istGesehen) { gesehen = folge.istGesehen }

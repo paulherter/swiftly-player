@@ -23,13 +23,6 @@ struct WiedergabeEinstellungenView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Unterseitenkopf(titel: "Wiedergabe", zurueck: zurueck)
 
-                Text("Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen.")
-                    .font(Stil.koerper)
-                    .lineSpacing(3)
-                    .foregroundStyle(Stil.schriftLeise)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 14)
-
                 // **Zwei Spalten, linksbuendig — die Anordnung des iPads.**
                 // Links, was den Ton angeht: Qualitaet und Sprache. Rechts
                 // allein das Verhalten. Zwischenraum ist doppelter
@@ -44,16 +37,6 @@ struct WiedergabeEinstellungenView: View {
                     verhalten
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                // **Steht unter beiden Spalten, nicht zwischen zwei Karten.**
-                // Die Fussnote gehoert zur Bitrate, aber in einer Spalte
-                // zwischen Qualitaet und Sprache haette sie die linke Karte
-                // auseinandergerissen und die rechte um ihre Hoehe versetzt.
-                Text("Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Stil.schrift.opacity(0.4))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 14)
             }
             .frame(maxWidth: Stil.einstellungBreite, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -75,17 +58,23 @@ struct WiedergabeEinstellungenView: View {
     // MARK: Gruppen
 
     private var qualitaet: some View {
-        Einstellungsgruppe(titel: "Qualität") {
+        // Wandelt der Server nicht um, ist nichts zu wählen: Direct Play steht
+        // fest an, die Bitrate ist gesperrt.
+        let frei = model.umwandelnErlaubt
+        let directPlay = model.immerDirectPlay || !frei
+
+        return Einstellungsgruppe(titel: "Qualität") {
             Schalterzeile(symbol: "play.fill", titel: Text("Immer Direct Play"),
-                          unter: Text("Nie umwandeln lassen — der Grund für diese App"),
-                          an: Binding(get: { model.immerDirectPlay },
+                          unter: Text("Der Server wandelt nie um, es läuft immer die Originaldatei"),
+                          an: Binding(get: { directPlay },
                                       set: { model.immerDirectPlay = $0 }))
+                .disabled(!frei)
             Trennstrich().padding(.leading, 48)
             Wertezeile(symbol: "chart.bar", titel: Text("Höchste Bitrate"),
                        wert: Bitrate.text(model.bitratenGrenze),
                        pfeil: true, aktion: { umschalten(.bitrate) })
-                .disabled(model.immerDirectPlay)
-                .opacity(model.immerDirectPlay ? 0.4 : 1)
+                .disabled(directPlay)
+                .opacity(directPlay ? 0.4 : 1)
             if offeneListe == .bitrate {
                 Werteliste(eintraege: Bitrate.stufen,
                            beschriftung: { Bitrate.text($0.wert) },
@@ -137,7 +126,7 @@ struct WiedergabeEinstellungenView: View {
             // aendert nichts an der Wiedergabe, er zeigt nur, was sie tut.
             // Aus, bis ihn jemand sucht — wie bei Downloads und Seerr.
             Schalterzeile(symbol: "waveform.badge.magnifyingglass",
-                          titel: Text("Technikschild im Player"),
+                          titel: Text("Technische Daten im Player"),
                           an: $technikschild)
             Trennstrich().padding(.leading, 48)
             Wertezeile(symbol: "gobackward", titel: Text("Zurückspulen"),

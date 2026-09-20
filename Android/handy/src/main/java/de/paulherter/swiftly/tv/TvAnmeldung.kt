@@ -85,7 +85,7 @@ fun TvServerSeite(app: SwiftlyAnwendung, verbunden: (String, String) -> Unit) {
             TvFeld(adresse, { adresse = it }, "tv.beispiel.de",
                    Modifier.padding(top = 16.dp).fillMaxWidth().focusRequester(fokus),
                    imeAction = ImeAction.Go, tastaturAktion = { verbinden() })
-            Text(uebersetzt("Ohne https:// — das ergänzen wir."), style = TvStil.klein, color = Stil.schriftSehrLeise,
+            Text(uebersetzt("https:// kannst du weglassen."), style = TvStil.klein, color = Stil.schriftSehrLeise,
                  modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
             TvKnopf(uebersetzt(if (laeuft) "Verbinden…" else "Verbinden"), freigegeben = adresse.isNotBlank() && !laeuft,
                     modifier = Modifier.padding(top = 22.dp)) { verbinden() }
@@ -247,7 +247,7 @@ fun TvQuickConnectSeite(app: SwiftlyAnwendung, neuerServer: Boolean = false, sch
                 Text(uebersetzt("So gehts").uppercase(), style = TextStyle(fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
                      color = Stil.schriftSehrLeise)
                 listOf("Jellyfin im Browser öffnen und anmelden", "Oben rechts aufs Profil, dann Quick Connect",
-                       "Code eintippen — hier gehts dann von allein weiter").forEachIndexed { i, schritt ->
+                       "Code eingeben, dann geht es hier von selbst weiter").forEachIndexed { i, schritt ->
                     Row(Modifier.padding(top = 10.dp)) {
                         Text("${i + 1}", style = TvStil.koerper, color = Stil.schriftSehrLeise, modifier = Modifier.width(26.dp))
                         Text(uebersetzt(schritt), style = TvStil.koerper, color = Stil.schriftLeise)

@@ -79,7 +79,7 @@ struct HomeView: View {
         // Neu geholt wird nach der Endmeldung, nicht beim Zumachen: beim
         // Zumachen ist sie noch unterwegs (`AppModel.wiedergabeBeendet`).
         .onChange(of: model.seitenAuffrischen) { _, _ in Task { await laden() } }
-        .fullScreenCover(item: $abspielen) { wunsch in
+        .playerCover(item: $abspielen) { wunsch in
             PlayerScreen(model: model, item: wunsch.item,
                          plan: wunsch.plan, startAt: wunsch.startAt)
         }

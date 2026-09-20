@@ -219,6 +219,32 @@ extension App {
         })
         anhaengen(block, g3.aussen)
 
+        anhaengen(block, luftHoch(18))
+
+        // **Bewerten, Discord, Fehler melden — ganz unten**, unter Server und
+        // Abmelden. Stand in den Einstellungen und wurde dort kaum gesehen.
+        // **Ohne „bewerten":** es gibt keinen Store, in dem eine Bewertung
+        // landen koennte. Die Adressen stehen im Paket.
+        let g4 = zeilengruppe()
+        anhaengen(g4.raum, wertezeile(symbol: "user-available-symbolic",
+                                      titel: uebersetzt("Discord beitreten"),
+                                      unter: uebersetzt("Fragen stellen und sagen, was fehlt")) {
+            imBrowser(Gemeinschaft.discord)
+        })
+        anhaengen(g4.raum, zeilenstrich())
+        anhaengen(g4.raum, wertezeile(symbol: "dialog-warning-symbolic",
+                                      titel: uebersetzt("Fehler melden"),
+                                      unter: uebersetzt("Auf GitHub, deine App-Version ist schon eingetragen")) {
+            #if os(Windows)
+            let system = "Windows"
+            #else
+            let system = "Linux"
+            #endif
+            imBrowser(Gemeinschaft.fehlerMelden(fassung: "\(Fassung.voll) · libVLC \(VLCFassung.text)",
+                                                plattform: system))
+        })
+        anhaengen(block, g4.aussen)
+
         let fuss = beschriftung(Fassung.voll, stil: "swiftly-zweitzeile")
         gtk_widget_add_css_class(fuss, "swiftly-fuss")
         gtk_label_set_xalign(OpaquePointer(fuss), 0)
@@ -299,29 +325,27 @@ extension App {
     private func wiedergabeBauen(_ block: Widget!) {
         anhaengen(block, unterseitenkopf(uebersetzt("Wiedergabe")))
 
-        let satz = beschriftung(uebersetzt("Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen."),
-                                stil: "swiftly-koerper", umbruch: true)
-        gtk_widget_add_css_class(satz, "dim-label")
-        gtk_label_set_xalign(OpaquePointer(satz), 0)
-        gtk_label_set_justify(OpaquePointer(satz), GTK_JUSTIFY_LEFT)
-        gtk_widget_set_margin_top(satz, 14)
-        anhaengen(block, satz)
-
         // **Zwei Spalten, wie auf dem Mac** (`WiedergabeEinstellungenView.swift:38`):
         // links, was den Ton angeht — Qualitaet und Sprache. Rechts allein das
         // Verhalten. Hier stand alles untereinander.
         let (links, rechts) = zweispalter(in: block)
 
         // MARK: Qualität
+        // Wandelt der Server nicht um, ist nichts zu wählen: Direct Play
+        // steht fest an, die Bitrate ist gesperrt.
+        let frei = umwandelnErlaubt
+        let directPlay = wahlen.immerDirectPlay || !frei
         let q = einstellungsgruppe(uebersetzt("Qualität"))
-        anhaengen(q.raum, schalterzeile(symbol: "media-playback-start-symbolic",
-                                        titel: uebersetzt("Immer Direct Play"),
-                                        unter: uebersetzt("Nie umwandeln lassen — der Grund für diese App"),
-                                        an: wahlen.immerDirectPlay) { [weak self] an in
+        let schalter = schalterzeile(symbol: "media-playback-start-symbolic",
+                                     titel: uebersetzt("Immer Direct Play"),
+                                     unter: uebersetzt("Der Server wandelt nie um, es läuft immer die Originaldatei"),
+                                     an: directPlay) { [weak self] an in
             self?.wahlen.immerDirectPlay = an
             self?.wahlen.sichern()
             self?.unterseiteOeffnen(.wiedergabe)
-        })
+        }
+        gtk_widget_set_sensitive(schalter, frei ? 1 : 0)
+        anhaengen(q.raum, schalter)
         anhaengen(q.raum, zeilenstrich())
         let bitrate = wertezeile(symbol: "view-list-symbolic", titel: uebersetzt("Höchste Bitrate"),
                                  wert: Bitrate.text(wahlen.bitratenGrenze), pfeil: true) {
@@ -329,8 +353,8 @@ extension App {
         }
         // **Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird** —
         // sonst bliebe sie wirkungslos und stünde trotzdem da.
-        gtk_widget_set_sensitive(bitrate, wahlen.immerDirectPlay ? 0 : 1)
-        gtk_widget_set_opacity(bitrate, wahlen.immerDirectPlay ? 0.4 : 1)
+        gtk_widget_set_sensitive(bitrate, directPlay ? 0 : 1)
+        gtk_widget_set_opacity(bitrate, directPlay ? 0.4 : 1)
         anhaengen(q.raum, bitrate)
         if offeneListe == .bitrate {
             anhaengen(q.raum, werteliste(Bitrate.stufen.map { (Bitrate.text($0.wert), $0.wert) },
@@ -341,14 +365,6 @@ extension App {
             })
         }
         anhaengen(links, q.aussen)
-
-        let hinweis = beschriftung(uebersetzt("Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da."),
-                                   stil: "swiftly-zweitzeile", umbruch: true)
-        gtk_widget_add_css_class(hinweis, "swiftly-fuss")
-        gtk_label_set_xalign(OpaquePointer(hinweis), 0)
-        gtk_label_set_justify(OpaquePointer(hinweis), GTK_JUSTIFY_LEFT)
-        gtk_widget_set_margin_top(hinweis, 10)
-        anhaengen(block, hinweis)
 
         // MARK: Sprache
         let sp = einstellungsgruppe(uebersetzt("Sprache"))
@@ -402,7 +418,7 @@ extension App {
         // an zweiter Stelle.
         anhaengen(v.raum, zeilenstrich())
         anhaengen(v.raum, schalterzeile(symbol: "preferences-system-symbolic",
-                                        titel: uebersetzt("Technikschild im Player"),
+                                        titel: uebersetzt("Technische Daten im Player"),
                                         an: wahlen.technikschild) { [weak self] an in
             self?.wahlen.technikschild = an
             self?.wahlen.sichern()
@@ -483,7 +499,7 @@ extension App {
         let o = einstellungsgruppe(uebersetzt("Offline"))
         anhaengen(o.raum, schalterzeile(symbol: "folder-download-symbolic",
                                         titel: uebersetzt("Downloads"),
-                                        unter: uebersetzt("Titel auf diesen Rechner laden und ohne Netz sehen"),
+                                        unter: uebersetzt("Titel auf diesen Rechner laden und offline schauen"),
                                         an: wahlen.downloadsAn) { [weak self] an in
             guard let self else { return }
             if an || self.downloads.posten.isEmpty {
@@ -519,7 +535,7 @@ extension App {
             anhaengen(o.raum, zeilenstrich())
             anhaengen(o.raum, schalterzeile(symbol: "network-wireless-symbolic",
                                             titel: uebersetzt("Nur über WLAN"),
-                                            unter: uebersetzt("Über Mobilfunk warten Downloads"),
+                                            unter: uebersetzt("Downloads warten, bis du im WLAN bist"),
                                             an: wahlen.nurUeberWLAN) { [weak self] an in
                 self?.wahlen.nurUeberWLAN = an
                 self?.wahlen.sichern()
@@ -587,29 +603,6 @@ extension App {
                                     })
         anhaengen(s.raum, pruefzeile)
         anhaengen(rechts, s.aussen)
-
-        // Vorlage: `EinstellungenView.gemeinschaft` auf dem Mac — unter dem
-        // Server. **Ohne „bewerten":** es gibt keinen Store, in dem eine
-        // Bewertung landen koennte. Die Adressen stehen im Paket.
-        let g = einstellungsgruppe("Swiftly")
-        anhaengen(g.raum, wertezeile(symbol: "user-available-symbolic",
-                                     titel: uebersetzt("Discord beitreten"),
-                                     unter: uebersetzt("Fragen stellen und sagen, was fehlt"),
-                                     auswahl: { imBrowser(Gemeinschaft.discord) }))
-        anhaengen(g.raum, zeilenstrich())
-        anhaengen(g.raum, wertezeile(symbol: "dialog-warning-symbolic",
-                                     titel: uebersetzt("Fehler melden"),
-                                     unter: uebersetzt("Auf GitHub, deine Fassung steht schon drin"),
-                                     auswahl: {
-            #if os(Windows)
-            let system = "Windows"
-            #else
-            let system = "Linux"
-            #endif
-            imBrowser(Gemeinschaft.fehlerMelden(fassung: "\(Fassung.voll) · libVLC \(VLCFassung.text)",
-                                                plattform: system))
-        }))
-        anhaengen(rechts, g.aussen)
 
         let fuss = beschriftung("\(Fassung.voll) · libVLC \(VLCFassung.text)",
                                 stil: "swiftly-zweitzeile")
@@ -947,18 +940,22 @@ extension App {
 
         anhaengen(links, luftHoch(26))
 
-        // **Zwei Formen derselben Auswahl**, nicht zwei Mengen.
+        // **Zwei Formen derselben Auswahl**, nicht zwei Mengen. Wie die
+        // übrigen Zeilen der Karte: ein Symbol, das die Form zeigt, kein
+        // Auswahl-Kreis — der Haken steht rechts.
         let g2 = einstellungsgruppe(uebersetzt("Genres"))
-        anhaengen(g2.raum, auswahlzeile(uebersetzt("Als eigene Reihen"), an: !wahlen.genreChips) {
-            [weak self] in
+        anhaengen(g2.raum, wertezeile(symbol: "view-grid-symbolic",
+                                      titel: uebersetzt("Als eigene Reihen"),
+                                      haken: !wahlen.genreChips) { [weak self] in
             self?.wahlen.genreChips = false
             self?.wahlen.sichern()
             self?.geladen.remove(.start)
             self?.unterseiteOeffnen(.darstellung)
         })
         anhaengen(g2.raum, zeilenstrich())
-        anhaengen(g2.raum, auswahlzeile(uebersetzt("Als Chips über den Reihen"), an: wahlen.genreChips) {
-            [weak self] in
+        anhaengen(g2.raum, wertezeile(symbol: "view-continuous-symbolic",
+                                      titel: uebersetzt("Als Chips über den Reihen"),
+                                      haken: wahlen.genreChips) { [weak self] in
             self?.wahlen.genreChips = true
             self?.wahlen.sichern()
             self?.geladen.remove(.start)
@@ -986,14 +983,6 @@ extension App {
             self?.unterseiteOeffnen(.genrewahl)
         })
         anhaengen(rechts, g2.aussen)
-
-        let fuss2 = beschriftung(uebersetzt("Genres kommen von deinem Server. Als Reihen steht jedes unten auf der Startseite, die zuletzt hinzugefügten Titel zuerst. Als Chips stehen sie oben, ein Klick öffnet das Genre. Ohne Auswahl bleibt die Startseite, wie sie ist."),
-                                 stil: "swiftly-zweitzeile", umbruch: true)
-        gtk_widget_add_css_class(fuss2, "swiftly-sehrleise")
-        gtk_label_set_xalign(OpaquePointer(fuss2), 0)
-        gtk_label_set_justify(OpaquePointer(fuss2), GTK_JUSTIFY_LEFT)
-        gtk_widget_set_margin_top(fuss2, 8)
-        anhaengen(rechts, fuss2)
     }
 
     /// Eine Reihe in der Liste: Name, Schalter, zwei Pfeile.

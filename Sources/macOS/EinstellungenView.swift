@@ -45,7 +45,6 @@ struct EinstellungenView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .leading, spacing: 0) {
                         server
-                        gemeinschaft
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -89,7 +88,7 @@ struct EinstellungenView: View {
         Einstellungsgruppe(titel: "Offline") {
             Schalterzeile(symbol: "arrow.down.circle",
                           titel: Text("Downloads"),
-                          unter: Text("Titel auf diesen Mac laden und ohne Netz sehen"),
+                          unter: Text("Titel auf diesen Mac laden und offline schauen"),
                           an: Binding(get: { model.downloadsAn },
                                       set: { an in
                                           if an || model.downloads.posten.isEmpty {
@@ -101,7 +100,7 @@ struct EinstellungenView: View {
             if model.downloadsAn {
                 Schalterzeile(symbol: "wifi",
                               titel: Text("Nur über WLAN"),
-                              unter: Text("Über Mobilfunk warten Downloads"),
+                              unter: Text("Downloads warten, bis du im WLAN bist"),
                               an: Binding(get: { model.nurUeberWLAN },
                                           set: { model.nurUeberWLAN = $0 }))
                 Wertezeile(symbol: "internaldrive",
@@ -206,23 +205,8 @@ struct EinstellungenView: View {
         }
     }
 
-    /// Bewerten, Discord, Fehler melden — wie auf dem iPhone, unter dem
-    /// Server. Die Adressen stehen im Paket (`Gemeinschaft`).
-    private var gemeinschaft: some View {
-        Einstellungsgruppe(titel: "Swiftly") {
-            Wertezeile(symbol: "star", titel: Text("Swiftly bewerten"),
-                       unter: Text("Im App Store"),
-                       aktion: { oeffnen(Gemeinschaft.appStoreBewertung) })
-            Trennstrich().padding(.leading, 48)
-            Wertezeile(symbol: "bubble.left.and.bubble.right", titel: Text("Discord beitreten"),
-                       unter: Text("Fragen stellen und sagen, was fehlt"),
-                       aktion: { oeffnen(Gemeinschaft.discord) })
-            Trennstrich().padding(.leading, 48)
-            Wertezeile(symbol: "ladybug", titel: Text("Fehler melden"),
-                       unter: Text("Auf GitHub, deine Fassung steht schon drin"),
-                       aktion: { oeffnen(Fassung.fehlerMelden) })
-        }
-    }
+    // **Bewerten, Discord, Fehler melden stehen jetzt im Profil**, ganz unten
+    // unter Server/Abmelden — hier wurden sie kaum gesehen.
 
     @Environment(\.openURL) private var oeffnen
 

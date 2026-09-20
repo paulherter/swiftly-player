@@ -85,7 +85,7 @@ final class Seerrmodell {
         // zweiten Versuch: das ist dann eine Entscheidung.
         let adressen = Seerr.adressen(aus: eingabe)
         guard !adressen.isEmpty else {
-            fehler = String(localized: "Diese Adresse ergibt keine.")
+            fehler = String(localized: "Das ist keine gültige Adresse.")
             return
         }
         meldetAn = true

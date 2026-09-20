@@ -26,10 +26,12 @@ final class AppModel {
     // MARK: Einstellungen
 
     /// Nie umwandeln lassen. Der Grund für diese App — deshalb Vorgabe an.
-    var immerDirectPlay: Bool { didSet { merken(immerDirectPlay, "immerDirectPlay") } }
+    /// **Je Server.** Ein Server wandelt vielleicht um, der andere nicht —
+    /// die Wahl gehört zum Server, nicht zum Gerät (`serverSchluessel`).
+    var immerDirectPlay: Bool { didSet { merken(immerDirectPlay, "immerDirectPlay" + serverSchluessel) } }
     /// Obergrenze in Mbit/s, 0 heißt unbegrenzt. Greift nur, wenn Direct Play
     /// nicht erzwungen wird.
-    var bitratenGrenze: Int { didSet { merken(bitratenGrenze, "bitratenGrenze") } }
+    var bitratenGrenze: Int { didSet { merken(bitratenGrenze, "bitratenGrenze" + serverSchluessel) } }
     var querformatFest: Bool { didSet { merken(querformatFest, "querformatFest") } }
     var fortschrittAufKacheln: Bool { didSet { merken(fortschrittAufKacheln, "fortschritt") } }
 
@@ -126,6 +128,9 @@ final class AppModel {
     /// Nicht gespeichert: kommt bei jedem Start frisch, und ein anderes Konto
     /// hat ein anderes Recht.
     private(set) var downloadrecht: Downloadrecht = .unbekannt
+    /// Darf der Server für dieses Konto Video umwandeln? Sonst bietet der
+    /// Player keine Bitratengrenze an — sie bliebe ohne Wirkung.
+    private(set) var umwandelnErlaubt = true
 
     /// **Ob ein Ladeknopf ueberhaupt erscheint** — der Schalter oben *und*
     /// das Recht am Konto, entschieden im Paket.
@@ -148,6 +153,23 @@ final class AppModel {
         }
     }
 
+
+    /// Anhang für Einstellungen, die je Server gelten. Ohne Sitzung leer —
+    /// dann gilt der alte, gerätweite Wert.
+    private var serverSchluessel: String {
+        session.map { "|" + $0.serverURL.absoluteString } ?? ""
+    }
+
+    /// Direct Play und Bitratengrenze des aktuellen Servers. Hat er noch
+    /// keine eigenen, gilt die bisherige gerätweite Wahl.
+    private func wiedergabeLaden() {
+        let ablage = UserDefaults.standard
+        let k = serverSchluessel
+        immerDirectPlay = ablage.object(forKey: "immerDirectPlay" + k) as? Bool
+            ?? ablage.object(forKey: "immerDirectPlay") as? Bool ?? true
+        bitratenGrenze = ablage.object(forKey: "bitratenGrenze" + k) as? Int
+            ?? ablage.integer(forKey: "bitratenGrenze")
+    }
 
     private func merken(_ wert: Any, _ name: String) {
         UserDefaults.standard.set(wert, forKey: name)
@@ -212,7 +234,7 @@ final class AppModel {
     private(set) var client: JellyfinClient? {
         didSet { downloads.anmelden(client: client, konto: session?.userID) }
     }
-    private(set) var session: Session?
+    private(set) var session: Session? { didSet { if session?.serverURL != oldValue?.serverURL { wiedergabeLaden() } } }
 
     /// Alle Konten auf diesem Server, in der Reihenfolge des Streifens über
     /// der Profilseite. Leer, solange niemand angemeldet ist.
@@ -723,6 +745,8 @@ final class AppModel {
             // `JellyfinClient.downloadURL`, und der merkt sich den letzten
             // bekannten Stand.
             downloadrecht = vorgaben?.downloadrecht ?? .unbekannt
+            // Ohne Antwort: erlaubt — dann bleibt die Qualitätswahl im Player.
+            umwandelnErlaubt = vorgaben?.umwandelnErlaubt ?? true
             Protokoll.schreib("[Konto] Nächste Folge automatisch: \(String(describing: naechsteAutomatischKonto)), Downloads: \(downloadrecht.rawValue)")
         }
         do {
@@ -1216,6 +1240,18 @@ final class AppModel {
         return await client.abschnitte(fuer: itemID)
     }
 
+    /// Vorschaubilder beim Spulen — `nil` ohne Trickplay am Server.
+    func trickplay(fuer itemID: String, quelle: String?) async -> Trickplay? {
+        guard let client else { return nil }
+        return await client.trickplay(itemID: itemID, mediaSourceID: quelle)
+    }
+
+    func trickplayBlatt(_ itemID: String, quelle: String?, breite: Int, blatt: Int) async -> Data? {
+        guard let client else { return nil }
+        return await client.trickplayBlatt(itemID: itemID, mediaSourceID: quelle,
+                                           breite: breite, blatt: blatt)
+    }
+
     // MARK: - Wiedergabe melden
     //
     // Schlägt eine Meldung fehl, ist das kein Grund, die Wiedergabe zu stören —
@@ -1612,12 +1648,12 @@ final class AppModel {
             // Start auffällt, kostet unnötig eine Anmeldung.
             guard Keychain.load(key: Self.kontenKey) != nil else {
                 Self.log.error("Keychain: Sitzung geschrieben, aber nicht lesbar")
-                errorMessage = String(localized: "Sitzung ließ sich nicht sichern — du müsstest dich neu anmelden.")
+                errorMessage = String(localized: "Deine Anmeldung ließ sich nicht speichern. Beim nächsten Start musst du dich neu anmelden.")
                 return
             }
             Self.log.info("Keychain: Sitzung gesichert")
         } catch {
-            errorMessage = String(localized: "Sitzung ließ sich nicht sichern.")
+            errorMessage = String(localized: "Deine Anmeldung ließ sich nicht speichern.")
         }
     }
 

@@ -100,7 +100,7 @@ struct ServerAufnahmeView: View {
                 Text("Server hinzufügen")
                     .font(Stil.titel)
                     .foregroundStyle(Stil.schrift)
-                Text("Die Adresse eines weiteren Jellyfin-Servers. Seine Konten kommen neben die, die du schon hast; auf der Profilseite wechselst du zwischen ihnen.")
+                Text("Die Adresse eines weiteren Jellyfin-Servers. Du bleibst bei beiden angemeldet und wechselst auf der Profilseite zwischen ihnen.")
                     .font(Stil.koerper)
                     .lineSpacing(3)
                     .foregroundStyle(Stil.schriftLeise)

@@ -54,7 +54,7 @@ settings:
     #
     # Vor einem Zuruecksetzen immer erst nachsehen:
     #   cd Notizen/Werkzeuge/Discord && node --env-file=.env melden.mjs beta --probe
-    CURRENT_PROJECT_VERSION: "8"
+    CURRENT_PROJECT_VERSION: "11"
     # Dieselbe Kennung wie zu Zeiten der kostenlosen Apple-ID: Apple hat das
     # persönliche Team in das bezahlte umgewandelt, statt ein zweites
     # anzulegen. Nachgeprüft am Distributionszertifikat (OU=63L6TSM2Y9).
@@ -287,6 +287,9 @@ targets:
       # seit es auch einen AppKit-Arm gibt.
       - path: Sources/Shared/Basisansicht.swift
       - path: Sources/Shared/VLCPlayer.swift
+      # Vorschaubilder beim Spulen: Holen und Zwischenspeicher der
+      # Trickplay-Blaetter, geteilt mit iPhone und Mac.
+      - path: Sources/Shared/Trickplaybilder.swift
       # Uebernahme zwischen Geraeten: Abfragetakt und Zustand.
       - path: Sources/Shared/Uebernahmemodell.swift
       - path: Sources/Shared/Localizable.xcstrings
@@ -506,6 +509,10 @@ targets:
       # Serien, Staffeln und Folgen im Speicher — seit `2fc501c` einmal
       # geteilt statt zweimal gebaut, und mit eigener Kontopruefung.
       - path: Sources/Shared/Serienspeicher.swift
+      # Trickplay-Vorschaubilder beim Spulen — lag bis zur Mac-Übernahme
+      # der neuen Player-Gestaltung unter Sources/iOS, obwohl der Code
+      # selbst schon plattformneutral war (nur CoreGraphics/ImageIO).
+      - path: Sources/Shared/Trickplaybilder.swift
       # Bildlader mit eigenem Speicher — entschluesselt abseits des
       # Hauptlaufs. Lag bis 05.09.2026 in Sources/macOS.
       - path: Sources/Shared/Spielwerte.swift

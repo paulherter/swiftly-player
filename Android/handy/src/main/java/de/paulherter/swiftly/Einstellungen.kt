@@ -111,6 +111,14 @@ class Einstellungen(ablage: Ablage) {
      */
     val downloadKnopfZeigen: Boolean
         get() = Kern.downloadKnopfZeigen(downloadrechtKonto, downloadsAn)
+    /**
+     * `Policy.EnableVideoPlaybackTranscoding` des geltenden Kontos, `"1"`/`"0"`/leer — nicht
+     * gespeichert, kommt je Start und Kontowechsel frisch (`SwiftlyAnwendung.kontovorgabenHolen`).
+     */
+    var umwandelnErlaubtKonto by mutableStateOf("")
+    /** Ohne Antwort vom Server: erlaubt — dann bleibt die Qualitätswahl im Player. */
+    val umwandelnErlaubt: Boolean
+        get() = umwandelnErlaubtKonto != "0"
     /** H5: Originaldateien sind gross — ueber Mobilfunk wird gewartet. */
     var nurUeberWLAN by Merkwert(a, "nurUeberWLAN", bool("nurUeberWLAN", true), jaNein)
     var pufferstufe by Merkwert(a, "pufferstufe", a.merkwert("pufferstufe") ?: "normal") { it }
@@ -206,7 +214,7 @@ fun Schalter(an: Boolean, aendern: (Boolean) -> Unit) {
 
 /** Vorlage: `Zeilenaufbau` — Zeichen 17 in 20, Titel 16, Unterzeile 13 bei 45 %, 14 Abstand. */
 @Composable
-private fun Zeilenaufbau(symbol: ImageVector, titel: String, unter: String?, farbe: Color, modifier: Modifier,
+fun Zeilenaufbau(symbol: ImageVector, titel: String, unter: String?, farbe: Color, modifier: Modifier,
                          senkrecht: Int = 14, rechts: @Composable RowScope.() -> Unit) {
     Row(modifier.fillMaxWidth().padding(horizontal = Stil.randAbstand, vertical = senkrecht.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -224,10 +232,17 @@ private fun Pfeil() {
     Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Color.White.copy(alpha = 0.28f), modifier = Modifier.size(20.dp))
 }
 
-/** Vorlage: `Wahlzeile` — schaltet etwas um; die ganze Zeile nimmt den Tipp. */
+/**
+ * Vorlage: `Wahlzeile` — schaltet etwas um; die ganze Zeile nimmt den Tipp.
+ * `gesperrt`: der Server entscheidet, nicht der Schalter — wie „Immer Direct
+ * Play", wenn der Server nicht umwandelt.
+ */
 @Composable
-fun Wahlzeile(symbol: ImageVector, titel: String, unter: String? = null, an: Boolean, aendern: (Boolean) -> Unit) {
-    Zeilenaufbau(symbol, titel, unter, Stil.schrift, Modifier.druckzeile { aendern(!an) }) { Schalter(an, aendern) }
+fun Wahlzeile(symbol: ImageVector, titel: String, unter: String? = null, an: Boolean, gesperrt: Boolean = false, aendern: (Boolean) -> Unit) {
+    val farbe = if (gesperrt) Stil.schrift.copy(alpha = 0.4f) else Stil.schrift
+    Zeilenaufbau(symbol, titel, unter, farbe, if (gesperrt) Modifier else Modifier.druckzeile { aendern(!an) }) {
+        Schalter(an, if (gesperrt) { _: Boolean -> } else aendern)
+    }
 }
 
 /** Vorlage: `Wertzeile` — zeigt einen Wert und fuehrt, wenn antippbar, zu seiner Auswahl. Gedimmt, wenn er nicht greift. */

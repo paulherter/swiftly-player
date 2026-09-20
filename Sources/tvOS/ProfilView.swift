@@ -295,15 +295,22 @@ struct ProfilView: View {
     private var zeilen: some View {
         switch bereich {
         case .wiedergabe:
-            Schalterzeile(titel: "Immer Direct Play", an: model.immerDirectPlay) {
+            // Wandelt der Server nicht um, ist nichts zu wählen: Direct Play
+            // steht fest an, die Bitrate ist gesperrt — wie auf den anderen
+            // Fassungen.
+            let frei = model.umwandelnErlaubt
+            let directPlay = model.immerDirectPlay || !frei
+            Schalterzeile(titel: "Immer Direct Play", an: directPlay) {
                 model.immerDirectPlay.toggle()
             }
+            .disabled(!frei)
             .focused($rechts, equals: .oben)
             Trennlinie()
             wertzeile("Höchste Bitrate", wert: Bitrate.text(model.bitratenGrenze),
                       eintraege: Bitrate.stufen, beschriftung: { Bitrate.text($0.wert) },
                       an: { $0.wert == model.bitratenGrenze },
                       waehlen: { model.bitratenGrenze = $0.wert })
+            .disabled(directPlay)
             Trennlinie()
             // **Steht neben der Bitrate, weil es dieselbe Sorte Entscheidung
             // ist:** was der Zuschauer ueber seine Leitung weiss und die App

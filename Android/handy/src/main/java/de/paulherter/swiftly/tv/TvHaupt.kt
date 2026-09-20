@@ -151,17 +151,21 @@ fun TvHaupt(app: SwiftlyAnwendung) {
         }
     }
     val spiel = app.spiel.value
-    // **Auf dem Fernseher ohne Bewegung.** Vorlage: `PlayerScreen` auf tvOS — Folge druecken, der
-    // Player ist sofort da (Lader), beim Schliessen sofort weg. Die Handy-Uebergaenge
-    // (`player_hoch`/`player_runter`) bleiben dem Handy vorbehalten; siehe `PlayerAktivitaet.kt`.
+    // **Der Player blendet ueber, 0,3 s** — wie auf tvOS seit bee033b und am Handy
+    // (`player_ein`/`player_aus`, siehe `PlayerAktivitaet.kt`).
     // `spielUebergeben` wie in `Hauptansicht`: ein Wunsch startet den Player genau einmal, auch wenn
     // die Aktivitaet neu gebaut wird.
     LaunchedEffect(spiel) {
         if (spiel == null || spiel === app.spielUebergeben) return@LaunchedEffect
         app.spielUebergeben = spiel
+        Fokusmerker.playerStartet()
         kontext.startActivity(Intent(kontext, PlayerAktivitaet::class.java),
-            (if (app.istFernseher) android.app.ActivityOptions.makeCustomAnimation(kontext, 0, 0)
-             else android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_hoch, de.paulherter.swiftly.R.anim.halten)).toBundle())
+            android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_ein, de.paulherter.swiftly.R.anim.halten).toBundle())
+    }
+    // **Nach dem Player zurueck auf die Kachel, Folge oder den Knopf, von dem aus gestartet wurde**
+    // (Vorlage tvOS 57d3219) — derselbe Weg, ob der Player per Zurueck oder von selbst endet.
+    LaunchedEffect(spiel == null) {
+        if (spiel == null) { delay(30); Fokusmerker.playerZu() }
     }
 
     // Gemeldete Kulissen je Seite (`seitenschluessel`) — siehe `TvKulissenebene`.

@@ -253,10 +253,14 @@ struct HauptView: View {
         .overlay {
             if let wunsch = steuerung.wunsch {
                 PlayerScreen(model: model, wunsch: wunsch) { steuerung.schliessen() }
-                    // Aufsteigen — die dritte der drei Bewegungen. Von unten
-                    // herauf und wieder hinunter; deshalb zeigt der Winkel
-                    // oben links nach unten.
-                    .transition(.move(edge: .bottom))
+                    // Die Auflage liegt außerhalb von `.environment(steuerung)`
+                    // oben — ohne das stürzte die Folgenebene ab: `Folgenzeile`
+                    // liest die Steuerung aus der Umgebung.
+                    .environment(steuerung)
+                    .environment(navigator)
+                    // **Überblenden wie auf iPhone und Apple TV** — auf allen
+                    // Geräten dieselbe Bewegung: der Player blendet ein und aus.
+                    .transition(.opacity)
             }
         }
         // **Der helle Streifen war kein Anstrich, sondern ein Rand.**
@@ -274,7 +278,7 @@ struct HauptView: View {
         // Der ist aber seit 26.1 behoben, und dieser Rechner läuft auf 26.5.
         // Also lag es doch an uns.
         .ignoresSafeArea()
-        .animation(Stil.zeitSprung, value: steuerung.wunsch?.id)
+        .animation(.easeInOut(duration: 0.3), value: steuerung.wunsch?.id)
         .onReceive(NotificationCenter.default.publisher(for: Kommandopost.name)) { post in
             guard let kommando = Kommandopost.empfangen(post) else { return }
             ausfuehren(kommando)

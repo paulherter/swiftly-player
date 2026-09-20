@@ -139,7 +139,7 @@ struct QuickConnectAnmeldung: View {
             Gruppentitel(text: "So gehts")
             schritt(1, "Jellyfin im Browser öffnen und anmelden")
             schritt(2, "Oben rechts aufs Profil, dann Quick Connect")
-            schritt(3, "Code eintippen — hier gehts dann von allein weiter")
+            schritt(3, "Code eingeben, dann geht es hier von selbst weiter")
         }
         .padding(.top, 38)
     }

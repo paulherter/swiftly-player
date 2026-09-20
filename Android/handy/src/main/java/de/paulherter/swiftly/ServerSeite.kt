@@ -65,7 +65,7 @@ fun ServerSeite(app: SwiftlyAnwendung, verbunden: (String, String) -> Unit) {
             Column(Modifier.padding(top = 18.dp)) {
                 Eingabefeld(adresse, { adresse = it }, Icons.Outlined.Language, "tv.beispiel.de", adresse = true) { verbinden() }
             }
-            Text(uebersetzt("Ohne https:// — das ergänzen wir."), style = Stil.klein, color = Stil.schriftSehrLeise,
+            Text(uebersetzt("https:// kannst du weglassen."), style = Stil.klein, color = Stil.schriftSehrLeise,
                  modifier = Modifier.fillMaxWidth().padding(top = 9.dp, start = 2.dp))
             Hauptknopf(if (laeuft) uebersetzt("Verbinden…") else uebersetzt("Verbinden"),
                        freigegeben = adresse.isNotBlank() && !laeuft,

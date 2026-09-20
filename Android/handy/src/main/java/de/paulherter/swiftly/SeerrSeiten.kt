@@ -164,7 +164,7 @@ fun SeerrEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
     }
 
     Einstellungsseite("Seerr", zurueck) {
-        Text(uebersetzt("Jellyseerr oder Overseerr. Damit findest du in der Suche auch, was noch nicht auf deinem Server liegt — und kannst es anfragen."),
+        Text(uebersetzt("Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen."),
              style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise, modifier = Modifier.padding(horizontal = Stil.randAbstand))
         if (verbunden) {
             Einstellungsgruppe(uebersetzt("Verbunden")) {
@@ -185,7 +185,7 @@ fun SeerrEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
                     adresse.isNotBlank() && benutzer.isNotBlank() && passwort.isNotBlank() ->
                         Hauptknopf(uebersetzt("Verbinden"), modifier = Modifier.padding(top = 6.dp)) { verbinden() }
                 }
-                Text(uebersetzt("Dein Passwort wird nicht gespeichert — nur die Sitzung, die Seerr dafür ausstellt."),
+                Text(uebersetzt("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr."),
                      style = TextStyle(fontSize = 12.sp, lineHeight = 17.sp), color = Stil.schriftSehrLeise, modifier = Modifier.padding(top = 6.dp))
             }
         }

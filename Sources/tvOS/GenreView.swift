@@ -53,7 +53,7 @@ struct GenreView: View {
         .overlay {
             if !laedt, items.isEmpty {
                 Leerzustand(symbol: "tag", titel: "Nichts in diesem Genre",
-                            hinweis: "Auf deinem Server steht gerade kein Film und keine Serie darin.")
+                            hinweis: "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.")
             }
         }
         .task(id: name) {

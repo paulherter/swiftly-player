@@ -155,6 +155,9 @@ struct Wertezeile: View {
     var akzent = false
     var pfeil = false
     var aktion: (() -> Void)?
+    /// Haken statt Pfeil oder Wert — für eine Wahl unter mehreren, siehe die
+    /// Genre-Form in `DarstellungView`.
+    var haken = false
     /// Ob die Zeile beim Überfahren hervorgehoben wird.
     ///
     /// **Standardmäßig nur, wenn sie eine eigene Aktion hat** — sonst würde
@@ -201,6 +204,11 @@ struct Wertezeile: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Stil.schriftSehrLeise)
+                    }
+                    if haken {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Stil.akzent)
                     }
                 }
             }

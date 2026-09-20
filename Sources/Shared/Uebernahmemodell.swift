@@ -174,7 +174,7 @@ final class Uebernahmemodell {
         async let sitzungenAbruf = try? client.fremdsitzungen()
         guard let plan = await planAbruf else {
             let wo = model.serverName ?? String(localized: "dem Server")
-            fehlerZeigen(String(localized: "Die Wiedergabe hat nicht geklappt — \(wo) hat keinen Plan geliefert."),
+            fehlerZeigen(String(localized: "Die Wiedergabe hat nicht geklappt. Von \(wo) kamen keine Daten zum Abspielen."),
                          model: model)
             return nil
         }

@@ -24,13 +24,23 @@ extension App {
             gtk_label_set_yalign(OpaquePointer(feld), 0)
             gtk_widget_set_halign(feld, GTK_ALIGN_START)
             gtk_widget_set_valign(feld, GTK_ALIGN_START)
-            gtk_widget_set_margin_top(feld, 22)
-            gtk_widget_set_margin_start(feld, 22)
+            // Mac: `.padding(.leading, Stil.randAbstand)`,
+            // `.padding(.top, mass.oben + mass.knopf + 6)`.
+            gtk_widget_set_margin_top(feld, Playermass.oben + Playermass.knopf + 6)
+            gtk_widget_set_margin_start(feld, Int32(Stil.randAbstand))
             // **Nichts abfangen.** Das Schild liegt ueber dem Bild und darf
             // keinen Klick schlucken, der der Steuerung gilt.
             gtk_widget_set_can_target(feld, 0)
             technikschild = feld
             gtk_overlay_add_overlay(OpaquePointer(spielerRahmen), feld)
+            // **Unter den Ebenen.** Wird das Schild erst angeschaltet, während
+            // die Einstellungenebene schon offen ist (der übliche Weg), läge
+            // es sonst über ihrer Abdunklung — GTK kennt kein „nach hinten
+            // legen", nur Aushängen-und-neu-Einhängen der darüberliegenden.
+            // Über der Steuerung, unter den Ebenen und dem stehenden Titel.
+            if let davor = offeneEbene ?? spielerTitelstand {
+                gtk_widget_insert_before(feld, spielerRahmen, davor)
+            }
             technikschildNachfuehren()
         } else {
             if let feld = technikschild, spielerRahmen != nil {

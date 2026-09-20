@@ -146,14 +146,18 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                 Column(Modifier.padding(5.dp).clip(RoundedCornerShape(TvStil.eckeKachel)).background(Stil.flaeche)) {
                     when (abteil) {
                         Abteil.Wiedergabe -> {
-                            TvSchalterzeile(uebersetzt("Immer Direct Play"), e.immerDirectPlay, modifier = erste) {
-                                e.immerDirectPlay = !e.immerDirectPlay; app.qualitaetMelden()
+                            // Wandelt der Server nicht um, ist nichts zu wählen: Direct Play steht
+                            // fest an, die Bitrate ist gesperrt — wie auf den anderen Fassungen.
+                            val frei = e.umwandelnErlaubt
+                            val directPlay = e.immerDirectPlay || !frei
+                            TvSchalterzeile(uebersetzt("Immer Direct Play"), directPlay, modifier = erste) {
+                                if (frei) { e.immerDirectPlay = !e.immerDirectPlay; app.qualitaetMelden() }
                             }
                             Trennlinie()
                             // Gedimmt, solange Direct Play erzwungen ist — dort griffe sie nicht.
                             TvHandlung(uebersetzt("Höchste Bitrate"), wert = bitraten.firstOrNull { it.wert == e.bitratenGrenze.toString() }?.text,
-                                       modifier = Modifier.alpha(if (e.immerDirectPlay) 0.4f else 1f)) {
-                                if (!e.immerDirectPlay) blatt(uebersetzt("Höchste Bitrate"), bitraten, e.bitratenGrenze.toString()) { e.bitratenGrenze = it.toInt(); app.qualitaetMelden() }
+                                       modifier = Modifier.alpha(if (directPlay) 0.4f else 1f)) {
+                                if (!directPlay) blatt(uebersetzt("Höchste Bitrate"), bitraten, e.bitratenGrenze.toString()) { e.bitratenGrenze = it.toInt(); app.qualitaetMelden() }
                             }
                             Trennlinie()
                             TvHandlung(uebersetzt("Puffer"), wert = puffer.firstOrNull { it.wert == e.pufferstufe }?.text) {

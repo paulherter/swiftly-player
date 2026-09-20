@@ -45,11 +45,24 @@ enum Regal {
     /// Ordner für eines von beiden nicht da und alles bleibt still.
     static let gruppe = "group.de.paulherter.swiftly"
 
+    /// **In `Library/Caches` des Gruppenordners, nicht in seine Wurzel.**
+    ///
+    /// tvOS laesst Apps nur dort schreiben (dazu Preferences ueber
+    /// UserDefaults). In die Wurzel schrieb die App seit jeher — und tvOS
+    /// lehnte es still ab. Gemessen am Apple TV (19.09.2026): Gruppenordner
+    /// erreichbar, zwei Rubriken gebaut, „Datei fehlt nach dem Schreiben".
+    /// Das Top Shelf blieb deshalb leer; wenn es je etwas zeigte, dann einen
+    /// alten Rest.
     private static var datei: URL? {
-        FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: gruppe)?
-            .appendingPathComponent("regal.json")
+        guard let wurzel = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: gruppe) else { return nil }
+        let ordner = wurzel.appendingPathComponent("Library/Caches", isDirectory: true)
+        try? FileManager.default.createDirectory(at: ordner, withIntermediateDirectories: true)
+        return ordner.appendingPathComponent("regal.json")
     }
+
+    /// Der letzte Schreibfehler, fuer ``befund()``.
+    nonisolated(unsafe) private static var letzterFehler: String?
 
     static func schreiben(_ vorschau: Regalvorschau) {
         guard var datei, let daten = try? JSONEncoder().encode(vorschau) else { return }
@@ -58,7 +71,13 @@ enum Regal {
         // Oeffnen der Startseite sein.
         let vorher = try? Data(contentsOf: datei)
         guard vorher != daten else { return }
-        try? daten.write(to: datei, options: .atomic)
+        do {
+            try daten.write(to: datei, options: .atomic)
+            letzterFehler = nil
+        } catch {
+            letzterFehler = error.localizedDescription
+            return
+        }
         // **Nicht in die Sicherung.**
         //
         // Die Bildadressen hier drin tragen Jellyfins `api_key` — das steht
@@ -106,6 +125,15 @@ enum Regal {
         // Auch das Leeren muss ankommen: sonst zeigt der Startbildschirm nach
         // dem Abmelden weiter die Titel des vorigen Kontos.
         bescheidGeben()
+    }
+
+    /// Fuer das Protokoll der App: kommt die App an den Ordner, liegt die
+    /// Datei da, wie gross. Die Erweiterung hat kein Protokoll, deshalb hier
+    /// nur ein Text und kein Schreiben.
+    static func befund() -> String {
+        guard let datei else { return "kein Gruppenordner (Berechtigung?)" }
+        let groesse = (try? FileManager.default.attributesOfItem(atPath: datei.path)[.size] as? Int) ?? nil
+        return groesse.map { "Datei da, \($0) Bytes" } ?? "Datei fehlt: \(letzterFehler ?? "kein Fehler gemeldet")"
     }
 
     static func lesen() -> Regalvorschau? {

@@ -2,7 +2,12 @@ package de.paulherter.swiftly
 
 import android.app.PictureInPictureParams
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.view.WindowManager
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Rational
@@ -47,20 +52,28 @@ class PlayerAktivitaet : ComponentActivity() {
             navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         val app = application as SwiftlyAnwendung
-        // **Der Player liegt oben drauf** (`fullScreenCover`): er faehrt von unten herein und wieder
-        // hinunter, die App darunter bewegt sich nicht. Ohne eigene Uebergaenge spielte Android die
-        // Animation fuer einen Aufgabenwechsel, und die App kam von oben herein.
-        //
-        // **Auf dem Fernseher keine Bewegung.** Vorlage: `PlayerScreen` auf tvOS — Folge druecken,
-        // der Player ist sofort da, beim Schliessen sofort weg. Das Handy behaelt seine Animation.
+        // **Der Player blendet ueber, er faehrt nicht** (Vorlage `Playerrahmen` auf iOS: `.crossDissolve`,
+        // 0,3 s). Geschoben kam er quer „von unten" und hochkant von der Seite — eine Blende hat keine
+        // Richtung. Die App darunter bewegt sich nicht.
+        // Auf dem Fernseher dieselbe Blende (tvOS bee033b).
         if (android.os.Build.VERSION.SDK_INT >= 34) {
-            if (app.istFernseher) {
-                overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
-                overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
-            } else {
-                overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, R.anim.player_hoch, R.anim.halten)
-                overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.halten, R.anim.player_runter)
+            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, R.anim.player_ein, R.anim.halten)
+            overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.halten, R.anim.player_aus)
+        }
+        if (!app.istFernseher) {
+            // **Quer vor dem ersten Bild, und nur der Player.** Die Lage steht im Manifest
+            // (`sensorLandscape`), damit das System sie schon beim Start kennt und die App dahinter
+            // hochkant bleibt; vorher setzte `PlayerSeite` sie erst im ersten Durchgang, der Player ging
+            // hochkant auf und drehte nach — und beim Schliessen stellte er die alte Lage wieder her und
+            // drehte noch einmal. Nur wer die Sperre abgeschaltet hat, darf auch hochkant.
+            if (!app.einstellungen.querformatFest) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+            // Ohne Systemleisten und mit wachem Bildschirm, solange diese Aktivitaet lebt — beim Schliessen
+            // nichts zurueckstellen: das Fenster geht mit ihr, ein Einblenden der Leisten blitzte nur auf.
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.systemBars())
             }
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         wunsch.value = app.spiel.value ?: run { finish(); return }
         // **Mit der Geste ins kleine Fenster, nicht danach.** Nach oben gewischt ging die Aktivitaet
@@ -89,10 +102,8 @@ class PlayerAktivitaet : ComponentActivity() {
     override fun finish() {
         super.finish()
         if (android.os.Build.VERSION.SDK_INT < 34) {
-            val fernseher = (application as SwiftlyAnwendung).istFernseher
             @Suppress("DEPRECATION")
-            if (fernseher) overridePendingTransition(0, 0)
-            else overridePendingTransition(R.anim.halten, R.anim.player_runter)
+            overridePendingTransition(R.anim.halten, R.anim.player_aus)
         }
     }
 

@@ -50,13 +50,6 @@ struct WiedergabeEinstellungenView: View {
 
     private var inhalt: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Gilt für alles, was neu startet. Im Player lässt sich jederzeit abweichen.")
-                .font(Stil.koerper)
-                .lineSpacing(3)
-                .foregroundStyle(Stil.schriftLeise)
-                .padding(.horizontal, Stil.randAbstand)
-                .padding(.top, 8)
-
             if breit {
                 // **Null, seit die Gruppen Karten sind.** Jede Karte traegt links
                 // und rechts schon `Stil.rand` — bei 56 dazwischen standen
@@ -76,28 +69,27 @@ struct WiedergabeEinstellungenView: View {
                 verhalten
             }
 
-            Text("Die Bitrate greift nur, wenn Direct Play nicht erzwungen wird — sonst bliebe sie wirkungslos und stünde trotzdem da.")
-                .mitwachsend(13)
-                .lineSpacing(2)
-                .foregroundStyle(Color.white.opacity(0.35))
-                .padding(.horizontal, Stil.randAbstand)
-                .padding(.top, 22)
         }
         .padding(.bottom, 40)
     }
 
     private var qualitaet: some View {
-        let waehlen: (() -> Void)? = model.immerDirectPlay ? nil : { oeffne(.bitrate) }
+        // Wandelt der Server nicht um, ist nichts zu wählen: Direct Play steht
+        // fest an, die Bitrate ist gesperrt.
+        let frei = model.umwandelnErlaubt
+        let directPlay = model.immerDirectPlay || !frei
+        let waehlen: (() -> Void)? = directPlay ? nil : { oeffne(.bitrate) }
 
         return Einstellungsgruppe(titel: "Qualität") {
             Wahlzeile(symbol: "play.fill", titel: Text("Immer Direct Play"),
-                      unter: Text("Nie umwandeln lassen — der Grund für diese App"),
-                      an: Binding(get: { model.immerDirectPlay },
+                      unter: Text("Der Server wandelt nie um, es läuft immer die Originaldatei"),
+                      an: Binding(get: { directPlay },
                                   set: { model.immerDirectPlay = $0 }))
+                .disabled(!frei)
             Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "chart.bar", titel: Text("Höchste Bitrate"),
                       wert: Bitrate.text(model.bitratenGrenze),
-                      gedimmt: model.immerDirectPlay, aktion: waehlen)
+                      gedimmt: directPlay, aktion: waehlen)
         }
     }
 
@@ -132,7 +124,7 @@ struct WiedergabeEinstellungenView: View {
             // aendert nichts an der Wiedergabe, er zeigt nur, was sie tut.
             // Aus, bis ihn jemand sucht — wie bei Downloads und Seerr.
             Wahlzeile(symbol: "waveform.badge.magnifyingglass",
-                      titel: Text("Technikschild im Player"),
+                      titel: Text("Technische Daten im Player"),
                       an: $technikschild)
             Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
             Wertzeile(symbol: "gobackward", titel: Text("Zurückspulen"),

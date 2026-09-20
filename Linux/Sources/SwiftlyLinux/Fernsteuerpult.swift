@@ -87,6 +87,22 @@ extension App {
         case "spielen":
             if let erster = letzteStartreihe.first { starte(erster) }
 
+        /// Nennt die ersten Titel der ersten Startreihe — damit ein Messlauf
+        /// weiss, was `spielen` starten würde, bevor er es tut.
+        case "startreihe":
+            print("[Fern] Startreihe: " + letzteStartreihe.prefix(5)
+                .map { ($0.seriesName ?? $0.name) + " (\($0.type ?? "?"))" }.joined(separator: " | "))
+            fflush(nil)
+
+        /// Anhalten oder weiter, wie die Leertaste — ein Messlauf hält gleich
+        /// an, damit die gemerkte Stelle beim Server stehen bleibt.
+        case "pause":
+            guard laufenderTitel != nil else { break }
+            abspieler.umschalten()
+            spielstand.laeuft.toggle()
+            spielerAbspielzeichen?.setzen(spielstand.laeuft)
+            medienstandMelden()
+
         /// Die Steuerung einblenden — sie geht sonst nach ein paar Sekunden
         /// von selbst weg, und ein Bildschirmabzug bekaeme sie nie zu sehen.
         case "steuerung":  steuerungZeigen()
@@ -95,7 +111,10 @@ extension App {
         case "spielerZu":  spielerSchliessen()
 
         /// Die Wiedergabetafel im Player auf- und zuklappen.
-        case "spurwahl":   spurwahlZeigen()
+        case "spurwahl":   ebeneOeffnen(.spuren)
+        case "einstellungenEbene": ebeneOeffnen(.einstellungen)
+        case "folgenEbene": ebeneOeffnen(.folgen)
+        case "ebeneZu":    ebeneSchliessen()
 
         /// Den offenen Titel laden, wie der Knopf „Laden" in der Tafel.
         case "laden":
@@ -103,6 +122,11 @@ extension App {
                 ladenAnstossen(t, quelle: t.mediaSources?.first,
                                bytes: t.mediaSources?.first?.size ?? 0)
             }
+
+        /// An eine Stelle springen (`stelle:1331`) — ein Messlauf stellt so
+        /// die gemerkte Stelle wieder her, bevor er den Player schliesst.
+        case "stelle":
+            if laufenderTitel != nil, teile.count > 1, let s = Double(teile[1]) { springe(auf: s) }
 
         /// Einen Reiter der Serienseite wählen.
         case "reiter":
@@ -259,6 +283,20 @@ extension App {
             naechsteFolge()
 
         /// Den ersten fertigen Download aus der Datei abspielen.
+        /// **Eine beliebige Datei spielen** — `dateispielen:/tmp/probe.mkv`.
+        /// Ohne Pfad der erste Download. Der Weg ohne Server und ohne Plan:
+        /// damit laesst sich eine Datei mit bekannten Eigenschaften messen,
+        /// ohne einen fremden Sehstand anzufassen.
+        case "dateispielen" where teile.count > 1:
+            let pfad = teile[1]
+            guard FileManager.default.fileExists(atPath: pfad) else {
+                print("[Pult] dateispielen: keine Datei \(pfad)"); fflush(nil); break
+            }
+            print("[Pult] dateispielen \(pfad)"); fflush(nil)
+            let item = Item(id: "probe", name: URL(fileURLWithPath: pfad).lastPathComponent,
+                            type: "Movie")
+            spielerOeffnen(item, ab: 0, ausDatei: URL(fileURLWithPath: pfad))
+
         case "dateispielen":
             if let p = downloads.posten.first(where: { downloads.datei(fuer: $0.id) != nil }) {
                 print("[Pult] dateispielen \(p.id) \(p.container ?? "?")")

@@ -242,6 +242,16 @@ struct DetailView: View {
     /// es nur bisher zufaellig richtig getroffen, weil der Fokus meist von
     /// oben links kam.
     @FocusState private var amHauptknopf: Bool
+    /// **Wohin der Fokus zurueckkehrt, wenn der Player zugeht.**
+    ///
+    /// Derselbe Grund wie bei `amMehrknopf`, nur fuer den Player: er liegt im
+    /// Rahmen als Geschwister, die Seite bleibt beim Abspielen durchgehend
+    /// eingehaengt, nur `disabled` — und das setzt `amHauptknopf`/`amMehrknopf`
+    /// dabei auf `false` zurueck. Ohne diese Erinnerung sucht sich tvOS beim
+    /// Entfernen des Players geometrisch etwas aus und landet oben am ersten
+    /// Reiter der Kopfleiste.
+    private enum Fokusziel { case hauptknopf, mehrknopf }
+    @State private var zuletztFokus: Fokusziel = .hauptknopf
 
     @State private var bereitet = false
     @State private var aehnliche: [Item] = []
@@ -332,6 +342,18 @@ struct DetailView: View {
         // bleiben damit selbst bedienbar.
         .defaultFocus($amHauptknopf, true, priority: .userInitiated)
         .onChange(of: mehrOffen) { _, offen in if !offen { amMehrknopf = true } }
+        .onChange(of: amHauptknopf) { _, an in if an { zuletztFokus = .hauptknopf } }
+        .onChange(of: amMehrknopf) { _, an in if an { zuletztFokus = .mehrknopf } }
+        // Siehe `zuletztFokus`: der Player hinterlaesst denselben leeren
+        // Fokus wie eine offene Tafel, nur eine Ebene hoeher — dieselbe
+        // Zuweisung holt ihn zurueck.
+        .onChange(of: abspielen.wrappedValue == nil) { vorher, geschlossen in
+            guard geschlossen, vorher == false else { return }
+            switch zuletztFokus {
+            case .hauptknopf: amHauptknopf = true
+            case .mehrknopf: amMehrknopf = true
+            }
+        }
         .disabled(mehrOffen)
         // Unter dem Mehr-Knopf, an seiner Kante — siehe `Tafelanker`. Vorher
         // `unterDerKnopfreihe`: aus dem Kopfaufbau gerechnet und um den
@@ -488,7 +510,7 @@ struct DetailView: View {
         Task {
             defer { bereitet = false }
             guard let plan = await model.plan(for: titel.id) else {
-                meldung = String(localized: "Der Server nennt keine Quelle für diesen Titel.")
+                meldung = String(localized: "Der Server hat keine Datei zu diesem Titel.")
                 return
             }
             abspielen.wrappedValue = Abspielwunsch(item: titel, plan: plan, startAt: ab)

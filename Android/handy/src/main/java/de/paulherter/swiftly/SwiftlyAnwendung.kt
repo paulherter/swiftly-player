@@ -329,12 +329,14 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     fun kontovorgabenHolen() {
         einstellungen.naechsteAutomatischKonto = ""
         einstellungen.downloadrechtKonto = ""
+        einstellungen.umwandelnErlaubtKonto = ""
         lauf.launch {
-            val beides = runCatching {
+            val teile = runCatching {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.kontovorgaben().await() }
-            }.getOrDefault("|").split("|")
-            einstellungen.naechsteAutomatischKonto = beides.getOrElse(0) { "" }
-            einstellungen.downloadrechtKonto = beides.getOrElse(1) { "" }
+            }.getOrDefault("||").split("|")
+            einstellungen.naechsteAutomatischKonto = teile.getOrElse(0) { "" }
+            einstellungen.downloadrechtKonto = teile.getOrElse(1) { "" }
+            einstellungen.umwandelnErlaubtKonto = teile.getOrElse(2) { "" }
         }
     }
 

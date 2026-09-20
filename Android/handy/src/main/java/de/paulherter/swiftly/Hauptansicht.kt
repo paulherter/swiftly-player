@@ -190,7 +190,7 @@ fun Hauptansicht(app: SwiftlyAnwendung) {
         if (spiel == null || spiel === app.spielUebergeben) return@LaunchedEffect
         app.spielUebergeben = spiel
         kontext.startActivity(android.content.Intent(kontext, PlayerAktivitaet::class.java),
-            android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_hoch, de.paulherter.swiftly.R.anim.halten).toBundle())
+            android.app.ActivityOptions.makeCustomAnimation(kontext, de.paulherter.swiftly.R.anim.player_ein, de.paulherter.swiftly.R.anim.halten).toBundle())
     }
 
     val waehlen: (Bereich) -> Unit = { b ->
