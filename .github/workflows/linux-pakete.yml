@@ -21,6 +21,10 @@ on:
         description: 'Fassung, z. B. 1.0.0'
         required: true
         default: '1.0.0'
+      paketstand:
+        description: 'Paketstand (pkgrel) fuer Arch — hochzaehlen, wenn dieselbe Fassung neu geschnuert wird'
+        required: false
+        default: '1'
 
 permissions:
   contents: write
@@ -62,12 +66,17 @@ jobs:
           export PKG_CONFIG_PATH="$PWD/.rlottie/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
           cd Linux
           swift build -c release -Xswiftc -static-stdlib
+          # **Den Bauordner erfragen, nicht raten.** `.build/release` ist ein
+          # Verweis, den SwiftPM umhaengen darf; derselbe Aufruf mit
+          # `--show-bin-path` sagt, wohin dieser Bau gelegt hat.
+          echo "BAUORDNER=$(swift build -c release -Xswiftc -static-stdlib --show-bin-path)" \
+            >> "$GITHUB_ENV"
 
       - name: Pakete schnueren
         run: |
           bash Linux/Installieren/paket-bauen.sh \
             "${{ steps.f.outputs.wert }}" \
-            "$PWD/Linux/.build/release" \
+            "$BAUORDNER" \
             "$PWD/pakete"
 
       # Ohne Schluessel entsteht eine unsignierte Quelle. Die funktioniert,
@@ -190,11 +199,14 @@ jobs:
           bash Werkzeuge/rlottie-bauen.sh "$PWD/.rlottie-quelle"
           export PKG_CONFIG_PATH="$PWD/.rlottie/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
           cd Linux && swift build -c release -Xswiftc -static-stdlib
+          echo "BAUORDNER=$(swift build -c release -Xswiftc -static-stdlib --show-bin-path)" \
+            >> "$GITHUB_ENV"
 
       - name: Paket schnueren
         run: |
           bash Linux/Installieren/pacman-paket.sh \
-            "${{ steps.f.outputs.wert }}" "$PWD/Linux/.build/release" "$PWD/pakete"
+            "${{ steps.f.outputs.wert }}" "$BAUORDNER" "$PWD/pakete" \
+            "${{ github.event.inputs.paketstand || '1' }}"
 
       # pacman prueft je Paket eine eigene .sig-Datei, nicht die Datenbank —
       # deshalb wird hier jedes Paket einzeln signiert und `repo-add -s`

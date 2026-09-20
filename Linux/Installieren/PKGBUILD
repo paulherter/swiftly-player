@@ -39,18 +39,40 @@ build() {
     export PKG_CONFIG_PATH="$SWIFTLY_RLOTTIE_ZIEL/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
     cd "$srcdir/swiftly-player/Linux"
     "$(_swift)" build -c release -Xswiftc -static-stdlib
+    # Wohin gebaut wurde, sagt derselbe Aufruf — `.build/release` ist nur ein
+    # Verweis, den SwiftPM umhaengen darf.
+    "$(_swift)" build -c release -Xswiftc -static-stdlib --show-bin-path \
+        > "$srcdir/bauordner.txt"
 }
 
 package() {
     local q="$srcdir/swiftly-player"
-    local b="$q/Linux/.build/release"
+    local b
+    b="$(cat "$srcdir/bauordner.txt")"
+    [ -d "$b" ] || { echo "Kein Bauordner: $b" >&2; return 1; }
 
     # Programm und Ressourcenbuendel bleiben beisammen: Swift findet
     # `Bundle.module` ueber den Pfad der laufenden Datei.
     install -Dm755 "$b/SwiftlyLinux" "$pkgdir/usr/lib/$pkgname/$pkgname"
-    for buendel in "$b"/*.resources; do
+
+    # **Beide Namen.** Bis Swift 6.3 heisst ein Buendel `<Ziel>_<Ziel>.resources`,
+    # ab 6.4 `<Ziel>_<Ziel>.bundle`; der erzeugte `Bundle.module`-Zugriff sucht
+    # genau den, unter dem gebaut wurde. Hier stand nur `.resources`, und auf
+    # 6.4 baute das Paket klaglos eines ohne jedes Buendel — die 1.0.3 starb
+    # beim Start an „unable to find bundle named SwiftlyLinux_SwiftlyLinux".
+    local n=0 buendel z
+    for buendel in "$b"/*.resources "$b"/*.bundle; do
         [ -d "$buendel" ] || continue
         cp -r "$buendel" "$pkgdir/usr/lib/$pkgname/"
+        n=$((n + 1))
+    done
+    [ "$n" -gt 0 ] || { echo "Kein Ressourcenbuendel in $b" >&2; return 1; }
+    # JellyfinKits Buendel traegt `de.lproj` und `en.lproj`; ohne es stirbt die
+    # App eine Ebene spaeter in `Textkatalog.bundle(bundle:sprache:)`.
+    for z in SwiftlyLinux JellyfinKit; do
+        [ -d "$pkgdir/usr/lib/$pkgname/${z}_${z}.resources" ] ||
+        [ -d "$pkgdir/usr/lib/$pkgname/${z}_${z}.bundle" ] ||
+            { echo "Ressourcenbuendel fehlt: ${z}_${z}" >&2; return 1; }
     done
     cp -r "$q/Linux/Ressourcen" "$pkgdir/usr/lib/$pkgname/Ressourcen"
     install -d "$pkgdir/usr/bin"

@@ -2,7 +2,11 @@
 #
 # Schnuert aus einem fertigen Bau ein pacman-Paket.
 #
-#     pacman-paket.sh <Fassung> <Bauverzeichnis> <Ausgabeverzeichnis>
+#     pacman-paket.sh <Fassung> <Bauverzeichnis> <Ausgabeverzeichnis> [Paketstand]
+#
+# Der Paketstand (`pkgrel`) ist normalerweise 1. Er wird hochgezaehlt, wenn
+# dieselbe Fassung neu geschnuert werden muss, weil am Paket etwas falsch war
+# und nicht am Programm — pacman sieht 1.0.3-2 dann als Update zu 1.0.3-1.
 #
 # **Warum nicht das PKGBUILD daneben.** Das PKGBUILD in diesem Verzeichnis
 # baut aus der Quelle — fuer Leute, die `makepkg -si` tippen wollen. Hier
@@ -18,6 +22,7 @@ set -euo pipefail
 fassung="${1:?Fassung fehlt}"
 bau="${2:?Bauverzeichnis fehlt}"
 raus="${3:?Ausgabeverzeichnis fehlt}"
+stand="${4:-2}"
 quelle="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 PROGRAMM="swiftly-jellyfin"
@@ -27,8 +32,28 @@ mkdir -p "$raus" "$werk/inhalt"
 
 cp "$bau/SwiftlyLinux" "$werk/inhalt/$PROGRAMM"
 strip "$werk/inhalt/$PROGRAMM" 2>/dev/null || true
-for buendel in "$bau"/*.resources; do
-    [ -d "$buendel" ] && cp -r "$buendel" "$werk/inhalt/"
+# **Beide Namen, und ohne Buendel kein Paket.** Bis Swift 6.3 legt SwiftPM
+# ein Buendel als `<Ziel>_<Ziel>.resources` ab, ab 6.4 als
+# `<Ziel>_<Ziel>.bundle` — der erzeugte `Bundle.module`-Zugriff sucht
+# genau den Namen, unter dem gebaut wurde. Hier stand `*.resources` fest,
+# und `[ -d ] && cp` schwieg, wenn das Muster nichts traf: die
+# Paketstrecke zog auf `swiftly install --use latest` eine 6.4, schnuerte
+# ein Paket ganz ohne Buendel und meldete Erfolg. Die 1.0.3 starb beim
+# Start an „unable to find bundle named SwiftlyLinux_SwiftlyLinux" —
+# gemeldet am 20.09.2026 von einem Tester auf CachyOS.
+anzahl=0
+for buendel in "$bau"/*.resources "$bau"/*.bundle; do
+    [ -d "$buendel" ] || continue
+    cp -r "$buendel" "$werk/inhalt/"
+    anzahl=$((anzahl + 1))
+done
+[ "$anzahl" -gt 0 ] || { echo "Kein Ressourcenbuendel in $bau" >&2; exit 1; }
+# JellyfinKits Buendel traegt `de.lproj` und `en.lproj`, also die
+# Uebersetzungen des Pakets; fehlt es, stirbt die App eine Ebene spaeter
+# in `Textkatalog.bundle(bundle:sprache:)`.
+for z in SwiftlyLinux JellyfinKit; do
+    [ -d "$werk/inhalt/${z}_${z}.resources" ] || [ -d "$werk/inhalt/${z}_${z}.bundle" ] ||
+        { echo "Ressourcenbuendel fehlt: ${z}_${z} — nachsehen in $bau" >&2; exit 1; }
 done
 cp "$quelle/Linux/Installieren/$KENNUNG.desktop" \
    "$quelle/Linux/Installieren/$KENNUNG.metainfo.xml" "$werk/inhalt/"
@@ -39,7 +64,7 @@ cp "$quelle/LICENSE" "$werk/inhalt/LICENSE"
 cat > "$werk/PKGBUILD" <<PKG
 pkgname=$PROGRAMM
 pkgver=$fassung
-pkgrel=1
+pkgrel=$stand
 pkgdesc="Jellyfin client that never transcodes"
 arch=('x86_64')
 url="https://github.com/paulherter/swiftly-player"
@@ -49,7 +74,7 @@ options=('!strip' '!debug')
 
 package() {
     install -Dm755 "\$startdir/inhalt/$PROGRAMM" "\$pkgdir/usr/lib/$PROGRAMM/$PROGRAMM"
-    for buendel in "\$startdir/inhalt"/*.resources; do
+    for buendel in "\$startdir/inhalt"/*.resources "\$startdir/inhalt"/*.bundle; do
         [ -d "\$buendel" ] && cp -r "\$buendel" "\$pkgdir/usr/lib/$PROGRAMM/"
     done
     cp -r "\$startdir/inhalt/Ressourcen" "\$pkgdir/usr/lib/$PROGRAMM/Ressourcen"
