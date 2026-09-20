@@ -319,6 +319,14 @@ sudo zypper install swiftly-jellyfin
 `… | bash -s -- --aus-quelle`. It pulls the dependencies from your
 distribution, fetches Swift into `$HOME`, and builds.
 
+**On Arch, CachyOS and Manjaro** the toolchain from swift.org is linked
+against Ubuntu's library names, and the compiler will not start until
+`libncurses.so.6` and `libxml2.so.2` are there. The installer creates those
+two links under `~/.swift-compat` by itself, without a password and without
+touching `/usr/lib`. If you skip the installer and run `swift build` by hand,
+source `Linux/umgebung.sh` first — it does the same and says what is missing
+before the build runs instead of after.
+
 </details>
 
 The packages are signed; the key's fingerprint is

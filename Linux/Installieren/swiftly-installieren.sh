@@ -260,8 +260,45 @@ else
     pakete_setzen
 fi
 
+# --------------------------------------------------------------- Quelle
+
+sagen "Quelltext"
+if [ -f "$PWD/Linux/Package.swift" ]; then
+    quelle="$PWD"
+    leise "Aus dem Verzeichnis, in dem du stehst."
+elif [ -d "$ARBEIT/quelle/.git" ]; then
+    quelle="$ARBEIT/quelle"
+    git -C "$quelle" fetch --depth 1 origin "$ZWEIG"
+    git -C "$quelle" reset --hard "origin/$ZWEIG"
+    leise "Vorhandenen Auscheck nachgezogen."
+else
+    quelle="$ARBEIT/quelle"
+    mkdir -p "$ARBEIT"
+    git clone --depth 1 --branch "$ZWEIG" "$HERKUNFT" "$quelle"
+fi
+
+# **Die Toolchain von swift.org ist gegen Ubuntus Sonamen gebunden.** Auf Arch
+# und CachyOS heisst dieselbe Bibliothek anders — `libncursesw.so.6` statt
+# `libncurses.so.6`, seit dem 20.09.2026 auch `libxml2.so.16` statt
+# `libxml2.so.2`. Der Uebersetzer startet dann gar nicht, mit „error while
+# loading shared libraries", und der Bau sieht aus wie ein Fehler im Code.
+# `umgebung.sh` legt die fehlenden Verweise unter `~/.swift-compat` an und
+# setzt die Suchpfade — ohne Passwort, ohne Eingriff ins System. Ein Tester
+# hat sich am 20.09.2026 mit zwei `sudo ln -sf` nach /usr/lib beholfen; das
+# soll niemand mehr tun muessen.
+if [ -f "$quelle/Linux/umgebung.sh" ]; then
+    # shellcheck source=/dev/null
+    . "$quelle/Linux/umgebung.sh"
+fi
+
+
 # ---------------------------------------------------------------- Swift
 
+# **Nach dem Quelltext, nicht davor.** Die Pruefung unten ruft `swift
+# --version` auf — und genau das scheitert auf Arch an einem Sonamen, den
+# `umgebung.sh` eine Stufe vorher schon geradegezogen hat. Andersherum sah ein
+# vorhandener Uebersetzer wie keiner aus, und das Skript lud eine zweite
+# Toolchain herunter, die an derselben Bibliothek gescheitert waere.
 sagen "Swift"
 export PATH="$HOME/.local/share/swiftly/bin:$PATH"
 brauche_swift=1
@@ -294,23 +331,6 @@ if [ "$brauche_swift" = "1" ]; then
     command -v swift >/dev/null 2>&1 || klagen "Swift ist nach der Installation nicht im PATH."
 fi
 
-# --------------------------------------------------------------- Quelle
-
-sagen "Quelltext"
-if [ -f "$PWD/Linux/Package.swift" ]; then
-    quelle="$PWD"
-    leise "Aus dem Verzeichnis, in dem du stehst."
-elif [ -d "$ARBEIT/quelle/.git" ]; then
-    quelle="$ARBEIT/quelle"
-    git -C "$quelle" fetch --depth 1 origin "$ZWEIG"
-    git -C "$quelle" reset --hard "origin/$ZWEIG"
-    leise "Vorhandenen Auscheck nachgezogen."
-else
-    quelle="$ARBEIT/quelle"
-    mkdir -p "$ARBEIT"
-    git clone --depth 1 --branch "$ZWEIG" "$HERKUNFT" "$quelle"
-fi
-
 # -------------------------------------------------------------- rlottie
 #
 # Die Startanimation. Gibt es in keiner Paketquelle, braucht aber auch kein
@@ -333,8 +353,16 @@ export PKG_CONFIG_PATH="$SWIFTLY_RLOTTIE_ZIEL/lib/pkgconfig:${PKG_CONFIG_PATH:-}
 
 sagen "Swiftly bauen"
 leise "Das dauert beim ersten Mal ein paar Minuten."
+
 ( cd "$quelle/Linux" && swift build -c release -Xswiftc -static-stdlib )
-binaer="$quelle/Linux/.build/release/SwiftlyLinux"
+
+# **Den Bauordner erfragen, nicht raten.** `.build/release` ist ein Verweis,
+# den SwiftPM nach Belieben umhaengt; derselbe Aufruf mit `--show-bin-path`
+# sagt, wohin dieser Bau wirklich gelegt hat.
+bauordner="$( cd "$quelle/Linux" && swift build -c release -Xswiftc -static-stdlib --show-bin-path )"
+[ -n "$bauordner" ] && [ -d "$bauordner" ] || klagen "Der Bau hat keinen Bauordner gemeldet."
+
+binaer="$bauordner/SwiftlyLinux"
 [ -x "$binaer" ] || klagen "Der Bau hat kein Programm hinterlassen."
 
 # ------------------------------------------------------------ Einraeumen
@@ -347,8 +375,35 @@ sagen "Einraeumen"
 mkdir -p "$ZIEL/bin" "$ZIEL/share/$PROGRAMM" "$ZIEL/share/applications" "$ZIEL/share/metainfo"
 install -m755 "$binaer" "$ZIEL/share/$PROGRAMM/$PROGRAMM"
 strip "$ZIEL/share/$PROGRAMM/$PROGRAMM" 2>/dev/null || true
-rm -rf "$ZIEL/share/$PROGRAMM"/*.resources
-cp -r "$quelle/Linux/.build/release"/*.resources "$ZIEL/share/$PROGRAMM/" 2>/dev/null || true
+
+# **Die Buendel heissen je nach Toolchain anders.** Bis Swift 6.3 legt SwiftPM
+# sie als `<Ziel>_<Ziel>.resources` ab, ab 6.4 als `<Ziel>_<Ziel>.bundle`, und
+# der erzeugte `Bundle.module`-Zugriff sucht genau den Namen, unter dem gebaut
+# wurde. Hier stand `*.resources` fest, mit `|| true` dahinter: auf 6.4 traf
+# das Muster nie etwas, die Installation meldete trotzdem „Fertig", und die
+# App starb beim Start an „unable to find bundle named
+# SwiftlyLinux_SwiftlyLinux" — gemeldet am 20.09.2026 von einem Tester auf
+# CachyOS. Deshalb beide Namen, und ohne Buendel kein „Fertig".
+rm -rf "$ZIEL/share/$PROGRAMM"/*.resources "$ZIEL/share/$PROGRAMM"/*.bundle
+buendel=0
+for b in "$bauordner"/*.resources "$bauordner"/*.bundle; do
+    [ -d "$b" ] || continue
+    cp -r "$b" "$ZIEL/share/$PROGRAMM/" || klagen "Ressourcenbuendel liess sich nicht kopieren: $b"
+    leise "Buendel: $(basename "$b")"
+    buendel=$((buendel + 1))
+done
+[ "$buendel" -gt 0 ] || klagen "Der Bau hat kein Ressourcenbuendel hinterlassen ($bauordner)."
+
+# **Die Zahl allein reicht nicht.** JellyfinKit bringt ein eigenes Buendel mit
+# — darin liegen `de.lproj` und `en.lproj`, also die Uebersetzungen. Fehlt es,
+# stirbt die App erst eine Ebene spaeter, in `Textkatalog.bundle(bundle:sprache:)`.
+for z in SwiftlyLinux JellyfinKit; do
+    if [ ! -d "$ZIEL/share/$PROGRAMM/${z}_${z}.resources" ] &&
+       [ ! -d "$ZIEL/share/$PROGRAMM/${z}_${z}.bundle" ]; then
+        klagen "Ressourcenbuendel fehlt: ${z}_${z} — nachsehen in $bauordner."
+    fi
+done
+
 rm -rf "$ZIEL/share/$PROGRAMM/Ressourcen"
 cp -r "$quelle/Linux/Ressourcen" "$ZIEL/share/$PROGRAMM/Ressourcen"
 ln -sf "$ZIEL/share/$PROGRAMM/$PROGRAMM" "$ZIEL/bin/$PROGRAMM"
