@@ -26,6 +26,9 @@ sealed interface Phase {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Messmodus des Technikschilds als Startextra, wie `-technikschildMessen YES` auf Apple.
+        if (intent?.hasExtra("technikschildMessen") == true)
+            (application as SwiftlyAnwendung).einstellungen.technikschildMessen = intent.getBooleanExtra("technikschildMessen", false)
         // **Immer helle Symbole in der Statusleiste** — die App ist dunkel, egal was im
         // System eingestellt ist. Ohne Vorgabe richtet sich `enableEdgeToEdge` nach dem
         // Systemthema, und auf hellem Thema standen Uhr und Akku schwarz auf Schwarz.

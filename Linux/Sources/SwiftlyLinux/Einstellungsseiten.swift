@@ -14,7 +14,7 @@ import JellyfinKit
 /// Wiedergabe getrennt, der Fernseher hat eine Seite. Linux folgt dem Mac.
 extension App {
 
-    enum Unterseite { case profil, quickConnect, wiedergabe, seerr, einstellungen, kontoHinzufuegen, serverAufnahme, darstellung, genrewahl }
+    enum Unterseite { case profil, quickConnect, wiedergabe, seerr, trakt, einstellungen, kontoHinzufuegen, serverAufnahme, darstellung, genrewahl }
 
     /// **Einstellungen blenden über, sie schieben nicht.**
     ///
@@ -70,7 +70,11 @@ extension App {
         // Der Mac deckelt Serveraufnahme, Weiteres Konto und Quick Connect
         // auf 460 (`ServerAufnahmeView.swift:71`, `ProfilView.swift:205,279`).
         let zweispaltig: Set<Unterseite> = [.einstellungen, .wiedergabe, .darstellung]
-        let formular: Set<Unterseite> = [.serverAufnahme, .kontoHinzufuegen, .quickConnect]
+        // **Profil und Seerr gehoeren dazu** (Mac 7c6d682f): „die Settings
+        // sind so lang gezogen … gleichzeitig aber in der Hoehe so klein."
+        // `lesebreite` ist das Mass fuer Fliesstext.
+        let formular: Set<Unterseite> = [.serverAufnahme, .kontoHinzufuegen, .quickConnect,
+                                          .profil, .seerr, .trakt]
         if zweispaltig.contains(was) {
             gtk_widget_set_halign(block, GTK_ALIGN_FILL)
             gtk_widget_set_hexpand(block, 1)
@@ -100,6 +104,7 @@ extension App {
         case .quickConnect:   quickConnectBauen(block)
         case .wiedergabe:     wiedergabeBauen(block)
         case .seerr:          seerrSeiteBauen(block)
+        case .trakt:          traktSeiteBauen(block)
         case .einstellungen:  einstellungenBauen(block)
         case .kontoHinzufuegen: kontoHinzufuegenBauen(block)
         case .serverAufnahme:   serverAufnahmeBauen(block)
@@ -109,7 +114,13 @@ extension App {
 
         let scroller = seitenscroller()
         gtk_scrolled_window_set_child(OpaquePointer(scroller), block)
-        if zweispaltig.contains(was) { deckeln(block, in: scroller, auf: Stil.einstellungBreite) }
+        // Die Einstellungen: **jede Spalte hoert bei `formularbreite` auf**
+        // (`EinstellungenView.swift`), also zwei Spalten plus 48 Abstand.
+        if was == .einstellungen {
+            deckeln(block, in: scroller, auf: Stil.formularBreite * 2 + Stil.randAbstand * 2)
+        } else if zweispaltig.contains(was) {
+            deckeln(block, in: scroller, auf: Stil.einstellungBreite)
+        }
         anhaengen(scheibe, scroller)
         if !anOrt { schieben(zu: scheibe, richtung: schub) }
     }
@@ -243,6 +254,24 @@ extension App {
             imBrowser(Gemeinschaft.fehlerMelden(fassung: "\(Fassung.voll) · libVLC \(VLCFassung.text)",
                                                 plattform: system))
         })
+        anhaengen(g4.raum, zeilenstrich())
+        // Neben „Fehler melden", weil es dazugehoert (Mac 307e2844): wer im
+        // Discord einen Fehler meldet, haengt das hier an.
+        anhaengen(g4.raum, wertezeile(symbol: "text-x-generic-symbolic",
+                                      titel: uebersetzt("Protokoll teilen"),
+                                      unter: uebersetzt("Die letzte Stunde, ohne Zugangsdaten")) {
+            guard let datei = Protokolldatei.schreiben() else { return }
+            imDateimanagerZeigen(datei)
+        })
+        #if os(Windows)
+        // **Nur unter Windows.** Auf Linux kommt die Aktualisierung aus der
+        // Paketquelle, die `swiftly-installieren.sh` einrichtet — dort waere
+        // ein eigener Weg an der Systemverwaltung vorbei.
+        anhaengen(g4.raum, zeilenstrich())
+        aktualisierungsraum = stapel(GTK_ORIENTATION_VERTICAL)
+        aktualisierungszeileFuellen()
+        anhaengen(g4.raum, aktualisierungsraum)
+        #endif
         anhaengen(block, g4.aussen)
 
         let fuss = beschriftung(Fassung.voll, stil: "swiftly-zweitzeile")
@@ -568,6 +597,8 @@ extension App {
                                      pfeil: !seerrDa) { [weak self] in
             self?.unterseiteOeffnen(.seerr)
         })
+        // Trakt neben Seerr — nur mit Zugangsdaten im Bau (`Trakt.swift`).
+        traktZeile(i.raum)
         // **Hier und nicht bei „Wiedergabe".** Die Zeilen dort sagen, *wie*
         // etwas ablaeuft; diese gibt als einzige der App etwas nach draussen.
         // Sie gehoert neben den anderen fremden Dienst.
@@ -603,6 +634,7 @@ extension App {
                                     })
         anhaengen(s.raum, pruefzeile)
         anhaengen(rechts, s.aussen)
+        anhaengen(rechts, eigeneKoepfeBauen())
 
         let fuss = beschriftung("\(Fassung.voll) · libVLC \(VLCFassung.text)",
                                 stil: "swiftly-zweitzeile")
@@ -651,7 +683,7 @@ extension App {
     /// die Anpassung und loest `changed` wieder aus — ohne den Vergleich
     /// waere das eine Schleife, und von der Sorte steht schon eine in
     /// `Fallen/`.
-    private func deckeln(_ block: Widget!, in scroller: Widget!, auf hoechstens: Int) {
+    func deckeln(_ block: Widget!, in scroller: Widget!, auf hoechstens: Int) {
         gtk_widget_set_halign(block, GTK_ALIGN_START)
         gtk_widget_set_hexpand(block, 0)
         guard let anpassung = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller))
@@ -1182,6 +1214,10 @@ extension App {
         gtk_editable_set_text(OpaquePointer(feld), serverAufnahmeAdresse)
         anhaengen(block, feld)
 
+        // „Erweitert" — eigene Header fuer einen Dienst vor dem Server.
+        let (erweitert, leser) = erweitertBauen(vorhanden: [])
+        anhaengen(block, erweitert)
+
         serverAufnahmeStand = beschriftung(serverAufnahmeFehler, stil: "swiftly-zweitzeile",
                                            umbruch: true)
         gtk_widget_add_css_class(serverAufnahmeStand, "swiftly-warnung")
@@ -1198,6 +1234,7 @@ extension App {
 
         let tun: () -> Void = { [weak self] in
             guard let self else { return }
+            self.serverAufnahmeKoepfe = leser.koepfe()
             self.serverPruefen(self.text(feld))
         }
         beiSignal(knopf, "clicked", tun)
@@ -1521,3 +1558,127 @@ extension App {
         gtk_widget_set_visible(downloadabschaltfrage, 0)
     }
 }
+
+
+// MARK: - Aktualisierung (Windows)
+
+#if os(Windows)
+extension App {
+
+    /// **Eine Zeile, die ihren Zustand zeigt.** Statt ein Label im Inneren
+    /// der ``wertezeile(symbol:titel:unter:wert:akzent:pfeil:haken:auswahl:)``
+    /// nachtraeglich zu suchen, wird die Zeile neu gebaut, wenn sich etwas
+    /// aendert. Das ist hier billiger als es klingt — es ist eine Zeile — und
+    /// es haelt die Darstellung an einer Stelle.
+    func aktualisierungszeileFuellen() {
+        guard let raum = aktualisierungsraum else { return }
+        leeren(raum)
+
+        switch aktualisierungslage {
+        case .unbekannt:
+            anhaengen(raum, wertezeile(symbol: "software-update-available-symbolic",
+                                       titel: uebersetzt("Nach Updates suchen"),
+                                       unter: uebersetzt("Swiftly fragt bei GitHub, ob es eine neuere Version gibt")) {
+                [weak self] in self?.aktualisierungSuchen()
+            })
+
+        case .sucht:
+            anhaengen(raum, wertezeile(symbol: "content-loading-symbolic",
+                                       titel: uebersetzt("Wird gesucht …")))
+
+        case .aktuell:
+            anhaengen(raum, wertezeile(symbol: "object-select-symbolic",
+                                       titel: uebersetzt("Swiftly ist aktuell"),
+                                       unter: Fassung.voll) {
+                [weak self] in self?.aktualisierungSuchen()
+            })
+
+        case .neu(let stand):
+            anhaengen(raum, wertezeile(symbol: "software-update-available-symbolic",
+                                       titel: String(format: uebersetzt("Swiftly %@ ist da"), stand.fassung),
+                                       unter: uebersetzt("Lädt den Installer und startet ihn. Swiftly beendet sich dabei."),
+                                       akzent: true) {
+                [weak self] in self?.aktualisierungEinspielen(stand)
+            })
+            anhaengen(raum, zeilenstrich())
+            anhaengen(raum, wertezeile(symbol: "text-x-generic-symbolic",
+                                       titel: uebersetzt("Was sich ändert"),
+                                       unter: erstesAusNotizen(stand.notizen)) {
+                imBrowser(URL(string: "https://github.com/paulherter/swiftly-player/releases/latest")!)
+            })
+
+        case .laedt:
+            anhaengen(raum, wertezeile(symbol: "content-loading-symbolic",
+                                       titel: uebersetzt("Wird geladen …"),
+                                       unter: uebersetzt("Das dauert einen Moment. Swiftly startet den Installer von selbst.")))
+
+        case .schiefgegangen(let grund):
+            anhaengen(raum, wertezeile(symbol: "dialog-warning-symbolic",
+                                       titel: uebersetzt("Hat nicht geklappt"),
+                                       unter: grund) {
+                [weak self] in self?.aktualisierungSuchen()
+            })
+        }
+    }
+
+    /// Die erste Zeile aus dem Text der Veröffentlichung, die etwas aussagt.
+    /// Überschriften und Leerzeilen taugen nicht als Vorschau.
+    private func erstesAusNotizen(_ text: String) -> String {
+        for zeile in text.split(separator: "\n") {
+            let sauber = zeile.trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "#*-• "))
+            if sauber.count > 12 { return String(sauber.prefix(120)) }
+        }
+        return uebersetzt("Auf GitHub nachlesen")
+    }
+
+    func aktualisierungSuchen() {
+        aktualisierungslage = .sucht
+        aktualisierungszeileFuellen()
+        Task.detached { [self] in
+            do {
+                let stand = try await Aktualisierung.suchen()
+                aufHauptfaden {
+                    self.aktualisierungslage = stand.map { .neu($0) } ?? .aktuell
+                    Protokoll.schreib("[Update] " + (stand.map { "neu: \($0.fassung)" } ?? "aktuell"))
+                    self.aktualisierungszeileFuellen()
+                }
+            } catch {
+                aufHauptfaden {
+                    self.aktualisierungslage = .schiefgegangen(uebersetzt("GitHub antwortet nicht."))
+                    Protokoll.schreib("[Update] Suche fehlgeschlagen")
+                    self.aktualisierungszeileFuellen()
+                }
+            }
+        }
+    }
+
+    func aktualisierungEinspielen(_ stand: Aktualisierung.Stand) {
+        aktualisierungslage = .laedt
+        aktualisierungszeileFuellen()
+        Task.detached { [self] in
+            do {
+                let datei = try await Aktualisierung.holen(stand)
+                aufHauptfaden {
+                    do {
+                        try Aktualisierung.einspielen(datei)
+                        Protokoll.schreib("[Update] Installer gestartet, Swiftly beendet sich")
+                        // Der Installer kann eine laufende `Swiftly.exe` nicht
+                        // ersetzen — also Platz machen.
+                        exit(0)
+                    } catch {
+                        self.aktualisierungslage = .schiefgegangen(uebersetzt("Der Installer ließ sich nicht starten."))
+                        self.aktualisierungszeileFuellen()
+                    }
+                }
+            } catch {
+                aufHauptfaden {
+                    self.aktualisierungslage = .schiefgegangen(uebersetzt("Das Herunterladen ist abgebrochen."))
+                    Protokoll.schreib("[Update] Herunterladen fehlgeschlagen")
+                    self.aktualisierungszeileFuellen()
+                }
+            }
+        }
+    }
+}
+#endif

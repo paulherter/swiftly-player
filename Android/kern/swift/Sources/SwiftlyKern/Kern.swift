@@ -107,6 +107,73 @@ public final class Kern: @unchecked Sendable {
                        clientVersion: fassung, programm: programm, session: sitzung)
     }
 
+    // MARK: Eigene Header (Issue #4)
+
+    /// **Vor der ersten Anfrage** — beim Start, aus dem Tresor. Die Tafel gilt fuer jede Anfrage an
+    /// diesen Server, die durch den Kern geht (Schnittstelle, Kachelblaetter, Steuerkanal); Kotlin
+    /// fragt fuer Bilder und Downloads ``eigenkoepfeFelder(adresse:)``. Wie `AppModel.eigeneKoepfeLaden`.
+    public static func eigenkoepfeLaden(tafel: String) {
+        Eigenkoepfe.laden(tafel.isEmpty ? nil : Data(tafel.utf8))
+    }
+
+    /// Die ganze Tafel zum Ablegen im Tresor — `"{}"`, wenn nichts eingetragen ist.
+    public static func eigenkoepfeAblage() -> String {
+        String(decoding: Eigenkoepfe.ablage(), as: UTF8.self)
+    }
+
+    /// Was fuer genau diese Basisadresse eingetragen ist — fuer „Erweitert". JSON `[{"name","wert"}]`.
+    public static func eigenkoepfeEingetragen(adresse: String) -> String {
+        guard let url = URL(string: adresse) else { return "[]" }
+        return kodiert(Eigenkoepfe.eingetragen(fuer: url))
+    }
+
+    /// Setzen (nicht ablegen — das macht Kotlin mit ``eigenkoepfeAblage()``). Leer nimmt den Server heraus.
+    public static func eigenkoepfeSetzen(adresse: String, koepfe: String) {
+        guard let url = URL(string: adresse) else { return }
+        Eigenkoepfe.setzen(koepfeLesen(koepfe), fuer: url)
+    }
+
+    /// Die Header fuer eine Anfrage an diese Adresse, als JSON-Objekt — `{}` ohne Eintrag oder fuer
+    /// jeden fremden Rechner. Fuer Coil (OkHttp) und die Downloads.
+    public static func eigenkoepfeFelder(adresse: String) -> String {
+        guard let url = URL(string: adresse) else { return "{}" }
+        let felder = Eigenkoepfe.felder(fuer: url)
+        return felder.isEmpty ? "{}" : kodiert(felder)
+    }
+
+    /// Durch dieselbe Schleuse wie beim Senden — fuer „Sichern", das nur bei einer Aenderung erscheint.
+    public static func eigenkoepfeBereinigt(koepfe: String) -> String {
+        kodiert(Eigenkoepfe.bereinigt(koepfeLesen(koepfe)))
+    }
+
+    /// Setzt Swiftly diesen Header selbst? Dann sagt die Zeile es, statt still nichts zu tun.
+    public static func kopfGesperrt(name: String) -> Bool { Eigenkoepfe.istGesperrt(name) }
+
+    /// Nur die Namen, fuers Protokoll — **nie die Werte**.
+    public static func eigenkoepfeNamen(adresse: String) -> String {
+        guard let url = URL(string: adresse) else { return "keine" }
+        return Eigenkoepfe.namen(Eigenkoepfe.eingetragen(fuer: url))
+    }
+
+    private static func koepfeLesen(_ json: String) -> [Eigenkopf] {
+        (try? JSONDecoder().decode([Eigenkopf].self, from: Data(json.utf8))) ?? []
+    }
+
+    /// Wie `AppModel.verbindeMit`: die Header aus „Erweitert" **vor dem ersten Abruf** setzen. Antwortet
+    /// der Server nicht, kommt der vorige Stand zurueck — fuer eine Adresse, unter der nichts antwortet,
+    /// bleibt nichts liegen. Abgelegt wird erst nach der Antwort (Kotlin, ``eigenkoepfeAblage()``).
+    private static func mitKoepfen<T>(_ koepfe: [Eigenkopf], fuer url: URL,
+                                      _ tun: () async throws -> T) async throws -> T {
+        let neu = Eigenkoepfe.bereinigt(koepfe)
+        guard !neu.isEmpty else { return try await tun() }
+        let vorher = Eigenkoepfe.eingetragen(fuer: url)
+        Eigenkoepfe.setzen(neu, fuer: url)
+        do { return try await tun() } catch {
+            Eigenkoepfe.setzen(vorher, fuer: url)
+            throw error
+        }
+    }
+
     // MARK: Sprache
 
     /// **Vor dem ersten Text aufrufen** — beim Start der App. `ordner` enthaelt
@@ -123,16 +190,19 @@ public final class Kern: @unchecked Sendable {
 
     /// Wie `AppModel.connect(to:)`: Adresse normalisieren, bei `https` ohne
     /// Antwort einmal `http` versuchen. Antwort: `{"name","version","adresse"}`.
-    public func verbinden(adresse: String) async throws -> String {
+    /// `koepfe` (JSON `[{"name","wert"}]`) kommen aus „Erweitert" — leer fuer fast alle, und dann bleibt,
+    /// was fuer diese Adresse schon eingetragen ist.
+    public func verbinden(adresse: String, koepfe: String) async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
             guard let url = AppModelURLNormalizer.normalize(adresse) else { throw Kernfehler.adresse(adresse) }
             var kandidaten = [url]
             if let anders = AppModelURLNormalizer.andersHerum(url) { kandidaten.append(anders) }
             var letzter: Error = Kernfehler.adresse(adresse)
+            let eigene = Self.koepfeLesen(koepfe)
             for kandidat in kandidaten {
                 let c = neuerClient(kandidat)
                 do {
-                    let info = try await c.publicSystemInfo()
+                    let info = try await Self.mitKoepfen(eigene, fuer: kandidat) { try await c.publicSystemInfo() }
                     setzen(c, Bildadresse(basis: kandidat, token: nil))
                     return try json(Serverantwort(name: info.serverName ?? kandidat.host() ?? "",
                                                   version: info.version ?? "",
@@ -175,16 +245,17 @@ public final class Kern: @unchecked Sendable {
     }
 
     /// Prueft einen weiteren Server, ohne die laufende Sitzung anzufassen. Antwort wie ``verbinden(adresse:)``.
-    public func aufnahmeVerbinden(adresse: String) async throws -> String {
+    public func aufnahmeVerbinden(adresse: String, koepfe: String) async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
             guard let url = AppModelURLNormalizer.normalize(adresse) else { throw Kernfehler.adresse(adresse) }
             var kandidaten = [url]
             if let anders = AppModelURLNormalizer.andersHerum(url) { kandidaten.append(anders) }
             var letzter: Error = Kernfehler.adresse(adresse)
+            let eigene = Self.koepfeLesen(koepfe)
             for kandidat in kandidaten {
                 let c = neuerClient(kandidat)
                 do {
-                    let info = try await c.publicSystemInfo()
+                    let info = try await Self.mitKoepfen(eigene, fuer: kandidat) { try await c.publicSystemInfo() }
                     sperre.lock(); _aufnahme = c; sperre.unlock()
                     return try json(Serverantwort(name: info.serverName ?? kandidat.host() ?? "", version: info.version ?? "",
                                                   adresse: kandidat.absoluteString))
@@ -440,16 +511,6 @@ public final class Kern: @unchecked Sendable {
 
     // MARK: Bibliothek
 
-    /// Die Sammlungen einer Art (`movies`, `tvshows`) — `AppModel.bibliotheken(art:)`.
-    /// Antwort: `[{"id","name"}]`.
-    public func bibliotheken(art: String) async throws -> String {
-        return try await lesbarWerfen { () async throws -> String in
-            guard let c = client else { throw Kernfehler.nichtVerbunden }
-            let sammlungen = try await c.userViews().filter { $0.collectionType == art }
-            return try json(sammlungen.map { Sammlungsantwort(id: $0.id, name: $0.name) })
-        }
-    }
-
     /// Der Name des Servers fuer die Zeile unter dem Titel — leer, wenn er keinen nennt.
     public func servername() async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
@@ -516,6 +577,7 @@ public final class Kern: @unchecked Sendable {
                 bewertung: i.communityRating, freigabe: i.officialRating,
                 planDa: p != nil, lossless: p?.isLossless ?? false, methode: p.map { $0.method.rawValue },
                 fortsetzenAb: ab, fortsetzenText: ab.map { zeitText($0) },
+                restzeit: i.restzeitText, fortschritt: i.userData?.playedPercentage.map { $0 / 100 },
                 beschreibung: i.beschreibung, regie: i.regie,
                 darsteller: Array(i.darsteller.prefix(12)).map {
                     Personantwort(id: $0.id, name: $0.name, rolle: $0.role, bild: personenbild($0))
@@ -876,7 +938,8 @@ public final class Kern: @unchecked Sendable {
             itemId: item.id, episode: istFolge, serieId: item.seriesId, staffelId: item.seasonId,
             kopfzeile: kopfzeile, staffelNr: istFolge ? item.parentIndexNumber : nil,
             folgeNr: istFolge ? item.indexNumber : nil,
-            nebenzeile: istFolge ? nil : (item.nebenzeile.isEmpty ? nil : item.nebenzeile)))
+            nebenzeile: istFolge ? nil : (item.nebenzeile.isEmpty ? nil : item.nebenzeile),
+            marken: w.abschnitte.flatMap { [$0.von, $0.bis] }))
     }
     /// „MKV · 1080p · H.264 · German · AAC · Stereo" — Vorlage: `dateizeile` in
     /// `Sources/tvOS/Wiedergabeblatt.swift`. Einmal hier, damit Kotlin sie nicht selbst aus
@@ -995,10 +1058,16 @@ public final class Kern: @unchecked Sendable {
     }
 
     /// **Die Steuerung geht auf oder zu** (`Angebotsebene.steuerung`): Oeffnen sagt die Karte „Naechste
-    /// Folge" ab; Auf und Zu schickt den Ueberspringen-Knopf in die Steuerung. Kotlin ruft das mit der
-    /// gewollten Sichtbarkeit, sofort beim Wechsel.
-    public func steuerungGeaendert(offen: Bool) {
-        sperre.lock(); _wiedergabe?.ebene.steuerung(offen: offen); sperre.unlock()
+    /// Folge" ab. Ein Ueberspringen-Knopf steht `Angebotsebene.knopfdauer` (6 s Laufzeit) ohne Steuerung
+    /// da; danach kommt er mit ihr und geht mit ihr (VERHALTEN B6a). Kotlin ruft das mit der gewollten
+    /// Sichtbarkeit, sofort beim Wechsel, und bekommt die Einblendung danach zurueck (`nichts`, `knopf`,
+    /// `karte`) — sonst stuende der Knopf bis zum naechsten Takt noch da oder fehlte noch.
+    public func steuerungGeaendert(offen: Bool) -> String {
+        sperre.lock(); defer { sperre.unlock() }
+        guard var w = _wiedergabe else { return "nichts" }
+        w.ebene.steuerung(offen: offen)
+        _wiedergabe = w
+        return Self.angebotslage(w).einblendung
     }
 
     /// **Zurueck, oder eine Richtungstaste am Fernseher:** die Einblendung geht, ein laufender
@@ -1237,6 +1306,25 @@ public final class Kern: @unchecked Sendable {
 
     private func protokoll(_ zeile: String) {
         protokollzeilen.schreiben(zeile)
+        Protokollring.geteilt.anhaengen(zeile)
+    }
+
+    // MARK: Protokoll teilen — Vorlage `Protokollring` / `Protokolldatei` (40cb4ae9)
+
+    /// Eine Zeile in den Speicher, aus dem der Nutzer sein Protokoll teilt. Geschwaerzt wird beim
+    /// Eintragen — ein Zugangsmerkmal liegt auch im Speicher nie im Klartext.
+    public static func protokollAnhaengen(text: String) {
+        Protokollring.geteilt.anhaengen(text)
+    }
+
+    /// Die Zeilen der letzten `sekunden`, aelteste zuerst, mit Uhrzeit — durch Zeilenumbrueche getrennt.
+    public static func protokollAuszug(sekunden: Double) -> String {
+        Protokollring.geteilt.auszug(sekunden: sekunden).joined(separator: "\n")
+    }
+
+    /// Zugangsmerkmale aus freiem Text — fuer Zeilen, die nicht durch den Speicher gingen (VLC).
+    public static func protokollSchwaerzen(text: String) -> String {
+        Protokollschwaerzung.text(text)
     }
 
     /// Die Meldezeilen seit dem letzten Abholen — Kotlin schreibt sie unter „Swiftly" ins logcat.
@@ -1586,40 +1674,52 @@ public final class Kern: @unchecked Sendable {
     /// Die festen Zeilen des Technikschilds, einmal je Titel: Auslieferung, Grund, Bild, Video, Ton,
     /// Untertitel, Datei, Bedarf. `art` ist `gut`, `warnend` oder leer; `schluessel` die Beschriftung
     /// fuer den Katalog. Die Werte formatiert `Technikangaben`, wie auf iOS.
-    public func technikFest() -> String {
+    /// **Die festen Zeilen des Technikschilds** — Vorlage `Technikschild` (Sources/Shared), 22.09.2026:
+    /// nur noch, was ein Zuschauer wissen will. Kopf, Grund, Bild, Ton, Untertitel und Datei sind
+    /// Kernzeilen (`kern`), die immer stehen; die Bildrate steht nur im Messmodus. `schluessel` ist der
+    /// leise Name vor dem Wert (Kotlin uebersetzt ihn).
+    public func technikFest(messen: Bool) -> String {
         sperre.lock(); let w = _wiedergabe; _zaehlwerk = nil; sperre.unlock()
         guard let w else { return "[]" }
         let plan = w.plan
         var zeilen = [Technikzeile(text: Technikangaben.auslieferung(plan.method),
-                                   art: Technikangaben.gewicht(plan.method) == .gut ? "gut" : "warnend")]
+                                   art: Technikangaben.gewicht(plan.method) == .gut ? "gut" : "warnend",
+                                   schluessel: nil, kopf: true)]
+        // Der Grund direkt unter dem Wort: wer „Transkodiert" liest, will wissen, woran es lag.
         if plan.method == .transcode, let grund = plan.reasons.first {
             zeilen.append(Technikzeile(text: grund.text, art: "warnend"))
         }
         if let q = plan.quelle {
-            let stroeme = q.mediaStreams ?? []
             let video = Dateiangaben.videospur(q)
-            let ton = stroeme.first { $0.type == "Audio" }
-            let untertitel = stroeme.first { $0.type == "Subtitle" }
+            let ton = Dateiangaben.tonspuren(q).first
+            let untertitel = Dateiangaben.untertitelspuren(q).first
             func teile(_ werte: [String?]) -> String? {
                 let da = werte.compactMap { $0 }
                 return da.isEmpty ? nil : da.joined(separator: " · ")
             }
-            if let bild = Technikangaben.bildzeile(breite: video?.width, hoehe: video?.height, tiefe: nil, umfang: video?.videoRangeType.map { String(describing: $0) }) {
-                zeilen.append(Technikzeile(text: bild, art: ""))
+            // Codec, Aufloesung und HDR-Art in einer Zeile; die Bildrate nur beim Messen.
+            if let bild = teile([Technikangaben.codecname(video?.codec),
+                                 Technikangaben.bildzeile(breite: video?.width, hoehe: video?.height, tiefe: nil, umfang: nil),
+                                 Technikangaben.dynamik(video),
+                                 messen ? Technikangaben.bildrate(video?.bildrate).map { "\($0) fps" } : nil]) {
+                zeilen.append(Technikzeile(text: bild, art: "", schluessel: "Bild"))
             }
-            if let v = teile([Technikangaben.codecname(video?.codec), Technikangaben.bildrate(video?.bildrate)]) {
-                zeilen.append(Technikzeile(text: v, art: ""))
-            }
-            if let t = teile([Technikangaben.codecname(ton?.codec), Technikangaben.kanalwort(ton?.channels), Technikangaben.sprache(ton?.language)]) {
+            if let t = teile([Technikangaben.codecname(ton?.codec), Technikangaben.kanalwort(ton?.channels), Technikangaben.sprache(ton?.language)]),
+               Technikangaben.codecname(ton?.codec) != nil {
                 zeilen.append(Technikzeile(text: t, art: "", schluessel: "Ton"))
             }
-            if let u = teile([Technikangaben.codecname(untertitel?.codec), Technikangaben.sprache(untertitel?.language)]) {
+            if let u = teile([Technikangaben.codecname(untertitel?.codec), Technikangaben.sprache(untertitel?.language)]),
+               Technikangaben.codecname(untertitel?.codec) != nil {
                 zeilen.append(Technikzeile(text: u, art: "", schluessel: "Untertitel"))
             }
-            if let c = Dateiangaben.container(q) { zeilen.append(Technikzeile(text: c, art: "", schluessel: "Datei")) }
-            if let groesse = q.size, let dauer = w.item.runtimeSeconds, dauer > 0,
-               let bedarf = Technikangaben.bitrate(Double(groesse) * 8 / dauer) {
-                zeilen.append(Technikzeile(text: "Ø " + bedarf, art: "", schluessel: "Datei braucht"))
+            // Container und Groesse, dahinter was die Datei im Mittel braucht — keine eigene Zeile mehr.
+            if let c = Dateiangaben.container(q) {
+                var text = c
+                if let groesse = q.size, groesse > 0, let dauer = w.item.runtimeSeconds, dauer > 1,
+                   let rate = Technikangaben.bitrate(Double(groesse) * 8 / dauer) {
+                    text += " · Ø \(rate)"
+                }
+                zeilen.append(Technikzeile(text: text, art: "", schluessel: "Datei"))
             }
         }
         return (try? json(zeilen)) ?? "[]"
@@ -1686,6 +1786,33 @@ public final class Kern: @unchecked Sendable {
     public static func auffrischungFaellig(zuletztMs: Int64) -> Bool {
         Auffrischung.faelligBeiRueckkehr(zuletzt: zuletztMs > 0 ? Date(timeIntervalSince1970: Double(zuletztMs) / 1000) : nil)
     }
+
+    // MARK: Stromwacht
+
+    /// **Steht der Strom, wird er neu aufgebaut** — die Schwellen stehen in `Stromwacht` im Paket, wie
+    /// auf iOS/tvOS (`VLCPlayer.stillstandPruefen`) und Linux (`Spieler.stromPruefen`). Kotlin misst nur
+    /// die Zeiten. `netzwechselVor` < 0 heisst: kein Wechsel. Antwort: `nochNicht`, `sprungLaeuft`,
+    /// `pufferWaechst` oder `neuVerbinden`.
+    public static func stromwachtRat(stillstandSeit: Double, netzwechselVor: Double, sprungOffen: Bool,
+                                     letzterSprungVor: Double, pufferWuchsVor: Double) -> String {
+        switch Stromwacht.rat(stillstandSeit: stillstandSeit,
+                              netzwechselVor: netzwechselVor < 0 ? nil : netzwechselVor,
+                              sprungOffen: sprungOffen, letzterSprungVor: letzterSprungVor,
+                              pufferWuchsVor: pufferWuchsVor) {
+        case .nochNicht: return "nochNicht"
+        case .sprungLaeuft: return "sprungLaeuft"
+        case .pufferWaechst: return "pufferWaechst"
+        case .neuVerbinden: return "neuVerbinden"
+        }
+    }
+
+    /// Stehen die Bilder, waehrend die Uhr laeuft? `vorher` < 0: noch kein Vergleichswert — dann nein.
+    public static func stromwachtBilderStehen(vorher: Int, jetzt: Int) -> Bool {
+        Stromwacht.bilderStehen(vorher: vorher < 0 ? nil : UInt64(vorher), jetzt: UInt64(max(jetzt, 0))) == true
+    }
+
+    /// Wie lange ein Netzwechsel als frisch gilt — ein Abriss am Filmende ohne Laenge zaehlt nur dann.
+    public static func stromwachtNetzwechselFrist() -> Double { Stromwacht.netzwechselFrist }
 
     // MARK: Fernsteuerung
 
@@ -1937,15 +2064,17 @@ public final class Kern: @unchecked Sendable {
 
     /// Verbindet mit Jellyfins eigenem Namen und Passwort. **Ein zweites Schema nur, wenn es geraten
     /// war** (`Seerr.adressen`) — und nur nach einem Netzfehler, nie nach einem falschen Passwort.
-    /// Antwort: der Zugang als JSON; das Passwort bleibt nirgends liegen.
-    public func seerrVerbinden(adresse: String, benutzer: String, passwort: String) async throws -> String {
+    /// Antwort: der Zugang als JSON; das Passwort bleibt nirgends liegen. `koepfe` aus „Erweitert" — fuer
+    /// einen Vorposten vor Seerr; sie liegen danach im Zugang (`Seerrzugang`), also im Tresor.
+    public func seerrVerbinden(adresse: String, benutzer: String, passwort: String, koepfe: String) async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
             let adressen = Seerr.adressen(aus: adresse)
             guard !adressen.isEmpty else { throw Kernfehler.adresse(adresse) }
             var letzter: Error = Kernfehler.adresse(adresse)
             for url in adressen {
                 do {
-                    let zugang = try await SeerrClient.anmelden(an: url, benutzer: benutzer, passwort: passwort)
+                    let zugang = try await SeerrClient.anmelden(an: url, benutzer: benutzer, passwort: passwort,
+                                                                    koepfe: Self.koepfeLesen(koepfe))
                     sperre.lock(); _seerr = SeerrClient(zugang: zugang); sperre.unlock()
                     return try json(zugang)
                 } catch let fehler as URLError {
@@ -2006,7 +2135,13 @@ public final class Kern: @unchecked Sendable {
             guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
             async let eigene = c.titel(person: id)
             let auskunft = try? await c.item(id: id)
-            let titel = await eigene
+            // **`nil` heisst gestoert, `[]` heisst „nichts auf diesem Server".**
+            // `JellyfinClient.titel(person:)` gibt beides getrennt zurueck — und der Kern
+            // uebersetzte es hier zu einem einzigen Fall, weil der Aufruf vor der Umstellung
+            // noch `[Item]` lieferte. Der Unterschied geht als `gestoert` an die Oberflaeche,
+            // damit die Personenseite nicht „keine Titel" sagt, wenn niemand geantwortet hat.
+            let geholt = await eigene
+            let titel = geholt ?? []
             // **Nur, was wirklich quer liegt** (`querbildEcht`) — ein beschnittenes Plakat gehoert
             // nicht in den Wechsel. Gibt es keines, steht irgendein Kopfbild da.
             var banner = titel.compactMap { Bildwahl.kopf($0, adressen: a)?.absoluteString }
@@ -2034,7 +2169,8 @@ public final class Kern: @unchecked Sendable {
                 beschreibung: auskunft?.beschreibung, geboren: geboren,
                 ort: auskunft?.productionLocations?.first { !$0.isEmpty },
                 bild: bild?.absoluteString, banner: banner,
-                titel: titel.map { rasterkachel($0, a) }, tmdb: auskunft?.tmdbKennung))
+                titel: titel.map { rasterkachel($0, a) }, tmdb: auskunft?.tmdbKennung,
+                gestoert: geholt == nil))
         }
     }
 
@@ -2042,7 +2178,10 @@ public final class Kern: @unchecked Sendable {
     public func titelUmfeld(id: String) async throws -> String {
         return try await lesbarWerfen { () async throws -> String in
             guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
-            async let aehnlich = try? c.aehnliche(itemID: id)
+            // Der Titel selbst geht mit: sein Titelschluessel haelt ihn und seine Hardlink-Doppel
+            // aus der Reihe (`AppModel.aehnliche`, 6e480f14).
+            let eigen = try? await c.item(id: id)
+            async let aehnlich = try? c.aehnliche(itemID: id, zu: eigen)
             async let zusatz = try? c.extras(itemID: id)
             let ae = await aehnlich ?? []
             let ex = await zusatz ?? []
@@ -2125,6 +2264,377 @@ public final class Kern: @unchecked Sendable {
     private func json<T: Encodable>(_ wert: T) throws -> String {
         String(decoding: try JSONEncoder().encode(wert), as: UTF8.self)
     }
+
+    // MARK: Ladeauswahl und Downloadfortschritt
+
+    private struct Ladeauswahlfolge: Encodable { let id, name: String; let gesehen: Bool; let bytes: Int64 }
+    private struct Fussplatzantwort: Encodable { let reicht: Bool; let bytes: Int64 }
+    private struct Naechstefolgeantwort: Encodable { let id, knopftext: String }
+
+    /// Die Folgen einer Staffel fuer `Ladeauswahl` — Name, gesehen und die Groesse der ersten
+    /// Quelle (`mediaSources.first.size`), wie das Blatt auf iOS sie liest. Wirft bei einem
+    /// gescheiterten Abruf: **gestoert ist nicht leer.**
+    public func ladeauswahlFolgen(serie: String, staffel: String) async throws -> String {
+        return try await lesbarWerfen { () async throws -> String in
+            guard let c = client else { throw Kernfehler.nichtVerbunden }
+            let liste = try await c.folgen(seriesID: serie, seasonID: staffel.isEmpty ? nil : staffel)
+            return try json(liste.map {
+                Ladeauswahlfolge(id: $0.id, name: $0.name, gesehen: $0.userData?.played ?? false,
+                                 bytes: $0.mediaSources?.first?.size ?? 0)
+            })
+        }
+    }
+
+    /// Der Fuss der Ladeauswahl — `Downloadregeln.fussplatz`: `reicht` mit dem, was danach frei
+    /// bleibt, sonst mit dem, was fehlt (Reserve eingerechnet).
+    public static func downloadFussplatz(bytes: Int64, frei: Int64) -> String {
+        switch Downloadregeln.fussplatz(fuer: bytes, frei: frei) {
+        case .frei(let rest): kodiert(Fussplatzantwort(reicht: true, bytes: rest))
+        case .zuWenig(let fehlt): kodiert(Fussplatzantwort(reicht: false, bytes: fehlt))
+        }
+    }
+
+    /// „0,84" und „2,31 GB" — `Downloadregeln.fortschritt`, als JSON-Liste aus zwei Texten. Der
+    /// Satz „%@ von %@" steht im App-Katalog.
+    public static func downloadFortschritt(geladen: Int64, gesamt: Int64) -> String {
+        let f = Downloadregeln.fortschritt(geladen: geladen, von: gesamt)
+        return kodiert([f.geladen, f.gesamt])
+    }
+
+    /// `Downloadregeln.fortschrittZeigen` — hoechstens einmal je Sekunde. `vorher` und `vergangen`
+    /// negativ heisst: noch nichts gemeldet.
+    public static func downloadFortschrittZeigen(geladen: Int64, gesamt: Int64, vorher: Int64, vergangen: Double) -> Bool {
+        Downloadregeln.fortschrittZeigen(geladen: geladen, gesamt: gesamt,
+                                         vorher: vorher < 0 ? nil : vorher,
+                                         vergangen: vergangen < 0 ? nil : vergangen)
+    }
+
+    /// **Ein `Fortschrittsschaetzer` je Download, hier gehalten.** Die Verwaltung meldet, die
+    /// Zeile fragt je Bild nach dem Wert; Zahl, Balken und Ring lesen denselben.
+    private static let schaetzerSperre = NSLock()
+    private static var schaetzer: [String: Fortschrittsschaetzer] = [:]
+
+    public static func downloadSchaetzerMelden(id: String, geladen: Int64, gesamt: Int64) {
+        schaetzerSperre.lock(); defer { schaetzerSperre.unlock() }
+        schaetzer[id, default: Fortschrittsschaetzer()].melden(geladen, gesamt: gesamt, um: Date())
+    }
+
+    /// Es kommen keine Byte mehr — angehalten, wartend, Fehler, kein Netz. Die Zahl steht.
+    public static func downloadSchaetzerAnhalten(id: String) {
+        schaetzerSperre.lock(); defer { schaetzerSperre.unlock() }
+        schaetzer[id]?.anhalten()
+    }
+
+    /// Der geschaetzte Stand jetzt; ohne Meldung `geladen`.
+    public static func downloadSchaetzerWert(id: String, geladen: Int64) -> Int64 {
+        schaetzerSperre.lock(); defer { schaetzerSperre.unlock() }
+        guard var s = schaetzer[id] else { return geladen }
+        let wert = s.wert(um: Date())
+        schaetzer[id] = s
+        return wert
+    }
+
+    public static func downloadSchaetzerVergessen(id: String) {
+        schaetzerSperre.lock(); defer { schaetzerSperre.unlock() }
+        schaetzer[id] = nil
+    }
+
+    /// Der Abspielknopf der Serie in den Downloads — `Downloadregeln.naechsteFolge`, beschriftet
+    /// wie auf der Serienseite (`Item.serienknopf`). `{}` ohne fertige Folge.
+    public static func downloadNaechsteFolge(liste: String) -> String {
+        guard let p = Downloadregeln.naechsteFolge(aus: postenLesen(liste)) else { return "{}" }
+        return kodiert(Naechstefolgeantwort(id: p.id, knopftext: Item.serienknopf(folge: p.alsItem, laedt: false)))
+    }
+
+    /// Das Kopfbild einer Serie in `breite` Pixeln — `AppModel.kopfbildURL(for:breite:)`, fuer das
+    /// Bild, das mit dem ersten Download aufs Geraet geht. Leer ohne Server oder Bild.
+    public func downloadKopfbild(serie: String, breite: Int) async -> String {
+        guard let c = client, let a = adressen, let item = try? await c.item(id: serie) else { return "" }
+        return Bildwahl.kopf(item, adressen: a, breite: breite)?.absoluteString ?? ""
+    }
+
+    // MARK: Bereichsangebot und Sammlungen
+
+    private struct Angebotseintrag: Encodable { let wert: String; let name: String?; let rubrik: Bool }
+    private struct Angebotsantwort: Encodable {
+        let istMenue, hatBestand: Bool
+        let wahl, kennung: String
+        let eintraege: [Angebotseintrag]
+    }
+    private struct Bereichsseitenantwort: Encodable {
+        let titel: [Rasterkachelantwort]; let gesamt: Int; let gesiebt, nochMehr: Bool
+    }
+    private struct Sammlungseintrag: Encodable { let id, name: String; let plakat: String?; let anzahl: Int }
+    private struct Sammlungsreihenantwort: Encodable { let id, name, art: String; let titel: [Rasterkachelantwort] }
+
+    /// Die Bibliotheken des Kontos (`AppModel.views`) — je Client, damit nach einem Kontowechsel
+    /// nichts vom vorigen Konto uebrig bleibt.
+    private var _ansichten: (fuer: ObjectIdentifier, liste: [Item])?
+    /// Anteile gemischter Bibliotheken und Sammlungen — `AppModel.angebotLaden()`. Gilt eine Minute.
+    private var _angebot: (fuer: ObjectIdentifier, anteile: [String: Bibliotheksanteil],
+                           verzeichnis: Sammlungsverzeichnis, zeit: Date)?
+    /// Das laufende Nachsehen — wer waehrenddessen fragt, wartet darauf, statt ein zweites zu starten.
+    private var _angebotAufgabe: (fuer: ObjectIdentifier, aufgabe: Task<Void, Never>)?
+    /// „Alle" aus mehreren Bibliotheken: das Sieb samt Stand im Server-Blaettern
+    /// (`Bibliotheksmodell.sieb`, `rohVersatz`, `rohGesamt`).
+    private var _sieb: (schluessel: String, sieb: Titelsieb, versatz: Int, roh: Int)?
+
+    private func gesperrt<T>(_ tun: () -> T) -> T {
+        sperre.lock(); defer { sperre.unlock() }
+        return tun()
+    }
+
+    private func ansichten(_ c: JellyfinClient) async throws -> [Item] {
+        let fuer = ObjectIdentifier(c)
+        if let da = gesperrt({ _ansichten?.fuer == fuer ? _ansichten?.liste : nil }) { return da }
+        let liste = try await c.userViews()
+        gesperrt { _ansichten = (fuer, liste) }
+        return liste
+    }
+
+    /// `AppModel.bereichsangebot(art:)` — was einem anderen Konto gehoert, zaehlt nicht.
+    private func angebot(art: String, _ c: JellyfinClient, views: [Item]) -> Bereichsangebot {
+        let fuer = ObjectIdentifier(c)
+        let stand = gesperrt { _angebot?.fuer == fuer ? _angebot : nil }
+        return Bereichsangebot.bilden(art: art, views: views, anteile: stand?.anteile ?? [:],
+                                      verzeichnis: stand?.verzeichnis)
+    }
+
+    private func verzeichnis(_ c: JellyfinClient) -> Sammlungsverzeichnis? {
+        let fuer = ObjectIdentifier(c)
+        return gesperrt { _angebot?.fuer == fuer ? _angebot?.verzeichnis : nil }
+    }
+
+    /// Holt Sammlungen und Anteile gemischter Bibliotheken — `AppModel.angebotLaden()`: auf Zuruf,
+    /// ein Stand gilt eine Minute, gescheitert ist nicht leer (der Stand bleibt dann ungueltig).
+    /// Die Bibliotheken selbst werden dabei mit aufgefrischt.
+    public func angebotLaden() async {
+        guard let c = client else { return }
+        let fuer = ObjectIdentifier(c)
+        let (frisch, laufend) = gesperrt { () -> (Bool, Task<Void, Never>?) in
+            let frisch = _angebot.map { $0.fuer == fuer && Date().timeIntervalSince($0.zeit) < 60 } ?? false
+            return (frisch, _angebotAufgabe?.fuer == fuer ? _angebotAufgabe?.aufgabe : nil)
+        }
+        if frisch { return }
+        if let laufend { await laufend.value; return }
+        let aufgabe = Task { [self] in
+            let stand: [Item]
+            if let neu = try? await c.userViews() {
+                stand = neu
+                gesperrt { _ansichten = (fuer, neu) }
+            } else if let alt = gesperrt({ _ansichten?.fuer == fuer ? _ansichten?.liste : nil }) {
+                stand = alt
+            } else { return }
+            async let anteile = c.bibliotheksanteile(views: stand)
+            async let verzeichnis: Sammlungsverzeichnis? = {
+                let mitVerborgenen = (try? await c.userViews(verborgene: true)) ?? stand
+                if Sammlungsverzeichnis.ausgeblendet(sichtbar: stand, mitVerborgenen: mitVerborgenen) {
+                    return .leer
+                }
+                return try? await c.sammlungsverzeichnis(ansichten: mitVerborgenen)
+            }()
+            let neueAnteile = await anteile
+            guard let neuesVerzeichnis = await verzeichnis else { return }
+            gesperrt { _angebot = (fuer, neueAnteile, neuesVerzeichnis, Date()) }
+        }
+        gesperrt { _angebotAufgabe = (fuer, aufgabe) }
+        await aufgabe.value
+        gesperrt { if _angebotAufgabe?.fuer == fuer { _angebotAufgabe = nil } }
+    }
+
+    /// Was der Titel von Filme bzw. Serien zur Wahl anbietet (``Bereichsangebot``) und welche Wahl
+    /// davon gilt — die gemerkte, sonst „Alle". Wartet nicht auf Sammlungen und gemischte
+    /// Bibliotheken; die kommen ueber ``angebotLaden()`` nach, und `kennung` sagt, ob sich etwas
+    /// geaendert hat (`BibliothekView.angebotskennung`).
+    /// Antwort: `{"istMenue","hatBestand","wahl","kennung","eintraege":[{"wert","name","rubrik"}]}` —
+    /// `name` nur bei Bibliotheken, „Alle"/„Sammlungen" beschriftet Kotlin aus dem Katalog.
+    public func bereichsangebot(art: String, gemerkt: String) async throws -> String {
+        return try await lesbarWerfen { () async throws -> String in
+            guard let c = client else { throw Kernfehler.nichtVerbunden }
+            let a = angebot(art: art, c, views: try await ansichten(c))
+            let eintraege = a.eintraege.map { e -> Angebotseintrag in
+                if case .bibliothek(let id) = e {
+                    return Angebotseintrag(wert: e.merkwert, name: a.bibliothek(id)?.name ?? "",
+                                           rubrik: e == a.ersteBibliothek)
+                }
+                return Angebotseintrag(wert: e.merkwert, name: nil, rubrik: false)
+            }
+            return try json(Angebotsantwort(
+                istMenue: a.istMenue, hatBestand: a.hatBestand,
+                wahl: a.wahl(gemerkt: gemerkt).merkwert,
+                kennung: a.eintraege.map(\.merkwert).joined(separator: ",") + "|"
+                    + a.alleQuellen.joined(separator: "+"),
+                eintraege: eintraege))
+        }
+    }
+
+    /// Eine Seite fuer „Alle" oder eine Bibliothek des Bereichs — `BibliothekView.quelle` und
+    /// `Bibliotheksmodell.laden/nachladen`. „Alle" liest aus einer Bibliothek wie vorher, aus
+    /// mehreren gesiebt (``Titelsieb``): je Titel einmal, nur aus `alleQuellen`. Das Sieb haelt der
+    /// Kern; `ab == 0` faengt es neu an (beim Zurueckkommen so weit, wie schon geblaettert war),
+    /// sonst geht es dort weiter, wo der Server stand.
+    /// Antwort: `{"titel","gesamt","gesiebt","nochMehr"}` — `nochMehr` gilt nur, wenn gesiebt.
+    public func bereichSeite(art: String, wahl: String, sortierung: String, filter: String,
+                             ab: Int, anzahl: Int) async throws -> String {
+        return try await lesbarWerfen { () async throws -> String in
+            guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+            let s = Sortierung(rawValue: sortierung) ?? .name
+            let f = Bibliotheksfilter(rawValue: filter) ?? .alle
+            let angebot = angebot(art: art, c, views: try await ansichten(c))
+            let quelle: Regalquelle?
+            switch Bereichswahl(merkwert: wahl) {
+            case .alle:
+                quelle = angebot.hatBestand
+                    ? Regalquelle(eltern: angebot.alleAus, art: art,
+                                  nurAus: angebot.alleAus == nil ? angebot.alleQuellen : [])
+                    : nil
+            case .bibliothek(let id): quelle = Regalquelle(eltern: id, art: art)
+            case .sammlungen: quelle = nil
+            }
+            guard let quelle else {
+                return try json(Bereichsseitenantwort(titel: [], gesamt: 0, gesiebt: false, nochMehr: false))
+            }
+            func seite(_ start: Int, _ menge: Int) async throws -> ItemsResponse {
+                try await c.items(parentID: quelle.eltern, limit: menge, startIndex: start,
+                                  sortBy: s.feld, sortOrder: quelle.richtung(s),
+                                  filters: f.jellyfinFilter, istGesehen: f.istGesehen,
+                                  recursive: quelle.rekursiv, includeItemTypes: quelle.typen)
+            }
+            guard quelle.siebt else {
+                let antwort = try await seite(ab, anzahl)
+                return try json(Bereichsseitenantwort(titel: antwort.items.map { rasterkachel($0, a) },
+                                                      gesamt: antwort.totalRecordCount,
+                                                      gesiebt: false, nochMehr: false))
+            }
+            let schluessel = "\(ObjectIdentifier(c))|\(quelle.schluessel)|\(s.rawValue)|\(f.rawValue)"
+            let vorher = gesperrt { _sieb }
+            var sieb: Titelsieb
+            var versatz: Int
+            var erste = anzahl
+            if ab == 0 {
+                let typen = quelle.typen
+                let kennungen = try await withThrowingTaskGroup(of: [Item].self) { gruppe in
+                    for id in quelle.nurAus {
+                        gruppe.addTask {
+                            try await c.titelkennungen(parentID: id, typen: typen,
+                                                       filters: f.jellyfinFilter, istGesehen: f.istGesehen)
+                        }
+                    }
+                    var alle: [Item] = []
+                    for try await liste in gruppe { alle += liste }
+                    return alle
+                }
+                sieb = Titelsieb(kennungen: kennungen)
+                versatz = 0
+                if let vorher, vorher.schluessel == schluessel { erste = max(anzahl, vorher.versatz) }
+            } else {
+                guard let vorher, vorher.schluessel == schluessel else {
+                    return try json(Bereichsseitenantwort(titel: [], gesamt: 0, gesiebt: true, nochMehr: false))
+                }
+                sieb = vorher.sieb
+                versatz = vorher.versatz
+            }
+            // Seiten holen, bis etwas stehen bleibt — `Bibliotheksmodell.fuellen`: eine Seite kann
+            // fast ganz aus Doppeln bestehen, und ohne neue Kachel loeste nichts das Nachladen aus.
+            var neu: [Item] = []
+            var roh = 0
+            var menge = erste
+            repeat {
+                let antwort = try await seite(versatz, menge)
+                neu += sieb.sieben(antwort.items)
+                versatz += antwort.items.count
+                roh = antwort.totalRecordCount
+                menge = anzahl
+                if antwort.items.isEmpty { break }
+            } while neu.count < anzahl / 2 && versatz < roh
+            let fertig = (schluessel: schluessel, sieb: sieb, versatz: versatz, roh: roh)
+            gesperrt { _sieb = fertig }
+            return try json(Bereichsseitenantwort(titel: neu.map { rasterkachel($0, a) }, gesamt: sieb.gesamt,
+                                                  gesiebt: true,
+                                                  nochMehr: Listenregeln.nochMehrDa(geladen: versatz, gesamt: roh)))
+        }
+    }
+
+    /// Die Sammlungen im Bereich, ab zwei Titeln (``Sammlungsverzeichnis/sammlungen(art:)``).
+    /// Antwort: `[{"id","name","plakat","anzahl"}]` — `plakat` fehlt ohne eigenes Bild, dann baut
+    /// Kotlin das Mosaik (``sammlungsmosaik(id:art:hoehe:)``).
+    public func sammlungen(art: String) async throws -> String {
+        return try await lesbarWerfen { () async throws -> String in
+            guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+            await angebotLaden()
+            return try json((verzeichnis(c)?.sammlungen(art: art) ?? []).map {
+                Sammlungseintrag(id: $0.id, name: $0.item.name,
+                                 plakat: Bildwahl.hochkant($0.item, adressen: a)?.absoluteString,
+                                 anzahl: $0.anzahl(art: art))
+            })
+        }
+    }
+
+    /// „3 Filme" bzw. „3 Serien" unter einer Sammlungskachel — `sammlungsanzahl` in Kotlin,
+    /// die Regel steht im Paket (``Sammlung/anzahltext(art:anzahl:)``).
+    public static func sammlungsanzahltext(art: String, anzahl: Int) -> String {
+        Sammlung.anzahltext(art: art, anzahl: anzahl)
+    }
+
+    /// Die Titel einer Sammlung in ihrer Folge — `AppModel.sammlungstitel(_:art:)`.
+    private func sammlungstitel(_ c: JellyfinClient, id: String, art: String?) async throws -> [Item] {
+        let quelle = Regalquelle(eltern: id, art: art, sammlung: true)
+        return try await c.items(parentID: quelle.eltern, limit: 100,
+                                 sortBy: Sortierung.erscheinung.feld,
+                                 sortOrder: quelle.richtung(.erscheinung),
+                                 recursive: quelle.rekursiv, includeItemTypes: quelle.typen).items
+    }
+
+    /// Die Plakate der ersten vier Titel fuer das Ersatzplakat einer Sammlung (`Sammlungsmosaik`).
+    /// Still: scheitert es, bleibt das Feld leer. Antwort: `["adresse" | null, …]`.
+    public func sammlungsmosaik(id: String, art: String, hoehe: Int) async -> String {
+        guard let c = client, let a = adressen,
+              let liste = try? await sammlungstitel(c, id: id, art: art.isEmpty ? nil : art) else { return "[]" }
+        let plakate: [String?] = liste.prefix(4).map {
+            Bildwahl.hochkant($0, adressen: a, maxHoehe: hoehe)?.absoluteString
+        }
+        return (try? json(plakate)) ?? "[]"
+    }
+
+    /// Eine Seite einer Sammlung — `SammlungView` bzw. `BibliothekView(sammlung:)`: nicht rekursiv,
+    /// nach Jahr aufsteigend (``Regalquelle/richtung(_:)``). `art` leer: alles, was darin steht.
+    public func sammlungSeite(id: String, art: String, sortierung: String, filter: String,
+                              ab: Int, anzahl: Int) async throws -> String {
+        return try await lesbarWerfen { () async throws -> String in
+            guard let c = client, let a = adressen else { throw Kernfehler.nichtVerbunden }
+            let s = Sortierung(rawValue: sortierung) ?? .erscheinung
+            let f = Bibliotheksfilter(rawValue: filter) ?? .alle
+            let quelle = Regalquelle(eltern: id, art: art.isEmpty ? nil : art, sammlung: true)
+            let antwort = try await c.items(parentID: quelle.eltern, limit: anzahl, startIndex: ab,
+                                            sortBy: s.feld, sortOrder: quelle.richtung(s),
+                                            filters: f.jellyfinFilter, istGesehen: f.istGesehen,
+                                            recursive: quelle.rekursiv, includeItemTypes: quelle.typen)
+            return try json(Rasterseitenantwort(titel: antwort.items.map { rasterkachel($0, a) },
+                                                gesamt: antwort.totalRecordCount))
+        }
+    }
+
+    /// „Teil der Sammlung" — `Sammlungsreihe`: hoechstens zwei Sammlungen, darin die anderen Titel
+    /// ohne den offenen und ohne Doppel. Still: ohne Sammlung oder bei einem Fehler `[]`.
+    /// Antwort: `[{"id","name","art","titel":[Kachel]}]`.
+    public func sammlungenFuerTitel(id: String) async -> String {
+        guard let c = client, let a = adressen, let titel = try? await c.item(id: id),
+              let art = Bibliotheksgattung.art(zuTyp: titel.type) else { return "[]" }
+        await angebotLaden()
+        guard let verzeichnis = verzeichnis(c) else { return "[]" }
+        var reihen: [Sammlungsreihenantwort] = []
+        // Hoechstens zwei Reihen. Steht ein Film in mehr Sammlungen, sind die uebrigen meist
+        // automatisch angelegte Doppel.
+        for sammlung in verzeichnis.sammlungen(mit: titel).prefix(2) {
+            guard let liste = try? await sammlungstitel(c, id: sammlung.id, art: art) else { continue }
+            let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
+            if !andere.isEmpty {
+                reihen.append(Sammlungsreihenantwort(id: sammlung.id, name: sammlung.item.name, art: art,
+                                                     titel: andere.map { rasterkachel($0, a) }))
+            }
+        }
+        return (try? json(reihen)) ?? "[]"
+    }
 }
 
 // MARK: Antworten — was Kotlin liest
@@ -2139,7 +2649,6 @@ struct Reihenantwort: Encodable {
     let quer: Bool
     let kacheln: [Kachelantwort]
 }
-struct Sammlungsantwort: Encodable { let id, name: String }
 struct Rasterseitenantwort: Encodable { let titel: [Rasterkachelantwort]; let gesamt: Int }
 struct Rasterkachelantwort: Encodable {
     let id, titel, typ: String
@@ -2159,7 +2668,11 @@ struct Titelantwort: Encodable {
     let planDa, lossless: Bool
     let methode: String?
     let fortsetzenAb: Double?
-    let fortsetzenText, beschreibung: String?
+    let fortsetzenText: String?
+    /// „Noch 25 Min." und der Anteil — unter dem Hauptknopf, wie `hauptknopf` am iPhone.
+    let restzeit: String?
+    let fortschritt: Double?
+    let beschreibung: String?
     let regie: [String]
     let darsteller: [Personantwort]
     let gemerkt, gesehen: Bool
@@ -2210,7 +2723,7 @@ struct Folgenantwort: Encodable {
 }
 struct Serverkartenantwort: Encodable { let adresse, host: String; let aktiv: Bool; let konten: [Kontoantwort] }
 struct Kontoantwort: Encodable { let kennung, name: String; let aktiv: Bool; let bild: String? }
-struct Technikzeile: Encodable { let text, art: String; var schluessel: String? = nil }
+struct Technikzeile: Encodable { let text, art: String; var schluessel: String? = nil; var kopf = false }
 struct Technikantwort: Encodable {
     let eingang, demuxer: String?
     let zeigt: Double?
@@ -2237,6 +2750,8 @@ struct Spielplanantwort: Encodable {
     let staffelNr, folgeNr: Int?
     /// Jahr · Laufzeit · Genre, nur beim Film — `metatext`/`item.nebenzeile` auf iOS.
     let nebenzeile: String?
+    /// Die Grenzen der Abschnitte (Vorspann, Abspann …) — Kerben im Zeitregler, wie am iPhone.
+    var marken: [Double] = []
 }
 struct Wechselantwort: Encodable {
     let ergebnis: String
@@ -2273,6 +2788,8 @@ struct Personenseitenantwort: Encodable {
     let banner: [String]
     let titel: [Rasterkachelantwort]
     let tmdb: Int?
+    /// Der Server hat auf die Titelliste nicht geantwortet — nicht dasselbe wie „keine Titel".
+    let gestoert: Bool
 }
 struct Seerrkachelantwort: Encodable {
     let id: Int

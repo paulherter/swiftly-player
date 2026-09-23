@@ -30,14 +30,34 @@ struct MerklisteView: View {
     /// dasselbe sagen — das Modell holt sie aus der Ablage, die Ansicht
     /// liest sie von dort ab.
     @State private var gattung: Merkgattung
-    /// **Wie in der Bibliothek, nicht anders.** Die Sortierung stand hier als
-    /// zweite Chipreihe neben der Gattung — auf Filme und Serien ist sie ein
-    /// Knopf, der eine Tafel unter sich aufklappt. Zwei Fassungen derselben
-    /// Frage auf Nachbarseiten; Und die Chipreihe hatte einen zweiten
-    /// Nachteil: sie faengt die Menue-Taste nicht, also verliess Zurueck die
-    /// Seite, statt die Auswahl zu schliessen.
-    @State private var sortierwahlOffen = false
-    @FocusState private var amSortierknopf: Bool
+    /// **Wie in der Bibliothek, nicht anders** — und das gilt jetzt fuer
+    /// beide Fragen dieser Seite.
+    ///
+    /// Die Sortierung stand hier als zweite Chipreihe neben der Gattung — auf
+    /// Filme und Serien ist sie ein Knopf, der eine Tafel unter sich
+    /// aufklappt. Zwei Fassungen derselben Frage auf Nachbarseiten; und die
+    /// Chipreihe hatte einen zweiten Nachteil: sie faengt die Menue-Taste
+    /// nicht, also verliess Zurueck die Seite, statt die Auswahl zu
+    /// schliessen.
+    ///
+    /// **Die Gattung ist jetzt ebenso eine Kapsel.** Als Chipsatz stand sie
+    /// mit drei Marken in der Reihe, obwohl immer genau eine an ist — das ist
+    /// eine Auswahl, kein Filter, derselbe Grund wie bei der
+    /// Bibliothekswahl. Auf dem iPhone steht sie seit je hinter einem Knopf
+    /// (`Auswahlblatt`, Gattung); der Fernseher hatte den Schritt nur nicht
+    /// mitgemacht.
+    @State private var offeneTafel: Tafel?
+    @FocusState private var amAusloeser: Tafel?
+
+    /// Hoechstens eine Tafel ist offen. Dieselbe Kennung sagt beim
+    /// Schliessen, auf welche Kapsel der Fokus zurueck muss — wie in
+    /// `BibliothekView`.
+    private enum Tafel: Hashable {
+        case gattung, sortierung
+
+        /// Der Name des Knopfs, an dem die Tafel haengt — siehe `Tafelanker`.
+        var ausloeser: String { self == .gattung ? "gattung" : "sortierung" }
+    }
     @Environment(\.tafelOffen) private var tafelOffen
 
     private var spalten: [GridItem] {
@@ -57,12 +77,27 @@ struct MerklisteView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 30) {
                         chipreihe
-                        if stand.items.isEmpty {
+                        if stand.gestoert, stand.items.isEmpty {
+                            // **Gestoert ist nicht leer.** `stand.gestoert`
+                            // stand im Modell und wurde nicht gelesen: bei
+                            // einer vollen Merkliste und einem stummen
+                            // Server stand „Noch nichts gemerkt" da, und das
+                            // ist schlicht falsch. Derselbe Text wie in der
+                            // Bibliothek — eine Ursache, eine Diagnose.
+                            Leerzustand(
+                                symbol: "externaldrive.badge.xmark",
+                                titel: "Server ist abgetaucht",
+                                hinweis: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                                knopf: ("Erneut versuchen", { Task { await stand.laden(model) } }))
+                                .frame(height: 460)
+                        } else if stand.items.isEmpty {
                             // **Der Leerzustand sagt, wie man hineinkommt.**
-                            // Sonst steht dort eine Sackgasse.
+                            // Sonst steht dort eine Sackgasse — und auf der
+                            // Fernbedienung noch unangenehmer als am Finger.
                             Leerzustand(symbol: "bookmark",
                                         titel: "Noch nichts gemerkt",
-                                        hinweis: "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort auswählst, sammelt sich hier.")
+                                        hinweis: "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort auswählst, sammelt sich hier.",
+                                        knopf: ("Aktualisieren", { Task { await stand.laden(model) } }))
                                 .frame(height: 460)
                         } else {
                             gitter
@@ -83,20 +118,22 @@ struct MerklisteView: View {
         .ignoresSafeArea(edges: .horizontal)
         // Hinter der offenen Tafel ist nichts fokussierbar — wie in der
         // Bibliothek; sonst steigt der Fokus aus der Tafel heraus.
-        .disabled(sortierwahlOffen)
+        .disabled(offeneTafel != nil)
         // Unter ihrem Knopf, an seiner Kante — siehe `Tafelanker`. Vorher
         // feste Abstaende von der Kante, und damit um den sicheren Rand
         // daneben; dieselbe Stelle wie auf der Filmseite.
-        .tafel(unter: sortierwahlOffen ? "sortierung" : nil) {
-            Handlungstafel(handlungen: sortierhandlungen, offen: $sortierwahlOffen)
+        .tafel(unter: offeneTafel?.ausloeser) {
+            Handlungstafel(handlungen: offeneTafel == .gattung
+                                       ? gattungshandlungen : sortierhandlungen,
+                           offen: tafelBindung)
                 .transition(.opacity)
         }
-        .animation(.easeInOut(duration: 0.18), value: sortierwahlOffen)
+        .animation(.easeInOut(duration: 0.18), value: offeneTafel)
         // Die Seite schaltet sich selbst ab, die Kopfleiste gehoert ihr aber
         // nicht — die muss `HauptView` stilllegen.
-        .onChange(of: sortierwahlOffen) { _, offen in
-            tafelOffen.wrappedValue = offen
-            if !offen { amSortierknopf = true }
+        .onChange(of: offeneTafel) { alt, neu in
+            tafelOffen.wrappedValue = neu != nil
+            if neu == nil, let alt { amAusloeser = alt }
         }
         .onDisappear { tafelOffen.wrappedValue = false }
         .animation(Stil.einblenden, value: stand.items.isEmpty)
@@ -105,13 +142,13 @@ struct MerklisteView: View {
 
     private var chipreihe: some View {
         HStack(alignment: .center, spacing: 20) {
-            ForEach(Merkgattung.allCases) { fall in
-                Button(fall.beschriftung) {
-                    gattung = fall
-                    stand.gattung = fall.art
-                }
-                .buttonStyle(ChipStil(an: gattung == fall))
+            Button { offeneTafel = .gattung } label: {
+                Text(gattung.beschriftung)
             }
+            .buttonStyle(KapselStil())
+            .focused($amAusloeser, equals: .gattung)
+            .tafelausloeser(Tafel.gattung.ausloeser)
+            .accessibilityLabel(Text("Gattung, \(gattung.beschriftung)"))
 
             // Der Strich, der hier stand, trennte die Gattung von einer
             // zweiten Chipreihe. Die ist zur Tafel geworden und steht rechts
@@ -125,27 +162,45 @@ struct MerklisteView: View {
                     .foregroundStyle(Stil.schriftSehrLeise)
             }
 
-            Button { sortierwahlOffen.toggle() } label: {
-                HStack(spacing: 14) {
-                    Text(stand.sortierung.beschriftung)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 22, weight: .semibold))
-                        // Folgt der Schrift — fest halbweiss verschwand
-                        // der Pfeil auf der weissen Fokusflaeche.
-                        .opacity(0.6)
-                }
+            // **Derselbe Stil wie auf Filme und Serien, nicht ein eigener.**
+            // Hier stand ein `KnopfStil` mit selbst gesetztem Pfeil: andere
+            // Ecke, andere Schriftgroesse, anderer Abstand als die Kapsel
+            // eine Seite weiter — bei gleicher Aufgabe. Den Pfeil bringt
+            // `KapselStil` mit.
+            Button { offeneTafel = .sortierung } label: {
+                Text(stand.sortierung.beschriftung)
             }
-            .buttonStyle(KnopfStil(hoehe: Stil.chipHoehe))
-            .focused($amSortierknopf)
-            .tafelausloeser("sortierung")
+            .buttonStyle(KapselStil())
+            .focused($amAusloeser, equals: .sortierung)
+            .tafelausloeser(Tafel.sortierung.ausloeser)
             .accessibilityLabel(Text("Sortierung, \(stand.sortierung.beschriftung)"))
         }
         .focusSection()
     }
 
+    /// `Handlungstafel` kennt nur offen oder zu; zu heisst hier: keine Tafel.
+    private var tafelBindung: Binding<Bool> {
+        Binding(get: { offeneTafel != nil },
+                set: { if !$0 { offeneTafel = nil } })
+    }
+
+    /// Die Gattungen als Tafel — dieselben Zeichen wie die Bibliothekswahl.
+    private var gattungshandlungen: [Titelhandlung] {
+        Merkgattung.allCases.map { fall in
+            Titelhandlung(symbol: gattung == fall ? "checkmark.circle.fill" : "circle",
+                          text: LocalizedStringKey(fall.beschriftung)) {
+                gattung = fall
+                stand.gattung = fall.art
+            }
+        }
+    }
+
     private var sortierhandlungen: [Titelhandlung] {
         Sortierung.allCases.map { fall in
-            Titelhandlung(symbol: stand.sortierung == fall ? "checkmark" : "arrow.up.arrow.down",
+            // Haken und leerer Kreis, wie in `BibliothekView` — hier stand
+            // ein Haken gegen ein Sortierzeichen, also zwei Bedeutungen in
+            // einer Spalte.
+            Titelhandlung(symbol: stand.sortierung == fall ? "checkmark.circle.fill" : "circle",
                           // `beschriftung` ist eine fertige Zeichenkette —
                           // sie wird im Modell uebersetzt, nicht hier.
                           text: LocalizedStringKey(fall.beschriftung)) {

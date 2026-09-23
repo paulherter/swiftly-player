@@ -1,5 +1,8 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -13,8 +16,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -29,7 +30,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -106,40 +106,53 @@ fun TvDetailkopf(titel: String, jahrLaufzeit: String, bewertung: Double?, freiga
 }
 
 /**
- * Vorlage: `Belegzeile` in `Sources/tvOS/Stil.swift` — Bewertung mit Stern, Altersfreigabe als
- * umrandete Plakette, Direct-Play (oder der Grund dagegen) als getoente Marke. Masse halbiert.
- * Fehlt alles drei, nimmt die Zeile keinen Platz ein — der Aufrufer legt sie trotzdem an, damit die
+ * Vorlage: `Belegzeile` in `Sources/tvOS/Stil.swift` — Bewertung, Altersfreigabe als Plakette,
+ * Direct-Play (oder der Grund dagegen) als getoente Marke. Masse halbiert.
+ * **Die Bewertung steckt in derselben Huelle wie Direct Play** (Vorlage 7d391ca8): vorher stand sie als
+ * einzige Angabe der Zeile nackt da. `eigen`: ein freier Beleg statt des Plans — auf der Seerr-Seite der
+ * Stand der Anfrage, in derselben Huelle (2a24f67a).
+ * Fehlt alles, nimmt die Zeile keinen Platz ein — der Aufrufer legt sie trotzdem an, damit die
  * feste Hoehe der Kopfzone nicht springt.
  */
 @Composable
-fun TvBelegzeile(direktplay: Boolean, hinweis: String?, bewertung: Double?, freigabe: String?) {
+fun TvBelegzeile(direktplay: Boolean, hinweis: String?, bewertung: Double?, freigabe: String?,
+                 eigen: Triple<Zeichen, String, Color>? = null) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (eigen != null) TvMarke(eigen.first, eigen.second, eigen.third, Staerke.Halbfett)
         bewertung?.let {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Icon(Icons.Filled.Star, contentDescription = null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(11.dp))
-                Text(String.format(Locale.getDefault(), "%.1f", it), style = TextStyle(fontSize = 13.5.sp), color = Color.White.copy(alpha = 0.8f))
-            }
+            TvMarke(Zeichen.SternVoll, String.format(Locale.ROOT, "%.1f", it).replace('.', ','), Stil.schriftLeise, Staerke.Halbfett)
         }
         freigabe?.takeIf { it.isNotBlank() }?.let { TvPlakette(it) }
-        if (direktplay || hinweis != null) {
-            val farbe = if (direktplay) Stil.akzent else Stil.warnung
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(farbe.copy(alpha = 0.15f))
-                    .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)) {
-                Icon(if (direktplay) Icons.Filled.Check else Icons.Filled.Warning, contentDescription = null,
-                     tint = farbe, modifier = Modifier.size(12.dp))
-                Text(if (direktplay) "Direct Play" else hinweis.orEmpty(),
-                     style = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.Medium), color = farbe)
-            }
+        if (eigen == null && (direktplay || hinweis != null)) {
+            TvMarke(if (direktplay) Zeichen.Haken else Zeichen.Warnung, if (direktplay) "Direct Play" else hinweis.orEmpty(),
+                    if (direktplay) Stil.akzent else Stil.warnung, if (direktplay) Staerke.Halbfett else Staerke.Normal)
         }
     }
 }
 
-/** Vorlage: `Plakette.fern` — Rand statt Fuellung, Rundung 3, dieselbe Ecke wie die Direct-Play-Marke. */
+/**
+ * **Die eine Huelle der Belege** — Vorlage `marke(...)`: Flaeche 15 % der Farbe, Ecke `eckeKlein`, Zeichen und
+ * Wort in derselben Farbe. Eine Huelle, nicht drei.
+ */
+@Composable
+private fun TvMarke(zeichen: Zeichen, wort: String, farbe: Color, staerke: Staerke) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
+        modifier = Modifier.clip(RoundedCornerShape(TvStil.eckeKlein)).background(farbe.copy(alpha = 0.15f))
+            .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)) {
+        Symbol(zeichen, 11.dp, farbe = farbe, staerke = staerke)
+        Text(wort, style = TvStil.kachel, color = farbe, maxLines = 1)
+    }
+}
+
+/**
+ * Vorlage: `Plakette.fern` — **Fuellung statt Rand** (BRAND 7): Flaeche = Farbe mit 15 %,
+ * Schrift = dieselbe Farbe voll; FSK und Bewertung neutral in Weiss 7 %. Der gezeichnete
+ * Rahmen war die einzige Kante in der Belegzeile. Ecke `eckeKlein` (7).
+ */
 @Composable
 private fun TvPlakette(text: String) {
-    Text(text, style = TextStyle(fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold), color = Stil.schriftLeise,
-         modifier = Modifier.border(1.dp, Stil.schriftLeise.copy(alpha = 0.3f), RoundedCornerShape(3.dp))
+    Text(text, style = TvStil.plakette.copy(letterSpacing = 0.sp), color = Stil.schriftLeise,
+         modifier = Modifier.clip(RoundedCornerShape(TvStil.eckeKlein)).background(Stil.linie)
              .padding(horizontal = 6.dp, vertical = 2.dp))
 }
 
@@ -161,7 +174,7 @@ private fun TvPlakette(text: String) {
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, ImageVector> = emptyMap(), waehlen: (String) -> Unit) {
+fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, Zeichen> = emptyMap(), waehlen: (String) -> Unit) {
     var offen by remember { mutableStateOf(false) }
     // **Erst den Fokus zurueck an den „…"-Knopf, dann das Menue schliessen** — umgekehrt fiele der
     // Fokus beim Entfernen der fokussierten Zeile kurz auf den ersten fokussierbaren Knoten, und ein
@@ -176,7 +189,7 @@ fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, ImageVector> = empty
         offen = false
     }
     Box {
-        TvKnopf(null, Icons.Filled.MoreHoriz, modifier = Modifier.focusRequester(knopf)) {
+        TvKnopf(null, Zeichen.Mehr, modifier = Modifier.focusRequester(knopf)) {
             if (offen) schliessen() else { freigabe[0] = false; offen = true }
         }
         if (offen) {
@@ -191,7 +204,7 @@ fun TvMehrknopf(eintraege: List<Wahl>, symbole: Map<String, ImageVector> = empty
                 // bei `Fokusmerker` eintragen, sonst zeigte das naechste Schliessen auf die zuletzt
                 // gewaehlte Zeile statt zurueck auf den „…"-Knopf.
                 CompositionLocalProvider(LocalInnerhalbTafel provides true) {
-                    Column(Modifier.width(340.dp).clip(RoundedCornerShape(10.dp)).background(Stil.erhoeht)
+                    Column(Modifier.width(340.dp).clip(RoundedCornerShape(TvStil.eckeFlaeche)).background(Stil.flaeche)
                             .padding(vertical = 6.dp)
                             .focusProperties { exit = { if (freigabe[0]) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup()) {
                         eintraege.forEachIndexed { i, e ->
@@ -234,7 +247,7 @@ fun TvBesetzung(p: Mitwirkender, tun: () -> Unit) {
     Column(Modifier.width(TvStil.posterBreite), horizontalAlignment = Alignment.CenterHorizontally) {
         Fokusflaeche(tun = tun) {
             Box(Modifier.size(TvStil.posterBreite).clip(CircleShape).background(Stil.flaeche), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(36.dp))
+                Symbol(Zeichen.PersonVoll, 30.dp, farbe = Stil.schriftSehrLeise)
                 AsyncImage(model = p.bild, contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             }
         }
@@ -313,15 +326,15 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                              hinweis = if (titel?.planDa == true && !titel.lossless) titel.methode else null,
                              knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf)) {
                     // Vorlage: `DetailView.starte` — ohne Plan wird gemeldet statt schweigend nichts zu tun.
-                    TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
+                    TvKnopf(uebersetzt(if (titel?.fortsetzenAb != null) "Fortsetzen" else "Abspielen"), Zeichen.Abspielen, Modifier.focusRequester(haupt)) {
                         if (titel?.planDa == true) app.spiel.value = Abspielwunsch(ziel.id, titel.fortsetzenAb)
                         else meldung = uebersetzt("Der Server hat keine Datei zu diesem Titel.")
                     }
-                    if (titel?.fortsetzenAb != null) TvKnopf(null, Icons.Filled.Replay) {
+                    if (titel?.fortsetzenAb != null) TvKnopf(null, Zeichen.Zurueckspulen) {
                         if (titel.planDa) app.spiel.value = Abspielwunsch(ziel.id, null)
                         else meldung = uebersetzt("Der Server hat keine Datei zu diesem Titel.")
                     }
-                    TvKnopf(null, if (titel?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
+                    TvKnopf(null, if (titel?.gemerkt == true) Zeichen.LesezeichenVoll else Zeichen.Lesezeichen) {
                         val an = !(titel?.gemerkt ?: false)
                         titel?.let { t = it.copy(gemerkt = an) }
                         lauf.launch { if (withContext(Dispatchers.IO) { app.kern.merken(ziel.id, an).await() }.isNotEmpty()) titel?.let { t = it } }
@@ -342,8 +355,8 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                             add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
                         }
                         TvMehrknopf(eintraege,
-                            mapOf("gesehen" to Icons.Filled.CheckCircle, "vonvorn" to Icons.Filled.Replay,
-                                  "zuruecksetzen" to Icons.Filled.RestartAlt, "metadaten" to Icons.Filled.Refresh)) { wahl ->
+                            mapOf("gesehen" to Zeichen.HakenKreisVoll, "vonvorn" to Zeichen.Zurueckspulen,
+                                  "zuruecksetzen" to Zeichen.RuecksetzenKreis, "metadaten" to Zeichen.Neuladen)) { wahl ->
                             lauf.launch {
                                 when (wahl) {
                                     // Vorlage: `gesehenHandlung`/`DetailView.swift:189-194` (VERHALTEN D6) —
@@ -367,9 +380,12 @@ fun TvDetail(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                             }
                         }
                     } else {
-                        TvKnopf(null, Icons.Filled.MoreHoriz) {}
+                        TvKnopf(null, Zeichen.Mehr) {}
                     }
                 }
+                // Ueber „Aehnliche Filme": die Sammlung ist die naehere Verwandtschaft. Nur bei
+                // Titeln, die in einer stehen (`Sammlungsreihe` in `Titelreihen.swift`).
+                TvSammlungsreihe(app, ziel.id, oeffnen) { i -> Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "sammlung$i") }
                 if (aehnliche.isNotEmpty()) TvStreifen(uebersetzt("Ähnliche Filme"), Modifier.tvEingeblendet(einblendAlpha).tvAbschnitt(a, "aehnliche")) {
                     items(aehnliche, key = { it.id }) { k -> TvKachel(k.plakat, k.titel, k.unterzeile) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
                 }
@@ -442,7 +458,7 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                     Row(Modifier.padding(start = TvStil.randSeite, top = 98.dp),
                         horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         Box(Modifier.size(TvStil.posterBreite).clip(CircleShape).background(Stil.flaeche), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(40.dp))
+                            Symbol(Zeichen.PersonVoll, 33.dp, farbe = Stil.schriftSehrLeise)
                             AsyncImage(model = s?.bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                         }
                         Column(Modifier.width(480.dp)) {
@@ -484,7 +500,12 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                         }
                     }
                 }
-                if (s != null && seerrFertig && s.titel.isEmpty() && anfragbar.orEmpty().isEmpty()) {
+                // **Gestoert ist nicht leer** — „Auf deinem Server gibt es sonst nichts mit …"
+                // ist eine Aussage ueber den Bestand, und die hat niemand geprueft, wenn der
+                // Server nicht geantwortet hat.
+                if (s != null && s.gestoert) {
+                    TvStoerung(app)
+                } else if (s != null && seerrFertig && s.titel.isEmpty() && anfragbar.orEmpty().isEmpty()) {
                     Text(uebersetzt("Auf deinem Server gibt es sonst nichts mit %@.", ziel.name), style = TvStil.koerper, color = Stil.schriftLeise,
                          modifier = Modifier.padding(start = TvStil.randSeite, top = 30.dp))
                 }
@@ -501,10 +522,18 @@ fun TvPerson(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
 @Composable
 fun TvGenre(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
     var titel by remember(ziel.id) { mutableStateOf<List<Rasterkachel>?>(null) }
-    LaunchedEffect(ziel.id) {
-        titel = try {
-            JSONArray(withContext(Dispatchers.IO) { app.kern.genre(ziel.id).await() }).let { a -> (0 until a.length()).map { rasterkachelLesen(a.getJSONObject(it)) } }
-        } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+    // **`gestoert` heisst gestoert, leer heisst leer.** `catch { emptyList() }` machte aus jedem
+    // Netzfehler die Aussage „in diesem Genre gibt es nichts" — derselbe Fehler wie am Telefon.
+    var gestoert by remember(ziel.id) { mutableStateOf(false) }
+    var versuch by remember(ziel.id) { mutableIntStateOf(0) }
+    LaunchedEffect(ziel.id, versuch) {
+        gestoert = false
+        try {
+            titel = JSONArray(withContext(Dispatchers.IO) { app.kern.genre(ziel.id).await() }).let { a -> (0 until a.length()).map { rasterkachelLesen(a.getJSONObject(it)) } }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) {
+            gestoert = true
+            titel = emptyList()
+        }
     }
     val liste = titel
     val fokus = ersterFokus(liste != null)
@@ -514,10 +543,11 @@ fun TvGenre(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
             Column {
                 Text(ziel.name, style = TvStil.reihe, color = Stil.schrift, maxLines = 1,
                      modifier = Modifier.padding(top = 48.dp, bottom = TvStil.titelAbstand))
-                if (liste != null && liste.isEmpty()) {
+                if (gestoert) TvStoerung(app, erneut = { versuch++ })
+                else if (liste != null && liste.isEmpty()) {
                     TvLeer(uebersetzt("Nichts in diesem Genre"),
                            uebersetzt("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."),
-                           symbol = Icons.Filled.Tag)
+                           symbol = Zeichen.Etikett)
                 }
             }
         })

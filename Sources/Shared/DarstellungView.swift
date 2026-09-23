@@ -20,6 +20,11 @@ struct DarstellungView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            // Derselbe Grund wie jede andere Seite. Er war kurz ein eigener
+            // (`gruppengrund`), weil reines Schwarz unter einer Karte die
+            // ganze Strecke auf einmal war; seit der Grund #101010 ist,
+            // betraegt der Sprung ein Fuenftel davon und braucht keine
+            // Ausnahme mehr.
             Stil.grund.ignoresSafeArea()
             VStack(spacing: 0) {
                 Unterseitenkopf(titel: String(localized: "Darstellung")) { zurueck() }
@@ -109,7 +114,7 @@ struct DarstellungView: View {
         } header: {
             Rubrik(text: "Startseite")
         } footer: {
-            Fusszeile(text: "Zum Umsortieren an den Griffen rechts ziehen.")
+            Fusszeile("Zum Umsortieren an den Griffen rechts ziehen.")
         }
     }
 
@@ -137,9 +142,15 @@ struct DarstellungView: View {
             ForEach(model.startGenres, id: \.self) { name in
                 // Vom Server, also nicht übersetzt.
                 Text(verbatim: name)
-                    .font(.system(size: 15))
+                    // Fließtext aus der Leiter statt einer eigenen Zahl —
+                    // derselbe Grad, nur ohne die Zahl im Aufrufer. Vorher
+                    // `.system(size: 15)`.
+                    // **Mitwachsend, nicht fest** — BRAND.md, Abschnitt 2. Grad und
+                    // Gewicht sind die der Tokens, nur folgen sie der Systemschrift.
+                    // Die Haken und Winkel bleiben fest: das sind Zeichen, kein Text.
+                    .mitwachsend(15)
                     .foregroundStyle(Stil.schrift)
-                    .listRowBackground(Stil.flaeche)
+                    .listRowBackground(Stil.gruppenflaeche)
             }
             .onMove { model.startGenres.move(fromOffsets: $0, toOffset: $1) }
             .onDelete { model.startGenres.remove(atOffsets: $0) }
@@ -148,10 +159,16 @@ struct DarstellungView: View {
             // einer Liste nirgends hin.
             Button { genrewahl = true } label: {
                 Label("Genre hinzufügen", systemImage: "plus")
-                    .font(.system(size: 15, weight: .medium))
+                    // Listenzeile: 15 Semifett. 15 Medium stand in keiner
+                    // Leiter — zwischen Fließtext und Listenzeile gibt es
+                    // keine Stufe. Vorher `.system(size: 15, weight: .medium)`.
+                    .mitwachsend(15, .semibold)
                     .foregroundStyle(Stil.akzent)
             }
-            .listRowBackground(Stil.flaeche)
+            // **Auch diese Zeile antwortet auf den Druck.** Sie war der eine
+            // Knopf auf der Seite ohne jede Rückmeldung.
+            .buttonStyle(Stil.Druckzeile())
+            .listRowBackground(Stil.gruppenflaeche)
             .deleteDisabled(true)
         } header: {
             Rubrik(text: "Genres")
@@ -164,47 +181,57 @@ struct DarstellungView: View {
             Zeilenaufbau(symbol: symbol, titel: Text(titel), unter: nil, gedimmt: false) {
                 if an {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Stil.akzent)
+                        .font(.system(size: 13, weight: .semibold))
+                        // **Gewählt heißt Weiß und Gewicht, nicht Farbe.** Der
+                        // Haken stand türkis; das ist Rangfolge unter
+                        // Geschwistern, und der Akzent trägt allein Zustand.
+                        // Halbfett ist der Titel der Zeile ohnehin schon.
+                        .foregroundStyle(Stil.schrift)
                 }
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .zeile()
+        .buttonStyle(Stil.Druckknopf())
+        .zeile(gewaehlt: an)
         .deleteDisabled(true)
         .accessibilityAddTraits(an ? .isSelected : [])
     }
 }
 
-/// Die Rubrik über einer Gruppe — derselbe Grad wie `Gruppentitel` auf den
-/// anderen Einstellungsseiten, ohne dessen eigenen Rand: den setzt die Liste.
+/// Die Rubrik über einer Gruppe — dieselbe wie `Gruppentitel` auf den anderen
+/// Einstellungsseiten, ohne dessen eigenen Rand: den setzt die Liste.
+///
+/// **Sie war bis zum 22.09. die alte Fassung**: 11 Punkt, Versalien, gesperrt.
+/// Als `Gruppentitel` auf Normalschreibung im Grad der Reihenüberschrift
+/// umgestellt wurde, ist diese Kopie stehen geblieben — und damit sah genau
+/// eine der vier Einstellungsseiten anders aus als die drei anderen. Paul am
+/// 22.09.: „bei Darstellung ist noch die falsche drin."
+///
+/// Dass es überhaupt eine Kopie gibt, hat einen Grund: `Gruppentitel` bringt
+/// seinen Seitenrand mit, und in einer Liste setzt den die Liste. Der Grad
+/// gehört trotzdem an eine Stelle — deshalb liest sie ihn hier ab, statt ihn
+/// noch einmal hinzuschreiben.
 private struct Rubrik: View {
     let text: LocalizedStringKey
     var body: some View {
         Text(text)
-            .textCase(.uppercase)
-            .font(.system(size: 11, weight: .semibold))
-            .tracking(1.2)
-            .foregroundStyle(Stil.schriftSehrLeise)
-    }
-}
-
-private struct Fusszeile: View {
-    let text: LocalizedStringKey
-    var body: some View {
-        Text(text)
-            .font(.system(size: 13))
-            .foregroundStyle(Stil.schriftSehrLeise)
+            .mitwachsend(20, .semibold)
+            .tracking(Stil.sperrungReihe)
+            .foregroundStyle(Stil.schriftLeise)
     }
 }
 
 private extension View {
     /// Eine Zeile aus unseren Bausteinen in Apples Liste: deren Innenrand
     /// weg, weil die Zeile ihren eigenen mitbringt, und unser Grund.
-    func zeile() -> some View {
+    func zeile(gewaehlt: Bool = false) -> some View {
         listRowInsets(EdgeInsets())
-            .listRowBackground(Stil.flaeche)
+            // **Gewählt heisst eine Stufe hoeher.** Solange der Haken türkis
+            // war, war die Farbe die ganze Auskunft; in Weiß braucht die
+            // gewählte Zeile ihren Grund dazu, sonst fällt sie nicht mehr auf.
+            // `erhoeht` ist derselbe Ton, den auch der gewaehlte Filterchip
+            // traegt — ein Zeichen fuer „gewaehlt", nicht zwei.
+            .listRowBackground(gewaehlt ? Stil.erhoeht : Stil.gruppenflaeche)
     }
 }
 
@@ -218,20 +245,31 @@ struct GenrewahlView: View {
     @Environment(\.breit) private var breit
     @State private var alle: [String] = []
     @State private var geladen = false
+    /// Ohne diese Flagge stand hier bei jedem Netzfehler „Auf deinem Server
+    /// sind keine Genres hinterlegt." — eine Aussage ueber den Server, die
+    /// die App gar nicht treffen konnte.
+    @State private var gestoert = false
 
     private var frei: [String] { alle.filter { !model.startGenres.contains($0) } }
 
     var body: some View {
         ZStack(alignment: .top) {
+            // Derselbe Grund wie jede andere Seite. Er war kurz ein eigener
+            // (`gruppengrund`), weil reines Schwarz unter einer Karte die
+            // ganze Strecke auf einmal war; seit der Grund #101010 ist,
+            // betraegt der Sprung ein Fuenftel davon und braucht keine
+            // Ausnahme mehr.
             Stil.grund.ignoresSafeArea()
             VStack(spacing: 0) {
                 Unterseitenkopf(titel: String(localized: "Genre hinzufügen")) { zurueck() }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        if geladen, frei.isEmpty {
+                        if gestoert, alle.isEmpty {
+                            Stoerhinweis(model: model) { Task { await gattungenLaden() } }
+                        } else if geladen, frei.isEmpty {
                             Text(alle.isEmpty ? "Auf deinem Server sind keine Genres hinterlegt."
                                               : "Alle Genres stehen schon auf der Startseite.")
-                                .font(Stil.koerper)
+                                .mitwachsend(15)
                                 .foregroundStyle(Stil.schriftLeise)
                                 .padding(.horizontal, Stil.rand(breit: breit))
                                 .padding(.top, 8)
@@ -239,7 +277,7 @@ struct GenrewahlView: View {
                             Einstellungsgruppe(titel: "Auf deinem Server") {
                                 ForEach(Array(frei.enumerated()), id: \.element) { stelle, name in
                                     if stelle > 0 {
-                                        Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+                                        Blattlinie()
                                     }
                                     Button {
                                         model.startGenres.append(name)
@@ -247,7 +285,7 @@ struct GenrewahlView: View {
                                     } label: {
                                         Wertzeile(symbol: "tag", titel: Text(verbatim: name))
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(Stil.Druckknopf())
                                 }
                             }
                         }
@@ -262,9 +300,13 @@ struct GenrewahlView: View {
         .toolbar(.hidden, for: .navigationBar)
         .background(WischZurueck())
         #endif
-        .task {
-            alle = await model.gattungen()
-            geladen = true
-        }
+        .task { await gattungenLaden() }
+    }
+
+    private func gattungenLaden() async {
+        let geholt = await model.gattungen()
+        gestoert = geholt == nil
+        if let geholt { alle = geholt }
+        geladen = true
     }
 }

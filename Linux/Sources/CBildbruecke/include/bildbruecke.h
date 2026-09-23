@@ -29,6 +29,12 @@ Bildbruecke *bildbruecke_neu(void);
 void bildbruecke_frei(Bildbruecke *b);
 
 /* Hängt die Brücke an einen Player. Muss vor dem Start geschehen. */
+/* Eine fertig formatierte Meldung von libVLC. Laeuft auf VLCs Faden. */
+typedef void (*Spurzeile)(const char *);
+
+/* Leitet libVLCs Warnungen und Fehler an `ziel`. NULL schaltet sie ab. */
+void vlcspur_an(libvlc_instance_t *kern, Spurzeile ziel);
+
 void bildbruecke_anhaengen(Bildbruecke *b, libvlc_media_player_t *mp);
 
 /* Holt das jüngste Bild. Gibt false zurück, wenn seit dem letzten Aufruf

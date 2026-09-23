@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dieselben zwei Ebenen wie `ic_launcher`: welche Maske ein Starter darueberlegt,
+     entscheidet er selbst, und die Sicherheitszone ist fuer die runde schon
+     eingerechnet (siehe `ic_launcher_vordergrund`). Eine eigene runde Fassung waere
+     eine zweite Wahrheit. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_hintergrund" />
+    <foreground android:drawable="@drawable/ic_launcher_vordergrund" />
+    <monochrome android:drawable="@drawable/ic_launcher_vordergrund" />
+</adaptive-icon>

@@ -80,17 +80,14 @@ struct HauptView: View {
     @State private var auswahlOffen = false
     @State private var filmregal = Bibliotheksmodell(merkname: "movies")
     @State private var serienregal = Bibliotheksmodell(merkname: "tvshows")
-    /// Welche Bibliothek der jeweiligen Gattung gezeigt wird — ein Server
-    /// kann mehrere haben. Liegt aus demselben Grund hier wie die Regale.
-    @State private var filmbibliothek: Item?
-    @State private var serienbibliothek: Item?
-    /// **Eine der uebrigen Bibliotheken, als Wurzel.**
+    /// Was das Titelmenü der beiden Bereiche gewählt hat — Alle, Sammlungen
+    /// oder eine Bibliothek. Liegt aus demselben Grund hier wie die Regale.
     ///
-    /// Nicht als Seite auf dem Stapel: eine Seite faehrt von rechts herein und
-    /// traegt einen Zurueckpfeil, und Filme und Serien sind Wurzeln — also ist
-    /// das hier eine. Gesetzt heisst: sie steht statt der Wurzel des Bereichs;
-    /// jeder Klick auf einen Bereich setzt sie zurueck.
-    @State private var offeneBibliothek: Item?
+    /// **Bis zum 23.09.2026 standen die übrigen Bibliotheken als Rubrik in
+    /// der Seitenleiste** und öffneten sich als eigene Wurzel. Jetzt stehen
+    /// sie im Titelmenü wie auf dem iPhone, und die Rubrik fällt weg.
+    @State private var filmwahl: Bereichswahl = .alle
+    @State private var serienwahl: Bereichswahl = .alle
 
     init(model: AppModel) {
         self.model = model
@@ -102,19 +99,6 @@ struct HauptView: View {
             Seitenleiste(model: model, bereich: $bereich,
                          uebernahme: uebernahme.angebot,
                          uebernehmen: { abzeichenGedrueckt() },
-                         bibliothekWaehlen: { bibliothekAusLeiste($0) },
-                         gewaehlteBibliothek: { art in
-                             art == "movies" ? filmbibliothek : serienbibliothek
-                         },
-                         bibliothekOeffnen: { bib in
-                             // Dieselbe Sammlung noch einmal: zurueck an ihre
-                             // Wurzel. Eine andere: die Wurzel wird getauscht,
-                             // der Zweig geht ohne Bewegung mit.
-                             kontozweigZu(animiert: offeneBibliothek?.id == bib.id)
-                             offeneBibliothek = bib
-                         },
-                         offeneKennung: offeneBibliothek?.id,
-                         schliesseBibliothek: { offeneBibliothek = nil },
                          zumProfil: { zumProfil() },
                          imKonto: navigator.imKonto(bereich),
                          bereichWaehlen: { bereichWaehlen($0) })
@@ -236,7 +220,7 @@ struct HauptView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: auswahlOffen)
+        .animation(Stil.sprung, value: auswahlOffen)
         .environment(navigator)
         .environment(\.bereich, bereich)
         // **G4: Der Seitenstapel gehört zum Konto.** Was darauf liegt, gehört
@@ -316,9 +300,10 @@ struct HauptView: View {
     /// Wie viele Seiten im **aktuellen** Bereich gezeigt werden.
     private var tiefe: Int { gezeigteTiefe[bereich] ?? 0 }
 
-    /// Was gerade die Wurzel ist — ein Bereich oder eine der uebrigen
-    /// Bibliotheken. Aendert sie sich, wird die Wurzel neu gebaut.
-    private var wurzelkennung: String { offeneBibliothek?.id ?? bereich.rawValue }
+    /// Was gerade die Wurzel ist. Aendert sie sich, wird die Wurzel neu
+    /// gebaut. Bis zum 23.09.2026 konnte das auch eine der uebrigen
+    /// Bibliotheken sein; die stehen jetzt im Titelmenue.
+    private var wurzelkennung: String { bereich.rawValue }
 
     private var inhalt: some View {
         GeometryReader { raum in
@@ -363,7 +348,10 @@ struct HauptView: View {
                     .animation(Stil.einblenden, value: wurzelkennung)
                     .offset(x: tiefe > 0 ? mitgang : 0)
                     .overlay {
-                        Color.black.opacity(tiefe > 0 ? 0.28 : 0)
+                        // Aus `grund`, nicht aus `Color.black` — reines
+                        // Schwarz gibt es an genau einer Stelle, hinter dem
+                        // Bild im Player (BAUTEILE 9.23).
+                        Stil.grund.opacity(tiefe > 0 ? 0.28 : 0)
                             .allowsHitTesting(false)
                     }
                     // **Was unter einer Seite liegt, nimmt keine Klicks.**
@@ -425,7 +413,7 @@ struct HauptView: View {
                         // liegende Seiten gehen ein Stück mit.
                         .offset(x: gezeigt ? (obenauf ? 0 : mitgang) : breite)
                         .overlay {
-                            Color.black.opacity(gezeigt && !obenauf ? 0.28 : 0)
+                            Stil.grund.opacity(gezeigt && !obenauf ? 0.28 : 0)
                                 .allowsHitTesting(false)
                         }
                         // Der Schlagschatten an der Vorderkante. Als schmaler
@@ -434,7 +422,7 @@ struct HauptView: View {
                         // sie in einen eigenen Zwischenspeicher, und den baut
                         // das System in jedem Einzelbild neu auf.
                         .overlay(alignment: .leading) {
-                            LinearGradient(colors: [.black.opacity(0.45), .clear],
+                            LinearGradient(colors: [Stil.grund.opacity(0.45), .clear],
                                            startPoint: .trailing, endPoint: .leading)
                                 .frame(width: 28)
                                 .offset(x: -28)
@@ -550,23 +538,16 @@ struct HauptView: View {
         }
     }
 
-    @ViewBuilder
-    private var wurzel: some View {
-        if let bib = offeneBibliothek {
-            Bibliotheksseite(model: model, bibliothek: bib)
-        } else {
-            bereichswurzel
-        }
-    }
+    private var wurzel: some View { bereichswurzel }
 
     @ViewBuilder
     private var bereichswurzel: some View {
         switch bereich {
         case .start:  HomeView(model: model, stand: startseite)
         case .filme:  BibliothekView(model: model, art: "movies", titel: "Filme",
-                                     regal: filmregal, gewaehlt: $filmbibliothek)
+                                     regal: filmregal, wahl: $filmwahl)
         case .serien: BibliothekView(model: model, art: "tvshows", titel: "Serien",
-                                     regal: serienregal, gewaehlt: $serienbibliothek)
+                                     regal: serienregal, wahl: $serienwahl)
         case .suche:  SucheView(model: model)
         case .downloads: DownloadsView(model: model)
         case .merkliste: MerklisteView(model: model)
@@ -576,8 +557,17 @@ struct HauptView: View {
     @ViewBuilder
     private func seite(_ ziel: Seitenziel) -> some View {
         switch ziel {
+        // Eine Sammlung aus Suche oder Merkliste: ohne Bereich, also alles,
+        // was in ihr steht — wie auf dem iPhone.
+        case let .titel(item) where item.type == "BoxSet":
+            Sammlungsseite(model: model, sammlung: item, art: nil) { schliessen(ziel) }
         case let .titel(item):  DetailView(model: model, item: item) { schliessen(ziel) }
+        case let .sammlung(item, art):
+            Sammlungsseite(model: model, sammlung: item, art: art) { schliessen(ziel) }
+        case let .downloadserie(id, titel):
+            Downloadserienseite(model: model, serienId: id, titel: titel) { schliessen(ziel) }
         case .seerr:            SeerrEinstellungenView(model: model, seerr: model.seerr) { schliessen(ziel) }
+        case .trakt:            TraktEinstellungenView(trakt: model.trakt) { schliessen(ziel) }
         case let .seerrTitel(t): SeerrDetailView(model: model, treffer: t) { schliessen(ziel) }
         // Nicht mehr erreichbar — eine Bibliothek ist eine Wurzel. Der Fall
         // steht hier, damit ein wiederhergestellter alter Stapel nicht bricht.
@@ -620,7 +610,7 @@ struct HauptView: View {
     /// einen anderen Bereich, und zurueck auf „Start" lag das Profil wieder
     /// obenauf. Das Zweite erledigt `.onChange(of: bereich)`.
     private func bereichWaehlen(_ neu: Bereich) {
-        if neu == bereich { kontozweigZu(animiert: offeneBibliothek == nil) }
+        if neu == bereich { kontozweigZu(animiert: true) }
         bereich = neu
     }
 
@@ -651,24 +641,16 @@ struct HauptView: View {
         navigator.oeffne(.profil, in: bereich)
     }
 
-    /// Eine Bibliothek aus der Seitenleiste: sie **wählt** die Sammlung und
-    /// wechselt in deren Bereich. Die Wahl wird gemerkt, damit sie beim
-    /// nächsten Öffnen noch gilt — dieselbe Stelle, die auch die Chips über
-    /// dem Regal benutzen.
-    private func bibliothekAusLeiste(_ bib: Item) {
-        model.bibliothekWaehlen(bib, art: bib.collectionType ?? "")
-        switch bib.collectionType {
-        case "movies":  filmbibliothek = bib;   bereich = .filme
-        case "tvshows": serienbibliothek = bib; bereich = .serien
-        default:        break
-        }
-    }
-
     private func ausfuehren(_ kommando: Kommando) {
         switch kommando {
         case .start:  bereichWaehlen(.start)
         case .filme:  bereichWaehlen(.filme)
         case .serien: bereichWaehlen(.serien)
+        case .merkliste: bereichWaehlen(.merkliste)
+        // **Nur wenn es sie gibt.** Ohne eingeschaltete Downloads steht der
+        // Bereich nicht in der Leiste; dann darf ein Kürzel ihn auch nicht
+        // öffnen.
+        case .downloads: if model.downloadsAn { bereichWaehlen(.downloads) }
         case .suche:  bereichWaehlen(.suche)
         case .zurueck:
             zurueck()
@@ -713,17 +695,6 @@ struct Seitenleiste: View {
     /// Was auf einem anderen Gerät läuft — `nil`, wenn nichts.
     var uebernahme: Fremdsitzung?
     var uebernehmen: () -> Void
-    let bibliothekWaehlen: (Item) -> Void
-    /// Welche Sammlung der jeweiligen Gattung gerade gezeigt wird. Als
-    /// Abfrage und nicht als Wert: die Stände liegen in `HauptView`, und die
-    /// Leiste soll sie nicht doppelt führen.
-    let gewaehlteBibliothek: (String) -> Item?
-    let bibliothekOeffnen: (Item) -> Void
-    /// Welche der uebrigen Bibliotheken gerade offen ist, wenn eine.
-    let offeneKennung: String?
-    private var bibliothekOffen: Bool { offeneKennung != nil }
-    private func bibliothekSchliessen() { schliesseBibliothek() }
-    let schliesseBibliothek: () -> Void
     let zumProfil: () -> Void
     /// Profil oder etwas von dort ist offen. Dann traegt keine Zeile oben die
     /// Auswahl, sondern das Konto unten — dieselbe Regel wie auf dem iPad.
@@ -746,9 +717,8 @@ struct Seitenleiste: View {
                 ForEach(Bereich.obenGruppe, id: \.self) { fall in
                     Seitenleistenzeile(symbol: fall.symbol,
                                        beschriftung: fall.beschriftung,
-                                       aktiv: bereich == fall && !bibliothekOffen && !imKonto) {
+                                       aktiv: bereich == fall && !imKonto) {
                         bereichWaehlen(fall)
-                        bibliothekSchliessen()
                     }
                 }
             }
@@ -763,52 +733,17 @@ struct Seitenleiste: View {
                 ForEach(Bereich.meinsGruppe(downloads: model.downloadsAn), id: \.self) { fall in
                     Seitenleistenzeile(symbol: fall.symbol,
                                        beschriftung: fall.beschriftung,
-                                       aktiv: bereich == fall && !bibliothekOffen && !imKonto) {
+                                       aktiv: bereich == fall && !imKonto) {
                         bereichWaehlen(fall)
-                        bibliothekSchliessen()
                     }
                 }
             }
             .padding(.horizontal, 12)
 
-            // **Die Rubrik stand da, die Zeilen darunter fehlten.** Ein
-            // Titel über nichts — beim Vergleich mit der Linux-Fassung
-            // aufgefallen, wo die Sammlungen aufgeführt sind.
-            //
-            // Aufgeführt wird, was wir auch öffnen können: Filme und Serien.
-            // Eine Musiksammlung stünde sonst da und führte ins Leere.
-            if !sammlungen.isEmpty {
-                Seitenleistenrubrik(text: "Bibliotheken")
-                    .padding(.horizontal, 12)
-                    .padding(.top, 26)
-                    .padding(.bottom, 8)
-
-                VStack(spacing: 2) {
-                    ForEach(sammlungen, id: \.id) { bib in
-                        // **Eine eigene Seite, kein Umschalter.** Vorher rief
-                        // das hier `bibliothekWaehlen` — der Filme-Bereich
-                        // sprang auf diese Sammlung um, und ueber "Filmabend"
-                        // stand dann die Ueberschrift "Filme".
-                        Seitenleistenzeile(symbol: bib.collectionType == "movies" ? "film" : "tv",
-                                           name: bib.name,
-                                           aktiv: offeneKennung == bib.id && !imKonto) {
-                            bibliothekOeffnen(bib)
-                        }
-                    }
-                }
-                .padding(.horizontal, 12)
-
-                // **Die Merkliste stand hier und steht jetzt oben bei den
-                // Bereichen.** Sie war eine Seite, die von rechts hereinfuhr —
-                // mit Zurueckpfeil, ohne Hervorhebung in der Leiste (`aktiv:
-                // false` stand fest verdrahtet da), und auf einem Stapel, auf
-                // den danach auch das Profil kam.
-                //
-                // Er hat recht, und die alte Begruendung war schief: dass ihre
-                // Grenze der Haken ist, macht sie zu einer Bibliothek — und
-                // Bibliotheken fahren hier auch nicht herein. Ein Ort in der
-                // Leiste ist ein Ort, kein Weg.
-            }
+            // **Keine Rubrik „Bibliotheken" mehr.** Die übrigen Bibliotheken
+            // standen hier und öffneten sich als eigene Wurzel. Seit dem
+            // 23.09.2026 stehen sie im Titelmenü von Filme und Serien, wie
+            // auf dem iPhone — zusammen mit „Alle" und „Sammlungen".
 
             Spacer(minLength: 0)
 
@@ -821,60 +756,29 @@ struct Seitenleiste: View {
                 Button(action: uebernehmen) {
                     Uebernahmezeile(sitzung: uebernahme)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckzeile())
                 .padding(.horizontal, 12)
                 .padding(.bottom, 4)
                 .transition(.opacity)
             }
 
-            Divider().overlay(Stil.linie)
+            // `Divider` bringt Apples eigene Farbe und Staerke mit; der
+            // Ueberzug malte sie nur zu. `Blattlinie` ist die eine Haarlinie
+            // der App und geht von Kante zu Kante.
+            Blattlinie()
 
             // Kein `NavigationLink`: die Seitenleiste liegt **neben** dem
             // Stapel, nicht darin. Sie schiebt das Ziel deshalb selbst auf
             // den Stapel des sichtbaren Bereichs.
             Button { zumProfil() } label: { Profilzeile(model: model, aktiv: imKonto) }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckzeile())
                 .padding(12)
         }
         .frame(width: Stil.seitenleisteBreite)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Stil.flaeche)
-        .animation(.easeInOut(duration: 0.22), value: uebernahme?.id)
+        .animation(Stil.sprung, value: uebernahme?.id)
         .task { if model.views.isEmpty { await model.loadViews() } }
-    }
-
-    /// **Die Rubrik zeigt die uebrigen Bibliotheken.**
-    ///
-    /// Oben stehen Filme und Serien; die beiden Sammlungen, die diese Bereiche
-    /// zeigen, gehoeren nicht noch einmal hierher.
-    ///
-    /// **Gefragt wird das Modell, nicht die Ansicht.**
-    /// `model.gewaehlteBibliothek(art:)` liest die gemerkte Wahl aus den
-    /// Einstellungen und faellt still auf die erste zurueck. Vorher stand hier
-    /// `filmbibliothek`, also der Zustand der *Ansicht* — und der ist beim
-    /// ersten Aufbau noch `nil`. Die Liste zeigte deshalb erst „Filme", und
-    /// sobald die Bibliotheksseite ihre Wahl gesetzt hatte, sprang sie auf
-    /// „Filmabend".
-    ///
-    /// Bleibt nichts uebrig, faellt die Rubrik ganz weg: dann *sind* Filme und
-    /// Serien die Bibliotheken, und sie stehen schon oben.
-    private var sammlungen: [Item] {
-        let offen = Set([model.gewaehlteBibliothek(art: "movies")?.id,
-                         model.gewaehlteBibliothek(art: "tvshows")?.id].compactMap { $0 })
-        return model.views
-            .filter { $0.collectionType == "movies" || $0.collectionType == "tvshows" }
-            .filter { !offen.contains($0.id) }
-    }
-
-    /// Hervorgehoben wird eine Sammlung nur, wenn ihr Bereich auch offen ist
-    /// — sonst stünden zwei Zeilen gleichzeitig im Akzent, ohne dass eine
-    /// davon zu sehen wäre.
-    private func istAktiv(_ bib: Item) -> Bool {
-        switch bib.collectionType {
-        case "movies":  bereich == .filme  && gewaehlteBibliothek("movies")?.id == bib.id
-        case "tvshows": bereich == .serien && gewaehlteBibliothek("tvshows")?.id == bib.id
-        default:        false
-        }
     }
 }
 
@@ -896,7 +800,7 @@ struct Profilzeile: View {
                     .foregroundStyle(aktiv ? Stil.akzent : Stil.schrift)
                     .lineLimit(1)
                 Text(verbatim: model.serverName ?? "")
-                    .font(.system(size: 11))
+                    .font(Stil.klein)
                     .foregroundStyle(Stil.schriftSehrLeise)
                     .lineLimit(1)
             }
@@ -904,9 +808,10 @@ struct Profilzeile: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 40)
-        .background(aktiv ? Stil.akzent.opacity(0.10)
-                          : schwebt ? Stil.schrift.opacity(0.06) : .clear,
-                    in: RoundedRectangle(cornerRadius: Stil.ecke))
+        // `akzentLeise` ist genau dieser Ton, schon ausgerechnet.
+        .background(aktiv ? Stil.akzentLeise
+                          : schwebt ? Stil.schwebeflaeche : .clear,
+                    in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
         .accessibilityAddTraits(aktiv ? .isSelected : [])
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)

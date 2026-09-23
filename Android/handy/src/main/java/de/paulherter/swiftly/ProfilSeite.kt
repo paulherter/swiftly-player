@@ -1,14 +1,13 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -17,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -59,34 +57,34 @@ fun ProfilSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -> U
     val server by rememberServerauskunft(app)
     Einstellungsseite(uebersetzt("Profil"), zurueck) {
         Kontokarten(app, server, oeffnen)
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(18.dp))
         Karte {
-            Profilzeile(Icons.Filled.Tv, uebersetzt("Quick Connect"), uebersetzt("Code vom Fernseher eingeben"), akzent = true) {
+            Profilzeile(Zeichen.Textsuche, uebersetzt("Quick Connect"), uebersetzt("Code vom Fernseher eingeben"), zeichenAkzent = true) {
                 oeffnen(Ziel("quickconnect", "Quick Connect", "QuickConnect"))
             }
         }
         Spacer(Modifier.height(18.dp))
         Karte {
-            Profilzeile(Icons.Filled.PlayArrow, uebersetzt("Wiedergabe"), uebersetzt("Sprache, Untertitel, Tempo")) {
+            Profilzeile(Zeichen.Abspielen, uebersetzt("Wiedergabe"), uebersetzt("Sprache, Untertitel, Tempo")) {
                 oeffnen(Ziel("wiedergabe", uebersetzt("Wiedergabe"), "Wiedergabeeinstellungen"))
             }
             Trennlinie()
-            Profilzeile(Icons.Filled.GridView, uebersetzt("Darstellung"), uebersetzt("Startseite, Reihen, Genres")) {
+            Profilzeile(Zeichen.Raster, uebersetzt("Darstellung"), uebersetzt("Startseite, Reihen, Genres")) {
                 oeffnen(Ziel("darstellung", uebersetzt("Darstellung"), "Darstellung"))
             }
             Trennlinie()
-            Profilzeile(Icons.Filled.Settings, uebersetzt("Einstellungen")) {
+            Profilzeile(Zeichen.Zahnrad, uebersetzt("Einstellungen")) {
                 oeffnen(Ziel("einstellungen", uebersetzt("Einstellungen"), "Einstellungen"))
             }
         }
         Spacer(Modifier.height(18.dp))
         Karte {
-            Profilzeile(Icons.Filled.Dns, uebersetzt("Server hinzufügen"), uebersetzt("Ein zweiter Jellyfin, eigene Konten")) {
+            Profilzeile(Zeichen.Server, uebersetzt("Server hinzufügen"), uebersetzt("Ein zweiter Jellyfin, eigene Konten")) {
                 oeffnen(Ziel("serveraufnahme", uebersetzt("Server hinzufügen"), "ServerAufnahme"))
             }
             Trennlinie()
             // Betrifft nur das geltende Konto; bleiben andere, gilt danach das naechste.
-            Profilzeile(Icons.AutoMirrored.Filled.Logout, uebersetzt("Abmelden")) { app.abmelden() }
+            Profilzeile(Zeichen.Abmelden, uebersetzt("Abmelden")) { app.abmelden() }
         }
         Spacer(Modifier.height(18.dp))
         // **Bewerten, Discord, Fehler melden — ganz unten.** Stand in den
@@ -97,19 +95,25 @@ fun ProfilSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: () -> U
         // drosselt und nicht meldet, ob sie erschien.
         val kontext = androidx.compose.ui.platform.LocalContext.current
         Karte {
-            Profilzeile(Icons.Filled.StarOutline, uebersetzt("Swiftly bewerten"), uebersetzt("Im Play Store")) {
+            Profilzeile(Zeichen.Stern, uebersetzt("Swiftly bewerten"), uebersetzt("Im Play Store")) {
                 app.adresseOeffnen(kontext, app.gemeinschaftAdresse("play"))
             }
             Trennlinie()
-            Profilzeile(Icons.AutoMirrored.Filled.Chat, uebersetzt("Discord beitreten"), uebersetzt("Fragen stellen und sagen, was fehlt")) {
+            Profilzeile(Zeichen.Gespraech, uebersetzt("Discord beitreten"), uebersetzt("Fragen stellen und sagen, was fehlt")) {
                 app.adresseOeffnen(kontext, app.gemeinschaftAdresse("discord"))
             }
             Trennlinie()
-            Profilzeile(Icons.Filled.BugReport, uebersetzt("Fehler melden"), uebersetzt("Auf GitHub, deine App-Version ist schon eingetragen")) {
+            Profilzeile(Zeichen.Kaefer, uebersetzt("Fehler melden"), uebersetzt("Auf GitHub, deine App-Version ist schon eingetragen")) {
                 app.adresseOeffnen(kontext, app.gemeinschaftAdresse("fehler"))
             }
+            Trennlinie()
+            // Neben „Fehler melden", weil es dazugehoert: wer im Discord einen Fehler meldet, haengt das hier an.
+            Profilzeile(Zeichen.Dokument, uebersetzt("Protokoll teilen"), uebersetzt("Die letzte Stunde, ohne Zugangsdaten")) {
+                Protokolldatei.teilen(kontext)
+            }
         }
-        Text(SwiftlyAnwendung.FASSUNGSZEILE, style = TextStyle(fontSize = 12.sp), color = Color.White.copy(alpha = 0.3f),
+        // Weiss auf 30 Prozent ist gerechnet 2,67:1 und fuer Text verboten (BRAND 1).
+        Text(SwiftlyAnwendung.FASSUNGSZEILE, style = Stil.klein, color = Stil.schriftSehrLeise,
              modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 26.dp))
     }
 }
@@ -120,12 +124,15 @@ fun QuickConnectSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
     var code by remember { mutableStateOf("") }
     var laeuft by remember { mutableStateOf(false) }
     var meldung by remember { mutableStateOf<String?>(null) }
+    var geschafft by remember { mutableStateOf(false) }
     val lauf = rememberCoroutineScope()
     Einstellungsseite(uebersetzt("Quick Connect"), zurueck) {
         Column(Modifier.padding(horizontal = Stil.randAbstand).widthIn(max = Stil.formularbreite)) {
             Text(uebersetzt("Auf dem anderen Gerät steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an."),
                  style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise, modifier = Modifier.padding(top = 10.dp))
-            val ziffern = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum", textAlign = TextAlign.Center)
+            // 28 statt 34: die Ziffern sind hier der Gegenstand der Seite, also die Titelstufe.
+            val ziffern = Stil.titelGross.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp,
+                                               fontFeatureSettings = "tnum", textAlign = TextAlign.Center)
             BasicTextField(value = code, onValueChange = { code = it.filter(Char::isDigit).take(6) }, singleLine = true,
                 textStyle = ziffern.copy(color = Stil.schrift), cursorBrush = SolidColor(Stil.akzent),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -137,16 +144,19 @@ fun QuickConnectSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
                         feld()
                     }
                 })
-            meldung?.let { Text(it, style = TextStyle(fontSize = 13.sp), color = Stil.schriftLeise, modifier = Modifier.padding(top = 12.dp)) }
-            Box(Modifier.padding(top = 22.dp)) {
-                Spielknopf(Icons.Filled.Check, uebersetzt(if (laeuft) "Moment…" else "Freigeben"), an = !laeuft && code.length >= 4, haupt = true) {
-                    laeuft = true
-                    meldung = null
-                    lauf.launch {
-                        val grund = withContext(Dispatchers.IO) { app.kern.quickConnectFreigeben(code).await() }
-                        meldung = if (grund.isEmpty()) uebersetzt("Freigegeben. Das andere Gerät ist gleich angemeldet.") else fehlertext(grund)
-                        laeuft = false
-                    }
+            // Geschafft im Akzent, gescheitert in `fehler` — 13 Medium.
+            meldung?.let { Text(it, style = Stil.kachel, color = if (geschafft) Stil.akzent else Stil.fehler, modifier = Modifier.padding(top = 12.dp)) }
+            // `HauptknopfStil` ohne Zeichen; nach dem Freigeben geht die Seite nach zwei Sekunden von selbst.
+            de.paulherter.swiftly.gemeinsam.Hauptknopf(uebersetzt(if (laeuft) "Moment…" else "Freigeben"),
+                    freigegeben = !laeuft && code.length >= 4, modifier = Modifier.padding(top = 22.dp)) {
+                laeuft = true
+                meldung = null
+                lauf.launch {
+                    val grund = withContext(Dispatchers.IO) { app.kern.quickConnectFreigeben(code).await() }
+                    geschafft = grund.isEmpty()
+                    meldung = if (geschafft) uebersetzt("Freigegeben. Das andere Gerät ist gleich angemeldet.") else fehlertext(grund)
+                    laeuft = false
+                    if (geschafft) { kotlinx.coroutines.delay(2000); zurueck() }
                 }
             }
         }
@@ -174,45 +184,44 @@ fun WiedergabeEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
         val directPlay = e.immerDirectPlay || !frei
 
         Einstellungsgruppe(uebersetzt("Qualität")) {
-            Wahlzeile(Icons.Filled.PlayArrow, uebersetzt("Immer Direct Play"), uebersetzt("Der Server wandelt nie um, es läuft immer die Originaldatei"),
+            Wahlzeile(Zeichen.Abspielen, uebersetzt("Immer Direct Play"), uebersetzt("Der Server wandelt nie um, es läuft immer die Originaldatei"),
                       directPlay, gesperrt = !frei) { e.immerDirectPlay = it; app.qualitaetMelden() }
             Trennlinie()
             // Gedimmt, solange Direct Play erzwungen ist — dort griffe sie nicht.
-            Wertzeile(Icons.Filled.BarChart, uebersetzt("Höchste Bitrate"),
+            Wertzeile(Zeichen.Balken, uebersetzt("Höchste Bitrate"),
                       wert = bitraten.firstOrNull { it.wert == e.bitratenGrenze.toString() }?.text, gedimmt = directPlay) {
                 blatt(uebersetzt("Höchste Bitrate"), bitraten, e.bitratenGrenze.toString()) { e.bitratenGrenze = it.toInt(); app.qualitaetMelden() }
             }
         }
 
         Einstellungsgruppe(uebersetzt("Sprache")) {
-            Wertzeile(Icons.Filled.VolumeUp, uebersetzt("Ton"), wert = tonwahl.firstOrNull { it.wert == e.tonSprache }?.text) {
+            Wertzeile(Zeichen.Lautsprecher, uebersetzt("Ton"), wert = tonwahl.firstOrNull { it.wert == e.tonSprache }?.text) {
                 blatt(uebersetzt("Ton"), tonwahl, e.tonSprache) { e.tonSprache = it }
             }
             Trennlinie()
-            Wertzeile(Icons.Filled.ClosedCaption, uebersetzt("Untertitel"), wert = untertitelwahl.firstOrNull { it.wert == e.untertitelSprache }?.text) {
+            Wertzeile(Zeichen.Untertitel, uebersetzt("Untertitel"), wert = untertitelwahl.firstOrNull { it.wert == e.untertitelSprache }?.text) {
                 blatt(uebersetzt("Untertitel"), untertitelwahl, e.untertitelSprache) { e.untertitelSprache = it }
             }
             Trennlinie()
-            Wahlzeile(Icons.Filled.Subtitles, uebersetzt("Untertitel automatisch"), uebersetzt("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
+            Wahlzeile(Zeichen.Textblock, uebersetzt("Untertitel automatisch"), uebersetzt("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
                       e.untertitelAutomatisch) { e.untertitelAutomatisch = it }
         }
 
         Einstellungsgruppe(uebersetzt("Verhalten")) {
-            Wahlzeile(Icons.Filled.SkipNext, uebersetzt("Nächste Folge automatisch"), an = e.naechsteAutomatisch) { e.naechsteAutomatisch = it }
+            Wahlzeile(Zeichen.Ueberspringen, uebersetzt("Nächste Folge automatisch"), an = e.naechsteAutomatisch) { e.naechsteAutomatisch = it }
             Trennlinie()
-            Wahlzeile(Icons.Filled.Insights, uebersetzt("Technische Daten im Player"),
-                      uebersetzt("Zeigt Bildrate, Puffer und ausgelassene Bilder über dem Film."), e.technikschild) { e.technikschild = it }
+            Wahlzeile(Zeichen.Wellensuche, uebersetzt("Technische Daten im Player"), an = e.technikschild) { e.technikschild = it }
             Trennlinie()
-            Wertzeile(Icons.Filled.Replay, uebersetzt("Zurückspulen"), wert = uebersetzt("%lld s", e.zurueckSekunden)) {
+            Wertzeile(Zeichen.Zurueckspulen, uebersetzt("Zurückspulen"), wert = uebersetzt("%lld s", e.zurueckSekunden)) {
                 blatt(uebersetzt("Zurückspulen"), sekundenwahl(), e.zurueckSekunden.toString()) { e.zurueckSekunden = it.toInt() }
             }
             Trennlinie()
-            Wertzeile(Icons.Filled.FastForward, uebersetzt("Vorspulen"), wert = uebersetzt("%lld s", e.vorSekunden)) {
+            Wertzeile(Zeichen.Vorspulen, uebersetzt("Vorspulen"), wert = uebersetzt("%lld s", e.vorSekunden)) {
                 blatt(uebersetzt("Vorspulen"), sekundenwahl(), e.vorSekunden.toString()) { e.vorSekunden = it.toInt() }
             }
             Trennlinie()
             // Unter Verhalten, nicht Qualitaet: der Puffer aendert die Ausdauer, nicht das Bild.
-            Wertzeile(Icons.Filled.Wifi, uebersetzt("Puffer"), wert = puffer.firstOrNull { it.wert == e.pufferstufe }?.text) {
+            Wertzeile(Zeichen.WlanStoerung, uebersetzt("Puffer"), wert = puffer.firstOrNull { it.wert == e.pufferstufe }?.text) {
                 blatt(uebersetzt("Puffer"), puffer, e.pufferstufe) { e.pufferstufe = it }
             }
         }
@@ -228,9 +237,9 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
     val e = app.einstellungen
     Einstellungsseite(uebersetzt("Darstellung"), zurueck) {
         Einstellungsgruppe(uebersetzt("Allgemein")) {
-            Wahlzeile(Icons.Filled.ScreenRotation, uebersetzt("Querformat im Player sperren"), an = e.querformatFest) { e.querformatFest = it }
+            Wahlzeile(Zeichen.Rechtecke, uebersetzt("Querformat im Player sperren"), an = e.querformatFest) { e.querformatFest = it }
             Trennlinie()
-            Wahlzeile(Icons.Filled.BarChart, uebersetzt("Fortschritt auf Kacheln"), an = e.fortschritt) { e.fortschritt = it }
+            Wahlzeile(Zeichen.BalkenVoll, uebersetzt("Fortschritt auf Kacheln"), an = e.fortschritt) { e.fortschritt = it }
         }
 
         Einstellungsgruppe(uebersetzt("Startseite")) {
@@ -241,21 +250,29 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
                 e.startReihen = JSONArray(Kern.startreiheVerschoben(r.wert, schritt.toLong(), e.startReihen.toTypedArray(), e.neuzugangGetrennt))
                     .let { a -> (0 until a.length()).map { a.getString(it) } }
             }) { r ->
-                Wahlzeile(Icons.Filled.ViewAgenda, uebersetzt(r.text), an = r.wert !in e.startAus) { an ->
+                // Jede Reihe mit ihrem eigenen Zeichen (`Startreihe.symbol`).
+                val zeichen = when (r.wert) {
+                    "weiterschauen" -> Zeichen.AbspielenKreis
+                    "naechsteFolge" -> Zeichen.UeberspringenUmriss
+                    "neueFilme" -> Zeichen.Film
+                    "neueSerien" -> Zeichen.Fernseher
+                    else -> Zeichen.Funkeln
+                }
+                Wahlzeile(zeichen, uebersetzt(r.text), an = r.wert !in e.startAus) { an ->
                     e.startAus = if (an) e.startAus - r.wert else e.startAus + r.wert
                 }
             }
             Trennlinie()
-            Wahlzeile(Icons.Filled.VerticalSplit, uebersetzt("Neuzugänge getrennt"), uebersetzt("Neue Filme und neue Serien als eigene Reihen"),
+            Wahlzeile(Zeichen.Geteilt, uebersetzt("Neuzugänge getrennt"), uebersetzt("Neue Filme und neue Serien als eigene Reihen"),
                       e.neuzugangGetrennt) { e.neuzugangGetrennt = it }
         }
         Fusszeile(uebersetzt("Zum Umsortieren an den Griffen rechts ziehen."))
 
         Einstellungsgruppe(uebersetzt("Genres")) {
             // Eine Liste, zwei Formen.
-            Darstellungsform(Icons.Filled.ViewAgenda, uebersetzt("Als eigene Reihen"), !e.genreChips) { e.genreChips = false }
+            Darstellungsform(Zeichen.Zeilen, uebersetzt("Als eigene Reihen"), !e.genreChips) { e.genreChips = false }
             Trennlinie()
-            Darstellungsform(Icons.Filled.ViewCarousel, uebersetzt("Als Chips über den Reihen"), e.genreChips) { e.genreChips = true }
+            Darstellungsform(Zeichen.Kapsel, uebersetzt("Als Chips über den Reihen"), e.genreChips) { e.genreChips = true }
             if (e.startGenres.isNotEmpty()) Trennlinie()
             Umsortierbar(e.startGenres, { it }, verschieben = { g, schritt ->
                 val liste = e.startGenres.toMutableList()
@@ -264,9 +281,10 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
                 if (von >= 0 && von != nach) { liste.removeAt(von); liste.add(nach, g); e.startGenres = liste }
             }) { g ->
                 Row(Modifier.fillMaxWidth().padding(start = Stil.randAbstand).height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(g, style = TextStyle(fontSize = 15.sp), color = Stil.schrift, modifier = Modifier.weight(1f))
+                    // Der Genrename in 15 Regular — er ist ein Eintrag, keine Zeile mit Titel.
+                    Text(g, style = Stil.koerper, color = Stil.schrift, modifier = Modifier.weight(1f))
                     Box(Modifier.size(44.dp).antippen { e.startGenres = e.startGenres - g }, contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.RemoveCircleOutline, contentDescription = uebersetzt("Löschen"), tint = Stil.schriftSehrLeise, modifier = Modifier.size(20.dp))
+                        Symbol(Zeichen.KreuzKreis, 17.dp, farbe = Stil.schriftSehrLeise, beschreibung = uebersetzt("Löschen"))
                     }
                 }
             }
@@ -274,18 +292,20 @@ fun DarstellungSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: ()
             Row(Modifier.fillMaxWidth().druckzeile { oeffnen(Ziel("genrewahl", uebersetzt("Genre hinzufügen"), "Genrewahl")) }
                     .padding(horizontal = Stil.randAbstand, vertical = 15.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = Stil.akzent, modifier = Modifier.width(20.dp))
-                Text(uebersetzt("Genre hinzufügen"), style = TextStyle(fontSize = 15.sp), color = Stil.akzent)
+                Box(Modifier.width(Stil.zeichenSpalte), contentAlignment = Alignment.Center) { Symbol(Zeichen.Plus, 15.dp, farbe = Stil.akzent, staerke = Staerke.Halbfett) }
+                Text(uebersetzt("Genre hinzufügen"), style = Stil.listentitel, color = Stil.akzent)
             }
         }
     }
 }
 
 @Composable
-private fun Darstellungsform(symbol: ImageVector, titel: String, gewaehlt: Boolean, waehlen: () -> Unit) {
-    // Wie die Zeilen darüber: Symbol, Titel, Haken — nicht kleiner.
-    Zeilenaufbau(symbol, titel, null, Stil.schrift, Modifier.druckzeile(waehlen)) {
-        if (gewaehlt) Icon(Icons.Filled.Check, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(16.dp))
+private fun Darstellungsform(symbol: Zeichen, titel: String, gewaehlt: Boolean, waehlen: () -> Unit) {
+    // **Gewaehlt heisst Weiss und Grund, nicht Farbe**: der Haken in Weiss, die Zeile auf `erhoeht`.
+    // Der Akzent traegt Zustand, keine Rangfolge unter Geschwistern.
+    Zeilenaufbau(symbol, titel, null, Stil.schrift,
+                 Modifier.background(if (gewaehlt) Stil.erhoeht else Color.Transparent).antippen(waehlen)) {
+        if (gewaehlt) Symbol(Zeichen.Haken, 13.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett)
     }
 }
 
@@ -301,16 +321,16 @@ fun EinstellungenSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: 
         if (!app.istFernseher) OfflineGruppe(app)
         // Integration vor Server: ein zweiter Dienst, kein zweiter Server.
         Einstellungsgruppe(uebersetzt("Integration")) {
-            Wertzeile(Icons.Filled.ManageSearch, "Seerr", uebersetzt("Anfragen, was noch nicht da ist"),
+            Wertzeile(Zeichen.FunkelnSuche, "Seerr", uebersetzt("Anfragen, was noch nicht da ist"),
                       wert = if (app.seerrVerbunden.value) uebersetzt("Verbunden") else null) {
                 oeffnen(Ziel("seerr", "Seerr", "Seerr"))
             }
         }
         Einstellungsgruppe(uebersetzt("Server")) {
-            Wertzeile(Icons.Filled.Storage, server?.first?.takeIf { it.isNotEmpty() } ?: app.servername.value.orEmpty().ifEmpty { "Jellyfin" },
+            Wertzeile(Zeichen.Server, server?.first?.takeIf { it.isNotEmpty() } ?: app.servername.value.orEmpty().ifEmpty { "Jellyfin" },
                       wert = server?.second ?: "?")
             Trennlinie()
-            Wertzeile(Icons.Filled.Wifi, uebersetzt("Verbindung prüfen"), unter = ergebnis,
+            Wertzeile(Zeichen.Wlan, uebersetzt("Verbindung prüfen"), unter = ergebnis,
                       wert = if (prueft) uebersetzt("Moment…") else null,
                       tun = if (prueft) null else { {
                           prueft = true
@@ -322,8 +342,16 @@ fun EinstellungenSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit, zurueck: 
                               prueft = false
                           }
                       } })
+            Trennlinie()
+            // **Eigene Header, Issue #4.** Nur fuer Server hinter einem Dienst wie Cloudflare Access;
+            // alle anderen gehen nie hinein.
+            val anzahl = remember(app.kontowechsel.intValue) { org.json.JSONArray(app.eigeneKoepfe(app.aktiverServer())).length() }
+            Wertzeile(Zeichen.Schluessel, uebersetzt("Eigene Header"), uebersetzt("Für einen Dienst vor dem Server"),
+                      wert = if (anzahl == 0) null else anzahl.toString()) {
+                oeffnen(Ziel("eigenkoepfe", uebersetzt("Eigene Header"), "EigeneKoepfe"))
+            }
         }
-        Text("${SwiftlyAnwendung.FASSUNGSZEILE} · libVLC 3.6.3", style = TextStyle(fontSize = 12.sp), color = Color.White.copy(alpha = 0.3f),
+        Text("${SwiftlyAnwendung.FASSUNGSZEILE} · libVLC 3.6.3", style = Stil.klein, color = Stil.schriftSehrLeise,
              modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 26.dp))
     }
 }
@@ -344,12 +372,13 @@ fun GenrewahlSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
         if (frei.isEmpty()) {
             // Zwei Faelle, zwei Saetze: der Server hat keine, oder alle stehen schon da.
             Text(uebersetzt(if (liste.isEmpty()) "Auf deinem Server sind keine Genres hinterlegt." else "Alle Genres stehen schon auf der Startseite."),
-                 style = Stil.koerper, color = Stil.schriftLeise, modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 20.dp))
+                 style = Stil.koerper, color = Stil.schriftLeise, modifier = Modifier.padding(horizontal = Stil.randAbstand).padding(top = 8.dp))
         } else {
-            Karte {
+            Einstellungsgruppe(uebersetzt("Auf deinem Server")) {
                 frei.forEachIndexed { i, g ->
                     if (i > 0) Trennlinie()
-                    Wertzeile(Icons.Filled.Tag, g, tun = { e.startGenres = e.startGenres + g; zurueck() })
+                    // Die ganze Zeile ist der Knopf, ohne Winkel — sie fuehrt nirgends hin, sie nimmt auf.
+                    Box(Modifier.antippen { e.startGenres = e.startGenres + g; zurueck() }) { Wertzeile(Zeichen.Etikett, g) }
                 }
             }
         }

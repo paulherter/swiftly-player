@@ -1,5 +1,8 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,8 +17,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -74,7 +75,7 @@ fun TvBesetzungsstreifen(leute: List<Mitwirkender>, herkunft: String? = null,
                 Fokusflaeche(tun = { oeffnen(Ziel(p.id, p.name, "Person", p.rolle, herkunft)) }) {
                     Box(Modifier.size(TvStil.posterBreite).clip(CircleShape).background(Stil.flaeche),
                         contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(36.dp))
+                        Symbol(Zeichen.PersonVoll, 30.dp, farbe = Stil.schriftSehrLeise)
                         AsyncImage(model = p.bild, contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                     }
                 }

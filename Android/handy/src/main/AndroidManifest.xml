@@ -10,6 +10,8 @@
     <application
         android:name=".SwiftlyAnwendung"
         android:label="Swiftly"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:banner="@drawable/tv_banner"
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/netz_vertrauen"
@@ -68,5 +70,15 @@
             android:name=".DownloadDienst"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <!-- „Protokoll teilen": gibt genau die eine Datei an das Teilen-Blatt (`Protokolldatei`). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.protokoll"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/protokoll_pfade" />
+        </provider>
     </application>
 </manifest>

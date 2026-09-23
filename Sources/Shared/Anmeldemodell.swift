@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import JellyfinKit
 
 /// Was der Anmeldebildschirm über den letzten Server weiß.
@@ -32,6 +33,37 @@ extension AppModel {
         let e = Servererinnerung(adresse: adresse, name: name, version: version)
         guard let roh = try? JSONEncoder().encode(e) else { return }
         UserDefaults.standard.set(roh, forKey: Self.erinnerungsSchluessel)
+    }
+
+    // MARK: - Eigene Header (Issue #4)
+
+    /// Ein Eintrag für alle Server: die ganze Tafel aus ``Eigenkoepfe``.
+    private static let koepfeSchluessel = "eigenkoepfe"
+
+    /// Beim Start, vor der ersten Anfrage.
+    static func eigeneKoepfeLaden() {
+        Eigenkoepfe.laden(Keychain.load(key: koepfeSchluessel))
+    }
+
+    /// Was für einen Server eingetragen ist — für „Erweitert".
+    func eigeneKoepfe(fuer server: URL?) -> [Eigenkopf] {
+        server.map(Eigenkoepfe.eingetragen(fuer:)) ?? []
+    }
+
+    /// Setzen und ablegen. Eine leere Liste nimmt den Server heraus.
+    ///
+    /// **In den Schlüsselbund, nicht in die Einstellungen** — die Werte sind
+    /// Zugänge wie das Merkmal selbst. Und ins Protokoll gehen nur die Namen.
+    func eigeneKoepfeSichern(_ koepfe: [Eigenkopf], fuer server: URL) {
+        Eigenkoepfe.setzen(koepfe, fuer: server)
+        let tafel = Eigenkoepfe.ablage()
+        if tafel == Data("{}".utf8) {
+            Keychain.delete(key: Self.koepfeSchluessel)
+        } else {
+            try? Keychain.save(tafel, key: Self.koepfeSchluessel)
+        }
+        let namen = Eigenkoepfe.namen(Eigenkoepfe.eingetragen(fuer: server))
+        Self.log.info("Eigene Header gesichert: \(namen, privacy: .public)")
     }
 
     // MARK: - Wer schaut
@@ -92,4 +124,29 @@ extension AppModel {
     /// Linux-Fassung unerreichbar — dort stand bei jeder fehlgeschlagenen
     /// Anmeldung roh `error.localizedDescription`, was gegen D3 verstoesst.
     func lesbar(_ fehler: any Error) -> String { lesbarerFehler(fehler) }
+}
+
+/// Eine Zeile in „Erweitert" — Name und Wert eines eigenen Headers.
+///
+/// **Eine eigene Kennung, nicht der Index.** Wer die zweite von drei Zeilen
+/// entfernt, soll nicht zusehen, wie der Wert der dritten in die zweite
+/// rutscht, während er noch tippt.
+struct Kopfzeile: Identifiable, Equatable {
+    let id = UUID()
+    var name = ""
+    var wert = ""
+
+    /// Den setzt Swiftly selbst — die Zeile sagt es, statt still nichts zu tun.
+    var gesperrt: Bool { Eigenkoepfe.istGesperrt(name) }
+
+    static func aus(_ koepfe: [Eigenkopf]) -> [Kopfzeile] {
+        koepfe.map { Kopfzeile(name: $0.name, wert: $0.wert) }
+    }
+}
+
+extension Array where Element == Kopfzeile {
+    /// Was davon hinausgehen darf — über dieselbe Schleuse wie überall.
+    var koepfe: [Eigenkopf] {
+        Eigenkoepfe.bereinigt(map { Eigenkopf(name: $0.name, wert: $0.wert) })
+    }
 }

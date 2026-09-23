@@ -1,5 +1,6 @@
 import CoreGraphics
 import ImageIO
+import JellyfinKit
 import SwiftUI
 
 /// Die vorherrschende Farbe eines Bildes.
@@ -30,7 +31,7 @@ final class Bildfarbe {
         // Adresse trotzdem als erledigt und wurde nie wieder versucht: der
         // Kopf behielt den Ton der vorigen Seite. Dieselbe Klasse Fehler wie
         // ein Zustand, der gesetzt wird, bevor die Sache geglückt ist.
-        guard let (daten, _) = try? await URLSession.shared.data(from: url) else { return }
+        guard let (daten, _) = try? await URLSession.shared.data(for: .mitEigenenKoepfen(url)) else { return }
         geladen = url
         // Dekodieren und rechnen abseits des Hauptlaufs.
         let gerechnet = await Task.detached(priority: .utility) {
@@ -38,15 +39,29 @@ final class Bildfarbe {
         }.value
         guard let werte = gerechnet else { return }
         // Abdunkeln und entsättigen: der Ton soll den Grundton einfärben,
-        // nicht ersetzen. 26 % Helligkeit liegt nah an `Stil.grund` (5 %),
-        // bleibt aber erkennbar warm oder kalt.
+        // nicht ersetzen.
+        //
+        // **Die Toenung ist nie heller als `Stil.flaeche`.** Sie stand auf
+        // 26 %, und das ist heller als `erhoeht` (18,8 %), also heller als
+        // die hellste Stufe der Leiter. Nachgerechnet fuer die Knopfreihe
+        // unter dem Abspielknopf: der Verlauf laeuft ueber `heldHoehe + 260`
+        // = 640 Punkt, die Reihe sitzt mit ihrer Mitte bei 356, also bei
+        // 55,6 % — dort kam 0,26 − (0,26 − 0,063) × 0,556 = **0,150** heraus.
+        // `Stil.flaeche` ist 0,149. Die Knoepfe standen damit auf genau
+        // ihrer eigenen Farbe und waren als Knoepfe nicht mehr zu sehen;
+        // Paul am 22.09.: „die Buttons sind doch viel heller" als am iPhone,
+        // wo dieselbe Reihe auf `grund` steht.
+        //
+        // 14,6 % ist der groesste Wert, bei dem die Toenung unter `flaeche`
+        // bleibt. An der Knopfreihe kommen damit 0,101 an — eine volle Stufe
+        // unter den Knoepfen. Oben bleibt der Ton sichtbar, nur ruhiger.
         // **Nicht springen.** Der Ton färbt einen bildschirmhohen Verlauf;
         // schlägt er ohne Anweisung um, blitzt die halbe Seite die Farbe
         // gewechselt auf. Das kommt aus dem Netz und trifft die Seite
         // irgendwann — oft mitten im Hereinfahren.
         withAnimation(.easeInOut(duration: 0.40)) {
             ton = Color(hue: werte.farbton, saturation: min(werte.saettigung, 0.45),
-                        brightness: 0.26)
+                        brightness: 0.146)
         }
     }
 

@@ -16,7 +16,7 @@
 ; `Windows\Startprogramm\startprogramm.c`.
 
 #define Name "Swiftly"
-#define Fassung "1.0.3"
+#define Fassung "1.0.4"
 #define Herausgeber "Paul Herter"
 #define Netz "https://github.com/paulherter/swiftly-player"
 #define Programm "Swiftly.exe"

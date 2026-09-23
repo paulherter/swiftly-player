@@ -26,6 +26,9 @@ struct SeerrDetailView: View {
     @Environment(\.breit) private var breit
 
     /// Wie weit gescrollt wurde — der Kopf blendet danach ein. Wie dort.
+    /// Wie hoch die Staffelliste zusammen ist — gemessen, damit das Blatt
+    /// nicht hoeher wird als sein Inhalt.
+    @State private var listenhoehe: CGFloat = 0
     @State private var versatz: CGFloat = 0
 
     @State private var stand: Seerrstand
@@ -33,6 +36,11 @@ struct SeerrDetailView: View {
     @State private var fehler: String?
     @State private var angefragt = false
     @State private var detail: Seerrdetail?
+    /// **Der Unterschied, den die Seite bisher nicht kannte.** `detail` blieb
+    /// bei einem stummen Jellyseerr auf `nil`, und Beschreibung, Staffeln,
+    /// Besetzung und Ähnliches verschwanden wortlos — die Seite sah aus wie
+    /// ein Titel, über den es nichts zu sagen gibt.
+    @State private var detailGestoert = false
     /// Welche Staffeln angekreuzt sind. Leer heisst **alle** — so wie beim
     /// ersten Oeffnen, wo niemand etwas ausgewaehlt hat.
     @State private var gewaehlt: Set<Int> = []
@@ -41,6 +49,9 @@ struct SeerrDetailView: View {
     /// Anfrage sonst einen Fingerbreit entfernt Bei einer Serie fragt das
     /// Staffelblatt ohnehin nach, das ist dort der zweite Schritt.
     @State private var bestaetigt = false
+    /// Welche der vier Bestaetigungen gerade dasteht. Wird beim Antippen
+    /// gezogen, nicht beim Zeichnen.
+    @State private var fassung = 0
 
     init(model: AppModel, treffer: Seerrtreffer) {
         self.model = model
@@ -101,8 +112,15 @@ struct SeerrDetailView: View {
                     // und deutet den Rest an; wer mehr will, schiebt.
                     besetzung
                     aehnlichesreihe
+                    if detailGestoert {
+                        // Hier steht Seerrs Adresse, nicht die des eigenen
+                        // Servers: der eigene laeuft, sonst waere man nicht
+                        // auf dieser Seite.
+                        Stoerhinweis(model: model, erneut: { Task { await detailLaden() } },
+                                     adresse: model.seerr.adresse)
+                    }
                 }
-                .padding(.bottom, 30)
+                .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
             // Der Raum, in dem `Heldbild` seine Dehnung misst. Fehlte er,
@@ -142,12 +160,16 @@ struct SeerrDetailView: View {
             guard !Task.isCancelled else { return }
             bestaetigt = false
         }
-        .task {
-            detail = await model.seerr.detail(treffer)
-            // **Nichts vorausgewaehlt.** „Man laedt ja nie alle runter im
-            // Normalfall" — wer alles will, kreuzt alles an; wer eine will,
-            // muss nicht erst acht abwaehlen.
-        }
+        // **Nichts vorausgewaehlt.** „Man laedt ja nie alle runter im
+        // Normalfall" — wer alles will, kreuzt alles an; wer eine will, muss
+        // nicht erst acht abwaehlen.
+        .task { await detailLaden() }
+    }
+
+    private func detailLaden() async {
+        let geholt = await model.seerr.detail(treffer)
+        detailGestoert = geholt == nil
+        if let geholt { detail = geholt }
     }
 
     // MARK: Teile
@@ -161,10 +183,13 @@ struct SeerrDetailView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(verbatim: treffer.titel)
                         .font(Stil.titel)
-                        .tracking(-0.6)
+                        .tracking(Stil.sperrungTitel)
                         .foregroundStyle(Stil.schrift)
                     Text(verbatim: nebenzeile)
-                        .font(.system(size: 14))
+                        // Jahr, Laufzeit, Genre sind eine Angabe: 12, wie
+                        // unter jedem anderen Heldbild. Vorher 13 Regular —
+                        // eine Stufe, die es nicht gibt.
+                        .font(Stil.klein)
                         .foregroundStyle(Stil.schriftLeise)
                         .lineLimit(1)
                 }
@@ -249,10 +274,33 @@ struct SeerrDetailView: View {
         }
     }
 
+    /// **Die zweite Stufe sagt, was zu tun ist.**
+    ///
+    /// Vorher stand dort „Wirklich anfragen?" — Paul am 21.09.: „Man versteht
+    /// nicht, dass man nochmal drücken muss." Ein Knopf, auf dem eine Frage
+    /// steht, ist eine Frage ohne Antwort: man weiss nicht, ob Druecken
+    /// bestaetigt oder abbricht. Jede Fassung faengt deshalb mit „Nochmal" an
+    /// — die Anweisung vorn, die Pointe dahinter.
+    ///
+    /// Vier Fassungen, und gewuerfelt wird **einmal**, beim Antippen: sonst
+    /// wechselte der Text unter dem Finger, sobald die Ansicht neu zeichnet.
+    /// Dieselbe zweimal hintereinander kommt nicht.
+    ///
+    /// Kein Emoji: das Zeichen bleibt der Haken, und die Laune steckt im Wort.
+    /// Sobald Seerr ein Zuruecknehmen kann, faellt die Rueckfrage ganz weg —
+    /// dann geschieht die Anfrage sofort und bietet „Rueckgaengig" an, so wie
+    /// es in `BRAND.md` steht. Dafuer fehlt im Modell der Aufruf zum
+    /// Zurueckziehen; solange er fehlt, waere ein Tipp ohne Rueckfrage nicht
+    /// umkehrbar.
+    private static let bestaetigungen: [LocalizedStringResource] = [
+        "Nochmal, dann läuft’s", "Nochmal — ab die Post",
+        "Nochmal, dann frag ich", "Nochmal, her damit"
+    ]
+
     private var knopftext: String {
         if laeuft { return String(localized: "Wird angefragt…") }
-        return bestaetigt ? String(localized: "Wirklich anfragen?")
-                          : String(localized: "Anfragen")
+        guard bestaetigt else { return String(localized: "Anfragen") }
+        return String(localized: Self.bestaetigungen[fassung])
     }
 
     /// **Zwei Stufen, und die zweite ist der eigentliche Auftrag.**
@@ -267,6 +315,9 @@ struct SeerrDetailView: View {
             return
         }
         guard bestaetigt else {
+            // Einmal wuerfeln, und nicht dieselbe wie zuletzt.
+            let andere = (0 ..< Self.bestaetigungen.count).filter { $0 != fassung }
+            fassung = andere.randomElement() ?? 0
             bestaetigt = true
             return
         }
@@ -316,7 +367,7 @@ struct SeerrDetailView: View {
                         NavigationLink(value: t) {
                             Seerrkachel(treffer: t).frame(width: Stil.kachelBreite)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
@@ -332,7 +383,11 @@ struct SeerrDetailView: View {
 
     private func auskunft(_ text: String) -> some View {
         Text(verbatim: text)
-            .font(Stil.koerper)
+            // **Mitwachsend, nicht fest** — BRAND.md, Abschnitt 2. Gilt für die
+            // Auskunft, die Staffelzeilen und den Knopf im Blatt; ihre Höhen
+            // sind deshalb Mindesthöhen. Fest bleiben der Seitentitel über dem
+            // Heldbild und seine Nebenzeile: die Leiste dort trägt ein Bild.
+            .mitwachsend(15)
             .foregroundStyle(Stil.schriftLeise)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -340,7 +395,7 @@ struct SeerrDetailView: View {
             // Flaechenmass, nicht Feldmass: der Kasten ist eine Flaeche,
             // kein Eingabefeld. Er stand auf 10, weil das die Zahl war, die
             // gerade in der Naehe stand.
-            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
+            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous))
     }
 
     // MARK: Staffeln
@@ -360,30 +415,34 @@ struct SeerrDetailView: View {
             } label: {
                 HStack(spacing: 10) {
                     Text("Staffel \(st.nummer)")
-                        .font(Stil.koerper)
+                        .mitwachsend(15)
                         .foregroundStyle(st.stand.anfragbar ? Stil.schrift
                                                             : Stil.schriftSehrLeise)
                     if st.folgen > 0 {
                         Text("· \(st.folgen) Folgen")
-                            .font(Stil.klein).foregroundStyle(Stil.schriftSehrLeise)
+                            .mitwachsend(12).foregroundStyle(Stil.schriftSehrLeise)
                     }
                     Spacer(minLength: 8)
                     if st.stand.anfragbar {
                         Image(systemName: gewaehlt.contains(st.nummer)
                                 ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 19))
+                            .font(.system(size: 17))
                             .foregroundStyle(gewaehlt.contains(st.nummer)
                                 ? Stil.akzent : Stil.schriftSehrLeise)
                     } else {
                         Text(st.stand == .da ? "vorhanden" : "unterwegs")
-                            .font(Stil.klein).foregroundStyle(Stil.schriftSehrLeise)
+                            .mitwachsend(12).foregroundStyle(Stil.schriftSehrLeise)
                     }
                 }
                 .padding(.horizontal, Stil.randAbstand)
-                .frame(height: 50)
+                .frame(minHeight: 50)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(Stil.Druckzeile())
+            // Das Kreuz im Kaestchen ist der Akzent, und der Akzent ist
+            // Farbe: vorgelesen klang eine angekreuzte Staffel wie jede
+            // andere. `.isSelected` sagt den Zustand mit.
+            .accessibilityAddTraits(gewaehlt.contains(st.nummer) ? .isSelected : [])
         }
     }
 
@@ -395,8 +454,23 @@ struct SeerrDetailView: View {
 
         ScrollView {
             VStack(spacing: 0) { staffelliste }
+                // Gemessen, nicht angenommen.
+                .onGeometryChange(for: CGFloat.self) { $0.size.height }
+                    action: { listenhoehe = $0 }
         }
-        .frame(maxHeight: 320)
+        // **So hoch wie die Staffeln, hoechstens 320.**
+        //
+        // Hier stand `.frame(maxHeight: 320)`, und das reicht nicht: eine
+        // `ScrollView` ist senkrecht gierig und nimmt sich die 320 auch dann,
+        // wenn drei Staffeln nur 150 brauchen. Uebrig blieb ein Hohlraum von
+        // gut zwei Zentimetern unter der letzten Zeile, der nichts tut. Paul
+        // am 22.09.: „da sind so 2 cm frei, als waere da etwas, was aber eben
+        // nicht da ist."
+        //
+        // Dieselbe Rechnung wie im `Auswahlblatt`, wo sie samt Begruendung
+        // schon steht.
+        .frame(height: min(listenhoehe, 320))
+        .scrollIndicators(.hidden)
 
         // Über die volle Breite, weil der Knopf darunter es auch ist.
         Blattlinie()
@@ -407,12 +481,12 @@ struct SeerrDetailView: View {
         } label: {
             Text(gewaehlt.isEmpty ? "Staffel wählen"
                                   : "\(gewaehlt.count) anfragen")
-                .font(.system(size: 16, weight: .semibold))
+                .mitwachsend(15, .semibold)
                 .foregroundStyle(gewaehlt.isEmpty ? Stil.schriftSehrLeise : Stil.akzent)
                 .frame(maxWidth: .infinity)
-                .frame(height: 54)
+                .frame(minHeight: 54)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckzeile())
         .disabled(gewaehlt.isEmpty)
     }
 

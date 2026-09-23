@@ -1,8 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Banner fuer den Fernseh-Starter: Grund und ein Abspielzeichen im Akzent. -->
+<!-- Banner fuer den Fernseh-Starter, 320 × 180.
+
+     **Markenflaeche #17181B, nicht der App-Grund #101010** — dasselbe Paar wie im
+     App-Zeichen und auf Apple (`Marken.markeFlaeche` / `markeAkzent`). Das Banner ist
+     eine Markenkachel, keine Seite; zwei verschiedene dunkle Toene fuer dieselbe
+     Rolle waere genau der Unterschied, der nichts zurueckzahlt.
+
+     Das Zeichen ist **der Pfad der Marke** (`Marken.signetForm`), nicht mehr ein von
+     Hand gezogenes Dreieck: Icon, Banner und Startvorhang zeigen damit dieselbe Form.
+     Der Pfad liegt in seinem eigenen Feld von 1024; es wird auf 124 gelegt und
+     mittig gesetzt, dann ist das Zeichen 56 hoch — knapp ein Drittel der Bannerhoehe,
+     so wie auf tvOS.
+
+         Massstab   124 / 1024 = 0,12109375
+         Versatz    x (320 − 124) / 2 = 98      y (180 − 124) / 2 = 28 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="320dp" android:height="180dp"
     android:viewportWidth="320" android:viewportHeight="180">
-    <path android:fillColor="#0B0B0D" android:pathData="M0,0h320v180h-320z" />
-    <path android:fillColor="#5CD1C2" android:pathData="M142,64 L182,90 L142,116 Z" />
+    <path android:fillColor="#17181B" android:pathData="M0,0h320v180h-320z" />
+    <group android:scaleX="0.12109375" android:scaleY="0.12109375"
+           android:translateX="98" android:translateY="28">
+        <path android:fillColor="#50D5DA"
+              android:pathData="M440.1,280l285,163.2c38,21.7,51.2,70,29.6,108-7,12.3-17.2,22.5-29.6,29.6l-285,163.2c-37.9,21.8-86.3,8.6-108.1-29.3-6.9-12-10.5-25.6-10.5-39.4v-326.6c0-43.7,35.5-79.2,79.2-79.2,13.8,0,27.4,3.6,39.4,10.5Z" />
+    </group>
 </vector>

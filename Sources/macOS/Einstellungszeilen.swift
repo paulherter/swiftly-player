@@ -11,11 +11,6 @@ import SwiftUI
 /// sie leuchten beim Schweben auf, und die Werteliste klappt an Ort und Stelle
 /// auf statt als Blatt von unten.
 
-/// Haarlinie, 1 Bildpunkt, Weiß 7 %.
-struct Trennstrich: View {
-    var body: some View { Rectangle().fill(Stil.linie).frame(height: 1) }
-}
-
 /// **Eine Gruppe als eigene Flaeche.**
 ///
 /// Sie trug ihre Zeilen randbuendig zwischen zwei Haarlinien — die aeltere
@@ -32,27 +27,47 @@ struct Karte<Inhalt: View>: View {
 
     var body: some View {
         VStack(spacing: 0) { inhalt }
-            .background(Stil.flaeche,
-                        in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche))
+            // Karte = 14, nicht 16: 16 gehoert eigenen Flaechen und Tafeln,
+            // 14 den Karten und Gruppen. Und `gruppenflaeche` statt
+            // `flaeche`: ein grosser Block traegt denselben Ton heller als
+            // ein Knopf — die Begruendung steht am Token.
+            .background(Stil.gruppenflaeche,
+                        in: RoundedRectangle(cornerRadius: Stil.eckeKarte, style: .continuous))
     }
 }
 
-/// Gruppe mit gesperrtem Titel, darunter die Karte.
+/// **Normalschreibung, nicht Versalien.**
+///
+/// Er stand in 11 Punkt, in Grossbuchstaben, mit 1,2 gesperrt und in einem
+/// eigenen „weiss 40 %" — das Muster aus iOS 6, das Apple seit Jahren nicht
+/// mehr setzt. In der TV-App steht ueber einer Gruppe schlicht
+/// „Automatische Wiedergabe": derselbe Grad wie eine Reihenueberschrift, in
+/// gedaempftem Ton, normal geschrieben.
+///
+/// Und 11 Punkt war der kleinste Grad der App ueber einer Gruppe, deren
+/// Zeilen 15 tragen — die Ueberschrift war leiser als das, was sie
+/// ueberschreibt.
+struct Gruppentitel: View {
+    let text: LocalizedStringKey
+    var body: some View {
+        Text(text)
+            .font(Stil.reihe)
+            .tracking(Stil.sperrungReihe)
+            .foregroundStyle(Stil.schriftLeise)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Gruppe mit Titel, darunter die Karte.
 struct Einstellungsgruppe<Inhalt: View>: View {
     let titel: LocalizedStringKey
     @ViewBuilder let inhalt: Inhalt
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Kein `uppercased()`: aus einem Schlüssel lässt sich keine
-            // Zeichenkette machen, ohne die Übersetzung zu verlieren.
-            Text(titel)
-                .textCase(.uppercase)
-                .font(.system(size: 11, weight: .medium))
-                .tracking(1.2)
-                .foregroundStyle(Stil.schrift.opacity(0.4))
+            Gruppentitel(text: titel)
                 .padding(.top, 26)
-                .padding(.bottom, 8)
+                .padding(.bottom, 10)
             Karte { inhalt }
         }
     }
@@ -75,28 +90,52 @@ private struct Zeilenrumpf<Rechts: View>: View {
     @ViewBuilder let rechts: Rechts
 
     var body: some View {
+        // Zeichen 15 in einer 20 breiten Spalte, 14 Abstand zum Text,
+        // Titel 15 Semifett, Unterzeile 12 in `schriftSehrLeise`
+        // (BAUTEILE 6). Die Unterzeile trug „weiss 45 %" — eine vierte
+        // Schriftstufe neben den drei, die es gibt.
         HStack(spacing: 14) {
             Image(systemName: symbol)
-                .font(.system(size: 15))
+                .font(Stil.koerper)
                 .foregroundStyle(akzent ? Stil.akzent : Stil.schriftLeise)
-                .frame(width: 22)
+                .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 2) {
                 titel
-                    .font(.system(size: 15))
+                    .font(Stil.listentitel)
                     .foregroundStyle(akzent ? Stil.akzent : Stil.schrift)
                 if let unter {
                     unter
-                        .font(.system(size: 12))
-                        .foregroundStyle(Stil.schrift.opacity(0.45))
+                        .font(Stil.klein)
+                        // **Unter dem Zeiger eine Stufe heller.** Die
+                        // Schwebefläche hebt den Grund, und `schriftSehrLeise`
+                        // darauf fällt gerechnet unter 4,5:1. Wer eine Fläche
+                        // anhebt, hebt die leisen Schriften mit (BRAND 1).
+                        .foregroundStyle(schwebt ? Stil.schriftLeise
+                                                 : Stil.schriftSehrLeise)
                 }
             }
             Spacer(minLength: 12)
             rechts
         }
         .padding(.horizontal, 12)
-        .frame(minHeight: 44)
-        .background(schwebt ? Stil.schrift.opacity(0.05) : .clear)
+        // **„14 + Inhalt + 14" als Innenabstand, nicht als feste Hoehe.**
+        //
+        // Hier stand `minHeight: 46` mit genau dieser Begruendung — aber eine
+        // Mindesthoehe rechnet den Inhalt nicht mit. Einzeilig ging es auf:
+        // rund 20 Punkt Schrift, 13 oben und unten. Eine Zeile **mit
+        // Unterzeile** traegt 37 (17 Titel, 2 Abstand, 12 klein), und dann
+        // blieben viereinhalb Punkt je Seite. Paul am 22.09.: „Wiedergabe,
+        // Sprache, Untertitel, Tempo — da ist gar kein Platz oben und unten,
+        // da ist ja nichts zum Atmen." Quick Connect traegt dieselbe Form.
+        //
+        // Als Innenabstand gilt die Regel fuer beide: einzeilig 48,
+        // zweizeilig 65. Die Mindesthoehe bleibt als Untergrenze fuer die
+        // Trefferflaeche stehen, greift jetzt aber nur noch, wenn eine Zeile
+        // ausnahmsweise weniger traegt.
+        .padding(.vertical, 14)
+        .frame(minHeight: 46)
+        .background(schwebt ? Stil.schwebeflaeche : .clear)
         .contentShape(Rectangle())
     }
 }
@@ -117,7 +156,7 @@ struct Schalterzeile: View {
                 Schalter(an: an)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckzeile())
         .onHover { schwebt = $0 }
         .animation(Stil.zeitSchweben, value: schwebt)
         .accessibilityRepresentation { Toggle(isOn: $an) { titel } }
@@ -129,8 +168,12 @@ struct Schalter: View {
     let an: Bool
 
     var body: some View {
+        // Aus: `rand`, nicht eine eigene Deckkraft — dieselbe Rolle wie
+        // jeder ruhende Rand, also derselbe Token. Die Masse sind die des
+        // Macs (38 × 22 statt 46 × 28): ein Zeiger trifft genauer, und die
+        // Zeile ist hier 44 statt 52 hoch.
         Capsule()
-            .fill(an ? Stil.akzent : Stil.schrift.opacity(0.14))
+            .fill(an ? Stil.akzent : Stil.rand)
             .frame(width: 38, height: 22)
             .overlay(alignment: an ? .trailing : .leading) {
                 Circle()
@@ -138,7 +181,7 @@ struct Schalter: View {
                     .frame(width: 16, height: 16)
                     .padding(3)
             }
-            .animation(Stil.zeitUmschalten, value: an)
+            .animation(Stil.umschalten, value: an)
     }
 }
 
@@ -182,7 +225,7 @@ struct Wertezeile: View {
         // den Klick schlucken. Derselbe Fehler wie bei den Kacheln.
         Group {
             if let aktion {
-                Button(action: aktion) { rumpf }.buttonStyle(.plain)
+                Button(action: aktion) { rumpf }.buttonStyle(Stil.Druckzeile())
             } else {
                 rumpf
             }
@@ -195,19 +238,25 @@ struct Wertezeile: View {
             Zeilenrumpf(symbol: symbol, titel: titel, unter: unter,
                         akzent: akzent, schwebt: schwebt) {
                 HStack(spacing: 8) {
+                    // Wert rechts 15 `schriftLeise`, Winkel 13 Semifett in
+                    // `schriftSehrLeise` (BAUTEILE 6). Hier standen 14 und
+                    // 12 — beide nicht auf der Leiter.
                     if let wert {
                         Text(verbatim: wert)
-                            .font(.system(size: 14))
+                            .font(Stil.koerper)
                             .foregroundStyle(Stil.schriftLeise)
                     }
                     if pfeil {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Stil.schriftSehrLeise)
                     }
+                    // Der Haken steht fuer eine Mehrfachwahl — dort ist das
+                    // Angekreuztsein der Zustand der Sache selbst und traegt
+                    // den Akzent (BRAND 1, zweite Ausnahme).
                     if haken {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(Stil.listentitel)
                             .foregroundStyle(Stil.akzent)
                     }
                 }
@@ -233,8 +282,9 @@ struct Werteliste<E: Identifiable>: View {
         }
         .padding(.vertical, 4)
         .padding(.leading, 48)
+        // Eine Stufe ueber der Karte: im Dunkelmodus geht Tiefe nach oben.
         .background(Stil.flaeche)
-        .overlay(alignment: .bottom) { Trennstrich() }
+        .overlay(alignment: .bottom) { Blattlinie() }
     }
 }
 
@@ -247,24 +297,31 @@ private struct Wertwahlzeile: View {
 
     var body: some View {
         Button(action: auswahl) {
+            // **Gewaehlt heisst Weiss, nicht Akzent** (BRAND 1). Eine
+            // Wahl unter Geschwistern ist Rangfolge, und Rangfolge tragen
+            // Ton und Flaeche. Der Akzent stand hier an Text und Haken.
             HStack(spacing: 8) {
                 Text(verbatim: text)
                     .font(Stil.koerper)
-                    .foregroundStyle(gewaehlt ? Stil.akzent : Stil.schrift)
+                    .foregroundStyle(gewaehlt ? Stil.schrift : Stil.schriftLeise)
                 Spacer(minLength: 0)
                 if gewaehlt {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Stil.akzent)
+                        .font(Stil.listentitel)
+                        .foregroundStyle(Stil.schrift)
+                        .frame(width: 14)
                 }
             }
             .padding(.horizontal, 12)
             .frame(height: Stil.zeileHoehe)
-            .background(schwebt ? Stil.schrift.opacity(0.06) : .clear)
+            .background(schwebt ? Stil.schwebeflaeche : .clear)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckzeile())
         .onHover { schwebt = $0 }
+        // Welcher Wert gilt, hing an Ton und Haken — beides sieht VoiceOver
+        // nicht. Dasselbe Merkmal setzen die Bausteine nebenan schon.
+        .accessibilityAddTraits(gewaehlt ? [.isButton, .isSelected] : .isButton)
     }
 }
 
@@ -283,21 +340,23 @@ struct Unterseitenkopf: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            // **Ohne Ring — nur der Pfeil, wie auf dem iPad.**
-            //
-            // `Aktionsknopf` umrandet sich, weil er in einer Knopfreihe neben
-            // seinesgleichen steht und dort sonst nicht als Knopf zu erkennen
-            // waere. Oben auf einer Unterseite steht er allein: dort ist der
-            // Ring eine Einfassung ohne Aufgabe. Die Rueckmeldung beim
-            // Ueberfahren bleibt.
-            Aktionsknopf(symbol: "chevron.left", titel: "Zurück",
-                         rand: false, auswahl: zurueck)
+            // **Der Rückweg ist ein blanker Pfeil** (BAUTEILE 7) — hier
+            // stand ein `Aktionsknopf` mit abgeschaltetem Ring, also ein
+            // Knopf, der sich als etwas anderes ausgibt.
+            Rueckpfeil(zurueck: zurueck)
             Group {
                 if let name { Text(verbatim: name) } else { Text(titel) }
             }
-                .font(.system(size: 28, weight: .bold))
-                .tracking(-0.6)
+                .font(Stil.titelGross)
+                .tracking(Stil.sperrungTitel)
                 .foregroundStyle(Stil.schrift)
+                // **Ein Name vom Server hat keine Laengengrenze.** Ohne
+                // `lineLimit` brach ein langer Bibliotheks- oder
+                // Servername in 28 Bold ueber drei Zeilen um und schob die
+                // Seite darunter weg; er schrumpft jetzt, statt sie zu
+                // verschieben — dieselbe Loesung wie auf den Detailseiten.
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
             Spacer(minLength: 0)
         }
     }

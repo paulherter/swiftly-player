@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
@@ -16,12 +19,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowCircleDown
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Movie
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.lifecycle.repeatOnLifecycle
@@ -43,7 +46,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,12 +61,12 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 /** Vorlage: `Bereich` in `Sources/Shared/Stil.swift` — Downloads nur, wenn eingeschaltet. */
-enum class Bereich(val titel: String, val symbol: ImageVector) {
-    Start("Start", Icons.Outlined.Home),
-    Filme("Filme", Icons.Outlined.Movie),
-    Serien("Serien", Icons.Outlined.Tv),
-    Downloads("Downloads", Icons.Outlined.ArrowCircleDown),
-    Suche("Suche", Icons.Outlined.Search),
+enum class Bereich(val titel: String, val symbol: Zeichen) {
+    Start("Start", Zeichen.Haus),
+    Filme("Filme", Zeichen.Film),
+    Serien("Serien", Zeichen.Fernseher),
+    Downloads("Downloads", Zeichen.LadenKreis),
+    Suche("Suche", Zeichen.Lupe),
 }
 
 /**
@@ -261,7 +263,8 @@ private fun Anfangsseite(app: SwiftlyAnwendung, bereich: Bereich, oeffnen: (Ziel
                 Bereich.Suche -> SuchSeite(app, oeffnen)
             }
         }
-        Leiste(bereich, app.einstellungen.downloadsAn, waehlen)
+        Leiste(bereich, app.einstellungen.downloadsAn,
+               app.downloads.posten.value.count { it.stand == "laedt" || it.stand == "wartet" }, waehlen)
     }
 }
 
@@ -278,11 +281,14 @@ private fun Unterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
         }
         "ServerAufnahme" -> ServerAufnahmeSeite(app, ziel.id.takeIf { it != "serveraufnahme" }, zurueck)
         "Genre" -> GenreSeite(app, ziel, oeffnen, zurueck)
+        // Eine Sammlung — aus dem Titelmenue mit Bereich, aus Suche oder Merkliste ohne.
+        "BoxSet" -> SammlungSeite(app, ziel, oeffnen, zurueck)
         "QuickConnect" -> QuickConnectSeite(app, zurueck)
         "Wiedergabeeinstellungen" -> WiedergabeEinstellungenSeite(app, zurueck)
         "Darstellung" -> DarstellungSeite(app, oeffnen, zurueck)
         "Einstellungen" -> EinstellungenSeite(app, oeffnen, zurueck)
         "Seerr" -> SeerrEinstellungenSeite(app, zurueck)
+        "EigeneKoepfe" -> EigeneKoepfeSeite(app, zurueck)
         "Seerrtitel" -> SeerrDetailSeite(app, ziel, oeffnen, zurueck)
         "Genrewahl" -> GenrewahlSeite(app, zurueck)
         "Downloadserie" -> DownloadserieSeite(app, ziel, zurueck)
@@ -290,25 +296,50 @@ private fun Unterseite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Uni
     }
 }
 
-/** Vorlage: `Bereichsleiste` in `Stil.swift` — 54 hoch, Grund, Haarlinie, 10 pt, aktiv im Akzent. */
+/**
+ * Vorlage: `Navileiste` + `Bereichsknopf` in `Stil.swift` — 54 hoch, deckend in `grund`,
+ * Haarlinie oben, 9 Luft ueber den Zeichen, 4 zwischen Zeichen und Beschriftung.
+ */
 @Composable
-private fun Leiste(aktiv: Bereich, downloads: Boolean, waehlen: (Bereich) -> Unit) {
+private fun Leiste(aktiv: Bereich, downloads: Boolean, laufen: Int, waehlen: (Bereich) -> Unit) {
     Column(Modifier.fillMaxWidth().background(Stil.grund).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
         Row(Modifier.fillMaxWidth().height(Stil.leisteHoehe).padding(top = 9.dp)) {
             // Downloads nur, wenn die Funktion an ist (H1) — links neben der Suche, die ganz rechts bleibt.
             Bereich.entries.filter { it != Bereich.Downloads || downloads }.forEach { b ->
                 val an = b == aktiv
-                val farbe = if (an) Stil.akzent else Color.White.copy(alpha = 0.42f)
+                // **Der gewaehlte Bereich traegt den Akzent** — die eine begruendete Ausnahme
+                // von „gewaehlt heisst Weiss" (BRAND 1). Ruhend `schriftSehrLeise`.
+                val farbe = if (an) Stil.akzent else Stil.schriftSehrLeise
+                val quelle = remember { MutableInteractionSource() }
+                val gedrueckt by quelle.collectIsPressedAsState()
+                // `Stil.Druckknopf`: Massstab 0,97 und Deckkraft 0,85, Druck sofort, Loslassen 0,12 s.
+                val druck by animateFloatAsState(if (gedrueckt) 1f else 0f,
+                    if (gedrueckt) snap() else Bewegung.loslassen(), label = "druck")
                 Column(
-                    Modifier.weight(1f).selectable(an, remember { MutableInteractionSource() }, null,
-                        role = androidx.compose.ui.semantics.Role.Tab) { waehlen(b) },
+                    Modifier.weight(1f).selectable(an, quelle, null,
+                        role = androidx.compose.ui.semantics.Role.Tab) { waehlen(b) }
+                        .graphicsLayer { val m = 1f - 0.03f * druck; scaleX = m; scaleY = m; alpha = 1f - 0.15f * druck },
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(b.symbol, contentDescription = null, tint = farbe, modifier = Modifier.size(26.dp))
+                    Box {
+                        // **Zeichen 20 pt heisst hier 24 dp Kasten.** SF Symbols stehen bei Grad 20 mit
+                        // rund 20 pt Hoehe da; ein Material-Zeichen traegt im 24er-Raster 2 dp Luft
+                        // ringsum, im 20er Kasten blieben vom Glyphen knapp 17 — genau das „wirkt
+                        // kleiner" am Pixel. Grund: anderer Symbolsatz, nicht andere Groesse.
+                        Symbol(b.symbol, 20.dp, farbe = farbe, staerke = if (an) Staerke.Halbfett else Staerke.Normal)
+                        if (b == Bereich.Downloads && laufen > 0) {
+                            // Die Zahl der laufenden, nicht der fertigen — nach aussen versetzt, sonst
+                            // deckt sie das Zeichen zu.
+                            Text(laufen.toString(), style = Stil.plakette.copy(letterSpacing = 0.sp), color = Stil.grund,
+                                 modifier = Modifier.align(Alignment.TopEnd).offset(x = 11.dp, y = (-7).dp)
+                                     .clip(CircleShape).background(Stil.akzent).padding(horizontal = 4.dp, vertical = 2.dp))
+                        }
+                    }
+                    // Beschriftung 10, gewaehlt Semibold, sonst Medium — wie `Bereichsknopf`.
                     Text(uebersetzt(b.titel), color = farbe,
-                         style = TextStyle(fontSize = 10.sp, fontWeight = if (an) FontWeight.SemiBold else FontWeight.Medium))
+                         style = Stil.plakette.copy(letterSpacing = 0.sp, fontWeight = if (an) FontWeight.SemiBold else FontWeight.Medium))
                 }
             }
         }

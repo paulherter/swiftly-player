@@ -73,7 +73,11 @@ final class Seerrmodell {
     /// tippt der Nutzer — wir haben es nicht, und das soll so bleiben. Es
     /// wird auch nicht gespeichert: gesichert wird nur die Sitzung, die
     /// Seerr daraufhin ausstellt.
-    func verbinden(adresse eingabe: String, benutzer: String, passwort: String) async {
+    ///
+    /// `koepfe` sind die eigenen Header aus „Erweitert" — für einen Vorposten
+    /// vor Seerr. Sie liegen danach im Zugang, also im Schlüsselbund.
+    func verbinden(adresse eingabe: String, benutzer: String, passwort: String,
+                   koepfe: [Eigenkopf] = []) async {
         fehler = nil
         // **Zwei Adressen, wenn wir das Schema geraten haben.**
         //
@@ -95,7 +99,7 @@ final class Seerrmodell {
         for url in adressen {
             do {
                 let neu = try await SeerrClient.anmelden(an: url, benutzer: benutzer,
-                                                         passwort: passwort)
+                                                         passwort: passwort, koepfe: koepfe)
                 sichern(neu)
                 zugang = neu
                 traegt = true

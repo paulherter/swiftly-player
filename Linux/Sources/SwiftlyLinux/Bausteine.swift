@@ -111,7 +111,9 @@ func seitenleistenzeile(symbol: String, text: String, aktiv: Bool) -> Widget! {
 /// Die Versalien macht hier der Aufrufer, nicht das Stilblatt: GTKs CSS kennt
 /// kein `text-transform`.
 func rubrik(_ text: String) -> Widget! {
-    let l = beschriftung(text.uppercased(), stil: "swiftly-rubrik")
+    // **Keine Versalien mehr** (Mac 984514f2): gesperrt wird nur, was in
+    // Versalien steht, und die fallen weg.
+    let l = beschriftung(text, stil: "swiftly-rubrik")
     gtk_widget_add_css_class(l, "swiftly-leise")
     gtk_label_set_xalign(OpaquePointer(l), 0)
     gtk_widget_set_margin_start(l, 10)
@@ -447,7 +449,7 @@ func einstellungsgruppe(_ titel: String) -> (aussen: Widget, raum: Widget) {
     gtk_widget_add_css_class(kopf, "swiftly-gruppenrubrik")
     gtk_widget_set_margin_start(kopf, 0)
     gtk_widget_set_margin_top(kopf, 26)
-    gtk_widget_set_margin_bottom(kopf, 8)
+    gtk_widget_set_margin_bottom(kopf, 10)
     anhaengen(aussen, kopf)
     let gruppe = zeilengruppe()
     anhaengen(aussen, gruppe.aussen)
@@ -457,8 +459,10 @@ func einstellungsgruppe(_ titel: String) -> (aussen: Widget, raum: Widget) {
 /// Der Trennstrich **innerhalb** einer Gruppe: eingerückt um 48, damit er
 /// unter dem Symbol beginnt und nicht davor.
 func zeilenstrich() -> Widget! {
+    // **46, gerechnet auf die Zeichenspalte** (`Stil.trennEinzugKarte`,
+    // Mac 62b5d194): 12 Rand + 20 Zeichen + 14 Abstand.
     let l = trennlinie()
-    gtk_widget_set_margin_start(l, 48)
+    gtk_widget_set_margin_start(l, 46)
     return l
 }
 
@@ -466,16 +470,21 @@ func zeilenstrich() -> Widget! {
 /// rechts etwas. Mindestens 44 hoch, 12 seitlich.
 private func zeilenrumpf(symbol: String, titel: String, unter: String?,
                          akzent: Bool, rechts: Widget?) -> Widget! {
+    // **„14 + Inhalt + 14" als Innenabstand, nicht als feste Hoehe** (Mac
+    // 8eb1ca13): eine Mindesthoehe rechnet den Inhalt nicht mit, und eine
+    // Zeile mit Unterzeile hatte dann keine Luft. Das Mass steht im
+    // Stilblatt (`padding: 14px 12px`); Zeichenspalte 20 statt 22.
     let reihe = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 14)
     let bild: Widget! = gtk_image_new_from_icon_name(symbol)
     gtk_image_set_pixel_size(OpaquePointer(bild), 15)
-    gtk_widget_set_size_request(bild, 22, -1)
+    gtk_widget_set_size_request(bild, 20, -1)
     anhaengen(reihe, bild)
 
     let text = stapel(GTK_ORIENTATION_VERTICAL, abstand: 2)
     gtk_widget_set_valign(text, GTK_ALIGN_CENTER)
     gtk_widget_set_hexpand(text, 1)
-    let t = beschriftung(titel, stil: "swiftly-koerper")
+    // Titel 15 Semifett (`listentitel`), Unterzeile 12 `schriftSehrLeise`.
+    let t = beschriftung(titel, stil: "swiftly-listentitel")
     gtk_label_set_xalign(OpaquePointer(t), 0)
     gtk_label_set_ellipsize(OpaquePointer(t), PANGO_ELLIPSIZE_END)
     anhaengen(text, t)
@@ -504,7 +513,8 @@ func wertezeile(symbol: String, titel: String, unter: String? = nil,
     let rechts = stapel(GTK_ORIENTATION_HORIZONTAL, abstand: 8)
     gtk_widget_set_valign(rechts, GTK_ALIGN_CENTER)
     if let wert, !wert.isEmpty {
-        let w = beschriftung(wert, stil: "swiftly-kacheltitel")
+        // Wert 15 in `schriftLeise`.
+        let w = beschriftung(wert, stil: "swiftly-koerper")
         gtk_widget_add_css_class(w, "dim-label")
         anhaengen(rechts, w)
     }
@@ -517,8 +527,9 @@ func wertezeile(symbol: String, titel: String, unter: String? = nil,
         anhaengen(rechts, h)
     }
     if pfeil {
+        // Winkel 13 in `schriftSehrLeise`.
         let p: Widget! = gtk_image_new_from_icon_name("go-next-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(p), 12)
+        gtk_image_set_pixel_size(OpaquePointer(p), 13)
         gtk_widget_add_css_class(p, "swiftly-leise")
         anhaengen(rechts, p)
     }
@@ -601,7 +612,7 @@ func werteliste<W: Equatable>(_ eintraege: [(String, W)], gewaehlt: W,
         anhaengen(reihe, l)
         if wert == gewaehlt {
             let haken: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
-            gtk_image_set_pixel_size(OpaquePointer(haken), 13)
+            gtk_image_set_pixel_size(OpaquePointer(haken), 14)
             anhaengen(reihe, haken)
         }
         gtk_button_set_child(alsKnopf(knopf), reihe)

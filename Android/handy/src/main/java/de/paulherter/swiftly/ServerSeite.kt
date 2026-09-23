@@ -1,13 +1,14 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,13 +39,17 @@ fun ServerSeite(app: SwiftlyAnwendung, verbunden: (String, String) -> Unit) {
     // Nach einer widerrufenen Anmeldung steht hier, warum man wieder auf der Serverwahl ist.
     var fehler by remember { mutableStateOf<String?>(app.anmeldehinweis.value.also { app.anmeldehinweis.value = null }) }
     val scope = rememberCoroutineScope()
+    /** „Erweitert" — eigene Header fuer einen Dienst vor dem Server. */
+    val koepfe = rememberKopfzeilen()
 
     fun verbinden() {
         if (adresse.isBlank() || laeuft) return
         laeuft = true; fehler = null
         scope.launch {
             try {
-                val json = withContext(Dispatchers.IO) { app.kern.verbinden(adresse).await() }
+                val json = withContext(Dispatchers.IO) { app.kern.verbinden(adresse, koepfe.alsJson()).await() }
+                // Erst jetzt ablegen: fuer eine Adresse, unter der nichts antwortet, bleibt nichts liegen.
+                if (koepfe.isNotEmpty()) app.eigeneKoepfeAblegen()
                 val antwort = JSONObject(json)
                 app.ablage.letzterServer = adresse
                 verbunden(antwort.getString("name"), antwort.getString("version"))
@@ -63,15 +68,17 @@ fun ServerSeite(app: SwiftlyAnwendung, verbunden: (String, String) -> Unit) {
             Text(uebersetzt("Wo steht dein Jellyfin-Server?"), style = Stil.koerper, color = Stil.schriftLeise,
                  modifier = Modifier.padding(top = 44.dp))
             Column(Modifier.padding(top = 18.dp)) {
-                Eingabefeld(adresse, { adresse = it }, Icons.Outlined.Language, "tv.beispiel.de", adresse = true) { verbinden() }
+                Eingabefeld(adresse, { adresse = it }, Zeichen.Globus, "tv.beispiel.de", adresse = true) { verbinden() }
             }
             Text(uebersetzt("https:// kannst du weglassen."), style = Stil.klein, color = Stil.schriftSehrLeise,
                  modifier = Modifier.fillMaxWidth().padding(top = 9.dp, start = 2.dp))
+            Erweitertbereich(koepfe, modifier = Modifier.padding(top = 6.dp))
             Hauptknopf(if (laeuft) uebersetzt("Verbinden…") else uebersetzt("Verbinden"),
                        freigegeben = adresse.isNotBlank() && !laeuft,
                        modifier = Modifier.padding(top = 22.dp)) { verbinden() }
             fehler?.let {
-                Text(it, style = Stil.klein, color = Stil.warnung, textAlign = TextAlign.Center,
+                // `fehler`, nicht `warnung`: die Verbindung ist schiefgegangen, sie wartet nicht.
+                Text(it, style = Stil.klein, color = Stil.fehler, textAlign = TextAlign.Center,
                      modifier = Modifier.padding(top = 14.dp))
             }
         }

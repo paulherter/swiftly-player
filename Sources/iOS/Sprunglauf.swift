@@ -24,9 +24,9 @@ enum Sprunglauf {
 
     static func wunsch(_ model: AppModel) async -> Abspielwunsch? {
         guard let client = model.client else { Protokoll.schreib("[Sprunglauf] nicht angemeldet"); return nil }
-        guard let serie = await model.suche("The Mentalist").first(where: { $0.type == "Series" })
+        guard let serie = await model.suche("The Mentalist")?.first(where: { $0.type == "Series" })
         else { Protokoll.schreib("[Sprunglauf] keine Serie"); return nil }
-        for kandidat in await model.folgen(serie: serie.id, staffel: nil).prefix(60) {
+        for kandidat in (await model.folgen(serie: serie.id, staffel: nil) ?? []).prefix(60) {
             let abschnitte = await model.abschnitte(fuer: kandidat.id)
             guard let intro = abschnitte.first(where: { $0.art == .vorspann || $0.art == .rueckblick }),
                   let ende = abschnitte.first(where: { $0.art == .abspann }),

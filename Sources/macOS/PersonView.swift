@@ -33,6 +33,9 @@ struct PersonView: View {
     @State private var titel: [Item] = []
     @State private var anfragbar: [Seerrtreffer] = []
     @State private var geladen = false
+    /// `nil` von `titel(person:)` heisst gestoert. Vorher stand bei einem
+    /// stummen Server „Auf deinem Server gibt es sonst nichts mit …" da.
+    @State private var gestoert = false
     /// Seerr hat geantwortet — erst dann gilt „es gibt sonst nichts".
     @State private var seerrFertig = false
     @State private var ganzeBiografie = false
@@ -72,9 +75,31 @@ struct PersonView: View {
                         rollenzeile
                         biografie
                     }
+                    // **Vor `geladen` stand hier nichts.** Name, Bild, und
+                    // darunter eine leere Flaeche — beim Laden, bei einer
+                    // Person ohne Titel und bei einem stummen Server
+                    // dieselbe. Drei Lagen, ein Bild.
+                    if !geladen {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Reihentitel(text: "Auf deinem Server")
+                            HStack(alignment: .top, spacing: Stil.kachelAbstand) {
+                                ForEach(0 ..< 4, id: \.self) { _ in
+                                    Ladefeld()
+                                        .frame(width: Stil.kachelBreite,
+                                               height: Stil.kachelBreite * 1.5)
+                                }
+                            }
+                        }
+                        .transition(.opacity)
+                    }
                     Titelreihe(titel: "Auf deinem Server", eintraege: titel, model: model)
                     anfragereihe
-                    if geladen, seerrFertig, titel.isEmpty, anfragbar.isEmpty {
+                    if gestoert, titel.isEmpty {
+                        // Auf Seerr wird nicht gewartet: was der eigene Server
+                        // sagt, ist die Hauptauskunft dieser Seite.
+                        Stoerhinweis(model: model, erneut: { Task { await laden() } },
+                                     abstandOben: 0)
+                    } else if geladen, seerrFertig, titel.isEmpty, anfragbar.isEmpty {
                         Text("Auf deinem Server gibt es sonst nichts mit \(person.name).")
                             .font(Stil.koerper)
                             .foregroundStyle(Stil.schriftLeise)
@@ -86,7 +111,7 @@ struct PersonView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
-        .ohneKanteneffekt()
+        .seitenscrollen()
         .toolbar(.hidden)
         .toolbarBackground(.hidden, for: .windowToolbar)
         // Derselbe Auslauf wie auf der Detailseite: der Bildton läuft unter
@@ -106,16 +131,17 @@ struct PersonView: View {
         }
         .task(id: person.id) { await laden() }
         .task(id: bannerJetzt) { await farbe.laden(bannerJetzt) }
-        .task(id: banner.count) {
-            // Weich wechseln, und langsam genug, dass man hinsieht, bevor es
-            // weitergeht. Mit einem Bild gibt es nichts zu wechseln.
-            guard banner.count > 1 else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(6))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeInOut(duration: 1.2)) { bannerStelle += 1 }
-            }
-        }
+        // **Die dekorative Bannerschleife ist weg.**
+        //
+        // Sie wechselte alle sechs Sekunden das Hintergrundbild, in einer
+        // Blende von 1,2 Sekunden. „Nichts bewegt sich dekorativ. Keine
+        // dauernde Bewegung, kein Wackeln, kein Puls" (BRAND 6) — und eine
+        // Schleife, die nie aufhoert, ist die deutlichste Form davon. Die
+        // iPhone-Fassung hat sie am 21.09. gestrichen; auf dem Mac lief sie
+        // weiter, und dort ist die Flaeche groesser.
+        //
+        // `bannerStelle` bleibt auf null: das erste Bild steht, und es
+        // bleibt stehen.
     }
 
     // MARK: Kopf
@@ -155,8 +181,9 @@ struct PersonView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: person.name)
-                    .font(.system(size: 34, weight: .bold))
-                    .tracking(-0.8)
+                    // Seitentitel: 28 Bold, Sperrung an der Stufe.
+                    .font(Stil.titelGross)
+                    .tracking(Stil.sperrungTitel)
                     .foregroundStyle(Stil.schrift)
                     .lineLimit(1)
                     .minimumScaleFactor(0.62)
@@ -167,12 +194,14 @@ struct PersonView: View {
                     Text(verbatim: geburtszeile ?? " ")
                     Text(verbatim: ort ?? " ")
                 }
-                .font(.system(size: 14))
+                // Angabe (Geburtsdatum, Ort): 12. Die 13 und 14 „ohne Rolle"
+                // sind in BAUTEILE 9.21 genau fuer diese Seite vermerkt.
+                .font(Stil.klein)
                 .foregroundStyle(Stil.schriftLeise)
                 .lineLimit(1)
                 .opacity(geladen ? 1 : 0)
             }
-            .frame(width: 560, alignment: .leading)
+            .frame(width: Stil.lesebreite, alignment: .leading)
         }
     }
 
@@ -190,7 +219,7 @@ struct PersonView: View {
     private var rollenzeile: some View {
         if let rolle = person.role, !rolle.isEmpty, let herkunft {
             Text("\(rolle) in \(herkunft)")
-                .font(.system(size: 14, weight: .medium))
+                .font(Stil.kachel)
                 .foregroundStyle(Stil.akzent)
                 .lineLimit(1)
         }
@@ -210,11 +239,13 @@ struct PersonView: View {
                     .lineLimit(ganzeBiografie ? nil : 4)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(ganzeBiografie ? "Weniger" : "Mehr") {
-                    withAnimation(.easeInOut(duration: 0.2)) { ganzeBiografie.toggle() }
+                    withAnimation(Stil.sprung) { ganzeBiografie.toggle() }
                 }
-                .buttonStyle(.plain)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Stil.schrift)
+                .buttonStyle(Stil.Druckknopf())
+                .font(Stil.koerper.weight(.medium))
+                // Der stille Knopf traegt den Akzent — er ist die zweite
+                // Handlung (BAUTEILE 6).
+                .foregroundStyle(Stil.akzent)
             }
             .frame(maxWidth: Stil.lesebreite, alignment: .leading)
             .transition(.opacity)
@@ -224,16 +255,14 @@ struct PersonView: View {
     @ViewBuilder
     private var anfragereihe: some View {
         if !anfragbar.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Kann angefragt werden")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Stil.schrift)
+            VStack(alignment: .leading, spacing: 12) {
+                Reihentitel(text: "Kann angefragt werden")
                 Blätterreihe(rand: 0) {
                     ForEach(anfragbar) { treffer in
                         Button { navigator.oeffne(.seerrTitel(treffer), in: bereich) } label: {
                             Seerrkachel(treffer: treffer)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                     }
                 }
             }
@@ -250,7 +279,9 @@ struct PersonView: View {
         async let eigene = model.titel(person: person.id)
         let a = await model.item(id: person.id)
         async let fremde = filmografie(tmdb: a?.tmdbKennung)
-        let b = await eigene
+        let geholt = await eigene
+        // Gescheitert: die Seite behaelt, was sie hatte, und sagt es.
+        let b = geholt ?? titel
 
         // Nur echte Querbilder wechseln; hat keiner der Titel eins, nimmt das
         // Banner, was der erste als Ersatz hergibt.
@@ -261,6 +292,7 @@ struct PersonView: View {
 
         withAnimation(Stil.einblenden) {
             auskunft = a
+            gestoert = geholt == nil
             titel = b
             banner = bilder
             geladen = true

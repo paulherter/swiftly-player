@@ -138,6 +138,7 @@
 "Anzeigen" = "Show";
 "Beschädigt" = "Corrupt";
 "Bild" = "Video";
+"Dynamik" = "Range";
 "Dekodiert Ø" = "Decoded avg";
 "Demuxer" = "Demuxer";
 "Eingang" = "Input";
@@ -330,3 +331,85 @@
 "Fragen stellen und sagen, was fehlt" = "Ask questions and tell me what's missing";
 "Fehler melden" = "Report a bug";
 "Auf GitHub, deine App-Version ist schon eingetragen" = "On GitHub, with your app version already filled in";
+
+/* Aktualisierung (nur Windows) */
+"Nach Updates suchen" = "Check for updates";
+"Swiftly fragt bei GitHub, ob es eine neuere Version gibt" = "Swiftly asks GitHub whether a newer version is available";
+"Wird gesucht …" = "Checking …";
+"Swiftly ist aktuell" = "Swiftly is up to date";
+"Swiftly %@ ist da" = "Swiftly %@ is available";
+"Lädt den Installer und startet ihn. Swiftly beendet sich dabei." = "Downloads the installer and starts it. Swiftly closes while it runs.";
+"Was sich ändert" = "What's new";
+"Auf GitHub nachlesen" = "Read it on GitHub";
+"Wird geladen …" = "Downloading …";
+"Das dauert einen Moment. Swiftly startet den Installer von selbst." = "This takes a moment. Swiftly starts the installer on its own.";
+"Hat nicht geklappt" = "That didn't work";
+"GitHub antwortet nicht." = "GitHub could not be reached.";
+"Der Installer ließ sich nicht starten." = "The installer could not be started.";
+"Das Herunterladen ist abgebrochen." = "The download stopped.";
+"VLC lädt noch" = "VLC is still loading";
+
+"%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?" = "%@ isn’t answering. Is it still running, or is the Wi-Fi stuck?";
+"Aktualisieren" = "Refresh";
+"Der Server" = "The server";
+"Erneut versuchen" = "Try again";
+"Filter zurücksetzen" = "Clear filter";
+"Server ist abgetaucht" = "The server went dark";
+"Sobald in dieser Bibliothek etwas liegt, taucht es hier auf." = "As soon as there is something in this library, it shows up here.";
+"Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter." = "Nothing under “%@” right now. Try a different filter.";
+"Zurück" = "Back";
+
+"Lad was runter, bevor der Zug ins Funkloch fährt." = "Grab something before the train hits the dead zone.";
+
+"%@ laden" = "Download %@";
+"1 Folge" = "1 episode";
+"Danach %@ frei" = "%@ free afterwards";
+"Direct Play · Originalqualität" = "Direct Play · original quality";
+"Entscheidet, was ein Haken auswählt." = "Decides what a tick selects.";
+"Ganze Serie" = "Whole series";
+"Nichts gewählt" = "Nothing selected";
+"Nichts Ähnliches gefunden" = "Nothing similar found";
+"Nur ungesehene" = "Unwatched only";
+"alles da" = "all here";
+"wird gelesen …" = "reading …";
+
+/* Trakt */
+"Trägt ein, was du schaust" = "Logs what you watch";
+"Swiftly meldet an Trakt, was du schaust. Ab 80 Prozent steht der Titel dort als gesehen." = "Swiftly tells Trakt what you watch. From 80 percent on, the title shows up there as watched.";
+"Hat dein Server das Trakt-Plugin, brauchst du das hier nicht. Sonst landet alles doppelt bei Trakt." = "If your server has the Trakt plugin, you don't need this. Otherwise everything lands on Trakt twice.";
+"Mit Trakt verbinden" = "Connect Trakt";
+"Hole Code…" = "Getting code…";
+"Geh auf %@ und gib diesen Code ein." = "Go to %@ and enter this code.";
+"Trakt öffnen" = "Open Trakt";
+"Neuer Code" = "New code";
+"Der Code ist abgelaufen. Hol dir einen neuen." = "The code expired. Get a new one.";
+"Trakt hat die Verbindung nicht freigegeben." = "Trakt didn't approve the connection.";
+"Trakt bremst gerade. Versuch es in ein paar Minuten noch mal." = "Trakt is holding back right now. Try again in a few minutes.";
+"Trakt ist gerade nicht erreichbar." = "Can't reach Trakt right now.";
+
+/* Eigene Header (Issue #4) */
+"Erweitert" = "Advanced";
+"Header-Name" = "Header name";
+"Wert" = "Value";
+"Header hinzufügen" = "Add header";
+"Den setzt Swiftly selbst." = "Swiftly sets this one itself.";
+"Sichern" = "Save";
+"Für einen Dienst vor deinem Server, etwa Cloudflare Access, Authelia oder Pangolin. Swiftly schickt die Header nur an diese Adresse." = "For a service in front of your server, like Cloudflare Access, Authelia or Pangolin. Swiftly only sends these headers to this address.";
+"Die letzte Stunde, ohne Zugangsdaten" = "The last hour, without sign-in details";
+"Protokoll teilen" = "Share Log";
+"%d Filme" = "%d movies";
+"%d Serien" = "%d series";
+"%@ zu wenig" = "%@ short";
+"Alle Filme" = "All Movies";
+"Alle Serien" = "All Series";
+"Sammlungen" = "Collections";
+"Sobald in dieser Sammlung etwas liegt, taucht es hier auf." = "As soon as there is something in this collection, it shows up here.";
+"Teil der Sammlung" = "Part of the collection";
+"alles gesehen" = "all watched";
+"geladen" = "downloaded";
+"gesehen" = "watched";
+"lädt" = "downloading";
+
+/* Downloads: Ladeauswahl und Serienseite (Mac 89299260, cc4e6e75) */
+"%@ von %@" = "%@ of %@";
+"Download entfernen" = "Remove download";

@@ -35,6 +35,26 @@ struct MerklisteRoute: Hashable {}
 /// auch eine Seite von rechts kommen — kein Blatt in fremder Gestalt.
 struct QuickConnectRoute: Hashable {}
 
+/// **Einen Server aufnehmen — als Seite, nicht als Blatt.**
+///
+/// Sie kam als `fullScreenCover` von unten, waehrend Quick Connect, Seerr,
+/// Einstellungen, Wiedergabe und Darstellung von rechts geschoben werden.
+/// Zwei Bewegungen fuer dieselbe Art Ziel: „eine Unterseite, von der man
+/// zurueckgeht". Von unten heisst in dieser App etwas anderes — ein Blatt,
+/// das man wegwischt.
+///
+/// `voreingestellt` ist die Adresse, wenn man ein **zweites Konto auf einem
+/// bekannten Server** anlegt; leer heisst „neuer Server".
+struct ServerRoute: Hashable {
+    var voreingestellt: URL?
+}
+
+/// **Ein weiteres Konto auf demselben Server — auch als Seite.**
+///
+/// Sie kam als `fullScreenCover` von unten, wie die Serveraufnahme vorher.
+/// Paul am 22.09.: „ich moechte gar nichts mehr von unten."
+struct KontoRoute: Hashable {}
+
 struct EinstellungenRoute: Hashable {}
 
 struct WiedergabeRoute: Hashable {}
@@ -46,6 +66,9 @@ struct WiedergabeRoute: Hashable {}
 /// dorthin springen will, denn ein eingebauter Verweis gehoert der Zeile, in
 /// der er steht.
 struct SeerrRoute: Hashable {}
+
+/// Trakt verbinden — neben Seerr unter Integration.
+struct TraktRoute: Hashable {}
 
 /// Die Seite einer Person. `herkunft` ist der Titel, über den man kam — dort
 /// steht „Patrick Jane in The Mentalist".

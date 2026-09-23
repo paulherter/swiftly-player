@@ -67,6 +67,25 @@ final class Startseitenmodell {
             return
         }
         let getrennt = model.neuzugangGetrennt
+
+        // **Die Genre-Reihen laufen nebenher, nicht hinterher.**
+        //
+        // Ihr Abruf stand am Ende dieser Funktion und wurde erst gestartet,
+        // wenn die festen Reihen schon da waren — also **nach** einem
+        // vollstaendigen Netzweg. Am Geraet hiess das: man scrollt nach unten,
+        // dort ist nichts, und irgendwann erscheint die letzte Kategorie auf
+        // einen Schlag. Paul am 22.09.: „beim Runterscrollen erscheint die
+        // letzte Kategorie random einfach zack da, auch viel zu spaet."
+        //
+        // Der Gedanke dahinter war richtig — die festen Reihen sollen zuerst
+        // stehen —, nur ist „zuerst **anzeigen**" nicht dasselbe wie „zuerst
+        // **abrufen**". `async let` startet den Abruf sofort und wird erst
+        // unten eingesammelt: die festen Reihen erscheinen wie bisher als
+        // erste, die Genres kommen aber um einen Netzweg frueher.
+        async let gattungen = model.genreChips ? [] :
+            Startseitenlader.gattungsreihen(von: client, namen: model.startGenres)
+                .map { Gattungsreihe(name: $0.name, items: $0.items) }
+
         // **Die Regel steht im Paket** (`Startseitenlader`), gemeinsam mit
         // Linux/Windows und Android. Hier wird nur noch in den Zustand
         // uebernommen — mit derselben Unterscheidung wie vorher: kam ein Abruf
@@ -96,10 +115,16 @@ final class Startseitenmodell {
         gestoert = !Task.isCancelled && stand.gestoert
         if !gestoert { zuletztGeladen = Date() }
         geladen = true
-        // Die Genre-Reihen danach — die festen Reihen stehen schon.
-        gattungsreihen = model.genreChips ? [] :
-            await Startseitenlader.gattungsreihen(von: client, namen: model.startGenres)
-                .map { Gattungsreihe(name: $0.name, items: $0.items) }
+        // **Und der alte Stand bleibt stehen, bis der neue da ist.**
+        //
+        // Hier wurde die Liste beim Auffrischen erst geleert und dann neu
+        // gefuellt — die Reihen verschwanden also und kamen wieder, jedes Mal,
+        // wenn man hoch und wieder runter ging. Genau die Unterscheidung, die
+        // `uebernehmen` fuer alle anderen Reihen seit jeher trifft: ein leeres
+        // Ergebnis nach einem Kontowechsel heisst leer, sonst heisst es „der
+        // Abruf kam nicht durch".
+        let frische = await gattungen
+        if !frische.isEmpty || wechsel || model.genreChips { gattungsreihen = frische }
         Serienspeicher.geteilt.vorholen(
             weiterschauen + naechsteFolge + zuletzt + neueSerien, mit: model)
     }

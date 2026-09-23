@@ -48,7 +48,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    // `buildConfig` fuer die Fassungszeile: sie liest `versionName` und
+    // `versionCode` von hier, statt sie ein zweites Mal von Hand zu fuehren.
+    buildFeatures { compose = true; buildConfig = true }
     packaging {
         jniLibs {
             useLegacyPackaging = false
@@ -65,7 +67,6 @@ dependencies {
     implementation(project(":gemeinsam"))
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
-    implementation(libs.androidx.material.icons.extended)
     implementation(libs.swiftkit.core)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -79,6 +80,8 @@ dependencies {
     implementation(libs.lottie.compose)
     implementation(libs.play.review.ktx)
     implementation(libs.androidx.tvprovider)
+    // Nur fuer die JVM-Tests (`StromweiterleiterTest`).
+    testImplementation("junit:junit:4.13.2")
 }
 
 // **Die Startanimation liegt einmal im Repo** (`Sources/Shared/Mittel`) und wird beim Bau

@@ -73,3 +73,8 @@ Jellyfin-Theme
 # Arbeitsordner eines Skills — Zwischenstaende, kein Code.
 .impeccable
 __pycache__/
+
+# **Die Zugangsdaten der Trakt-Anwendung** (client_id, client_secret). Sie
+# liegen nur auf den Bau-Rechnern; ohne die Datei gibt es in der App kein
+# Trakt. Aufbau steht in `Trakt.swift` beim Typ `TraktZugang`.
+Packages/JellyfinKit/Sources/JellyfinKit/Resources/Trakt.json

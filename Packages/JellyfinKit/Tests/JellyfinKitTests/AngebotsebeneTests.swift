@@ -20,13 +20,65 @@ struct AngebotsebeneTests {
         return ausgeloest
     }
 
-    @Test("Überspringen steht ab Beginn über dem Bild und geht nicht nach Sekunden weg")
-    func ueberspringenBleibt() {
+    @Test("Überspringen steht ab Beginn sechs Sekunden über dem Bild und blendet dann aus")
+    func ueberspringenBlendetAus() {
         var e = Angebotsebene()
-        laufen(&e, 60, angebot: intro)
+        laufen(&e, 5.5, angebot: intro)
         #expect(e.anzeige == .knopf(intro))
+        laufen(&e, 0.5, angebot: intro)
+        #expect(e.anzeige == .nichts, "nach sechs Sekunden ohne Drücken weg")
+        laufen(&e, 60, angebot: intro)
+        #expect(e.anzeige == .nichts, "und kommt ohne Steuerung nicht wieder")
+        let geschlossen = e.schliessen()
+        #expect(!geschlossen, "Zurück gehört dann dem Player")
+    }
+
+    @Test("Nach Ablauf kommt der Knopf mit der Steuerung und geht mit ihr, jedes Mal")
+    func ueberspringenMitSteuerung() {
+        var e = Angebotsebene()
+        laufen(&e, 8, angebot: intro)
+        #expect(e.anzeige == .nichts)
+        e.steuerung(offen: true)
+        #expect(e.anzeige == .knopf(intro), "Steuerung auf: Knopf da")
+        laufen(&e, 10, angebot: intro)
+        #expect(e.anzeige == .knopf(intro), "solange sie offen ist")
+        e.steuerung(offen: false)
+        #expect(e.anzeige == .nichts, "Steuerung zu: Knopf weg")
+        e.steuerung(offen: true, durch: .nebenbei)
+        #expect(e.anzeige == .knopf(intro), "auch mit dem Zeiger geöffnet")
+        e.steuerung(offen: false)
+        #expect(e.anzeige == .nichts)
+        e.steuerung(offen: true)
         laufen(&e, 1, angebot: .keiner)
-        #expect(e.anzeige == .nichts, "Abschnitt vorbei")
+        #expect(e.anzeige == .nichts, "der Abschnitt ist vorbei")
+    }
+
+    @Test("Die sechs Sekunden laufen auch bei offener Steuerung und stehen in der Pause")
+    func knopfzeit() {
+        var e = Angebotsebene()
+        e.steuerung(offen: true)
+        laufen(&e, 7, angebot: intro)
+        #expect(e.anzeige == .knopf(intro))
+        e.steuerung(offen: false)
+        #expect(e.anzeige == .nichts, "Zu nach Ablauf nimmt ihn mit")
+
+        var p = Angebotsebene()
+        laufen(&p, 3, angebot: intro)
+        laufen(&p, 30, angebot: intro, laeuft: false)
+        #expect(p.anzeige == .knopf(intro), "Pause hält die Zeit an")
+        laufen(&p, 3, angebot: intro)
+        #expect(p.anzeige == .nichts)
+    }
+
+    @Test("Ein neuer Abschnitt fängt die sechs Sekunden neu an")
+    func neuerAbschnitt() {
+        var e = Angebotsebene()
+        laufen(&e, 8, angebot: intro)
+        #expect(e.anzeige == .nichts)
+        laufen(&e, 1, angebot: .keiner)
+        let rueckblick = Knopfangebot.ueberspringen(nach: 300, art: .rueckblick)
+        laufen(&e, 1, angebot: rueckblick)
+        #expect(e.anzeige == .knopf(rueckblick))
     }
 
     @Test("Nach einem Sprung erscheint und verschwindet der Knopf im selben Aufruf")
@@ -39,7 +91,7 @@ struct AngebotsebeneTests {
         #expect(e.anzeige == .nichts)
     }
 
-    @Test("Überspringen steht bei offener und geschlossener Steuerung, Auf und Zu ändern nichts")
+    @Test("In den ersten sechs Sekunden ändern Auf und Zu der Steuerung nichts")
     func steuerungAufZu() {
         var e = Angebotsebene()
         laufen(&e, 1, angebot: intro)

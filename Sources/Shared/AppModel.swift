@@ -76,7 +76,30 @@ final class AppModel {
     // MARK: Startseite nach Wunsch
 
     /// Reihenfolge der festen Reihen. Wer eine ausblendet, behält ihren Platz.
-    var startReihen: [Startreihe] { didSet { merken(startReihen.map(\.rawValue), "startReihen") } }
+    ///
+    /// **Doppelte werden hier abgefangen, nicht in den drei Ansichten.**
+    /// Umsortiert wird an drei Stellen — `DarstellungView` auf iOS, dieselbe
+    /// Datei unter `macOS`, `ProfilView` auf tvOS — und jede schreibt die ganze
+    /// Liste zurück. Eine Prüfung je Ansicht wäre dreimal dieselbe Zeile, und
+    /// die vierte Ansicht hätte sie wieder nicht. Die Regel liegt im Paket
+    /// (`Startreihenfolge.sauber`), die Stelle, die sie durchsetzt, hier.
+    ///
+    /// Die zweite Zuweisung lässt `didSet` noch einmal laufen; dann ist die
+    /// Liste schon sauber und es wird gemerkt. Mehr als diesen einen Umlauf
+    /// kann es nicht geben — `sauber` ist auf sich selbst angewandt dasselbe.
+    var startReihen: [Startreihe] {
+        didSet {
+            let sauber = Startreihenfolge.sauber(startReihen)
+            guard sauber == startReihen else {
+                let vorher = startReihen.map(\.rawValue).joined(separator: ",")
+                let nachher = sauber.map(\.rawValue).joined(separator: ",")
+                Self.log.error("Startreihen doppelt — \(vorher, privacy: .public) wird zu \(nachher, privacy: .public)")
+                startReihen = sauber
+                return
+            }
+            merken(startReihen.map(\.rawValue), "startReihen")
+        }
+    }
     var startAus: Set<Startreihe> { didSet { merken(startAus.map(\.rawValue), "startAus") } }
     /// **Genres entweder als Chips oder als Reihen**, nie beides: an heißt
     /// eine Reihe Chips unter dem Kopf, aus heißt die gewählten Genres als
@@ -213,6 +236,140 @@ final class AppModel {
 
     private static func bibliotheksname(_ art: String) -> String { "bibliothek-\(art)" }
 
+
+    // MARK: - Titelmenü: Alle, Sammlungen, Bibliotheken
+
+    /// Die Sammlungen des Kontos — `nil`, solange nicht gefragt.
+    private(set) var sammlungsverzeichnis: Sammlungsverzeichnis?
+    /// Filme und Serien je gemischter Bibliothek.
+    private(set) var bibliotheksanteile: [String: Bibliotheksanteil] = [:]
+    /// Für welches Konto und welche Bibliotheken beides gilt.
+    private var angebotFuer: String?
+    private var angebotLaeuft: String?
+
+    private var angebotsschluessel: String {
+        "\(kontowechsel)|" + views.map(\.id).joined(separator: ",")
+    }
+
+    /// Was der Titel dieses Bereichs zur Wahl anbietet — die Regel steht im
+    /// Paket (``Bereichsangebot``).
+    ///
+    /// **Was einem anderen Konto gehört, zählt nicht.** Bis das neue
+    /// geladen ist, steht nur da, was `views` allein hergibt.
+    func bereichsangebot(art: String) -> Bereichsangebot {
+        let gilt = angebotFuer == angebotsschluessel
+        return Bereichsangebot.bilden(art: art, views: views,
+                                      anteile: gilt ? bibliotheksanteile : [:],
+                                      verzeichnis: gilt ? sammlungsverzeichnis : nil)
+    }
+
+    /// Holt Sammlungen und Anteile gemischter Bibliotheken.
+    ///
+    /// **Nur auf Zuruf**, nicht in `loadViews`: gefragt wird erst, wenn eine
+    /// Seite es braucht.
+    ///
+    /// **Nicht nur einmal je Konto.** Die erste Fassung merkte sich das
+    /// Ergebnis, bis sich Konto oder Bibliotheken änderten; wer auf dem
+    /// Server eine Sammlung anlegte, sah sie erst nach einem Neustart der
+    /// App. Jetzt gilt ein Stand eine Minute — öffnet man danach Filme oder
+    /// Serien wieder, wird nachgesehen.
+    func angebotLaden() async {
+        guard let client, !views.isEmpty else { return }
+        let fuer = angebotsschluessel
+        let frisch = angebotZeit.map { Date().timeIntervalSince($0) < 60 } ?? false
+        guard angebotFuer != fuer || !frisch, angebotLaeuft != fuer else { return }
+        angebotLaeuft = fuer
+        defer { if angebotLaeuft == fuer { angebotLaeuft = nil } }
+        let stand = views
+        async let anteile = client.bibliotheksanteile(views: stand)
+        async let verzeichnis: Sammlungsverzeichnis? = {
+            let mitVerborgenen = (try? await client.userViews(verborgene: true)) ?? stand
+            if Sammlungsverzeichnis.ausgeblendet(sichtbar: stand, mitVerborgenen: mitVerborgenen) {
+                return .leer
+            }
+            return try? await client.sammlungsverzeichnis(ansichten: mitVerborgenen)
+        }()
+        let neueAnteile = await anteile
+        let neuesVerzeichnis = await verzeichnis
+        // Inzwischen das Konto gewechselt: das Ergebnis gehört niemandem mehr.
+        guard fuer == angebotsschluessel else { return }
+        bibliotheksanteile = neueAnteile
+        // **Gescheitert ist nicht leer.** Ohne Antwort bleibt der Stand
+        // ungültig, und die nächste Seite fragt noch einmal.
+        guard let neuesVerzeichnis else { return }
+        sammlungsverzeichnis = neuesVerzeichnis
+        angebotFuer = fuer
+        angebotZeit = Date()
+    }
+    private var angebotZeit: Date?
+
+    /// Die Kennungen der Bibliotheken, aus denen „Alle" liest — für das
+    /// Sieb, mit denselben Filtern wie die Seite.
+    func titelsieb(_ quelle: Regalquelle, filter: Bibliotheksfilter) async -> Titelsieb? {
+        guard let client else { return nil }
+        let typen = quelle.typen
+        do {
+            let listen = try await withThrowingTaskGroup(of: [Item].self) { gruppe in
+                for id in quelle.nurAus {
+                    gruppe.addTask {
+                        try await client.titelkennungen(parentID: id, typen: typen,
+                                                        filters: filter.jellyfinFilter,
+                                                        istGesehen: filter.istGesehen)
+                    }
+                }
+                var alle: [Item] = []
+                for try await liste in gruppe { alle += liste }
+                return alle
+            }
+            return Titelsieb(kennungen: listen)
+        } catch {
+            if !Task.isCancelled { errorMessage = lesbar(error) }
+            return nil
+        }
+    }
+
+    /// Die Sammlungen, zu denen ein Titel gehört — aus dem Verzeichnis, nur
+    /// wenn es zu diesem Konto gehört.
+    func sammlungen(mit titel: Item) -> [Sammlung] {
+        guard angebotFuer == angebotsschluessel else { return [] }
+        return sammlungsverzeichnis?.sammlungen(mit: titel) ?? []
+    }
+
+    /// Die Plakate der ersten Titel je Sammlung — einmal geholt, dann aus dem
+    /// Speicher: das Mosaik fragt bei jedem Erscheinen neu, und jedes Mal
+    /// dieselbe Abfrage wäre Verschwendung. Wie Android (`Mosaikspeicher` in
+    /// `SammlungSeite.kt`). Geleert beim Kontowechsel, in `nachDemWechsel()`.
+    private var sammlungstitelSpeicher: [String: [Item]] = [:]
+
+    /// Die Titel einer Sammlung für die Reihe auf der Detailseite.
+    ///
+    /// **Still, ohne `errorMessage`.** Die Reihe ist eine Zugabe; scheitert
+    /// sie, fehlt sie — eine Fehlermeldung über der ganzen Seite wäre für
+    /// eine Reihe, nach der niemand gefragt hat, zu laut.
+    func sammlungstitel(_ sammlung: Sammlung, art: String) async -> [Item]? {
+        let schluessel = sammlung.id + "|" + art
+        if let gespeichert = sammlungstitelSpeicher[schluessel] { return gespeichert }
+        guard let client else { return nil }
+        let quelle = Regalquelle(eltern: sammlung.id, art: art, sammlung: true)
+        guard let gefunden = try? await client.items(parentID: quelle.eltern, limit: 100,
+                                       sortBy: Sortierung.erscheinung.feld,
+                                       sortOrder: quelle.richtung(.erscheinung),
+                                       recursive: quelle.rekursiv,
+                                       includeItemTypes: quelle.typen).items else { return nil }
+        sammlungstitelSpeicher[schluessel] = gefunden
+        return gefunden
+    }
+
+    /// Die gemerkte Wahl dieses Bereichs, geprüft gegen das Angebot.
+    func bereichswahl(art: String) -> Bereichswahl {
+        bereichsangebot(art: art)
+            .wahl(gemerkt: UserDefaults.standard.string(forKey: Self.bibliotheksname(art)))
+    }
+
+    func bereichWaehlen(_ wahl: Bereichswahl, art: String) {
+        merken(wahl.merkwert, Self.bibliotheksname(art))
+    }
+
     /// Was dem Server als Grenze gemeldet wird — die Rechnung liegt im Paket
     /// (``Bitratengrenze``), weil Linux dieselbe Antwort geben muss und sie
     /// dort wortgleich ein zweites Mal stand.
@@ -242,6 +399,10 @@ final class AppModel {
     /// eine Ansicht, die sie besitzt, verliert sie beim Schliessen, und ein
     /// zweites Modell daneben hätte einen zweiten Zugang.
     let seerr = Seerrmodell()
+    /// Trakt — liegt hier aus demselben Grund wie `seerr`, und weil die
+    /// Meldungen an Trakt neben denen an Jellyfin entstehen (`reportStart`
+    /// und folgende).
+    let trakt = Traktkonto()
 
     /// Was auf dem Geraet liegt. **Liegt hier aus demselben Grund wie
     /// `seerr`:** sie haelt eine Hintergrundsitzung, und eine Ansicht, die
@@ -295,6 +456,31 @@ final class AppModel {
             // Seerr hängt an einem Server — beim Wechsel auf einen anderen
             // gilt dessen Zugang. Innerhalb eines Servers ändert sich nichts.
             seerr.serverGewechselt(bund?.aktives.serverURL)
+            // Trakt haengt am Konto, nicht am Server (`Traktkonto`).
+            trakt.kontoGewechselt(bund?.aktives.kontoschluessel)
+            profilbilderVorholen()
+        }
+    }
+
+    /// **Die Bilder der anderen Konten, bevor jemand danach fragt.**
+    ///
+    /// Die Adresse steht sofort da — sie wird aus Serveradresse, Kennung und
+    /// Zugang gebaut, ohne Netzweg. Das **Bild** dagegen wurde erst geholt,
+    /// wenn das Profilzeichen zum ersten Mal auf dem Schirm stand: beim
+    /// ersten Oeffnen des Profils sah man deshalb kurz den Buchstaben und
+    /// danach das Bild. Paul am 22.09.: „beim ersten Oeffnen tauchen die
+    /// anderen Profilbilder erst spaeter auf."
+    ///
+    /// Es sind hoechstens eine Handvoll kleiner Bilder, und sie stehen fest,
+    /// sobald der Bund steht. Wer sie dann holt, hat sie, wenn sie gebraucht
+    /// werden. Ohne Vorrang: das laufende Plakat geht vor.
+    private func profilbilderVorholen() {
+        let adressen = konten.compactMap { benutzerbildURL(fuer: $0) }
+        guard !adressen.isEmpty else { return }
+        Task.detached(priority: .background) {
+            for adresse in adressen {
+                _ = await Bildspeicher.geteilt.laden(adresse, aufGeraet: true)
+            }
         }
     }
 
@@ -346,10 +532,20 @@ final class AppModel {
         // ausgeschaltet hat, behält das; wer es nie angefasst hat, bekommt die
         // beiden Reihen.
         neuzugangGetrennt = ablage.object(forKey: "neuGetrennt") as? Bool ?? true
-        let gemerkteReihen = (ablage.stringArray(forKey: "startReihen") ?? [])
-            .compactMap(Startreihe.init(rawValue:))
-        // Eine Reihe, die es beim Merken noch nicht gab, kommt hinten dazu.
-        startReihen = gemerkteReihen + Startreihe.allCases.filter { !gemerkteReihen.contains($0) }
+        // **Die Rechnung liegt im Paket** (`Startreihenfolge.geltend`): eine
+        // Reihe, die es beim Merken noch nicht gab, kommt hinten dazu, und was
+        // doppelt in der Ablage steht, kommt einmal heraus. Hier stand eine
+        // zweite Fassung derselben Rechnung — und die kannte nur die erste
+        // Hälfte. Ein Gerät, auf dem „neueFilme" zweimal abgelegt war, trug den
+        // Fehler damit über jeden Start hinweg.
+        let abgelegteReihen = ablage.stringArray(forKey: "startReihen") ?? []
+        let geltendeReihen = Startreihenfolge.geltend(abgelegt: abgelegteReihen)
+        if !abgelegteReihen.isEmpty, geltendeReihen.map(\.rawValue) != abgelegteReihen {
+            let vorher = abgelegteReihen.joined(separator: ",")
+            let nachher = geltendeReihen.map(\.rawValue).joined(separator: ",")
+            Self.log.info("Startreihen glattgezogen: abgelegt \(vorher, privacy: .public) → \(nachher, privacy: .public)")
+        }
+        startReihen = geltendeReihen
         startAus = Set((ablage.stringArray(forKey: "startAus") ?? []).compactMap(Startreihe.init(rawValue:)))
         genreChips = ablage.object(forKey: "genreChips") as? Bool ?? false
         startGenres = ablage.stringArray(forKey: "startGenres") ?? []
@@ -374,8 +570,12 @@ final class AppModel {
         // Steckverbindung, die nicht zustande kommt, eine Antwort, die
         // niemand ansieht. Am 10.09.2026 hat das eine halbe Nacht gekostet.
         Spur.schreiben = { Protokoll.schreib($0) }
+        Stromweiterleiter.protokoll = { Protokoll.schreib($0) }
 
         Self.keychainSelbsttest()
+        // **Vor der Sitzung.** Hinter einem Vorposten braucht schon der erste
+        // Abruf die eigenen Header — und die ersten Plakate gleich danach.
+        Self.eigeneKoepfeLaden()
         restoreSession()
     }
 
@@ -420,7 +620,9 @@ final class AppModel {
 
     // MARK: - Verbinden
 
-    func connect(to raw: String) async {
+    /// `koepfe` kommen aus „Erweitert" auf der Anmeldeseite — leer für fast
+    /// alle, und dann bleibt, was für diese Adresse schon eingetragen ist.
+    func connect(to raw: String, koepfe: [Eigenkopf] = []) async {
         errorMessage = nil
         phase = .connecting
 
@@ -438,7 +640,7 @@ final class AppModel {
         // dann, und nur dann, ist ein zweiter Versuch über `http` sinnvoll.
         // Bei einer Antwort mit Fehlercode wäre er falsch: der Server ist ja
         // da, er sagt nur etwas anderes.
-        if await verbindeMit(url) { return }
+        if await verbindeMit(url, koepfe: koepfe) { return }
 
         // Den Grund des **ersten** Versuchs festhalten.
         //
@@ -452,17 +654,23 @@ final class AppModel {
 
         if raw.contains("://") == false,
            let ausweich = AppModelURLNormalizer.andersHerum(url),
-           await verbindeMit(ausweich) { return }
+           await verbindeMit(ausweich, koepfe: koepfe) { return }
 
         errorMessage = echterGrund
         phase = .disconnected
     }
 
     /// - Returns: `true`, wenn der Server geantwortet hat.
-    private func verbindeMit(_ url: URL) async -> Bool {
+    private func verbindeMit(_ url: URL, koepfe: [Eigenkopf] = []) async -> Bool {
         let c = JellyfinClient(baseURL: url, deviceID: Self.deviceID, deviceName: Self.deviceName)
+        let vorher = Eigenkoepfe.eingetragen(fuer: url)
+        let neu = Eigenkoepfe.bereinigt(koepfe)
+        if !neu.isEmpty { Eigenkoepfe.setzen(neu, fuer: url) }
         do {
             let info = try await c.publicSystemInfo()
+            // Erst jetzt ablegen: fuer eine Adresse, unter der nichts
+            // antwortet, bleibt nichts im Schluesselbund liegen.
+            if !neu.isEmpty { eigeneKoepfeSichern(neu, fuer: url) }
             client = c
             serverName = info.serverName ?? url.host()
             serverVersion = info.version
@@ -474,6 +682,7 @@ final class AppModel {
             errorMessage = nil
             return true
         } catch {
+            if !neu.isEmpty { Eigenkoepfe.setzen(vorher, fuer: url) }
             errorMessage = anschlussfehler(error, adresse: url)
             return false
         }
@@ -555,6 +764,7 @@ final class AppModel {
         // stehen.
         Task { await loadViews() }
         errorMessage = nil
+        sammlungstitelSpeicher.removeAll()
         kontowechsel += 1
         #if os(tvOS)
         Regal.leeren()
@@ -606,7 +816,7 @@ final class AppModel {
 
     /// Prüft eine Adresse und hält den Server bereit — Name und Fassung, oder
     /// `nil` mit dem Grund in `errorMessage`.
-    func serverPruefen(_ roh: String) async -> (name: String, fassung: String)? {
+    func serverPruefen(_ roh: String, koepfe: [Eigenkopf] = []) async -> (name: String, fassung: String)? {
         errorMessage = nil
         guard let url = Self.normalizeServerURL(roh) else {
             errorMessage = String(localized: "Die Adresse konnte nicht gelesen werden.")
@@ -616,14 +826,32 @@ final class AppModel {
         if !roh.contains("://"), let anders = AppModelURLNormalizer.andersHerum(url) {
             kandidaten.append(anders)
         }
+        let neu = Eigenkoepfe.bereinigt(koepfe)
+        var letzter: (any Error)?
         for adresse in kandidaten {
             let c = JellyfinClient(baseURL: adresse, deviceID: Self.deviceID, deviceName: Self.deviceName)
-            if let info = try? await c.publicSystemInfo() {
+            let vorher = Eigenkoepfe.eingetragen(fuer: adresse)
+            if !neu.isEmpty { Eigenkoepfe.setzen(neu, fuer: adresse) }
+            let info: PublicSystemInfo
+            do { info = try await c.publicSystemInfo() } catch {
+                letzter = error
+                if !neu.isEmpty { Eigenkoepfe.setzen(vorher, fuer: adresse) }
+                continue
+            }
+            do {
+                if !neu.isEmpty { eigeneKoepfeSichern(neu, fuer: adresse) }
                 aufnahme = c
                 let name = info.serverName ?? adresse.host() ?? String(localized: "Server")
                 aufnahmeName = name
                 return (name, info.version ?? "?")
             }
+        }
+        // Eine Anmeldeseite davor ist kein fehlendes Jellyfin — der Satz
+        // dazu sagt, was zu tun ist.
+        if let j = letzter as? JellyfinError, case let .transport(text) = j,
+           text == Eigenkoepfe.anmeldeseiteText {
+            errorMessage = text
+            return nil
         }
         errorMessage = String(localized: "Unter dieser Adresse antwortet kein Jellyfin.")
         return nil
@@ -780,19 +1008,34 @@ final class AppModel {
         }
     }
 
-    func aehnliche(_ item: Item) async -> [Item] {
-        guard let client else { return [] }
-        return (try? await client.aehnliche(itemID: item.id)) ?? []
+    /// **`nil` heisst gestoert, `[]` heisst wirklich nichts Ähnliches.**
+    ///
+    /// Hier stand `(try? …) ?? []`. Damit sah ein abgebrochener Abruf genauso
+    /// aus wie eine Sammlung ohne Verwandtes — die Serienseite sagte „Nichts
+    /// Ähnliches gefunden", obwohl sie den Server nie erreicht hatte. Das ist
+    /// dieselbe Lüge, die bei der Suche schon einmal einzeln behoben wurde;
+    /// seit dem 21.09.2026 ist sie hier an der Wurzel weg.
+    func aehnliche(_ item: Item) async -> [Item]? {
+        guard let client else { return nil }
+        return try? await client.aehnliche(itemID: item.id, zu: item)
     }
 
-    func extras(_ item: Item) async -> [Item] {
-        guard let client else { return [] }
-        return (try? await client.extras(itemID: item.id)) ?? []
+    /// **`nil` heisst gestoert, `[]` heisst keine Extras.** Siehe `aehnliche`.
+    func extras(_ item: Item) async -> [Item]? {
+        guard let client else { return nil }
+        return try? await client.extras(itemID: item.id)
     }
 
-    func suche(_ begriff: String) async -> [Item] {
+    /// **`nil` heisst gestoert, `[]` heisst nichts gefunden.**
+    ///
+    /// Hier stand `(try? …) ?? []`, und damit wurde aus jedem Netzfehler eine
+    /// leere Trefferliste — die Suche sagte dann „Auf deinem Server steht dazu
+    /// nichts", obwohl sie den Server gar nicht erreicht hatte. Eine App, die
+    /// bei Netzproblemen behauptet, die Sammlung sei leer, verliert Vertrauen
+    /// schneller, als sie es mit Politur gewinnt.
+    func suche(_ begriff: String) async -> [Item]? {
         guard let client, begriff.count >= 2 else { return [] }
-        return (try? await client.suche(begriff)) ?? []
+        return try? await client.suche(begriff)
     }
 
     // MARK: - Personen und Genres
@@ -804,8 +1047,9 @@ final class AppModel {
     /// hier. Sie stand bis zum 12.09.2026 an dieser Stelle und erreichte
     /// damit Linux und Windows nicht — die hängen ausschließlich am Paket.
     /// Dort hat sie jetzt auch Tests.
-    func titel(person id: String) async -> [Item] {
-        guard let client else { return [] }
+    /// **`nil` heisst gestoert, `[]` heisst: von dieser Person liegt nichts da.**
+    func titel(person id: String) async -> [Item]? {
+        guard let client else { return nil }
         return await client.titel(person: id)
     }
 
@@ -818,9 +1062,13 @@ final class AppModel {
         return await client.titel(gattung: gattung, limit: limit)
     }
 
-    func gattungen() async -> [String] {
-        guard let client else { return [] }
-        return (try? await client.gattungen()) ?? []
+    /// **`nil` heisst gestoert, `[]` heisst: der Server kennt keine Genres.**
+    ///
+    /// Die Genre-Auswahl in den Einstellungen stand bei jedem Netzfehler leer
+    /// da — als hätte der Server keine Genres, nicht als hätte er geschwiegen.
+    func gattungen() async -> [String]? {
+        guard let client else { return nil }
+        return try? await client.gattungen()
     }
 
     // MARK: - Kopfbild
@@ -843,6 +1091,13 @@ final class AppModel {
     /// Antwortet sofort mit dem, was schon bekannt ist; kommt der Ersatz
     /// später, zeichnen die Seiten von selbst neu — das Modell ist
     /// beobachtbar.
+    /// Dasselbe Kopfbild in einer bestimmten Breite (in Pixeln) — fuer den
+    /// Download, der es in Bildschirmaufloesung auf das Geraet legt.
+    func kopfbildURL(for item: Item, breite: Int) -> URL? {
+        guard let bilder else { return nil }
+        return Bildwahl.kopf(item, adressen: bilder, breite: breite)
+    }
+
     func kopfbildURL(for item: Item) -> URL? {
         guard let bilder else { return nil }
         if let url = Bildwahl.kopf(item, adressen: bilder, breite: 1200) { return url }
@@ -971,14 +1226,20 @@ final class AppModel {
         } catch { return lesbar(error) }
     }
 
-    func staffeln(_ serie: Item) async -> [Item] {
-        guard let client else { return [] }
-        return (try? await client.staffeln(seriesID: serie.id)) ?? []
+    /// **`nil` heisst gestoert, `[]` heisst: die Serie hat keine Staffeln.**
+    ///
+    /// Eine Serie ohne Staffeln gibt es wirklich (frisch angelegt, noch nichts
+    /// eingelesen). Ein stummer Server ist etwas anderes, und die Serienseite
+    /// muss beides auseinanderhalten können.
+    func staffeln(_ serie: Item) async -> [Item]? {
+        guard let client else { return nil }
+        return try? await client.staffeln(seriesID: serie.id)
     }
 
-    func folgen(serie: String, staffel: String?) async -> [Item] {
-        guard let client else { return [] }
-        return (try? await client.folgen(seriesID: serie, seasonID: staffel)) ?? []
+    /// **`nil` heisst gestoert, `[]` heisst: die Staffel hat keine Folgen.**
+    func folgen(serie: String, staffel: String?) async -> [Item]? {
+        guard let client else { return nil }
+        return try? await client.folgen(seriesID: serie, seasonID: staffel)
     }
 
     /// Wo man in dieser Serie steht — für den großen Knopf.
@@ -1119,22 +1380,32 @@ final class AppModel {
                filter: Bibliotheksfilter = .alle,
                ab startIndex: Int = 0,
                anzahl: Int = AppModel.seitengroesse) async -> (titel: [Item], gesamt: Int)? {
+        await items(aus: Regalquelle(eltern: parentID, art: art), sortierung: sortierung,
+                    filter: filter, ab: startIndex, anzahl: anzahl)
+    }
+
+    /// Eine Seite aus einer Bibliothek, aus allen oder aus einer Sammlung —
+    /// die Unterschiede stehen in ``Regalquelle``.
+    func items(aus quelle: Regalquelle,
+               sortierung: Sortierung = .name,
+               filter: Bibliotheksfilter = .alle,
+               ab startIndex: Int = 0,
+               anzahl: Int = AppModel.seitengroesse) async -> (titel: [Item], gesamt: Int)? {
         guard let client else { return nil }
-        let gattungen = Bibliotheksgattung.typen(zu: art)
         do {
-            let antwort = try await client.items(parentID: parentID,
+            let antwort = try await client.items(parentID: quelle.eltern,
                                                  limit: anzahl,
                                                  startIndex: startIndex,
                                                  sortBy: sortierung.feld,
-                                                 sortOrder: sortierung.richtung,
+                                                 sortOrder: quelle.richtung(sortierung),
                                                  filters: filter.jellyfinFilter,
                                                  istGesehen: filter.istGesehen,
                                                  // Rekursiv, sobald die Gattung
                                                  // feststeht: sonst blieben die
                                                  // Titel unter den virtuellen
                                                  // Ordnern unerreichbar.
-                                                 recursive: Bibliotheksgattung.rekursiv(zu: art),
-                                                 includeItemTypes: gattungen)
+                                                 recursive: quelle.rekursiv,
+                                                 includeItemTypes: quelle.typen)
             return (antwort.items, antwort.totalRecordCount)
         } catch {
             errorMessage = lesbar(error)
@@ -1325,6 +1596,7 @@ final class AppModel {
         laufenderTitel = (item, plan)
         gemeldetPausiert = false
         meldungen.melden(meldung(.start, item: item, plan: plan, seconds: seconds))
+        trakt.start(item: item, client: client, sekunden: seconds)
     }
 
     private nonisolated static func startSenden(client: JellyfinClient, item: Item,
@@ -1397,6 +1669,7 @@ final class AppModel {
     func laufzustandGemeldet(laeuft: Bool, sekunden: Double) {
         guard let laufenderTitel, gemeldetPausiert == laeuft else { return }
         Protokoll.schreib("[Melden] sofort: \(laeuft ? "weiter" : "Pause") bei \(Int(sekunden)) s")
+        trakt.laufzustand(laeuft: laeuft, sekunden: sekunden)
         reportProgress(item: laufenderTitel.item, plan: laufenderTitel.plan,
                        seconds: sekunden, paused: !laeuft)
     }
@@ -1407,6 +1680,7 @@ final class AppModel {
         guard let laufenderTitel else { return }
         reportProgress(item: laufenderTitel.item, plan: laufenderTitel.plan,
                        seconds: max(0, ziel), paused: gemeldetPausiert)
+        trakt.sprung(sekunden: max(0, ziel))
     }
 
     /// **Die App geht in den Hintergrund** (T3 #5): den Stand jetzt melden,
@@ -1474,6 +1748,9 @@ final class AppModel {
         // Stand des letzten Takts zeigen, nicht den von vor dem Abspielen.
         defer { wiedergabeBeendet += 1 }
         let eintrag = meldung(.stopp, item: item, plan: plan, seconds: seconds)
+        // Vor dem Abwarten: Trakt hat seine eigene Reihe und wartet auf
+        // Jellyfin nicht — und Jellyfin nicht auf Trakt.
+        trakt.stopp(item: item, sekunden: seconds)
         // Sofort, nicht nach der Antwort: ein Fernbefehl in der Zwischenzeit
         // gehoert keinem Titel mehr (T1-M9).
         if let laufenderTitel,

@@ -19,7 +19,7 @@ import JellyfinKit
 ///
 /// Das Bild kommt über ``Bildbruecke`` aus dem C-Teil. Warum das nicht in
 /// Swift steht, begründet `bildbruecke.h`.
-final class Abspieler {
+final class Abspieler: @unchecked Sendable {
 
     private var kern: OpaquePointer?
     private var spieler: OpaquePointer?
@@ -36,6 +36,10 @@ final class Abspieler {
     /// Steht diese Zahl still, liegt es nicht an VLC, sondern daran, dass
     /// das Bildfeld keinen Takt mehr bekommt.
     private(set) var takte = 0
+    #if DEBUG
+    private var holdauer = 0.0
+    private var zuletztGemeldet = 0
+    #endif
 
     /// Wie die Anzeige das Bild zeigt. Ein `GtkPicture`, sonst nichts.
     var anzeige: Widget! { bildfeld }
@@ -61,6 +65,13 @@ final class Abspieler {
         // das Bild selbst dar. `--no-video-title-show` unterdrückt die
         // Einblendung, die VLC sonst über jedes Bild legt.
         var woerter = ["--no-video-title-show", "--quiet"]
+        // **Der Schalter gilt in jedem Bau**, nicht nur im Debug: wer einen
+        // Fehler meldet, hat den ausgelieferten. Mit `--quiet` schweigt VLC
+        // auch zu „no suitable decoder module", und genau solche Saetze
+        // fehlten am 20.09.2026 im Protokoll eines Testers.
+        if ProcessInfo.processInfo.environment["SWIFTLY_VLC_MELDUNGEN"] == "1" {
+            woerter = ["--no-video-title-show", "--verbose=1"]
+        }
         #if DEBUG
         // **Zum Pruefen, ob Module fehlen.** Mit `--quiet` schweigt VLC auch
         // zu „no suitable decoder module"; im Debug-Bau laesst
@@ -93,11 +104,43 @@ final class Abspieler {
         }
         #endif
 
-        var argumente: [UnsafePointer<CChar>?] = []
-        for wort in woerter { argumente.append(strdup(wort)) }
-        kern = libvlc_new(Int32(argumente.count), &argumente)
-        for zeiger in argumente { free(UnsafeMutableRawPointer(mutating: zeiger)) }
-
+        // **`libvlc_new` gehoert nicht auf den Hauptfaden.**
+        //
+        // Es liest die Modulliste ein — unter Windows hunderte DLLs im
+        // `plugins`-Ordner, und beim ersten Mal sieht der Virenwaechter jede
+        // davon an. Im Protokoll eines Testers vom 20.09.2026 stand dafuer
+        // `[Hauptfaden] VLC anhalten hat 13030 ms gebraucht`, und zwar beim
+        // **ersten** Abspielen, wo es gar nichts anzuhalten gab: der Aufruf
+        // griff auf `App.abspieler` zu, und weil das ein `lazy var` ist, lief
+        // in diesem Augenblick dieser Konstruktor. Dreizehn Sekunden stand
+        // das Fenster, bevor der Druck auf „Abspielen" ueberhaupt bearbeitet
+        // wurde.
+        //
+        // Der Kern entsteht deshalb nebenlaeufig. Wer vorher oeffnen will,
+        // hinterlegt seinen Auftrag; er laeuft, sobald der Kern steht.
+        let werte = woerter
+        Task.detached { [self] in
+            #if DEBUG
+            // **Damit der Wartefall einmal wahr wird.** Auf einem schnellen
+            // Rechner steht der Kern nach 0,1 s, und der Zweig „Titel wartet"
+            // waere nie gelaufen — geprueft ist er dann nicht.
+            if let langsam = ProcessInfo.processInfo.environment["SWIFTLY_VLC_LANGSAM"],
+               let s = UInt64(langsam) { try? await Task.sleep(nanoseconds: s * 1_000_000_000) }
+            #endif
+            var argumente: [UnsafePointer<CChar>?] = []
+            for wort in werte { argumente.append(strdup(wort)) }
+            let fertig = libvlc_new(Int32(argumente.count), &argumente)
+            for zeiger in argumente { free(UnsafeMutableRawPointer(mutating: zeiger)) }
+            let adresse = UInt(bitPattern: fertig.map { UnsafeMutableRawPointer($0) })
+            aufHauptfaden {
+                self.kern = adresse == 0 ? nil : OpaquePointer(UnsafeMutableRawPointer(bitPattern: adresse)!)
+                self.vlcMeldungenAnschliessen()
+                Protokoll.schreib("[Player] VLC bereit")
+                let wartet = self.wartenderAuftrag
+                self.wartenderAuftrag = nil
+                wartet?()
+            }
+        }
         bruecke = bildbruecke_neu()
         bildfeld = gtk_picture_new()
         // **Das Bildfeld überlebt seine Seite.** Es wird einmal angelegt und
@@ -133,12 +176,44 @@ final class Abspieler {
     /// wurde beim Oeffnen gesetzt und beim Folgenwechsel vergessen, und die
     /// naechste Folge lief still mit der alten. Ohne Standardwert kann keine
     /// der drei Aufrufstellen sie auslassen — der Uebersetzer fragt nach.
+    /// Was laufen soll, sobald ``kern`` steht — hoechstens eines, das
+    /// juengste gewinnt. Wer zweimal tippt, will den zweiten Titel.
+    private var wartenderAuftrag: (() -> Void)?
+    private var wartetSeit: Date?
+
+    /// Steht der Kern? Der Ladeschirm sagt es dem Zuschauer, statt ihn vor
+    /// eine schwarze Fläche zu setzen.
+    var bereit: Bool { kern != nil }
+
     func oeffnen(_ url: URL, ab: Double, puffer: Pufferstufe) {
+        guard kern != nil else {
+            Protokoll.schreib("[Player] VLC noch nicht bereit, Titel wartet")
+            if wartetSeit == nil { wartetSeit = Date() }
+            wartenderAuftrag = { [self] in oeffnen(url, ab: ab, puffer: puffer) }
+            return
+        }
+        // **Wie lange der erste Titel auf VLC gewartet hat.** Beim ersten Mal
+        // auf einem Rechner sieht der Virenwaechter jede Modul-DLL an; danach
+        // liegt alles im Zwischenspeicher des Systems. Ohne diese Zahl ist
+        // „dauert beim ersten Mal laenger" eine Erzaehlung und keine Messung.
+        if let seit = wartetSeit {
+            wartetSeit = nil
+            Protokoll.schreib(String(format: "[Player] wartete %.1f s auf VLC",
+                                     Date().timeIntervalSince(seit)))
+        }
         beenden(nurMedium: true)
         geholteBilder = 0
         takte = 0
+        #if DEBUG
+        holdauer = 0; zuletztGemeldet = 0
+        #endif
+        sprungBei = nil
         guard let kern, let bruecke else { return }
-        guard let medium = libvlc_media_new_location(kern, url.absoluteString) else { return }
+        // Hinter einem Vorposten holt die App den Strom selbst: libVLC kann
+        // keine eigenen Header senden (Issue #4). Ohne Header unverändert.
+        let vlcAdresse = Stromweiterleiter.gemeinsam.adresse(fuer: url)
+        if vlcAdresse != url { Protokoll.schreib("[Player] Strom über den Weiterleiter") }
+        guard let medium = libvlc_media_new_location(kern, vlcAdresse.absoluteString) else { return }
         // **Die Stelle als Option, nicht als Sprung nach dem Start.** Genau
         // so macht es die iOS-Fassung (`:start-time`), und der Grund steht
         // dort: ein Sprung nach dem Start baut den Strom ein zweites Mal auf.
@@ -183,9 +258,58 @@ final class Abspieler {
                                 laufzustandRuf, ich)
             libvlc_event_attach(ereignisse, libvlc_event_type_t(libvlc_MediaPlayerPaused.rawValue),
                                 laufzustandRuf, ich)
+            // **Die uebrigen Zustaende nur fuers Protokoll.** Am 20.09.2026
+            // stand im Protokoll eines Testers keine einzige Zeile aus dem
+            // Player — es war nicht zu sagen, ob VLC ueberhaupt aufgemacht
+            // hat, ob es puffert oder ob es mit einem Fehler stehenblieb.
+            // Ohne diese Zeilen ist der naechste Bericht wieder blind.
+            for zustand in [libvlc_MediaPlayerOpening, libvlc_MediaPlayerBuffering,
+                            libvlc_MediaPlayerStopped, libvlc_MediaPlayerEndReached,
+                            libvlc_MediaPlayerEncounteredError] {
+                libvlc_event_attach(ereignisse, libvlc_event_type_t(zustand.rawValue),
+                                    zustandRuf, ich)
+            }
         }
+        Protokoll.schreib("[Player] oeffne \(url.isFileURL ? "Datei" : "Netz")"
+            + " \(url.pathExtension.isEmpty ? "ohne Endung" : url.pathExtension)"
+            + ", ab \(Int(ab)) s, Puffer \(puffer)")
         libvlc_media_player_play(spieler)
         bildTaktStarten()
+        rendererMelden()
+    }
+
+    /// **Womit GTK zeichnet — einmal je Titel ins Protokoll.**
+    ///
+    /// Steht dort `GskCairoRenderer`, laeuft das Zeichnen auf der CPU: jedes
+    /// Bild wird dann in Software auf Fenstergroesse gerechnet, und bei
+    /// 1080p25 ist der Hauptfaden damit ausgelastet. Genau das erklaert, warum
+    /// ein Fenster sich nicht mehr verschieben laesst und warum Arbeit, die
+    /// im Leerlauf haengt, nicht mehr drankommt. Mit `GskGLRenderer` oder
+    /// `GskNglRenderer` macht das die Grafikkarte.
+    ///
+    /// Eine Zeile je Titel, kein Dauerlaerm — und sie beantwortet eine Frage,
+    /// die sonst nur ein Blick auf den fremden Rechner beantwortet.
+    private func rendererMelden() {
+        guard let bildfeld, let fenster = gtk_widget_get_native(bildfeld),
+              let zeichner = gtk_native_get_renderer(fenster) else { return }
+        let name = g_type_name_from_instance(
+            unsafeBitCast(zeichner, to: UnsafeMutablePointer<GTypeInstance>.self))
+        Protokoll.schreib("[Player] Zeichenwerk \(name.map { String(cString: $0) } ?? "unbekannt")")
+    }
+
+    /// **Was VLC selbst zu melden hat, in unser Protokoll.**
+    ///
+    /// Ohne das schweigt libVLC (`--quiet`) oder schreibt nach stderr, wo es
+    /// unter Windows niemand findet. Nur auf ausdruecklichen Wunsch, denn
+    /// VLCs Zeilen koennen die volle Abspieladresse tragen — und die traegt
+    /// bei Jellyfin den Zugangsschluessel. Deshalb wird jede Zeile vorher
+    /// entschaerft; wer ein Protokoll weiterschickt, gibt seinen Schluessel
+    /// nicht mit.
+    private func vlcMeldungenAnschliessen() {
+        guard ProcessInfo.processInfo.environment["SWIFTLY_VLC_MELDUNGEN"] == "1",
+              let kern else { return }
+        vlcspur_an(kern, vlcLogRuf)
+        Protokoll.schreib("[Player] VLC-Meldungen an")
     }
 
     func abspielen() { spieler.map { libvlc_media_player_set_pause($0, 0) } }
@@ -228,7 +352,35 @@ final class Abspieler {
 
     func setzeZeit(_ sekunden: Double) {
         guard let spieler else { return }
+        // **Jeder Sprung ins Protokoll, mit dem Bildzaehler.**
+        //
+        // Ein Tester meldete am 20.09.2026: vorwaerts springen bringt kein
+        // Bild, rueckwaerts schon. Ob nach einem Sprung ueberhaupt neue
+        // Bilder an der Bruecke ankommen, ist die Frage, die das entscheidet
+        // — und ohne den Zaehler daneben ist sie nicht zu beantworten.
+        let von = position
+        Protokoll.schreib(String(format: "[Player] springe %@ auf %.0f s (von %.0f s, Bilder bisher %d)",
+                                 sekunden >= von ? "vor" : "zurueck", max(0, sekunden), von, geholteBilder))
+        sprungBei = geholteBilder
+        sprungSeit = Date()
         libvlc_media_player_set_time(spieler, libvlc_time_t(max(0, sekunden) * 1000))
+    }
+
+    /// Der Bildstand beim letzten Sprung — ``Spieler`` meldet danach einmal,
+    /// wie viele dazugekommen sind.
+    private(set) var sprungBei: Int?
+    private var sprungSeit = Date.distantPast
+
+    /// Wie viele Bilder seit dem letzten Sprung dazukamen, und danach
+    /// zuruecksetzen. `nil`, wenn kein Sprung offen ist.
+    /// **Erst nach einer Sekunde.** Der Takt kommt unter Umstaenden zehn
+    /// Millisekunden nach dem Sprung, und dann steht dort „0 Bilder dazu",
+    /// auch wenn alles in Ordnung ist. Die Zahl soll eine Auskunft sein,
+    /// keine Falle fuer den Naechsten, der sie liest.
+    func sprungbilanz() -> Int? {
+        guard let bei = sprungBei, Date().timeIntervalSince(sprungSeit) >= 1 else { return nil }
+        sprungBei = nil
+        return geholteBilder - bei
     }
 
     /// Sprungweiten kommen aus den Einstellungen (B2), nicht von hier.
@@ -299,8 +451,9 @@ final class Abspieler {
     @discardableResult
     func untertiteldateiAnhaengen(_ adresse: URL) -> Bool {
         guard let spieler else { return false }
+        let vlcAdresse = Stromweiterleiter.gemeinsam.adresse(fuer: adresse)
         return libvlc_media_player_add_slave(spieler, libvlc_media_slave_type_subtitle,
-                                             adresse.absoluteString, false) == 0
+                                             vlcAdresse.absoluteString, false) == 0
     }
 
     /// Tempostufen kommen aus dem Paket (B9), nicht von hier.
@@ -389,6 +542,23 @@ final class Abspieler {
 
     fileprivate func bildHolen() {
         takte += 1
+        #if DEBUG
+        // **Zum Pruefen der Wache selbst.** `SWIFTLY_BREMSE=300` haelt den
+        // Hauptfaden bei jedem Bild auf und muss die Taktluecken-Meldung
+        // ausloesen. Eine Wache, die nie angeschlagen hat, ist keine.
+        if let bremse = ProcessInfo.processInfo.environment["SWIFTLY_BREMSE"],
+           let ms = UInt32(bremse), ms > 0 { Thread.sleep(forTimeInterval: Double(ms) / 1000) }
+        let begonnen = ContinuousClock.now
+        defer {
+            let d = ContinuousClock.now - begonnen
+            holdauer += Double(d.components.attoseconds) / 1e15   // ms
+            if geholteBilder > 0, geholteBilder % 100 == 0, geholteBilder != zuletztGemeldet {
+                zuletztGemeldet = geholteBilder
+                Protokoll.schreib(String(format: "[Bild] %d Bilder, %.2f ms je Bild im Schnitt",
+                                         geholteBilder, holdauer / Double(geholteBilder)))
+            }
+        }
+        #endif
         guard let bruecke else { return }
         var daten: UnsafePointer<UInt8>?
         var breite: UInt32 = 0, hoehe: UInt32 = 0, zeilentakt: UInt32 = 0
@@ -409,6 +579,7 @@ final class Abspieler {
     // MARK: Schliessen
 
     func beenden(nurMedium: Bool = false) {
+        if !nurMedium { wartenderAuftrag = nil }
         if let spieler {
             libvlc_media_player_stop(spieler)
             libvlc_media_player_release(spieler)
@@ -438,6 +609,62 @@ nonisolated(unsafe) private let laufzustandRuf: @convention(c) (
         guard let zeiger = UnsafeMutableRawPointer(bitPattern: adresse) else { return }
         Unmanaged<Abspieler>.fromOpaque(zeiger).takeUnretainedValue().laufzustand?(laeuft)
     }
+}
+
+/// **VLCs Zustaende ins Protokoll.** Wie ``laufzustandRuf`` auf VLCs Faden:
+/// hier nichts von libVLC rufen, nur die Nummer weitertragen.
+nonisolated(unsafe) private let zustandRuf: @convention(c) (
+    UnsafePointer<libvlc_event_t>?, UnsafeMutableRawPointer?
+) -> Void = { ereignis, _ in
+    guard let ereignis else { return }
+    func ist(_ art: libvlc_event_e) -> Bool {
+        ereignis.pointee.type == libvlc_event_type_t(art.rawValue)
+    }
+    let name: String
+    if ist(libvlc_MediaPlayerOpening)               { name = "oeffnet" }
+    else if ist(libvlc_MediaPlayerStopped)          { name = "angehalten" }
+    else if ist(libvlc_MediaPlayerEndReached)       { name = "Ende erreicht" }
+    else if ist(libvlc_MediaPlayerEncounteredError) { name = "FEHLER" }
+    else if ist(libvlc_MediaPlayerBuffering)        { name = "puffert" }
+    else { name = "Zustand \(ereignis.pointee.type)" }
+    // **Puffern kommt im Hundertstelschritt.** Nur die Randwerte melden,
+    // sonst steht das Protokoll voll mit einer Zahl, die sich um 0,4 hebt.
+    if ist(libvlc_MediaPlayerBuffering) {
+        let stand = ereignis.pointee.u.media_player_buffering.new_cache
+        guard stand <= 0.1 || stand >= 100 else { return }
+        aufHauptfaden { Protokoll.schreib("[Player] puffert \(Int(stand)) %") }
+        return
+    }
+    let ende = ist(libvlc_MediaPlayerStopped) || ist(libvlc_MediaPlayerEndReached)
+        || ist(libvlc_MediaPlayerEncounteredError)
+    aufHauptfaden {
+        Protokoll.schreib("[Player] \(name)")
+        if ende { Wachhalter.freigeben() }
+    }
+}
+
+/// **VLCs eigene Meldungen** — die Zeile kommt fertig formatiert aus der
+/// C-Schicht (`vlcspur_an`), weil `va_list` sich in Swift nicht als
+/// `@convention(c)` schreiben laesst. Laeuft auf VLCs Faden.
+///
+/// Der Zugangsschluessel wird herausgeschnitten, bevor die Zeile steht: VLC
+/// nennt beim Oeffnen die volle Adresse, und die traegt bei Jellyfin den
+/// Schluessel. Ein Protokoll wird weitergeschickt; der Schluessel nicht.
+nonisolated(unsafe) private let vlcLogRuf: @convention(c) (
+    UnsafePointer<CChar>?
+) -> Void = { zeile in
+    guard let zeile else { return }
+    var text = String(cString: zeile)
+    for schluessel in ["api_key=", "X-Emby-Token=", "ApiKey=", "Token="] {
+        while let von = text.range(of: schluessel) {
+            let rest = text[von.upperBound...]
+            let bis = rest.firstIndex(where: { "&? \n\"".contains($0) }) ?? rest.endIndex
+            text.replaceSubrange(von.lowerBound..<bis, with: schluessel + "…")
+            if bis == rest.endIndex { break }
+        }
+    }
+    let fertig = text
+    aufHauptfaden { Protokoll.schreib("[VLC] " + fertig) }
 }
 
 /// Der Taktgeber von GTK. Wie jeder C-Rückruf trägt er die Instanz als Zeiger.

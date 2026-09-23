@@ -32,6 +32,11 @@ struct WiedergabeEinstellungenView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            // Derselbe Grund wie jede andere Seite. Er war kurz ein eigener
+            // (`gruppengrund`), weil reines Schwarz unter einer Karte die
+            // ganze Strecke auf einmal war; seit der Grund #101010 ist,
+            // betraegt der Sprung ein Fuenftel davon und braucht keine
+            // Ausnahme mehr.
             Stil.grund.ignoresSafeArea()
             VStack(spacing: 0) {
                 // Titel neben dem Pfeil, nicht darunter — siehe
@@ -86,7 +91,7 @@ struct WiedergabeEinstellungenView: View {
                       an: Binding(get: { directPlay },
                                   set: { model.immerDirectPlay = $0 }))
                 .disabled(!frei)
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Blattlinie()
             Wertzeile(symbol: "chart.bar", titel: Text("Höchste Bitrate"),
                       wert: Bitrate.text(model.bitratenGrenze),
                       gedimmt: directPlay, aktion: waehlen)
@@ -98,11 +103,11 @@ struct WiedergabeEinstellungenView: View {
             Wertzeile(symbol: "speaker.wave.2", titel: Text("Ton"),
                       wert: model.tonSprache.isEmpty ? String(localized: "Wie die Datei") : model.tonSprache,
                       aktion: { oeffne(.ton) })
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Blattlinie()
             Wertzeile(symbol: "captions.bubble", titel: Text("Untertitel"),
                       wert: model.untertitelSprache.isEmpty ? String(localized: "Aus") : model.untertitelSprache,
                       aktion: { oeffne(.untertitel) })
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Blattlinie()
             Wahlzeile(symbol: "text.alignleft", titel: Text("Untertitel automatisch"),
                       unter: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
                       an: Binding(get: { model.untertitelAutomatisch },
@@ -117,7 +122,7 @@ struct WiedergabeEinstellungenView: View {
             Wahlzeile(symbol: "forward.end.fill", titel: Text("Nächste Folge automatisch"),
                       an: Binding(get: { model.naechsteAutomatisch },
                                   set: { model.naechsteAutomatisch = $0 }))
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Blattlinie()
             // **Der Schalter fuer das Technikschild.**
             //
             // Er steht hier bei „Verhalten" und nicht bei den Bildregeln: er
@@ -126,15 +131,15 @@ struct WiedergabeEinstellungenView: View {
             Wahlzeile(symbol: "waveform.badge.magnifyingglass",
                       titel: Text("Technische Daten im Player"),
                       an: $technikschild)
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Blattlinie()
             Wertzeile(symbol: "gobackward", titel: Text("Zurückspulen"),
                       wert: "\(model.zurueckSekunden) s",
                       aktion: { oeffne(.zurueck) })
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Blattlinie()
             Wertzeile(symbol: "goforward", titel: Text("Vorspulen"),
                       wert: "\(model.vorSekunden) s",
                       aktion: { oeffne(.vor) })
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Blattlinie()
             // **Steht bei „Verhalten", nicht bei der Qualitaet.** Sie aendert
             // nichts am Bild — nur, wie viel Vorrat der Player haelt, bevor
             // eine wackelige Leitung durchschlaegt.
@@ -287,6 +292,12 @@ struct Auswahleintrag: Identifiable {
 
 /// Zeile mit Schalter.
 struct Wahlzeile: View {
+    /// **Gesperrt heisst gedaempft.** `Wertzeile` nimmt `gedimmt` von aussen;
+    /// hier stand die Sperre bislang fest auf `false`, und „Immer Direct
+    /// Play" sah bedienbar aus, obwohl `.disabled` daran hing. Der Zustand
+    /// kommt aus der Umgebung, damit das `.disabled` der Aufrufstelle reicht
+    /// und keine zweite Angabe danebenstehen muss, die auseinanderlaufen kann.
+    @Environment(\.isEnabled) private var bedienbar
     let symbol: String
     /// Bewusst `Text` und nicht `String` oder `LocalizedStringKey`: die
     /// Zeilen tragen mal eine feste Beschriftung — `Text("Sprache")`, wird
@@ -298,7 +309,8 @@ struct Wahlzeile: View {
     @Binding var an: Bool
 
     var body: some View {
-        Zeilenaufbau(symbol: symbol, titel: titel, unter: unter, gedimmt: false) {
+        Zeilenaufbau(symbol: symbol, titel: titel, unter: unter,
+                     gedimmt: !bedienbar) {
             Schalter(an: $an)
         }
     }
@@ -322,18 +334,21 @@ struct Wertzeile: View {
             HStack(spacing: 8) {
                 if let wert {
                     Text(wert)
-                        .font(.system(size: 15))
-                        .foregroundStyle(Color.white.opacity(0.5))
+                        // Der Wert wächst mit wie der Titel daneben — sonst folgte die
+                        // halbe Zeile der Systemschrift und die andere Hälfte nicht.
+                        .mitwachsend(15)
+                        .foregroundStyle(Stil.schriftLeise)
                 }
                 if aktion != nil {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.28))
+                        // Siehe RootView: 28 Prozent sind 2,50:1.
+                        .foregroundStyle(Stil.schriftSehrLeise)
                 }
             }
         }
         if let aktion {
-            Button(action: aktion) { rumpf }.buttonStyle(.plain)
+            Button(action: aktion) { rumpf }.buttonStyle(Stil.Druckknopf())
         } else {
             rumpf
         }
@@ -355,18 +370,37 @@ struct Zeilenaufbau<Rechts: View>: View {
                 .font(.system(size: 17))
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
-                titel.mitwachsend(16)
+                // **Listenzeile: 15 Semifett.** 16 Regular war genauso laut
+                // wie der Erklaertext darunter — der Name fuehrt, der Wert
+                // folgt. Leiter in BRAND.md, Abschnitt 2.
+                titel.mitwachsend(15, .semibold)
+                    // **Gedaempft, nicht durchscheinend** (BRAND 5).
+                    //
+                    // Hier stand `Stil.schrift.opacity(0.4)` auf der ganzen
+                    // Zeile. Zwei Schaeden in einem Wert: gerechnet sind das
+                    // 3,57:1 auf `grund` — unter 4,5, und BRAND 1 fuehrt
+                    // „weiss 40 %" namentlich als verboten. Und der innere
+                    // `foregroundStyle` der Unterzeile gewinnt gegen den
+                    // aeusseren, also wurde die Unterzeile **nicht** gedimmt
+                    // und stand mit 5,58:1 heller da als ihr eigener Titel.
+                    // Die Rangfolge kippte genau im gesperrten Zustand.
+                    .foregroundStyle(gedimmt ? Stil.schriftSehrLeise : Stil.schrift)
                 if let unter {
                     unter
-                        .mitwachsend(13)
-                        .foregroundStyle(Color.white.opacity(0.45))
+                        .mitwachsend(12)
+                        // Gesperrt tragen Titel und Unterzeile denselben Ton:
+                        // der Abstand zwischen ihnen bleibt so erhalten,
+                        // statt sich umzudrehen.
+                        .foregroundStyle(Stil.schriftSehrLeise)
                         .multilineTextAlignment(.leading)
                 }
             }
             Spacer(minLength: 0)
             rechts()
         }
-        .foregroundStyle(Stil.schrift.opacity(gedimmt ? 0.4 : 1))
+        // Das Symbol links und alles, was `rechts()` liefert, folgen dem
+        // Zustand der Zeile; die Textspalte setzt sich ihren Ton selbst.
+        .foregroundStyle(gedimmt ? Stil.schriftSehrLeise : Stil.schrift)
         .padding(.horizontal, Stil.rand(breit: breit))
         .padding(.vertical, 14)
         .contentShape(Rectangle())

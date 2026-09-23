@@ -28,6 +28,43 @@ struct StartreihenTests {
         #expect(Set(jetzt) == Set(Startreihe.allCases))
     }
 
+    /// **Der gemeldete Fehler vom 21.09.2026.** Eine Ablage, in der
+    /// „neueFilme" zweimal steht, ergab zwei Reihen „Zuletzt hinzugefuegte
+    /// Filme" untereinander — und weil `geltend` nur anhaengte, was fehlt,
+    /// ueberlebte der Zustand jeden Start und jedes Umsortieren.
+    @Test("Eine doppelt abgelegte Reihe kommt einmal zurueck")
+    func doppelteAblage() {
+        let kaputt = ["weiterschauen", "naechsteFolge", "neueFilme",
+                      "neueFilme", "neueSerien", "neuzugaenge"]
+        let jetzt = Startreihenfolge.geltend(abgelegt: kaputt)
+        #expect(jetzt.count == Startreihe.allCases.count)
+        #expect(jetzt.filter { $0 == .neueFilme }.count == 1)
+        // Der erste Eintrag gilt: die dritte Stelle bleibt die dritte.
+        #expect(jetzt.map(\.rawValue) == ["weiterschauen", "naechsteFolge",
+                                          "neueFilme", "neueSerien", "neuzugaenge"])
+    }
+
+    /// Auch die sichtbare Liste und das Umsortieren duerfen den Zustand nicht
+    /// weitertragen — sonst schriebe der erste Griff an die Einstellungen die
+    /// Doppelung wieder zurueck.
+    @Test("Sichtbar und Verschieben tragen keine Doppelten weiter")
+    func doppelteUeberstehenNichts() {
+        let kaputt = ["neueFilme", "neueFilme", "weiterschauen"]
+        #expect(Startreihenfolge.sichtbar(abgelegt: kaputt, aus: [], getrennt: true)
+                    .filter { $0 == .neueFilme }.count == 1)
+        let neu = Startreihenfolge.verschoben(.weiterschauen, um: -1,
+                                             abgelegt: kaputt, getrennt: true)
+        #expect(neu.count == Startreihe.allCases.count)
+        #expect(Set(neu) == Set(alle))
+    }
+
+    @Test("Glattziehen ist auf sich selbst angewandt dasselbe")
+    func sauberIstStabil() {
+        let einmal = Startreihenfolge.sauber([.neueFilme, .weiterschauen, .neueFilme])
+        #expect(einmal == [.neueFilme, .weiterschauen])
+        #expect(Startreihenfolge.sauber(einmal) == einmal)
+    }
+
     @Test("Unbekannte Namen in der Ablage werden verworfen, nicht uebernommen")
     func unbekanntes() {
         let jetzt = Startreihenfolge.geltend(abgelegt: ["gibtsnicht", "weiterschauen"])

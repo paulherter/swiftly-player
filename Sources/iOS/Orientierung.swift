@@ -44,12 +44,45 @@ final class Orientierung {
     }
 
     /// Player offen: darf drehen.
+    /// **Den Ton nehmen, wenn ein Film läuft, und ihn sonst teilen.**
+    ///
+    /// Die Tonsitzung wird beim Start **aktiv** eingerichtet und bleibt es —
+    /// das ist gewollt: frueher wurde sie erst beim Abspielen aktiviert, und
+    /// schlug das mitten in der Player-Animation fehl, bekam VLC eine
+    /// Abtastrate von 0 und das Bild blieb stehen. Daran wird hier nichts
+    /// geaendert.
+    ///
+    /// Umgeschaltet wird nur, **ob sie andere Töne duldet**. Mit
+    /// `.mixWithOthers` laeuft Spotify oder eine Sprachnachricht weiter, waehrend
+    /// Swiftly offen ist. Paul am 22.09.: „Jedes Mal, wenn ich Spotify oder eine
+    /// Sprachnachricht abspiele und dann Swiftly öffne, pausiert trotzdem die
+    /// Sprachnachricht, auch wenn gar nichts läuft." Erst wenn ein Film
+    /// startet, nimmt Swiftly den Ton exklusiv — dann haelt das System die
+    /// andere Wiedergabe an, wie es sich gehoert.
+    ///
+    /// Ein Kategoriewechsel einer schon aktiven Sitzung aendert ihre
+    /// Abtastrate nicht; der VLC-Fehler von damals kann darueber nicht
+    /// zurueckkommen.
+    private func tonExklusiv(_ exklusiv: Bool) {
+        let sitzung = AVAudioSession.sharedInstance()
+        do {
+            try sitzung.setCategory(.playback, mode: .moviePlayback,
+                                    options: exklusiv ? [] : [.mixWithOthers])
+        } catch {
+            Protokoll.schreib("[Audio] umschalten fehlgeschlagen: \(error.localizedDescription)")
+        }
+    }
+
     func playerGeoeffnet(querformatFest: Bool, anfordern: Bool = true) {
+        tonExklusiv(true)
         setzen(querformatFest ? .landscape : [.portrait, .landscape], anfordern: anfordern)
     }
 
     /// Zurück zur App: wieder hochkant.
-    func playerGeschlossen(anfordern: Bool = true) { setzen(.portrait, anfordern: anfordern) }
+    func playerGeschlossen(anfordern: Bool = true) {
+        tonExklusiv(false)
+        setzen(.portrait, anfordern: anfordern)
+    }
 
     /// Steht die Szene gerade quer? Nur auf dem iPhone von Belang.
     static var szeneQuer: Bool {
@@ -145,7 +178,13 @@ final class SwiftlyAppDelegate: NSObject, UIApplicationDelegate {
         do {
             // .playback + .moviePlayback: Ton läuft weiter, wenn das Fenster
             // schrumpft — sonst wäre Bild-im-Bild stumm.
-            try sitzung.setCategory(.playback, mode: .moviePlayback)
+            //
+            // **Beim Start aber mit `.mixWithOthers`**, siehe `tonFreigeben`.
+            // Eine aktive Wiedergabe-Sitzung beansprucht den Ton sonst
+            // exklusiv, und iOS hielt Spotify oder eine Sprachnachricht an,
+            // sobald man Swiftly nur oeffnete — ohne dass hier irgendetwas
+            // lief.
+            try sitzung.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
             // **Systemhinweise duerfen den Film nicht anhalten.**
             //
             // Die Mitteilungszentrale herunterzuziehen loeste eine

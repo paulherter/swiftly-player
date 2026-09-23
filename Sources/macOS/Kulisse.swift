@@ -68,35 +68,3 @@ struct Kulissenblende: ViewModifier {
             }
     }
 }
-
-/// Nebenknopf der Knopfreihe: abgerundetes Quadrat, **nur Symbol**.
-///
-/// tvOS hat sich bewusst gegen Beschriftungen entschieden — „Merkliste
-/// erreicht eigentlich das Merklistensymbol an sich". Ohne Beschriftung ist
-/// der Name für VoiceOver Pflicht (E8), deshalb der ausdrückliche `titel`.
-struct Nebenknopf: View {
-    let symbol: String
-    let titel: LocalizedStringKey
-    var aktiv = false
-    let auswahl: () -> Void
-
-    @State private var schwebt = false
-
-    var body: some View {
-        Button(action: auswahl) {
-            Image(systemName: symbol)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(aktiv ? Stil.grund : Stil.schrift)
-                .frame(width: Stil.hauptknopfHoehe, height: Stil.hauptknopfHoehe)
-                .background(aktiv ? Stil.schrift
-                                  : Stil.schrift.opacity(schwebt ? 0.22 : 0.14),
-                            in: RoundedRectangle(cornerRadius: Stil.ecke))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { schwebt = $0 }
-        .animation(Stil.zeitSchweben, value: schwebt)
-        .accessibilityLabel(Text(titel))
-        .accessibilityAddTraits(aktiv ? [.isButton, .isSelected] : .isButton)
-    }
-}

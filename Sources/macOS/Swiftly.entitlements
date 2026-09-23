@@ -10,13 +10,15 @@
 	     ausgehende Verbindungen sind darin standardmaessig gesperrt. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- **Kein com.apple.security.network.server.** Es stand hier einmal,
-	     begruendet mit einer Suche nach dem Server im lokalen Netz — die es
-	     nicht gibt: kein UDP, kein Bonjour, kein Lauschen, die Adresse wird
-	     von Hand eingegeben. Apples Pruefung hat den Bau am 03.09.2026
-	     deshalb abgewiesen. Ein Client, der nur hinausgeht, braucht nur
-	     .client. Kaeme die Serversuche je dazu, gehoert das Entitlement
-	     zurueck — zusammen mit dem Code, der es rechtfertigt. -->
+	<!-- **Lauschen, nur auf 127.0.0.1.** Hinter einem Vorposten (Cloudflare
+	     Access, Authelia …) braucht der Strom eigene Header, die VLC nicht
+	     senden kann. Der Stromweiterleiter im Paket nimmt VLCs Anfrage auf
+	     127.0.0.1 an und holt den Strom mit den Headern — nur wenn welche
+	     eingetragen sind. Ohne dieses Recht verweigert die Sandbox das bind.
+	     Am 03.09.2026 wurde ein Bau abgewiesen, weil das Recht ohne Code
+	     dastand, der es braucht; jetzt gibt es ihn (Stromweiterleiter.swift). -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 	<!-- Dieselbe Begruendung wie auf iOS: ohne die Zugriffsgruppe verweigert
 	     der Keychain das Schreiben (-34018) und die Anmeldung ginge bei
 	     jedem Start verloren. -->

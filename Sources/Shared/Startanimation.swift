@@ -209,6 +209,17 @@ struct Startvorhang: View {
                 // Auf dem Fernseher entsprechend mehr: 440 Punkt sind auf
                 // 1920 × 1080 eine Briefmarke.
                 .frame(width: kante, height: kante)
+                // **Der Vorhang sagt jetzt auch, wer da startet.** Die
+                // Animation ist ein Bild mit Text und trug weder eine
+                // Beschriftung noch `accessibilityHidden` — wer sie nicht
+                // sieht, saß zwei bis dreieinhalb Sekunden vor einer stummen
+                // Fläche und erfuhr nicht, dass die App anläuft. Hülle und
+                // Lottie-Ansicht bringen von sich aus kein Element mit, das
+                // VoiceOver anspringen könnte; deshalb erst
+                // `accessibilityElement`, dann derselbe Name, den `Wortmarke`
+                // und `Signet` in `Marken.swift` schon tragen.
+                .accessibilityElement()
+                .accessibilityLabel(Text("Swiftly"))
         }
         .ignoresSafeArea()
         .transition(.opacity)

@@ -19,8 +19,16 @@ struct Playermass {
     /// Trefferfläche der Symbolknöpfe.
     let knopf: CGFloat = 38
     let symbol: CGFloat = 18
-    let titel: CGFloat = 22
-    let meta: CGFloat = 14
+    /// **Die Leiter der App, nicht eine eigene.**
+    ///
+    /// Hier standen Titel 22 und Angabe 14 — der Player war damit der
+    /// einzige Ort der Mac-Fassung mit einer zweiten Schriftleiter, und 14
+    /// steht in keiner von beiden. Jetzt dieselben Zahlen wie auf dem
+    /// iPhone: Titel = Reihenueberschrift (20), Angabe = Angabe (12), Zeit
+    /// 13 wie der Kacheltitel — die kleinste Stufe, die ueber Bild noch
+    /// sicher lesbar ist.
+    let titel: CGFloat = 20
+    let meta: CGFloat = 12
     let zeit: CGFloat = 13
     /// Abstand der Überspringen-Pille über der Leiste.
     let ueberLeiste: CGFloat = 20
@@ -51,11 +59,12 @@ struct Symbolknopf: View {
                 .font(.system(size: mass.symbol, weight: .medium))
                 .foregroundStyle(.white)
                 .frame(width: mass.knopf, height: mass.knopf)
-                .background(schwebt ? .white.opacity(0.12) : .clear,
-                            in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
+                .background(schwebt ? Stil.schwebeflaeche : .clear,
+                            in: RoundedRectangle(cornerRadius: Stil.eckeFeld,
+                                                 style: .continuous))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckknopf())
         .help(beschriftung)
         .accessibilityLabel(Text(beschriftung))
         .onHover { schwebt = $0 }
@@ -108,9 +117,13 @@ private struct Wahlspalte<Inhalt: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Spaltenkopf = Blattrubrik: 17 Semifett mit ihrer Sperrung.
+            // 18 Bold stand in keiner Leiter, und Bold steht genau einmal,
+            // am Seitentitel (BRAND 2).
             Text(titel)
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(.white)
+                .font(Stil.rubrikGross)
+                .tracking(Stil.sperrungRubrik)
+                .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 9)
@@ -139,7 +152,7 @@ private struct Ebenenzeile: View {
         Button(action: aktion) {
             HStack(spacing: 9) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(Stil.listentitel)
                     .opacity(gewaehlt ? 1 : 0)
                     .frame(width: 17)
                 // Spurnamen kommen aus der Datei — wörtlich, nicht nachschlagen.
@@ -147,16 +160,19 @@ private struct Ebenenzeile: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .font(.system(size: 15, weight: gewaehlt ? .semibold : .regular))
+            // **Ein Gewicht.** Gewaehlt heisst voller Ton, nicht ein
+            // zweiter Schnitt — der aendert die Breite (BRAND 5).
+            .font(Stil.koerper)
             .foregroundStyle(gewaehlt ? Stil.schrift : Stil.schriftLeise)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(schwebt ? .white.opacity(0.06) : .clear,
-                        in: RoundedRectangle(cornerRadius: Stil.eckeFeld))
+            .background(schwebt ? Stil.schwebeflaeche : .clear,
+                        in: RoundedRectangle(cornerRadius: Stil.eckeFeld,
+                                             style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Stil.Druckzeile())
         .onHover { schwebt = $0 }
         .accessibilityAddTraits(gewaehlt ? .isSelected : [])
     }
@@ -374,14 +390,18 @@ struct FolgenEbene: View {
                         VStack(spacing: 0) {
                             ForEach(folgen) { folge in
                                 // **`aktion:` ausgeschrieben, nicht als
-                                // Abschlussblock** — sonst bindet Swifts
-                                // Regel für abschliessende Blöcke ihn an
-                                // `ringtipp` (auch optional, mit Vorbelegung)
-                                // statt an `aktion`, und ein Klick riefe
-                                // `starten` mit der Unterkante als `Item` auf.
+                                // Abschlussblock.** Es war einmal nötig, weil
+                                // `Folgenzeile` davor `ringtipp` trug und
+                                // Swifts Regel für abschliessende Blöcke ihn
+                                // dort gebunden hätte. Der Ring ist weg, der
+                                // ausgeschriebene Name bleibt: er sagt, was
+                                // der Block tut.
                                 Folgenzeile(model: model, folge: folge,
                                             aktion: { gewaehlteFolge in starten(gewaehlteFolge) })
-                                .background(folge.id == item.id ? Color.white.opacity(0.08) : .clear)
+                                // `gewaehlt` ist genau dieser Wert — weiss
+                                // mit acht Prozent, die Flaeche einer
+                                // laufenden Zeile.
+                                .background(folge.id == item.id ? Stil.gewaehlt : .clear)
                                 .accessibilityAddTraits(folge.id == item.id ? .isSelected : [])
                                 .id(folge.id)
                                 .transition(.opacity)
@@ -411,8 +431,8 @@ struct FolgenEbene: View {
             gewaehlteStaffel = passendeStaffel(in: gemerkt.staffeln)
             if let id = gewaehlteStaffel?.id, let liste = gemerkt.folgen[id] { folgen = liste }
         }
-        let frisch = await model.staffeln(serie)
-        guard !frisch.isEmpty else { return }
+        // `nil` heisst gestoert: dann bleibt stehen, was der Speicher hatte.
+        guard let frisch = await model.staffeln(serie), !frisch.isEmpty else { return }
         staffeln = frisch
         if gewaehlteStaffel == nil || !frisch.contains(where: { $0.id == gewaehlteStaffel?.id }) {
             gewaehlteStaffel = passendeStaffel(in: frisch)
@@ -431,11 +451,13 @@ struct FolgenEbene: View {
     private func folgenLaden(staffelGewechselt: Bool = false) async {
         guard let serie = item.seriesId else { return }
         let staffel = gewaehlteStaffel?.id
-        let geladen = await model.folgen(serie: serie, staffel: staffel)
+        // Gescheitert heisst: die Liste bleibt, wie sie war. Sie leer zu
+        // setzen hiesse behaupten, die Staffel habe keine Folgen.
+        guard let geladen = await model.folgen(serie: serie, staffel: staffel) else { return }
         // Wer inzwischen eine andere Staffel gewählt hat, bekommt deren Folgen.
         guard staffel == gewaehlteStaffel?.id else { return }
         if staffelGewechselt {
-            withAnimation(.easeOut(duration: 0.25)) { folgen = geladen }
+            withAnimation(Stil.einblenden) { folgen = geladen }
         } else {
             folgen = geladen
         }

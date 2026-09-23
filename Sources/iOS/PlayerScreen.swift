@@ -81,8 +81,9 @@ struct PlayerScreen: View {
     private var ebeneOffen: Bool { offeneEbene != nil }
 
     /// **Der Angebotsknopf unten rechts** — eine Regel, egal ob die Steuerung
-    /// offen ist (Paul, 17.09.2026): Überspringen steht, solange der Abschnitt
-    /// läuft; die Karte „Nächste Folge" steht bei geschlossener Steuerung
+    /// offen ist (Paul, 17.09.2026): Überspringen steht die ersten sechs
+    /// Sekunden des Abschnitts, danach nur mit der Steuerung
+    /// (`Angebotsebene.knopfdauer`); die Karte „Nächste Folge" steht bei geschlossener Steuerung
     /// (`Angebotsebene.anzeige`), bei offener steht dort der normale Knopf.
     private var angebotDa: Bool {
         // Beim Spulen weicht sie der Vorschau über der Leiste.
@@ -253,7 +254,10 @@ struct PlayerScreen: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: 0.2), value: drehungFertig)
+        // Derselbe Takt, in dem jede andere Ansicht ihren Bereich tauscht
+        // (BRAND 6). Vorher easeOut 0,2 von Hand — dieselbe Dauer, aber eine
+        // eigene Zahl für eine Rolle, die schon einen Token hat.
+        .animation(Stil.bereichswechsel, value: drehungFertig)
         .transition(.opacity)
     }
 
@@ -261,11 +265,16 @@ struct PlayerScreen: View {
     private var kleinerHinweis: some View {
         VStack(spacing: 12) {
             Image(systemName: "pip.fill")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(.white.opacity(0.45))
+                // Vorher `.light` — das Gewicht ist gestrichen, es gibt nur
+                // noch Regular, Medium und Semibold (BRAND 2). Medium wie die
+                // übrigen Zeichen im Player. Der Grad 30 bleibt: ein Zeichen,
+                // keine Schrift.
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(Stil.schriftSehrLeise)
             Text("Läuft im kleinen Fenster")
-                .font(.system(size: 15))
-                .foregroundStyle(.white.opacity(0.6))
+                // Dieselbe Stufe wie vorher (15 Regular), jetzt als Token.
+                .font(Stil.koerper)
+                .foregroundStyle(Stil.schriftLeise)
         }
         .allowsHitTesting(false)
         .transition(.opacity)
@@ -277,15 +286,19 @@ struct PlayerScreen: View {
         VStack(spacing: 10) {
             Lader(groesse: 26, staerke: 2.5)
             Text("Verbindung unterbrochen")
-                .font(.subheadline.weight(.medium))
+                // Vorher `.subheadline.weight(.medium)` — 15 Medium steht in
+                // keiner Leiter. Eine Zeile, die etwas sagt, ist 15 Semibold.
+                .font(Stil.listentitel)
             Text("Läuft weiter, sobald das Netz zurück ist.")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.7))
+                // Vorher `.caption`; 12 Regular heißt hier `klein`.
+                .font(Stil.klein)
+                .foregroundStyle(Stil.schriftLeise)
         }
-        .foregroundStyle(.white)
+        // Gelesen wird `schrift`, nicht rohes Weiß — vorher `.white`.
+        .foregroundStyle(Stil.schrift)
         .padding(.horizontal, 22)
         .padding(.vertical, 18)
-        .background(Color.black.opacity(0.7), in: RoundedRectangle(cornerRadius: Stil.ecke))
+        .background(Color.black.opacity(0.7), in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
         .transition(.opacity)
         .allowsHitTesting(false)
     }
@@ -365,6 +378,29 @@ struct PlayerScreen: View {
                                       : .smooth(duration: 0.34),
                            value: schleierDa)
 
+            // **Das Technikschild.** Eine Auskunft, kein Bedienteil: es nimmt
+            // nichts an. **Direkt auf dem Film** (Paul, 22.09.2026): über dem
+            // Schleier, damit es lesbar bleibt, aber unter Titel, Knöpfen und
+            // Leiste — und damit auch unter den Ebenen. **Es gleitet mit der
+            // Steuerung** (Paul, 22.09.2026): offen steht es unter der
+            // Titelzeile, zu rückt es an den oberen Rand, wo sie stand — so
+            // ist es nie im Weg. Bewegung statt Blende, dieselbe Kurve wie die
+            // Steuerung; mit reduzierter Bewegung springt es.
+            if technikschild {
+                Technikschild(plan: plan, werte: spielwerte, flaeche: surface,
+                              schirmHertz: schirmtakt.hertz)
+                    .padding(.leading, mass.seite)
+                    .padding(.top, mass.oben + mass.knopf + Stil.kachelAbstand)
+                    .offset(y: steuerungDa ? 0 : -(mass.knopf + Stil.kachelAbstand))
+                    .animation(Stil.bewegungReduziert ? nil
+                               : Self.kurve(da: steuerungDa, ebene: ebeneOffen),
+                               value: steuerungDa)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .ignoresSafeArea(edges: mass.obenUebergehen)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
             Group {
                 // Eigene Ebene statt zwischen Kopf und Fuss gestapelt: der
                 // Fuss ist hoeher als der Kopf, dadurch lag die Mitte
@@ -415,14 +451,20 @@ struct PlayerScreen: View {
             // Steuerung. Beide stehen an genau dieser einen Stelle (Paul,
             // 17.09.2026): vorher lag der Knopf bei offener Steuerung in der
             // Titelzeile, zehn Punkt höher, und sprang beim Aufblenden. Der Fuß
-            // hält ihm dafür nur den Platz frei. Öffnen und Schließen der
-            // Steuerung lassen ihn stehen; er kommt und geht mit denselben
-            // Kurven wie die Steuerung.
+            // hält ihm dafür nur den Platz frei. Überspringen steht sechs
+            // Sekunden von selbst, danach kommt und geht es mit der Steuerung
+            // (`Angebotsebene.knopfdauer`) — immer mit denselben Kurven wie
+            // sie.
             //
             // Rechtsbündig direkt über der Leiste, mit denselben Maßen wie der
             // Fuß — so überlappt er sie nie, ob die Steuerung offen ist oder
             // nicht.
-            if angebotDa {
+            // **Weich weg, nicht zack weg** (Paul, 22.09.2026): das Entfernen
+            // aus dem Baum lief trotz Transition hart. Der Knopf bleibt
+            // deshalb im Baum, solange es ein Angebot gibt, und kommt und
+            // geht über die Deckkraft — die Transition gilt nur noch am
+            // Anfang und Ende des Abschnitts.
+            if angebot.sichtbar {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     HStack(spacing: 0) {
@@ -438,6 +480,11 @@ struct PlayerScreen: View {
                 .padding(.horizontal, mass.seite)
                 .padding(.bottom, mass.unten + mass.leiste + mass.ueberLeiste)
                 .ignoresSafeArea(edges: mass.obenUebergehen)
+                .opacity(angebotDa ? 1 : 0)
+                .allowsHitTesting(angebotDa)
+                .accessibilityHidden(!angebotDa)
+                .animation(angebotDa ? .snappy(duration: 0.18, extraBounce: 0) : .smooth(duration: 0.34),
+                           value: angebotDa)
                 .transition(.asymmetric(
                     insertion: .opacity.animation(.snappy(duration: 0.18, extraBounce: 0)),
                     removal: .opacity.animation(.smooth(duration: 0.34))))
@@ -452,20 +499,6 @@ struct PlayerScreen: View {
             // Montiert nur, solange eine offen ist: die Spurspalten lesen
             // `surface?.tonspuren` und `?.untertitelspuren` direkt aus
             // VLCKit, und dauerhaft montiert wäre das bei jedem Takt.
-            // **Das Technikschild.** Eine Auskunft, kein Bedienteil: es nimmt
-            // nichts an. Über der Steuerung, aber **unter den Ebenen** — wer
-            // Folgen oder Einstellungen aufmacht, will die sehen, nicht das Schild.
-            if technikschild {
-                Technikschild(plan: plan, werte: spielwerte, flaeche: surface,
-                              schirmHertz: schirmtakt.hertz)
-                    .padding(.leading, Stil.randAbstand)
-                    .padding(.top, 12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-                    .zIndex(4)
-            }
-
             if let offeneEbene {
                 ebenenansicht(offeneEbene)
                     .transition(.opacity)
@@ -527,7 +560,9 @@ struct PlayerScreen: View {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: airplayPlan?.url)
+        // Auf den Fernseher und zurück tauscht den ganzen Bereich aus, also der
+        // Bereichswechsel-Token. Vorher easeInOut 0,2 von Hand.
+        .animation(Stil.bereichswechsel, value: airplayPlan?.url)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         // Am Stapel gemessen, nicht an der Videofläche: die meldet nach der
@@ -557,7 +592,9 @@ struct PlayerScreen: View {
             guard !Task.isCancelled, !amSchieben, !ebeneOffen else { return }
             steuerungSichtbar = false
         }
-        .animation(.easeInOut(duration: 0.15), value: sprungAnzeige?.richtung)
+        // Vorher easeInOut 0,15 — das liegt zwischen zwei Stufen. Die Marke
+        // steht nur 700 ms, deshalb die kürzere: Umschalten 0,10.
+        .animation(Stil.umschalten, value: sprungAnzeige?.richtung)
         .animation(Self.ebenenKurve, value: offeneEbene)
 
         // Auch die Griffe erneuern: sonst rechnet `umschalten` weiter mit
@@ -889,8 +926,13 @@ struct PlayerScreen: View {
         let da = steuerungDa || offeneEbene == .folgen
         return HStack(alignment: .top, spacing: 12) {
             Text(verbatim: titelzeile)
-                .font(.system(size: mass.titel, weight: .bold))
-                .foregroundStyle(.white)
+                // 20 Semifett — die Reihenueberschrift aus der Leiter. Vorher
+                // 19 (iPhone) und 22 (iPad) in Bold: ein Grad, den es in
+                // keiner Leiter gibt, und Bold steht genau einmal, am
+                // Seitentitel. Die Begruendung stehe bei `Playermass`.
+                .font(.system(size: mass.titel, weight: .semibold))
+                // Vorher rohes `.white`; gelesen wird `schrift`.
+                .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
             Spacer(minLength: 0)
             symbolreihe
@@ -912,7 +954,7 @@ struct PlayerScreen: View {
                 // Nur Platzhalter: gezeigt wird der Titel von
                 // `stehenderTitel`, der bei offener Folgenebene stehen bleibt.
                 Text(verbatim: titelzeile)
-                    .font(.system(size: mass.titel, weight: .bold))
+                    .font(.system(size: mass.titel, weight: .semibold))
                     .lineLimit(1)
                     .opacity(0)
                     .accessibilityHidden(true)
@@ -927,7 +969,9 @@ struct PlayerScreen: View {
                 .foregroundStyle(Stil.schriftLeise)
                 .lineLimit(1)
             }
-            .foregroundStyle(.white)
+            // Vorher rohes `.white`; gelesen wird `schrift`. Die Metazeile
+            // darunter setzt sich ihr `schriftLeise` selbst.
+            .foregroundStyle(Stil.schrift)
 
             Spacer(minLength: 0)
 
@@ -942,7 +986,9 @@ struct PlayerScreen: View {
             // noch dem Überspringen-Knopf in die Quere.
             if let hinweis {
                 Text(hinweis)
-                    .font(.caption2).foregroundStyle(.white.opacity(0.85))
+                    // Vorher `.caption2` (11 Regular) — 11 steht nur als
+                    // Semibold in der Leiter; ein Satz ist eine Angabe, also 12.
+                    .font(Stil.klein).foregroundStyle(Stil.schrift)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, mass.seite)
                     .offset(y: 22)
@@ -1010,8 +1056,20 @@ struct PlayerScreen: View {
     private var fuss: some View {
         Zeitzeile(position: $position, dauer: dauer, amSchieben: amSchieben,
                   schrift: mass.zeit, pad: mass.pad,
-                  vorschau: { trickplay.bild(bei: $0, model: model) }) { schiebt in
+                  vorschau: { trickplay.bild(bei: $0, model: model) },
+                  // **Beide Grenzen, nicht nur der Anfang.** Wo der Vorspann
+                  // anfaengt, sagt allein noch nicht, wo er aufhoert — und
+                  // genau das will man sehen, bevor man greift.
+                  marken: abschnitte.flatMap { [$0.von, $0.bis] }) { schiebt in
             if schiebt {
+                // **Der Regler ist das Bauteil, an dem der Finger am
+                // laengsten liegt** — und die ganze App hatte bis zum 21.09.
+                // genau eine Haptik, keine davon im Player. Anfassen und
+                // Loslassen sind die zwei Momente, in denen die Hand eine
+                // Antwort erwartet: leicht beim Greifen, mittel beim
+                // Absetzen, weil der Sprung dann wirklich geschieht.
+                // `Stil.ruck` haelt sich selbst an `bewegungReduziert`.
+                Stil.ruck(.leicht)
                 amSchieben = true
                 zuletztGeschoben = Date()
                 ausblendMarke += 1
@@ -1019,6 +1077,7 @@ struct PlayerScreen: View {
                 // Ausdrücklich zurücksetzen: sonst bliebe amSchieben
                 // stehen und die Zeitanzeige würde nie mehr nachgeführt.
                 amSchieben = false
+                Stil.ruck(.mittel)
                 surface?.seek(toSeconds: position)
                 gesprungen(auf: position)
                 ausblendenVerschieben()
@@ -1043,19 +1102,40 @@ struct PlayerScreen: View {
                 // der Knopf muss im selben Moment umspringen, in dem der Ton
                 // aufhoert, sonst wirkt der ganze Player traege. Dort also
                 // der einfache Austausch.
-                .contentTransition(.symbolEffect(flott ? .replace.offUp
-                                                       : .replace.downUp))
+                //
+                // **Bei reduzierter Bewegung springt es um, statt zu
+                // wechseln.** Der Massstab am Knopf fragt die Einstellung
+                // schon; dieser Effekt tat es nicht, und damit lief mitten im
+                // Player genau die Bewegung weiter, die jemand abgeschaltet
+                // hat.
+                .contentTransition(Stil.bewegungReduziert
+                                   ? .identity
+                                   : .symbolEffect(flott ? .replace.offUp
+                                                         : .replace.downUp))
                 .font(.system(size: riesig ? (schmal ? 36 : 48)
                                           : (gross ? (schmal ? 24 : 30) : 17),
                               weight: .medium))
-                .foregroundStyle(.white.opacity(gedimmt ? 0.35 : 1))
+                // **Gesperrt heißt gedämpfte Schrift, nicht durchscheinend**
+                // (BRAND 5). Vorher `.white.opacity(0.35)`: über einer hellen
+                // Szene war das Zeichen dann gar nicht mehr da, über einer
+                // dunklen fast normal — die Deckkraft hing am Bild statt am
+                // Zustand.
+                .foregroundStyle(gedimmt ? Stil.schriftSehrLeise : Color.white)
                 // Diskreter Effekt aus SF Symbols: spielt einmal ab und geht
                 // von selbst in die Ruhelage zurueck. Ein selbst gerechneter
                 // Winkel blieb dagegen stehen.
-                .symbolEffect(.bounce, options: .speed(1.7), value: takt)
+                // Ein Wert, der sich nie aendert, loest den Effekt nie aus —
+                // so bleibt der Knopf bei reduzierter Bewegung still, ohne
+                // dass der Zweig die Ansicht austauscht.
+                .symbolEffect(.bounce, options: .speed(1.7),
+                              value: Stil.bewegungReduziert ? 0 : takt)
                 .frame(width: kante(riesig), height: kante(riesig))
                 .contentShape(Rectangle())
         }
+        // **Jeder Knopf gibt Rückmeldung** (BRAND 5). Zurück, Pause und Vor
+        // hatten keine: ein Bildknopf im Standardstil zeigt beim Druck nichts,
+        // und gerade hier ist die Fläche groß und der Finger weit vom Symbol.
+        .buttonStyle(Stil.Druckknopf())
         .accessibilityLabel(beschriftung.map { Text($0) } ?? Text(verbatim: symbol))
         .accessibilityRemoveTraits(gedimmt ? .isButton : [])
     }
@@ -1100,6 +1180,9 @@ struct PlayerScreen: View {
         case .keiner:
             break
         case let .ueberspringen(nach, _):
+            // Mittel, wie das Absetzen des Reglers: ein Abschnitt zu
+            // ueberspringen versetzt den Film um Minuten, nicht um Sekunden.
+            Stil.ruck(.mittel)
             // Wie ein Sprung von Hand: Stelle setzen, springen, und die
             // Anzeige kurz nicht überschreiben lassen.
             surface?.seek(toSeconds: nach)
@@ -1150,7 +1233,9 @@ struct PlayerScreen: View {
     /// aber falsch für einen Befehl von außen, der ausdrücklich „spiel ab"
     /// oder „halt an" sagt.
     private func laufzustand(_ an: Bool) {
-        withAnimation(.easeOut(duration: 0.12)) { laeuft = an }
+        // Dieselbe Rolle wie in `ausfuehren`, also derselbe Token: Umschalten
+        // 0,10. Vorher easeOut 0,12 — zwei Werte für ein Umschalten.
+        withAnimation(Stil.umschalten) { laeuft = an }
         steuerungSichtbar = true
         zentrale.standNachziehen(position: position, laeuft: an, tempo: tempo)
         ausblendenVerschieben()
@@ -1170,6 +1255,11 @@ struct PlayerScreen: View {
     }
 
     private func spulen(_ sekunden: Int32) {
+        // Knopf **und** Doppeltipp laufen hier durch, also sitzt die
+        // Rueckmeldung an einer Stelle. Leicht, nicht mittel: ein Sprung von
+        // zehn Sekunden ist kleiner als das Absetzen des Reglers, und der
+        // Doppeltipp wird oft mehrmals hintereinander ausgeloest.
+        Stil.ruck(.leicht)
         // Das Ziel vor dem Sprung ausrechnen: von einem noch offenen Ziel aus,
         // nicht von der Stelle, an der VLC gerade noch steht.
         let ziel = Wiedergabetakt.ziel(um: Double(sekunden), stand: anzeigestand)
@@ -1213,13 +1303,22 @@ struct PlayerScreen: View {
     @discardableResult
     private func angebotNachziehen(vergangen: Double) -> Bool {
         guard !wechselt else { return false }
-        let fertig = ebene.takt(angebot: angebot,
+        var neu = ebene
+        let fertig = neu.takt(angebot: angebot,
                                 karteFaellig: Abschnittslogik.karteFaellig(position: position, dauer: dauer,
                                                                            abschnitte: abschnitte,
                                                                            hatNaechsteFolge: naechsteFolge != nil),
                                 laeuft: laeuft && bildFrei && !amSchieben,
                                 vergangen: vergangen,
                                 countdown: Abschnittslogik.countdown(position: position, dauer: dauer))
+        // Blendet der Überspringen-Knopf von selbst aus (`knopfdauer`), soll
+        // er so weich gehen, wie er kam: der Takt läuft ohne Animation, also
+        // den Wechsel der Sichtbarkeit hier ausdrücklich animieren.
+        if neu.anzeige.sichtbar != ebene.anzeige.sichtbar {
+            withAnimation(.smooth(duration: 0.34)) { ebene = neu }
+        } else {
+            ebene = neu
+        }
         fuellungStellen()
         return fertig
     }
@@ -1664,10 +1763,17 @@ private struct Sprungmarke: View {
         VStack(spacing: 6) {
             Image(systemName: richtung < 0 ? "gobackward" : "goforward")
                 .font(.system(size: 32, weight: .medium))
-                .symbolEffect(.bounce, options: .speed(1.7), value: gedreht)
-            Text("\(sekunden) s").font(.footnote.weight(.medium))
+                // Siehe den Knopf oben: bei reduzierter Bewegung bleibt der
+                // Wert stehen, und der Effekt spielt nicht.
+                .symbolEffect(.bounce, options: .speed(1.7),
+                              value: Stil.bewegungReduziert ? false : gedreht)
+            // Vorher `.footnote.weight(.medium)` — dieselbe Stufe (13 Medium),
+            // aber als Systemgrad, der mit der Systemschrift mitwandert; der
+            // Player bleibt fest.
+            Text("\(sekunden) s").font(Stil.kachel)
         }
-        .foregroundStyle(.white)
+        // Vorher rohes `.white`.
+        .foregroundStyle(Stil.schrift)
         .frame(width: 108, height: 108)
         .background(.black.opacity(0.45), in: Circle())
         .onAppear { gedreht = true }
@@ -1720,15 +1826,62 @@ struct VideoSurfaceHost: UIViewRepresentable {
 /// gespeicherte Werte** vergleicht SwiftUI die Eingaben, findet keine, die
 /// sich geaendert haetten, und laesst `body` aus.
 private struct Playerschleier: View {
+    /// Wie weit die Baender reichen. Oben deckt es Statusleiste, Titel,
+    /// Metazeile und die Knopfreihe; unten die Ueberspringen-Pille, die
+    /// Zeitzeile und den sicheren Bereich darunter.
+    private static let hoeheOben: CGFloat = 200
+    private static let hoeheUnten: CGFloat = 260
+
     var body: some View {
-        // **Flach, ohne Verläufe** — rgba(11,11,13,.42) wie im Entwurf.
-        // **Reines Schwarz, nicht `Stil.grund`.** Über HDR-Video wird
-        // #0B0B0D als SDR-Farbe hochgerechnet und hebt dunkle Szenen an —
-        // die Steuerung machte das Bild heller statt dunkler. Wie auf tvOS.
-        Color.black.opacity(0.42)
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .transition(.opacity)
+        // **Reines Schwarz, nicht `Stil.grund`.** Ueber HDR-Video wird #0B0B0D
+        // als SDR-Farbe hochgerechnet und hebt dunkle Szenen an — die
+        // Steuerung machte das Bild heller statt dunkler. Wie auf tvOS, und so
+        // steht es in BRAND 4.
+        // **Die Flaeche fuehrt die Groesse, die Baender liegen darueber.**
+        //
+        // Hier stand ein `ZStack` mit einem `VStack` darin, und dessen zwei
+        // feste Baender ergaben zusammen **460 Punkt Mindesthoehe**. Vorher
+        // war der Schleier ein blosses `Color` — das hat keine eigene Groesse
+        // und passt in jeden Rahmen, auch in den kleinen Fensterplayer. Mit
+        // der Mindesthoehe ragte er dort heraus, und mit ihm alles, was auf
+        // ihm liegt. Paul am 21.09.: „der Player ist kaputt, die Elemente
+        // ragen aus dem Player raus."
+        //
+        // Als `overlay` auf der Flaeche zaehlen die Baender fuer die Groesse
+        // nicht mit — die Flaeche bleibt beliebig dehnbar —, und `clipped()`
+        // haelt sie in ihrem Rahmen, wenn der einmal kleiner ist als sie.
+        Color.black.opacity(0.45)
+            .overlay(alignment: .top) { bandOben }
+            .overlay(alignment: .bottom) { bandUnten }
+            .clipped()
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .transition(.opacity)
+    }
+
+    /// Oben: gehalten, bis die Knopfreihe zu Ende ist, dann ausgefedert. Ein
+    /// Verlauf, der gleich am oberen Rand abnimmt, ist genau dort am
+    /// schwaechsten, wo der Titel steht — 0,55 ueber der Flaeche sind zusammen
+    /// 0,752, und damit traegt der Titel 9,68:1 und die Metazeile in
+    /// `schriftLeise` 4,66:1.
+    private var bandOben: some View {
+        LinearGradient(stops: [.init(color: .black.opacity(0.55), location: 0),
+                               .init(color: .black.opacity(0.55), location: 0.45),
+                               .init(color: .clear, location: 1)],
+                       startPoint: .top, endPoint: .bottom)
+            .frame(height: Self.hoeheOben)
+    }
+
+    /// Unten umgekehrt und am Rand am dichtesten: dort sitzt die Zeitzeile.
+    /// 0,62 ueber der Flaeche sind zusammen 0,791 — 11,27:1 statt der 5,70:1,
+    /// die die flache Fassung erreichte. Der Rand ist also **lesbarer**
+    /// geworden, nicht nur die Mitte heller.
+    private var bandUnten: some View {
+        LinearGradient(stops: [.init(color: .clear, location: 0),
+                               .init(color: .black.opacity(0.42), location: 0.55),
+                               .init(color: .black.opacity(0.62), location: 1)],
+                       startPoint: .top, endPoint: .bottom)
+            .frame(height: Self.hoeheUnten)
     }
 }
 
@@ -1746,20 +1899,29 @@ private struct Zeitzeile: View {
     let pad: Bool
     /// Das Trickplay-Bild zur Stelle, oder `nil`.
     let vorschau: (Double) -> CGImage?
+    /// Grenzen der Abschnitte in Sekunden — Kerben auf dem Regler.
+    let marken: [Double]
     /// `true` beim Anfassen, `false` beim Loslassen.
     let schiebt: (Bool) -> Void
 
     var body: some View {
         HStack(spacing: 14) {
             Text(Spielzeit.text(position))
-            Zeitregler(wert: $position, bis: max(dauer, 1), beimSchieben: schiebt)
+            Zeitregler(wert: $position, bis: max(dauer, 1), marken: marken,
+                       beimSchieben: schiebt)
                 .overlay(alignment: .topLeading) {
                     if amSchieben { vorschauKasten }
                 }
             Text("−" + Spielzeit.text(max(dauer - position, 0)))
         }
         .font(.system(size: schrift).monospacedDigit())
-        .foregroundStyle(Stil.schriftLeise)
+        // **`schriftLeise` ist hier nicht zu retten.** Die Zeile liegt mit 13
+        // Punkt auf dem Playerschleier über dem laufenden Bild: über einer
+        // weißen Szene trug `schriftLeise` 1,34:1, Grenze 4,5. Unter dem
+        // Verlaufsband am Fuß (zusammen 0,791) kommt `schrift` auf 11,27:1 —
+        // Verstrichene Zeit und Restzeit sind keine Nebensache; sie sind der
+        // Grund, aus dem man hier hinsieht.
+        .foregroundStyle(Stil.schrift)
     }
 
     /// **Über dem Griff: Vorschaubild, darunter die Zeit.** Ohne Trickplay
@@ -1779,18 +1941,35 @@ private struct Zeitzeile: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: breite, height: hoehe)
-                        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke))
-                        .overlay(RoundedRectangle(cornerRadius: Stil.ecke)
-                            .strokeBorder(.white.opacity(0.35), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
+                        // Ränder trägt `Stil.rand`. Vorher weiß 35 % — eine
+                        // zweite Zahl für dieselbe Rolle.
+                        .overlay(RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
+                            .strokeBorder(Stil.rand, lineWidth: 1))
                 }
                 Text(Spielzeit.text(position))
-                    .font(.system(size: schrift, weight: .bold).monospacedDigit())
-                    .foregroundStyle(.white)
+                    // Bold trägt allein der Seitentitel (BRAND 2), hier also
+                    // Semibold. Der Grad bleibt `mass.zeit`: er rechnet mit der
+                    // Fenstergröße.
+                    .font(.system(size: schrift, weight: .semibold).monospacedDigit())
+                    // Vorher rohes `.white`.
+                    .foregroundStyle(Stil.schrift)
+                    // **Eine eigene Fläche, weil hier kein Schleier liegt.**
+                    // Die Zeit stand blank über dem Trickplay-Standbild: über
+                    // einem weißen Bild 1,09:1, Grenze 4,5. Auf `Stil.grund`
+                    // mit 0,82 — dieselbe Deckkraft wie am Technikschild —
+                    // sind es 10,93:1, und zwar über jedem Standbild.
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Stil.grund.opacity(0.82)))
             }
             .fixedSize()
             // Unterkante knapp über der Trefferfläche — die Leiste selbst
             // liegt in deren Mitte.
-            .position(x: x, y: -((bild == nil ? 0 : hoehe + 6) + schrift) / 2 - 2)
+            // `schrift + 6`: die Kapsel um die Zeit trägt oben und unten je
+            // 3 Punkt Luft. Ohne die 6 rutschte der Kasten um 3 Punkt nach
+            // unten — die Unterkante soll bleiben, wo sie abgenommen ist.
+            .position(x: x, y: -((bild == nil ? 0 : hoehe + 6) + schrift + 6) / 2 - 2)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -1837,12 +2016,17 @@ private struct Angebotsknopf: View {
                     Image(systemName: "forward.end.fill")
                     Text(verbatim: angebot.beschriftung)
                 }
-                .font(.system(size: 15, weight: .bold))
+                // Vorher 15 Bold — Bold steht genau einmal, am Seitentitel
+                // (BRAND 2). Die Stufe darunter ist 15 Semibold.
+                .font(Stil.listentitel)
                 .padding(.horizontal, 18)
                 .frame(height: 40)
                 .background {
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: Stil.eckeFeld).fill(.white)
+                        // Die eine gefüllte Fläche im Bild ist der Hauptknopf,
+                        // und seine Farbe ist `schrift` (BRAND 7). Vorher rohes
+                        // `.white`.
+                        RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous).fill(Stil.schrift)
                         if let fuellung {
                             // **Durchgehend statt im Takt** (Paul, 17.09.2026):
                             // im halben Sekundentakt nachgezogen ruckelte sie am
@@ -1858,10 +2042,10 @@ private struct Angebotsknopf: View {
                             }
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld))
+                    .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(Stil.Druckknopf())
             .foregroundStyle(Self.dunkel)
             .fixedSize()
             .accessibilityLabel(Text(verbatim: angebot.beschriftung))

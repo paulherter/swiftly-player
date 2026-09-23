@@ -21,6 +21,8 @@ struct ServerAufnahmeView: View {
     @State private var pruefe = false
     @State private var benutzer = ""
     @State private var passwort = ""
+    /// „Erweitert" — eigene Header für einen Dienst vor dem Server.
+    @State private var koepfe: [Kopfzeile] = []
     /// Der Code-Weg läuft erst an, wenn der Server steht — sonst zöge jeder
     /// Besuch dieser Seite einen Code bei einem Server, den es noch nicht gibt.
     @State private var perCode = true
@@ -46,7 +48,7 @@ struct ServerAufnahmeView: View {
                 if let fehler = model.errorMessage {
                     Text(verbatim: fehler)
                         .font(Stil.klein)
-                        .foregroundStyle(Stil.warnung)
+                        .foregroundStyle(Stil.fehler)
                         .padding(.top, 24)
                 }
 
@@ -92,6 +94,8 @@ struct ServerAufnahmeView: View {
                 .font(Stil.klein)
                 .foregroundStyle(Stil.schriftSehrLeise)
 
+            TVErweitert(zeilen: $koepfe)
+
             Button(pruefe ? "Moment…" : "Weiter", action: pruefen)
                 .buttonStyle(KnopfStil())
                 .disabled(adresse.isEmpty || pruefe)
@@ -125,10 +129,9 @@ struct ServerAufnahmeView: View {
             .padding(.top, 24)
 
         if let vorgang = stand.vorgang {
-            Text(verbatim: vorgang.code)
-                .font(.system(size: 80, weight: .bold).monospacedDigit())
-                .tracking(14)
-                .foregroundStyle(Stil.schrift)
+            // Dieselben Felder wie auf der Quick-Connect-Seite — siehe
+            // `Codefelder`. Hier stand der Code als eine Zeile in 80 Punkt.
+            Codefelder(code: vorgang.code)
                 .padding(.top, 24)
             Text("Läuft ab in \(stand.restsekunden / 60):\(String(format: "%02d", stand.restsekunden % 60))")
                 .font(Stil.klein)
@@ -137,7 +140,7 @@ struct ServerAufnahmeView: View {
         } else if let fehler = stand.fehler {
             Text(verbatim: fehler)
                 .font(Stil.koerper)
-                .foregroundStyle(Stil.warnung)
+                .foregroundStyle(Stil.fehler)
                 .padding(.top, 24)
         }
 
@@ -174,7 +177,7 @@ struct ServerAufnahmeView: View {
         guard !adresse.isEmpty, !pruefe else { return }
         pruefe = true
         Task {
-            let antwort = await model.serverPruefen(adresse)
+            let antwort = await model.serverPruefen(adresse, koepfe: koepfe.koepfe)
             withAnimation(Stil.einblenden) { server = antwort }
             pruefe = false
         }

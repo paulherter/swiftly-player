@@ -16,7 +16,18 @@ struct ServerAufnahmeView: View {
     /// Ein Server, der schon im Bund ist — dann geht es um ein weiteres Konto
     /// dort, und die Adresse steht schon da.
     var voreingestellt: URL? = nil
-    let fertig: () -> Void
+    /// **Was am Ende geschieht — oder nichts, dann geht die Seite zurueck.**
+    ///
+    /// Sie wurde als Blatt aufgerufen und brauchte deshalb jemanden, der das
+    /// Blatt schliesst. Als geschobene Seite schliesst sie sich selbst; der
+    /// Rueckruf bleibt fuer die Aufrufer, die daneben noch etwas aufraeumen.
+    var fertig: (() -> Void)? = nil
+
+    @Environment(\.dismiss) private var schliessen
+
+    private func beenden() {
+        if let fertig { fertig() } else { schliessen() }
+    }
 
     @State private var adresse = ""
     @State private var server: (name: String, fassung: String)?
@@ -24,6 +35,15 @@ struct ServerAufnahmeView: View {
     @State private var benutzer = ""
     @State private var passwort = ""
     @State private var quickConnect = false
+    /// „Erweitert" — eigene Header für einen Dienst vor dem Server.
+    @State private var koepfe: [Kopfzeile] = []
+
+    /// Was oben neben dem Rueckweg steht — er wechselt mit dem Stand.
+    private var seitentitel: String {
+        if let server { return server.name }
+        return voreingestellt == nil ? String(localized: "Server hinzufügen")
+                                     : String(localized: "Konto hinzufügen")
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -38,7 +58,9 @@ struct ServerAufnahmeView: View {
                     if let fehler = model.errorMessage {
                         Text(fehler)
                             .font(Stil.klein)
-                            .foregroundStyle(Stil.warnung)
+                            // Der Server hat nicht geantwortet — das ist
+                            // schiefgegangen, nicht abwartend. `fehler`.
+                            .foregroundStyle(Stil.fehler)
                             .frame(maxWidth: .infinity)
                             .multilineTextAlignment(.center)
                             .padding(.top, 12)
@@ -51,17 +73,26 @@ struct ServerAufnahmeView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollDismissesKeyboard(.interactively)
-            .safeAreaInset(edge: .bottom) {
-                Button("Abbrechen") {
+            // **Der Rueckweg ist der Abbruch.** Unten stand eine eigene Zeile
+            // „Abbrechen" — die brauchte es, solange die Ansicht als Blatt
+            // kam und nur so zu schliessen war. Als geschobene Seite hat sie
+            // oben denselben Rueckweg wie jede andere, und zwei Wege zurueck
+            // sind einer zu viel.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Unterseitenkopf(titel: seitentitel) {
                     model.serverAufnahmeAbbrechen()
-                    fertig()
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 13))
-                .foregroundStyle(Stil.schriftSehrLeise)
-                .padding(.bottom, 22)
+                    beenden()
+                } rechts: { EmptyView() }
             }
         }
+        #if os(iOS)
+        // Ohne das steht Apples Leiste mit eigenem Rueckpfeil darueber — dann
+        // sind es zwei, und einer davon ist aus Glas. Genau das war hier zu
+        // sehen, weil die Ansicht als Blatt entstanden ist und die Leiste nie
+        // gebraucht hat.
+        .toolbar(.hidden, for: .navigationBar)
+        .background(WischZurueck())
+        #endif
         .onAppear {
             model.serverAufnahmeAbbrechen()
             if let voreingestellt {
@@ -70,10 +101,17 @@ struct ServerAufnahmeView: View {
             }
         }
         .fullScreenCover(isPresented: $quickConnect) {
-            QuickConnectAnmeldung(model: model, neuerServer: true) { fertig() }
+            QuickConnectAnmeldung(model: model, neuerServer: true) { beenden() }
         }
     }
 
+    /// **Kein eigener grosser Titel mehr.**
+    ///
+    /// Hier stand der Seitenname in 28 Bold, 48 Punkt unter der Statusleiste —
+    /// die Bauart einer Wurzelseite. Als geschobene Unterseite traegt ihn die
+    /// Leiste oben neben dem Rueckweg, wie auf jeder anderen Unterseite auch.
+    /// Was bleibt, ist, was der Titel nicht sagen kann: der Verbindungsstand
+    /// und die Erklaerung.
     @ViewBuilder
     private var kopf: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -81,40 +119,30 @@ struct ServerAufnahmeView: View {
                 HStack(spacing: 8) {
                     Circle().fill(Stil.akzent).frame(width: 7, height: 7)
                     Text("Verbunden · Jellyfin \(server.fassung)")
-                        .font(.system(size: 12))
+                        // Die Angabe der Leiter, 12 Regular. Vorher als Zahl.
+                        .font(Stil.klein)
                         .foregroundStyle(Stil.schriftSehrLeise)
                 }
-                // Der Name kommt vom Server.
-                Text(verbatim: server.name)
-                    .font(Stil.titel)
-                    .foregroundStyle(Stil.schrift)
             } else if let voreingestellt {
-                Text("Konto hinzufügen")
-                    .font(Stil.titel)
-                    .foregroundStyle(Stil.schrift)
                 Text(verbatim: voreingestellt.host() ?? voreingestellt.absoluteString)
                     .font(Stil.koerper)
                     .foregroundStyle(Stil.schriftLeise)
-                    .padding(.top, 4)
             } else {
-                Text("Server hinzufügen")
-                    .font(Stil.titel)
-                    .foregroundStyle(Stil.schrift)
                 Text("Die Adresse eines weiteren Jellyfin-Servers. Du bleibst bei beiden angemeldet und wechselst auf der Profilseite zwischen ihnen.")
                     .font(Stil.koerper)
                     .lineSpacing(3)
                     .foregroundStyle(Stil.schriftLeise)
-                    .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 48)
+        .padding(.top, 8)
     }
 
     private var adressteil: some View {
         VStack(spacing: 10) {
             Eingabefeld(text: $adresse, symbol: "externaldrive.connected.to.line.below",
                         platzhalter: "tv.example.de", abschluss: pruefen)
+            Erweitertbereich(zeilen: $koepfe)
             Button(pruefe ? "Verbinden…" : "Verbinden", action: pruefen)
                 .buttonStyle(HauptknopfStil())
                 .padding(.top, 10)
@@ -141,7 +169,8 @@ struct ServerAufnahmeView: View {
             HStack(spacing: 12) {
                 Rectangle().fill(Stil.linie).frame(height: 1)
                 Text("oder")
-                    .font(.system(size: 12))
+                    // Die Angabe der Leiter, 12 Regular. Vorher als Zahl.
+                    .font(Stil.klein)
                     .foregroundStyle(Stil.schriftSehrLeise)
                 Rectangle().fill(Stil.linie).frame(height: 1)
             }
@@ -154,7 +183,7 @@ struct ServerAufnahmeView: View {
                     Text("Mit Quick Connect anmelden")
                 }
             }
-            .buttonStyle(NebenknopfStil())
+            .buttonStyle(NebenknopfStil(akzent: true))
             .padding(.top, 10)
         }
         .padding(.top, 28)
@@ -164,8 +193,11 @@ struct ServerAufnahmeView: View {
         guard !adresse.isEmpty, !pruefe else { return }
         pruefe = true
         Task {
-            let antwort = await model.serverPruefen(adresse)
-            withAnimation(.easeInOut(duration: 0.2)) { server = antwort }
+            let antwort = await model.serverPruefen(adresse, koepfe: koepfe.koepfe)
+            // Der Anmeldeteil kommt, weil der Server geantwortet hat — genau
+            // der Fall, für den `Stil.einblenden` da ist. Vorher eine eigene
+            // `.easeInOut(0,2)`.
+            withAnimation(Stil.einblenden) { server = antwort }
             pruefe = false
         }
     }
@@ -175,7 +207,7 @@ struct ServerAufnahmeView: View {
         Task {
             if await model.anmeldenAmNeuenServer(benutzer: benutzer, passwort: passwort) {
                 passwort = ""
-                fertig()
+                beenden()
             }
         }
     }

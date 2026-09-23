@@ -86,4 +86,52 @@ struct TechnikangabenTests {
         #expect(Technikangaben.gewicht(.directStream) == .gut)
         #expect(Technikangaben.gewicht(.transcode) == .warnend)
     }
+
+    private func spur(_ typ: Farbumfang?, transfer: String? = nil,
+                      profil: Int? = nil, kompatibel: Int? = nil) -> MediaStream {
+        MediaStream(codec: "hevc", type: "Video", language: nil, displayTitle: nil,
+                    channels: nil, isDefault: nil, index: 0, height: 2160, width: 3840,
+                    videoRangeType: typ, colorTransfer: transfer,
+                    dvProfile: profil, dvBlSignalCompatibilityId: kompatibel)
+    }
+
+    @Test("HDR-Art: die Formate beim Namen, Dolby Vision mit Profil und Basisschicht")
+    func dynamik() {
+        #expect(Technikangaben.dynamik(spur(.sdr)) == "SDR")
+        #expect(Technikangaben.dynamik(spur(.hdr10)) == "HDR10")
+        #expect(Technikangaben.dynamik(spur(.hdr10Plus)) == "HDR10+")
+        #expect(Technikangaben.dynamik(spur(.hlg)) == "HLG")
+        #expect(Technikangaben.dynamik(spur(.dolbyVision, profil: 5, kompatibel: 0))
+                == "Dolby Vision P5")
+        #expect(Technikangaben.dynamik(spur(.dolbyVisionHDR10, profil: 8, kompatibel: 1))
+                == "Dolby Vision P8.1 · HDR10")
+        #expect(Technikangaben.dynamik(spur(.dolbyVisionEL, profil: 7, kompatibel: 6))
+                == "Dolby Vision P7 · EL")
+        #expect(Technikangaben.dynamik(spur(.dolbyVisionHLG, profil: 8, kompatibel: 4))
+                == "Dolby Vision P8.4 · HLG")
+        // Ohne Profil steht nur, was sicher ist.
+        #expect(Technikangaben.dynamik(spur(.dolbyVisionHDR10)) == "Dolby Vision · HDR10")
+    }
+
+    @Test("HDR-Art: ohne Typ zählt die Kennlinie, sonst steht nichts da")
+    func dynamikOhneTyp() {
+        #expect(Technikangaben.dynamik(spur(.unbekannt, transfer: "smpte2084")) == "HDR10")
+        #expect(Technikangaben.dynamik(spur(nil, transfer: "arib-std-b67")) == "HLG")
+        #expect(Technikangaben.dynamik(spur(.unbekannt)) == nil)
+        #expect(Technikangaben.dynamik(nil) == nil)
+        // Ungültiges Dolby Vision spielt als Basisschicht.
+        #expect(Technikangaben.dynamik(spur(.dolbyVisionUngueltig, transfer: "smpte2084"))
+                == "HDR10")
+        #expect(Technikangaben.dynamik(spur(.dolbyVisionUngueltig)) == nil)
+    }
+
+    @Test("Dolby-Vision-Felder kommen aus der Serverantwort, auch als Zeichenkette")
+    func dvAusJSON() throws {
+        let roh = #"{"Codec":"hevc","Type":"Video","VideoRangeType":"DOVIWithHDR10","DvProfile":8,"DvBlSignalCompatibilityId":"1"}"#
+        let s = try JSONDecoder().decode(MediaStream.self, from: Data(roh.utf8))
+        #expect(s.dvProfile == 8)
+        #expect(s.dvBlSignalCompatibilityId == 1)
+        #expect(s.codec == "hevc")
+        #expect(Technikangaben.dynamik(s) == "Dolby Vision P8.1 · HDR10")
+    }
 }

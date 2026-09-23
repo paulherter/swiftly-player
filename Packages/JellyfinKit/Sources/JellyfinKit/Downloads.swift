@@ -232,6 +232,30 @@ public enum Downloadregeln {
                              entbehrlichBytes: weg.reduce(0) { $0 + $1.bytes })
     }
 
+    /// Was der Fuss einer Ladeauswahl rechts sagt — **bevor** man drueckt.
+    public enum Fussplatz: Sendable, Equatable {
+        /// So viel bleibt nach dem Laden frei.
+        case frei(Int64)
+        /// So viel fehlt, damit es reicht — die Reserve eingerechnet.
+        case zuWenig(Int64)
+    }
+
+    /// **Der Fuss sagt dasselbe wie das Blatt danach.**
+    ///
+    /// Ob es reicht, entscheidet ``platz(fuer:frei:vorhanden:)`` mit ``luft``
+    /// als Reserve. Rechnete der Fuss ohne sie, stuende dort „Danach 0,4 GB
+    /// frei", und der Knopf fuehrte trotzdem ins Blatt „Nicht genug Platz".
+    /// Also zaehlt die Reserve beim Fehlbetrag mit; reicht es, steht die
+    /// schlichte Differenz da, denn das ist, was das Geraet danach zeigt.
+    ///
+    /// Ohne Auswahl fehlt nichts: dann steht da, was jetzt frei ist — auch
+    /// wenn das weniger als die Reserve ist.
+    public static func fussplatz(fuer bytes: Int64, frei: Int64) -> Fussplatz {
+        guard bytes > 0 else { return .frei(max(frei, 0)) }
+        let uebrig = frei - bytes - luft
+        return uebrig >= 0 ? .frei(frei - bytes) : .zuWenig(-uebrig)
+    }
+
     /// Was die App zum Entfernen vorschlagen darf: **fertig geladen und
     /// gesehen**, groesste zuerst.
     ///
@@ -292,9 +316,121 @@ public enum Downloadregeln {
         bytes.formatted(.byteCount(style: .file))
     }
 
+    /// **Wann ein Fortschritt gezeigt wird: hoechstens einmal je Sekunde.**
+    ///
+    /// `URLSession` meldet im Takt der Pakete. Die Grenze von einem halben
+    /// Prozent allein liess bei einer schnellen Leitung fuenf und mehr neue
+    /// Zahlen je Sekunde durch — die Unterzeile zitterte, statt zu zaehlen.
+    /// Durch kommen immer: die erste Meldung, ein Neuanfang (weniger als
+    /// vorher) und das Ende.
+    public static func fortschrittZeigen(geladen: Int64, gesamt: Int64,
+                                         vorher: Int64?, vergangen: TimeInterval?) -> Bool {
+        guard let vorher, let vergangen else { return true }
+        if geladen < vorher { return true }
+        if gesamt > 0, geladen >= gesamt { return geladen != vorher }
+        let schritt = max(Int64(1), gesamt / 200)
+        return geladen - vorher >= schritt && vergangen >= 1
+    }
+
+    /// „0,84 von 2,31 GB" — **beide Zahlen in derselben Einheit, mit fester
+    /// Stellenzahl.**
+    ///
+    /// ``groesse(_:)`` passt Einheit und Nachkommastellen dem Wert an: aus
+    /// „845 MB" wird „1 GB", dann „1,01 GB", dann „1,1 GB". Fuer eine
+    /// Angabe, die stillsteht, ist das richtig; fuer eine, die zaehlt, heisst
+    /// es, dass Komma und Breite staendig wechseln. Hier gibt die Gesamtgroesse
+    /// die Einheit vor, und die Stellenzahl bleibt: GB mit zwei, MB ohne.
+    public static func fortschritt(geladen: Int64, von gesamt: Int64,
+                                   locale: Locale = .current) -> (geladen: String, gesamt: String) {
+        let (teiler, einheit, stellen): (Double, String, Int) =
+            gesamt >= 1_000_000_000 ? (1e9, "GB", 2)
+            : gesamt >= 1_000_000 ? (1e6, "MB", 0) : (1e3, "KB", 0)
+        func zahl(_ b: Int64) -> String {
+            (Double(max(b, 0)) / teiler).formatted(
+                .number.precision(.fractionLength(stellen)).locale(locale))
+        }
+        return (zahl(min(geladen, max(gesamt, geladen))), zahl(gesamt) + " " + einheit)
+    }
+
+    /// **Welche geladene Folge der Abspielknopf nimmt.** Die erste
+    /// fertige, die noch nicht gesehen ist, nach Staffel und Folge; ist
+    /// alles gesehen, die erste — wie „von vorn". Laufende und wartende
+    /// zaehlen nicht: sie lassen sich noch nicht abspielen.
+    public static func naechsteFolge(aus posten: [Downloadposten]) -> Downloadposten? {
+        let fertig = posten.filter { $0.stand == .fertig }.sorted {
+            ($0.staffel ?? 0, $0.folge ?? 0, $0.id) < ($1.staffel ?? 0, $1.folge ?? 0, $1.id)
+        }
+        return fertig.first { !$0.gesehen } ?? fertig.first
+    }
+
     /// „3 von 12 Titeln" braucht niemand — aber „12 Titel · 42,8 GB" schon.
     public static func belegung(_ posten: [Downloadposten]) -> (anzahl: Int, bytes: Int64) {
         let fertig = posten.filter { $0.stand == .fertig }
         return (fertig.count, fertig.reduce(0) { $0 + $1.bytes })
+    }
+}
+
+/// **Zwischen zwei Meldungen weiterzaehlen — nie rueckwaerts.**
+///
+/// Gemeldet wird hoechstens einmal je Sekunde (``Downloadregeln/fortschrittZeigen(geladen:gesamt:vorher:vergangen:)``).
+/// Zeigt man nur die Meldungen, springt die Zahl stueckweise; so machen es
+/// die Laeden nicht: App Store und Musik zaehlen dazwischen im Tempo der
+/// letzten Sekunden weiter. Genau das rechnet dieser Schaetzer — und Balken,
+/// Ring und Zahl lesen alle denselben Wert, damit keiner dem anderen
+/// vorauslaeuft.
+///
+/// Vier Regeln: (1) das Tempo ist geglaettet, ein einzelnes schnelles Paket
+/// reisst es nicht hoch; (2) hoechstens anderthalb Sekunden ueber die letzte
+/// Meldung hinaus, dann steht die Zahl, bis wieder etwas kommt; (3) nie
+/// weniger als zuletzt gezeigt — nur ein Neuanfang (weniger als die vorige
+/// Meldung) setzt zurueck; (4) **angehalten heisst stehen.** Pause, Warten,
+/// Fehler, kein Netz: ``anhalten()`` friert die Zahl ein, und beim
+/// Fortsetzen misst er das Tempo neu, statt ueber die Pause zu rechnen —
+/// die Zahl steht, bis die echte sie einholt, und springt nicht.
+public struct Fortschrittsschaetzer: Sendable {
+    private var gemeldet: Int64?
+    private var meldeZeit: Date?
+    private var gesamt: Int64 = 0
+    private var laeuft = false
+    /// Byte je Sekunde, geglaettet.
+    public private(set) var tempo: Double = 0
+    private var gezeigt: Int64 = 0
+
+    public init() {}
+
+    public mutating func melden(_ geladen: Int64, gesamt: Int64, um zeit: Date) {
+        self.gesamt = gesamt
+        if let g = gemeldet, geladen < g {
+            // Neuanfang: was vorher stand, gilt nicht mehr.
+            tempo = 0
+            gezeigt = geladen
+        } else if laeuft, let g = gemeldet, let mz = meldeZeit {
+            let dt = zeit.timeIntervalSince(mz)
+            if dt > 0.05 {
+                let neu = Double(geladen - g) / dt
+                tempo = tempo == 0 ? neu : tempo * 0.7 + neu * 0.3
+            }
+        }
+        gemeldet = geladen
+        meldeZeit = zeit
+        laeuft = true
+    }
+
+    /// Es kommen keine Byte mehr — die Zahl bleibt, wo sie steht.
+    public mutating func anhalten() {
+        laeuft = false
+        tempo = 0
+    }
+
+    public mutating func wert(um zeit: Date) -> Int64 {
+        guard let g = gemeldet, let mz = meldeZeit else { return gezeigt }
+        var schaetzung = g
+        if laeuft {
+            let dt = min(max(zeit.timeIntervalSince(mz), 0), 1.5)
+            schaetzung += Int64(tempo * dt)
+        }
+        if gesamt > 0 { schaetzung = min(schaetzung, gesamt) }
+        gezeigt = max(gezeigt, schaetzung)
+        return gezeigt
     }
 }

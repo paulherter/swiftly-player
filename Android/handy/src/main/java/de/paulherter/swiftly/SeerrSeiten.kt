@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
@@ -7,13 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.AddCircleOutline
-import androidx.compose.material.icons.outlined.ArrowCircleDown
-import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -22,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -70,12 +65,12 @@ object Seerrmarke {
 
     fun farbe(stand: Int): Color = when (stand) { 2 -> bernstein; 3 -> blau; else -> Stil.akzent }
 
-    fun symbol(stand: Int): ImageVector = when (stand) {
-        2 -> Icons.Filled.Schedule
-        3 -> Icons.Outlined.ArrowCircleDown
-        4 -> Icons.Filled.Contrast
-        5 -> Icons.Filled.Check
-        else -> Icons.Outlined.AddCircleOutline
+    fun symbol(stand: Int): Zeichen = when (stand) {
+        2 -> Zeichen.Uhr
+        3 -> Zeichen.LadenKreis
+        4 -> Zeichen.Kontrast
+        5 -> Zeichen.Haken
+        else -> Zeichen.PlusKreis
     }
 
     fun wort(stand: Int) = uebersetzt(when (stand) {
@@ -109,8 +104,8 @@ fun SeerrkachelAnsicht(k: Seerrkachel, modifier: Modifier = Modifier, tun: () ->
                 Row(Modifier.align(Alignment.BottomStart).padding(6.dp).clip(CircleShape).background(Seerrmarke.farbe(k.stand))
                         .padding(horizontal = if (kurz != null) 7.dp else 5.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Seerrmarke.symbol(k.stand), contentDescription = null, tint = Stil.grund, modifier = Modifier.size(11.dp))
-                    kurz?.let { Text(it, style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.SemiBold), color = Stil.grund) }
+                    Symbol(Seerrmarke.symbol(k.stand), 10.dp, farbe = Stil.grund, staerke = Staerke.Halbfett)
+                    kurz?.let { Text(it, style = Stil.plakette.copy(letterSpacing = 0.sp), color = Stil.grund) }
                 }
             }
         }
@@ -125,11 +120,11 @@ fun SeerrkachelAnsicht(k: Seerrkachel, modifier: Modifier = Modifier, tun: () ->
 /** Ueberschrift eines Trefferblocks mit Anzahl — „Auf deinem Server", „Kann angefragt werden". */
 @Composable
 fun Blocktitel(titel: String, anzahl: Int, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(titel.uppercase(), style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp),
-             color = Stil.schriftSehrLeise, modifier = Modifier.weight(1f))
-        if (anzahl > 0) Text("$anzahl", style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum"),
-                             color = Stil.schriftSehrLeise)
+    // `blockTitel`: Rubrik 20 `schriftLeise`, rechts die Zaehlmarke, oben 16, unten 10.
+    Row(modifier.fillMaxWidth().padding(top = 16.dp, bottom = 10.dp), verticalAlignment = Alignment.Bottom) {
+        Text(titel, style = Stil.reihe,
+             color = Stil.schriftLeise, modifier = Modifier.weight(1f))
+        if (anzahl > 0) Zaehlmarke(anzahl)
     }
 }
 
@@ -146,6 +141,8 @@ fun SeerrEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
     var verbindet by remember { mutableStateOf(false) }
     var fehler by remember { mutableStateOf<String?>(null) }
     var traegt by remember { mutableStateOf<Boolean?>(null) }
+    /** „Erweitert" — eigene Header fuer einen Dienst vor Seerr. Sie liegen danach im Zugang, also im Tresor. */
+    val koepfe = rememberKopfzeilen()
     val lauf = rememberCoroutineScope()
     val verbunden = app.seerrVerbunden.value
     LaunchedEffect(verbunden) {
@@ -156,7 +153,7 @@ fun SeerrEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
         verbindet = true; fehler = null
         lauf.launch {
             try {
-                app.seerrMerken(withContext(Dispatchers.IO) { app.kern.seerrVerbinden(adresse, benutzer, passwort).await() })
+                app.seerrMerken(withContext(Dispatchers.IO) { app.kern.seerrVerbinden(adresse, benutzer, passwort, koepfe.alsJson()).await() })
                 passwort = ""
             } catch (e: CancellationException) { throw e } catch (e: Exception) { fehler = fehlertext(app, e) }
             verbindet = false
@@ -168,29 +165,36 @@ fun SeerrEinstellungenSeite(app: SwiftlyAnwendung, zurueck: () -> Unit) {
              style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise, modifier = Modifier.padding(horizontal = Stil.randAbstand))
         if (verbunden) {
             Einstellungsgruppe(uebersetzt("Verbunden")) {
-                Wertzeile(Icons.Filled.Link, app.seerrAdresse().orEmpty(),
+                Wertzeile(Zeichen.Kette, app.seerrAdresse().orEmpty(),
                           wert = when (traegt) { true -> uebersetzt("Aktiv"); false -> uebersetzt("Sitzung abgelaufen"); null -> null })
                 Trennlinie()
-                Wertzeile(Icons.Outlined.Cancel, uebersetzt("Verbindung trennen")) { app.seerrTrennen(); passwort = "" }
+                Wertzeile(Zeichen.KreuzKreis, uebersetzt("Verbindung trennen")) { app.seerrTrennen(); passwort = "" }
             }
         } else {
-            Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Eingabefeld(adresse, { adresse = it }, Icons.Filled.Link, "seerr.example.de", adresse = true)
-                Eingabefeld(benutzer, { benutzer = it }, Icons.Outlined.Person, uebersetzt("Benutzername"))
-                Eingabefeld(passwort, { passwort = it }, Icons.Outlined.Lock, uebersetzt("Passwort"), geheim = true) { verbinden() }
-                fehler?.let { Text(it, style = Stil.klein, color = Stil.warnung) }
+            // `formular`: 26 unter der Einleitung, Felder 12 auseinander, Fehler 14 darueber in `fehler`,
+            // Knopf 20, Hinweis 12.
+            Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 26.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Eingabefeld(adresse, { adresse = it }, Zeichen.Kette, "seerr.example.de", adresse = true)
+                    Eingabefeld(benutzer, { benutzer = it }, Zeichen.Person, uebersetzt("Benutzername"))
+                    Eingabefeld(passwort, { passwort = it }, Zeichen.Schloss, uebersetzt("Passwort"), geheim = true) { verbinden() }
+                    Erweitertbereich(koepfe)
+                }
+                fehler?.let { Text(it, style = Stil.klein, color = Stil.fehler, modifier = Modifier.padding(top = 14.dp)) }
                 // Kein gesperrter Knopf: er erscheint, sobald alles da ist.
                 when {
-                    verbindet -> Text(uebersetzt("Verbinde…"), style = Stil.koerper, color = Stil.schriftLeise)
+                    verbindet -> Text(uebersetzt("Verbinde…"), style = Stil.koerper, color = Stil.schriftLeise, modifier = Modifier.padding(top = 20.dp))
                     adresse.isNotBlank() && benutzer.isNotBlank() && passwort.isNotBlank() ->
-                        Hauptknopf(uebersetzt("Verbinden"), modifier = Modifier.padding(top = 6.dp)) { verbinden() }
+                        Hauptknopf(uebersetzt("Verbinden"), modifier = Modifier.padding(top = 20.dp)) { verbinden() }
                 }
                 Text(uebersetzt("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr."),
-                     style = TextStyle(fontSize = 12.sp, lineHeight = 17.sp), color = Stil.schriftSehrLeise, modifier = Modifier.padding(top = 6.dp))
+                     style = Stil.klein.copy(lineHeight = 17.sp), color = Stil.schriftSehrLeise, modifier = Modifier.padding(top = 12.dp))
             }
         }
     }
 }
+
+private val bestaetigungen = listOf("Nochmal, dann läuft’s", "Nochmal — ab die Post", "Nochmal, dann frag ich", "Nochmal, her damit")
 
 /**
  * Vorlage: `SeerrDetailView` — **derselbe Aufbau wie die echte Titelseite**; drei eigene Fassungen
@@ -206,6 +210,7 @@ fun SeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit,
     var anfragbar by remember(ziel.id) { mutableStateOf(k.anfragbar) }
     var angefragt by remember(ziel.id) { mutableStateOf(false) }
     var bestaetigt by remember { mutableStateOf(false) }
+    var fassung by remember { mutableIntStateOf(0) }
     var laeuft by remember { mutableStateOf(false) }
     var meldung by remember { mutableStateOf<String?>(null) }
     val lauf = rememberCoroutineScope()
@@ -232,7 +237,7 @@ fun SeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit,
             liste.map { o ->
                 val folgen = o.getInt("folgen")
                 Wahl(o.getInt("nummer").toString(),
-                     uebersetzt("Staffel %lld", o.getInt("nummer")) + if (folgen > 0) " · " + uebersetzt("%lld Folgen", folgen) else "")
+                     uebersetzt("Staffel %lld", o.getInt("nummer")), if (folgen > 0) "· " + uebersetzt("%lld Folgen", folgen) else null)
             },
             null,
             mehrfach = emptySet(),
@@ -256,34 +261,24 @@ fun SeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit,
         Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             Held(k.kulisse, k.titel, nebenzeile)
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(Modifier.heightIn(min = 26.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    val farbe = Seerrmarke.farbe(stand)
-                    Row(Modifier.clip(RoundedCornerShape(8.dp)).background(farbe.copy(alpha = 0.15f)).padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Seerrmarke.symbol(stand), contentDescription = null, tint = farbe, modifier = Modifier.size(12.dp))
-                        Text(Seerrmarke.wort(stand), style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = farbe)
-                    }
-                    // 0 ist bei TMDB „keine Bewertung", nicht null Sterne.
-                    d?.feldZahl("bewertung")?.takeIf { it > 0 }?.let { b ->
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Filled.Star, contentDescription = null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(12.dp))
-                            Text(String.format(Locale.getDefault(), "%.1f", b), style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium),
-                                 color = Color.White.copy(alpha = 0.8f))
-                        }
-                    }
-                }
+                // Dieselbe `Belegzeile` wie auf der Titelseite, mit dem Stand als freiem Beleg.
+                // 0 ist bei TMDB „keine Bewertung", nicht null Sterne.
+                Belegzeile(true, false, false, null, d?.feldZahl("bewertung")?.takeIf { it > 0 }, null,
+                           eigen = Triple(Seerrmarke.symbol(stand), Seerrmarke.wort(stand), Seerrmarke.farbe(stand)))
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     when {
                         angefragt -> Hinweisbox(uebersetzt("Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."))
                         // Weiss wie „Fortsetzen", nicht im Akzent — die Marke darueber traegt die Farbe schon.
-                        anfragbar -> Spielknopf(if (bestaetigt) Icons.Filled.Check else Icons.Filled.Add,
-                            uebersetzt(when { laeuft -> "Wird angefragt…"; bestaetigt -> "Wirklich anfragen?"; else -> "Anfragen" }),
+                        // „Wirklich anfragen?" las sich nicht als „nochmal druecken". Jede Fassung faengt mit
+                        // „Nochmal" an; beim ersten Tipp wird eine gewuerfelt, nie zweimal dieselbe.
+                        anfragbar -> Spielknopf(if (bestaetigt) Zeichen.Haken else Zeichen.Plus,
+                            when { laeuft -> uebersetzt("Wird angefragt…"); bestaetigt -> uebersetzt(bestaetigungen[fassung]); else -> uebersetzt("Anfragen") },
                             an = !laeuft, haupt = true) {
                             ruck(Ruck.Mittel)
                             when {
                                 k.istSerie -> staffelblatt()
                                 bestaetigt -> anfragen(emptyList())
-                                else -> bestaetigt = true
+                                else -> { fassung = (bestaetigungen.indices - fassung).random(); bestaetigt = true }
                             }
                         }
                         else -> Hinweisbox(Seerrmarke.hinweis(stand))
@@ -310,6 +305,6 @@ fun SeerrDetailSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit,
 
 @Composable
 private fun Hinweisbox(text: String) {
-    Text(text, style = TextStyle(fontSize = 14.sp, lineHeight = 19.sp), color = Stil.schriftLeise,
+    Text(text, style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise,
          modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche).padding(14.dp))
 }

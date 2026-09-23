@@ -71,12 +71,24 @@ struct Heldkopf<Inhalt: View>: View {
                 // die muss man einzeln erreichen koennen.
                 VStack(alignment: .leading, spacing: 0) {
                     Text(titel)
-                        .font(.system(size: 40, weight: .bold))
-                        .tracking(-1)
+                        // **Der Titel ueber einem Heldbild *ist* der
+                        // Seitentitel** — dieselbe Stufe wie „Einstellungen",
+                        // und iPad und Mac tragen sie 1:1 wie das iPhone.
+                        // Vorher 40 Bold mit −1: eine eigene Stufe fuer eine
+                        // Rolle, die schon eine hatte, und damit die Stelle,
+                        // an der die breite Fassung eine zweite Gestaltung
+                        // anfing. Die Sperrung bleibt bei −0,021 em, gerechnet
+                        // auf 28 — dieselben −0,6 wie auf Film- und
+                        // Serienseite.
+                        .font(Stil.titel)
+                        .tracking(Stil.sperrungTitel)
                         .foregroundStyle(Stil.schrift)
                         .lineLimit(2)
                     Text(nebenzeile)
-                        .font(.system(size: 14))
+                        // Jahr, Staffeln, Genre sind eine Angabe, und die steht
+                        // in der Leiter auf 12. Vorher 14 — eine Zahl, die in
+                        // keiner Stufe vorkommt.
+                        .font(Stil.klein)
                         .foregroundStyle(Stil.schriftLeise)
                         .lineLimit(1)
                         .padding(.top, 8)
@@ -219,7 +231,9 @@ struct Handlungstafel: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Rectangle()
-                .fill(.black.opacity(0.30))
+                // `grund`, nicht rohes Schwarz: der Schleier ist die Seite
+                // darunter, und die ist `#101010`.
+                .fill(Stil.grund.opacity(0.30))
                 .ignoresSafeArea()
                 .onTapGesture { schliessen() }
 
@@ -228,6 +242,10 @@ struct Handlungstafel: View {
                 .offset(x: links, y: oben)
         }
         .transition(.opacity)
+        // Der Schleier schliesst auf Antippen; mit VoiceOver gibt es kein
+        // Tippen auf eine Flaeche ohne Merkmal. `.escape` ist der Ausgang,
+        // den das System dafuer vorsieht — der Player macht es schon so.
+        .accessibilityAction(.escape) { schliessen() }
     }
 
     /// Rechtsbündig zum Auslöser, aber nie über den Rand hinaus.
@@ -249,7 +267,10 @@ struct Handlungstafel: View {
     private var tafel: some View {
         VStack(spacing: 0) {
             Text(titel)
-                .font(.system(size: 13, weight: .semibold))
+                // Untertitel eines Blatts: 13 in `schriftLeise`. Semifett
+                // stand hier ohne Grund — 13 traegt in der Leiter Medium,
+                // Semifett faengt erst bei 15 an.
+                .font(Stil.kachel)
                 .foregroundStyle(Stil.schriftLeise)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -259,8 +280,8 @@ struct Handlungstafel: View {
 
             ForEach(Array(handlungen.enumerated()), id: \.element.id) { paar in
                 if paar.offset > 0 {
-                    Rectangle().fill(Stil.linie).frame(height: 1)
-                        .padding(.leading, 52)
+                    // Dieselbe Haarlinie wie im `Handlungsblatt`: durchgehend.
+                    Blattlinie()
                 }
                 Button {
                     schliessen()
@@ -271,22 +292,29 @@ struct Handlungstafel: View {
                             .font(.system(size: 17))
                             .frame(width: 20)
                         paar.element.beschriftung
-                            .font(.system(size: 16))
+                            // Zeile einer Handlungsliste: 15, wie im
+                            // `Handlungsblatt`. 16 steht in keiner Leiter — und
+                            // dieselbe Zeile in zwei Graden ist genau der
+                            // Grund, aus dem es die Leiter gibt.
+                            .font(Stil.koerper)
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(paar.element.warnend ? Stil.warnung : Stil.schrift)
                     .padding(.horizontal, Stil.randAbstand)
-                    .frame(height: 50)
+                    // **`minHeight`, nicht `height`.** Derselbe Fehler wie einmal beim
+                    // `Schalter`: eine feste Hoehe an einer Textzeile schneidet
+                    // den Text ab, sobald jemand die Systemschrift groesser
+                    // stellt. Das Mass bleibt das Mindestmass.
+                    .frame(minHeight: 50)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Stil.Druckzeile())
             }
         }
         .background {
-            RoundedRectangle(cornerRadius: Stil.eckeFlaeche).fill(Stil.flaeche)
+            RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous).fill(Stil.flaeche)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: Stil.eckeFlaeche).strokeBorder(Stil.rand)
         }
     }
 

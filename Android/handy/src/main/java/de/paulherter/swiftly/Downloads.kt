@@ -163,18 +163,37 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
         if (frisch.isEmpty()) return
         alle = alle + frisch
         zeigen(); speichern()
-        lauf.launch(Dispatchers.IO) {
-            bilder.forEach { (kennung, adresse) ->
-                val ziel = bildDatei(kennung)
-                if (!ziel.exists()) runCatching {
-                    val v = URL(adresse).openConnection() as HttpURLConnection
-                    v.connectTimeout = 15000; v.readTimeout = 30000
-                    if (v.responseCode in 200..299) v.inputStream.use { ein -> ziel.outputStream().use { ein.copyTo(it) } }
-                    v.disconnect()
-                }
-            }
-        }
+        lauf.launch(Dispatchers.IO) { bilder.forEach { (kennung, adresse) -> bildSichern(bildDatei(kennung), adresse) } }
         takt()
+    }
+
+    /** Laedt nicht, was schon liegt; erst ganz geladen wird die Datei an ihren Platz gelegt. */
+    private fun bildSichern(ziel: File, adresse: String): Boolean {
+        if (ziel.exists()) return true
+        return runCatching {
+            val v = URL(adresse).openConnection() as HttpURLConnection
+            v.connectTimeout = 15000; v.readTimeout = 30000
+            eigenkoepfeFelder(adresse).forEach { (name, wert) -> v.setRequestProperty(name, wert) }
+            val neu = File(ziel.path + ".neu")
+            val ging = v.responseCode in 200..299 && v.inputStream.use { ein -> neu.outputStream().use { ein.copyTo(it) } } > 0
+            v.disconnect()
+            ging && neu.renameTo(ziel)
+        }.getOrDefault(false)
+    }
+
+    /** Unter diesem Schluessel reicht die Serienseite das grosse Kopfbild in `hinzufuegen` herein. */
+    fun kopfkennung(serienId: String) = "$serienId-kopf"
+
+    /**
+     * **Das Kopfbild der Serie in Bildschirmaufloesung** — Vorlage `Downloadverwaltung.kopfbild`.
+     * Plakat und Querbilder sind fuer Zeilen gemessen und standen im Kopf gestreckt und weich da.
+     */
+    fun kopfbild(serienId: String): File? = bildDatei(kopfkennung(serienId)).takeIf { it.exists() }
+
+    /** Fuer Downloads von vorher, die es noch nicht haben: beim naechsten Oeffnen mit Netz nachholen. */
+    suspend fun kopfbildNachholen(serienId: String, adresse: String): File? = withContext(Dispatchers.IO) {
+        val ziel = bildDatei(kopfkennung(serienId))
+        if (bildSichern(ziel, adresse)) ziel else null
     }
 
     /** `ringGetippt` — ein Ring, eine Regel. Geladenes entfernt nur die Liste. */
@@ -188,6 +207,8 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
 
     fun anhalten(id: String) {
         if (laufend == id) { aufgabe?.cancel(); aufgabe = null; laufend = null }
+        // Pause steht sofort — der Schaetzer zaehlt nicht ueber die Pause weiter.
+        Kern.downloadSchaetzerAnhalten(id)
         val p = alle.firstOrNull { it.id == id } ?: return
         aendern(id) { it.copy(stand = "angehalten", geladen = teil(p).length(), grund = null) }
         takt()
@@ -205,8 +226,11 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
         alle = alle - weg.toSet()
         weg.forEach { p ->
             File(ordner, p.dateiname).delete(); teil(p).delete(); bildDatei(p.id).delete()
+            Kern.downloadSchaetzerVergessen(p.id)
             val sid = p.serienId
-            if (sid != null && alle.none { it.konto == konto && it.serienId == sid }) bildDatei(sid).delete()
+            if (sid != null && alle.none { it.konto == konto && it.serienId == sid }) {
+                bildDatei(sid).delete(); bildDatei(kopfkennung(sid)).delete()
+            }
         }
         zeigen(); speichern()
         takt()
@@ -222,6 +246,7 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
             if (!darf) {
                 aufgabe?.cancel(); aufgabe = null; laufend = null
                 val p = alle.firstOrNull { it.id == id }
+                Kern.downloadSchaetzerAnhalten(id)
                 if (p != null) aendern(id) { it.copy(stand = "wartet", geladen = teil(p).length()) }
             }
         }
@@ -241,6 +266,7 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
             // Abgebrochen kommt hier nicht an — wer abbricht, setzt den Stand selbst.
             laufend = null; aufgabe = null
             val fehler = ergebnis.exceptionOrNull()
+            if (fehler == null) Kern.downloadSchaetzerVergessen(p.id) else Kern.downloadSchaetzerAnhalten(p.id)
             when {
                 fehler == null -> aendern(p.id) { it.copy(stand = "fertig", geladen = ergebnis.getOrDefault(it.bytes), grund = null) }
                 // Ohne Netz mit angefangener Datei: angehalten, kein Fehlertext — es geht dort weiter.
@@ -258,6 +284,8 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
         val schon = if (teil.exists()) teil.length() else 0L
         val v = URL(adresse).openConnection() as HttpURLConnection
         v.connectTimeout = 15000; v.readTimeout = 30000
+        // Mit den eigenen Headern des Servers (Issue #4); ohne Eintrag dieselbe Anfrage wie vorher.
+        eigenkoepfeFelder(adresse).forEach { (name, wert) -> v.setRequestProperty(name, wert) }
         if (schon > 0) v.setRequestProperty("Range", "bytes=$schon-")
         try {
             val code = v.responseCode
@@ -266,9 +294,11 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
             val anhaengen = code == 206
             var geladen = if (anhaengen) schon else 0L
             val gesamt = if (p.bytes > 0) p.bytes else v.contentLengthLong.takeIf { it > 0 }?.plus(geladen) ?: 0L
-            // Gedrosselt auf halbe Prozent — sonst rechnet jede Liste mehrmals je Sekunde neu.
-            val schritt = maxOf(gesamt / 200, 512_000L)
-            var gemeldet = geladen
+            // **Hoechstens einmal je Sekunde** (`Downloadregeln.fortschrittZeigen`). Das halbe
+            // Prozent allein liess bei schneller Leitung fuenf und mehr Zahlen je Sekunde durch —
+            // die Unterzeile zitterte, statt zu zaehlen. Dazwischen zaehlt der Schaetzer weiter.
+            var gemeldet = -1L
+            var gemeldetZeit = 0L
             v.inputStream.use { ein ->
                 FileOutputStream(teil, anhaengen).use { aus ->
                     val puffer = ByteArray(256 * 1024)
@@ -278,10 +308,13 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
                         if (n < 0) break
                         aus.write(puffer, 0, n)
                         geladen += n
-                        if (geladen - gemeldet >= schritt) {
+                        val jetzt = SystemClock.elapsedRealtime()
+                        if (Kern.downloadFortschrittZeigen(geladen, gesamt, gemeldet,
+                                                           if (gemeldet < 0) -1.0 else (jetzt - gemeldetZeit) / 1000.0)) {
                             gemeldet = geladen
+                            gemeldetZeit = jetzt
                             val stand = geladen
-                            withContext(Dispatchers.Main) { fortschritt(p, stand) }
+                            withContext(Dispatchers.Main) { fortschritt(p, stand, gesamt) }
                         }
                     }
                 }
@@ -292,8 +325,9 @@ class Downloadverwaltung(private val app: SwiftlyAnwendung) {
         } finally { v.disconnect() }
     }
 
-    private fun fortschritt(p: Downloadposten, geladen: Long) {
+    private fun fortschritt(p: Downloadposten, geladen: Long, gesamt: Long) {
         if (laufend != p.id) return
+        Kern.downloadSchaetzerMelden(p.id, geladen, if (gesamt > 0) gesamt else p.bytes)
         aendern(p.id, schreiben = false) { it.copy(geladen = geladen) }
         val jetzt = SystemClock.elapsedRealtime()
         if (jetzt - gemeldetUm > 1500) { gemeldetUm = jetzt; DownloadDienst.melden(app, p.titel, posten(p.id)?.anteil) }

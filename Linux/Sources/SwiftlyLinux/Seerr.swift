@@ -61,6 +61,11 @@ extension App {
         gtk_entry_set_placeholder_text(alsFeld(passwort), uebersetzt("Passwort"))
         anhaengen(block, feldzeile(uebersetzt("Passwort"), passwort))
 
+        // „Erweitert" — eigene Header fuer einen Dienst vor Seerr (Issue #4).
+        let (erweitert, kopfleser) = erweitertBauen(vorhanden: [])
+        gtk_widget_set_margin_bottom(erweitert, 14)
+        anhaengen(block, erweitert)
+
         // **Das Passwort wird nicht gesichert** — nur die Sitzung, die Seerr
         // dafuer ausstellt. Woertlich die Zusage der Apple-Fassung, und sie
         // steht dort wie hier sichtbar auf der Seite, nicht nur im Quelltext.
@@ -90,6 +95,7 @@ extension App {
             let roh = String(cString: gtk_editable_get_text(OpaquePointer(aKiste.widget)))
             let b = String(cString: gtk_editable_get_text(OpaquePointer(bKiste.widget)))
             let pw = String(cString: gtk_editable_get_text(OpaquePointer(pKiste.widget)))
+            let koepfe = kopfleser.koepfe()
             // **Eine Eingabe ergibt mehrere Adressen.** `Seerr.adressen` faechert
             // sie auf (mit und ohne Schema, mit und ohne Port) — dieselbe Regel
             // wie auf den Apple-Fassungen, im Paket und dort getestet.
@@ -107,7 +113,8 @@ extension App {
                 var letzter: String?
                 for url in adressen {
                     do {
-                        let neu = try await SeerrClient.anmelden(an: url, benutzer: b, passwort: pw)
+                        let neu = try await SeerrClient.anmelden(an: url, benutzer: b, passwort: pw,
+                                                                 koepfe: koepfe)
                         aufHauptfaden {
                             self.seerrzugang = neu
                             self.seerrclient = SeerrClient(zugang: neu)
@@ -134,6 +141,22 @@ extension App {
             }
         }
         anhaengen(reihe, verbinden)
+        // **Kein gesperrter Knopf, sondern keiner** (`SeerrEinstellungenView`
+        // auf dem Mac): solange Adresse, Benutzer und Passwort nicht
+        // dastehen, ist nichts zu tun, und ein grauer Knopf behauptet das
+        // Gegenteil. Er erscheint, sobald alle drei gefuellt sind.
+        let knopfKiste = Zeigerkiste(verbinden)
+        let nachfuehren: () -> Void = {
+            let voll = [aKiste, bKiste, pKiste].allSatisfy {
+                !String(cString: gtk_editable_get_text(OpaquePointer($0.widget)))
+                    .trimmingCharacters(in: .whitespaces).isEmpty
+            }
+            gtk_widget_set_visible(knopfKiste.widget, voll ? 1 : 0)
+        }
+        for feld in [adresse, benutzer, passwort] {
+            beiSignal(feld, "changed", nachfuehren)
+        }
+        nachfuehren()
 
         if seerrzugang != nil {
             let weg = nebenknopf("user-trash-symbolic", name: uebersetzt("Verbindung trennen"))

@@ -45,10 +45,13 @@ struct HomeView: View {
                 .padding(.top, Stil.leisteUnten + 40)
                 .transition(.opacity)
             } else if stand.gestoert {
-                Leerzustand(symbol: "wifi.exclamationmark",
-                            titel: "Der Server antwortet nicht",
-                            hinweis: "Prüf die Verbindung und versuch es noch einmal.",
-                            knopf: ("Nochmal versuchen", { Task { await laden() } }))
+                // **Dieselbe Formel wie auf jedem anderen Geraet.** Sie nennt
+                // die Serveradresse und stellt die Frage, die weiterhilft —
+                // „Prueef die Verbindung" sagt nicht, welche.
+                Leerzustand(symbol: "externaldrive.badge.xmark",
+                            titel: "Server ist abgetaucht",
+                            hinweis: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                            knopf: ("Erneut versuchen", { Task { await laden() } }))
             } else if stand.alleLeer {
                 Leerzustand(symbol: "play.rectangle",
                             titel: "Hier ist noch nichts",
@@ -464,7 +467,12 @@ struct HomeView: View {
             ForEach(model.startGenres, id: \.self) { name in
                 NavigationLink(value: GenreRoute(name: name)) {
                     // Vom Server, also nicht übersetzt.
+                    //
+                    // **Eine Zeile.** Die Pille hat eine feste Hoehe; ein
+                    // langer Gattungsname brach um und lief oben und unten
+                    // aus ihr heraus.
                     Text(verbatim: name)
+                        .lineLimit(1)
                 }
                 .buttonStyle(KnopfStil(hoehe: Stil.chipHoehe))
             }
@@ -735,6 +743,10 @@ private struct Streifen: View {
                     Group {
                         if let direkt {
                             Button { direkt(item) } label: { kachel(item) }
+                                // Langes Druecken auf der Fernbedienung, wie
+                                // in der TV-App von Apple — kein Nachbau,
+                                // `contextMenu` kann das auf tvOS selbst.
+                                .contextMenu { kachelmenue(item) }
                         } else {
                             NavigationLink(value: item) { kachel(item) }
                         }
@@ -770,6 +782,58 @@ private struct Streifen: View {
         // Als Abschnitt gilt die Reihe als Ganzes und wird angesteuert, egal
         // wie breit sie ist.
         .focusSection()
+    }
+
+    /// Das Menue hinter dem langen Druecken — dieselben drei Eintraege wie
+    /// auf dem iPhone (`Shared/HomeView.swift`).
+    ///
+    /// **Nur an den Kacheln mit `direkt`.** Das sind die, die sofort
+    /// abspielen, also „Weiterschauen" — dort ist der Weg auf die Uebersicht
+    /// sonst verbaut. Die anderen Reihen fuehren mit einem Druck ohnehin
+    /// dorthin und brauchen kein Menue; dieselbe Grenze zieht das iPhone.
+    @ViewBuilder
+    private func kachelmenue(_ item: Item) -> some View {
+        // Zur Serie kommt man weiterhin — nur nicht mehr im Weg der
+        // Wiedergabe.
+        NavigationLink(value: item) {
+            Label("Zur Übersicht", systemImage: "info.circle")
+        }
+        // **Beide Eintraege immer, nicht der passende.**
+        //
+        // Steht auf iOS so begruendet und ist dort entschieden: eine Folge,
+        // durch die man nur durchgesprungen ist, gilt als angefangen —
+        // „ungesehen" setzt sie zurueck und holt sie aus „Weiterschauen".
+        // Wer das will, findet sonst nichts. Ein Umschalter mit Haeckchen
+        // waere die dritte Moeglichkeit und die schlechteste: er liest sich
+        // wie eine Anzeige, und man weiss vor dem Druecken nicht, was
+        // passiert.
+        Button {
+            gesehenSetzen(item, an: true)
+        } label: {
+            Label("Als gesehen markieren", systemImage: "checkmark.circle")
+        }
+        Button {
+            gesehenSetzen(item, an: false)
+        } label: {
+            Label("Als ungesehen markieren", systemImage: "eye.slash")
+        }
+    }
+
+    /// **Kein eigenes Nachladen.** `AppModel.setzeGesehen` zaehlt
+    /// `sehstandGeaendert` hoch, und die Startseite haengt mit
+    /// `seitenAuffrischen` daran — sie laedt von selbst neu. Das ist wichtig,
+    /// weil eine als gesehen markierte Folge aus „Weiterschauen"
+    /// verschwindet und die naechste in „Naechste Folge" erscheint; nur die
+    /// Kachel umzufaerben liesse beide Reihen falsch stehen.
+    ///
+    /// Die Logik selbst ist geteilt und wird nicht kopiert: sie steht in
+    /// `AppModel.setzeGesehen`, die auch den `Serienspeicher` leert.
+    private func gesehenSetzen(_ item: Item, an: Bool) {
+        Task {
+            if let grund = await model.setzeGesehen(item, an: an) {
+                model.errorMessage = grund
+            }
+        }
     }
 
     private func kachel(_ item: Item) -> some View {

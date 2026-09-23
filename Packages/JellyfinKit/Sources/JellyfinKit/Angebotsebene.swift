@@ -8,12 +8,20 @@ import Foundation
 ///
 /// **Neu gefasst nach Pauls Tests am iPhone (17.09.2026):**
 ///
-/// - **Überspringen** (Intro, Rückblick …) steht, solange der Abschnitt
-///   läuft — **egal, ob die Steuerung offen oder zu ist**; Öffnen und
-///   Schließen lassen ihn stehen. Er geht nur, wenn der Abschnitt endet oder
-///   er gedrückt wurde. (Eine Fassung davor schickte ihn nach Auf und Zu der
-///   Steuerung weg; das wirkte, als gehe er mal mit der Steuerung und mal
-///   nicht.)
+/// - **Überspringen** (Intro, Rückblick …) steht ab Beginn des Abschnitts
+///   ``knopfdauer`` lang über dem Bild und blendet dann aus, wenn niemand
+///   drückt (Nutzerwunsch, 22.09.2026: der Knopf stand eine ganze
+///   Vorspannlänge über dem Bild). Danach gehört er zur Steuerung: **solange
+///   sie offen ist, steht er da**, öffnet man sie innerhalb des Abschnitts
+///   wieder, kommt er mit ihr und geht mit ihr. Die sechs Sekunden zählen nur
+///   im Laufen und laufen auch bei offener Steuerung weiter — wer sie schließt,
+///   nachdem sie um sind, nimmt den Knopf mit.
+///
+///   *Verworfen:* bis 22.09. stand er, solange der Abschnitt lief, egal ob
+///   die Steuerung offen oder zu war (Fassung vom 17.09.). Die Fassung davor
+///   schickte ihn nach **einem** Auf und Zu der Steuerung für immer weg; das
+///   wirkte, als gehe er mal mit der Steuerung und mal nicht. Jetzt gilt eine
+///   Regel: nach Ablauf geht er genau mit ihr, jedes Mal.
 /// - **Nächste Folge** als Karte gibt es nur mit Abspann-Abschnitt vom Server
 ///   (``Abschnittslogik/karteFaellig(position:dauer:abschnitte:hatNaechsteFolge:)``).
 ///   Sie bleibt stehen, die Füllung läuft ``countdown`` lang, und wenn sie
@@ -50,6 +58,11 @@ public struct Angebotsebene: Sendable, Equatable {
     /// aussah.
     public static let nachlauf: Double = 0.5 + 0.4
 
+    /// So lange steht „Intro überspringen" (und jedes andere Überspringen)
+    /// ohne Steuerung über dem Bild, gezählt ab Beginn des Abschnitts, nur im
+    /// Laufen. Danach nur noch mit der Steuerung.
+    public static let knopfdauer: Double = 6
+
     public enum Anzeige: Sendable, Equatable {
         case nichts
         case knopf(Knopfangebot)
@@ -70,6 +83,8 @@ public struct Angebotsebene: Sendable, Equatable {
     private var angebot: Knopfangebot = .keiner
     private var geschlossen = false
     private var gelaufen: Double = 0
+    /// Wie lange der Überspringen-Knopf schon steht — siehe ``knopfdauer``.
+    private var knopfGelaufen: Double = 0
     private var laenge: Double = Self.countdown
     private var ausgeloest = false
     private var steuerungOffen = false
@@ -122,10 +137,15 @@ public struct Angebotsebene: Sendable, Equatable {
         if neuerAnlass != anlass {
             anlass = neuerAnlass
             gelaufen = 0
+            knopfGelaufen = 0
             laenge = max(countdown, 0.5)
             geschlossen = false
         }
         angebot = neu
+
+        if case .ueberspringen = anlass, laeuft, vergangen > 0, !geschlossen {
+            knopfGelaufen += vergangen
+        }
 
         guard laeuft, vergangen > 0, anlass == .naechsteFolge, !geschlossen,
               !steuerungDeckt, !ausgeloest else { return false }
@@ -141,8 +161,9 @@ public struct Angebotsebene: Sendable, Equatable {
     ///
     /// Bewusstes Auf sagt eine Karte „Nächste Folge" ab — auch, wenn die
     /// Steuerung vorher schon durch den Zeiger offen stand. Auf durch den
-    /// Zeiger (`.nebenbei`) lässt sie laufen. Einen Überspringen-Knopf berührt
-    /// beides nicht.
+    /// Zeiger (`.nebenbei`) lässt sie laufen. Ein Überspringen-Knopf, dessen
+    /// ``knopfdauer`` um ist, kommt mit jeder Art Auf zurück und geht mit dem
+    /// Zu.
     public mutating func steuerung(offen: Bool, durch art: Oeffnung = .bewusst) {
         guard offen else {
             steuerungOffen = false
@@ -162,17 +183,24 @@ public struct Angebotsebene: Sendable, Equatable {
         }
     }
 
-    /// Was über dem Bild steht. Ein Überspringen-Knopf auch bei offener
-    /// Steuerung; die Karte bei geschlossener oder nur durch den Zeiger
-    /// geöffneter — bei bewusst offener steht dort der normale Knopf, und den
-    /// zeigt die Plattform.
+    /// Was über dem Bild steht. Ein Überspringen-Knopf in seinen ersten
+    /// ``knopfdauer`` Sekunden, danach nur bei offener Steuerung; die Karte
+    /// bei geschlossener oder nur durch den Zeiger geöffneter — bei bewusst
+    /// offener steht dort der normale Knopf, und den zeigt die Plattform.
     public var anzeige: Anzeige {
         guard anlass != .keiner, !geschlossen, !ausgeloest else { return .nichts }
         if anlass == .naechsteFolge {
             guard !steuerungDeckt else { return .nichts }
             return .karte(anteil: min(gelaufen / laenge, 1))
         }
+        guard !knopfAbgelaufen else { return .nichts }
         return .knopf(angebot)
+    }
+
+    /// Der Überspringen-Knopf hat seine Zeit ohne Steuerung gehabt und die
+    /// Steuerung ist zu — er steht nicht da.
+    private var knopfAbgelaufen: Bool {
+        knopfGelaufen >= Self.knopfdauer && !steuerungOffen
     }
 
     /// Wie lange die Füllung der gerade stehenden Karte läuft.
@@ -197,6 +225,9 @@ public struct Angebotsebene: Sendable, Equatable {
     @discardableResult
     public mutating func schliessen() -> Bool {
         guard anlass != .keiner, !geschlossen, !ausgeloest else { return false }
+        // Ein ausgeblendeter Knopf ist schon weg: Zurück gehört dann dem
+        // Player, nicht einer Einblendung, die niemand sieht.
+        if case .ueberspringen = anlass, knopfAbgelaufen { return false }
         if anlass == .naechsteFolge { weiterAbgesagt = true }
         geschlossen = true
         return true

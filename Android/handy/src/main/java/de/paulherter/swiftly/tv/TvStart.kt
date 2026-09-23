@@ -1,5 +1,8 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
@@ -16,10 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -255,7 +254,7 @@ fun Kopfauskunft(titel: String, zweitzeile: String?, angabenzeile: String?, bewe
         Text(titel, style = TvStil.auskunftTitel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
              modifier = Modifier.height(34.dp))
         zweitzeile?.let {
-            Text(it, style = TvStil.auskunftZweitzeile, color = Stil.schrift.copy(alpha = 0.78f), maxLines = 1,
+            Text(it, style = TvStil.auskunftZweitzeile, color = Stil.schriftLeise, maxLines = 1,
                  overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp).height(22.dp))
         }
         // **Feste 17 dp, Inhalt darf hinausragen** — tvOS: `.frame(height: 34)`, die Direct-Play-Marke
@@ -268,7 +267,10 @@ fun Kopfauskunft(titel: String, zweitzeile: String?, angabenzeile: String?, bewe
         Row(Modifier.wrapContentHeight(Alignment.CenterVertically, unbounded = true), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             angabenzeile?.takeIf { it.isNotEmpty() }?.let {
-                Text(it, style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.62f), maxLines = 1)
+                // **Voller Wert statt Deckkraft** (BRAND 1): hier liegt ein Heldbild darunter,
+                // und ueber einem Bild liest eine Deckkraft anders als auf dem Grund.
+                // Weiss auf 62 Prozent ist rechnerisch `schriftSehrLeise` (#989898).
+                Text(it, style = TvStil.klein, color = Stil.schriftSehrLeise, maxLines = 1)
             }
             // Bewertung und Freigabe stehen auf **jeder** Seite, Start wie Detail — nur der
             // Direct-Play-Beleg ist Detail vorbehalten und kommt ueber `schluss`.
@@ -276,7 +278,7 @@ fun Kopfauskunft(titel: String, zweitzeile: String?, angabenzeile: String?, bewe
             schluss()
         }
         }
-        Text(beschreibung.orEmpty(), style = TvStil.koerper, color = Stil.schrift.copy(alpha = 0.62f),
+        Text(beschreibung.orEmpty(), style = TvStil.koerper, color = Stil.schriftSehrLeise,
              maxLines = if (zweitzeile != null) 2 else 3, overflow = TextOverflow.Ellipsis,
              modifier = Modifier.padding(top = 11.dp).height(TvStil.beschreibungHoehe(if (zweitzeile != null) 2 else 3)))
     }
@@ -287,12 +289,12 @@ fun Kopfauskunft(titel: String, zweitzeile: String?, angabenzeile: String?, bewe
 @Composable
 fun TvRestzeitmarke(restzeit: String?, gesehen: Boolean) {
     val (symbol, text) = when {
-        restzeit != null -> Icons.Filled.Schedule to restzeit
-        gesehen -> Icons.Filled.Check to uebersetzt("Gesehen")
+        restzeit != null -> Zeichen.Uhr to restzeit
+        gesehen -> Zeichen.Haken to uebersetzt("Gesehen")
         else -> return
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(symbol, contentDescription = null, tint = Stil.akzent, modifier = Modifier.size(18.dp))
+        Symbol(symbol, 13.dp, farbe = Stil.akzent, staerke = Staerke.Mittel)
         Text(text, style = TvStil.koerper, color = Stil.akzent, maxLines = 1)
     }
 }
@@ -521,7 +523,7 @@ fun TvStartSeite(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
     TvKulisseMelden(if (gestoert || alleLeer) null else bild)
     Box(Modifier.fillMaxSize()) {
         when {
-            gestoert -> TvStartFehler { lauf.launch { laden() } }
+            gestoert -> TvStoerung(app, erneut = { lauf.launch { laden() } })
             alleLeer -> TvLeer(uebersetzt("Hier ist noch nichts"), uebersetzt("Sobald auf dem Server etwas liegt, taucht es hier auf."))
             else -> {
                 Column(Modifier.fillMaxSize()) {
@@ -635,23 +637,12 @@ private fun TvReihenplatzhalter(quer: Boolean) {
     }
 }
 
-/**
- * Vorlage: `Leerzustand(symbol: "wifi.exclamationmark", ...)` in `HomeView` fuer `stand.gestoert`.
- * **Eigens hier, nicht in `TvLeer`** (`TvSeiten.kt`): `TvLeer` kennt keinen Knopf, und diese Datei
- * darf `TvSeiten.kt` nicht aendern — sechs Agenten arbeiten gleichzeitig an eigenen Dateien.
- */
-@Composable
-private fun TvStartFehler(nochmal: () -> Unit) {
-    val fokus = ersterFokus()
-    Column(Modifier.fillMaxWidth().padding(top = 140.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Filled.WifiOff, contentDescription = null, tint = Stil.schriftLeise, modifier = Modifier.size(36.dp))
-        Text(uebersetzt("Der Server antwortet nicht"), style = TvStil.reihe, color = Stil.schrift,
-             modifier = Modifier.padding(top = 16.dp))
-        Text(uebersetzt("Prüf die Verbindung und versuch es noch einmal."), style = TvStil.koerper, color = Stil.schriftLeise,
-             modifier = Modifier.padding(top = 8.dp).widthIn(max = 480.dp))
-        TvKnopf(uebersetzt("Nochmal versuchen"), modifier = Modifier.padding(top = 22.dp).focusRequester(fokus)) { nochmal() }
-    }
-}
+// `TvStartFehler` stand hier mit eigenem Wortlaut („Der Server antwortet nicht" / „Prueaf die
+// Verbindung und versuch es noch einmal." / „Nochmal versuchen") und eigenen Massen. Er ist
+// durch `TvStoerung` (`TvSeiten.kt`) ersetzt: **die Serverformel steht auf allen Plattformen
+// woertlich gleich**, und sie nennt die Adresse — daran erkennt man auf einen Blick, ob der
+// Server aus ist oder man im falschen Netz steckt. Die Begruendung „diese Datei darf
+// `TvSeiten.kt` nicht aendern" galt fuer einen Tag mit sechs gleichzeitigen Agenten.
 
 /**
  * Vorlage: `Kopfschatten` in `Sources/tvOS/TVBausteine.swift` — ein leiser Schatten unter der

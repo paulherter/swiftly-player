@@ -50,7 +50,7 @@ enum Svgvorrat {
               let z = lesen(text) else {
             if !gemeldet.contains(name) {
                 gemeldet.insert(name)
-                print("[Zeichen] fehlt: \(name).svg")
+                Protokoll.schreib("[Zeichen] fehlt: \(name).svg")
                 fflush(nil)
             }
             return nil

@@ -99,3 +99,54 @@ struct ListenregelnTests {
         #expect(!Listenregeln.nochMehrDa(geladen: 121, gesamt: 120))
     }
 }
+
+/// „Zuletzt hinzugefügt" über alle Bibliotheken: derselbe Titel in zwei
+/// Bibliotheken kommt mit verschiedenen Kennungen zurück.
+@Suite("Ein Titel, eine Zeile")
+struct JeTitelEinmalTests {
+
+    private func film(_ id: String, _ name: String, jahr: Int? = 2026, tmdb: String? = nil) -> Item {
+        Item(id: id, name: name, type: "Movie", productionYear: jahr,
+             providerIds: tmdb.map { ["Tmdb": $0] })
+    }
+
+    private func folge(_ id: String, serie: String, serienID: String) -> Item {
+        Item(id: id, name: "Folge", type: "Episode", seriesName: serie, seriesId: serienID)
+    }
+
+    @Test("Derselbe Film aus zwei Bibliotheken steht einmal da, der erste bleibt")
+    func filmZweiBibliotheken() {
+        // Wie am Server gemessen: gleiche TMDb-Nummer, verschiedene Kennungen.
+        let roh = [film("359b", "Toy Story 5", tmdb: "1084244"),
+                   film("fa4a", "Toy Story 5", tmdb: "1084244")]
+        #expect(Listenregeln.jeTitelEinmal(roh, zeigen: 24).map(\.id) == ["359b"])
+    }
+
+    @Test("Ohne Anbieternummer zählen Name und Jahr")
+    func filmOhneNummer() {
+        let roh = [film("a", "Obsession"), film("b", "obsession"), film("c", "Obsession", jahr: 1976)]
+        #expect(Listenregeln.jeTitelEinmal(roh, zeigen: 24).map(\.id) == ["a", "c"])
+    }
+
+    @Test("Dieselbe Serie mit zwei Serien-IDs steht einmal da, mit ihrer neuesten Folge")
+    func serieZweiBibliotheken() {
+        let roh = [folge("67e2", serie: "Adults", serienID: "7870"),
+                   folge("b6fe", serie: "Beauty & The Nerd", serienID: "0f0c"),
+                   folge("fdcf", serie: "Beauty & The Nerd", serienID: "a323"),
+                   folge("d419", serie: "Adults", serienID: "f131"),
+                   folge("480c", serie: "Adults", serienID: "7870")]
+        #expect(Listenregeln.jeTitelEinmal(roh, zeigen: 24).map(\.id) == ["67e2", "b6fe"])
+    }
+
+    @Test("Film und Serie gleichen Namens bleiben beide")
+    func filmUndSerie() {
+        let roh = [film("f", "FROM"), folge("e", serie: "FROM", serienID: "s")]
+        #expect(Listenregeln.jeTitelEinmal(roh, zeigen: 24).count == 2)
+    }
+
+    @Test("Gezeigt wird höchstens die gewünschte Zahl")
+    func obergrenze() {
+        let roh = (0..<10).map { film("\($0)", "Film \($0)") }
+        #expect(Listenregeln.jeTitelEinmal(roh, zeigen: 3).map(\.id) == ["0", "1", "2"])
+    }
+}

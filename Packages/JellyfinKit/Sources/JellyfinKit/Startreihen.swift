@@ -78,10 +78,38 @@ public enum Startreihenfolge {
 
     /// Die geltende Reihenfolge: was abgelegt ist, gefolgt von allem, was dort
     /// fehlt — damit eine neue Reihe auftaucht, statt still zu verschwinden.
+    ///
+    /// **Jede Reihe genau einmal — und das ist keine Vorsichtsmassnahme.**
+    /// Diese Rechnung fuegte hinzu, was fehlt, und pruefte nie, was doppelt
+    /// dasteht. Stand „neueFilme" zweimal in der Ablage, kam es zweimal
+    /// zurueck, kam bei jedem Umsortieren zweimal wieder heraus und wurde
+    /// zweimal zurueckgeschrieben: der Fehler heilt nicht von selbst, er
+    /// ueberlebt jeden Start. Auf der Startseite stand die Reihe dann zweimal
+    /// untereinander, und weil `ForEach` seine Zeilen ueber die Kennung
+    /// zuordnet, griff ein Tipp dazu noch daneben — dieselbe Klasse Fehler,
+    /// die `Listenregeln` fuer die Titellisten abfaengt.
+    ///
+    /// Am 21.09.2026 gemeldet: „Neue Filme gibt es bei mir doppelt. Neue
+    /// Serien gibt es einmal."
+    ///
+    /// **Der erste Eintrag gilt.** Wer eine Reihe nach oben geschoben hat, hat
+    /// das an ihrer ersten Stelle getan; die spaetere Wiederholung ist der
+    /// Nachzuegler, nicht die Absicht.
     public static func geltend(abgelegt: [String]) -> [Startreihe] {
-        let bekannt = abgelegt.compactMap(Startreihe.init(rawValue:))
+        let bekannt = sauber(abgelegt.compactMap(Startreihe.init(rawValue:)))
         let fehlend = Startreihe.allCases.filter { !bekannt.contains($0) }
         return bekannt + fehlend
+    }
+
+    /// Jede Reihe genau einmal, in der Reihenfolge des ersten Auftretens.
+    ///
+    /// **Auch auf dem Schreibweg noetig, nicht nur auf dem Leseweg.** Eine
+    /// Ablage, die schon doppelt ist, muss beim Laden glattgezogen werden —
+    /// sonst bleibt die Startseite auf einem Geraet, das den Fehler schon
+    /// traegt, kaputt — auch wenn nie wieder etwas doppelt hineingeschrieben wird.
+    public static func sauber(_ reihen: [Startreihe]) -> [Startreihe] {
+        var gesehen = Set<Startreihe>()
+        return reihen.filter { gesehen.insert($0).inserted }
     }
 
     /// Was am Ende auf der Seite steht: in der Reihenfolge, ohne die

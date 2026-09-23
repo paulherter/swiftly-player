@@ -305,3 +305,60 @@ struct Folgenstreifen: View {
         return teile.isEmpty ? nil : teile.joined(separator: " · ")
     }
 }
+
+// MARK: - Teil der Sammlung
+
+/// **Die Reihe „Teil der Sammlung" auf der Filmseite** — die anderen Titel
+/// der Sammlung, in ihrer Folge. Dieselbe Regel wie am iPhone
+/// (`Sammlungsreihe` in `Sammlungsseite.swift`): die Mitgliedschaft steht im
+/// ``Sammlungsverzeichnis``, nur die Plakate kommen frisch; hoechstens zwei
+/// Reihen; fehlt die Sammlung, fehlt die Reihe.
+///
+/// **Der Weg auf die Sammlungsseite ist eine Kapsel neben der Ueberschrift.**
+/// Am iPhone ist die Ueberschrift selbst der Knopf; auf dem Fernseher ist
+/// eine Ueberschrift kein Fokusziel, und ein Weg, den der Fokus nicht
+/// erreicht, ist keiner (VERHALTEN F, Eingabe). Die Kapsel traegt den Namen
+/// der Sammlung — dieselbe Angabe, die am iPhone darunter steht.
+struct Sammlungsreihe: View {
+    let model: AppModel
+    let titel: Item
+
+    @State private var reihen: [(sammlung: Sammlung, titel: [Item])] = []
+
+    private var art: String? { Bibliotheksgattung.art(zuTyp: titel.type) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Ein Anker, damit `.task` auch dann laeuft, wenn noch keine
+            // Reihe dasteht.
+            Color.clear.frame(height: 0)
+            ForEach(reihen, id: \.sammlung.id) { reihe in
+                reihenabschnitt {
+                    HStack(alignment: .center, spacing: 24) {
+                        Reihentitel(text: "Teil der Sammlung")
+                        NavigationLink(value: SammlungRoute(sammlung: reihe.sammlung.item, art: art)) {
+                            Text(verbatim: reihe.sammlung.item.name)
+                        }
+                        .buttonStyle(KapselStil(pfeil: "chevron.right"))
+                    }
+                    .focusSection()
+                } inhalt: {
+                    Titelstreifen(model: model, items: reihe.titel)
+                }
+            }
+        }
+        .task(id: "\(titel.id)|\(model.kontowechsel)") { await laden() }
+    }
+
+    private func laden() async {
+        guard let art else { return }
+        await model.angebotLaden()
+        var gefunden: [(sammlung: Sammlung, titel: [Item])] = []
+        for sammlung in model.sammlungen(mit: titel).prefix(2) {
+            guard let liste = await model.sammlungstitel(sammlung, art: art) else { continue }
+            let andere = Listenregeln.ohneDoppelte(liste).filter { $0.id != titel.id }
+            if !andere.isEmpty { gefunden.append((sammlung, andere)) }
+        }
+        withAnimation(Stil.einblenden) { reihen = gefunden }
+    }
+}

@@ -26,6 +26,8 @@ struct ServerAufnahmeView: View {
     @State private var pruefe = false
     @State private var benutzer = ""
     @State private var kennwort = ""
+    /// „Erweitert" — eigene Header für einen Dienst vor dem Server.
+    @State private var koepfe: [Kopfzeile] = []
     /// Umgeschaltet auf den Code-Weg. Der Vorgang läuft erst dann an — sonst
     /// zöge jeder Besuch dieser Seite einen Code beim Server, den niemand
     /// braucht.
@@ -68,7 +70,7 @@ struct ServerAufnahmeView: View {
             Spacer(minLength: 0)
         }
         // Schmal wie ein Formular, aber am linken Rand wie jede Unterseite.
-        .frame(maxWidth: 460, alignment: .leading)
+        .frame(maxWidth: Stil.formularbreite, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Stil.randAbstand)
         .padding(.top, Stil.inhaltOben)
@@ -109,6 +111,9 @@ struct ServerAufnahmeView: View {
             .padding(.top, 26)
             .focused($feld, equals: .adresse)
 
+        MacErweitert(zeilen: $koepfe)
+            .padding(.top, 10)
+
         fehlerzeile
 
         Hauptknopf(beschriftung: pruefe ? "Moment…" : "Weiter", symbol: "arrow.right",
@@ -130,7 +135,7 @@ struct ServerAufnahmeView: View {
     private func gefunden(_ server: (name: String, fassung: String)) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 13))
+                .font(Stil.klein)
                 .foregroundStyle(Stil.akzent)
             Text(verbatim: "\(server.name) · Jellyfin \(server.fassung)")
                 .font(Stil.zweitzeile)
@@ -179,13 +184,15 @@ struct ServerAufnahmeView: View {
                 .padding(.top, 26)
 
             Text(verbatim: vorgang.code)
-                .font(.system(size: 40, weight: .semibold).monospacedDigit())
+                // 28 Bold ist die hoechste Stufe der Leiter; 40 stand
+                // darueber.
+                .font(Stil.titelGross.monospacedDigit())
                 .tracking(6)
                 .foregroundStyle(Stil.schrift)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
-                .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
-                .overlay { RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand) }
+                .background(Stil.flaeche,
+                            in: RoundedRectangle(cornerRadius: Stil.eckeFeld, style: .continuous))
                 // Ein Klick legt den Code in die Zwischenablage — meist wird
                 // er gleich daneben in einem Browserfenster eingefügt.
                 .kopierbar(vorgang.code)
@@ -233,7 +240,7 @@ struct ServerAufnahmeView: View {
         HStack(spacing: 12) {
             Rectangle().fill(Stil.linie).frame(height: 1)
             Text("oder")
-                .font(.system(size: 12))
+                .font(Stil.klein)
                 .foregroundStyle(Stil.schriftSehrLeise)
             Rectangle().fill(Stil.linie).frame(height: 1)
         }
@@ -245,8 +252,8 @@ struct ServerAufnahmeView: View {
         guard !adresse.isEmpty, !pruefe else { return }
         pruefe = true
         Task {
-            let antwort = await model.serverPruefen(adresse)
-            withAnimation(.easeInOut(duration: 0.2)) { server = antwort }
+            let antwort = await model.serverPruefen(adresse, koepfe: koepfe.koepfe)
+            withAnimation(Stil.sprung) { server = antwort }
             pruefe = false
             if antwort != nil { feld = .benutzer }
         }

@@ -33,6 +33,9 @@ import de.paulherter.swiftly.gemeinsam.Stil
 class TvAktivitaet : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Messmodus des Technikschilds als Startextra, wie `-technikschildMessen YES` auf Apple.
+        if (intent?.hasExtra("technikschildMessen") == true)
+            (application as SwiftlyAnwendung).einstellungen.technikschildMessen = intent.getBooleanExtra("technikschildMessen", false)
         val app = application as SwiftlyAnwendung
         app.tiefenlink.value = intent?.data
         setContent {

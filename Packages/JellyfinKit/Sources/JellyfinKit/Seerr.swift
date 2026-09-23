@@ -158,10 +158,36 @@ public struct Seerrzugang: Codable, Sendable, Equatable {
     public let adresse: URL
     /// Der Sitzungskeks, so wie er im `Cookie`-Kopf wieder hinausgeht.
     public let keks: String
+    /// Eigene Köpfe für einen Vorposten vor Seerr — Cloudflare Access,
+    /// Authelia, Pangolin. **Leer für fast alle.** Sie liegen mit dem Keks
+    /// im Schlüsselbund, weil sie genauso ein Zugang sind.
+    public let koepfe: [Eigenkopf]
 
-    public init(adresse: URL, keks: String) {
+    public init(adresse: URL, keks: String, koepfe: [Eigenkopf] = []) {
         self.adresse = adresse
         self.keks = keks
+        self.koepfe = Eigenkoepfe.bereinigt(koepfe)
+    }
+
+    private enum CodingKeys: String, CodingKey { case adresse, keks, koepfe }
+
+    /// **Ein Zugang von vorher hat kein Feld `koepfe`** — und muss trotzdem
+    /// lesbar bleiben. Scheiterte das Lesen, wäre jeder bestehende Nutzer
+    /// still von Seerr getrennt; genau das ist bei der Ablage schon einmal
+    /// passiert.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        adresse = try c.decode(URL.self, forKey: .adresse)
+        keks = try c.decode(String.self, forKey: .keks)
+        koepfe = try c.decodeIfPresent([Eigenkopf].self, forKey: .koepfe) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(adresse, forKey: .adresse)
+        try c.encode(keks, forKey: .keks)
+        // Leer bleibt weg: ein Zugang ohne Köpfe sieht aus wie immer.
+        if !koepfe.isEmpty { try c.encode(koepfe, forKey: .koepfe) }
     }
 }
 
@@ -465,10 +491,15 @@ public actor SeerrClient {
     /// Seerr fragt Jellyfin selbst, ob Name und Passwort stimmen, und legt
     /// dafür eine eigene Sitzung an. Zurück kommt der Keks, den jeder weitere
     /// Aufruf mitträgt.
+    ///
+    /// `koepfe` gehen schon mit dieser ersten Anfrage hinaus — ein Vorposten
+    /// vor Seerr lässt sonst gar nicht erst bis zur Anmeldung durch.
     public static func anmelden(an adresse: URL, benutzer: String, passwort: String,
+                                koepfe: [Eigenkopf] = [],
                                 sitzung: URLSession = .ortsnetzfaehig) async throws -> Seerrzugang {
         var req = URLRequest(url: adresse.appendingPathComponent("api/v1/auth/jellyfin"))
         req.httpMethod = "POST"
+        Eigenkoepfe.anwenden(koepfe, auf: &req)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(
             withJSONObject: ["username": benutzer, "password": passwort])
@@ -485,6 +516,14 @@ public actor SeerrClient {
         let (daten, antwort) = try await sitzung.data(for: req)
         guard let http = antwort as? HTTPURLResponse else {
             throw JellyfinError.transport("Keine Antwort von Seerr.")
+        }
+        // **Vor jeder anderen Deutung.** Eine Anmeldeseite davor sah aus wie
+        // „Seerr hat keine Sitzung mitgegeben" (bei 200 nach Umleitung) oder
+        // wie ein falsches Passwort (bei 403) — beides führte in die Irre.
+        // Nur nicht bei 404: dort hat schlicht kein Seerr geantwortet, und
+        // ein fremder Webserver schickt seine Fehlerseite ebenfalls als HTML.
+        if http.statusCode != 404, Eigenkoepfe.anmeldeseite(http) {
+            throw JellyfinError.transport(Eigenkoepfe.anmeldeseiteText)
         }
         switch http.statusCode {
         case 200, 201: break
@@ -509,7 +548,7 @@ public actor SeerrClient {
         guard let keks else {
             throw JellyfinError.transport("Seerr hat keine Sitzung mitgegeben.")
         }
-        return Seerrzugang(adresse: adresse, keks: keks)
+        return Seerrzugang(adresse: adresse, keks: keks, koepfe: koepfe)
     }
 
 
@@ -521,6 +560,9 @@ public actor SeerrClient {
         guard let url = teile?.url else { throw JellyfinError.transport("Adresse unbrauchbar.") }
         var req = URLRequest(url: url)
         req.httpMethod = methode
+        // Die eigenen Köpfe zuerst — `Cookie` ist dort gesperrt, der Keks
+        // bleibt also unserer.
+        Eigenkoepfe.anwenden(zugang.koepfe, auf: &req)
         req.setValue(zugang.keks, forHTTPHeaderField: "Cookie")
         // Der Keks kommt nur von uns — nicht aus dem gemeinsamen Speicher
         // (wie beim Anmelden).

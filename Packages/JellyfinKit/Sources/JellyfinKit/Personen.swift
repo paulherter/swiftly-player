@@ -24,17 +24,22 @@ public extension JellyfinClient {
     /// Plakat ihrer Serie, also dasselbe Bild zwanzigmal nebeneinander.
     /// Dieselbe Überlegung wie bei der Suche (A7).
     ///
-    /// **Ein Fehlschlag ist eine leere Liste, keine Ausnahme.** Die Reihe
-    /// fällt dann weg; die Seite steht trotzdem, weil Name und Bild vom
-    /// Aufrufer kommen und auf nichts warten.
-    func titel(person id: String, limit: Int = 60) async -> [Item] {
-        let antwort = try? await items(limit: limit,
-                                       sortBy: "ProductionYear,SortName",
-                                       sortOrder: "Descending",
-                                       recursive: true,
-                                       includeItemTypes: ["Movie", "Series"],
-                                       personIDs: [id])
-        return Listenregeln.ohneDoppelte(antwort?.items ?? [])
+    /// **`nil` heisst gestoert, `[]` heisst: von dieser Person liegt nichts da.**
+    ///
+    /// Bis zum 21.09.2026 wurde hier jeder Fehlschlag zur leeren Liste. Die
+    /// Personenseite zeigte dann Name und Bild und darunter nichts — als hätte
+    /// der Server diese Person ohne einen einzigen Titel. Wer nicht weiß, dass
+    /// gerade das WLAN weg ist, hält das für die Wahrheit. Nur der Aufrufer
+    /// kann die beiden Fälle unterscheiden, also muss er sie auch bekommen.
+    func titel(person id: String, limit: Int = 60) async -> [Item]? {
+        guard let antwort = try? await items(limit: limit,
+                                             sortBy: "ProductionYear,SortName",
+                                             sortOrder: "Descending",
+                                             recursive: true,
+                                             includeItemTypes: ["Movie", "Series"],
+                                             personIDs: [id])
+        else { return nil }
+        return Listenregeln.ohneDoppelte(antwort.items)
     }
 }
 

@@ -27,6 +27,10 @@ _ = g_setenv("PANGOCAIRO_BACKEND", "fc", 0)
 // "[Start] App gestartet" und dieser Zeile im Protokoll ist genau diese
 // Pruefung.
 Startstufe.melden("programm")
+// **Woher die Uhrzeit kommt** — steht hier UTC, obwohl der Rechner woanders
+// steht, sind die Uhrzeiten gegen die des Startprogramms verschoben und die
+// Laufzeit ist das Mass. Siehe ``Protokoll``.
+Protokoll.zeitzoneMelden()
 
 // **Das Paket bekommt seinen Faden nach draussen**, wie auf den
 // Apple-Fassungen. Der Steuerkanal und die Sitzungsabfrage im Paket
@@ -42,6 +46,7 @@ Spur.schreiben = { text in
     let u = DateFormatter()
     u.dateFormat = "HH:mm:ss"
     print("\(u.string(from: Date())) [Paket] \(text)")
+    Protokollring.geteilt.anhaengen("[Paket] \(text)")
     // **Und sofort hinausschreiben.**
     //
     // `print` in eine **umgeleitete** Datei ist blockweise gepuffert, nicht
@@ -61,6 +66,8 @@ Spur.schreiben = { text in
     // geleert, und der Name faellt weg.
     fflush(nil)
 }
+// Der Weiterleiter vor libVLC (Issue #4) meldet in dasselbe Protokoll.
+Stromweiterleiter.protokoll = { Spur.schreiben?($0) }
 
 nonisolated(unsafe) let app = App()
 

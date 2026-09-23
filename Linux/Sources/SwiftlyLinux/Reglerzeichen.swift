@@ -192,8 +192,10 @@ nonisolated(unsafe) private let merkMalen: @convention(c) (
     cairo_line_to(cr, x0, y0 + bh)
     cairo_close_path(cr)
 
-    if z.dunkel { cairo_set_source_rgba(cr, 0.043, 0.043, 0.051, 1) }
-    else        { cairo_set_source_rgba(cr, 1, 1, 1, 1) }
+    // **Aktiv heisst Akzent am Zeichen** (Mac cb153e7f): der Aktionsknopf
+    // bleibt auf `flaeche`, nur das Zeichen wechselt — #50D5DA.
+    if z.dunkel { cairo_set_source_rgba(cr, Stil.akzentRGB.0, Stil.akzentRGB.1, Stil.akzentRGB.2, 1) }
+    else        { cairo_set_source_rgba(cr, Stil.weissRGB.0, Stil.weissRGB.1, Stil.weissRGB.2, 1) }
     if z.gefuellt {
         cairo_fill(cr)
     } else {
@@ -201,4 +203,55 @@ nonisolated(unsafe) private let merkMalen: @convention(c) (
         cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND)
         cairo_stroke(cr)
     }
+}
+
+/// **Das Filterzeichen — drei Striche, nach unten kuerzer.**
+///
+/// Der Mac nimmt `line.3.horizontal.decrease` fuer den Filterknopf der
+/// Bibliothek (`BibliothekView.swift`). Breeze hat einen Trichter
+/// (`view-filter-symbolic`), Adwaita gar nichts — und unter Windows gibt es
+/// nur Adwaita. Also gemalt, wie die vier Zeichen davor.
+///
+/// **Die Farbe kommt vom Stilblatt**, nicht aus dem Zeichen: der Knopf wechselt
+/// beim Oeffnen von `schriftLeise` auf `schrift`, und `gtk_widget_get_color`
+/// liest genau den Ton, den das Stilblatt der Flaeche gerade gibt.
+final class Filterzeichen: @unchecked Sendable {
+    fileprivate var lebt = true
+    let anzeige: Widget
+
+    init(mass: Int32 = 12) {
+        let feld: Widget! = gtk_drawing_area_new()
+        gtk_widget_add_css_class(feld, "swiftly-blank")
+        gtk_widget_add_css_class(feld, "swiftly-malzeichen")
+        gtk_drawing_area_set_content_width(alsZeichen(feld), mass)
+        gtk_drawing_area_set_content_height(alsZeichen(feld), mass)
+        gtk_widget_set_valign(feld, GTK_ALIGN_CENTER)
+        anzeige = feld!
+        gtk_drawing_area_set_draw_func(alsZeichen(feld), filterMalen,
+                                       Unmanaged.passUnretained(self).toOpaque(), nil)
+        beiSignal(feld, "destroy") { self.lebt = false }
+    }
+}
+
+nonisolated(unsafe) private let filterMalen: @convention(c) (
+    UnsafeMutablePointer<GtkDrawingArea>?, OpaquePointer?, Int32, Int32, gpointer?
+) -> Void = { flaeche, cr, breite, hoehe, daten in
+    guard let cr, let daten else { return }
+    let z = Unmanaged<Filterzeichen>.fromOpaque(daten).takeUnretainedValue()
+    guard z.lebt else { return }
+    var farbe = GdkRGBA()
+    gtk_widget_get_color(z.anzeige, &farbe)
+    cairo_set_source_rgba(cr, Double(farbe.red), Double(farbe.green),
+                          Double(farbe.blue), Double(farbe.alpha))
+    let w = Double(breite), h = Double(hoehe)
+    let strich = max(w * 0.14, 1.4)
+    cairo_set_line_width(cr, strich)
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND)
+    for (i, anteil) in [1.0, 0.64, 0.28].enumerated() {
+        let y = h * (0.22 + 0.28 * Double(i))
+        let laenge = (w - strich) * anteil
+        cairo_move_to(cr, (w - laenge) / 2, y)
+        cairo_line_to(cr, (w + laenge) / 2, y)
+    }
+    cairo_stroke(cr)
 }

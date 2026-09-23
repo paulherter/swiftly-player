@@ -165,6 +165,65 @@ public enum Technikangaben {
         return text
     }
 
+    // MARK: Dynamikumfang
+
+    /// **Welche HDR-Art die Datei trägt** — „HDR10", „HDR10+", „HLG", „SDR"
+    /// oder „Dolby Vision P8.1 · HDR10" (Profil und, nach dem Punkt, die
+    /// Basisschicht, auf die ein Gerät ohne Dolby Vision zurückfällt).
+    ///
+    /// **Das Format der Datei, nicht der Ausgang.** Ob das Gerät das Signal
+    /// als HDR ausgibt oder VLC es auf SDR abbildet, weiß keine Plattform
+    /// zuverlässig — deshalb behauptet die Zeile darüber nichts. Sie steht im
+    /// oberen Teil des Schildes, der die Datei beschreibt.
+    ///
+    /// Die Namen sind Formatnamen und werden nicht übersetzt. `nil`, wenn der
+    /// Server nichts Brauchbares sagt — geraten wird nicht (``Farbauskunft``).
+    public static func dynamik(_ spur: MediaStream?) -> String? {
+        guard let spur else { return nil }
+        var umfang = Farbauskunft.umfang(typ: spur.videoRangeType,
+                                         kennlinie: spur.colorTransfer,
+                                         primaervalenzen: spur.colorPrimaries)
+        // Ungültige DV-Angaben spielt jeder Player als Basisschicht — dann
+        // zählt, was die rohen Angaben über die sagen.
+        if umfang == .dolbyVisionUngueltig {
+            umfang = Farbauskunft.umfang(typ: nil, kennlinie: spur.colorTransfer,
+                                         primaervalenzen: spur.colorPrimaries)
+        }
+        let basis: String?
+        switch umfang {
+        case .unbekannt, .dolbyVisionUngueltig: return nil
+        case .sdr:       return "SDR"
+        case .hdr10:     return "HDR10"
+        case .hdr10Plus: return "HDR10+"
+        case .hlg:       return "HLG"
+        case .dolbyVision:            basis = nil
+        case .dolbyVisionHDR10:       basis = "HDR10"
+        case .dolbyVisionHLG:         basis = "HLG"
+        case .dolbyVisionSDR:         basis = "SDR"
+        case .dolbyVisionEL:          basis = "EL"
+        case .dolbyVisionHDR10Plus:   basis = "HDR10+"
+        case .dolbyVisionELHDR10Plus: basis = "EL · HDR10+"
+        }
+        var text = "Dolby Vision"
+        if let profil = dvProfilwort(profil: spur.dvProfile,
+                                     kompatibel: spur.dvBlSignalCompatibilityId) {
+            text += " P\(profil)"
+        }
+        if let basis { text += " · \(basis)" }
+        return text
+    }
+
+    /// „8.1", „5", „7". Die Stelle nach dem Punkt gibt es nur bei den Profilen,
+    /// die sie tragen (8 und 10) — ein „5.0" oder „7.6" steht so nirgends.
+    static func dvProfilwort(profil: Int?, kompatibel: Int?) -> String? {
+        guard let profil, profil > 0 else { return nil }
+        if [8, 10].contains(profil), let kompatibel, kompatibel >= 0,
+           !(profil == 8 && kompatibel == 0) {
+            return "\(profil).\(kompatibel)"
+        }
+        return "\(profil)"
+    }
+
     // MARK: Auslieferung
 
     /// Wie schwer die Auslieferungsart wiegt — daran haengt die Farbe.

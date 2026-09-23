@@ -19,6 +19,8 @@ struct SeerrAnbindenView: View {
     @State private var adresse = ""
     @State private var benutzer = ""
     @State private var passwort = ""
+    /// „Erweitert" — eigene Header für einen Dienst vor Seerr.
+    @State private var koepfe: [Kopfzeile] = []
 
     var body: some View {
         ZStack {
@@ -56,9 +58,14 @@ struct SeerrAnbindenView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text(verbatim: seerr.adresse ?? "")
                 .font(Stil.koerper).foregroundStyle(Stil.schrift)
+            // **Ein Wert, keine Zustandsfarbe.** Die Vorlage zeigt ihn als
+            // gewoehnlichen Wert einer Zeile (`Shared/SeerrEinstellungenView`);
+            // hier trug er Akzent beziehungsweise `warnung`. Eine abgelaufene
+            // Sitzung wartet nicht und ist auch kein Fehler — sie ist eine
+            // Auskunft, und das Wort sagt sie schon.
             Text(seerr.traegt ? "Sitzung aktiv" : "Sitzung abgelaufen")
                 .font(Stil.klein)
-                .foregroundStyle(seerr.traegt ? Stil.akzent : Stil.warnung)
+                .foregroundStyle(Stil.schriftLeise)
             // **Kein „Abmelden", sondern „Trennen".** Bei Seerr selbst bleibt
             // alles, wie es ist — es geht nur um diesen einen Zugang.
             Button("Verbindung trennen") {
@@ -76,10 +83,15 @@ struct SeerrAnbindenView: View {
             Eingabefeld(platzhalter: "Benutzername", text: $benutzer, inhalt: .username)
             Eingabefeld(platzhalter: "Passwort", text: $passwort,
                         sicher: true, inhalt: .password)
+            TVErweitert(zeilen: $koepfe)
 
             if let fehler = seerr.fehler {
                 Text(verbatim: fehler)
-                    .font(Stil.klein).foregroundStyle(Stil.warnung)
+                    // **Fehlgeschlagen ist nicht „wartet".** Die Anmeldung
+                    // ist schiefgegangen, also `fehler` — die Begruendung
+                    // steht bei dem Token in `Farben.swift`. Serveraufnahme
+                    // und Quick Connect machen es hier schon richtig.
+                    .font(Stil.klein).foregroundStyle(Stil.fehler)
             }
 
             // Kein gesperrter Knopf: solange nichts dasteht, ist nichts zu
@@ -89,7 +101,7 @@ struct SeerrAnbindenView: View {
                     guard !seerr.meldetAn else { return }
                     Task {
                         await seerr.verbinden(adresse: adresse, benutzer: benutzer,
-                                              passwort: passwort)
+                                              passwort: passwort, koepfe: koepfe.koepfe)
                         if seerr.verbunden { passwort = "" }
                     }
                 }
@@ -144,16 +156,20 @@ struct Seerrkachel: View {
     @ViewBuilder
     private var marke: some View {
         if treffer.stand != .da {
-            HStack(spacing: 5) {
+            // **Die Masse von `Shared/Seerrkachel.swift`, verdoppelt.** Dort
+            // stehen Zeichen 10 halbfett, Text `Stil.plakette`, Abstand 3,
+            // Innenabstand 5/7 auf 3. Hier standen 15 fett und 17 halbfett —
+            // weder iPhone- noch Fernseherstufen.
+            HStack(spacing: 6) {
                 Image(systemName: treffer.stand.symbol)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 20, weight: .semibold))
                 if let wort = treffer.stand.kurzwort {
-                    Text(verbatim: wort).font(.system(size: 17, weight: .semibold))
+                    Text(verbatim: wort).font(Stil.plakette)
                 }
             }
             .foregroundStyle(Stil.grund)
-            .padding(.horizontal, treffer.stand.kurzwort == nil ? 9 : 12)
-            .padding(.vertical, 5)
+            .padding(.horizontal, treffer.stand.kurzwort == nil ? 10 : 14)
+            .padding(.vertical, 6)
             .background(treffer.stand.farbe, in: Capsule())
         }
     }
@@ -169,12 +185,18 @@ struct SeerrDetailView: View {
 
     @State private var stand: Seerrstand
     @State private var detail: Seerrdetail?
+    /// **Der Unterschied, den die Seite nicht kannte.** `detail` blieb bei
+    /// einem stummen Jellyseerr auf `nil`, und Beschreibung, Staffeln,
+    /// Besetzung und Ähnliches verschwanden wortlos.
+    @State private var detailGestoert = false
     @State private var laeuft = false
     @State private var angefragt = false
     @State private var fehler: String?
     @State private var gewaehlt: Set<Int> = []
     @State private var staffelnOffen = false
     @State private var bestaetigt = false
+    /// Welche der vier Rueckfragen gerade auf dem Knopf steht.
+    @State private var fassung = 0
     /// Der Fokus muss beim Aufklappen in die Tafel wandern — tvOS legt ihn
     /// nicht von selbst um, solange der Ausloeser stehenbleibt.
     @FocusState private var ersteZeile: Int?
@@ -218,6 +240,13 @@ struct SeerrDetailView: View {
                         besetzungsstreifen
                     }
                 }
+                if detailGestoert {
+                    // Jellyseerrs Adresse, nicht die des eigenen Servers: der
+                    // laeuft, sonst waere man nicht auf dieser Seite.
+                    Stoerzustand(model: model, adresse: model.seerr.adresse,
+                                 erneut: { Task { await detailLaden() } })
+                        .frame(height: Stil.posterHoehe)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, Stil.abschlussLuft)
@@ -243,7 +272,13 @@ struct SeerrDetailView: View {
             staffeltafel.transition(.opacity)
         }
         .animation(Stil.fokusAnimation, value: staffelnOffen)
-        .task { detail = await model.seerr.detail(treffer) }
+        .task { await detailLaden() }
+    }
+
+    private func detailLaden() async {
+        let geholt = await model.seerr.detail(treffer)
+        detailGestoert = geholt == nil
+        if let geholt { detail = geholt }
     }
 
     /// **Derselbe Kopf wie auf einer echten Detailseite.**
@@ -275,8 +310,9 @@ struct SeerrDetailView: View {
     private var block: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(verbatim: treffer.titel)
-                .font(.system(size: 60, weight: .bold))
-                .tracking(-1.4)
+                // Seitentitel aus der Leiter; 60 gibt es dort nicht.
+                .font(Stil.titelGross)
+                .tracking(Stil.sperrungTitel)
                 .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
                 .minimumScaleFactor(0.62)
@@ -284,8 +320,9 @@ struct SeerrDetailView: View {
 
             HStack(spacing: 24) {
                 Text(verbatim: nebenzeile)
-                    .font(.system(size: 29))
-                    .foregroundStyle(Stil.schrift.opacity(0.62))
+                    // Eine Angabe — am iPhone 12, hier das Doppelte.
+                    .font(Stil.klein)
+                    .foregroundStyle(Stil.schriftSehrLeise)
                     .lineLimit(1)
                 belegzeile
             }
@@ -293,9 +330,9 @@ struct SeerrDetailView: View {
             .padding(.top, 14)
 
             Text(verbatim: detail?.beschreibung ?? "")
-                .font(.system(size: 29))
+                .font(Stil.koerper)
                 .lineSpacing(Stil.beschreibungLuft)
-                .foregroundStyle(Stil.schrift.opacity(0.62))
+                .foregroundStyle(Stil.schriftSehrLeise)
                 .lineLimit(3)
                 .padding(.top, 22)
                 .frame(width: 1000, height: Stil.beschreibungHoehe(3),
@@ -325,24 +362,12 @@ struct SeerrDetailView: View {
         return teile.joined(separator: " · ")
     }
 
+    /// Stand und Bewertung in derselben Huelle — wie am iPhone, wo beides
+    /// durch dieselbe `Belegzeile` laeuft.
     private var belegzeile: some View {
-        HStack(spacing: 22) {
-            HStack(spacing: 8) {
-                Image(systemName: stand.symbol).font(.system(size: 20, weight: .heavy))
-                Text(verbatim: stand.wort).font(.system(size: 24, weight: .medium))
-            }
-            .foregroundStyle(stand.farbe)
-
-            if let b = detail?.bewertung, b > 0 {
-                HStack(spacing: 7) {
-                    Image(systemName: "star.fill").font(.system(size: 20))
-                    Text(verbatim: String(format: "%.1f", b)
-                            .replacingOccurrences(of: ".", with: ","))
-                        .font(.system(size: 24))
-                }
-                .foregroundStyle(Stil.schrift.opacity(0.8))
-            }
-        }
+        Belegzeile(direktplay: false,
+                   bewertung: (detail?.bewertung).flatMap { $0 > 0 ? $0 : nil },
+                   eigen: (stand.symbol, stand.wort, stand.farbe))
     }
 
     /// **Ein Stand ist keine Schaltflaeche.** Was wartet oder laedt, laesst
@@ -358,7 +383,8 @@ struct SeerrDetailView: View {
                     .focused($amKnopf)
                     .tafelausloeser("staffeln")
                 if let fehler {
-                    Text(verbatim: fehler).font(Stil.klein).foregroundStyle(Stil.warnung)
+                    // Eine gescheiterte Anfrage ist ein Fehler, keine Warnung.
+                    Text(verbatim: fehler).font(Stil.klein).foregroundStyle(Stil.fehler)
                 }
             }
         } else {
@@ -366,10 +392,30 @@ struct SeerrDetailView: View {
         }
     }
 
+    /// **Die zweite Stufe sagt, was zu tun ist.**
+    ///
+    /// Vorher stand dort „Wirklich anfragen?" — Paul am 21.09.: „Man
+    /// versteht nicht, dass man nochmal druecken muss." Ein Knopf, auf dem
+    /// eine Frage steht, ist eine Frage ohne Antwort: man weiss nicht, ob
+    /// Druecken bestaetigt oder abbricht. Jede Fassung faengt deshalb mit
+    /// „Nochmal" an — die Anweisung vorn, die Pointe dahinter.
+    ///
+    /// Vier Fassungen, und gewuerfelt wird **einmal**, beim Druecken: sonst
+    /// wechselte der Text unter der Fernbedienung, sobald die Ansicht neu
+    /// zeichnet. Dieselbe zweimal hintereinander kommt nicht.
+    ///
+    /// Wortgleich mit `Shared/SeerrDetailView`. Eine Kopie waere ein Fehler,
+    /// aber der Katalogschluessel ist derselbe — der Wortlaut laeuft also
+    /// nicht auseinander, ohne dass es auffaellt.
+    private static let bestaetigungen: [LocalizedStringKey] = [
+        "Nochmal, dann läuft’s", "Nochmal — ab die Post",
+        "Nochmal, dann frag ich", "Nochmal, her damit"
+    ]
+
     private var knopftext: LocalizedStringKey {
         if laeuft { return "Wird angefragt…" }
         if treffer.istSerie { return "Staffeln wählen" }
-        return bestaetigt ? "Wirklich anfragen?" : "Anfragen"
+        return bestaetigt ? Self.bestaetigungen[fassung] : "Anfragen"
     }
 
     /// **Zwei Stufen, und die zweite ist der eigentliche Auftrag.** Mit einer
@@ -382,7 +428,13 @@ struct SeerrDetailView: View {
     private func gedrueckt() {
         guard !laeuft else { return }
         if treffer.istSerie { staffelnOffen = true; return }
-        guard bestaetigt else { bestaetigt = true; return }
+        guard bestaetigt else {
+            // Einmal wuerfeln, und nicht dieselbe wie zuletzt.
+            let andere = (0 ..< Self.bestaetigungen.count).filter { $0 != fassung }
+            fassung = andere.randomElement() ?? 0
+            bestaetigt = true
+            return
+        }
         Task { await anfragen() }
     }
 
@@ -421,6 +473,14 @@ struct SeerrDetailView: View {
                             staffelzeile(st)
                         }
                         .buttonStyle(ZeilenStil())
+                        // **Gewaehlt ist hier die Akzentfarbe der ganzen
+                        // Zeile** — der Kommentar bei `staffelzeile` sagt es
+                        // selbst, und VoiceOver sieht Farbe nicht. Ohne das
+                        // Merkmal klingt die gewaehlte Staffel wie jede
+                        // andere, und eine Mehrfachwahl, die man nicht
+                        // nachhoeren kann, ist keine.
+                        .accessibilityAddTraits(gewaehlt.contains(st.nummer)
+                                                ? [.isButton, .isSelected] : .isButton)
                         .focused($ersteZeile, equals: st.nummer)
                     }
                 }
@@ -449,10 +509,9 @@ struct SeerrDetailView: View {
             .buttonStyle(ZeilenStil())
         }
         .frame(width: 620)
-        .clipShape(RoundedRectangle(cornerRadius: Stil.ecke + 8))
-        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke + 8))
-        .overlay(RoundedRectangle(cornerRadius: Stil.ecke + 8).strokeBorder(Stil.rand))
-        .shadow(color: .black.opacity(0.5), radius: 40, y: 16)
+        .clipShape(RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous))
+        // Kein Rand, kein Schatten — siehe `TVBausteine`.
+        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.eckeFlaeche, style: .continuous))
         .focusSection()
         .task { ersteZeile = erstWaehlbare }
         .onExitCommand { staffelnOffen = false }
@@ -466,18 +525,22 @@ struct SeerrDetailView: View {
         return HStack(spacing: 22) {
             Image(systemName: zeichen(fuer: st))
                 .frame(width: 38)
-                .foregroundStyle(an ? Stil.akzent : Stil.schriftSehrLeise)
+                .foregroundStyle(an ? Stil.akzent : Stil.schriftLeise)
             Text("Staffel \(st.nummer)")
             Spacer(minLength: 0)
             if st.folgen > 0 {
                 Text("\(st.folgen) Folgen")
-                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .foregroundStyle(Stil.schriftLeise)
             }
         }
         // Was schon dasteht, ist kein Angebot — und was gewaehlt ist, sagt es
         // nicht nur mit einem kleinen Kaestchen: die ganze Zeile nimmt die
         // Akzentfarbe an.
-        .foregroundStyle(an ? Stil.akzent : (frei ? Stil.schrift : Stil.schriftSehrLeise))
+        // `schriftLeise` statt `schriftSehrLeise`: auf dem Tafelgrund
+        // (`erhoeht`) steht die sehr leise Schrift mit 3,12:1 da — und im
+        // Fokus, wo die Flaeche noch heller wird, wird es nicht besser. Eine
+        // schon angefragte Staffel soll leiser sein, nicht unlesbar.
+        .foregroundStyle(an ? Stil.akzent : (frei ? Stil.schrift : Stil.schriftLeise))
     }
 
     /// Hoechstens vier Zeilen — darunter wird geschoben. Bei weniger
@@ -538,7 +601,7 @@ struct SeerrDetailView: View {
             .foregroundStyle(Stil.schriftLeise)
             .frame(width: 900, alignment: .leading)
             .padding(.vertical, 20).padding(.horizontal, 24)
-            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
+            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
     }
 
     private func anfragen() async {

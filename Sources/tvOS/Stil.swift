@@ -1,4 +1,5 @@
 import Foundation
+import JellyfinKit
 import SwiftUI
 
 /// Maße, Schriftgrößen und Bausteine für den Fernseher.
@@ -19,6 +20,40 @@ import SwiftUI
 /// Schatten, Parallaxe und ein Aufblitzen mit, die zu einer flachen
 /// Gestaltung nicht passen.
 extension Stil {
+    /// **Dieselben Namen wie auf dem iPhone**, damit die geteilten Bausteine in
+    /// `Sources/Shared` sie hier auch finden. Die Werte sind die dieser
+    /// Plattform; die Rolle ist dieselbe.
+    static var bewegungReduziert: Bool {
+        UIAccessibility.isReduceMotionEnabled
+    }
+    static let listentitel = Font.system(size: 30, weight: .semibold)
+
+    // Die Eckenleiter steht weiter unten bei den uebrigen Massen, unter
+    // „MARK: Ecken" — alle vier Stufen an einer Stelle, mit der Rechnung.
+
+    // MARK: - Rueckmeldung auf den Druck
+
+    /// **Dieselben zwei Stile wie auf dem iPhone**, damit die geteilten
+    /// Bausteine in `Sources/Shared` sie hier auch finden. Eine Zeile bekommt
+    /// eine Flaeche, ein Knopf wird kleiner — jeder Knopf antwortet auf den
+    /// Druck, das steht in `Notizen/BRAND.md`, Abschnitt 5.
+    struct Druckzeile: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .background(Stil.schrift.opacity(configuration.isPressed ? 0.06 : 0))
+                .animation(.linear(duration: 0.12), value: configuration.isPressed)
+        }
+    }
+
+    struct Druckknopf: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed ? 0.97 : 1)
+                .opacity(configuration.isPressed ? 0.85 : 1)
+                .animation(.linear(duration: 0.12), value: configuration.isPressed)
+        }
+    }
+
 
     // MARK: Maße — Apple TV
 
@@ -55,8 +90,71 @@ extension Stil {
     /// nachrechnet, wenn die Leiste je wandert.
     static var leisteUnten: CGFloat { leisteOben + leisteHoehe }
 
-    static let ecke: CGFloat = 12
-    static let eckeKachel: CGFloat = 16
+    // MARK: Ecken
+
+    /// **Die Eckenleiter — dieselbe Rundung wie am iPhone, nicht dieselbe Zahl.**
+    ///
+    /// Hier stand einmal, die Ecken trugen am Fernseher „durchweg das
+    /// Eineinhalbfache", und als Beleg zwei Zahlen, die beide nicht 1,5 waren:
+    /// 16/8, 12/10, 16/10, 24/16 sind 2,0 / 1,2 / 1,6 / 1,5. Ein fester Faktor
+    /// war also weder eingehalten noch der richtige Gedanke.
+    ///
+    /// **Der Massstab ist das Verhaeltnis von Radius zu Groesse des Dings, das
+    /// er rundet.** Nur das entscheidet, wie rund eine Ecke *wirkt*: 10 auf ein
+    /// 112 breites Plakat sind 0,089, 16 auf ein 208 breites nur 0,077 — am
+    /// Fernseher war das Plakat also flacher als am Telefon, obwohl die Zahl
+    /// groesser war. Und weil die Dinge am Fernseher **nicht** alle gleich
+    /// stark wachsen (Plakat 112 → 208 ist 1,86, Knopf 48 → 76 nur 1,58),
+    /// kann es einen festen Faktor fuer die Ecken gar nicht geben.
+    ///
+    /// Je Stufe also: iPhone-Verhaeltnis nehmen, mit dem Fernseher-Mass des
+    /// **gleichen Dings** multiplizieren, auf eine gerade Zahl runden.
+    ///
+    ///     Stufe          iPhone: Ding / Ecke      Verh.   Fernseher: Ding      Rechnung        neu
+    ///     eckeKlein      Marke 24 hoch  /  8      0,333   Marke 47 hoch        47 × 0,333 = 15,7
+    ///                    Plakette 24 hoch / 8     0,333   Plakette.fern 41     41 × 0,333 = 13,7   14
+    ///     ecke           Knopf 48 hoch  / 10      0,208   Knopf 76 hoch        76 × 0,208 = 15,8   16
+    ///     eckeKachel     Plakat 112 breit / 10    0,089   Plakat 208 breit    208 × 0,089 = 18,6   18
+    ///     eckeFlaeche    Tafel, Zeile 58 / 16     0,276   Tafel, Zeile 84     84 × 0,276 = 23,2   24
+    ///
+    /// Die Leiter ist damit **14 / 16 / 18 / 24** statt 16 / 12 / 16 / 24. Zwei
+    /// Punkte Abstand sind am Fernseher kein zu feiner Unterschied, sondern der
+    /// richtige: 1920 Punkt auf drei Meter Entfernung fuellen ungefaehr
+    /// denselben Sehwinkel wie 390 Punkt auf Armlaenge, ein Fernseherpunkt ist
+    /// also rund ein Fuenftel eines iPhone-Punkts.
+    ///
+    /// Auffaellig ist nur `eckeKlein`: es **sinkt** von 16 auf 14, obwohl alles
+    /// andere steigt. Der Grund ist derselbe Rechenweg — die kleinen Marken
+    /// wachsen vom Telefon zum Fernseher weniger als der Rest (24 → 41…47,
+    /// also 1,7 bis 2,0 bei einer Ecke, die vorher das Doppelte trug).
+    static let ecke: CGFloat = 16
+    /// Plakate und Kacheln. Am iPhone dieselbe Zahl wie der Knopf (beide 10);
+    /// hier zwei mehr als der Knopf, weil das Plakat staerker gewachsen ist als
+    /// er. Zwei Punkte sind auf drei Meter kein Rang, sondern nur die ehrliche
+    /// Rundung — wer sie zusammenlegen will, nimmt fuer beide 18.
+    static let eckeKachel: CGFloat = 18
+    /// **Die kleine Ecke, fuer Marken und Plaketten.** Traegt die Marke der
+    /// `Belegzeile`, `Plakette.fern` und die Marke oben auf einer Kachel — alle
+    /// drei zwischen 36 und 47 Punkt hoch.
+    static let eckeKlein: CGFloat = 14
+    /// **Eine eigene Flaeche oder Tafel:** die `Handlungstafel` und das
+    /// Staffelblatt der Seerr-Seite, beide 620 Punkt breit mit Zeilen in
+    /// `zeilenHoehe`. Sie stand bisher als Zahl `Stil.ecke + 8` in beiden
+    /// Dateien und hier ungenutzt daneben.
+    ///
+    /// Gemessen wird an der **Zeilenhoehe**, nicht an der Breite: die Tafel
+    /// ist am Fernseher 620 breit gegen 342 am iPhone, aber 1760 Punkt
+    /// Inhaltsbreite gegen 354 — an der Breite gerechnet kaeme eine Ecke von
+    /// 80 heraus, und das ist offensichtlich keine Tafel mehr. Die Zeile ist
+    /// das Ding, an dem man die Rundung liest.
+    static let eckeFlaeche: CGFloat = 24
+
+    /// **Keine Stufe der Leiter, sondern ein Platzhalterbalken.** Ein
+    /// `Ladefeld`, das fuer eine Textzeile steht, ist 16 bis 30 Punkt hoch;
+    /// dieselben 0,23 wie beim kleinen Feld ergeben darauf 4 bis 7. Eine Zahl
+    /// fuer alle drei, weil ein Punkt Unterschied an einem Balken, der nur
+    /// sagt „hier kommt Text", nichts erzaehlt.
+    static let eckeBalken: CGFloat = 5
 
     /// Poster bleiben 2:3 wie auf dem iPhone, nur größer.
     static let posterBreite: CGFloat = 208
@@ -116,10 +214,16 @@ extension Stil {
     /// zweiten. Mit den 120 aus der Tafelrechnung passten deshalb nur zwei
     /// Zeilen in den Platz, obwohl `lineLimit` auf drei stand: die dritte
     /// wurde still abgeschnitten.
-    static let beschreibungZeile: CGFloat = 35
+    ///
+    /// **37, seit der Fliesstext auf 30 steht.** Die 35 galten fuer 29 Punkt;
+    /// dieselbe Rechnung (Zeilenhoehe rund das 1,21-Fache des Grades) ergibt
+    /// auf 30 rund 36,2. Aufgerundet auf 37, damit die dritte Zeile nicht
+    /// genau an der Nachkommastelle wieder abgeschnitten wird — der Fehler,
+    /// den der Absatz darueber beschreibt.
+    static let beschreibungZeile: CGFloat = 37
     static let beschreibungLuft: CGFloat = 11
 
-    /// Wie hoch `zeilen` Zeilen Beschreibung stehen: 3 → 127, 2 → 81.
+    /// Wie hoch `zeilen` Zeilen Beschreibung stehen: 3 → 133, 2 → 85.
     static func beschreibungHoehe(_ zeilen: Int) -> CGFloat {
         CGFloat(zeilen) * beschreibungZeile + CGFloat(zeilen - 1) * beschreibungLuft
     }
@@ -254,11 +358,53 @@ extension Stil {
 
     // MARK: Fokus
 
-    /// Wie stark eine fokussierte Kachel wächst — und das ist alles, was
-    /// Fokus auf einer Kachel ausmacht. Kein Ring, keine Fläche, kein
-    /// Schatten. Bewusst wenig: Apples Karte springt deutlich weiter und
-    /// schiebt in einer dichten Reihe die Nachbarn optisch weg.
-    static let fokusLupe: CGFloat = 1.08
+    /// **Die Fokusleiter: drei Stufen, nach der Groesse des Gegenstands.**
+    ///
+    /// `Sources/tvOS` vergroesserte fokussierte Dinge in sechs Stufen — 1,03 ·
+    /// 1,04 · 1,06 · 1,08 · 1,10 · 1,12 —, und nur 1,08 war ein Token. Sechs
+    /// Zahlen fuer **eine** Aussage („hier steht die Fernbedienung") sind
+    /// gewachsen, nicht entworfen: wer eine davon aendert, aendert ein Fuenftel
+    /// der App und weiss es nicht.
+    ///
+    /// **Das Kriterium ist, wie weit der Umriss wandert**, nicht wie viel
+    /// Prozent es sind. Ein Prozentsatz sagt am Fernseher nichts: 8 % sind auf
+    /// einem 60 Punkt grossen Profilkreis fuenf Punkte — das sieht man aus drei
+    /// Metern nicht —, auf einer 760 Punkt breiten Zeile sind es einundsechzig.
+    /// Gemessen wird deshalb die **laengste Seite** des Dings, und der Zuwachs
+    /// soll ueberall in derselben Groessenordnung landen, rund 6 bis 25 Punkte:
+    ///
+    ///     Stufe               Wert    laengste Seite   Beispiele                       Zuwachs
+    ///     fokusLupeKlein      1,10    bis 120          Profilkreis 60, Symbolknopf 88   +6 … +9
+    ///     fokusLupe           1,06    120 bis 500      Chip 180, Knopf 250,
+    ///                                                  Plakat 312, Querkachel 448      +11 … +27
+    ///     fokusLupeBreit      1,03    ab 500           Leistenzeile 620,
+    ///                                                  Geraetezeile 760                +19 … +23
+    ///
+    /// Klein waechst also staerker, gross weniger — genau umgekehrt zu vorher,
+    /// wo der Profilkreis mit 1,12 **und** die Kachel mit 1,08 den grossen
+    /// Zuwachs hatten und die Chips mit 1,06 den kleinen.
+    ///
+    /// **Es wird ausschliesslich skaliert, nie ein fester Betrag addiert.**
+    /// `BRAND.md` §5 behauptete, der fokussierte Knopf wachse „um einen festen
+    /// Betrag von 3 Punkt" — das stand nirgends im Code und steht auch jetzt
+    /// nicht hier. Die Notizen sind korrigiert.
+    ///
+    /// Frei stehende Bilder bekommen zusaetzlich einen Ring (`ProfilStil`,
+    /// `KontostreifenStil`): ein Bild kann nicht heller werden wie eine Kachel,
+    /// und sechs Punkte Zuwachs allein sind auf drei Meter zu leise.
+    ///
+    /// Kein Schatten, keine Parallaxe, kein Aufblitzen — Apples Karte springt
+    /// deutlich weiter und schiebt in einer dichten Reihe die Nachbarn optisch
+    /// weg. BRAND 4.
+    static let fokusLupeKlein: CGFloat = 1.10
+    /// Der Grundwert: Kacheln, Plakate, Knoepfe, Chips, Reiter — alles zwischen
+    /// 120 und 500 Punkt laengster Seite. Auf einer Kachel ist er das einzige,
+    /// was Fokus ausmacht: kein Ring, keine Flaeche, kein Schatten.
+    static let fokusLupe: CGFloat = 1.06
+    /// Zeilen und Tafeln ab 500 Punkt Breite. Drei Prozent sind dort schon
+    /// zwanzig Punkte — dieselbe sichtbare Bewegung wie zehn Prozent an einem
+    /// Profilkreis.
+    static let fokusLupeBreit: CGFloat = 1.03
     /// Die ruhige Fläche, die überall Fokus bedeutet, wo kein Knopf steht:
     /// Listenzeilen, Chips, Folgenzeilen. Weiß bleibt den Handlungsknöpfen
     /// vorbehalten — dort ist es der Hauptknopf vom iPhone.
@@ -266,12 +412,22 @@ extension Stil {
 
     /// Fokuswechsel sollen unmittelbar wirken — die Fernbedienung ist
     /// träge genug.
-    static let fokusAnimation = Animation.easeOut(duration: 0.14)
+    ///
+    /// **„Bewegung reduzieren" gilt auch hier.** `bewegungReduziert` stand
+    /// oben in der Datei und wurde in ganz `Sources/tvOS` kein einziges Mal
+    /// gelesen: jede Fokus- und Einblendbewegung lief unabhaengig von der
+    /// Systemeinstellung. Der Fokus selbst bleibt sichtbar — nur die Kurve
+    /// wird kurz und gerade, so wie am iPhone.
+    static var fokusAnimation: Animation {
+        bewegungReduziert ? .linear(duration: 0.1) : .easeOut(duration: 0.14)
+    }
 
     /// Wie Inhalt erscheint, wenn er angekommen ist — dieselbe Kurve wie auf
     /// dem iPhone. **Nichts erscheint hart** (E18): Bilder blenden ein,
     /// Inhalt loest Platzhalter ab.
-    static let einblenden = Animation.easeInOut(duration: 0.28)
+    static var einblenden: Animation {
+        bewegungReduziert ? .linear(duration: 0.14) : .easeInOut(duration: 0.28)
+    }
 
     // MARK: Seitenwechsel
 
@@ -280,19 +436,47 @@ extension Stil {
     /// Reines Überblenden, ohne Verschiebung — mehr macht die Systemleiste
     /// auf tvOS auch nicht. `easeInOut`, weil an beiden Enden etwas
     /// passiert: das eine geht, das andere kommt.
-    static let seitenwechsel = Animation.easeInOut(duration: 0.25)
+    static var seitenwechsel: Animation {
+        bewegungReduziert ? .linear(duration: 0.14) : .easeInOut(duration: 0.25)
+    }
 
     // MARK: Schrift — Apple TV
 
-    /// Rund verdoppelt gegenüber dem iPhone und an Apples tvOS-Rampe
-    /// eingenordet. Die iOS-Entsprechung steht jeweils daneben.
-    static let titelGross = Font.system(size: 57, weight: .bold)       // iOS 28
-    static let reihe      = Font.system(size: 38, weight: .semibold)   // iOS 20
-    static let knopf      = Font.system(size: 31, weight: .semibold)   // iOS 15/16
-    static let koerper    = Font.system(size: 29)                      // iOS 15
-    static let kachel     = Font.system(size: 27, weight: .medium)     // iOS 14
-    static let klein      = Font.system(size: 25)                      // iOS 12
-    static let plakette   = Font.system(size: 21, weight: .semibold)   // iOS 10
+    /// **Genau das Doppelte des iPhones** — eine Regel statt einer zweiten
+    /// Tabelle (BRAND 2).
+    ///
+    /// Sie hing bis zum 22.09. an Apples tvOS-Rampe: 57 / 38 / 31 / 29 / 27 /
+    /// 25 / 21. Keiner dieser Werte war das Doppelte, und `kachel` trug
+    /// ausserdem noch die alte 14 als Vorlage, die es am iPhone seit dem
+    /// 21.09. nicht mehr gibt. Wer am iPhone eine Stufe aendert, hat damit
+    /// den Fernseher mitgeaendert — das war der Sinn der Regel, und sie galt
+    /// hier nicht.
+    static let titelGross = Font.system(size: 56, weight: .bold)       // iOS 28
+    static let unterseitentitel = Font.system(size: 44, weight: .semibold) // iOS 22
+    static let reihe      = Font.system(size: 40, weight: .semibold)   // iOS 20
+    static let rubrikGross = Font.system(size: 34, weight: .semibold)  // iOS 17
+    static let knopf      = Font.system(size: 30, weight: .semibold)   // iOS 15
+    static let koerper    = Font.system(size: 30)                      // iOS 15
+    static let kachel     = Font.system(size: 26, weight: .medium)     // iOS 13
+    static let klein      = Font.system(size: 24)                      // iOS 12
+    static let gruppe     = Font.system(size: 22, weight: .semibold)   // iOS 11
+    static let plakette   = Font.system(size: 20, weight: .semibold)   // iOS 10
+
+    // MARK: Sperrung — jeweils der em-Wert aus BRAND 2 mal der Punktgroesse
+    /// 56 · −0,021 em
+    static let sperrungTitel      = -1.176
+    /// 44 · −0,014 em
+    static let sperrungUnterseite = -0.616
+    /// 34 · −0,008 em
+    static let sperrungRubrik     = -0.272
+    /// 22 · +0,14 em
+    static let sperrungGruppe     = 3.08
+    /// 20 · +0,10 em
+    static let plaketteSperrung   = 2.0
+
+    /// **Sperrung der Reihenueberschrift.** −0,012 em auf 40 Punkt.
+    /// Mitgezogen, als die Leiter auf das Doppelte geradegezogen wurde.
+    static let sperrungReihe = -0.48
 }
 
 // MARK: - Bild
@@ -336,6 +520,12 @@ struct Bild: View {
             .frame(width: breite, height: hoehe)
             .frame(maxWidth: breite == nil ? .infinity : nil)
             .overlay {
+              // **Nur hinter einem Vorposten.** `AsyncImage` kann keine
+              // eigenen Header senden (Issue #4); `Netzbild` kann es. Fuer
+              // alle anderen bleibt es beim Bisherigen.
+              if let url, !Eigenkoepfe.fuer(url).isEmpty {
+                Netzbild(url: url)
+              } else {
                 // Die `transaction` blendet den Wechsel der Lagen weich;
                 // ohne sie schaltet `AsyncImage` hart um. **Nichts erscheint
                 // hart** — GESTALTUNG, Abschnitt E.
@@ -354,6 +544,7 @@ struct Bild: View {
                     }
                 }
                 .id(anlauf)
+              }
             }
             // Eine neue Adresse heißt ein frischer Anlauf.
             .onChange(of: url) { _, _ in anlauf = 0 }
@@ -363,7 +554,7 @@ struct Bild: View {
                 }
             }
             .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: ecke))
+            .clipShape(RoundedRectangle(cornerRadius: ecke, style: .continuous))
     }
 }
 
@@ -375,7 +566,9 @@ struct Fortschrittsbalken: View {
     var body: some View {
         GeometryReader { rahmen in
             ZStack(alignment: .leading) {
-                Rectangle().fill(Color.white.opacity(0.22))
+                // Helle Spur, wie am iPhone: die Spur ist die Laenge des
+                // Ganzen, nicht der fehlende Rest.
+                Rectangle().fill(Color.white.opacity(0.30))
                 Rectangle().fill(Stil.akzent)
                     .frame(width: rahmen.size.width * min(max(anteil, 0), 1))
             }
@@ -406,13 +599,32 @@ struct Fortschrittsbalken: View {
 /// gekoppelter Rand die Plakette auf dem iPhone aufgehellt hätte.
 extension Plakette {
     static func fern(_ text: String, farbe: Color = Stil.schriftLeise) -> Plakette {
+        // **Dieselbe Form wie die Marke nebenan, eine Stufe kleiner.**
+        //
+        // Hier stand die Haelfte der noetigen Masse: Innenabstand und Ecke
+        // waren verdoppelt, die Schrift blieb bei 13 — sie war im geteilten
+        // Baustein gar nicht einstellbar. Das war eine
+        // Telefonbeschriftung in einem Fernseherkasten mit doppelt so
+        // runden Ecken wie ihr Nachbar.
+        //
+        // Auf 27 gesetzt, also gleichauf mit der Marke, wurde sie zu
+        // schwer: „etwas zu riesig verglichen mit denen daneben." Das ist
+        // richtig so, und es hat einen Grund ausser dem Augenmass — „Direct
+        // Play" ist die Aussage der Zeile, die Freigabe eine Nebenangabe
+        // wie die Bewertung. 24 Medium in 14/6: dieselbe Form, sichtbar eine
+        // Stufe leiser.
+        //
+        // **Die Ecke ist `eckeKlein`, keine eigene Zahl.** Hier stand 6 — auf
+        // einer 41 Punkt hohen Plakette sind das 0,15, wo am iPhone 0,33
+        // stehen; sie war damit das kantigste Ding der Seite. Am iPhone
+        // nimmt dieselbe Plakette in der `Belegzeile` ebenfalls das kleine
+        // Mass. Die Marke nebenan nimmt es auch, und genau darauf kommt es an.
         Plakette(text: text,
                  farbe: farbe,
-                 randfarbe: farbe.opacity(0.3),
-                 innenWaagerecht: 12,
-                 innenSenkrecht: 4,
-                 rundung: 6,
-                 strichstaerke: 2)
+                 innenWaagerecht: 14,
+                 innenSenkrecht: 6,
+                 rundung: Stil.eckeKlein,
+                 groesse: 24)
     }
 }
 
@@ -433,17 +645,22 @@ struct Belegzeile: View {
     /// ueber die **Wiedergabe** zuletzt. Im Wiedergabeblatt ist es umgekehrt:
     /// dort ist der Beleg der Grund, warum die Zeile ueberhaupt dasteht.
     var belegZuletzt = false
+    /// **Ein freier Beleg statt des Wiedergabeplans** — auf der Seerr-Seite
+    /// der Stand der Anfrage, in derselben Huelle wie Direct Play und die
+    /// Bewertung. Wie `Belegzeile.eigen` am iPhone.
+    var eigen: (symbol: String, wort: String, farbe: Color)? = nil
 
     var body: some View {
         HStack(spacing: 24) {
             if !belegZuletzt { beleg }
+            // In derselben Huelle wie Direct Play — wie am iPhone seit dem
+            // 23.09.2026: vorher stand die Bewertung als einzige Angabe der
+            // Zeile nackt da.
             if let bewertung {
-                HStack(spacing: 8) {
-                    Image(systemName: "star.fill").font(.system(size: 22))
-                    Text(String(format: "%.1f", bewertung).replacingOccurrences(of: ".", with: ","))
-                        .font(.system(size: 27))
-                }
-                .foregroundStyle(Color.white.opacity(0.8))
+                marke("star.fill",
+                      Text(verbatim: String(format: "%.1f", bewertung)
+                          .replacingOccurrences(of: ".", with: ",")),
+                      farbe: Stil.schriftLeise, gewicht: .semibold)
             }
 
             if let freigabe { Plakette.fern(freigabe) }
@@ -454,15 +671,20 @@ struct Belegzeile: View {
 
     @ViewBuilder
     private var beleg: some View {
-        if direktplay {
-            marke("checkmark", Text("Direct Play"), farbe: Stil.akzent, gewicht: .heavy)
+        if let eigen {
+            marke(eigen.symbol, Text(verbatim: eigen.wort),
+                  farbe: eigen.farbe, gewicht: .semibold)
+        } else if direktplay {
+            // Halbfett, nicht `.heavy` — wie am iPhone. Extrafett war der
+            // vierte Schnitt und damit einer zu viel (BRAND 2).
+            marke("checkmark", Text("Direct Play"), farbe: Stil.akzent, gewicht: .semibold)
         } else if let hinweis {
             marke("exclamationmark.triangle.fill", Text(hinweis),
                   farbe: Stil.warnung, gewicht: .regular)
         }
     }
 
-    /// Die Huelle, in der beide Belege stecken.
+    /// Die Huelle, in der die Belege und die Bewertung stecken.
     ///
     /// **Warum eine Marke und kein loser Text.** Zeichen und Wort standen
     /// nackt auf dem Grund, und daneben liegt die Freigabe als umrandete
@@ -470,17 +692,20 @@ struct Belegzeile: View {
     /// wiegen. Jetzt tragen beide dieselbe Ecke und lesen sich als Paar;
     /// welche Auskunft es ist, sagt die Farbe.
     ///
-    /// **Rundung 6, dieselbe wie `Plakette.fern`** — nicht `Stil.ecke`. Es
+    /// **`eckeKlein`, dieselbe wie `Plakette.fern`** — nicht `Stil.ecke`. Es
     /// geht hier nicht um die Groesse der Flaeche, sondern darum, dass die
-    /// beiden Nachbarn gleich aussehen.
+    /// beiden Nachbarn gleich aussehen. Hier stand 6: auf einer 47 Punkt hohen
+    /// Marke 0,13, wo am iPhone auf 24 Punkt Hoehe 0,33 stehen.
     ///
     /// Fuenfzehn Prozent Toenung, keine Fuellung: der weisse Fokus bleibt
     /// die einzige gefuellte Flaeche des Bildschirms.
     private func marke(_ symbol: String, _ wort: Text,
                        farbe: Color, gewicht: Font.Weight) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 24, weight: gewicht))
-            wort.font(.system(size: 27, weight: .medium))
+            Image(systemName: symbol).font(.system(size: 22, weight: gewicht))
+            // `Stil.kachel` — 26 Medium, das Doppelte der 13 Medium, die das
+            // Wort am iPhone traegt. Vorher 27, eine Zahl ohne Stufe.
+            wort.font(Stil.kachel)
         }
         .foregroundStyle(farbe)
         // Links enger als rechts: das Zeichen ist schmaler als seine
@@ -488,7 +713,8 @@ struct Belegzeile: View {
         .padding(.leading, 16)
         .padding(.trailing, 20)
         .padding(.vertical, 8)
-        .background(farbe.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+        .background(farbe.opacity(0.15),
+                    in: RoundedRectangle(cornerRadius: Stil.eckeKlein, style: .continuous))
     }
 }
 
@@ -516,7 +742,10 @@ struct Leerzustand: View {
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: symbol)
-                .font(.system(size: 76, weight: .light))
+                // 88 Regular: am iPhone ist das Zeichen 44 gross und traegt
+                // kein eigenes Gewicht mehr — „drei Gewichte, Regular ist das
+                // leichteste" (BRAND 2). Vorher 76 in `.light`.
+                .font(.system(size: 88))
                 .foregroundStyle(Stil.schriftSehrLeise)
             Text(titel)
                 .font(Stil.reihe)
@@ -534,6 +763,32 @@ struct Leerzustand: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+
+/// **Ein Wortlaut fuer „der Server hat nicht geantwortet", nicht dreizehn.**
+///
+/// Genau derselbe `Leerzustand`, den Bibliothek, Startseite und Suche schon
+/// zeigen — nur stand er in jeder Datei einzeln, und ab dem 21.09.2026 braucht
+/// ihn auch die Serienseite, die Personenseite, die Genrewahl und die
+/// Seerr-Seite. Viermal abgeschrieben waere viermal die Gelegenheit, dass
+/// einer davon anders klingt.
+///
+/// `adresse` ist wahlweise: auf einer Seerr-Seite hat Jellyseerr geschwiegen,
+/// nicht der eigene Server, und die falsche Adresse im Satz waere die falsche
+/// Fehlersuche.
+struct Stoerzustand: View {
+    let model: AppModel
+    var adresse: String?
+    var erneut: (() -> Void)?
+
+    var body: some View {
+        Leerzustand(
+            symbol: "externaldrive.badge.xmark",
+            titel: "Server ist abgetaucht",
+            hinweis: "\(adresse ?? model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+            knopf: erneut.map { tun in (titel: LocalizedStringKey("Erneut versuchen"), tun: tun) })
     }
 }
 
@@ -657,9 +912,9 @@ struct Hinweisstreifen: View {
         .foregroundStyle(Stil.warnung)
         .padding(.horizontal, 30)
         .padding(.vertical, 20)
-        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke))
+        .background(Stil.erhoeht, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: Stil.ecke)
+            RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous)
                 .strokeBorder(Stil.warnung.opacity(0.3), lineWidth: 2)
         }
         .frame(maxWidth: 1100)
@@ -676,15 +931,32 @@ struct Hinweisstreifen: View {
 // MARK: - Umbrechende Reihe
 
 /// Rubrik über einer Gruppe von Zeilen.
+/// **Normalschreibung, nicht Versalien** — dieselbe Entscheidung wie am
+/// iPhone: Versalien lassen sich schlechter lesen, brauchen Sperrung, um
+/// ueberhaupt lesbar zu sein, und 21 Punkt war ueber einer Gruppe, deren
+/// Zeilen 30 tragen, leiser als das, was er ueberschreibt. Auf drei Meter
+/// zaehlt das doppelt.
 struct Gruppentitel: View {
     let text: LocalizedStringKey
     var body: some View {
         Text(text)
-            .textCase(.uppercase)
-            .font(.system(size: 21, weight: .semibold))
-            .tracking(1.4)
-            .foregroundStyle(Stil.schriftSehrLeise)
+            .font(Stil.reihe)
+            .tracking(Stil.sperrungReihe)
+            .foregroundStyle(Stil.schriftLeise)
             .padding(.leading, 26)
             .padding(.bottom, 16)
+    }
+}
+
+/// **Die Trennlinie in einer Tafel oder einem Blatt — durchgehend.**
+///
+/// Der geteilte Baustein `Uebernahmeauswahl` liest sie. Ein Einzug ist in
+/// einer Liste am Bildschirmrand richtig; in einer Tafel ist die gerundete
+/// Kante schon die Gruppe, und der Einzug waere nur eine zweite Kante, die
+/// mit keiner anderen fluchtet. Die ausfuehrliche Begruendung steht in
+/// `Sources/Shared/Stil.swift`, wo die iPhone-Fassung sie traegt.
+struct Blattlinie: View {
+    var body: some View {
+        Rectangle().fill(Stil.linie).frame(height: 1)
     }
 }

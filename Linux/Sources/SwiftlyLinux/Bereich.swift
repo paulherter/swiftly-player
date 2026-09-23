@@ -18,8 +18,8 @@ import Foundation
 /// | `magnifyingglass` | `system-search-symbolic` |
 enum Bereich: CaseIterable {
     case start, filme, serien, merkliste, downloads, suche
-    /// **Eine Bibliothek als eigene Seite — und deshalb kein Eintrag in der
-    /// Leiste.**
+    /// **Eine Sammlung als Unterseite — und deshalb kein Eintrag in der
+    /// Leiste** (Mac 8ca6269a, `MacSammlung.swift`).
     ///
     /// Sie steht in dieser Aufzaehlung, weil sie dieselbe Rasterseite
     /// benutzt: Kopf, Filter, Sortierung, Nachladen am unteren Rand liegen
@@ -28,12 +28,11 @@ enum Bereich: CaseIterable {
     /// `obenGruppe` und `meinsGruppe` taucht sie nicht auf, also erscheint
     /// sie nie als Zeile.
     ///
-    /// **Warum ueberhaupt eine eigene Seite:** vorher fuehrte ein Klick auf
-    /// eine Sammlung in den Filme-Bereich und waehlte sich dort aus — ueber
-    /// „Filmabend" stand dann die Ueberschrift „Filme", und eine Sammlung,
-    /// die weder `movies` noch `tvshows` ist, tat gar nichts. Auf dem Mac ist
-    /// genau das behoben (`Seitenziel.bibliothek`); hier stand es noch.
-    case bibliothek
+    /// Bis zum 23.09.2026 stand hier die Bibliothek als eigene Seite, aus
+    /// der Rubrik „Bibliotheken" der Seitenleiste. Die Rubrik ist weg; die
+    /// Bibliotheken stehen jetzt im Titelmenue von Filme und Serien, wie auf
+    /// dem Mac.
+    case sammlung
 
     /// **Alle Titel eines Genres — aus den Chips über der Startseite.**
     ///
@@ -72,7 +71,7 @@ enum Bereich: CaseIterable {
         case .downloads: uebersetzt("Downloads")
         case .suche:  uebersetzt("Suche")
         // Der Titel kommt vom geoeffneten Eintrag, nicht von hier.
-        case .bibliothek: ""
+        case .sammlung: ""
         // Der Genrename kommt vom Server und wird **nicht** uebersetzt (E7).
         case .gattung: ""
         }
@@ -102,7 +101,7 @@ enum Bereich: CaseIterable {
         case .merkliste: "merkliste"
         case .downloads: "downloads"
         case .suche:  "suche"
-        case .bibliothek: "bibliothek"
+        case .sammlung: "sammlung"
         case .gattung: "gattung"
         }
     }
@@ -121,7 +120,7 @@ enum Bereich: CaseIterable {
         // fuer dasselbe benutzt.
         case .downloads: "folder-download-symbolic"
         case .suche:  "system-search-symbolic"
-        case .bibliothek: "folder-symbolic"
+        case .sammlung: "folder-symbolic"
         // Steht nie in der Leiste; das Zeichen gilt nur fuer den Kopf.
         case .gattung: "tag-symbolic"
         }

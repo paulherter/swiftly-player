@@ -263,7 +263,20 @@ extension App {
         Task.detached { [self] in
             let d = await client.detail(art: t.art, id: t.id)
             aufHauptfaden {
-                guard let d else { return }
+                // **Gestoert sagt es** (Mac 4fffc63c) — mit Seerrs Adresse,
+                // nicht der des eigenen Servers: der laeuft, sonst waere man
+                // nicht auf dieser Seite.
+                guard let d else {
+                    guard self.seerrBlock != nil else { return }
+                    leeren(self.seerrBlock)
+                    let h = self.stoerhinweis(oben: 0, adresse: client.adresse.host) { [weak self] in
+                        self?.seerrDetailNachladen(t)
+                    }
+                    gtk_widget_set_halign(h, GTK_ALIGN_START)
+                    gtk_widget_set_margin_start(h, Int32(Stil.randAbstand))
+                    anhaengen(self.seerrBlock, h)
+                    return
+                }
                 self.seerrAngabenFuellen(t, d)
                 if let text = d.beschreibung, !text.isEmpty {
                     gtk_label_set_text(OpaquePointer(self.seerrHandlung), text)

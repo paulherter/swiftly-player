@@ -9,7 +9,7 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 
 <br>
 
-[![Plattformen](https://img.shields.io/badge/iOS_·_iPadOS_·_tvOS_·_macOS_·_Android_·_Android_TV_·_Linux_·_Windows-1E1E22?style=flat-square&labelColor=1E1E22)](#-platforms)
+[![Plattformen](https://img.shields.io/badge/iOS_·_iPadOS_·_tvOS_·_macOS_·_Android_·_Android_TV_·_Linux_·_Windows-1E1E22?style=flat-square&labelColor=1E1E22)](#platforms)
 &nbsp;
 [![Lizenz](https://img.shields.io/badge/MPL--2.0-1E1E22?style=flat-square&labelColor=1E1E22)](LICENSE)
 &nbsp;
@@ -23,11 +23,11 @@ It never transcodes — every file plays as Direct Play or Direct Stream.
 &nbsp;
 [![Join the beta on TestFlight](https://img.shields.io/badge/Join_the_beta-1E1E22?style=for-the-badge&logo=apple&logoColor=5CD1C2)](https://testflight.apple.com/join/MqeP2cnj)
 &nbsp;
-[![Join the Android beta on Google Play](https://img.shields.io/badge/Android_beta-1E1E22?style=for-the-badge&logo=googleplay&logoColor=5CD1C2)](#-android)
+[![Join the Android beta on Google Play](https://img.shields.io/badge/Android_beta-1E1E22?style=for-the-badge&logo=googleplay&logoColor=5CD1C2)](#android)
 &nbsp;
-[![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=5CD1C2)](#-windows)
+[![Download for Windows](https://img.shields.io/badge/Windows-1E1E22?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMyIgeT0iMTMiIHdpZHRoPSI4IiBoZWlnaHQ9IjgiIHJ4PSIxIi8%2BPHJlY3QgeD0iMTMiIHk9IjEzIiB3aWR0aD0iOCIgaGVpZ2h0PSI4IiByeD0iMSIvPjwvc3ZnPg%3D%3D&logoColor=5CD1C2)](#windows)
 &nbsp;
-[![Install on Linux](https://img.shields.io/badge/Linux-1E1E22?style=for-the-badge&logo=linux&logoColor=5CD1C2)](#-linux)
+[![Install on Linux](https://img.shields.io/badge/Linux-1E1E22?style=for-the-badge&logo=linux&logoColor=5CD1C2)](#linux)
 &nbsp;
 [![Bugs and feedback on Discord](https://img.shields.io/badge/Discord-1E1E22?style=for-the-badge&logo=discord&logoColor=5CD1C2)](https://discord.gg/MeGwfv3UwN)
 
@@ -59,7 +59,7 @@ But three things it does that no other Jellyfin client does at all.
 
 <br>
 
-## 📸 Screenshots
+## Screenshots
 
 <table>
 <tr>
@@ -82,9 +82,9 @@ But three things it does that no other Jellyfin client does at all.
 
 <br>
 
-## ✨ Three things you will not find elsewhere
+## Three things you will not find elsewhere
 
-### 📲 Continue on this device
+### Continue on this device
 
 You are watching on the Apple TV. You get up, take your phone — and there is a
 badge next to your profile picture. **Tap it, and the film carries on here,
@@ -99,7 +99,7 @@ account is offered, and only devices that are actually reachable.
 I have not seen this in another Jellyfin client, and it is the thing people
 notice on day one and then cannot do without.
 
-### 👥 Several Jellyfin accounts on one server
+### Several Jellyfin accounts on one server
 
 Your household has one server and several accounts on it — yours, your
 partner's, the children's. Swiftly holds **all of them at once**.
@@ -112,7 +112,7 @@ with them.
 
 Signing out affects only the account you are on. The others stay.
 
-### 📺 Every Apple TV profile keeps its own login
+### Every Apple TV profile keeps its own login
 
 The Apple TV already knows who is watching — it has profiles at the top of the
 screen. Swiftly follows them.
@@ -124,9 +124,9 @@ the question, and the app simply respects the answer.
 
 <br>
 
-## 🌟 Everything else
+## Everything else
 
-### 🎬 Watching
+### Watching
 
 - **Never transcode.** The device profile declares containers, codecs and
   *every* subtitle format, so the server has no reason to re-encode.
@@ -140,17 +140,19 @@ the question, and the app simply respects the answer.
 - **Playback speed**, and the position is reported back to the server as you
   watch.
 
-### 📚 Finding things
+### Finding things
 
 - **Several libraries** of the same kind, and the app remembers which one you
   were in.
 - **Search** across your libraries, with the season and episode you meant.
+- **Collections** sit next to your libraries: the title of Movies and Series
+  switches between everything, your collections and each library.
 - **Request through Seerr** — ask for a movie or show that is missing,
   without leaving the app.
 - **Top Shelf**<sup>1</sup>: what you were watching sits above the app icon on
   the Apple TV home screen, before you even open it.
 
-### 📱 On your devices
+### On your devices
 
 - **Picture in Picture**<sup>2</sup> — the one thing that sent me looking for
   another client in the first place.
@@ -159,10 +161,13 @@ the question, and the app simply respects the answer.
 - **Media keys**<sup>3</sup> work, and a small window stays on top while you
   do something else.
 - **Quick Connect**, so you never type a password on a television remote.
+- **Custom HTTP headers** per server, for Cloudflare Access, Authelia or
+  Pangolin in front of Jellyfin. They go with every request to that server,
+  playback included, and nowhere else.
 - **Downloads**, with the quality you choose, for watching without a
   connection.
 
-### 🔒 Yours
+### Yours
 
 - **No account, no subscription, no ads, no tracking.** Nothing leaves your
   device except the requests to the server you enter yourself.
@@ -172,7 +177,7 @@ the question, and the app simply respects the answer.
 
 <br>
 
-## 📱 Platforms
+## Platforms
 
 One app, one design, sized for the screen you are on. The logic — server
 access, device profile, playback timing — is shared; only the views differ,
@@ -180,14 +185,14 @@ and only where distance, input or window size demand it.
 
 | Platform | State |
 |---|---|
-| 📱 iPhone | **1.0.2** on the App Store · next build on TestFlight |
-| 📲 iPad | **1.0.2** on the App Store · ships with the iPhone app |
-| 📺 Apple TV | **1.0.2** on the App Store |
-| 💻 Mac | **1.0.2** on the App Store |
-| 🤖 Android | **1.0.3** beta on Google Play · [join](#-android) |
-| 📺 Android TV | **1.0.3** beta on Google Play · same app, [join](#-android) |
-| 🐧 Linux | **1.0.2** · [install](#-linux) |
-| 🪟 Windows | **1.0.2** · [download](#-windows) |
+| iPhone | **1.0.3** on the App Store · next build on TestFlight |
+| iPad | **1.0.3** on the App Store · ships with the iPhone app |
+| Apple TV | **1.0.3** on the App Store |
+| Mac | **1.0.3** on the App Store |
+| Android | beta on Google Play · [join](#android) |
+| Android TV | beta on Google Play · same app, [join](#android) |
+| Linux | **1.0.4** · [install](#linux) |
+| Windows | **1.0.4** · [download](#windows) |
 
 **One download covers iPhone, iPad, Mac and Apple TV:**
 [App Store](https://apps.apple.com/app/id6806824067).
@@ -199,7 +204,7 @@ things rather than "have a look around".
 
 <br>
 
-## 🤖 Android
+## Android
 
 **The Android app is in beta on Google Play**, for phones and Android TV with
 Android 9 or newer. On the phone it is the same app as on the iPhone: Direct Play through libVLC,
@@ -243,7 +248,7 @@ it there.
 
 <br>
 
-## 🐧 Linux
+## Linux
 
 > **Renamed in September 2026.** The app used to be called Swiftly for
 > Jellyfin. The packages keep the name `swiftly-jellyfin`, so the commands
@@ -350,9 +355,9 @@ transcodes" rests on.
 
 <br>
 
-## 🪟 Windows
+## Windows
 
-**[Download Swiftly-1.0.2-Setup.exe](https://github.com/paulherter/swiftly-player/releases/download/v1.0.2/Swiftly-1.0.2-Setup.exe)** — 81 MB, Windows 10 and 11, 64-bit. It installs over an older version.
+**[Download Swiftly-1.0.4-Setup.exe](https://github.com/paulherter/swiftly-player/releases/download/v1.0.4/Swiftly-1.0.4-Setup.exe)** — 77 MB, Windows 10 and 11, 64-bit. It installs over an older version, and from 1.0.4 on it updates itself: Settings → Check for updates asks GitHub for a newer version, downloads the installer and runs it.
 
 The installer puts Swiftly where it belongs: Program Files (or your own folder
 if you run it without admin rights — you choose in the dialog), a Start menu
@@ -366,17 +371,17 @@ code-signing certificate. Jellyfin's own desktop app is in exactly the same
 position. The checksum below is there so you can verify what you downloaded:
 
 ```
-SHA256  20c3cd13a8f861ebb8f351e334be7b8c62c0a8954dac5bc9304979bcfc4995cd
+SHA256  1747188e850dcb2d7e8a3d061a52816a887ef8010c3b54fd2257f385ad8ee071
 ```
 
-**It is the same program as on Linux** — the same 8,900 lines of interface,
-mirrored into the Windows build; what differs sits behind seven `#if` marks in
-those same files. GTK 4, libVLC and the Swift runtime all ship inside the
+**It is the same program as on Linux** — the same interface code, mirrored
+into the Windows build; what differs sits behind twenty `#if` marks in ten of
+those files. GTK 4, libVLC and the Swift runtime all ship inside the
 installer, so there is nothing else to install.
 
 <br>
 
-## 📖 Documentation
+## Documentation
 
 - 🛠️ [Building](Documentation/Building.md) — clone, fetch VLCKit, generate the
   project, run the tests
@@ -388,7 +393,7 @@ installer, so there is nothing else to install.
 
 <br>
 
-## ✅ Requirements
+## Requirements
 
 - Your own Jellyfin server, **10.8 or newer**. Swiftly Player hosts
   nothing and has no account of its own — you sign in with the credentials you
@@ -398,7 +403,7 @@ installer, so there is nothing else to install.
 
 <br>
 
-## 🐞 Reporting bugs
+## Reporting bugs
 
 The Discord is the fastest way: **https://discord.gg/MeGwfv3UwN** — there are
 channels for bug reports and feature requests, and a beta chat.
@@ -414,7 +419,7 @@ audio codec and subtitle format of that file.
 
 <br>
 
-## 🤖 Built with Claude
+## Built with Claude
 
 Swiftly Player was written together with Anthropic's Claude, and the
 commit history says so — every commit carries a `Co-Authored-By` line. The
@@ -424,7 +429,7 @@ work it out.
 
 <br>
 
-## 📄 License
+## License
 
 The code is licensed under the **Mozilla Public License 2.0** — see
 [LICENSE](LICENSE). In short: you may use, change and redistribute it, and if

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Die Vordergrundebene: das Abspielzeichen der Marke im Akzent #50D5DA.
+
+     **Der Pfad ist derselbe wie auf Apple** — `Marken.signetForm` aus
+     Sources/Shared/Marken.swift, unveraendert, in seinem eigenen Feld von 1024 × 1024.
+     Kein zweites Mal gezeichnet: eine nachgebaute Form waere ein zweites Signet.
+
+     **Die Rechnung fuer die Sicherheitszone.** Ein adaptives Icon liefert ein Feld von
+     108 × 108 dp, von dem das System nur die inneren **72 × 72** garantiert zeigt; die
+     aeusseren 18 dp je Seite gehen an Maske und Parallaxe. Auf Apple ist dagegen die
+     **ganze** Kachel von 1024 sichtbar. Damit das Zeichen auf beiden Plattformen
+     gleich gross **wirkt**, wird das Apple-Feld von 1024 also auf genau diese 72
+     gelegt:
+
+         Massstab      72 / 1024        = 0,0703125
+         Versatz       (108 − 72) / 2   = 18
+
+     Gerechnet ergibt das fuer die Form (x 321,6 … 754,6 · y 280 … 744 im 1024er Feld):
+
+         Breite    434 × 0,0703 = 30,5 dp   →  42 % der sichtbaren 72, wie auf Apple
+         Hoehe     464 × 0,0703 = 32,6 dp   →  45 %
+         Lage      x 40,6 … 71,1 · y 37,7 … 70,3
+
+     Die Form sitzt damit vollstaendig in der Sicherheitszone (18 … 90) und traegt
+     Apples leichten Rechtsversatz weiter: ein Abspieldreieck wirkt mittig, wenn es
+     etwas rechts der geometrischen Mitte steht.
+
+     `<group>` rechnet Massstab vor Versatz (M = T · S), also stehen hier genau die
+     zwei Zahlen von oben und keine umgerechneten Pfadpunkte. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.0703125" android:scaleY="0.0703125"
+           android:translateX="18" android:translateY="18">
+        <path android:fillColor="#50D5DA"
+              android:pathData="M440.1,280l285,163.2c38,21.7,51.2,70,29.6,108-7,12.3-17.2,22.5-29.6,29.6l-285,163.2c-37.9,21.8-86.3,8.6-108.1-29.3-6.9-12-10.5-25.6-10.5-39.4v-326.6c0-43.7,35.5-79.2,79.2-79.2,13.8,0,27.4,3.6,39.4,10.5Z" />
+    </group>
+</vector>

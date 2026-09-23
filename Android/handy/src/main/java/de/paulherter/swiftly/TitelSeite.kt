@@ -1,5 +1,10 @@
 package de.paulherter.swiftly
 
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -20,9 +25,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.ui.semantics.semantics
@@ -36,7 +38,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -83,6 +84,9 @@ data class Titel(
     val gemerkt: Boolean, val gesehen: Boolean, val trailer: String?, val datei: Datei?,
     /** Nur fuer den Fernseher — siehe `Kachel.kulisse`. */
     val kulisse: String? = null,
+    /** „Noch 25 Min." unter dem Hauptknopf, und der Anteil fuer den Balken darunter. */
+    val restzeit: String? = null,
+    val fortschritt: Double? = null,
 )
 
 internal fun JSONObject.feldText(feld: String): String? = if (isNull(feld)) null else getString(feld)
@@ -103,7 +107,8 @@ internal fun titelLesen(json: String): Titel = JSONObject(json).let { o ->
           o.optBoolean("gemerkt"), o.optBoolean("gesehen"), o.feldText("trailer"),
           o.optJSONObject("datei")?.let { d ->
               Datei(d.feldText("container"), d.feldText("video"), d.feldTexte("ton"), d.optString("untertitel"), d.optBoolean("hatUntertitel"))
-          }, if (o.has("kulisse")) o.feldText("kulisse") else null)
+          }, if (o.has("kulisse")) o.feldText("kulisse") else null,
+          o.feldText("restzeit"), o.feldZahl("fortschritt"))
 }
 
 /** Die Fassade meldet „nicht angemeldet" als Kennung, weil der Wortlaut im App-Katalog steht. */
@@ -142,6 +147,8 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
     var titel by remember(ziel.id) { mutableStateOf(app.titelSpeicher[ziel.id]) }
     var aehnliche by remember(ziel.id) { mutableStateOf<List<Rasterkachel>>(emptyList()) }
     var extras by remember(ziel.id) { mutableStateOf<List<Extra>>(emptyList()) }
+    var aehnlicheGestoert by remember(ziel.id) { mutableStateOf(false) }
+    var umfeldVersuch by remember(ziel.id) { mutableIntStateOf(0) }
     var gemerkt by remember(ziel.id) { mutableStateOf(titel?.gemerkt ?: false) }
     var gesehen by remember(ziel.id) { mutableStateOf(titel?.gesehen ?: false) }
     var meldung by remember { mutableStateOf<String?>(null) }
@@ -159,13 +166,14 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
 
-    LaunchedEffect(ziel.id) {
-        auffrischen()
+    LaunchedEffect(ziel.id) { auffrischen() }
+    LaunchedEffect(ziel.id, umfeldVersuch) {
         try {
             val o = JSONObject(withContext(Dispatchers.IO) { app.kern.titelUmfeld(ziel.id).await() })
             aehnliche = o.feldListe("aehnliche") { rasterkachelLesen(it) }
             extras = o.feldListe("extras") { Extra(it.getString("id"), it.getString("name"), it.feldText("bild"), it.feldText("laufzeit")) }
-        } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            aehnlicheGestoert = false
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { aehnlicheGestoert = aehnliche.isEmpty() }
     }
 
     // Nach dem Schauen neu laden: Fortschritt, Gesehen und Plan haben sich geaendert.
@@ -200,25 +208,27 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
             Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 14.dp),
                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Belegzeile(t)
+                // **Knopf und Aktionsreihe als ein Block**: 8 zwischen ihnen, 14 zu allem anderen.
+                Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Spielknoepfe(t) { ab -> ruck(Ruck.Mittel); app.spiel.value = Abspielwunsch(ziel.id, ab) }
-                Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Aktionsknopf(if (gemerkt) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder, uebersetzt("Merkliste"), gemerkt) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Aktionsknopf(if (gemerkt) Zeichen.LesezeichenVoll else Zeichen.Lesezeichen, uebersetzt("Merkliste"), gemerkt) {
                         umschalten(!gemerkt, { gemerkt = it }, { app.kern.merken(ziel.id, it).await() }) { alt, an -> alt.copy(gemerkt = an) }
                     }
                     // Das fuenfte Feld, nur wenn die Funktion an ist — neben der Merkliste: das Paar „fuer spaeter".
                     if (app.einstellungen.downloadKnopfZeigen && t?.typ != "Series") Downloadfeld(app, ziel.id, name)
                     // Der Trailer vom Server laeuft auf iOS im eigenen Player — der folgt; bis dahin der fremde.
-                    Aktionsknopf(Icons.Outlined.Movie, uebersetzt("Trailer"), false) {
+                    Aktionsknopf(Zeichen.Film, uebersetzt("Trailer"), false) {
                         val adresse = t?.trailer
                         val ging = adresse != null && runCatching {
                             kontext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(adresse)))
                         }.isSuccess
                         if (!ging) meldung = uebersetzt("Für diesen Titel liegt kein Trailer vor.")
                     }
-                    Aktionsknopf(if (gesehen) Icons.Filled.CheckCircle else Icons.Filled.CheckCircleOutline, uebersetzt("Gesehen"), gesehen) {
+                    Aktionsknopf(if (gesehen) Zeichen.HakenKreisVoll else Zeichen.HakenKreis, uebersetzt("Gesehen"), gesehen) {
                         umschalten(!gesehen, { gesehen = it }, { app.kern.gesehen(ziel.id, it).await() }) { alt, an -> alt.copy(gesehen = an) }
                     }
-                    Aktionsknopf(Icons.Filled.MoreHoriz, uebersetzt("Mehr"), false) {
+                    Aktionsknopf(Zeichen.Mehr, uebersetzt("Mehr"), false) {
                         // `Titelhandlungen.fuerFilm`.
                         val eintraege = buildList {
                             if (t != null && t.planDa && t.fortsetzenAb != null) {
@@ -228,7 +238,7 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
                             add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
                         }
                         app.blatt.value = Blattwunsch(name, eintraege, null,
-                            mapOf("vonvorn" to Icons.Filled.Replay, "zuruecksetzen" to Icons.Filled.RestartAlt, "metadaten" to Icons.Filled.Refresh)) { wahl ->
+                            mapOf("vonvorn" to Zeichen.Zurueckspulen, "zuruecksetzen" to Zeichen.RuecksetzenKreis, "metadaten" to Zeichen.Neuladen)) { wahl ->
                             bereich.launch {
                                 when (wahl) {
                                     "vonvorn" -> app.spiel.value = Abspielwunsch(ziel.id, null)
@@ -246,11 +256,15 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
                         }
                     }
                 }
-                t?.beschreibung?.let { Klapptext(it) }
-                if (t != null && t.regie.isNotEmpty()) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(uebersetzt("Regie"), style = TextStyle(fontSize = 13.sp), color = Stil.schriftLeise)
-                        Text(t.regie.joinToString(", "), style = TextStyle(fontSize = 13.sp), color = Stil.schrift)
+                }
+                // `beschreibung`: Klapptext, 8 darunter „Regie" in 12, 5 dazwischen.
+                t?.beschreibung?.let { text ->
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Klapptext(text)
+                        if (t.regie.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text(uebersetzt("Regie"), style = Stil.klein, color = Stil.schriftLeise)
+                            Text(t.regie.joinToString(", "), style = Stil.klein, color = Stil.schrift)
+                        }
                     }
                 }
             }
@@ -262,8 +276,17 @@ fun TitelSeite(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit, zurue
             if (extras.isNotEmpty()) Abschnitt(uebersetzt("Extras"), 12.dp) {
                 items(extras) { e -> Extrakachel(e) }
             }
+            // Ueber „Aehnliche Titel": die Sammlung ist die naehere Verwandtschaft. Nur bei Titeln,
+            // die in einer stehen (`Sammlungsreihe`).
+            Sammlungsreihe(app, ziel.id, oeffnen)
             if (aehnliche.isNotEmpty()) Abschnitt(uebersetzt("Ähnliche Titel"), Stil.kachelAbstand) {
                 items(aehnliche) { k -> RasterKachelAnsicht(k, Modifier.width(Stil.kachelBreite)) { oeffnen(Ziel(k.id, k.titel, k.typ)) } }
+            } else if (aehnlicheGestoert) {
+                // Nur dieser Abschnitt hat nicht geantwortet — die Serverformel fuer ihn allein.
+                Column(Modifier.padding(top = Stil.reihenAbstand), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(uebersetzt("Ähnliche Titel"), style = Stil.reihe, color = Stil.schrift, modifier = Modifier.padding(horizontal = Stil.randAbstand))
+                    Stoerhinweis(app.serveradresse(), abstandOben = 0.dp, erneut = { umfeldVersuch++ })
+                }
             }
             t?.datei?.let { Dateiauszug(it) }
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
@@ -280,12 +303,15 @@ internal fun Held(bild: String?, name: String, nebenzeile: String) {
     Box(Modifier.fillMaxWidth().height(Stil.heldHoehe)) {
         AsyncImage(model = bild, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Heldauslauf(Modifier.align(Alignment.BottomStart))
-        Column(Modifier.align(Alignment.BottomStart).padding(horizontal = Stil.randAbstand).padding(bottom = 16.dp)) {
-            Text(name, style = Stil.titel.copy(letterSpacing = (-0.6).sp), color = Stil.schrift)
+        Column(Modifier.align(Alignment.BottomStart).padding(horizontal = Stil.randAbstand).padding(bottom = 16.dp),
+               verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // **Der Titel ueber einem Heldbild *ist* der Seitentitel** — dieselbe Stufe wie
+            // „Einstellungen" (BRAND 2). Die Sperrung bringt die Stufe schon mit.
+            Text(name, style = Stil.titel, color = Stil.schrift)
             // **Die Nebenzeile haelt ihren Platz, auch solange sie leer ist.** Der Titel steht sofort
             // da (aus dem Ziel), die Nebenzeile erst nach dem Laden — und die Spalte haengt unten.
             // Kam die Zeile nachtraeglich dazu, rutschte der Titel um eine Zeilenhoehe nach oben.
-            Text(nebenzeile.ifEmpty { " " }, style = TextStyle(fontSize = 14.sp), color = Stil.schriftLeise,
+            Text(nebenzeile.ifEmpty { " " }, style = Stil.klein, color = Stil.schriftLeise,
                  maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -308,46 +334,49 @@ private fun Belegzeile(t: Titel?) =
     Belegzeile(t != null, t?.planDa == true, t?.lossless == true, t?.methode, t?.bewertung, t?.freigabe)
 
 @Composable
-internal fun Belegzeile(geladen: Boolean, planDa: Boolean, lossless: Boolean, methode: String?, bewertung: Double?, freigabe: String?) {
+internal fun Belegzeile(geladen: Boolean, planDa: Boolean, lossless: Boolean, methode: String?, bewertung: Double?, freigabe: String?,
+                        /** Ein freier Beleg statt des Wiedergabeplans — auf der Seerr-Seite der Stand. */
+                        eigen: Triple<Zeichen, String, Color>? = null) {
     val sichtbar by animateFloatAsState(if (geladen) 1f else 0f, Bewegung.einblenden(), label = "beleg")
     Row(Modifier.heightIn(min = 26.dp).alpha(sichtbar), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        if (planDa) {
+        if (eigen != null) {
+            val (zeichen, wort, farbe) = eigen
+            Belegmarke(zeichen, wort, farbe, Staerke.Halbfett)
+        } else if (planDa) {
+            // Direct Play traegt den Haken halbfett, der Hinweis das Dreieck regular.
             val farbe = if (lossless) Stil.akzent else Stil.warnung
-            Row(Modifier.clip(RoundedCornerShape(8.dp)).background(farbe.copy(alpha = 0.15f))
-                    .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(if (lossless) Icons.Filled.Check else Icons.Filled.Warning, contentDescription = null, tint = farbe, modifier = Modifier.size(12.dp))
-                Text(if (lossless) "Direct Play" else methode.orEmpty(),
-                     style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = farbe)
-            }
+            Belegmarke(if (lossless) Zeichen.Haken else Zeichen.Warnung, if (lossless) "Direct Play" else methode.orEmpty(),
+                       farbe, if (lossless) Staerke.Halbfett else Staerke.Normal)
         }
+        // **In derselben Huelle wie Direct Play** (Vorlage 7d55a810): vorher stand die Bewertung als einzige
+        // Angabe der Zeile nackt da. Stern halbfett in `schriftLeise`.
         bewertung?.let { b ->
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Icon(Icons.Filled.Star, contentDescription = null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(12.dp))
-                Text(String.format(Locale.getDefault(), "%.1f", b), style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium),
-                     color = Color.White.copy(alpha = 0.8f))
-            }
+            Belegmarke(Zeichen.SternVoll, String.format(Locale.ROOT, "%.1f", b).replace('.', ','), Stil.schriftLeise, Staerke.Halbfett)
         }
         freigabe?.takeIf { it.isNotBlank() }?.let {
-            Text(it, style = Stil.plakette, color = Stil.schriftLeise,
-                 modifier = Modifier.border(1.dp, Stil.rand, RoundedCornerShape(8.dp)).padding(horizontal = 5.dp, vertical = 2.dp))
+            // `Plakette`: 13 Medium `schriftLeise` auf 15 % derselben Farbe, 10/4 innen, Ecke 8.
+            Text(it, style = Stil.kachel, color = Stil.schriftLeise,
+                 modifier = Modifier.clip(RoundedCornerShape(Stil.eckeKlein)).background(Stil.schriftLeise.copy(alpha = 0.15f))
+                     .padding(horizontal = 10.dp, vertical = 4.dp))
         }
     }
 }
 
-/** Vorlage: `hauptknopf` — Fortsetzen und „Von vorn" untereinander, sonst „Abspielen". Ohne Plan gesperrt. */
+/**
+ * Vorlage: `hauptknopf` — **ein Knopf, nicht zwei**: „Fortsetzen ab …" oder „Abspielen". „Von vorn"
+ * steht im Mehr-Blatt; ein zweiter Knopf darunter war doppelt. Darunter, 9 Abstand, die Restzeit in
+ * 12 und der Fortschritt. Ohne Plan gesperrt.
+ */
 @Composable
 private fun Spielknoepfe(t: Titel?, spielen: (Double?) -> Unit) {
     val bereit = t?.planDa == true
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         val ab = t?.fortsetzenText
-        if (ab != null) {
-            Spielknopf(Icons.Filled.PlayArrow, uebersetzt("Fortsetzen ab %@", ab), bereit, haupt = true) { spielen(t?.fortsetzenAb) }
-            Spielknopf(Icons.Filled.Replay, uebersetzt("Von vorn"), bereit, haupt = false) { spielen(null) }
-        } else {
-            Spielknopf(Icons.Filled.PlayArrow, uebersetzt("Abspielen"), bereit, haupt = true) { spielen(null) }
-        }
+        if (ab != null) Spielknopf(Zeichen.Abspielen, uebersetzt("Fortsetzen ab %@", ab), bereit, haupt = true) { spielen(t.fortsetzenAb) }
+        else Spielknopf(Zeichen.Abspielen, uebersetzt("Abspielen"), bereit, haupt = true) { spielen(null) }
+        t?.restzeit?.let { Text(it, style = Stil.klein, color = Stil.schriftLeise) }
+        t?.fortschritt?.takeIf { it > 0 }?.let { Fortschrittsbalken(it, Modifier.clip(RoundedCornerShape(2.dp))) }
     }
 }
 
@@ -356,7 +385,9 @@ private fun Spielknoepfe(t: Titel?, spielen: (Double?) -> Unit) {
  * Akzent traegt Zustand (E2), keine Knopffarbe.
  */
 @Composable
-internal fun Spielknopf(symbol: ImageVector, text: String, an: Boolean, haupt: Boolean, tun: () -> Unit) {
+internal fun Spielknopf(symbol: Zeichen, text: String, an: Boolean, haupt: Boolean,
+                        /** Gesperrt auf einem Blatt in `flaeche` braucht der Knopf `erhoeht` — sonst bleibt nur leise Schrift. */
+                        gesperrtFlaeche: Color = Stil.flaeche, tun: () -> Unit) {
     val quelle = remember { MutableInteractionSource() }
     val gedrueckt by quelle.collectIsPressedAsState()
     // `HauptknopfStil`: weiss, gedrueckt 75 %; `NebenknopfStil`: 10 %, gedrueckt 16 %. Sofort an, 120 ms aus.
@@ -366,27 +397,32 @@ internal fun Spielknopf(symbol: ImageVector, text: String, an: Boolean, haupt: B
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(Stil.ecke))
             .drawBehind {
                 drawRect(when {
-                    !an -> Stil.flaeche
+                    !an -> gesperrtFlaeche
+                    // Haupt: Weiss, gedrueckt auf 75 Prozent. Neben: `flaeche`, gedrueckt
+                    // `gedruecktFlaeche` — zwei benannte Toene statt zweier gerechneter.
                     haupt -> Color.White.copy(alpha = 1f - 0.25f * druck.value)
-                    else -> Color.White.copy(alpha = 0.10f + 0.06f * druck.value)
+                    else -> androidx.compose.ui.graphics.lerp(Stil.flaeche, Stil.gedruecktFlaeche, druck.value)
                 })
             }
             .then(if (an) Modifier.clickable(quelle, null, onClick = tun) else Modifier),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically) {
-        Icon(symbol, contentDescription = null, tint = farbe, modifier = Modifier.size(18.dp))
-        Text(text, style = TextStyle(fontSize = if (haupt) 16.sp else 15.sp,
-                                     fontWeight = if (haupt) FontWeight.SemiBold else FontWeight.Medium), color = farbe)
+        // Das Zeichen traegt die Schrift des Knopfs: 17 Semibold am Hauptknopf, 15 Medium am Nebenknopf.
+        Symbol(symbol, if (haupt) 17.dp else 15.dp, farbe = farbe, staerke = if (haupt) Staerke.Halbfett else Staerke.Mittel)
+        // Hauptknopf 17 Semibold, Nebenknopf 15 Medium (BAUTEILE 6) — 16 stand in keiner Leiter.
+        Text(text, style = if (haupt) Stil.rubrikGross else Stil.knopftext, color = farbe)
     }
 }
 
 /** Vorlage: `Aktionsknopf` — 44 hoch, Flaeche, Ecke 10, aktiv im Akzent. */
 @Composable
-internal fun RowScope.Aktionsknopf(symbol: ImageVector, beschreibung: String, aktiv: Boolean, tun: () -> Unit) {
-    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche).antippen(tun)
+internal fun RowScope.Aktionsknopf(symbol: Zeichen, beschreibung: String, aktiv: Boolean, tun: () -> Unit) {
+    // **Alle Felder einer Reihe tragen dieselben Masse: 48 × 48** (BRAND 7). Sie standen auf 44.
+    Box(Modifier.weight(1f).height(Stil.knopfHoehe).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche).antippen(tun)
             .semantics { selected = aktiv; role = androidx.compose.ui.semantics.Role.Button },
         contentAlignment = Alignment.Center) {
-        Icon(symbol, contentDescription = beschreibung, tint = if (aktiv) Stil.akzent else Stil.schrift, modifier = Modifier.size(24.dp))
+        // `Stil.rubrikGross`: 17 Semibold.
+        Symbol(symbol, 17.dp, farbe = if (aktiv) Stil.akzent else Stil.schrift, staerke = Staerke.Halbfett, beschreibung = beschreibung)
     }
 }
 
@@ -395,20 +431,22 @@ internal fun RowScope.Aktionsknopf(symbol: ImageVector, beschreibung: String, ak
 internal fun Klapptext(text: String) {
     var offen by remember { mutableStateOf(false) }
     val drehung by animateFloatAsState(if (offen) 180f else 0f, Bewegung.sprung(), label = "pfeil")
-    Row(Modifier.fillMaxWidth().animateContentSize(Bewegung.sprung()).antippen { offen = !offen },
+    // `Druckzeile`, nicht Druckknopf: ein Absatz schrumpft nicht. Text in voller Schrift, 15 mit 3 Luft.
+    Row(Modifier.fillMaxWidth().animateContentSize(Bewegung.sprung()).druckzeile { offen = !offen },
         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(text, style = TextStyle(fontSize = 16.sp, lineHeight = 22.sp), color = Color.White.copy(alpha = 0.78f),
+        Text(text, style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schrift,
              maxLines = if (offen) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Color.White.copy(alpha = 0.45f),
-             modifier = Modifier.padding(top = 2.dp).size(18.dp).graphicsLayer { rotationZ = drehung })
+        Symbol(Zeichen.WinkelRunter, 12.dp, Modifier.padding(top = 4.dp).graphicsLayer { rotationZ = drehung },
+               farbe = Stil.schriftSehrLeise, staerke = Staerke.Halbfett)
     }
 }
 
 /** Vorlage: `Abschnitt` — 26 Abstand oben, Reihentitel, waagerechte Reihe. */
 @Composable
 internal fun Abschnitt(titel: String, abstand: Dp, inhalt: LazyListScope.() -> Unit) {
-    Column(Modifier.padding(top = 26.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(titel, style = Stil.reihe.copy(letterSpacing = (-0.3).sp), color = Stil.schrift,
+    // `Abschnitt`: oben `reihenAbstand` (28), Reihentitel in der Sperrung seiner Stufe, 12 zur Reihe.
+    Column(Modifier.padding(top = Stil.reihenAbstand), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(titel, style = Stil.reihe, color = Stil.schrift,
              modifier = Modifier.padding(horizontal = Stil.randAbstand))
         LazyRow(contentPadding = PaddingValues(horizontal = Stil.randAbstand),
                 horizontalArrangement = Arrangement.spacedBy(abstand), content = inhalt)
@@ -418,15 +456,12 @@ internal fun Abschnitt(titel: String, abstand: Dp, inhalt: LazyListScope.() -> U
 /** Vorlage: `Besetzungskachel` — Kreis 76, Name zweizeilig, Rolle, 84 breit. */
 @Composable
 internal fun Besetzungskachel(p: Mitwirkender, tun: () -> Unit = {}) {
-    Column(Modifier.width(84.dp).antippen(tun), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        SubcomposeAsyncImage(model = p.bild, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.size(76.dp).clip(CircleShape).background(Stil.flaeche),
-            error = {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Person, contentDescription = null, tint = Stil.schriftSehrLeise, modifier = Modifier.size(28.dp))
-                }
-            })
-        Text(p.name, style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),
+    // Ohne Bild bleibt der Kreis leer — `Bild` traegt dort kein Zeichen.
+    Column(Modifier.width(84.dp).antippen(tun), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        AsyncImage(model = p.bild, contentDescription = null, contentScale = ContentScale.Crop,
+            modifier = Modifier.size(76.dp).clip(CircleShape).background(Stil.flaeche))
+        // Name 12 Medium — `Besetzungskachel`, nicht die 13 unter einem Plakat.
+        Text(p.name, style = Stil.kachel.copy(fontSize = 12.sp, textAlign = TextAlign.Center),
              color = Stil.schrift, maxLines = 2, overflow = TextOverflow.Ellipsis)
         p.rolle?.let {
             Text(it, style = Stil.klein.copy(textAlign = TextAlign.Center), color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -439,34 +474,37 @@ internal fun Besetzungskachel(p: Mitwirkender, tun: () -> Unit = {}) {
 private fun Extrakachel(e: Extra) {
     Column(Modifier.width(210.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         AsyncImage(model = e.bild, contentDescription = null, contentScale = ContentScale.Crop,
-                   modifier = Modifier.size(210.dp, 118.dp).clip(RoundedCornerShape(Stil.ecke)).background(Stil.flaeche))
-        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(e.name, style = Stil.kachel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            e.laufzeit?.let { Text(it, style = Stil.klein, color = Stil.schriftLeise, maxLines = 1) }
-        }
+                   modifier = Modifier.size(210.dp, 118.dp).clip(RoundedCornerShape(Stil.eckeKachel)).background(Stil.flaeche))
+        Text(e.name, style = Stil.kachel, color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        e.laufzeit?.let { Text(it, style = Stil.klein, color = Stil.schriftSehrLeise, maxLines = 1) }
     }
 }
 
 /** Vorlage: `dateiauszug` — Container, Video, bis zu zwei Tonspuren, Untertitel; Ton im Akzent. */
 @Composable
 private fun Dateiauszug(d: Datei) {
+    // Gruppentitel oben 22, dann eine Linie ueber und unter jeder Zeile; Werte in voller Schrift,
+    // rechtsbuendig mit gleich breiten Ziffern (`Dateizeile`), senkrecht 8.
     Column(Modifier.padding(horizontal = Stil.randAbstand).padding(top = 22.dp)) {
-        Text(uebersetzt("Datei").uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
-             color = Stil.schriftSehrLeise, modifier = Modifier.padding(bottom = 8.dp))
+        // `Gruppentitel` bringt seinen Seitenrand mit — am iPhone steht er dadurch eine Stufe
+        // eingerueckt ueber den Zeilen; so auch hier.
+        Text(uebersetzt("Datei"), style = Stil.reihe,
+             color = Stil.schriftLeise, modifier = Modifier.padding(start = Stil.randAbstand, bottom = 10.dp))
         val zeilen = buildList {
-            d.container?.let { add(Triple(uebersetzt("Container"), it, false)) }
-            d.video?.let { add(Triple(uebersetzt("Video"), it, false)) }
+            d.container?.let { add(uebersetzt("Container") to it) }
+            d.video?.let { add(uebersetzt("Video") to it) }
             // Die zweite Tonzeile wiederholt die Beschriftung nicht.
-            d.ton.forEachIndexed { i, ton -> add(Triple(if (i == 0) uebersetzt("Ton") else " ", ton, true)) }
-            add(Triple(uebersetzt("Untertitel"), d.untertitel, d.hatUntertitel))
+            d.ton.forEachIndexed { i, ton -> add((if (i == 0) uebersetzt("Ton") else " ") to ton) }
+            add(uebersetzt("Untertitel") to d.untertitel)
         }
-        zeilen.forEachIndexed { i, (name, wert, hervor) ->
-            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
-            Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(name, style = TextStyle(fontSize = 12.sp), color = Stil.schriftLeise)
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
+        zeilen.forEach { (name, wert) ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(name, style = Stil.klein, color = Stil.schriftLeise)
                 Spacer(Modifier.weight(1f))
-                Text(wert, style = TextStyle(fontSize = 12.sp, textAlign = TextAlign.End), color = if (hervor) Stil.akzent else Stil.schrift)
+                Text(wert, style = Stil.klein.copy(textAlign = TextAlign.End, fontFeatureSettings = "tnum"), color = Stil.schrift)
             }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
         }
     }
 }
@@ -477,19 +515,27 @@ private fun Dateiauszug(d: Datei) {
  * in der Zeichenphase gelesen: so zeichnet Scrollen die Seite nicht neu.
  */
 @Composable
-internal fun Detailkopf(titel: String, staerke: () -> Float, zurueck: () -> Unit) {
-    Box(Modifier.fillMaxWidth()) {
-        Box(Modifier.matchParentSize().graphicsLayer { alpha = 1f - staerke() }
-            .background(Brush.verticalGradient(listOf(Stil.grund.copy(alpha = 0.7f), Stil.grund.copy(alpha = 0f)))))
+internal fun Detailkopf(titel: String, staerke: () -> Float, zurueck: () -> Unit,
+                        /** Ein Knopf rechts, etwa Bearbeiten — ohne ihn haelt ein leeres Feld von 44 den Titel mittig. */
+                        rechts: (@Composable () -> Unit)? = null) {
+    Box(Modifier.fillMaxWidth()
+            // Ueber dem Heldbild der Kopfverlauf mit 70 %, der mit der Leiste weicht.
+            .drawBehind { kopfverlauf(0.7f * (1f - staerke())) }) {
+        // **Glas am iPhone, deckender Grund hier** — Plattform: Compose kann nicht weichzeichnen, was
+        // hinter einer Ansicht liegt (`RenderEffect` wirkt nur auf die eigene Ebene). Ein Grund, der
+        // mit der Leiste aufzieht, traegt den Titel ebenso.
         Box(Modifier.matchParentSize().graphicsLayer { alpha = staerke() }.background(Stil.grund))
         Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(1.dp).graphicsLayer { alpha = staerke() }.background(Stil.linie))
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 6.dp, end = Stil.randAbstand, bottom = 6.dp),
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 8.dp, end = Stil.randAbstand, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).antippen(zurueck), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.ArrowBackIosNew, contentDescription = uebersetzt("Zurück"), tint = Stil.schrift, modifier = Modifier.size(22.dp))
+                Symbol(Zeichen.WinkelLinks, 20.dp, farbe = Stil.schrift, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Zurück"))
             }
-            Text(titel, style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold), color = Stil.schrift,
-                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.graphicsLayer { alpha = staerke() })
+            Text(titel, style = Stil.rubrikGross, color = Stil.schrift,
+                 maxLines = 1, overflow = TextOverflow.Ellipsis,
+                 modifier = Modifier.weight(1f).padding(horizontal = 4.dp).graphicsLayer { alpha = staerke() }.clearAndSetSemantics {})
+            // Rechts derselbe Platz wie der Pfeil links — so steht der Titel nicht schief.
+            if (rechts != null) rechts() else Spacer(Modifier.width(44.dp))
         }
     }
 }
@@ -504,8 +550,24 @@ internal fun Hinweisstreifen(text: String?, modifier: Modifier, schliessen: () -
     AnimatedVisibility(text != null, modifier,
         enter = fadeIn(tween(200, easing = Bewegung.weich)) + slideInVertically(tween(200, easing = Bewegung.weich)) { it / 4 },
         exit = fadeOut(tween(150, easing = Bewegung.weich)) + slideOutVertically(tween(150, easing = Bewegung.weich)) { it / 4 }) {
-        Text(gemerkt[0].orEmpty(), style = TextStyle(fontSize = 14.sp, textAlign = TextAlign.Center), color = Stil.schrift,
-             modifier = Modifier.navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 34.dp).clip(CircleShape).background(Stil.erhoeht)
-                 .border(1.dp, Stil.rand, CircleShape).padding(horizontal = 18.dp, vertical = 12.dp))
+        // Ein Streifen aus `flaeche`, **ohne Rand** — die Flaeche ist schon der Gegenstand.
+        Text(gemerkt[0].orEmpty(), style = Stil.koerper.copy(textAlign = TextAlign.Center), color = Stil.schrift,
+             modifier = Modifier.navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 34.dp).clip(CircleShape).background(Stil.flaeche)
+                 .padding(horizontal = 18.dp, vertical = 12.dp))
+    }
+}
+
+/**
+ * **Die Huelle, in der alle Belege stecken** — Vorlage `marke(...)` in `Belegzeile`: Zeichen 11, Wort 13 Medium,
+ * 6 dazwischen, links 8, rechts 10, oben/unten 4, Flaeche 15 % der Farbe, Ecke `eckeKlein`. Eine Huelle, nicht
+ * drei — genau daran ist diese Zeile schon einmal auseinandergelaufen.
+ */
+@Composable
+private fun Belegmarke(zeichen: Zeichen, wort: String, farbe: Color, staerke: Staerke) {
+    Row(Modifier.clip(RoundedCornerShape(Stil.eckeKlein)).background(farbe.copy(alpha = 0.15f))
+            .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Symbol(zeichen, 11.dp, farbe = farbe, staerke = staerke)
+        Text(wort, style = Stil.kachel, color = farbe)
     }
 }

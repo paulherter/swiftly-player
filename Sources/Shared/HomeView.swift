@@ -16,8 +16,7 @@ struct HomeView: View {
     @State private var bereitet = false
     /// Keine der Anfragen kam durch.
     @State private var laedtNeu = false
-    /// Wie weit die Seite gescrollt ist — **nur für den Farbschein und den
-    /// Kopfverlauf.** Siehe ``Farbschein``.
+    /// Wie weit die Seite gescrollt ist — **nur für den Kopfverlauf.**
     @State private var weg = Scrollweg()
 
     var body: some View {
@@ -27,14 +26,11 @@ struct HomeView: View {
             inhalt
                 // Der Wechsel zieht die Scrollflaeche heran — die Kopfzeile
                 // darueber liegt fest, siehe `bereichsinhalt()`.
-                // **Der Farbschein reist als Unterlage mit**, hinter dem
-                // Inhalt und vor dem Grund. Siehe ``Farbschein``.
+                // Die Unterlage ist leer: hier lag einmal ein farbiger
+                // Schein hinter dem Inhalt. Er ist gefallen — die Startseite
+                // traegt denselben dunklen Kopfverlauf wie jede andere Seite.
                 .bereichsinhalt {
-                    if breit {
-                        FarbscheinBreit(weg: weg)
-                    } else {
-                        Farbschein(weg: weg, fenster: .hinterDemInhalt)
-                    }
+                    EmptyView()
                 }
                 // Unter dem Kopf und unter der Uebernahmeauswahl, ueber dem
                 // Inhalt — siehe `bereichsleiste()`.
@@ -54,7 +50,11 @@ struct HomeView: View {
                 // Das Wann zum Wie aus `Leerzustand`: ohne animiertes
                 // Einfuegen bleibt die `.transition` dort wirkungslos.
                 nichtsDa
+                    .padding(.bottom, breit ? 0 : Stil.leisteHoehe)
                     .animation(Stil.einblenden, value: stand.geladen)
+        // Das Wann zum Wie oben: die Genre-Reihen ueberblenden, wenn sie
+        // eintreffen.
+        .animation(Stil.einblenden, value: stand.gattungsreihen.map(\.name))
             }
         }
         // **Nach dem Zusehen neu holen, ohne Frist.**
@@ -104,12 +104,9 @@ struct HomeView: View {
     }
 
     private var kopfzeile: some View {
-        // **Der Farbschein haengt am Kopf, nicht an der Seite.** Siehe
-        // ``Farbschein``: nur dort liegt er ueber `Kopfverlauf` statt
-        // darunter. `kopfzeile` gibt es ohnehin nur schmal.
         // **Der Verlauf zieht erst beim Scrollen auf.** Im Ruhezustand liegt
-        // unter dem Kopf noch kein Inhalt — dort deckt er nichts ab und nimmt
-        // dem Farbschein nur die obere Kante weg, die seine kraeftigste ist.
+        // unter dem Kopf noch kein Inhalt — dort deckt er nichts ab.
+        // `kopfzeile` gibt es ohnehin nur schmal.
         Kopfleser(weg: weg) {
             HStack(alignment: .center, spacing: 0) {
                 Wortmarke(hoehe: 30)
@@ -148,8 +145,11 @@ struct HomeView: View {
         if stand.gestoert {
             Leerzustand(
                 symbol: "externaldrive.badge.xmark",
-                kopfzeile: "Kein Kontakt zum Server",
-                text: "\(model.serverAdresse ?? String(localized: "Der Server")) hat nicht geantwortet. Läuft der Server, und bist du im selben Netz?",
+                // Ein harmloser Fehler - nichts geht verloren, also darf ein
+                kopfzeile: "Server ist abgetaucht",
+                // Der Titel sagt noch, was los ist; der Witz steht im zweiten
+                // Satz. So steht es in BRAND.md, Abschnitt 7.
+                text: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
                 laedt: laedtNeu,
                 hauptknopf: laedtNeu ? nil : ("Erneut versuchen", { neuVersuchen() }),
                 stillerKnopf: laedtNeu ? nil : ("Server wechseln", { model.signOut() }))
@@ -162,6 +162,13 @@ struct HomeView: View {
         }
     }
 
+    /// **Der Leerzustand rechnet die Navileiste ab.**
+    ///
+    /// Er sitzt mittig im ganzen Fenster, und schmal liegen die unteren 54
+    /// Punkt davon unter der Leiste: der Block sass also sichtbar zu tief,
+    /// waehrend er auf der Bibliotheksseite mittig stand. Dieselbe Zahl, die
+    /// die Scrollflaechen als `contentMargins` freihalten.
+
     private func neuVersuchen() {
         laedtNeu = true
         Task {
@@ -172,7 +179,18 @@ struct HomeView: View {
 
     private var inhalt: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: Stil.reihenAbstand) {
+            // **Voller Stapel.** Er hat den gemeldeten Fehler geloest: der
+            // faule schaetzt die Hoehe entladener Reihen, und weil eine Reihe
+            // nicht gleich hoch ist, erschien die letzte zu spaet und
+            // verschwand beim Hochscrollen wieder.
+            //
+            // Er stand einen Bau lang unter Verdacht, die App abzuschiessen.
+            // Das war er nicht — die Abstuerze kamen von der Bibliothek, nicht
+            // von hier, und ich habe zwei Baue lang am falschen Bildschirm
+            // gesucht. Was aus dem Verdacht bleibt, ist richtig und bleibt
+            // stehen: die Reihe traegt einen `LazyHStack`, und jedes Bild wird
+            // so gross entschluesselt, wie es dasteht.
+            VStack(alignment: .leading, spacing: Stil.reihenAbstand) {
                 // **Die Reihen stehen schon, bevor sie Inhalt haben.** Statt
                 // eines Rings mitten auf der Seite: zwei Reihen in ihrer
                 // Form, die überblenden, sobald die Titel da sind. Man sieht
@@ -192,9 +210,14 @@ struct HomeView: View {
                     feste(reihe)
                 }
                 // Die gewählten Genres als eigene Reihen, nach den festen.
+                //
+                // **Sie blenden ein, statt zu erscheinen.** Sie kommen einen
+                // Netzweg spaeter als die festen Reihen — ohne Uebergang stand
+                // dort erst nichts und dann auf einen Schlag alles.
                 ForEach(stand.gattungsreihen) { r in
                     Reihe(model: model, titel: "", name: r.name, items: r.items,
                           nachGesehen: { await laden() })
+                        .transition(.opacity)
                 }
                 // Die Reihe „Bibliotheken" ist entfallen — Filme und Serien
                 // stehen jetzt in der Leiste unten.
@@ -202,6 +225,9 @@ struct HomeView: View {
             .padding(.top, 8)
         }
         .animation(Stil.einblenden, value: stand.geladen)
+        // Das Wann zum Wie oben: die Genre-Reihen ueberblenden, wenn sie
+        // eintreffen.
+        .animation(Stil.einblenden, value: stand.gattungsreihen.map(\.name))
         .scrollIndicators(.hidden)
         // Oben unter dem unscharfen Kopf durch, unten über der Leiste enden.
         //
@@ -221,8 +247,8 @@ struct HomeView: View {
             // `@State` in dieser Ansicht; jeder Scrollschritt baute damit die
             // ganze Scrollflaeche samt `refreshable` und `contentMargins` neu,
             // und unter iOS 18 lief die Seite dabei auf und ab. Jetzt lesen ihn
-            // nur Farbschein und Kopf, und oberhalb von 240 aendert sich an
-            // beiden sichtbar nichts mehr.
+            // nur der Kopf, und oberhalb von 240 aendert sich daran
+            // sichtbar nichts mehr.
             let wert = min(max(neu, 0), 240)
             if abs(wert - weg.wert) >= 0.5 { weg.wert = wert }
         }
@@ -294,14 +320,16 @@ struct HomeView: View {
                     NavigationLink(value: GenreRoute(name: name)) {
                         // Vom Server, also nicht übersetzt.
                         Text(verbatim: name)
-                            .font(.system(size: 14, weight: .medium))
+                            // `kachel` ist 13 Medium — hier stand die Zahl.
+                            .font(Stil.kachel)
                             .foregroundStyle(Stil.schrift)
                             .padding(.horizontal, 14)
-                            .frame(height: 34)
-                            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke))
-                            .overlay(RoundedRectangle(cornerRadius: Stil.ecke).strokeBorder(Stil.rand))
+                            // `minHeight`: eine feste Hoehe schnitte den
+                            // Genrenamen ab, sobald die Systemschrift waechst.
+                            .frame(minHeight: 34)
+                            .background(Stil.flaeche, in: RoundedRectangle(cornerRadius: Stil.ecke, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Stil.Druckknopf())
                 }
             }
             .padding(.horizontal, Stil.rand(breit: breit))
@@ -345,35 +373,52 @@ private struct Reihe: View {
         }
     }
 
+    /// **Die Hoehe steht fest, sie wird nicht gemessen.**
+    ///
+    /// Titelzeile (20 Punkt, rund 24 Zeilenhoehe) · 12 Abstand · Bildhoehe ·
+    /// 7 Abstand · Textblock (13 und 12 Punkt mit 1 dazwischen, rund 32).
+    /// Keiner der Werte waechst mit der Systemschrift — die Kachel bleibt
+    /// fest, so steht es in BRAND 2.
+    ///
+    /// Sie steht hier, damit `LazyVStack` nicht schaetzen muss. Seine
+    /// Schaetzung war der Grund, warum die letzte Reihe zu spaet erschien und
+    /// beim Hochscrollen wieder verschwand.
+    private var reihenhoehe: CGFloat {
+        let bild = quer ? Stil.reihenQuerHoehe(breit: breit)
+                        : Stil.reihenHoehe(breit: breit)
+        return 24 + 12 + bild + 7 + 32
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        // 12, nicht 11: dieselbe Rolle (Rubrik ueber einer Reihe) hatte auf
+        // der Detailseite 12 und hier 11 — beides neben der Rasterleiter.
+        VStack(alignment: .leading, spacing: 12) {
             // **Derselbe Rand wie die Kacheln darunter.** Der Baustein setzt
             // seit dem Herausloesen keinen eigenen mehr — auf tvOS gibt es
             // `randAbstand` nicht. Er muss hier `rand(breit:)` lesen, sonst
             // steht die Ueberschrift auf dem iPad schmaler als ihre Reihe.
-            Group {
-                if let name {
-                    Text(verbatim: name)
-                        .font(Stil.reihe)
-                        .tracking(-0.3)
-                        .foregroundStyle(Stil.schrift)
-                } else {
-                    Reihentitel(text: titel)
-                }
-            }
-            .padding(.horizontal, Stil.rand(breit: breit))
+            // **Ein Baustein, nicht sein Nachbau.** Hier stand der
+            // Serverfall als eigene `Text`-Kette — mit Sperrung −0,3, während
+            // `Reihentitel` −0,24 trägt. Dieselbe Stufe, zwei Werte, und der
+            // Baustein kann `name` seit seinem Herauslösen selbst.
+            Reihentitel(text: titel, name: name)
+                .padding(.horizontal, Stil.rand(breit: breit))
 
             ScrollView(.horizontal, showsIndicators: false) {
                 // Oben ausrichten: ohne das zentriert der Stapel, und eine
                 // Kachel mit nur einer Textzeile — ein Film ohne Folgenkürzel
                 // — sitzt tiefer als die Serien daneben.
-                HStack(alignment: .top, spacing: Stil.kachelAbstand) {
+                // **`LazyHStack`, nicht `HStack`.** Eine Reihe kann zwanzig
+                // Plakate tragen, sichtbar sind drei. Sie alle entstehen zu
+                // lassen kostete im Protokoll ueber sechzig Bilder in einer
+                // Sekunde, jedes zwischen 650 KB und 1,7 MB.
+                LazyHStack(alignment: .top, spacing: Stil.kachelAbstand) {
                     ForEach(items) { item in
                         if let direkt {
                             Button { direkt(item) } label: {
                                 Kachel(model: model, item: item, quer: quer, neuzugang: neuzugang)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(Stil.Druckknopf())
                             // Zur Serie kommt man weiterhin — nur nicht mehr
                             // im Weg der Wiedergabe.
                             .contextMenu {
@@ -410,13 +455,18 @@ private struct Reihe: View {
                             NavigationLink(value: item) {
                                 Kachel(model: model, item: item, quer: quer, neuzugang: neuzugang)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(Stil.Druckknopf())
                         }
                     }
                 }
                 .padding(.horizontal, Stil.rand(breit: breit))
             }
+            .scrollIndicators(.hidden)
         }
+        // Damit `LazyVStack` nicht schaetzen muss — Begruendung an
+        // `reihenhoehe`. Oben ausgerichtet, damit eine Kachel ohne
+        // Unterzeile nicht in der Mitte haengt.
+        .frame(height: reihenhoehe, alignment: .top)
     }
 }
 
@@ -504,203 +554,12 @@ private struct Kachel: View {
     }
 }
 
-/// **Der Farbschein über der Kopfzeile — ein Versuch auf Widerruf.**
-///
-/// Er kommt von der Webseite, wo hinter der Schlagzeile ein türkiser und
-/// ein blauer Schein stehen. Dort ist das eine ausdrücklich notierte
-/// Abweichung von `GESTALTUNG.md` („Flächen sind flach").
-///
-/// **Wenn er wieder rausgeht**, sind es vier Stellen: diese Struktur, das
-/// `{ … Farbschein … }` am `bereichsinhalt()`, das `verlaufStaerke:` am
-/// `Unschaerfekopf` und `versatz` samt seinem `onScrollGeometryChange`.
-/// Die Überladungen in `Stil.swift` können stehen bleiben oder mitgehen —
-/// ohne Aufrufer verhalten sie sich wie vorher.
-///
-/// **Vier Anläufe, alle an derselben Frage: welche Lage.** Der Reihe nach,
-/// damit es niemand noch einmal durchprobiert:
-///
-/// 1. *Über dem Inhalt.* Dann liegt er über Schrift und Plakaten, und beim
-///    Scrollen wandert das Bild unter einem farbigen Fleck durch.
-/// 2. *Hinter der Scrollfläche.* Sauber gegenüber dem Inhalt — aber
-///    `Kopfverlauf` deckt oben mit 0,98, also war die obere Kante schwarz,
-///    an der der Schein am kräftigsten sein müsste.
-/// 3. *Über dem Verlauf, unter dem Kopfinhalt.* Obere Kante endlich farbig,
-///    dafür liegt er wieder über allem, was beim Scrollen unter dem Kopf
-///    durchläuft — die Reihenüberschrift bekam beim Hochwischen einen
-///    Farbstich.
-/// 4. **Hinter der Scrollfläche, und der Verlauf zieht erst beim Scrollen
-///    auf.** Das ist es.
-///
-/// Der vierte Anlauf ist keine Abwägung, sondern eine Beobachtung: **im
-/// Ruhezustand liegt unter dem Kopf gar kein Inhalt.** Die Scrollfläche
-/// beginnt bei 117 Punkt, der Kopf endet bei 101. Der Verlauf deckt dort
-/// nichts ab — er ist erst nötig, wenn wirklich etwas darunter durchläuft.
-/// Also zieht er mit dem Scrollen auf, und der Schein geht im selben Zug.
-///
-/// **Und er wird in zwei Fenstern gezeichnet, nicht in einem.** Das ist der
-/// fuenfte Anlauf und der Grund, warum er ueberhaupt noch einen brauchte:
-/// hinter dem Inhalt allein zog der Kopfverlauf beim Scrollen darueber auf
-/// und fraß ihn genau dort auf, wo er noch stand — von aussen sieht das aus
-/// wie Ausblenden, obwohl er faehrt.
-///
-/// Also oben, ueber dem Verlauf, die ersten 118 Punkt des **Schirms**; und
-/// darunter, hinter dem Inhalt, der Rest. Beide zeichnen dasselbe an
-/// derselben Stelle, deshalb ist die Naht nicht zu sehen. Die Fenster stehen
-/// fest, die Farbe faehrt darunter durch: eins zu eins mit dem Inhalt, ohne
-/// Ausblenden, nach 165 Punkten oben hinaus.
-private struct Farbschein: View {
-    /// Welcher Ausschnitt des Schirms gezeichnet wird. Siehe oben.
-    enum Fenster { case ueberDemVerlauf, hinterDemInhalt }
-
-    /// Der zurückgelegte Scrollweg, 0 im Ruhezustand.
-    let weg: Scrollweg
-    let fenster: Fenster
-
-    /// So weit reicht `Kopfverlauf` (Kopf 101 + Zugabe 17). **Dieselbe Zahl
-    /// wie dort** — geht sie dort hoch, gehört sie hier mit.
-    private let kopfhoehe: CGFloat = 118
-
-    /// Reicht bis unter die erste Reihenüberschrift.
-    private let hoehe: CGFloat = 165
-
-    var body: some View {
-        // **Das Fenster steht fest auf dem Schirm, die Farbe fährt darunter
-        // durch.** Nur so bleiben beide Hälften aneinander: teilte sich der
-        // Schein an einer mitwandernden Kante, schoebe sich die untere
-        // Haelfte unter den Verlauf und wuerde von unten aufgefressen.
-        switch fenster {
-        case .ueberDemVerlauf:
-            gemalt
-                .frame(height: kopfhoehe, alignment: .top)
-                .clipped()
-                .drumherum()
-        case .hinterDemInhalt:
-            gemalt
-                .frame(maxHeight: .infinity, alignment: .top)
-                .mask(alignment: .top) {
-                    VStack(spacing: 0) {
-                        Color.clear.frame(height: kopfhoehe)
-                        Color.white
-                    }
-                }
-                .drumherum()
-        }
-    }
-
-    /// Zwei weichgezeichnete Kreise mit Ausklang nach unten — beide Fenster
-    /// zeichnen **dasselbe**, an derselben Stelle. Deshalb ist die Naht
-    /// zwischen ihnen nicht zu sehen.
-    private var gemalt: some View {
-        ZStack(alignment: .top) {
-            // Die Mitten liegen auf der Oberkante des Schirms: dort ist der
-            // Schein am kräftigsten, und nach unten läuft er von selbst aus.
-            Circle()
-                .fill(Stil.akzent)
-                .frame(width: 320, height: 320)
-                .opacity(0.28)
-                .offset(x: -110, y: -160)
-            Circle()
-                .fill(Stil.kuehl)
-                .frame(width: 340, height: 340)
-                .opacity(0.24)
-                .offset(x: 130, y: -180)
-        }
-        .blur(radius: 60)
-        .frame(maxWidth: .infinity, alignment: .top)
-        .frame(height: hoehe, alignment: .top)
-        .mask(alignment: .top) {
-            LinearGradient(stops: [
-                .init(color: .white, location: 0),
-                .init(color: .white.opacity(0.94), location: 0.34),
-                .init(color: .white.opacity(0.72), location: 0.58),
-                .init(color: .white.opacity(0.34), location: 0.80),
-                .init(color: .white.opacity(0), location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            .frame(height: hoehe)
-        }
-        // **Er fährt mit, und sonst nichts.** Eins zu eins mit dem Inhalt,
-        // ohne Ausblenden: er verhält sich wie das oberste Stück der Seite.
-        .offset(y: -weg.wert)
-    }
-}
-
-private extension View {
-    /// Was beide Fenster gleich brauchen.
-    func drumherum() -> some View {
-        ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-}
-
-/// **Der Farbschein auf iPad und Mac — eine Lage, kein Fenster.**
-///
-/// Auf dem iPhone wird er in zwei Fenstern gezeichnet, weil `Kopfverlauf`
-/// oben mit 0,98 deckt und ihn sonst verschluckt. Breit gibt es diesen
-/// Verlauf nicht: dort steht kein Kopf über dem Inhalt.
-///
-/// **Und genau daran ist der erste Versuch gescheitert.** Die schmale
-/// Fassung lässt die oberen 118 Punkt frei — dort zeichnet das andere
-/// Fenster. Breit gibt es dieses andere Fenster nicht, also fehlte der
-/// Streifen: der Schein begann erst unter dem freien Rand, und zwischen
-/// Oberkante und Farbe stand eine Lücke.
-///
-/// **Kein Kreispaar, sondern ein Verlauf über die ganze Breite.** Auf dem
-/// iPhone sind es zwei Kreise, und die überlappen sich dort, weil 390 Punkt
-/// schmaler sind als die Kreise selbst. Auf über 900 Punkt tun sie das nicht
-/// mehr: dann steht links Türkis, rechts Blau und dazwischen ein dunkles
-/// Loch. Zwei Anläufe sind genau daran gescheitert — erst zu klein und in
-/// der Mitte, dann an den Kanten und in der Mitte hohl.
-///
-/// Ein Verlauf von Kante zu Kante hat dieses Problem nicht: er ist
-/// durchgehend, weil er aus einem Stück ist, und er passt sich jeder
-/// Fensterbreite von selbst an. Schräg statt waagerecht, damit er nicht wie
-/// ein Balken liest.
-///
-/// Er ist leiser als auf dem iPhone — 0,20 gegen 0,28. Dieselbe Farbe auf
-/// der zweieinhalbfachen Fläche ist nicht dieselbe Menge Farbe.
-private struct FarbscheinBreit: View {
-    let weg: Scrollweg
-
-    /// Endet über der ersten Reihenüberschrift. Die Scrollfläche beginnt
-    /// breit bei `Stil.kopfOben + 20`, also bei 46.
-    private let hoehe: CGFloat = 170
-
-    var body: some View {
-        LinearGradient(stops: [
-            .init(color: Stil.akzent.opacity(0.22), location: 0),
-            .init(color: Stil.akzent.opacity(0.17), location: 0.26),
-            // Die Mitte ist die Stelle, an der die beiden Kreise ein Loch
-            // liessen — hier traegt sie die Mischung aus beiden.
-            .init(color: Stil.scheinMitte.opacity(0.15), location: 0.52),
-            .init(color: Stil.kuehl.opacity(0.17), location: 0.76),
-            .init(color: Stil.kuehl.opacity(0.20), location: 1),
-        ], startPoint: .topLeading, endPoint: .bottomTrailing)
-        .frame(maxWidth: .infinity, alignment: .top)
-        .frame(height: hoehe, alignment: .top)
-        .mask(alignment: .top) {
-            LinearGradient(stops: [
-                .init(color: .white, location: 0),
-                .init(color: .white.opacity(0.92), location: 0.34),
-                .init(color: .white.opacity(0.66), location: 0.58),
-                .init(color: .white.opacity(0.28), location: 0.80),
-                .init(color: .white.opacity(0), location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            .frame(height: hoehe)
-        }
-        .ignoresSafeArea(edges: .top)
-        .offset(y: -weg.wert)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
 
 /// **Wie weit die Startseite gescrollt ist — ausserhalb der Seite.**
 ///
 /// Als `@State` in `HomeView` machte jeder Scrollschritt die ganze Seite neu.
 /// Als beobachtetes Objekt werden nur die Ansichten neu gebaut, die `wert`
-/// tatsaechlich lesen: Farbschein und Kopf.
+/// tatsaechlich lesen: der Kopf.
 @Observable
 final class Scrollweg {
     var wert: CGFloat = 0
@@ -720,13 +579,22 @@ final class Scrollweg {
 
 /// Der Detailkopf, der den Scrollweg selbst liest — damit nicht die ganze
 /// Film- oder Serienseite es tut.
-struct Detailkopfleser: View {
+struct Detailkopfleser<Rechts: View>: View {
     let titel: String
     let weg: Scrollweg
     let zurueck: () -> Void
+    /// Was rechts in der Leiste steht — auf den meisten Seiten nichts.
+    @ViewBuilder var rechts: () -> Rechts
 
     var body: some View {
-        Detailkopf(titel: titel, versatz: weg.wert, zurueck: zurueck)
+        Detailkopf(titel: titel, versatz: weg.wert, zurueck: zurueck,
+                   rechts: AnyView(rechts()))
+    }
+}
+
+extension Detailkopfleser where Rechts == EmptyView {
+    init(titel: String, weg: Scrollweg, zurueck: @escaping () -> Void) {
+        self.init(titel: titel, weg: weg, zurueck: zurueck) { EmptyView() }
     }
 }
 
@@ -737,8 +605,10 @@ private struct Kopfleser<Inhalt: View>: View {
     @ViewBuilder var inhalt: () -> Inhalt
 
     var body: some View {
-        Unschaerfekopf(verlaufStaerke: min(Double(weg.wert) / 40, 1),
-                       lage: AnyView(Farbschein(weg: weg, fenster: .ueberDemVerlauf)),
-                       inhalt: inhalt)
+        // **Dieselbe Kante wie auf Filme und Serien.** Mit `versatz` legt
+        // `Unschaerfekopf` den vollen Grund unter die Kopfzeile und blendet
+        // beim Scrollen die dünne Linie darunter ein — vorher trug die
+        // Startseite als einzige Seite einen weichen, farbigen Verlauf.
+        Unschaerfekopf(versatz: weg.wert, inhalt: inhalt)
     }
 }

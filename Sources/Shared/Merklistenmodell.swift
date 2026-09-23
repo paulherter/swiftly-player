@@ -57,9 +57,21 @@ final class Merklistenmodell {
     /// wird aufgefrischt, nicht auf die erste Seite gekürzt.
     private var geladenFuer: String?
 
+    /// **Der Abruf ist gescheitert — nicht „nichts gemerkt".**
+    ///
+    /// `gemerkte` gibt `nil` bei einer Stoerung und eine leere Seite bei einer
+    /// leeren Liste zurueck; hier wurde nur auf `if let` geprueft, und der
+    /// `else`-Fall fiel still durch. Die Ansicht sah eine leere `items` und
+    /// sagte „Noch nichts gemerkt" — bei einer Merkliste, die voll sein kann.
+    /// Dieselbe Unterscheidung fuehren `Startseitenmodell` und
+    /// `Bibliotheksmodell` seit Tagen.
+    private(set) var gestoert = false
+
     func laden(_ model: AppModel) async {
         laedt = items.isEmpty
-        if let seite = await model.gemerkte(art: gattung, sortierung: sortierung, ab: 0) {
+        let antwort = await model.gemerkte(art: gattung, sortierung: sortierung, ab: 0)
+        gestoert = antwort == nil
+        if let seite = antwort {
             // Dieselbe Regel wie auf der Startseite — siehe `Listenregeln`.
             let fuer = "\(kennung)|\(model.kontowechsel)"
             items = geladenFuer == fuer

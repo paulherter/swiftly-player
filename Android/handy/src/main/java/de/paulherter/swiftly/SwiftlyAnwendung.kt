@@ -190,7 +190,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
 
     /** Die Meldezeilen des Kerns (Start, Stopped, Wechsel) ins logcat unter „Swiftly". */
     fun protokollSchreiben() {
-        kern.protokollAbholen().takeIf { it.isNotEmpty() }?.lines()?.forEach { android.util.Log.i("Swiftly", "[Melden] $it") }
+        kern.protokollAbholen().takeIf { it.isNotEmpty() }?.lines()?.forEach { Protokoll.schreib("[Melden] $it") }
     }
 
     /**
@@ -204,8 +204,13 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
         downloads.nachziehen()
     }
 
-    /** Posten beim Kern holen, dann das Ladeblatt — was schon da ist, faellt vorher heraus. */
-    fun downloadsAnlegen(ids: List<String>, titel: String) {
+    /**
+     * Posten beim Kern holen, dann das Ladeblatt — was schon da ist, faellt vorher heraus.
+     * `abwarten`: kommt der Ruf aus einem Blatt, das gerade hinunterfaehrt, wartet das Ladeblatt so
+     * lange — **ein Blatt zur Zeit**, zwei zugleich waeren zwei Karten, die sich kreuzen.
+     */
+    fun downloadsAnlegen(ids: List<String>, titel: String, abwarten: Long = 0) {
+        val beginn = android.os.SystemClock.uptimeMillis()
         lauf.launch {
             val roh = runCatching { kern.downloadPosten(ids.toTypedArray()).await() }.getOrNull() ?: return@launch
             val a = org.json.JSONArray(roh)
@@ -219,8 +224,24 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
                 o.feldText("bild")?.let { bilder[p.id] = it }
                 p.serienId?.let { sid -> o.feldText("serienbild")?.let { bilder[sid] = it } }
             }
+            // **Das grosse Kopfbild der Serie** geht mit, einmal je Serie — fuer die Serienseite in den
+            // Downloads. In Bildschirmbreite, mindestens so breit, wie ein 16:9-Bild fuer die 300 hohe
+            // Kopfflaeche braucht (Vorlage `SeriesView.ladebilder`).
+            for (sid in neue.mapNotNull { it.serienId }.distinct()) {
+                if (downloads.kopfbild(sid) != null) continue
+                val adresse = runCatching { kern.downloadKopfbild(sid, kopfbildbreite()).await() }.getOrNull()
+                if (!adresse.isNullOrEmpty()) bilder[downloads.kopfkennung(sid)] = adresse
+            }
+            val rest = abwarten - (android.os.SystemClock.uptimeMillis() - beginn)
+            if (rest > 0) kotlinx.coroutines.delay(rest)
             if (neue.isNotEmpty()) ladeblattZeigen(this@SwiftlyAnwendung, neue, bilder, titel)
         }
+    }
+
+    /** Breite des Kopfbilds in Pixeln: Seitenbreite, mindestens `heldHoehe` × 16 / 9. */
+    fun kopfbildbreite(): Long {
+        val m = resources.displayMetrics
+        return maxOf(m.widthPixels.toFloat(), 300f * 16f / 9f * m.density).toLong()
     }
 
     /** Gattung, Sortierung und die geladenen Titel der Merkliste. */
@@ -249,13 +270,50 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
      * Speicher liegt, steht sofort da: Coil blendet Treffer aus dem Speicher nicht.
      */
     override fun newImageLoader(context: coil3.PlatformContext): coil3.ImageLoader =
-        coil3.ImageLoader.Builder(context).crossfade(280).build()
+        coil3.ImageLoader.Builder(context).crossfade(280)
+            // Eigene Header des Servers an jedes Bild (Issue #4) — ohne Eintrag dieselbe Anfrage wie vorher.
+            .components {
+                add(coil3.network.okhttp.OkHttpNetworkFetcherFactory(callFactory = {
+                    okhttp3.OkHttpClient.Builder().addInterceptor(EigenkoepfeAbfang).build()
+                }))
+            }
+            .build()
+
+    // MARK: Eigene Header (Issue #4) — Vorlage `Anmeldemodell.swift`
+
+    /** Die Basisadresse des geltenden Kontos, oder `null` ohne Anmeldung. */
+    fun aktiverServer(): String? = ablage.konten?.let { Kern.bundAktives(it) }?.let {
+        runCatching { org.json.JSONObject(it).optString("serverURL") }.getOrNull()
+    }?.takeIf { it.isNotEmpty() }
+
+    /** Was fuer einen Server eingetragen ist — fuer „Erweitert". JSON `[{"name","wert"}]`. */
+    fun eigeneKoepfe(server: String?): String = server?.let { Kern.eigenkoepfeEingetragen(it) } ?: "[]"
+
+    /**
+     * Die ganze Tafel in den Tresor — **nicht in die Einstellungen**, die Werte sind Zugaenge wie das
+     * Merkmal selbst. Nach jeder erfolgreichen Verbindung mit Headern und nach „Sichern".
+     */
+    fun eigeneKoepfeAblegen() {
+        val tafel = Kern.eigenkoepfeAblage()
+        ablage.tresorSchreiben(EIGENKOEPFE, if (tafel == "{}") null else tafel)
+    }
+
+    /** Setzen und ablegen. Eine leere Liste nimmt den Server heraus. Ins Protokoll nur die Namen. */
+    fun eigeneKoepfeSichern(koepfe: String, server: String) {
+        Kern.eigenkoepfeSetzen(server, koepfe)
+        eigeneKoepfeAblegen()
+        Protokoll.schreib("Eigene Header gesichert: " + Kern.eigenkoepfeNamen(server))
+    }
 
     override fun onCreate() {
         super.onCreate()
         ablage = Ablage(this)
         einstellungen = Einstellungen(ablage)
         Texte.laden(this)
+        // Vor der ersten Anfrage des Kerns: eigene Zertifizierungsstellen auch fuer URLSession und VLC.
+        Zertifikate.bereitstellen(this)
+        // **Vor der Sitzung.** Hinter einem Vorposten braucht schon der erste Abruf die eigenen Header.
+        Kern.eigenkoepfeLaden(ablage.tresorLesen(EIGENKOEPFE).orEmpty())
         val sprache = if (Locale.getDefault().language == "de") "de" else "en"
         // Vor dem ersten Text aus dem Paket — sonst stehen dort die Schluessel.
         Kern.paketspracheSetzen(paketspracheEntpacken().absolutePath, sprache)
@@ -312,7 +370,7 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
                 ?.let { runCatching { org.json.JSONObject(it).optString("userName") }.getOrNull() }
             val satz = if (weiter.isNullOrEmpty()) de.paulherter.swiftly.gemeinsam.uebersetzt("Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
                        else de.paulherter.swiftly.gemeinsam.uebersetzt("Die Anmeldung von %@ gilt nicht mehr. Jetzt angemeldet als %@.", name, weiter)
-            android.util.Log.i("Swiftly", "Anmeldung widerrufen, abgemeldet (weiteres Konto: ${!weiter.isNullOrEmpty()})")
+            Protokoll.schreib("Anmeldung widerrufen, abgemeldet (weiteres Konto: ${!weiter.isNullOrEmpty()})")
             if (weiter.isNullOrEmpty()) anmeldehinweis.value = satz
             else android.widget.Toast.makeText(this@SwiftlyAnwendung, satz, android.widget.Toast.LENGTH_LONG).show()
             abmeldenJetzt()
@@ -344,6 +402,18 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     fun benutzername(): String = ablage.konten?.let { Kern.bundAktives(it) }?.let {
         runCatching { org.json.JSONObject(it).optString("userName") }.getOrNull()
     }.orEmpty().ifEmpty { "?" }
+
+    /**
+     * **Wer nicht geantwortet hat** — Vorlage: `AppModel.serverAdresse`. Der Rechnername
+     * des Servers, sonst „Der Server".
+     *
+     * Das ist der eigentliche Gewinn am Stoerzustand: daran erkennt man auf einen Blick,
+     * ob der Server aus ist oder man im falschen Netz steckt. Er stand an einer Stelle
+     * von Hand gerechnet und an vier Stellen gar nicht.
+     */
+    fun serveradresse(): String =
+        ablage.letzterServer?.let { runCatching { java.net.URI(it).host }.getOrNull() }
+            ?.takeIf { it.isNotEmpty() } ?: de.paulherter.swiftly.gemeinsam.uebersetzt("Der Server")
 
     /** Nimmt eine frische Sitzung auf; gab es schon Konten, ist das ein Wechsel. */
     fun sitzungAufnehmen(sitzung: String) {
@@ -429,11 +499,23 @@ class SwiftlyAnwendung : Application(), coil3.SingletonImageLoader.Factory {
     }
 
     companion object {
-        const val BuildConfigFassung = "1.0.3"
+        /**
+         * **Aus dem Bau gelesen, nicht von Hand gefuehrt.**
+         *
+         * Hier stand fest „1.0.3" und „(Build 1)", waehrend `versionName` in
+         * `build.gradle.kts` laengst 1.0.4 war. Die Einstellungen zeigten damit
+         * eine falsche Fassung — und derselbe Wert ging bei der Anmeldung als
+         * Client-Fassung an den Jellyfin-Server. Zwei Stellen fuer dieselbe
+         * Zahl laufen auseinander; jetzt gibt es eine.
+         */
+        val BuildConfigFassung: String = BuildConfig.VERSION_NAME
         /** `Fassung.zeile` auf iOS. */
-        const val FASSUNGSZEILE = "Swiftly Player 1.0.3 (Build 1)"
+        val FASSUNGSZEILE: String =
+            "Swiftly Player ${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})"
         /** Derselbe Schluessel wie in `UserDefaults` auf iOS. */
         const val NACHMELDUNGEN = "nachmeldungen"
+        /** Ein Eintrag fuer alle Server: die ganze Tafel aus `Eigenkoepfe` — derselbe Name wie im Schluesselbund. */
+        const val EIGENKOEPFE = "eigenkoepfe"
     }
 }
 

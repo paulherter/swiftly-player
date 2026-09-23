@@ -1,5 +1,8 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -12,10 +15,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -60,7 +59,7 @@ private enum class Abteil(val titel: String) {
 
 @Composable
 private fun Gruppenkopf(text: String) {
-    Text(text.uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
+    Text(text, style = TvStil.reihe,
          color = Stil.schriftSehrLeise, modifier = Modifier.padding(start = 13.dp, top = 18.dp, bottom = 6.dp))
 }
 
@@ -250,6 +249,9 @@ fun TvProfil(app: SwiftlyAnwendung, oeffnen: (Ziel) -> Unit) {
                             // Mehrere Server, seit dem 12.09.2026 — vorher hielt der Bund genau einen.
                             TvHandlung(uebersetzt("Server hinzufügen")) { oeffnen(Ziel("serveraufnahme", uebersetzt("Server hinzufügen"), "ServerAufnahme")) }
                             Trennlinie()
+                            // Fuer Server hinter einem Dienst wie Cloudflare Access (Issue #4).
+                            TvHandlung(uebersetzt("Eigene Header")) { oeffnen(Ziel("eigenkoepfe", uebersetzt("Eigene Header"), "EigeneKoepfe")) }
+                            Trennlinie()
                             // Wie auf tvOS traegt „Verbindung pruefen" den ersten Fokus dieses Abteils,
                             // nicht „Server hinzufuegen" — so steht es in `ProfilView.swift`.
                             TvHandlung(uebersetzt("Verbindung prüfen"), wert = pruefung, pfeil = false, modifier = erste) {
@@ -311,7 +313,7 @@ private fun BereichZeile(titel: String, ausgewaehlt: Boolean, modifier: Modifier
         Row(Modifier.fillMaxWidth().height(TvStil.zeilenHoehe).clip(RoundedCornerShape(TvStil.ecke))
                 .background(grund).padding(horizontal = 13.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Text(titel, style = TextStyle(fontSize = 15.5.sp,
+            Text(titel, style = TvStil.koerper.copy(
                      fontWeight = if (ausgewaehlt || fokus) FontWeight.SemiBold else FontWeight.Normal),
                  color = if (ausgewaehlt) Stil.akzent else Stil.schrift, maxLines = 1)
         }
@@ -324,10 +326,10 @@ private fun BereichZeile(titel: String, ausgewaehlt: Boolean, modifier: Modifier
 private fun TvAnzeige(titel: String, wert: String, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().height(TvStil.zeilenHoehe).padding(horizontal = 13.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Text(titel, style = TextStyle(fontSize = 15.5.sp, fontWeight = FontWeight.Normal), color = Stil.schrift,
+        Text(titel, style = TvStil.koerper, color = Stil.schrift,
              maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Spacer(Modifier.width(20.dp))
-        Text(wert, style = TextStyle(fontSize = 14.sp), color = Stil.schriftLeise, maxLines = 1)
+        Text(wert, style = TvStil.kachel, color = Stil.schriftLeise, maxLines = 1)
     }
 }
 
@@ -340,12 +342,11 @@ private fun TvHandlung(titel: String = "", name: String? = null, wert: String? =
         Row(Modifier.fillMaxWidth().height(TvStil.zeilenHoehe).clip(RoundedCornerShape(TvStil.ecke))
                 .background(if (fokus) TvStil.fokusflaeche else Color.Transparent).padding(horizontal = 13.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(name ?: titel, style = TextStyle(fontSize = 15.5.sp, fontWeight = FontWeight.Normal),
+            Text(name ?: titel, style = TvStil.koerper,
                  color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (wert != null) {
-                Text(wert, style = TextStyle(fontSize = 14.sp), color = Stil.schriftLeise, maxLines = 1)
-                if (pfeil) Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null,
-                                tint = Stil.schriftSehrLeise, modifier = Modifier.size(16.dp))
+                Text(wert, style = TvStil.kachel, color = Stil.schriftLeise, maxLines = 1)
+                if (pfeil) Symbol(Zeichen.WinkelRunter, 13.dp, farbe = Stil.schriftSehrLeise, staerke = Staerke.Halbfett)
             }
         }
     }
@@ -358,7 +359,8 @@ private fun TvSchalter(an: Boolean) {
     val breite = 42.dp; val hoehe = 25.dp; val kreis = 20.dp; val einzug = 2.5.dp
     val versatz by animateDpAsState(if (an) breite - kreis - einzug else einzug,
                                      tween(150), label = "schalterVersatz")
-    val kapsel by animateColorAsState(if (an) Stil.akzent else Color.White.copy(alpha = 0.16f),
+    // Aus: Flaeche `rand` (Weiss 12 %), an: `akzent`, Knauf `grund` (BAUTEILE 6).
+    val kapsel by animateColorAsState(if (an) Stil.akzent else Stil.rand,
                                        tween(150), label = "schalterKapsel")
     val knopf by animateColorAsState(if (an) Stil.grund else Color.White,
                                       tween(150), label = "schalterKnopf")
@@ -374,7 +376,7 @@ private fun TvSchalterzeile(titel: String, an: Boolean, modifier: Modifier = Mod
         Row(Modifier.fillMaxWidth().height(TvStil.zeilenHoehe).clip(RoundedCornerShape(TvStil.ecke))
                 .background(if (fokus) TvStil.fokusflaeche else Color.Transparent).padding(horizontal = 13.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(titel, style = TextStyle(fontSize = 15.5.sp), color = Stil.schrift, maxLines = 1,
+            Text(titel, style = TvStil.koerper, color = Stil.schrift, maxLines = 1,
                  overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             TvSchalter(an)
         }
@@ -389,8 +391,8 @@ private fun TvReihenzeile(name: String, an: Boolean, kannHoch: Boolean, kannRunt
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TvSchalterzeile(name, an, modifier = Modifier.weight(1f), tun = umschalten)
-        TvKnopf(null, Icons.Filled.KeyboardArrowUp, hoehe = 28.dp, freigegeben = kannHoch) { schieben(-1) }
-        TvKnopf(null, Icons.Filled.KeyboardArrowDown, hoehe = 28.dp, freigegeben = kannRunter) { schieben(1) }
+        TvKnopf(null, Zeichen.WinkelHoch, hoehe = 28.dp, freigegeben = kannHoch) { schieben(-1) }
+        TvKnopf(null, Zeichen.WinkelRunter, hoehe = 28.dp, freigegeben = kannRunter) { schieben(1) }
     }
 }
 
@@ -409,7 +411,7 @@ private fun Kontokarte(app: SwiftlyAnwendung, serverzeile: String, karten: List<
                         aufnehmen: () -> Unit, wechseln: (String) -> Unit) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvStil.eckeKachel)).background(Stil.flaeche).padding(16.dp)) {
         Profilbild(app, 42.dp)
-        Text(app.benutzername(), style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),
+        Text(app.benutzername(), style = TvStil.reihe,
              color = Stil.schrift, maxLines = 1, overflow = TextOverflow.Ellipsis,
              modifier = Modifier.padding(top = 9.dp))
         // Serverdaten, kein Katalogtext.
@@ -436,24 +438,23 @@ private fun Kontenstreifen(karten: List<JSONObject>, aufnehmen: () -> Unit, wech
 
     Row(Modifier.fillMaxWidth().focusGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         andere.forEach { konto ->
-            Fokusflaeche(lupe = 1.12f, tun = { wechseln(konto.optString("kennung")) }) { fokus ->
+            Fokusflaeche(lupe = TvStil.fokusLupeKlein, tun = { wechseln(konto.optString("kennung")) }) { fokus ->
                 Box(Modifier.size(groesse).clip(CircleShape)
                         .then(if (fokus) Modifier.border(2.dp, Color.White, CircleShape) else Modifier)) {
                     Kontokreis(konto.optString("name"), konto.optString("bild").ifEmpty { null }, groesse)
                 }
             }
         }
-        Fokusflaeche(lupe = 1.12f, tun = aufnehmen) { fokus ->
+        Fokusflaeche(lupe = TvStil.fokusLupeKlein, tun = aufnehmen) { fokus ->
             Box(Modifier.size(groesse)
                     .drawBehind {
-                        drawCircle(color = Color.White.copy(alpha = 0.28f),
+                        drawCircle(color = Stil.schriftSehrLeise,
                                    style = Stroke(width = 1.5.dp.toPx(),
                                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.5.dp.toPx()))))
                     }
                     .then(if (fokus) Modifier.border(2.dp, Color.White, CircleShape) else Modifier),
                 contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Add, contentDescription = uebersetzt("Weiteres Konto hinzufügen"),
-                     tint = Stil.schriftLeise, modifier = Modifier.size(12.dp))
+                Symbol(Zeichen.Plus, 12.dp, farbe = Stil.schriftLeise, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Weiteres Konto hinzufügen"))
             }
         }
     }

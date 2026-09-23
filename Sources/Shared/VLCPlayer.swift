@@ -45,6 +45,11 @@ enum Protokoll {
     }()
 
     static func schreib(_ text: String) {
+        // **Der Speicher gilt in jedem Bau** — daraus teilt der Nutzer sein
+        // Protokoll (`Protokollring`, Profil → „Protokoll teilen"). Geschwärzt wird
+        // dort beim Eintragen.
+        Protokollring.geteilt.anhaengen(text)
+
         // Ein Fehlersuch-Werkzeug gehört nicht in die ausgelieferte Fassung:
         // die Datei liegt in `Documents`, wird in iCloud gesichert und wächst
         // im Betrieb bis 256 KB. `Logger` bleibt, der ist dafür gemacht.
@@ -202,9 +207,7 @@ final class VLCPlayerView: Basisansicht {
         // Derselbe Fehler wie beim eigenen Protokoll, das in `Documents`
         // schrieb, wo tvOS nichts schreiben laesst: ein Werkzeug, das lautlos
         // ins Leere laeuft, sieht aus wie eines, das nichts zu melden hat.
-        #if DEBUG
         VLCPlayerView.bibliothek.loggers = [Dateiprotokoll()]
-        #endif
 
         // Muss die View selbst sein: VLC prüft die Zeichenfläche auf
         // VLCPictureInPictureDrawable, und die Schnittstelle sitzt hier.
@@ -435,6 +438,7 @@ final class VLCPlayerView: Basisansicht {
     /// Sperrfrist verbrauchen und den echten Versuch beim Wiederkommen
     /// blockieren. Stattdessen wird vorgemerkt, dass noch etwas offen ist.
     private func streckeGewechselt(_ strecke: String, erreichbar: Bool) {
+        guard !endgueltigGestoppt else { return }
         let vorher = letzteStrecke
         letzteStrecke = strecke
         netzErreichbar = erreichbar
@@ -469,6 +473,7 @@ final class VLCPlayerView: Basisansicht {
         // Bei jedem Wechsel nachziehen: sonst zeigt der Knopf im
         // Bild-im-Bild-Fenster weiter Wiedergabe, obwohl pausiert ist.
         refreshPiPState()
+        anzeigeschlafZulassen()
 
         // Pausierter Start: jeder Wechsel ist ein Anlass, sofort statt beim
         // naechsten Takt — bei Paused ist das der Moment zum Fortsetzen.
@@ -508,6 +513,12 @@ final class VLCPlayerView: Basisansicht {
         }
         guard !absichtlichBeendet else { return }
         guard zustand == .stopped || zustand == .stopping || zustand == .error else { return }
+        // Ein Fehler vor dem ersten Bild löst hier nichts aus — die
+        // Oberfläche zeigt dann weiter „lädt". Wenigstens das Protokoll
+        // soll es sagen; den Grund nennen die vlc-Zeilen davor.
+        if zustand == .error, letzteGutePosition <= 1 {
+            Protokoll.schreib("[VLC] Fehler vor dem ersten Bild")
+        }
         let laenge = laengeSekunden
         guard letzteGutePosition > 1 else { return }
         // Kennt VLC die Laenge nicht, laesst sich Abriss und gewolltes Ende
@@ -566,6 +577,42 @@ final class VLCPlayerView: Basisansicht {
         Protokoll.schreib("[VLC] Sprung auf \(Int(ziel)) s kam auf beiden Wegen nicht an")
         offenesZiel = nil
         offenSeit = nil
+    }
+
+    /// **Wach halten darf nur VLCs Leerlaufsperre, nicht die Bildebene.**
+    ///
+    /// Bei angehaltenem Film ging das Apple TV nie in den Bildschirmschoner
+    /// und nie in den Ruhezustand (gemeldet 22.09.2026). Die Leerlaufsperre war es
+    /// nicht: `isIdleTimerDisabled` steht im Simulator gemessen nur beim
+    /// Abspielen auf `true` und wird bei Pause und Schliessen sofort `false`,
+    /// auch nach 75 s Pause noch — VLCs `uikit_inhibit` haengt an
+    /// `vout_ChangePause` und macht das richtig.
+    ///
+    /// Wach hielt die `AVSampleBufferDisplayLayer`, in die VLC das Bild legt.
+    /// `preventsDisplaySleepDuringVideoPlayback` steht auf iOS und tvOS von
+    /// Haus aus auf `true`, und die Ebene hat keine eigene Zeitbasis (Rate
+    /// immer 1,0). Fuer sie laeuft also jedes Bild, das ankommt — und VLC
+    /// legt auch angehalten weiter Bilder nach: das letzte wird alle 80 ms
+    /// neu gezeigt (`VOUT_REDISPLAY_DELAY`), gemessen gut 11 je Sekunde, 330
+    /// in 30 s Pause. Auf dem Mac nachgestellt: dieselbe Ebene mit dem
+    /// Schalter an haelt `PreventUserIdleDisplaySleep`, solange Bilder kommen,
+    /// mit dem Schalter aus nichts.
+    ///
+    /// VLC baut die Ebene bei jedem neuen Bildausgang neu (Folgenwechsel,
+    /// Neuaufbau nach Netzabriss), und sie sitzt eine Ebene tiefer in VLCs
+    /// eigener Fensteransicht. Deshalb bei jedem Zustandswechsel und jede
+    /// Sekunde nachsehen; der Gang durch eine Handvoll Ebenen kostet nichts.
+    /// Auf dem Mac steht der Schalter von Haus aus auf `false`, dort ist das
+    /// eine Absicherung.
+    private func anzeigeschlafZulassen() {
+        func freigeben(_ ebene: CALayer) {
+            if let bild = ebene as? AVSampleBufferDisplayLayer, bild.preventsDisplaySleepDuringVideoPlayback {
+                bild.preventsDisplaySleepDuringVideoPlayback = false
+            }
+            ebene.sublayers?.forEach(freigeben)
+        }
+        let wurzel: CALayer? = layer
+        wurzel.map(freigeben)
     }
 
     /// Zweite Absicherung fuer Abrisse, bei denen VLC im Zustand Playing
@@ -745,6 +792,9 @@ final class VLCPlayerView: Basisansicht {
     /// zurueck zwanzig Sekunden gekostet und die Rettung waere schlimmer
     /// gewesen als der Schaden. Jetzt sind es rund fuenfzig Millisekunden.
     private func neuVerbinden(grund: String) {
+        // Nach `stop()` gibt es nichts mehr aufzubauen — sonst spielt eine
+        // abgeraeumte Ansicht wieder los, nur zu hoeren, nicht zu sehen.
+        guard !endgueltigGestoppt else { return }
         guard let adresse = letzteAdresse, letzteGutePosition > 1 else { return }
 
         guard netzErreichbar else {
@@ -999,7 +1049,10 @@ final class VLCPlayerView: Basisansicht {
 
         wachhund?.invalidate()
         wachhund = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.stillstandPruefen() }
+            Task { @MainActor in
+                self?.stillstandPruefen()
+                self?.anzeigeschlafZulassen()
+            }
         }
 
         oeffnen(url: url, abSekunden: abSekunden, container: container)
@@ -1012,7 +1065,18 @@ final class VLCPlayerView: Basisansicht {
         letzteBilder = nil
         letzteBytes = nil
         bilderStehenSeit = nil
-        guard let medium = VLCMedia(url: url) else {
+        // Nebenher, ohne auf sie zu warten: wie VLCs Sockets den Server
+        // erreichen. Nur fürs Protokoll, siehe `Netzprobe`.
+        Netzprobe.starten(url)
+        // **Hinter einem Vorposten holt die App den Strom selbst** (Issue #4):
+        // VLC kann keine eigenen Header senden. Ohne eingetragene Header
+        // kommt die Adresse unverändert zurück. AirPlay spricht weiter direkt
+        // mit dem Server und bleibt hinter einem Vorposten deshalb stumm.
+        let vlcAdresse = Stromweiterleiter.gemeinsam.adresse(fuer: url)
+        if vlcAdresse != url {
+            Protokoll.schreib("[VLC] Strom über den Weiterleiter (Header: \(Eigenkoepfe.namen(Eigenkoepfe.fuer(url))))")
+        }
+        guard let medium = VLCMedia(url: vlcAdresse) else {
             Self.log.error("Medium ließ sich nicht öffnen: \(url.ohneGeheimnis, privacy: .public)")
             return
         }
@@ -1217,7 +1281,7 @@ final class VLCPlayerView: Basisansicht {
         // Nachbardateien, der Server nennt sie aber. Vorrang 0, damit VLC
         // keine davon selbst einschaltet — das entscheidet `Spurregel`.
         for datei in untertiteldateien {
-            let gehaengt = medium.addSlave(VLCMediaSlave(url: datei.adresse, type: .subtitle, priority: 0))
+            let gehaengt = medium.addSlave(VLCMediaSlave(url: Stromweiterleiter.gemeinsam.adresse(fuer: datei.adresse), type: .subtitle, priority: 0))
             Protokoll.schreib("[Spuren] Datei \(datei.index) angehängt \(gehaengt), Merkmal \(datei.merkmal ?? "—")")
         }
         player.media = medium
@@ -1398,9 +1462,23 @@ final class VLCPlayerView: Basisansicht {
         startwacht?.invalidate()
         startwacht = nil
         startsprung = nil
-        // netzwache bleibt: cancel() ist endgueltig, und dieselbe View spielt
-        // beim Folgenwechsel weiter. Sie kostet im Leerlauf nichts.
         player.stop()
+        // **Die Ansicht muss danach wirklich gehen koennen.** `drawable` haelt
+        // laut VLCKit-Header stark, `player` haelt die Ansicht also fest, und
+        // die Ansicht den `player` — ein Kreis. Nachgemessen: eine Ansicht mit
+        // `drawable = self` lebt nach `stop()` weiter, ohne den Verweis nicht.
+        //
+        // Mit ihr lebte die Netzwache weiter. Legte sich der Rechner schlafen,
+        // riss das Netz ab und `streckeGewechselt` merkte die letzte Stelle
+        // vor; beim Aufwachen baute `neuVerbinden` den Strom wieder auf und
+        // spielte — Ton aus einem Player, der laengst geschlossen war.
+        //
+        // `stop()` ist endgueltig (siehe `endgueltigGestoppt`); ein
+        // Folgenwechsel laeuft ueber `play(url:)` auf derselben Ansicht und
+        // kommt hier nicht vorbei. Deshalb darf die Netzwache hier enden.
+        netzwache.cancel()
+        wartetAufNetz = false
+        player.drawable = nil
     }
 
     // MARK: - Spuren und Geschwindigkeit
@@ -1860,8 +1938,10 @@ final class Zeichenflaeche: Basisansicht {
 
 /// Beobachtet VLCs Zustand — bewusst ohne Actor-Isolation, weil VLCKit aus
 /// einem eigenen Thread meldet.
-#if DEBUG
-/// Leitet VLCs eigene Meldungen in dieselbe Datei wie unsere.
+/// Leitet VLCs eigene Meldungen in dieselbe Datei wie unsere — und in den
+/// Speicher, aus dem ein Nutzer sein Protokoll teilt. Im ausgelieferten Bau
+/// nur ab Warnung: dort stehen VLCs Verbindungsfehler, und mehr soll dort
+/// keine Last machen.
 ///
 /// **Gefiltert, nicht vollstaendig.** Auf `debug` schreibt VLC hunderte Zeilen
 /// je Sekunde; ungefiltert waere die Datei nach Sekunden an ihrer Grenze und
@@ -1882,8 +1962,12 @@ final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
     /// stuft verspaetete Bilder und Uhrabweichungen als Warnung ein. Fuer
     /// die Demuxer-Suche, die `debug` braucht, reicht ein gesetzter
     /// Schluessel — dann darf es auch langsam sein.
+    #if DEBUG
     var level: VLCLogLevel = UserDefaults.standard.bool(forKey: "vlcAusfuehrlich")
         ? .debug : .info
+    #else
+    var level: VLCLogLevel = .warning
+    #endif
 
     /// **Nach Inhalt sieben, nicht nach Modul.**
     ///
@@ -1922,7 +2006,6 @@ final class Dateiprotokoll: NSObject, VLCLogging, @unchecked Sendable {
         Protokoll.schreib("[vlc/\(modul)] \(nachricht)")
     }
 }
-#endif
 
 final class Zustandsmelder: NSObject, VLCMediaPlayerDelegate, @unchecked Sendable {
     private weak var player: VLCMediaPlayer?

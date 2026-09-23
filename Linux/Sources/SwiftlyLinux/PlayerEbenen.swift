@@ -217,7 +217,7 @@ extension App {
         zeigerZeigen(true)
         angebotNachfuehren()
         if let x = spielerEbenenX { gtk_widget_grab_focus(x) }
-        print("[Ebene] auf: \(ziel)")
+        Protokoll.schreib("[Ebene] auf: \(ziel)")
         fflush(nil)
     }
 
@@ -239,7 +239,7 @@ extension App {
         steuerungSichtbarkeit(dauer: 0.2)
         steuerungZeigen()
         if let knopf = spielerEbenenknoepfe[art] { gtk_widget_grab_focus(knopf) }
-        print("[Ebene] zu: \(art), Steuerung klickbar: \(gtk_widget_get_can_target(spielerSteuerung) != 0)")
+        Protokoll.schreib("[Ebene] zu: \(art), Steuerung klickbar: \(gtk_widget_get_can_target(spielerSteuerung) != 0)")
         fflush(nil)
     }
 

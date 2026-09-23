@@ -127,6 +127,7 @@ struct FilmView: View {
 
     @State private var extras: [Item] = []
     @State private var aehnliche: [Item] = []
+    @State private var sammlungsreihen: [Sammlungsreihe.Reihe] = []
     @State private var kopfstand = Kopfstand()
 
     var body: some View {
@@ -149,6 +150,12 @@ struct FilmView: View {
                     // Extras und Ähnliches fehlten auf meiner Filmseite ganz.
                     // Reihenfolge wie auf iOS (A9).
                     Titelreihe(titel: "Extras", eintraege: extras, model: model)
+                    // Über „Ähnliches": die Sammlung ist die nähere
+                    // Verwandtschaft. Nur bei Titeln, die in einer stehen.
+                    ForEach(sammlungsreihen, id: \.sammlung.id) { reihe in
+                        Sammlungsreihe(model: model, reihe: reihe,
+                                       art: Bibliotheksgattung.art(zuTyp: film.type))
+                    }
                     Titelreihe(titel: "Ähnliches", eintraege: aehnliche, model: model)
                     if let quelle = film.mediaSources?.first {
                         Dateizeile(quelle: quelle)
@@ -167,7 +174,7 @@ struct FilmView: View {
         //
         // E4 wieder: was das Rahmenwerk ungefragt dazustellt, gehört ebenso
         // abgestellt wie das, was man selbst hinschreibt.
-        .ohneKanteneffekt()
+        .seitenscrollen()
         // **Der Inhalt läuft bis unter die Titelleiste durch.** SwiftUI rückt
         // ihn sonst um deren Sicherheitsbereich ein, und über dem Bild stand
         // ein dunkler Streifen. Die iPhone-Fassung tut dasselbe.
@@ -179,13 +186,24 @@ struct FilmView: View {
         // ungefragt beisteuert.
         .toolbar(.hidden)
         .toolbarBackground(.hidden, for: .windowToolbar)
-        // Der Ton läuft unter dem Heldenbild noch ein Stück weiter und
-        // verliert sich dann im Grundton — wie bei Apple TV, wo die ganze
-        // Seite vom Bild eingefärbt wirkt statt an seiner Unterkante zu enden.
+        // **Der Ton endet mit dem Heldbild, nicht 260 Punkt darunter.**
+        //
+        // Er lief bis `heldHoehe + 260` weiter, „wie bei Apple TV, wo die
+        // ganze Seite vom Bild eingefaerbt wirkt". Auf dem Mac steht die
+        // Knopfreihe aber **neben** dem Abspielknopf, also mitten in diesem
+        // Auslauf — auf dem iPhone steht dieselbe Reihe **unter** dem Bild auf
+        // reinem `grund`. Die Knoepfe tragen auf beiden Plattformen exakt
+        // `flaeche` #262626; derselbe Grauton wirkt auf einem farbigen Grund
+        // aber wie eine andere Farbe. Paul am 22.09.: „Das sind nicht
+        // dieselben, so wie ich das sehe."
+        //
+        // Endet der Verlauf mit dem Bild, kommen an der Mitte der Knopfreihe
+        // (356 von 380) noch 0,068 an — praktisch `grund` (0,063). Oben bleibt
+        // der Ton voll.
         .background(alignment: .top) {
             LinearGradient(colors: [farbe.ton, Stil.grund],
                            startPoint: .top, endPoint: .bottom)
-                .frame(height: Stil.heldHoehe + 260)
+                .frame(height: Stil.heldHoehe)
                 .frame(maxHeight: .infinity, alignment: .top)
         }
         .background(Stil.grund)
@@ -199,8 +217,12 @@ struct FilmView: View {
         .task {
             async let a = model.extras(film)
             async let b = model.aehnliche(film)
-            extras = await a
-            aehnliche = await b
+            extras = (await a) ?? []
+            aehnliche = (await b) ?? []
+        }
+        .task(id: "\(film.id)|\(model.kontowechsel)") {
+            let gefunden = await Sammlungsreihe.laden(model, titel: film)
+            withAnimation(Stil.einblenden) { sammlungsreihen = gefunden }
         }
     }
 }
@@ -215,10 +237,10 @@ struct Titelreihe: View {
 
     var body: some View {
         if !eintraege.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                Text(titel)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Stil.schrift)
+            // Reihenueberschrift: 20 Semifett in `schrift`, 12 Abstand zur
+            // Reihe (BAUTEILE 8). 16 stand in keiner Leiter.
+            VStack(alignment: .leading, spacing: 12) {
+                Reihentitel(text: titel)
                 Blätterreihe(rand: 0) {
                     ForEach(eintraege, id: \.id) { eintrag in
                         Button { navigator.oeffne(.titel(eintrag), in: bereich) } label: {
@@ -233,7 +255,7 @@ struct Titelreihe: View {
                                          offeneFolgen: eintrag.userData?.unplayedItemCount),
                                          zeichen: eintrag.type == "Series" ? "tv" : "film")
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                     }
                 }
             }
@@ -267,6 +289,25 @@ struct Heldenkopf: View {
     /// ebenfalls. Der Kopf weiss die Staffel nicht von selbst — sie steht
     /// eine Ebene tiefer in `SerienView` —, also kommt sie von dort.
     var staffel: Item? = nil
+    /// **Was der Ladeknopf auf einer Serienseite tut.**
+    ///
+    /// Auf dem iPhone steht auf **jeder** Film- und Serienseite ein Knopf zum
+    /// Laden in der Reihe unter dem Abspielknopf; bei einer Serie oeffnet er
+    /// die Auswahl (ganze Serie, Staffel, einzelne Folge). Hier war der Knopf
+    /// an `titel.type != "Series"` gebunden — auf der Serienseite gab es ihn
+    /// also gar nicht, und das Laden hing allein an einem Chip neben der
+    /// Staffelwahl, an dem niemand sucht. Paul am 22.09.: „Der Laden-Knopf
+    /// existiert nicht."
+    ///
+    /// Die Auswahl selbst braucht Staffeln und vorgeladene Folgen und steht
+    /// deshalb weiter in `SerienView`; der Kopf kennt nur den Knopf und
+    /// meldet den Klick nach oben. Bei einem Film bleibt es beim Kopf selbst:
+    /// dort gibt es nichts zu waehlen, und die Ladetafel haengt direkt am
+    /// Knopf.
+    var ladeauswahl: (() -> Void)? = nil
+    /// Ob die Ladeauswahl offen ist — der Knopf traegt den Zustand, wie der
+    /// Mehr-Knopf daneben.
+    var auswahlOffen: Bool = false
 
     /// **Wie weit über den oberen Rand hinausgezogen wurde.**
     ///
@@ -408,14 +449,17 @@ struct Heldenkopf: View {
         // Was darin zu groß wird, wird abgeschnitten und verschiebt nichts.
         //
         //     0    Titel        42
-        //     54   Angaben      20
+        //     54   Angaben      26
         //     92   Beschreibung 66   (drei Zeilen)
         //     182  Knopfreihe   48
         //     230  Ende
         ZStack(alignment: .topLeading) {
             Text(verbatim: titel.name)
-                .font(.system(size: 34, weight: .bold))
-                .tracking(-0.8)
+                // **Der Titel ueber einem Heldbild *ist* der Seitentitel**
+                // (BRAND 2): 28 Bold, Sperrung an der Stufe. 34 war eine
+                // eigene Stufe fuer dieselbe Rolle.
+                .font(Stil.titelGross)
+                .tracking(Stil.sperrungTitel)
                 .foregroundStyle(Stil.schrift)
                 .lineLimit(1)
                 // Ein langer Titel schrumpft, statt die Seite zu verschieben.
@@ -423,8 +467,27 @@ struct Heldenkopf: View {
                 .frame(width: 640, height: 42, alignment: .leading)
                 .offset(y: 0)
 
+            // **26, nicht 20 — sonst schneidet der Beschnitt die Belege ab.**
+            //
+            // In dieser Zeile stehen die Freigabe-Plakette und der
+            // Direct-Play-Beleg. Beide sind 13 Punkt Schrift mit 4 Punkt Luft
+            // oben und unten, also rund 24 hoch. Auf 20 gedeckelt und
+            // beschnitten fehlte ihnen oben und unten je ein Streifen: die
+            // Plakette sah dadurch anders aus als dieselbe Plakette auf dem
+            // iPhone, und der Beleg wirkte angeschnitten. Paul am 22.09.:
+            // „oben und unten abgeschnitten."
+            //
+            // 26 ist der Wert der Vorlage — `Belegzeile` in
+            // `Sources/Shared/Stil.swift` haelt dieselbe Zeile auf dem iPhone
+            // genau so hoch, mit derselben Begruendung („so hoch wie eine
+            // Marke, immer").
+            //
+            // Der Beschnitt bleibt: er haelt die ausgerechnete Stelle der
+            // Beschreibung darunter, egal was der Server liefert. Bei 26
+            // schneidet er nur nichts mehr weg. Dieselbe Falle wie bei den
+            // Folgennamen, wo ein zu enger Rahmen die Unterlaengen frass.
             angabenReihe
-                .frame(width: 640, height: 20, alignment: .leading)
+                .frame(width: 640, height: 26, alignment: .leading)
                 .clipped()
                 .offset(y: 54)
 
@@ -434,7 +497,10 @@ struct Heldenkopf: View {
             Text(verbatim: titel.beschreibung ?? "")
                 .font(Stil.koerper)
                 .lineSpacing(3)
-                .foregroundStyle(Stil.schrift.opacity(0.62))
+                // `schriftLeise` ist ein voller Wert. Deckkraft aendert
+                // ihre Wirkung, sobald etwas darunter liegt — und hier liegt
+                // das Heldbild darunter.
+                .foregroundStyle(Stil.schriftLeise)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
                 .frame(width: 640, height: 66, alignment: .topLeading)
@@ -448,62 +514,99 @@ struct Heldenkopf: View {
         .frame(width: 640, height: 230, alignment: .topLeading)
     }
 
-    /// Jahr, Laufzeit, Genres, Bewertung, Freigabe und der Beleg — **eine
-    /// Zeile**, nicht drei.
+    /// Jahr, Laufzeit, Genres — und dahinter die Belegzeile: Direct Play,
+    /// Bewertung, Freigabe. **Eine Zeile**, nicht drei.
+    ///
+    /// **Die Reihenfolge ist die der Vorlage.** In `Belegzeile`
+    /// (`Sources/Shared/Stil.swift`) stehen die drei Belege als Beleg →
+    /// Bewertung → Freigabe; hier standen sie als Bewertung → Freigabe →
+    /// Beleg. Dieselben drei Angaben in anderer Folge lesen sich als eine
+    /// andere Zeile, und die beiden sollen nebeneinander gleich aussehen.
+    ///
+    /// Jahr, Laufzeit und Genre stehen davor, weil der Mac sie nicht wie das
+    /// iPhone unter dem Titel im Heldbild trägt — dort ist die `nebenzeile`
+    /// Teil des `Heldkopf`, hier hat der Titelblock feste Stellen und keine
+    /// zweite Zeile dafür.
     private var angabenReihe: some View {
         HStack(spacing: 14) {
+            // Angabe (Jahr, Laufzeit, Genre): 12, wie im `Heldkopf` auf dem
+            // iPhone. 14 und 10 stehen in keiner Leiter.
             Text(verbatim: angabenzeile)
-                .font(.system(size: 14))
+                .font(Stil.klein)
                 .foregroundStyle(Stil.schriftLeise)
+            if let plan { beleg(plan) }
+            // In derselben Hülle wie Direct Play, wie in `Belegzeile`
+            // (23.09.2026): vorher stand die Bewertung als einzige Angabe
+            // der Zeile nackt da.
             if let bewertung = titel.communityRating {
-                HStack(spacing: 5) {
-                    Image(systemName: "star.fill").font(.system(size: 10))
-                    Text(verbatim: String(format: "%.1f", bewertung))
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .foregroundStyle(Stil.schriftLeise)
+                marke("star.fill",
+                      String(format: "%.1f", bewertung).replacingOccurrences(of: ".", with: ","),
+                      farbe: Stil.schriftLeise, gewicht: .semibold)
             }
             // **Ecke 8, nicht der Standardwert 3.** Dieselbe Rechnung wie auf
             // dem iPhone: die Skala steht bei 10/12/16, und eine Marke mit 3
             // sitzt hier neben Dingen mit 10 — sie war das eckigste Element
             // der Seite.
+            //
+            // Alle anderen Maße kommen aus dem Baustein selbst und sind damit
+            // dieselben wie auf dem iPhone: 13 Medium, Innenabstand 10/4,
+            // Fläche in 15 Prozent.
             if let freigabe = titel.officialRating {
-                Plakette(text: freigabe, rundung: 8)
-            }
-            if let plan {
-                // **Der Beleg ist eine Marke, kein loser Text.**
-                //
-                // Er stand als Zeichen und Wort nackt auf dem Grund, direkt
-                // neben der umrandeten Freigabe-Plakette: zwei verschiedene
-                // Formen fuer zwei Angaben, die gleich viel wiegen. Jetzt
-                // tragen beide dieselbe Ecke und lesen sich als Paar; welche
-                // Auskunft es ist, sagt die Farbe.
-                //
-                // Fuenfzehn Prozent Toenung, keine Fuellung — der weisse
-                // Abspielknopf bleibt der einzige gefuellte Gegenstand der
-                // Seite. Ab etwa einem Drittel wird daraus ein zweiter Knopf.
-                let farbe = plan.isLossless ? Stil.akzent : Stil.warnung
-                HStack(spacing: 6) {
-                    Image(systemName: plan.isLossless
-                          ? "checkmark" : "exclamationmark.triangle.fill")
-                        .font(.system(size: 11, weight: .heavy))
-                    Text(verbatim: plan.isLossless
-                         ? String(localized: "Direct Play") : plan.method.rawValue)
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .foregroundStyle(farbe)
-                // Links enger als rechts: das Zeichen ist schmaler als seine
-                // Zeichenzelle, sonst sitzt das Wort sichtbar aus der Mitte.
-                .padding(.leading, 8)
-                .padding(.trailing, 10)
-                .padding(.vertical, 4)
-                .background(farbe.opacity(0.15),
-                            in: RoundedRectangle(cornerRadius: 8))
+                Plakette(text: freigabe, rundung: Stil.eckeKlein)
             }
             Spacer(minLength: 0)
         }
         .lineLimit(1)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Der Direct-Play-Beleg als Marke — zeichengleich mit `Belegzeile.marke`
+    /// in `Sources/Shared/Stil.swift`.
+    ///
+    /// **Der Beleg ist eine Marke, kein loser Text.** Er stand als Zeichen und
+    /// Wort nackt auf dem Grund, direkt neben der umrandeten
+    /// Freigabe-Plakette: zwei verschiedene Formen für zwei Angaben, die
+    /// gleich viel wiegen. Jetzt tragen beide dieselbe Ecke und lesen sich als
+    /// Paar; welche Auskunft es ist, sagt die Farbe.
+    ///
+    /// Fünfzehn Prozent Tönung, keine Füllung — der weiße Abspielknopf bleibt
+    /// der einzige gefüllte Gegenstand der Seite. Ab etwa einem Drittel wird
+    /// daraus ein zweiter Knopf.
+    ///
+    /// **Warum hier abgeschrieben und nicht geteilt:** `Belegzeile` liegt in
+    /// `Sources/Shared/Stil.swift`, und diese Datei gehört nicht zum
+    /// Mac-Ziel — dort gilt `Sources/macOS/Stil.swift`. Solange der Baustein
+    /// nicht in eine Datei umzieht, die beide Ziele tragen (etwa
+    /// `Sources/Shared/Bausteine.swift`, wo `Plakette` schon steht), bleibt es
+    /// eine zweite Abschrift. Sie ist als solche vermerkt, damit sie nicht
+    /// unbemerkt auseinanderläuft.
+    @ViewBuilder
+    private func beleg(_ plan: PlaybackPlan) -> some View {
+        // **Halbfett nur beim Haken.** Die Warnung trägt Regular — was sie
+        // laut macht, ist die Farbe, nicht das Gewicht. Auf dem iPhone ist
+        // es genau so aufgeteilt; hier stand beides auf Semifett.
+        marke(plan.isLossless ? "checkmark" : "exclamationmark.triangle.fill",
+              plan.isLossless ? String(localized: "Direct Play") : plan.method.rawValue,
+              farbe: plan.isLossless ? Stil.akzent : Stil.warnung,
+              gewicht: plan.isLossless ? .semibold : .regular)
+    }
+
+    /// Die Hülle von Beleg und Bewertung — `Belegzeile.marke` auf dem iPhone.
+    private func marke(_ symbol: String, _ wort: String,
+                       farbe: Color, gewicht: Font.Weight) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 11, weight: gewicht))
+            Text(verbatim: wort).font(Stil.kachel)
+        }
+        .foregroundStyle(farbe)
+        // Links enger als rechts: das Zeichen ist schmaler als seine
+        // Zeichenzelle, sonst sitzt das Wort sichtbar aus der Mitte.
+        .padding(.leading, 8)
+        .padding(.trailing, 10)
+        .padding(.vertical, 4)
+        .background(farbe.opacity(0.15),
+                    in: RoundedRectangle(cornerRadius: Stil.eckeKlein,
+                                         style: .continuous))
     }
 
     /// Vier Ziele wie auf dem Apple TV: Fortsetzen, Von vorn, Merkliste,
@@ -522,7 +625,7 @@ struct Heldenkopf: View {
             if let ab = (spielbarerTitel ?? titel).fortsetzenAb {
                 Hauptknopf(beschriftung: "Fortsetzen") { starten(ab) }
                     .frame(width: Stil.hauptknopfBreite)
-                Nebenknopf(symbol: "arrow.counterclockwise", titel: "Von vorn") {
+                Aktionsknopf(mass: Stil.hauptknopfHoehe, symbol: "arrow.counterclockwise", titel: "Von vorn") {
                     starten(0)
                 }
             } else {
@@ -530,7 +633,7 @@ struct Heldenkopf: View {
                     .frame(width: Stil.hauptknopfBreite)
             }
 
-            Nebenknopf(symbol: merkliste ? "bookmark.fill" : "bookmark",
+            Aktionsknopf(mass: Stil.hauptknopfHoehe, symbol: merkliste ? "bookmark.fill" : "bookmark",
                        titel: "Merkliste", aktiv: merkliste) {
                 merkliste.toggle()
                 Task {
@@ -544,14 +647,25 @@ struct Heldenkopf: View {
             // **Der Ladeknopf, und nur wenn die Funktion an ist.**
             //
             // Auf dem iPhone ist es das fünfte Feld einer Reihe; hier stehen
-            // beschriftete Nebenknöpfe nebeneinander, also ist es einer mehr.
-            // Er steht **nach** der Merkliste — die beiden sind das Paar
-            // „für später" und gehören zusammen.
+            // die Nebenknöpfe nebeneinander, also ist es einer mehr. Er steht
+            // **nach** der Merkliste — die beiden sind das Paar „für später"
+            // und gehören zusammen.
+            //
+            // **Bei einer Serie öffnet er die Auswahl, bei einem Film die
+            // Ladetafel.** Dieselbe Aufteilung wie auf dem iPhone: dort ruft
+            // die Serienseite `Ladeauswahl` und die Filmseite `Ladeblatt`. Bei
+            // einer Serie ist zu klären, *was* geladen wird; bei einem Film
+            // ist das die eine Datei.
+            if model.downloadKnopfZeigen, titel.type == "Series",
+               let ladeauswahl {
+                Aktionsknopf(mass: Stil.hauptknopfHoehe, symbol: "arrow.down",
+                             titel: "Laden", aktiv: auswahlOffen, auswahl: ladeauswahl)
+            }
             if model.downloadKnopfZeigen, titel.type != "Series" {
-                Nebenknopf(symbol: ladezeichen, titel: "Laden",
+                Aktionsknopf(mass: Stil.hauptknopfHoehe, symbol: ladezeichen, titel: "Laden",
                            aktiv: geladen != nil) {
                     ringGeklickt(geladen, model.downloads) {
-                        withAnimation(Stil.zeitSprung) { ladetafelOffen.toggle() }
+                        withAnimation(Stil.sprung) { ladetafelOffen.toggle() }
                     }
                 }
                 .overlay(alignment: .topLeading) {
@@ -559,7 +673,7 @@ struct Heldenkopf: View {
                         Ladetafel(model: model, posten: [p], titel: titel.name,
                                   bilder: ladebilder, offen: $ladetafelOffen)
                             .offset(y: Stil.hauptknopfHoehe + 8)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(.aufklappen(von: .topLeading))
                             .zIndex(30)
                     }
                 }
@@ -571,20 +685,22 @@ struct Heldenkopf: View {
                             .contentShape(Rectangle())
                             .frame(width: 4000, height: 4000)
                             .onTapGesture {
-                                withAnimation(Stil.zeitSprung) { ladetafelOffen = false }
+                                withAnimation(Stil.sprung) { ladetafelOffen = false }
                             }
                     }
                 }
             }
 
-            Nebenknopf(symbol: "ellipsis", titel: "Mehr", aktiv: mehrOffen) {
-                withAnimation(Stil.zeitSprung) { mehrOffen.toggle() }
+            Aktionsknopf(mass: Stil.hauptknopfHoehe, symbol: "ellipsis", titel: "Mehr", aktiv: mehrOffen) {
+                withAnimation(Stil.sprung) { mehrOffen.toggle() }
             }
             .overlay(alignment: .topLeading) {
                 if mehrOffen {
                     Handlungsliste(handlungen: mehrHandlungen, offen: $mehrOffen)
                         .offset(x: -206, y: Stil.hauptknopfHoehe + 8)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        // Sie oeffnet nach links, ihre obere **rechte** Ecke
+                        // liegt unter den drei Punkten.
+                        .transition(.aufklappen(von: .topTrailing))
                 }
             }
 
@@ -683,10 +799,8 @@ struct Besetzungsreihe: View {
 
     var body: some View {
         if !leute.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Besetzung")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Stil.schrift)
+            VStack(alignment: .leading, spacing: 12) {
+                Reihentitel(text: "Besetzung")
                 Blätterreihe(rand: 0, breiteJeStueck: 84 + 18, bildHoehe: 84) {
                     ForEach(leute, id: \.id) { person in
                         // **Ein Kopf ist jetzt ein Weg.** Ein Tester tippte
@@ -697,7 +811,7 @@ struct Besetzungsreihe: View {
                             Kopfbild(name: person.name, rolle: person.role,
                                      bild: model.personBild(person))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckknopf())
                     }
                 }
             }
@@ -716,7 +830,10 @@ struct Kopfbild: View {
         VStack(alignment: .leading, spacing: 7) {
             ZStack {
                 Stil.flaeche
-                Netzbild(url: bild)
+                // **Mit Zeichen, wie jedes andere fehlende Bild auf dem
+                // Mac.** Ohne es blieb an der Besetzungsreihe als einziger
+                // Stelle ein blanker grauer Kreis stehen.
+                Netzbild(url: bild, zeichen: "person", anzeigekante: 76)
             }
             .frame(width: 76, height: 76)
             .clipShape(Circle())

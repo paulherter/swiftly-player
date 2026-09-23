@@ -1,13 +1,15 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.runtime.withFrameNanos
 import android.os.SystemClock
-import android.util.Log
+import de.paulherter.swiftly.Protokoll
 import androidx.activity.compose.BackHandler
-import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
@@ -36,10 +38,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -67,7 +65,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
@@ -110,6 +107,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import androidx.compose.animation.core.EaseInOut
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.offset
+import de.paulherter.swiftly.gemeinsam.bewegungReduziert
 
 /**
  * Vorlage: `PlayerScreen` und `PlayerEbenen` in `Sources/tvOS/`.
@@ -233,7 +235,7 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
         // Anhalten/Weiter heisst „hier", nicht „dorthin" — eine Marke wird verworfen.
         markeVerwerfen()
         if (soll) werk.spieler.play() else werk.spieler.pause()
-        Log.i("Swiftly", "[Taste] $quelle: ${if (soll) "abspielen" else "anhalten"}")
+        Protokoll.schreib("[Taste] $quelle: ${if (soll) "abspielen" else "anhalten"}")
         zeigen()
     }
     fun umschalten(quelle: String) = laufenSetzen(!gewollt[0], quelle)
@@ -276,7 +278,7 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     }
 
     fun ebeneOeffnen(welche: String) {
-        Log.i("Swiftly", "[Ebene] auf $welche")
+        Protokoll.schreib("[Ebene] auf $welche")
         ebenenAusgang[0] = false
         offeneEbene = welche
         beruehrt++
@@ -284,7 +286,7 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     // **Zurueck an den Knopf, der die Ebene geoeffnet hat** — erst der Fokus, dann die Ebene weg.
     fun ebeneSchliessen() {
         val war = offeneEbene ?: return
-        Log.i("Swiftly", "[Ebene] zu $war")
+        Protokoll.schreib("[Ebene] zu $war")
         ebenenAusgang[0] = true
         val ziel = when (war) { "spuren" -> knopfSpuren; "folgen" -> if (hatFolgen) knopfFolgen else fernbedienung; else -> knopfEinstellungen }
         if (runCatching { ziel.requestFocus() }.isFailure) runCatching { fernbedienung.requestFocus() }
@@ -299,14 +301,15 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
     }
 
     // **Die Einblendung** ohne Steuerung (Vorlage `karteDa`/`angebotsebene`): solange sie steht,
-    // liegt der Fokus auf ihr. Danach an die Fernbedienungsflaeche, nicht an einen Knopf (Plezy #1890).
+    // liegt der Fokus auf ihr. Danach an die Fernbedienungsflaeche, nicht an einen Knopf (Plezy #1890) —
+    // auch, wenn „Intro ueberspringen" nach sechs Sekunden Laufzeit von selbst ausblendet (VERHALTEN B6a).
     val karteDa = werk.einblendung != "nichts" && werk.bildFrei && !steuerungZiel && !ebeneOffen && !werk.wechselt
     LaunchedEffect(karteDa) {
         if (karteDa) {
             runCatching { angebotFokus.requestFocus() }
             delay(80)
             runCatching { angebotFokus.requestFocus() }
-            Log.i("Swiftly", "Angebot: ein (${werk.einblendung}), Fokus auf dem Knopf")
+            Protokoll.schreib("Angebot: ein (${werk.einblendung}), Fokus auf dem Knopf")
         } else if (!steuerungZiel && !ebeneOffen) {
             runCatching { fernbedienung.requestFocus() }
         }
@@ -336,9 +339,9 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
             steuerungZiel -> {
                 runCatching { fernbedienung.requestFocus() }
                 sichtbar = false
-                Log.i("Swiftly", "[Zurück] Steuerung aus")
+                Protokoll.schreib("[Zurück] Steuerung aus")
             }
-            karteDa -> { werk.angebotSchliessen(); Log.i("Swiftly", "[Angebot] Zurück schließt") }
+            karteDa -> { werk.angebotSchliessen(); Protokoll.schreib("[Angebot] Zurück schließt") }
             else -> werk.beenden(schliessen)
         }
     }
@@ -397,8 +400,9 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
             }
         }
 
-        // **Nur noch der Ring, kein Pausezeichen** — angehalten zeigt die Leiste (Vorlage tvOS).
-        if (werk.bildFrei && (werk.wechselt || (werk.laeuft && werk.puffert))) {
+        // **Nur noch der Ring, kein Pausezeichen** — angehalten zeigt die Leiste (Vorlage tvOS). Auch, solange
+        // der Strom nach einem Abriss neu aufgebaut wird (tvOS: `zeitSteht || stelltWiederHer`).
+        if (werk.bildFrei && (werk.wechselt || werk.stelltWiederHer || (werk.laeuft && werk.puffert))) {
             Box(Modifier.align(Alignment.Center)) { TvLader(groesse = 64.dp) }
         }
 
@@ -415,7 +419,7 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             meta?.let { Text(it, style = TvPlayermass.meta, color = Stil.schriftLeise, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             if (plan != null && !plan.lossless && plan.methode.isNotEmpty()) {
-                                Icon(painterResource(R.drawable.player_warnung), contentDescription = null, tint = Stil.warnung, modifier = Modifier.size(15.dp))
+                                Symbol(Zeichen.Warnung, 12.dp, farbe = Stil.warnung)
                                 Text(plan.methode, style = TvPlayermass.meta, color = Stil.warnung, maxLines = 1)
                             }
                         }
@@ -432,9 +436,9 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                                 }
                             },
                         horizontalArrangement = Arrangement.spacedBy(TvPlayermass.knopfAbstand)) {
-                        TvSymbolknopf(R.drawable.player_untertitel, uebersetzt("Audio & Untertitel"), !spult, knopfSpuren) { ebeneOeffnen("spuren") }
-                        if (hatFolgen) TvSymbolknopf(R.drawable.player_folgen, uebersetzt("Folgen"), !spult, knopfFolgen) { ebeneOeffnen("folgen") }
-                        TvSymbolknopf(R.drawable.player_regler, uebersetzt("Einstellungen"), !spult, knopfEinstellungen) { ebeneOeffnen("einstellungen") }
+                        TvSymbolknopf(Zeichen.Untertitel, uebersetzt("Audio & Untertitel"), !spult, knopfSpuren) { ebeneOeffnen("spuren") }
+                        if (hatFolgen) TvSymbolknopf(Zeichen.Stapel, uebersetzt("Folgen"), !spult, knopfFolgen) { ebeneOeffnen("folgen") }
+                        TvSymbolknopf(Zeichen.Regler, uebersetzt("Einstellungen"), !spult, knopfEinstellungen) { ebeneOeffnen("einstellungen") }
                         LaunchedEffect(Unit) {
                             if (obenWunsch[0]) {
                                 obenWunsch[0] = false
@@ -466,7 +470,7 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                         if (!steuerungZiel) {
                             // Ohne Steuerung holt jede Richtung sie. Eine Karte ist damit abgesagt, ein
                             // Ueberspringen-Knopf bleibt stehen.
-                            Log.i("Swiftly", "Angebot: Richtungstaste holt die Steuerung")
+                            Protokoll.schreib("Angebot: Richtungstaste holt die Steuerung")
                             zeigen()
                         } else when (e.key) {
                             Key.DirectionUp -> runCatching { knopfSpuren.requestFocus() }
@@ -480,21 +484,30 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
                     sekunden = werk.countdownRest.takeIf { werk.einblendung == "karte" },
                     laeuft = werk.laeuft, laenge = werk.countdownLaenge,
                     modifier = Modifier.focusRequester(angebotFokus)) {
-                    Log.i("Swiftly", "Angebot: gedrückt (${werk.angebotArt})")
+                    Protokoll.schreib("Angebot: gedrückt (${werk.angebotArt})")
                     werk.angebotAusfuehren()
                 }
             }
         }
 
         werk.hinweis?.let {
-            Text(it, style = TextStyle(fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center), color = Stil.schrift,
+            Text(it, style = TvStil.koerper.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), color = Stil.schrift,
                  modifier = Modifier.align(Alignment.TopCenter).padding(top = 90.dp, start = 96.dp, end = 96.dp))
         }
 
-        // **Das Technikschild** — ueber der Steuerung, unter den Ebenen. Nimmt keinen Fokus.
+        // **Das Technikschild** — nimmt weder Fokus noch Eingaben. Es beginnt unter der Titelzeile und **gleitet
+        // mit der Steuerung** (Vorlage 71832e36): zu rueckt es an den oberen Rand, wo sie stand. Bewegung statt
+        // Blende, 0,2 s easeInOut; mit reduzierter Bewegung springt es.
         if (app.einstellungen.technikschild && werk.technikFest.isNotEmpty()) {
+            val reduziert = bewegungReduziert()
+            val hoch by animateFloatAsState(if (steuerungZiel) 0f else 1f,
+                if (reduziert) snap() else tween(200, easing = EaseInOut), label = "technikschild")
+            val weg = with(LocalDensity.current) { (TvPlayermass.knopf + TvStil.kachelAbstand).toPx() }
             Technikschild(werk.technikFest, werk.technikLive, werk.position, werk.dauer,
-                Modifier.align(Alignment.TopStart).padding(start = TvStil.randSeite, top = TvStil.randOben))
+                app.einstellungen.technikschildMessen, fern = true,
+                Modifier.align(Alignment.TopStart)
+                    .padding(start = TvStil.randSeite, top = TvStil.randOben + TvPlayermass.knopf + TvStil.kachelAbstand)
+                    .offset { IntOffset(0, -(hoch * weg).roundToInt()) })
         }
 
         // **Die drei Ebenen** — Vollbild ueber dem Bild, geschlossene Fokusgruppe: der Fokus bleibt
@@ -543,10 +556,10 @@ fun TvPlayer(app: SwiftlyAnwendung, wunsch: Abspielwunsch, schliessen: () -> Uni
  * (tvOS rechnet in 1920 Punkten Breite, Android TV in 960 dp).
  */
 private object TvPlayermass {
-    val titel = TextStyle(fontSize = 28.5.sp, fontWeight = FontWeight.Bold)
-    val meta = TextStyle(fontSize = 15.5.sp)
-    val zeit = 14.sp
-    val vorschauZeit = 16.sp
+    val titel = TvStil.reihe
+    val meta = TvStil.klein
+    val zeit = 13.sp
+    val vorschauZeit = 15.sp
     val leisteGrund = Color.White.copy(alpha = 0.28f)
     val titelAbstand = 3.dp
     val knopf = 44.dp
@@ -567,13 +580,13 @@ private fun TvLader(groesse: androidx.compose.ui.unit.Dp) {
 
 /** Einer der Symbolknoepfe oben rechts: ruhend nur das Zeichen, fokussiert die weisse Flaeche (`SymbolknopfStil`). */
 @Composable
-private fun TvSymbolknopf(@DrawableRes symbol: Int, beschreibung: String, aktiv: Boolean, fokus: FocusRequester, tun: () -> Unit) {
+private fun TvSymbolknopf(symbol: Zeichen, beschreibung: String, aktiv: Boolean, fokus: FocusRequester, tun: () -> Unit) {
     Fokusflaeche(Modifier.focusRequester(fokus).focusProperties { canFocus = aktiv }
-            .semantics { contentDescription = beschreibung }, lupe = 1.04f, tun = tun) { hat ->
+            .semantics { contentDescription = beschreibung }, lupe = TvStil.fokusLupeKlein, tun = tun) { hat ->
         Box(Modifier.size(TvPlayermass.knopf).clip(RoundedCornerShape(TvStil.ecke))
                 .background(if (hat) Color.White else Color.Transparent), contentAlignment = Alignment.Center) {
-            // Die Groesse steht im Zeichen selbst (Glyphe bei 19 — tvOS 38 pt, halbiert).
-            Icon(painterResource(symbol), contentDescription = null, tint = if (hat) Stil.grund else Stil.schrift)
+            // tvOS 38 pt Medium, halbiert.
+            Symbol(symbol, 19.dp, farbe = if (hat) Stil.grund else Stil.schrift, staerke = Staerke.Mittel)
         }
     }
 }
@@ -589,15 +602,18 @@ private fun TvAngebotspille(text: String, anteil: Double?, sekunden: Int?, laeuf
     val form = RoundedCornerShape(TvStil.ecke)
     Fokusflaeche(modifier = modifier.semantics(mergeDescendants = true) {
         if (sekunden != null) stateDescription = uebersetzt("Startet in %lld Sekunden", sekunden)
-    }, lupe = 1.08f, tun = tun) { fokus ->
-        Row(Modifier.height(36.dp).shadow(if (fokus) 13.dp else 6.dp, form).clip(form).background(Stil.schrift)
+    }, lupe = TvStil.fokusLupe, tun = tun) { fokus ->
+        // **Keine Schatten** (BRAND 4), auch nicht unter der Ueberspringen-Pille: ein weicher
+        // Schatten wird auf drei Meter zu Schlamm, und es waere die einzige Plattform mit
+        // Schatten. Der Fokus sagt es ueber Groesse und Flaeche.
+        Row(Modifier.height(36.dp).clip(form).background(Stil.schrift)
                 .drawBehind {
                     if (anteil != null) drawRect(Stil.grund.copy(alpha = 0.16f), size = size.copy(width = size.width * fuellung))
                 }
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Icon(painterResource(R.drawable.player_ueberspringen), contentDescription = null, tint = Stil.grund, modifier = Modifier.size(15.dp))
-            Text(text, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold), color = Stil.grund, maxLines = 1)
+            Symbol(Zeichen.Ueberspringen, 15.dp, farbe = Stil.grund, staerke = Staerke.Halbfett)
+            Text(text, style = TvStil.knopf, color = Stil.grund, maxLines = 1)
         }
     }
 }
@@ -624,8 +640,7 @@ private fun TvZeitleiste(position: Double, dauer: Double, marke: Double?, laeuft
         Row(verticalAlignment = Alignment.CenterVertically) {
             AnimatedVisibility(visible = !laeuft, enter = fadeIn(tween(180)) + expandHorizontally(tween(180)),
                                exit = fadeOut(tween(180)) + shrinkHorizontally(tween(180))) {
-                Icon(painterResource(R.drawable.player_pause), contentDescription = null, tint = Stil.schrift,
-                     modifier = Modifier.padding(end = 8.dp).size(10.dp, 12.dp))
+                Symbol(Zeichen.Pause, 12.dp, Modifier.padding(end = 8.dp), farbe = Stil.schrift, staerke = Staerke.Mittel)
             }
             Text(zeitText(position), style = ziffern, color = Stil.schriftLeise)
         }
@@ -641,7 +656,7 @@ private fun TvZeitleiste(position: Double, dauer: Double, marke: Double?, laeuft
                     .clip(CircleShape).background(Color.White.copy(alpha = 0.55f)))
             Box(Modifier.offset(x = breite * ziel - 9.dp).size(18.dp)
                     .graphicsLayer { scaleX = griffSkala; scaleY = griffSkala; alpha = griffDeckung }
-                    .shadow(5.dp, CircleShape).background(Stil.akzent, CircleShape))
+                    .background(Stil.akzent, CircleShape))
             if (spult) {
                 val bild = vorschau(gezeigt)
                 // Unterkante knapp ueber der Leiste, waagerecht ueber dem Griff; am Rand bleibt der Kasten
@@ -661,7 +676,7 @@ private fun TvZeitleiste(position: Double, dauer: Double, marke: Double?, laeuft
                             modifier = Modifier.size(200.dp, 112.5.dp).clip(RoundedCornerShape(TvStil.ecke))
                                 .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(TvStil.ecke)))
                     }
-                    Text(zeitText(gezeigt), style = TextStyle(fontSize = TvPlayermass.vorschauZeit, fontWeight = FontWeight.Bold,
+                    Text(zeitText(gezeigt), style = TextStyle(fontSize = TvPlayermass.vorschauZeit, fontWeight = FontWeight.SemiBold,
                          fontFeatureSettings = "tnum"), color = Stil.schrift)
                 }
             }
@@ -688,7 +703,7 @@ private fun Spaltenreihe(inhalt: @Composable RowScope.() -> Unit) {
 @Composable
 private fun Wahlspalte(titel: String, liste: LazyListState, inhalt: LazyListScope.() -> Unit) {
     Column(Modifier.width(TvPlayermass.spalte).fillMaxHeight()) {
-        Text(titel, style = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold), color = Stil.schrift, maxLines = 1,
+        Text(titel, style = TvStil.unterseitentitel, color = Stil.schrift, maxLines = 1,
              modifier = Modifier.padding(start = 13.dp, bottom = 11.dp).semantics { heading() })
         LazyColumn(Modifier.weight(1f).focusGroup(), state = liste, verticalArrangement = Arrangement.spacedBy(2.dp),
                    contentPadding = PaddingValues(bottom = TvStil.randOben), content = inhalt)
@@ -705,10 +720,10 @@ private fun Ebenenzeile(text: String, gewaehlt: Boolean, modifier: Modifier = Mo
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
             val farbe = if (gewaehlt || fokus) Stil.schrift else Stil.schriftLeise
             Box(Modifier.width(21.dp), contentAlignment = Alignment.Center) {
-                if (gewaehlt) Icon(painterResource(R.drawable.player_haken), contentDescription = null, tint = farbe, modifier = Modifier.size(15.dp))
+                if (gewaehlt) Symbol(Zeichen.Haken, 15.dp, farbe = farbe, staerke = Staerke.Halbfett)
             }
             // Spurnamen kommen aus der Datei — woertlich.
-            Text(text, style = TextStyle(fontSize = 18.sp, fontWeight = if (gewaehlt) FontWeight.SemiBold else FontWeight.Normal),
+            Text(text, style = if (gewaehlt) TvStil.knopf else TvStil.koerper,
                  color = farbe, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -913,7 +928,7 @@ private fun TvFolgenEbene(app: SwiftlyAnwendung, plan: Spielplan, titel: String,
             // Platzhalter: der Titel selbst steht im Player und blendet nicht mit.
             Text(titel, style = TvPlayermass.titel, maxLines = 1, modifier = Modifier.alpha(0f))
             if (staffeln.isNotEmpty()) Box {
-                TvKnopf(staffeln.firstOrNull { it.id == gewaehlt }?.name ?: uebersetzt("Staffel"), Icons.Filled.KeyboardArrowDown,
+                TvKnopf(staffeln.firstOrNull { it.id == gewaehlt }?.name ?: uebersetzt("Staffel"), Zeichen.WinkelRunter,
                         Modifier.focusRequester(pille), hoehe = 30.dp, fokusGeaendert = { pilleFokus[0] = it }) {
                     if (wahl != null) wahlZu() else { wahlAusgang[0] = false; wahl = staffeln }
                 }
@@ -925,13 +940,13 @@ private fun TvFolgenEbene(app: SwiftlyAnwendung, plan: Spielplan, titel: String,
                                 val p = m.measure(c.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity, maxWidth = Constraints.Infinity))
                                 layout(0, 0) { p.place(0, 36.dp.roundToPx()) }
                             }
-                            .width(260.dp).heightIn(max = 330.dp).clip(RoundedCornerShape(10.dp)).background(Stil.erhoeht)
+                            .width(260.dp).heightIn(max = 330.dp).clip(RoundedCornerShape(TvStil.eckeFlaeche)).background(Stil.flaeche)
                             .verticalScroll(rememberScrollState()).padding(vertical = 6.dp)
                             .focusProperties { exit = { if (wahlAusgang[0]) FocusRequester.Default else FocusRequester.Cancel } }
                             .focusGroup()) {
                         val start = eintraege.indexOfFirst { it.id == gewaehlt }.coerceAtLeast(0)
                         eintraege.forEachIndexed { i, s ->
-                            TvZeile(s.name, if (s.id == gewaehlt) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                            TvZeile(s.name, if (s.id == gewaehlt) Zeichen.HakenKreisVoll else Zeichen.Kreis,
                                     modifier = if (i == start) Modifier.focusRequester(erste) else Modifier) { staffelWaehlen(s) }
                         }
                     }

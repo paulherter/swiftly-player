@@ -19,6 +19,11 @@ struct EinstellungenView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            // Derselbe Grund wie jede andere Seite. Er war kurz ein eigener
+            // (`gruppengrund`), weil reines Schwarz unter einer Karte die
+            // ganze Strecke auf einmal war; seit der Grund #101010 ist,
+            // betraegt der Sprung ein Fuenftel davon und braucht keine
+            // Ausnahme mehr.
             Stil.grund.ignoresSafeArea()
             VStack(spacing: 0) {
                 // **Der Titel steht neben dem Pfeil, nicht darunter.**
@@ -91,9 +96,9 @@ struct EinstellungenView: View {
             // **Nicht getippt.** Hier stand „Swiftly 1.0" — eine Zahl, die
             // seit 1.0.1 falsch war und die niemand mitzieht. Der Mac las
             // sie schon aus dem Bündel; das hier war die letzte Kopie.
-            Text(verbatim: Fassung.mitUnterbau)
-                .font(.system(size: 12))
-                .foregroundStyle(Color.white.opacity(0.3))
+            // Der Baustein, nicht die dritte Abschrift: Grad, Farbe und das
+            // Mitwachsen stehen in `Fusszeile`.
+            Fusszeile(Text(verbatim: Fassung.mitUnterbau))
                 .padding(.horizontal, Stil.rand(breit: breit))
                 .padding(.top, 26)
         }
@@ -130,13 +135,13 @@ struct EinstellungenView: View {
                                       else { abschaltblatt = true }
                                   }))
             if model.downloadsAn {
-                Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+                Blattlinie()
                 Wahlzeile(symbol: "wifi",
                           titel: Text("Nur über WLAN"),
                           unter: Text("Downloads warten, bis du im WLAN bist"),
                           an: Binding(get: { model.nurUeberWLAN },
                                       set: { model.nurUeberWLAN = $0 }))
-                Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+                Blattlinie()
                 // **Die Zahl steht in der Zeile, nicht erst dahinter.** Wer
                 // wissen will, wie viel belegt ist, soll dafür nicht tippen
                 // müssen — es ist die einzige Auskunft, um die es hier geht.
@@ -160,7 +165,23 @@ struct EinstellungenView: View {
                           unter: Text("Anfragen, was noch nicht da ist"),
                           wert: model.seerr.verbunden ? String(localized: "Verbunden") : nil)
             }
-            .buttonStyle(.plain)
+            // **`Druckzeile`, nicht `Druckknopf`.** Die Zeile ist randbuendig
+            // und so breit wie die Karte; sie um 0,97 zu schrumpfen loest sie
+            // sichtbar von den Zeilen darueber. Eine Zeile quittiert mit
+            // Flaeche, ein kompaktes Steuerelement mit Maszstab.
+            .buttonStyle(Stil.Druckzeile())
+            // **Nur, wenn der Bau die Zugangsdaten der Trakt-Anwendung
+            // hat** (`TraktZugang`). Ohne sie gaebe es einen Knopf, der
+            // garantiert scheitert.
+            if model.trakt.verfuegbar {
+                Blattlinie()
+                NavigationLink(value: TraktRoute()) {
+                    Wertzeile(symbol: "checkmark.circle", titel: Text(verbatim: "Trakt"),
+                              unter: Text("Trägt ein, was du schaust"),
+                              wert: model.trakt.verbunden ? String(localized: "Verbunden") : nil)
+                }
+                .buttonStyle(Stil.Druckzeile())
+            }
         }
     }
 
@@ -171,32 +192,23 @@ struct EinstellungenView: View {
             Wertzeile(symbol: "externaldrive.connected.to.line.below",
                       titel: Text(verbatim: model.serverName ?? "Server"),
                       wert: model.serverVersion ?? "?")
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
+            Blattlinie()
             Wertzeile(symbol: "wifi", titel: Text("Verbindung prüfen"),
                       unter: pruefung.map { Text(verbatim: $0) },
                       wert: pruefe ? String(localized: "Moment…") : nil,
                       aktion: anstossen)
-        }
-    }
-
-    /// **Bewerten, Discord, Fehler melden — immer da, nie aufdringlich.**
-    ///
-    /// Ganz unten, nach allem, was das Gerät betrifft: wer hier ankommt,
-    /// sucht es. Von selbst kommt die App nur zweimal darauf zu, nach dem
-    /// dritten und dem fünften zu Ende geschauten Titel (`Gemeinschaft`).
-    private var gemeinschaft: some View {
-        Einstellungsgruppe(titel: "Swiftly") {
-            Wertzeile(symbol: "star", titel: Text("Swiftly bewerten"),
-                      unter: Text("Im App Store"),
-                      aktion: { oeffnen(Gemeinschaft.appStoreBewertung) })
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
-            Wertzeile(symbol: "bubble.left.and.bubble.right", titel: Text("Discord beitreten"),
-                      unter: Text("Fragen stellen und sagen, was fehlt"),
-                      aktion: { oeffnen(Gemeinschaft.discord) })
-            Trennlinie().padding(.leading, Stil.trennEinzugKarte(breit: breit))
-            Wertzeile(symbol: "ladybug", titel: Text("Fehler melden"),
-                      unter: Text("Auf GitHub, deine App-Version ist schon eingetragen"),
-                      aktion: { oeffnen(Fassung.fehlerMelden) })
+            Blattlinie()
+            // **Eigene Header, Issue #4.** Nur für Server hinter einem
+            // Dienst wie Cloudflare Access; alle anderen gehen nie hinein.
+            NavigationLink {
+                EigeneKoepfeSeite(model: model)
+            } label: {
+                Wertzeile(symbol: "key", titel: Text("Eigene Header"),
+                          unter: Text("Für einen Dienst vor dem Server"),
+                          wert: model.eigeneKoepfe(fuer: model.session?.serverURL).isEmpty
+                              ? nil : String(model.eigeneKoepfe(fuer: model.session?.serverURL).count))
+            }
+            .buttonStyle(Stil.Druckzeile())
         }
     }
 

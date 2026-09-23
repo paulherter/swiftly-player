@@ -10,22 +10,33 @@ import SwiftUI
 /// Reihen gleich aussehender Kapseln mit verschiedener Bedeutung haben die
 /// Seite zugestellt.
 ///
-/// Jetzt: vorn die Bibliothek als Kapsel (ab zwei), dann die Filter, rechts
-/// die Anzahl und die Sortierung als Kapsel. Beide Kapseln nennen den
-/// aktuellen Wert und klappen die Wahl dort auf, wo sie stehen (E5). Alle
-/// drei Formen in der Reihe sind Kapseln — Entwurf A2.
+/// Jetzt: vorn die Bibliothek als Kapsel (ab zwei), dann Filter und
+/// Sortierung als je eine Kapsel mit Zeichen, rechts die Anzahl — die
+/// Anordnung der iPhone-Pillen (`Wertpille`). Jede Kapsel nennt den
+/// aktuellen Wert und klappt die Wahl dort auf, wo sie steht (E5).
+///
+/// **Keine Filterchips mehr.** Sie standen als Reihe „Alle · Angefangen ·
+/// Ungesehen" da; am iPhone ist es seit je ein Knopf, der den Filter nennt
+/// und ein Blatt oeffnet. Paul am 22.09.: „Das gefällt mir nicht. Wir müssen
+/// das anders machen, wie auf dem Handy."
 ///
 /// **Kein Kopfblock.** Startseite und Detailseiten tragen oben Titel,
 /// Angabenzeile und Beschreibung des Titels, um den es geht. Eine Bibliothek
 /// beschreibt keinen einzelnen Titel, sie zeigt einen Bestand — hier gibt es
-/// nichts, was ein Heldenbild tragen muesste. Stattdessen faerbt der Grund
-/// sich je Bereich, siehe `grundton`.
+/// nichts, was ein Heldenbild tragen muesste. Der Grund bleibt der Grund der
+/// App — siehe `grundton`.
 struct BibliothekView: View {
     let model: AppModel
     /// Entweder über die Gattung („movies", „tvshows") aus der Kopfleiste …
     var art: String?
-    /// … oder als benannte Bibliothek über den Sprungpfad.
+    /// … oder als benannte Bibliothek über den Sprungpfad …
     var bibliothek: Item?
+    /// … oder als Sammlung. **Die Sammlungsseite ist eine Bibliotheksseite**
+    /// — wie am iPhone (`SammlungView`): Name, Filter und Sortierung, Raster.
+    /// Sortiert nach Jahr, und zwar aufsteigend (``Regalquelle/richtung(_:)``),
+    /// damit eine Reihe in ihrer Folge steht. Nichts davon wird gemerkt: eine
+    /// Sammlung ist ein Blick in eine Reihe, kein Ort, an den man zurückkehrt.
+    var sammlung: Item?
     var filter: [Bibliotheksfilter] = Bibliotheksfilter.allCases
 
     /// Blättern, Filtern und Sortieren stehen in `Bibliotheksmodell` —
@@ -34,17 +45,28 @@ struct BibliothekView: View {
     /// Welche Tafel offen ist — hoechstens eine. Dieselbe Kennung sagt beim
     /// Schliessen, auf welche Kapsel der Fokus zurueck muss.
     @State private var offeneTafel: Tafel?
-    /// Welche Bibliothek dieser Gattung gezeigt wird — nur wenn die Ansicht
-    /// ueber die Gattung kam. Kommt sie ueber den Sprungpfad, ist die
+    /// **Was die Kapsel vorn gewaehlt hat — seit dem 23.09.2026 mehr als
+    /// eine Bibliothek:** „Alle", „Sammlungen", dann die Bibliotheken, wie
+    /// das Titelmenue am iPhone. Die Regel steht in ``Bereichsangebot``. Nur
+    /// wenn die Ansicht ueber die Gattung kam; ueber den Sprungpfad ist die
     /// Bibliothek benannt und es gibt nichts zu waehlen.
-    @State private var gewaehlt: Item?
+    @State private var wahl: Bereichswahl = .alle
+    /// Woraus zuletzt geladen wurde — aendert sich die Quelle unter
+    /// derselben Wahl (eine gemischte Bibliothek kommt nach), wird neu geladen.
+    @State private var geladeneQuelle: String?
     @FocusState private var amAusloeser: Tafel?
 
     private enum Tafel: Hashable {
-        case bibliothek, sortierung
+        case bibliothek, filter, sortierung
 
         /// Der Name des Knopfs, an dem die Tafel haengt — siehe `Tafelanker`.
-        var ausloeser: String { self == .bibliothek ? "bibliothek" : "sortierung" }
+        var ausloeser: String {
+            switch self {
+            case .bibliothek: "bibliothek"
+            case .filter:     "filter"
+            case .sortierung: "sortierung"
+            }
+        }
     }
     /// Welche Kachel den Fokus hat, und welche ihn zuletzt hatte — wie
     /// `zuletztAmTitel` in `HomeView`. `amTitel` wird `nil`, sobald eine
@@ -56,12 +78,18 @@ struct BibliothekView: View {
     /// Eine benannte Bibliothek merkt sich ihre eigene Sortierung, eine
     /// Gattung die ihrer Gattung.
     init(model: AppModel, art: String? = nil, bibliothek: Item? = nil,
+         sammlung: Item? = nil,
          filter: [Bibliotheksfilter] = Bibliotheksfilter.allCases) {
         self.model = model
         self.art = art
         self.bibliothek = bibliothek
-        self.filter = filter
-        _stand = State(initialValue: Bibliotheksmodell(merkname: bibliothek?.id ?? art))
+        self.sammlung = sammlung
+        // Bei Serien derselbe Satz wie auf der Serienbibliothek.
+        self.filter = sammlung != nil && art == "tvshows"
+            ? [.alle, .angefangen, .merkliste] : filter
+        let stand = Bibliotheksmodell(merkname: sammlung == nil ? (bibliothek?.id ?? art) : nil)
+        if sammlung != nil { stand.sortierung = .erscheinung }
+        _stand = State(initialValue: stand)
     }
     @Environment(\.tafelOffen) private var tafelOffen
 
@@ -72,7 +100,7 @@ struct BibliothekView: View {
 
     var body: some View {
         ZStack {
-            if stand.laedt {
+            if stand.laedt, wahl != .sammlungen {
                 // Kein Ladering: das Raster steht schon in seiner Form und
                 // wird ueberblendet, sobald die Titel da sind.
                 Rasterplatzhalter()
@@ -83,9 +111,19 @@ struct BibliothekView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 30) {
+                        if let sammlung {
+                            // Der Name kommt vom Server und wird nicht
+                            // übersetzt — wie der Titel der Genreseite.
+                            Reihentitel(name: sammlung.name)
+                                .padding(.horizontal, Stil.randSeite)
+                        }
                         chipreihe
 
-                        if stand.items.isEmpty {
+                        if wahl == .sammlungen {
+                            // Die Liste steht schon im Speicher: „Sammlungen"
+                            // gibt es in der Tafel nur, wenn es welche gibt.
+                            sammlungsgitter
+                        } else if stand.items.isEmpty {
                             leer
                         } else {
                             gitter
@@ -102,7 +140,12 @@ struct BibliothekView: View {
                     // hohen Elementen richtet ein gemeinsamer Anfang nichts
                     // aus — die Chips endeten 26 Punkt hoeher als der Titel
                     // der Startseite.
-                    .padding(.top, bibliothek == nil
+                    //
+                    // Die Sammlungsseite traegt ihren Namen darueber und
+                    // beginnt deshalb wie die Genreseite.
+                    .padding(.top, sammlung != nil
+                             ? Stil.kopfversatzDetail + 40 - Stil.randOben
+                             : bibliothek == nil
                              ? Stil.erstesEnde - Stil.chipHoehe - Stil.randOben
                              : Stil.randOben)
                     .padding(.bottom, 60)
@@ -125,7 +168,17 @@ struct BibliothekView: View {
         }
         // Eine andere Liste — der gemerkte Titel gehört nicht mehr dazu.
         .onChange(of: stand.kennung) { zuletztAmTitel = nil }
-        .onChange(of: gewaehlt?.id) { zuletztAmTitel = nil }
+        .onChange(of: wahl) { zuletztAmTitel = nil }
+        // **Sammlungen und gemischte Bibliotheken kommen nach** (aus
+        // `angebotLaden()`). Aendert sich damit, was „Alle" liest oder was
+        // gewaehlt sein darf, wird neu geladen — wie am iPhone.
+        .onChange(of: angebotskennung) { _, _ in
+            guard ueberGattung else { return }
+            let neu = model.bereichswahl(art: art ?? "")
+            guard neu != wahl || quelle?.schluessel != geladeneQuelle else { return }
+            wahl = neu
+            Task { await laden() }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(grundton.ignoresSafeArea())
         // Seitlicher Rand: siehe `HomeView` — der Systemrand faellt weg,
@@ -144,9 +197,10 @@ struct BibliothekView: View {
         // 160…779 und 76 Punkt zu tief; die Sortiertafel endete bei 1760,
         // ihr Knopf bei 1842. Beides genau um den sicheren Rand daneben.
         .tafel(unter: offeneTafel?.ausloeser) {
-            Handlungstafel(handlungen: offeneTafel == .sortierung
-                                       ? sortierhandlungen : bibliothekshandlungen,
-                           offen: tafelBindung)
+            Handlungstafel(handlungen: tafelinhalt.handlungen,
+                           offen: tafelBindung,
+                           gewaehlt: tafelinhalt.gewaehlt,
+                           rubrik: tafelrubrik)
                 .transition(.opacity)
         }
         .animation(.easeInOut(duration: 0.18), value: offeneTafel)
@@ -171,63 +225,45 @@ struct BibliothekView: View {
         .task(id: "\(stand.kennung)|\(model.kontowechsel)") { await laden() }
     }
 
-    /// **Je Bereich ein eigener Grundton.**
+    /// **Ein Grund fuer alle Bestandsseiten, und zwar unserer.**
     ///
-    /// Ein fester Verlauf aus der rechten oberen Ecke ins Dunkle — nicht aus
-    /// einem Bild abgeleitet wie auf den Detailseiten: die Bibliothek hat
-    /// keinen Titel, den sie beschreibt, also gibt es nichts abzuleiten.
+    /// Hier stand ein Netzverlauf je Bereich: Serien im Akzent (171 Grad),
+    /// Filme in der Komplementaeren (351 Grad), damit man am Grund sieht, wo
+    /// man ist, bevor man die Leiste liest. Das war aus der Zeit, in der die
+    /// Palette noch getoent war.
     ///
-    /// Serien tragen den Akzent (Farbton 171 Grad), Filme die Komplementaere
-    /// (351 Grad) — gegenueberliegend auf dem Farbkreis, gleiche Saettigung
-    /// und Helligkeit. Man sieht am Grund, wo man ist, bevor man die Leiste
-    /// liest.
+    /// Zwei Gruende, es fallen zu lassen. Die Leiste oben sagt ohnehin, wo
+    /// man ist, und sie sagt es in Worten. Und die Merkliste — dieselbe Art
+    /// Seite, derselbe Aufbau, dasselbe Gitter — hatte nie einen Verlauf;
+    /// nebeneinander sahen drei Bestandsseiten nach drei verschiedenen Apps
+    /// aus. Paul am 23.09.: „einfach nur unser Grau, so wie bei Watchlist.
+    /// Das ist konsistent."
     ///
-    /// E2 ist nicht beruehrt: das ist Grund, kein Bedienelement — dieselbe
-    /// Begruendung wie beim gefaerbten Grund der Detailseiten.
+    /// Die Farbe bleibt dort, wo sie etwas aussagt: am gewaehlten Filter, am
+    /// Fortschritt, am Beleg. Nicht unter allem.
     private var grundton: some View {
-        let ton: Double = art == "movies" ? 351 : 171
-
-        // **Ein Netz, kein radialer Verlauf.**
-        //
-        // Radial gestapelt hat es gebandet, und aus demselben Grund wie auf
-        // den Detailseiten: ein Verlauf von einer Farbe nach durchsichtig
-        // bewegt sich in RGB fast auf einer Geraden, die Stufengrenzen der
-        // drei Kanaele fallen zusammen und bilden durchgehende Baender.
-        //
-        // `MeshGradient` interpoliert ueber eine Flaeche statt entlang einer
-        // Linie — keine Stopps, an denen etwas knicken kann. 25 Stuetzpunkte,
-        // damit die Farbe nicht in Inseln zerfaellt. Dazu dasselbe Rauschen
-        // wie dort, gegen die Quantisierung der Flaeche selbst.
-        //
-        // Der Gipfel sitzt rechts bei 28 Prozent Hoehe, also knapp **unter**
-        // dem Kopfverlauf der Leiste. Lag er in der Ecke, deckte der ihn zu
-        // und es blieb eine Kante.
-        let seite = 5
-        var punkte: [SIMD2<Float>] = []
-        for zeile in 0 ..< seite {
-            for spalte in 0 ..< seite {
-                punkte.append([Float(spalte) / Float(seite - 1),
-                               Float(zeile) / Float(seite - 1)])
-            }
-        }
-        return ZStack {
-            MeshGradient(width: seite, height: seite, points: punkte,
-                         colors: punkte.map { netzfarbe($0, ton: ton) })
-            Bildton.rauschen
-                .resizable(resizingMode: .tile)
-                .opacity(0.008)
-        }
-        .ignoresSafeArea()
+        Stil.grund.ignoresSafeArea()
     }
 
-    /// Nah am Gipfel farbig, weit weg der Grundton — dieselbe Rechnung wie
-    /// bei `Bildgrund`, nur mit festem Farbton statt einem aus dem Bild.
-    private func netzfarbe(_ punkt: SIMD2<Float>, ton: Double) -> Color {
-        let dx = Double(0.97 - punkt.x), dy = Double(0.28 - punkt.y)
-        let naehe = 1 - min(1, (dx * dx + dy * dy).squareRoot() / 1.2)
-        return Color(hue: ton / 360,
-                     saturation: 0.30 + 0.16 * naehe,
-                     brightness: 0.050 + 0.055 * pow(naehe, 1.6))
+    /// Was die offene Tafel zeigt, und welche Zeile davon gilt.
+    private var tafelinhalt: (handlungen: [Titelhandlung], gewaehlt: Int?) {
+        switch offeneTafel {
+        case .filter:
+            (filterhandlungen, filter.firstIndex(of: stand.filter))
+        case .sortierung:
+            (sortierhandlungen, Sortierung.allCases.firstIndex(of: stand.sortierung))
+        case .bibliothek, nil:
+            (bibliothekshandlungen, angebot.eintraege.firstIndex(of: wahl))
+        }
+    }
+
+    /// Die Filter als Tafel — dieselben Zeichen wie Sortierung und
+    /// Bibliothekswahl daneben, dieselben Eintraege wie am iPhone.
+    private var filterhandlungen: [Titelhandlung] {
+        filter.map { f in
+            Titelhandlung(symbol: stand.filter == f ? "checkmark.circle.fill" : "circle",
+                          text: "\(f.beschriftung)") { stand.filter = f }
+        }
     }
 
     /// Die Sortierungen als Handlungstafel — kein zweiter Chipsatz.
@@ -238,18 +274,27 @@ struct BibliothekView: View {
         }
     }
 
-    /// Die Bibliotheken dieser Gattung als Tafel. Die Namen kommen vom Server
-    /// und stehen **wörtlich** — siehe `Titelhandlung.wortlaut`.
+    /// Das Titelmenue als Tafel: Alle · Sammlungen · Strich · Bibliotheken.
+    /// Die Namen der Bibliotheken kommen vom Server und stehen **wörtlich** —
+    /// siehe `Titelhandlung.wortlaut`.
     private var bibliothekshandlungen: [Titelhandlung] {
-        auswahl.map { bib in
-            Titelhandlung(symbol: bib.id == gewaehlt?.id ? "checkmark.circle.fill" : "circle",
-                          wortlaut: bib.name) {
-                guard bib.id != gewaehlt?.id else { return }
-                model.bibliothekWaehlen(bib, art: art ?? "")
-                gewaehlt = bib
+        angebot.eintraege.map { eintrag in
+            Titelhandlung(symbol: eintrag == wahl ? "checkmark.circle.fill" : "circle",
+                          wortlaut: beschriftung(eintrag)) {
+                guard eintrag != wahl else { return }
+                model.bereichWaehlen(eintrag, art: art ?? "")
+                wahl = eintrag
                 Task { await laden() }
             }
         }
+    }
+
+    /// Wo in der Tafel die Rubrik „Bibliotheken" steht.
+    private func tafelrubrik(_ zeile: Int) -> LocalizedStringKey? {
+        guard offeneTafel == .bibliothek,
+              angebot.eintraege.indices.contains(zeile),
+              angebot.eintraege[zeile] == angebot.ersteBibliothek else { return nil }
+        return "Bibliotheken"
     }
 
     /// `Handlungstafel` kennt nur offen oder zu; zu heisst hier: keine Tafel.
@@ -269,45 +314,77 @@ struct BibliothekView: View {
             // Bedeutung sahen gleich aus. Jetzt nennt die Kapsel die gewaehlte
             // und klappt die uebrigen als Tafel auf — wie die Sortierung.
             // Entwurf: `Gestaltung/Bibliothekswahl-tvOS`, Variante A2.
-            if auswahl.count > 1 {
+            //
+            // **Seit dem 23.09.2026 das Titelmenue des iPhones:** Alle,
+            // Sammlungen, Strich, Bibliotheken. Die Kapsel nennt den Wert —
+            // „Alle Filme", nicht wie am iPhone nur „Filme": dort ist es der
+            // Seitentitel, hier sagt die Kopfleiste schon, wo man ist, und
+            // die Kapsel ist eine Wahl neben Filter und Sortierung.
+            if ueberGattung, angebot.istMenue {
                 Button { offeneTafel = .bibliothek } label: {
-                    Text(verbatim: gewaehlt?.name ?? "")
+                    Text(verbatim: beschriftung(wahl))
                 }
                 .buttonStyle(KapselStil())
                 .focused($amAusloeser, equals: .bibliothek)
                 .tafelausloeser(Tafel.bibliothek.ausloeser)
-                .accessibilityLabel(Text("Bibliothek, \(gewaehlt?.name ?? "")"))
+                .accessibilityLabel(Text("Bibliothek, \(beschriftung(wahl))"))
 
                 // Senkrechter Strich statt Abstand: Wahl und Filter
-                // nebeneinander sehen sonst aus wie eine Reihe.
-                Rectangle()
-                    .fill(Stil.rand)
-                    .frame(width: 2, height: Stil.chipHoehe * 0.6)
+                // nebeneinander sehen sonst aus wie eine Reihe. Ohne Filter
+                // („Sammlungen") trennt er nichts und faellt weg.
+                if wahl != .sammlungen {
+                    Rectangle()
+                        .fill(Stil.rand)
+                        .frame(width: 2, height: Stil.chipHoehe * 0.6)
+                }
             }
 
-            ForEach(filter) { f in
-                Button(f.beschriftung) { stand.filter = f }
-                    .buttonStyle(ChipStil(an: stand.filter == f))
+            // **Filter und Sortierung nebeneinander, mit Zeichen — wie die
+            // zwei `Wertpille`n am iPhone**, dieselben Zeichen in derselben
+            // Reihenfolge. Die Sortierung stand rechts aussen neben der
+            // Anzahl; am iPhone steht rechts nur die Anzahl.
+            // **Bei „Sammlungen" nur die Anzahl** — die Liste muss man weder
+            // filtern noch umsortieren (`Regalsteuerung.nurAnzahl` am iPhone).
+            // Die Reihe behaelt ihre Hoehe, siehe unten.
+            if wahl != .sammlungen {
+                Button { offeneTafel = .filter } label: {
+                    Text(verbatim: stand.filter.beschriftung)
+                }
+                .buttonStyle(KapselStil(symbol: "line.3.horizontal.decrease"))
+                .focused($amAusloeser, equals: .filter)
+                .tafelausloeser(Tafel.filter.ausloeser)
+                .accessibilityLabel(Text("Filter, \(stand.filter.beschriftung)"))
+
+                Button { offeneTafel = .sortierung } label: {
+                    Text(verbatim: stand.sortierung.beschriftung)
+                }
+                .buttonStyle(KapselStil(symbol: "arrow.up.arrow.down"))
+                .focused($amAusloeser, equals: .sortierung)
+                .tafelausloeser(Tafel.sortierung.ausloeser)
+                .accessibilityLabel(Text("Sortierung, \(stand.sortierung.beschriftung)"))
             }
 
             Spacer(minLength: 40)
 
             // Die Anzahl stand bisher nirgends — sie ist die einzige Auskunft,
             // die eine Bibliothek ueber sich selbst geben kann.
-            if stand.gesamt > 0 {
-                Text("\(stand.gesamt) · sortiert nach")
+            if wahl == .sammlungen {
+                if !sammlungsliste.isEmpty {
+                    Text("\(sammlungsliste.count) Sammlungen")
+                        .font(Stil.klein)
+                        .foregroundStyle(Stil.schriftSehrLeise)
+                }
+            } else if stand.gesamt > 0 {
+                Text("\(stand.gesamt) Titel")
                     .font(Stil.klein)
                     .foregroundStyle(Stil.schriftSehrLeise)
             }
-
-            Button { offeneTafel = .sortierung } label: {
-                Text(stand.sortierung.beschriftung)
-            }
-            .buttonStyle(KapselStil())
-            .focused($amAusloeser, equals: .sortierung)
-            .tafelausloeser(Tafel.sortierung.ausloeser)
-            .accessibilityLabel(Text("Sortierung, \(stand.sortierung.beschriftung)"))
         }
+        // **Dieselbe Hoehe mit und ohne Kapseln.** Bei „Sammlungen" fehlen
+        // Filter und Sortierung; ohne feste Hoehe rutschte die Reihe beim
+        // Wechsel nach oben und das Raster sprang mit — derselbe Fehler, den
+        // `Regalsteuerung` am iPhone mit `minHeight` abfaengt.
+        .frame(height: Stil.chipHoehe)
         .focusSection()
         .padding(.horizontal, Stil.randSeite)
     }
@@ -335,7 +412,7 @@ struct BibliothekView: View {
                 .onAppear {
                     guard stand.loestNachladenAus(item.id, spalten: Stil.gitterSpalten)
                     else { return }
-                    Task { await stand.nachladen(model, art: art, bibliothek: bibliothek ?? gewaehlt) }
+                    Task { await nachladen() }
                 }
             }
         }
@@ -344,33 +421,207 @@ struct BibliothekView: View {
         .scrollClipDisabled()
     }
 
+    /// **Gestoert ist nicht leer.**
+    ///
+    /// `Bibliotheksmodell.gestoert` steht seit der iPhone-Fassung im Modell
+    /// und wurde hier nicht gelesen: antwortete der Server nicht, stand
+    /// „Hier ist noch nichts" — eine Behauptung ueber den Serverinhalt, die
+    /// niemand geprueft hat. Die eigene Startseite macht es nebenan richtig
+    /// (`HomeView`), dieselbe Formel steht jetzt auch hier: die
+    /// Serveradresse und die Frage, die weiterhilft.
+    @ViewBuilder
     private var leer: some View {
-        Leerzustand(
-            symbol: stand.filter == .alle ? "tray" : "line.3.horizontal.decrease",
-            titel: stand.filter == .alle ? "Hier ist noch nichts" : "Nichts gefunden",
-            hinweis: stand.filter == .alle
-                ? "Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."
-                : "Unter diesem Filter liegt gerade nichts.",
-            knopf: stand.filter == .alle
-                ? ("Aktualisieren", { Task { await laden() } })
-                : ("Filter zurücksetzen", { stand.filter = .alle }))
-        .frame(height: 500)
+        if stand.gestoert {
+            Leerzustand(
+                symbol: "externaldrive.badge.xmark",
+                titel: "Server ist abgetaucht",
+                hinweis: "\(model.serverAdresse ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                knopf: ("Erneut versuchen", { Task { await laden() } }))
+            .frame(height: 500)
+        } else {
+            Leerzustand(
+                symbol: stand.filter == .alle ? "tray" : "line.3.horizontal.decrease",
+                titel: stand.filter == .alle ? "Hier ist noch nichts" : "Nichts gefunden",
+                hinweis: stand.filter != .alle
+                    ? "Unter diesem Filter liegt gerade nichts."
+                    : sammlung != nil
+                    ? "Sobald in dieser Sammlung etwas liegt, taucht es hier auf."
+                    : "Sobald in dieser Bibliothek etwas liegt, taucht es hier auf.",
+                knopf: stand.filter == .alle
+                    ? ("Aktualisieren", { Task { await laden() } })
+                    : ("Filter zurücksetzen", { stand.filter = .alle }))
+            .frame(height: 500)
+        }
+    }
+
+    // MARK: Sammlungen
+
+    /// **Sammlungen im selben Raster, mit derselben Kachel.** Unter dem Namen
+    /// steht, wie viele Filme bzw. Serien darin sind — wie am iPhone. Ohne
+    /// eigenes Bild traegt die Kachel ein Mosaik aus den ersten Plakaten
+    /// (`Sammlungsmosaik`).
+    private var sammlungsgitter: some View {
+        LazyVGrid(columns: spalten, alignment: .leading, spacing: Stil.gitterZeile) {
+            ForEach(sammlungsliste) { eintrag in
+                NavigationLink(value: SammlungRoute(sammlung: eintrag.item, art: art)) {
+                    Kachelinhalt(bild: model.imageURL(for: eintrag.item, maxHeight: 600,
+                                                      hochkant: true),
+                                 titel: eintrag.item.name,
+                                 unterzeile: anzahltext(eintrag.anzahl(art: art ?? "")),
+                                 ersatz: eintrag.item.imageTags?["Primary"] == nil
+                                     ? AnyView(Sammlungsmosaik(model: model, sammlung: eintrag,
+                                                               art: art ?? ""))
+                                     : nil)
+                }
+                .buttonStyle(KachelStil())
+                .focused($amTitel, equals: eintrag.id)
+            }
+        }
+        .padding(.horizontal, Stil.randSeite)
+        .scrollClipDisabled()
+    }
+
+    private var sammlungsliste: [Sammlung] {
+        model.sammlungsverzeichnis?.sammlungen(art: art ?? "") ?? []
+    }
+
+    private func anzahltext(_ n: Int) -> String {
+        art == "tvshows" ? String(localized: "\(n) Serien") : String(localized: "\(n) Filme")
+    }
+
+    private func beschriftung(_ w: Bereichswahl) -> String {
+        switch w {
+        case .alle:
+            art == "tvshows" ? String(localized: "Alle Serien") : String(localized: "Alle Filme")
+        case .sammlungen:
+            String(localized: "Sammlungen")
+        case .bibliothek(let id):
+            angebot.bibliothek(id)?.name ?? ""
+        }
     }
 
     // MARK: Laden
 
-    private func laden() async {
-        if bibliothek == nil, model.views.isEmpty { await model.loadViews() }
-        if let art, bibliothek == nil, gewaehlt == nil {
-            gewaehlt = model.gewaehlteBibliothek(art: art)
-        }
-        await stand.laden(model, art: art, bibliothek: bibliothek ?? gewaehlt)
+    /// Nur ueber die Gattung gibt es etwas zu waehlen.
+    private var ueberGattung: Bool { bibliothek == nil && sammlung == nil && art != nil }
+
+    /// Was die Kapsel zur Wahl anbietet. Ab zwei Eintraegen steht sie da.
+    private var angebot: Bereichsangebot { model.bereichsangebot(art: art ?? "") }
+
+    /// Aendert sich das, wird die Wahl neu geprueft — ueber die Kennungen,
+    /// nicht ueber die Anzahl (siehe `BibliothekView` am iPhone).
+    private var angebotskennung: String {
+        angebot.eintraege.map(\.merkwert).joined(separator: ",") + "|"
+            + angebot.alleQuellen.joined(separator: "+")
     }
 
-    /// Alle Bibliotheken dieser Gattung. Ab zwei kommt die Wahl in die
-    /// Chipreihe.
-    private var auswahl: [Item] {
-        guard bibliothek == nil, let art else { return [] }
-        return model.bibliotheken(art: art)
+    /// Woraus das Raster liest. `nil`: in diesem Bereich gibt es nichts.
+    private var quelle: Regalquelle? {
+        if let sammlung { return Regalquelle(eltern: sammlung.id, art: art, sammlung: true) }
+        if let bibliothek {
+            return Regalquelle(eltern: bibliothek.id, art: art ?? bibliothek.collectionType)
+        }
+        guard let art else { return nil }
+        switch wahl {
+        case .alle:
+            // Aus einer Bibliothek wie vor dem Umbau; aus mehreren gesiebt,
+            // je Titel einmal (``Titelsieb``).
+            return angebot.hatBestand
+                ? Regalquelle(eltern: angebot.alleAus, art: art,
+                              nurAus: angebot.alleAus == nil ? angebot.alleQuellen : [])
+                : nil
+        case .bibliothek(let id):
+            return Regalquelle(eltern: id, art: art)
+        case .sammlungen:
+            return nil
+        }
+    }
+
+    private func laden() async {
+        if bibliothek == nil, model.views.isEmpty { await model.loadViews() }
+        if ueberGattung {
+            // Sammlungen und gemischte Bibliotheken kommen nebenher: die
+            // Seite wartet nicht auf sie. Treffen sie ein, meldet
+            // `angebotskennung` es, und die Wahl wird neu geprueft.
+            Task { await model.angebotLaden() }
+            // **Die gemerkte Wahl gehoert einem Konto.** Bei jedem Laden gegen
+            // das Angebot des angemeldeten Kontos geprueft; eine Bibliothek
+            // des vorigen Kontos gibt es darin nicht, und die Seite faellt
+            // auf „Alle" zurueck, statt eine fremde Kennung abzufragen.
+            wahl = model.bereichswahl(art: art ?? "")
+            guard wahl != .sammlungen else { return }
+        }
+        geladeneQuelle = quelle?.schluessel
+        await stand.laden(model, aus: quelle)
+    }
+
+    private func nachladen() async {
+        guard let quelle else { return }
+        await stand.nachladen(model, aus: quelle)
+    }
+}
+
+// MARK: - Sammlungen
+
+/// Eine Sammlung, geöffnet aus einem Bereich — `art` sagt, ob ihre Filme
+/// oder ihre Serien gemeint sind. `nil`: alles, was in ihr steht. Derselbe
+/// Weg wie am iPhone (`Sammlungsseite.swift`, dort nicht im Fernsehziel).
+struct SammlungRoute: Hashable {
+    let sammlung: Item
+    let art: String?
+}
+
+/// **Ersatzplakat einer Sammlung ohne eigenes Bild** — ein Mosaik aus den
+/// Plakaten ihrer ersten Titel, im selben 2:3-Format und mit denselben Ecken
+/// wie jedes andere Plakat. Dieselbe Regel wie am iPhone: ein Titel füllt das
+/// Feld, zwei stehen nebeneinander, ab drei wird daraus ein 2×2-Mosaik.
+///
+/// Die Fugen sind doppelt so breit wie am iPhone (2 → 4), wie jedes Mass auf
+/// dem Fernseher; die Plakate kommen in halber Kachelgroesse.
+struct Sammlungsmosaik: View {
+    let model: AppModel
+    let sammlung: Sammlung
+    let art: String
+
+    @State private var titel: [Item] = []
+
+    private static let fuge: CGFloat = 4
+
+    private var reihen: [[Item]] {
+        titel.isEmpty ? [] : (titel.count > 2 ? [Array(titel.prefix(2)), Array(titel[2...].prefix(2))]
+                                               : [titel])
+    }
+
+    var body: some View {
+        GeometryReader { rahmen in
+            let platz = reihen.isEmpty ? [[]] : reihen
+            let hoehe = (rahmen.size.height - CGFloat(platz.count - 1) * Self.fuge)
+                / CGFloat(platz.count)
+            VStack(spacing: Self.fuge) {
+                ForEach(Array(platz.enumerated()), id: \.offset) { _, stapel in
+                    zeile(stapel, breite: rahmen.size.width, hoehe: hoehe)
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Stil.eckeKachel, style: .continuous))
+        .task(id: sammlung.id) {
+            let gefunden = await model.sammlungstitel(sammlung, art: art)
+            withAnimation(Stil.einblenden) { titel = Array((gefunden ?? []).prefix(4)) }
+        }
+    }
+
+    private func zeile(_ stapel: [Item], breite: CGFloat, hoehe: CGFloat) -> some View {
+        let feldbreite = stapel.isEmpty ? breite
+            : (breite - CGFloat(stapel.count - 1) * Self.fuge) / CGFloat(stapel.count)
+        return HStack(spacing: Self.fuge) {
+            if stapel.isEmpty {
+                Bild(url: nil, breite: feldbreite, hoehe: hoehe, ecke: 0)
+            } else {
+                ForEach(stapel) { eintrag in
+                    Bild(url: model.imageURL(for: eintrag, maxHeight: 300, hochkant: true),
+                         breite: feldbreite, hoehe: hoehe, ecke: 0)
+                }
+            }
+        }
     }
 }

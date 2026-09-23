@@ -112,18 +112,27 @@ struct Ladeblatt: View {
                 .foregroundStyle(warnend ? Stil.warnung : Stil.schriftLeise)
                 .frame(width: 20)
             Text(was)
-                .font(.system(size: 16))
+                // **Mitwachsend, nicht fest** — BRAND.md, Abschnitt 2. Der Wert
+                // rechts bleibt fest: er läuft tabellarisch und steht mit den
+                // anderen Zeilen in einer Spalte.
+                .mitwachsend(15)
                 .foregroundStyle(warnend ? Stil.warnung : Stil.schrift)
             Spacer(minLength: 12)
             Text(verbatim: wert)
-                .font(.system(size: 16))
+                .font(.system(size: 15))
                 .monospacedDigit()
                 .foregroundStyle(Stil.schrift)
         }
         .padding(.vertical, 13)
         .padding(.horizontal, Stil.randAbstand)
+        // **52 wie jede Zeile in einem Blatt.** Sie hatte als einzige gar
+        // kein Mass und stand allein auf ihrem Innenabstand — gut 44 Punkt,
+        // also acht flacher als die Zeilen im Blatt nebenan. `minHeight`,
+        // damit sie mit groesserer Systemschrift wachsen darf.
+        .frame(minHeight: 52)
         .overlay(alignment: .top) {
-            Trennlinie().padding(.leading, Stil.randAbstand)
+            // Blatt, also durchgehend — siehe `Blattlinie`.
+            Blattlinie()
         }
     }
 
@@ -138,7 +147,7 @@ struct Ladeblatt: View {
 
     private func hinweis(_ text: LocalizedStringKey) -> some View {
         Text(text)
-            .font(.system(size: 13))
+            .mitwachsend(13)
             .foregroundStyle(Stil.schriftLeise)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)

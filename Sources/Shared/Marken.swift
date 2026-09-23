@@ -24,7 +24,10 @@ enum Marke {
     /// Die Farben der Vorlage. Bewusst eigene Werte und nicht `Stil.akzent`:
     /// die Marke ist gesetzt, das Erscheinungsbild der App darf sich davon
     /// unabhängig bewegen.
-    static let markeAkzent = Color(red: 0.184, green: 0.859, blue: 0.753)   // #2FDBC0
+    /// **Derselbe Ton wie `Stil.akzent` (21.09.2026).** Vorher stand hier ein
+    /// eigener Wert, und die App hatte zwei Tuerkis: die Marke #2FDBC0, die
+    /// Oberflaeche #5CD1C2. Wer den Akzent aendert, aendert die Marke mit.
+    static let markeAkzent = Color(red: 0.314, green: 0.835, blue: 0.855)   // #50D5DA
     static let markeFlaeche = Color(red: 0.090, green: 0.094, blue: 0.106)  // #17181B
 
     /// Die Buchstaben „swiftly“.

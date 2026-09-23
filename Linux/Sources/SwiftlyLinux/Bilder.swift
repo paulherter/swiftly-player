@@ -69,7 +69,7 @@ actor Bildlager {
             await einlass()
             defer { Task { await einlassZurueck() } }
             do {
-                let (daten, antwort) = try await URLSession.shared.data(from: url)
+                let (daten, antwort) = try await URLSession.shared.data(for: .mitEigenenKoepfen(url))
                 guard let http = antwort as? HTTPURLResponse,
                       (200..<300).contains(http.statusCode) else { return nil }
                 return daten

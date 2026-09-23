@@ -81,12 +81,18 @@ struct RootView: View {
             #if os(iOS)
             if !gestartet {
                 Startvorhang {
-                    withAnimation(.easeOut(duration: 0.45)) { gestartet = true }
+                    // 0,28 aus `Stil.einblenden` statt eigener 0,45: der
+                    // Vorhang geht auf wie jeder andere Inhalt, der da ist —
+                    // eine Dauer, nicht zwei. Vorher `.easeOut(0,45)`.
+                    withAnimation(Stil.einblenden) { gestartet = true }
                 }
             }
             #endif
         }
-        .animation(.default, value: model.phase)
+        // Verbinden → Anmelden → Hauptansicht ist ein Bereichswechsel und
+        // kein Systemstandard. `.default` war die letzte Bewegung der App
+        // ohne Token; jetzt dieselbe Kennlinie wie jeder Reiterwechsel.
+        .animation(Stil.bereichswechsel, value: model.phase)
         // Deckel für die Schriftgröße.
         //
         // Die Gestaltung steht auf festen Punktmaßen — Kacheln 112 × 168,
@@ -118,6 +124,8 @@ struct RootView: View {
 struct ConnectView: View {
     let model: AppModel
     @State private var adresse = ""
+    /// „Erweitert" — eigene Header für einen Dienst vor dem Server.
+    @State private var koepfe: [Kopfzeile] = []
 
     var body: some View {
         ScrollView {
@@ -142,6 +150,9 @@ struct ConnectView: View {
                     .padding(.top, 9)
                     .padding(.leading, 2)
 
+                Erweitertbereich(zeilen: $koepfe)
+                    .padding(.top, 6)
+
                 // **Der Knopf bleibt stehen und sagt, was laeuft.** Hier
                 // wechselte er gegen einen Ring — die Seite sprang, und
                 // wohin man gedrueckt hatte, war weg.
@@ -157,9 +168,12 @@ struct ConnectView: View {
                 if let fehler = model.errorMessage {
                     // Der Fehler steht unter dem Feld, das ihn ausgelöst hat,
                     // nicht am Seitenende.
+                    // **`fehler`, nicht `warnung`.** Eine abgelehnte
+                    // Anmeldung ist schiefgegangen, sie wartet nicht auf
+                    // jemanden — und beides trug dieselbe Farbe.
                     Text(fehler)
                         .font(Stil.klein)
-                        .foregroundStyle(Stil.warnung)
+                        .foregroundStyle(Stil.fehler)
                         .multilineTextAlignment(.center)
                         .padding(.top, 14)
                 }
@@ -192,21 +206,29 @@ struct ConnectView: View {
                     Circle().fill(Stil.akzent).frame(width: 7, height: 7)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(letzte.name)
-                            .font(.system(size: 15))
+                            // Listenzeile aus der Leiter — vorher 15 als Zahl.
+                            .font(Stil.listentitel)
                             .foregroundStyle(Stil.schrift)
                         Text("\(letzte.adresse) · Jellyfin \(letzte.version)")
-                            .font(.system(size: 12))
+                            // Die Angabe der Leiter, 12 Regular. Vorher 12 als
+                            // Zahl an der Aufrufstelle.
+                            .font(Stil.klein)
                             .foregroundStyle(Stil.schriftSehrLeise)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.28))
+                        // 13 Semibold: der Winkel rechts in einer Zeile, wie
+                        // in `Wertzeile` und `Profilzeile`. 12 war die zweite
+                        // Zahl fuer dasselbe Zeichen.
+                        .font(.system(size: 13, weight: .semibold))
+                        // Weiss 28 Prozent sind 2,50:1 - fuer ein Bedienzeichen
+                        // liegt die Grenze bei 3:1.
+                        .foregroundStyle(Stil.schriftSehrLeise)
                 }
                 .padding(.vertical, 14)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(Stil.Druckzeile())
             Trennlinie()
         }
         .padding(.top, 36)
@@ -214,7 +236,7 @@ struct ConnectView: View {
 
     private func verbinden() {
         guard !adresse.isEmpty else { return }
-        Task { await model.connect(to: adresse) }
+        Task { await model.connect(to: adresse, koepfe: koepfe.koepfe) }
     }
 }
 
@@ -233,7 +255,11 @@ struct LoginView: View {
     /// Konto. Dann gibt es keinen Weg zu einem anderen Server — und das Blatt
     /// muss sich selbst schliessen koennen.
     var weiteresKonto = false
+    /// Wird beim Hinzufuegen nicht mehr gebraucht — die Seite geht selbst
+    /// zurueck. Bleibt fuer die Anmeldung an der Wurzel, die kein Zurueck hat.
     var fertig: () -> Void = {}
+
+    @Environment(\.dismiss) private var schliessen
 
     @State private var benutzer = ""
     @State private var passwort = ""
@@ -256,18 +282,35 @@ struct LoginView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
-        .safeAreaInset(edge: .bottom) {
-            // Beim Hinzufuegen fuehrt „Anderer Server" ins Leere: `signOut()`
-            // wuerde das gerade angemeldete Konto abmelden. Dort steht
-            // stattdessen der Rueckweg.
-            Button(weiteresKonto ? "Abbrechen" : "Anderer Server") {
-                if weiteresKonto { fertig() } else { model.signOut() }
+        // **Beim Hinzufuegen traegt die Leiste oben den Rueckweg.**
+        //
+        // Unten stand „Abbrechen" — das brauchte es, solange die Ansicht als
+        // Blatt kam. Als geschobene Seite hat sie oben denselben Rueckweg wie
+        // jede andere Unterseite, und zwei Wege zurueck sind einer zu viel.
+        // An der Wurzel bleibt die Zeile: dort gibt es kein Zurueck, sondern
+        // nur den Weg zu einem anderen Server.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if weiteresKonto {
+                Unterseitenkopf(titel: String(localized: "Konto hinzufügen")) {
+                    schliessen()
+                } rechts: { EmptyView() }
             }
-                .buttonStyle(.plain)
-                .font(.system(size: 13))
-                .foregroundStyle(Stil.schriftSehrLeise)
-                .padding(.bottom, 22)
         }
+        .safeAreaInset(edge: .bottom) {
+            if !weiteresKonto {
+                Button("Anderer Server") { model.signOut() }
+                    .buttonStyle(Stil.Druckzeile())
+                    // 12 Regular aus der Leiter; 13 Regular steht dort nicht.
+                    .font(Stil.klein)
+                    .foregroundStyle(Stil.schriftSehrLeise)
+                    .padding(.bottom, 22)
+            }
+        }
+        #if os(iOS)
+        // Nur beim Hinzufuegen: an der Wurzel gibt es keine Leiste, die stoeren
+        // koennte, und `WischZurueck` haette dort nichts zurueckzuwischen.
+        .toolbar(weiteresKonto ? .hidden : .automatic, for: .navigationBar)
+        #endif
         // **Wer das Blatt zeigt, schliesst es auch.** Nach dem Hinzufuegen
         // blieb es sonst stehen und es sah aus, als sei nichts passiert.
         //
@@ -276,7 +319,7 @@ struct LoginView: View {
         // ohne Fehlermeldung**: sonst verschluckt das Schliessen sie.
         .onChange(of: model.kontowechsel) { _, _ in
             guard weiteresKonto, model.errorMessage == nil else { return }
-            fertig()
+            schliessen()
         }
         .task {
             bekannte = await model.oeffentlicheBenutzer()
@@ -298,7 +341,8 @@ struct LoginView: View {
             HStack(spacing: 8) {
                 Circle().fill(Stil.akzent).frame(width: 7, height: 7)
                 Text("Verbunden · Jellyfin \(version)")
-                    .font(.system(size: 12))
+                    // Die Angabe der Leiter, 12 Regular. Vorher als Zahl.
+                    .font(Stil.klein)
                     .foregroundStyle(Stil.schriftSehrLeise)
             }
             Text(serverName)
@@ -320,7 +364,7 @@ struct LoginView: View {
                                          bild: bilder[person.id],
                                          gewaehlt: benutzer == person.name)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(Stil.Druckzeile())
                     }
                 }
                 .padding(.vertical, 2)
@@ -351,7 +395,7 @@ struct LoginView: View {
             if let fehler = model.errorMessage {
                 Text(fehler)
                     .font(Stil.klein)
-                    .foregroundStyle(Stil.warnung)
+                    .foregroundStyle(Stil.fehler)
                     .multilineTextAlignment(.center)
             }
         }
@@ -365,7 +409,8 @@ struct LoginView: View {
             HStack(spacing: 12) {
                 Rectangle().fill(Stil.linie).frame(height: 1)
                 Text("oder")
-                    .font(.system(size: 12))
+                    // Die Angabe der Leiter, 12 Regular. Vorher als Zahl.
+                    .font(Stil.klein)
                     .foregroundStyle(Stil.schriftSehrLeise)
                 Rectangle().fill(Stil.linie).frame(height: 1)
             }
@@ -377,7 +422,7 @@ struct LoginView: View {
                     Text("Mit Quick Connect anmelden")
                 }
             }
-            .buttonStyle(NebenknopfStil())
+            .buttonStyle(NebenknopfStil(akzent: true))
         }
         .padding(.top, 26)
     }
@@ -396,23 +441,24 @@ struct Kontozeichen: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            ZStack {
-                Circle().fill(Stil.erhoeht)
-                if let bild {
-                    Bild(url: bild).clipShape(Circle())
-                } else {
-                    Text(String(name.prefix(1)).uppercased())
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(gewaehlt ? Stil.schrift : Stil.schriftLeise)
-                }
-            }
-            .frame(width: 60, height: 60)
-            .overlay {
-                Circle().strokeBorder(gewaehlt ? Stil.akzent : Stil.rand,
-                                      lineWidth: gewaehlt ? 2 : 1)
-            }
+            // **Der Baustein, nicht sein Nachbau.**
+            //
+            // Hier stand das Zeichen ein zweites Mal von Hand: `erhoeht` als
+            // Grund statt des Verlaufs, weisser Ring 2 pt statt `hervorgehoben`,
+            // 20 Semifett als Buchstabe statt `groesse * 0,38`, und das Bild
+            // ueber `Bild` statt ueber den Bildspeicher — also ohne den
+            // synchronen Blick, der das Aufblitzen des Buchstaben verhindert.
+            // Dasselbe Ding in zwei Bauarten heisst zwei Profilringe in einer
+            // App. Dass der Ring hier weiss ist und nicht im Akzent, ist
+            // richtig und steht jetzt als `gewaehlt` im Baustein.
+            Profilzeichen(name: name, bild: bild, groesse: 60, gewaehlt: gewaehlt)
             Text(name)
-                .font(.system(size: 13))
+                // Titel unter einem Zeichen: 13 aus der Leiter, vorher als
+                // Zahl. Ein Gewicht, nicht zwei: `semibold` ist breiter als
+                // `medium`, und bei zwei Zeilen mit `minimumScaleFactor`
+                // entscheidet die Breite ueber den Umbruch — der Name brach
+                // beim Auswaehlen anders. Ton und Ring sagen die Wahl.
+                .font(Stil.kachel)
                 .foregroundStyle(gewaehlt ? Stil.schrift : Stil.schriftLeise)
                 // Zwei Zeilen und etwas mehr Breite: ein elfstelliger Name wurde bei
                 // 66 Punkt und einer Zeile auf zehn Zeichen verstümmelt, und
@@ -423,6 +469,12 @@ struct Kontozeichen: View {
                 .minimumScaleFactor(0.85)
         }
         .frame(width: 84)
+        // **Die Wahl sagt sich nicht nur ueber Ton und Ring.** Beides ist
+        // Farbe, und Farbe allein erreicht niemanden, der die Seite vorlesen
+        // laesst: VoiceOver sagte bei jedem Konto dasselbe. `.isSelected`
+        // ist das Merkmal, das das System dafuer kennt.
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(gewaehlt ? [.isButton, .isSelected] : .isButton)
     }
 }
 

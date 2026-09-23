@@ -1,5 +1,8 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -11,15 +14,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.gemeinsam.Stil
@@ -131,16 +131,16 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                              knopfAlpha = einblendAlpha, modifier = Modifier.tvAbschnitt(a, "kopf", TvAbschnittsart.Kopf)) {
                     // Nie gesperrt, solange geladen wird: der Knopf muss ein Fokusziel bleiben.
                     // Vorlage: `SerienView.starte` — ohne Plan wird gemeldet statt schweigend nichts zu tun.
-                    TvKnopf(serie?.knopftext?.ifEmpty { null } ?: uebersetzt("Lädt…"), Icons.Filled.PlayArrow, Modifier.focusRequester(haupt)) {
+                    TvKnopf(serie?.knopftext?.ifEmpty { null } ?: uebersetzt("Lädt…"), Zeichen.Abspielen, Modifier.focusRequester(haupt)) {
                         val st = serie?.stand
                         if (st != null && serie?.planDa == true) app.spiel.value = Abspielwunsch(st.id, st.ab)
                         else if (st != null) meldung = uebersetzt("Der Server hat keine Datei zu dieser Folge.")
                     }
-                    serie?.stand?.takeIf { it.fortsetzen }?.let { st -> TvKnopf(null, Icons.Filled.Replay) {
+                    serie?.stand?.takeIf { it.fortsetzen }?.let { st -> TvKnopf(null, Zeichen.Zurueckspulen) {
                         if (serie?.planDa == true) app.spiel.value = Abspielwunsch(st.id, null)
                         else meldung = uebersetzt("Der Server hat keine Datei zu dieser Folge.")
                     } }
-                    TvKnopf(null, if (serie?.gemerkt == true) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder) {
+                    TvKnopf(null, if (serie?.gemerkt == true) Zeichen.LesezeichenVoll else Zeichen.Lesezeichen) {
                         val alt = serie ?: return@TvKnopf
                         s = alt.copy(gemerkt = !alt.gemerkt)
                         lauf.launch { if (withContext(Dispatchers.IO) { app.kern.merken(alt.id, !alt.gemerkt).await() }.isNotEmpty()) s = alt }
@@ -162,9 +162,9 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                             add(Wahl("metadaten", uebersetzt("Metadaten neu einlesen")))
                         }
                         TvMehrknopf(eintraege,
-                            mapOf("gesehen" to Icons.Filled.CheckCircle, "vonvorn" to Icons.Filled.Replay,
-                                  "naechste" to Icons.Filled.SkipNext, "staffel" to Icons.Filled.CheckCircleOutline,
-                                  "metadaten" to Icons.Filled.Refresh)) { wahl ->
+                            mapOf("gesehen" to Zeichen.HakenKreisVoll, "vonvorn" to Zeichen.Zurueckspulen,
+                                  "naechste" to Zeichen.Ueberspringen, "staffel" to Zeichen.HakenKreis,
+                                  "metadaten" to Zeichen.Neuladen)) { wahl ->
                             lauf.launch {
                                 when (wahl) {
                                     // Vorlage: `gesehenHandlung`/`DetailView.swift:189-194` (VERHALTEN D6) —
@@ -201,7 +201,7 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                             }
                         }
                     } else {
-                        TvKnopf(null, Icons.Filled.MoreHoriz) {}
+                        TvKnopf(null, Zeichen.Mehr) {}
                     }
                 }
 
@@ -210,7 +210,7 @@ fun TvSerie(app: SwiftlyAnwendung, ziel: Ziel, oeffnen: (Ziel) -> Unit) {
                         Text(uebersetzt("Folgen"), style = TvStil.reihe, color = Stil.schrift)
                         val liste = serie?.staffeln.orEmpty()
                         if (liste.size > 1) {
-                            TvKnopf(liste.firstOrNull { it.id == staffel }?.name ?: uebersetzt("Staffel"), Icons.Filled.KeyboardArrowDown, hoehe = 30.dp) {
+                            TvKnopf(liste.firstOrNull { it.id == staffel }?.name ?: uebersetzt("Staffel"), Zeichen.WinkelRunter, hoehe = 30.dp) {
                                 app.blatt.value = Blattwunsch(uebersetzt("Staffel"), liste.map { Wahl(it.id, it.name) }, staffel) { staffel = it }
                             }
                         }

@@ -1,5 +1,10 @@
 package de.paulherter.swiftly
 
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.draw.alpha
+import de.paulherter.swiftly.gemeinsam.Zeichen
+import de.paulherter.swiftly.gemeinsam.Symbol
+import de.paulherter.swiftly.gemeinsam.Staerke
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,13 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -29,9 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -60,28 +58,42 @@ import org.json.JSONObject
 
 // MARK: Bausteine
 
-/** Vorlage: `NebenknopfStil` — 48 hoch, Weiss 10 %, gedrueckt 16 %, sofort an und 120 ms aus. */
+/**
+ * Vorlage: `NebenknopfStil` — 48 hoch, **`flaeche`**, gedrueckt `gedruecktFlaeche`, sofort an
+ * und 120 ms aus, dazu der Massstab 0,97 wie an jedem anderen Knopf.
+ *
+ * Er zeichnete Weiss auf 10 bzw. 16 Prozent ueber den Grund. Das ergibt #2A2A2A und #333333 —
+ * zwei Toene knapp neben den beiden, die es dafuer gibt, und keiner davon mit Namen. Diese
+ * Fassung traegt zusaetzlich ein Zeichen; sonst ist sie der geteilte `Nebenknopf`.
+ *
+ * `akzent`: Schrift und Zeichen im Akzent — `NebenknopfStil(akzent: true)`, der zweite Weg zum
+ * selben Ziel (Quick Connect unter dem Anmeldeknopf). 9 zwischen Zeichen und Wort.
+ */
 @Composable
-fun Nebenknopf(symbol: ImageVector, text: String, tun: () -> Unit) {
+fun Nebenknopf(symbol: Zeichen, text: String, akzent: Boolean = true, tun: () -> Unit) {
     val quelle = remember { MutableInteractionSource() }
     val gedrueckt by quelle.collectIsPressedAsState()
-    val druck = remember { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(gedrueckt) { if (gedrueckt) druck.snapTo(1f) else druck.animateTo(0f, Bewegung.loslassen()) }
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(Stil.ecke))
-            .drawBehind { drawRect(Color.White.copy(alpha = 0.10f + 0.06f * druck.value)) }
+    val mass by androidx.compose.animation.core.animateFloatAsState(
+        if (gedrueckt) Bewegung.DRUCKMASS else 1f, Bewegung.loslassen(), label = "druck")
+    Row(Modifier.fillMaxWidth().heightIn(min = Stil.knopfHoehe)
+            .graphicsLayer { scaleX = mass; scaleY = mass }
+            .clip(RoundedCornerShape(Stil.ecke))
+            .background(if (gedrueckt) Stil.gedruecktFlaeche else Stil.flaeche)
             .clickable(quelle, null, onClick = tun),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-        Icon(symbol, contentDescription = null, tint = Stil.schrift, modifier = Modifier.size(18.dp))
-        Text(text, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium), color = Stil.schrift)
+        horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+        // Das Zeichen im Knopf traegt die Schrift des Knopfs: 15 Medium (`NebenknopfStil`).
+        val farbe = if (akzent) Stil.akzent else Stil.schrift
+        Symbol(symbol, 15.dp, farbe = farbe, staerke = Staerke.Mittel)
+        Text(text, style = Stil.knopftext, color = farbe)
     }
 }
 
 /** „oder" zwischen zwei Linien — trennt Passwort und Quick Connect. */
 @Composable
 fun Oder(modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.weight(1f).height(1.dp).background(Stil.linie))
-        Text(uebersetzt("oder"), style = TextStyle(fontSize = 12.sp), color = Stil.schriftSehrLeise)
+        Text(uebersetzt("oder"), style = Stil.klein, color = Stil.schriftSehrLeise)
         Box(Modifier.weight(1f).height(1.dp).background(Stil.linie))
     }
 }
@@ -156,7 +168,9 @@ fun QuickConnectAnmeldung(app: SwiftlyAnwendung, neuerServer: Boolean, zurueck: 
                  style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise, modifier = Modifier.padding(top = 10.dp))
             val c = code
             when {
-                fehler != null -> Text(fehler.orEmpty(), style = TextStyle(fontSize = 15.sp, textAlign = TextAlign.Center), color = Stil.warnung,
+                // `fehler`, nicht `warnung`: der Code kam nicht — das ist schiefgegangen, nicht
+                // etwas, das auf jemanden wartet (BRAND 1, fuenf semantische Farben).
+                fehler != null -> Text(fehler.orEmpty(), style = Stil.koerper.copy(textAlign = TextAlign.Center), color = Stil.fehler,
                                        modifier = Modifier.fillMaxWidth().padding(top = 40.dp))
                 c == null -> Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
                     Ladefeld(Modifier.size(260.dp, 60.dp), 12.dp)
@@ -167,10 +181,11 @@ fun QuickConnectAnmeldung(app: SwiftlyAnwendung, neuerServer: Boolean, zurueck: 
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                         c.forEachIndexed { i, zeichen ->
                             if (c.length % 2 == 0 && i == c.length / 2) Spacer(Modifier.width(6.dp))
-                            Box(Modifier.size(46.dp, 60.dp).clip(RoundedCornerShape(Stil.eckeFeld)).background(Stil.flaeche)
-                                    .border(1.dp, Stil.rand, RoundedCornerShape(Stil.eckeFeld)),
+                            // **Kein Rand** (BRAND 4): ein Feld ist eine gefuellte Flaeche.
+                            // 28 ist die Stufe des Seitentitels — der Code *ist* hier die Seite.
+                            Box(Modifier.size(46.dp, 60.dp).clip(RoundedCornerShape(Stil.eckeFeld)).background(Stil.flaeche),
                                 contentAlignment = Alignment.Center) {
-                                Text(zeichen.toString(), style = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
+                                Text(zeichen.toString(), style = Stil.titelGross.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp, fontFeatureSettings = "tnum"),
                                      color = Stil.schrift)
                             }
                         }
@@ -179,25 +194,27 @@ fun QuickConnectAnmeldung(app: SwiftlyAnwendung, neuerServer: Boolean, zurueck: 
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(Stil.akzent))
                         Text(uebersetzt("Warte auf Freigabe · noch %lld:%@", rest / 60, "%02d".format(rest % 60)),
-                             style = TextStyle(fontSize = 14.sp, fontFeatureSettings = "tnum"), color = Stil.schriftLeise)
+                             style = Stil.kachel.copy(fontFeatureSettings = "tnum"), color = Stil.schriftLeise)
                     }
                 }
             }
             Column(Modifier.padding(top = 38.dp)) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
-                Text(uebersetzt("So gehts").uppercase(), style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
-                     color = Stil.schriftSehrLeise, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+                // Gruppentitel: 20 Semibold in Normalschreibung, `schriftLeise` (BRAND 2).
+                Text(uebersetzt("So gehts"), style = Stil.reihe,
+                     color = Stil.schriftLeise, modifier = Modifier.padding(top = 16.dp, bottom = 10.dp))
                 listOf("Jellyfin im Browser öffnen und anmelden", "Oben rechts aufs Profil, dann Quick Connect",
                        "Code eingeben, dann geht es hier von selbst weiter").forEachIndexed { i, schritt ->
                     Row(Modifier.padding(top = 10.dp)) {
-                        Text("${i + 1}", style = TextStyle(fontSize = 14.sp), color = Stil.schriftSehrLeise, modifier = Modifier.width(20.dp))
-                        Text(uebersetzt(schritt), style = TextStyle(fontSize = 14.sp, lineHeight = 19.sp), color = Stil.schriftLeise)
+                        Text("${i + 1}", style = Stil.koerper, color = Stil.schriftSehrLeise, modifier = Modifier.width(Stil.zeichenSpalte))
+                        Text(uebersetzt(schritt), style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise)
                     }
                 }
             }
         }
         Box(Modifier.padding(horizontal = Stil.randAbstand).navigationBarsPadding().padding(bottom = 24.dp)) {
-            Nebenknopf(Icons.Filled.Refresh, uebersetzt("Neuen Code holen")) { lauf++ }
+            // `NebenknopfStil()` ohne Zeichen und ohne Akzent.
+            de.paulherter.swiftly.gemeinsam.Nebenknopf(uebersetzt("Neuen Code holen")) { lauf++ }
         }
     }
 }
@@ -219,6 +236,8 @@ fun ServerAufnahmeSeite(app: SwiftlyAnwendung, voreingestellt: String?, zurueck:
     var laeuft by remember { mutableStateOf(false) }
     var fehler by remember { mutableStateOf<String?>(null) }
     var quick by remember { mutableStateOf(false) }
+    /** „Erweitert" — eigene Header fuer einen Dienst vor dem Server. */
+    val koepfe = rememberKopfzeilen()
     val lauf = rememberCoroutineScope()
 
     fun abbrechen() { app.kern.aufnahmeAbbrechen(); zurueck() }
@@ -228,7 +247,9 @@ fun ServerAufnahmeSeite(app: SwiftlyAnwendung, voreingestellt: String?, zurueck:
         pruefe = true; fehler = null
         lauf.launch {
             try {
-                val o = JSONObject(withContext(Dispatchers.IO) { app.kern.aufnahmeVerbinden(adresse).await() })
+                val o = JSONObject(withContext(Dispatchers.IO) { app.kern.aufnahmeVerbinden(adresse, koepfe.alsJson()).await() })
+                // Erst jetzt ablegen: fuer eine Adresse, unter der nichts antwortet, bleibt nichts liegen.
+                if (koepfe.isNotEmpty()) app.eigeneKoepfeAblegen()
                 server = o.getString("name") to o.getString("version")
             } catch (e: CancellationException) { throw e } catch (e: Exception) { fehler = fehlertext(app, e) }
             pruefe = false
@@ -251,39 +272,53 @@ fun ServerAufnahmeSeite(app: SwiftlyAnwendung, voreingestellt: String?, zurueck:
     }
     BackHandler { abbrechen() }
 
+    val s = server
+    // Der Titel ist der Servername, sobald er feststeht.
+    val seitentitel = s?.first ?: uebersetzt(if (voreingestellt != null) "Konto hinzufügen" else "Server hinzufügen")
+    // **Oben der Rueckweg, unten nichts.** Als geschobene Seite hat sie oben denselben Pfeil wie jede
+    // andere Unterseite; ein zweites „Abbrechen" unten waere ein zweiter Weg zurueck.
     Column(Modifier.fillMaxSize().background(Stil.grund)) {
-        val s = server
-        Unterseitenkopf(uebersetzt(if (voreingestellt != null) "Konto hinzufügen" else "Server hinzufügen")) { abbrechen() }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Stil.randAbstand).widthIn(max = Stil.formularbreite),
-               verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (s == null) {
-                Text(if (voreingestellt == null) uebersetzt("Die Adresse eines weiteren Jellyfin-Servers. Du bleibst bei beiden angemeldet und wechselst auf der Profilseite zwischen ihnen.")
-                     else runCatching { java.net.URI(voreingestellt).host }.getOrNull() ?: voreingestellt,
-                     style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise)
-                if (voreingestellt == null || fehler != null) {
-                    Box(Modifier.padding(top = 8.dp)) {
-                        Eingabefeld(adresse, { adresse = it }, Icons.Outlined.Language, "tv.example.de", adresse = true) { pruefen() }
+        Unterseitenkopf(seitentitel, { abbrechen() })
+        Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.widthIn(max = Stil.formularbreite).fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 40.dp)
+                       .navigationBarsPadding().imePadding()) {
+                // `kopf`: verbunden, die voreingestellte Adresse, oder was die Seite tut — oben 8.
+                Box(Modifier.padding(top = 8.dp)) {
+                    when {
+                        s != null -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.size(7.dp).clip(CircleShape).background(Stil.akzent))
+                            Text(uebersetzt("Verbunden · Jellyfin %@", s.second), style = Stil.klein, color = Stil.schriftSehrLeise)
+                        }
+                        voreingestellt != null -> Text(runCatching { java.net.URI(voreingestellt).host }.getOrNull() ?: voreingestellt,
+                                                       style = Stil.koerper, color = Stil.schriftLeise)
+                        else -> Text(uebersetzt("Die Adresse eines weiteren Jellyfin-Servers. Du bleibst bei beiden angemeldet und wechselst auf der Profilseite zwischen ihnen."),
+                                     style = Stil.koerper.copy(lineHeight = 21.sp), color = Stil.schriftLeise)
                     }
-                    Hauptknopf(uebersetzt(if (pruefe) "Verbinden…" else "Verbinden"), freigegeben = adresse.isNotBlank() && !pruefe,
-                               modifier = Modifier.padding(top = 6.dp)) { pruefen() }
                 }
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(Stil.akzent))
-                    Text(uebersetzt("Verbunden · Jellyfin %@", s.second), style = TextStyle(fontSize = 12.sp), color = Stil.schriftSehrLeise)
+                if (s != null) {
+                    Column(Modifier.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Eingabefeld(benutzer, { benutzer = it }, Zeichen.Person, uebersetzt("Benutzername"))
+                        Eingabefeld(passwort, { passwort = it }, Zeichen.Schloss, uebersetzt("Passwort"), geheim = true) { anmelden() }
+                        Hauptknopf(uebersetzt(if (laeuft) "Anmelden…" else "Anmelden"), freigegeben = benutzer.isNotBlank() && !laeuft,
+                                   modifier = Modifier.padding(top = 10.dp).alpha(if (benutzer.isBlank()) 0.4f else 1f)) { anmelden() }
+                        Oder(Modifier.padding(top = 16.dp))
+                        Box(Modifier.padding(top = 10.dp)) {
+                            Nebenknopf(Zeichen.Fernseher, uebersetzt("Mit Quick Connect anmelden")) { quick = true }
+                        }
+                    }
+                } else if (voreingestellt == null || fehler != null) {
+                    Column(Modifier.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Eingabefeld(adresse, { adresse = it }, Zeichen.Server, "tv.example.de", adresse = true) { pruefen() }
+                        Erweitertbereich(koepfe)
+                        Hauptknopf(uebersetzt(if (pruefe) "Verbinden…" else "Verbinden"), freigegeben = adresse.isNotBlank() && !pruefe,
+                                   modifier = Modifier.padding(top = 10.dp).alpha(if (adresse.isBlank()) 0.4f else 1f)) { pruefen() }
+                    }
                 }
-                Text(s.first, style = Stil.titel, color = Stil.schrift, modifier = Modifier.padding(bottom = 14.dp))
-                Eingabefeld(benutzer, { benutzer = it }, Icons.Outlined.Person, uebersetzt("Benutzername"))
-                Eingabefeld(passwort, { passwort = it }, Icons.Outlined.Lock, uebersetzt("Passwort"), geheim = true) { anmelden() }
-                Hauptknopf(uebersetzt(if (laeuft) "Anmelden…" else "Anmelden"), freigegeben = benutzer.isNotBlank() && !laeuft,
-                           modifier = Modifier.padding(top = 6.dp)) { anmelden() }
-                Oder(Modifier.padding(top = 12.dp))
-                Nebenknopf(Icons.Outlined.Tv, uebersetzt("Mit Quick Connect anmelden")) { quick = true }
+                // `fehler`, nicht `warnung`: eine abgelehnte Anmeldung ist schiefgegangen.
+                fehler?.let { Text(it, style = Stil.klein.copy(textAlign = TextAlign.Center), color = Stil.fehler,
+                                   modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) }
             }
-            fehler?.let { Text(it, style = Stil.klein, color = Stil.warnung, modifier = Modifier.padding(top = 6.dp)) }
         }
-        Text(uebersetzt("Abbrechen"), style = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center), color = Stil.schriftSehrLeise,
-             modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 22.dp).antippen { abbrechen() })
     }
 }
 
@@ -337,7 +372,8 @@ private fun KarteInhalt(app: SwiftlyAnwendung, karte: Serverkarte, mehrere: Bool
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Profilzeichen(vorn.name, vorn.bild, 56.dp, hervorgehoben = karte.aktiv && mehrere)
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(vorn.name, style = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp), color = Stil.schrift, maxLines = 1)
+            // 17 Semibold, die Blattrubrik — der Name ist der Gegenstand der Karte, nicht eine Zeile.
+            Text(vorn.name, style = Stil.rubrikGross, color = Stil.schrift, maxLines = 1)
             // **Beide Zeilen halten ihren Platz, auch solange sie leer sind.** Name und Serverauskunft
             // kommen nacheinander: der Name steht sofort, `serverauskunft` erst nach der Antwort.
             // Wuchs die Kopfzeile dabei ueber die 56 des Zeichens hinaus, rutschte alles darunter —
@@ -346,8 +382,8 @@ private fun KarteInhalt(app: SwiftlyAnwendung, karte: Serverkarte, mehrere: Bool
                 (server?.first?.takeIf { it.isNotEmpty() } ?: app.servername.value.orEmpty()) to
                     (server?.second?.takeIf { it.isNotEmpty() }?.let { uebersetzt("Jellyfin %@", it) } ?: "")
             else karte.host to uebersetzt("Antippen zum Wechseln")
-            Text(zeile.ifEmpty { " " }, style = TextStyle(fontSize = 13.sp), color = Stil.schriftSehrLeise, maxLines = 1)
-            Text(unterzeile.ifEmpty { " " }, style = TextStyle(fontSize = 12.sp), color = Stil.schriftSehrLeise, maxLines = 1)
+            Text(zeile.ifEmpty { " " }, style = Stil.klein, color = Stil.schriftSehrLeise, maxLines = 1)
+            Text(unterzeile.ifEmpty { " " }, style = Stil.klein, color = Stil.schriftSehrLeise, maxLines = 1)
         }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(Stil.linie))
@@ -367,7 +403,7 @@ private fun KarteInhalt(app: SwiftlyAnwendung, karte: Serverkarte, mehrere: Bool
                     else oeffnen(Ziel(karte.adresse, uebersetzt("Konto hinzufügen"), "ServerAufnahme"))
                 },
             contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.Add, contentDescription = uebersetzt("Konto hinzufügen"), tint = Stil.schriftSehrLeise, modifier = Modifier.size(17.dp))
+            Symbol(Zeichen.Plus, 15.dp, farbe = Stil.schriftSehrLeise, staerke = Staerke.Halbfett, beschreibung = uebersetzt("Konto hinzufügen"))
         }
     }
 }
